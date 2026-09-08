@@ -1,389 +1,106 @@
-# Grok 下一階段開發指令：Real Blender E2E + Parametric Cabinet
+# Grok 下一階段開發指令：Phase 71–120 Autonomous Furniture Factory
 
 > Repo: `netfox-web/blender-autonomous-3d`
->
-> 先讀完整 repo 與 `src/fox3d/`，禁止另起新專案、禁止重寫既有架構。
+> 基線：先讀 `docs/GROK_PROGRESS_REPORT.md`、REAL/CABINET acceptance 與現有 `src/fox3d/`。
+> 不重做 Phase 1–70。優先填 REAL gaps；無真外部 Provider/設備時必須標 MOCK/PARTIAL/BLOCKED。
+
+## 本輪目標
+把目前單一 STORAGE_CABINET 能力擴成可持續演進的「空間 → 多櫃設計 → 工程 → BOM/成本 → Blender → 製造候選」家具自動研發工廠。Engineering Definition 仍是尺寸唯一 Source of Truth；Blender 只是 consumer；正式 CNC/投產仍需 Human Approval。
+
+## Phase 71–80：家具產品族與組合工程
+71. 建立 FurnitureProductType Registry：WARDROBE、SHOE_CABINET、TV_CABINET、BOOKCASE、STORAGE_CABINET、DISPLAY_CABINET、KITCHEN_BASE、KITCHEN_WALL。
+72. 將 CabinetSpec 泛化但保持舊 API 相容，不複製第二套 parametric engine。
+73. 建立 CabinetModule：單一櫃可由多 module 組成。
+74. 支援 vertical partition / horizontal partition。
+75. 支援 open shelf / closed compartment。
+76. 支援 hinged door / double door / drawer bank / open bay。
+77. 支援 toe-kick / legs / plinth。
+78. 支援 top filler / side filler / wall clearance。
+79. 建立 MultiCabinetAssembly，同一牆面可組合多櫃。
+80. 建立 Assembly Engineering Hash；任一 module 改變必須造成 hash/BOM/render lineage 改變。
+
+## Phase 81–90：空間 Digital Twin / 自動配置
+81. 建立 SpaceDigitalTwin schema：room/wall/opening/obstacle/outlet metadata。
+82. 支援手動尺寸 JSON 建立房間，不要求 AI 才能工作。
+83. Wall segment：length/height/thickness/origin/direction。
+84. Door/window opening + keep-out zone。
+85. Column/beam/skirting/outlet keep-out zone。
+86. 建立 Space Constraint Engine，櫃體不可穿牆、門窗、柱與保留區。
+87. 建立 WallFitSolver：依可用牆寬自動配置單櫃/多櫃。
+88. 支援 fixed gap / minimum clearance / symmetric layout。
+89. 自動產 3–10 個合法 layout candidates。
+90. Blender Space Preview：牆、地板、開口、櫃體一起 render；空間資料與家具資料 lineage 分開記錄。
+
+## Phase 91–100：工程規則、五金、製造資料
+91. Rule Engine 加強門片 opening sweep collision。
+92. Drawer extension collision。
+93. Shelf span / load placeholder rule（未有真結構模型時不得宣稱結構認證）。
+94. Hardware Registry：hinge/rail/handle/connector/leg，以 vendor-neutral ID 為主。
+95. Hardware compatibility rule：門厚、抽屜、開啟角等。
+96. Edge banding 明確到每一板件邊，不只 boolean。
+97. DrillingManifest schema：孔位、直徑、深度、面、座標系。
+98. CuttingManifest schema：panel、尺寸、grain direction、quantity。
+99. ManufacturingManifest version/hash/approval state。
+100. Manufacturing Candidate Gate：ENGINEERING_VALID → COSTED → PREVIEWED → WAITING_APPROVAL；不得自動 LIVE_CNC。
+
+## Phase 101–110：板材、Nesting、成本與報價
+101. SheetMaterial Registry：板長/板寬/厚度/紋理方向/成本。
+102. BOM → required panel rectangles。
+103. 實作 deterministic 2D nesting baseline（例如 shelf/guillotine heuristic），不是只定義 Adapter。
+104. 計算 sheet count / utilization / waste area。
+105. Grain-direction constraint。
+106. Kerf / trim allowance parameters。
+107. Nesting result manifest + SVG/DXF-friendly geometry interface。
+108. Cost Engine 加入 sheet waste、edge banding length、hardware、drilling/cutting processing。
+109. Quote Engine：cost + margin policy → suggested price；不得接真金流。
+110. Quote version 綁 EngineeringHash + BOMHash + NestingHash，工程改動必須使舊報價 stale。
+
+## Phase 111–120：自助設計、AI R&D、真實驗收
+111. Natural Language 支援產品族，例如衣櫃/鞋櫃/電視櫃/展示櫃，不讓 LLM 直接製造 mm。
+112. DesignIntent 加 room/wall target、用途、風格、預算、storage requirements。
+113. Intent → deterministic normalized constraints；不明確資料標 UNKNOWN/NEEDS_INPUT，不幻想。
+114. Variant Generator 同時變 layout/module/material/door/drawer，但先 Engineering Validate。
+115. Vision Judge 接 Provider interface；若沒有真 Provider 保持 MOCK，禁止假 REAL。
+116. Vision 分數與 Engineering score 分離；工程 Rule 永遠有 veto。
+117. ProductRDAgent 支援 Space → Layout → Furniture Variants → BOM → Nesting → Cost → Preview → Candidate。
+118. 建立 Customer Revision：改寬度/材質/層板/門片後建立新 immutable version，保留 lineage。
+119. 建立 Furniture Factory Admin/API：Space Twins、Assemblies、BOM、Nesting、Quotes、Approval；沿用現有 Admin，不另建平台。
+120. 建立 `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` + JSON evidence，跑完整 E2E：3600mm wall → 多櫃合法配置 → BOM → nesting → cost/quote → real Blender preview → WAITING_APPROVAL。
+
+## 同輪必須補既有 PARTIAL/MOCK gaps（不另算空 Phase）
+- Assembly animation MP4：若可在本機 Blender 真跑，完成 REAL；否則留下具體 blocker。
+- Cycles AOV：depth / normal / segmentation，能真產 artifact 才標 REAL。
+- Vision Judge：只有真正 Provider 呼叫才可 REAL。
+- AI Video：只有 FoxStudio ProviderAdapter 真註冊/呼叫才可 REAL；不可硬綁 H3/LTX。
+- OS sandbox：不得因 path guard 就宣稱完整 OS jail。
+- `feature/admin-console` 若存在，先比較差異，只合併不衝突且有價值部分。
+
+## 測試與驗收硬規則
+1. 不重寫 Scheduler / Queue / DAM / Recipe Registry / TwinStore。
+2. 不建立第二套家具尺寸來源。
+3. Blender 不得自行修正工程 mm 後不回寫 Engineering Definition。
+4. Mock 測試與 Real acceptance 分開。
+5. 每一新 product type 至少有 geometry+BOM regression。
+6. MultiCabinet 至少測 2、3、4 module/cabinet 組合。
+7. Space solver 至少測 door/window/column collision rejection。
+8. Nesting 至少測 deterministic、no-overlap、sheet bounds、grain constraint。
+9. Quote stale detection 必測。
+10. Production manufacturing 一律 Human Approval Gate。
+11. 缺外部 Provider 不阻止其餘 Phase，標 MOCK/PARTIAL 後繼續。
+12. 不要為了湊 50 Phase 建空 class/schema；每個 Phase 要有 execution path 或 regression evidence。
+
+## 回報契約
+完成後：
+- 更新 `docs/GROK_PROGRESS_REPORT.md`。
+- 新增/更新 `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` 與 machine-readable JSON evidence。
+- 更新 CURRENT_IMPLEMENTATION_AUDIT / REAL_E2E / CABINET acceptance（若狀態改變）。
+- 跑完整 pytest + 現有 lint/typecheck/integration/E2E。
+- 報告 REAL / MOCK / PARTIAL / BLOCKED。
+- commit + push main。
+- GitHub Issue #1 留 commit SHA、測試數、REAL blockers、下一輪建議。
+- 不要求使用者複製貼上；ChatGPT 直接從 GitHub 接手。
+
+## 下一輪規劃原則
+若本輪無重大 blocker，下一輪建議 Phase 121–180，方向為：家具商品化/AR/Web3D、包裝與展示架 Parametric Product、零售/展場 Scene、AI Video 真 Provider、Synthetic Data AOV、Render Farm、多 GPU Scheduler、Recipe 自動研究與品質資料閉環。
 
-## 最高優先目標
-
-目前後台已存在 Blender Workers、3D Jobs / Render Queue、Digital Twins、Recipes、Parametric Products、Furniture、Packaging、Scenes、Materials、Camera Recipes、Lighting Recipes、Recipe Research、Synthetic Data、Product R&D 等功能。
-
-本輪不要繼續堆 Mock UI。先確認哪些是真的、哪些是 Mock，然後打通：
-
-`真 Blender Headless → 真 NVIDIA GPU → 真 Cycles/OptiX → 真 Render → Queue → Digital Twin → DAM`
-
-完成後再往參數化木櫃、自動 BOM、成本與未來 CNC/CAM 邊界發展。
-
----
-
-## STEP 0 — Audit，禁止猜測
-
-完整掃描：
-
-- `src/`
-- `tests/`
-- `docs/`
-- `scripts/`
-- `pyproject.toml`
-- requirements
-- Docker
-- README
-- env/config/schema/migration
-
-搜尋：
-
-`mock`, `fake`, `stub`, `TODO`, `FIXME`, `NotImplemented`, `mock-4.2`, `local-mock`, `local-5090`, `BLENDER`, `OPTIX`, `CUDA`, `CYCLES`, `DigitalTwin`, `Parametric`, `Cabinet`, `BOM`, `Render`, `DAM`。
-
-建立 `docs/CURRENT_IMPLEMENTATION_AUDIT.md`，每項只能標：
-
-- REAL
-- PARTIAL
-- MOCK
-- STUB
-- MISSING
-- BLOCKED
-
-看到 API、class、route、schema 或 UI 不代表完成，必須追到真正 execution path。
-
----
-
-## Phase 41 — 真 Blender Discovery
-
-實作 Windows / Linux Blender discovery：
-
-- 自動尋找 Blender executable
-- 執行 `blender --version`
-- 回報真實 Blender version / executable path
-- 找不到則 `BLOCKED_NO_BLENDER`
-- 禁止 fallback 成 mock 後宣稱成功
-
-Mock 僅可保留於 automated test / dev。
-
-## Phase 42 — 真 GPU Discovery
-
-實作真 NVIDIA GPU discovery，至少取得：
-
-- GPU index
-- GPU UUID
-- GPU name
-- VRAM total / used / free
-- driver
-- CUDA availability
-
-可使用 `nvidia-smi`。不得硬編碼 RTX 5090 / RTX 5080 假裝偵測成功。
-
-Worker Registry 記錄來源：`REAL_DISCOVERY | MOCK | MANUAL`。
-
-## Phase 43 — Blender Cycles / OptiX Probe
-
-真正執行：
-
-`blender -b --python <probe.py>`
-
-使用 `bpy` 檢查：
-
-- Cycles availability
-- CUDA devices
-- OptiX devices
-- selected render device
-
-輸出結構化 JSON。沒有 OptiX 則 `BLOCKED_NO_OPTIX`，不得偷偷 CPU fallback 後標 GPU PASS。
-
-## Phase 44 — Real Smoke Render
-
-建立 `REAL_BLENDER_SMOKE_TEST`：
-
-- Cube
-- Plane
-- Camera
-- 3-point lights
-- Cycles
-- OptiX
-- 512x512 PNG
-
-必須真啟動 Blender process、真使用 NVIDIA GPU、真產 PNG。
-
-記錄：jobId、workerId、GPU、GPU UUID、Blender version、Cycles、OptiX、開始/結束時間、duration、output hash、output size、logs。
-
-PNG 必須可從後台查看。
-
-## Phase 45 — Queue 真串 Blender Worker
-
-沿用既有 Queue / Scheduler / Reservation / Worker，禁止第二套 Queue。
-
-Lifecycle：
-
-`QUEUED → RESERVED → DISPATCHED → RUNNING → RENDERING → UPLOADING → COMPLETED`
-
-失敗為 `FAILED`。
-
-必須支援 retry、timeout、cancel、heartbeat、worker offline、reservation release。
-
-## Phase 46 — Admin 真實狀態
-
-Blender Workers 顯示：
-
-- REAL / MOCK badge
-- hostname
-- OS
-- GPU
-- VRAM
-- Blender version
-- Cycles
-- CUDA
-- OptiX
-- status
-- current job
-- last heartbeat
-
-`mock-4.2` 不得顯示得像正式 Worker。
-
-## Phase 47 — Digital Twin 真 E2E
-
-建立 `PRODUCT_DIGITAL_TWIN_E2E`，先支援 GLB / GLTF：
-
-`Upload → Asset/DAM → Digital Twin → validation → Blender import → normalize → dimensions → bounding box → preview render → DAM`
-
-Digital Twin 頁面至少顯示 preview、asset、dimensions、format、version、createdAt。不得只建立 database row。
-
-## Phase 48 — WHITE_STUDIO 真商品攝影
-
-沿用既有 `WHITE_STUDIO` Recipe：
-
-`Digital Twin → Blender Scene → Ground Plane → Auto Camera Framing → Lighting → Shadow → Cycles → OptiX → Render → DAM`
-
-不得人工打開 Blender。
-
-## Phase 49 — PRODUCT_360
-
-`Digital Twin → Turntable → 36 frames → GPU Render`
-
-輸出 frames manifest、MP4、Web 360 manifest，全部回 DAM。
-
-記錄 lineage：DigitalTwinVersion、RecipeVersion、BlenderVersion、GPU、JobId。
-
-## Phase 50 — REAL E2E Acceptance
-
-建立 `docs/REAL_E2E_ACCEPTANCE.md`，逐項標：
-
-- REAL PASS
-- MOCK PASS
-- BLOCKED
-- FAIL
-
-Production Ready 至少要求：
-
-- `realBlender=true`
-- `realGPU=true`
-- `realCycles=true`
-- `realOptix=true`
-- `realRenderOutput=true`
-- `queueIntegrated=true`
-- `damIntegrated=true`
-
-任一 false，不得宣稱 Production Ready。
-
----
-
-# Parametric Furniture
-
-## Phase 51 — Engineering Core
-
-建立 `EngineeringProductDefinition` 作為唯一 Source of Truth，至少包含：
-
-- productType
-- width / height / depth
-- material
-- components
-- constraints
-- connections
-- hardware
-
-Blender 只是 consumer。同一 Engineering JSON 同時供 Blender、BOM、Cost、未來 CAD/CAM。
-
-## Phase 52 — STORAGE_CABINET V1
-
-第一個真參數化產品：`STORAGE_CABINET`。
-
-測試輸入：
-
-- width=800
-- height=1800
-- depth=400
-- boardThickness=18
-- shelfCount=4
-- doorCount=2
-
-自動建立 left/right panel、top、bottom、back、shelves、doors。禁止固定 mesh hardcode；參數改變必須重新生成 geometry。
-
-## Phase 53 — BOM
-
-由同一 Engineering Definition 自動產 BOM：
-
-- partId
-- partType
-- length
-- width
-- thickness
-- material
-- quantity
-- edgeBanding
-
-驗證 3D geometry dimensions == BOM dimensions。禁止 Blender 與 BOM 各有一套尺寸。
-
-## Phase 54 — Resize Regression
-
-測試 width `800 → 1200`，確認 cabinet、top/bottom、shelf、doors、BOM、material usage、preview 全部同步更新。
-
-## Phase 55 — Engineering Rule Engine
-
-加入 minimum/maximum dimension、board thickness、door clearance、shelf clearance、back panel、drawer clearance、component collision、door collision、hardware clearance。
-
-LLM 不負責工程合法性；Rule Engine 才能 Validate。
-
-## Phase 56 — Cabinet Materials
-
-建立：`WOOD_WHITE`, `WOOD_OAK`, `WOOD_WALNUT`, `WOOD_BLACK`, `WOOD_CREAM`。
-
-資料包含 visual material、engineering material、cost unit、thickness options、texture asset。Blender 材質與工程材料需 mapping。
-
-## Phase 57 — Cabinet Cost
-
-由 BOM 計算 board area、edge banding、hardware、processing、assembly、estimated material cost、estimated total cost。先做 Engine，不串付款。
-
-## Phase 58 — Door / Drawer / Hardware
-
-加入 hinged door、drawer、handle、hinge placeholder、drawer rail placeholder，建立 component graph，支援 collision test。
-
-## Phase 59 — Exploded / Assembly
-
-由 component graph 自動產 exploded view、assembly order、assembly animation，輸出 PNG / MP4 / manifest。
-
-## Phase 60 — Cabinet Real Acceptance
-
-建立 `docs/CABINET_REAL_ACCEPTANCE.md`，證明：
-
-`自然參數 → Engineering Definition → geometry → BOM → material → cost → Blender preview`
-
-全部來自同一產品版本。
-
-## Phase 61 — Natural Language Cabinet
-
-加入 `DesignIntent`。
-
-範例：
-
-「幫我做一個寬120公分、高180公分、深40公分，雙門、4層板、白色木紋收納櫃。」
-
-流程：
-
-`Natural Language → DesignIntent JSON → Parametric Engine → Engineering Rules → BOM → Cost → Blender`
-
-LLM 禁止直接輸出正式製造資料。
-
-## Phase 62 — Variant Generator
-
-同一需求產多方案：door layout、shelf layout、color、handle、proportion。先 Preview，不要全部 Final Render。
-
-## Phase 63 — Vision Judge
-
-Preview 評估 composition、aesthetics、space utilization、manufacturability、cost、constraint validity，保留 Top N。工程合法性不得由 Vision Model 取代 Rule Engine。
-
-## Phase 64 — Product R&D Agent
-
-流程：
-
-`Natural Language → Design Intent → Variants → Engineering Validation → BOM → Cost → Blender Preview → Vision Judge → Candidate`
-
-正式生產前必須 `HUMAN_APPROVAL_REQUIRED`。
-
-## Phase 65 — CNC/CAM Boundary
-
-本輪只建立 `ManufacturingManifest` 與 Adapter interfaces：
-
-- CADAdapter
-- CAMAdapter
-- CNCAdapter
-- NestingAdapter
-
-可產 BOM、DXF export interface、drilling manifest、cutting manifest，但禁止真正控制 CNC。
-
----
-
-# 後續延伸
-
-## Phase 66 — Packaging Digital Twin
-
-沿用同一 Digital Twin 架構延伸 BOX / BOTTLE / POUCH / JAR / TUBE：
-
-`artwork → material → 3D → render → 360 → video reference`
-
-禁止第二套 Digital Twin。
-
-## Phase 67 — Blender → AI Video
-
-建立通用 Adapter：
-
-`Blender → start/middle/end references + depth + normal + mask → AI Video Adapter`
-
-預留 H3 / LTX / 其他模型，不硬綁單一模型。
-
-Blender = deterministic control；AI Video = generative motion/effects。
-
-## Phase 68 — Synthetic Data
-
-真 Blender 產 RGB、depth、normal、mask、segmentation、bounding boxes、camera pose、object id；每批 Dataset 必須有 manifest。
-
-## Phase 69 — Autonomous Recipe Research
-
-GPU idle 時：
-
-`Recipe Variant → low-res Blender Preview → Vision Judge → Score`
-
-狀態：`EXPERIMENTAL → CANDIDATE → APPROVED → PRODUCTION`。
-
-Agent 不得直接覆蓋 Production Recipe。
-
-## Phase 70 — Production Hardening
-
-檢查 tenant isolation、script sandbox、path traversal、arbitrary Python execution、resource limits、network restrictions、job cancellation、GPU cleanup、temp cleanup、asset lineage、cache integrity、worker crash recovery。
-
-Blender Python 是可執行程式碼。未批准 AI-generated Python 必須 `SANDBOX ONLY`。
-
----
-
-# 不可違反規則
-
-1. 不重寫現有架構。
-2. 不建立第二套 Scheduler / Queue / Recipe Registry / DAM。
-3. 不因命名不同就重做，優先 reuse / extend / adapter。
-4. Mock 保留給測試，但不得冒充 Production。
-5. REAL acceptance 必須有實際 artifact 證據。
-6. 缺 Blender / OptiX / GPU 時不得造假 PASS。
-7. 每個 Phase 要有 regression tests。
-8. 不要只做 UI。
-9. 不要只建 schema 就宣稱完成。
-10. 不要為 Phase 數量做空殼。
-11. 既有功能若已完成，先驗證再標 REAL/PARTIAL，不重寫。
-12. 正式製造/CNC 前保留 Human Approval Gate。
-
-# 本輪交付
-
-完成後提交：
-
-1. `CURRENT_IMPLEMENTATION_AUDIT.md`
-2. `REAL_E2E_ACCEPTANCE.md`
-3. `CABINET_REAL_ACCEPTANCE.md`
-4. 所有新增/修改檔案
-5. migrations
-6. tests
-7. 真實測試結果
-8. Mock / Real 對照表
-9. 未完成 Blockers
-10. 下一輪建議
-
-並執行專案現有 lint / typecheck / unit / integration / E2E tests。
-
-最後報告必須明確區分 `REAL / MOCK / PARTIAL / BLOCKED`，不得用「已完成」概括尚未真正接通的功能。
-
-**現在直接從 main branch Audit 開始，依依賴順序實作，不要先問是否繼續。**
+現在直接開始。先讀現有實作與 Progress Report，已 REAL 的不要重做；依依賴順序完成 71–120。
