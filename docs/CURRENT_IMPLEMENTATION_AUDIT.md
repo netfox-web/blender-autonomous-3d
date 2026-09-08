@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 301–360 integrity CODE_EVIDENCE_SHA `414847d`; prior feature code `64c5b6f`; atomic runner `513ae9d` / docs `b55b52c`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `3ea08b0`. Historical Phase 1–300 notes below remain. New modules extend existing SoT; Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 361–420 CODE_EVIDENCE_SHA `068cbe8`; prior integrity `414847d` / `e5f3e6c`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `5648e4e`. Historical Phase 1–360 notes below remain. New modules extend existing SoT; Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -22,6 +22,19 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 358 batch stress | FIXTURE | 20 releases, ≥100 ops; `noDoubleConsume` observed (not `or True`); material conservation; negative regression |
 | 359 readiness | REAL flags | missing evidence → false/UNVERIFIED; `liveFactoryExecutionReady=false`; `fullAutonomousFactoryReady=false` |
 | 360 acceptance docs | REAL | `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` + `PILOT_OPERATIONS_ACCEPTANCE.md` + `QC_TRACEABILITY_ACCEPTANCE.md` |
+
+## Phase 361–420 Pilot Reliability / Manufacturing Control Boundary
+
+| Item | Status | Evidence |
+|---|---|---|
+| 361–368 STRICT_STOCK | REAL | no phantom lots; FIXTURE_AUTO_SEED labeled; lock/CAS; restart persist; 40-thread no oversell |
+| 369–376 WO transitions | REAL | TRANSITIONS table; ops require reserve; complete needs ops+QC+packing |
+| 377–384 QC plan pin | REAL | release-pinned qcPlanHash; rework append-only |
+| 385–392 supersession | REAL | superseded cannot open WO; approval exact-hash |
+| 393–400 receipts | REAL logic / IMPORTED data | idempotent; quarantine not allocatable; no PO |
+| 401–408 shipment draft | REAL logic | SHIPMENT_DRAFT not booked; pack shortage/duplicate fail |
+| 409–414 console/API | REAL | `/api/pilot/console`; tenant header; no LIVE_CNC controls |
+| 415–420 fixture stress + REAL | FIXTURE + REAL | 50 WO / 652 ops FIXTURE; 4/4 T1000 OptiX `068cbe8` |
 
 ## Mock vs Real split
 

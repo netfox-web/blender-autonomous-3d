@@ -1,0 +1,52 @@
+{
+  "domain": "pilot-reliability",
+  "label": "FIXTURE",
+  "stress": {
+    "label": "FIXTURE",
+    "workOrderCount": 50,
+    "operationTransitions": 652,
+    "receiptIdempotent": true,
+    "quarantineBlocked": true,
+    "noOversell": true,
+    "materialConserved": true,
+    "negatives": [
+      "op-before-reserve-failed",
+      "complete-open-ops-failed",
+      "stale-wo-failed"
+    ],
+    "packMismatchFails": true,
+    "packOk": true,
+    "shipmentDraft": true,
+    "liveFactoryExecutionReady": false
+  },
+  "rows": [
+    {
+      "check": "supplier quote business data",
+      "status": "IMPORTED",
+      "evidence": "IMPORTED snapshots, not LIVE_PROVIDER"
+    },
+    {
+      "check": "FX business data",
+      "status": "MANUAL",
+      "evidence": "MANUAL"
+    },
+    {
+      "check": "reliability fixture stress",
+      "status": "FIXTURE",
+      "evidence": "wo=50 ops=652 oversell=False"
+    },
+    {
+      "check": "carrier quote",
+      "status": "IMPORTED",
+      "evidence": "c8c2ac7c"
+    }
+  ],
+  "note": "FIXTURE stress is not factory throughput. Supplier/carrier data remains IMPORTED/MANUAL.",
+  "evidenceCodeCommit": "068cbe8218a47d69edd9cbe79db9fe169e37b509",
+  "workingTreeClean": true,
+  "acceptanceGenerationId": "a6b65566-65fe-4ea3-9f74-a1a16815970c",
+  "generatedAt": "2026-09-08T23:23:06.983817+00:00",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveMachineControl": false
+}

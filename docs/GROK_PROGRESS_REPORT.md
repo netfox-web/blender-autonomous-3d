@@ -2,33 +2,37 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `3ea08b0` (**CHANGES REQUIRED** — Phase 301–360 Pilot Integrity / Release-bound Evidence)  
-Review head: `c625e97` / prior evidence code `64c5b6f`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `5648e4e` (**ACCEPT WITH SCOPE** — Phase 361–420 Pilot Reliability / Manufacturing Control Boundary V1)  
+Review head: `e5f3e6c` / prior evidence code `414847d`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **GAPS ONLY** for the six `3ea08b0` blockers. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / RemnantStore / ReleaseGate / ManufacturingRelease / WorkOrder / QC architecture. Did not start Phase 361+.
+Executed Phase 361–420 **GAPS ONLY**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / RemnantStore / ReleaseGate / ManufacturingRelease / WorkOrder / QC. No second ERP/WMS/MES/QMS.
 
-| Blocker | Fix |
+| Gap | Fix |
 |---|---|
-| 1 `noDoubleConsume` fail-open (`or True`) | `observe_no_double_consume` compares lot remaining/reserved/consumed before vs after retry; stress asserts True; negative regression (`allocate_sheet` extra) returns False. Label **FIXTURE**. |
-| 2 Lot reserve destructive / cancel leak | `MaterialLotRegistry.reserve_sheets` / `consume_reservation` / `release_reservation`; available+reserved+consumed conserved; WO cancel restores unconsumed; consume decrements once; retries/tenants safe. |
-| 3 `complete(..., qc_ok=True)` bypass | Authoritative `QcService.required_final_ok`; caller boolean cannot allow missing/failed FINAL; cross-tenant QC ignored; tenant checked before storing QC. |
-| 4 EvidenceBundle `releaseHash=null` | `render_family_previews(families=…)` renders from the accepted ManufacturingRelease snapshot; bundle `releaseHash` / engineeringHash / bomHash verified fail-closed. |
-| 5 Readiness fail-open defaults | Missing evidence → false / **UNVERIFIED**; `liveFactoryExecutionReady` / `liveProviderReady` / `globalProductionReady` / `fullAutonomousFactoryReady` stay false. |
-| 6 Canonical six-file fail-open | `canonicalTruthSetOk` is required for REAL acceptance; mixed generation/commit, missing, malformed → non-zero and canonical files unchanged. |
+| Phantom lots on reserve | `STRICT_STOCK` default (API); shortage fail-closed, no auto-create; `FIXTURE_AUTO_SEED` labeled FIXTURE and 403 on production API |
+| Concurrent oversell | lot reserve/consume/release under registry lock + CAS version; 40-thread last-sheet: 1 winner |
+| Restart | durable lots.json keeps reserved qty + owner |
+| WO state machine | `TRANSITIONS` table; illegal transitions fail; ops require reservation; complete needs closed ops + QC + packing |
+| QC plan pin | release snapshot `qcPlan`/`qcPlanHash`; later schema change does not affect released WO |
+| Supersession | `supersede()`; stale/superseded cannot open new WO; in-progress stays bound to original hash; approval is exact-releaseHash |
+| Receipts | `ReceivingService` MANUAL/IMPORTED; idempotent; mismatch quarantined (not allocatable); no PO/payment |
+| Shipment | `SHIPMENT_DRAFT` `submittedToCarrier=false` `booked=false`; pack shortage/duplicate negatives; expected≠measured |
+| Admin/API | `/api/pilot/console` tenant-scoped; truthful badges; no LIVE_CNC buttons |
+| Fixture stress | 50 WO / 652 op transitions; conservation; no oversell; labeled **FIXTURE** |
 
-**CODE_EVIDENCE_SHA:** `414847d9b183fb7175461e5a886dfbe9337b5a73`  
+**CODE_EVIDENCE_SHA:** `068cbe8218a47d69edd9cbe79db9fe169e37b509`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34283481326` on `414847d` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34290377181` on `068cbe8` ubuntu+windows.
 
-Clean-tree REAL e2e (`scripts/run_pilot_e2e.py`): `requiredRealAcceptanceOk=true` exit 0; 4/4 T1000 OptiX `commitSha=414847d`; `usedMock=false`; hash/size PASS; non-null matching `releaseHash` per family; generation `3c7c223f-78fa-440a-bee7-61b7c6b59dfd`.
+Clean-tree REAL e2e: `requiredRealAcceptanceOk=true`; 4/4 T1000 OptiX `commitSha=068cbe8`; `usedMock=false`; non-null matching `releaseHash`; generation `a6b65566-65fe-4ea3-9f74-a1a16815970c`.
 
 ## Tests
 
 ```
-pytest -q  →  144 passed   (local MOCK suite — not Production Ready)
+pytest -q  →  156 passed   (MOCK/unit/integration + FIXTURE reliability — not Production Ready)
 ```
 
 CI GREEN is MOCK-suite only, not REAL Blender.
@@ -37,19 +41,16 @@ CI GREEN is MOCK-suite only, not REAL Blender.
 
 | Item | Label |
 |---|---|
-| Lot reserve/cancel/consume conservation | REAL (unit) |
-| QC gate fail-closed | REAL (unit) |
-| Canonical six-file runner fail-closed | REAL (unit) |
-| 4-family Blender EvidenceBundles | REAL — Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, release-bound |
-| 4-family WO/QC/carton E2E | REAL (manual simulation, not live MES) |
-| 20-release / ≥100-op stress | FIXTURE / simulation |
-| Supplier / carrier quotes | IMPORTED / MANUAL (not LIVE_PROVIDER) |
-| FX | MANUAL |
-| McKee/BCT / print preflight / barcode print | PARTIAL / ENGINEERING_ESTIMATE |
+| STRICT_STOCK / lot conservation / CAS | REAL (unit) |
+| WO transitions / QC pin / supersede | REAL (unit) |
+| Receipt/quarantine/idempotency | REAL logic / IMPORTED or MANUAL data |
+| 4-family Blender EvidenceBundles | REAL — Blender 5.2.1 LTS + NVIDIA T1000 OptiX, release-bound |
+| Reliability 50-WO stress | FIXTURE |
+| Supplier/carrier quotes / FX | IMPORTED / MANUAL |
+| Shipment draft | REAL logic, not booked |
 | Vision / AI Video / Demand | MOCK |
-| OS sandbox | PARTIAL (PATH_GUARD_ONLY) |
-| LIVE_CNC / LIVE_LASER / liveFactoryExecution | BLOCKED |
-| `globalProductionReady` | false |
+| OS sandbox / AR / barcode / McKee | PARTIAL / ENGINEERING_ESTIMATE |
+| LIVE_CNC / LIVE_LASER / liveFactory | BLOCKED |
 | `fullAutonomousFactoryReady` | false |
 
 ## Blockers (unchanged policy)
@@ -59,12 +60,11 @@ CI GREEN is MOCK-suite only, not REAL Blender.
 - OS jail missing (PATH_GUARD_ONLY PARTIAL)
 - No LIVE_PROVIDER credentials
 - Packaging strength ENGINEERING_ESTIMATE
-- Electrical compliance BLOCKED
 
 ## Do not redo
 
-Phase 1–300 product features and Evidence Integrity runner (`513ae9d` / `b55b52c`). Phase 301–360 feature work (`64c5b6f`). Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Phase 1–360 product features and integrity runner. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 
 ## Next round
 
-ChatGPT re-review `3ea08b0` exit criteria 1–10. No Phase 361+ until **ACCEPT WITH SCOPE**.
+ChatGPT re-review Phase 361–420 exit criteria 1–15.
