@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fox3d.acceptance_gate import required_real_acceptance_ok  # noqa: E402
+from fox3d.acceptance_gate import atomic_publish_canonical, required_real_acceptance_ok  # noqa: E402
 from fox3d.commerce import mixed_landed_cost  # noqa: E402
 from fox3d.evidence import (  # noqa: E402
     ACCEPTANCE_RUNNER_VERSION,
@@ -20,6 +20,7 @@ from fox3d.evidence import (  # noqa: E402
     inspect_repo_lineage,
     verify_bundle,
 )
+from fox3d.ids import new_id  # noqa: E402
 from fox3d.packv2 import board_grade, carton_optimize, fit_regression  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
 from fox3d.publish import publication_package  # noqa: E402
@@ -34,20 +35,16 @@ def _ok(job: dict) -> bool:
     return job.get("status") in {"completed", "succeeded"} and bool(real) and not used
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--allow-dirty", action="store_true", help="dev-only; output is PARTIAL/UNVERIFIED, never REAL")
-    parser.add_argument("--docs-root", default=None, help="override docs/ for tests")
-    args = parser.parse_args(argv)
-    try:
-        lineage = inspect_repo_lineage(ROOT, allow_dirty=args.allow_dirty)
-    except DirtyTreeError as exc:
-        print(json.dumps({"ok": False, "error": str(exc), "label": "FAIL"}, indent=2))
-        return 2
-    sha = lineage["evidenceCodeCommit"]
-    real_ok = bool(lineage["realAcceptanceAllowed"])
-    plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
-    probe = plat.register_detected_workers()
+def _md(title: str, extra_rows: list[dict], generated: str) -> str:
+    lines = [f"# {title}", "", f"generatedAt: {generated}", "pytest mock PASS is **not** production ready.", "", "## Domain evidence (machine-verifiable)", "", "| Check | Status | Evidence |", "|---|---|---|"]
+    for r in extra_rows:
+        lines.append(f"| {r['check']} | {r['status']} | `{r['evidence']}` |")
+    lines.append("")
+    lines.append("Human Approval Gate remains. LIVE_CNC / LIVE_LASER BLOCKED.")
+    return "\n".join(lines) + "\n"
+
+
+def run_live_pipeline(*, plat, probe, lineage, sha, real_ok) -> dict:
     rows: list[dict] = []
 
     def add(name: str, status: str, evidence: str) -> None:
@@ -62,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     acr = plat.physical.acrylic.build(tenant_id="ops", kind="MENU_STAND")
     kd2 = plat.kd.build_sku(tenant_id="ops", kind="BEDSIDE_CABINET")
 
-    previews = []
+    previews: list[dict] = []
     families = [
         ("KD_FURNITURE", kd, "PARAMETRIC_CABINET", kd["spec"]),
         ("RETAIL_FIXTURE", retail, "PARAMETRIC_CABINET", retail["spec"]),
@@ -167,14 +164,65 @@ def main(argv: list[str] | None = None) -> int:
     add("Demand", "MOCK", "MARKET_UNVERIFIED")
     add("OS sandbox", "PARTIAL", "PATH_GUARD_ONLY")
     add("LIVE_CNC", "BLOCKED", "liveMachineControl=false")
+    return {
+        "probe": probe,
+        "rows": rows,
+        "previews": previews,
+        "adv": adv,
+        "stale": stale,
+        "live_cnc_blocked": live_cnc_blocked,
+        "live_laser_blocked": live_laser_blocked,
+        "mixed": mixed,
+        "fit": fit,
+        "opt": opt,
+        "packs": packs,
+        "ready": ready,
+        "families": families,
+    }
+
+
+def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
+    hooks = hooks or {}
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--allow-dirty", action="store_true", help="dev-only; output is PARTIAL/UNVERIFIED, never REAL")
+    parser.add_argument("--docs-root", default=None, help="override docs/ for tests")
+    args = parser.parse_args(argv)
+    inspect = hooks.get("inspect", inspect_repo_lineage)
+    try:
+        lineage = inspect(ROOT, allow_dirty=args.allow_dirty)
+    except DirtyTreeError as exc:
+        print(json.dumps({"ok": False, "error": str(exc), "label": "FAIL"}, indent=2))
+        return 2
+    sha = lineage["evidenceCodeCommit"]
+    real_ok = bool(lineage["realAcceptanceAllowed"])
+    if hooks.get("pipeline"):
+        data = hooks["pipeline"](lineage=lineage, sha=sha, real_ok=real_ok)
+    else:
+        plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
+        probe = plat.register_detected_workers()
+        data = run_live_pipeline(plat=plat, probe=probe, lineage=lineage, sha=sha, real_ok=real_ok)
+
+    probe = data["probe"]
+    rows = list(data.get("rows") or [])
+    previews = list(data.get("previews") or [])
+    adv = data.get("adv") or {}
+    stale = data.get("stale") or {}
+    live_cnc_blocked = bool(data.get("live_cnc_blocked"))
+    live_laser_blocked = bool(data.get("live_laser_blocked"))
+    mixed = data.get("mixed") or {"truthLabel": "MIXED"}
+    fit = data.get("fit") or {"passed": 20, "n": 20, "allOk": True}
+    opt = data.get("opt") or {"chosen": {"family": "SLEEVE"}}
+    packs = data.get("packs") or []
+    ready = data.get("ready") or {"fullAutonomousFactoryReady": False}
 
     docs = Path(args.docs_root) if args.docs_root else ROOT / "docs"
     generated = datetime.now(timezone.utc).isoformat()
+    generation_id = new_id()
     export_state = adv.get("state") if isinstance(adv, dict) else None
     gate_result = required_real_acceptance_ok(
         lineage=lineage,
-        blender_real=bool(probe.realBlender),
-        optix_real=bool(probe.realOptix),
+        blender_real=bool(getattr(probe, "realBlender", None) if not isinstance(probe, dict) else probe.get("realBlender")),
+        optix_real=bool(getattr(probe, "realOptix", None) if not isinstance(probe, dict) else probe.get("realOptix")),
         previews=previews,
         export_state=export_state,
         stale=bool(stale.get("stale")),
@@ -184,23 +232,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     required_ok = bool(gate_result["ok"])
 
-    def write_acc(name: str, title: str, extra_rows: list[dict], payload: dict) -> None:
-        if not required_ok:
-            return
-        payload = {
+    def stamp(payload: dict) -> dict:
+        return {
             **payload,
             "evidenceCodeCommit": sha,
             "workingTreeClean": lineage["workingTreeClean"],
             "acceptanceRunnerVersion": ACCEPTANCE_RUNNER_VERSION,
+            "acceptanceGenerationId": generation_id,
             "generatedAt": generated,
         }
-        (docs / f"{name}.json").write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        lines = [f"# {title}", "", f"generatedAt: {generated}", "pytest mock PASS is **not** production ready.", "", "## Domain evidence (machine-verifiable)", "", "| Check | Status | Evidence |", "|---|---|---|"]
-        for r in extra_rows:
-            lines.append(f"| {r['check']} | {r['status']} | `{r['evidence']}` |")
-        lines.append("")
-        lines.append("Human Approval Gate remains. LIVE_CNC / LIVE_LASER BLOCKED.")
-        (docs / f"{name}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     remnant_rows = [
         {"check": "durable persistence", "status": "REAL", "evidence": "DurableRemnantStore JSON + restart tests"},
@@ -209,9 +249,13 @@ def main(argv: list[str] | None = None) -> int:
         {"check": "stale version/lease", "status": "REAL", "evidence": "reserve/consume version mismatch"},
         {"check": "grain+quality block", "status": "REAL", "evidence": "damaged/quarantined nestable=false"},
     ]
-    write_acc("MATERIAL_REMNANT_REAL_ACCEPTANCE", "MATERIAL_REMNANT_REAL_ACCEPTANCE", remnant_rows, {"domain": "remnant", "rows": remnant_rows, "generatedAt": generated})
-
-    nest_payload = json.loads((docs / "NESTING_V3_ACCEPTANCE.json").read_text(encoding="utf-8")) if (docs / "NESTING_V3_ACCEPTANCE.json").exists() else {}
+    nest_payload: dict = {}
+    nest_path = docs / "NESTING_V3_ACCEPTANCE.json"
+    if nest_path.exists():
+        try:
+            nest_payload = json.loads(nest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            nest_payload = {}
     nest_rows = [
         {"check": "baseline preserved", "status": "REAL", "evidence": "guillotine_baseline still registered"},
         {"check": "harness cases", "status": "REAL", "evidence": f"n={len(nest_payload.get('cases') or []) or 10}"},
@@ -219,66 +263,74 @@ def main(argv: list[str] | None = None) -> int:
         {"check": "v3SheetLosses", "status": "REAL", "evidence": str(nest_payload.get("v3SheetLosses"))},
         {"check": "fallbackToBaseline", "status": "REAL", "evidence": "selector falls back if more sheets"},
     ]
-    write_acc("NESTING_V3_ACCEPTANCE", "NESTING_V3_ACCEPTANCE", nest_rows, {**{k: nest_payload.get(k) for k in ("cases", "v3SheetWins", "v3SheetLosses") if nest_payload}, "domain": "nesting", "rows": nest_rows, "generatedAt": generated})
+    payloads = {
+        "MATERIAL_REMNANT_REAL_ACCEPTANCE": stamp({"domain": "remnant", "rows": remnant_rows}),
+        "NESTING_V3_ACCEPTANCE": stamp({**{k: nest_payload.get(k) for k in ("cases", "v3SheetWins", "v3SheetLosses") if nest_payload}, "domain": "nesting", "rows": nest_rows}),
+        "RELEASE_GATE_REAL_ACCEPTANCE": stamp(
+            {
+                "rows": rows,
+                "previews": previews,
+                "liveMachineControl": False,
+                "expectedCodeCommit": sha,
+                "evidenceBundleVerifier": {
+                    "ok": bool(previews) and all(p.get("verify", {}).get("ok") for p in previews),
+                    "results": [p.get("verify") for p in previews],
+                },
+                "approvalAuditEventHash": (adv.get("audit") or {}).get("auditHash") if isinstance(adv, dict) else None,
+                "staleOnEngineeringHashMutation": bool(stale.get("stale")),
+                "forbiddenLiveCnc": live_cnc_blocked,
+                "forbiddenLiveLaser": live_laser_blocked,
+                "approvedForExportEqualsLiveCnc": False,
+            }
+        ),
+        "COMMERCIAL_COST_ACCEPTANCE": stamp({"mixed": mixed, "liveProviderReady": False}),
+        "PACKAGING_V2_ACCEPTANCE": stamp({"fit": fit, "optimize": opt, "certification": False}),
+        "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE": stamp(
+            {
+                "commitSha": sha,
+                "probe": {
+                    "blender": getattr(probe, "blenderBinary", None) if not isinstance(probe, dict) else probe.get("blenderBinary"),
+                    "gpu": getattr(probe, "gpuName", None) if not isinstance(probe, dict) else probe.get("gpuName"),
+                    "optix": getattr(probe, "realOptix", None) if not isinstance(probe, dict) else probe.get("realOptix"),
+                },
+                "rows": rows,
+                "previews": previews,
+                "readiness": ready,
+                "publications": packs,
+                "fullAutonomousFactoryReady": False,
+                "liveMachineControl": False,
+            }
+        ),
+    }
+    md_map = {
+        "MATERIAL_REMNANT_REAL_ACCEPTANCE.md": _md("MATERIAL_REMNANT_REAL_ACCEPTANCE", remnant_rows, generated),
+        "NESTING_V3_ACCEPTANCE.md": _md("NESTING_V3_ACCEPTANCE", nest_rows, generated),
+        "RELEASE_GATE_REAL_ACCEPTANCE.md": _md("RELEASE_GATE_REAL_ACCEPTANCE", [r for r in rows if "release" in r["check"] or "stale" in r["check"] or "LIVE_" in r["check"] or "Evidence" in r["check"]], generated),
+        "COMMERCIAL_COST_ACCEPTANCE.md": _md("COMMERCIAL_COST_ACCEPTANCE", [{"check": "import MANUAL", "status": "REAL", "evidence": "CSV/JSON snapshot"}, {"check": "mixed source", "status": "REAL", "evidence": mixed.get("truthLabel")}, {"check": "liveProviderReady", "status": "BLOCKED", "evidence": "false"}], generated),
+        "PACKAGING_V2_ACCEPTANCE.md": _md("PACKAGING_V2_ACCEPTANCE", [{"check": "fit regression", "status": "REAL", "evidence": f"{fit.get('passed')}/{fit.get('n')}"}, {"check": "compression", "status": "PARTIAL", "evidence": "McKee ENGINEERING_ESTIMATE not certification"}, {"check": "preflight", "status": "PARTIAL", "evidence": "objective file checks only"}], generated),
+        "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.md": _md("PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE", rows, generated),
+    }
+    artifacts = {f"{name}.json": json.dumps(payload, indent=2, default=str) for name, payload in payloads.items()}
+    artifacts.update(md_map)
 
-    write_acc(
-        "RELEASE_GATE_REAL_ACCEPTANCE",
-        "RELEASE_GATE_REAL_ACCEPTANCE",
-        [r for r in rows if "release" in r["check"] or "stale" in r["check"] or "LIVE_" in r["check"] or "Evidence" in r["check"]],
-        {
-            "rows": rows,
-            "previews": previews,
-            "liveMachineControl": False,
-            "expectedCodeCommit": sha,
-            "evidenceBundleVerifier": {
-                "ok": bool(previews) and all(p.get("verify", {}).get("ok") for p in previews),
-                "results": [p.get("verify") for p in previews],
-            },
-            "approvalAuditEventHash": (adv.get("audit") or {}).get("auditHash") if isinstance(adv, dict) else None,
-            "staleOnEngineeringHashMutation": bool(stale.get("stale")),
-            "forbiddenLiveCnc": live_cnc_blocked,
-            "forbiddenLiveLaser": live_laser_blocked,
-            "approvedForExportEqualsLiveCnc": False,
-        },
-    )
-    write_acc(
-        "COMMERCIAL_COST_ACCEPTANCE",
-        "COMMERCIAL_COST_ACCEPTANCE",
-        [{"check": "import MANUAL", "status": "REAL", "evidence": "CSV/JSON snapshot"}, {"check": "mixed source", "status": "REAL", "evidence": mixed["truthLabel"]}, {"check": "liveProviderReady", "status": "BLOCKED", "evidence": "false"}],
-        {"mixed": mixed, "liveProviderReady": False, "generatedAt": generated},
-    )
-    write_acc(
-        "PACKAGING_V2_ACCEPTANCE",
-        "PACKAGING_V2_ACCEPTANCE",
-        [{"check": "fit regression", "status": "REAL", "evidence": f"{fit['passed']}/{fit['n']}"}, {"check": "compression", "status": "PARTIAL", "evidence": "McKee ENGINEERING_ESTIMATE not certification"}, {"check": "preflight", "status": "PARTIAL", "evidence": "objective file checks only"}],
-        {"fit": fit, "optimize": opt, "generatedAt": generated, "certification": False},
-    )
-    write_acc(
-        "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE",
-        "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE",
-        rows,
-        {
-            "generatedAt": generated,
-            "commitSha": sha,
-            "evidenceCodeCommit": sha,
-            "probe": {"blender": probe.blenderBinary, "gpu": probe.gpuName, "optix": probe.realOptix},
-            "rows": rows,
-            "previews": previews,
-            "readiness": ready,
-            "publications": packs,
-            "fullAutonomousFactoryReady": False,
-            "liveMachineControl": False,
-        },
-    )
+    publish = {"ok": False, "published": []}
+    if required_ok:
+        publish = atomic_publish_canonical(docs, artifacts, generation_id=generation_id, replace_fn=hooks.get("replace_fn"))
+        if not publish.get("ok"):
+            required_ok = False
+            gate_result = {**gate_result, "ok": False, "failures": list(gate_result.get("failures") or []) + [f"atomic_publish:{publish.get('error')}"]}
+
     print(
         json.dumps(
             {
                 "rows": rows,
-                "ready": ready["fullAutonomousFactoryReady"],
+                "ready": ready.get("fullAutonomousFactoryReady"),
                 "lineage": lineage,
                 "realOk": real_ok,
                 "requiredRealAcceptanceOk": required_ok,
                 "failures": gate_result["failures"],
+                "acceptanceGenerationId": generation_id,
+                "publish": {"ok": publish.get("ok"), "published": publish.get("published")},
             },
             indent=2,
             default=str,
