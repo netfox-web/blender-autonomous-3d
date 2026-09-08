@@ -1,171 +1,263 @@
-# Grok 修正指令：Phase 121–180 Review Fix — CI / Security / Evidence
+# Grok 下一階段開發指令：Phase 181–240 — Physical Product OS / Multi-Material Factory
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Review baseline: `2aea7744c257801b489cae26eb9fb41d035f6ebc`
-> ChatGPT review result: **CHANGES REQUIRED**
+> Review baseline: `43cd4bda78c1b0189863bc46da1ceca79e761fb1`
+> ChatGPT review result: **ACCEPT WITH SCOPE**
 >
-> 不要開始 Phase 181+。先修正本輪驗收、CI、安全與證據一致性。禁止重寫既有 Scheduler / Queue / DAM / Recipe Registry / TwinStore / Parametric Engineering SoT。
+> `704d058` 的 10 項 exit criteria 已實質通過：runtime multipart、cross-OS traversal、remnant ownership、paired saved sheet evidence、8/8 REAL KD Blender previews、成本 readiness 誠實分層、local tests、GitHub Actions ubuntu+windows GREEN。現在可進 Phase 181+。
+>
+> 但仍禁止把 MOCK/CONFIG/PARTIAL 冒充 Production：Vision / AI Video / Demand 仍 MOCK；REAL_PROVIDER cost/logistics 未接；OS sandbox PARTIAL；AR runtime PARTIAL；LIVE_CNC / live machine control BLOCKED。
 
-## 為什麼本輪不能直接 ACCEPT
+## 先做 2 個文件一致性修正（不另起架構）
 
-Grok 回報本機 `pytest -q → 75 passed`，但新加入的 GitHub Actions 在 commit `2aea7744` 上實際是 **FAILURE**。Workflow run `34239900443` 的 `unit` job 有 3 個失敗：
+1. `docs/KD_FACTORY_REAL_ACCEPTANCE.md` 的 `scoped readiness` evidence 字串仍殘留 `ciEvidenceReady=false`，但 header / JSON 已是 true。請同步成 head GitHub GREEN 證據，避免同一文件互相矛盾。
+2. `docs/GROK_PROGRESS_REPORT.md` Blockers 的 `REAL_PROVIDER costs missing` 重複一行，清掉重複即可。
 
-1. `tests/test_api.py::test_api_job_twin_parametric_rd`
-   - FastAPI 建立 `/api/digital-twins/upload` route 時缺少 `python-multipart`。
-2. `tests/test_furniture_factory.py::test_factory_e2e_mock_and_api`
-   - 同樣缺少 `python-multipart`。
-3. `tests/test_phase66_70.py::test_path_traversal_blocked`
-   - Ubuntu CI 對 `..\\..\\Windows\\System32\\cmd.exe` 沒有阻擋，結果 `succeeded` 而不是 `blocked`。
-
-因此目前 `KD_FACTORY_REAL_ACCEPTANCE.json` 內 `ciEvidenceReady=true` 不成立；不得把「workflow file 已存在」等同「CI PASS」。
+這兩項是文件 hygiene，不要重跑/重寫 Phase 1–180 已驗證功能。
 
 ---
 
-# FIX 1 — 正式修好 API runtime dependency
+# Phase 181–190 — Durable Material / Remnant Intelligence
 
-`src/fox3d/api.py` 有 multipart/form-data upload route，因此 `python-multipart` 應該是**專案 runtime dependency**，不是只在 CI 臨時 `pip install`。
+## Phase 181 — RemnantStore abstraction
+將現在 `RemnantInventory` 的 in-process dict 抽象成 `RemnantStore` interface；既有 in-memory 行為保留相容。禁止建立第二套 WMS。
 
-要求：
-- 更新 `pyproject.toml` 正式 dependencies。
-- 使用乾淨環境 `pip install -e ".[dev]"` 後可直接建立 FastAPI app 並跑 API tests。
-- 不可用 skip test / monkeypatch FastAPI dependency 來讓 CI 假綠。
-- 增加 regression：乾淨依賴下 `create_app()` 可成功註冊 multipart route。
+## Phase 182 — Durable remnant persistence
+沿用 repo 既有 `.fox3d-data` / persistence pattern，新增可重啟後恢復的 durable remnant store。若現有 persistence abstraction 可延伸則必須 reuse。記錄 tenantId、material、thickness、grain、w/h、sourceRun、status、reservedBy、version。
 
----
+## Phase 183 — Optimistic version / lease
+reserve / consume 必須帶 version 或 lease token，避免 stale consumer。至少測 stale token、double consume、cross-tenant、restart recovery。
 
-# FIX 2 — Cross-platform Path Traversal 安全修正
+## Phase 184 — Reservation TTL / recovery
+reserved remnant 支援 TTL、expired lease recovery、worker crash recovery；不得讓永久 reserved 形成死庫存。
 
-目前 `assert_job_paths_safe()` 使用 host-native `Path(...).parts`。Linux 將 Windows `\\` 視為普通字元，所以 Windows traversal payload 在 Ubuntu CI 可繞過。
+## Phase 185 — Material Lot lineage
+板材新增 `materialLotId` / supplierLot / receivedAt / configCostSnapshot / sheet dimensions；所有 Nesting placement 可追到 material lot 或 remnant source。
 
-要求：
-- worker-facing path validation 必須與 host OS 無關，同時辨識 `/` 與 `\\`。
-- 正規化後任何 segment 為 `..` 都必須拒絕。
-- 至少測：
-  - `../../etc/passwd`
-  - `..\\..\\Windows\\System32\\cmd.exe`
-  - mixed separators，例如 `foo/..\\../bar`
-  - 正常相對 DAM/work path 不應誤擋。
-- 若 path 已知應限定在某 allowed root，優先做 canonical containment check；但不要為了修 test 破壞既有 DAM/work execution path。
-- `OS sandbox` 仍標 **PARTIAL**。Path guard 修好也不能宣稱 OS jail / full sandbox。
-- 禁止只針對該測試字串 hardcode。
+## Phase 186 — Remnant quality state
+加入 AVAILABLE / RESERVED / CONSUMED / QUARANTINED / DAMAGED。Damaged/Quarantined 不得進自動 nesting。
 
-最好把 CI 做成 `ubuntu-latest` + `windows-latest` Python 3.12 matrix，兩邊都跑 mock unit/regression，專門避免 separator semantics 再回歸。
+## Phase 187 — Grain/orientation on remnants
+餘料要保留 grain orientation；旋轉後不符合 grain constraint 時不得使用。
 
----
+## Phase 188 — Remnant valuation
+建立 deterministic remnant value：area、shape usability、material config cost、age；明確標 `ESTIMATED/CONFIG`，不是會計成本。
 
-# FIX 3 — CI evidence 必須由真正 GitHub check 決定
+## Phase 189 — Inventory reconciliation manifest
+每次 production batch 產 inventory delta manifest：new sheets allocated、remnants created、reserved、consumed、true scrap、reconciliation hash。
 
-要求：
-- GitHub Actions `pytest` 必須實際 GREEN。
-- 報告記錄：commit SHA、workflow run ID、job conclusion、test summary。
-- `pytest` CI 仍是 MOCK Blender suite，只能證明 regression tests，不得升級成 REAL Blender Production acceptance。
-- Acceptance JSON 不能在 push 前預測 `ciEvidenceReady=true`。
-- 若 acceptance script 在本機執行時無法查 GitHub check，請輸出 `ciEvidenceReady=false` 或 `PENDING/UNKNOWN`；只有有真實 green GitHub run evidence 後才改 true。
-- 若需要 Grok 下一次 watcher 再讀 green check 後更新 docs，可以分兩個 commits 完成；不能預先造 PASS。
+## Phase 190 — Material/Remnant acceptance
+建立 `docs/MATERIAL_REMNANT_REAL_ACCEPTANCE.md` + JSON：至少證明 restart recovery、ownership、TTL recovery、tenant isolation、grain、consume-once、inventory conservation。
 
 ---
 
-# FIX 4 — Readiness 命名與成本來源要誠實
+# Phase 191–200 — Nesting Optimizer V3
 
-目前 packaging / logistics / hardware / sheet prices 仍是 `ESTIMATED/CONFIG`，不是即時 supplier / logistics provider，因此：
+## Phase 191 — Nesting Strategy Registry
+保留 deterministic guillotine baseline，新增 strategy interface；不得把 baseline 刪掉。
 
-- 不要把 `commercialCostModelReady=true` 解讀成「可直接用於正式商業報價」。
-- 建議改成：
-  - `estimatedCostModelReady=true`
-  - `realProviderCostReady=false`
-  - `commercialQuoteReady=false`，直到 REAL_PROVIDER 成本/物流來源與 freshness 有證據。
-- 若為相容性保留 `commercialCostModelReady`，必須明確 scope 為 `CONFIG_ESTIMATE_ONLY`，不得混淆為正式採購成本。
-- `productionReady=true` 若保留，只能明確限定 `productionReadyScope=coreFactoryE2E`；`fullAutonomousFactoryReady=false` 必須繼續。
-- Demand = MOCK、Vision = MOCK、AI Video = MOCK、AR runtime = PARTIAL、OS sandbox = PARTIAL、LIVE_CNC = BLOCKED。
+## Phase 192 — Best-fit decreasing heuristic
+實作第二個真 execution strategy；同一 BOM deterministic reproducible。
 
----
+## Phase 193 — Multi-start deterministic search
+用固定 seed / bounded search 產多個候選 layout，不需要 ML。限制 CPU time / candidate count。
 
-# FIX 5 — RemnantInventory reservation ownership
+## Phase 194 — Multi-objective scoring
+至少同時考慮：new sheet count、true scrap、reusable remnant value、cut count、grain compatibility、material lot split。工程合法性 hard veto。
 
-目前 in-process `RemnantInventory` 有 consume-once，但 `consume()` 允許一個已被 batch-A reserve 的 remnant 被 batch-B consume。這是實際 correctness/concurrency gap。
+## Phase 195 — Cross-SKU production window
+允許同材質/厚度的多 SKU、不同 quantity 在一個 production window 共同 nesting；placement lineage 保留 skuId/productVersion/bomLineId。
 
-要求：
-- `reserved` 狀態下，只能由相同 `reservedBy`（或一致的 lease/token）consume。
-- 其他 actor/batch consume 必須拒絕。
-- 至少 regression：
-  - reserve A → consume A = PASS
-  - reserve A → consume B = BLOCKED
-  - reserve A → reserve B = BLOCKED
-  - consume once → second consume = BLOCKED
-- 清楚標示目前仍是 **in-process ledger**，不是 persistent WMS inventory。Execution semantics 可 REAL，但 persistence/inventory integration 不得宣稱 REAL WMS。
+## Phase 196 — Cut sequence manifest
+由合法 nesting 產 deterministic cut sequence / saw-friendly manifest；只做製程資料，不控制鋸台/CNC。
 
----
+## Phase 197 — Defect keep-out zones
+Sheet / remnant 可標 defect rectangles；nesting 不得把 panel 放進 defect zone。
 
-# FIX 6 — savedNewSheetCount 不可用面積近似冒充實際省板數
+## Phase 198 — Reusable-offcut objective
+不只最低 scrap，也能在接近同等 sheet count 時優先留下「更好用的矩形餘料」。
 
-目前 Nesting result 的 `savedNewSheetCount` 在部分情況用 `round(remnantConsumedArea / sheetArea)` 推估。這不等於實際少開幾張板。
+## Phase 199 — Benchmark harness
+同一批至少 10 組真實/fixture BOM 比較 guillotine baseline vs V3：sheetCount、trueWasteRatio、reusableRemnantRatio、cutCount、runtime。不得只挑 V3 贏的 case。
 
-要求：
-- Benchmark / acceptance 中的 `savedNewSheetCount` 必須使用 paired comparison：
-  `baselineWithoutRemnants.sheetCount - withRemnants.sheetCount`。
-- 若單次 `nest_parts()` 沒有 paired baseline，就不要宣稱 actual saved sheet count；可用 `estimatedSavedSheetEquivalent` 另欄標 ESTIMATED。
-- `costSaved` 同樣要標 actual paired delta 或 ESTIMATED，不混用。
-- 增加 cases：餘料面積大但形狀不適合、餘料面積小但剛好省掉最後一張板，確保不會用純面積比例誤判。
+## Phase 200 — Nesting V3 acceptance
+建立 `docs/NESTING_V3_ACCEPTANCE.md` + JSON。若 V3 某些 case 較差，要誠實展示；選擇器可回退 baseline。
 
 ---
 
-# FIX 7 — Phase 130 驗收目前不足，不能把 121–130 全部標 REAL
+# Phase 201–210 — KD Design-for-Assembly / Logistics Optimization
 
-原 Phase 130 要求至少 8 個不同產品族走：
+## Phase 201 — Connector recipe versioning
+延伸現有 vendor-neutral connector recipes，加入 compatibility/version/requiredTools，不綁真供應商 SKU。
 
-`params → Engineering Definition → geometry → BOM → common-part fingerprint → Blender preview`
+## Phase 202 — Common hardware optimizer
+同一 SKU family 優先共用 connector/hardware，計 common-hardware ratio。
 
-目前 KD acceptance 只列 3 個 family，且只展示 1 個 REAL Blender KD preview。因此 Phase 130 應先標 **PARTIAL**，直到補足證據。
+## Phase 203 — Common panel optimizer
+在尺寸容許範圍內產候選，評估共用板件率；不得偷偷改使用者硬性尺寸。
 
-要求：
-- 在現有 T1000 host 上至少挑 8 個不同 product kinds 做低解析 REAL Blender preview；不要用 pytest mock 代替。
-- 每個 kind evidence 至少記：
-  - kind
-  - engineeringHash
-  - bomHash
-  - jobId
-  - output artifact hash + size
-  - `realBlender=true`
-  - `realCycles=true`
-  - `realOptix=true`
-  - `usedMock=false`
-- 若某一項真實 worker 無法跑，誠實標 BLOCKED/PARTIAL，不造 artifact。
+## Phase 204 — Tool-count KPI
+組裝工具種類與工具切換次數納入 assembly score。
 
-同時補「產品結構差異」驗收：目前允許共用 CabinetEngine / panel primitives，但不能只有 `kind` 名稱不同。至少對 `STUDENT_DESK / GARMENT_RACK / OPEN_SHELF / STORAGE_BENCH / PET_FURNITURE / RETAIL_DISPLAY` 驗證 meaningful component / connection / hardware semantics。若某類目前實際仍只是 generic carcass + defaults，先標 PARTIAL 並在既有 Parametric Engine 上 extend；禁止另起第二套 engine。
+## Phase 205 — Misassembly-risk rules
+左右件相似、孔位方向、正反面辨識、對稱件等建立 deterministic risk warnings。
 
----
+## Phase 206 — Part label manifest
+每塊板件產 part label / QR payload metadata，包含 productVersion、partId、orientation、step refs；只產資料，不直接列印。
 
-# FIX 8 — Acceptance / Audit / Progress 必須同步修正
+## Phase 207 — Assembly instruction V2
+由 assembly graph 產 step-by-step manifest；每一步有 inputs、connectors、tools、before/after state、warning。
 
-完成修正後更新：
-- `docs/GROK_PROGRESS_REPORT.md`
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-- `docs/KD_FACTORY_REAL_ACCEPTANCE.md`
-- `docs/KD_FACTORY_REAL_ACCEPTANCE.json`
-- `docs/REAL_E2E_ACCEPTANCE.md`（只有 readiness wording 需要時才改，不要破壞舊 REAL evidence）
+## Phase 208 — Carton contents manifest
+紙箱內板件/五金/說明書 checklist，能對 BOM 做 reconciliation。
 
-目前 review 在修好前應反映：
-- Local pytest: `75 passed` = local MOCK-suite evidence。
-- GitHub CI @ `2aea7744`: **FAILED, 3 tests**。
-- Phase 121–180：**CHANGES REQUIRED / PARTIAL ACCEPTANCE**，不是整輪完全 REAL。
-- Waste V2 的面積守恆與 remnant/true scrap 分拆可保留為有價值實質完成，但要修上述 ownership / saved-sheet evidence。
-- Mock/PARTIAL/BLOCKED 狀態不得升級。
+## Phase 209 — Auto redesign loop
+若 oversize、true waste、assembly difficulty、tool count 超政策門檻，Variant Generator 可產受約束 redesign candidates；Engineering Rule 永遠 veto。
+
+## Phase 210 — KD optimized candidate acceptance
+至少 10 個小宅/KD candidates 比較 before/after：waste、carton、weight、common-part ratio、assembly score。禁止宣稱市場熱銷；Demand 仍 MOCK。
 
 ---
 
-## Exit Criteria — 全部達成才可請 ChatGPT 進 Phase 181+
+# Phase 211–220 — Retail Display / POP Fixture Factory
 
-1. Clean install 不再缺 `python-multipart`。
-2. Linux + Windows separator traversal regressions PASS。
-3. GitHub Actions 至少一個 head commit 真正 GREEN；若使用 OS matrix，matrix 全部 GREEN。
-4. Acceptance 不再錯寫 failed/pending CI 為 `ciEvidenceReady=true`。
-5. Remnant reservation ownership regression PASS。
-6. savedNewSheetCount 使用 paired baseline；估算值另名且明確 ESTIMATED。
-7. 至少 8 個 distinct KD kinds 有 REAL Blender preview evidence，或未能完成者誠實降級，不能宣稱 Phase 130 REAL。
-8. Cost readiness 明確區分 CONFIG_ESTIMATE 與 REAL_PROVIDER。
-9. `fullAutonomousFactoryReady=false`；Vision/Video/Demand/OS sandbox/CNC 保持真實狀態。
-10. 完整 local tests + CI tests 都回報；Mock tests 不得作 Production Ready 證據。
+> 不另建第二套 Digital Twin / Parametric / Nesting。延伸既有 `RETAIL_DISPLAY` 與 Physical Product definitions。
 
-完成後 commit + push main，更新 `docs/GROK_PROGRESS_REPORT.md`，並在 Issue #1 留：新 commit SHA、local pytest 結果、GitHub Actions run 結果、REAL/MOCK/PARTIAL/BLOCKED 摘要與仍存在 blockers。不要要求使用者複製貼上。
+## Phase 211 — Retail fixture family registry
+至少：COUNTER_DISPLAY、FLOOR_DISPLAY、PDQ_DISPLAY、RISER_DISPLAY、PEGBOARD_DISPLAY、ENDCAP_MODULE。
 
-**現在直接修正上述 gaps，不要進 Phase 181+，也不要重做已驗證 REAL 的 Phase 1–120。**
+## Phase 212 — Product facing / slot definition
+輸入商品 Digital Twin 尺寸、facing count、rows/columns、clearance，產 slot layout。
+
+## Phase 213 — Planogram solver
+依展示架可用寬高與商品尺寸產合法 planogram candidates；不得重疊或超界。
+
+## Phase 214 — Capacity / load placeholder rules
+計算商品數量與估算總重；沒有真結構分析時只能標 `CONFIG_ESTIMATE/PARTIAL`，不得宣稱結構認證。
+
+## Phase 215 — Artwork zones
+fixture 定義 printable artwork zones / logo zones / safe areas；只做 geometry metadata，不冒充印刷 preflight 完成。
+
+## Phase 216 — Lighting / cable optional metadata
+可描述燈條/走線預留，但 electrical compliance 一律 BLOCKED/PARTIAL，除非未來有真工程規則。
+
+## Phase 217 — Same BOM/Nesting/Cost path
+Retail fixture 必須走現有 BOM → Nesting V3 → Waste → Remnant → Cost → Packing → Approval；禁止專用旁路。
+
+## Phase 218 — REAL Blender fixture previews
+至少 6 種 fixture 走 REAL Blender 5.2.1 / OptiX low-res preview；每種記 engineeringHash、bomHash、jobId、artifact hash/size、usedMock=false。
+
+## Phase 219 — Retail fixture packing
+KD display 拆箱尺寸、重量、CBM、assembly manifest；logistics cost 仍 CONFIG。
+
+## Phase 220 — Retail fixture acceptance
+建立 `docs/RETAIL_FIXTURE_REAL_ACCEPTANCE.md` + JSON：商品尺寸 → planogram → fixture → BOM → nesting → packing → REAL Blender → WAITING_APPROVAL。
+
+---
+
+# Phase 221–230 — Structural Packaging / Dieline V1
+
+> 既有 Packaging Digital Twin 必須 reuse；這輪是在同一 Twin/Engineering 架構增加「可計算結構」，不是第二套 packaging system。
+
+## Phase 221 — PackagingEngineeringDefinition
+加入 structural packaging engineering wrapper，保持 Product Digital Twin 相容。
+
+## Phase 222 — Box families
+至少 RSC_CARTON、MAILER_BOX、SLEEVE、TRAY、PDQ_TRAY 五種 parametric family。
+
+## Phase 223 — Product fit rules
+由商品 dimensions + clearance 產 inner dimensions / outer dimensions；不得把 artwork 當結構尺寸來源。
+
+## Phase 224 — Dieline primitives
+建立 cut / crease / perforation / glue zones 幾何語意，輸出 SVG/DXF-friendly manifest。
+
+## Phase 225 — Bleed / safe area metadata
+Artwork zones 加 bleed/safe-area metadata；真正印前 trapping/color/preflight 未接時標 PARTIAL。
+
+## Phase 226 — Paperboard / corrugated sheet registry
+建立 sheet size、caliper、grain/flute direction、CONFIG cost。ECT/BCT/壓縮強度沒有真模型時不得宣稱 REAL structural certification。
+
+## Phase 227 — Packaging nesting
+將 dielines 做 sheet nesting，沿用 Waste V2 概念：used / trim / reusable remainder / true scrap；若演算法與木板 nesting 不同，用 adapter/strategy，不建第二個 Scheduler/DAM。
+
+## Phase 228 — Fold preview
+Blender 自動產 flat → folded box preview / simple assembly animation；REAL artifact 才標 REAL。
+
+## Phase 229 — Packaging + Retail bundle
+同一商品 Digital Twin 可一次產 consumer package + PDQ + retail fixture proposal，保留 lineage。
+
+## Phase 230 — Packaging structure acceptance
+建立 `docs/PACKAGING_STRUCTURE_REAL_ACCEPTANCE.md` + JSON：商品尺寸 → box definition → dieline → nesting/waste → Blender fold preview。強度/印前仍需誠實 scope。
+
+---
+
+# Phase 231–235 — Acrylic / Sheet Product Extension
+
+## Phase 231 — Acrylic sheet material registry
+透明/乳白/黑等材料 code、thickness、sheet size、CONFIG cost、grain=none；不要假裝供應商即時價格。
+
+## Phase 232 — Acrylic product families
+至少 MENU_STAND、SIGN_HOLDER、RISER_STAND、DISPLAY_BOX、PRODUCT_STAND。
+
+## Phase 233 — Acrylic sheet nesting
+沿用 Nesting Strategy Registry / Waste V2 / remnant semantics；材質厚度必須相容。
+
+## Phase 234 — Cut/Bend manifest boundary
+可產 laser/CNC cut geometry interface 與 bend line manifest；bend radius / heat parameters 若只是 config，標 CONFIG/PARTIAL；LIVE LASER/CNC 永遠 BLOCKED。
+
+## Phase 235 — Acrylic REAL previews
+至少 3 種 product REAL Blender preview + BOM + nesting + packing evidence。
+
+---
+
+# Phase 236–240 — Unified AI Physical Product OS V1
+
+## Phase 236 — PhysicalProductFamily Registry
+建立上層 registry 統一 furniture/KD/retail fixture/packaging/acrylic capabilities，但底層仍 reuse 現有 Twin/Queue/DAM/Engineering adapters。不得重寫既有 CabinetSpec；以 adapter/typed definition 漸進抽象。
+
+## Phase 237 — Inventory-to-Product reverse R&D
+輸入可用 new sheets + remnants + material lots，產可製造 product candidates。分數至少含：material utilization、true scrap、remnant consumption、common parts、packing、assembly、estimated margin。Market demand 未有 REAL Provider 時明確 MARKET_UNVERIFIED。
+
+## Phase 238 — Unified Admin/API
+沿用現有 Admin/API 增加：Materials、Remnants、Nesting Benchmarks、KD Candidates、Retail Fixtures、Packaging Structures、Acrylic Products、Approval。不得另開第二個平台。
+
+## Phase 239 — PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE
+建立 `docs/PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE.md` + JSON，至少證明三條 REAL E2E：
+1. KD furniture → BOM/Nesting/Waste/Packing/Blender
+2. Retail display → Product slots/Planogram/BOM/Nesting/Blender
+3. Packaging or acrylic → Engineering/Dieline-or-Cut/Nesting/Blender
+全部停在 Human Approval / prototype boundary。
+
+## Phase 240 — Full regression / readiness matrix
+跑完整 local pytest + GitHub Actions ubuntu/windows。Readiness 必須逐項：REAL / ESTIMATED-CONFIG / MOCK / PARTIAL / BLOCKED。`fullAutonomousFactoryReady` 除非 Vision/Demand/ProviderCost/OS sandbox/machine boundaries 全部真的打通，否則保持 false。
+
+---
+
+# 本輪不可違反規則
+
+1. 不重寫既有 Scheduler / Queue / DAM / Recipe Registry / TwinStore / Cabinet Engineering SoT。
+2. 新產品族優先 adapter / registry / typed definition，禁止每種產品各自一套平台。
+3. 所有 dimensions / BOM / nesting / packing 必須有 lineage/hash；不要靠 Blender scene 反推正式工程尺寸。
+4. Mock pytest 只代表 regression，不是 Production Ready。
+5. REAL Blender 必須實際 artifact + usedMock=false。
+6. CONFIG/ESTIMATED cost 不得叫 REAL supplier/commercial quote。
+7. Demand / Vision / Video 沒 live provider 就維持 MOCK。
+8. OS sandbox 沒 OS jail 就維持 PARTIAL。
+9. CNC / saw / laser / print machine live control 一律 BLOCKED；Human Approval Gate 保留。
+10. Packaging strength/electrical/structural certifications 沒真工程模型就標 PARTIAL/BLOCKED。
+11. 每個 Phase 要有 execution path 或 regression evidence；禁止空 class/schema 湊 Phase 數量。
+12. 所有新的 durable inventory 路徑要 tenant isolation + crash/restart tests。
+13. GitHub Actions 必須真的 GREEN 才可寫 CI ready；不要預測 PASS。
+
+# 回報契約
+
+完成後：
+- 更新 `docs/GROK_PROGRESS_REPORT.md`。
+- 更新 `docs/CURRENT_IMPLEMENTATION_AUDIT.md`。
+- 依各段建立上述 REAL acceptance docs + JSON evidence。
+- 更新 `docs/REAL_E2E_ACCEPTANCE.md` 只做 scope/readiness 同步，不破壞舊 REAL 證據。
+- commit + push main。
+- GitHub Issue #1 留：commit SHA、local pytest、GitHub Actions run、REAL/MOCK/PARTIAL/BLOCKED 摘要、blockers、下一輪建議。
+- 不要求使用者複製貼上；ChatGPT 直接從 GitHub 接手。
+
+**現在直接從 Phase 181 開始，先修兩個文件一致性問題，再依依賴順序實作。已 REAL 的 Phase 1–180 不重做。**
