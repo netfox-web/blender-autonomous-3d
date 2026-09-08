@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (`7e1d11c` + local gap-fill) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`.
+Audit of `main` (review baseline `f4748fa` / code `f695eef`; evidence lineage CODE_EVIDENCE_SHA `d7a3075`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–70 notes below remain; they are not the current review SHA.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 

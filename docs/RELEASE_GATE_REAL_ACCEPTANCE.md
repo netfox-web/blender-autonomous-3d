@@ -1,15 +1,16 @@
 # RELEASE_GATE_REAL_ACCEPTANCE
 
-generatedAt: 2026-09-08T17:18:53.564886+00:00
+generatedAt: 2026-09-08T18:43:21.938082+00:00
 pytest mock PASS is **not** production ready.
 
 ## Domain evidence (machine-verifiable)
 
 | Check | Status | Evidence |
 |---|---|---|
-| publication 5-family Blender+EvidenceBundle | REAL | `real=5/5` |
+| publication 5-family Blender+EvidenceBundle | REAL | `real=5/5 clean=True` |
 | release gate APPROVED_FOR_EXPORT | REAL | `APPROVED_FOR_EXPORT` |
 | forbidden LIVE_CNC transition | REAL | `blocked` |
+| forbidden LIVE_LASER transition | REAL | `blocked` |
 | approval stale on hash change | REAL | `True` |
 | LIVE_CNC | BLOCKED | `liveMachineControl=false` |
 

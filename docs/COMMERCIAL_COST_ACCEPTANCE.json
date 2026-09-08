@@ -23,5 +23,8 @@
     "liveProviderReady": false
   },
   "liveProviderReady": false,
-  "generatedAt": "2026-09-08T17:18:53.564886+00:00"
+  "generatedAt": "2026-09-08T18:43:21.938082+00:00",
+  "evidenceCodeCommit": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
+  "workingTreeClean": true,
+  "acceptanceRunnerVersion": "os-v2-e2e-lineage-1"
 }

@@ -2,67 +2,66 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `b9e7861` (Phase 241–300 Commercialization Hardening)  
-Review baseline: `f2f9eec` **ACCEPT WITH SCOPE**  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `b0b8cbf` (**CHANGES REQUIRED** — Evidence Lineage; not Phase 301+)  
+Review baseline: `f4748fa` / code `f695eef`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Hygiene first (no Phase 1–240 rewrite):
-1. `REAL_E2E_ACCEPTANCE.md` unscoped `productionReady: True` → scoped `coreRenderE2EReady` / `physicalProductOsPrototypeReady` / `globalProductionReady=false`
-2. Audit Phase 68 current AOV status synced (historical PARTIAL kept)
-3. Domain acceptance docs now carry machine-verifiable domain-only evidence (not the shared Physical OS table)
+Did **not** start Phase 301+. Fixed Evidence Integrity lineage only.
 
-Then Phase 241–300 on existing Twin/Queue/DAM/Engineering — no second ERP/WMS/CRM.
-
-| Band | Landed |
+| Gap | Fix |
 |---|---|
-| 241–250 Release gates | scoped readiness; EvidenceBundle+verifier; truth-label regression; immutable approval audit; stale-on-hash; RC state machine to APPROVED_FOR_EXPORT (≠ LIVE_CNC); SandboxBackend PATH_GUARD_ONLY PARTIAL; job policy networkAllowed=false |
-| 251–260 Provider gateway | snapshot import CSV/JSON MANUAL/IMPORTED; mixed-source landed cost; quote binding/stale; supplier alternatives with engineering veto; `liveProviderReady=false` |
-| 261–270 Packaging V2 | board grade; McKee BCT ENGINEERING_ESTIMATE; 20 fit cases; dieline/bleed validators; artwork objective checks; barcode PARTIAL; carton optimize |
-| 271–280 Safety | rule registry; stability/wall-anchor/pinch/shelf/retail/acrylic estimates; notCertified=true; dangerous cases veto |
-| 281–290 Publication | ProductPublicationPackage; GLB hash; Web3D manifest; AR PARTIAL (no fake USDZ); catalog release/supersede; 5-family REAL Blender+EvidenceBundle |
-| 291–300 R&D loop | outcome schema/import (FIXTURE ≠ market); Demand V2 MARKET_UNVERIFIED; engineering-only ranking; substitution reapproval; Admin KPI |
+| REAL EvidenceBundle `commitSha=b9e7861` | Runner now binds `evidenceCodeCommit=git rev-parse HEAD` on a **clean** tree |
+| Dirty working tree REAL run | `DirtyTreeError` / exit 2; `--allow-dirty` is UNVERIFIED and does not write REAL acceptance |
+| `verify_bundle` no expected commit | `expected_commit_sha` → `commit_sha_mismatch` |
+| Two-phase commits | CODE_EVIDENCE_SHA then EVIDENCE_DOCS_SHA |
+
+**CODE_EVIDENCE_SHA:** `d7a3075a2b0e621d748de949c0b7244bf5825c55`  
+**EVIDENCE_DOCS_SHA:** this docs commit (recorded after push)  
+**workingTreeClean:** true at REAL e2e start  
+**acceptanceRunnerVersion:** `os-v2-e2e-lineage-1`
+
+5/5 REAL T1000 OptiX preview bundles: KD / Retail / Packaging / Acrylic / KD#2; `commitSha == CODE_EVIDENCE_SHA`; `usedMock=false`; hash/size verifier PASS.
 
 ## Tests
 
 ```
-pytest -q  →  101 passed   (local MOCK suite — not Production Ready)
+pytest -q  →  102 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions @ `f695eef`: **GREEN** run `34256429183` — `unit (ubuntu-latest)` + `unit (windows-latest)`. MOCK blender suite only, not REAL production.
+GitHub Actions @ `d7a3075` (CODE_EVIDENCE_SHA): **GREEN** run `34264676274` — ubuntu-latest + windows-latest. MOCK suite only.
 
-## REAL / IMPORTED / MANUAL / CONFIG_ESTIMATE / MOCK / PARTIAL / BLOCKED
+GitHub Actions @ EVIDENCE_DOCS_SHA / current head: recorded after this docs push.
+
+## REAL / MOCK / PARTIAL / BLOCKED
 
 | Area | Label |
 |---|---|
-| EvidenceBundle verifier on 5 REAL previews | REAL (T1000 OptiX, usedMock=false, hash/size) |
-| Approval audit + stale + forbidden LIVE_CNC | REAL |
-| Scoped readiness | REAL computed; `globalProductionReady=false` |
-| Provider snapshot import execution | REAL (MANUAL/IMPORTED data) |
-| liveProviderReady | BLOCKED (no credentials) |
-| Mixed landed cost | REAL MIXED (MANUAL + CONFIG_ESTIMATE) |
-| Packaging V2 fit 20/20 | REAL |
-| BCT / print preflight / barcode | PARTIAL / ENGINEERING_ESTIMATE |
-| Safety estimates + veto cases | REAL execution, notCertified |
-| AR USDZ | PARTIAL (adapter only, no fake file) |
-| Vision / Demand / Video | MOCK |
-| OS sandbox | PARTIAL (PATH_GUARD_ONLY) |
-| LIVE_CNC / LIVE_LASER / electrical | BLOCKED |
+| Clean-commit EvidenceBundle 5/5 | REAL (`d7a3075`, usedMock=false) |
+| Release gate + stale + LIVE_CNC/LASER forbidden | REAL |
+| Provider snapshots | MANUAL/IMPORTED (not LIVE_PROVIDER) |
+| Mixed landed cost | MIXED MANUAL+CONFIG_ESTIMATE |
+| McKee BCT / print preflight / barcode | ENGINEERING_ESTIMATE / PARTIAL |
+| AR USDZ | PARTIAL (no fake file) |
+| Vision / Video / Demand | MOCK |
+| OS sandbox | PARTIAL PATH_GUARD_ONLY |
+| LIVE_CNC / LIVE_LASER / electrical / liveProvider | BLOCKED |
+| globalProductionReady | false |
 | fullAutonomousFactoryReady | false |
 
-## Blockers
+## Blockers (unchanged policy)
 
 - LIVE_CNC / LIVE_LASER BLOCKED
 - Vision/Video/Demand MOCK
-- OS jail missing (sandbox PARTIAL)
-- No LIVE_PROVIDER cost/logistics/FX credentials
+- OS jail missing
+- No LIVE_PROVIDER credentials
 - Packaging strength is McKee estimate, not lab certification
 
 ## Do not redo
 
-Phase 1–240 REAL paths. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec not rewritten.
+Phase 1–300 product features. No Phase 301+. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec not rewritten.
 
 ## Next round
 
-ChatGPT re-review. Follow-ups: live provider credentials, OS jail backend, lab/cert data, USDZ encoder, live demand. Keep Human Approval Gate. `fullAutonomousFactoryReady` stays false until those are actually REAL.
+ChatGPT re-review of Evidence Lineage exit criteria 1–10. Phase 301+ only after **ACCEPT WITH SCOPE**.
