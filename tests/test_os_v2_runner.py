@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+from fox3d.acceptance_gate import CANONICAL_REAL_FILES, read_canonical_truth_set
 from fox3d.evidence import evidence_bundle, prepare_evidence_lineage, verify_bundle
 from fox3d.ids import sha256_bytes
 
@@ -102,11 +103,14 @@ def test_runner_success_exit_0(tmp_path):
     _seed_old(docs)
     code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": _pipeline(tmp_path, previews)})
     assert code == 0
-    phys = json.loads((docs / "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.json").read_text(encoding="utf-8"))
-    rel = json.loads((docs / "RELEASE_GATE_REAL_ACCEPTANCE.json").read_text(encoding="utf-8"))
-    assert phys["acceptanceGenerationId"] == rel["acceptanceGenerationId"]
-    assert phys["evidenceCodeCommit"] == SHA
-    assert rel["evidenceCodeCommit"] == SHA
+    check = read_canonical_truth_set(docs)
+    assert check["ok"] is True
+    assert set(check["payloads"]) == set(CANONICAL_REAL_FILES)
+    assert check["evidenceCodeCommit"] == SHA
+    gens = {check["payloads"][n]["acceptanceGenerationId"] for n in CANONICAL_REAL_FILES}
+    commits = {check["payloads"][n]["evidenceCodeCommit"] for n in CANONICAL_REAL_FILES}
+    assert len(gens) == 1
+    assert commits == {SHA}
 
 
 def test_runner_commit_mismatch_nonzero_canonical_unchanged(tmp_path):

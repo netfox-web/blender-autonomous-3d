@@ -6,7 +6,13 @@ import json
 
 import pytest
 
-from fox3d.acceptance_gate import required_real_acceptance_ok, write_canonical_if_ok
+from fox3d.acceptance_gate import (
+    CANONICAL_REAL_FILES,
+    aggregate_canonical_consistency,
+    read_canonical_truth_set,
+    required_real_acceptance_ok,
+    write_canonical_if_ok,
+)
 from fox3d.evidence import DirtyTreeError, evidence_bundle, prepare_evidence_lineage, verify_bundle
 from fox3d.ids import sha256_bytes
 
@@ -130,3 +136,58 @@ def test_live_machine_not_blocked_fails(tmp_path):
     assert _gate(previews, live_laser_blocked=False)["ok"] is False
     assert "live_cnc_not_blocked" in _gate(previews, live_cnc_blocked=False)["failures"]
     assert "live_laser_not_blocked" in _gate(previews, live_laser_blocked=False)["failures"]
+
+
+def _write_canonical(docs, *, gen="g1", commit="c1", skip=None, extra=None):
+    docs.mkdir(parents=True, exist_ok=True)
+    for name in CANONICAL_REAL_FILES:
+        if skip == name:
+            continue
+        payload = {"acceptanceGenerationId": gen, "evidenceCodeCommit": commit, "domain": name}
+        if extra and name in extra:
+            payload.update(extra[name])
+        (docs / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_canonical_reader_accepts_same_generation_and_commit(tmp_path):
+    _write_canonical(tmp_path, gen="gen-a", commit="sha-a")
+    result = read_canonical_truth_set(tmp_path)
+    assert result["ok"] is True
+    assert result["acceptanceGenerationId"] == "gen-a"
+    assert result["evidenceCodeCommit"] == "sha-a"
+    assert set(result["payloads"]) == set(CANONICAL_REAL_FILES)
+    agg = aggregate_canonical_consistency(tmp_path)
+    assert agg["canonicalTruthSetOk"] is True
+    assert agg["secondAcceptanceSystem"] is False
+
+
+def test_canonical_reader_rejects_mixed_generation(tmp_path):
+    _write_canonical(tmp_path, gen="gen-a", commit="sha-a")
+    mixed = json.loads((tmp_path / "NESTING_V3_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    mixed["acceptanceGenerationId"] = "gen-b"
+    (tmp_path / "NESTING_V3_ACCEPTANCE.json").write_text(json.dumps(mixed), encoding="utf-8")
+    result = read_canonical_truth_set(tmp_path)
+    assert result["ok"] is False
+    assert "mixed_generation" in result["errors"]
+    assert any(e.startswith("generation_mismatch:") for e in result["errors"])
+
+
+def test_canonical_reader_rejects_mixed_commit(tmp_path):
+    _write_canonical(tmp_path, gen="gen-a", commit="sha-a")
+    mixed = json.loads((tmp_path / "COMMERCIAL_COST_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    mixed["evidenceCodeCommit"] = "sha-b"
+    (tmp_path / "COMMERCIAL_COST_ACCEPTANCE.json").write_text(json.dumps(mixed), encoding="utf-8")
+    result = read_canonical_truth_set(tmp_path)
+    assert result["ok"] is False
+    assert "mixed_commit" in result["errors"]
+
+
+def test_canonical_reader_rejects_missing_and_malformed(tmp_path):
+    _write_canonical(tmp_path, skip="PACKAGING_V2_ACCEPTANCE")
+    result = read_canonical_truth_set(tmp_path)
+    assert result["ok"] is False
+    assert "missing:PACKAGING_V2_ACCEPTANCE" in result["errors"]
+    (tmp_path / "PACKAGING_V2_ACCEPTANCE.json").write_text("KEEP-OLD", encoding="utf-8")
+    bad = read_canonical_truth_set(tmp_path)
+    assert bad["ok"] is False
+    assert "malformed:PACKAGING_V2_ACCEPTANCE" in bad["errors"]

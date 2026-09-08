@@ -138,3 +138,73 @@ def generations_consistent(docs: Path, names: list[str], *, generation_id: str, 
         if payload.get("evidenceCodeCommit") != evidence_commit:
             errors.append(f"commit_mismatch:{name}")
     return {"ok": not errors, "errors": errors}
+
+
+def read_canonical_truth_set(docs: Path, names: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+    """Read the six canonical JSON truth files as one set. Reject mixed/missing/malformed.
+
+    Not a second acceptance system — folds over existing generation/commit fields.
+    """
+    wanted = list(names or CANONICAL_REAL_FILES)
+    errors: list[str] = []
+    payloads: dict[str, dict[str, Any]] = {}
+    for name in wanted:
+        path = docs / f"{name}.json"
+        if not path.exists():
+            errors.append(f"missing:{name}")
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8")
+            payload = json.loads(raw)
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            errors.append(f"malformed:{name}")
+            continue
+        if not isinstance(payload, dict):
+            errors.append(f"malformed:{name}")
+            continue
+        payloads[name] = payload
+    gens = {payloads[n].get("acceptanceGenerationId") for n in payloads}
+    commits = {payloads[n].get("evidenceCodeCommit") for n in payloads}
+    generation_id = next(iter(gens)) if len(gens) == 1 else None
+    evidence_commit = next(iter(commits)) if len(commits) == 1 else None
+    if payloads:
+        if None in gens or "" in gens:
+            errors.append("missing_generation")
+        if len(gens) > 1:
+            errors.append("mixed_generation")
+            ref_gen = payloads[next(iter(payloads))].get("acceptanceGenerationId")
+            for name, payload in payloads.items():
+                if payload.get("acceptanceGenerationId") != ref_gen:
+                    errors.append(f"generation_mismatch:{name}")
+        if None in commits or "" in commits:
+            errors.append("missing_commit")
+        if len(commits) > 1:
+            errors.append("mixed_commit")
+            ref_commit = payloads[next(iter(payloads))].get("evidenceCodeCommit")
+            for name, payload in payloads.items():
+                if payload.get("evidenceCodeCommit") != ref_commit:
+                    errors.append(f"commit_mismatch:{name}")
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "payloads": payloads,
+        "acceptanceGenerationId": generation_id,
+        "evidenceCodeCommit": evidence_commit,
+        "files": wanted,
+        "present": list(payloads),
+    }
+
+
+def aggregate_canonical_consistency(docs: Path) -> dict[str, Any]:
+    """Machine-verifiable result that the six canonical JSON files are one generation."""
+    result = read_canonical_truth_set(docs)
+    return {
+        "canonicalTruthSetOk": result["ok"],
+        "acceptanceGenerationId": result["acceptanceGenerationId"],
+        "evidenceCodeCommit": result["evidenceCodeCommit"],
+        "errors": result["errors"],
+        "requiredFiles": list(CANONICAL_REAL_FILES),
+        "present": result["present"],
+        "path": "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.canonicalTruthSet",
+        "secondAcceptanceSystem": False,
+    }
