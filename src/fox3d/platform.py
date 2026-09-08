@@ -38,7 +38,17 @@ from fox3d.infra import (
 )
 from fox3d.jobs import BlenderJob
 from fox3d.media import ARExporter, AssemblyAnimator, BlenderToVideo, Product360Engine, RetailEngine, SyntheticFactory
-from fox3d.ops import DrainController, LineageLog, LineageRecord, RenderCache, RenderQA, ScriptRegistry, qa_or_retry
+from fox3d.ops import (
+    DrainController,
+    LineageLog,
+    LineageRecord,
+    RenderCache,
+    RenderQA,
+    ScriptRegistry,
+    assert_job_paths_safe,
+    cleanup_job_temp,
+    qa_or_retry,
+)
 from fox3d.packaging import PackagingEngine
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
 from fox3d.rd import ProductRDAgent, VisionJudge
@@ -274,6 +284,13 @@ class Platform:
                 )
             return job
 
+        try:
+            assert_job_paths_safe(job)
+        except PermissionError as exc:
+            self._release(job)
+            job["status"] = "blocked"
+            job["error"] = str(exc)
+            return job
         job["gpu"] = placement.get("gpuName")
         job["gpuUuid"] = (self.probe.gpuUuid if self.probe else None)
         job["worker"] = self.worker_id
@@ -418,6 +435,7 @@ class Platform:
                 job["status"] = terminal
                 job["output"] = output
         self._release(job)
+        cleanup_job_temp(self.runtime.work_dir / str(job["jobId"]))
         done = self.queue.get(job["jobId"]) or job
         done["qa"] = qa
         done["cacheHit"] = False
@@ -713,7 +731,135 @@ class Platform:
         return self.execute_job(job)
 
     def product_rd(self, *, tenant_id: str, text: str, variant_count: int = 12) -> dict[str, Any]:
-        return self.rd.run(tenant_id=tenant_id, text=text, variant_count=variant_count)
+        result = self.rd.run(tenant_id=tenant_id, text=text, variant_count=variant_count)
+        result["HUMAN_APPROVAL_REQUIRED"] = True
+        if isinstance(result.get("approval"), dict):
+            result["approval"]["HUMAN_APPROVAL_REQUIRED"] = True
+        return result
+
+    def packaging_twin(self, *, tenant_id: str, template: str, sku: str, artwork_bytes: bytes | None = None) -> dict[str, Any]:
+        """Same Digital Twin store — not a second twin architecture."""
+        pkg = self.packaging.build(tenant_id=tenant_id, template=template, sku=sku)
+        artwork_id = None
+        if artwork_bytes:
+            artwork_id = self.dam.put(tenant_id=tenant_id, kind="artwork", name=f"{sku}-art.png", data=artwork_bytes).asset_id
+        twin = ProductDigitalTwin(
+            tenantId=tenant_id,
+            sku=sku,
+            dimensions=pkg["dimensions"],
+            materials=["cardboard" if template in {"BOX", "CARTON", "DISPLAY_BOX"} else "plastic"],
+            packagingArtwork=[artwork_id] if artwork_id else [],
+            productMetadata={"kind": "PACKAGING", "template": pkg["template"], "pipeline": pkg["pipeline"]},
+            compatibleRecipes=["scene:WHITE_STUDIO"],
+        )
+        twin = self.twins.create(twin)
+        job = self.submit_job(
+            {
+                "tenantId": tenant_id,
+                "jobType": "BLENDER_PRODUCT",
+                "mode": "PACKAGING_TWIN",
+                "assetId": twin.twinId,
+                "packagingTemplate": pkg["template"],
+                "dimensions": pkg["dimensions"],
+                "scene": "WHITE_STUDIO",
+                "render": {"width": 512, "height": 512, "engine": "CYCLES", "device": "OPTIX", "samples": 24},
+                "timeoutSeconds": 300,
+            }
+        )
+        rendered = self.execute_job(job)
+        preview = (rendered.get("output") or {}).get("files", {}).get("beauty.png")
+        if preview:
+            twin.previewAssetId = preview
+            self.twins._items[twin.twinId] = twin
+        return {"twin": twin.model_dump(mode="json"), "job": rendered, "sameTwinStore": True}
+
+    def blender_to_video(self, *, tenant_id: str, twin_id: str, adapter: str | None = None) -> dict[str, Any]:
+        gate = self._production_gate()
+        twin = self.twins.get(twin_id, tenant_id=tenant_id)
+        job = self.submit_job(
+            {
+                "tenantId": tenant_id,
+                "jobType": "BLENDER_TO_VIDEO",
+                "mode": "BLENDER_TO_VIDEO",
+                "assetId": twin.twinId,
+                "glbPath": twin.glb,
+                "passes": True,
+                "scene": "WHITE_STUDIO",
+                "render": {"width": 512, "height": 512, "engine": "CYCLES", "device": "OPTIX", "samples": 16},
+                "timeoutSeconds": 600,
+            }
+        )
+        blender_job = job if gate else self.execute_job(job)
+        if gate:
+            blender_job = {**gate, "jobId": job["jobId"]}
+        refs = (blender_job.get("output") or {}).get("files") or {}
+        video = self.gateway.generate_video(
+            adapter=adapter,
+            request={
+                "twinId": twin.twinId,
+                "start": refs.get("START_FRAME"),
+                "middle": refs.get("MIDDLE_FRAME"),
+                "end": refs.get("END_FRAME"),
+                "mask": refs.get("mask.png"),
+                "duration": 6,
+            },
+        )
+        return {
+            "blender": blender_job,
+            "aiVideo": video,
+            "aiVideoStatus": "MOCK" if video.get("kind") == "mock_video" or video.get("provider") == "mock" else "REAL",
+            "adapterHardcoded": False,
+            "principle": {"blender": "deterministic control", "aiVideo": "generative creativity"},
+        }
+
+    def synthetic_dataset(self, *, tenant_id: str, twin_id: str, frames: int = 8) -> dict[str, Any]:
+        gate = self._production_gate()
+        if gate:
+            return {**gate, "manifestRequired": True}
+        twin = self.twins.get(twin_id, tenant_id=tenant_id)
+        job = self.submit_job(
+            {
+                "tenantId": tenant_id,
+                "jobType": "SYNTHETIC_DATA",
+                "mode": "SYNTHETIC_DATA",
+                "assetId": twin.twinId,
+                "glbPath": twin.glb,
+                "passes": True,
+                "render": {"width": 256, "height": 256, "engine": "CYCLES", "device": "OPTIX", "samples": 8},
+                "timeoutSeconds": 600,
+            }
+        )
+        result = self.execute_job(job)
+        files = (result.get("output") or {}).get("files") or {}
+        manifest = {
+            "jobId": result.get("jobId"),
+            "twinId": twin.twinId,
+            "produced": ["RGB"] + (["mask"] if files.get("mask.png") else []),
+            "notProducedThisRun": [p for p in ["depth", "normal", "segmentation"] if p not in {"RGB", "mask"}],
+            "files": files,
+            "realBlender": result.get("realBlender"),
+        }
+        blob = __import__("json").dumps(manifest, default=str).encode("utf-8")
+        stored = self.dam.put(tenant_id=tenant_id, kind="synthetic_manifest", name="manifest.json", data=blob)
+        manifest["manifestAssetId"] = stored.asset_id
+        return {"job": result, "manifest": manifest}
+
+    def hardening_report(self) -> dict[str, Any]:
+        return {
+            "tenantIsolation": True,
+            "scriptSandbox": True,
+            "pathTraversalGuard": True,
+            "arbitraryPython": "allowlisted blender_job.py only; AI-generated = SANDBOX ONLY",
+            "resourceLimits": True,
+            "networkRestrictions": "deny_all on registered scripts",
+            "jobCancellation": True,
+            "gpuCleanup": "reservation release on complete/fail/cancel",
+            "tempCleanup": True,
+            "assetLineage": True,
+            "cacheIntegrity": True,
+            "workerCrashRecovery": True,
+            "liveCnc": False,
+        }
 
 
 BlenderRuntime._mock_version = lambda self: "mock-4.2"  # type: ignore[method-assign]

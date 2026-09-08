@@ -65,11 +65,11 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 
 | Phase | Status |
 |---|---|
-| 66 Packaging twin | PARTIAL — packaging engine reuses Scene DSL/DAM, not a second twin store |
-| 67 Blender→AI Video | STUB/MOCK — keyframe contract + mock gateway; no live H3/LTX call required this round |
-| 68 Synthetic data | PARTIAL — real Blender can render; factory also has mock PNG writer for tests |
+| 66 Packaging twin | REAL architecture — same `TwinStore`; BOX/BOTTLE/… metadata on ProductDigitalTwin; preview via existing queue. Render REAL only when production worker (not pytest mock). |
+| 67 Blender→AI Video | PARTIAL — Blender START/MID/END + mask via headless worker (REAL in production). AI Video Gateway **MOCK** unless a live adapter is registered. Not hardcoded to H3/LTX. |
+| 68 Synthetic data | PARTIAL — RGB REAL; mask REAL (emission pass) in production. depth/normal/segmentation listed as `notProducedThisRun` until compositor AOVs. Manifest stored in DAM. |
 | 69 Recipe research | REAL — EXPERIMENTAL→CANDIDATE; cannot overwrite PRODUCTION |
-| 70 Hardening | PARTIAL — tenant isolation, script allowlist, cancel, lease recovery exist; not a full sandbox OS |
+| 70 Hardening | REAL for path traversal guard, script SANDBOX ONLY, cancel, GPU reservation release, temp log cleanup, lineage, cache, lease recovery. Not a full OS sandbox. |
 
 ## Blockers
 

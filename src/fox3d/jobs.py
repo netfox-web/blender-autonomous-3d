@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from fox3d.capabilities import BLENDER_RENDER
 from fox3d.ids import new_id
@@ -46,6 +46,8 @@ class GpuRequirement(BaseModel):
 
 
 class BlenderJob(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     jobId: str = Field(default_factory=new_id)
     tenantId: str
     projectId: str = "default"

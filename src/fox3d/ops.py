@@ -11,6 +11,31 @@ from fox3d.infra import ComputeRegistry, JobQueue, Operations, job_cache_key
 from fox3d.pngutil import EXR_MAGIC, is_png
 
 
+def assert_job_paths_safe(job: dict[str, Any]) -> None:
+    """Reject path traversal in worker-facing file fields. Does not restrict Blender binary."""
+    for key in ("glbPath", "progressFile", "cancelFile"):
+        raw = job.get(key)
+        if not raw:
+            continue
+        parts = Path(str(raw)).parts
+        if ".." in parts:
+            raise PermissionError("path traversal blocked")
+
+
+def cleanup_job_temp(job_dir: Path) -> list[str]:
+    removed: list[str] = []
+    if not job_dir.exists():
+        return removed
+    for path in job_dir.iterdir():
+        if path.suffix.lower() in {".log", ".blend1", ".blend"} or path.name.endswith(".tmp"):
+            try:
+                path.unlink()
+                removed.append(path.name)
+            except OSError:
+                continue
+    return removed
+
+
 class DrainController:
     """Maps to FoxStudio compute_targets.status=draining. Never SIGKILL mid-tile."""
 

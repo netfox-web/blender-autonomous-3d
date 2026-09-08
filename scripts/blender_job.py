@@ -215,6 +215,75 @@ def _three_point(height: float = 1.0) -> None:
     _add_light("Light.Rim", "spot", (0.1, 1.8, z), 220, (1, 1, 1))
 
 
+def build_packaging(template: str, dims: dict) -> dict:
+    width = float(dims.get("width") or 120) / 1000.0
+    height = float(dims.get("height") or 160) / 1000.0
+    depth = float(dims.get("depth") or 60) / 1000.0
+    boxy = template.upper() in {"BOX", "CARTON", "POUCH", "BAG", "DISPLAY_BOX"}
+    mat = "cardboard" if boxy else "plastic"
+    size = (width, depth if boxy else width, height)
+    product = _add_box("Product", size, (0, 0, height / 2), mat)
+    ground = _add_plane("Ground", 2.0, (0, 0, 0))
+    cam = _add_camera((width * 2.2, -depth * 3.5, height * 0.8), (0, 0, height / 2), 85)
+    _three_point(height)
+    return {"Product": product, "Ground": ground, "Camera": cam}
+
+
+def _render_emission_mask(job: dict, *, width: int, height: int) -> str | None:
+    import bpy
+
+    for i, obj in enumerate(bpy.data.objects):
+        if obj.type != "MESH":
+            continue
+        mat = bpy.data.materials.new(f"mask.{obj.name}")
+        mat.use_nodes = True
+        nodes = mat.node_tree.nodes
+        links = mat.node_tree.links
+        nodes.clear()
+        em = nodes.new("ShaderNodeEmission")
+        hue = (i * 47) % 255
+        em.inputs[0].default_value = ((hue % 8) / 8.0, ((hue // 8) % 8) / 8.0, 0.2, 1.0)
+        em.inputs[1].default_value = 1.0
+        out = nodes.new("ShaderNodeOutputMaterial")
+        links.new(em.outputs[0], out.inputs[0])
+        obj.data.materials.clear()
+        obj.data.materials.append(mat)
+    scene = bpy.context.scene
+    scene.cycles.samples = 1
+    path = Path(job.get("workDir") or ".") / "mask.png"
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    scene.render.filepath = str(path)
+    bpy.ops.render.render(write_still=True)
+    return str(path) if path.exists() else None
+
+
+def _render_keyframes(job: dict, *, width: int, height: int, samples: int) -> dict:
+    import bpy
+
+    cam = bpy.context.scene.camera
+    origin = list(cam.location) if cam is not None else [1.4, -2.2, 1.0]
+    work = Path(job.get("workDir") or ".")
+    scene = bpy.context.scene
+    scene.cycles.samples = max(4, samples // 2)
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    names = ("START_FRAME", "MIDDLE_FRAME", "END_FRAME")
+    scales = (1.15, 1.0, 0.85)
+    paths = {}
+    for name, scale in zip(names, scales):
+        if cam is not None:
+            cam.location = (origin[0] * scale, origin[1] * scale, origin[2])
+        out = work / f"{name}.png"
+        scene.render.filepath = str(out)
+        bpy.ops.render.render(write_still=True)
+        if out.exists():
+            paths[name] = str(out)
+    if cam is not None:
+        cam.location = origin
+    return paths
+
+
 def build_smoke_scene() -> dict:
     cube = _add_box("Cube", (0.5, 0.5, 0.5), (0, 0, 0.25), "plastic")
     plane = _add_plane("Plane", 4.0, (0, 0, 0))
@@ -466,6 +535,8 @@ def build_and_render(job: dict) -> dict:
     created = {}
     if mode in {"REAL_SMOKE_TEST", "SMOKE"} or job.get("smokeTest"):
         created = build_smoke_scene()
+    elif job.get("packagingTemplate"):
+        created = build_packaging(str(job.get("packagingTemplate")), job.get("dimensions") or {})
     elif job.get("engineering"):
         created = build_cabinet(job["engineering"], explode=bool(job.get("explode")))
     else:
@@ -515,6 +586,16 @@ def build_and_render(job: dict) -> dict:
     png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
     if not png_path.exists() or png_path.stat().st_size < 32:
         return {"status": "failed", "error": "no PNG written", "realBlender": True}
+    outputs = {"beauty.png": str(png_path)}
+    produced = ["RGB"]
+    if mode in {"BLENDER_TO_VIDEO", "SYNTHETIC_DATA"} or job.get("passes"):
+        keys = _render_keyframes(job, width=width, height=max(256, height // 2), samples=max(8, samples // 2))
+        outputs.update(keys)
+        mask = _render_emission_mask(job, width=width, height=height)
+        if mask:
+            outputs["mask.png"] = mask
+            produced.append("mask")
+        produced.extend([k for k in keys if keys[k]])
     result = {
         "status": "succeeded",
         "engine": "CYCLES",
@@ -526,8 +607,9 @@ def build_and_render(job: dict) -> dict:
         "realCycles": True,
         "realOptix": used_device == "OPTIX",
         "realRenderOutput": True,
-        "outputs": {"beauty.png": str(png_path)},
+        "outputs": outputs,
         "objects": sorted(created.keys()),
+        "producedPasses": produced,
     }
     _write_progress(job, 1.0, "done")
     return result
