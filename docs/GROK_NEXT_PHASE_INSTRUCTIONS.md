@@ -1,163 +1,157 @@
-# Grok 修正指令：Evidence Lineage Fail-Closed Fix — CHANGES REQUIRED
+# Grok 修正指令：Runner-Level Atomic REAL Acceptance — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Re-review head: `35a7e336f8406a8fbb36c637ff8096e1a01333a0`
-> Evidence code commit: `d7a3075a2b0e621d748de949c0b7244bf5825c55`
+> Re-review head: `2968a8bdb56207ea4bc0abca79019ae43e1650a6`
+> Evidence code commit: `6d9de7e4c57085054f373c63efe51eaccdf59f04`
 > ChatGPT review result: **CHANGES REQUIRED**
 >
-> 這輪已修正大部分 Evidence Lineage：REAL acceptance 重新綁定 clean committed `CODE_EVIDENCE_SHA=d7a3075`，5/5 T1000 OptiX EvidenceBundle 的 `commitSha` / `expectedCommitSha` 一致、`usedMock=false`、artifact hash/size verifier PASS；GitHub Actions code/head 亦 GREEN。這些實質成果保留，不要重做 Phase 1–300。
+> 本輪已實質修掉先前 `... else 0` 的 fail-open bug：`scripts/run_os_v2_e2e.py` 現在會計算 `requiredRealAcceptanceOk`，任一 required check 失敗時 return 4；5/5 REAL Blender evidence 已重新綁 `CODE_EVIDENCE_SHA=6d9de7e`，`usedMock=false`、Blender 5.2.1 + T1000 OptiX、commit/hash verifier PASS；CODE CI run `34267625716` 與 docs/head run `34267760938` 的 ubuntu+windows 都 GREEN。這些成果保留，不要重做 Phase 1–300。
 >
-> 但目前 `scripts/run_os_v2_e2e.py` 還有一個 **fail-open blocker**，因此暫不放行 Phase 301+。
+> 但上一輪 exit criteria 還有兩個 Evidence Integrity 缺口，因此**仍不要進 Phase 301+**。
 
 ---
 
-## Blocker — REAL acceptance runner 最後永遠 exit 0
+## Gap 1 — 目前 regression 沒有真正測 runner `main()` / process exit
 
-目前檔尾：
+`tests/test_acceptance_gate.py` 現在主要直接測：
+
+- `required_real_acceptance_ok(...)`
+- `write_canonical_if_ok(...)`
+
+它證明 gate helper 的判斷，但**沒有直接呼叫 `scripts/run_os_v2_e2e.py::main()` 或 subprocess 執行 runner**。上一輪真正的 bug 就是在 runner 最後 return；只測 helper 無法防止未來再次出現「gate=False 但 runner exit 0」或「runner 先寫 canonical 再 fail」的整合回歸。
+
+### 必修
+
+新增 runner-level integration regressions，可用 dependency injection / monkeypatch，不需要真的啟 Blender。至少直接驗證：
+
+1. 5/5 valid required evidence → `main(...) == 0`。
+2. commit mismatch → `main(...) != 0`，canonical files 完全不變。
+3. artifact hash mismatch → non-zero，canonical 不變。
+4. artifact **size mismatch** → non-zero，canonical 不變。
+5. `usedMock=true` 或 `realBlender=false` → non-zero。
+6. 4/5 preview → non-zero。
+7. dirty tree without override → non-zero。
+8. `--allow-dirty` → UNVERIFIED + non-zero + canonical 不變。
+9. LIVE_CNC 或 LIVE_LASER 如果沒有被拒絕 → non-zero。
+
+測試名稱/結構不限，但必須測到 runner 的 return code，而不是只測 gate helper。
+
+---
+
+## Gap 2 — canonical truth files 目前 success-only，但不是真正 atomic batch
+
+目前 `write_acc(...)` 雖然有：
 
 ```python
-if not real_ok:
-    return 3
-return 0 if all(p.get("label") == "REAL" for p in previews) or not previews else 0
+if not required_ok:
+    return
 ```
 
-這個 conditional 的兩個分支都是 `0`。因此在 **clean tree** 上，即使某個 REAL preview / EvidenceBundle verifier 失敗、artifact/hash 不符、commit mismatch 導致 preview label 變成 PARTIAL，runner 仍可能：
+這已避免 required gate FAIL 時覆寫 canonical，這點合格。
 
-1. 寫出 canonical `*_REAL_ACCEPTANCE.json/.md`；
-2. process exit code 仍為 0；
-3. 外層 watcher/CI/操作員誤判 REAL acceptance 成功。
+但通過 gate 後，runner 仍以多次 `Path.write_text(...)` 逐一寫 JSON / MD / 多個 acceptance files。若第 2、3、4 個檔案寫入期間發生 exception、磁碟錯誤或 process 中止，可能留下「一半是新 evidence、一半是舊 evidence」的 canonical truth set。這不符合上一輪要求的 **atomic / success-only**。
 
-這違反上一輪要求：「commit mismatch / required REAL verifier failure 必須讓整個 REAL acceptance FAIL」。
+### 必修
 
----
+不要改既有 acceptance schema，只把輸出機制 harden：
 
-## Fix 1 — runner 必須 fail-closed
+1. 先把本次所有 canonical JSON + MD 完整產生成記憶體 payload。
+2. 全部寫到同一 docs root 下的 temporary/staging files。
+3. staging 全部成功後才用 `os.replace()`（或同等 atomic replace）發布 canonical files。
+4. 若 staging/replace 前 validation 失敗，不得改任何 canonical。
+5. 若 publish 中途 exception，至少要能保證 canonical set 不被當成本輪完整 PASS；建議使用 manifest/generation id 或 backup+rollback，讓 reader 不會混讀不同 generation。
+6. canonical acceptance 加入一致的 `acceptanceGenerationId`（或等價欄位）並在 aggregate acceptance 驗證所有本輪 truth files 同 generation / 同 `evidenceCodeCommit`。
 
-修改 `scripts/run_os_v2_e2e.py`，建立單一明確的 `required_real_acceptance_ok`（名稱可不同），至少包含：
-
-- `workingTreeClean == true`
-- `realAcceptanceAllowed == true`
-- Blender REAL discovery 成功
-- OptiX REAL probe 成功
-- 5 個 required preview 都存在
-- 5/5 `preview.label == REAL`
-- 5/5 `verify.ok == true`
-- 5/5 `bundle.commitSha == evidenceCodeCommit`
-- 5/5 `usedMock == false`
-- 5/5 artifact exists + hash/size PASS
-- release gate 到 `APPROVED_FOR_EXPORT` 成功
-- engineering hash mutation 後 approval stale=true
-- `LIVE_CNC` transition 被拒絕
-- `LIVE_LASER` transition 被拒絕
-
-只要任一 required REAL check fail：
-
-- runner 必須 non-zero exit；
-- 不得把該 run 宣稱 REAL acceptance PASS；
-- 不得覆寫 canonical REAL acceptance truth files 為成功版本。
-
-不要用「有 rows 就 exit 0」或「PARTIAL 也算成功」的邏輯。
+不要新增第二套 Acceptance 系統；沿用現在 `write_acc` / EvidenceBundle / existing docs。
 
 ---
 
-## Fix 2 — canonical acceptance 寫入要 atomic / success-only
+## Gap 3 — 補 atomic publish failure regression
 
-目前 `write_acc(...)` 在 required preview 全部驗證完成前就可能寫 canonical files。改成：
+至少加入一個 regression：
 
-1. 先完整執行所有 required checks；
-2. 計算 `required_real_acceptance_ok`；
-3. 只有 `true` 才更新 canonical：
-   - `docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.json/.md`
-   - `docs/RELEASE_GATE_REAL_ACCEPTANCE.json/.md`
-   - 其他本 runner 定義為 REAL truth source 的 acceptance files
-4. 若失敗，可在 stdout / temp diagnostics 提供原因，但**不要覆寫上一份已通過的 canonical REAL evidence**。
+- 先建立一組 OLD canonical sentinel files。
+- 模擬本輪 required evidence 全 PASS。
+- monkeypatch 第 N 個 staging/publish write/replace 故意拋 exception。
+- runner 必須 non-zero。
+- 驗證 canonical reader 不會看到「部分 NEW + 部分 OLD」被當成有效同一輪 REAL acceptance。
 
-若你要保留失敗診斷檔，必須明確命名 `FAILED/UNVERIFIED`，不可被 acceptance loader 當 REAL truth source。
+再加入 successful publish regression：所有 canonical truth files 都有相同 `acceptanceGenerationId`、相同 `evidenceCodeCommit`。
 
----
-
-## Fix 3 — 補 integration regression tests
-
-至少新增以下 regression；不能只測 `verify_bundle()` 單函式：
-
-1. 5/5 valid REAL bundles → runner success / exit 0。
-2. 任一 bundle `commitSha` stale/mismatch → runner non-zero，canonical REAL acceptance 不更新。
-3. 任一 artifact hash/size mismatch → runner non-zero，canonical REAL acceptance 不更新。
-4. 任一 preview `usedMock=true` 或 `realBlender=false` → runner non-zero。
-5. 只有 4/5 required previews → runner non-zero。
-6. dirty tree without override → non-zero（保留既有 test）。
-7. dirty tree `--allow-dirty` → UNVERIFIED + non-zero + 不寫 canonical REAL acceptance。
-8. forbidden LIVE_CNC 或 LIVE_LASER 若意外可通過 → runner non-zero。
-
-測試可用 dependency injection / monkeypatch / temp docs root，避免真的啟 Blender；這些 regression 本身仍是 MOCK/unit evidence，不得標 Production Ready。
+這些仍是 MOCK/unit integration evidence，不得標 Production Ready。
 
 ---
 
-## Fix 4 — 重新跑 clean committed REAL evidence
+## 重新驗收流程
 
-修完 code/tests 後：
+修完後：
 
-1. 先 commit/push code，記為新的 **CODE_EVIDENCE_SHA**。
-2. 確認該 SHA GitHub Actions ubuntu + windows GREEN。
-3. 在該 SHA 的 clean checkout 執行 REAL OS V2 E2E。
-4. 必須再次得到 5/5 T1000 OptiX / Blender 5.2.1：
+1. commit/push code + tests，記為新的 **CODE_EVIDENCE_SHA**。
+2. CODE_EVIDENCE_SHA GitHub Actions ubuntu + windows 必須 GREEN。
+3. local pytest PASS，清楚標示 MOCK suite。
+4. 在新 CODE_EVIDENCE_SHA 的 clean checkout 執行 REAL OS V2 E2E。
+5. 5/5 T1000 OptiX / Blender 5.2.1：
    - `usedMock=false`
    - artifact exists
-   - hash/size verifier PASS
+   - hash + size verifier PASS
    - `bundle.commitSha == CODE_EVIDENCE_SHA`
    - `expectedCommitSha == CODE_EVIDENCE_SHA`
    - `workingTreeClean=true`
-5. REAL acceptance 成功後再 commit docs/evidence，記為 **EVIDENCE_DOCS_SHA**。
-6. EVIDENCE_DOCS_SHA / current head 的 GitHub Actions ubuntu + windows 也要 GREEN。
+6. `requiredRealAcceptanceOk=true` 且 runner exit 0。
+7. 所有 canonical truth files 同 `acceptanceGenerationId` / 同 evidence commit。
+8. 再 commit docs/evidence，記為 **EVIDENCE_DOCS_SHA**。
+9. EVIDENCE_DOCS_SHA/current head GitHub Actions ubuntu + windows GREEN。
 
 ---
 
-## Fix 5 — 文件同步
+## 文件同步
 
 更新：
 
 - `docs/GROK_PROGRESS_REPORT.md`
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`（若本修正影響 Evidence Integrity 描述）
-- `docs/REAL_E2E_ACCEPTANCE.md` 的 Phase 241–300 pointer（只需 SHA/runner lineage 更新）
+- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
+- `docs/REAL_E2E_ACCEPTANCE.md` 的 evidence pointer
+
+並修正措辭：目前 `tests/test_acceptance_gate.py` 在 runner-level tests 補上前，只能稱 **gate/unit regressions**，不要稱完整 runner integration regression。
 
 Issue #1 回報：
 
-- CODE_EVIDENCE_SHA
+- 新 CODE_EVIDENCE_SHA
 - EVIDENCE_DOCS_SHA
-- local pytest 新總數（仍標 MOCK suite）
-- code/head GitHub Actions run IDs
-- 5/5 REAL evidence summary
-- fail-closed regression 結果
+- local pytest 總數（MOCK suite）
+- code/head CI run IDs
+- runner-level fail cases 實測摘要
+- atomic publish rollback/failure regression
+- 5/5 clean-tree REAL evidence summary
 
 ---
 
-## Truth labels 不變
+## Truth labels 維持不變
 
-- REAL：clean committed code 上的實際 Blender/OptiX + verified artifact/hash + deterministic release gate
+- REAL：clean committed code 上的實際 Blender/OptiX + verified artifact/hash/size + deterministic release gate
 - MANUAL/IMPORTED：supplier/material/hardware/logistics/FX snapshots；不是 LIVE_PROVIDER
-- CONFIG_ESTIMATE / ENGINEERING_ESTIMATE：成本、McKee、未 lab certified 的工程估算
+- CONFIG_ESTIMATE / ENGINEERING_ESTIMATE：成本、McKee、未 lab certified 工程估算
 - MOCK：Vision / AI Video / Demand（MARKET_UNVERIFIED）
 - PARTIAL：OS sandbox `PATH_GUARD_ONLY`、AR USDZ、print preflight/barcode、未認證 packaging strength
 - BLOCKED：LIVE_CNC / LIVE_LASER / electrical compliance / liveProviderReady
 - `globalProductionReady=false`
 - `fullAutonomousFactoryReady=false`
 
-不要開 LIVE machine control，不要新增假 provider，不要把 MOCK CI 當 REAL Blender evidence。
+不要開 LIVE machine control，不要新增假 provider，不要把 CI MOCK suite 當 REAL Blender evidence。
 
 ---
 
 ## Exit criteria — 全部達成後再交回 ChatGPT
 
-1. 修掉 `... else 0` fail-open bug。
-2. 任一 required REAL evidence failure 都使 runner non-zero。
-3. failed/unverified run 不覆寫 canonical REAL acceptance。
-4. integration regressions 覆蓋 commit mismatch / hash mismatch / mock preview / 4-of-5 / dirty / LIVE_CNC-LASER。
-5. 新 CODE_EVIDENCE_SHA clean-tree REAL run 5/5 PASS。
-6. 5/5 bundles 綁新 CODE_EVIDENCE_SHA 且 verifier PASS。
+1. runner-level tests 直接驗證 `main()` / exit code。
+2. commit/hash/size/mock/4-of-5/dirty/LIVE_CNC-LASER failure 都 runner non-zero。
+3. canonical truth set 使用 atomic/staged publish，不留下可被誤認為同一輪 PASS 的混合 generation。
+4. publish failure regression PASS。
+5. successful publish 的 canonical truth files generation/commit 一致。
+6. 新 CODE_EVIDENCE_SHA clean-tree REAL run 5/5 PASS。
 7. local pytest PASS（MOCK suite, not Production Ready）。
-8. CODE_EVIDENCE_SHA GitHub Actions ubuntu+windows GREEN。
-9. EVIDENCE_DOCS_SHA/current head GitHub Actions ubuntu+windows GREEN。
-10. Truth labels 保持原樣，`fullAutonomousFactoryReady=false`。
-11. **不要進 Phase 301+，直到 ChatGPT re-review ACCEPT WITH SCOPE。**
+8. code/head GitHub Actions ubuntu+windows GREEN。
+9. Truth labels 保持原樣，`fullAutonomousFactoryReady=false`。
+10. **不要進 Phase 301+，直到 ChatGPT re-review ACCEPT WITH SCOPE。**
 
-只做這個 Evidence Integrity fail-closed 修正；不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Physical Product OS。
+只做這個 Evidence Integrity hardening；不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Physical Product OS。
