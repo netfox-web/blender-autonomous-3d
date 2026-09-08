@@ -1,0 +1,191 @@
+"""HTTP API — FastAPI. Admin UI talks to this, never to a Blender GUI."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+
+from fox3d.admin import render_admin
+from fox3d.platform import Platform
+
+_PLATFORM: Platform | None = None
+
+
+def get_platform() -> Platform:
+    global _PLATFORM
+    if _PLATFORM is None:
+        _PLATFORM = Platform(mock_blender=False)
+        _PLATFORM.register_detected_workers()
+    return _PLATFORM
+
+
+def create_app(platform: Platform | None = None) -> FastAPI:
+    app = FastAPI(title="Blender Autonomous 3D / Product R&D Engine", version="0.1.0")
+    if platform is not None:
+        global _PLATFORM
+        _PLATFORM = platform
+
+    def tenant(x_tenant_id: str | None) -> str:
+        if not x_tenant_id:
+            raise HTTPException(400, "X-Tenant-Id required")
+        return x_tenant_id
+
+    @app.get("/health")
+    def health() -> dict[str, Any]:
+        plat = get_platform()
+        probe = plat.probe.to_dict() if plat.probe else {}
+        return {"status": "ok", "probe": probe, "mock": plat.mock_blender}
+
+    @app.get("/")
+    def root() -> RedirectResponse:
+        return RedirectResponse("/admin")
+
+    @app.get("/api/probe")
+    def probe() -> dict[str, Any]:
+        plat = get_platform()
+        if plat.probe is None:
+            plat.register_detected_workers()
+        return plat.probe.to_dict() if plat.probe else {}
+
+    @app.post("/api/3d/jobs")
+    def create_job(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        payload["tenantId"] = tid
+        return get_platform().submit_job(payload)
+
+    @app.get("/api/3d/jobs")
+    def list_jobs(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        plat = get_platform()
+        tid = x_tenant_id
+        return {"items": plat.queue.list(tenant_id=tid) if tid else plat.queue.list()}
+
+    @app.get("/api/3d/jobs/{job_id}")
+    def read_job(job_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        try:
+            return get_platform().get_job(job_id, tenant_id=tenant(x_tenant_id))
+        except (KeyError, PermissionError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/api/3d/jobs/{job_id}/cancel")
+    def cancel_job(job_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        try:
+            return get_platform().cancel_job(job_id, tenant_id=tenant(x_tenant_id))
+        except (KeyError, PermissionError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/assets/{asset_id}")
+    def read_asset(asset_id: str, x_tenant_id: str | None = Header(default=None)) -> FileResponse:
+        plat = get_platform()
+        try:
+            if x_tenant_id:
+                obj = plat.dam.get(asset_id, tenant_id=x_tenant_id)
+            else:
+                obj = plat.dam.get_unchecked(asset_id)
+        except (KeyError, PermissionError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+        path = Path(obj.path)
+        media = "image/png" if path.suffix.lower() == ".png" else "application/octet-stream"
+        return FileResponse(path, media_type=media)
+
+    @app.post("/api/digital-twins")
+    def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().create_twin(payload)
+
+    @app.post("/api/digital-twins/upload")
+    async def upload_twin(
+        sku: str = Form(...),
+        file: UploadFile = File(...),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        data = await file.read()
+        return get_platform().product_e2e(tenant_id=tid, sku=sku, glb_bytes=data)
+
+    @app.get("/api/digital-twins/{twin_id}")
+    def read_twin(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        try:
+            return get_platform().get_twin(twin_id, tenant_id=tenant(x_tenant_id))
+        except (KeyError, PermissionError) as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.post("/api/digital-twins/{twin_id}/preview")
+    def twin_preview(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        plat = get_platform()
+        twin = plat.get_twin(twin_id, tenant_id=tenant(x_tenant_id))
+        return plat.product_e2e(tenant_id=twin["tenantId"], sku=twin["sku"], glb_path=twin.get("glb"))
+
+    @app.post("/api/digital-twins/{twin_id}/360")
+    def twin_360(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return get_platform().product_360_e2e(tenant_id=tenant(x_tenant_id), twin_id=twin_id, frames=36)
+
+    @app.post("/api/parametric/products")
+    def create_parametric(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        plat = get_platform()
+        created = plat.create_parametric(payload)
+        if payload.get("render"):
+            created["render"] = plat.render_parametric(created["spec"]["productId"], tenant_id=payload["tenantId"])
+        return created
+
+    @app.post("/api/parametric/products/{product_id}/resize")
+    def resize_parametric(product_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        plat = get_platform()
+        resized = plat.resize_parametric(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k in {"width", "height", "depth"}})
+        if payload.get("render", True):
+            resized["render"] = plat.render_parametric(resized["spec"]["productId"], tenant_id=resized["spec"]["tenantId"])
+        return resized
+
+    @app.post("/api/parametric/products/{product_id}/variants")
+    def variants(product_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        return get_platform().rd.run(
+            tenant_id=body.get("tenantId") or tenant(x_tenant_id),
+            text=body.get("text") or f"variants for {product_id}",
+            variant_count=int(body.get("count") or 12),
+        )
+
+    @app.post("/api/render/preview")
+    def preview(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().preview(payload)
+
+    @app.post("/api/render/final")
+    def final_render(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().final_render(payload)
+
+    @app.post("/api/product-rd/generate")
+    def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        plat = get_platform()
+        rd = plat.product_rd(tenant_id=tid, text=payload.get("text") or "", variant_count=int(payload.get("variantCount") or 12))
+        if rd.get("baseSpec") and not plat._production_gate():
+            stored = plat.create_parametric({**rd["baseSpec"], "tenantId": tid, "kind": rd["baseSpec"].get("kind")})
+            rd["parametricRender"] = plat.render_parametric(stored["spec"]["productId"], tenant_id=tid)
+        return rd
+
+    @app.post("/api/e2e/smoke")
+    def e2e_smoke() -> dict[str, Any]:
+        return get_platform().real_smoke_test()
+
+    @app.get("/admin", response_class=HTMLResponse)
+    def admin() -> str:
+        return render_admin(get_platform())
+
+    return app
+
+
+def main() -> None:
+    import uvicorn
+
+    print("Autonomous 3D Admin: http://127.0.0.1:8788/admin")
+    print("Health:               http://127.0.0.1:8788/health")
+    uvicorn.run(create_app(), host="127.0.0.1", port=8788, log_level="info")
+
+
+if __name__ == "__main__":
+    main()

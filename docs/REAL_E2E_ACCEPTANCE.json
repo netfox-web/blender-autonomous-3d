@@ -1,0 +1,158 @@
+{
+  "productionReady": true,
+  "probe": {
+    "blender": true,
+    "blenderBinary": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
+    "blenderVersion": "5.2.1",
+    "blenderVersionRaw": "Blender 5.2.1 LTS (hash 9e2066aef7ef built 2026-08-25 02:38:20)\nBlender 5.2.1 LTS\n\tbuild date: 2026-08-25\n\tbuild time: 02:38:20\n\tbuild commit date: 2026-08-24\n\tbuild commit time: 16:50\n\tbuild hash: 9e2066aef7ef\n\tbuild branch: blender-v5.2-release\n\tbuild platform: Windows\n\tbuild type: Release\n\tbuild c flags:  /W3 -Werror=implicit-function-declaration -Werror=return-type -Wno-tautological-compare -Wno-unknown-pragmas -Wno-char-subscripts -Wstrict-prototypes -Wmissing-prototypes -Wunused-parameter -Wundef -Wundef-prefix -Werror=unguarded-availability-new /DWIN32 /D_WINDOWS /MP /nologo /J /Gy /Gd /showFilenames -Wno-unused-command-line-argument -Wno-microsoft-enum-forward-reference /clang:-funsigned-char /clang:-fno-strict-aliasing /clang:-ffp-contract=off -march=x86-64-v2 \n\tbuild c++ flags:  /W3 -Wno-tautological-compare -Wno-unknown-pragmas -Wno-char-subscripts -Wno-overloaded-virtual -Wno-sign-compare -Wno-invalid-offsetof -Wno-suggest-override -Wundef -Wundef-prefix -Wunused-parameter -Wmismatched-tags -Werror=unguarded-availability-new /DWIN32 /D_WINDOWS /EHsc  /Gy /MP /nologo /J /Gd /showFilenames /EHsc -Wno-unused-command-line-argument -Wno-microsoft-enum-forward-reference /clang:-funsigned-char /clang:-fno-strict-aliasing /clang:-ffp-contract=off -march=x86-64-v2 \n\tbuild link flags: /MACHINE:X64  /SUBSYSTEM:CONSOLE /STACK:2097152 /ignore:4049 /ignore:4217 /ignore:4221\n\tbuild system: CMake\n",
+    "cycles": true,
+    "cuda": true,
+    "optix": true,
+    "cyclesDevices": [
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "CUDA"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "CUDA"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "CUDA"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "HIP"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "HIP"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "HIP"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "ONEAPI"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "ONEAPI"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "ONEAPI"
+      }
+    ],
+    "gpus": [
+      {
+        "name": "NVIDIA T1000",
+        "vramGb": 4.0,
+        "driver": "596.86",
+        "gpuIndex": 0
+      }
+    ],
+    "gpuName": "NVIDIA T1000",
+    "vramGb": 4.0,
+    "driver": "596.86",
+    "blocked": [],
+    "realBlender": true,
+    "realGPU": true,
+    "realCycles": true,
+    "realOptix": true
+  },
+  "rows": [
+    {
+      "check": "Blender executable",
+      "status": "REAL",
+      "evidence": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    {
+      "check": "blender --version",
+      "status": "REAL",
+      "evidence": "5.2.1"
+    },
+    {
+      "check": "NVIDIA GPU / VRAM",
+      "status": "REAL",
+      "evidence": "NVIDIA T1000 4.0GB driver=596.86"
+    },
+    {
+      "check": "Cycles devices",
+      "status": "REAL",
+      "evidence": "[{\"name\": \"NVIDIA T1000\", \"type\": \"CUDA\", \"kind\": \"OPTIX\"}, {\"name\": \"Intel Core i9-14900K\", \"type\": \"CPU\", \"kind\": \"OPTIX\"}, {\"name\": \"NVIDIA T1000\", \"type\": \"OPTIX\", \"kind\": \"OPTIX\"}, {\"name\": \"NVIDIA T1000\", \"type\": \"CUDA\", \"kind\": \"CUDA\"}, {\"name\": \"Intel Core i9-14900K\", \"type\": \"CPU\", \"kind\": \"CUDA\"}, {\"name\": \"NVIDIA T1000\", \"type\": \"OPTIX\", \"kind\": \"CUDA\"}, {\"name\": \"NVIDIA T1000\", \"type\": \"CUDA\", \"kind\": \"HIP\"}, {\"name\": \"Intel Core i9-14900K\", \"type\": \"CPU\", \"kind\": \"HIP\"}, {\"name\": \"N"
+    },
+    {
+      "check": "OptiX",
+      "status": "REAL",
+      "evidence": "realOptix=true"
+    },
+    {
+      "check": "REAL_SMOKE_TEST (cube/plane/camera/3-point/Cycles/OptiX/512 PNG)",
+      "status": "REAL",
+      "evidence": "status=completed error=None blender=5.2.1 LTS device=OPTIX mock=False"
+    },
+    {
+      "check": "PRODUCT_E2E WHITE_STUDIO",
+      "status": "REAL",
+      "evidence": "status=completed error=None preview=43f015d5-030c-4012-afa6-e0937b68a235"
+    },
+    {
+      "check": "PRODUCT_360_E2E 36 frames",
+      "status": "REAL",
+      "evidence": "status=completed frames={'frames': ['bb1b0915-b80e-4268-a67a-f8ff12875950', '661d31d3-7bf7-4e7e-b572-b26d0b485bcd', 'b3c196e0-d53d-4e15-b868-576ec3cf53d2', '1d287a8d-cb4d-4a27-863e-c908326b148d', '10554b84-a528-4787-9c8a-1f961b1676d7', '0618024f-3eb2-412a-bb7f-8c55e2eadb4f', 'e699ed5e-65a3-4c50-a78d-2d2c1b4c20ca', '4de0fc1b-968b-4568-8f57-233295f7302e', '33620412-0928-4751-a872-5e9a7a692194', 'ec22fbe1-b814-4cd9-84c5-f90696bb376f', '63d7d6ea-e2b1-4f08-aa18-6d77ab117d4c', '24ab4837-c171-47e3-a91e-eab30feb1896', 'cb87ac87-c325-4c30-8cd6-271c93a38ceb', '81d852ba-937f-43e2-9955-022bcfe50781', '4a109306-5126-4c8e-8616-cc72cc0bd0c0', 'a591b94f-47f0-4d7a-ae22-59f30084dfe5', '425ea145-9ce0-4067-ab77-cbb8762a677f', 'd9c3b418-3187-47a6-97a2-9a8a31c7c7c3', '9e508695-7e84-4a23-874a-0944d6206b2c', '11670ee7-4a02-40ae-a732-5f6ce4c0c574', 'b6b19d43-6b9c-48b0-bef6-d5df1f3000fb', '65ec2673-2608-4e8d-9d29-c167b94437e9', '7da4289b-b035-426c-a848-a509036c4e44', '57766efc-31e0-49ad-bfa3-64fcaca5e4c7', '0e2a6892-b19f-4063-8c70-c406693f050a', '90ff6051-a0a0-4b21-987a-ee47e0d4914c', '5dcb6263-ebbf-42e6-b891-ff3f1f91e1da', '4351314d-dcf5-4cac-ba12-0827a117ed89', '33ad55b5-2c8b-4318-bfdd-58f110355ef7', '53f4b0f1-510a-4d00-96da-52b2249f6a65', 'ef148f98-364b-4b14-9190-4be53d7329bd', '07c916d3-e784-4262-bfc8-029b3dde8072', 'ec876077-e12a-4e34-b3f7-75544bdbb5d5', '3b123b92-a84f-4fb7-9873-463e3d55713b', '71405625-58a6-4961-b5ab-41d30fe8d173', '5d406429-2042-4a15-bf97-55c3879c39e5'], 'beauty.png': 'd8aa2d26-6ac8-4b77-9de6-084e289e60c3', 'turntable.mp4': 'adc8e812-a87c-4e3d-b934-4d47a3ff8b51'}"
+    },
+    {
+      "check": "PARAMETRIC STORAGE_CABINET 800x1800x400",
+      "status": "REAL",
+      "evidence": "hash=c1edaa908b44aa1656158a279bd4dead92bf71f826adbf72a932546db2b78074 job=completed"
+    },
+    {
+      "check": "Cabinet resize 800\u21921200 geometry+BOM sync",
+      "status": "REAL",
+      "evidence": "top800={'partId': 'top', 'partName': 'TOP', 'length': 800.0, 'width': 400.0, 'thickness': 18.0, 'quantity': 1, 'role': 'top', 'edgeBanding': True} top1200={'partId': 'top', 'partName': 'TOP', 'length': 1200.0, 'width': 400.0, 'thickness': 18.0, 'quantity': 1, 'role': 'top', 'edgeBanding': True} bomHashChanged=True"
+    },
+    {
+      "check": "Cabinet resize rebuild render",
+      "status": "REAL",
+      "evidence": "status=completed"
+    },
+    {
+      "check": "Exploded view / assembly placeholders",
+      "status": "REAL",
+      "evidence": "status=completed"
+    },
+    {
+      "check": "NL furniture \u2192 DesignIntent \u2192 validate \u2192 BOM \u2192 cost",
+      "status": "REAL",
+      "evidence": "kind=STORAGE_CABINET width=1200.0 llmDirectManufacturing=false"
+    }
+  ],
+  "note": "MOCK rows are test-only. BLOCKED is not a pass. Do not ship as Production Ready unless REAL_SMOKE_TEST and PRODUCT_E2E are REAL."
+}

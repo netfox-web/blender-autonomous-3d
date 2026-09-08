@@ -1,0 +1,10 @@
+.fox3d-data/
+.fox3d-work/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+.claude/
