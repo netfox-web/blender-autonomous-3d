@@ -25,7 +25,7 @@ RELEASE_STATES = (
     "CANCELLED",
 )
 FORBIDDEN_STATES = frozenset({"LIVE_CNC", "LIVE_LASER", "APPROVED_FOR_PRODUCTION", "APPROVED_FOR_MACHINE"})
-HASH_KEYS = ("engineeringHash", "bomHash", "nestingHash", "packagingHash", "materialSnapshotHash", "costPolicyHash")
+HASH_KEYS = ("engineeringHash", "bomHash", "nestingHash", "packagingHash", "materialSnapshotHash", "costPolicyHash", "qcPlanHash")
 
 FAMILY_STEPS = {
     "KD_FURNITURE": ["panel_cutting", "edge_banding", "drilling_routing", "hardware_prep", "assembly", "surface_inspection", "packaging"],
@@ -172,6 +172,13 @@ class ManufacturingReleaseService:
         missing = [k for k in ("engineeringHash", "bomHash") if not snap.get(k)]
         if missing:
             raise ValueError(f"missing hashes: {missing}")
+        from fox3d.qc import plan_for_family, plan_hash
+
+        plan = plan_for_family(rec.get("productFamily") or "KD_FURNITURE")
+        rec["snapshot"]["qcPlan"] = plan
+        rec["qcPlanHash"] = plan_hash(plan)
+        rec["hashes"]["qcPlanHash"] = rec["qcPlanHash"]
+        rec["snapshot"]["qcPlanHash"] = rec["qcPlanHash"]
         artifacts = self._build_packet(rec)
         self.packets[release_id] = artifacts
         rec["checksumManifest"] = self._checksums(artifacts)
@@ -189,7 +196,14 @@ class ManufacturingReleaseService:
         rec["submittedAt"] = _now()
         return rec
 
-    def approve(self, release_id: str, *, actor: str, audit_hash: str | None = None) -> dict[str, Any]:
+    def approve(
+        self,
+        release_id: str,
+        *,
+        actor: str,
+        audit_hash: str | None = None,
+        expected_release_hash: str | None = None,
+    ) -> dict[str, Any]:
         rec = self.releases[release_id]
         if rec["status"] != "WAITING_APPROVAL":
             raise PermissionError("Human Approval Gate: WAITING_APPROVAL required")
@@ -198,10 +212,15 @@ class ManufacturingReleaseService:
         rec["status"] = "APPROVED_FOR_MANUAL_RELEASE"
         rec["approvedBy"] = actor
         rec["approvedAt"] = _now()
-        rec["approvalAuditHash"] = audit_hash or stable_hash({"actor": actor, "releaseId": release_id, "at": rec["approvedAt"]})
+        rec["releaseHash"] = self._release_hash(rec)
+        if expected_release_hash and expected_release_hash != rec["releaseHash"]:
+            raise PermissionError("approval for release A cannot authorize release B")
+        rec["approvedReleaseHash"] = rec["releaseHash"]
+        rec["approvalAuditHash"] = audit_hash or stable_hash(
+            {"actor": actor, "releaseId": release_id, "releaseHash": rec["releaseHash"], "at": rec["approvedAt"]}
+        )
         rec["immutable"] = True
         rec["frozenCost"] = self._freeze_cost(rec["snapshot"])
-        rec["releaseHash"] = self._release_hash(rec)
         rec["equalsLiveCnc"] = False
         rec["liveMachineControl"] = False
         return rec
@@ -245,6 +264,26 @@ class ManufacturingReleaseService:
 
     def is_stale(self, release_id: str, current: dict[str, Any]) -> bool:
         return bool(self.refresh_stale(release_id, current).get("stale"))
+
+    def diff(self, old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
+        keys = ("engineeringHash", "bomHash", "nestingHash", "packagingHash", "costPolicyHash", "qcPlanHash")
+        changed = {}
+        for k in keys:
+            a, b = old.get(k) or (old.get("hashes") or {}).get(k), new.get(k) or (new.get("hashes") or {}).get(k)
+            if str(a or "") != str(b or ""):
+                changed[k] = {"from": a, "to": b}
+        return {"changed": changed, "unchanged": [k for k in keys if k not in changed]}
+
+    def supersede(self, release_id: str, new_snap: dict[str, Any], *, actor: str, tenant_id: str) -> dict[str, Any]:
+        old = self.releases[release_id]
+        new = self.create(new_snap, tenant_id=tenant_id, created_by=actor, idempotency_key=f"{tenant_id}:supersede:{new_id()}")
+        old["status"] = "SUPERSEDED"
+        old["stale"] = True
+        old["supersededBy"] = new["releaseId"]
+        old["supersededAt"] = _now()
+        new["supersedes"] = old["releaseId"]
+        new["supersedesHash"] = old.get("releaseHash")
+        return {"old": old, "new": new, "diff": self.diff(old, new)}
 
     def packet(self, release_id: str) -> dict[str, str]:
         if release_id not in self.packets:

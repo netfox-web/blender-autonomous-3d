@@ -161,6 +161,16 @@ def render_admin(platform: Any) -> str:
     · API: /api/materials /api/remnants /api/nesting/benchmarks /api/kd/candidates /api/retail/fixtures /api/packaging/structures /api/acrylic/products /api/physical-os/approve /api/readiness /api/kpi /api/commerce/import /api/safety/evaluate
     · KPI {len(getattr(getattr(platform, "release", None), "events", []) or [])} approval events · stale {sum(1 for a in (getattr(getattr(platform, "release", None), "approvals", {}) or {}).values() if a.get("stale"))}
     · LIVE_CNC/LASER blocked · Human Approval Gate</p>
+    <h2>Pilot Reliability / Manufacturing Control Boundary</h2>
+    <p class="note">
+      STRICT_STOCK default · FIXTURE_AUTO_SEED test-only · receipts MANUAL/IMPORTED · shipment SHIPMENT_DRAFT not booked
+      · LIVE_CNC <span class="badge mock">BLOCKED</span>
+      · LIVE_LASER <span class="badge mock">BLOCKED</span>
+      · Vision/Demand <span class="badge mock">MOCK</span>
+      · quotes <span class="badge mock">IMPORTED</span>
+      · OS sandbox <span class="badge mock">PARTIAL</span>
+    </p>
+    <p class="note">API: /api/pilot/console /api/pilot/work-orders /api/pilot/receipts /api/pilot/purchase-requests — tenant header required. No LIVE_CNC/LASER controls.</p>
   </section>
 </body>
 </html>"""

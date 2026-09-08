@@ -9,8 +9,9 @@ from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
-from fox3d.inventory import MaterialLotRegistry, normalize_status
+from fox3d.inventory import MaterialLotRegistry, StockShortage, normalize_status
 from fox3d.mfg_release import FAMILY_STEPS
+from fox3d.qc import plan_for_family, plan_hash
 
 WO_STATES = (
     "DRAFT",
@@ -24,6 +25,19 @@ WO_STATES = (
     "CANCELLED",
 )
 TERMINAL = frozenset({"COMPLETED", "REJECTED", "CANCELLED"})
+STRICT_STOCK = "STRICT_STOCK"
+FIXTURE_AUTO_SEED = "FIXTURE_AUTO_SEED"
+TRANSITIONS = {
+    "DRAFT": frozenset({"RELEASED_FOR_MANUAL_EXECUTION", "CANCELLED"}),
+    "RELEASED_FOR_MANUAL_EXECUTION": frozenset({"MATERIAL_RESERVED", "CANCELLED"}),
+    "MATERIAL_RESERVED": frozenset({"IN_PROGRESS", "PACKING", "QC_HOLD", "CANCELLED", "REJECTED"}),
+    "IN_PROGRESS": frozenset({"IN_PROGRESS", "PACKING", "QC_HOLD", "COMPLETED", "CANCELLED", "REJECTED"}),
+    "QC_HOLD": frozenset({"IN_PROGRESS", "PACKING", "REJECTED", "CANCELLED", "QC_HOLD"}),
+    "PACKING": frozenset({"COMPLETED", "QC_HOLD", "CANCELLED", "REJECTED", "PACKING"}),
+    "COMPLETED": frozenset(),
+    "REJECTED": frozenset(),
+    "CANCELLED": frozenset({"CANCELLED"}),
+}
 
 
 def _now() -> str:
@@ -47,6 +61,7 @@ class WorkOrderService:
         self.orders: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, str] = {}
         self.operations: list[dict[str, Any]] = []
+        self.allocation_policy = STRICT_STOCK
 
     def bind_qc(self, qc: Any) -> None:
         self.qc = qc
@@ -66,8 +81,8 @@ class WorkOrderService:
     ) -> dict[str, Any]:
         if release.get("status") not in {"RELEASED_FOR_MANUAL_EXECUTION", "APPROVED_FOR_MANUAL_RELEASE"}:
             raise PermissionError("work order requires a released/approved manufacturing packet")
-        if release.get("stale") or release.get("status") == "STALE":
-            raise PermissionError("stale release cannot open a work order")
+        if release.get("stale") or release.get("status") in {"STALE", "SUPERSEDED", "CANCELLED"} or release.get("supersededBy"):
+            raise PermissionError("stale/superseded release cannot open a work order")
         batch = batch_id or new_id()
         key = idempotency_key or f"{tenant_id}:{release['releaseHash']}:{batch}"
         if key in self._idem:
@@ -105,11 +120,19 @@ class WorkOrderService:
             "materialReserved": False,
             "liveMachineControl": False,
             "mes": False,
+            "audit": [],
+            "allocationPolicy": None,
         }
+        snap = release.get("snapshot") or {}
+        rec["qcPlan"] = list(snap.get("qcPlan") or plan_for_family(family))
+        rec["qcPlanHash"] = release.get("qcPlanHash") or snap.get("qcPlanHash") or plan_hash(rec["qcPlan"])
+        rec["lineage"]["qcPlanHash"] = rec["qcPlanHash"]
         rec["traveler"] = self._traveler(family)
         rec["workOrderHash"] = stable_hash({k: rec[k] for k in ("tenantId", "releaseHash", "batchId", "quantity")})
+        rec["packingRequired"] = any(s["operation"] == "packaging" or s["operation"] == "packing" for s in rec["traveler"]["steps"])
         self.orders[rec["workOrderId"]] = rec
         self._idem[key] = rec["workOrderId"]
+        self._audit(rec, actor=actor, from_state=None, to="DRAFT", reason="create", key=key)
         return rec
 
     def _traveler(self, family: str) -> dict[str, Any]:
@@ -133,27 +156,34 @@ class WorkOrderService:
     def release_for_execution(self, work_order_id: str, *, actor: str) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
         self._assert_release_fresh(rec)
-        if rec["state"] not in {"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"}:
-            raise PermissionError(rec["state"])
-        rec["state"] = "RELEASED_FOR_MANUAL_EXECUTION"
+        if rec["state"] == "RELEASED_FOR_MANUAL_EXECUTION":
+            return rec
+        self._transition(rec, "RELEASED_FOR_MANUAL_EXECUTION", actor=actor, reason="release")
         rec["releasedBy"] = actor
         return rec
 
-    def reserve_materials(self, work_order_id: str, *, actor: str, tenant_id: str | None = None) -> dict[str, Any]:
+    def reserve_materials(
+        self,
+        work_order_id: str,
+        *,
+        actor: str,
+        tenant_id: str | None = None,
+        allocation_policy: str | None = None,
+    ) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=tenant_id)
         self._assert_release_fresh(rec)
         if rec.get("materialReserved"):
             return rec
+        policy = allocation_policy or self.allocation_policy or STRICT_STOCK
+        if policy not in {STRICT_STOCK, FIXTURE_AUTO_SEED}:
+            raise PermissionError(policy)
         tid = rec["tenantId"]
         release = self._release_of(rec)
         nesting = (release.get("snapshot") or {}).get("nesting") or {}
         sheet_n = max(int(nesting.get("sheetCount") or 1), 1) * int(rec["quantity"])
         material = str(nesting.get("sheetSku") or "PB_18_WHITE")
         thickness = float(nesting.get("thickness") or 18)
-        lots = [l for l in self.lots.list(tenant_id=tid) if int(l.get("remainingSheets") or 0) > 0]
-        if not lots:
-            lot = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=max(sheet_n, 2))
-            lots = [lot]
+        lots = self.lots.list(tenant_id=tid, allocatable=True)
         lot_reservations: list[dict[str, Any]] = []
         remaining = sheet_n
         for lot in lots:
@@ -175,7 +205,21 @@ class WorkOrderService:
             )
             remaining -= take
         if remaining > 0:
+            if policy != FIXTURE_AUTO_SEED:
+                payload = {
+                    "code": "SHORTAGE",
+                    "workOrderId": rec["workOrderId"],
+                    "needed": sheet_n,
+                    "shortBy": remaining,
+                    "available": sheet_n - remaining,
+                    "policy": STRICT_STOCK,
+                    "message": "STRICT_STOCK: insufficient material, no phantom lot",
+                }
+                rec["shortage"] = payload
+                raise StockShortage(payload)
             extra = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=remaining)
+            extra["truthLabel"] = "FIXTURE"
+            extra["allocationPolicy"] = FIXTURE_AUTO_SEED
             item = self.lots.reserve_sheets(
                 extra["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=remaining
             )
@@ -186,6 +230,7 @@ class WorkOrderService:
                     "quantity": remaining,
                     "reservationId": item["reservationId"],
                     "state": "RESERVED",
+                    "truthLabel": "FIXTURE",
                 }
             )
             remaining = 0
@@ -201,9 +246,11 @@ class WorkOrderService:
         rec["lineage"]["materialLots"] = sorted({item["lotId"] for item in lot_reservations})
         rec["lineage"]["remnants"] = remnant_ids
         rec["materialReserved"] = True
-        rec["state"] = "MATERIAL_RESERVED"
+        rec["allocationPolicy"] = policy
+        rec["truthLabel"] = "FIXTURE" if policy == FIXTURE_AUTO_SEED else "REAL"
         rec["reservedBy"] = actor
         rec["reservedAt"] = _now()
+        self._transition(rec, "MATERIAL_RESERVED", actor=actor, reason=f"reserve:{policy}")
         return rec
 
     def start_operation(
@@ -217,15 +264,18 @@ class WorkOrderService:
         tenant_id: str | None = None,
     ) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=tenant_id)
-        self._assert_release_fresh(rec)
+        self._assert_release_fresh(rec, allow_bound_finish=True)
         if rec["state"] in TERMINAL:
             raise PermissionError(rec["state"])
         if rec["state"] in {"DRAFT"}:
             raise PermissionError("not released")
-        if rec["state"] == "RELEASED_FOR_MANUAL_EXECUTION":
-            rec["state"] = "MATERIAL_RESERVED" if rec.get("materialReserved") else rec["state"]
-        if rec["state"] in {"MATERIAL_RESERVED", "QC_HOLD"}:
-            rec["state"] = "IN_PROGRESS"
+        if not rec.get("materialReserved"):
+            raise PermissionError("operation requires material reservation")
+        for existing in rec["ops"]:
+            if existing.get("operation") == operation and existing.get("status") in {"STARTED", "COMPLETED"}:
+                return existing
+        if rec["state"] in {"MATERIAL_RESERVED", "QC_HOLD", "RELEASED_FOR_MANUAL_EXECUTION"}:
+            self._transition(rec, "IN_PROGRESS", actor=actor, reason=f"start:{operation}")
         op = {
             "opId": new_id(),
             "workOrderId": rec["workOrderId"],
@@ -248,6 +298,8 @@ class WorkOrderService:
     def complete_operation(self, work_order_id: str, op_id: str, *, actor: str, notes: str = "") -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
         op = next(o for o in rec["ops"] if o["opId"] == op_id)
+        if op.get("status") == "COMPLETED":
+            return op
         op["completedAt"] = _now()
         op["status"] = "COMPLETED"
         if notes:
@@ -317,33 +369,71 @@ class WorkOrderService:
         rec["consumedBy"] = actor
         return rec
 
+    def consume_one(self, work_order_id: str, reservation_id: str, *, actor: str) -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        item = next((i for i in rec.get("reservations") or [] if i.get("reservationId") == reservation_id), None)
+        if item is None or item.get("kind") != "lot":
+            raise KeyError(reservation_id)
+        if item.get("state") == "CONSUMED":
+            return rec
+        self.lots.consume_reservation(reservation_id, tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"])
+        item["state"] = "CONSUMED"
+        rec["consumed"].append(item)
+        rec["partialConsumed"] = True
+        rec["consumedBy"] = actor
+        return rec
+
     def set_packing(self, work_order_id: str, carton_ids: list[str]) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
-        rec["state"] = "PACKING"
         rec["lineage"]["package"] = list(carton_ids)
         rec["cartonIds"] = list(carton_ids)
+        if rec["state"] not in TERMINAL:
+            self._transition(rec, "PACKING", actor="ops", reason="packing")
         return rec
 
     def complete(self, work_order_id: str, *, actor: str, qc_ok: bool = True) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
-        self._assert_release_fresh(rec)
+        self._assert_release_fresh(rec, allow_bound_finish=True)
+        if rec["state"] == "COMPLETED":
+            return rec
+        if rec["state"] in {"REJECTED"}:
+            raise PermissionError("cannot complete rejected work order")
+        open_ops = [o for o in rec.get("ops") or [] if o.get("status") != "COMPLETED"]
+        needed = [s["operation"] for s in rec.get("traveler", {}).get("steps") or []]
+        done = {o.get("operation") for o in rec.get("ops") or [] if o.get("status") == "COMPLETED"}
+        missing_ops = [op for op in needed if op not in done]
+        if rec.get("ops"):
+            if open_ops:
+                raise PermissionError("open operation blocks completion")
+            if missing_ops:
+                raise PermissionError(f"required operations incomplete: {missing_ops}")
         gate = self._authoritative_qc_gate(rec)
         rec["qcGate"] = gate
+        if rec["state"] == "QC_HOLD" and not gate.get("ok"):
+            raise PermissionError("required QC missing or failed; completion blocked")
         if not gate.get("ok"):
-            rec["state"] = "QC_HOLD"
+            if rec["state"] != "QC_HOLD":
+                self._transition(rec, "QC_HOLD", actor=actor, reason="qc-gate")
             raise PermissionError("required QC missing or failed; completion blocked")
         if not qc_ok:
-            rec["state"] = "QC_HOLD"
+            if rec["state"] != "QC_HOLD":
+                self._transition(rec, "QC_HOLD", actor=actor, reason="caller-qc-flag")
             raise PermissionError("required QC missing or failed; completion blocked")
-        rec["state"] = "COMPLETED"
+        if missing_ops:
+            raise PermissionError(f"required operations incomplete: {missing_ops}")
+        if rec.get("packingRequired") and not rec.get("cartonIds"):
+            raise PermissionError("packing required before completion")
         rec["completedBy"] = actor
         rec["completedAt"] = _now()
+        self._transition(rec, "COMPLETED", actor=actor, reason="complete")
         return rec
 
     def _authoritative_qc_gate(self, rec: dict[str, Any]) -> dict[str, Any]:
         if self.qc is None:
             return {"ok": False, "reason": "NO_QC_AUTHORITY", "missing": ["*"], "failed": []}
-        result = self.qc.required_final_ok(rec["workOrderId"], rec["productFamily"], tenant_id=rec.get("tenantId"))
+        result = self.qc.required_final_ok(
+            rec["workOrderId"], rec["productFamily"], tenant_id=rec.get("tenantId"), plan=rec.get("qcPlan")
+        )
         result = dict(result)
         result["reason"] = None if result.get("ok") else "REQUIRED_FINAL_QC"
         rec["qcGateHash"] = stable_hash(result)
@@ -360,8 +450,10 @@ class WorkOrderService:
         rec = self._require(work_order_id, tenant_id=None)
         if rec["state"] == "CANCELLED":
             return rec
-        if rec["state"] == "COMPLETED":
+        if rec["state"] in {"COMPLETED", "REJECTED"}:
             raise PermissionError("cannot cancel completed")
+        if rec.get("consumedFlag"):
+            rec["consumedFrozen"] = True
         for item in rec.get("reservations") or []:
             if item.get("kind") == "lot" and item.get("state") == "RESERVED":
                 try:
@@ -382,10 +474,10 @@ class WorkOrderService:
                         self.remnants.store.put(rem)
                 except (KeyError, PermissionError):
                     continue
-        rec["state"] = "CANCELLED"
         rec["cancelledBy"] = actor
         rec["cancelledAt"] = _now()
         rec["materialReserved"] = False
+        self._transition(rec, "CANCELLED", actor=actor, reason="cancel")
         return rec
 
     def _require(self, work_order_id: str, tenant_id: str | None) -> dict[str, Any]:
@@ -400,11 +492,36 @@ class WorkOrderService:
         rel = self.releases.get(rec["releaseId"])
         return rel
 
-    def _assert_release_fresh(self, rec: dict[str, Any]) -> None:
+    def _assert_release_fresh(self, rec: dict[str, Any], *, allow_bound_finish: bool = False) -> None:
         if self.releases is None:
             return
         rel = self.releases.get(rec["releaseId"])
-        if rel.get("stale") or rel.get("status") == "STALE":
-            raise PermissionError("stale release cannot progress")
         if rel.get("releaseHash") != rec.get("releaseHash"):
             raise PermissionError("work order releaseHash mismatch")
+        stale = bool(rel.get("stale") or rel.get("status") in {"STALE", "SUPERSEDED"})
+        if stale and allow_bound_finish and rec["state"] in {"MATERIAL_RESERVED", "IN_PROGRESS", "PACKING", "QC_HOLD"}:
+            rec["boundToOriginalRelease"] = True
+            rec["staleReleaseNoted"] = True
+            return
+        if stale:
+            raise PermissionError("stale release cannot progress")
+
+    def _transition(self, rec: dict[str, Any], to: str, *, actor: str, reason: str, key: str | None = None) -> None:
+        frm = rec.get("state")
+        allowed = TRANSITIONS.get(frm, frozenset())
+        if to not in allowed and frm != to:
+            raise PermissionError(f"illegal transition {frm}->{to}")
+        rec["state"] = to
+        self._audit(rec, actor=actor, from_state=frm, to=to, reason=reason, key=key)
+
+    def _audit(self, rec: dict[str, Any], *, actor: str, from_state: str | None, to: str, reason: str, key: str | None = None) -> None:
+        ev = {
+            "actor": actor,
+            "at": _now(),
+            "from": from_state,
+            "to": to,
+            "reason": reason,
+            "idempotencyKey": key,
+        }
+        ev["hash"] = stable_hash(ev)
+        rec.setdefault("audit", []).append(ev)

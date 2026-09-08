@@ -119,7 +119,7 @@ def test_workorder_idempotent_reserve_cancel_and_tenant(platform):
     rel2 = platform.pilot.open_release(platform.kd.build_sku(tenant_id="alpha", kind="DESK_RISER"), tenant_id="alpha", family="KD_FURNITURE")
     wo2 = wo_svc.create(tenant_id="alpha", release=rel2, quantity=1, actor="tester")
     wo_svc.release_for_execution(wo2["workOrderId"], actor="tester")
-    wo_svc.reserve_materials(wo2["workOrderId"], actor="tester", tenant_id="alpha")
+    wo_svc.reserve_materials(wo2["workOrderId"], actor="tester", tenant_id="alpha", allocation_policy="FIXTURE_AUTO_SEED")
     cancelled = wo_svc.cancel(wo2["workOrderId"], actor="tester")
     assert cancelled["state"] == "CANCELLED"
     cancelled2 = wo_svc.cancel(wo2["workOrderId"], actor="tester")
@@ -133,7 +133,7 @@ def test_qc_blocks_and_rework_and_trace(platform):
     rel = platform.pilot.open_release(platform.kd.build_sku(tenant_id="qc1", kind="OPEN_SHELF"), tenant_id="qc1", family="KD_FURNITURE")
     wo = wo_svc.create(tenant_id="qc1", release=rel, quantity=1, actor="qc")
     wo_svc.release_for_execution(wo["workOrderId"], actor="qc")
-    wo_svc.reserve_materials(wo["workOrderId"], actor="qc")
+    wo_svc.reserve_materials(wo["workOrderId"], actor="qc", tenant_id="qc1", allocation_policy="FIXTURE_AUTO_SEED")
     fail = qc.final(
         tenant_id="qc1",
         work_order_id=wo["workOrderId"],
@@ -173,6 +173,7 @@ def test_qc_blocks_and_rework_and_trace(platform):
         operator="qc",
     )
     assert qc.completion_allowed(wo["workOrderId"], "KD_FURNITURE") is True
+    _ops_and_pack(platform, wo["workOrderId"], tenant="qc1")
     wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
     trace = qc.trace(work_order_id=wo["workOrderId"])
     assert trace["releaseHash"] == rel["releaseHash"]
@@ -307,6 +308,23 @@ def test_batch_stress_and_readiness(platform):
     assert base["fullAutonomousFactoryReady"] is False
 
 
+def _ops_and_pack(platform, wo_id: str, *, tenant: str, actor: str = "qc"):
+    wo_svc = platform.pilot.workorders
+    rec = wo_svc.get(wo_id)
+    for step in rec["traveler"]["steps"]:
+        op = wo_svc.start_operation(wo_id, step["operation"], actor=actor)
+        wo_svc.complete_operation(wo_id, op["opId"], actor=actor)
+    cartons = platform.pilot.logistics.instantiate_cartons(
+        tenant_id=tenant,
+        work_order_id=wo_id,
+        batch_id=rec["batchId"],
+        plan={"length": 400, "width": 300, "height": 200},
+        quantity=1,
+        contents=[{"sku": "product", "qty": 1}],
+    )
+    wo_svc.set_packing(wo_id, [c["cartonId"] for c in cartons])
+
+
 def _draft_wo(platform, *, tenant="cons", kind="OPEN_SHELF"):
     product = platform.kd.build_sku(tenant_id=tenant, kind=kind)
     rel = platform.pilot.open_release(product, tenant_id=tenant, family="KD_FURNITURE")
@@ -377,7 +395,7 @@ def test_no_double_consume_negative_regression(platform):
 
 def test_qc_complete_cannot_bypass_required_final(platform):
     wo, _rel, wo_svc = _draft_wo(platform, tenant="qcbypass")
-    wo_svc.reserve_materials(wo["workOrderId"], actor="qc", tenant_id="qcbypass")
+    wo_svc.reserve_materials(wo["workOrderId"], actor="qc", tenant_id="qcbypass", allocation_policy="FIXTURE_AUTO_SEED")
     with pytest.raises(PermissionError):
         wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
     assert wo_svc.get(wo["workOrderId"])["state"] == "QC_HOLD"
@@ -418,6 +436,7 @@ def test_qc_complete_cannot_bypass_required_final(platform):
         unit="mm",
         operator="qc",
     )
+    _ops_and_pack(platform, wo["workOrderId"], tenant="qcbypass")
     wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
     assert wo_svc.get(wo["workOrderId"])["state"] == "COMPLETED"
     wo2, _rel2, _ = _draft_wo(platform, tenant="qcbypass", kind="DESK_RISER")

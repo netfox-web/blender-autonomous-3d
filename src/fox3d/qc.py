@@ -47,6 +47,14 @@ FAMILY_TOLERANCES: dict[str, list[dict[str, Any]]] = {
 }
 
 
+def plan_for_family(family: str) -> list[dict[str, Any]]:
+    return [dict(r) for r in FAMILY_TOLERANCES.get(family, [])]
+
+
+def plan_hash(plan: list[dict[str, Any]] | None) -> str:
+    return stable_hash(plan or [])
+
+
 def _now() -> str:
     return utcnow().isoformat()
 
@@ -63,7 +71,11 @@ class QcService:
         self.defects: dict[str, dict[str, Any]] = {}
 
     def schema(self, family: str) -> list[dict[str, Any]]:
-        return [dict(r) for r in FAMILY_TOLERANCES.get(family, [])]
+        return plan_for_family(family)
+
+    def pin_plan(self, family: str) -> dict[str, Any]:
+        plan = self.schema(family)
+        return {"qcPlan": plan, "qcPlanHash": plan_hash(plan)}
 
     def record(
         self,
@@ -173,8 +185,21 @@ class QcService:
                 wo["state"] = "REJECTED"
         return rec
 
-    def required_final_ok(self, work_order_id: str, family: str, *, tenant_id: str | None = None) -> dict[str, Any]:
-        required = [c["checkId"] for c in self.schema(family) if c.get("requiredFinal")]
+    def required_final_ok(
+        self,
+        work_order_id: str,
+        family: str,
+        *,
+        tenant_id: str | None = None,
+        plan: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        if plan is None and self.workorders is not None:
+            try:
+                plan = self.workorders.get(work_order_id).get("qcPlan")
+            except KeyError:
+                plan = None
+        schema = plan or self.schema(family)
+        required = [c["checkId"] for c in schema if c.get("requiredFinal")]
         wo_tenant = tenant_id
         if wo_tenant is None and self.workorders is not None:
             try:

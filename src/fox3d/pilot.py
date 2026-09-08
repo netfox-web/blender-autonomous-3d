@@ -14,8 +14,10 @@ from fox3d.mfg_release import ManufacturingReleaseService, product_snapshot
 from fox3d.pilot_econ import PilotEconomics
 from fox3d.qc import QcService
 from fox3d.readiness import scoped_readiness
+from fox3d.receipt import ReceivingService
+from fox3d.reliability import ReliabilityHarness
 from fox3d.supplier import SupplierQuoteService
-from fox3d.workorder import WorkOrderService
+from fox3d.workorder import FIXTURE_AUTO_SEED, WorkOrderService
 
 PILOT_FAMILIES = ("KD_FURNITURE", "RETAIL_FIXTURE", "PACKAGING_STRUCTURE", "ACRYLIC_SHEET")
 
@@ -58,6 +60,8 @@ class PilotOps:
         self.workorders.bind_qc(self.qc)
         self.logistics = LogisticsService()
         self.econ = PilotEconomics()
+        self.receiving = ReceivingService(lots=platform.lots)
+        self.reliability = ReliabilityHarness(self)
 
     def build_product(self, *, tenant_id: str, family: str, kind: str, render: bool = False) -> dict[str, Any]:
         if family == "KD_FURNITURE":
@@ -92,7 +96,9 @@ class PilotOps:
         verify = self.releases.verify(rel["releaseId"])
         wo = self.workorders.create(tenant_id=tenant_id, release=rel, quantity=1, actor=actor)
         self.workorders.release_for_execution(wo["workOrderId"], actor=actor)
-        self.workorders.reserve_materials(wo["workOrderId"], actor=actor, tenant_id=tenant_id)
+        self.workorders.reserve_materials(
+            wo["workOrderId"], actor=actor, tenant_id=tenant_id, allocation_policy=FIXTURE_AUTO_SEED
+        )
         ops = []
         for step in (wo["traveler"]["steps"]):
             op = self.workorders.start_operation(wo["workOrderId"], step["operation"], actor=actor)
@@ -135,6 +141,9 @@ class PilotOps:
             quantity=1,
             contents=[{"sku": "product", "qty": 1}],
             expected_weight_kg=float(((product.get("weight") or {}).get("grossKg") or 8)),
+            release_hash=rel["releaseHash"],
+            product_version=rel.get("productVersion"),
+            lot_ids=wo.get("lineage", {}).get("materialLots") or [],
         )
         self.workorders.set_packing(wo["workOrderId"], [c["cartonId"] for c in cartons])
         qc_ok = self.qc.completion_allowed(wo["workOrderId"], family)
@@ -433,6 +442,8 @@ class PilotOps:
         matrix["liveFactoryExecutionReady"] = False
         matrix["liveProviderReady"] = False
         matrix["globalProductionReady"] = False
+        matrix["pilotReliabilityReady"] = _flag("reliability")
+        matrix["strictStockReady"] = _flag("strictStock")
         matrix["fullAutonomousFactoryReady"] = False
         matrix["labels"] = {
             **(matrix.get("labels") or {}),
@@ -445,5 +456,74 @@ class PilotOps:
             "liveProviderReady": "BLOCKED",
             "globalProductionReady": "BLOCKED",
             "fullAutonomousFactoryReady": "BLOCKED",
+            "pilotReliabilityReady": _label(matrix["pilotReliabilityReady"], "FIXTURE"),
+            "strictStockReady": _label(matrix["strictStockReady"], "REAL"),
         }
         return matrix
+
+    def console(self, *, tenant_id: str) -> dict[str, Any]:
+        lots = []
+        for lot in self.workorders.lots.list(tenant_id=tenant_id):
+            q = self.workorders.lots.quantities(lot["lotId"], tenant_id=tenant_id)
+            lots.append(
+                {
+                    **q,
+                    "quarantined": bool(lot.get("quarantined")),
+                    "material": lot.get("material"),
+                    "truthLabel": lot.get("truthLabel") or lot.get("receiptSource") or "CONFIG",
+                }
+            )
+        wos = []
+        for wo in self.workorders.orders.values():
+            if wo.get("tenantId") != tenant_id:
+                continue
+            wos.append(
+                {
+                    "workOrderId": wo["workOrderId"],
+                    "state": wo["state"],
+                    "releaseHash": wo.get("releaseHash"),
+                    "materialReserved": wo.get("materialReserved"),
+                    "openOps": [o["operation"] for o in wo.get("ops") or [] if o.get("status") != "COMPLETED"],
+                    "qcHold": wo.get("state") == "QC_HOLD",
+                    "packing": wo.get("cartonIds") or [],
+                    "allocationPolicy": wo.get("allocationPolicy"),
+                    "truthLabel": wo.get("truthLabel") or "REAL",
+                }
+            )
+        releases = []
+        for rel in self.releases.releases.values():
+            if rel.get("tenantId") != tenant_id:
+                continue
+            releases.append(
+                {
+                    "releaseId": rel["releaseId"],
+                    "status": rel["status"],
+                    "stale": bool(rel.get("stale")),
+                    "supersededBy": rel.get("supersededBy"),
+                    "releaseHash": rel.get("releaseHash"),
+                    "approvedReleaseHash": rel.get("approvedReleaseHash"),
+                    "qcPlanHash": rel.get("qcPlanHash"),
+                }
+            )
+        return {
+            "tenantId": tenant_id,
+            "lots": lots,
+            "workOrders": wos,
+            "releases": releases,
+            "receipts": [r for r in self.receiving.receipts.values() if r.get("tenantId") == tenant_id],
+            "purchaseRequests": [r for r in self.receiving.requests.values() if r.get("tenantId") == tenant_id],
+            "shipments": list(self.logistics.shipments.values()),
+            "qcRework": [d for d in self.qc.defects.values() if d.get("tenantId") == tenant_id],
+            "liveCnc": False,
+            "liveLaser": False,
+            "liveMachineControl": False,
+            "badges": {
+                "LIVE_CNC": "BLOCKED",
+                "LIVE_LASER": "BLOCKED",
+                "Vision": "MOCK",
+                "Demand": "MOCK",
+                "quotes": "IMPORTED",
+                "receipts": "MANUAL/IMPORTED",
+                "sandbox": "PARTIAL",
+            },
+        }

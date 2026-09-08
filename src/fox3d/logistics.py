@@ -38,6 +38,9 @@ class LogisticsService:
         contents: list[dict[str, Any]] | None = None,
         expected_weight_kg: float = 8.0,
         idempotency_key: str | None = None,
+        release_hash: str | None = None,
+        product_version: Any = None,
+        lot_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         key = idempotency_key or f"{tenant_id}:{work_order_id}:{batch_id}"
         if key in self._idem:
@@ -62,6 +65,9 @@ class LogisticsService:
                     "truthLabel": "EXPECTED",
                 },
                 "measured": None,
+                "releaseHash": release_hash,
+                "productVersion": product_version,
+                "lotIds": list(lot_ids or []),
                 "createdAt": _now(),
             }
             rec["cartonHash"] = stable_hash({k: rec[k] for k in rec if k not in {"cartonId", "cartonHash"}})
@@ -111,6 +117,25 @@ class LogisticsService:
     def contents_conserved(self, *, work_order_id: str, expected_qty: float, sku: str = "product") -> bool:
         lst = self.packing_list(work_order_id=work_order_id)
         return abs(float(lst["batchTotal"].get(sku) or 0) - float(expected_qty)) < 1e-6
+
+    def pack_completeness(self, *, work_order_id: str, expected_qty: float, sku: str = "product") -> dict[str, Any]:
+        lst = self.packing_list(work_order_id=work_order_id)
+        got = float(lst["batchTotal"].get(sku) or 0)
+        delta = got - float(expected_qty)
+        ok = abs(delta) < 1e-6
+        code = "ok"
+        if delta < -1e-6:
+            code = "shortage"
+        elif delta > 1e-6:
+            code = "duplicate"
+        return {
+            "ok": ok,
+            "code": code,
+            "expected": expected_qty,
+            "recorded": got,
+            "shipmentReady": ok,
+            "workOrderId": work_order_id,
+        }
 
     def dim_weight(self, dims: dict[str, Any], *, divisor: float = DIM_DIVISOR) -> dict[str, Any]:
         l, w, h = float(dims["length"]), float(dims["width"]), float(dims["height"])
@@ -193,11 +218,29 @@ class LogisticsService:
             "cartonIds": list(carton_ids),
             "pieces": len(cartons),
             "submittedToCarrier": False,
+            "booked": False,
+            "shipped": False,
+            "status": "SHIPMENT_DRAFT",
             "providerNeutral": True,
             "createdAt": _now(),
         }
         rec["requestHash"] = stable_hash({k: rec[k] for k in rec if k not in {"shipmentId", "requestHash"}})
+        idem = f"{origin}:{destination}:{','.join(carton_ids)}:{service}"
+        if idem in self._idem:
+            sid = self._idem[idem][0] if isinstance(self._idem[idem], list) else self._idem[idem]
+            if sid in self.shipments:
+                return self.shipments[sid]
+        self._idem[idem] = [rec["shipmentId"]]
         self.shipments[rec["shipmentId"]] = rec
+        return rec
+
+    def shipment_draft(self, *, origin: str, destination: str, carton_ids: list[str], service: str = "ground") -> dict[str, Any]:
+        rec = self.shipping_request(origin=origin, destination=destination, carton_ids=carton_ids, service=service)
+        rec["submittedToCarrier"] = False
+        rec["booked"] = False
+        rec["shipped"] = False
+        rec["status"] = "SHIPMENT_DRAFT"
+        rec["liveCarrier"] = False
         return rec
 
     def import_carrier_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:

@@ -99,6 +99,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
             "fullAutonomousFactoryReady": False,
             "liveFactoryExecutionReady": False,
         }
+        stress = data.get("stress") or {"label": "FIXTURE", "workOrderCount": 0, "operationTransitions": 0}
         rows.extend(data.get("rows") or [])
     else:
         plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
@@ -114,9 +115,12 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
             add(f"{fam['family']} WO COMPLETED", "REAL" if fam["workOrderState"] == "COMPLETED" else "PARTIAL", fam["workOrderState"])
 
         quotes = plat.pilot.supplier_fixture(plat.pilot.releases.get(four["families"][0]["releaseId"]))
-        add("supplier quotes imported", "REAL", f"n={len(quotes['quotes'])} source=IMPORTED")
+        add("supplier quote import/compare logic", "REAL", f"n={len(quotes['quotes'])} parser=REAL")
+        add("supplier quote business data", "IMPORTED", "IMPORTED snapshots, not LIVE_PROVIDER")
         add("supplier compare stale", "REAL" if quotes["staleOnReleaseChange"] else "PARTIAL", str(quotes["staleOnReleaseChange"]))
-        add("FX source", quotes["fxSource"], quotes["fxSource"])
+        add("FX business data", "MANUAL", quotes["fxSource"])
+        stress = plat.pilot.reliability.run(tenant_id="pilot-real-fix", n_orders=50)
+        add("reliability fixture stress", "FIXTURE", f"wo={stress['workOrderCount']} ops={stress['operationTransitions']} oversell={not stress['noOversell']}")
 
         log = plat.pilot.logistics
         carrier = log.import_carrier_quote({"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000}, source="IMPORTED")
@@ -144,6 +148,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
                 "supplierQuotes": True,
                 "carrierQuotes": True,
                 "coreRender": probe.realBlender,
+                "reliability": stress.get("noOversell") and stress.get("materialConserved"),
+                "strictStock": True,
             }
         )
         add("liveFactoryExecutionReady", "BLOCKED", str(ready["liveFactoryExecutionReady"]))
@@ -215,11 +221,21 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
                 "traces": [fam.get("trace", {}).get("workOrderId") for fam in four["families"]],
             }
         ),
+        "PILOT_RELIABILITY_ACCEPTANCE": stamp(
+            {
+                "domain": "pilot-reliability",
+                "label": "FIXTURE",
+                "stress": stress,
+                "rows": [r for r in rows if "reliability" in r["check"] or r["status"] in {"FIXTURE", "IMPORTED", "MANUAL"}],
+                "note": "FIXTURE stress is not factory throughput. Supplier/carrier data remains IMPORTED/MANUAL.",
+            }
+        ),
     }
     artifacts = {f"{name}.json": json.dumps(payload, indent=2, default=str) for name, payload in payloads.items()}
     artifacts["MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md"] = _md("MANUFACTURING_RELEASE_REAL_ACCEPTANCE", mfg_rows, generated)
     artifacts["PILOT_OPERATIONS_ACCEPTANCE.md"] = _md("PILOT_OPERATIONS_ACCEPTANCE", ops_rows, generated)
     artifacts["QC_TRACEABILITY_ACCEPTANCE.md"] = _md("QC_TRACEABILITY_ACCEPTANCE", qc_rows, generated)
+    artifacts["PILOT_RELIABILITY_ACCEPTANCE.md"] = _md("PILOT_RELIABILITY_ACCEPTANCE", [r for r in rows if r["status"] in {"FIXTURE", "IMPORTED", "MANUAL", "BLOCKED"} or "reliability" in r["check"]], generated)
 
     publish = {"ok": False, "published": []}
     if required_ok:

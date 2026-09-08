@@ -252,12 +252,21 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/materials/lots")
     def create_lot(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = payload.get("tenantId") or tenant(x_tenant_id)
-        return get_platform().lots.create(
+        if str(payload.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
+            raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
+        return get_platform().pilot.receiving.import_receipt(
+            {
+                "material": str(payload.get("material") or "WOOD_WHITE"),
+                "thickness": float(payload.get("thickness") or 18),
+                "quantity": int(payload.get("sheetCount") or payload.get("quantity") or 1),
+                "supplierLot": payload.get("supplierLot"),
+                "supplierId": payload.get("supplierId"),
+                "unitCost": payload.get("costPerSheet") or payload.get("unitCost"),
+            },
             tenant_id=tid,
-            material=str(payload.get("material") or "WOOD_WHITE"),
-            thickness=float(payload.get("thickness") or 18),
-            supplier_lot=payload.get("supplierLot"),
-            sheet_count=int(payload.get("sheetCount") or 1),
+            actor=str(payload.get("actor") or "api"),
+            source=str(payload.get("source") or "MANUAL"),
+            idempotency_key=payload.get("idempotencyKey"),
         )
 
     @app.get("/api/remnants")
@@ -383,6 +392,54 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         from fox3d.rdloop import kpi_read_model
 
         return kpi_read_model(get_platform())
+
+    @app.get("/api/pilot/console")
+    def pilot_console(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return get_platform().pilot.console(tenant_id=tenant(x_tenant_id))
+
+    @app.get("/api/pilot/work-orders")
+    def pilot_work_orders(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = [wo for wo in get_platform().pilot.workorders.orders.values() if wo.get("tenantId") == tid]
+        return {"items": items, "liveMachineControl": False}
+
+    @app.post("/api/pilot/work-orders/{work_order_id}/reserve")
+    def pilot_reserve(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        if str(body.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
+            raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
+        try:
+            return get_platform().pilot.workorders.reserve_materials(
+                work_order_id,
+                actor=str(body.get("actor") or "api"),
+                tenant_id=tenant(x_tenant_id),
+                allocation_policy="STRICT_STOCK",
+            )
+        except PermissionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/pilot/receipts")
+    def pilot_receipt(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().pilot.receiving.import_receipt(
+            payload,
+            tenant_id=tid,
+            actor=str(payload.get("actor") or "api"),
+            source=str(payload.get("source") or "IMPORTED"),
+            idempotency_key=payload.get("idempotencyKey"),
+        )
+
+    @app.post("/api/pilot/purchase-requests")
+    def pilot_pr(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().pilot.receiving.draft_purchase_request(
+            tenant_id=tid,
+            material=str(payload.get("material") or "PB_18_WHITE"),
+            quantity=int(payload.get("quantity") or 1),
+            actor=str(payload.get("actor") or "api"),
+            shortage=payload.get("shortage"),
+            release_hash=payload.get("releaseHash"),
+        )
 
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
