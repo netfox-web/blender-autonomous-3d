@@ -14,6 +14,7 @@ No second millimetre source of truth in Blender.
 | Cost from BOM | REAL | Material/Hardware/Processing/Assembly/Packaging/Shipping; no payment |
 | Door / drawer / hinge / handle | REAL | components + hardware list; collision via Rule Engine |
 | Exploded preview | REAL | `render_parametric(..., explode=True)` completed on Blender 5.2.1 OptiX |
+| Assembly animation MP4 | REAL | Blender PNG sequence muxed with ffmpeg (`docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md`) |
 | NL 120×180×40cm 雙門 4層 | REAL | DesignIntent mm 1200/1800/400; `llmMayNotSetMillimetresDirectly=true` |
 | CNC live control | BLOCKED | CAD/CAM/CNC/Nesting adapters emit ManufacturingManifest only; `liveMachineControl=false` |
 | Vision Judge live model | MOCK | heuristic scores; Rule Engine remains engineering authority |

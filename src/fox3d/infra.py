@@ -372,9 +372,13 @@ class AIGateway:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
         self._video_adapters: dict[str, Callable[..., dict[str, Any]]] = {}
+        self._vision_adapters: dict[str, Callable[..., dict[str, Any]]] = {}
 
     def register_video_adapter(self, name: str, fn: Callable[..., dict[str, Any]]) -> None:
         self._video_adapters[name] = fn
+
+    def register_vision_adapter(self, name: str, fn: Callable[..., dict[str, Any]]) -> None:
+        self._vision_adapters[name] = fn
 
     def generate_video(self, *, adapter: str | None, request: dict[str, Any]) -> dict[str, Any]:
         name = adapter or next(iter(self._video_adapters), "mock")

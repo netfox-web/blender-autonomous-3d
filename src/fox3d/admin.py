@@ -144,6 +144,12 @@ def render_admin(platform: Any) -> str:
     </p>
     <h2>Digital Twins</h2>
     {''.join(twin_cards) or '<p class="note">no twins</p>'}
+    <h2>Furniture Factory</h2>
+    <p class="note">Spaces {len(getattr(getattr(platform, "factory", None), "spaces", {}) or {})}
+    · Assemblies {len(getattr(getattr(platform, "factory", None), "assemblies", {}) or {})}
+    · Quotes {len(getattr(getattr(platform, "factory", None), "quotes", {}) or {})}
+    · Runs {len(getattr(getattr(platform, "factory", None), "runs", {}) or {})}
+    · LIVE_CNC blocked · Human Approval Gate</p>
     <p class="note">Production acceptance 必須 realBlender / realGPU / realCycles / realOptix / realRenderOutput。Mock 僅限 automated tests。</p>
   </section>
 </body>

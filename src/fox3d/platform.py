@@ -50,8 +50,9 @@ from fox3d.ops import (
     qa_or_retry,
 )
 from fox3d.packaging import PackagingEngine
+from fox3d.factory import FurnitureFactory
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
-from fox3d.rd import ProductRDAgent, VisionJudge
+from fox3d.rd import GatewayVisionProvider, ProductRDAgent, VisionJudge
 from fox3d.recipes import BlenderRecipeResearchAgent, RecipeIntelligence
 from fox3d.scene import SceneDSL, compile_scene_graph
 from fox3d.space import SpacePipeline
@@ -86,8 +87,9 @@ class Platform:
         self.cnc = CNCAdapter()
         self.nesting = NestingAdapter()
         self.spaces = SpacePipeline()
-        self.judge = VisionJudge()
+        self.judge = VisionJudge(GatewayVisionProvider(self.gateway))
         self.rd = ProductRDAgent(self.cabinets, self.cost, self.judge, self.studio)
+        self.factory = FurnitureFactory(self)
         self.p360 = Product360Engine()
         self.ar = ARExporter()
         self.synthetic = SyntheticFactory()
@@ -323,7 +325,7 @@ class Platform:
                 twin = self.twins.get(job["assetId"], tenant_id=job["tenantId"]).model_dump()
             except Exception:
                 twin = None
-        if not job.get("sceneGraph") and not job.get("smokeTest") and not job.get("engineering"):
+        if not job.get("sceneGraph") and not job.get("smokeTest") and not job.get("engineering") and not job.get("space"):
             job["sceneGraph"] = compile_scene_graph(dsl, product=twin)
 
         flag = cancel_flag or threading.Event()
@@ -737,6 +739,9 @@ class Platform:
             result["approval"]["HUMAN_APPROVAL_REQUIRED"] = True
         return result
 
+    def furniture_factory_run(self, *, tenant_id: str, render: bool = False, **kwargs: Any) -> dict[str, Any]:
+        return self.factory.run(tenant_id=tenant_id, render=render, **kwargs)
+
     def packaging_twin(self, *, tenant_id: str, template: str, sku: str, artwork_bytes: bytes | None = None) -> dict[str, Any]:
         """Same Digital Twin store — not a second twin architecture."""
         pkg = self.packaging.build(tenant_id=tenant_id, template=template, sku=sku)
@@ -825,19 +830,27 @@ class Platform:
                 "assetId": twin.twinId,
                 "glbPath": twin.glb,
                 "passes": True,
+                "aovs": True,
                 "render": {"width": 256, "height": 256, "engine": "CYCLES", "device": "OPTIX", "samples": 8},
                 "timeoutSeconds": 600,
             }
         )
         result = self.execute_job(job)
         files = (result.get("output") or {}).get("files") or {}
+        produced = ["RGB"]
+        if files.get("mask.png"):
+            produced.append("mask")
+        for name, key in (("depth", "depth.png"), ("normal", "normal.png"), ("segmentation", "seg.png")):
+            if files.get(key):
+                produced.append(name)
         manifest = {
             "jobId": result.get("jobId"),
             "twinId": twin.twinId,
-            "produced": ["RGB"] + (["mask"] if files.get("mask.png") else []),
-            "notProducedThisRun": [p for p in ["depth", "normal", "segmentation"] if p not in {"RGB", "mask"}],
+            "produced": produced,
+            "notProducedThisRun": [p for p in ["depth", "normal", "segmentation", "mask"] if p not in produced],
             "files": files,
             "realBlender": result.get("realBlender"),
+            "aovLabel": "REAL" if result.get("realBlender") and {"depth", "normal", "segmentation"} <= set(produced) else ("MOCK" if self.mock_blender else "PARTIAL"),
         }
         blob = __import__("json").dumps(manifest, default=str).encode("utf-8")
         stored = self.dam.put(tenant_id=tenant_id, kind="synthetic_manifest", name="manifest.json", data=blob)

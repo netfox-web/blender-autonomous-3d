@@ -77,6 +77,29 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 - Vision Judge is heuristic (**MOCK** for the vision-model slice only).
 - Live CNC is forbidden this round (**correct**).
 
+## Phase 71–120 Autonomous Furniture Factory (this round)
+
+| Phase | Status | Notes |
+|---|---|---|
+| 71 Product type registry | REAL | 8 types + geometry/BOM tests |
+| 72–78 Modules | REAL | partitions, open/closed, hinged/double/drawer/open bay, toe-kick/legs/plinth, fillers |
+| 79–80 MultiCabinet + hash | REAL | factory 2-cabinet assembly; hash lineage |
+| 81–85 Space schema | REAL manual JSON; photogrammetry MOCK | walls origin/direction, keep-outs |
+| 86–89 Solver | REAL | 3 legal layouts; door/window/column reject |
+| 90 Space preview | REAL | Blender 5.2.1 OptiX job completed |
+| 91–95 Rules + hardware | REAL | placeholders not structural cert; vendor-neutral IDs |
+| 96–100 Manifests + gate | REAL / LIVE_CNC BLOCKED | WAITING_APPROVAL |
+| 101–107 Nesting | REAL | guillotine, grain, kerf/trim, SVG/DXF interface |
+| 108–110 Quote | REAL | stale on hash change |
+| 111–114 NL / variants | REAL | DISPLAY_CABINET; UNKNOWN/NEEDS_INPUT |
+| 115–116 Vision | MOCK | Provider interface; engineering veto |
+| 117–119 Factory API | REAL | `/api/factory/*` on existing Admin |
+| 120 Acceptance | REAL | `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` |
+| Assembly MP4 | REAL | ffmpeg mux |
+| Cycles AOV | REAL | Blender 5 compositing_node_group |
+| AI Video | MOCK | no live adapter |
+| OS sandbox | PARTIAL | not a full OS jail |
+
 ## Do not redo
 
 Blender discovery, OptiX probe, smoke render, WHITE_STUDIO, 360, DAM, parametric geometry/BOM/cost/NL, production no-mock-fallback.

@@ -172,6 +172,47 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def e2e_smoke() -> dict[str, Any]:
         return get_platform().real_smoke_test()
 
+    @app.get("/api/factory/product-types")
+    def factory_types() -> dict[str, Any]:
+        return {"items": get_platform().factory.types.list()}
+
+    @app.post("/api/factory/spaces")
+    def factory_space(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().factory.create_space(payload).model_dump(mode="json")
+
+    @app.post("/api/factory/run")
+    def factory_run(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().furniture_factory_run(
+            tenant_id=tid,
+            space=payload.get("space"),
+            wall_name=payload.get("wallName") or "N",
+            product_types=payload.get("productTypes"),
+            text=payload.get("text"),
+            render=bool(payload.get("render")),
+        )
+
+    @app.get("/api/factory/quotes/{quote_id}")
+    def factory_quote(quote_id: str) -> dict[str, Any]:
+        rec = get_platform().factory.quotes.get(quote_id)
+        if not rec:
+            raise HTTPException(404, quote_id)
+        return rec
+
+    @app.post("/api/factory/quotes/{quote_id}/approve")
+    def factory_quote_approve(quote_id: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        plat = get_platform()
+        body = payload or {}
+        for run_id, run in plat.factory.runs.items():
+            if (run.get("quote") or {}).get("quoteId") == quote_id:
+                return plat.factory.approve(run_id, actor=str(body.get("actor") or "human"))
+        raise HTTPException(404, quote_id)
+
+    @app.post("/api/factory/products/{product_id}/revise")
+    def factory_revise(product_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return get_platform().factory.revise_cabinet(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k != "tenantId"})
+
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
         return render_admin(get_platform())

@@ -98,6 +98,16 @@ class CabinetSpec(ParametricProduct):
     plinthHeight: float = 0
     handles: bool = True
     handleStyle: str = "bar"
+    modules: list[dict[str, Any]] = Field(default_factory=list)
+    toeKickHeight: float = 0
+    topFillerHeight: float = 0
+    sideFillerWidth: float = 0
+    wallClearance: float = 0
+    openingStyle: str = "hinged"
+    parentProductId: str | None = None
+    revision: int = 1
+    verticalPartitions: int | None = None
+    horizontalPartitions: int = 0
 
     def to_product(self) -> ParametricProduct:
         data = self.model_dump()
@@ -166,10 +176,26 @@ class EngineeringRuleEngine:
             # Full-height doors swinging through a drawer bank on a short carcass.
             if spec.doorCount and spec.drawerCount and spec.shelfCount == 0 and spec.height < 400:
                 v.append(RuleViolation(code="DRAWER_COLLISION", message="drawers collide with door opening on a short carcass"))
+            v.append(
+                RuleViolation(
+                    code="DRAWER_EXTENSION",
+                    message="drawer full-extension needs front clearance ≥ drawer-box depth; geometric placeholder only",
+                    severity="warning",
+                    field="depth",
+                )
+            )
         if spec.shelfCount:
             limit = {15: 600, 16: 700, 18: 800, 25: 1000, 30: 1200}.get(int(t), 800)
             if bay_span > limit:
                 v.append(RuleViolation(code="SHELF_SPAN", message=f"shelf span {bay_span:.0f}mm exceeds {limit}mm for {t}mm board — add a divider", field="width"))
+            v.append(
+                RuleViolation(
+                    code="SHELF_LOAD_PLACEHOLDER",
+                    message="shelf span check is geometric only; not a structural certification",
+                    severity="warning",
+                    field="shelfCount",
+                )
+            )
         if spec.backPanel and spec.backThickness < 3:
             v.append(RuleViolation(code="BACK_PANEL", message="back panel thinner than 3mm"))
         # Hardware space: hinge cup 12mm + overlay.
@@ -196,6 +222,13 @@ class EngineeringRuleEngine:
             need = tv_width_mm(float(tv_inch)) + 200
             if spec.width < need:
                 v.append(RuleViolation(code="TV_WIDTH", message=f"cabinet width {spec.width}mm < TV {tv_inch}\" + margins ({need:.0f}mm)"))
+        try:
+            from fox3d.manufacturing import HardwareRegistry
+
+            for issue in HardwareRegistry().compatibility(spec):
+                v.append(RuleViolation(code=str(issue["code"]), message=str(issue["message"]), severity=issue.get("severity") or "error"))
+        except Exception:
+            pass
         errors = [x for x in v if x.severity == "error"]
         return EngineeringReport(ok=len(errors) == 0, violations=v)
 
@@ -230,11 +263,25 @@ class CabinetEngine:
             handles=bool(defaults.get("handles", True)),
             material=str(defaults.get("material") or "particle_board"),
             metadata=dict(defaults.get("metadata") or {}),
+            toeKickHeight=float(defaults.get("toeKickHeight") or 0),
+            topFillerHeight=float(defaults.get("topFillerHeight") or 0),
+            sideFillerWidth=float(defaults.get("sideFillerWidth") or 0),
+            wallClearance=float(defaults.get("wallClearance") or 0),
+            openingStyle=str(defaults.get("openingStyle") or "hinged"),
+            verticalPartitions=defaults.get("verticalPartitions"),
+            horizontalPartitions=int(defaults.get("horizontalPartitions") or 0),
         )
-        spec.constraints["bays"] = _bay_count(spec.width - 2 * spec.boardThickness, 800)
+        inner_w = spec.width - 2 * spec.boardThickness
+        if spec.verticalPartitions is not None:
+            spec.constraints["bays"] = max(1, int(spec.verticalPartitions) + 1)
+        else:
+            spec.constraints["bays"] = _bay_count(inner_w, 800)
         spec.components = self._components(spec)
         spec.hardware = self._hardware(spec)
         spec.connections = self._connections(spec)
+        from fox3d.furniture import sync_modules
+
+        sync_modules(spec)
         report = self.rules.validate(spec)
         return spec, report
 
@@ -242,16 +289,31 @@ class CabinetEngine:
         data = spec.model_dump()
         data.update({k: v for k, v in dims.items() if v is not None})
         data["productId"] = new_id()
+        data["modules"] = []
+        data["parentProductId"] = spec.productId
+        data["revision"] = int(getattr(spec, "revision", 1) or 1) + 1
         nxt = CabinetSpec.model_validate(data)
+        inner_w = nxt.width - 2 * nxt.boardThickness
+        if nxt.verticalPartitions is not None:
+            nxt.constraints["bays"] = max(1, int(nxt.verticalPartitions) + 1)
+        else:
+            nxt.constraints["bays"] = _bay_count(inner_w, 800)
         nxt.components = self._components(nxt)
         nxt.hardware = self._hardware(nxt)
         nxt.connections = self._connections(nxt)
+        from fox3d.furniture import sync_modules
+
+        sync_modules(nxt)
         return nxt, self.rules.validate(nxt)
 
     def _components(self, spec: CabinetSpec) -> list[dict[str, Any]]:
         t = spec.boardThickness
         inner_w = spec.width - 2 * t
-        bays = _bay_count(inner_w, 800)
+        if spec.verticalPartitions is not None:
+            bays = max(1, int(spec.verticalPartitions) + 1)
+        else:
+            bays = _bay_count(inner_w, 800)
+        spec.constraints["bays"] = bays
         parts = [
             _panel("L_SIDE", spec.height, spec.depth, t, "left"),
             _panel("R_SIDE", spec.height, spec.depth, t, "right"),
@@ -263,9 +325,10 @@ class CabinetEngine:
         if spec.backPanel:
             parts.append(_panel("BACK", spec.width - 2 * t, spec.height - 2 * t, spec.backThickness, "back"))
         if spec.shelfCount:
-            usable_h = spec.height - 2 * t - spec.plinthHeight - spec.drawerCount * 180
             for i in range(spec.shelfCount):
                 parts.append(_panel(f"SHELF_{i+1}", inner_w, spec.depth - 20, t, "shelf"))
+        for i in range(int(spec.horizontalPartitions or 0)):
+            parts.append(_panel(f"H_PARTITION_{i+1}", inner_w, spec.depth - 20, t, "h_partition"))
         if spec.doorCount:
             door_w = spec.width / spec.doorCount
             door_h = spec.height - spec.plinthHeight
@@ -277,7 +340,16 @@ class CabinetEngine:
                 parts.append(_panel(f"DRAWER_BOX_{i+1}", spec.depth - 40, inner_w - 30, 12, "drawer_box"))
         if spec.legs:
             for i in range(4):
-                parts.append({"partName": f"LEG_{i+1}", "length": spec.plinthHeight or 100, "width": 40, "thickness": 40, "role": "leg", "material": spec.material})
+                parts.append({"partId": f"leg_{i+1}", "partName": f"LEG_{i+1}", "partType": "leg", "length": spec.plinthHeight or 100, "width": 40, "thickness": 40, "quantity": 1, "role": "leg", "material": spec.material, "edgeBanding": False})
+        if spec.topFillerHeight:
+            parts.append(_panel("TOP_FILLER", spec.width, spec.depth, t, "top_filler"))
+        if spec.sideFillerWidth:
+            parts.append(_panel("SIDE_FILLER", spec.height, spec.depth, t, "side_filler"))
+        if spec.plinthHeight and not spec.legs:
+            parts.append(_panel("PLINTH", spec.width, spec.depth, spec.plinthHeight, "plinth"))
+            parts.append(_panel("TOE_KICK", spec.width, 80, spec.plinthHeight, "toe_kick"))
+        elif spec.toeKickHeight:
+            parts.append(_panel("TOE_KICK", spec.width, 80, spec.toeKickHeight, "toe_kick"))
         return parts
 
     def _hardware(self, spec: CabinetSpec) -> list[dict[str, Any]]:
@@ -296,7 +368,20 @@ class CabinetEngine:
         hw.append({"partName": "cam_lock", "quantity": 16, "sku": "cam_lock"})
         hw.append({"partName": "dowel", "quantity": 16, "sku": "dowel"})
         if spec.kind == "WARDROBE":
-            hw.append({"partName": "hanging_rail", "quantity": 1, "sku": "hanging_rail"})
+            hw.append({"partName": "hanging_rail", "quantity": 1, "sku": "hanging_rail", "vendorNeutralId": "HW_HANGING_RAIL"})
+        for item in hw:
+            if item["sku"] == "hinge":
+                item["vendorNeutralId"] = "HW_HINGE_CLIP_110"
+            elif item["sku"] == "drawer_slide_pair":
+                item["vendorNeutralId"] = "HW_RAIL_450"
+            elif item["sku"] == "handle":
+                item["vendorNeutralId"] = "HW_HANDLE_BAR"
+            elif item["sku"] == "leg":
+                item["vendorNeutralId"] = "HW_LEG_100"
+            elif item["sku"] == "cam_lock":
+                item["vendorNeutralId"] = "HW_CAM_LOCK_15"
+            elif item["sku"] == "dowel":
+                item["vendorNeutralId"] = "HW_DOWEL_8"
         return hw
 
     def _connections(self, spec: CabinetSpec) -> list[dict[str, Any]]:
@@ -368,6 +453,10 @@ def map_cabinet_material(name: str) -> dict[str, Any]:
 
 
 def _panel(name: str, length: float, width: float, thickness: float, role: str) -> dict[str, Any]:
+    from fox3d.manufacturing import edge_banding_edges
+
+    edges = edge_banding_edges(role)
+    grain = "length" if role in {"top", "bottom", "shelf", "door", "drawer_front", "h_partition"} else "none"
     return {
         "partId": name.lower(),
         "partName": name,
@@ -377,7 +466,9 @@ def _panel(name: str, length: float, width: float, thickness: float, role: str) 
         "thickness": thickness,
         "quantity": 1,
         "role": role,
-        "edgeBanding": role in {"door", "shelf", "drawer_front", "top"},
+        "edgeBanding": any(edges.values()),
+        "edgeBandingEdges": edges,
+        "grainDirection": grain,
     }
 
 
@@ -396,6 +487,8 @@ class BOMEngine:
                     "thickness": part.get("thickness"),
                     "quantity": part.get("quantity", 1),
                     "edgeBanding": bool(part.get("edgeBanding")),
+                    "edgeBandingEdges": part.get("edgeBandingEdges"),
+                    "grainDirection": part.get("grainDirection"),
                     "hardware": False,
                     "cost": None,
                 }
@@ -413,17 +506,20 @@ class BOMEngine:
                     "edgeBanding": False,
                     "hardware": True,
                     "cost": None,
+                    "vendorNeutralId": hw.get("vendorNeutralId"),
                 }
             )
-        return {
+        payload = {
             "productId": spec.productId,
             "engineeringHash": spec.engineering_hash(),
             "lines": lines,
         }
+        payload["bomHash"] = stable_hash(lines)
+        return payload
 
 
 class CostEngine:
-    def quote(self, spec: CabinetSpec, bom: dict[str, Any], *, margin: float = 0.4) -> dict[str, Any]:
+    def quote(self, spec: CabinetSpec, bom: dict[str, Any], *, margin: float = 0.4, nesting: dict[str, Any] | None = None) -> dict[str, Any]:
         material_cost = 0.0
         processing = 0.0
         edge_m = 0.0
@@ -437,8 +533,14 @@ class CostEngine:
             eng_mat = map_cabinet_material(str(spec.material)).get("engineering") or spec.material
             material_cost += area * MATERIAL_PRICE_PER_M2.get(eng_mat, MATERIAL_PRICE_PER_M2.get(spec.material, 300.0))
             processing += PROCESSING_CUT_PER_PART * qty
-            if line.get("edgeBanding"):
-                perim = 2 * (length + width) * qty
+            if line.get("edgeBanding") or line.get("edgeBandingEdges"):
+                edges = line.get("edgeBandingEdges")
+                if edges:
+                    from fox3d.manufacturing import edge_banding_length_mm
+
+                    perim = edge_banding_length_mm(float(line.get("length") or 0), float(line.get("width") or 0), edges) / 1000.0 * qty
+                else:
+                    perim = 2 * (length + width) * qty
                 edge_m += perim
                 processing += perim * PROCESSING_EDGE_PER_M
             processing += 8 * PROCESSING_DRILL_PER_HOLE * qty  # typical cam/dowel holes
@@ -452,7 +554,11 @@ class CostEngine:
         assembly = max(0.5, volume_m3 * 8) * ASSEMBLY_PER_HOUR
         packaging = PACKAGING_BASE + volume_m3 * 120
         shipping = 150 + volume_m3 * 400
-        estimated = material_cost + banding_cost + hardware_cost + processing + assembly + packaging
+        waste_cost = 0.0
+        if nesting:
+            waste_cost = float(nesting.get("wasteAreaM2") or 0) * 80.0
+            material_cost = material_cost  # panel area remains; waste called out separately
+        estimated = material_cost + banding_cost + hardware_cost + processing + assembly + packaging + waste_cost
         suggested = estimated * (1 + margin)
         for line in bom["lines"]:
             if line.get("hardware"):
@@ -469,6 +575,8 @@ class CostEngine:
             "suggestedPrice": round(suggested, 2),
             "currency": "TWD",
             "engineeringHash": bom["engineeringHash"],
+            "SheetWasteCost": round(waste_cost, 2),
+            "edgeBandingLengthM": round(edge_m, 3),
         }
 
 
@@ -523,15 +631,11 @@ class NestingAdapter(CAMAdapter):
 
     def export(self, spec: CabinetSpec, bom: dict[str, Any]) -> dict[str, Any]:
         manifest = super().export(spec, bom)
-        sheets = []
-        used = 0.0
-        sheet_area = (MAX_PANEL_W / 1000) * (MAX_PANEL_H / 1000)
-        for line in bom["lines"]:
-            if line.get("hardware"):
-                continue
-            used += (float(line.get("length") or 0) / 1000) * (float(line.get("width") or 0) / 1000)
-        sheets_needed = max(1, math.ceil(used / sheet_area))
-        manifest["nesting"] = {"sheetMm": [MAX_PANEL_W, MAX_PANEL_H], "sheetsNeeded": sheets_needed, "usedM2": round(used, 3)}
+        from fox3d.manufacturing import NestingEngine
+
+        nested = NestingEngine().nest(bom, material=str(spec.material), thickness=float(spec.boardThickness))
+        manifest["nesting"] = nested
+        manifest["liveMachineControl"] = False
         return manifest
 
 
@@ -554,18 +658,26 @@ def parse_design_intent(text: str, *, tenant_id: str) -> dict[str, Any]:
     robot = bool(re.search(r"掃地|機器人|robot", text, re.I))
     cream = bool(re.search(r"奶油", text))
     kind: str = "CABINET"
+    unknown_fields: list[str] = []
+    needs_input: list[str] = []
     if re.search(r"電視櫃|电视柜|TV", text, re.I):
         kind = "TV_CABINET"
     elif re.search(r"衣櫃|衣櫥|wardrobe", text, re.I):
         kind = "WARDROBE"
     elif re.search(r"鞋櫃|shoe", text, re.I):
         kind = "SHOE_CABINET"
+    elif re.search(r"展示", text):
+        kind = "DISPLAY_CABINET"
     elif re.search(r"書櫃|book", text, re.I):
         kind = "BOOKCASE"
+    elif re.search(r"吊櫃|wall cabinet", text, re.I):
+        kind = "KITCHEN_WALL"
     elif re.search(r"廚|kitchen", text, re.I):
         kind = "KITCHEN_BASE"
     elif re.search(r"收納|儲物|storage", text, re.I):
         kind = "STORAGE_CABINET"
+    else:
+        unknown_fields.append("productType")
     width = float(named_w or TYPE_DEFAULTS[kind]["width"])
     metadata: dict[str, Any] = {"style": "cream" if cream else "neutral", "sourceText": text}
     if re.search(r"白|木紋", text):
@@ -598,12 +710,43 @@ def parse_design_intent(text: str, *, tenant_id: str) -> dict[str, Any]:
         params["plinthHeight"] = 100
     if wall:
         params["wallWidth"] = wall
+    budget = _search_float(r"預算\s*(\d+)", text)
+    if budget is None:
+        budget = _search_float(r"(\d+)\s*(?:元|塊|TWD)", text)
+    storage_req = []
+    if re.search(r"吊衣|掛衣|hang", text, re.I):
+        storage_req.append("hanging")
+    if re.search(r"抽屜|drawer", text, re.I):
+        storage_req.append("drawers")
+    if re.search(r"層板|shelf", text, re.I):
+        storage_req.append("shelves")
+    if re.search(r"牆|wall", text, re.I) and not wall:
+        needs_input.append("wallWidth")
+    if named_w is None and wall is None:
+        unknown_fields.append("exactWidth")
+    room = None
+    if re.search(r"客廳|living", text, re.I):
+        room = "living"
+    elif re.search(r"臥|bedroom", text, re.I):
+        room = "bedroom"
+    elif re.search(r"廚|kitchen", text, re.I):
+        room = "kitchen"
+    elif re.search(r"玄關|entry", text, re.I):
+        room = "entry"
     return {
         "tenantId": tenant_id,
         "kind": kind,
         "params": params,
         "notes": text,
         "llmMayNotSetMillimetresDirectly": True,
+        "roomTarget": room,
+        "wallTarget": wall,
+        "purpose": kind,
+        "style": metadata.get("style"),
+        "budget": budget,
+        "storageRequirements": storage_req,
+        "unknownFields": unknown_fields,
+        "needsInput": needs_input,
     }
 
 

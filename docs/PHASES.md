@@ -42,3 +42,17 @@
 | 38 API | `api.py` | Spec paths |
 | 39 Admin UI | `admin.py` `/admin` | No Blender UI |
 | 40 Acceptance | `tests/test_acceptance.py` | 30 checks |
+| 71 FurnitureProductType registry | `furniture.py` | 8 types; no second SoT |
+| 72–78 Cabinet modules | `CabinetSpec.modules` | partitions, open/closed, doors, toe-kick, fillers |
+| 79–80 MultiCabinetAssembly | `furniture.py` | assembly engineering hash |
+| 81–85 Space twin schema | `space.py` | walls origin/direction, keep-outs; photogrammetry MOCK |
+| 86–89 Constraint + WallFitSolver | `space.py` | door/window/column reject; 3–10 layouts |
+| 90 Space preview | `blender_job.build_space_preview` | space vs furniture lineage split |
+| 91–95 Rules + hardware registry | `parametric.py` + `manufacturing.py` | sweep/extension/span placeholder; vendor-neutral HW |
+| 96–100 Edge/drill/cut/gate | `manufacturing.py` | WAITING_APPROVAL; never LIVE_CNC |
+| 101–107 Sheet + guillotine nest | `NestingEngine` | deterministic, grain, kerf, SVG/DXF interface |
+| 108–110 Cost/quote hashes | `QuoteEngine` | stale if engineering/BOM/nesting change |
+| 111–114 NL + variants | `parse_design_intent` + factory | UNKNOWN/NEEDS_INPUT; engineering-first |
+| 115–116 Vision Provider | `rd.py` | MOCK heuristic; engineering veto |
+| 117–119 Factory pipeline + API | `factory.py` + `/api/factory/*` | existing Admin |
+| 120 Factory REAL acceptance | `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` | 3600mm wall E2E |

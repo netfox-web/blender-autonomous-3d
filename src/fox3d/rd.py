@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 from fox3d.ids import new_id
 from fox3d.parametric import (
@@ -15,8 +15,53 @@ from fox3d.parametric import (
 from fox3d.studio import LIGHTING_RECIPES, MATERIALS
 
 
+class VisionProvider(Protocol):
+    name: str
+    status: str  # MOCK | REAL
+
+    def score_image(self, *, preview: dict[str, Any]) -> dict[str, float]:
+        ...
+
+
+class HeuristicVisionProvider:
+    name = "heuristic"
+    status = "MOCK"
+
+    def score_image(self, *, preview: dict[str, Any]) -> dict[str, float]:
+        graph = (preview.get("sceneGraph") or {})
+        cam = graph.get("camera") or {}
+        fill = float(cam.get("fill") or 0.7)
+        return {
+            "composition": 0.9 if 0.45 <= fill <= 0.85 else 0.55,
+            "aesthetics": 0.8 if (preview.get("dsl") or {}).get("scene") else 0.5,
+            "product_visibility": 0.85 if graph.get("objects") else 0.2,
+            "brand_consistency": 0.7,
+        }
+
+
+class GatewayVisionProvider:
+    def __init__(self, gateway: Any) -> None:
+        self.gateway = gateway
+        self.name = "foxstudio-gateway"
+
+    @property
+    def status(self) -> str:
+        adapters = getattr(self.gateway, "_vision_adapters", None) or {}
+        return "REAL" if adapters else "MOCK"
+
+    def score_image(self, *, preview: dict[str, Any]) -> dict[str, float]:
+        fn = None
+        adapters = getattr(self.gateway, "_vision_adapters", None) or {}
+        if adapters:
+            fn = next(iter(adapters.values()))
+        if not fn:
+            return HeuristicVisionProvider().score_image(preview=preview)
+        out = fn(preview)
+        return {k: float(v) for k, v in (out or {}).items() if isinstance(v, (int, float))}
+
+
 class VisionJudge:
-    """Product scoring. Live vision models plug in via AI Gateway; tests use heuristics."""
+    """Product scoring. Live vision models plug in via Provider; default is MOCK heuristic."""
 
     dimensions = (
         "composition",
@@ -29,26 +74,42 @@ class VisionJudge:
         "manufacturability",
     )
 
+    def __init__(self, provider: VisionProvider | None = None) -> None:
+        self.provider: VisionProvider = provider or HeuristicVisionProvider()
+
     def score(self, *, preview: dict[str, Any], spec: CabinetSpec | None, quote: dict[str, Any] | None, report_ok: bool) -> dict[str, Any]:
-        scores: dict[str, float] = {}
-        graph = (preview.get("sceneGraph") or {})
-        cam = graph.get("camera") or {}
-        fill = float(cam.get("fill") or 0.7)
-        scores["composition"] = 0.9 if 0.45 <= fill <= 0.85 else 0.55
-        scores["aesthetics"] = 0.8 if (preview.get("dsl") or {}).get("scene") else 0.5
-        scores["product_visibility"] = 0.85 if graph.get("objects") else 0.2
-        scores["brand_consistency"] = 0.7
-        scores["engineering_validity"] = 1.0 if report_ok else 0.2
+        vision = dict(self.provider.score_image(preview=preview))
+        scores: dict[str, float] = {
+            "composition": float(vision.get("composition") or 0.5),
+            "aesthetics": float(vision.get("aesthetics") or 0.5),
+            "product_visibility": float(vision.get("product_visibility") or 0.5),
+            "brand_consistency": float(vision.get("brand_consistency") or 0.5),
+        }
+        engineering: dict[str, float] = {}
+        engineering["engineering_validity"] = 1.0 if report_ok else 0.2
         wall = (spec.metadata.get("wallWidth") if spec else None) or 0
         if spec and wall:
-            scores["space_utilization"] = min(1.0, spec.width / wall)
+            engineering["space_utilization"] = min(1.0, spec.width / wall)
         else:
-            scores["space_utilization"] = 0.7
+            engineering["space_utilization"] = 0.7
         cost = (quote or {}).get("estimatedCost") or 0
-        scores["cost"] = 0.9 if cost and cost < 25000 else 0.65 if cost < 80000 else 0.4
-        scores["manufacturability"] = 0.9 if report_ok else 0.3
-        overall = sum(scores.values()) / len(scores)
-        return {"scores": scores, "overall": round(overall, 4), "previewId": preview.get("variantId")}
+        engineering["cost"] = 0.9 if cost and cost < 25000 else 0.65 if cost < 80000 else 0.4
+        engineering["manufacturability"] = 0.9 if report_ok else 0.3
+        scores.update(engineering)
+        vision_score = sum(vision.get(k, scores[k]) for k in ("composition", "aesthetics", "product_visibility", "brand_consistency")) / 4
+        engineering_score = sum(engineering.values()) / len(engineering)
+        veto = not report_ok
+        overall = min(vision_score, 0.2) if veto else (0.5 * vision_score + 0.5 * engineering_score)
+        return {
+            "scores": scores,
+            "overall": round(overall, 4),
+            "visionScore": round(vision_score, 4),
+            "engineeringScore": round(engineering_score, 4),
+            "engineeringVeto": veto,
+            "previewId": preview.get("variantId"),
+            "provider": {"name": getattr(self.provider, "name", "heuristic"), "status": getattr(self.provider, "status", "MOCK")},
+            "label": "REAL" if getattr(self.provider, "status", "MOCK") == "REAL" else "MOCK",
+        }
 
 
 class VariantGenerator:
@@ -71,7 +132,7 @@ class VariantGenerator:
                     variants.append(
                         {
                             "variantId": new_id(),
-                            "layout": f"doors:{door}/shelves:{shelf}",
+                            "layout": f"doors:{door}/shelves:{shelf}/drawers:{drawer_opts[i % len(drawer_opts)]}",
                             "dimensions": {"width": max(400, width), "height": spec.height, "depth": spec.depth},
                             "material": materials[i % len(materials)],
                             "color": colors[i % len(colors)],
@@ -79,9 +140,10 @@ class VariantGenerator:
                             "drawer": drawer_opts[i % len(drawer_opts)],
                             "shelf": max(0, shelf),
                             "handle": handles[i % len(handles)],
-                            "lighting": LIGHTING_RECIPES[i % len(LIGHTING_RECIPES)],
+                            "module": "DOUBLE_DOOR" if door == 2 else ("HINGED_DOOR" if door else "OPEN_BAY"),
                             "previewOnly": True,
                             "finalRender": False,
+                            "lighting": LIGHTING_RECIPES[i % len(LIGHTING_RECIPES)],
                         }
                     )
                     i += 1

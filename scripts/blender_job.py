@@ -348,17 +348,28 @@ def import_glb(path: str):
     return root
 
 
-def build_cabinet(engineering: dict, *, explode: bool = False) -> dict:
+def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0, 0.0), name_prefix: str = "", setup_scene: bool = True) -> dict:
     """Millimetres in engineering JSON are the source of truth. Do not invent sizes."""
+    created = add_cabinet_parts(engineering, explode=explode, origin=origin, name_prefix=name_prefix)
+    if setup_scene:
+        width = float(engineering.get("width") or 800) / 1000.0
+        height = float(engineering.get("height") or 1800) / 1000.0
+        depth = float(engineering.get("depth") or 400) / 1000.0
+        _add_plane("Ground", 4.0, (0, 0, 0))
+        _add_camera((origin[0] + width * 1.6, origin[1] - depth * 3.2, origin[2] + height * 0.7), (origin[0], origin[1], origin[2] + height * 0.45), 50)
+        _three_point(height)
+    return created
+
+
+def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0, 0.0), name_prefix: str = "") -> dict:
     created = {}
     width = float(engineering.get("width") or 800) / 1000.0
     height = float(engineering.get("height") or 1800) / 1000.0
     depth = float(engineering.get("depth") or 400) / 1000.0
     material = str(engineering.get("material") or "particle_board")
-    if material == "particle_board":
+    if material == "particle_board" or material.startswith("WOOD_"):
         material = "white_wood"
     parts = engineering.get("components") or []
-    # Simple carcass layout from roles; dimensions come from each part, not from Blender.
     counts = {"shelf": 0, "door": 0, "divider": 0, "drawer_front": 0}
     for part in parts:
         role = str(part.get("role") or "")
@@ -407,19 +418,211 @@ def build_cabinet(engineering: dict, *, explode: bool = False) -> dict:
             loc = [0, -depth / 2 - thick / 2, 0.12 * counts["drawer_front"]]
         elif role == "leg":
             continue
+        elif role == "top_filler":
+            size = [width, depth, max(thick, 0.018)]
+            loc = [0, 0, height + max(thick, 0.018) / 2]
+        elif role == "side_filler":
+            size = [max(thick, 0.018), depth, height]
+            loc = [width / 2 + max(thick, 0.018), 0, height / 2]
+        elif role in {"plinth", "toe_kick"}:
+            size = [width, 0.08 if role == "toe_kick" else depth, max(thick, 0.08)]
+            loc = [0, -depth / 2 + size[1] / 2 if role == "toe_kick" else 0, size[2] / 2]
+        elif role == "h_partition":
+            size = [width - 2 * thick, depth - 0.02, thick]
+            loc = [0, 0, height * 0.5]
         else:
             size = [max(length, 0.01), max(width_p, 0.01), max(thick, 0.004)]
-        obj = _add_box(name, size, loc, material)
-        created[name] = obj
+        if explode and role not in {"door"}:
+            loc = [loc[0], loc[1] - 0.05, loc[2] + 0.02]
+        loc = [loc[0] + origin[0], loc[1] + origin[1], loc[2] + origin[2]]
+        obj = _add_box(name_prefix + name, size, loc, material)
+        created[name_prefix + name] = obj
         if role == "door":
-            handle = _add_box(name + ".HANDLE", (0.012, 0.02, 0.12), (loc[0], loc[1] - 0.02, loc[2]), "metal")
-            created[name + ".HANDLE"] = handle
-            hinge = _add_box(name + ".HINGE", (0.02, 0.02, 0.04), (loc[0] - size[0] / 2, loc[1], loc[2]), "metal")
-            created[name + ".HINGE"] = hinge
-    _add_plane("Ground", 4.0, (0, 0, 0))
-    _add_camera((width * 1.6, -depth * 3.2, height * 0.7), (0, 0, height * 0.45), 50)
+            handle = _add_box(name_prefix + name + ".HANDLE", (0.012, 0.02, 0.12), (loc[0], loc[1] - 0.02, loc[2]), "metal")
+            created[name_prefix + name + ".HANDLE"] = handle
+            hinge = _add_box(name_prefix + name + ".HINGE", (0.02, 0.02, 0.04), (loc[0] - size[0] / 2, loc[1], loc[2]), "metal")
+            created[name_prefix + name + ".HINGE"] = hinge
+    return created
+
+
+def build_space_preview(space: dict, assembly: dict) -> dict:
+    created = {}
+    width = float(space.get("width") or 3600) / 1000.0
+    depth = float(space.get("depth") or 3000) / 1000.0
+    height = float(space.get("height") or 2600) / 1000.0
+    created["Floor"] = _add_plane("Floor", max(width, depth) * 1.4, (width / 2, depth / 2, 0))
+    for wall in space.get("walls") or []:
+        length = float(wall.get("length") or 0) / 1000.0
+        thick = float(wall.get("thickness") or 100) / 1000.0
+        origin = wall.get("origin") or [0, 0, 0]
+        direction = wall.get("direction") or [1, 0]
+        dx, dy = float(direction[0]), float(direction[1])
+        cx = float(origin[0]) / 1000.0 + dx * length / 2
+        cy = float(origin[1]) / 1000.0 + dy * length / 2
+        cz = height / 2
+        size = (abs(dx) * length + abs(dy) * thick + 0.02, abs(dy) * length + abs(dx) * thick + 0.02, height)
+        created[str(wall.get("name") or wall.get("wallId"))] = _add_box(str(wall.get("name") or "Wall"), size, (cx, cy, cz), "matte")
+    for i, cab in enumerate(assembly.get("cabinets") or []):
+        spec = cab.get("spec") or {}
+        start = float(cab.get("startMm") or cab.get("originX") or 0) / 1000.0
+        origin = (start + float(spec.get("width") or 800) / 2000.0, 0.15, 0.0)
+        parts = add_cabinet_parts(spec, origin=origin, name_prefix=f"C{i}_")
+        created.update(parts)
+    _add_camera((width * 0.5, -depth * 0.9, height * 0.7), (width * 0.5, depth * 0.3, height * 0.3), 28)
     _three_point(height)
     return created
+
+
+def _compositor_tree(scene):
+    import bpy
+
+    scene.render.use_compositing = True
+    if hasattr(scene, "compositing_node_group"):
+        tree = scene.compositing_node_group
+        if tree is None:
+            tree = bpy.data.node_groups.new("fox3d_compositor", "CompositorNodeTree")
+            scene.compositing_node_group = tree
+        return tree, True
+    scene.use_nodes = True
+    return scene.node_tree, False
+
+
+def _ensure_comp_output(tree, blender5: bool):
+    if blender5:
+        if not any(s.name == "Image" and getattr(s, "in_out", "") in {"OUTPUT", "out"} for s in tree.interface.items_tree):
+            try:
+                tree.interface.new_socket(name="Image", in_out="OUTPUT", socket_type="NodeSocketColor")
+            except Exception:
+                pass
+        node = tree.nodes.new("NodeGroupOutput")
+        return node
+    return tree.nodes.new("CompositorNodeComposite")
+
+
+def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
+    """Cycles compositor stills for depth / normal / object-index segmentation."""
+    import bpy
+
+    scene = bpy.context.scene
+    view = scene.view_layers[0]
+    view.use_pass_z = True
+    view.use_pass_normal = True
+    view.use_pass_object_index = True
+    for i, obj in enumerate(bpy.data.objects):
+        if obj.type == "MESH":
+            obj.pass_index = i + 1
+    scene.cycles.samples = 1
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    scene.render.image_settings.file_format = "PNG"
+    work = Path(job.get("workDir") or ".")
+    found: dict[str, str] = {}
+    debug = {"outputs": [], "errors": [], "blender5": False}
+
+    def _socket(rl, *names):
+        debug["outputs"] = [getattr(s, "name", "") or getattr(s, "identifier", "") for s in rl.outputs]
+        for name in names:
+            try:
+                return rl.outputs[name]
+            except (KeyError, LookupError, TypeError):
+                continue
+        return None
+
+    def _render_connected(filename: str, kind: str) -> None:
+        tree, blender5 = _compositor_tree(scene)
+        debug["blender5"] = blender5
+        tree.nodes.clear()
+        rl = tree.nodes.new("CompositorNodeRLayers")
+        try:
+            rl.scene = scene
+        except Exception:
+            pass
+        out_node = _ensure_comp_output(tree, blender5)
+        src = None
+        src_out = None
+        if kind == "depth":
+            src = _socket(rl, "Depth", "Z")
+            if src is None:
+                debug["errors"].append("no Depth/Z socket")
+                return
+            mapper = None
+            for ntype in ("ShaderNodeMapRange", "CompositorNodeMapRange"):
+                try:
+                    mapper = tree.nodes.new(ntype)
+                    break
+                except Exception:
+                    mapper = None
+            if mapper is not None:
+                try:
+                    mapper.inputs[1].default_value = 0.1
+                    mapper.inputs[2].default_value = 8.0
+                    mapper.inputs[3].default_value = 1.0
+                    mapper.inputs[4].default_value = 0.0
+                except Exception:
+                    pass
+                tree.links.new(src, mapper.inputs[0])
+                src_out = mapper.outputs[0]
+            else:
+                src_out = src
+        elif kind == "normal":
+            src_out = _socket(rl, "Normal")
+        else:
+            src_out = _socket(rl, "Object Index", "IndexOB", "IndexMA")
+        if src_out is None:
+            debug["errors"].append(f"no socket for {kind}: {debug.get('outputs')}")
+            return
+        tree.links.new(src_out, out_node.inputs[0])
+        out = work / filename
+        scene.render.filepath = str(out)
+        bpy.ops.render.render(write_still=True)
+        if out.exists() and out.stat().st_size > 32:
+            found[filename] = str(out)
+
+    for filename, kind in (("depth.png", "depth"), ("normal.png", "normal"), ("seg.png", "seg")):
+        try:
+            _render_connected(filename, kind)
+        except Exception as exc:
+            debug["errors"].append(f"{kind}: {exc}")
+    _write_json(work / "aov_debug.json", debug)
+    try:
+        tree, blender5 = _compositor_tree(scene)
+        tree.nodes.clear()
+        rl = tree.nodes.new("CompositorNodeRLayers")
+        out_node = _ensure_comp_output(tree, blender5)
+        tree.links.new(rl.outputs["Image"], out_node.inputs[0])
+    except Exception:
+        pass
+    return found
+
+
+def _render_assembly_anim(job: dict, created: dict, *, frames: int, width: int, height: int, samples: int) -> tuple[list[str], str | None]:
+    import bpy
+
+    scene = bpy.context.scene
+    scene.cycles.samples = max(4, samples // 2)
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    work = Path(job.get("workDir") or ".")
+    frame_dir = work / "assembly"
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    originals = {name: tuple(obj.location) for name, obj in created.items() if getattr(obj, "location", None) is not None}
+    paths = []
+    for i in range(frames):
+        t = i / max(frames - 1, 1)
+        for name, obj in created.items():
+            if name not in originals:
+                continue
+            ox, oy, oz = originals[name]
+            obj.location = (ox, oy - 0.25 * t, oz + 0.08 * t)
+        out = frame_dir / f"{i:03d}.png"
+        scene.render.filepath = str(out)
+        bpy.ops.render.render(write_still=True)
+        paths.append(str(out))
+    for name, obj in created.items():
+        if name in originals:
+            obj.location = originals[name]
+    mp4 = _mux_png_sequence(frame_dir, work / "assembly.mp4")
+    return paths, mp4
 
 
 def _render_still(job: dict, *, width: int, height: int, samples: int) -> tuple[Path, float]:
@@ -537,6 +740,8 @@ def build_and_render(job: dict) -> dict:
         created = build_smoke_scene()
     elif job.get("packagingTemplate"):
         created = build_packaging(str(job.get("packagingTemplate")), job.get("dimensions") or {})
+    elif mode in {"SPACE_PREVIEW"} or job.get("space"):
+        created = build_space_preview(job.get("space") or {}, job.get("assembly") or {})
     elif job.get("engineering"):
         created = build_cabinet(job["engineering"], explode=bool(job.get("explode")))
     else:
@@ -583,11 +788,33 @@ def build_and_render(job: dict) -> dict:
         return result
 
     _write_progress(job, 0.5, "render")
+    want_aov = bool(job.get("aovs") or mode in {"SYNTHETIC_DATA"} or job.get("passes"))
     png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
     if not png_path.exists() or png_path.stat().st_size < 32:
         return {"status": "failed", "error": "no PNG written", "realBlender": True}
     outputs = {"beauty.png": str(png_path)}
     produced = ["RGB"]
+    if want_aov:
+        try:
+            aovs = _render_aov_pngs(job, width=width, height=height)
+            outputs.update(aovs)
+        except Exception:
+            aovs = {}
+        if outputs.get("depth.png"):
+            produced.append("depth")
+        if outputs.get("normal.png"):
+            produced.append("normal")
+        if outputs.get("seg.png"):
+            produced.append("segmentation")
+    if job.get("assemblyAnimation") or mode == "ASSEMBLY_ANIM":
+        frames_n = int((job.get("animation") or {}).get("frames") or 8)
+        asm_paths, asm_mp4 = _render_assembly_anim(job, created, frames=frames_n, width=width, height=height, samples=samples)
+        outputs["assemblyFrames"] = asm_paths
+        if asm_mp4:
+            outputs["assembly.mp4"] = asm_mp4
+            produced.append("assembly_mp4")
+        else:
+            produced.append("assembly_png_sequence")
     if mode in {"BLENDER_TO_VIDEO", "SYNTHETIC_DATA"} or job.get("passes"):
         keys = _render_keyframes(job, width=width, height=max(256, height // 2), samples=max(8, samples // 2))
         outputs.update(keys)

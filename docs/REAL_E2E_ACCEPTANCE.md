@@ -31,3 +31,5 @@ productionReady: **True**
 Worker on this host is `local-t1000` (real nvidia-smi). There is no RTX 5090; `local-5090` / `mock-4.2` are not registered in production.
 
 Mock Worker 僅供 `pytest`。Production acceptance 不得把 mock-4.2 寫成 PASS。
+
+Furniture factory Phase 71–120 evidence: `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md`. Cycles AOV depth/normal/segmentation is **REAL** on this host (Blender 5 compositor). Assembly MP4 is **REAL** (ffmpeg). Vision Judge and AI Video remain **MOCK**. LIVE_CNC remains **BLOCKED**.

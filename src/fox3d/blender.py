@@ -529,17 +529,34 @@ class BlenderRuntime:
             write_png(job_dir / "beauty.png", width, height, bytes(rgb))
         write_webp_stub(job_dir / "beauty.webp")
         write_exr_stub(job_dir / "beauty.exr", seed)
+        outputs = {
+            "beauty.png": str(job_dir / "beauty.png"),
+            "beauty.webp": str(job_dir / "beauty.webp"),
+            "beauty.exr": str(job_dir / "beauty.exr"),
+        }
+        if job.get("aovs") or job.get("passes") or job.get("mode") in {"SYNTHETIC_DATA", "SPACE_PREVIEW"}:
+            for name in ("depth.png", "normal.png", "seg.png", "mask.png"):
+                write_solid_png(job_dir / name, seed + name, max(8, width // 4), max(8, height // 4))
+                outputs[name] = str(job_dir / name)
+        if job.get("assemblyAnimation"):
+            frame_dir = job_dir / "assembly"
+            frame_dir.mkdir(parents=True, exist_ok=True)
+            frames = []
+            for i in range(4):
+                p = frame_dir / f"{i:03d}.png"
+                write_solid_png(p, seed + f"asm{i}", 32, 32)
+                frames.append(str(p))
+            mp4 = job_dir / "assembly.mp4"
+            mp4.write_bytes(b"ftypisom")
+            outputs["assembly.mp4"] = str(mp4)
+            outputs["assemblyFrames"] = frames
         if on_progress:
             on_progress(1.0)
         png = job_dir / "beauty.png"
         ok = png.exists() and is_png(png)
         return RuntimeResult(
             status="succeeded" if ok else "failed",
-            outputs={
-                "beauty.png": str(job_dir / "beauty.png"),
-                "beauty.webp": str(job_dir / "beauty.webp"),
-                "beauty.exr": str(job_dir / "beauty.exr"),
-            },
+            outputs=outputs,
             progress=1.0 if ok else 0.0,
             engine=engine,
             device=device,
