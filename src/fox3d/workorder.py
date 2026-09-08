@@ -43,9 +43,13 @@ class WorkOrderService:
         self.remnants = remnants
         self.dam = dam
         self.releases = releases
+        self.qc: Any | None = None
         self.orders: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, str] = {}
         self.operations: list[dict[str, Any]] = []
+
+    def bind_qc(self, qc: Any) -> None:
+        self.qc = qc
 
     def get(self, work_order_id: str) -> dict[str, Any]:
         return self.orders[work_order_id]
@@ -146,23 +150,45 @@ class WorkOrderService:
         sheet_n = max(int(nesting.get("sheetCount") or 1), 1) * int(rec["quantity"])
         material = str(nesting.get("sheetSku") or "PB_18_WHITE")
         thickness = float(nesting.get("thickness") or 18)
-        lots = [l for l in self.lots.list(tenant_id=tid) if float(l.get("remainingSheets") or 0) > 0]
+        lots = [l for l in self.lots.list(tenant_id=tid) if int(l.get("remainingSheets") or 0) > 0]
         if not lots:
             lot = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=max(sheet_n, 2))
             lots = [lot]
-        reserved_lots = []
+        lot_reservations: list[dict[str, Any]] = []
         remaining = sheet_n
         for lot in lots:
-            while remaining > 0 and int(lot.get("remainingSheets") or 0) > 0:
-                self.lots.allocate_sheet(lot["lotId"], tenant_id=tid)
-                reserved_lots.append(lot["lotId"])
-                remaining -= 1
-                lot = self.lots.get(lot["lotId"], tenant_id=tid)
+            avail = int(lot.get("remainingSheets") or 0)
+            if avail <= 0 or remaining <= 0:
+                continue
+            take = min(remaining, avail)
+            item = self.lots.reserve_sheets(
+                lot["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=take
+            )
+            lot_reservations.append(
+                {
+                    "kind": "lot",
+                    "lotId": lot["lotId"],
+                    "quantity": take,
+                    "reservationId": item["reservationId"],
+                    "state": "RESERVED",
+                }
+            )
+            remaining -= take
         if remaining > 0:
             extra = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=remaining)
-            for _ in range(remaining):
-                self.lots.allocate_sheet(extra["lotId"], tenant_id=tid)
-                reserved_lots.append(extra["lotId"])
+            item = self.lots.reserve_sheets(
+                extra["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=remaining
+            )
+            lot_reservations.append(
+                {
+                    "kind": "lot",
+                    "lotId": extra["lotId"],
+                    "quantity": remaining,
+                    "reservationId": item["reservationId"],
+                    "state": "RESERVED",
+                }
+            )
+            remaining = 0
         remnant_ids: list[str] = []
         if self.remnants is not None:
             for rem in list(self.remnants.available(tenant_id=tid)):
@@ -171,10 +197,8 @@ class WorkOrderService:
                     remnant_ids.append(rem["remnantId"])
                 except PermissionError:
                     continue
-        rec["reservations"] = [{"kind": "lot", "lotId": lid} for lid in reserved_lots] + [
-            {"kind": "remnant", "remnantId": rid} for rid in remnant_ids
-        ]
-        rec["lineage"]["materialLots"] = sorted(set(reserved_lots))
+        rec["reservations"] = lot_reservations + [{"kind": "remnant", "remnantId": rid} for rid in remnant_ids]
+        rec["lineage"]["materialLots"] = sorted({item["lotId"] for item in lot_reservations})
         rec["lineage"]["remnants"] = remnant_ids
         rec["materialReserved"] = True
         rec["state"] = "MATERIAL_RESERVED"
@@ -273,7 +297,13 @@ class WorkOrderService:
         if rec.get("consumedFlag"):
             return rec
         for item in rec.get("reservations") or []:
-            if item.get("kind") == "remnant" and self.remnants is not None:
+            if item.get("kind") == "lot":
+                self.lots.consume_reservation(
+                    item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
+                )
+                item["state"] = "CONSUMED"
+                rec["consumed"].append(item)
+            elif item.get("kind") == "remnant" and self.remnants is not None:
                 rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
                 self.remnants.consume(
                     item["remnantId"],
@@ -284,6 +314,7 @@ class WorkOrderService:
                 )
                 rec["consumed"].append(item)
         rec["consumedFlag"] = True
+        rec["consumedBy"] = actor
         return rec
 
     def set_packing(self, work_order_id: str, carton_ids: list[str]) -> dict[str, Any]:
@@ -296,6 +327,11 @@ class WorkOrderService:
     def complete(self, work_order_id: str, *, actor: str, qc_ok: bool = True) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
         self._assert_release_fresh(rec)
+        gate = self._authoritative_qc_gate(rec)
+        rec["qcGate"] = gate
+        if not gate.get("ok"):
+            rec["state"] = "QC_HOLD"
+            raise PermissionError("required QC missing or failed; completion blocked")
         if not qc_ok:
             rec["state"] = "QC_HOLD"
             raise PermissionError("required QC missing or failed; completion blocked")
@@ -303,6 +339,15 @@ class WorkOrderService:
         rec["completedBy"] = actor
         rec["completedAt"] = _now()
         return rec
+
+    def _authoritative_qc_gate(self, rec: dict[str, Any]) -> dict[str, Any]:
+        if self.qc is None:
+            return {"ok": False, "reason": "NO_QC_AUTHORITY", "missing": ["*"], "failed": []}
+        result = self.qc.required_final_ok(rec["workOrderId"], rec["productFamily"], tenant_id=rec.get("tenantId"))
+        result = dict(result)
+        result["reason"] = None if result.get("ok") else "REQUIRED_FINAL_QC"
+        rec["qcGateHash"] = stable_hash(result)
+        return result
 
     def reject(self, work_order_id: str, *, actor: str, reason: str) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
@@ -318,7 +363,15 @@ class WorkOrderService:
         if rec["state"] == "COMPLETED":
             raise PermissionError("cannot cancel completed")
         for item in rec.get("reservations") or []:
-            if item.get("kind") == "remnant" and self.remnants is not None:
+            if item.get("kind") == "lot" and item.get("state") == "RESERVED":
+                try:
+                    self.lots.release_reservation(
+                        item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
+                    )
+                    item["state"] = "RELEASED"
+                except (KeyError, PermissionError):
+                    continue
+            elif item.get("kind") == "remnant" and self.remnants is not None:
                 try:
                     rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
                     if normalize_status(rem.get("status")) == "reserved" and rem.get("reservedBy") == rec["workOrderId"]:

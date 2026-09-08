@@ -45,75 +45,128 @@ def _md(title: str, rows: list[dict], generated: str) -> str:
 
 
 def _ok_job(p: dict) -> bool:
-    return p.get("label") == "REAL" and bool((p.get("verify") or {}).get("ok")) and not p.get("usedMock")
+    bun = p.get("bundle") or {}
+    return (
+        p.get("label") == "REAL"
+        and bool((p.get("verify") or {}).get("ok"))
+        and not p.get("usedMock")
+        and bool(bun.get("releaseHash") or p.get("releaseHash"))
+    )
 
 
-def main(argv: list[str] | None = None) -> int:
+def _release_bound_ok(previews: list[dict], families: list[dict]) -> bool:
+    expected = {f["family"]: f.get("releaseHash") for f in families}
+    if len(previews) < 4:
+        return False
+    for p in previews:
+        bun = p.get("bundle") or {}
+        rh = bun.get("releaseHash") or p.get("releaseHash")
+        want = expected.get(p.get("family"))
+        if not rh or not want or rh != want:
+            return False
+        if not (p.get("verify") or {}).get("ok"):
+            return False
+    return True
+
+
+def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
+    hooks = hooks or {}
     parser = argparse.ArgumentParser()
     parser.add_argument("--docs-root", default=None)
     parser.add_argument("--allow-dirty", action="store_true")
     args = parser.parse_args(argv)
     docs = Path(args.docs_root) if args.docs_root else ROOT / "docs"
+    inspect = hooks.get("inspect") or inspect_repo_lineage
     try:
-        lineage = inspect_repo_lineage(ROOT, allow_dirty=args.allow_dirty)
+        lineage = inspect(ROOT, allow_dirty=args.allow_dirty)
     except DirtyTreeError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}))
         return 4
     sha = lineage["evidenceCodeCommit"]
     real_ok = bool(lineage.get("realAcceptanceAllowed"))
-    plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
-    probe = plat.register_detected_workers()
     rows: list[dict] = []
 
     def add(name: str, status: str, evidence: str) -> None:
         rows.append({"check": name, "status": status, "evidence": evidence})
 
-    add("Blender", "REAL" if probe.realBlender else "BLOCKED_NO_BLENDER", str(probe.blenderBinary))
-    add("OptiX", "REAL" if probe.realOptix else "BLOCKED_NO_OPTIX", str(probe.gpuName))
-    add("workingTreeClean", "REAL" if lineage["workingTreeClean"] else "UNVERIFIED", str(lineage["workingTreeClean"]))
-
-    four = plat.pilot.run_four_family_e2e(tenant_id="pilot-real")
-    add("four-family manual E2E", "REAL" if four["ok"] else "PARTIAL", f"ok={four['ok']} n={len(four['families'])}")
-    for fam in four["families"]:
-        add(f"{fam['family']} packet checksum", "REAL" if fam["verify"]["ok"] else "PARTIAL", fam["releaseHash"][:12])
-        add(f"{fam['family']} WO COMPLETED", "REAL" if fam["workOrderState"] == "COMPLETED" else "PARTIAL", fam["workOrderState"])
-
-    quotes = plat.pilot.supplier_fixture(plat.pilot.releases.get(four["families"][0]["releaseId"]))
-    add("supplier quotes imported", "REAL", f"n={len(quotes['quotes'])} source=IMPORTED")
-    add("supplier compare stale", "REAL" if quotes["staleOnReleaseChange"] else "PARTIAL", str(quotes["staleOnReleaseChange"]))
-    add("FX source", quotes["fxSource"], quotes["fxSource"])
-
-    log = plat.pilot.logistics
-    carrier = log.import_carrier_quote({"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000}, source="IMPORTED")
-    add("carrier quote", carrier["truthLabel"], carrier["quoteId"][:8])
-
-    previews: list[dict] = []
-    if probe.realBlender and probe.realOptix:
-        previews = plat.pilot.render_family_previews(tenant_id="pilot-real", commit_sha=sha, real_ok=real_ok)
-        n_real = sum(1 for p in previews if _ok_job(p))
-        add("pilot 4-family Blender EvidenceBundle", "REAL" if n_real >= 4 and real_ok else "PARTIAL", f"real={n_real}/4 clean={lineage['workingTreeClean']}")
+    if hooks.get("pipeline"):
+        data = hooks["pipeline"](lineage=lineage, sha=sha, real_ok=real_ok)
+        probe = data["probe"]
+        four = data["four"]
+        previews = list(data.get("previews") or [])
+        quotes = data.get("quotes") or {"quotes": [{}, {}, {}], "staleOnReleaseChange": True, "fxSource": "MANUAL"}
+        ready = data.get("ready") or {
+            "fullAutonomousFactoryReady": False,
+            "liveFactoryExecutionReady": False,
+        }
+        rows.extend(data.get("rows") or [])
     else:
-        add("pilot 4-family Blender EvidenceBundle", "BLOCKED_NO_OPTIX" if probe.realBlender else "BLOCKED_NO_BLENDER", "skipped")
+        plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
+        probe = plat.register_detected_workers()
+        add("Blender", "REAL" if probe.realBlender else "BLOCKED_NO_BLENDER", str(probe.blenderBinary))
+        add("OptiX", "REAL" if probe.realOptix else "BLOCKED_NO_OPTIX", str(probe.gpuName))
+        add("workingTreeClean", "REAL" if lineage["workingTreeClean"] else "UNVERIFIED", str(lineage["workingTreeClean"]))
 
-    ready = plat.pilot.readiness(
-        evidence={"releasePackage": True, "pilotOps": four["ok"], "qc": True, "supplierQuotes": True, "carrierQuotes": True, "coreRender": probe.realBlender}
-    )
-    add("liveFactoryExecutionReady", "BLOCKED", str(ready["liveFactoryExecutionReady"]))
-    add("fullAutonomousFactoryReady", "BLOCKED", str(ready["fullAutonomousFactoryReady"]))
-    add("LIVE_CNC", "BLOCKED", "liveMachineControl=false")
-    add("LIVE_LASER", "BLOCKED", "liveMachineControl=false")
+        four = plat.pilot.run_four_family_e2e(tenant_id="pilot-real")
+        add("four-family manual E2E", "REAL" if four["ok"] else "PARTIAL", f"ok={four['ok']} n={len(four['families'])}")
+        for fam in four["families"]:
+            add(f"{fam['family']} packet checksum", "REAL" if fam["verify"]["ok"] else "PARTIAL", fam["releaseHash"][:12])
+            add(f"{fam['family']} WO COMPLETED", "REAL" if fam["workOrderState"] == "COMPLETED" else "PARTIAL", fam["workOrderState"])
+
+        quotes = plat.pilot.supplier_fixture(plat.pilot.releases.get(four["families"][0]["releaseId"]))
+        add("supplier quotes imported", "REAL", f"n={len(quotes['quotes'])} source=IMPORTED")
+        add("supplier compare stale", "REAL" if quotes["staleOnReleaseChange"] else "PARTIAL", str(quotes["staleOnReleaseChange"]))
+        add("FX source", quotes["fxSource"], quotes["fxSource"])
+
+        log = plat.pilot.logistics
+        carrier = log.import_carrier_quote({"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000}, source="IMPORTED")
+        add("carrier quote", carrier["truthLabel"], carrier["quoteId"][:8])
+
+        previews = []
+        if probe.realBlender and probe.realOptix:
+            previews = plat.pilot.render_family_previews(
+                tenant_id="pilot-real", commit_sha=sha, real_ok=real_ok, families=four["families"]
+            )
+            n_real = sum(1 for p in previews if _ok_job(p))
+            add(
+                "pilot 4-family Blender EvidenceBundle",
+                "REAL" if n_real >= 4 and real_ok else "PARTIAL",
+                f"real={n_real}/4 clean={lineage['workingTreeClean']}",
+            )
+        else:
+            add("pilot 4-family Blender EvidenceBundle", "BLOCKED_NO_OPTIX" if probe.realBlender else "BLOCKED_NO_BLENDER", "skipped")
+
+        ready = plat.pilot.readiness(
+            evidence={
+                "releasePackage": True,
+                "pilotOps": four["ok"],
+                "qc": True,
+                "supplierQuotes": True,
+                "carrierQuotes": True,
+                "coreRender": probe.realBlender,
+            }
+        )
+        add("liveFactoryExecutionReady", "BLOCKED", str(ready["liveFactoryExecutionReady"]))
+        add("fullAutonomousFactoryReady", "BLOCKED", str(ready["fullAutonomousFactoryReady"]))
+        add("LIVE_CNC", "BLOCKED", "liveMachineControl=false")
+        add("LIVE_LASER", "BLOCKED", "liveMachineControl=false")
 
     canon = aggregate_canonical_consistency(docs)
     add("canonical six-file reader", "REAL" if canon["canonicalTruthSetOk"] else "PARTIAL", ",".join(canon["errors"]) or "ok")
 
+    blender_real = bool(getattr(probe, "realBlender", None) if not isinstance(probe, dict) else probe.get("realBlender"))
+    optix_real = bool(getattr(probe, "realOptix", None) if not isinstance(probe, dict) else probe.get("realOptix"))
     n_real = sum(1 for p in previews if _ok_job(p))
+    release_bound = _release_bound_ok(previews, four.get("families") or [])
     required_ok = (
         real_ok
-        and bool(probe.realBlender)
-        and bool(probe.realOptix)
+        and blender_real
+        and optix_real
         and four["ok"]
         and n_real >= 4
         and all((p.get("verify") or {}).get("ok") for p in previews)
+        and release_bound
+        and bool(canon.get("canonicalTruthSetOk"))
         and ready["fullAutonomousFactoryReady"] is False
         and ready["liveFactoryExecutionReady"] is False
     )
@@ -170,9 +223,12 @@ def main(argv: list[str] | None = None) -> int:
 
     publish = {"ok": False, "published": []}
     if required_ok:
-        publish = atomic_publish_canonical(docs, artifacts, generation_id=generation_id)
+        publish = atomic_publish_canonical(docs, artifacts, generation_id=generation_id, replace_fn=hooks.get("replace_fn"))
         if not publish.get("ok"):
             required_ok = False
+
+    def _pg(key: str):
+        return probe.get(key) if isinstance(probe, dict) else getattr(probe, key, None)
 
     print(
         json.dumps(
@@ -180,9 +236,19 @@ def main(argv: list[str] | None = None) -> int:
                 "requiredRealAcceptanceOk": required_ok,
                 "evidenceCodeCommit": sha,
                 "acceptanceGenerationId": generation_id,
-                "previews": [{"family": p.get("family"), "label": p.get("label"), "verify": (p.get("verify") or {}).get("ok")} for p in previews],
+                "previews": [
+                    {
+                        "family": p.get("family"),
+                        "label": p.get("label"),
+                        "verify": (p.get("verify") or {}).get("ok"),
+                        "releaseHash": (p.get("bundle") or {}).get("releaseHash") or p.get("releaseHash"),
+                    }
+                    for p in previews
+                ],
                 "fourFamilyOk": four["ok"],
-                "probe": {"blender": probe.blenderBinary, "gpu": probe.gpuName, "optix": probe.realOptix},
+                "canonicalTruthSetOk": bool(canon.get("canonicalTruthSetOk")),
+                "releaseBoundOk": release_bound,
+                "probe": {"blender": _pg("blenderBinary"), "gpu": _pg("gpuName"), "optix": _pg("realOptix")},
                 "publish": {"ok": publish.get("ok"), "published": publish.get("published")},
                 "fullAutonomousFactoryReady": False,
             },

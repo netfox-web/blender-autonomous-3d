@@ -110,11 +110,13 @@ class QcService:
         rec["qcHash"] = stable_hash({k: rec[k] for k in rec if k not in {"qcId", "qcHash"}})
         if dam_asset_id and self.dam is not None:
             self.dam.get(dam_asset_id, tenant_id=tenant_id)
-        self.checks[rec["qcId"]] = rec
         if self.workorders is not None:
             wo = self.workorders.get(work_order_id)
             if wo.get("tenantId") != tenant_id:
                 raise PermissionError("tenant isolation: qc")
+        self.checks[rec["qcId"]] = rec
+        if self.workorders is not None:
+            wo = self.workorders.get(work_order_id)
             wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
             if not ok and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}:
                 wo["state"] = "QC_HOLD"
@@ -171,9 +173,21 @@ class QcService:
                 wo["state"] = "REJECTED"
         return rec
 
-    def required_final_ok(self, work_order_id: str, family: str) -> dict[str, Any]:
+    def required_final_ok(self, work_order_id: str, family: str, *, tenant_id: str | None = None) -> dict[str, Any]:
         required = [c["checkId"] for c in self.schema(family) if c.get("requiredFinal")]
-        rows = [c for c in self.checks.values() if c["workOrderId"] == work_order_id and c["stage"] == "FINAL"]
+        wo_tenant = tenant_id
+        if wo_tenant is None and self.workorders is not None:
+            try:
+                wo_tenant = self.workorders.get(work_order_id).get("tenantId")
+            except KeyError:
+                wo_tenant = None
+        rows = [
+            c
+            for c in self.checks.values()
+            if c["workOrderId"] == work_order_id
+            and c["stage"] == "FINAL"
+            and (wo_tenant is None or c.get("tenantId") == wo_tenant)
+        ]
         latest: dict[str, dict[str, Any]] = {}
         for row in rows:
             prev = latest.get(row["checkId"])
@@ -184,8 +198,8 @@ class QcService:
         failed = [cid for cid, row in latest.items() if not row["ok"]]
         return {"ok": not missing and not failed, "missing": missing, "failed": failed, "required": required}
 
-    def completion_allowed(self, work_order_id: str, family: str) -> bool:
-        return self.required_final_ok(work_order_id, family)["ok"]
+    def completion_allowed(self, work_order_id: str, family: str, *, tenant_id: str | None = None) -> bool:
+        return self.required_final_ok(work_order_id, family, tenant_id=tenant_id)["ok"]
 
     def trace(self, *, work_order_id: str | None = None, release_hash: str | None = None, product_id: str | None = None) -> dict[str, Any]:
         wo = None

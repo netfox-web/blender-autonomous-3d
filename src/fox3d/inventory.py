@@ -209,6 +209,9 @@ class MaterialLotRegistry:
             "configCostSnapshot": {"costPerSheet": cost_per_sheet, "source": "CONFIG"},
             "sheetCount": sheet_count,
             "remainingSheets": sheet_count,
+            "reservedSheets": 0,
+            "consumedSheets": 0,
+            "reservations": {},
             "version": 1,
         }
         rec["lotHash"] = stable_hash({k: rec[k] for k in rec if k not in {"lotHash"}})
@@ -221,19 +224,140 @@ class MaterialLotRegistry:
         rec = self.lots[lot_id]
         if rec.get("tenantId") != tenant_id:
             raise PermissionError("tenant isolation: material lot")
+        self._ensure_qty(rec)
         return rec
+
+    def _ensure_qty(self, rec: dict[str, Any]) -> dict[str, Any]:
+        rec.setdefault("reservedSheets", 0)
+        rec.setdefault("consumedSheets", 0)
+        rec.setdefault("reservations", {})
+        remaining = int(rec.get("remainingSheets") or 0)
+        reserved = int(rec.get("reservedSheets") or 0)
+        consumed = int(rec.get("consumedSheets") or 0)
+        if "sheetCount" not in rec:
+            rec["sheetCount"] = remaining + reserved + consumed
+        sheet_count = int(rec.get("sheetCount") or 0)
+        if reserved == 0 and remaining + consumed != sheet_count and 0 <= remaining <= sheet_count:
+            rec["consumedSheets"] = sheet_count - remaining
+        return rec
+
+    def quantities(self, lot_id: str, *, tenant_id: str) -> dict[str, Any]:
+        rec = self.get(lot_id, tenant_id=tenant_id)
+        remaining = int(rec.get("remainingSheets") or 0)
+        reserved = int(rec.get("reservedSheets") or 0)
+        consumed = int(rec.get("consumedSheets") or 0)
+        sheet_count = int(rec.get("sheetCount") or 0)
+        return {
+            "lotId": lot_id,
+            "available": remaining,
+            "reserved": reserved,
+            "consumed": consumed,
+            "sheetCount": sheet_count,
+            "conserved": remaining + reserved + consumed == sheet_count,
+        }
+
+    def conservation_ok(self, *, tenant_id: str) -> dict[str, Any]:
+        rows = [self.quantities(lot["lotId"], tenant_id=tenant_id) for lot in self.list(tenant_id=tenant_id)]
+        return {"ok": all(r["conserved"] for r in rows) if rows else True, "lots": rows}
+
+    def _reservation_key(self, *, tenant_id: str, work_order_id: str, lot_id: str, quantity: int) -> str:
+        return f"{tenant_id}:{work_order_id}:{lot_id}:{int(quantity)}"
+
+    def _find_reservation(self, reservation_id: str, *, tenant_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        other = False
+        for rec in self.lots.values():
+            self._ensure_qty(rec)
+            item = (rec.get("reservations") or {}).get(reservation_id)
+            if not item:
+                continue
+            if rec.get("tenantId") != tenant_id:
+                other = True
+                continue
+            return item, rec
+        if other:
+            raise PermissionError("tenant isolation: material lot")
+        raise KeyError(reservation_id)
+
+    def reserve_sheets(self, lot_id: str, *, tenant_id: str, work_order_id: str, quantity: int) -> dict[str, Any]:
+        rec = self.get(lot_id, tenant_id=tenant_id)
+        qty = int(quantity)
+        if qty <= 0:
+            raise PermissionError("reservation quantity must be positive")
+        key = self._reservation_key(tenant_id=tenant_id, work_order_id=work_order_id, lot_id=lot_id, quantity=qty)
+        existing = (rec.get("reservations") or {}).get(key)
+        if existing and existing.get("state") == "RESERVED":
+            return existing
+        if existing and existing.get("state") == "CONSUMED":
+            raise PermissionError("lot reservation already consumed")
+        available = int(rec.get("remainingSheets") or 0)
+        if qty > available:
+            raise PermissionError(f"lot {lot_id} insufficient available sheets")
+        rec["remainingSheets"] = available - qty
+        rec["reservedSheets"] = int(rec.get("reservedSheets") or 0) + qty
+        rec["version"] = int(rec.get("version") or 1) + 1
+        item = {
+            "reservationId": key,
+            "lotId": lot_id,
+            "tenantId": tenant_id,
+            "workOrderId": work_order_id,
+            "quantity": qty,
+            "state": "RESERVED",
+        }
+        rec.setdefault("reservations", {})[key] = item
+        self.persist()
+        return item
+
+    def consume_reservation(self, reservation_id: str, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
+        item, rec = self._find_reservation(reservation_id, tenant_id=tenant_id)
+        if rec.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: material lot")
+        if item.get("workOrderId") != work_order_id:
+            raise PermissionError("reservation ownership")
+        if item.get("state") == "CONSUMED":
+            return item
+        if item.get("state") != "RESERVED":
+            raise PermissionError(f"lot reservation not consumable ({item.get('state')})")
+        qty = int(item["quantity"])
+        rec["reservedSheets"] = int(rec.get("reservedSheets") or 0) - qty
+        rec["consumedSheets"] = int(rec.get("consumedSheets") or 0) + qty
+        item["state"] = "CONSUMED"
+        rec["version"] = int(rec.get("version") or 1) + 1
+        self.persist()
+        return item
+
+    def release_reservation(self, reservation_id: str, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
+        item, rec = self._find_reservation(reservation_id, tenant_id=tenant_id)
+        if rec.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: material lot")
+        if item.get("workOrderId") != work_order_id:
+            raise PermissionError("reservation ownership")
+        if item.get("state") == "RELEASED":
+            return item
+        if item.get("state") == "CONSUMED":
+            raise PermissionError("cannot release consumed lot reservation")
+        if item.get("state") != "RESERVED":
+            raise PermissionError(f"lot reservation not releasable ({item.get('state')})")
+        qty = int(item["quantity"])
+        rec["reservedSheets"] = int(rec.get("reservedSheets") or 0) - qty
+        rec["remainingSheets"] = int(rec.get("remainingSheets") or 0) + qty
+        item["state"] = "RELEASED"
+        rec["version"] = int(rec.get("version") or 1) + 1
+        self.persist()
+        return item
 
     def allocate_sheet(self, lot_id: str, *, tenant_id: str) -> dict[str, Any]:
         rec = self.get(lot_id, tenant_id=tenant_id)
         if int(rec.get("remainingSheets") or 0) <= 0:
             raise PermissionError(f"lot {lot_id} exhausted")
         rec["remainingSheets"] = int(rec["remainingSheets"]) - 1
+        rec["consumedSheets"] = int(rec.get("consumedSheets") or 0) + 1
         rec["version"] = int(rec.get("version") or 1) + 1
         self.persist()
         return rec
 
     def list(self, *, tenant_id: str) -> list[dict[str, Any]]:
-        return [v for v in self.lots.values() if v.get("tenantId") == tenant_id]
+        rows = [self._ensure_qty(v) for v in self.lots.values() if v.get("tenantId") == tenant_id]
+        return rows
 
 
 def remnant_value(rec: dict[str, Any], *, cost_per_m2: float = 280.0, now_iso: str | None = None) -> dict[str, Any]:

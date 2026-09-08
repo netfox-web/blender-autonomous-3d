@@ -55,6 +55,7 @@ class PilotOps:
             releases=self.releases,
         )
         self.qc = QcService(dam=platform.dam, workorders=self.workorders)
+        self.workorders.bind_qc(self.qc)
         self.logistics = LogisticsService()
         self.econ = PilotEconomics()
 
@@ -202,7 +203,13 @@ class PilotOps:
             "liveFactoryExecutionReady": False,
         }
 
-    def batch_stress(self, *, tenant_id: str = "pilot-stress", plan: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+    def batch_stress(
+        self,
+        *,
+        tenant_id: str = "pilot-stress",
+        plan: list[tuple[str, str]] | None = None,
+        consume_retry: Any | None = None,
+    ) -> dict[str, Any]:
         plan = plan or STRESS_PLAN
         releases = []
         wo_ids = []
@@ -215,14 +222,8 @@ class PilotOps:
         # idempotency: retry create
         first = self.releases.get(releases[0])
         again = self.releases.create(first["snapshot"], tenant_id=tenant_id, created_by="pilot", idempotency_key=f"{tenant_id}:{first['productId']}:{first['productVersion']}:{first['engineeringHash']}")
-        # double-consume blocked
-        double = None
-        wo0 = self.workorders.get(wo_ids[0])
-        try:
-            self.workorders.consume_reserved(wo0["workOrderId"], actor="pilot")
-            double = "idempotent"
-        except PermissionError as exc:
-            double = str(exc)
+        no_double = self.observe_no_double_consume(wo_ids[0], consume=consume_retry)
+        conservation = self.lot_conservation(tenant_id)
         # tenant isolation
         isolated = False
         try:
@@ -245,12 +246,38 @@ class PilotOps:
             "workOrderCount": len(wo_ids),
             "operationCount": op_count,
             "idempotentRelease": again["releaseId"] == releases[0],
-            "noDoubleConsume": double in {"idempotent", None} or True,
+            "noDoubleConsume": bool(no_double),
+            "materialConserved": bool(conservation["ok"]),
             "tenantIsolation": isolated,
             "staleReleaseBlocked": stale_blocked,
             "label": "FIXTURE",
             "liveFactoryExecutionReady": False,
         }
+
+    def _lot_state(self, tenant_id: str) -> dict[str, tuple[int, int, int]]:
+        return {
+            lot["lotId"]: (
+                int(lot.get("remainingSheets") or 0),
+                int(lot.get("reservedSheets") or 0),
+                int(lot.get("consumedSheets") or 0),
+            )
+            for lot in self.workorders.lots.list(tenant_id=tenant_id)
+        }
+
+    def lot_conservation(self, tenant_id: str) -> dict[str, Any]:
+        return self.workorders.lots.conservation_ok(tenant_id=tenant_id)
+
+    def observe_no_double_consume(self, work_order_id: str, *, consume: Any | None = None) -> bool:
+        rec = self.workorders.get(work_order_id)
+        tid = rec["tenantId"]
+        before = self._lot_state(tid)
+        fn = consume or self.workorders.consume_reserved
+        try:
+            fn(work_order_id, actor="pilot")
+        except PermissionError:
+            pass
+        after = self._lot_state(tid)
+        return before == after and bool(self.lot_conservation(tid)["ok"])
 
     def supplier_fixture(self, release: dict[str, Any]) -> dict[str, Any]:
         rfq = self.suppliers.rfq_from_release(release, quantity=10)
@@ -274,18 +301,41 @@ class PilotOps:
         stale = self.suppliers.comparison_stale(cmp, release_hash="other", quantity=10, fx_snapshot_id=fx["snapshotId"])
         return {"rfq": rfq, "quotes": quotes, "comparison": cmp, "staleOnReleaseChange": stale, "fxSource": fx.get("source")}
 
-    def render_family_previews(self, *, tenant_id: str, commit_sha: str, real_ok: bool) -> list[dict[str, Any]]:
+    def render_family_previews(
+        self,
+        *,
+        tenant_id: str,
+        commit_sha: str,
+        real_ok: bool,
+        families: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
         from fox3d.evidence import evidence_bundle, verify_bundle
 
-        kinds = {
-            "KD_FURNITURE": ("OPEN_SHELF", "PARAMETRIC_CABINET"),
-            "RETAIL_FIXTURE": ("COUNTER_DISPLAY", "PARAMETRIC_CABINET"),
-            "PACKAGING_STRUCTURE": ("RSC_CARTON", "PACKAGING_FOLD"),
-            "ACRYLIC_SHEET": ("MENU_STAND", "ACRYLIC_PRODUCT"),
+        mode_map = {
+            "KD_FURNITURE": "PARAMETRIC_CABINET",
+            "RETAIL_FIXTURE": "PARAMETRIC_CABINET",
+            "PACKAGING_STRUCTURE": "PACKAGING_FOLD",
+            "ACRYLIC_SHEET": "ACRYLIC_PRODUCT",
         }
+        if families is None:
+            families = self.run_four_family_e2e(tenant_id=tenant_id)["families"]
         previews: list[dict[str, Any]] = []
-        for family, (kind, mode) in kinds.items():
-            rec = self.build_product(tenant_id=tenant_id, family=family, kind=kind, render=False)
+        for fam in families:
+            rel = self.releases.get(fam["releaseId"])
+            snap = rel.get("snapshot") or {}
+            family = rel["productFamily"]
+            kind = rel.get("kind") or fam.get("kind")
+            mode = mode_map[family]
+            release_hash = rel["releaseHash"]
+            eng_hash = rel.get("engineeringHash") or snap.get("engineeringHash")
+            bom_hash = rel.get("bomHash") or (snap.get("bom") or {}).get("bomHash")
+            rec = {
+                "spec": snap.get("spec") or {},
+                "engineering": snap.get("engineering") or {},
+                "kind": kind,
+                "dimensions": snap.get("dimensions"),
+                "sheet": snap.get("sheet"),
+            }
             payload: dict[str, Any] = {
                 "tenantId": tenant_id,
                 "jobType": "BLENDER_PREVIEW",
@@ -298,9 +348,17 @@ class PilotOps:
             if mode == "PACKAGING_FOLD":
                 payload["foldPreview"] = True
                 payload["packagingTemplate"] = "BOX"
-                payload["dimensions"] = (rec.get("engineering") or {}).get("fit", {}).get("outer") or {"width": 120, "height": 80, "depth": 40}
+                payload["dimensions"] = (rec.get("engineering") or {}).get("fit", {}).get("outer") or rec.get("dimensions") or {
+                    "width": 120,
+                    "height": 80,
+                    "depth": 40,
+                }
             if mode == "ACRYLIC_PRODUCT":
-                payload["acrylic"] = {"kind": rec.get("kind"), "dimensions": rec.get("dimensions"), "finish": (rec.get("sheet") or {}).get("finish")}
+                payload["acrylic"] = {
+                    "kind": rec.get("kind"),
+                    "dimensions": rec.get("dimensions"),
+                    "finish": (rec.get("sheet") or {}).get("finish"),
+                }
             job = self.platform.execute_job(self.platform.submit_job(payload))
             if job.get("status") in {"queued", "retry_scheduled"}:
                 job = self.platform.execute_job(job)
@@ -316,11 +374,20 @@ class PilotOps:
                 commit_sha=commit_sha,
                 job=job,
                 artifact_path=beauty,
-                engineering_hash=rec.get("engineeringHash") or (rec.get("engineering") or {}).get("engineeringHash"),
-                bom_hash=(rec.get("bom") or {}).get("bomHash"),
-                extra={"releaseHash": rec.get("releaseHash"), "productFamily": family},
+                engineering_hash=eng_hash,
+                bom_hash=bom_hash,
+                extra={"releaseHash": release_hash, "productFamily": family, "releaseId": rel["releaseId"]},
             )
-            ver = verify_bundle(bun, require_real=True, expected_commit_sha=commit_sha)
+            verify_kwargs: dict[str, Any] = {
+                "require_real": True,
+                "expected_commit_sha": commit_sha,
+                "expected_release_hash": release_hash,
+            }
+            if eng_hash:
+                verify_kwargs["expected_engineering_hash"] = eng_hash
+            if bom_hash:
+                verify_kwargs["expected_bom_hash"] = bom_hash
+            ver = verify_bundle(bun, **verify_kwargs)
             used_mock = bool(job.get("usedMock"))
             real_blender = bool(job.get("realBlender"))
             label = "REAL" if real_ok and ver["ok"] and real_blender and not used_mock else "PARTIAL"
@@ -336,6 +403,9 @@ class PilotOps:
                     "verify": ver,
                     "bundle": bun,
                     "label": label,
+                    "releaseHash": release_hash,
+                    "engineeringHash": eng_hash,
+                    "bomHash": bom_hash,
                     "blenderVersion": job.get("blenderVersion"),
                     "gpuName": job.get("gpu") or job.get("gpuName"),
                     "workerId": job.get("worker"),
@@ -346,23 +416,34 @@ class PilotOps:
     def readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
         ev = evidence or {}
         matrix = scoped_readiness(evidence=ev)
-        matrix["manufacturingReleasePackageReady"] = bool(ev.get("releasePackage", True))
-        matrix["manualPilotOpsReady"] = bool(ev.get("pilotOps", True))
-        matrix["qcTraceabilityReady"] = bool(ev.get("qc", True))
-        matrix["importedSupplierQuoteReady"] = bool(ev.get("supplierQuotes", True))
-        matrix["importedCarrierQuoteReady"] = bool(ev.get("carrierQuotes", True))
+
+        def _flag(key: str) -> bool:
+            if key not in ev:
+                return False
+            return bool(ev[key])
+
+        def _label(ready: bool, when_true: str) -> str:
+            return when_true if ready else "UNVERIFIED"
+
+        matrix["manufacturingReleasePackageReady"] = _flag("releasePackage")
+        matrix["manualPilotOpsReady"] = _flag("pilotOps")
+        matrix["qcTraceabilityReady"] = _flag("qc")
+        matrix["importedSupplierQuoteReady"] = _flag("supplierQuotes")
+        matrix["importedCarrierQuoteReady"] = _flag("carrierQuotes")
         matrix["liveFactoryExecutionReady"] = False
         matrix["liveProviderReady"] = False
         matrix["globalProductionReady"] = False
         matrix["fullAutonomousFactoryReady"] = False
         matrix["labels"] = {
             **(matrix.get("labels") or {}),
-            "manufacturingReleasePackageReady": "REAL",
-            "manualPilotOpsReady": "REAL",
-            "qcTraceabilityReady": "REAL",
-            "importedSupplierQuoteReady": "IMPORTED",
-            "importedCarrierQuoteReady": "IMPORTED",
+            "manufacturingReleasePackageReady": _label(matrix["manufacturingReleasePackageReady"], "REAL"),
+            "manualPilotOpsReady": _label(matrix["manualPilotOpsReady"], "REAL"),
+            "qcTraceabilityReady": _label(matrix["qcTraceabilityReady"], "REAL"),
+            "importedSupplierQuoteReady": _label(matrix["importedSupplierQuoteReady"], "IMPORTED"),
+            "importedCarrierQuoteReady": _label(matrix["importedCarrierQuoteReady"], "IMPORTED"),
             "liveFactoryExecutionReady": "BLOCKED",
             "liveProviderReady": "BLOCKED",
+            "globalProductionReady": "BLOCKED",
+            "fullAutonomousFactoryReady": "BLOCKED",
         }
         return matrix

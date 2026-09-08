@@ -282,6 +282,8 @@ def test_batch_stress_and_readiness(platform):
     assert stress["releaseCount"] == 20
     assert stress["operationCount"] >= 100
     assert stress["idempotentRelease"] is True
+    assert stress["noDoubleConsume"] is True
+    assert stress["materialConserved"] is True
     assert stress["tenantIsolation"] is True
     assert stress["staleReleaseBlocked"] is True
     assert stress["label"] == "FIXTURE"
@@ -303,3 +305,165 @@ def test_batch_stress_and_readiness(platform):
     base = scoped_readiness()
     assert base["liveFactoryExecutionReady"] is False
     assert base["fullAutonomousFactoryReady"] is False
+
+
+def _draft_wo(platform, *, tenant="cons", kind="OPEN_SHELF"):
+    product = platform.kd.build_sku(tenant_id=tenant, kind=kind)
+    rel = platform.pilot.open_release(product, tenant_id=tenant, family="KD_FURNITURE")
+    wo_svc = platform.pilot.workorders
+    wo = wo_svc.create(tenant_id=tenant, release=rel, quantity=1, actor="tester")
+    wo_svc.release_for_execution(wo["workOrderId"], actor="tester")
+    return wo, rel, wo_svc
+
+
+def test_lot_reserve_cancel_consume_conservation(platform):
+    tenant = "cons"
+    lots = platform.lots
+    lot = lots.create(tenant_id=tenant, material="PB_18_WHITE", thickness=18, sheet_count=10)
+    before = lots.quantities(lot["lotId"], tenant_id=tenant)
+    assert before["available"] == 10
+    assert before["conserved"] is True
+    wo, _rel, wo_svc = _draft_wo(platform, tenant=tenant)
+    reserved = wo_svc.reserve_materials(wo["workOrderId"], actor="tester", tenant_id=tenant)
+    after_reserve = lots.quantities(lot["lotId"], tenant_id=tenant)
+    assert after_reserve["available"] < before["available"]
+    assert after_reserve["reserved"] > 0
+    assert after_reserve["consumed"] == 0
+    assert after_reserve["conserved"] is True
+    reserved_qty = after_reserve["reserved"]
+    wo_svc.reserve_materials(wo["workOrderId"], actor="tester", tenant_id=tenant)
+    assert lots.quantities(lot["lotId"], tenant_id=tenant) == after_reserve
+    cancelled = wo_svc.cancel(wo["workOrderId"], actor="tester")
+    assert cancelled["state"] == "CANCELLED"
+    restored = lots.quantities(lot["lotId"], tenant_id=tenant)
+    assert restored["available"] == before["available"]
+    assert restored["reserved"] == 0
+    assert restored["consumed"] == 0
+    wo2, _rel2, _ = _draft_wo(platform, tenant=tenant, kind="DESK_RISER")
+    wo_svc.reserve_materials(wo2["workOrderId"], actor="tester", tenant_id=tenant)
+    mid = lots.quantities(lot["lotId"], tenant_id=tenant)
+    assert mid["reserved"] > 0
+    wo_svc.consume_reserved(wo2["workOrderId"], actor="tester")
+    after_consume = lots.quantities(lot["lotId"], tenant_id=tenant)
+    assert after_consume["consumed"] == mid["reserved"]
+    assert after_consume["reserved"] == 0
+    assert after_consume["available"] == before["available"] - after_consume["consumed"]
+    assert after_consume["conserved"] is True
+    wo_svc.consume_reserved(wo2["workOrderId"], actor="tester")
+    assert lots.quantities(lot["lotId"], tenant_id=tenant) == after_consume
+    with pytest.raises(PermissionError):
+        lots.reserve_sheets(lot["lotId"], tenant_id="other", work_order_id=wo2["workOrderId"], quantity=1)
+    with pytest.raises(PermissionError):
+        lots.consume_reservation(reserved["reservations"][0]["reservationId"], tenant_id="other", work_order_id=wo2["workOrderId"])
+    assert lots.conservation_ok(tenant_id=tenant)["ok"] is True
+    assert reserved_qty > 0
+
+
+def test_no_double_consume_negative_regression(platform):
+    row = platform.pilot.run_family_e2e(tenant_id="dbl", family="KD_FURNITURE", kind="OPEN_SHELF")
+    assert platform.pilot.observe_no_double_consume(row["workOrderId"]) is True
+    rec = platform.pilot.workorders.get(row["workOrderId"])
+    lot_id = rec["lineage"]["materialLots"][0]
+    lot = platform.lots.get(lot_id, tenant_id=rec["tenantId"])
+    lot["remainingSheets"] = int(lot["remainingSheets"]) + 1
+    lot["sheetCount"] = int(lot["sheetCount"]) + 1
+    assert platform.lots.quantities(lot_id, tenant_id=rec["tenantId"])["conserved"] is True
+
+    def bad_consume(work_order_id, *, actor):
+        platform.lots.allocate_sheet(lot_id, tenant_id=rec["tenantId"])
+
+    assert platform.pilot.observe_no_double_consume(row["workOrderId"], consume=bad_consume) is False
+
+
+def test_qc_complete_cannot_bypass_required_final(platform):
+    wo, _rel, wo_svc = _draft_wo(platform, tenant="qcbypass")
+    wo_svc.reserve_materials(wo["workOrderId"], actor="qc", tenant_id="qcbypass")
+    with pytest.raises(PermissionError):
+        wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
+    assert wo_svc.get(wo["workOrderId"])["state"] == "QC_HOLD"
+    qc = platform.pilot.qc
+    qc.final(
+        tenant_id="qcbypass",
+        work_order_id=wo["workOrderId"],
+        check_id="THICKNESS",
+        measured=18.0,
+        nominal=18.0,
+        tol=0.5,
+        unit="mm",
+        operator="qc",
+    )
+    with pytest.raises(PermissionError):
+        wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
+    fail = qc.final(
+        tenant_id="qcbypass",
+        work_order_id=wo["workOrderId"],
+        check_id="PANEL_LENGTH",
+        measured=50.0,
+        nominal=400.0,
+        tol=1.0,
+        unit="mm",
+        operator="qc",
+    )
+    assert fail["ok"] is False
+    with pytest.raises(PermissionError):
+        wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
+    qc.defect(tenant_id="qcbypass", work_order_id=wo["workOrderId"], code="DEF_SIZE", disposition="REWORK", actor="qc")
+    qc.final(
+        tenant_id="qcbypass",
+        work_order_id=wo["workOrderId"],
+        check_id="PANEL_LENGTH",
+        measured=400.0,
+        nominal=400.0,
+        tol=1.0,
+        unit="mm",
+        operator="qc",
+    )
+    wo_svc.complete(wo["workOrderId"], actor="qc", qc_ok=True)
+    assert wo_svc.get(wo["workOrderId"])["state"] == "COMPLETED"
+    wo2, _rel2, _ = _draft_wo(platform, tenant="qcbypass", kind="DESK_RISER")
+    for check_id, nominal in (("THICKNESS", 18.0), ("PANEL_LENGTH", 400.0)):
+        qc.checks[f"x-{check_id}"] = {
+            "qcId": f"x-{check_id}",
+            "tenantId": "other-tenant",
+            "workOrderId": wo2["workOrderId"],
+            "stage": "FINAL",
+            "checkId": check_id,
+            "ok": True,
+            "at": "2099-01-01T00:00:00+00:00",
+        }
+    with pytest.raises(PermissionError):
+        wo_svc.complete(wo2["workOrderId"], actor="qc", qc_ok=True)
+    with pytest.raises(PermissionError):
+        qc.final(
+            tenant_id="other-tenant",
+            work_order_id=wo2["workOrderId"],
+            check_id="THICKNESS",
+            measured=18.0,
+            nominal=18.0,
+            tol=0.5,
+            unit="mm",
+            operator="qc",
+        )
+
+
+def test_readiness_defaults_unverified_without_evidence(platform):
+    empty = platform.pilot.readiness()
+    for key in (
+        "manufacturingReleasePackageReady",
+        "manualPilotOpsReady",
+        "qcTraceabilityReady",
+        "importedSupplierQuoteReady",
+        "importedCarrierQuoteReady",
+    ):
+        assert empty[key] is False
+        assert empty["labels"][key] == "UNVERIFIED"
+    assert empty["liveFactoryExecutionReady"] is False
+    assert empty["liveProviderReady"] is False
+    assert empty["globalProductionReady"] is False
+    assert empty["fullAutonomousFactoryReady"] is False
+    only_release = platform.pilot.readiness(evidence={"releasePackage": True})
+    assert only_release["manufacturingReleasePackageReady"] is True
+    assert only_release["labels"]["manufacturingReleasePackageReady"] == "REAL"
+    assert only_release["importedSupplierQuoteReady"] is False
+    assert only_release["labels"]["importedSupplierQuoteReady"] == "UNVERIFIED"
+    assert only_release["importedCarrierQuoteReady"] is False

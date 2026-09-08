@@ -103,6 +103,9 @@ def verify_bundle(
     *,
     require_real: bool = True,
     expected_commit_sha: str | None = None,
+    expected_release_hash: str | None = None,
+    expected_engineering_hash: str | None = None,
+    expected_bom_hash: str | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     path = bundle.get("artifactPath")
@@ -129,6 +132,15 @@ def verify_bundle(
     if expected_commit_sha:
         if bundle.get("commitSha") != expected_commit_sha:
             errors.append("commit_sha_mismatch")
+    if expected_release_hash:
+        if not bundle.get("releaseHash"):
+            errors.append("release_hash_missing")
+        elif bundle.get("releaseHash") != expected_release_hash:
+            errors.append("release_hash_mismatch")
+    if expected_engineering_hash and bundle.get("engineeringHash") != expected_engineering_hash:
+        errors.append("engineering_hash_mismatch")
+    if expected_bom_hash and bundle.get("bomHash") != expected_bom_hash:
+        errors.append("bom_hash_mismatch")
     ok = not errors
     return {
         "ok": ok,
@@ -137,4 +149,6 @@ def verify_bundle(
         "evidenceHash": bundle.get("evidenceHash"),
         "expectedCommitSha": expected_commit_sha,
         "bundleCommitSha": bundle.get("commitSha"),
+        "expectedReleaseHash": expected_release_hash,
+        "bundleReleaseHash": bundle.get("releaseHash"),
     }
