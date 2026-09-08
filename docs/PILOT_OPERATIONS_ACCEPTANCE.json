@@ -24,7 +24,7 @@
     {
       "check": "KD_FURNITURE packet checksum",
       "status": "REAL",
-      "evidence": "a8d13b92f876"
+      "evidence": "3896da583450"
     },
     {
       "check": "KD_FURNITURE WO COMPLETED",
@@ -34,7 +34,7 @@
     {
       "check": "RETAIL_FIXTURE packet checksum",
       "status": "REAL",
-      "evidence": "64bb353713f2"
+      "evidence": "4fd8ad2fed92"
     },
     {
       "check": "RETAIL_FIXTURE WO COMPLETED",
@@ -44,7 +44,7 @@
     {
       "check": "PACKAGING_STRUCTURE packet checksum",
       "status": "REAL",
-      "evidence": "d3d74d2596b0"
+      "evidence": "1b68f3ff9e35"
     },
     {
       "check": "PACKAGING_STRUCTURE WO COMPLETED",
@@ -54,7 +54,7 @@
     {
       "check": "ACRYLIC_SHEET packet checksum",
       "status": "REAL",
-      "evidence": "c1772eff69b4"
+      "evidence": "6e59aefe4af9"
     },
     {
       "check": "ACRYLIC_SHEET WO COMPLETED",
@@ -79,7 +79,7 @@
     {
       "check": "carrier quote",
       "status": "IMPORTED",
-      "evidence": "54cd3e6e"
+      "evidence": "54690e83"
     },
     {
       "check": "pilot 4-family Blender EvidenceBundle",
@@ -143,7 +143,9 @@
       "manualPilotOpsReady": "REAL",
       "qcTraceabilityReady": "REAL",
       "importedSupplierQuoteReady": "IMPORTED",
-      "importedCarrierQuoteReady": "IMPORTED"
+      "importedCarrierQuoteReady": "IMPORTED",
+      "globalProductionReady": "BLOCKED",
+      "fullAutonomousFactoryReady": "BLOCKED"
     },
     "globalProductionReady": false,
     "humanApprovalGate": true,
@@ -179,10 +181,10 @@
     "path": "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.canonicalTruthSet",
     "secondAcceptanceSystem": false
   },
-  "evidenceCodeCommit": "64c5b6fc624ed1e2b6a75de9a1d76ba6701274b7",
+  "evidenceCodeCommit": "414847d9b183fb7175461e5a886dfbe9337b5a73",
   "workingTreeClean": true,
-  "acceptanceGenerationId": "1831ff20-23b8-4d94-a180-1f0c0780be8c",
-  "generatedAt": "2026-09-08T21:24:50.238262+00:00",
+  "acceptanceGenerationId": "3c7c223f-78fa-440a-bee7-61b7c6b59dfd",
+  "generatedAt": "2026-09-08T21:59:00.530087+00:00",
   "fullAutonomousFactoryReady": false,
   "liveFactoryExecutionReady": false,
   "liveMachineControl": false

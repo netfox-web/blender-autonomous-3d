@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 301–360 CODE_EVIDENCE_SHA `64c5b6f`; prior atomic runner `513ae9d` / docs `b55b52c`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–300 notes below remain. New modules extend existing SoT; Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 301–360 integrity CODE_EVIDENCE_SHA `414847d`; prior feature code `64c5b6f`; atomic runner `513ae9d` / docs `b55b52c`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `3ea08b0`. Historical Phase 1–300 notes below remain. New modules extend existing SoT; Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -13,14 +13,14 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 301–304 canonical six-file reader | REAL | `read_canonical_truth_set` rejects mixed generation/commit, missing, malformed; runner success checks all six |
 | 305–312 ManufacturingRelease packets | REAL | KD/retail/packaging/acrylic; checksum SHA-256+size; tamper fails; APPROVED_FOR_MANUAL_RELEASE ≠ LIVE_CNC |
 | 313–320 supplier RFQ/compare | REAL logic / IMPORTED data | ≥3 snapshots; FX MANUAL; stale on releaseHash/qty/FX; no LIVE_PROVIDER |
-| 321–328 WorkOrder traveler | REAL (manual) | idempotent reserve/consume/cancel; remnant+lot reuse; tenant isolation; not a MES |
-| 329–336 QC + traceability | REAL | out-of-tol + required-final block COMPLETED; rework loop; DAM refs; full trace query |
+| 321–328 WorkOrder traveler | REAL (manual) | lot `reserve_sheets` (not allocate-on-reserve); cancel restores unconsumed; consume once; tenant isolation; not a MES |
+| 329–336 QC + traceability | REAL | authoritative `required_final_ok`; `qc_ok=True` cannot bypass missing/failed FINAL; rework loop; DAM refs |
 | 337–344 logistics boundary | REAL planning | carton expected≠measured; conservation; pallet PLANNING; carrier IMPORTED; barcode PARTIAL |
 | 345–352 unit economics | REAL freeze | frozen history; variance; scrap vs remnant vs recovered credit; demand observation MOCK |
 | 353–356 four-family E2E | REAL (manual sim) | all COMPLETED with verified packets |
-| 357 REAL Blender refresh | REAL | 4/4 T1000 OptiX `commitSha=64c5b6f` `usedMock=false` hash/size PASS |
-| 358 batch stress | FIXTURE | 20 releases, ≥100 ops, idempotency, tenant isolation, stale blocked |
-| 359 readiness | REAL flags | `manufacturingReleasePackageReady` / `manualPilotOpsReady` / `qcTraceabilityReady`; `liveFactoryExecutionReady=false`; `fullAutonomousFactoryReady=false` |
+| 357 REAL Blender refresh | REAL | 4/4 T1000 OptiX `commitSha=414847d` `usedMock=false` hash/size PASS; non-null `releaseHash` bound to accepted ManufacturingRelease |
+| 358 batch stress | FIXTURE | 20 releases, ≥100 ops; `noDoubleConsume` observed (not `or True`); material conservation; negative regression |
+| 359 readiness | REAL flags | missing evidence → false/UNVERIFIED; `liveFactoryExecutionReady=false`; `fullAutonomousFactoryReady=false` |
 | 360 acceptance docs | REAL | `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` + `PILOT_OPERATIONS_ACCEPTANCE.md` + `QC_TRACEABILITY_ACCEPTANCE.md` |
 
 ## Mock vs Real split

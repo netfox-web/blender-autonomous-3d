@@ -1,6 +1,6 @@
 # QC_TRACEABILITY_ACCEPTANCE
 
-generatedAt: 2026-09-08T21:24:50.238262+00:00
+generatedAt: 2026-09-08T21:59:00.530087+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 
 | Check | Status | Evidence |
