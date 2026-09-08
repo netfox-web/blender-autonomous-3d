@@ -2,37 +2,39 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `817921f` (**CHANGES REQUIRED** — fail-closed REAL runner; not Phase 301+)  
-Re-review head: `35a7e33` / prior evidence code `d7a3075`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `6f02264` (**CHANGES REQUIRED** — runner-level atomic REAL acceptance; not Phase 301+)  
+Re-review head: `2968a8b` / prior evidence code `6d9de7e`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Did **not** start Phase 301+. Fixed fail-open REAL runner only.
+Did **not** start Phase 301+. Hardened Evidence Integrity only.
 
 | Gap | Fix |
 |---|---|
-| `return 0 if ... or not previews else 0` always 0 | `required_real_acceptance_ok` → exit 4 unless every required REAL check passes |
-| Canonical files written before gate | `write_acc` / `write_canonical_if_ok` only after `required_ok` |
-| Missing integration regressions | `tests/test_acceptance_gate.py` (commit mismatch, hash, mock, 4/5, dirty, LIVE_CNC/LASER) |
+| Tests only hit gate helpers, not `main()` exit | `tests/test_os_v2_runner.py` calls `main(...)` for success + commit/hash/size/mock/4-of-5/dirty/allow-dirty/LIVE_CNC-LASER |
+| Canonical writes were success-only but not atomic | `atomic_publish_canonical`: stage all JSON+MD, then `os.replace`; rollback on exception; shared `acceptanceGenerationId` |
+| Publish failure mixed generation | regression: 3rd replace raises → exit != 0, all sentinels stay OLD |
 
-**CODE_EVIDENCE_SHA:** `6d9de7e4c57085054f373c63efe51eaccdf59f04`  
+**CODE_EVIDENCE_SHA:** `513ae9df9093005409794b021a533e70edeec9bf`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34267625716` on `6d9de7e` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34273759566` on `513ae9d` ubuntu+windows.
 
-Clean-tree REAL e2e: `requiredRealAcceptanceOk=true`, exit 0, 5/5 T1000 OptiX `commitSha=6d9de7e`, `usedMock=false`, hash/size PASS, `workingTreeClean=true`.
+Clean-tree REAL e2e: `requiredRealAcceptanceOk=true` exit 0; 5/5 T1000 OptiX `commitSha=513ae9d`; `usedMock=false`; hash/size PASS; all 6 canonical JSON share generation `3bf0138c-834e-4137-8807-7cae874b1626`.
+
+`tests/test_acceptance_gate.py` remains **gate/unit regressions** only. Runner integration is `test_os_v2_runner.py`.
 
 ## Tests
 
 ```
-pytest -q  →  110 passed   (local MOCK suite — not Production Ready)
+pytest -q  →  120 passed   (local MOCK suite — not Production Ready)
 ```
 
 CI GREEN is MOCK-suite only, not REAL Blender.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
-Unchanged labels. Fail-closed runner is REAL execution of the gate; Blender evidence is REAL on `6d9de7e`. `fullAutonomousFactoryReady=false`. `globalProductionReady=false`.
+Unchanged. `fullAutonomousFactoryReady=false`. `globalProductionReady=false`.
 
 ## Blockers (unchanged policy)
 
@@ -48,4 +50,4 @@ Phase 1–300 product features. No Phase 301+.
 
 ## Next round
 
-ChatGPT re-review fail-closed exit criteria. Phase 301+ only after **ACCEPT WITH SCOPE**.
+ChatGPT re-review runner-level atomic exit criteria. Phase 301+ only after **ACCEPT WITH SCOPE**.

@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (fail-closed evidence CODE_EVIDENCE_SHA `6d9de7e`; prior lineage `d7a3075` / review `35a7e33`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–70 notes below remain; they are not the current review SHA. REAL OS V2 runner is fail-closed: required evidence failure → non-zero exit and no canonical overwrite.
+Audit of `main` (runner-level atomic evidence CODE_EVIDENCE_SHA `513ae9d`; prior fail-closed `6d9de7e` / review `2968a8b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–70 notes below remain; they are not the current review SHA. REAL OS V2 runner: `main()` fail-closed + staged `os.replace` publish with generation id / rollback. `tests/test_acceptance_gate.py` is gate/unit only; runner integration is `tests/test_os_v2_runner.py`.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
