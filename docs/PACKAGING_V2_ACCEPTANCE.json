@@ -1,0 +1,204 @@
+{
+  "fit": {
+    "cases": [
+      {
+        "name": "mailer_small",
+        "family": "MAILER_BOX",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "rsc_shoe",
+        "family": "RSC_CARTON",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "sleeve_book",
+        "family": "SLEEVE",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "tray_cos",
+        "family": "TRAY",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "pdq_unit",
+        "family": "PDQ_TRAY",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "zero",
+        "family": "MAILER_BOX",
+        "ok": false,
+        "expect": false,
+        "passed": true
+      },
+      {
+        "name": "neg",
+        "family": "RSC_CARTON",
+        "ok": false,
+        "expect": false,
+        "passed": true
+      },
+      {
+        "name": "huge_h",
+        "family": "SLEEVE",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "needle",
+        "family": "TRAY",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "cube",
+        "family": "MAILER_BOX",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "flat",
+        "family": "PDQ_TRAY",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "tall_rsc",
+        "family": "RSC_CARTON",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "wide",
+        "family": "MAILER_BOX",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "missing_w",
+        "family": "RSC_CARTON",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "bad_family_dims",
+        "family": "MAILER_BOX",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "pdq_wide",
+        "family": "PDQ_TRAY",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "sleeve_thin",
+        "family": "SLEEVE",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "tray_deep",
+        "family": "TRAY",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "rsc_tiny",
+        "family": "RSC_CARTON",
+        "ok": true,
+        "expect": true,
+        "passed": true
+      },
+      {
+        "name": "impossible_zero_family",
+        "family": "MAILER_BOX",
+        "ok": false,
+        "expect": false,
+        "passed": true
+      }
+    ],
+    "n": 20,
+    "passed": 20,
+    "allOk": true
+  },
+  "optimize": {
+    "candidates": [
+      {
+        "family": "RSC_CARTON",
+        "boardAreaMm2": 85536.0,
+        "cbm": 0.001942,
+        "compressionMargin": 420.69,
+        "engineeringVeto": false,
+        "score": -4.7478
+      },
+      {
+        "family": "MAILER_BOX",
+        "boardAreaMm2": 72864.0,
+        "cbm": 0.001673,
+        "compressionMargin": 420.69,
+        "engineeringVeto": false,
+        "score": -3.4537
+      },
+      {
+        "family": "SLEEVE",
+        "boardAreaMm2": 50688.0,
+        "cbm": 0.001724,
+        "compressionMargin": 420.69,
+        "engineeringVeto": false,
+        "score": -1.2412
+      },
+      {
+        "family": "TRAY",
+        "boardAreaMm2": 68112.0,
+        "cbm": 0.000977,
+        "compressionMargin": 420.69,
+        "engineeringVeto": false,
+        "score": -2.9089
+      },
+      {
+        "family": "PDQ_TRAY",
+        "boardAreaMm2": 65577.6,
+        "cbm": 0.000977,
+        "compressionMargin": 420.69,
+        "engineeringVeto": false,
+        "score": -2.6554
+      }
+    ],
+    "chosen": {
+      "family": "SLEEVE",
+      "boardAreaMm2": 50688.0,
+      "cbm": 0.001724,
+      "compressionMargin": 420.69,
+      "engineeringVeto": false,
+      "score": -1.2412
+    },
+    "engineeringVetoFirst": true
+  },
+  "generatedAt": "2026-09-08T17:18:53.564886+00:00",
+  "certification": false
+}

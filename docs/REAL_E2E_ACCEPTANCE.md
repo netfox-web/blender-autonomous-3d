@@ -1,6 +1,12 @@
 # REAL_E2E_ACCEPTANCE
 
-productionReady: **True**
+Scoped readiness (not a global Production Ready flag):
+- `coreRenderE2EReady`: **true** — Blender 5.2.1 + T1000 OptiX smoke/preview/360/parametric PNG
+- `physicalProductOsPrototypeReady`: **true** — KD/retail/packaging/acrylic prototype E2E with Human Approval Gate
+- `globalProductionReady`: **false** — Vision/Demand/live provider cost/OS jail/LIVE_CNC are not REAL
+- `fullAutonomousFactoryReady`: **false**
+
+`productionReady` without a scope is forbidden. Mock pytest is not production evidence.
 
 | Check | Status | Evidence |
 |---|---|---|

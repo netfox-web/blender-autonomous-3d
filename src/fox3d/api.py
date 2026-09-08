@@ -334,6 +334,56 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def physical_readiness() -> dict[str, Any]:
         return get_platform().physical.readiness()
 
+    @app.get("/api/readiness")
+    def scoped_ready() -> dict[str, Any]:
+        from fox3d.readiness import scoped_readiness
+
+        return scoped_readiness()
+
+    @app.post("/api/evidence/verify")
+    def evidence_verify(payload: dict[str, Any]) -> dict[str, Any]:
+        from fox3d.evidence import verify_bundle
+
+        return verify_bundle(payload.get("bundle") or payload)
+
+    @app.post("/api/release/advance")
+    def release_advance(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        _ = tenant(x_tenant_id)
+        plat = get_platform()
+        try:
+            return plat.release.advance(
+                str(payload.get("entityId")),
+                target=str(payload.get("target") or "WAITING_APPROVAL"),
+                actor=str(payload.get("actor") or "human"),
+                entity=payload.get("entity") or {},
+                evidence_ok=bool(payload.get("evidenceOk")),
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+    @app.post("/api/commerce/import")
+    def commerce_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        _ = tenant(x_tenant_id)
+        plat = get_platform()
+        kind = str(payload.get("kind") or "material")
+        store = getattr(plat.providers, kind)
+        source = str(payload.get("source") or "MANUAL")
+        rows = payload.get("rows") or []
+        return {"items": plat.providers.import_rows(store, rows, source=source), "liveProviderReady": False}
+
+    @app.post("/api/safety/evaluate")
+    def safety_eval(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        _ = tenant(x_tenant_id)
+        from fox3d.safety import evaluate_product
+
+        return evaluate_product(str(payload.get("kind") or "KD"), payload.get("record") or payload)
+
+    @app.get("/api/kpi")
+    def kpi() -> dict[str, Any]:
+        from fox3d.rdloop import kpi_read_model
+
+        return kpi_read_model(get_platform())
+
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
         return render_admin(get_platform())

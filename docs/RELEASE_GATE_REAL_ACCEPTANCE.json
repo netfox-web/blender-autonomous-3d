@@ -1,0 +1,283 @@
+{
+  "rows": [
+    {
+      "check": "Blender",
+      "status": "REAL",
+      "evidence": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    {
+      "check": "OptiX",
+      "status": "REAL",
+      "evidence": "NVIDIA T1000"
+    },
+    {
+      "check": "publication 5-family Blender+EvidenceBundle",
+      "status": "REAL",
+      "evidence": "real=5/5"
+    },
+    {
+      "check": "release gate APPROVED_FOR_EXPORT",
+      "status": "REAL",
+      "evidence": "APPROVED_FOR_EXPORT"
+    },
+    {
+      "check": "forbidden LIVE_CNC transition",
+      "status": "REAL",
+      "evidence": "blocked"
+    },
+    {
+      "check": "approval stale on hash change",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "mixed landed cost",
+      "status": "REAL",
+      "evidence": "MIXED"
+    },
+    {
+      "check": "liveProviderReady",
+      "status": "BLOCKED",
+      "evidence": "false"
+    },
+    {
+      "check": "packaging fit 20 cases",
+      "status": "REAL",
+      "evidence": "20/20"
+    },
+    {
+      "check": "carton optimize",
+      "status": "REAL",
+      "evidence": "SLEEVE"
+    },
+    {
+      "check": "safety notCertified",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "publication packages",
+      "status": "REAL",
+      "evidence": "n=5"
+    },
+    {
+      "check": "fullAutonomousFactoryReady",
+      "status": "BLOCKED",
+      "evidence": "False"
+    },
+    {
+      "check": "Vision",
+      "status": "MOCK",
+      "evidence": "no live provider"
+    },
+    {
+      "check": "Demand",
+      "status": "MOCK",
+      "evidence": "MARKET_UNVERIFIED"
+    },
+    {
+      "check": "OS sandbox",
+      "status": "PARTIAL",
+      "evidence": "PATH_GUARD_ONLY"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    }
+  ],
+  "previews": [
+    {
+      "family": "KD_FURNITURE",
+      "jobId": "40b53582-b47f-4e49-a24c-ea0f033163d4",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "295545e0777f234a601916762badfe5d29df338334fd8333af928232ae1d38e0",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "411e7bcd-1c52-40bc-be9f-2bd56872bcdd",
+        "evidenceHash": "cd3820487625874858c4c65f7dbf6fc0cc4da722ba05e03363716726dc732cdd"
+      },
+      "bundle": {
+        "bundleId": "411e7bcd-1c52-40bc-be9f-2bd56872bcdd",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:45.068645+00:00",
+        "jobId": "40b53582-b47f-4e49-a24c-ea0f033163d4",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "73df62a7-6a3b-4f14-af47-9d095df6d793",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\73df62a7-6a3b-4f14-af47-9d095df6d793_beauty.png",
+        "artifactHash": "295545e0777f234a601916762badfe5d29df338334fd8333af928232ae1d38e0",
+        "artifactSize": 61147,
+        "engineeringHash": "3b4168a84c2472961032ca70114291f4330e27e4bd4abceae042eba2e6225d57",
+        "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "cd3820487625874858c4c65f7dbf6fc0cc4da722ba05e03363716726dc732cdd"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "RETAIL_FIXTURE",
+      "jobId": "e4086768-b1c8-476b-b015-a682cd0f986b",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "80656d955a30ee62fa6effd2f1b3babd5cd449c31c73d42c444ae51a6d6f6879",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "dd6e9297-280e-429c-8004-89da6a9bebc6",
+        "evidenceHash": "e436d34a1154d3df2d18a4b38ddffc03814fadee7cba657a3c6bf011ffc06527"
+      },
+      "bundle": {
+        "bundleId": "dd6e9297-280e-429c-8004-89da6a9bebc6",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:47.291760+00:00",
+        "jobId": "e4086768-b1c8-476b-b015-a682cd0f986b",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "e3245057-e613-4cbc-82ef-db77055df293",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\e3245057-e613-4cbc-82ef-db77055df293_beauty.png",
+        "artifactHash": "80656d955a30ee62fa6effd2f1b3babd5cd449c31c73d42c444ae51a6d6f6879",
+        "artifactSize": 57158,
+        "engineeringHash": "768471496bb903727dfa45f504cf0fe7ee9364a45e5eb8f5ac5f7168312b22a4",
+        "bomHash": "c00bfc9515129c5a83fc9aeb1ebd4735f52cfbc076298d1f1f7b4bdfa2c3f9f2",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "e436d34a1154d3df2d18a4b38ddffc03814fadee7cba657a3c6bf011ffc06527"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "PACKAGING_STRUCTURE",
+      "jobId": "63b03039-da94-43c5-96f7-66603c33a071",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "da8a28cd1e488baf3762d2a17f8d4d58bb186eb550515990ba72c2342131ecb8",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "d1399ca7-34cb-4c9d-90d4-635044aedc3e",
+        "evidenceHash": "d264ad3a64dfc2bed09eb559d669a3a95e7ad689d9231f3be1bee0296f58cedf"
+      },
+      "bundle": {
+        "bundleId": "d1399ca7-34cb-4c9d-90d4-635044aedc3e",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:49.517469+00:00",
+        "jobId": "63b03039-da94-43c5-96f7-66603c33a071",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "bb5e214b-91cd-4df5-8aa8-03005240820e",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\bb5e214b-91cd-4df5-8aa8-03005240820e_beauty.png",
+        "artifactHash": "da8a28cd1e488baf3762d2a17f8d4d58bb186eb550515990ba72c2342131ecb8",
+        "artifactSize": 64070,
+        "engineeringHash": "4fe1dd40476f6ffc33772f89acaa39c7c21493ca84915ba3fb99cf55c450de08",
+        "bomHash": "6ffcc7b3ec34acc7f2cdeaf2f2f50f24126af542562ae97c61178581504eab9a",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "d264ad3a64dfc2bed09eb559d669a3a95e7ad689d9231f3be1bee0296f58cedf"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "ACRYLIC_SHEET",
+      "jobId": "ba06958e-1def-4db2-980f-89bb95bd3ccb",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "db974d076ac2b41083eb37a433c0ff2bc9ad8352f8372ed2d88ef05f439574a9",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "a3eefc59-df81-43fb-835a-a93235ba7690",
+        "evidenceHash": "40e24ea683f20c88d183f751b6ccb967109adf3af994b5eb4d7324957d9535e3"
+      },
+      "bundle": {
+        "bundleId": "a3eefc59-df81-43fb-835a-a93235ba7690",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:51.540978+00:00",
+        "jobId": "ba06958e-1def-4db2-980f-89bb95bd3ccb",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "9862b8da-38dd-47f1-8b96-c0fe3b423e5e",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\9862b8da-38dd-47f1-8b96-c0fe3b423e5e_beauty.png",
+        "artifactHash": "db974d076ac2b41083eb37a433c0ff2bc9ad8352f8372ed2d88ef05f439574a9",
+        "artifactSize": 58900,
+        "engineeringHash": "5da62e7829cb37266e6d2794fbfba512e70698dc8443495e40040338c6f631f4",
+        "bomHash": "d081a1bd25d02859211e14e7844c4920c368e1a0f4fd846c370f825dfe8e5e0b",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "40e24ea683f20c88d183f751b6ccb967109adf3af994b5eb4d7324957d9535e3"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "KD_FURNITURE",
+      "jobId": "55b5d120-d3ce-4ede-ac63-e562c1a29672",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "e574964ca9e4dc53961f13126d958ad269dda385d93c3ff1521d9318e4d8df2a",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "f01cc844-2cda-452a-af6c-942ec0591337",
+        "evidenceHash": "3c13cc8e9b25127714b0a17b7d5d2497afbb8566c7f086756665d637cf4e358c"
+      },
+      "bundle": {
+        "bundleId": "f01cc844-2cda-452a-af6c-942ec0591337",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:53.562383+00:00",
+        "jobId": "55b5d120-d3ce-4ede-ac63-e562c1a29672",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "aa08cfb4-4409-45ff-bcf4-b874cce7af61",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\aa08cfb4-4409-45ff-bcf4-b874cce7af61_beauty.png",
+        "artifactHash": "e574964ca9e4dc53961f13126d958ad269dda385d93c3ff1521d9318e4d8df2a",
+        "artifactSize": 53797,
+        "engineeringHash": "ce011072e35d4a71a637f822ababa828f63e64e45ff5e962202f8e608e516234",
+        "bomHash": "7fe73a15450188b796ffad9d1ae14eb9ce97f3e1eb3b62e7b55da66db1be7166",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "3c13cc8e9b25127714b0a17b7d5d2497afbb8566c7f086756665d637cf4e358c"
+      },
+      "label": "REAL"
+    }
+  ],
+  "generatedAt": "2026-09-08T17:18:53.564886+00:00",
+  "liveMachineControl": false
+}

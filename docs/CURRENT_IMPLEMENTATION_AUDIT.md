@@ -67,7 +67,7 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 |---|---|
 | 66 Packaging twin | REAL architecture — same `TwinStore`; BOX/BOTTLE/… metadata on ProductDigitalTwin; preview via existing queue. Render REAL only when production worker (not pytest mock). |
 | 67 Blender→AI Video | PARTIAL — Blender START/MID/END + mask via headless worker (REAL in production). AI Video Gateway **MOCK** unless a live adapter is registered. Not hardcoded to H3/LTX. |
-| 68 Synthetic data | PARTIAL — RGB REAL; mask REAL (emission pass) in production. depth/normal/segmentation listed as `notProducedThisRun` until compositor AOVs. Manifest stored in DAM. |
+| 68 Synthetic data | PARTIAL at Phase 68 (RGB/mask REAL in production; depth/normal/segmentation were `notProducedThisRun` until compositor AOVs). **Current:** Phase 71–120 added REAL Cycles AOV depth/normal/seg via Blender 5 compositing_node_group. Manifest still in DAM. |
 | 69 Recipe research | REAL — EXPERIMENTAL→CANDIDATE; cannot overwrite PRODUCTION |
 | 70 Hardening | REAL for path traversal guard, script SANDBOX ONLY, cancel, GPU reservation release, temp log cleanup, lineage, cache, lease recovery. Not a full OS sandbox. |
 
@@ -155,3 +155,25 @@ Hygiene: KD scoped-readiness `ciEvidenceReady=true` synced; Progress Report dupl
 | Vision/Video/Demand | MOCK | |
 | LIVE_CNC/LASER | BLOCKED | |
 | OS sandbox | PARTIAL | |
+
+## Phase 241–300 Commercialization Hardening (`b9e7861` 旨令)
+
+Hygiene: unscoped `productionReady` removed from REAL_E2E; Phase 68 AOV current status synced; domain acceptance files now have unique machine-verifiable rows.
+
+| Phase | Status | Notes |
+|---|---|---|
+| 241 scoped readiness | REAL | `globalProductionReady=false`; full factory false |
+| 242–243 EvidenceBundle+verifier | REAL | 5/5 T1000 OptiX artifacts hash/size/usedMock=false |
+| 244 truth labels | REAL | regression forbids MOCK→REAL, CONFIG→LIVE_PROVIDER |
+| 245–247 approval/stale/RC | REAL | APPROVED_FOR_EXPORT ≠ LIVE_CNC |
+| 248–249 sandbox/policy | PARTIAL | PATH_GUARD_ONLY; network not host-enforced |
+| 250 release-gate acceptance | REAL | `docs/RELEASE_GATE_REAL_ACCEPTANCE.md` |
+| 251–259 provider snapshots | REAL import / BLOCKED live | MANUAL/IMPORTED; mixed MIXED cost |
+| 260 commercial cost acceptance | REAL | `docs/COMMERCIAL_COST_ACCEPTANCE.md`; liveProviderReady=false |
+| 261–269 packaging V2 | REAL geometry / PARTIAL strength | 20/20 fit; McKee estimate |
+| 270 packaging V2 acceptance | REAL | `docs/PACKAGING_V2_ACCEPTANCE.md` |
+| 271–279 safety | REAL estimate / notCertified | dangerous cases veto |
+| 281–289 publication | REAL packages / PARTIAL AR | no fake USDZ |
+| 291–299 R&D loop | MOCK demand / FIXTURE outcomes | MARKET_UNVERIFIED |
+| 300 OS V2 acceptance | REAL | `docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.md` |
+| fullAutonomousFactoryReady | false | |

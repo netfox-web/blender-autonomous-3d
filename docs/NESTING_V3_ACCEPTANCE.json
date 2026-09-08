@@ -253,34 +253,33 @@
   ],
   "v3SheetWins": 2,
   "v3SheetLosses": 0,
-  "note": "Honest benchmark; selector may fall back to baseline. Not all cases win.",
-  "liveMachineControl": false,
-  "materialMapped": {
-    "code": "WOOD_WHITE",
-    "visual": "white_wood",
-    "engineering": "particle_board",
-    "costUnit": "TWD/m2",
-    "thicknessOptionsMm": [
-      15,
-      18,
-      25
-    ],
-    "textureAsset": "wood_white",
-    "baseColor": [
-      0.86,
-      0.82,
-      0.74
-    ]
-  },
-  "sheet": {
-    "length": 2440,
-    "width": 1220,
-    "thickness": 18,
-    "grain": "length",
-    "costPerSheet": 850.0,
-    "costPerM2": 280.0,
-    "texture": "WOOD_WHITE",
-    "engineering": "particle_board",
-    "sku": "PB_18_WHITE"
-  }
+  "domain": "nesting",
+  "rows": [
+    {
+      "check": "baseline preserved",
+      "status": "REAL",
+      "evidence": "guillotine_baseline still registered"
+    },
+    {
+      "check": "harness cases",
+      "status": "REAL",
+      "evidence": "n=10"
+    },
+    {
+      "check": "v3SheetWins",
+      "status": "REAL",
+      "evidence": "2"
+    },
+    {
+      "check": "v3SheetLosses",
+      "status": "REAL",
+      "evidence": "0"
+    },
+    {
+      "check": "fallbackToBaseline",
+      "status": "REAL",
+      "evidence": "selector falls back if more sheets"
+    }
+  ],
+  "generatedAt": "2026-09-08T17:18:53.564886+00:00"
 }

@@ -1,0 +1,2078 @@
+{
+  "generatedAt": "2026-09-08T17:18:53.564886+00:00",
+  "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+  "probe": {
+    "blender": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
+    "gpu": "NVIDIA T1000",
+    "optix": true
+  },
+  "rows": [
+    {
+      "check": "Blender",
+      "status": "REAL",
+      "evidence": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    {
+      "check": "OptiX",
+      "status": "REAL",
+      "evidence": "NVIDIA T1000"
+    },
+    {
+      "check": "publication 5-family Blender+EvidenceBundle",
+      "status": "REAL",
+      "evidence": "real=5/5"
+    },
+    {
+      "check": "release gate APPROVED_FOR_EXPORT",
+      "status": "REAL",
+      "evidence": "APPROVED_FOR_EXPORT"
+    },
+    {
+      "check": "forbidden LIVE_CNC transition",
+      "status": "REAL",
+      "evidence": "blocked"
+    },
+    {
+      "check": "approval stale on hash change",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "mixed landed cost",
+      "status": "REAL",
+      "evidence": "MIXED"
+    },
+    {
+      "check": "liveProviderReady",
+      "status": "BLOCKED",
+      "evidence": "false"
+    },
+    {
+      "check": "packaging fit 20 cases",
+      "status": "REAL",
+      "evidence": "20/20"
+    },
+    {
+      "check": "carton optimize",
+      "status": "REAL",
+      "evidence": "SLEEVE"
+    },
+    {
+      "check": "safety notCertified",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "publication packages",
+      "status": "REAL",
+      "evidence": "n=5"
+    },
+    {
+      "check": "fullAutonomousFactoryReady",
+      "status": "BLOCKED",
+      "evidence": "False"
+    },
+    {
+      "check": "Vision",
+      "status": "MOCK",
+      "evidence": "no live provider"
+    },
+    {
+      "check": "Demand",
+      "status": "MOCK",
+      "evidence": "MARKET_UNVERIFIED"
+    },
+    {
+      "check": "OS sandbox",
+      "status": "PARTIAL",
+      "evidence": "PATH_GUARD_ONLY"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    }
+  ],
+  "previews": [
+    {
+      "family": "KD_FURNITURE",
+      "jobId": "40b53582-b47f-4e49-a24c-ea0f033163d4",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "295545e0777f234a601916762badfe5d29df338334fd8333af928232ae1d38e0",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "411e7bcd-1c52-40bc-be9f-2bd56872bcdd",
+        "evidenceHash": "cd3820487625874858c4c65f7dbf6fc0cc4da722ba05e03363716726dc732cdd"
+      },
+      "bundle": {
+        "bundleId": "411e7bcd-1c52-40bc-be9f-2bd56872bcdd",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:45.068645+00:00",
+        "jobId": "40b53582-b47f-4e49-a24c-ea0f033163d4",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "73df62a7-6a3b-4f14-af47-9d095df6d793",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\73df62a7-6a3b-4f14-af47-9d095df6d793_beauty.png",
+        "artifactHash": "295545e0777f234a601916762badfe5d29df338334fd8333af928232ae1d38e0",
+        "artifactSize": 61147,
+        "engineeringHash": "3b4168a84c2472961032ca70114291f4330e27e4bd4abceae042eba2e6225d57",
+        "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "cd3820487625874858c4c65f7dbf6fc0cc4da722ba05e03363716726dc732cdd"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "RETAIL_FIXTURE",
+      "jobId": "e4086768-b1c8-476b-b015-a682cd0f986b",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "80656d955a30ee62fa6effd2f1b3babd5cd449c31c73d42c444ae51a6d6f6879",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "dd6e9297-280e-429c-8004-89da6a9bebc6",
+        "evidenceHash": "e436d34a1154d3df2d18a4b38ddffc03814fadee7cba657a3c6bf011ffc06527"
+      },
+      "bundle": {
+        "bundleId": "dd6e9297-280e-429c-8004-89da6a9bebc6",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:47.291760+00:00",
+        "jobId": "e4086768-b1c8-476b-b015-a682cd0f986b",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "e3245057-e613-4cbc-82ef-db77055df293",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\e3245057-e613-4cbc-82ef-db77055df293_beauty.png",
+        "artifactHash": "80656d955a30ee62fa6effd2f1b3babd5cd449c31c73d42c444ae51a6d6f6879",
+        "artifactSize": 57158,
+        "engineeringHash": "768471496bb903727dfa45f504cf0fe7ee9364a45e5eb8f5ac5f7168312b22a4",
+        "bomHash": "c00bfc9515129c5a83fc9aeb1ebd4735f52cfbc076298d1f1f7b4bdfa2c3f9f2",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "e436d34a1154d3df2d18a4b38ddffc03814fadee7cba657a3c6bf011ffc06527"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "PACKAGING_STRUCTURE",
+      "jobId": "63b03039-da94-43c5-96f7-66603c33a071",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "da8a28cd1e488baf3762d2a17f8d4d58bb186eb550515990ba72c2342131ecb8",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "d1399ca7-34cb-4c9d-90d4-635044aedc3e",
+        "evidenceHash": "d264ad3a64dfc2bed09eb559d669a3a95e7ad689d9231f3be1bee0296f58cedf"
+      },
+      "bundle": {
+        "bundleId": "d1399ca7-34cb-4c9d-90d4-635044aedc3e",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:49.517469+00:00",
+        "jobId": "63b03039-da94-43c5-96f7-66603c33a071",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "bb5e214b-91cd-4df5-8aa8-03005240820e",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\bb5e214b-91cd-4df5-8aa8-03005240820e_beauty.png",
+        "artifactHash": "da8a28cd1e488baf3762d2a17f8d4d58bb186eb550515990ba72c2342131ecb8",
+        "artifactSize": 64070,
+        "engineeringHash": "4fe1dd40476f6ffc33772f89acaa39c7c21493ca84915ba3fb99cf55c450de08",
+        "bomHash": "6ffcc7b3ec34acc7f2cdeaf2f2f50f24126af542562ae97c61178581504eab9a",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "d264ad3a64dfc2bed09eb559d669a3a95e7ad689d9231f3be1bee0296f58cedf"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "ACRYLIC_SHEET",
+      "jobId": "ba06958e-1def-4db2-980f-89bb95bd3ccb",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "db974d076ac2b41083eb37a433c0ff2bc9ad8352f8372ed2d88ef05f439574a9",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "a3eefc59-df81-43fb-835a-a93235ba7690",
+        "evidenceHash": "40e24ea683f20c88d183f751b6ccb967109adf3af994b5eb4d7324957d9535e3"
+      },
+      "bundle": {
+        "bundleId": "a3eefc59-df81-43fb-835a-a93235ba7690",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:51.540978+00:00",
+        "jobId": "ba06958e-1def-4db2-980f-89bb95bd3ccb",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "9862b8da-38dd-47f1-8b96-c0fe3b423e5e",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\9862b8da-38dd-47f1-8b96-c0fe3b423e5e_beauty.png",
+        "artifactHash": "db974d076ac2b41083eb37a433c0ff2bc9ad8352f8372ed2d88ef05f439574a9",
+        "artifactSize": 58900,
+        "engineeringHash": "5da62e7829cb37266e6d2794fbfba512e70698dc8443495e40040338c6f631f4",
+        "bomHash": "d081a1bd25d02859211e14e7844c4920c368e1a0f4fd846c370f825dfe8e5e0b",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "40e24ea683f20c88d183f751b6ccb967109adf3af994b5eb4d7324957d9535e3"
+      },
+      "label": "REAL"
+    },
+    {
+      "family": "KD_FURNITURE",
+      "jobId": "55b5d120-d3ce-4ede-ac63-e562c1a29672",
+      "usedMock": false,
+      "realBlender": true,
+      "outputHash": "e574964ca9e4dc53961f13126d958ad269dda385d93c3ff1521d9318e4d8df2a",
+      "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+      "blenderVersion": "5.2.1 LTS",
+      "workerId": "fox3d-worker-local",
+      "verify": {
+        "ok": true,
+        "errors": [],
+        "bundleId": "f01cc844-2cda-452a-af6c-942ec0591337",
+        "evidenceHash": "3c13cc8e9b25127714b0a17b7d5d2497afbb8566c7f086756665d637cf4e358c"
+      },
+      "bundle": {
+        "bundleId": "f01cc844-2cda-452a-af6c-942ec0591337",
+        "commitSha": "b9e7861be28c6f94a1bc7c985c77877b98b70720",
+        "generatedAt": "2026-09-08T17:18:53.562383+00:00",
+        "jobId": "55b5d120-d3ce-4ede-ac63-e562c1a29672",
+        "workerId": "fox3d-worker-local",
+        "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "gpuName": "NVIDIA T1000",
+        "blenderVersion": "5.2.1 LTS",
+        "usedMock": false,
+        "artifactId": "aa08cfb4-4409-45ff-bcf4-b874cce7af61",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\aa08cfb4-4409-45ff-bcf4-b874cce7af61_beauty.png",
+        "artifactHash": "e574964ca9e4dc53961f13126d958ad269dda385d93c3ff1521d9318e4d8df2a",
+        "artifactSize": 53797,
+        "engineeringHash": "ce011072e35d4a71a637f822ababa828f63e64e45ff5e962202f8e608e516234",
+        "bomHash": "7fe73a15450188b796ffad9d1ae14eb9ce97f3e1eb3b62e7b55da66db1be7166",
+        "recipeVersion": null,
+        "realBlender": true,
+        "status": "completed",
+        "evidenceHash": "3c13cc8e9b25127714b0a17b7d5d2497afbb8566c7f086756665d637cf4e358c"
+      },
+      "label": "REAL"
+    }
+  ],
+  "readiness": {
+    "coreRenderE2EReady": true,
+    "kdPrototypeReady": true,
+    "retailPrototypeReady": true,
+    "packagingPrototypeReady": true,
+    "acrylicPrototypeReady": true,
+    "commercialPricingReady": true,
+    "liveProviderReady": false,
+    "machineControlReady": false,
+    "liveVisionReady": false,
+    "liveDemandReady": false,
+    "osSandboxReady": false,
+    "fullAutonomousFactoryReady": false,
+    "labels": {
+      "commercialPricingReady": "IMPORTED",
+      "liveProviderReady": "BLOCKED",
+      "machineControlReady": "BLOCKED",
+      "liveVisionReady": "MOCK",
+      "liveDemandReady": "MOCK",
+      "osSandboxReady": "PARTIAL"
+    },
+    "globalProductionReady": false,
+    "humanApprovalGate": true,
+    "liveMachineControl": false
+  },
+  "publications": [
+    {
+      "publicationId": "58d166ad-fc5b-4ae2-993c-57da81f2e419",
+      "family": "KD_FURNITURE",
+      "productVersion": 1,
+      "spec": {
+        "productId": "80e950bd-be0d-4a7f-9c50-490546888371",
+        "tenantId": "ops",
+        "kind": "OPEN_SHELF",
+        "width": 800.0,
+        "height": 1200.0,
+        "depth": 300.0,
+        "thickness": 18.0,
+        "material": "WOOD_WHITE",
+        "components": [
+          {
+            "partId": "l_side",
+            "partName": "L_SIDE",
+            "partType": "left",
+            "length": 1200.0,
+            "width": 300.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "left",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "r_side",
+            "partName": "R_SIDE",
+            "partType": "right",
+            "length": 1200.0,
+            "width": 300.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "right",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "top",
+            "partName": "TOP",
+            "partType": "top",
+            "length": 800.0,
+            "width": 300.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "top",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "bottom",
+            "partName": "BOTTOM",
+            "partType": "bottom",
+            "length": 764.0,
+            "width": 300.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "bottom",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_1",
+            "partName": "SHELF_1",
+            "partType": "shelf",
+            "length": 764.0,
+            "width": 280.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_2",
+            "partName": "SHELF_2",
+            "partType": "shelf",
+            "length": 764.0,
+            "width": 280.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_3",
+            "partName": "SHELF_3",
+            "partType": "shelf",
+            "length": 764.0,
+            "width": 280.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_4",
+            "partName": "SHELF_4",
+            "partType": "shelf",
+            "length": 764.0,
+            "width": 280.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "open_bay_stile",
+            "partName": "OPEN_BAY_STILE",
+            "partType": "stile",
+            "length": 1164.0,
+            "width": 40,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "stile",
+            "edgeBanding": false,
+            "edgeBandingEdges": {
+              "front": false,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          }
+        ],
+        "constraints": {
+          "bays": 1
+        },
+        "connections": [
+          {
+            "from": "L_SIDE",
+            "to": "TOP",
+            "joint": "cam"
+          },
+          {
+            "from": "R_SIDE",
+            "to": "TOP",
+            "joint": "cam"
+          },
+          {
+            "from": "L_SIDE",
+            "to": "BOTTOM",
+            "joint": "cam"
+          },
+          {
+            "from": "R_SIDE",
+            "to": "BOTTOM",
+            "joint": "cam"
+          }
+        ],
+        "hardware": [
+          {
+            "partName": "cam_lock",
+            "quantity": 16,
+            "sku": "cam_lock",
+            "vendorNeutralId": "HW_CAM_LOCK_15"
+          },
+          {
+            "partName": "dowel",
+            "quantity": 16,
+            "sku": "dowel",
+            "vendorNeutralId": "HW_DOWEL_8"
+          }
+        ],
+        "metadata": {
+          "flatPack": true,
+          "productFamily": "OPEN_SHELF",
+          "kdGrid": {
+            "width": [
+              300,
+              400,
+              600,
+              800
+            ],
+            "depth": [
+              250,
+              300,
+              400
+            ],
+            "height": [
+              400,
+              800,
+              1200,
+              1600
+            ]
+          },
+          "connectorRecipe": {
+            "version": 1,
+            "family": "KD_CAM_DOWEL",
+            "connectors": [
+              "HW_CAM_LOCK_15",
+              "HW_DOWEL_8"
+            ],
+            "tools": [
+              "hex_key",
+              "mallet"
+            ],
+            "requiredTools": [
+              "hex_key"
+            ],
+            "compatibility": [
+              "KD_CAM_DOWEL_V1",
+              "KD_CAM_DOWEL_V2"
+            ],
+            "vendorNeutral": true,
+            "kind": "OPEN_SHELF",
+            "recipeKey": "KD_CAM_DOWEL_V1"
+          },
+          "disassemblyDirection": "panel-flat",
+          "maxLoosePartCount": 41,
+          "toolRequirements": [
+            "hex_key",
+            "mallet"
+          ],
+          "panelGrouping": {
+            "left": [
+              "l_side"
+            ],
+            "right": [
+              "r_side"
+            ],
+            "top": [
+              "top"
+            ],
+            "bottom": [
+              "bottom"
+            ],
+            "shelf": [
+              "shelf_1",
+              "shelf_2",
+              "shelf_3",
+              "shelf_4"
+            ],
+            "stile": [
+              "open_bay_stile"
+            ]
+          },
+          "connectorZones": [
+            {
+              "partId": "L_SIDE",
+              "to": "TOP",
+              "joint": "cam"
+            },
+            {
+              "partId": "R_SIDE",
+              "to": "TOP",
+              "joint": "cam"
+            },
+            {
+              "partId": "L_SIDE",
+              "to": "BOTTOM",
+              "joint": "cam"
+            },
+            {
+              "partId": "R_SIDE",
+              "to": "BOTTOM",
+              "joint": "cam"
+            }
+          ],
+          "maximumLoosePartCount": 41
+        },
+        "boardThickness": 18.0,
+        "doorCount": 0,
+        "shelfCount": 4,
+        "drawerCount": 0,
+        "backPanel": false,
+        "backThickness": 3.0,
+        "legs": false,
+        "plinthHeight": 0.0,
+        "handles": true,
+        "handleStyle": "bar",
+        "modules": [
+          {
+            "moduleId": "ecaa73cd-42a5-466d-adec-3384f4c06304",
+            "kind": "OPEN_SHELF",
+            "width": 764.0,
+            "height": 291.0,
+            "depth": 280.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 250.8,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "6ad4c365-adf3-48ad-95a5-48aa9c01edf3",
+            "kind": "OPEN_SHELF",
+            "width": 764.0,
+            "height": 291.0,
+            "depth": 280.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 483.6,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "405558d6-997b-4b5f-b3fa-d14659ade1c9",
+            "kind": "OPEN_SHELF",
+            "width": 764.0,
+            "height": 291.0,
+            "depth": 280.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 716.4000000000001,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "d937dfc9-37ae-40e1-b34b-c41a81c2b860",
+            "kind": "OPEN_SHELF",
+            "width": 764.0,
+            "height": 291.0,
+            "depth": 280.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 949.2,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "0524aad0-c79f-4c12-998c-f91ef22a01fa",
+            "kind": "OPEN_BAY",
+            "width": 764.0,
+            "height": 1164.0,
+            "depth": 300.0,
+            "originX": 18.0,
+            "originY": 0.0,
+            "originZ": 0.0,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          }
+        ],
+        "toeKickHeight": 0.0,
+        "topFillerHeight": 0.0,
+        "sideFillerWidth": 0.0,
+        "wallClearance": 0.0,
+        "openingStyle": "hinged",
+        "parentProductId": null,
+        "revision": 1,
+        "verticalPartitions": null,
+        "horizontalPartitions": 0
+      },
+      "bomSummary": {
+        "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
+        "lines": 11
+      },
+      "packingSummary": {
+        "length": 1224.0,
+        "width": 324.0,
+        "height": 231.0,
+        "paddingMm": 12.0,
+        "hardwareBox": [
+          160.0,
+          110.0,
+          45.0
+        ],
+        "largestPanel": {
+          "length": 1200.0,
+          "width": 300.0
+        },
+        "stackHeight": 162.0,
+        "panelCount": 9,
+        "derivedFromPanels": true,
+        "recipeVersion": 1,
+        "packagingHash": "083df9c69823dd970a69912a506ae5a4a526c69dd87749ae8045dcaaaf0a093d",
+        "materials": [
+          {
+            "sku": "carton",
+            "qty": 1,
+            "cost": 35.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "epe",
+            "qty": 1,
+            "cost": 12.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "corner",
+            "qty": 8,
+            "cost": 4.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "bag",
+            "qty": 1,
+            "cost": 3.0,
+            "source": "ESTIMATED"
+          }
+        ],
+        "packagingCost": 82.0,
+        "costSource": "ESTIMATED"
+      },
+      "previewAssets": [],
+      "assembly": {
+        "productId": "80e950bd-be0d-4a7f-9c50-490546888371",
+        "engineeringHash": "3b4168a84c2472961032ca70114291f4330e27e4bd4abceae042eba2e6225d57",
+        "version": 2,
+        "steps": [
+          {
+            "step": 1,
+            "inputs": [
+              "top"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [],
+            "after": [
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 2,
+            "inputs": [
+              "top"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "top"
+            ],
+            "after": [
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 3,
+            "inputs": [
+              "bottom"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 4,
+            "inputs": [
+              "bottom"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 5,
+            "inputs": [
+              "shelf_1"
+            ],
+            "connectors": [
+              "dowel"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "shelf_1",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 6,
+            "inputs": [
+              "shelf_2"
+            ],
+            "connectors": [
+              "dowel"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "shelf_1",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "shelf_1",
+              "shelf_2",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 7,
+            "inputs": [
+              "shelf_3"
+            ],
+            "connectors": [
+              "dowel"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "shelf_1",
+              "shelf_2",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "shelf_1",
+              "shelf_2",
+              "shelf_3",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 8,
+            "inputs": [
+              "shelf_4"
+            ],
+            "connectors": [
+              "dowel"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "shelf_1",
+              "shelf_2",
+              "shelf_3",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "shelf_1",
+              "shelf_2",
+              "shelf_3",
+              "shelf_4",
+              "top"
+            ],
+            "warning": null
+          }
+        ],
+        "twoPerson": true,
+        "source": "assembly_graph_v2",
+        "manifestHash": "4b91a4be598288a8aa0fe6a9d512be4c303c18db78c8385bec0946decfc1dd11"
+      },
+      "warnings": {
+        "warnings": [
+          {
+            "code": "LR_SIMILAR",
+            "message": "left/right panels same size \u2014 orientation marking required",
+            "severity": "warning"
+          },
+          {
+            "code": "SYMMETRIC_PARTS",
+            "message": "identical outline ['l_side', 'r_side']",
+            "severity": "info"
+          },
+          {
+            "code": "SYMMETRIC_PARTS",
+            "message": "identical outline ['shelf_1', 'shelf_2', 'shelf_3', 'shelf_4']",
+            "severity": "info"
+          }
+        ],
+        "riskScore": 0.45,
+        "source": "deterministic"
+      },
+      "engineeringHash": "3b4168a84c2472961032ca70114291f4330e27e4bd4abceae042eba2e6225d57",
+      "liveMachineControl": false,
+      "publicationHash": "0604c7550de326747341ba3bff22e93edbea17db3a8a012063aee70dc9338b4b"
+    },
+    {
+      "publicationId": "6b19c90a-cb97-42e1-99dc-0caad125763d",
+      "family": "RETAIL_FIXTURE",
+      "productVersion": 1,
+      "spec": {
+        "productId": "7d9eea6f-9f36-4d09-805f-34e3cbcdfe57",
+        "tenantId": "ops",
+        "kind": "RETAIL_DISPLAY",
+        "width": 600.0,
+        "height": 800.0,
+        "depth": 400.0,
+        "thickness": 18.0,
+        "material": "WOOD_WHITE",
+        "components": [
+          {
+            "partId": "l_side",
+            "partName": "L_SIDE",
+            "partType": "left",
+            "length": 800.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "left",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "r_side",
+            "partName": "R_SIDE",
+            "partType": "right",
+            "length": 800.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "right",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "top",
+            "partName": "TOP",
+            "partType": "top",
+            "length": 600.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "top",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "bottom",
+            "partName": "BOTTOM",
+            "partType": "bottom",
+            "length": 564.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "bottom",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_1",
+            "partName": "SHELF_1",
+            "partType": "shelf",
+            "length": 564.0,
+            "width": 380.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_2",
+            "partName": "SHELF_2",
+            "partType": "shelf",
+            "length": 564.0,
+            "width": 380.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "shelf_3",
+            "partName": "SHELF_3",
+            "partType": "shelf",
+            "length": 564.0,
+            "width": 380.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "kick_plate",
+            "partName": "KICK_PLATE",
+            "partType": "kick_plate",
+            "length": 600.0,
+            "width": 80,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "kick_plate",
+            "edgeBanding": false,
+            "edgeBandingEdges": {
+              "front": false,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          }
+        ],
+        "constraints": {
+          "bays": 1
+        },
+        "connections": [
+          {
+            "from": "L_SIDE",
+            "to": "TOP",
+            "joint": "cam"
+          },
+          {
+            "from": "R_SIDE",
+            "to": "TOP",
+            "joint": "cam"
+          },
+          {
+            "from": "L_SIDE",
+            "to": "BOTTOM",
+            "joint": "cam"
+          },
+          {
+            "from": "R_SIDE",
+            "to": "BOTTOM",
+            "joint": "cam"
+          },
+          {
+            "from": "L_SIDE",
+            "to": "KICK_PLATE",
+            "joint": "cam"
+          }
+        ],
+        "hardware": [
+          {
+            "partName": "cam_lock",
+            "quantity": 16,
+            "sku": "cam_lock",
+            "vendorNeutralId": "HW_CAM_LOCK_15"
+          },
+          {
+            "partName": "dowel",
+            "quantity": 16,
+            "sku": "dowel",
+            "vendorNeutralId": "HW_DOWEL_8"
+          }
+        ],
+        "metadata": {
+          "fixtureFamily": "COUNTER_DISPLAY",
+          "physicalProductFamily": "RETAIL_FIXTURE"
+        },
+        "boardThickness": 18.0,
+        "doorCount": 0,
+        "shelfCount": 3,
+        "drawerCount": 0,
+        "backPanel": false,
+        "backThickness": 3.0,
+        "legs": false,
+        "plinthHeight": 0.0,
+        "handles": true,
+        "handleStyle": "bar",
+        "modules": [
+          {
+            "moduleId": "eebd54cd-515e-4c3a-9503-50cc8c0debc0",
+            "kind": "OPEN_SHELF",
+            "width": 564.0,
+            "height": 254.66666666666666,
+            "depth": 380.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 209.0,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "782aa09e-35ba-4317-b47f-d6b3ddc83664",
+            "kind": "OPEN_SHELF",
+            "width": 564.0,
+            "height": 254.66666666666666,
+            "depth": 380.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 400.0,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "33cef090-9985-4e05-adb3-1ac133c9f2f4",
+            "kind": "OPEN_SHELF",
+            "width": 564.0,
+            "height": 254.66666666666666,
+            "depth": 380.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 591.0,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "add4aed0-71b1-49b1-a44c-2b8ca89e3fd2",
+            "kind": "OPEN_BAY",
+            "width": 564.0,
+            "height": 764.0,
+            "depth": 400.0,
+            "originX": 18.0,
+            "originY": 0.0,
+            "originZ": 0.0,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          }
+        ],
+        "toeKickHeight": 0.0,
+        "topFillerHeight": 0.0,
+        "sideFillerWidth": 0.0,
+        "wallClearance": 0.0,
+        "openingStyle": "hinged",
+        "parentProductId": null,
+        "revision": 1,
+        "verticalPartitions": null,
+        "horizontalPartitions": 0
+      },
+      "bomSummary": {
+        "bomHash": "c00bfc9515129c5a83fc9aeb1ebd4735f52cfbc076298d1f1f7b4bdfa2c3f9f2",
+        "lines": 10
+      },
+      "packingSummary": {
+        "length": 824.0,
+        "width": 424.0,
+        "height": 213.0,
+        "paddingMm": 12.0,
+        "hardwareBox": [
+          160.0,
+          110.0,
+          45.0
+        ],
+        "largestPanel": {
+          "length": 800.0,
+          "width": 400.0
+        },
+        "stackHeight": 144.0,
+        "panelCount": 8,
+        "derivedFromPanels": true,
+        "recipeVersion": 1,
+        "packagingHash": "02d6861e09421dd422739e2778efc562f2fbf5bccc32aae480b1526313f1673e",
+        "materials": [
+          {
+            "sku": "carton",
+            "qty": 1,
+            "cost": 35.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "epe",
+            "qty": 1,
+            "cost": 12.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "corner",
+            "qty": 8,
+            "cost": 4.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "bag",
+            "qty": 1,
+            "cost": 3.0,
+            "source": "ESTIMATED"
+          }
+        ],
+        "packagingCost": 82.0,
+        "costSource": "ESTIMATED"
+      },
+      "previewAssets": [],
+      "assembly": null,
+      "warnings": null,
+      "engineeringHash": "768471496bb903727dfa45f504cf0fe7ee9364a45e5eb8f5ac5f7168312b22a4",
+      "liveMachineControl": false,
+      "publicationHash": "e37cb5f636e3a15328c00e904b278d86aa709e6738d9b64a775bb958d09bcdeb"
+    },
+    {
+      "publicationId": "c069ae2b-44eb-4138-93cc-b85b1b75823c",
+      "family": "PACKAGING_STRUCTURE",
+      "productVersion": 1,
+      "spec": {
+        "family": "RSC_CARTON",
+        "twinId": null,
+        "fit": {
+          "family": "RSC_CARTON",
+          "inner": {
+            "length": 132.0,
+            "width": 132.0,
+            "height": 96.0
+          },
+          "outer": {
+            "length": 138.0,
+            "width": 138.0,
+            "height": 102.0
+          },
+          "clearance": {
+            "length": 6.0,
+            "width": 6.0,
+            "height": 8.0
+          },
+          "artworkNotStructural": true
+        },
+        "dieline": {
+          "family": "RSC_CARTON",
+          "caliperMm": 3.0,
+          "panels": [
+            {
+              "id": "bottom",
+              "w": 132.0,
+              "h": 132.0,
+              "kind": "panel"
+            },
+            {
+              "id": "front",
+              "w": 132.0,
+              "h": 96.0,
+              "kind": "panel"
+            },
+            {
+              "id": "top",
+              "w": 132.0,
+              "h": 132.0,
+              "kind": "panel"
+            },
+            {
+              "id": "back",
+              "w": 132.0,
+              "h": 96.0,
+              "kind": "panel"
+            },
+            {
+              "id": "left",
+              "w": 132.0,
+              "h": 96.0,
+              "kind": "panel"
+            },
+            {
+              "id": "right",
+              "w": 132.0,
+              "h": 96.0,
+              "kind": "panel"
+            }
+          ],
+          "cut": [
+            {
+              "panelId": "bottom",
+              "op": "cut",
+              "w": 132.0,
+              "h": 132.0
+            },
+            {
+              "panelId": "front",
+              "op": "cut",
+              "w": 132.0,
+              "h": 96.0
+            },
+            {
+              "panelId": "top",
+              "op": "cut",
+              "w": 132.0,
+              "h": 132.0
+            },
+            {
+              "panelId": "back",
+              "op": "cut",
+              "w": 132.0,
+              "h": 96.0
+            },
+            {
+              "panelId": "left",
+              "op": "cut",
+              "w": 132.0,
+              "h": 96.0
+            },
+            {
+              "panelId": "right",
+              "op": "cut",
+              "w": 132.0,
+              "h": 96.0
+            }
+          ],
+          "crease": [
+            {
+              "from": "bottom",
+              "to": "front",
+              "op": "crease"
+            },
+            {
+              "from": "front",
+              "to": "top",
+              "op": "crease"
+            },
+            {
+              "from": "top",
+              "to": "back",
+              "op": "crease"
+            },
+            {
+              "from": "back",
+              "to": "left",
+              "op": "crease"
+            },
+            {
+              "from": "left",
+              "to": "right",
+              "op": "crease"
+            }
+          ],
+          "perforation": [],
+          "glue": [
+            {
+              "panelId": "right",
+              "op": "glue",
+              "widthMm": 15
+            }
+          ],
+          "dxfFriendly": {
+            "units": "mm",
+            "layers": [
+              "CUT",
+              "CREASE",
+              "PERF",
+              "GLUE"
+            ],
+            "liveMachineControl": false
+          },
+          "liveMachineControl": false,
+          "manifestHash": "7ca2c2114471ae7f56573765dd2f66d60384859d882eab7b6173d6320b4244c6"
+        },
+        "dielineSvgBytes": 534,
+        "sheet": {
+          "sku": "KRAFT_RSC_B",
+          "length": 1200,
+          "width": 800,
+          "caliperMm": 3.0,
+          "grain": "length",
+          "flute": "B",
+          "costPerSheet": 28.0,
+          "source": "CONFIG",
+          "ect": null,
+          "bct": null,
+          "structuralCertification": false
+        },
+        "bleed": {
+          "zones": [
+            {
+              "name": "main",
+              "bleedMm": 3,
+              "safeMm": 5,
+              "kind": "printable"
+            }
+          ],
+          "trapping": "PARTIAL",
+          "colorManagement": "PARTIAL",
+          "preflight": "PARTIAL",
+          "note": "Artwork geometry only \u2014 print preflight not connected."
+        },
+        "strength": {
+          "ect": null,
+          "bct": null,
+          "label": "PARTIAL",
+          "structuralCertification": false,
+          "note": "No REAL ECT/BCT model."
+        },
+        "compatibleTwin": true,
+        "engineeringHash": "4fe1dd40476f6ffc33772f89acaa39c7c21493ca84915ba3fb99cf55c450de08"
+      },
+      "bomSummary": {
+        "bomHash": "6ffcc7b3ec34acc7f2cdeaf2f2f50f24126af542562ae97c61178581504eab9a",
+        "lines": 6
+      },
+      "packingSummary": null,
+      "previewAssets": [],
+      "assembly": null,
+      "warnings": null,
+      "engineeringHash": "4fe1dd40476f6ffc33772f89acaa39c7c21493ca84915ba3fb99cf55c450de08",
+      "liveMachineControl": false,
+      "publicationHash": "37fc05cfd8ac6f6c7d331efa8c24412de0b0302a2e9d847db4bdbc8c9d3380a5"
+    },
+    {
+      "publicationId": "70ad30eb-5ac2-4146-9772-d939a52798a8",
+      "family": "ACRYLIC_SHEET",
+      "productVersion": 1,
+      "spec": {
+        "width": 210,
+        "height": 297,
+        "depth": 80
+      },
+      "bomSummary": {
+        "bomHash": "d081a1bd25d02859211e14e7844c4920c368e1a0f4fd846c370f825dfe8e5e0b",
+        "lines": 2
+      },
+      "packingSummary": {
+        "length": 230,
+        "width": 317,
+        "height": 30,
+        "derivedFromPanels": true,
+        "packagingHash": "2d2ddcf2e0baada4c164672a0165ed73bb71bfb1e6ff0284b8362d45cebf9086",
+        "costSource": "ESTIMATED",
+        "packagingCost": 18.0
+      },
+      "previewAssets": [],
+      "assembly": null,
+      "warnings": null,
+      "engineeringHash": "5da62e7829cb37266e6d2794fbfba512e70698dc8443495e40040338c6f631f4",
+      "liveMachineControl": false,
+      "publicationHash": "c4b16c1a83733b66e51e2a3b0281480f4410e45a866f9ff4873558872fa33170"
+    },
+    {
+      "publicationId": "f9a9458e-d7ad-47d6-8b91-05621f96942c",
+      "family": "KD_FURNITURE",
+      "productVersion": 1,
+      "spec": {
+        "productId": "1ecc8510-4a14-4d79-85ec-c66075f6ad69",
+        "tenantId": "ops",
+        "kind": "BEDSIDE_CABINET",
+        "width": 400.0,
+        "height": 400.0,
+        "depth": 400.0,
+        "thickness": 18.0,
+        "material": "WOOD_WHITE",
+        "components": [
+          {
+            "partId": "l_side",
+            "partName": "L_SIDE",
+            "partType": "left",
+            "length": 400.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "left",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "r_side",
+            "partName": "R_SIDE",
+            "partType": "right",
+            "length": 400.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "right",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "top",
+            "partName": "TOP",
+            "partType": "top",
+            "length": 400.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "top",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "bottom",
+            "partName": "BOTTOM",
+            "partType": "bottom",
+            "length": 364.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "bottom",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "back",
+            "partName": "BACK",
+            "partType": "back",
+            "length": 364.0,
+            "width": 364.0,
+            "thickness": 3,
+            "quantity": 1,
+            "role": "back",
+            "edgeBanding": false,
+            "edgeBandingEdges": {
+              "front": false,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "none"
+          },
+          {
+            "partId": "shelf_1",
+            "partName": "SHELF_1",
+            "partType": "shelf",
+            "length": 364.0,
+            "width": 380.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "shelf",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": false,
+              "left": false,
+              "right": false
+            },
+            "grainDirection": "length"
+          },
+          {
+            "partId": "door_1",
+            "partName": "DOOR_1",
+            "partType": "door",
+            "length": 400.0,
+            "width": 400.0,
+            "thickness": 18.0,
+            "quantity": 1,
+            "role": "door",
+            "edgeBanding": true,
+            "edgeBandingEdges": {
+              "front": true,
+              "back": true,
+              "left": true,
+              "right": true
+            },
+            "grainDirection": "length"
+          }
+        ],
+        "constraints": {
+          "bays": 1
+        },
+        "connections": [
+          {
+            "from": "L_SIDE",
+            "to": "TOP",
+            "joint": "cam"
+          },
+          {
+            "from": "R_SIDE",
+            "to": "TOP",
+            "joint": "cam"
+          },
+          {
+            "from": "L_SIDE",
+            "to": "BOTTOM",
+            "joint": "cam"
+          },
+          {
+            "from": "R_SIDE",
+            "to": "BOTTOM",
+            "joint": "cam"
+          }
+        ],
+        "hardware": [
+          {
+            "partName": "hinge",
+            "quantity": 2,
+            "sku": "hinge",
+            "vendorNeutralId": "HW_HINGE_CLIP_110"
+          },
+          {
+            "partName": "handle",
+            "quantity": 1,
+            "sku": "handle",
+            "vendorNeutralId": "HW_HANDLE_BAR"
+          },
+          {
+            "partName": "cam_lock",
+            "quantity": 16,
+            "sku": "cam_lock",
+            "vendorNeutralId": "HW_CAM_LOCK_15"
+          },
+          {
+            "partName": "dowel",
+            "quantity": 16,
+            "sku": "dowel",
+            "vendorNeutralId": "HW_DOWEL_8"
+          }
+        ],
+        "metadata": {
+          "flatPack": true,
+          "productFamily": "BEDSIDE_CABINET",
+          "kdGrid": {
+            "width": [
+              300,
+              400,
+              600,
+              800
+            ],
+            "depth": [
+              250,
+              300,
+              400
+            ],
+            "height": [
+              400,
+              800,
+              1200,
+              1600
+            ]
+          },
+          "connectorRecipe": {
+            "version": 1,
+            "family": "KD_CAM_DOWEL",
+            "connectors": [
+              "HW_CAM_LOCK_15",
+              "HW_DOWEL_8"
+            ],
+            "tools": [
+              "hex_key",
+              "mallet"
+            ],
+            "requiredTools": [
+              "hex_key"
+            ],
+            "compatibility": [
+              "KD_CAM_DOWEL_V1",
+              "KD_CAM_DOWEL_V2"
+            ],
+            "vendorNeutral": true,
+            "kind": "BEDSIDE_CABINET",
+            "recipeKey": "KD_CAM_DOWEL_V1"
+          },
+          "disassemblyDirection": "panel-flat",
+          "maxLoosePartCount": 42,
+          "toolRequirements": [
+            "hex_key",
+            "mallet"
+          ],
+          "panelGrouping": {
+            "left": [
+              "l_side"
+            ],
+            "right": [
+              "r_side"
+            ],
+            "top": [
+              "top"
+            ],
+            "bottom": [
+              "bottom"
+            ],
+            "back": [
+              "back"
+            ],
+            "shelf": [
+              "shelf_1"
+            ],
+            "door": [
+              "door_1"
+            ]
+          },
+          "connectorZones": [
+            {
+              "partId": "L_SIDE",
+              "to": "TOP",
+              "joint": "cam"
+            },
+            {
+              "partId": "R_SIDE",
+              "to": "TOP",
+              "joint": "cam"
+            },
+            {
+              "partId": "L_SIDE",
+              "to": "BOTTOM",
+              "joint": "cam"
+            },
+            {
+              "partId": "R_SIDE",
+              "to": "BOTTOM",
+              "joint": "cam"
+            }
+          ],
+          "maximumLoosePartCount": 42
+        },
+        "boardThickness": 18.0,
+        "doorCount": 1,
+        "shelfCount": 1,
+        "drawerCount": 0,
+        "backPanel": true,
+        "backThickness": 3.0,
+        "legs": false,
+        "plinthHeight": 0.0,
+        "handles": true,
+        "handleStyle": "bar",
+        "modules": [
+          {
+            "moduleId": "5fad0132-6067-49b6-a835-8c4f9a427fc7",
+            "kind": "CLOSED_COMPARTMENT",
+            "width": 364.0,
+            "height": 364.0,
+            "depth": 380.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 200.0,
+            "quantity": 1,
+            "openingStyle": null,
+            "notes": ""
+          },
+          {
+            "moduleId": "374cbc04-3ff5-4b0b-a4cf-f333c386240d",
+            "kind": "HINGED_DOOR",
+            "width": 400.0,
+            "height": 400.0,
+            "depth": 18.0,
+            "originX": 0.0,
+            "originY": 0.0,
+            "originZ": 0.0,
+            "quantity": 1,
+            "openingStyle": "hinged",
+            "notes": ""
+          }
+        ],
+        "toeKickHeight": 0.0,
+        "topFillerHeight": 0.0,
+        "sideFillerWidth": 0.0,
+        "wallClearance": 0.0,
+        "openingStyle": "hinged",
+        "parentProductId": null,
+        "revision": 1,
+        "verticalPartitions": null,
+        "horizontalPartitions": 0
+      },
+      "bomSummary": {
+        "bomHash": "7fe73a15450188b796ffad9d1ae14eb9ce97f3e1eb3b62e7b55da66db1be7166",
+        "lines": 11
+      },
+      "packingSummary": {
+        "length": 424.0,
+        "width": 424.0,
+        "height": 180.0,
+        "paddingMm": 12.0,
+        "hardwareBox": [
+          160.0,
+          110.0,
+          45.0
+        ],
+        "largestPanel": {
+          "length": 400.0,
+          "width": 400.0
+        },
+        "stackHeight": 111.0,
+        "panelCount": 7,
+        "derivedFromPanels": true,
+        "recipeVersion": 1,
+        "packagingHash": "dafb1725456a7f54d41238e6decf30d9f5f1297e24b305116510b318a0856813",
+        "materials": [
+          {
+            "sku": "carton",
+            "qty": 1,
+            "cost": 35.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "epe",
+            "qty": 1,
+            "cost": 12.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "corner",
+            "qty": 8,
+            "cost": 4.0,
+            "source": "ESTIMATED"
+          },
+          {
+            "sku": "bag",
+            "qty": 1,
+            "cost": 3.0,
+            "source": "ESTIMATED"
+          }
+        ],
+        "packagingCost": 82.0,
+        "costSource": "ESTIMATED"
+      },
+      "previewAssets": [],
+      "assembly": {
+        "productId": "1ecc8510-4a14-4d79-85ec-c66075f6ad69",
+        "engineeringHash": "ce011072e35d4a71a637f822ababa828f63e64e45ff5e962202f8e608e516234",
+        "version": 2,
+        "steps": [
+          {
+            "step": 1,
+            "inputs": [
+              "top"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [],
+            "after": [
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 2,
+            "inputs": [
+              "top"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "top"
+            ],
+            "after": [
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 3,
+            "inputs": [
+              "bottom"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 4,
+            "inputs": [
+              "bottom"
+            ],
+            "connectors": [
+              "cam"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "top"
+            ],
+            "warning": null
+          },
+          {
+            "step": 5,
+            "inputs": [
+              "shelf_1"
+            ],
+            "connectors": [
+              "dowel"
+            ],
+            "tools": [
+              "hex_key"
+            ],
+            "before": [
+              "bottom",
+              "top"
+            ],
+            "after": [
+              "bottom",
+              "shelf_1",
+              "top"
+            ],
+            "warning": null
+          }
+        ],
+        "twoPerson": true,
+        "source": "assembly_graph_v2",
+        "manifestHash": "dbf9e3d15c83ad5bfea9db69f5b49397e207544c5b0b2221dd3708231fa0a3d4"
+      },
+      "warnings": {
+        "warnings": [
+          {
+            "code": "LR_SIMILAR",
+            "message": "left/right panels same size \u2014 orientation marking required",
+            "severity": "warning"
+          },
+          {
+            "code": "FACE_HANDEDNESS",
+            "message": "front/back identification required for drilled faces",
+            "severity": "warning"
+          },
+          {
+            "code": "SYMMETRIC_PARTS",
+            "message": "identical outline ['l_side', 'r_side', 'top', 'door_1']",
+            "severity": "info"
+          }
+        ],
+        "riskScore": 0.45,
+        "source": "deterministic"
+      },
+      "engineeringHash": "ce011072e35d4a71a637f822ababa828f63e64e45ff5e962202f8e608e516234",
+      "liveMachineControl": false,
+      "publicationHash": "5c8bd38f590b45dc335b11641c158aade9ca1a720c6a638761aff00d7faabcad"
+    }
+  ],
+  "fullAutonomousFactoryReady": false,
+  "liveMachineControl": false
+}

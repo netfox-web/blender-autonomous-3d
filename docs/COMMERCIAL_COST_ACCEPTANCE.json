@@ -1,0 +1,27 @@
+{
+  "mixed": {
+    "components": [
+      {
+        "name": "sheet",
+        "amount": 880.0,
+        "source": "MANUAL"
+      },
+      {
+        "name": "logistics",
+        "amount": 80.0,
+        "source": "CONFIG_ESTIMATE"
+      }
+    ],
+    "total": 960.0,
+    "sources": [
+      "CONFIG_ESTIMATE",
+      "MANUAL"
+    ],
+    "mixed": true,
+    "truthLabel": "MIXED",
+    "notSingleReal": true,
+    "liveProviderReady": false
+  },
+  "liveProviderReady": false,
+  "generatedAt": "2026-09-08T17:18:53.564886+00:00"
+}

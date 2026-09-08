@@ -158,7 +158,9 @@ def render_admin(platform: Any) -> str:
     · Packaging {len(getattr(getattr(getattr(platform, "physical", None), "packaging", None), "items", {}) or {})}
     · Acrylic {len(getattr(getattr(getattr(platform, "physical", None), "acrylic", None), "items", {}) or {})}
     · LIVE_CNC/LASER blocked · Human Approval Gate
-    · API: /api/materials /api/remnants /api/nesting/benchmarks /api/kd/candidates /api/retail/fixtures /api/packaging/structures /api/acrylic/products /api/physical-os/approve</p>
+    · API: /api/materials /api/remnants /api/nesting/benchmarks /api/kd/candidates /api/retail/fixtures /api/packaging/structures /api/acrylic/products /api/physical-os/approve /api/readiness /api/kpi /api/commerce/import /api/safety/evaluate
+    · KPI {len(getattr(getattr(platform, "release", None), "events", []) or [])} approval events · stale {sum(1 for a in (getattr(getattr(platform, "release", None), "approvals", {}) or {}).values() if a.get("stale"))}
+    · LIVE_CNC/LASER blocked · Human Approval Gate</p>
   </section>
 </body>
 </html>"""

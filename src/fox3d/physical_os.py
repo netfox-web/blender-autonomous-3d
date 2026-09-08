@@ -78,7 +78,7 @@ class PhysicalProductOS:
             "note": "Demand provider is MOCK — not claimed as bestselling.",
         }
 
-    def approve(self, *, entity_id: str, actor: str, kind: str = "product") -> dict[str, Any]:
+    def approve(self, *, entity_id: str, actor: str, kind: str = "product", entity: dict[str, Any] | None = None) -> dict[str, Any]:
         rec = {
             "entityId": entity_id,
             "kind": kind,
@@ -88,30 +88,38 @@ class PhysicalProductOS:
             "forbidden": ["LIVE_CNC", "LIVE_LASER", "APPROVED_FOR_PRODUCTION"],
         }
         self.approvals[entity_id] = rec
+        gate = getattr(self.platform, "release", None)
+        if gate is not None:
+            rec["audit"] = gate.audit(
+                actor=actor,
+                entity_id=entity_id,
+                entity=entity or rec,
+                decision="WAITING_APPROVAL",
+                reason="human-approval-gate",
+            )
+            rec["hashes"] = rec["audit"].get("hashes")
         return rec
 
     def readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        from fox3d.readiness import scoped_readiness
+
         ev = evidence or {}
-        matrix = {
-            "kdFurnitureE2E": {"label": "REAL" if ev.get("kd") else "PARTIAL", "ready": bool(ev.get("kd"))},
-            "retailFixtureE2E": {"label": "REAL" if ev.get("retail") else "PARTIAL", "ready": bool(ev.get("retail"))},
-            "packagingOrAcrylicE2E": {"label": "REAL" if ev.get("pack_or_acr") else "PARTIAL", "ready": bool(ev.get("pack_or_acr"))},
-            "durableRemnants": {"label": "REAL" if ev.get("remnants") else "PARTIAL", "ready": bool(ev.get("remnants"))},
-            "nestingV3": {"label": "REAL" if ev.get("nesting_v3") else "PARTIAL", "ready": bool(ev.get("nesting_v3"))},
-            "estimatedCost": {"label": "ESTIMATED-CONFIG", "ready": True},
-            "realProviderCost": {"label": "BLOCKED", "ready": False},
-            "vision": {"label": "MOCK", "ready": False},
-            "demand": {"label": "MOCK", "ready": False},
-            "video": {"label": "MOCK", "ready": False},
-            "osSandbox": {"label": "PARTIAL", "ready": False},
-            "liveMachineControl": {"label": "BLOCKED", "ready": False},
-            "structuralCertification": {"label": "PARTIAL", "ready": False},
-            "electricalCompliance": {"label": "BLOCKED", "ready": False},
-            "ciEvidence": {"label": "MOCK" if not ev.get("ci") else "REAL", "ready": bool(ev.get("ci")), "note": "pytest mock suite only unless GitHub GREEN recorded"},
-        }
-        matrix["fullAutonomousFactoryReady"] = False
-        matrix["productionReadyScope"] = "physicalProductOsV1-prototype-boundary"
-        matrix["humanApprovalGate"] = True
+        matrix = scoped_readiness(evidence=ev)
+        matrix["kdFurnitureE2E"] = {"label": "REAL" if ev.get("kd") else "PARTIAL", "ready": bool(ev.get("kd") or matrix.get("kdPrototypeReady"))}
+        matrix["retailFixtureE2E"] = {"label": "REAL" if ev.get("retail") else "PARTIAL", "ready": bool(ev.get("retail") or matrix.get("retailPrototypeReady"))}
+        matrix["packagingOrAcrylicE2E"] = {"label": "REAL" if ev.get("pack_or_acr") else "PARTIAL", "ready": bool(ev.get("pack_or_acr"))}
+        matrix["estimatedCost"] = {"label": "CONFIG_ESTIMATE", "ready": True}
+        matrix["realProviderCost"] = {"label": "BLOCKED", "ready": False}
+        matrix["vision"] = {"label": "MOCK", "ready": False}
+        matrix["demand"] = {"label": "MOCK", "ready": False}
+        matrix["video"] = {"label": "MOCK", "ready": False}
+        matrix["osSandbox"] = {"label": "PARTIAL", "ready": False}
+        matrix["liveMachineControl"] = {"label": "BLOCKED", "ready": False}
+        matrix["structuralCertification"] = {"label": "PARTIAL", "ready": False}
+        matrix["electricalCompliance"] = {"label": "BLOCKED", "ready": False}
+        matrix["ciEvidence"] = {"label": "MOCK" if not ev.get("ci") else "REAL", "ready": bool(ev.get("ci")), "note": "pytest mock suite only unless GitHub GREEN recorded"}
+        matrix["productionReadyScope"] = "physicalProductOsV2-prototype-boundary"
+        matrix["globalProductionReady"] = False
         return matrix
 
     def kd_optimized_board(self, *, tenant_id: str, count: int = 10) -> dict[str, Any]:

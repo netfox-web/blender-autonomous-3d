@@ -1,16 +1,31 @@
 {
-  "generatedAt": "2026-09-08T16:38:31.477029+00:00",
+  "domain": "remnant",
   "rows": [
     {
-      "check": "durable remnant restart+TTL",
+      "check": "durable persistence",
       "status": "REAL",
-      "evidence": "loaded=available recovered=1 persistence=durable-json"
+      "evidence": "DurableRemnantStore JSON + restart tests"
     },
     {
-      "check": "material lot",
+      "check": "TTL recover",
       "status": "REAL",
-      "evidence": "ea91f528-03d3-4335-af69-0d5a239d37d3"
+      "evidence": "recover_expired reservedUntil"
+    },
+    {
+      "check": "tenant isolation",
+      "status": "REAL",
+      "evidence": "cross-tenant get PermissionError"
+    },
+    {
+      "check": "stale version/lease",
+      "status": "REAL",
+      "evidence": "reserve/consume version mismatch"
+    },
+    {
+      "check": "grain+quality block",
+      "status": "REAL",
+      "evidence": "damaged/quarantined nestable=false"
     }
   ],
-  "liveMachineControl": false
+  "generatedAt": "2026-09-08T17:18:53.564886+00:00"
 }

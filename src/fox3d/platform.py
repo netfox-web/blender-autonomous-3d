@@ -51,10 +51,14 @@ from fox3d.ops import (
 )
 from fox3d.packaging import PackagingEngine
 from fox3d.factory import FurnitureFactory
+from fox3d.commerce import ProviderRegistry
 from fox3d.inventory import DurableRemnantStore, MaterialLotRegistry
 from fox3d.kd_factory import KdFactory
 from fox3d.manufacturing import RemnantInventory
 from fox3d.physical_os import PhysicalProductOS
+from fox3d.publish import CatalogRelease
+from fox3d.release import ReleaseGate
+from fox3d.sandbox import SandboxRegistry
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
 from fox3d.rd import GatewayVisionProvider, ProductRDAgent, VisionJudge
 from fox3d.recipes import BlenderRecipeResearchAgent, RecipeIntelligence
@@ -99,6 +103,10 @@ class Platform:
         self.kd = KdFactory(self)
         self.physical = PhysicalProductOS(self)
         self.retail_fixtures = self.physical.retail
+        self.providers = ProviderRegistry(self.root / "providers")
+        self.release = ReleaseGate()
+        self.sandbox = SandboxRegistry()
+        self.catalog = CatalogRelease()
         self.p360 = Product360Engine()
         self.ar = ARExporter()
         self.synthetic = SyntheticFactory()

@@ -2,72 +2,67 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `fb8cae6` (Phase 181–240 Physical Product OS)  
-Review baseline: `43cd4bd` **ACCEPT WITH SCOPE**  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `b9e7861` (Phase 241–300 Commercialization Hardening)  
+Review baseline: `f2f9eec` **ACCEPT WITH SCOPE**  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Hygiene first (no Phase 1–180 rewrite): KD acceptance scoped-readiness string now `ciEvidenceReady=true`; Progress Report duplicate REAL_PROVIDER blocker removed.
+Hygiene first (no Phase 1–240 rewrite):
+1. `REAL_E2E_ACCEPTANCE.md` unscoped `productionReady: True` → scoped `coreRenderE2EReady` / `physicalProductOsPrototypeReady` / `globalProductionReady=false`
+2. Audit Phase 68 current AOV status synced (historical PARTIAL kept)
+3. Domain acceptance docs now carry machine-verifiable domain-only evidence (not the shared Physical OS table)
 
-Then Phase 181–240 on existing Twin/Queue/DAM/Engineering/Nesting — no second scheduler/WMS/platform.
+Then Phase 241–300 on existing Twin/Queue/DAM/Engineering — no second ERP/WMS/CRM.
 
-| Phase band | What landed |
+| Band | Landed |
 |---|---|
-| 181–190 Remnant intelligence | `RemnantStore` + durable JSON under `.fox3d-data/remnants`; version/lease; TTL recovery; quality states; grain; lot lineage; ESTIMATED valuation; inventory delta manifest |
-| 191–200 Nesting V3 | Strategy registry keeps guillotine baseline; BFD; multi-start; multi-objective score; cut sequence; defect keep-out; reusable-offcut; 10-case harness; fallback to baseline if V3 uses more sheets |
-| 201–210 KD DFA | Connector v1/v2 compatibility; common hardware/panel; tool KPI; misassembly warnings; part labels; assembly V2; carton checklist; constrained redesign; 10-candidate before/after (Demand MOCK) |
-| 211–220 Retail / POP | 6 fixture families; slots/planogram; CONFIG_ESTIMATE load; artwork PARTIAL; electrical BLOCKED; same BOM→Nesting V3→Approval; **6/6 REAL T1000 OptiX previews** |
-| 221–230 Packaging V1 | 5 box families; dieline cut/crease/perf/glue; bleed PARTIAL; paperboard CONFIG; Waste V2 nesting; **REAL fold preview**; twin+PDQ+fixture bundle |
-| 231–235 Acrylic | 3 sheet SKUs CONFIG; 5 families; nesting grain=none; cut/bend CONFIG/PARTIAL; LIVE LASER BLOCKED; **3/3 REAL previews** |
-| 236–240 Physical OS | Family registry adapters; inventory reverse R&D MARKET_UNVERIFIED; Admin/API extensions; acceptance docs; readiness matrix; `fullAutonomousFactoryReady=false` |
+| 241–250 Release gates | scoped readiness; EvidenceBundle+verifier; truth-label regression; immutable approval audit; stale-on-hash; RC state machine to APPROVED_FOR_EXPORT (≠ LIVE_CNC); SandboxBackend PATH_GUARD_ONLY PARTIAL; job policy networkAllowed=false |
+| 251–260 Provider gateway | snapshot import CSV/JSON MANUAL/IMPORTED; mixed-source landed cost; quote binding/stale; supplier alternatives with engineering veto; `liveProviderReady=false` |
+| 261–270 Packaging V2 | board grade; McKee BCT ENGINEERING_ESTIMATE; 20 fit cases; dieline/bleed validators; artwork objective checks; barcode PARTIAL; carton optimize |
+| 271–280 Safety | rule registry; stability/wall-anchor/pinch/shelf/retail/acrylic estimates; notCertified=true; dangerous cases veto |
+| 281–290 Publication | ProductPublicationPackage; GLB hash; Web3D manifest; AR PARTIAL (no fake USDZ); catalog release/supersede; 5-family REAL Blender+EvidenceBundle |
+| 291–300 R&D loop | outcome schema/import (FIXTURE ≠ market); Demand V2 MARKET_UNVERIFIED; engineering-only ranking; substitution reapproval; Admin KPI |
 
 ## Tests
 
 ```
-pytest -q  →  89 passed   (local MOCK suite — not Production Ready)
+pytest -q  →  101 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions @ `5d8c533`: **GREEN** run `34252520536` — `unit (ubuntu-latest)` + `unit (windows-latest)`. MOCK blender suite only, not REAL production.
+GitHub Actions on this SHA: pending until this push. Do not predict PASS.
 
-## REAL / MOCK / PARTIAL / BLOCKED
+## REAL / IMPORTED / MANUAL / CONFIG_ESTIMATE / MOCK / PARTIAL / BLOCKED
 
 | Area | Label |
 |---|---|
-| Durable remnant restart / TTL / tenant isolation / consume-once | REAL (JSON ledger, not WMS) |
-| Material lots + placement lineage | REAL |
-| Nesting V3 vs baseline harness (10 cases) | REAL (this run: 2 sheet-count wins, 0 losses; selector may still fall back) |
-| Defect keep-out / grain on remnants | REAL |
-| KD DFA manifests (labels, assembly V2, carton, redesign) | REAL |
-| Retail 6-family planogram→BOM→nest→approval | REAL |
-| Retail fixture Blender previews | REAL 6/6 T1000 OptiX `usedMock=false` |
-| Packaging dieline + nesting | REAL |
-| Packaging fold Blender preview | REAL `usedMock=false` |
-| Acrylic 3-kind Blender previews | REAL 3/3 `usedMock=false` |
-| estimated / CONFIG cost | ESTIMATED/CONFIG |
-| realProviderCost / commercialQuote | false |
-| Vision / Video / Demand | MOCK |
-| OS sandbox | PARTIAL |
-| AR runtime | PARTIAL |
-| Packaging ECT/BCT / print preflight | PARTIAL |
-| Electrical compliance | BLOCKED |
-| LIVE_CNC / LIVE_LASER | BLOCKED |
-| CI evidence this SHA | REAL GitHub GREEN on `5d8c533` run `34252520536` (MOCK suite) |
+| EvidenceBundle verifier on 5 REAL previews | REAL (T1000 OptiX, usedMock=false, hash/size) |
+| Approval audit + stale + forbidden LIVE_CNC | REAL |
+| Scoped readiness | REAL computed; `globalProductionReady=false` |
+| Provider snapshot import execution | REAL (MANUAL/IMPORTED data) |
+| liveProviderReady | BLOCKED (no credentials) |
+| Mixed landed cost | REAL MIXED (MANUAL + CONFIG_ESTIMATE) |
+| Packaging V2 fit 20/20 | REAL |
+| BCT / print preflight / barcode | PARTIAL / ENGINEERING_ESTIMATE |
+| Safety estimates + veto cases | REAL execution, notCertified |
+| AR USDZ | PARTIAL (adapter only, no fake file) |
+| Vision / Demand / Video | MOCK |
+| OS sandbox | PARTIAL (PATH_GUARD_ONLY) |
+| LIVE_CNC / LIVE_LASER / electrical | BLOCKED |
 | fullAutonomousFactoryReady | false |
-| productionReadyScope | physicalProductOsV1-prototype-boundary (Human Approval Gate) |
 
-## Blockers (unchanged policy)
+## Blockers
 
-- LIVE_CNC / LIVE_LASER BLOCKED (`liveMachineControl=false`)
+- LIVE_CNC / LIVE_LASER BLOCKED
 - Vision/Video/Demand MOCK
-- OS sandbox PARTIAL (path guard ≠ OS jail)
-- REAL_PROVIDER costs missing
-- CI GREEN is mock-suite only (not REAL Blender) — run `34252520536` on `5d8c533`
+- OS jail missing (sandbox PARTIAL)
+- No LIVE_PROVIDER cost/logistics/FX credentials
+- Packaging strength is McKee estimate, not lab certification
 
 ## Do not redo
 
-Phase 1–180 REAL paths. Scheduler / Queue / DAM / Recipe Registry / TwinStore / Cabinet Engineering SoT were not rewritten.
+Phase 1–240 REAL paths. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec not rewritten.
 
 ## Next round
 
-ChatGPT re-review of Phase 181–240. Suggested follow-ups (not started): REAL_PROVIDER cost/logistics, live Vision/Demand, OS jail, true ECT/BCT, print preflight, electrical rules. Keep Human Approval Gate. `fullAutonomousFactoryReady` stays false until those are actually REAL.
+ChatGPT re-review. Follow-ups: live provider credentials, OS jail backend, lab/cert data, USDZ encoder, live demand. Keep Human Approval Gate. `fullAutonomousFactoryReady` stays false until those are actually REAL.
