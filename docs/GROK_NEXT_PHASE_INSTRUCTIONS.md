@@ -1,327 +1,187 @@
-# Grok 下一輪開發指令：Phase 361–420 Pilot Reliability / Manufacturing Control Boundary V1
+# Grok 修正指令：Phase 361–420 Reliability / Tenant & Stock Integrity
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Review head: `e5f3e6ce722c16f222a5bdb6d8f57efb34512383`  
-> Reviewed CODE_EVIDENCE_SHA: `414847d9b183fb7175461e5a886dfbe9337b5a73`  
-> ChatGPT review result: **ACCEPT WITH SCOPE**  
-> Phase 301–360 correction exit criteria are materially satisfied. Proceed to Phase 361–420, but keep all existing truth boundaries.
+> Reviewed head: `450993fa60df2907739b87e4efe0c4bb806f8784`  
+> Reviewed CODE_EVIDENCE_SHA: `068cbe8218a47d69edd9cbe79db9fe169e37b509`  
+> ChatGPT review result: **CHANGES REQUIRED**  
+> **Do not start Phase 421+ yet. Fix only the gaps below. Do not rewrite the existing architecture.**
 
-## Accepted evidence from the previous round
+## Evidence accepted from this round
 
-- Local `pytest -q`: **144 passed**, explicitly **MOCK/unit/integration suite — not Production Ready**.
-- GitHub Actions code run `34283481326`: **SUCCESS**, `unit (ubuntu-latest)` + `unit (windows-latest)`.
-- GitHub Actions docs/head run `34283611233`: **SUCCESS** on `e5f3e6c`.
-- MaterialLot reserve/cancel/consume conservation is now explicit and tested; retry consume is idempotent and cross-tenant access is rejected.
-- Required FINAL QC is authoritative; `complete(..., qc_ok=True)` cannot bypass zero/missing/failed required FINAL checks.
-- Phase 358 `noDoubleConsume` is observed from state, has a positive assertion and a negative regression; this remains **FIXTURE/simulation evidence**.
-- REAL Blender acceptance is **4/4** on Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, clean committed code SHA `414847d`, artifact hash/size verified, and each artifact is bound to the exact accepted ManufacturingRelease with non-null matching `releaseHash` plus engineering/BOM lineage.
-- `run_pilot_e2e` now requires canonical truth-set consistency and fails non-zero on mixed generation/commit, missing/malformed files, or release-lineage mismatch without overwriting the accepted files.
-- Missing readiness evidence defaults false/UNVERIFIED.
+The following evidence is valid within scope and does not need to be re-described as stronger than it is:
 
-## Truth labels that remain unchanged
-
-- **REAL within scope:** release package generation/verification, manual WorkOrder flow, QC logic/traceability, lot reservation logic, real Blender/OptiX rendering evidence.
-- **IMPORTED / MANUAL:** supplier quotes, carrier quotes, FX, actual-cost imports, measured operational inputs unless a real authenticated provider is actually connected.
-- **FIXTURE / TEST_DATA:** stress runs, synthetic demand, test QC data, auto-seeded test inventory.
-- **PARTIAL / ENGINEERING_ESTIMATE:** OS sandbox (`PATH_GUARD_ONLY`), AR, barcode printing, print preflight, McKee/BCT/packaging strength.
-- **MOCK:** Vision Judge, AI Video, Demand unless a genuine provider is connected and separately accepted.
-- **BLOCKED:** LIVE_CNC, LIVE_LASER, live machine control, electrical compliance, live provider actions without credentials.
-- `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `globalProductionReady=false`, `fullAutonomousFactoryReady=false` must remain false.
+- GitHub Actions code run `34290377181` on `068cbe8`: ubuntu + windows **SUCCESS**.
+- GitHub Actions docs/head run `34290489149` on `450993f`: **SUCCESS**.
+- Local `pytest -q`: `156 passed`, but this remains **MOCK/unit/integration + FIXTURE** evidence, not Production Ready.
+- 4/4 Blender EvidenceBundles are **REAL** for Blender/render scope: Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, clean committed code SHA `068cbe8`, release-bound, artifact hash/size verifier PASS.
+- Vision / AI Video / Demand remain **MOCK**.
+- OS sandbox / AR / print preflight / barcode / McKee/BCT remain **PARTIAL / ENGINEERING_ESTIMATE**.
+- Supplier/carrier/FX/receipts remain **IMPORTED / MANUAL** business data unless a real authenticated provider is connected.
+- LIVE_CNC / LIVE_LASER / live machine execution / live provider remain **BLOCKED**.
+- `globalProductionReady=false`, `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `fullAutonomousFactoryReady=false` must remain false.
 
 ---
 
-# Non-negotiable architecture rules
+# Blocking finding 1 — STRICT_STOCK is not transaction-safe on partial shortage
 
-1. **Do not rewrite** Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / RemnantStore / ReleaseGate / ManufacturingRelease / WorkOrder / QC / Physical Product OS.
-2. Do not create a second ERP, WMS, MES, QMS, inventory master, approval system, evidence system, render queue, or DAM.
-3. Extend the existing services with small ports/adapters/state rules only.
-4. Human Approval Gate remains mandatory for manufacturing release/export.
-5. No autonomous purchase, payment, carrier booking, CNC, laser, or machine actuation in this phase.
-6. A successful import/parser/API call may be **REAL logic**, but imported business data itself stays **IMPORTED/MANUAL**. Do not label imported supplier/carrier data `REAL_PROVIDER`.
-7. Do not use fixture auto-generation to hide unavailable material, missing QC, unavailable provider, unavailable machine, or missing evidence.
-8. Preserve the existing clean-commit / EvidenceBundle / atomic acceptance publish semantics.
+Current `WorkOrderService.reserve_materials()` reserves from available lots one-by-one and only afterwards discovers whether the total is insufficient. Under `STRICT_STOCK`, if some sheets were reserved and `remaining > 0`, it raises `StockShortage` **without rolling back the reservations already taken in that attempt**. The WorkOrder has not yet stored those reservation IDs, so they can become orphan-held inventory.
 
----
+This violates the required fail-closed/conservation behavior even though the existing no-stock test passes.
 
-# Phase 361–368 — Inventory truth, strict stock policy, concurrency safety
+## Required fix
 
-The current manual pilot is accepted as a simulation boundary, but one important hardening item must be addressed first: `WorkOrderService.reserve_materials()` can currently create a new MaterialLot when stock is missing/insufficient. That is acceptable only as an explicit **FIXTURE/test convenience**; it must not silently fabricate stock in a normal/manual-production path.
+Keep `MaterialLotRegistry` and `WorkOrderService`; do not add a second inventory engine.
 
-## Required work
+Implement one of these small-scope approaches:
 
-- Add an explicit material allocation policy to the existing WorkOrder/Pilot path, e.g.:
-  - `STRICT_STOCK` — default for non-test/manual-production API paths.
-  - `FIXTURE_AUTO_SEED` — allowed only for tests / explicit pilot fixture runners and labeled FIXTURE.
-- Under `STRICT_STOCK`, insufficient stock must fail closed with a structured shortage result; **do not auto-create inventory**.
-- Material lot creation for real/manual pilot inventory must happen through an explicit receipt/import path, not a hidden side effect of reserve.
-- Keep existing `MaterialLotRegistry`; do not add a second inventory service.
-- Make lot reserve/consume/release read-modify-write atomic inside the existing registry lock/version mechanism.
-- Add deterministic stale-version/CAS behavior if needed so two simultaneous reservations cannot oversell the same sheets.
-- Preserve tenant isolation and the invariant:
-  `available + reserved + consumed == received/adjusted quantity`.
-- Persist reservation state and prove restart/reload retains the same quantities, reservation ownership and idempotency state.
-- Add explicit inventory adjustment events only if needed; every adjustment must record actor, reason, source, tenant, before/after quantities and hash. No silent mutation.
+1. **Preflight then reserve atomically** under the existing registry transaction/lock boundary, or
+2. reserve provisionally and **rollback every reservation created by the current attempt** if the full requirement cannot be satisfied.
 
-## Required regressions
+The result must guarantee:
 
-- Two threads/process-simulated callers race to reserve the last sheet: at most one succeeds; no negative stock; conservation holds.
-- 20–50 concurrent reserve attempts on a small lot: no oversell and deterministic failures.
-- Retry the same idempotency key: same reservation, no extra decrement.
-- Restart/reload: reserved quantity and reservation owner survive.
-- Cancel after reserve: only unconsumed quantity returns.
-- Cancel after partial consume: consumed stock stays consumed; only remaining reservation is released.
-- `STRICT_STOCK` with no stock => BLOCKED/SHORTAGE, no generated lot.
-- `FIXTURE_AUTO_SEED` is visibly labeled FIXTURE and inaccessible from the normal production/manual API default.
+- failed `STRICT_STOCK` reservation leaves all lot quantities exactly as before the attempt;
+- no orphan reservation remains;
+- retrying the failed request does not progressively consume/hold stock;
+- conservation remains `available + reserved + consumed == received/adjusted` for every lot.
+
+## Mandatory regressions
+
+- Need 5 sheets, lot A has 2 and lot B has 1: reserve fails SHORTAGE and both lots return to their exact before-state.
+- Repeat the same failed reserve 10 times: quantities/reservation count unchanged after every failure.
+- Restart after failed reserve: no leaked reservation appears from persisted `lots.json`.
+- Concurrent shortage attempts cannot leave partial holds.
 
 ---
 
-# Phase 369–376 — WorkOrder state-machine hardening
+# Blocking finding 2 — WorkOrder reservation ignores material compatibility
 
-Use the existing `WorkOrderService`; add transition validation rather than a new workflow engine.
+Current `reserve_materials()` calculates the release-required `material` and `thickness`, but selects from `self.lots.list(tenant_id=tid, allocatable=True)` without filtering by material SKU/thickness. Therefore a PB/wood WorkOrder can reserve an unrelated material lot merely because it has free sheets.
 
-## Required work
+## Required fix
 
-- Define one authoritative transition table for current WorkOrder states.
-- Reject illegal transitions rather than silently changing state.
-- Starting a manufacturing operation requires a released, fresh ManufacturingRelease and successful material reservation.
-- `COMPLETED` requires:
-  - all required operations completed,
-  - authoritative FINAL QC passed,
-  - required packing/carton state present where the family requires it,
-  - release still matches the WorkOrder-bound releaseHash,
-  - no unresolved REJECT/SCRAP/QC_HOLD.
-- Retry of `release`, `reserve`, `start op`, `complete op`, `consume`, `packing`, `complete`, `cancel` must be deterministic/idempotent where semantically valid.
-- Every state transition records actor, timestamp, from/to, reason, idempotency key and hash in the existing WorkOrder lineage/audit structure.
-- Do not add MES machine control.
+Before reservation, candidate lots must be compatible with the ManufacturingRelease snapshot. At minimum enforce:
 
-## Required negative tests
+- exact material / sheet SKU match;
+- thickness match within a deterministic tolerance appropriate to stored numeric representation;
+- quarantined/blocked lots excluded as already intended;
+- if dimensions/grain are manufacturing-significant for the release, enforce them too rather than silently substituting.
 
-- operation before release/material reserve => fail;
-- complete with open operation => fail;
-- complete without packing when required => fail;
-- complete with QC_HOLD => fail;
-- stale/superseded release cannot start a new WorkOrder;
-- completed WorkOrder cannot be cancelled or mutate consumption;
-- cross-tenant WorkOrder actions fail.
+Do not silently coerce another SKU into a match. A mismatch is unavailable stock and contributes to structured SHORTAGE evidence.
+
+## Mandatory regressions
+
+- Required `PB_18_WHITE`, only `OAK` stock exists -> SHORTAGE; OAK quantities unchanged.
+- Required 18 mm, only 12 mm stock exists -> SHORTAGE; 12 mm lot unchanged.
+- Compatible lots across multiple receipts can satisfy one WO and conserve quantities.
+- Quarantined matching SKU cannot satisfy the WO.
 
 ---
 
-# Phase 377–384 — QC Traceability V2 / release-pinned inspection plan
+# Blocking finding 3 — New Pilot API tenant boundary is fail-open in several write/read paths
 
-Extend the existing `QcService`; do not build a second QMS.
+Phase 409–414 requires tenant-scoped Pilot API behavior. Current new/modified endpoints often use `payload.get("tenantId") or tenant(X-Tenant-Id)`, allowing request-body tenant IDs to override the authoritative tenant header. Also `ReceivingService.import_receipt()` accepts caller-provided idempotency keys in one global `_idem` map without forcing tenant scope. A reused key can therefore resolve to another tenant's receipt. Finally `PilotOperations.console()` returns `list(self.logistics.shipments.values())` without tenant filtering, while shipment records themselves do not carry an authoritative tenant ID.
 
-## Required work
+These are multi-tenant isolation blockers.
 
-- Freeze the required QC schema/check set into the ManufacturingRelease or WorkOrder snapshot using a version/hash.
-- A later config/schema change must not silently change the inspection requirements of an already-released WorkOrder.
-- QC records must include source truth: `TEST_DATA`, `MANUAL`, `IMPORTED`, or `DEVICE`; `DEVICE` does not imply calibrated/certified unless separate calibration evidence exists.
-- Add optional gauge/device ID, lot ID, operation ID, DAM photo/document refs and operator.
-- Latest FINAL result semantics must remain fail closed.
-- Rework cycle must preserve failed record + defect/disposition + corrective operation + new final result; do not overwrite history.
-- Add trace query path from productVersion/releaseHash/workOrder -> material lot/remnant -> operations -> QC -> carton.
+## Required fix
 
-## Acceptance
+Use the existing tenant/auth boundary; do not invent a second identity system.
 
-- Release A pins QC plan hash A; config changes to B; WorkOrder from A still requires A.
-- Missing/failed required check still blocks completion.
-- Cross-tenant QC cannot satisfy another tenant.
-- Rework history remains append-only and traceable.
+- For normal Pilot/material production/manual API routes, `X-Tenant-Id` (or the existing authenticated tenant source) is authoritative.
+- If body `tenantId` is present and differs from the authenticated/header tenant, reject the request (403/409). Do not switch tenants.
+- Scope receipt idempotency internally as `(tenant_id, caller_key)` or equivalent. The caller should not need to prefix the key manually.
+- A tenant B retry using the same raw idempotency key as tenant A must never return A's receipt or lot.
+- Add tenant identity to shipment drafts from their cartons/work order. All cartons in one shipment must belong to exactly one tenant.
+- Reject cross-tenant carton mixing.
+- `pilot.console(tenant_id=...)` must return only that tenant's shipments, cartons, receipts, purchase requests, WOs, releases and QC rows.
+- Do not expose a global shipment list through a tenant-scoped console.
 
----
+Apply the same authoritative-tenant rule to the Phase 361–420 routes you modified (`/api/materials/lots`, `/api/pilot/receipts`, `/api/pilot/purchase-requests`, `/api/pilot/work-orders/.../reserve`) and any directly adjacent new Pilot route. Do not broaden this into an unrelated full API rewrite.
 
-# Phase 385–392 — ManufacturingRelease revision / supersession control
+## Mandatory regressions
 
-Reuse `ManufacturingReleaseService` and the Human Approval Gate.
-
-## Required work
-
-- Add explicit immutable revision/supersession lineage:
-  `releaseId/releaseHash -> supersededBy -> new releaseId/releaseHash`.
-- Produce a deterministic diff summary for engineeringHash, bomHash, nesting/cut plan, packing, cost snapshot and QC-plan hash.
-- A superseded/stale release cannot create a new WorkOrder.
-- An already in-progress WorkOrder remains bound to its original releaseHash; policy must explicitly mark whether it may finish or requires HOLD/reapproval. Do not silently rebind it.
-- Any material engineering/BOM/manufacturing change requires the existing Human Approval Gate again.
-- Approval audit must identify the exact releaseHash being approved.
-
-## Negative tests
-
-- modify engineering after approval -> old release stale/superseded;
-- attempt new WO from old release -> fail;
-- attempt to mutate old release packet -> checksum fail;
-- approval for release A cannot authorize release B.
+- Header tenant A + body tenant B on receipt/material/purchase-request -> rejected; no object created in B.
+- Tenant A and tenant B both use raw idempotency key `same-key` -> two tenant-local receipts; neither can retrieve/affect the other's object.
+- Tenant A console never includes tenant B shipment/carton/receipt/WO/release/QC data.
+- Shipment draft mixing carton IDs from A and B -> rejected.
+- Missing tenant header on tenant-scoped Pilot write/read routes -> fail closed according to the existing API convention.
 
 ---
 
-# Phase 393–400 — Receiving / procurement boundary without autonomous purchasing
+# Blocking finding 4 — Phase 415–420 acceptance runner does not fail closed on reliability result
 
-Do not add payment or purchase execution. Reuse supplier/provider snapshots and MaterialLotRegistry.
+`run_pilot_e2e.py` executes `stress = plat.pilot.reliability.run(...)` and publishes `PILOT_RELIABILITY_ACCEPTANCE`, but final `required_ok` does not directly require the stress contract itself. It only checks REAL Blender/canonical/release conditions and the global false readiness flags. A broken reliability stress could therefore still allow exit 0 / canonical publish.
 
-## Required work
+## Required fix
 
-- Add a lightweight `PurchaseRequest` / `MaterialReceipt` adapter only if needed; it must be a boundary object, not a second ERP.
-- RFQ/quote comparison may produce `DRAFT_PURCHASE_REQUEST` / `WAITING_HUMAN_APPROVAL`; it must never send a PO or payment.
-- A **MANUAL/IMPORTED receipt** can create/increase a MaterialLot with:
-  supplier ID, supplier lot, material SKU, dimensions/thickness, received qty, unit cost snapshot, received time, source, actor, optional COA/DAM refs.
-- Quantity/material/thickness mismatch can quarantine the receipt or create a discrepancy record; no silent acceptance.
-- Only accepted receipt quantity becomes `available` stock under `STRICT_STOCK`.
-- Supplier and receipt source labels stay MANUAL/IMPORTED unless a real provider is actually connected.
+Add one explicit reliability gate used by `required_ok`. It must require, at minimum:
 
-## Acceptance
+- `label == FIXTURE`;
+- expected WorkOrder count >= 50;
+- operation transitions >= 250;
+- `noOversell == true`;
+- `materialConserved == true`;
+- receipt idempotency true;
+- quarantine blocked true;
+- pack mismatch negative true;
+- shipment remains draft/not booked;
+- required negative cases actually present and failed;
+- plus the new partial-shortage rollback, material mismatch and tenant-isolation negative cases from this correction.
 
-- shortage -> draft purchase request, not stock fabrication;
-- imported receipt -> lot availability increases exactly by accepted quantity;
-- quarantined receipt -> unavailable to nesting/reservation;
-- retry receipt import by idempotency key -> no duplicate stock.
+If any required reliability assertion is false/missing, runner must:
 
----
+- return non-zero;
+- not publish/overwrite canonical accepted evidence;
+- report which reliability condition failed.
 
-# Phase 401–408 — Packaging / shipment execution boundary
+Do not label the 50-WO stress REAL factory throughput. It remains **FIXTURE**.
 
-Reuse current LogisticsService / carton plan. No live carrier booking.
+## Mandatory runner regressions
 
-## Required work
+Inject a hooks/pipeline result with each of these broken one at a time and prove `main()` exits non-zero and does not publish:
 
-- Distinguish expected carton plan from measured carton facts.
-- Validate pack completeness: expected SKU/qty/parts vs recorded contents; shortages/duplicates must block shipment-ready scope.
-- Bind carton IDs to workOrderId, batchId, productVersion/releaseHash, lot/remnant lineage where relevant.
-- Measured dimensions/weight remain MANUAL/IMPORTED unless a real scale/dimensioner integration is separately evidenced.
-- Generate `SHIPMENT_DRAFT` / carrier request payload only; `submittedToCarrier=false` by default.
-- Barcode payload can be generated, but physical printer integration remains PARTIAL until actually tested on hardware.
-- Carrier quote stays IMPORTED unless real provider credentials/API are connected.
+- `noOversell=false`;
+- `materialConserved=false`;
+- missing required negative evidence;
+- too few WOs/ops;
+- shipment marked booked/submitted;
+- partial-shortage rollback false;
+- tenant-isolation false.
 
-## Acceptance
-
-- carton content conservation positive + missing/duplicate negative tests;
-- expected and measured data remain separate/immutable;
-- shipment draft cannot claim booked/shipped;
-- retry pack/ship draft is idempotent.
+Also keep the existing clean-tree, commit lineage, 4/4 REAL Blender, releaseHash, canonical-generation and atomic-publish fail-closed tests.
 
 ---
 
-# Phase 409–414 — Pilot Operations console/API on existing Admin surface
+# Required test/evidence sequence before re-review
 
-Do not create a new frontend stack or second backend.
+1. Make code/test fixes first and commit them as a new **CODE_EVIDENCE_SHA**.
+2. Run `pytest -q`; report count but label it MOCK/unit/integration/FIXTURE, not Production Ready.
+3. Push and require GitHub Actions ubuntu + windows GREEN for the code commit.
+4. Because code SHA changed, run the existing REAL acceptance path again from a **clean committed tree** and produce 4/4 release-bound `usedMock=false` Blender/T1000 OptiX EvidenceBundles bound to the new CODE_EVIDENCE_SHA.
+5. `PILOT_RELIABILITY_ACCEPTANCE.json` must include explicit results for:
+   - `partialShortageRollback=true`,
+   - `materialCompatibility=true`,
+   - `tenantIsolation=true`,
+   - plus the existing no-oversell/conservation/idempotency/negative checks.
+6. Update `GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md` only with facts actually re-proven.
+7. Do not edit `CABINET_REAL_ACCEPTANCE.md` unless cabinet evidence changed.
+8. Commit docs/evidence separately where practical, push, and require current-head CI GREEN.
+9. Keep Human Approval Gate and all LIVE machine/provider blockers unchanged.
 
-## Required work
+# Exit criteria
 
-Extend existing Admin/API to expose, by tenant:
+Do **not** claim Phase 361–420 accepted until all are true:
 
-- material lots: available/reserved/consumed/quarantined + shortage status;
-- WorkOrders: state, releaseHash, material reservations, open operations, QC holds, packing state;
-- release revision/supersession status and approval evidence;
-- QC failures/rework queue;
-- receipt/import status;
-- shipment drafts and measured-vs-expected carton facts;
-- truthful badges: REAL / IMPORTED / MANUAL / FIXTURE / PARTIAL / MOCK / BLOCKED.
+- failed strict reservation is transaction-neutral (no partial hold/leak);
+- lot selection matches required material/thickness and cannot substitute unrelated stock;
+- receipt idempotency is tenant-scoped regardless of raw caller key;
+- body tenant cannot override authoritative request tenant;
+- shipment/carton console data is tenant-scoped and cross-tenant mixing is rejected;
+- reliability acceptance itself is part of `required_ok` and fails closed;
+- all new negative regressions pass;
+- code CI and docs/head CI are GREEN;
+- new clean-tree 4/4 REAL Blender evidence is bound to the new code commit;
+- Mock/Fixture/Imported/Partial/Blocked truth labels remain honest;
+- `globalProductionReady=false` and `fullAutonomousFactoryReady=false` remain false.
 
-No LIVE_CNC/LIVE_LASER buttons that imply enabled control. Existing machine-control fields stay false/blocked.
-
-Add tenant/RBAC negative tests using the existing auth boundary where available; do not invent a second identity system.
-
----
-
-# Phase 415–420 — Reliability acceptance / clean-commit pilot evidence
-
-## Required fixture stress
-
-Create a repeatable **FIXTURE** stress scenario (not REAL factory throughput claim):
-
-- >= 50 WorkOrders across KD / retail / packaging / acrylic;
-- >= 250 operation transitions;
-- concurrent competition for limited MaterialLots;
-- retries of reserve/consume/state transitions;
-- cancellations before and after partial consume;
-- stale/superseded release attempts;
-- QC fail -> rework -> pass;
-- tenant isolation attacks;
-- receipt idempotency;
-- carton content mismatch negatives.
-
-Must prove:
-
-- no negative stock / no oversell;
-- material conservation;
-- no double consume;
-- no duplicate receipt stock;
-- no illegal state transition accepted;
-- no QC bypass;
-- no stale/superseded release creates a new WO;
-- all expected negative cases actually fail.
-
-Label this **FIXTURE / simulation**, not factory capacity.
-
-## REAL acceptance
-
-After code/tests are committed:
-
-1. Record a new clean `CODE_EVIDENCE_SHA`.
-2. Run `pytest -q`; state exactly which tests are MOCK/unit/integration/FIXTURE.
-3. Push and require GitHub Actions `ubuntu-latest` + `windows-latest` GREEN for the code commit.
-4. From a **clean committed tree**, run the existing REAL acceptance path on the actually detected Blender/OptiX worker.
-5. Produce at least **4/4 current-code, release-bound REAL Blender EvidenceBundles** for KD / retail / packaging / acrylic with:
-   - `usedMock=false`,
-   - actual Blender/OptiX worker identity,
-   - expected/bundle CODE_EVIDENCE_SHA match,
-   - non-null exact `releaseHash`,
-   - engineeringHash/BOM hash match where applicable,
-   - artifact hash + byte size verification.
-6. Reuse the current atomic/staged acceptance system. Do not create a second evidence publisher.
-7. Add/update one scoped acceptance pair, preferably `docs/PILOT_RELIABILITY_ACCEPTANCE.md` + `.json`, and update existing progress/audit/REAL_E2E docs only where facts changed.
-8. Do not edit `docs/CABINET_REAL_ACCEPTANCE.md` unless cabinet evidence actually changes.
-9. Commit docs/evidence separately where practical; require current-head CI GREEN.
-
----
-
-# Evidence hygiene required in this round
-
-There is one non-blocking wording issue from the accepted Phase 301–360 evidence: a row such as `supplier quotes imported` can currently have row status `REAL` while its data source is `IMPORTED`. In the next docs/evidence refresh, make the distinction unambiguous:
-
-- importer/parser/compare **logic execution** may be `REAL`;
-- supplier/carrier/FX **business data truth** must be `IMPORTED` / `MANUAL` unless live provider evidence exists.
-
-Do not change historical evidence merely to make it look stronger. Clarify labels without inflating readiness.
-
----
-
-# Exit criteria for ChatGPT re-review
-
-Do not claim Phase 361–420 complete unless all are true:
-
-1. Normal/manual WorkOrder reservation defaults to strict real inventory; missing stock cannot silently auto-create a MaterialLot.
-2. Fixture auto-seed, if retained, is explicit and labeled FIXTURE only.
-3. Concurrent reservation cannot oversell; available/reserved/consumed is conserved across retry/restart/cancel/partial consume.
-4. WorkOrder state transitions are validated and fail closed; completion requires closed ops + authoritative QC + required packing.
-5. QC plan is release-pinned and rework history is append-only/traceable.
-6. Superseded/stale release cannot spawn a new WO; approval is exact-releaseHash scoped.
-7. Material receipt is MANUAL/IMPORTED, idempotent, and is the explicit source of strict stock; quarantine cannot be allocated.
-8. Shipment stays draft/not-booked unless a real carrier provider is separately connected.
-9. Fixture stress negative cases truly fail and are labeled FIXTURE, not REAL factory throughput.
-10. Local tests pass; code CI ubuntu+windows GREEN; docs/head CI GREEN.
-11. REAL acceptance is from a clean committed CODE_EVIDENCE_SHA with 4/4 release-bound `usedMock=false` Blender/OptiX evidence.
-12. `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `globalProductionReady=false`, `fullAutonomousFactoryReady=false` unless future genuine evidence explicitly changes those scopes.
-13. LIVE_CNC / LIVE_LASER remain BLOCKED and Human Approval Gate remains mandatory.
-14. Vision / AI Video / Demand remain MOCK unless genuine provider execution is separately evidenced.
-15. No existing core architecture was rewritten and no second ERP/WMS/MES/QMS/evidence system was introduced.
-
----
-
-# Required Issue #1 handoff
-
-When complete, leave one concise Issue #1 comment with:
-
-- code SHA + evidence/docs SHA;
-- local pytest count and exact MOCK/FIXTURE note;
-- code/head Actions run IDs and ubuntu/windows result;
-- strict-stock/no-phantom-lot result;
-- concurrent reserve/consume conservation result;
-- WorkOrder illegal-transition regressions;
-- QC-plan pinning + QC bypass/rework result;
-- release supersession/stale-WO result;
-- receipt idempotency/quarantine result;
-- shipment draft/not-booked boundary;
-- FIXTURE stress counts and negative-case results;
-- 4/4 REAL release-bound Blender EvidenceBundle result;
-- remaining MOCK/PARTIAL/IMPORTED/MANUAL/BLOCKED boundaries;
-- `fullAutonomousFactoryReady=false`.
-
-Do not ask the user to copy/paste the report. ChatGPT will read the repository and Issue directly.
+When complete, update the normal handoff files and leave Issue #1 a concise completion note with CODE_EVIDENCE_SHA, test result, CI runs, REAL evidence summary and truth labels.
