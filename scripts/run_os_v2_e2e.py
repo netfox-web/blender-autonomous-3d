@@ -11,6 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from fox3d.acceptance_gate import required_real_acceptance_ok  # noqa: E402
 from fox3d.commerce import mixed_landed_cost  # noqa: E402
 from fox3d.evidence import (  # noqa: E402
     ACCEPTANCE_RUNNER_VERSION,
@@ -36,6 +37,7 @@ def _ok(job: dict) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--allow-dirty", action="store_true", help="dev-only; output is PARTIAL/UNVERIFIED, never REAL")
+    parser.add_argument("--docs-root", default=None, help="override docs/ for tests")
     args = parser.parse_args(argv)
     try:
         lineage = inspect_repo_lineage(ROOT, allow_dirty=args.allow_dirty)
@@ -166,11 +168,24 @@ def main(argv: list[str] | None = None) -> int:
     add("OS sandbox", "PARTIAL", "PATH_GUARD_ONLY")
     add("LIVE_CNC", "BLOCKED", "liveMachineControl=false")
 
-    docs = ROOT / "docs"
+    docs = Path(args.docs_root) if args.docs_root else ROOT / "docs"
     generated = datetime.now(timezone.utc).isoformat()
+    export_state = adv.get("state") if isinstance(adv, dict) else None
+    gate_result = required_real_acceptance_ok(
+        lineage=lineage,
+        blender_real=bool(probe.realBlender),
+        optix_real=bool(probe.realOptix),
+        previews=previews,
+        export_state=export_state,
+        stale=bool(stale.get("stale")),
+        live_cnc_blocked=live_cnc_blocked,
+        live_laser_blocked=live_laser_blocked,
+        expected_commit=sha,
+    )
+    required_ok = bool(gate_result["ok"])
 
     def write_acc(name: str, title: str, extra_rows: list[dict], payload: dict) -> None:
-        if not real_ok:
+        if not required_ok:
             return
         payload = {
             **payload,
@@ -255,10 +270,23 @@ def main(argv: list[str] | None = None) -> int:
             "liveMachineControl": False,
         },
     )
-    print(json.dumps({"rows": rows, "ready": ready["fullAutonomousFactoryReady"], "lineage": lineage, "realOk": real_ok}, indent=2, default=str))
-    if not real_ok:
-        return 3
-    return 0 if all(p.get("label") == "REAL" for p in previews) or not previews else 0
+    print(
+        json.dumps(
+            {
+                "rows": rows,
+                "ready": ready["fullAutonomousFactoryReady"],
+                "lineage": lineage,
+                "realOk": real_ok,
+                "requiredRealAcceptanceOk": required_ok,
+                "failures": gate_result["failures"],
+            },
+            indent=2,
+            default=str,
+        )
+    )
+    if not required_ok:
+        return 4
+    return 0
 
 
 if __name__ == "__main__":
