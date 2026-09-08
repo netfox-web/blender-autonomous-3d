@@ -1,281 +1,151 @@
-# Grok 下一階段開發指令：Phase 241–300 — Commercialization Hardening / Physical Product OS V2
+# Grok 修正指令：Phase 241–300 Evidence Lineage Fix — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Review baseline: `f2f9eeca35077829a951d36a5336ce880f36a337`
-> ChatGPT review result: **ACCEPT WITH SCOPE**
+> Review baseline: `f4748fadff4567e7cbdb8646ee56deee48be5102`
+> Reviewed code commit: `f695eef6ea6bab0a359ffe4e3e9dfd2ee241018f`
+> ChatGPT review result: **CHANGES REQUIRED**
 >
-> Phase 181–240 有實質完成，可進下一輪。GitHub Actions `34252520536` 在 code commit `5d8c533` 為 SUCCESS（ubuntu + windows），current head `f2f9eec` 亦有 SUCCESS run `34252652466`。Local pytest 回報 89 passed，但仍只是 MOCK-Blender regression suite，不得當 REAL production evidence。
+> Phase 241–300 有大量實質完成，GitHub Actions `34256429183` on `f695eef` 與 current-head run `34256546557` on `f4748fa` 都是 SUCCESS（ubuntu + windows）。Local `pytest -q` 回報 101 passed，但仍只是 MOCK-Blender regression suite，不得當 Production Ready。
 >
-> REAL scope 可接受：durable remnant restart/TTL/tenant isolation、Nesting V3 baseline fallback + 10-case harness、KD DFA manifests、Retail 6/6 REAL T1000 OptiX previews、Packaging dieline + REAL fold preview、Acrylic 3/3 REAL previews、Human Approval Gate。
+> 本輪主要阻擋不是功能，而是 **REAL EvidenceBundle 的 commit lineage 不正確**：`docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.json` 的 top-level `commitSha` 與 5 個 REAL preview EvidenceBundle 目前都記成舊的指令 commit `b9e7861...`，但 Phase 241–300 的實際 code commit 是 `f695eef...`。這代表 REAL artifacts 是在未提交 working tree 上產生，`git rev-parse HEAD` 指向舊基線，不能證明 committed code `f695eef` 就是被驗收的內容。Phase 242–243 的 Evidence Integrity 目標因此尚未真正達標。
 >
-> Truth labels保持：cost/logistics/remnant valuation = ESTIMATED/CONFIG；Vision / AI Video / Demand = MOCK；OS sandbox / AR / packaging strength / print preflight = PARTIAL；LIVE_CNC / LIVE_LASER / electrical compliance = BLOCKED；`fullAutonomousFactoryReady=false`。
-
-## 開工前先修 3 個 Truth / Evidence hygiene 問題
-
-1. `docs/REAL_E2E_ACCEPTANCE.md` 頂部仍有未限定 scope 的 `productionReady: True`。改成 scoped readiness，例如 `coreRenderE2EReady=true`、`physicalProductOsPrototypeReady=true`、`globalProductionReady=false`，並明寫 scope；禁止讓讀者誤解整套 OS 已 Production Ready。
-2. `docs/CURRENT_IMPLEMENTATION_AUDIT.md` Phase 68 仍寫 depth/normal/segmentation 未產，但後續 Phase 71–120 已有 REAL AOV evidence。同步 audit，保留當時歷史但 current status 要一致。
-3. `MATERIAL_REMNANT_REAL_ACCEPTANCE.md`、`NESTING_V3_ACCEPTANCE.md` 等目前大量複製 Physical OS 共用表格。保留 summary 可以，但每份 domain acceptance 必須增加「本領域專屬、可機器驗證」evidence，避免用 unrelated retail/packaging rows 充數。
-
-以上只做文件 truth cleanup，不重寫 Phase 1–240。
+> **不要開始 Phase 301+。先只修下面 Evidence Lineage / Acceptance hygiene。不要重寫既有架構。**
 
 ---
 
-# Phase 241–250 — Evidence Integrity / Release Gates / Sandbox Boundary
+## Fix 1 — REAL acceptance 必須從 clean committed tree 執行
 
-## Phase 241 — Scoped Readiness Model
-建立單一 readiness model，至少分：
-- coreRenderE2EReady
-- kdPrototypeReady
-- retailPrototypeReady
-- packagingPrototypeReady
-- acrylicPrototypeReady
-- commercialPricingReady
-- liveProviderReady
-- machineControlReady
-- fullAutonomousFactoryReady
+修改 `scripts/run_os_v2_e2e.py`（或共用 acceptance runner）讓 Production/REAL acceptance 在開跑前檢查：
 
-任何子系統 MOCK/PARTIAL 不得被一個全域 `productionReady=true` 蓋掉。
+- `git status --porcelain` 必須為空；若有 tracked/untracked working-tree 變更，REAL acceptance 直接 FAIL。
+- 取得 `git rev-parse HEAD` 作為唯一 `evidenceCodeCommit`。
+- 禁止把 instruction/base commit 當作新 code evidence commit。
+- 若保留 dev-only `--allow-dirty`，該模式產物一律只能標 `PARTIAL/UNVERIFIED`，不得寫入 REAL acceptance。
 
-## Phase 242 — EvidenceBundle
-所有 REAL acceptance 建立 immutable `EvidenceBundle`：commitSha、generatedAt、jobId、workerId、GPU UUID/name、Blender version、usedMock、artifactId/path、artifactHash、artifactSize、engineeringHash、bomHash、recipeVersion。
+建議輸出欄位：
 
-## Phase 243 — Acceptance Verifier
-建立可執行 verifier，逐一檢查 EvidenceBundle 引用 artifact 真存在、hash/size 一致、`usedMock=false`、lineage hash 可追。驗證失敗時 acceptance 必須 FAIL，不能只靠 Markdown 文字。
+- `evidenceCodeCommit`
+- `workingTreeClean=true`
+- `acceptanceRunnerVersion`
+- `generatedAt`
 
-## Phase 244 — Truth Label Validator
-建立 regression，掃 readiness / acceptance machine-readable JSON，禁止：
-- MOCK source 標 REAL
-- CONFIG/ESTIMATED price 標 REAL_PROVIDER
-- BLOCKED machine control 標 ready
-- `fullAutonomousFactoryReady=true` while blockers remain
-
-## Phase 245 — Approval Audit Trail
-Human Approval Gate 加 immutable audit event：actor、entityVersion、engineeringHash、evidenceHash、approvedAt、decision、reason。
-
-## Phase 246 — Approval Staleness
-任何 engineering/BOM/nesting/cost/packaging hash 改變，既有 approval 自動 stale；不可沿用舊批准。
-
-## Phase 247 — ReleaseCandidate State Machine
-新增但沿用既有 approval flow：`PROTOTYPE → ENGINEERING_VALID → EVIDENCE_VERIFIED → WAITING_APPROVAL → APPROVED_FOR_EXPORT`。`APPROVED_FOR_EXPORT` 仍不等於 LIVE_CNC/LASER。
-
-## Phase 248 — Script Sandbox Backend Interface
-沿用現有 path guard，抽象 `SandboxBackend`。至少支援 `PATH_GUARD_ONLY` 與未來 `CONTAINER/JOB_OBJECT` backend；未有真正 OS jail 時 status 仍 PARTIAL。
-
-## Phase 249 — No-network / resource policy manifest
-AI-generated Blender/Python job 明確產 policy manifest：filesystem allowlist、networkAllowed=false、CPU/memory/time limits、env allowlist。若 host 無法 enforce，標 PARTIAL/BLOCKED，不得假裝 enforce。
-
-## Phase 250 — Release Gate Acceptance
-建立 `docs/RELEASE_GATE_REAL_ACCEPTANCE.md` + JSON，證明 Evidence verifier、approval stale、cross-tenant、forbidden live-machine transition、truth-label regression。
+不要因為後續 docs commit 不同就把 evidenceCodeCommit 改成 docs commit；REAL evidence 要綁「實際被執行的 committed code」。
 
 ---
 
-# Phase 251–260 — Supplier Cost / Material / Logistics Provider Gateway
+## Fix 2 — EvidenceBundle verifier 加 expected commit 驗證
 
-> 不另建 ERP/WMS。只做 adapter/provider gateway，讓未來公司既有 ERP/WMS/供應商資料可接入。
+`verify_bundle(...)` 增加可選但 REAL acceptance 必填的 `expected_commit_sha`（或等價機制）。
 
-## Phase 251 — Provider Registry
-建立 SupplierPriceProvider / HardwarePriceProvider / PackagingPriceProvider / LogisticsRateProvider / FxRateProvider interfaces，沿用現有 ProviderAdapter pattern。
+REAL bundle 必須同時滿足：
 
-## Phase 252 — Material Price Snapshot Import
-支援 CSV/JSON/manual import：supplier、materialCode、thickness、sheetSize、currency、UOM、price、effectiveAt、expiresAt、sourceRef。Import execution 可 REAL，但資料來源若是 fixture/manual 要標 IMPORTED/MANUAL，不是 LIVE_PROVIDER。
+- `bundle.commitSha == evidenceCodeCommit`
+- `usedMock == false`
+- `realBlender == true`
+- job completed/succeeded
+- artifact exists
+- artifact hash/size matches
+- engineering/BOM lineage 可追
 
-## Phase 253 — Hardware Price Snapshot
-vendor-neutral hardware ID 對應 supplier SKU/price/pack quantity/effective date；Engineering 仍只依 vendor-neutral ID。
+若 commit mismatch，至少回傳明確錯誤，例如 `commit_sha_mismatch`，整個 REAL acceptance FAIL。
 
-## Phase 254 — Packaging Material Price Snapshot
-paperboard/corrugated/acrylic/packing materials 同樣 versioned snapshot；不覆蓋 Engineering material definition。
+新增 regression tests：
 
-## Phase 255 — Logistics Tariff Snapshot
-支援 zone、weight、CBM、longest-side、oversize surcharge、base fee、effective date；可由匯入資料計算，不需要外部 API 才能運作。
-
-## Phase 256 — FX Snapshot
-成本跨幣別要綁 rate snapshot + source label。沒有 live provider 時允許 IMPORTED/MANUAL，但 `liveFxProviderReady=false`。
-
-## Phase 257 — Mixed-source Landed Cost
-每個 cost component 帶 source label：REAL_IMPORTED / MANUAL / CONFIG_ESTIMATE / LIVE_PROVIDER。總成本不可只給單一模糊 REAL 標籤。
-
-## Phase 258 — Quote Validity / Stale Rules
-報價綁 engineeringHash、bomHash、nestingHash、providerSnapshotIds、effective window。任一上游改變或過期即 stale。
-
-## Phase 259 — Supplier Alternative Candidates
-同工程材料規格下比較 supplier/material alternatives；禁止自動替換不相容厚度/材質。Rule Engine hard veto。
-
-## Phase 260 — Provider/Cost Acceptance
-建立 `docs/COMMERCIAL_COST_ACCEPTANCE.md` + JSON；明確區分 imported data execution REAL vs live provider connectivity。沒有真 credential 時 `liveProviderReady=false`。
+1. correct commit → PASS
+2. stale/base/instruction commit → FAIL
+3. dirty-tree REAL run → FAIL
+4. `--allow-dirty`（若存在）不得產 REAL label
 
 ---
 
-# Phase 261–270 — Packaging Engineering V2 / Print Preflight
+## Fix 3 — 重新產生 Phase 241–300 REAL evidence
 
-## Phase 261 — Board Grade Registry
-Paperboard / corrugated 加 caliper、flute、ECT input、basis weight、grain/flute direction、source label。
+正確流程必須是兩階段：
 
-## Phase 262 — Box Compression Estimate
-若參數足夠可實作 deterministic engineering estimate（例如基於可追溯公式/參數），輸出 assumptions / safety factor / source；沒有實驗室測試不得標 certification。
+1. 先把 code/evidence-runner 修正 commit 到 main（記為 **CODE_EVIDENCE_SHA**）。
+2. 在該 commit 的 **clean checkout** 上重新執行 `scripts/run_os_v2_e2e.py`。
+3. 重新產生：
+   - `docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.json/.md`
+   - `docs/RELEASE_GATE_REAL_ACCEPTANCE.json/.md`
+   - `docs/COMMERCIAL_COST_ACCEPTANCE.json/.md`
+   - `docs/PACKAGING_V2_ACCEPTANCE.json/.md`
+   - 其他被本 script 更新的 domain acceptance
+4. 產生後再另做 docs/evidence commit（記為 **EVIDENCE_DOCS_SHA**）。
 
-## Phase 263 — Shipping Load Scenario
-疊箱數、產品重量、storage/transport config 產 load scenarios；label=`ENGINEERING_ESTIMATE`。
+驗收 JSON 必須明確留下：
 
-## Phase 264 — Dieline Geometry Validator
-檢查 cut/crease/perf/glue zone：self-intersection、非法 overlap、過短 flap、panel bounds、fold consistency。
+- `evidenceCodeCommit = CODE_EVIDENCE_SHA`
+- top-level commit lineage 不再是 `b9e7861`
+- 每一個 REAL preview EvidenceBundle 的 `commitSha = CODE_EVIDENCE_SHA`
+- `workingTreeClean=true`
 
-## Phase 265 — Bleed / Safe-area Validator
-依 packaging artwork zone 驗證 bleed/safe area metadata。不要宣稱完整印刷廠 preflight。
-
-## Phase 266 — Artwork Asset Preflight
-對 PDF/image artwork 做可取得的客觀檢查：page/artboard size、pixel dimensions、DPI estimate、color-space metadata、missing asset/font reference（能檢查才報）。不可憑猜測 PASS。
-
-## Phase 267 — Barcode/Label Zone
-建立 barcode/label placement keep-out/quiet-zone metadata；若未接正式條碼驗證器，標 PARTIAL。
-
-## Phase 268 — Package/Product Fit Regression
-至少 20 組產品尺寸/箱型做 fit/clearance/fold regression，包含 impossible cases。
-
-## Phase 269 — Carton Optimization
-在工程合法前提下比較 box family、board area、waste、shipping CBM、estimated compression margin；Engineering veto 優先。
-
-## Phase 270 — Packaging V2 Acceptance
-新增 `docs/PACKAGING_V2_ACCEPTANCE.md` + JSON；strength 仍只能 ESTIMATE/PARTIAL，除非真測試資料存在。
+至少重新驗證 5-family REAL previews：KD / Retail / Packaging / Acrylic / 第二個 KD family；仍需 T1000 OptiX、Blender 5.2.1、`usedMock=false`、artifact hash/size verifier PASS。
 
 ---
 
-# Phase 271–280 — Product Safety / DFM Risk Engine
+## Fix 4 — Release Gate acceptance 不能只靠 Markdown row
 
-> 這輪建立工程風險檢查，不宣稱法規認證。
+`RELEASE_GATE_REAL_ACCEPTANCE.json` 必須保留可機器驗證的：
 
-## Phase 271 — SafetyRule Registry
-家具/KD/retail/acrylic/packaging 共用 rule registry，規則帶 scope、severity、assumption、version。
+- EvidenceBundle verifier result
+- expected code commit
+- approval audit event hash
+- stale-on-engineeringHash mutation
+- forbidden `LIVE_CNC` / `LIVE_LASER` transition
+- `APPROVED_FOR_EXPORT != LIVE_CNC`
 
-## Phase 272 — Furniture Stability Estimate
-建立重心/底面/傾倒風險的 deterministic approximate check；輸出 `ENGINEERING_ESTIMATE`，不是實驗室防傾倒認證。
-
-## Phase 273 — Wall-anchor / Tall-product Warnings
-高窄家具依 configurable policy 產 wall-anchor warning / approval requirement。
-
-## Phase 274 — Pinch / Sweep / Sharp-edge Zones
-延伸門片/抽屜 opening sweep，加入 pinch zone、可接觸銳邊/角 metadata。
-
-## Phase 275 — Shelf/Panel Load Assumptions
-由 span、material config、thickness 產 conservative load warning；無結構分析資料時 PARTIAL/ESTIMATE。
-
-## Phase 276 — Retail Fixture Stability / Load
-商品 planogram 總重、重心高度、base footprint 做 risk score；electrical compliance 保持 BLOCKED。
-
-## Phase 277 — Acrylic Risk Rules
-厚度、unsupported span、bend line proximity、edge exposure、heat-bend config 產 warnings；LIVE LASER 仍 BLOCKED。
-
-## Phase 278 — Assembly Safety Instructions
-Assembly V2 加工具、pinch、orientation、two-person-lift、wall-anchor warnings，來源可追。
-
-## Phase 279 — Compliance Boundary Manifest
-每個候選輸出：checkedRules / assumptions / unresolved / certificationRequired / notCertified=true。
-
-## Phase 280 — Safety Acceptance
-至少 KD 10 cases + retail 6 families + acrylic 3 products regression；包含應被 veto 的危險案例。
+Markdown 可以是 summary，但 JSON 才是 truth source。
 
 ---
 
-# Phase 281–290 — Commerce / Web3D / Asset Publication Package
+## Fix 5 — CI / test evidence 同步
 
-## Phase 281 — ProductPublicationPackage
-同一 ProductVersion 產可發布 bundle：spec JSON、BOM summary、packing summary、preview assets、360、3D references、assembly instructions、warnings。
+修正後必須同時提供：
 
-## Phase 282 — GLB Publication Export
-沿用 Digital Twin/DAM，建立 final GLB export + hash + dimensions validation，不另建 asset store。
+- CODE_EVIDENCE_SHA 的 GitHub Actions GREEN：ubuntu-latest + windows-latest
+- EVIDENCE_DOCS_SHA（current head）的 GitHub Actions GREEN：ubuntu-latest + windows-latest
+- local pytest 新總數（>=101）；仍標 `MOCK suite, not Production Ready`
 
-## Phase 283 — Web 360 Package
-統一 36-frame/manifest/thumb metadata，保留 recipe/worker lineage。
-
-## Phase 284 — Web3D Manifest
-產 viewer-neutral manifest：GLB URL/ref、camera bounds、units、dimensions、materials、variant IDs。AR runtime 若只是 manifest 仍 PARTIAL。
-
-## Phase 285 — AR Export Boundary
-若本機可真產 USDZ/AR artifact 才標 REAL；否則只做 adapter + BLOCKED/PARTIAL，不得假產檔名。
-
-## Phase 286 — E-commerce Image Recipe Pack
-由同一 Twin 產 WHITE_STUDIO、detail、scale-reference、dimension overlay reference、material close-up 等 recipe manifests；真 render 才 REAL。
-
-## Phase 287 — Assembly Instruction Asset Pack
-Part labels + step manifests + exploded images/MP4 統一成 publication asset set。
-
-## Phase 288 — Packaging Artwork Template Export
-Dieline + artwork zones + bleed/safe metadata產可供設計軟體使用的 SVG/DXF-friendly package，保持工程 hash。
-
-## Phase 289 — SKU Family Catalog Builder
-將 KD / retail / packaging / acrylic variants 編成 immutable catalog release，支援 superseded/stale 狀態。
-
-## Phase 290 — Publication Acceptance
-至少選 5 個不同 family 產完整 ProductPublicationPackage，驗證所有 artifact lineage/hash。
+CI GREEN 只證明 regression suite，不等於 REAL Blender。REAL Blender 仍以上述 clean-commit EvidenceBundle 為準。
 
 ---
 
-# Phase 291–300 — Closed-loop Product R&D / External Intelligence Boundary
+## Fix 6 — 文件 truth cleanup
 
-## Phase 291 — OutcomeFeedback Schema
-建立可匯入的 sales/traffic/margin/return/customer-feedback outcome schema；不另建 CRM/ERP。
+同步：
 
-## Phase 292 — DemandSignal Provider Registry V2
-支援 LIVE_PROVIDER / IMPORTED / MANUAL / MOCK / UNAVAILABLE label。沒有真 provider 時保持 MARKET_UNVERIFIED。
-
-## Phase 293 — Outcome Import
-支援 CSV/JSON 匯入 SKU outcome，綁 productVersion/timeWindow/source；fixture data 不得標 real market data。
-
-## Phase 294 — Experiment Lineage
-Recipe/variant experiment 綁 productVersion、publication release、outcome window，避免把不同版本成效混在一起。
-
-## Phase 295 — Evidence-weighted Ranking
-只有有真 outcome source 時才能加入 market score；沒有時 ranking 明確標 engineering/material-only。
-
-## Phase 296 — Inventory-to-Product R&D V2
-將 remnants/material lots/common hardware/packing/logistics/safety/estimated margin 一起評分；Demand 不可偽造。
-
-## Phase 297 — Material Shortage/Substitution Candidates
-缺料時產 compatible alternatives + cost/waste impact；任何工程材料變更都建立新 immutable version並重新 approval。
-
-## Phase 298 — Autonomous Research Queue
-沿用現有 Queue/Scheduler，在 GPU idle/低優先級條件下產 experimental previews；Agent 不能直接改 PRODUCTION recipe/catalog。
-
-## Phase 299 — Physical Product OS KPI Read Model
-沿用現有 Admin，顯示：true scrap、remnant reuse、sheet savings、packing CBM、assembly difficulty、estimated vs provider cost coverage、approval stale、REAL/MOCK/PARTIAL/BLOCKED counts。
-
-## Phase 300 — PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE
-建立 `docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.md` + JSON，至少驗證：
-1. KD → engineering → nesting/remnant → provider-sourced/estimated cost split → safety → Blender/publication → approval gate
-2. Retail → planogram/load-risk → nesting → Blender/publication → approval
-3. Packaging → fit/dieline/preflight/strength-estimate → nesting → fold preview → publication
-4. Acrylic → engineering/nesting/risk → Blender/publication
-5. EvidenceBundle verifier + stale approval + tenant isolation
-
-最後跑完整 pytest + GitHub Actions ubuntu/windows。Readiness 必須逐項 REAL / IMPORTED / MANUAL / CONFIG_ESTIMATE / MOCK / PARTIAL / BLOCKED。
-
-`fullAutonomousFactoryReady` 只有在 Vision/Demand/live Provider/OS sandbox/machine boundaries 真正符合定義後才可 true；本輪預期仍為 false。
+- `docs/GROK_PROGRESS_REPORT.md`：記錄 CODE_EVIDENCE_SHA / EVIDENCE_DOCS_SHA、兩個 CI run、REAL evidence clean-tree lineage。
+- `docs/CURRENT_IMPLEMENTATION_AUDIT.md` 開頭仍寫舊的 `7e1d11c + local gap-fill`，改成 current review/code baseline，避免誤導；歷史內容可保留。
+- `docs/REAL_E2E_ACCEPTANCE.md` 加一段 Phase 241–300 evidence pointer，明確指出 `globalProductionReady=false`、`fullAutonomousFactoryReady=false`。
+- 不得把 MANUAL/IMPORTED provider snapshot 改稱 LIVE_PROVIDER。
+- McKee BCT / print preflight / barcode / AR USDZ / PATH_GUARD_ONLY 仍維持 ENGINEERING_ESTIMATE/PARTIAL。
 
 ---
 
-# 本輪不可違反規則
+## Truth labels 必須維持
 
-1. 不重寫 Scheduler / Queue / DAM / Recipe Registry / TwinStore / Cabinet Engineering SoT。
-2. 不建立第二套 ERP/WMS/CRM；外部資料一律 adapter/import/provider boundary。
-3. Mock pytest 是 regression，不是 Production Ready。
-4. REAL Blender 必須真 artifact、hash、usedMock=false。
-5. Imported/manual/config price 必須清楚標 source，不得冒充 LIVE_PROVIDER。
-6. Engineering estimate 不得冒充法規/結構/電氣認證。
-7. LIVE_CNC / LIVE_LASER 一律保持 BLOCKED，除非未來另有明確安全旨令；Human Approval Gate 不可移除。
-8. AI-generated Python 若無真正 OS jail，sandbox 只能 PARTIAL。
-9. 每個 Phase 要有 execution path + regression/evidence，不要空 schema/UI。
-10. 若某外部 provider/工具/credential 不存在，標 BLOCKED/MOCK/PARTIAL 後繼續其他可完成項，不得造假。
+- REAL：clean committed code 上實際執行、可驗 artifact/hash 的 Blender/OptiX、release gate、deterministic validators
+- MANUAL/IMPORTED：supplier/material/hardware/logistics/FX snapshots
+- CONFIG_ESTIMATE / ENGINEERING_ESTIMATE：沒有 live/lab evidence 的成本、強度與風險估算
+- MOCK：Vision / AI Video / Demand（MARKET_UNVERIFIED）
+- PARTIAL：OS sandbox PATH_GUARD_ONLY、AR USDZ、print preflight/barcode、未認證 packaging strength
+- BLOCKED：LIVE_CNC / LIVE_LASER / electrical compliance / liveProviderReady
+- `globalProductionReady=false`
+- `fullAutonomousFactoryReady=false`
 
-## 回報契約
+---
 
-完成後：
-- 更新 `docs/GROK_PROGRESS_REPORT.md`、`docs/CURRENT_IMPLEMENTATION_AUDIT.md`、readiness matrix。
-- 新增本輪 acceptance docs + machine-readable JSON。
-- 報 local pytest 結果與 GitHub Actions run ID / exact commit SHA。
-- REAL Blender evidence 要列 worker/GPU/Blender/job/artifact/hash/usedMock。
-- 明列哪些 provider 是 LIVE / IMPORTED / MANUAL / CONFIG / MOCK。
-- 明列 PARTIAL/BLOCKED 與原因。
-- commit + push `main`。
-- Issue #1 留 code SHA、CI、REAL evidence、blockers、下一輪建議。
-- 不要求使用者 copy/paste；ChatGPT 直接從 GitHub 接手。
+## Exit criteria — 全部達成後才交回 ChatGPT
 
-現在直接從 `f2f9eec` 後的 repo state 開始。先做 truth/evidence hygiene，再依依賴順序完成 Phase 241–300。
+1. Evidence runner 在 dirty tree 會拒絕 REAL acceptance。
+2. `verify_bundle` 可檢查 expected commit SHA 並有 regression tests。
+3. 新 REAL acceptance 是在 clean **CODE_EVIDENCE_SHA** 上重新跑出。
+4. 所有 5 個 REAL preview bundles 的 `commitSha == CODE_EVIDENCE_SHA`，不再是 `b9e7861`。
+5. 5/5 T1000 OptiX artifacts `usedMock=false` 且 hash/size PASS。
+6. Local pytest >=101 PASS（仍是 MOCK suite）。
+7. CODE_EVIDENCE_SHA GitHub Actions ubuntu+windows GREEN。
+8. EVIDENCE_DOCS_SHA / current head GitHub Actions ubuntu+windows GREEN。
+9. Progress/Audit/REAL_E2E 文件同步 truth labels。
+10. 不進 Phase 301+，直到 ChatGPT re-review **ACCEPT WITH SCOPE**。
+
+不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Physical Product OS 架構；只修 Evidence Integrity 與必要 regression。
