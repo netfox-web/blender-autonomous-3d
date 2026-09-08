@@ -233,6 +233,107 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def kd_readiness() -> dict[str, Any]:
         return get_platform().kd.readiness()
 
+    @app.get("/api/materials")
+    def materials(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        plat = get_platform()
+        from fox3d.acrylic import ACRYLIC_SHEETS
+        from fox3d.manufacturing import SheetMaterialRegistry
+        from fox3d.packaging import PAPERBOARD_SHEETS
+
+        lots = plat.lots.list(tenant_id=tenant(x_tenant_id)) if x_tenant_id else list(plat.lots.lots.values())
+        return {
+            "sheets": SheetMaterialRegistry().list(),
+            "acrylic": list(ACRYLIC_SHEETS),
+            "paperboard": list(PAPERBOARD_SHEETS),
+            "lots": lots,
+            "costSource": "CONFIG",
+        }
+
+    @app.post("/api/materials/lots")
+    def create_lot(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().lots.create(
+            tenant_id=tid,
+            material=str(payload.get("material") or "WOOD_WHITE"),
+            thickness=float(payload.get("thickness") or 18),
+            supplier_lot=payload.get("supplierLot"),
+            sheet_count=int(payload.get("sheetCount") or 1),
+        )
+
+    @app.get("/api/remnants")
+    def remnants(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        return get_platform().remnants.snapshot(tenant_id=tid)
+
+    @app.post("/api/remnants/{remnant_id}/reserve")
+    def remnant_reserve(remnant_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        try:
+            return get_platform().remnants.reserve(remnant_id, by=str(body.get("by") or "api"), version=body.get("version"), lease_seconds=body.get("leaseSeconds"), tenant_id=tenant(x_tenant_id))
+        except (KeyError, PermissionError) as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/nesting/benchmarks")
+    def nesting_benchmarks(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        from fox3d.nesting_v3 import run_benchmark
+
+        body = payload or {}
+        plat = get_platform()
+        result = run_benchmark(plat, tenant_id=body.get("tenantId") or tenant(x_tenant_id))
+        plat.physical.benchmarks.append(result)
+        return result
+
+    @app.post("/api/kd/candidates")
+    def kd_candidates(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        return get_platform().physical.kd_optimized_board(tenant_id=body.get("tenantId") or tenant(x_tenant_id), count=int(body.get("count") or 10))
+
+    @app.post("/api/retail/fixtures")
+    def retail_fixtures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().physical.retail.build(
+            tenant_id=tid,
+            family=str(payload.get("family") or "COUNTER_DISPLAY"),
+            product=payload.get("product"),
+            facing=int(payload.get("facing") or 2),
+            render=bool(payload.get("render")),
+        )
+
+    @app.post("/api/packaging/structures")
+    def packaging_structures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        dims = payload.get("productDims") or payload.get("dimensions") or {"width": 120, "height": 80, "depth": 40}
+        return get_platform().physical.packaging.build(
+            tenant_id=tid,
+            family=str(payload.get("family") or "RSC_CARTON"),
+            product_dims=dims,
+            render=bool(payload.get("render")),
+        )
+
+    @app.post("/api/acrylic/products")
+    def acrylic_products(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().physical.acrylic.build(
+            tenant_id=tid,
+            kind=str(payload.get("kind") or "MENU_STAND"),
+            sheet_sku=str(payload.get("sheetSku") or "ACR_CLEAR_5"),
+            render=bool(payload.get("render")),
+        )
+
+    @app.post("/api/physical-os/approve")
+    def physical_approve(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        _ = tenant(x_tenant_id)
+        return get_platform().physical.approve(entity_id=str(payload.get("entityId") or payload.get("productId")), actor=str(payload.get("actor") or "human"), kind=str(payload.get("kind") or "product"))
+
+    @app.get("/api/physical-os/families")
+    def physical_families() -> dict[str, Any]:
+        reg = get_platform().physical.families
+        return {"items": [reg.get(name) for name in reg.list()]}
+
+    @app.get("/api/physical-os/readiness")
+    def physical_readiness() -> dict[str, Any]:
+        return get_platform().physical.readiness()
+
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
         return render_admin(get_platform())

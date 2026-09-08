@@ -35,3 +35,5 @@ Mock Worker 僅供 `pytest`。Production acceptance 不得把 mock-4.2 寫成 PA
 Furniture factory Phase 71–120 evidence: `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` (`productionReady` scope = `coreFactoryE2E` only).
 
 KD / flat-pack Phase 121–180 evidence: `docs/KD_FACTORY_REAL_ACCEPTANCE.md`. Waste V2 splits reusable remnant vs true scrap. Vision Judge, AI Video, and demand remain **MOCK**. LIVE_CNC remains **BLOCKED**. `fullAutonomousFactoryReady=false`. `ciEvidenceReady` is **true** for MOCK-suite GitHub Actions run `34245840051` on `e7d911d` (ubuntu+windows GREEN). That is not REAL Blender production. Cost model is `CONFIG_ESTIMATE_ONLY`.
+
+Physical Product OS Phase 181–240 evidence: `docs/PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE.md` (+ material/nesting/retail/packaging JSON). Scope is prototype / Human Approval Gate only. Retail 6/6 and acrylic 3/3 REAL T1000 OptiX previews. Packaging strength and print preflight stay **PARTIAL**. LIVE_LASER/CNC **BLOCKED**.

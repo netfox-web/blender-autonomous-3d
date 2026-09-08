@@ -1,0 +1,12 @@
+{
+  "generatedAt": "2026-09-08T16:38:31.477029+00:00",
+  "fold": {
+    "engineeringHash": "1377a6a5003c2209c49bf45a9fa5dc7a700cdda753fe2b2f3da65d77ab6c6e94",
+    "jobId": "1d061cb2-f7cc-4d53-a276-3426aa377403",
+    "outputHash": "d03f98e74a0ca0bb3a754add52f70cf8def4cc893ecea17031f2e692df99db2a",
+    "outputSize": 62024,
+    "usedMock": false,
+    "label": "REAL"
+  },
+  "packageId": "b602fe7f-b095-4847-8a31-7cb70102ffc6"
+}

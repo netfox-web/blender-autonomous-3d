@@ -1,0 +1,16 @@
+{
+  "generatedAt": "2026-09-08T16:38:31.477029+00:00",
+  "rows": [
+    {
+      "check": "durable remnant restart+TTL",
+      "status": "REAL",
+      "evidence": "loaded=available recovered=1 persistence=durable-json"
+    },
+    {
+      "check": "material lot",
+      "status": "REAL",
+      "evidence": "ea91f528-03d3-4335-af69-0d5a239d37d3"
+    }
+  ],
+  "liveMachineControl": false
+}

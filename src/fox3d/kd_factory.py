@@ -35,7 +35,7 @@ FORBIDDEN_STATES = {"APPROVED_FOR_PRODUCTION", "LIVE_CNC"}
 class KdFactory:
     def __init__(self, platform: Any) -> None:
         self.platform = platform
-        self.remnants = RemnantInventory()
+        self.remnants = getattr(platform, "remnants", None) or RemnantInventory()
         self.batches: dict[str, dict[str, Any]] = {}
         self.candidates: dict[str, dict[str, Any]] = {}
         self.demand = DemandSignalProvider()
@@ -174,8 +174,15 @@ class KdFactory:
         bom = {"productId": "cross", "lines": lines}
         return self.nester.nest(bom, material=material, thickness=thickness)
 
-    def extract_remnants(self, nesting: dict[str, Any], *, material: str, thickness: float, run_id: str) -> list[dict[str, Any]]:
-        return self.remnants.add_from_nesting(nesting, material=material, thickness=thickness, source_run=run_id)
+    def extract_remnants(self, nesting: dict[str, Any], *, material: str, thickness: float, run_id: str, tenant_id: str | None = None, material_lot_id: str | None = None) -> list[dict[str, Any]]:
+        return self.remnants.add_from_nesting(
+            nesting,
+            material=material,
+            thickness=thickness,
+            source_run=run_id,
+            tenant_id=tenant_id,
+            material_lot_id=material_lot_id,
+        )
 
     def remnant_first_case(self, rec: dict[str, Any]) -> dict[str, Any]:
         spec = CabinetSpec.model_validate(rec["spec"])
@@ -280,6 +287,28 @@ class KdFactory:
             "erp": False,
             "liveMachineControl": False,
         }
+        spec0 = recs[0]["spec"]
+        created = self.extract_remnants(
+            nest,
+            material=str(spec0.get("material") or "WOOD_WHITE"),
+            thickness=float(spec0.get("boardThickness") or 18),
+            run_id=batch_id,
+            tenant_id=tenant_id,
+        )
+        from fox3d.inventory import inventory_delta_manifest
+
+        rec["inventory"] = inventory_delta_manifest(
+            batch_id=batch_id,
+            tenant_id=tenant_id,
+            new_sheets=int(nest.get("sheetCount") or 0),
+            remnants_created=created,
+            reserved=[],
+            consumed=[],
+            true_scrap_area=float(nest.get("trueScrapArea") or 0),
+            reusable_area=float(nest.get("reusableRemnantArea") or 0),
+            used_area=float(nest.get("partUsedArea") or 0),
+            sheet_area=float((nest.get("sheetMm") or [2440, 1220])[0] * (nest.get("sheetMm") or [2440, 1220])[1]),
+        )
         self.batches[batch_id] = rec
         return rec
 

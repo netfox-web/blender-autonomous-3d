@@ -110,14 +110,30 @@ class FlatPackProductTypeRegistry:
         }
 
 
-def connector_recipe_for(kind: str) -> dict[str, Any]:
+def connector_recipe_for(kind: str, *, version: int | None = None) -> dict[str, Any]:
     if kind == "MOBILE_SIDE_TABLE":
-        return dict(CONNECTOR_RECIPES["KD_BOLT_CASTER_V1"])
-    if kind in {"STUDENT_DESK", "VANITY_DESK", "GARMENT_RACK", "DESK_RISER"}:
-        return dict(CONNECTOR_RECIPES["KD_SCREW_V1"])
-    rec = dict(CONNECTOR_RECIPES["KD_CAM_DOWEL_V1"])
+        key = "KD_BOLT_CASTER_V1"
+    elif kind in {"STUDENT_DESK", "VANITY_DESK", "GARMENT_RACK", "DESK_RISER"}:
+        key = "KD_SCREW_V1"
+    elif version == 2:
+        key = "KD_CAM_DOWEL_V2"
+    else:
+        key = "KD_CAM_DOWEL_V1"
+    rec = dict(CONNECTOR_RECIPES[key])
     rec["kind"] = kind
+    rec["recipeKey"] = key
+    rec["compatibility"] = list(rec.get("compatibility") or [key])
+    rec["requiredTools"] = list(rec.get("requiredTools") or rec.get("tools") or [])
     return rec
+
+
+def connector_compatible(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    fam_a = a.get("family") or a.get("recipeKey")
+    fam_b = b.get("family") or b.get("recipeKey")
+    if fam_a and fam_b and fam_a == fam_b:
+        return True
+    keys = set(a.get("compatibility") or []) | {a.get("recipeKey")}
+    return (b.get("recipeKey") in keys) or (b.get("family") in keys)
 
 
 def build_flatpack_spec(engine: CabinetEngine, *, tenant_id: str, kind: str, **params: Any) -> dict[str, Any]:
@@ -166,6 +182,12 @@ def build_flatpack_spec(engine: CabinetEngine, *, tenant_id: str, kind: str, **p
         "toolRequirements": spec.metadata["toolRequirements"],
     }
     spec.metadata.update(kd_meta)
+    v2 = assembly_instruction_v2(graph, spec, bom, recipe=recipe)
+    labels = part_label_manifest(spec, bom, graph)
+    contents = carton_contents_manifest(spec, bom, packing)
+    risk = misassembly_risk(spec, bom)
+    tools = tool_count_kpi({"kd": kd_meta, "assemblyGraph": graph, "spec": spec.model_dump(mode="json")})
+    difficulty = {**difficulty, **{k: tools[k] for k in ("toolCount", "toolSwitchCount")}}
     return {
         "spec": spec.model_dump(mode="json"),
         "report": report.model_dump(),
@@ -179,6 +201,11 @@ def build_flatpack_spec(engine: CabinetEngine, *, tenant_id: str, kind: str, **p
         "shipping": ship,
         "difficulty": difficulty,
         "kd": kd_meta,
+        "instructionsV2": v2,
+        "partLabels": labels,
+        "cartonContents": contents,
+        "misassembly": risk,
+        "tools": tools,
         "label": "REAL" if report.ok else "BLOCKED",
     }
 
@@ -506,4 +533,260 @@ def rd_score_v2(*, report_ok: bool, nesting: dict[str, Any], common: dict[str, A
         "overallDeterministic": overall,
         "engineeringVeto": veto,
         "mixedConfidenceForbidden": True,
+    }
+
+
+def common_hardware_optimizer(recs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Prefer shared connector SKUs across a SKU family. Vendor-neutral only."""
+    all_hw: list[str] = []
+    per: list[set[str]] = []
+    for rec in recs:
+        hw = {
+            str(ln.get("vendorNeutralId") or ln.get("partId") or ln.get("partName"))
+            for ln in (rec.get("bom") or {}).get("lines") or []
+            if ln.get("hardware")
+        }
+        per.append(hw)
+        all_hw.extend(hw)
+    union = set(all_hw)
+    inter = set.intersection(*per) if per else set()
+    ratio = round(len(inter) / max(len(union), 1), 4)
+    return {
+        "commonHardwareRatio": ratio,
+        "sharedSkus": sorted(inter),
+        "unionSkus": sorted(union),
+        "familySize": len(recs),
+        "vendorNeutral": True,
+    }
+
+
+def common_panel_optimizer(rec: dict[str, Any], *, max_delta_mm: float = 10.0, hard_dims: dict[str, float] | None = None) -> dict[str, Any]:
+    """Propose shared panel sizes within tolerance. Never silently change hard user dims."""
+    hard = hard_dims or {}
+    fps = rec.get("fingerprints") or []
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for fp in fps:
+        key = f"{fp.get('thickness')}:{fp.get('material')}"
+        groups.setdefault(key, []).append(fp)
+    proposals: list[dict[str, Any]] = []
+    for items in groups.values():
+        for i, a in enumerate(items):
+            for b in items[i + 1 :]:
+                dl = abs(float(a["length"]) - float(b["length"]))
+                dw = abs(float(a["width"]) - float(b["width"]))
+                if 0 < dl + dw <= max_delta_mm:
+                    proposals.append(
+                        {
+                            "a": a.get("partId"),
+                            "b": b.get("partId"),
+                            "deltaMm": round(dl + dw, 2),
+                            "blockedByHardDim": bool(hard),
+                        }
+                    )
+    applied = [] if hard else proposals
+    ratio = rec.get("commonParts", {}).get("commonPartRatio") or 0
+    if applied:
+        ratio = min(1.0, float(ratio) + 0.05 * len(applied))
+    return {
+        "commonPanelRatio": round(ratio, 4),
+        "proposals": proposals,
+        "applied": applied,
+        "hardDimsHonored": True,
+        "changedUserHardSize": False,
+    }
+
+
+def tool_count_kpi(rec: dict[str, Any]) -> dict[str, Any]:
+    tools = list((rec.get("kd") or {}).get("toolRequirements") or (rec.get("spec") or {}).get("metadata", {}).get("toolRequirements") or [])
+    steps = (rec.get("assemblyGraph") or {}).get("steps") or []
+    switches = 0
+    prev = None
+    for st in steps:
+        tool = st.get("tool")
+        if prev is not None and tool != prev:
+            switches += 1
+        prev = tool
+    return {
+        "toolCount": len(set(tools) | {st.get("tool") for st in steps if st.get("tool")}),
+        "toolSwitchCount": switches,
+        "tools": sorted({*(tools), *(st.get("tool") for st in steps if st.get("tool"))}),
+        "source": "deterministic",
+    }
+
+
+def misassembly_risk(spec: Any, bom: dict[str, Any]) -> dict[str, Any]:
+    panels = [ln for ln in bom.get("lines") or [] if not ln.get("hardware")]
+    warnings: list[dict[str, Any]] = []
+    left = next((ln for ln in panels if str(ln.get("partId") or "").lower() in {"l_side", "left"}), None)
+    right = next((ln for ln in panels if str(ln.get("partId") or "").lower() in {"r_side", "right"}), None)
+    if left and right:
+        same = abs(float(left.get("length") or 0) - float(right.get("length") or 0)) < 0.5 and abs(float(left.get("width") or 0) - float(right.get("width") or 0)) < 0.5
+        if same:
+            warnings.append({"code": "LR_SIMILAR", "message": "left/right panels same size — orientation marking required", "severity": "warning"})
+    doors = [ln for ln in panels if str(ln.get("partType") or "") in {"door", "drawer_front"}]
+    if doors:
+        warnings.append({"code": "FACE_HANDEDNESS", "message": "front/back identification required for drilled faces", "severity": "warning"})
+    sym = {}
+    for ln in panels:
+        key = (round(float(ln.get("length") or 0), 1), round(float(ln.get("width") or 0), 1), round(float(ln.get("thickness") or 0), 1))
+        sym.setdefault(key, []).append(ln.get("partId"))
+    for key, ids in sym.items():
+        if len(ids) > 1:
+            warnings.append({"code": "SYMMETRIC_PARTS", "message": f"identical outline {ids}", "severity": "info"})
+    return {
+        "warnings": warnings,
+        "riskScore": round(min(1.0, 0.15 * len(warnings)), 4),
+        "source": "deterministic",
+    }
+
+
+def part_label_manifest(spec: Any, bom: dict[str, Any], graph: dict[str, Any]) -> dict[str, Any]:
+    steps = graph.get("steps") or []
+    labels = []
+    for ln in bom.get("lines") or []:
+        if ln.get("hardware"):
+            continue
+        pid = str(ln.get("partId") or ln.get("partName"))
+        step_refs = [st.get("step") for st in steps if pid in (st.get("parts") or [])]
+        payload = {
+            "productVersion": getattr(spec, "revision", None) or (spec.get("revision") if isinstance(spec, dict) else 1),
+            "partId": pid,
+            "orientation": "grain-length" if (ln.get("partType") in {"top", "bottom", "shelf", "door"}) else "any",
+            "stepRefs": step_refs,
+        }
+        labels.append({**payload, "qrPayload": payload, "print": False})
+    man = {
+        "productId": getattr(spec, "productId", None) or (spec.get("productId") if isinstance(spec, dict) else None),
+        "labels": labels,
+        "print": False,
+        "source": "metadata-only",
+    }
+    man["manifestHash"] = stable_hash(man)
+    return man
+
+
+def assembly_instruction_v2(graph: dict[str, Any], spec: Any, bom: dict[str, Any], *, recipe: dict[str, Any] | None = None) -> dict[str, Any]:
+    tools = list((recipe or {}).get("requiredTools") or (recipe or {}).get("tools") or ["hex_key"])
+    connectors = list((recipe or {}).get("connectors") or [])
+    steps_out = []
+    nodes = list(graph.get("nodes") or [])
+    assembled: list[str] = []
+    for st in graph.get("steps") or []:
+        inputs = [p for p in (st.get("parts") or []) if p]
+        before = list(assembled)
+        assembled = sorted(set(assembled + inputs))
+        steps_out.append(
+            {
+                "step": st.get("step"),
+                "inputs": inputs,
+                "connectors": st.get("hardware") or connectors[:1],
+                "tools": [st.get("tool") or (tools[0] if tools else "hex_key")],
+                "before": before,
+                "after": list(assembled),
+                "warning": st.get("warning") or None,
+            }
+        )
+    if not steps_out:
+        steps_out.append(
+            {
+                "step": 1,
+                "inputs": nodes,
+                "connectors": connectors[:1] or ["cam"],
+                "tools": tools[:1] or ["hex_key"],
+                "before": [],
+                "after": nodes,
+                "warning": None,
+            }
+        )
+    man = {
+        "productId": getattr(spec, "productId", None) or (spec.get("productId") if isinstance(spec, dict) else None),
+        "engineeringHash": spec.engineering_hash() if hasattr(spec, "engineering_hash") else None,
+        "version": 2,
+        "steps": steps_out,
+        "twoPerson": graph.get("twoPerson"),
+        "source": "assembly_graph_v2",
+    }
+    man["manifestHash"] = stable_hash({k: man[k] for k in man if k != "manifestHash"})
+    return man
+
+
+def carton_contents_manifest(spec: Any, bom: dict[str, Any], packing: dict[str, Any]) -> dict[str, Any]:
+    panels = [ln for ln in bom.get("lines") or [] if not ln.get("hardware")]
+    hw = [ln for ln in bom.get("lines") or [] if ln.get("hardware")]
+    checklist = [{"kind": "panel", "partId": ln.get("partId"), "qty": ln.get("quantity")} for ln in panels]
+    checklist.extend({"kind": "hardware", "partId": ln.get("partId") or ln.get("partName"), "qty": ln.get("quantity")} for ln in hw)
+    checklist.append({"kind": "instructions", "partId": "MANUAL", "qty": 1})
+    bom_qty = sum(int(ln.get("quantity") or 1) for ln in bom.get("lines") or [])
+    pack_qty = sum(int(x.get("qty") or 1) for x in checklist if x["kind"] != "instructions")
+    man = {
+        "productId": getattr(spec, "productId", None) or (spec.get("productId") if isinstance(spec, dict) else None),
+        "carton": {"L": packing.get("length"), "W": packing.get("width"), "H": packing.get("height")},
+        "checklist": checklist,
+        "bomLineCount": bom_qty,
+        "packedLineCount": pack_qty,
+        "reconciled": bom_qty == pack_qty,
+        "source": "bom",
+    }
+    man["manifestHash"] = stable_hash({k: man[k] for k in man if k != "manifestHash"})
+    return man
+
+
+def auto_redesign_candidates(engine: CabinetEngine, rec: dict[str, Any], *, tenant_id: str, policy: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Constrained redesign when oversize / waste / assembly / tools exceed policy. Engineering veto still applies."""
+    p = {**DEFAULT_LOGISTICS_POLICY, **(policy or {})}
+    kind = rec["spec"]["kind"] if isinstance(rec["spec"], dict) else rec["spec"].kind
+    gate = rec.get("gate") or {}
+    difficulty = rec.get("difficulty") or {}
+    nesting = rec.get("nesting") or {}
+    tools = tool_count_kpi(rec)
+    triggers: list[str] = []
+    if gate.get("hard"):
+        triggers.extend(gate["hard"])
+    if float(nesting.get("trueWasteRatio") or 0) > 0.35:
+        triggers.append("TRUE_WASTE")
+    if float(difficulty.get("score") or 0) > float(p.get("maxAssemblyDifficulty") or 0.75):
+        triggers.append("ASSEMBLY_DIFFICULTY")
+    if int(tools.get("toolCount") or 0) > 3:
+        triggers.append("TOOL_COUNT")
+    if not triggers:
+        return {"triggered": False, "candidates": [], "engineeringVetoAlways": True}
+    registry = FlatPackProductTypeRegistry()
+    grid = registry.grid(kind)
+    spec = rec["spec"] if isinstance(rec["spec"], dict) else rec["spec"].model_dump()
+    candidates = []
+    for w in grid["width"]:
+        for d in grid["depth"]:
+            for h in grid["height"]:
+                if w == spec["width"] and d == spec["depth"] and h == spec["height"]:
+                    continue
+                if w > spec["width"] or h > spec["height"]:
+                    continue
+                built = build_flatpack_spec(engine, tenant_id=tenant_id, kind=kind, width=w, depth=d, height=h, material=spec.get("material"))
+                if not built["report"]["ok"]:
+                    continue
+                candidates.append(
+                    {
+                        "kind": kind,
+                        "width": w,
+                        "depth": d,
+                        "height": h,
+                        "engineeringHash": built["engineeringHash"],
+                        "oversize": built["shipping"]["oversize"],
+                        "trueWasteRatio": None,
+                        "difficulty": built["difficulty"]["score"],
+                        "reportOk": built["report"]["ok"],
+                    }
+                )
+                if len(candidates) >= 4:
+                    break
+            if len(candidates) >= 4:
+                break
+        if len(candidates) >= 4:
+            break
+    return {
+        "triggered": True,
+        "triggers": triggers,
+        "candidates": candidates,
+        "engineeringVetoAlways": True,
+        "note": "Variant generator is constrained; Engineering Rule Engine veto remains hard.",
     }

@@ -27,6 +27,6 @@ pytest mock PASS is **not** production ready. Demand/Vision/Video remain MOCK.
 | LIVE_CNC | BLOCKED | `liveMachineControl=false` |
 | small-space catalog | REAL | `n=24 kinds=['APPLIANCE_RACK', 'BEDSIDE_CABINET', 'DESK_RISER', 'GARMENT_RACK', 'MOBILE_SIDE_TABLE', 'NARROW_BOOKCASE', 'OPEN_SHELF', 'PET_FURNITURE', 'RETAIL_DISPLAY', 'STORAGE_BENCH', 'STUDENT_DESK',` |
 | CI evidence | REAL (MOCK suite) | `run 34245840051 success ubuntu+windows @ e7d911d` |
-| scoped readiness | REAL | `{"coreFactoryE2EReady": true, "kdDfMReady": true, "estimatedCostModelReady": true, "realProviderCostReady": false, "commercialQuoteReady": false, "ciEvidenceReady": false, "fullAutonomousFactoryReady"` |
+| scoped readiness | REAL | `{"coreFactoryE2EReady": true, "kdDfMReady": true, "estimatedCostModelReady": true, "realProviderCostReady": false, "commercialQuoteReady": false, "ciEvidenceReady": true, "fullAutonomousFactoryReady": false}` GitHub GREEN `34245840051` on `e7d911d` (MOCK suite) |
 
 LIVE_CNC remains **BLOCKED**. Approval stops at WAITING_PRODUCT_APPROVAL / APPROVED_FOR_PROTOTYPE.

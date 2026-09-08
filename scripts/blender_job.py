@@ -146,6 +146,9 @@ def _bsdf(name: str, mat_name: str):
         "cardboard": (0.0, 0.75, 0.0),
         "matte": (0.0, 0.85, 0.0),
         "glossy": (0.15, 0.08, 0.0),
+        "acrylic_clear": (0.0, 0.05, 0.92),
+        "acrylic_milky": (0.0, 0.22, 0.45),
+        "acrylic_black": (0.0, 0.12, 0.0),
     }
     metallic, roughness, transmission = presets.get(name, (0.0, 0.4, 0.0))
     if principled:
@@ -153,6 +156,12 @@ def _bsdf(name: str, mat_name: str):
         principled.inputs["Roughness"].default_value = roughness
         if "Base Color" in principled.inputs and name in {"white_wood", "mdf", "particle_board"}:
             principled.inputs["Base Color"].default_value = (0.86, 0.82, 0.74, 1.0)
+        if "Base Color" in principled.inputs and name == "acrylic_clear":
+            principled.inputs["Base Color"].default_value = (0.85, 0.92, 0.95, 1.0)
+        if "Base Color" in principled.inputs and name == "acrylic_milky":
+            principled.inputs["Base Color"].default_value = (0.92, 0.92, 0.9, 1.0)
+        if "Base Color" in principled.inputs and name == "acrylic_black":
+            principled.inputs["Base Color"].default_value = (0.02, 0.02, 0.02, 1.0)
         if "Transmission" in principled.inputs:
             principled.inputs["Transmission"].default_value = transmission
         elif "Transmission Weight" in principled.inputs:
@@ -227,6 +236,44 @@ def build_packaging(template: str, dims: dict) -> dict:
     cam = _add_camera((width * 2.2, -depth * 3.5, height * 0.8), (0, 0, height / 2), 85)
     _three_point(height)
     return {"Product": product, "Ground": ground, "Camera": cam}
+
+
+def build_packaging_fold(template: str, dims: dict) -> dict:
+    """Flat net + folded box. Engineering sizes come from the job JSON."""
+    width = float(dims.get("width") or dims.get("length") or 120) / 1000.0
+    height = float(dims.get("height") or 80) / 1000.0
+    depth = float(dims.get("depth") or 60) / 1000.0
+    folded = _add_box("FoldedBox", (width, depth, height), (0.0, 0.0, height / 2), "cardboard")
+    net_w = (2 * width) + (2 * depth)
+    net_h = max(depth, width) + height
+    flat = _add_box("FlatNet", (net_w, net_h, 0.004), (net_w * 0.6, -depth * 2.2, 0.002), "cardboard")
+    ground = _add_plane("Ground", 4.0, (0, 0, 0))
+    cam = _add_camera((width * 2.8, -depth * 4.2, height * 1.6), (width * 0.3, -depth * 0.6, height * 0.3), 50)
+    _three_point(height)
+    return {"FoldedBox": folded, "FlatNet": flat, "Ground": ground, "Camera": cam}
+
+
+def build_acrylic_product(kind: str, dims: dict, finish: str = "clear") -> dict:
+    width = float(dims.get("width") or 210) / 1000.0
+    height = float(dims.get("height") or 297) / 1000.0
+    depth = float(dims.get("depth") or 80) / 1000.0
+    mat = {"clear": "acrylic_clear", "milky": "acrylic_milky", "black": "acrylic_black"}.get(finish, "acrylic_clear")
+    created = {}
+    if kind == "MENU_STAND":
+        created["Face"] = _add_box("Face", (width, 0.005, height), (0, 0, height / 2), mat)
+        created["Base"] = _add_box("Base", (width, depth, 0.005), (0, depth / 4, 0.0025), mat)
+    elif kind == "SIGN_HOLDER":
+        created["Face"] = _add_box("Face", (width, 0.005, height), (0, 0, height / 2), mat)
+        created["LegL"] = _add_box("LegL", (0.005, depth, 0.04), (-width / 2, 0, 0.02), mat)
+        created["LegR"] = _add_box("LegR", (0.005, depth, 0.04), (width / 2, 0, 0.02), mat)
+    elif kind == "DISPLAY_BOX":
+        created["Box"] = _add_box("Box", (width, depth, height), (0, 0, height / 2), mat)
+    else:
+        created["Stand"] = _add_box("Stand", (width, depth, height), (0, 0, height / 2), mat)
+    created["Ground"] = _add_plane("Ground", 2.0, (0, 0, 0))
+    created["Camera"] = _add_camera((width * 2.2, -depth * 3.4, height * 0.9), (0, 0, height / 2), 70)
+    _three_point(height)
+    return created
 
 
 def _render_emission_mask(job: dict, *, width: int, height: int) -> str | None:
@@ -625,6 +672,18 @@ def _render_assembly_anim(job: dict, created: dict, *, frames: int, width: int, 
     return paths, mp4
 
 
+def _find_beauty_png(work: Path) -> Path | None:
+    candidates = [work / "beauty.png", work / "beauty.png.png"]
+    candidates.extend(sorted(work.glob("beauty*.png")))
+    for path in candidates:
+        try:
+            if path.exists() and path.stat().st_size >= 32:
+                return path
+        except OSError:
+            continue
+    return None
+
+
 def _render_still(job: dict, *, width: int, height: int, samples: int) -> tuple[Path, float]:
     import bpy
 
@@ -634,14 +693,16 @@ def _render_still(job: dict, *, width: int, height: int, samples: int) -> tuple[
     scene.render.resolution_y = height
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
-    work = Path(job.get("workDir") or ".")
+    scene.render.use_file_extension = True
+    work = Path(job.get("workDir") or ".").resolve()
     work.mkdir(parents=True, exist_ok=True)
     png_path = work / "beauty.png"
     scene.render.filepath = str(png_path)
     started = time.perf_counter()
     bpy.ops.render.render(write_still=True)
     elapsed = time.perf_counter() - started
-    return png_path, elapsed
+    found = _find_beauty_png(work) or png_path
+    return found, elapsed
 
 
 def _mux_png_sequence(frame_dir: Path, mp4: Path) -> str | None:
@@ -738,8 +799,13 @@ def build_and_render(job: dict) -> dict:
     created = {}
     if mode in {"REAL_SMOKE_TEST", "SMOKE"} or job.get("smokeTest"):
         created = build_smoke_scene()
+    elif mode in {"PACKAGING_FOLD"} or job.get("foldPreview"):
+        created = build_packaging_fold(str(job.get("packagingTemplate") or "BOX"), job.get("dimensions") or {})
     elif job.get("packagingTemplate"):
         created = build_packaging(str(job.get("packagingTemplate")), job.get("dimensions") or {})
+    elif mode in {"ACRYLIC_PRODUCT", "ACRYLIC_PREVIEW"} or job.get("acrylic"):
+        acr = job.get("acrylic") or {}
+        created = build_acrylic_product(str(acr.get("kind") or "MENU_STAND"), acr.get("dimensions") or {}, str(acr.get("finish") or "clear"))
     elif mode in {"SPACE_PREVIEW"} or job.get("space"):
         created = build_space_preview(job.get("space") or {}, job.get("assembly") or {})
     elif job.get("engineering"):
@@ -790,8 +856,10 @@ def build_and_render(job: dict) -> dict:
     _write_progress(job, 0.5, "render")
     want_aov = bool(job.get("aovs") or mode in {"SYNTHETIC_DATA"} or job.get("passes"))
     png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
-    if not png_path.exists() or png_path.stat().st_size < 32:
-        return {"status": "failed", "error": "no PNG written", "realBlender": True}
+    found = png_path if png_path.exists() and png_path.stat().st_size >= 32 else _find_beauty_png(Path(job.get("workDir") or ".").resolve())
+    if found is None or not found.exists() or found.stat().st_size < 32:
+        return {"status": "failed", "error": "no PNG written", "realBlender": True, "workDir": job.get("workDir")}
+    png_path = found
     outputs = {"beauty.png": str(png_path)}
     produced = ["RGB"]
     if want_aov:

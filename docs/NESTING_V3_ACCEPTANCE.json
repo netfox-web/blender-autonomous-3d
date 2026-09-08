@@ -1,0 +1,286 @@
+{
+  "cases": [
+    {
+      "name": "desk_riser_x4",
+      "kind": "DESK_RISER",
+      "qty": 4,
+      "baseline": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.1682,
+        "reusableRemnantRatio": 0.1859,
+        "cutCount": 35,
+        "runtimeSec": 0.0004,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.1081,
+        "reusableRemnantRatio": 0.2459,
+        "cutCount": 34,
+        "runtimeSec": 0.005,
+        "strategy": "best_fit_decreasing",
+        "fallbackToBaseline": false,
+        "score": -1003.5
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "bedside_x2",
+      "kind": "BEDSIDE_CABINET",
+      "qty": 2,
+      "baseline": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0795,
+        "reusableRemnantRatio": 0.2107,
+        "cutCount": 24,
+        "runtimeSec": 0.0003,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0752,
+        "reusableRemnantRatio": 0.215,
+        "cutCount": 23,
+        "runtimeSec": 0.0045,
+        "strategy": "best_fit_decreasing",
+        "fallbackToBaseline": false,
+        "score": -1000.5062
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "open_shelf",
+      "kind": "OPEN_SHELF",
+      "qty": 1,
+      "baseline": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0375,
+        "reusableRemnantRatio": 0.6112,
+        "cutCount": 25,
+        "runtimeSec": 0.0003,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0393,
+        "reusableRemnantRatio": 0.6095,
+        "cutCount": 23,
+        "runtimeSec": 0.0031,
+        "strategy": "best_fit_decreasing",
+        "fallbackToBaseline": false,
+        "score": -1962.3799
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "pet_x3",
+      "kind": "PET_FURNITURE",
+      "qty": 3,
+      "baseline": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0667,
+        "reusableRemnantRatio": 0.3214,
+        "cutCount": 36,
+        "runtimeSec": 0.0005,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0657,
+        "reusableRemnantRatio": 0.3225,
+        "cutCount": 29,
+        "runtimeSec": 0.0044,
+        "strategy": "best_fit_decreasing",
+        "fallbackToBaseline": false,
+        "score": -1984.6076
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "storage_bench",
+      "kind": "STORAGE_BENCH",
+      "qty": 1,
+      "baseline": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0532,
+        "reusableRemnantRatio": 0.3045,
+        "cutCount": 20,
+        "runtimeSec": 0.0002,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0431,
+        "reusableRemnantRatio": 0.3146,
+        "cutCount": 16,
+        "runtimeSec": 0.0023,
+        "strategy": "best_fit_decreasing",
+        "fallbackToBaseline": false,
+        "score": -995.2293
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "narrow_book",
+      "kind": "NARROW_BOOKCASE",
+      "qty": 1,
+      "baseline": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0593,
+        "reusableRemnantRatio": 0.2759,
+        "cutCount": 21,
+        "runtimeSec": 0.0003,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0593,
+        "reusableRemnantRatio": 0.2759,
+        "cutCount": 21,
+        "runtimeSec": 0.0034,
+        "strategy": "guillotine_baseline",
+        "fallbackToBaseline": false,
+        "score": -997.6068
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "mobile_table_x2",
+      "kind": "MOBILE_SIDE_TABLE",
+      "qty": 2,
+      "baseline": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0739,
+        "reusableRemnantRatio": 0.5216,
+        "cutCount": 47,
+        "runtimeSec": 0.0005,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0868,
+        "reusableRemnantRatio": 0.1042,
+        "cutCount": 52,
+        "runtimeSec": 0.0074,
+        "strategy": "best_fit_decreasing",
+        "fallbackToBaseline": false,
+        "score": -1010.77
+      },
+      "v3BetterSheets": true,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "garment_rack",
+      "kind": "GARMENT_RACK",
+      "qty": 1,
+      "baseline": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0473,
+        "reusableRemnantRatio": 0.2047,
+        "cutCount": 15,
+        "runtimeSec": 0.0003,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 1,
+        "trueWasteRatio": 0.0473,
+        "reusableRemnantRatio": 0.2047,
+        "cutCount": 15,
+        "runtimeSec": 0.0028,
+        "strategy": "guillotine_baseline",
+        "fallbackToBaseline": false,
+        "score": -998.6604
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "appliance_rack",
+      "kind": "APPLIANCE_RACK",
+      "qty": 1,
+      "baseline": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0927,
+        "reusableRemnantRatio": 0.5118,
+        "cutCount": 19,
+        "runtimeSec": 0.0003,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0702,
+        "reusableRemnantRatio": 0.5343,
+        "cutCount": 19,
+        "runtimeSec": 0.0033,
+        "strategy": "guillotine_baseline",
+        "fallbackToBaseline": false,
+        "score": -1967.7655
+      },
+      "v3BetterSheets": false,
+      "v3WorseSheets": false
+    },
+    {
+      "name": "student_desk",
+      "kind": "STUDENT_DESK",
+      "qty": 1,
+      "baseline": {
+        "sheetCount": 3,
+        "trueWasteRatio": 0.039,
+        "reusableRemnantRatio": 0.5511,
+        "cutCount": 30,
+        "runtimeSec": 0.0003,
+        "strategy": "guillotine_baseline"
+      },
+      "v3": {
+        "sheetCount": 2,
+        "trueWasteRatio": 0.0591,
+        "reusableRemnantRatio": 0.326,
+        "cutCount": 31,
+        "runtimeSec": 0.0035,
+        "strategy": "guillotine_baseline",
+        "fallbackToBaseline": false,
+        "score": -1987.3176
+      },
+      "v3BetterSheets": true,
+      "v3WorseSheets": false
+    }
+  ],
+  "v3SheetWins": 2,
+  "v3SheetLosses": 0,
+  "note": "Honest benchmark; selector may fall back to baseline. Not all cases win.",
+  "liveMachineControl": false,
+  "materialMapped": {
+    "code": "WOOD_WHITE",
+    "visual": "white_wood",
+    "engineering": "particle_board",
+    "costUnit": "TWD/m2",
+    "thicknessOptionsMm": [
+      15,
+      18,
+      25
+    ],
+    "textureAsset": "wood_white",
+    "baseColor": [
+      0.86,
+      0.82,
+      0.74
+    ]
+  },
+  "sheet": {
+    "length": 2440,
+    "width": 1220,
+    "thickness": 18,
+    "grain": "length",
+    "costPerSheet": 850.0,
+    "costPerM2": 280.0,
+    "texture": "WOOD_WHITE",
+    "engineering": "particle_board",
+    "sku": "PB_18_WHITE"
+  }
+}

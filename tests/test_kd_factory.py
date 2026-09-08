@@ -111,7 +111,7 @@ def test_remnant_qualify_reserve_consume_once(platform):
     inv.consume(rid, by="batch-1")
     with pytest.raises(PermissionError):
         inv.consume(rid, by="batch-1")
-    assert inv.items[rid]["persistence"] == "in-process-ledger"
+    assert inv.items[rid]["persistence"] in {"in-process-ledger", "durable-json"}
 
 
 def test_batch_single_sku_and_cross_sku(platform):

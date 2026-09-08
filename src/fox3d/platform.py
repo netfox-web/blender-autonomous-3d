@@ -51,7 +51,10 @@ from fox3d.ops import (
 )
 from fox3d.packaging import PackagingEngine
 from fox3d.factory import FurnitureFactory
+from fox3d.inventory import DurableRemnantStore, MaterialLotRegistry
 from fox3d.kd_factory import KdFactory
+from fox3d.manufacturing import RemnantInventory
+from fox3d.physical_os import PhysicalProductOS
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
 from fox3d.rd import GatewayVisionProvider, ProductRDAgent, VisionJudge
 from fox3d.recipes import BlenderRecipeResearchAgent, RecipeIntelligence
@@ -91,7 +94,11 @@ class Platform:
         self.judge = VisionJudge(GatewayVisionProvider(self.gateway))
         self.rd = ProductRDAgent(self.cabinets, self.cost, self.judge, self.studio)
         self.factory = FurnitureFactory(self)
+        self.lots = MaterialLotRegistry(self.root / "lots")
+        self.remnants = RemnantInventory(DurableRemnantStore(self.root / "remnants"), default_tenant="default")
         self.kd = KdFactory(self)
+        self.physical = PhysicalProductOS(self)
+        self.retail_fixtures = self.physical.retail
         self.p360 = Product360Engine()
         self.ar = ARExporter()
         self.synthetic = SyntheticFactory()
@@ -314,6 +321,11 @@ class Platform:
             done = self.queue.get(job["jobId"]) or job
             done["cacheHit"] = True
             done["output"] = cached
+            done["realBlender"] = cached.get("realBlender")
+            done["usedMock"] = cached.get("usedMock")
+            done["realOptix"] = cached.get("realOptix")
+            done["outputHash"] = (cached.get("files") or {}).get("beautyHash") or done.get("outputHash")
+            done["outputSize"] = (cached.get("files") or {}).get("beautySize") or done.get("outputSize")
             if done.get("status") not in {"completed", "succeeded"}:
                 done["status"] = term
             self._release(job)
@@ -327,7 +339,15 @@ class Platform:
                 twin = self.twins.get(job["assetId"], tenant_id=job["tenantId"]).model_dump()
             except Exception:
                 twin = None
-        if not job.get("sceneGraph") and not job.get("smokeTest") and not job.get("engineering") and not job.get("space"):
+        if (
+            not job.get("sceneGraph")
+            and not job.get("smokeTest")
+            and not job.get("engineering")
+            and not job.get("space")
+            and not job.get("acrylic")
+            and not job.get("foldPreview")
+            and str(job.get("mode") or "") not in {"ACRYLIC_PRODUCT", "ACRYLIC_PREVIEW", "PACKAGING_FOLD"}
+        ):
             job["sceneGraph"] = compile_scene_graph(dsl, product=twin)
 
         flag = cancel_flag or threading.Event()

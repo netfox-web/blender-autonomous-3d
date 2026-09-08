@@ -151,6 +151,14 @@ def render_admin(platform: Any) -> str:
     · Runs {len(getattr(getattr(platform, "factory", None), "runs", {}) or {})}
     · LIVE_CNC blocked · Human Approval Gate</p>
     <p class="note">Production acceptance 必須 realBlender / realGPU / realCycles / realOptix / realRenderOutput。Mock 僅限 automated tests。</p>
+    <h2>Physical Product OS</h2>
+    <p class="note">Families {len(getattr(getattr(platform, "physical", None), "families", None).list()) if getattr(platform, "physical", None) else 0}
+    · Remnants {len(getattr(getattr(platform, "remnants", None), "items", {}) or {})}
+    · Retail fixtures {len(getattr(getattr(getattr(platform, "physical", None), "retail", None), "items", {}) or {})}
+    · Packaging {len(getattr(getattr(getattr(platform, "physical", None), "packaging", None), "items", {}) or {})}
+    · Acrylic {len(getattr(getattr(getattr(platform, "physical", None), "acrylic", None), "items", {}) or {})}
+    · LIVE_CNC/LASER blocked · Human Approval Gate
+    · API: /api/materials /api/remnants /api/nesting/benchmarks /api/kd/candidates /api/retail/fixtures /api/packaging/structures /api/acrylic/products /api/physical-os/approve</p>
   </section>
 </body>
 </html>"""

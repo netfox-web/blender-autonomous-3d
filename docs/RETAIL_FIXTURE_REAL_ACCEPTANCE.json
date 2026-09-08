@@ -1,0 +1,85 @@
+{
+  "generatedAt": "2026-09-08T16:38:31.477029+00:00",
+  "previews": [
+    {
+      "family": "COUNTER_DISPLAY",
+      "engineeringHash": "be859715a94357b8061a3a0059e54615ee2ed8e9758ec90dcc8f42b9ad737827",
+      "bomHash": "c00bfc9515129c5a83fc9aeb1ebd4735f52cfbc076298d1f1f7b4bdfa2c3f9f2",
+      "jobId": "eb2b3b60-4bea-4d0c-95d0-0193ae9ed5ec",
+      "outputHash": "32de55058f49d424fa13afd6cce7095b23a3b34d25065f6bf744b98450d01e2a",
+      "outputSize": 57171,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "FLOOR_DISPLAY",
+      "engineeringHash": "904f21705eeb9e618660e8df84f3518ddf70852f8377617097cc03950f2e5e64",
+      "bomHash": "97957ca8b9fe7cb05c8b33ae533db40f49287307fcb49f2b19292fd03f51ae10",
+      "jobId": "a4fb6da8-5a24-4063-902f-a6ece0209f54",
+      "outputHash": "e35c21ecf979c71998bca8c538a26003320fa5e1fde49186ab4b6c7b793cada5",
+      "outputSize": 61578,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "PDQ_DISPLAY",
+      "engineeringHash": "49d6bf5a5e64643983286fc8c613f65f823ccfaa0813ae6395fff52c62543cec",
+      "bomHash": "80df3e7b502ca92144bfa72ba25c1278801f0b0fc063b13b41ba49d8dcf4e4cc",
+      "jobId": "fcb4973e-f41c-4936-a295-149cafb9f749",
+      "outputHash": "0f5ab9c8dc58de47a5e0a9b5844c84ba95f8425364b57d7ada08df09b55d1d2b",
+      "outputSize": 54671,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "RISER_DISPLAY",
+      "engineeringHash": "5a3d61ab103a17ea782fe1d1d40a04844d72eb17428cba7656efd3d59983ed7c",
+      "bomHash": "ab20b0294345c62c702709d1288e87d7aff124071e473c66fdee287c27ae1e41",
+      "jobId": "d42a6652-7449-4404-a1ae-e4bf06330a96",
+      "outputHash": "d41c9d1c898535a228827efc8616c0ed48d0548cfc88e69577afa12607a84628",
+      "outputSize": 50582,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "PEGBOARD_DISPLAY",
+      "engineeringHash": "841a60ebe92e839f48699a6ac5dd1760140003572425895b1e8e45b0adbdcf1e",
+      "bomHash": "d0ed59f87066f00b486ee7d3fc214516fbe7fc1d2ad3e9e75e44cc77d3d5393d",
+      "jobId": "a36f81fb-09e9-4ac0-ad3d-3209253ef669",
+      "outputHash": "227857820cec026a7196f765971ac78503f5ef2d901bb7c5315b4acec4dcca9d",
+      "outputSize": 59035,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "ENDCAP_MODULE",
+      "engineeringHash": "b9f88b7f0d03e90803f44544232f48733c0f2085bdbef737ee0ec60c74295f9f",
+      "bomHash": "e7e774c5d55ad6f8df3448fdc131a5919677664875dc77c3a4b32b278a6efd52",
+      "jobId": "dcf320f1-7524-4a25-9e90-2231dbc3bf7f",
+      "outputHash": "ce4c84c71cc524dc920ab3644b3cc6c50524befc99eb7f9109bb251241844a1a",
+      "outputSize": 60930,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    }
+  ],
+  "families": [
+    "COUNTER_DISPLAY",
+    "FLOOR_DISPLAY",
+    "PDQ_DISPLAY",
+    "RISER_DISPLAY",
+    "PEGBOARD_DISPLAY",
+    "ENDCAP_MODULE"
+  ]
+}

@@ -50,20 +50,38 @@ HARDWARE_REGISTRY: dict[str, dict[str, Any]] = {
 CONNECTOR_RECIPES: dict[str, dict[str, Any]] = {
     "KD_CAM_DOWEL_V1": {
         "version": 1,
+        "family": "KD_CAM_DOWEL",
         "connectors": ["HW_CAM_LOCK_15", "HW_DOWEL_8"],
         "tools": ["hex_key", "mallet"],
+        "requiredTools": ["hex_key"],
+        "compatibility": ["KD_CAM_DOWEL_V1", "KD_CAM_DOWEL_V2"],
+        "vendorNeutral": True,
+    },
+    "KD_CAM_DOWEL_V2": {
+        "version": 2,
+        "family": "KD_CAM_DOWEL",
+        "connectors": ["HW_CAM_LOCK_15", "HW_DOWEL_8"],
+        "tools": ["hex_key"],
+        "requiredTools": ["hex_key"],
+        "compatibility": ["KD_CAM_DOWEL_V1", "KD_CAM_DOWEL_V2"],
         "vendorNeutral": True,
     },
     "KD_SCREW_V1": {
         "version": 1,
+        "family": "KD_SCREW",
         "connectors": ["HW_SCREW_M4", "HW_BRACKET_L"],
         "tools": ["screwdriver"],
+        "requiredTools": ["screwdriver"],
+        "compatibility": ["KD_SCREW_V1"],
         "vendorNeutral": True,
     },
     "KD_BOLT_CASTER_V1": {
         "version": 1,
+        "family": "KD_BOLT_CASTER",
         "connectors": ["HW_BOLT_M6", "HW_CASTER_50"],
         "tools": ["wrench"],
+        "requiredTools": ["wrench"],
+        "compatibility": ["KD_BOLT_CASTER_V1"],
         "vendorNeutral": True,
     },
 }
@@ -287,21 +305,8 @@ class _Free:
 class NestingEngine:
     """Deterministic guillotine / first-fit decreasing baseline. Not a CAM driver."""
 
-    def nest(
-        self,
-        bom: dict[str, Any],
-        *,
-        material: str = "WOOD_WHITE",
-        thickness: float = 18,
-        kerf_mm: float = 4.0,
-        trim_mm: float = 10.0,
-        sheet: dict[str, Any] | None = None,
-        remnants: list[dict[str, Any]] | None = None,
-        remnant_policy: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    def parts_from_bom(self, bom: dict[str, Any], *, material: str = "WOOD_WHITE", thickness: float = 18, sheet: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         sheetspec = sheet or SheetMaterialRegistry().for_cabinet_material(material, thickness=thickness)
-        sheet_w = float(sheetspec.get("length") or MAX_PANEL_W)
-        sheet_h = float(sheetspec.get("width") or MAX_PANEL_H)
         grain_axis = str(sheetspec.get("grain") or "length")
         parts: list[dict[str, Any]] = []
         for line in bom.get("lines") or []:
@@ -313,7 +318,7 @@ class NestingEngine:
                 continue
             qty = int(line.get("quantity") or 1)
             role = str(line.get("partType") or line.get("role") or "")
-            grain = "length" if role in {"top", "bottom", "shelf", "door", "drawer_front", "h_partition"} else "none"
+            grain = line.get("grain") or line.get("grainDirection") or ("length" if role in {"top", "bottom", "shelf", "door", "drawer_front", "h_partition"} else "none")
             if grain_axis == "none":
                 grain = "none"
             for i in range(qty):
@@ -326,8 +331,27 @@ class NestingEngine:
                         "grain": grain,
                         "skuId": line.get("skuId") or bom.get("productId"),
                         "productVersion": line.get("productVersion") or bom.get("revision") or 1,
+                        "bomLineId": line.get("bomLineId") or line.get("partId") or line.get("partName"),
+                        "materialLotId": line.get("materialLotId"),
                     }
                 )
+        return parts
+
+    def nest(
+        self,
+        bom: dict[str, Any],
+        *,
+        material: str = "WOOD_WHITE",
+        thickness: float = 18,
+        kerf_mm: float = 4.0,
+        trim_mm: float = 10.0,
+        sheet: dict[str, Any] | None = None,
+        remnants: list[dict[str, Any]] | None = None,
+        remnant_policy: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        sheetspec = sheet or SheetMaterialRegistry().for_cabinet_material(material, thickness=thickness)
+        parts = self.parts_from_bom(bom, material=material, thickness=thickness, sheet=sheetspec)
         return self.nest_parts(
             parts,
             material=material,
@@ -337,6 +361,7 @@ class NestingEngine:
             sheet=sheetspec,
             remnants=remnants,
             remnant_policy=remnant_policy,
+            **kwargs,
         )
 
     def nest_parts(
@@ -352,29 +377,41 @@ class NestingEngine:
         remnant_policy: dict[str, Any] | None = None,
         objective: str = "min_sheets",
         seed: str = "baseline",
+        strategy: str = "guillotine",
+        defects: list[dict[str, Any]] | None = None,
+        material_lot_id: str | None = None,
     ) -> dict[str, Any]:
         sheetspec = sheet or SheetMaterialRegistry().for_cabinet_material(material, thickness=thickness)
         sheet_w = float(sheetspec.get("length") or MAX_PANEL_W)
         sheet_h = float(sheetspec.get("width") or MAX_PANEL_H)
         grain_axis = str(sheetspec.get("grain") or "length")
         policy = {**DEFAULT_REMNANT_POLICY, **(remnant_policy or {})}
-        ordered = sorted(parts, key=lambda p: (-max(float(p["length"]), float(p["width"])), -min(float(p["length"]), float(p["width"])), str(p.get("partId"))))
+        place_mode = "best_fit" if strategy in {"best_fit", "best_fit_decreasing"} else "first_fit"
+        ordered = list(parts)
+        if seed in {"baseline", "bfd"} or not seed:
+            ordered = sorted(parts, key=lambda p: (-max(float(p["length"]), float(p["width"])), -min(float(p["length"]), float(p["width"])), str(p.get("partId"))))
         usable_w = sheet_w - 2 * trim_mm
         usable_h = sheet_h - 2 * trim_mm
         remnant_used: list[dict[str, Any]] = []
         remaining = list(ordered)
+        grain_violations = 0
         if remnants:
             for rem in remnants:
                 if remaining and self._remnant_compatible(rem, material, thickness, grain_axis, policy):
+                    rem_grain = str(rem.get("grain") or grain_axis)
+                    rem_defects = list(rem.get("defects") or [])
                     free = [_Free(0.0, 0.0, float(rem["w"]), float(rem["h"]))]
                     placed: list[dict[str, Any]] = []
                     leftover: list[dict[str, Any]] = []
                     for part in remaining:
-                        hit = self._place(part, free, kerf_mm, grain_axis)
+                        hit = self._place(part, free, kerf_mm, rem_grain, defects=rem_defects, mode=place_mode)
                         if hit:
                             hit["skuId"] = part.get("skuId")
                             hit["productVersion"] = part.get("productVersion")
+                            hit["bomLineId"] = part.get("bomLineId")
+                            hit["materialLotId"] = rem.get("materialLotId") or part.get("materialLotId")
                             hit["remnantId"] = rem.get("remnantId")
+                            hit["sourceKind"] = "remnant"
                             placed.append(hit)
                         else:
                             leftover.append(part)
@@ -384,20 +421,30 @@ class NestingEngine:
                                 "remnantId": rem.get("remnantId"),
                                 "placements": placed,
                                 "usedAreaMm2": sum(p["w"] * p["h"] for p in placed),
+                                "grain": rem_grain,
+                                "materialLotId": rem.get("materialLotId"),
                             }
                         )
                         remaining = leftover
         sheets: list[dict[str, Any]] = []
         unplaceable: list[str] = []
+        lot_ids: set[str] = set()
+        sheet_defects = list(defects or sheetspec.get("defects") or [])
         while remaining:
             free = [_Free(trim_mm, trim_mm, usable_w, usable_h)]
             placements: list[dict[str, Any]] = []
             leftover_parts: list[dict[str, Any]] = []
+            lot_id = material_lot_id or (remaining[0].get("materialLotId") if remaining else None)
+            if lot_id:
+                lot_ids.add(str(lot_id))
             for part in remaining:
-                placed = self._place(part, free, kerf_mm, grain_axis)
+                placed = self._place(part, free, kerf_mm, grain_axis, defects=sheet_defects, mode=place_mode)
                 if placed:
                     placed["skuId"] = part.get("skuId")
                     placed["productVersion"] = part.get("productVersion")
+                    placed["bomLineId"] = part.get("bomLineId")
+                    placed["materialLotId"] = lot_id or part.get("materialLotId")
+                    placed["sourceKind"] = "sheet"
                     placements.append(placed)
                 else:
                     leftover_parts.append(part)
@@ -455,14 +502,28 @@ class NestingEngine:
             "candidateRemnants": waste_v2["candidateRemnants"],
             "objective": objective,
             "seed": seed,
+            "strategy": strategy,
+            "grainViolations": grain_violations,
+            "materialLotSplit": max(0, len(lot_ids) - 1),
+            "materialLotIds": sorted(lot_ids),
+            "defects": sheet_defects,
+            "illegal": bool(unplaceable),
             "liveMachineControl": False,
         }
         result["svg"] = self.to_svg(result)
         result["dxfInterface"] = self.to_dxf_interface(result)
-        result["nestingHash"] = stable_hash({k: result[k] for k in ("sheetMm", "kerfMm", "trimMm", "grainConstraint", "sheets", "remnantUsed", "seed", "objective")})
+        result["nestingHash"] = stable_hash({k: result[k] for k in ("sheetMm", "kerfMm", "trimMm", "grainConstraint", "sheets", "remnantUsed", "seed", "objective", "strategy")})
         return result
 
     def _remnant_compatible(self, rem: dict[str, Any], material: str, thickness: float, grain_axis: str, policy: dict[str, Any]) -> bool:
+        from fox3d.inventory import nestable, normalize_status
+
+        if not nestable(rem):
+            return False
+        if normalize_status(rem.get("status")) in {"reserved", "consumed"} and not rem.get("allowReserved"):
+            # reserved/consumed stock is not auto-nested unless caller marked allowReserved
+            if normalize_status(rem.get("status")) == "consumed":
+                return False
         if policy.get("requireSameThickness") and rem.get("thickness") is not None and abs(float(rem["thickness"]) - thickness) > 0.5:
             return False
         rem_mat = rem.get("materialCode") or rem.get("texture") or rem.get("material")
@@ -470,7 +531,10 @@ class NestingEngine:
             mapped = str(map_cabinet_material(material).get("code") or material).upper()
             if str(rem_mat).upper() not in {mapped, str(material).upper()}:
                 return False
-        _ = grain_axis
+        if policy.get("requireGrainCompatible") and rem.get("grain") and grain_axis not in {"none", None}:
+            rem_grain = str(rem.get("grain") or "none")
+            if rem_grain not in {"none", grain_axis}:
+                return False
         return float(rem.get("w") or 0) >= 1 and float(rem.get("h") or 0) >= 1
 
     def _waste_v2(
@@ -538,25 +602,55 @@ class NestingEngine:
             return [(W, L, True)]
         return [(L, W, False), (W, L, True)]
 
-    def _place(self, part: dict[str, Any], free: list[_Free], kerf: float, grain_axis: str) -> dict[str, Any] | None:
+    def _hits_defect(self, x: float, y: float, w: float, h: float, defects: list[dict[str, Any]] | None) -> bool:
+        box = {"x": x, "y": y, "w": w, "h": h}
+        for d in defects or []:
+            dx, dy = float(d.get("x") or 0), float(d.get("y") or 0)
+            dw, dh = float(d.get("w") or 0), float(d.get("h") or 0)
+            if dw >= 1 and dh >= 1 and _overlap(box, {"x": dx, "y": dy, "w": dw, "h": dh}):
+                return True
+        return False
+
+    def _place(
+        self,
+        part: dict[str, Any],
+        free: list[_Free],
+        kerf: float,
+        grain_axis: str,
+        *,
+        defects: list[dict[str, Any]] | None = None,
+        mode: str = "first_fit",
+    ) -> dict[str, Any] | None:
+        hits: list[tuple[tuple, int, float, float, bool]] = []
         for idx, fr in enumerate(list(free)):
             for pw, ph, rotated in self._orientations(part, grain_axis):
-                if pw <= fr.w + 1e-6 and ph <= fr.h + 1e-6:
-                    placement = {
-                        "partId": part["partId"],
-                        "partName": part["partName"],
-                        "x": round(fr.x, 3),
-                        "y": round(fr.y, 3),
-                        "w": round(pw, 3),
-                        "h": round(ph, 3),
-                        "rotated": rotated,
-                    }
-                    leftover = self._split(fr, pw, ph, kerf)
-                    free.pop(idx)
-                    free.extend(leftover)
-                    free.sort(key=lambda f: (f.y, f.x, f.w * f.h))
-                    return placement
-        return None
+                if pw <= fr.w + 1e-6 and ph <= fr.h + 1e-6 and not self._hits_defect(fr.x, fr.y, pw, ph, defects):
+                    leftover_area = fr.w * fr.h - pw * ph
+                    key = (leftover_area, fr.w * fr.h, fr.y, fr.x, idx)
+                    hits.append((key, idx, pw, ph, rotated))
+                    if mode != "best_fit":
+                        break
+            if hits and mode != "best_fit":
+                break
+        if not hits:
+            return None
+        hits.sort(key=lambda h: h[0])
+        _key, idx, pw, ph, rotated = hits[0]
+        fr = free[idx]
+        placement = {
+            "partId": part["partId"],
+            "partName": part["partName"],
+            "x": round(fr.x, 3),
+            "y": round(fr.y, 3),
+            "w": round(pw, 3),
+            "h": round(ph, 3),
+            "rotated": rotated,
+        }
+        leftover = self._split(fr, pw, ph, kerf)
+        free.pop(idx)
+        free.extend(leftover)
+        free.sort(key=lambda f: (f.y, f.x, f.w * f.h))
+        return placement
 
     def _split(self, fr: _Free, pw: float, ph: float, kerf: float) -> list[_Free]:
         right_w = fr.w - pw - kerf
@@ -789,65 +883,202 @@ def build_manufacturing_pack(spec: Any, bom: dict[str, Any], *, kerf_mm: float =
 
 
 class RemnantInventory:
-    """In-process remnant ledger. Not a WMS. Consume-once reservation."""
+    """Remnant ledger over RemnantStore. Not a WMS. Consume-once reservation."""
 
-    def __init__(self) -> None:
-        self.items: dict[str, dict[str, Any]] = {}
+    def __init__(self, store: Any | None = None, *, default_tenant: str = "default") -> None:
+        from fox3d.inventory import InMemoryRemnantStore
 
-    def add_from_nesting(self, nesting: dict[str, Any], *, material: str, thickness: float, source_run: str, policy: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        self.store = store or InMemoryRemnantStore()
+        self.items: dict[str, dict[str, Any]] = self.store.as_dict()
+        self.default_tenant = default_tenant
+        self._durable = type(self.store).__name__ == "DurableRemnantStore"
+
+    def _persist_label(self) -> str:
+        return "durable-json" if self._durable else "in-process-ledger"
+
+    def add_from_nesting(
+        self,
+        nesting: dict[str, Any],
+        *,
+        material: str,
+        thickness: float,
+        source_run: str,
+        policy: dict[str, Any] | None = None,
+        tenant_id: str | None = None,
+        material_lot_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         created: list[dict[str, Any]] = []
         from fox3d.infra import utcnow
+        from fox3d.inventory import QUALITY_UPPER
 
+        tid = tenant_id or self.default_tenant
         for rem in nesting.get("candidateRemnants") or []:
             rec = {
                 "remnantId": new_id(),
+                "tenantId": tid,
                 "sourceNestingRun": source_run,
+                "sourceRun": source_run,
                 "material": material,
                 "materialCode": map_cabinet_material(material).get("code"),
                 "thickness": thickness,
                 "w": rem["w"],
                 "h": rem["h"],
-                "grain": nesting.get("grainConstraint") or "length",
+                "grain": nesting.get("grainConstraint") or rem.get("grain") or "length",
                 "location": f"sheet:{rem.get('sheetIndex')}",
                 "status": "available",
+                "qualityState": QUALITY_UPPER["available"],
                 "reservedBy": None,
                 "consumedBy": None,
                 "createdAt": utcnow().isoformat(),
                 "area": rem.get("area") or rem["w"] * rem["h"],
+                "version": 1,
+                "leaseToken": None,
+                "reservedUntil": None,
+                "materialLotId": material_lot_id or rem.get("materialLotId") or nesting.get("materialLotId"),
+                "defects": list(rem.get("defects") or []),
+                "persistence": self._persist_label(),
             }
-            self.items[rec["remnantId"]] = rec
+            self.store.put(rec)
             created.append(rec)
         return created
 
-    def available(self) -> list[dict[str, Any]]:
-        return [v for v in self.items.values() if v["status"] == "available"]
+    def available(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
+        from fox3d.inventory import normalize_status
 
-    def reserve(self, remnant_id: str, *, by: str) -> dict[str, Any]:
+        tid = tenant_id
+        rows = list(self.items.values())
+        if tid is not None:
+            rows = [v for v in rows if v.get("tenantId") in {None, tid}]
+        return [v for v in rows if normalize_status(v.get("status")) == "available"]
+
+    def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
+        return self.store.get(remnant_id, tenant_id=tenant_id)
+
+    def set_quality(self, remnant_id: str, status: str, *, tenant_id: str | None = None) -> dict[str, Any]:
+        from fox3d.inventory import QUALITY_UPPER, normalize_status
+
         rec = self.items[remnant_id]
-        if rec["status"] != "available":
+        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
+            raise PermissionError("tenant isolation: remnant")
+        st = normalize_status(status)
+        if st not in QUALITY_UPPER:
+            raise ValueError(st)
+        rec["status"] = st
+        rec["qualityState"] = QUALITY_UPPER[st]
+        rec["version"] = int(rec.get("version") or 1) + 1
+        rec["persistence"] = self._persist_label()
+        self.store.put(rec)
+        return rec
+
+    def reserve(
+        self,
+        remnant_id: str,
+        *,
+        by: str,
+        version: int | None = None,
+        lease_seconds: float | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        from datetime import timedelta
+
+        from fox3d.infra import utcnow
+        from fox3d.inventory import QUALITY_UPPER, lease_token, normalize_status
+
+        rec = self.items[remnant_id]
+        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
+            raise PermissionError("tenant isolation: remnant")
+        if normalize_status(rec.get("status")) != "available":
             raise PermissionError(f"remnant {remnant_id} not available ({rec['status']})")
+        current_v = int(rec.get("version") or 1)
+        if version is not None and int(version) != current_v:
+            raise PermissionError(f"stale remnant version {version} != {current_v}")
         rec["status"] = "reserved"
+        rec["qualityState"] = QUALITY_UPPER["reserved"]
         rec["reservedBy"] = by
-        rec["persistence"] = "in-process-ledger"
+        rec["version"] = current_v + 1
+        rec["leaseToken"] = lease_token(remnant_id, rec["version"], by)
+        if lease_seconds is not None:
+            rec["reservedUntil"] = (utcnow() + timedelta(seconds=float(lease_seconds))).isoformat()
+        rec["persistence"] = self._persist_label()
+        self.store.put(rec)
         return rec
 
-    def consume(self, remnant_id: str, *, by: str) -> dict[str, Any]:
+    def consume(
+        self,
+        remnant_id: str,
+        *,
+        by: str,
+        version: int | None = None,
+        lease_token: str | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        from fox3d.inventory import QUALITY_UPPER, normalize_status
+
         rec = self.items[remnant_id]
-        if rec["status"] == "consumed":
+        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
+            raise PermissionError("tenant isolation: remnant")
+        st = normalize_status(rec.get("status"))
+        if st == "consumed":
             raise PermissionError(f"remnant {remnant_id} already consumed")
-        if rec["status"] == "reserved" and rec.get("reservedBy") != by:
+        if st == "reserved" and rec.get("reservedBy") != by:
             raise PermissionError(f"remnant {remnant_id} reserved by {rec.get('reservedBy')}")
-        if rec["status"] not in {"available", "reserved"}:
+        if st not in {"available", "reserved"}:
             raise PermissionError(f"remnant {remnant_id} not consumable ({rec['status']})")
+        current_v = int(rec.get("version") or 1)
+        if version is not None and int(version) != current_v:
+            raise PermissionError(f"stale remnant version {version} != {current_v}")
+        if lease_token is not None and rec.get("leaseToken") and rec.get("leaseToken") != lease_token:
+            raise PermissionError("stale remnant lease token")
         rec["status"] = "consumed"
+        rec["qualityState"] = QUALITY_UPPER["consumed"]
         rec["consumedBy"] = by
-        rec["persistence"] = "in-process-ledger"
+        rec["version"] = current_v + 1
+        rec["leaseToken"] = None
+        rec["persistence"] = self._persist_label()
+        self.store.put(rec)
         return rec
 
-    def snapshot(self) -> dict[str, Any]:
+    def recover_expired(self, *, now: Any | None = None) -> list[dict[str, Any]]:
+        from datetime import datetime
+
+        from fox3d.inventory import QUALITY_UPPER, normalize_status
+
+        stamp = now.isoformat() if hasattr(now, "isoformat") else (now or None)
+        recovered: list[dict[str, Any]] = []
+        for rec in list(self.items.values()):
+            if normalize_status(rec.get("status")) != "reserved":
+                continue
+            until = rec.get("reservedUntil")
+            if not until:
+                continue
+            try:
+                deadline = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            current = now if hasattr(now, "isoformat") else datetime.fromisoformat((stamp or datetime.now().isoformat()).replace("Z", "+00:00"))
+            if current.tzinfo is None and deadline.tzinfo is not None:
+                from datetime import timezone
+
+                current = current.replace(tzinfo=timezone.utc)
+            if current >= deadline:
+                rec["status"] = "available"
+                rec["qualityState"] = QUALITY_UPPER["available"]
+                rec["reservedBy"] = None
+                rec["leaseToken"] = None
+                rec["reservedUntil"] = None
+                rec["version"] = int(rec.get("version") or 1) + 1
+                rec["recoveredFrom"] = "expired-lease"
+                rec["persistence"] = self._persist_label()
+                self.store.put(rec)
+                recovered.append(rec)
+        return recovered
+
+    def snapshot(self, *, tenant_id: str | None = None) -> dict[str, Any]:
+        items = self.available(tenant_id=tenant_id) if tenant_id else list(self.items.values())
         return {
             "source": "CONFIG",
-            "label": "MOCK",
-            "items": list(self.items.values()),
-            "availableCount": len(self.available()),
+            "label": "REAL" if self._durable else "MOCK",
+            "persistence": self._persist_label(),
+            "items": list(self.items.values()) if tenant_id is None else [v for v in self.items.values() if v.get("tenantId") in {None, tenant_id}],
+            "availableCount": len(self.available(tenant_id=tenant_id) if tenant_id else self.available()),
         }

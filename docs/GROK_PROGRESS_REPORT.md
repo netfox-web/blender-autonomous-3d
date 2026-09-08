@@ -2,68 +2,72 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `704d058` (**CHANGES REQUIRED** — CI / security / evidence; not Phase 181+)  
-Baseline: `2aea774` review FAIL on GitHub Actions `34239900443` (3 tests)  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `fb8cae6` (Phase 181–240 Physical Product OS)  
+Review baseline: `43cd4bd` **ACCEPT WITH SCOPE**  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Did **not** start Phase 181+. Fixed review gaps only.
+Hygiene first (no Phase 1–180 rewrite): KD acceptance scoped-readiness string now `ciEvidenceReady=true`; Progress Report duplicate REAL_PROVIDER blocker removed.
 
-| Gap | Fix |
+Then Phase 181–240 on existing Twin/Queue/DAM/Engineering/Nesting — no second scheduler/WMS/platform.
+
+| Phase band | What landed |
 |---|---|
-| Missing `python-multipart` | runtime dep in `pyproject.toml`; `create_app()` multipart route regression |
-| Ubuntu path-traversal bypass | OS-agnostic `/` and `\\` segment split; mixed-separator tests |
-| CI claimed GREEN without check | matrix ubuntu+windows; GREEN recorded as run `34245840051` on `e7d911d` |
-| Cost readiness naming | `estimatedCostModelReady` / `realProviderCostReady=false` / `commercialQuoteReady=false`; compat `commercialCostModelScope=CONFIG_ESTIMATE_ONLY` |
-| Remnant consume-across-reserve | consume only by `reservedBy`; second reserve blocked; in-process ledger |
-| `savedNewSheetCount` area approx | paired `baseline.sheetCount - remnant.sheetCount`; estimate field separate ESTIMATED |
-| Phase 130 8-kind REAL preview | 8/8 distinct kinds on T1000 OptiX; cache key now includes engineeringHash |
-| KD structure aliases | STUDENT_DESK/GARMENT_RACK/OPEN_SHELF/STORAGE_BENCH/PET_FURNITURE/RETAIL_DISPLAY extra parts+joints |
+| 181–190 Remnant intelligence | `RemnantStore` + durable JSON under `.fox3d-data/remnants`; version/lease; TTL recovery; quality states; grain; lot lineage; ESTIMATED valuation; inventory delta manifest |
+| 191–200 Nesting V3 | Strategy registry keeps guillotine baseline; BFD; multi-start; multi-objective score; cut sequence; defect keep-out; reusable-offcut; 10-case harness; fallback to baseline if V3 uses more sheets |
+| 201–210 KD DFA | Connector v1/v2 compatibility; common hardware/panel; tool KPI; misassembly warnings; part labels; assembly V2; carton checklist; constrained redesign; 10-candidate before/after (Demand MOCK) |
+| 211–220 Retail / POP | 6 fixture families; slots/planogram; CONFIG_ESTIMATE load; artwork PARTIAL; electrical BLOCKED; same BOM→Nesting V3→Approval; **6/6 REAL T1000 OptiX previews** |
+| 221–230 Packaging V1 | 5 box families; dieline cut/crease/perf/glue; bleed PARTIAL; paperboard CONFIG; Waste V2 nesting; **REAL fold preview**; twin+PDQ+fixture bundle |
+| 231–235 Acrylic | 3 sheet SKUs CONFIG; 5 families; nesting grain=none; cut/bend CONFIG/PARTIAL; LIVE LASER BLOCKED; **3/3 REAL previews** |
+| 236–240 Physical OS | Family registry adapters; inventory reverse R&D MARKET_UNVERIFIED; Admin/API extensions; acceptance docs; readiness matrix; `fullAutonomousFactoryReady=false` |
 
 ## Tests
 
 ```
-pytest -q  →  77 passed   (local MOCK suite — not Production Ready)
+pytest -q  →  89 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions @ `2aea774`: **FAILED, 3 tests** (historical, run `34239900443`).  
-GitHub Actions @ `e7d911d`: **GREEN** run `34245840051` — `unit (ubuntu-latest)` + `unit (windows-latest)`. MOCK blender suite only, not REAL production.
+GitHub Actions on this SHA: pending until this push. Do not treat local pytest as CI GREEN. Historical GREEN remains run `34245840051` on `e7d911d` (MOCK suite).
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
 | Area | Label |
 |---|---|
-| Path guard (cross-OS separators) | REAL (still not OS jail) |
-| python-multipart runtime | REAL |
-| Waste V2 remnant vs true scrap | REAL |
-| Remnant reserve/consume ownership | REAL (in-process ledger, not WMS) |
-| Paired savedNewSheetCount | REAL |
-| 8 KD kinds Blender preview | REAL (T1000 OptiX, usedMock=false) |
-| KD distinct structure | REAL for 6 named kinds |
-| estimated cost model | ESTIMATED/CONFIG |
+| Durable remnant restart / TTL / tenant isolation / consume-once | REAL (JSON ledger, not WMS) |
+| Material lots + placement lineage | REAL |
+| Nesting V3 vs baseline harness (10 cases) | REAL (this run: 2 sheet-count wins, 0 losses; selector may still fall back) |
+| Defect keep-out / grain on remnants | REAL |
+| KD DFA manifests (labels, assembly V2, carton, redesign) | REAL |
+| Retail 6-family planogram→BOM→nest→approval | REAL |
+| Retail fixture Blender previews | REAL 6/6 T1000 OptiX `usedMock=false` |
+| Packaging dieline + nesting | REAL |
+| Packaging fold Blender preview | REAL `usedMock=false` |
+| Acrylic 3-kind Blender previews | REAL 3/3 `usedMock=false` |
+| estimated / CONFIG cost | ESTIMATED/CONFIG |
 | realProviderCost / commercialQuote | false |
 | Vision / Video / Demand | MOCK |
 | OS sandbox | PARTIAL |
 | AR runtime | PARTIAL |
-| LIVE_CNC | BLOCKED |
-| CI evidence | REAL GitHub GREEN on `e7d911d` run `34245840051` (MOCK suite) |
+| Packaging ECT/BCT / print preflight | PARTIAL |
+| Electrical compliance | BLOCKED |
+| LIVE_CNC / LIVE_LASER | BLOCKED |
+| CI evidence this SHA | pending push (do not predict PASS) |
 | fullAutonomousFactoryReady | false |
-| productionReadyScope | coreFactoryE2E only |
+| productionReadyScope | physicalProductOsV1-prototype-boundary (Human Approval Gate) |
 
 ## Blockers (unchanged policy)
 
-- LIVE_CNC BLOCKED
+- LIVE_CNC / LIVE_LASER BLOCKED (`liveMachineControl=false`)
 - Vision/Video/Demand MOCK
-- OS sandbox PARTIAL
+- OS sandbox PARTIAL (path guard ≠ OS jail)
 - REAL_PROVIDER costs missing
-- REAL_PROVIDER costs missing
-- CI GREEN is mock-suite only (not REAL Blender)
+- CI GREEN is mock-suite only (not REAL Blender) until a new run is recorded on this SHA
 
 ## Do not redo
 
-Phase 1–120 REAL paths. No Phase 181+.
+Phase 1–180 REAL paths. Scheduler / Queue / DAM / Recipe Registry / TwinStore / Cabinet Engineering SoT were not rewritten.
 
 ## Next round
 
-ChatGPT re-review after head CI is actually GREEN. Then Phase 181+ only if exit criteria 1–10 pass.
+ChatGPT re-review of Phase 181–240. Suggested follow-ups (not started): REAL_PROVIDER cost/logistics, live Vision/Demand, OS jail, true ECT/BCT, print preflight, electrical rules. Keep Human Approval Gate. `fullAutonomousFactoryReady` stays false until those are actually REAL.

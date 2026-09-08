@@ -1,0 +1,695 @@
+{
+  "generatedAt": "2026-09-08T16:38:31.477029+00:00",
+  "probe": {
+    "blender": true,
+    "blenderBinary": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
+    "blenderVersion": "5.2.1",
+    "blenderVersionRaw": "Blender 5.2.1 LTS (hash 9e2066aef7ef built 2026-08-25 02:38:20)\nBlender 5.2.1 LTS\n\tbuild date: 2026-08-25\n\tbuild time: 02:38:20\n\tbuild commit date: 2026-08-24\n\tbuild commit time: 16:50\n\tbuild hash: 9e2066aef7ef\n\tbuild branch: blender-v5.2-release\n\tbuild platform: Windows\n\tbuild type: Release\n\tbuild c flags:  /W3 -Werror=implicit-function-declaration -Werror=return-type -Wno-tautological-compare -Wno-unknown-pragmas -Wno-char-subscripts -Wstrict-prototypes -Wmissing-prototypes -Wunused-parameter -Wundef -Wundef-prefix -Werror=unguarded-availability-new /DWIN32 /D_WINDOWS /MP /nologo /J /Gy /Gd /showFilenames -Wno-unused-command-line-argument -Wno-microsoft-enum-forward-reference /clang:-funsigned-char /clang:-fno-strict-aliasing /clang:-ffp-contract=off -march=x86-64-v2 \n\tbuild c++ flags:  /W3 -Wno-tautological-compare -Wno-unknown-pragmas -Wno-char-subscripts -Wno-overloaded-virtual -Wno-sign-compare -Wno-invalid-offsetof -Wno-suggest-override -Wundef -Wundef-prefix -Wunused-parameter -Wmismatched-tags -Werror=unguarded-availability-new /DWIN32 /D_WINDOWS /EHsc  /Gy /MP /nologo /J /Gd /showFilenames /EHsc -Wno-unused-command-line-argument -Wno-microsoft-enum-forward-reference /clang:-funsigned-char /clang:-fno-strict-aliasing /clang:-ffp-contract=off -march=x86-64-v2 \n\tbuild link flags: /MACHINE:X64  /SUBSYSTEM:CONSOLE /STACK:2097152 /ignore:4049 /ignore:4217 /ignore:4221\n\tbuild system: CMake\n",
+    "cycles": true,
+    "cuda": true,
+    "optix": true,
+    "cyclesDevices": [
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "CUDA"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "CUDA"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "CUDA"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "HIP"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "HIP"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "HIP"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "ONEAPI"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "ONEAPI"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "ONEAPI"
+      }
+    ],
+    "gpus": [
+      {
+        "gpuIndex": 0,
+        "uuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "name": "NVIDIA T1000",
+        "vramGb": 4.0,
+        "vramUsedGb": 0.0,
+        "vramFreeGb": 3.84,
+        "driver": "596.86"
+      }
+    ],
+    "gpuName": "NVIDIA T1000",
+    "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+    "vramGb": 4.0,
+    "vramUsedGb": 0.0,
+    "vramFreeGb": 3.84,
+    "driver": "596.86",
+    "hostname": "home",
+    "osName": "Windows",
+    "discoverySource": "REAL_DISCOVERY",
+    "blocked": [],
+    "realBlender": true,
+    "realGPU": true,
+    "realCycles": true,
+    "realOptix": true
+  },
+  "rows": [
+    {
+      "check": "Blender",
+      "status": "REAL",
+      "evidence": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    {
+      "check": "OptiX",
+      "status": "REAL",
+      "evidence": "NVIDIA T1000"
+    },
+    {
+      "check": "durable remnant restart+TTL",
+      "status": "REAL",
+      "evidence": "loaded=available recovered=1 persistence=durable-json"
+    },
+    {
+      "check": "material lot",
+      "status": "REAL",
+      "evidence": "ea91f528-03d3-4335-af69-0d5a239d37d3"
+    },
+    {
+      "check": "KD furniture E2E core",
+      "status": "REAL",
+      "evidence": "hash=a3830a264510 sheets=2"
+    },
+    {
+      "check": "nesting V3 benchmark",
+      "status": "REAL",
+      "evidence": "cases=10 wins=2 losses=0"
+    },
+    {
+      "check": "KD optimized 10",
+      "status": "REAL",
+      "evidence": "n=10 demand=MOCK"
+    },
+    {
+      "check": "retail fixture Blender previews",
+      "status": "REAL",
+      "evidence": "real=6/6"
+    },
+    {
+      "check": "retail planogram pipeline",
+      "status": "REAL",
+      "evidence": "COUNTER_DISPLAY,FLOOR_DISPLAY,PDQ_DISPLAY,RISER_DISPLAY,PEGBOARD_DISPLAY,ENDCAP_MODULE"
+    },
+    {
+      "check": "packaging dieline+nest",
+      "status": "REAL",
+      "evidence": "RSC_CARTON"
+    },
+    {
+      "check": "packaging fold preview",
+      "status": "REAL",
+      "evidence": "status=completed mock=False"
+    },
+    {
+      "check": "acrylic Blender previews",
+      "status": "REAL",
+      "evidence": "real=3/3"
+    },
+    {
+      "check": "WAITING_APPROVAL",
+      "status": "REAL",
+      "evidence": "WAITING_PRODUCT_APPROVAL"
+    },
+    {
+      "check": "Vision Judge",
+      "status": "MOCK",
+      "evidence": "no live provider"
+    },
+    {
+      "check": "Demand",
+      "status": "MOCK",
+      "evidence": "DemandSignalProvider UNAVAILABLE"
+    },
+    {
+      "check": "AI Video",
+      "status": "MOCK",
+      "evidence": "no ProviderAdapter"
+    },
+    {
+      "check": "OS sandbox",
+      "status": "PARTIAL",
+      "evidence": "path guard only"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "structural certification",
+      "status": "PARTIAL",
+      "evidence": "no ECT/BCT model"
+    },
+    {
+      "check": "electrical compliance",
+      "status": "BLOCKED",
+      "evidence": "no electrical rules"
+    },
+    {
+      "check": "fullAutonomousFactoryReady",
+      "status": "BLOCKED",
+      "evidence": "False"
+    }
+  ],
+  "fixturePreviews": [
+    {
+      "family": "COUNTER_DISPLAY",
+      "engineeringHash": "be859715a94357b8061a3a0059e54615ee2ed8e9758ec90dcc8f42b9ad737827",
+      "bomHash": "c00bfc9515129c5a83fc9aeb1ebd4735f52cfbc076298d1f1f7b4bdfa2c3f9f2",
+      "jobId": "eb2b3b60-4bea-4d0c-95d0-0193ae9ed5ec",
+      "outputHash": "32de55058f49d424fa13afd6cce7095b23a3b34d25065f6bf744b98450d01e2a",
+      "outputSize": 57171,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "FLOOR_DISPLAY",
+      "engineeringHash": "904f21705eeb9e618660e8df84f3518ddf70852f8377617097cc03950f2e5e64",
+      "bomHash": "97957ca8b9fe7cb05c8b33ae533db40f49287307fcb49f2b19292fd03f51ae10",
+      "jobId": "a4fb6da8-5a24-4063-902f-a6ece0209f54",
+      "outputHash": "e35c21ecf979c71998bca8c538a26003320fa5e1fde49186ab4b6c7b793cada5",
+      "outputSize": 61578,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "PDQ_DISPLAY",
+      "engineeringHash": "49d6bf5a5e64643983286fc8c613f65f823ccfaa0813ae6395fff52c62543cec",
+      "bomHash": "80df3e7b502ca92144bfa72ba25c1278801f0b0fc063b13b41ba49d8dcf4e4cc",
+      "jobId": "fcb4973e-f41c-4936-a295-149cafb9f749",
+      "outputHash": "0f5ab9c8dc58de47a5e0a9b5844c84ba95f8425364b57d7ada08df09b55d1d2b",
+      "outputSize": 54671,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "RISER_DISPLAY",
+      "engineeringHash": "5a3d61ab103a17ea782fe1d1d40a04844d72eb17428cba7656efd3d59983ed7c",
+      "bomHash": "ab20b0294345c62c702709d1288e87d7aff124071e473c66fdee287c27ae1e41",
+      "jobId": "d42a6652-7449-4404-a1ae-e4bf06330a96",
+      "outputHash": "d41c9d1c898535a228827efc8616c0ed48d0548cfc88e69577afa12607a84628",
+      "outputSize": 50582,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "PEGBOARD_DISPLAY",
+      "engineeringHash": "841a60ebe92e839f48699a6ac5dd1760140003572425895b1e8e45b0adbdcf1e",
+      "bomHash": "d0ed59f87066f00b486ee7d3fc214516fbe7fc1d2ad3e9e75e44cc77d3d5393d",
+      "jobId": "a36f81fb-09e9-4ac0-ad3d-3209253ef669",
+      "outputHash": "227857820cec026a7196f765971ac78503f5ef2d901bb7c5315b4acec4dcca9d",
+      "outputSize": 59035,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "family": "ENDCAP_MODULE",
+      "engineeringHash": "b9f88b7f0d03e90803f44544232f48733c0f2085bdbef737ee0ec60c74295f9f",
+      "bomHash": "e7e774c5d55ad6f8df3448fdc131a5919677664875dc77c3a4b32b278a6efd52",
+      "jobId": "dcf320f1-7524-4a25-9e90-2231dbc3bf7f",
+      "outputHash": "ce4c84c71cc524dc920ab3644b3cc6c50524befc99eb7f9109bb251241844a1a",
+      "outputSize": 60930,
+      "realBlender": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    }
+  ],
+  "acrylicPreviews": [
+    {
+      "kind": "MENU_STAND",
+      "engineeringHash": "5da62e7829cb37266e6d2794fbfba512e70698dc8443495e40040338c6f631f4",
+      "bomHash": "4400e0e28ba2aff3bfdc4a02d50a7b97c5d18e646e51358a039a7ea247010093",
+      "jobId": "8d59a0bf-7017-4d0d-8ea9-9d8d11a7db4e",
+      "outputHash": "c57d5b51f432c0b411055995016ec420b3c0e567b444b2f26b0aa7111225aaba",
+      "outputSize": 58892,
+      "usedMock": false,
+      "realBlender": true,
+      "status": "completed",
+      "error": null,
+      "label": "REAL"
+    },
+    {
+      "kind": "SIGN_HOLDER",
+      "engineeringHash": "aaa510eaa10f99c835d83b3a7936fb238d50fe5a6919427d68519ed4792a9fb6",
+      "bomHash": "4e7ddd405f81c6f070863c17629fdd2e9c9df64bd94049a2d8f936ffd95f8085",
+      "jobId": "7339e0a5-4361-4fc1-bf07-a9d5e3b58c38",
+      "outputHash": "f0790536b33eaffc6a35109d127ef4a73c13184d6e20bb23f8eaf2ceb449d970",
+      "outputSize": 60723,
+      "usedMock": false,
+      "realBlender": true,
+      "status": "completed",
+      "error": null,
+      "label": "REAL"
+    },
+    {
+      "kind": "DISPLAY_BOX",
+      "engineeringHash": "c747824890480b454225a34fc64e6cd1372f626be0703abb4bc1a0447bebdbd4",
+      "bomHash": "3bb8eab2aa140a24ccecdef1b4f6a4ac1baa90ae699ac814555c3f757412b33a",
+      "jobId": "ac7eb596-24b6-4e5b-9787-d8f991d880ca",
+      "outputHash": "344b84a6d4e6c4e743e817c70cf064dce92475cf3dbd4a5f1a1481e863d2cdc8",
+      "outputSize": 50940,
+      "usedMock": false,
+      "realBlender": true,
+      "status": "completed",
+      "error": null,
+      "label": "REAL"
+    }
+  ],
+  "packagingFold": {
+    "engineeringHash": "1377a6a5003c2209c49bf45a9fa5dc7a700cdda753fe2b2f3da65d77ab6c6e94",
+    "jobId": "1d061cb2-f7cc-4d53-a276-3426aa377403",
+    "outputHash": "d03f98e74a0ca0bb3a754add52f70cf8def4cc893ecea17031f2e692df99db2a",
+    "outputSize": 62024,
+    "usedMock": false,
+    "label": "REAL"
+  },
+  "benchmark": {
+    "wins": 2,
+    "losses": 0,
+    "cases": 10
+  },
+  "kdBoard": [
+    {
+      "kind": "DESK_RISER",
+      "before": {
+        "waste": 0.0636,
+        "carton": {
+          "L": 624.0,
+          "W": 274.0,
+          "H": 159.0
+        },
+        "weight": 6.924,
+        "commonPartRatio": 0.2,
+        "assembly": 0.2567
+      },
+      "after": {
+        "waste": 0.0636,
+        "carton": {
+          "L": 624.0,
+          "W": 274.0,
+          "H": 159.0
+        },
+        "weight": 6.924,
+        "commonPartRatio": 0.2,
+        "assembly": 0.2567
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.2,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "BEDSIDE_CABINET",
+      "before": {
+        "waste": 0.0517,
+        "carton": {
+          "L": 424.0,
+          "W": 424.0,
+          "H": 180.0
+        },
+        "weight": 12.699,
+        "commonPartRatio": 0.1429,
+        "assembly": 0.5947
+      },
+      "after": {
+        "waste": 0.0517,
+        "carton": {
+          "L": 424.0,
+          "W": 424.0,
+          "H": 180.0
+        },
+        "weight": 12.699,
+        "commonPartRatio": 0.1429,
+        "assembly": 0.5947
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.1429,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "OPEN_SHELF",
+      "before": {
+        "waste": 0.0375,
+        "carton": {
+          "L": 1224.0,
+          "W": 324.0,
+          "H": 231.0
+        },
+        "weight": 26.679,
+        "commonPartRatio": 0.4444,
+        "assembly": 0.581
+      },
+      "after": {
+        "waste": 0.0375,
+        "carton": {
+          "L": 1224.0,
+          "W": 324.0,
+          "H": 231.0
+        },
+        "weight": 26.679,
+        "commonPartRatio": 0.4444,
+        "assembly": 0.581
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.4444,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "PET_FURNITURE",
+      "before": {
+        "waste": 0.0495,
+        "carton": {
+          "L": 624.0,
+          "W": 424.0,
+          "H": 177.0
+        },
+        "weight": 15.912,
+        "commonPartRatio": 0.1667,
+        "assembly": 0.5173
+      },
+      "after": {
+        "waste": 0.0495,
+        "carton": {
+          "L": 624.0,
+          "W": 424.0,
+          "H": 177.0
+        },
+        "weight": 15.912,
+        "commonPartRatio": 0.1667,
+        "assembly": 0.5173
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.1667,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "STORAGE_BENCH",
+      "before": {
+        "waste": 0.0532,
+        "carton": {
+          "L": 824.0,
+          "W": 438.0,
+          "H": 180.0
+        },
+        "weight": 21.239,
+        "commonPartRatio": 0.1429,
+        "assembly": 0.508
+      },
+      "after": {
+        "waste": 0.0532,
+        "carton": {
+          "L": 824.0,
+          "W": 438.0,
+          "H": 180.0
+        },
+        "weight": 21.239,
+        "commonPartRatio": 0.1429,
+        "assembly": 0.508
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.1429,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "MOBILE_SIDE_TABLE",
+      "before": {
+        "waste": 0.0807,
+        "carton": {
+          "L": 524.0,
+          "W": 424.0,
+          "H": 352.0
+        },
+        "weight": 14.026,
+        "commonPartRatio": 0.3333,
+        "assembly": 0.653
+      },
+      "after": {
+        "waste": 0.0807,
+        "carton": {
+          "L": 524.0,
+          "W": 424.0,
+          "H": 352.0
+        },
+        "weight": 14.026,
+        "commonPartRatio": 0.3333,
+        "assembly": 0.653
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.3333,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "NARROW_BOOKCASE",
+      "before": {
+        "waste": 0.0593,
+        "carton": {
+          "L": 1624.0,
+          "W": 388.0,
+          "H": 234.0
+        },
+        "weight": 19.505,
+        "commonPartRatio": 0.5,
+        "assembly": 0.6083
+      },
+      "after": {
+        "waste": 0.0838,
+        "carton": {
+          "L": 424.0,
+          "W": 288.0,
+          "H": 234.0
+        },
+        "weight": 9.176,
+        "commonPartRatio": 0.5,
+        "assembly": 0.6083
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.5,
+      "redesignTriggered": true,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "APPLIANCE_RACK",
+      "before": {
+        "waste": 0.0927,
+        "carton": {
+          "L": 824.0,
+          "W": 588.0,
+          "H": 180.0
+        },
+        "weight": 25.482,
+        "commonPartRatio": 0.2857,
+        "assembly": 0.5263
+      },
+      "after": {
+        "waste": 0.0927,
+        "carton": {
+          "L": 824.0,
+          "W": 588.0,
+          "H": 180.0
+        },
+        "weight": 25.482,
+        "commonPartRatio": 0.2857,
+        "assembly": 0.5263
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.2857,
+      "redesignTriggered": false,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "STUDENT_DESK",
+      "before": {
+        "waste": 0.039,
+        "carton": {
+          "L": 1224.0,
+          "W": 624.0,
+          "H": 355.0
+        },
+        "weight": 47.712,
+        "commonPartRatio": 0.3636,
+        "assembly": 0.5523
+      },
+      "after": {
+        "waste": 0.0733,
+        "carton": {
+          "L": 824.0,
+          "W": 424.0,
+          "H": 337.0
+        },
+        "weight": 23.676,
+        "commonPartRatio": 0.4,
+        "assembly": 0.5433
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.3636,
+      "redesignTriggered": true,
+      "demand": "MOCK"
+    },
+    {
+      "kind": "GARMENT_RACK",
+      "before": {
+        "waste": 0.0473,
+        "carton": {
+          "L": 1624.0,
+          "W": 424.0,
+          "H": 177.0
+        },
+        "weight": 28.322,
+        "commonPartRatio": 0.1667,
+        "assembly": 0.5073
+      },
+      "after": {
+        "waste": 0.0516,
+        "carton": {
+          "L": 424.0,
+          "W": 274.0,
+          "H": 177.0
+        },
+        "weight": 6.116,
+        "commonPartRatio": 0.1667,
+        "assembly": 0.5073
+      },
+      "commonHardwareRatio": 1.0,
+      "commonPanel": 0.1667,
+      "redesignTriggered": true,
+      "demand": "MOCK"
+    }
+  ],
+  "readiness": {
+    "kdFurnitureE2E": {
+      "label": "REAL",
+      "ready": true
+    },
+    "retailFixtureE2E": {
+      "label": "REAL",
+      "ready": true
+    },
+    "packagingOrAcrylicE2E": {
+      "label": "REAL",
+      "ready": true
+    },
+    "durableRemnants": {
+      "label": "REAL",
+      "ready": true
+    },
+    "nestingV3": {
+      "label": "REAL",
+      "ready": true
+    },
+    "estimatedCost": {
+      "label": "ESTIMATED-CONFIG",
+      "ready": true
+    },
+    "realProviderCost": {
+      "label": "BLOCKED",
+      "ready": false
+    },
+    "vision": {
+      "label": "MOCK",
+      "ready": false
+    },
+    "demand": {
+      "label": "MOCK",
+      "ready": false
+    },
+    "video": {
+      "label": "MOCK",
+      "ready": false
+    },
+    "osSandbox": {
+      "label": "PARTIAL",
+      "ready": false
+    },
+    "liveMachineControl": {
+      "label": "BLOCKED",
+      "ready": false
+    },
+    "structuralCertification": {
+      "label": "PARTIAL",
+      "ready": false
+    },
+    "electricalCompliance": {
+      "label": "BLOCKED",
+      "ready": false
+    },
+    "ciEvidence": {
+      "label": "MOCK",
+      "ready": false,
+      "note": "pytest mock suite only unless GitHub GREEN recorded"
+    },
+    "fullAutonomousFactoryReady": false,
+    "productionReadyScope": "physicalProductOsV1-prototype-boundary",
+    "humanApprovalGate": true
+  },
+  "liveMachineControl": false,
+  "fullAutonomousFactoryReady": false,
+  "productionReadyScope": "physicalProductOsV1-prototype-boundary"
+}

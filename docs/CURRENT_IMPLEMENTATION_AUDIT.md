@@ -125,3 +125,33 @@ Local pytest 77 passed after: multipart runtime dep, OS-agnostic path guard, rem
 ## Do not redo
 
 Blender discovery, OptiX probe, smoke render, WHITE_STUDIO, 360, DAM, parametric geometry/BOM/cost/NL, production no-mock-fallback.
+
+## Phase 181–240 Physical Product OS (`fb8cae6` 旨令)
+
+Hygiene: KD scoped-readiness `ciEvidenceReady=true` synced; Progress Report duplicate REAL_PROVIDER line removed. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec not rewritten.
+
+| Phase | Status | Notes |
+|---|---|---|
+| 181–184 RemnantStore durable + lease/TTL | REAL | `.fox3d-data/remnants` JSON; restart + stale version + tenant isolation tests |
+| 185 Material lots | REAL | CONFIG cost snapshot; placement `materialLotId` |
+| 186–187 quality + grain | REAL | damaged/quarantined excluded; grain blocks illegal rotate |
+| 188 valuation | ESTIMATED/CONFIG | not accounting cost |
+| 189 inventory manifest | REAL | reconciliation hash on production batch |
+| 190 remnant acceptance | REAL | `docs/MATERIAL_REMNANT_REAL_ACCEPTANCE.md` |
+| 191–194 Nesting V3 | REAL | baseline kept; BFD; multi-start; multi-objective; fallback |
+| 195–198 window/cut/defects/offcut | REAL | sku/bom lineage; saw-friendly sequence; defect keep-out |
+| 199–200 benchmark + acceptance | REAL | 10 fixtures; this host 2 wins / 0 losses; `docs/NESTING_V3_ACCEPTANCE.md` |
+| 201–210 KD DFA | REAL | connector versions; 10-candidate board; Demand MOCK |
+| 211–217 retail families + planogram + same pipeline | REAL | 6 families; load CONFIG_ESTIMATE; electrical BLOCKED |
+| 218 retail Blender | REAL | 6/6 T1000 OptiX `usedMock=false` |
+| 219–220 packing + acceptance | REAL | `docs/RETAIL_FIXTURE_REAL_ACCEPTANCE.md` |
+| 221–227 packaging structure | REAL geometry / PARTIAL strength+preflight | 5 families; dieline SVG/DXF-friendly |
+| 228 fold preview | REAL | Blender flat+folded |
+| 229–230 bundle + acceptance | REAL | `docs/PACKAGING_STRUCTURE_REAL_ACCEPTANCE.md` |
+| 231–235 acrylic | REAL previews / CONFIG cost / BLOCKED live laser | 3/3 REAL Blender |
+| 236–238 registry + reverse R&D + API | REAL adapters | MARKET_UNVERIFIED; existing Admin |
+| 239 OS acceptance | REAL | `docs/PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE.md` three E2E paths |
+| 240 readiness | REAL computed | `fullAutonomousFactoryReady=false` |
+| Vision/Video/Demand | MOCK | |
+| LIVE_CNC/LASER | BLOCKED | |
+| OS sandbox | PARTIAL | |

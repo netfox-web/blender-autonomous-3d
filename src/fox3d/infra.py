@@ -444,7 +444,7 @@ class Scheduler:
         capability = str(job.get("jobType") or "")
         min_vram = float((job.get("gpuRequirement") or {}).get("minVramGb") or 0)
         prefer_video = capability in {"BLENDER_TO_VIDEO"} or str(job.get("lane") or "") == "ai_video"
-        preview = capability in {"BLENDER_PREVIEW", "BLENDER_SCENE", "PARAMETRIC_3D"}
+        preview = capability in {"BLENDER_PREVIEW", "BLENDER_SCENE", "PARAMETRIC_3D", "ACRYLIC_PREVIEW", "PACKAGING_FOLD", "ACRYLIC_PRODUCT"}
         candidates: list[tuple[float, ComputeNode, dict[str, Any]]] = []
         for node in self.compute.all():
             if node.status != "online":
@@ -605,6 +605,10 @@ def job_cache_key(job: dict[str, Any], *, blender_version: str) -> str:
         "explode": job.get("explode"),
         "engineeringHash": stable_hash(job.get("engineering")) if job.get("engineering") else None,
         "spaceHash": stable_hash(job.get("space")) if job.get("space") else None,
+        "acrylicHash": stable_hash(job.get("acrylic")) if job.get("acrylic") else None,
+        "foldPreview": bool(job.get("foldPreview")),
+        "packagingTemplate": job.get("packagingTemplate"),
+        "dimensions": job.get("dimensions"),
     }
     return stable_hash(payload)
 
