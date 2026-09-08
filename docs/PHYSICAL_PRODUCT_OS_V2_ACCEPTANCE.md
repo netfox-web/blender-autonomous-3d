@@ -1,6 +1,6 @@
 # PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE
 
-generatedAt: 2026-09-08T18:43:21.938082+00:00
+generatedAt: 2026-09-08T19:13:15.155745+00:00
 pytest mock PASS is **not** production ready.
 
 ## Domain evidence (machine-verifiable)

@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (review baseline `f4748fa` / code `f695eef`; evidence lineage CODE_EVIDENCE_SHA `d7a3075`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–70 notes below remain; they are not the current review SHA.
+Audit of `main` (fail-closed evidence CODE_EVIDENCE_SHA `6d9de7e`; prior lineage `d7a3075` / review `35a7e33`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–70 notes below remain; they are not the current review SHA. REAL OS V2 runner is fail-closed: required evidence failure → non-zero exit and no canonical overwrite.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 

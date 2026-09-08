@@ -2,66 +2,50 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `b0b8cbf` (**CHANGES REQUIRED** — Evidence Lineage; not Phase 301+)  
-Review baseline: `f4748fa` / code `f695eef`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `817921f` (**CHANGES REQUIRED** — fail-closed REAL runner; not Phase 301+)  
+Re-review head: `35a7e33` / prior evidence code `d7a3075`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Did **not** start Phase 301+. Fixed Evidence Integrity lineage only.
+Did **not** start Phase 301+. Fixed fail-open REAL runner only.
 
 | Gap | Fix |
 |---|---|
-| REAL EvidenceBundle `commitSha=b9e7861` | Runner now binds `evidenceCodeCommit=git rev-parse HEAD` on a **clean** tree |
-| Dirty working tree REAL run | `DirtyTreeError` / exit 2; `--allow-dirty` is UNVERIFIED and does not write REAL acceptance |
-| `verify_bundle` no expected commit | `expected_commit_sha` → `commit_sha_mismatch` |
-| Two-phase commits | CODE_EVIDENCE_SHA then EVIDENCE_DOCS_SHA |
+| `return 0 if ... or not previews else 0` always 0 | `required_real_acceptance_ok` → exit 4 unless every required REAL check passes |
+| Canonical files written before gate | `write_acc` / `write_canonical_if_ok` only after `required_ok` |
+| Missing integration regressions | `tests/test_acceptance_gate.py` (commit mismatch, hash, mock, 4/5, dirty, LIVE_CNC/LASER) |
 
-**CODE_EVIDENCE_SHA:** `d7a3075a2b0e621d748de949c0b7244bf5825c55`  
-**EVIDENCE_DOCS_SHA:** this docs commit (recorded after push)  
-**workingTreeClean:** true at REAL e2e start  
-**acceptanceRunnerVersion:** `os-v2-e2e-lineage-1`
+**CODE_EVIDENCE_SHA:** `6d9de7e4c57085054f373c63efe51eaccdf59f04`  
+**EVIDENCE_DOCS_SHA:** this docs commit (after push)  
+GitHub Actions CODE: **GREEN** `34267625716` on `6d9de7e` ubuntu+windows.
 
-5/5 REAL T1000 OptiX preview bundles: KD / Retail / Packaging / Acrylic / KD#2; `commitSha == CODE_EVIDENCE_SHA`; `usedMock=false`; hash/size verifier PASS.
+Clean-tree REAL e2e: `requiredRealAcceptanceOk=true`, exit 0, 5/5 T1000 OptiX `commitSha=6d9de7e`, `usedMock=false`, hash/size PASS, `workingTreeClean=true`.
 
 ## Tests
 
 ```
-pytest -q  →  102 passed   (local MOCK suite — not Production Ready)
+pytest -q  →  110 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions @ `d7a3075` (CODE_EVIDENCE_SHA): **GREEN** run `34264676274` — ubuntu-latest + windows-latest. MOCK suite only.
-
-GitHub Actions @ EVIDENCE_DOCS_SHA / current head: recorded after this docs push.
+CI GREEN is MOCK-suite only, not REAL Blender.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
-| Area | Label |
-|---|---|
-| Clean-commit EvidenceBundle 5/5 | REAL (`d7a3075`, usedMock=false) |
-| Release gate + stale + LIVE_CNC/LASER forbidden | REAL |
-| Provider snapshots | MANUAL/IMPORTED (not LIVE_PROVIDER) |
-| Mixed landed cost | MIXED MANUAL+CONFIG_ESTIMATE |
-| McKee BCT / print preflight / barcode | ENGINEERING_ESTIMATE / PARTIAL |
-| AR USDZ | PARTIAL (no fake file) |
-| Vision / Video / Demand | MOCK |
-| OS sandbox | PARTIAL PATH_GUARD_ONLY |
-| LIVE_CNC / LIVE_LASER / electrical / liveProvider | BLOCKED |
-| globalProductionReady | false |
-| fullAutonomousFactoryReady | false |
+Unchanged labels. Fail-closed runner is REAL execution of the gate; Blender evidence is REAL on `6d9de7e`. `fullAutonomousFactoryReady=false`. `globalProductionReady=false`.
 
 ## Blockers (unchanged policy)
 
 - LIVE_CNC / LIVE_LASER BLOCKED
 - Vision/Video/Demand MOCK
-- OS jail missing
+- OS jail missing (PATH_GUARD_ONLY PARTIAL)
 - No LIVE_PROVIDER credentials
-- Packaging strength is McKee estimate, not lab certification
+- Packaging strength ENGINEERING_ESTIMATE
 
 ## Do not redo
 
-Phase 1–300 product features. No Phase 301+. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec not rewritten.
+Phase 1–300 product features. No Phase 301+.
 
 ## Next round
 
-ChatGPT re-review of Evidence Lineage exit criteria 1–10. Phase 301+ only after **ACCEPT WITH SCOPE**.
+ChatGPT re-review fail-closed exit criteria. Phase 301+ only after **ACCEPT WITH SCOPE**.

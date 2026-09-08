@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-08T18:43:21.938082+00:00",
-  "commitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-  "evidenceCodeCommit": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
+  "generatedAt": "2026-09-08T19:13:15.155745+00:00",
+  "commitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+  "evidenceCodeCommit": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
   "probe": {
     "blender": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
     "gpu": "NVIDIA T1000",
@@ -102,201 +102,201 @@
   "previews": [
     {
       "family": "KD_FURNITURE",
-      "jobId": "dab9a333-1613-471d-aa15-22c38fc900c7",
+      "jobId": "077bcfab-fe39-47d1-b9fe-183510d15c65",
       "usedMock": false,
       "realBlender": true,
-      "outputHash": "55056213210f09d8e34d8bb48631f0f802d9e3462d47528b10c2f93f6df88b85",
+      "outputHash": "8cb9fcd51245ed4be22f4abdbc9d36f907bff5fb749f4cfa41d9b91dc2580bd2",
       "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
       "blenderVersion": "5.2.1 LTS",
       "workerId": "fox3d-worker-local",
       "verify": {
         "ok": true,
         "errors": [],
-        "bundleId": "0aa1fc0a-6e5f-4538-b766-23191591c2ea",
-        "evidenceHash": "ef294187c4c2d9153f19a6436019996efeb44a21f434940aa2e2d71df3e60e8c",
-        "expectedCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "bundleCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55"
+        "bundleId": "234dbc24-cead-4bb9-bdbc-662f2165a8d9",
+        "evidenceHash": "435fe08a01647cec78c2c2d29ae20a3a153d2e54e0d56318fc90ad710e0ca501",
+        "expectedCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "bundleCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04"
       },
       "bundle": {
-        "bundleId": "0aa1fc0a-6e5f-4538-b766-23191591c2ea",
-        "commitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "generatedAt": "2026-09-08T18:43:13.256627+00:00",
-        "jobId": "dab9a333-1613-471d-aa15-22c38fc900c7",
+        "bundleId": "234dbc24-cead-4bb9-bdbc-662f2165a8d9",
+        "commitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "generatedAt": "2026-09-08T19:13:06.469161+00:00",
+        "jobId": "077bcfab-fe39-47d1-b9fe-183510d15c65",
         "workerId": "fox3d-worker-local",
         "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
         "gpuName": "NVIDIA T1000",
         "blenderVersion": "5.2.1 LTS",
         "usedMock": false,
-        "artifactId": "2bcf7711-c163-43cd-bd86-d8b25b86db78",
-        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\2bcf7711-c163-43cd-bd86-d8b25b86db78_beauty.png",
-        "artifactHash": "55056213210f09d8e34d8bb48631f0f802d9e3462d47528b10c2f93f6df88b85",
-        "artifactSize": 61162,
-        "engineeringHash": "10892750394e68c057c676525a6529e6dc6193e720bdf296eaa129e3b338f276",
+        "artifactId": "de24560c-8fb8-4673-a143-278b9accc611",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\de24560c-8fb8-4673-a143-278b9accc611_beauty.png",
+        "artifactHash": "8cb9fcd51245ed4be22f4abdbc9d36f907bff5fb749f4cfa41d9b91dc2580bd2",
+        "artifactSize": 61213,
+        "engineeringHash": "ab20c7b4bd9a81db1ede81712fda3a85e2ed800d920128e108b3038badda4529",
         "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
         "recipeVersion": null,
         "realBlender": true,
         "status": "completed",
-        "evidenceHash": "ef294187c4c2d9153f19a6436019996efeb44a21f434940aa2e2d71df3e60e8c"
+        "evidenceHash": "435fe08a01647cec78c2c2d29ae20a3a153d2e54e0d56318fc90ad710e0ca501"
       },
       "label": "REAL"
     },
     {
       "family": "RETAIL_FIXTURE",
-      "jobId": "2cf5c3bf-e20e-42f9-86de-49a44c88d868",
+      "jobId": "74a21fcb-97af-4729-b893-80285b8869ca",
       "usedMock": false,
       "realBlender": true,
-      "outputHash": "b5d8dea842a1cfb11f325fe78a4f7087c659727195535d67cff4013b93c18062",
+      "outputHash": "0c9eb04a64719eacdf39b2a88c1ff664ec781936dc9ba7d28c25d5cba2a017f6",
       "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
       "blenderVersion": "5.2.1 LTS",
       "workerId": "fox3d-worker-local",
       "verify": {
         "ok": true,
         "errors": [],
-        "bundleId": "d237fe7e-99ad-4949-b7e8-f09e68969044",
-        "evidenceHash": "5ccd93a5360ce0a26500245035c19c4f7e2738b92e4f00edde35026d8f5cc8f2",
-        "expectedCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "bundleCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55"
+        "bundleId": "f09ed1cc-ab4a-4d2f-be6e-6edcaa1945f1",
+        "evidenceHash": "d8980ee7d5de235002383e55b591e9977c414935532b91917912f2239c795ed3",
+        "expectedCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "bundleCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04"
       },
       "bundle": {
-        "bundleId": "d237fe7e-99ad-4949-b7e8-f09e68969044",
-        "commitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "generatedAt": "2026-09-08T18:43:15.477387+00:00",
-        "jobId": "2cf5c3bf-e20e-42f9-86de-49a44c88d868",
+        "bundleId": "f09ed1cc-ab4a-4d2f-be6e-6edcaa1945f1",
+        "commitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "generatedAt": "2026-09-08T19:13:08.686708+00:00",
+        "jobId": "74a21fcb-97af-4729-b893-80285b8869ca",
         "workerId": "fox3d-worker-local",
         "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
         "gpuName": "NVIDIA T1000",
         "blenderVersion": "5.2.1 LTS",
         "usedMock": false,
-        "artifactId": "8e8d1e69-ae72-4add-936c-f17a1876d7e2",
-        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\8e8d1e69-ae72-4add-936c-f17a1876d7e2_beauty.png",
-        "artifactHash": "b5d8dea842a1cfb11f325fe78a4f7087c659727195535d67cff4013b93c18062",
-        "artifactSize": 57162,
-        "engineeringHash": "1653142631cc36042edcf61484b6235c83847880e98b42a3936b1842fd35028e",
+        "artifactId": "7928af1b-7f35-477d-8da8-e7c80d636f4d",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\7928af1b-7f35-477d-8da8-e7c80d636f4d_beauty.png",
+        "artifactHash": "0c9eb04a64719eacdf39b2a88c1ff664ec781936dc9ba7d28c25d5cba2a017f6",
+        "artifactSize": 57181,
+        "engineeringHash": "ae31d45a9582f174d804271b260822ce8bebfcf54edaed2c869fdf5c31b90818",
         "bomHash": "c00bfc9515129c5a83fc9aeb1ebd4735f52cfbc076298d1f1f7b4bdfa2c3f9f2",
         "recipeVersion": null,
         "realBlender": true,
         "status": "completed",
-        "evidenceHash": "5ccd93a5360ce0a26500245035c19c4f7e2738b92e4f00edde35026d8f5cc8f2"
+        "evidenceHash": "d8980ee7d5de235002383e55b591e9977c414935532b91917912f2239c795ed3"
       },
       "label": "REAL"
     },
     {
       "family": "PACKAGING_STRUCTURE",
-      "jobId": "75d832a7-7a92-4124-aaa5-4bf462851f72",
+      "jobId": "91ba2ae4-6f40-4efc-8835-1d93a978f829",
       "usedMock": false,
       "realBlender": true,
-      "outputHash": "80608950297d32ae66de32dac154b26801abfd3278970dbd7cfc3da11f0c52a8",
+      "outputHash": "a701930833c133337d71b3ce4db2d3ebec8740a88ce45ee78d3985419791f4aa",
       "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
       "blenderVersion": "5.2.1 LTS",
       "workerId": "fox3d-worker-local",
       "verify": {
         "ok": true,
         "errors": [],
-        "bundleId": "48027754-7df7-443d-aece-31b12fd92202",
-        "evidenceHash": "cc98254eba6f229962e9dbef8d1df0c1cfdb29cae3a47a5cbbda228a7bdb5162",
-        "expectedCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "bundleCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55"
+        "bundleId": "6284900b-2829-4e20-972d-b05ba7c5bad3",
+        "evidenceHash": "902a7784376ea579cd0d44a2b9494772a197ce24c69285c9cdb5f6bd365895aa",
+        "expectedCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "bundleCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04"
       },
       "bundle": {
-        "bundleId": "48027754-7df7-443d-aece-31b12fd92202",
-        "commitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "generatedAt": "2026-09-08T18:43:17.496134+00:00",
-        "jobId": "75d832a7-7a92-4124-aaa5-4bf462851f72",
+        "bundleId": "6284900b-2829-4e20-972d-b05ba7c5bad3",
+        "commitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "generatedAt": "2026-09-08T19:13:10.909075+00:00",
+        "jobId": "91ba2ae4-6f40-4efc-8835-1d93a978f829",
         "workerId": "fox3d-worker-local",
         "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
         "gpuName": "NVIDIA T1000",
         "blenderVersion": "5.2.1 LTS",
         "usedMock": false,
-        "artifactId": "82c36e4c-4e6a-4d95-b3ea-787a780c1aff",
-        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\82c36e4c-4e6a-4d95-b3ea-787a780c1aff_beauty.png",
-        "artifactHash": "80608950297d32ae66de32dac154b26801abfd3278970dbd7cfc3da11f0c52a8",
-        "artifactSize": 64008,
+        "artifactId": "bb07fc99-14b2-484a-abaa-8f1db1955fe0",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\bb07fc99-14b2-484a-abaa-8f1db1955fe0_beauty.png",
+        "artifactHash": "a701930833c133337d71b3ce4db2d3ebec8740a88ce45ee78d3985419791f4aa",
+        "artifactSize": 64077,
         "engineeringHash": "4fe1dd40476f6ffc33772f89acaa39c7c21493ca84915ba3fb99cf55c450de08",
         "bomHash": "6ffcc7b3ec34acc7f2cdeaf2f2f50f24126af542562ae97c61178581504eab9a",
         "recipeVersion": null,
         "realBlender": true,
         "status": "completed",
-        "evidenceHash": "cc98254eba6f229962e9dbef8d1df0c1cfdb29cae3a47a5cbbda228a7bdb5162"
+        "evidenceHash": "902a7784376ea579cd0d44a2b9494772a197ce24c69285c9cdb5f6bd365895aa"
       },
       "label": "REAL"
     },
     {
       "family": "ACRYLIC_SHEET",
-      "jobId": "d4516611-5ea3-420e-83c6-1970a70aa3bc",
+      "jobId": "872e1822-c2db-464b-b5bd-04b19b1b0d29",
       "usedMock": false,
       "realBlender": true,
-      "outputHash": "b8346e1795505344477bf933f6104142b26ed9243c380523de476a229ab511fb",
+      "outputHash": "73069238e9716eac0e4390d8e6b4ef0e6cc2a50a2e3c61357f5b4273c5497900",
       "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
       "blenderVersion": "5.2.1 LTS",
       "workerId": "fox3d-worker-local",
       "verify": {
         "ok": true,
         "errors": [],
-        "bundleId": "f0b7a471-4e0a-423e-aa98-f7719ea6eaa2",
-        "evidenceHash": "c881497b8959ee40e48885e4dc38901d2d8deb787c5993fedf2900c897c0cbcd",
-        "expectedCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "bundleCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55"
+        "bundleId": "02692c5c-6c1d-4503-a720-35ba59e2e18c",
+        "evidenceHash": "47cb319f51a1e24e04825d98fed789f3b5ffa72493faae1bf4021281cbbc6305",
+        "expectedCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "bundleCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04"
       },
       "bundle": {
-        "bundleId": "f0b7a471-4e0a-423e-aa98-f7719ea6eaa2",
-        "commitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "generatedAt": "2026-09-08T18:43:19.714330+00:00",
-        "jobId": "d4516611-5ea3-420e-83c6-1970a70aa3bc",
+        "bundleId": "02692c5c-6c1d-4503-a720-35ba59e2e18c",
+        "commitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "generatedAt": "2026-09-08T19:13:12.931316+00:00",
+        "jobId": "872e1822-c2db-464b-b5bd-04b19b1b0d29",
         "workerId": "fox3d-worker-local",
         "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
         "gpuName": "NVIDIA T1000",
         "blenderVersion": "5.2.1 LTS",
         "usedMock": false,
-        "artifactId": "9fcac9f4-61ca-4914-9b15-4bdc6bb920f5",
-        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\9fcac9f4-61ca-4914-9b15-4bdc6bb920f5_beauty.png",
-        "artifactHash": "b8346e1795505344477bf933f6104142b26ed9243c380523de476a229ab511fb",
-        "artifactSize": 58938,
+        "artifactId": "375186bd-7b71-4602-a3bc-206acc6ef610",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\375186bd-7b71-4602-a3bc-206acc6ef610_beauty.png",
+        "artifactHash": "73069238e9716eac0e4390d8e6b4ef0e6cc2a50a2e3c61357f5b4273c5497900",
+        "artifactSize": 58907,
         "engineeringHash": "5da62e7829cb37266e6d2794fbfba512e70698dc8443495e40040338c6f631f4",
-        "bomHash": "1779db48704f092fa78a34b05f23086e62e757018d70acd7c88b5ef8ca39b68f",
+        "bomHash": "f9bb8bc4aebeff7f8e07cca2a0ef96434d4774724eac7e49860fb912f5e66c7b",
         "recipeVersion": null,
         "realBlender": true,
         "status": "completed",
-        "evidenceHash": "c881497b8959ee40e48885e4dc38901d2d8deb787c5993fedf2900c897c0cbcd"
+        "evidenceHash": "47cb319f51a1e24e04825d98fed789f3b5ffa72493faae1bf4021281cbbc6305"
       },
       "label": "REAL"
     },
     {
       "family": "KD_FURNITURE",
-      "jobId": "c75f085b-8251-4f60-8d09-b8044b6d612e",
+      "jobId": "7978f08a-2a03-4c7f-a16e-d2e544f0c52b",
       "usedMock": false,
       "realBlender": true,
-      "outputHash": "790672b21c883e972e18aa7da5c8281217423a585232f0031b2dde1fcbf88e46",
+      "outputHash": "65c7c4a09388b96908978e1f4e6eca6a368e9d036932c5931a373e1183782d8c",
       "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
       "blenderVersion": "5.2.1 LTS",
       "workerId": "fox3d-worker-local",
       "verify": {
         "ok": true,
         "errors": [],
-        "bundleId": "4040f1ee-9469-451a-adf3-736a6051a2c1",
-        "evidenceHash": "ccbd84a51032e94cbca0558825b3c921c54f7be3fbc582e0d3124bedabf36cdd",
-        "expectedCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "bundleCommitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55"
+        "bundleId": "35e9b3ac-433b-421b-aa5b-b34977d4a1eb",
+        "evidenceHash": "0b95db8b222b5697a268e3b25946afde80ae34aad4cce27ac35dc77b26591167",
+        "expectedCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "bundleCommitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04"
       },
       "bundle": {
-        "bundleId": "4040f1ee-9469-451a-adf3-736a6051a2c1",
-        "commitSha": "d7a3075a2b0e621d748de949c0b7244bf5825c55",
-        "generatedAt": "2026-09-08T18:43:21.935066+00:00",
-        "jobId": "c75f085b-8251-4f60-8d09-b8044b6d612e",
+        "bundleId": "35e9b3ac-433b-421b-aa5b-b34977d4a1eb",
+        "commitSha": "6d9de7e4c57085054f373c63efe51eaccdf59f04",
+        "generatedAt": "2026-09-08T19:13:15.153220+00:00",
+        "jobId": "7978f08a-2a03-4c7f-a16e-d2e544f0c52b",
         "workerId": "fox3d-worker-local",
         "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
         "gpuName": "NVIDIA T1000",
         "blenderVersion": "5.2.1 LTS",
         "usedMock": false,
-        "artifactId": "1f8db3c2-48f7-4074-b1e3-11116e4241b7",
-        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\1f8db3c2-48f7-4074-b1e3-11116e4241b7_beauty.png",
-        "artifactHash": "790672b21c883e972e18aa7da5c8281217423a585232f0031b2dde1fcbf88e46",
-        "artifactSize": 53845,
-        "engineeringHash": "34be2c956e7eae820607505cc9ca4eacf6e8a47b7c99575520d1b720acb7776b",
+        "artifactId": "edd8b2fb-cf3a-4e30-93fa-cc78b1cc299e",
+        "artifactPath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\dam\\ops\\render\\edd8b2fb-cf3a-4e30-93fa-cc78b1cc299e_beauty.png",
+        "artifactHash": "65c7c4a09388b96908978e1f4e6eca6a368e9d036932c5931a373e1183782d8c",
+        "artifactSize": 53825,
+        "engineeringHash": "6a4cd1a6bab4fd8b938dfa8bd59597c65116779604ac210f62b2957fcdd126b8",
         "bomHash": "7fe73a15450188b796ffad9d1ae14eb9ce97f3e1eb3b62e7b55da66db1be7166",
         "recipeVersion": null,
         "realBlender": true,
         "status": "completed",
-        "evidenceHash": "ccbd84a51032e94cbca0558825b3c921c54f7be3fbc582e0d3124bedabf36cdd"
+        "evidenceHash": "0b95db8b222b5697a268e3b25946afde80ae34aad4cce27ac35dc77b26591167"
       },
       "label": "REAL"
     }
@@ -328,11 +328,11 @@
   },
   "publications": [
     {
-      "publicationId": "2084fe29-07a8-43a8-82de-ce55fdba174c",
+      "publicationId": "b034d4a4-ed79-4ca7-a1bd-849307fd2258",
       "family": "KD_FURNITURE",
       "productVersion": 1,
       "spec": {
-        "productId": "b0af9d12-efc7-4d44-bdb1-62293b9ddf1c",
+        "productId": "0c3b1021-0b7d-4044-af48-6d5cb84440ae",
         "tenantId": "ops",
         "kind": "OPEN_SHELF",
         "width": 800.0,
@@ -652,7 +652,7 @@
         "handleStyle": "bar",
         "modules": [
           {
-            "moduleId": "78ab3d09-0438-427b-a3cc-dec8aa875d61",
+            "moduleId": "50b2adbd-4639-4c49-bed3-4b5f7bb55227",
             "kind": "OPEN_SHELF",
             "width": 764.0,
             "height": 291.0,
@@ -665,7 +665,7 @@
             "notes": ""
           },
           {
-            "moduleId": "5c5e7b6b-dc18-4cf5-997d-0e72cdf066b4",
+            "moduleId": "4b71794c-5bee-4ec7-9a33-44170f335b80",
             "kind": "OPEN_SHELF",
             "width": 764.0,
             "height": 291.0,
@@ -678,7 +678,7 @@
             "notes": ""
           },
           {
-            "moduleId": "76661ae2-f03a-4598-a53f-cd2bf6c9623c",
+            "moduleId": "baf1cc43-c032-4956-8faa-728340f5ec3e",
             "kind": "OPEN_SHELF",
             "width": 764.0,
             "height": 291.0,
@@ -691,7 +691,7 @@
             "notes": ""
           },
           {
-            "moduleId": "10efeca7-2689-48a2-a192-5a009b955bd9",
+            "moduleId": "d09fe576-ed76-4b29-9924-80db62e55cf1",
             "kind": "OPEN_SHELF",
             "width": 764.0,
             "height": 291.0,
@@ -704,7 +704,7 @@
             "notes": ""
           },
           {
-            "moduleId": "2e728084-ca53-4c7b-905a-b7c392866887",
+            "moduleId": "15f4b3e5-dd7c-45b9-bccb-f8cdc475b2da",
             "kind": "OPEN_BAY",
             "width": 764.0,
             "height": 1164.0,
@@ -781,8 +781,8 @@
       },
       "previewAssets": [],
       "assembly": {
-        "productId": "b0af9d12-efc7-4d44-bdb1-62293b9ddf1c",
-        "engineeringHash": "10892750394e68c057c676525a6529e6dc6193e720bdf296eaa129e3b338f276",
+        "productId": "0c3b1021-0b7d-4044-af48-6d5cb84440ae",
+        "engineeringHash": "ab20c7b4bd9a81db1ede81712fda3a85e2ed800d920128e108b3038badda4529",
         "version": 2,
         "steps": [
           {
@@ -965,7 +965,7 @@
         ],
         "twoPerson": true,
         "source": "assembly_graph_v2",
-        "manifestHash": "6d14f606a4d9298f2478f50a2881e4eb39b8b9dfc9e2b2354026f540bc6e3609"
+        "manifestHash": "5a402b4102897d565efe39bece77bd31c754dd0de6c287487987199c79a5c551"
       },
       "warnings": {
         "warnings": [
@@ -988,16 +988,16 @@
         "riskScore": 0.45,
         "source": "deterministic"
       },
-      "engineeringHash": "10892750394e68c057c676525a6529e6dc6193e720bdf296eaa129e3b338f276",
+      "engineeringHash": "ab20c7b4bd9a81db1ede81712fda3a85e2ed800d920128e108b3038badda4529",
       "liveMachineControl": false,
-      "publicationHash": "635e1670b5b79f483812be71cf9e3be50d13a0b5cb897d933c572aef28872c28"
+      "publicationHash": "3e7ce154fe7f3f713f7e7becbe89c4f753b0c0c9dbf31385959821424d2ed2a8"
     },
     {
-      "publicationId": "49189d5a-70f3-49f1-91bc-1b856ed3c714",
+      "publicationId": "a71beb48-25a3-461d-bcef-f735ddd5e8bc",
       "family": "RETAIL_FIXTURE",
       "productVersion": 1,
       "spec": {
-        "productId": "691e7017-6238-4319-939c-3d7acc37edcb",
+        "productId": "20eb4ac7-9841-4ea9-a909-88ae6a31b50f",
         "tenantId": "ops",
         "kind": "RETAIL_DISPLAY",
         "width": 600.0,
@@ -1211,7 +1211,7 @@
         "handleStyle": "bar",
         "modules": [
           {
-            "moduleId": "e7e1eff8-68db-4ab3-84ce-3b534ed1dbff",
+            "moduleId": "7a77e973-37eb-4df5-8430-4b3cab3cf23d",
             "kind": "OPEN_SHELF",
             "width": 564.0,
             "height": 254.66666666666666,
@@ -1224,7 +1224,7 @@
             "notes": ""
           },
           {
-            "moduleId": "986c334b-2878-4a3f-8fb2-6e2f37d8a606",
+            "moduleId": "b1e32534-58d2-4b7a-ad45-ea7f46ad5d55",
             "kind": "OPEN_SHELF",
             "width": 564.0,
             "height": 254.66666666666666,
@@ -1237,7 +1237,7 @@
             "notes": ""
           },
           {
-            "moduleId": "854c077e-8fc5-4fc6-bbb7-961ef19ffe4d",
+            "moduleId": "ad98efe9-864a-4b52-9a12-8d58bb9e161b",
             "kind": "OPEN_SHELF",
             "width": 564.0,
             "height": 254.66666666666666,
@@ -1250,7 +1250,7 @@
             "notes": ""
           },
           {
-            "moduleId": "3f7c9190-1173-46c1-883d-a899a04ed185",
+            "moduleId": "f4537b41-f2bf-4481-9c4b-78d807f56acb",
             "kind": "OPEN_BAY",
             "width": 564.0,
             "height": 764.0,
@@ -1328,12 +1328,12 @@
       "previewAssets": [],
       "assembly": null,
       "warnings": null,
-      "engineeringHash": "1653142631cc36042edcf61484b6235c83847880e98b42a3936b1842fd35028e",
+      "engineeringHash": "ae31d45a9582f174d804271b260822ce8bebfcf54edaed2c869fdf5c31b90818",
       "liveMachineControl": false,
-      "publicationHash": "96205427df5365ebe55e04657f6117c0b32554d47d8538ac49e88fa032db6c8b"
+      "publicationHash": "57d28e7549459f6f9c7da0a0088765305f698239ec335771d5cc4c793c3431bf"
     },
     {
-      "publicationId": "ce071534-ad41-496f-aabe-e92fd411313b",
+      "publicationId": "8711a8d2-e402-4808-a203-598911305e0d",
       "family": "PACKAGING_STRUCTURE",
       "productVersion": 1,
       "spec": {
@@ -1536,7 +1536,7 @@
       "publicationHash": "37fc05cfd8ac6f6c7d331efa8c24412de0b0302a2e9d847db4bdbc8c9d3380a5"
     },
     {
-      "publicationId": "38bee50d-aeaa-48f6-b047-1216842cb2f5",
+      "publicationId": "84b80f90-5d68-44c4-849c-39323bac13d5",
       "family": "ACRYLIC_SHEET",
       "productVersion": 1,
       "spec": {
@@ -1545,7 +1545,7 @@
         "depth": 80
       },
       "bomSummary": {
-        "bomHash": "1779db48704f092fa78a34b05f23086e62e757018d70acd7c88b5ef8ca39b68f",
+        "bomHash": "f9bb8bc4aebeff7f8e07cca2a0ef96434d4774724eac7e49860fb912f5e66c7b",
         "lines": 2
       },
       "packingSummary": {
@@ -1562,14 +1562,14 @@
       "warnings": null,
       "engineeringHash": "5da62e7829cb37266e6d2794fbfba512e70698dc8443495e40040338c6f631f4",
       "liveMachineControl": false,
-      "publicationHash": "341fc65fcf91dc3509d32854025c828ddcf0bced7c17763334156f50006c6d12"
+      "publicationHash": "9c65bfdb5390dec228141cab4db8e8f41dc383c9fbdfa7de9b13a975b42144f0"
     },
     {
-      "publicationId": "75b99fec-713d-4cb9-968b-0b0ed88e0753",
+      "publicationId": "db6584fa-c186-47a2-9c62-5b747b359fff",
       "family": "KD_FURNITURE",
       "productVersion": 1,
       "spec": {
-        "productId": "61be0389-468d-43f6-9a85-5f72a8f0bf0b",
+        "productId": "41582407-9ac7-40b8-b1e3-1067097099ef",
         "tenantId": "ops",
         "kind": "BEDSIDE_CABINET",
         "width": 400.0,
@@ -1865,7 +1865,7 @@
         "handleStyle": "bar",
         "modules": [
           {
-            "moduleId": "c673c4c4-ec93-4769-92c9-b6023a9ada39",
+            "moduleId": "35931449-6572-4d85-bbf9-040a17608511",
             "kind": "CLOSED_COMPARTMENT",
             "width": 364.0,
             "height": 364.0,
@@ -1878,7 +1878,7 @@
             "notes": ""
           },
           {
-            "moduleId": "a76a5c35-01c8-438c-831b-730336ec146e",
+            "moduleId": "a677d3a5-b11a-4f2b-b08c-5e3270a60adc",
             "kind": "HINGED_DOOR",
             "width": 400.0,
             "height": 400.0,
@@ -1955,8 +1955,8 @@
       },
       "previewAssets": [],
       "assembly": {
-        "productId": "61be0389-468d-43f6-9a85-5f72a8f0bf0b",
-        "engineeringHash": "34be2c956e7eae820607505cc9ca4eacf6e8a47b7c99575520d1b720acb7776b",
+        "productId": "41582407-9ac7-40b8-b1e3-1067097099ef",
+        "engineeringHash": "6a4cd1a6bab4fd8b938dfa8bd59597c65116779604ac210f62b2957fcdd126b8",
         "version": 2,
         "steps": [
           {
@@ -2061,7 +2061,7 @@
         ],
         "twoPerson": true,
         "source": "assembly_graph_v2",
-        "manifestHash": "428454bc76b0e63e0e47d3096f75054dfd2903b579aea410c300194a0addf99e"
+        "manifestHash": "3ca970fe7ac4309e84d8feeb792f4af6da7ca5d27c00838833ca3134a90fb158"
       },
       "warnings": {
         "warnings": [
@@ -2084,9 +2084,9 @@
         "riskScore": 0.45,
         "source": "deterministic"
       },
-      "engineeringHash": "34be2c956e7eae820607505cc9ca4eacf6e8a47b7c99575520d1b720acb7776b",
+      "engineeringHash": "6a4cd1a6bab4fd8b938dfa8bd59597c65116779604ac210f62b2957fcdd126b8",
       "liveMachineControl": false,
-      "publicationHash": "b32879e3ec0e5b016c4eb9b87ee4b2647ba37fa8760a3b36a09ae42a2e3c10aa"
+      "publicationHash": "a5859e97b1c3387f756997de26f95967503129b1e81f4b51df8fe984d13be072"
     }
   ],
   "fullAutonomousFactoryReady": false,
