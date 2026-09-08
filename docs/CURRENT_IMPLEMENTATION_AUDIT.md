@@ -1,10 +1,27 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (runner-level atomic evidence CODE_EVIDENCE_SHA `513ae9d`; prior fail-closed `6d9de7e` / review `2968a8b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–70 notes below remain; they are not the current review SHA. REAL OS V2 runner: `main()` fail-closed + staged `os.replace` publish with generation id / rollback. `tests/test_acceptance_gate.py` is gate/unit only; runner integration is `tests/test_os_v2_runner.py`.
+Audit of `main` (Phase 301–360 CODE_EVIDENCE_SHA `64c5b6f`; prior atomic runner `513ae9d` / docs `b55b52c`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`. Historical Phase 1–300 notes below remain. New modules extend existing SoT; Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 301–360 Manufacturing Release & Pilot Operations
+
+| Item | Status | Evidence |
+|---|---|---|
+| 301–304 canonical six-file reader | REAL | `read_canonical_truth_set` rejects mixed generation/commit, missing, malformed; runner success checks all six |
+| 305–312 ManufacturingRelease packets | REAL | KD/retail/packaging/acrylic; checksum SHA-256+size; tamper fails; APPROVED_FOR_MANUAL_RELEASE ≠ LIVE_CNC |
+| 313–320 supplier RFQ/compare | REAL logic / IMPORTED data | ≥3 snapshots; FX MANUAL; stale on releaseHash/qty/FX; no LIVE_PROVIDER |
+| 321–328 WorkOrder traveler | REAL (manual) | idempotent reserve/consume/cancel; remnant+lot reuse; tenant isolation; not a MES |
+| 329–336 QC + traceability | REAL | out-of-tol + required-final block COMPLETED; rework loop; DAM refs; full trace query |
+| 337–344 logistics boundary | REAL planning | carton expected≠measured; conservation; pallet PLANNING; carrier IMPORTED; barcode PARTIAL |
+| 345–352 unit economics | REAL freeze | frozen history; variance; scrap vs remnant vs recovered credit; demand observation MOCK |
+| 353–356 four-family E2E | REAL (manual sim) | all COMPLETED with verified packets |
+| 357 REAL Blender refresh | REAL | 4/4 T1000 OptiX `commitSha=64c5b6f` `usedMock=false` hash/size PASS |
+| 358 batch stress | FIXTURE | 20 releases, ≥100 ops, idempotency, tenant isolation, stale blocked |
+| 359 readiness | REAL flags | `manufacturingReleasePackageReady` / `manualPilotOpsReady` / `qcTraceabilityReady`; `liveFactoryExecutionReady=false`; `fullAutonomousFactoryReady=false` |
+| 360 acceptance docs | REAL | `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` + `PILOT_OPERATIONS_ACCEPTANCE.md` + `QC_TRACEABILITY_ACCEPTANCE.md` |
 
 ## Mock vs Real split
 

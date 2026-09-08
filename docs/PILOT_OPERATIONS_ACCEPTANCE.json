@@ -1,0 +1,189 @@
+{
+  "domain": "pilot-ops",
+  "rows": [
+    {
+      "check": "Blender",
+      "status": "REAL",
+      "evidence": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    {
+      "check": "OptiX",
+      "status": "REAL",
+      "evidence": "NVIDIA T1000"
+    },
+    {
+      "check": "workingTreeClean",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "four-family manual E2E",
+      "status": "REAL",
+      "evidence": "ok=True n=4"
+    },
+    {
+      "check": "KD_FURNITURE packet checksum",
+      "status": "REAL",
+      "evidence": "a8d13b92f876"
+    },
+    {
+      "check": "KD_FURNITURE WO COMPLETED",
+      "status": "REAL",
+      "evidence": "COMPLETED"
+    },
+    {
+      "check": "RETAIL_FIXTURE packet checksum",
+      "status": "REAL",
+      "evidence": "64bb353713f2"
+    },
+    {
+      "check": "RETAIL_FIXTURE WO COMPLETED",
+      "status": "REAL",
+      "evidence": "COMPLETED"
+    },
+    {
+      "check": "PACKAGING_STRUCTURE packet checksum",
+      "status": "REAL",
+      "evidence": "d3d74d2596b0"
+    },
+    {
+      "check": "PACKAGING_STRUCTURE WO COMPLETED",
+      "status": "REAL",
+      "evidence": "COMPLETED"
+    },
+    {
+      "check": "ACRYLIC_SHEET packet checksum",
+      "status": "REAL",
+      "evidence": "c1772eff69b4"
+    },
+    {
+      "check": "ACRYLIC_SHEET WO COMPLETED",
+      "status": "REAL",
+      "evidence": "COMPLETED"
+    },
+    {
+      "check": "supplier quotes imported",
+      "status": "REAL",
+      "evidence": "n=3 source=IMPORTED"
+    },
+    {
+      "check": "supplier compare stale",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "FX source",
+      "status": "MANUAL",
+      "evidence": "MANUAL"
+    },
+    {
+      "check": "carrier quote",
+      "status": "IMPORTED",
+      "evidence": "54cd3e6e"
+    },
+    {
+      "check": "pilot 4-family Blender EvidenceBundle",
+      "status": "REAL",
+      "evidence": "real=4/4 clean=True"
+    },
+    {
+      "check": "liveFactoryExecutionReady",
+      "status": "BLOCKED",
+      "evidence": "False"
+    },
+    {
+      "check": "fullAutonomousFactoryReady",
+      "status": "BLOCKED",
+      "evidence": "False"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "LIVE_LASER",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "canonical six-file reader",
+      "status": "REAL",
+      "evidence": "ok"
+    }
+  ],
+  "readiness": {
+    "coreRenderE2EReady": true,
+    "kdPrototypeReady": true,
+    "retailPrototypeReady": true,
+    "packagingPrototypeReady": true,
+    "acrylicPrototypeReady": true,
+    "commercialPricingReady": false,
+    "manufacturingReleasePackageReady": true,
+    "manualPilotOpsReady": true,
+    "qcTraceabilityReady": true,
+    "importedSupplierQuoteReady": true,
+    "importedCarrierQuoteReady": true,
+    "liveFactoryExecutionReady": false,
+    "liveProviderReady": false,
+    "machineControlReady": false,
+    "liveVisionReady": false,
+    "liveDemandReady": false,
+    "osSandboxReady": false,
+    "fullAutonomousFactoryReady": false,
+    "labels": {
+      "commercialPricingReady": "CONFIG_ESTIMATE",
+      "liveProviderReady": "BLOCKED",
+      "liveFactoryExecutionReady": "BLOCKED",
+      "machineControlReady": "BLOCKED",
+      "liveVisionReady": "MOCK",
+      "liveDemandReady": "MOCK",
+      "osSandboxReady": "PARTIAL",
+      "manufacturingReleasePackageReady": "REAL",
+      "manualPilotOpsReady": "REAL",
+      "qcTraceabilityReady": "REAL",
+      "importedSupplierQuoteReady": "IMPORTED",
+      "importedCarrierQuoteReady": "IMPORTED"
+    },
+    "globalProductionReady": false,
+    "humanApprovalGate": true,
+    "liveMachineControl": false
+  },
+  "fourFamilyOk": true,
+  "supplier": {
+    "n": 3,
+    "stale": true,
+    "fx": "MANUAL"
+  },
+  "canonicalTruthSet": {
+    "canonicalTruthSetOk": true,
+    "acceptanceGenerationId": "3bf0138c-834e-4137-8807-7cae874b1626",
+    "evidenceCodeCommit": "513ae9df9093005409794b021a533e70edeec9bf",
+    "errors": [],
+    "requiredFiles": [
+      "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE",
+      "RELEASE_GATE_REAL_ACCEPTANCE",
+      "COMMERCIAL_COST_ACCEPTANCE",
+      "PACKAGING_V2_ACCEPTANCE",
+      "MATERIAL_REMNANT_REAL_ACCEPTANCE",
+      "NESTING_V3_ACCEPTANCE"
+    ],
+    "present": [
+      "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE",
+      "RELEASE_GATE_REAL_ACCEPTANCE",
+      "COMMERCIAL_COST_ACCEPTANCE",
+      "PACKAGING_V2_ACCEPTANCE",
+      "MATERIAL_REMNANT_REAL_ACCEPTANCE",
+      "NESTING_V3_ACCEPTANCE"
+    ],
+    "path": "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.canonicalTruthSet",
+    "secondAcceptanceSystem": false
+  },
+  "evidenceCodeCommit": "64c5b6fc624ed1e2b6a75de9a1d76ba6701274b7",
+  "workingTreeClean": true,
+  "acceptanceGenerationId": "1831ff20-23b8-4d94-a180-1f0c0780be8c",
+  "generatedAt": "2026-09-08T21:24:50.238262+00:00",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveMachineControl": false
+}
