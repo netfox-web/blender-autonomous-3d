@@ -30,7 +30,7 @@ Then Phase 241–300 on existing Twin/Queue/DAM/Engineering — no second ERP/WM
 pytest -q  →  101 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions on this SHA: pending until this push. Do not predict PASS.
+GitHub Actions @ `f695eef`: **GREEN** run `34256429183` — `unit (ubuntu-latest)` + `unit (windows-latest)`. MOCK blender suite only, not REAL production.
 
 ## REAL / IMPORTED / MANUAL / CONFIG_ESTIMATE / MOCK / PARTIAL / BLOCKED
 
