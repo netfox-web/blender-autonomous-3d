@@ -100,6 +100,10 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | AI Video | MOCK | no live adapter |
 | OS sandbox | PARTIAL | not a full OS jail |
 
+## Phase 121–180 review fix (`704d058` CHANGES REQUIRED)
+
+Local pytest 77 passed after: multipart runtime dep, OS-agnostic path guard, remnant ownership, paired saved sheets, 8-kind REAL Blender previews. **GitHub CI @ 2aea774 FAILED 3 tests.** Acceptance `ciEvidenceReady` stays false until a GREEN GitHub run on the fix SHA. Cost model scope=`CONFIG_ESTIMATE_ONLY`. Phase 130 upgraded from 1 preview to 8 REAL kinds. OS sandbox still PARTIAL.
+
 ## Phase 121–180 KD / Flat-Pack (this round)
 
 | Phase | Status | Notes |

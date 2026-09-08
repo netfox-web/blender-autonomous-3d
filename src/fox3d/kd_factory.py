@@ -191,13 +191,42 @@ class KdFactory:
             }
         ]
         with_rem = self.nester.nest(rec["bom"], material=str(spec.material), thickness=float(spec.boardThickness), remnants=remnants)
+        saved = max(0, int(independent["sheetCount"]) - int(with_rem["sheetCount"]))
         return {
             "independentSheetCount": independent["sheetCount"],
             "remnantFirstSheetCount": with_rem["sheetCount"],
-            "savedNewSheetCount": max(0, independent["sheetCount"] - with_rem["sheetCount"]),
+            "savedNewSheetCount": saved,
+            "savedNewSheetSource": "PAIRED_BASELINE",
+            "estimatedSavedSheetEquivalent": with_rem.get("estimatedSavedSheetEquivalent"),
+            "estimatedSavedSheetSource": "ESTIMATED",
             "remnantConsumedArea": with_rem.get("remnantConsumedArea") or 0,
+            "costSavedSource": "PAIRED_BASELINE" if saved else "ESTIMATED",
             "independent": {k: independent[k] for k in ("sheetCount", "trueWasteRatio", "utilizationRatio", "reusableRemnantRatio") if k in independent},
             "remnantFirst": {k: with_rem[k] for k in ("sheetCount", "trueWasteRatio", "utilizationRatio", "remnantConsumedArea") if k in with_rem},
+        }
+
+    def remnant_shape_cases(self, rec: dict[str, Any]) -> dict[str, Any]:
+        """Large unusable remnant vs small remnant that actually drops a sheet."""
+        spec = CabinetSpec.model_validate(rec["spec"])
+        baseline = self.nester.nest(rec["bom"], material=str(spec.material), thickness=float(spec.boardThickness))
+        awkward = self.nester.nest(
+            rec["bom"],
+            material=str(spec.material),
+            thickness=float(spec.boardThickness),
+            remnants=[{"remnantId": "awkward-strip", "w": 2400, "h": 40, "thickness": spec.boardThickness, "materialCode": map_cabinet_material(str(spec.material)).get("code")}],
+        )
+        helpful = self.nester.nest(
+            rec["bom"],
+            material=str(spec.material),
+            thickness=float(spec.boardThickness),
+            remnants=[{"remnantId": "small-fit", "w": 700, "h": 280, "thickness": spec.boardThickness, "materialCode": map_cabinet_material(str(spec.material)).get("code")}],
+        )
+        return {
+            "baselineSheets": baseline["sheetCount"],
+            "awkwardSavedSheets": max(0, baseline["sheetCount"] - awkward["sheetCount"]),
+            "helpfulSavedSheets": max(0, baseline["sheetCount"] - helpful["sheetCount"]),
+            "awkwardEstimatedEquivalent": awkward.get("estimatedSavedSheetEquivalent"),
+            "note": "savedNewSheetCount is paired sheetCount delta, not area/sheetArea",
         }
 
     def quantity_breaks(self, rec: dict[str, Any], quantities: tuple[int, ...] = (1, 10, 20, 50, 100)) -> list[dict[str, Any]]:
@@ -409,10 +438,15 @@ class KdFactory:
         sandbox = bool(ev.get("osJail"))
         cnc = bool(ev.get("liveCnc"))
         ci = bool(ev.get("ciStatus"))
+        real_provider_cost = bool(ev.get("realProviderCost"))
         matrix = {
             "coreFactoryE2EReady": core,
             "kdDfMReady": kd,
+            "estimatedCostModelReady": cost,
+            "realProviderCostReady": real_provider_cost,
+            "commercialQuoteReady": bool(cost and real_provider_cost and market),
             "commercialCostModelReady": cost,
+            "commercialCostModelScope": "CONFIG_ESTIMATE_ONLY",
             "marketDemandVerified": market,
             "liveVisionReady": vision,
             "liveVideoReady": video,
@@ -420,17 +454,33 @@ class KdFactory:
             "liveMachineControlReady": cnc,
             "ciEvidenceReady": ci,
         }
-        matrix["fullAutonomousFactoryReady"] = all(matrix.values())
+        matrix["fullAutonomousFactoryReady"] = all(
+            [
+                matrix["coreFactoryE2EReady"],
+                matrix["kdDfMReady"],
+                matrix["realProviderCostReady"],
+                matrix["commercialQuoteReady"],
+                matrix["marketDemandVerified"],
+                matrix["liveVisionReady"],
+                matrix["liveVideoReady"],
+                matrix["osSandboxReady"],
+                matrix["liveMachineControlReady"],
+                matrix["ciEvidenceReady"],
+            ]
+        )
         matrix["requiredChecks"] = {
             "coreFactoryE2EReady": ["real Blender furniture factory E2E"],
             "kdDfMReady": ["waste V2 conservation", "remnant extract/consume-once", "packing derived from panels"],
-            "commercialCostModelReady": ["landed cost lineage hashes"],
+            "estimatedCostModelReady": ["CONFIG/ESTIMATED landed cost lineage"],
+            "realProviderCostReady": ["REAL_PROVIDER cost/logistics APIs"],
+            "commercialQuoteReady": ["REAL_PROVIDER cost + freshness + demand"],
+            "commercialCostModelReady": ["compat alias of estimatedCostModelReady; scope=CONFIG_ESTIMATE_ONLY"],
             "marketDemandVerified": ["live DemandSignal Provider"],
             "liveVisionReady": ["registered vision adapter"],
             "liveVideoReady": ["registered video ProviderAdapter"],
             "osSandboxReady": ["OS jail"],
             "liveMachineControlReady": ["forbidden this round"],
-            "ciEvidenceReady": ["GitHub Actions pytest"],
+            "ciEvidenceReady": ["GitHub Actions pytest GREEN on this SHA"],
         }
         matrix["productionReady"] = core
         matrix["productionReadyScope"] = "coreFactoryE2E"

@@ -601,6 +601,10 @@ def job_cache_key(job: dict[str, Any], *, blender_version: str) -> str:
         "render": job.get("render"),
         "blenderVersion": blender_version,
         "recipeId": job.get("recipeId"),
+        "mode": job.get("mode") or job.get("jobType"),
+        "explode": job.get("explode"),
+        "engineeringHash": stable_hash(job.get("engineering")) if job.get("engineering") else None,
+        "spaceHash": stable_hash(job.get("space")) if job.get("space") else None,
     }
     return stable_hash(payload)
 

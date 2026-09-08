@@ -34,4 +34,4 @@ Mock Worker 僅供 `pytest`。Production acceptance 不得把 mock-4.2 寫成 PA
 
 Furniture factory Phase 71–120 evidence: `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` (`productionReady` scope = `coreFactoryE2E` only).
 
-KD / flat-pack Phase 121–180 evidence: `docs/KD_FACTORY_REAL_ACCEPTANCE.md`. Waste V2 splits reusable remnant vs true scrap. Vision Judge, AI Video, and demand remain **MOCK**. LIVE_CNC remains **BLOCKED**. `fullAutonomousFactoryReady=false`.
+KD / flat-pack Phase 121–180 evidence: `docs/KD_FACTORY_REAL_ACCEPTANCE.md`. Waste V2 splits reusable remnant vs true scrap. Vision Judge, AI Video, and demand remain **MOCK**. LIVE_CNC remains **BLOCKED**. `fullAutonomousFactoryReady=false`. `ciEvidenceReady` is **false/PENDING** until GitHub Actions is GREEN on the current SHA (do not treat local pytest as CI PASS). Cost model is `CONFIG_ESTIMATE_ONLY`.

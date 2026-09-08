@@ -378,6 +378,20 @@ class CabinetEngine:
             parts.append(_panel("TOE_KICK", spec.width, 80, spec.plinthHeight, "toe_kick"))
         elif spec.toeKickHeight:
             parts.append(_panel("TOE_KICK", spec.width, 80, spec.toeKickHeight, "toe_kick"))
+        if spec.kind == "STUDENT_DESK":
+            parts.append(_panel("DESKTOP", spec.width, spec.depth, t, "desktop"))
+            parts.append(_panel("STRETCHER", spec.width - 2 * t, 80, t, "stretcher"))
+        elif spec.kind == "GARMENT_RACK":
+            parts.append(_panel("RAIL_BEAM", spec.width - 2 * t, 40, t, "rail_beam"))
+        elif spec.kind == "STORAGE_BENCH":
+            parts.append(_panel("LID", spec.width, spec.depth, t, "lid"))
+            parts.append(_panel("SEAT", inner_w, spec.depth - 20, t, "seat"))
+        elif spec.kind == "PET_FURNITURE":
+            parts.append(_panel("CUBBY_FLOOR", inner_w, spec.depth - 20, t, "cubby"))
+        elif spec.kind == "RETAIL_DISPLAY":
+            parts.append(_panel("KICK_PLATE", spec.width, 80, t, "kick_plate"))
+        elif spec.kind == "OPEN_SHELF" and spec.shelfCount:
+            parts.append(_panel("OPEN_BAY_STILE", spec.height - 2 * t, 40, t, "stile"))
         return parts
 
     def _hardware(self, spec: CabinetSpec) -> list[dict[str, Any]]:
@@ -415,12 +429,24 @@ class CabinetEngine:
         return hw
 
     def _connections(self, spec: CabinetSpec) -> list[dict[str, Any]]:
-        return [
+        joints = [
             {"from": "L_SIDE", "to": "TOP", "joint": "cam"},
             {"from": "R_SIDE", "to": "TOP", "joint": "cam"},
             {"from": "L_SIDE", "to": "BOTTOM", "joint": "cam"},
             {"from": "R_SIDE", "to": "BOTTOM", "joint": "cam"},
         ]
+        if spec.kind == "STUDENT_DESK":
+            joints.append({"from": "L_SIDE", "to": "DESKTOP", "joint": "bolt"})
+            joints.append({"from": "R_SIDE", "to": "STRETCHER", "joint": "screw"})
+        elif spec.kind == "GARMENT_RACK":
+            joints.append({"from": "L_SIDE", "to": "RAIL_BEAM", "joint": "bolt"})
+        elif spec.kind == "STORAGE_BENCH":
+            joints.append({"from": "L_SIDE", "to": "LID", "joint": "hinge"})
+        elif spec.kind == "PET_FURNITURE":
+            joints.append({"from": "L_SIDE", "to": "CUBBY_FLOOR", "joint": "dowel"})
+        elif spec.kind == "RETAIL_DISPLAY":
+            joints.append({"from": "L_SIDE", "to": "KICK_PLATE", "joint": "cam"})
+        return joints
 
 
 def _bay_count(inner_w: float, limit: float) -> int:

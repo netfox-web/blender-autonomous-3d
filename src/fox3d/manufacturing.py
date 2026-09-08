@@ -448,17 +448,15 @@ class NestingEngine:
             "sheets": sheets,
             "unplaceable": unplaceable,
             "remnantUsed": remnant_used,
-            "savedNewSheetCount": 1 if remnant_used and n_sheets == 0 else (1 if remnant_used else 0),
+            "savedNewSheetCount": None,
+            "estimatedSavedSheetEquivalent": round(sum(r["usedAreaMm2"] for r in remnant_used) / max(sheet_area, 1), 4) if remnant_used else 0.0,
+            "estimatedSavedSheetSource": "ESTIMATED",
             "remnantConsumedArea": sum(r["usedAreaMm2"] for r in remnant_used),
             "candidateRemnants": waste_v2["candidateRemnants"],
             "objective": objective,
             "seed": seed,
             "liveMachineControl": False,
         }
-        if remnant_used and n_sheets == 0:
-            result["savedNewSheetCount"] = 1
-        elif remnant_used:
-            result["savedNewSheetCount"] = max(0, int(round(result["remnantConsumedArea"] / max(sheet_area, 1))))
         result["svg"] = self.to_svg(result)
         result["dxfInterface"] = self.to_dxf_interface(result)
         result["nestingHash"] = stable_hash({k: result[k] for k in ("sheetMm", "kerfMm", "trimMm", "grainConstraint", "sheets", "remnantUsed", "seed", "objective")})
@@ -830,14 +828,20 @@ class RemnantInventory:
             raise PermissionError(f"remnant {remnant_id} not available ({rec['status']})")
         rec["status"] = "reserved"
         rec["reservedBy"] = by
+        rec["persistence"] = "in-process-ledger"
         return rec
 
     def consume(self, remnant_id: str, *, by: str) -> dict[str, Any]:
         rec = self.items[remnant_id]
+        if rec["status"] == "consumed":
+            raise PermissionError(f"remnant {remnant_id} already consumed")
+        if rec["status"] == "reserved" and rec.get("reservedBy") != by:
+            raise PermissionError(f"remnant {remnant_id} reserved by {rec.get('reservedBy')}")
         if rec["status"] not in {"available", "reserved"}:
-            raise PermissionError(f"remnant {remnant_id} already {rec['status']}")
+            raise PermissionError(f"remnant {remnant_id} not consumable ({rec['status']})")
         rec["status"] = "consumed"
         rec["consumedBy"] = by
+        rec["persistence"] = "in-process-ledger"
         return rec
 
     def snapshot(self) -> dict[str, Any]:

@@ -1,19 +1,29 @@
-from fox3d.ops import assert_job_paths_safe
+from fox3d.ops import assert_job_paths_safe, path_segments
 
 
 def test_path_traversal_blocked(platform):
-    job = platform.submit_job(
-        {
-            "tenantId": "t1",
-            "jobType": "BLENDER_PREVIEW",
-            "scene": "WHITE_STUDIO",
-            "glbPath": r"..\..\Windows\System32\cmd.exe",
-            "render": {"width": 16, "height": 16},
-        }
-    )
-    result = platform.execute_job(job)
-    assert result["status"] == "blocked"
-    assert "traversal" in (result.get("error") or "")
+    payloads = [
+        r"..\..\Windows\System32\cmd.exe",
+        "../../etc/passwd",
+        r"foo/..\../bar",
+        r"foo\..\..\bar",
+    ]
+    for glb in payloads:
+        job = platform.submit_job(
+            {
+                "tenantId": "t1",
+                "jobType": "BLENDER_PREVIEW",
+                "scene": "WHITE_STUDIO",
+                "glbPath": glb,
+                "render": {"width": 16, "height": 16},
+            }
+        )
+        result = platform.execute_job(job)
+        assert result["status"] == "blocked", glb
+        assert "traversal" in (result.get("error") or ""), glb
+    assert ".." in path_segments(r"foo/..\../bar")
+    assert_job_paths_safe({"glbPath": "ok.glb"})
+    assert_job_paths_safe({"glbPath": "dam/work/product.glb"})
 
 
 def test_packaging_uses_same_twin_store(platform):

@@ -11,14 +11,22 @@ from fox3d.infra import ComputeRegistry, JobQueue, Operations, job_cache_key
 from fox3d.pngutil import EXR_MAGIC, is_png
 
 
+def path_segments(raw: str) -> list[str]:
+    """OS-agnostic segments: treat both `/` and `\\` as separators."""
+    text = str(raw).replace("\\", "/")
+    return [seg for seg in text.split("/") if seg not in {"", "."}]
+
+
 def assert_job_paths_safe(job: dict[str, Any]) -> None:
-    """Reject path traversal in worker-facing file fields. Does not restrict Blender binary."""
+    """Reject path traversal in worker-facing file fields. Does not restrict Blender binary.
+
+    Host Path().parts is not used: Linux would treat Windows `\\` as a filename character.
+    """
     for key in ("glbPath", "progressFile", "cancelFile"):
         raw = job.get(key)
         if not raw:
             continue
-        parts = Path(str(raw)).parts
-        if ".." in parts:
+        if ".." in path_segments(str(raw)):
             raise PermissionError("path traversal blocked")
 
 

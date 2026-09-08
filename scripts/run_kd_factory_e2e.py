@@ -48,14 +48,54 @@ def main() -> int:
     add("pack/weight/assembly", "REAL", f"carton={rec['packing']['length']}x{rec['packing']['width']}x{rec['packing']['height']} kg={rec['weight']['grossKg']} score={rec['difficulty']['score']}")
     add("landed cost lineage", "REAL", f"cost={rec['landed']['unitLandedCost']} hashes={list(rec['landed']['lineage'])}")
 
+    preview_kinds = (
+        "BEDSIDE_CABINET",
+        "OPEN_SHELF",
+        "STUDENT_DESK",
+        "GARMENT_RACK",
+        "STORAGE_BENCH",
+        "PET_FURNITURE",
+        "RETAIL_DISPLAY",
+        "DESK_RISER",
+    )
+    preview_rows: list[dict] = []
     preview_ok = False
     if probe.realBlender and probe.realOptix:
-        prev = plat.render_parametric(rec["spec"]["productId"], tenant_id="ops")
-        job = prev.get("job") or {}
-        preview_ok = job.get("status") in {"completed", "succeeded"} and job.get("realBlender")
-        add("Blender KD product preview", "REAL" if preview_ok else "PARTIAL", f"status={job.get('status')} job={job.get('jobId')}")
+        for kind in preview_kinds:
+            built = plat.kd.build_sku(tenant_id="ops", kind=kind, render=False)
+            job = plat.submit_job(
+                {
+                    "tenantId": "ops",
+                    "jobType": "PARAMETRIC_3D",
+                    "mode": "PARAMETRIC_CABINET",
+                    "engineering": built["spec"],
+                    "render": {"width": 256, "height": 256, "engine": "CYCLES", "device": "OPTIX", "samples": 8},
+                    "timeoutSeconds": 180,
+                }
+            )
+            job = plat.execute_job(job)
+            files = (job.get("output") or {}).get("files") or {}
+            ok = job.get("status") in {"completed", "succeeded"} and bool(job.get("realBlender")) and not job.get("usedMock")
+            preview_rows.append(
+                {
+                    "kind": kind,
+                    "engineeringHash": built["engineeringHash"],
+                    "bomHash": built["bom"].get("bomHash"),
+                    "jobId": job.get("jobId"),
+                    "outputHash": job.get("outputHash") or files.get("beautyHash"),
+                    "outputSize": job.get("outputSize") or files.get("beautySize"),
+                    "realBlender": bool(job.get("realBlender")),
+                    "realCycles": bool(job.get("realCycles") or (job.get("output") or {}).get("realCycles")),
+                    "realOptix": bool(job.get("realOptix") or (job.get("output") or {}).get("realOptix")),
+                    "usedMock": bool(job.get("usedMock")),
+                    "status": job.get("status"),
+                    "label": "REAL" if ok else "PARTIAL",
+                }
+            )
+        preview_ok = sum(1 for r in preview_rows if r["label"] == "REAL") >= 8
+        add("Phase 130 eight KD Blender previews", "REAL" if preview_ok else "PARTIAL", f"real={sum(1 for r in preview_rows if r['label']=='REAL')}/8")
     else:
-        add("Blender KD product preview", "BLOCKED_NO_OPTIX" if probe.realBlender else "BLOCKED_NO_BLENDER", "skipped")
+        add("Phase 130 eight KD Blender previews", "BLOCKED_NO_OPTIX" if probe.realBlender else "BLOCKED_NO_BLENDER", "skipped")
 
     waiting = plat.kd.approve_prototype(rec["spec"]["productId"], actor="ops")
     add("WAITING_PRODUCT_APPROVAL", "REAL" if waiting["approvalState"] == "WAITING_PRODUCT_APPROVAL" else "FAIL", waiting["approvalState"])
@@ -80,20 +120,30 @@ def main() -> int:
         "liveVideo": False,
         "osJail": False,
         "liveCnc": False,
-        "ciStatus": True,
+        "realProviderCost": False,
+        "ciStatus": False,
     }
     matrix = plat.kd.readiness(evidence=evidence)
-    add("scoped readiness", "REAL", json.dumps({k: matrix[k] for k in matrix if k.endswith("Ready") or k == "productionReadyScope"}))
+    add("CI evidence", "PENDING", "ciEvidenceReady=false until GitHub Actions GREEN on this SHA")
+    add("scoped readiness", "REAL", json.dumps({k: matrix[k] for k in ("coreFactoryE2EReady", "kdDfMReady", "estimatedCostModelReady", "realProviderCostReady", "commercialQuoteReady", "ciEvidenceReady", "fullAutonomousFactoryReady", "productionReadyScope")}))
 
     report = {
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "coreFactoryE2EReady": matrix["coreFactoryE2EReady"],
         "kdDfMReady": matrix["kdDfMReady"],
+        "estimatedCostModelReady": matrix["estimatedCostModelReady"],
+        "realProviderCostReady": matrix["realProviderCostReady"],
+        "commercialQuoteReady": matrix["commercialQuoteReady"],
         "commercialCostModelReady": matrix["commercialCostModelReady"],
+        "commercialCostModelScope": matrix["commercialCostModelScope"],
+        "ciEvidenceReady": False,
+        "ciEvidenceNote": "UNKNOWN/PENDING at local generate time; not claimed GREEN before GitHub check",
         "fullAutonomousFactoryReady": matrix["fullAutonomousFactoryReady"],
         "productionReady": matrix["productionReady"],
         "productionReadyScope": matrix["productionReadyScope"],
-        "note": "productionReady scope is coreFactoryE2E only; Vision/Video/CNC/demand are not included",
+        "phase130": "REAL" if preview_ok else "PARTIAL",
+        "kdPreviewEvidence": preview_rows,
+        "note": "productionReady scope is coreFactoryE2E only; CI not claimed GREEN in this file at generate time",
         "probe": probe.to_dict(),
         "rows": rows,
         "readiness": matrix,
@@ -106,7 +156,8 @@ def main() -> int:
         "",
         f"generatedAt: {report['generatedAt']}",
         f"productionReady (scope=`coreFactoryE2E`): **{report['productionReady']}**",
-        f"kdDfMReady: **{report['kdDfMReady']}** · commercialCostModelReady: **{report['commercialCostModelReady']}** · fullAutonomousFactoryReady: **{report['fullAutonomousFactoryReady']}**",
+        f"kdDfMReady: **{report['kdDfMReady']}** · estimatedCostModelReady: **{report['estimatedCostModelReady']}** · realProviderCostReady: **{report['realProviderCostReady']}** · ciEvidenceReady: **{report['ciEvidenceReady']}** · fullAutonomousFactoryReady: **{report['fullAutonomousFactoryReady']}**",
+        f"Phase 130 eight-kind REAL Blender preview: **{report['phase130']}**",
         "",
         "pytest mock PASS is **not** production ready. Demand/Vision/Video remain MOCK.",
         "",

@@ -1,12 +1,133 @@
 {
-  "generatedAt": "2026-09-08T14:40:57.418501+00:00",
+  "generatedAt": "2026-09-08T15:35:53.392646+00:00",
   "coreFactoryE2EReady": true,
   "kdDfMReady": true,
+  "estimatedCostModelReady": true,
+  "realProviderCostReady": false,
+  "commercialQuoteReady": false,
   "commercialCostModelReady": true,
+  "commercialCostModelScope": "CONFIG_ESTIMATE_ONLY",
+  "ciEvidenceReady": false,
+  "ciEvidenceNote": "UNKNOWN/PENDING at local generate time; not claimed GREEN before GitHub check",
   "fullAutonomousFactoryReady": false,
   "productionReady": true,
   "productionReadyScope": "coreFactoryE2E",
-  "note": "productionReady scope is coreFactoryE2E only; Vision/Video/CNC/demand are not included",
+  "phase130": "REAL",
+  "kdPreviewEvidence": [
+    {
+      "kind": "BEDSIDE_CABINET",
+      "engineeringHash": "76234fdb798cf708bfbe896723e80feaea436da8b223236b65c51ef09c648164",
+      "bomHash": "7fe73a15450188b796ffad9d1ae14eb9ce97f3e1eb3b62e7b55da66db1be7166",
+      "jobId": "5aa1b41a-1a18-425f-a10e-7b671f3c298f",
+      "outputHash": "26b2ef92323ce51c579f2bdeca1fe0162966ae195aa37977a715aaec42e10ed9",
+      "outputSize": 53814,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "OPEN_SHELF",
+      "engineeringHash": "94507974fc0772253d54a6effb7813c73a4b437e961d2df292f19421ecf29dc6",
+      "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
+      "jobId": "08563ccd-fca8-4b5d-b703-442a13d66550",
+      "outputHash": "e2ef23c706e63765314eee8e75371593bb37d21d82821e3da7e9c59cf248c60f",
+      "outputSize": 61160,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "STUDENT_DESK",
+      "engineeringHash": "5cdbdcbf10dd651fb601bab96f7a8e809c821336f3687d87722a6e6e4e52de77",
+      "bomHash": "7c1678ff53c232d595c3a85158d2990b59bd4ffb239099b284eace0d16100dc2",
+      "jobId": "a11b8213-4b5b-42b8-9e4f-9387459515cc",
+      "outputHash": "b41feb818a05445ad9820956374e9b12788956f70087bdf9e23bd0c81364ec54",
+      "outputSize": 51261,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "GARMENT_RACK",
+      "engineeringHash": "adcb89a7907ce1aa3a359e73e4b95c2097de98a8853b25d7312b343af0b19028",
+      "bomHash": "e7222e3f35d59cea600db57012df14422b2badb96418c542c130fb662f47cc68",
+      "jobId": "a0a8ea6a-252c-4f64-bd88-abbe66ee2957",
+      "outputHash": "4692b68873616f8addaa616915848d1dcc4be677d6c0c5055e9942185c8cba65",
+      "outputSize": 57229,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "STORAGE_BENCH",
+      "engineeringHash": "195a868b000704f8caeaafad9411bec46f5bc8ea81d0b103d7397b77ac8a8a15",
+      "bomHash": "49cfaa6cbe295cd506f8d1f62f4a9f890915e4c1f1913c70b11329ae82797982",
+      "jobId": "44c47bff-fb59-40ce-a982-6a21f3fb7695",
+      "outputHash": "03c0f7b1274394c047ebbfdb2b93f432f127f7704db6acde9a37723acba485f1",
+      "outputSize": 53197,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "PET_FURNITURE",
+      "engineeringHash": "58c6cf2ca350b7fef560291789e1599ef8515531579bd036f165e0c15127fa3c",
+      "bomHash": "6d57a178f6f7d2a6755c3fd8a55b07986dfd35d1b09967a31a7e2446f348c25e",
+      "jobId": "00ed10ec-a326-4bde-a3f6-e98ffa4f5dc6",
+      "outputHash": "06995fb821ccecd5caab887b3b30ec74bdbcb884634a0a07bc4b378d78192985",
+      "outputSize": 52228,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "RETAIL_DISPLAY",
+      "engineeringHash": "2d9ca10dc22b15be34ac018517591c2aaf805e52a6f1307920f014fca22ec038",
+      "bomHash": "59b69351994af81028c1d29ec9f304aa25d825bdf8a68c32b267cc05ba0d818a",
+      "jobId": "78d6b1b0-3b03-43a9-9747-9661a14528c0",
+      "outputHash": "790ed557446bf4fbdb08790bc407b4416f036900bb2c1e8d4c037d05eaf1ca70",
+      "outputSize": 61011,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    },
+    {
+      "kind": "DESK_RISER",
+      "engineeringHash": "03b717d39463ac1d57bbf353c2000776494655469b08d12971d8cae1047e505e",
+      "bomHash": "6f2467cdd7a65e37ae29b1fde21b437eab23ad3ee2cdcc995725251ed6b4c536",
+      "jobId": "6fb62c01-d6de-4569-95d3-00b6c3e1d36c",
+      "outputHash": "2885e9f41daf5f5a6cadefe27acb23fc5ba22d0d9b40f455e98159562e3b3381",
+      "outputSize": 48473,
+      "realBlender": true,
+      "realCycles": true,
+      "realOptix": true,
+      "usedMock": false,
+      "status": "completed",
+      "label": "REAL"
+    }
+  ],
+  "note": "productionReady scope is coreFactoryE2E only; CI not claimed GREEN in this file at generate time",
   "probe": {
     "blender": true,
     "blenderBinary": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
@@ -127,17 +248,17 @@
     {
       "check": "cross-SKU nesting",
       "status": "REAL",
-      "evidence": "sheets=7 waste=0.1026"
+      "evidence": "sheets=8 waste=0.0792"
     },
     {
       "check": "waste V2 conservation",
       "status": "REAL",
-      "evidence": "err=0.0 trueWaste=0.053 remnant=0.2601"
+      "evidence": "err=0.0 trueWaste=0.0375 remnant=0.6112"
     },
     {
       "check": "remnants extract+consume",
       "status": "REAL",
-      "evidence": "extracted=4 savedSheets=1 consumed=480720.0"
+      "evidence": "extracted=7 savedSheets=1 consumed=480720.0"
     },
     {
       "check": "pack/weight/assembly",
@@ -150,9 +271,9 @@
       "evidence": "cost=1448.69 hashes=['engineeringHash', 'bomHash', 'nestingHash', 'packagingHash']"
     },
     {
-      "check": "Blender KD product preview",
+      "check": "Phase 130 eight KD Blender previews",
       "status": "REAL",
-      "evidence": "status=completed job=c132b8fc-eb70-46f1-a26d-238d4f46fb65"
+      "evidence": "real=8/8"
     },
     {
       "check": "WAITING_PRODUCT_APPROVAL",
@@ -190,21 +311,30 @@
       "evidence": "n=24 kinds=['APPLIANCE_RACK', 'BEDSIDE_CABINET', 'DESK_RISER', 'GARMENT_RACK', 'MOBILE_SIDE_TABLE', 'NARROW_BOOKCASE', 'OPEN_SHELF', 'PET_FURNITURE', 'RETAIL_DISPLAY', 'STORAGE_BENCH', 'STUDENT_DESK', 'VANITY_DESK']"
     },
     {
+      "check": "CI evidence",
+      "status": "PENDING",
+      "evidence": "ciEvidenceReady=false until GitHub Actions GREEN on this SHA"
+    },
+    {
       "check": "scoped readiness",
       "status": "REAL",
-      "evidence": "{\"coreFactoryE2EReady\": true, \"kdDfMReady\": true, \"commercialCostModelReady\": true, \"liveVisionReady\": false, \"liveVideoReady\": false, \"osSandboxReady\": false, \"liveMachineControlReady\": false, \"ciEvidenceReady\": true, \"fullAutonomousFactoryReady\": false, \"productionReady\": true, \"productionReadyScope\": \"coreFactoryE2E\"}"
+      "evidence": "{\"coreFactoryE2EReady\": true, \"kdDfMReady\": true, \"estimatedCostModelReady\": true, \"realProviderCostReady\": false, \"commercialQuoteReady\": false, \"ciEvidenceReady\": false, \"fullAutonomousFactoryReady\": false, \"productionReadyScope\": \"coreFactoryE2E\"}"
     }
   ],
   "readiness": {
     "coreFactoryE2EReady": true,
     "kdDfMReady": true,
+    "estimatedCostModelReady": true,
+    "realProviderCostReady": false,
+    "commercialQuoteReady": false,
     "commercialCostModelReady": true,
+    "commercialCostModelScope": "CONFIG_ESTIMATE_ONLY",
     "marketDemandVerified": false,
     "liveVisionReady": false,
     "liveVideoReady": false,
     "osSandboxReady": false,
     "liveMachineControlReady": false,
-    "ciEvidenceReady": true,
+    "ciEvidenceReady": false,
     "fullAutonomousFactoryReady": false,
     "requiredChecks": {
       "coreFactoryE2EReady": [
@@ -215,8 +345,17 @@
         "remnant extract/consume-once",
         "packing derived from panels"
       ],
+      "estimatedCostModelReady": [
+        "CONFIG/ESTIMATED landed cost lineage"
+      ],
+      "realProviderCostReady": [
+        "REAL_PROVIDER cost/logistics APIs"
+      ],
+      "commercialQuoteReady": [
+        "REAL_PROVIDER cost + freshness + demand"
+      ],
       "commercialCostModelReady": [
-        "landed cost lineage hashes"
+        "compat alias of estimatedCostModelReady; scope=CONFIG_ESTIMATE_ONLY"
       ],
       "marketDemandVerified": [
         "live DemandSignal Provider"
@@ -234,7 +373,7 @@
         "forbidden this round"
       ],
       "ciEvidenceReady": [
-        "GitHub Actions pytest"
+        "GitHub Actions pytest GREEN on this SHA"
       ]
     },
     "productionReady": true,
@@ -242,76 +381,14 @@
   },
   "catalogTop": [
     {
-      "productId": "68f52114-eff2-437e-b8b7-115247a3b654",
-      "kind": "OPEN_SHELF",
-      "dimensions": {
-        "width": 800.0,
-        "height": 1200.0,
-        "depth": 300.0
-      },
-      "engineeringHash": "a201477f5ced42e6669fbff5f2c0489d6fbb64fa19cc3dfbc61fdd67c52a25c3",
-      "bomHash": "c02c39bd150fe5ad824d88e9d28e57c033e72a5c89b337b20f25a7179c8646e0",
-      "commonPartRatio": 0.5,
-      "sheetCount": 1,
-      "utilizationRatio": 0.6869,
-      "trueWasteRatio": 0.053,
-      "reusableRemnantRatio": 0.2601,
-      "carton": {
-        "L": 1224.0,
-        "W": 324.0,
-        "H": 213.0
-      },
-      "packedWeight": 26.099,
-      "assemblyDifficulty": 0.572,
-      "estimatedMinutes": 26.4,
-      "landedCost": 1761.26,
-      "suggestedPrice": 2553.83,
-      "demandDataConfidence": "MOCK",
-      "previewAsset": null,
-      "approvalState": "COMMERCIAL_CANDIDATE",
-      "rdScore": 0.7718,
-      "engineeringVeto": false
-    },
-    {
-      "productId": "71462a77-b5f4-4e60-9d1c-f91cd5328484",
-      "kind": "OPEN_SHELF",
-      "dimensions": {
-        "width": 800.0,
-        "height": 1200.0,
-        "depth": 300.0
-      },
-      "engineeringHash": "e6388feaa3024ee957f659b48d3bf2faeb4b926fab9911ef9225a5549423718b",
-      "bomHash": "c02c39bd150fe5ad824d88e9d28e57c033e72a5c89b337b20f25a7179c8646e0",
-      "commonPartRatio": 0.5,
-      "sheetCount": 1,
-      "utilizationRatio": 0.6869,
-      "trueWasteRatio": 0.053,
-      "reusableRemnantRatio": 0.2601,
-      "carton": {
-        "L": 1224.0,
-        "W": 324.0,
-        "H": 213.0
-      },
-      "packedWeight": 26.099,
-      "assemblyDifficulty": 0.572,
-      "estimatedMinutes": 26.4,
-      "landedCost": 1761.26,
-      "suggestedPrice": 2553.83,
-      "demandDataConfidence": "MOCK",
-      "previewAsset": null,
-      "approvalState": "COMMERCIAL_CANDIDATE",
-      "rdScore": 0.7718,
-      "engineeringVeto": false
-    },
-    {
-      "productId": "ddc70383-ddc4-4cea-a9fe-430d5c971086",
+      "productId": "86230760-517c-4c26-9a0f-6f786c35856f",
       "kind": "VANITY_DESK",
       "dimensions": {
         "width": 800.0,
         "height": 750.0,
         "depth": 400.0
       },
-      "engineeringHash": "8e859a121981c6be6433aee748c886db51270b21a389dd62f7850b713235b4d0",
+      "engineeringHash": "65908f43b387af66cb4aed6f977dc57a6f6efb9450ba733bc9dc1dabf9072d5c",
       "bomHash": "3003abe090bb75d550488bddd5d8ebfd76949774ccc829fa6b9135ebf4671ed4",
       "commonPartRatio": 0.4615,
       "sheetCount": 1,
@@ -335,14 +412,14 @@
       "engineeringVeto": false
     },
     {
-      "productId": "66059408-dbbb-466a-a21d-ffc19bf82fb9",
+      "productId": "8cc7d41b-bf18-4b2b-9132-e1f19e7d6751",
       "kind": "VANITY_DESK",
       "dimensions": {
         "width": 800.0,
         "height": 750.0,
         "depth": 400.0
       },
-      "engineeringHash": "5ea163aa95c7d5e464cfb281f2c11a7d42cdaae2a7b4e964aa184e5806c6db22",
+      "engineeringHash": "0cd5765d7b65c98936cfc3b1a5ea81041b2682a30e7fe0189549ea44a3c453b0",
       "bomHash": "3003abe090bb75d550488bddd5d8ebfd76949774ccc829fa6b9135ebf4671ed4",
       "commonPartRatio": 0.4615,
       "sheetCount": 1,
@@ -366,14 +443,76 @@
       "engineeringVeto": false
     },
     {
-      "productId": "e139f216-9ac5-4716-93b3-96c9cad5d3eb",
+      "productId": "aeb55b10-a513-4e3f-97b2-49925508afda",
+      "kind": "OPEN_SHELF",
+      "dimensions": {
+        "width": 800.0,
+        "height": 1200.0,
+        "depth": 300.0
+      },
+      "engineeringHash": "1c25ccd123729160cba56ccc6059be1b5ae9ae76a56141f0ca041eabce438472",
+      "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
+      "commonPartRatio": 0.4444,
+      "sheetCount": 2,
+      "utilizationRatio": 0.3513,
+      "trueWasteRatio": 0.0375,
+      "reusableRemnantRatio": 0.6112,
+      "carton": {
+        "L": 1224.0,
+        "W": 324.0,
+        "H": 231.0
+      },
+      "packedWeight": 26.679,
+      "assemblyDifficulty": 0.581,
+      "estimatedMinutes": 27.8,
+      "landedCost": 2267.59,
+      "suggestedPrice": 3288.01,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7468,
+      "engineeringVeto": false
+    },
+    {
+      "productId": "8eb3d654-6403-42a2-992d-2206f462ea75",
+      "kind": "OPEN_SHELF",
+      "dimensions": {
+        "width": 800.0,
+        "height": 1200.0,
+        "depth": 300.0
+      },
+      "engineeringHash": "c021301a5eca566dbb0bcabe35313a75207527984c066099699b88afb6eb1ffc",
+      "bomHash": "4df167923fac9b17ff8fa2d90ff33d80ab9b40ce0e56ee083f569ad4465193ef",
+      "commonPartRatio": 0.4444,
+      "sheetCount": 2,
+      "utilizationRatio": 0.3513,
+      "trueWasteRatio": 0.0375,
+      "reusableRemnantRatio": 0.6112,
+      "carton": {
+        "L": 1224.0,
+        "W": 324.0,
+        "H": 231.0
+      },
+      "packedWeight": 26.679,
+      "assemblyDifficulty": 0.581,
+      "estimatedMinutes": 27.8,
+      "landedCost": 2267.59,
+      "suggestedPrice": 3288.01,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7468,
+      "engineeringVeto": false
+    },
+    {
+      "productId": "4fad4395-6f8a-4b04-b53d-9b3c74b7a87a",
       "kind": "DESK_RISER",
       "dimensions": {
         "width": 600.0,
         "height": 120.0,
         "depth": 250.0
       },
-      "engineeringHash": "2eff0acb8f8ec0bd111c83cd5e9f0c2928301f1ac5a6716dae6391f07807e82f",
+      "engineeringHash": "c08d8b72a4db675b88637dc80256ae5be4cd779534767cf30e4eb7a54fee0ad1",
       "bomHash": "fd5325f96ca8b17e5c2ccd0172e6ef73df746f639576696a593e4f976a8ffe69",
       "commonPartRatio": 0.2,
       "sheetCount": 1,

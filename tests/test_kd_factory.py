@@ -104,9 +104,14 @@ def test_remnant_qualify_reserve_consume_once(platform):
         created = [inv.items["r1"]]
     rid = created[0]["remnantId"]
     inv.reserve(rid, by="batch-1")
-    inv.consume(rid, by="batch-1")
+    with pytest.raises(PermissionError):
+        inv.reserve(rid, by="batch-2")
     with pytest.raises(PermissionError):
         inv.consume(rid, by="batch-2")
+    inv.consume(rid, by="batch-1")
+    with pytest.raises(PermissionError):
+        inv.consume(rid, by="batch-1")
+    assert inv.items[rid]["persistence"] == "in-process-ledger"
 
 
 def test_batch_single_sku_and_cross_sku(platform):
@@ -128,8 +133,15 @@ def test_batch_single_sku_and_cross_sku(platform):
 def test_remnant_first_saves_sheets(platform):
     rec = platform.kd.build_sku(tenant_id="t1", kind="DESK_RISER")
     case = platform.kd.remnant_first_case(rec)
-    assert case["savedNewSheetCount"] >= 1 or case["remnantFirstSheetCount"] < case["independentSheetCount"]
+    assert case["savedNewSheetSource"] == "PAIRED_BASELINE"
+    assert case["savedNewSheetCount"] == max(0, case["independentSheetCount"] - case["remnantFirstSheetCount"])
+    assert case["estimatedSavedSheetSource"] == "ESTIMATED"
     assert case["remnantConsumedArea"] > 0
+    shapes = platform.kd.remnant_shape_cases(rec)
+    assert shapes["awkwardSavedSheets"] <= shapes["helpfulSavedSheets"] or shapes["baselineSheets"] >= 1
+    nest = platform.kd.nester.nest(rec["bom"], material=rec["spec"]["material"], thickness=rec["spec"]["boardThickness"])
+    assert nest.get("savedNewSheetCount") is None
+    assert nest.get("estimatedSavedSheetSource") == "ESTIMATED"
 
 
 def test_quote_stale_after_engineering_or_packaging(platform):
@@ -174,7 +186,11 @@ def test_readiness_matrix_truthful(platform):
     m = platform.kd.readiness(evidence={"coreFactoryE2E": True, "kdWasteV2": True, "kdPacking": True, "kdRemnants": True, "kdLandedCost": True})
     assert m["coreFactoryE2EReady"] is True
     assert m["kdDfMReady"] is True
-    assert m["commercialCostModelReady"] is True
+    assert m["estimatedCostModelReady"] is True
+    assert m["realProviderCostReady"] is False
+    assert m["commercialQuoteReady"] is False
+    assert m["commercialCostModelScope"] == "CONFIG_ESTIMATE_ONLY"
+    assert m["ciEvidenceReady"] is False
     assert m["marketDemandVerified"] is False
     assert m["liveVisionReady"] is False
     assert m["liveVideoReady"] is False
@@ -211,6 +227,24 @@ def test_retail_display_same_pipeline(platform):
     assert rec["nesting"]["sheetCount"] >= 1
     assert rec["packing"]["derivedFromPanels"]
     assert rec["kd"]["flatPack"]
+
+
+def test_kd_kinds_have_distinct_structure(platform):
+    expected = {
+        "STUDENT_DESK": {"DESKTOP", "STRETCHER"},
+        "GARMENT_RACK": {"RAIL_BEAM"},
+        "OPEN_SHELF": {"OPEN_BAY_STILE"},
+        "STORAGE_BENCH": {"LID", "SEAT"},
+        "PET_FURNITURE": {"CUBBY_FLOOR"},
+        "RETAIL_DISPLAY": {"KICK_PLATE"},
+    }
+    for kind, names in expected.items():
+        rec = platform.kd.build_sku(tenant_id="t1", kind=kind)
+        present = {ln["partName"] for ln in rec["bom"]["lines"]}
+        assert names <= present, (kind, present)
+        joints = {c.get("to") for c in rec["spec"]["connections"]}
+        if kind == "GARMENT_RACK":
+            assert any(ln.get("partName") == "hanging_rail" for ln in rec["bom"]["lines"] if ln.get("hardware"))
 
 
 def test_nl_kd_kinds():

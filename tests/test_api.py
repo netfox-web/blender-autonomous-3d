@@ -18,6 +18,17 @@ def _gpu(name: str, vram: float) -> dict:
     }
 
 
+def test_create_app_registers_multipart_upload(tmp_path):
+    plat = Platform(root=tmp_path / "data", mock_blender=True)
+    plat.register_node(target_key="5080-1", name="5080", detected=_gpu("NVIDIA GeForce RTX 5080", 16))
+    app = create_app(plat)
+    paths = {getattr(r, "path", None) for r in app.routes}
+    assert "/api/digital-twins/upload" in paths
+    import python_multipart  # runtime dep, not CI-only
+
+    assert python_multipart
+
+
 def test_api_job_twin_parametric_rd(tmp_path):
     plat = Platform(root=tmp_path / "data", mock_blender=True)  # API unit test — not production acceptance
     plat.register_node(target_key="5080-1", name="5080", detected=_gpu("NVIDIA GeForce RTX 5080", 16))
