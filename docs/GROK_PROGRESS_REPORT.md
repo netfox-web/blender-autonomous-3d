@@ -28,7 +28,7 @@ Then Phase 181–240 on existing Twin/Queue/DAM/Engineering/Nesting — no secon
 pytest -q  →  89 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions on this SHA: pending until this push. Do not treat local pytest as CI GREEN. Historical GREEN remains run `34245840051` on `e7d911d` (MOCK suite).
+GitHub Actions @ `5d8c533`: **GREEN** run `34252520536` — `unit (ubuntu-latest)` + `unit (windows-latest)`. MOCK blender suite only, not REAL production.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
@@ -52,7 +52,7 @@ GitHub Actions on this SHA: pending until this push. Do not treat local pytest a
 | Packaging ECT/BCT / print preflight | PARTIAL |
 | Electrical compliance | BLOCKED |
 | LIVE_CNC / LIVE_LASER | BLOCKED |
-| CI evidence this SHA | pending push (do not predict PASS) |
+| CI evidence this SHA | REAL GitHub GREEN on `5d8c533` run `34252520536` (MOCK suite) |
 | fullAutonomousFactoryReady | false |
 | productionReadyScope | physicalProductOsV1-prototype-boundary (Human Approval Gate) |
 
@@ -62,7 +62,7 @@ GitHub Actions on this SHA: pending until this push. Do not treat local pytest a
 - Vision/Video/Demand MOCK
 - OS sandbox PARTIAL (path guard ≠ OS jail)
 - REAL_PROVIDER costs missing
-- CI GREEN is mock-suite only (not REAL Blender) until a new run is recorded on this SHA
+- CI GREEN is mock-suite only (not REAL Blender) — run `34252520536` on `5d8c533`
 
 ## Do not redo
 
