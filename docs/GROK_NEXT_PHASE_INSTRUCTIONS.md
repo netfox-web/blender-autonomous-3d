@@ -1,263 +1,281 @@
-# Grok 下一階段開發指令：Phase 181–240 — Physical Product OS / Multi-Material Factory
+# Grok 下一階段開發指令：Phase 241–300 — Commercialization Hardening / Physical Product OS V2
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Review baseline: `43cd4bda78c1b0189863bc46da1ceca79e761fb1`
+> Review baseline: `f2f9eeca35077829a951d36a5336ce880f36a337`
 > ChatGPT review result: **ACCEPT WITH SCOPE**
 >
-> `704d058` 的 10 項 exit criteria 已實質通過：runtime multipart、cross-OS traversal、remnant ownership、paired saved sheet evidence、8/8 REAL KD Blender previews、成本 readiness 誠實分層、local tests、GitHub Actions ubuntu+windows GREEN。現在可進 Phase 181+。
+> Phase 181–240 有實質完成，可進下一輪。GitHub Actions `34252520536` 在 code commit `5d8c533` 為 SUCCESS（ubuntu + windows），current head `f2f9eec` 亦有 SUCCESS run `34252652466`。Local pytest 回報 89 passed，但仍只是 MOCK-Blender regression suite，不得當 REAL production evidence。
 >
-> 但仍禁止把 MOCK/CONFIG/PARTIAL 冒充 Production：Vision / AI Video / Demand 仍 MOCK；REAL_PROVIDER cost/logistics 未接；OS sandbox PARTIAL；AR runtime PARTIAL；LIVE_CNC / live machine control BLOCKED。
+> REAL scope 可接受：durable remnant restart/TTL/tenant isolation、Nesting V3 baseline fallback + 10-case harness、KD DFA manifests、Retail 6/6 REAL T1000 OptiX previews、Packaging dieline + REAL fold preview、Acrylic 3/3 REAL previews、Human Approval Gate。
+>
+> Truth labels保持：cost/logistics/remnant valuation = ESTIMATED/CONFIG；Vision / AI Video / Demand = MOCK；OS sandbox / AR / packaging strength / print preflight = PARTIAL；LIVE_CNC / LIVE_LASER / electrical compliance = BLOCKED；`fullAutonomousFactoryReady=false`。
 
-## 先做 2 個文件一致性修正（不另起架構）
+## 開工前先修 3 個 Truth / Evidence hygiene 問題
 
-1. `docs/KD_FACTORY_REAL_ACCEPTANCE.md` 的 `scoped readiness` evidence 字串仍殘留 `ciEvidenceReady=false`，但 header / JSON 已是 true。請同步成 head GitHub GREEN 證據，避免同一文件互相矛盾。
-2. `docs/GROK_PROGRESS_REPORT.md` Blockers 的 `REAL_PROVIDER costs missing` 重複一行，清掉重複即可。
+1. `docs/REAL_E2E_ACCEPTANCE.md` 頂部仍有未限定 scope 的 `productionReady: True`。改成 scoped readiness，例如 `coreRenderE2EReady=true`、`physicalProductOsPrototypeReady=true`、`globalProductionReady=false`，並明寫 scope；禁止讓讀者誤解整套 OS 已 Production Ready。
+2. `docs/CURRENT_IMPLEMENTATION_AUDIT.md` Phase 68 仍寫 depth/normal/segmentation 未產，但後續 Phase 71–120 已有 REAL AOV evidence。同步 audit，保留當時歷史但 current status 要一致。
+3. `MATERIAL_REMNANT_REAL_ACCEPTANCE.md`、`NESTING_V3_ACCEPTANCE.md` 等目前大量複製 Physical OS 共用表格。保留 summary 可以，但每份 domain acceptance 必須增加「本領域專屬、可機器驗證」evidence，避免用 unrelated retail/packaging rows 充數。
 
-這兩項是文件 hygiene，不要重跑/重寫 Phase 1–180 已驗證功能。
-
----
-
-# Phase 181–190 — Durable Material / Remnant Intelligence
-
-## Phase 181 — RemnantStore abstraction
-將現在 `RemnantInventory` 的 in-process dict 抽象成 `RemnantStore` interface；既有 in-memory 行為保留相容。禁止建立第二套 WMS。
-
-## Phase 182 — Durable remnant persistence
-沿用 repo 既有 `.fox3d-data` / persistence pattern，新增可重啟後恢復的 durable remnant store。若現有 persistence abstraction 可延伸則必須 reuse。記錄 tenantId、material、thickness、grain、w/h、sourceRun、status、reservedBy、version。
-
-## Phase 183 — Optimistic version / lease
-reserve / consume 必須帶 version 或 lease token，避免 stale consumer。至少測 stale token、double consume、cross-tenant、restart recovery。
-
-## Phase 184 — Reservation TTL / recovery
-reserved remnant 支援 TTL、expired lease recovery、worker crash recovery；不得讓永久 reserved 形成死庫存。
-
-## Phase 185 — Material Lot lineage
-板材新增 `materialLotId` / supplierLot / receivedAt / configCostSnapshot / sheet dimensions；所有 Nesting placement 可追到 material lot 或 remnant source。
-
-## Phase 186 — Remnant quality state
-加入 AVAILABLE / RESERVED / CONSUMED / QUARANTINED / DAMAGED。Damaged/Quarantined 不得進自動 nesting。
-
-## Phase 187 — Grain/orientation on remnants
-餘料要保留 grain orientation；旋轉後不符合 grain constraint 時不得使用。
-
-## Phase 188 — Remnant valuation
-建立 deterministic remnant value：area、shape usability、material config cost、age；明確標 `ESTIMATED/CONFIG`，不是會計成本。
-
-## Phase 189 — Inventory reconciliation manifest
-每次 production batch 產 inventory delta manifest：new sheets allocated、remnants created、reserved、consumed、true scrap、reconciliation hash。
-
-## Phase 190 — Material/Remnant acceptance
-建立 `docs/MATERIAL_REMNANT_REAL_ACCEPTANCE.md` + JSON：至少證明 restart recovery、ownership、TTL recovery、tenant isolation、grain、consume-once、inventory conservation。
+以上只做文件 truth cleanup，不重寫 Phase 1–240。
 
 ---
 
-# Phase 191–200 — Nesting Optimizer V3
+# Phase 241–250 — Evidence Integrity / Release Gates / Sandbox Boundary
 
-## Phase 191 — Nesting Strategy Registry
-保留 deterministic guillotine baseline，新增 strategy interface；不得把 baseline 刪掉。
+## Phase 241 — Scoped Readiness Model
+建立單一 readiness model，至少分：
+- coreRenderE2EReady
+- kdPrototypeReady
+- retailPrototypeReady
+- packagingPrototypeReady
+- acrylicPrototypeReady
+- commercialPricingReady
+- liveProviderReady
+- machineControlReady
+- fullAutonomousFactoryReady
 
-## Phase 192 — Best-fit decreasing heuristic
-實作第二個真 execution strategy；同一 BOM deterministic reproducible。
+任何子系統 MOCK/PARTIAL 不得被一個全域 `productionReady=true` 蓋掉。
 
-## Phase 193 — Multi-start deterministic search
-用固定 seed / bounded search 產多個候選 layout，不需要 ML。限制 CPU time / candidate count。
+## Phase 242 — EvidenceBundle
+所有 REAL acceptance 建立 immutable `EvidenceBundle`：commitSha、generatedAt、jobId、workerId、GPU UUID/name、Blender version、usedMock、artifactId/path、artifactHash、artifactSize、engineeringHash、bomHash、recipeVersion。
 
-## Phase 194 — Multi-objective scoring
-至少同時考慮：new sheet count、true scrap、reusable remnant value、cut count、grain compatibility、material lot split。工程合法性 hard veto。
+## Phase 243 — Acceptance Verifier
+建立可執行 verifier，逐一檢查 EvidenceBundle 引用 artifact 真存在、hash/size 一致、`usedMock=false`、lineage hash 可追。驗證失敗時 acceptance 必須 FAIL，不能只靠 Markdown 文字。
 
-## Phase 195 — Cross-SKU production window
-允許同材質/厚度的多 SKU、不同 quantity 在一個 production window 共同 nesting；placement lineage 保留 skuId/productVersion/bomLineId。
+## Phase 244 — Truth Label Validator
+建立 regression，掃 readiness / acceptance machine-readable JSON，禁止：
+- MOCK source 標 REAL
+- CONFIG/ESTIMATED price 標 REAL_PROVIDER
+- BLOCKED machine control 標 ready
+- `fullAutonomousFactoryReady=true` while blockers remain
 
-## Phase 196 — Cut sequence manifest
-由合法 nesting 產 deterministic cut sequence / saw-friendly manifest；只做製程資料，不控制鋸台/CNC。
+## Phase 245 — Approval Audit Trail
+Human Approval Gate 加 immutable audit event：actor、entityVersion、engineeringHash、evidenceHash、approvedAt、decision、reason。
 
-## Phase 197 — Defect keep-out zones
-Sheet / remnant 可標 defect rectangles；nesting 不得把 panel 放進 defect zone。
+## Phase 246 — Approval Staleness
+任何 engineering/BOM/nesting/cost/packaging hash 改變，既有 approval 自動 stale；不可沿用舊批准。
 
-## Phase 198 — Reusable-offcut objective
-不只最低 scrap，也能在接近同等 sheet count 時優先留下「更好用的矩形餘料」。
+## Phase 247 — ReleaseCandidate State Machine
+新增但沿用既有 approval flow：`PROTOTYPE → ENGINEERING_VALID → EVIDENCE_VERIFIED → WAITING_APPROVAL → APPROVED_FOR_EXPORT`。`APPROVED_FOR_EXPORT` 仍不等於 LIVE_CNC/LASER。
 
-## Phase 199 — Benchmark harness
-同一批至少 10 組真實/fixture BOM 比較 guillotine baseline vs V3：sheetCount、trueWasteRatio、reusableRemnantRatio、cutCount、runtime。不得只挑 V3 贏的 case。
+## Phase 248 — Script Sandbox Backend Interface
+沿用現有 path guard，抽象 `SandboxBackend`。至少支援 `PATH_GUARD_ONLY` 與未來 `CONTAINER/JOB_OBJECT` backend；未有真正 OS jail 時 status 仍 PARTIAL。
 
-## Phase 200 — Nesting V3 acceptance
-建立 `docs/NESTING_V3_ACCEPTANCE.md` + JSON。若 V3 某些 case 較差，要誠實展示；選擇器可回退 baseline。
+## Phase 249 — No-network / resource policy manifest
+AI-generated Blender/Python job 明確產 policy manifest：filesystem allowlist、networkAllowed=false、CPU/memory/time limits、env allowlist。若 host 無法 enforce，標 PARTIAL/BLOCKED，不得假裝 enforce。
 
----
-
-# Phase 201–210 — KD Design-for-Assembly / Logistics Optimization
-
-## Phase 201 — Connector recipe versioning
-延伸現有 vendor-neutral connector recipes，加入 compatibility/version/requiredTools，不綁真供應商 SKU。
-
-## Phase 202 — Common hardware optimizer
-同一 SKU family 優先共用 connector/hardware，計 common-hardware ratio。
-
-## Phase 203 — Common panel optimizer
-在尺寸容許範圍內產候選，評估共用板件率；不得偷偷改使用者硬性尺寸。
-
-## Phase 204 — Tool-count KPI
-組裝工具種類與工具切換次數納入 assembly score。
-
-## Phase 205 — Misassembly-risk rules
-左右件相似、孔位方向、正反面辨識、對稱件等建立 deterministic risk warnings。
-
-## Phase 206 — Part label manifest
-每塊板件產 part label / QR payload metadata，包含 productVersion、partId、orientation、step refs；只產資料，不直接列印。
-
-## Phase 207 — Assembly instruction V2
-由 assembly graph 產 step-by-step manifest；每一步有 inputs、connectors、tools、before/after state、warning。
-
-## Phase 208 — Carton contents manifest
-紙箱內板件/五金/說明書 checklist，能對 BOM 做 reconciliation。
-
-## Phase 209 — Auto redesign loop
-若 oversize、true waste、assembly difficulty、tool count 超政策門檻，Variant Generator 可產受約束 redesign candidates；Engineering Rule 永遠 veto。
-
-## Phase 210 — KD optimized candidate acceptance
-至少 10 個小宅/KD candidates 比較 before/after：waste、carton、weight、common-part ratio、assembly score。禁止宣稱市場熱銷；Demand 仍 MOCK。
+## Phase 250 — Release Gate Acceptance
+建立 `docs/RELEASE_GATE_REAL_ACCEPTANCE.md` + JSON，證明 Evidence verifier、approval stale、cross-tenant、forbidden live-machine transition、truth-label regression。
 
 ---
 
-# Phase 211–220 — Retail Display / POP Fixture Factory
+# Phase 251–260 — Supplier Cost / Material / Logistics Provider Gateway
 
-> 不另建第二套 Digital Twin / Parametric / Nesting。延伸既有 `RETAIL_DISPLAY` 與 Physical Product definitions。
+> 不另建 ERP/WMS。只做 adapter/provider gateway，讓未來公司既有 ERP/WMS/供應商資料可接入。
 
-## Phase 211 — Retail fixture family registry
-至少：COUNTER_DISPLAY、FLOOR_DISPLAY、PDQ_DISPLAY、RISER_DISPLAY、PEGBOARD_DISPLAY、ENDCAP_MODULE。
+## Phase 251 — Provider Registry
+建立 SupplierPriceProvider / HardwarePriceProvider / PackagingPriceProvider / LogisticsRateProvider / FxRateProvider interfaces，沿用現有 ProviderAdapter pattern。
 
-## Phase 212 — Product facing / slot definition
-輸入商品 Digital Twin 尺寸、facing count、rows/columns、clearance，產 slot layout。
+## Phase 252 — Material Price Snapshot Import
+支援 CSV/JSON/manual import：supplier、materialCode、thickness、sheetSize、currency、UOM、price、effectiveAt、expiresAt、sourceRef。Import execution 可 REAL，但資料來源若是 fixture/manual 要標 IMPORTED/MANUAL，不是 LIVE_PROVIDER。
 
-## Phase 213 — Planogram solver
-依展示架可用寬高與商品尺寸產合法 planogram candidates；不得重疊或超界。
+## Phase 253 — Hardware Price Snapshot
+vendor-neutral hardware ID 對應 supplier SKU/price/pack quantity/effective date；Engineering 仍只依 vendor-neutral ID。
 
-## Phase 214 — Capacity / load placeholder rules
-計算商品數量與估算總重；沒有真結構分析時只能標 `CONFIG_ESTIMATE/PARTIAL`，不得宣稱結構認證。
+## Phase 254 — Packaging Material Price Snapshot
+paperboard/corrugated/acrylic/packing materials 同樣 versioned snapshot；不覆蓋 Engineering material definition。
 
-## Phase 215 — Artwork zones
-fixture 定義 printable artwork zones / logo zones / safe areas；只做 geometry metadata，不冒充印刷 preflight 完成。
+## Phase 255 — Logistics Tariff Snapshot
+支援 zone、weight、CBM、longest-side、oversize surcharge、base fee、effective date；可由匯入資料計算，不需要外部 API 才能運作。
 
-## Phase 216 — Lighting / cable optional metadata
-可描述燈條/走線預留，但 electrical compliance 一律 BLOCKED/PARTIAL，除非未來有真工程規則。
+## Phase 256 — FX Snapshot
+成本跨幣別要綁 rate snapshot + source label。沒有 live provider 時允許 IMPORTED/MANUAL，但 `liveFxProviderReady=false`。
 
-## Phase 217 — Same BOM/Nesting/Cost path
-Retail fixture 必須走現有 BOM → Nesting V3 → Waste → Remnant → Cost → Packing → Approval；禁止專用旁路。
+## Phase 257 — Mixed-source Landed Cost
+每個 cost component 帶 source label：REAL_IMPORTED / MANUAL / CONFIG_ESTIMATE / LIVE_PROVIDER。總成本不可只給單一模糊 REAL 標籤。
 
-## Phase 218 — REAL Blender fixture previews
-至少 6 種 fixture 走 REAL Blender 5.2.1 / OptiX low-res preview；每種記 engineeringHash、bomHash、jobId、artifact hash/size、usedMock=false。
+## Phase 258 — Quote Validity / Stale Rules
+報價綁 engineeringHash、bomHash、nestingHash、providerSnapshotIds、effective window。任一上游改變或過期即 stale。
 
-## Phase 219 — Retail fixture packing
-KD display 拆箱尺寸、重量、CBM、assembly manifest；logistics cost 仍 CONFIG。
+## Phase 259 — Supplier Alternative Candidates
+同工程材料規格下比較 supplier/material alternatives；禁止自動替換不相容厚度/材質。Rule Engine hard veto。
 
-## Phase 220 — Retail fixture acceptance
-建立 `docs/RETAIL_FIXTURE_REAL_ACCEPTANCE.md` + JSON：商品尺寸 → planogram → fixture → BOM → nesting → packing → REAL Blender → WAITING_APPROVAL。
-
----
-
-# Phase 221–230 — Structural Packaging / Dieline V1
-
-> 既有 Packaging Digital Twin 必須 reuse；這輪是在同一 Twin/Engineering 架構增加「可計算結構」，不是第二套 packaging system。
-
-## Phase 221 — PackagingEngineeringDefinition
-加入 structural packaging engineering wrapper，保持 Product Digital Twin 相容。
-
-## Phase 222 — Box families
-至少 RSC_CARTON、MAILER_BOX、SLEEVE、TRAY、PDQ_TRAY 五種 parametric family。
-
-## Phase 223 — Product fit rules
-由商品 dimensions + clearance 產 inner dimensions / outer dimensions；不得把 artwork 當結構尺寸來源。
-
-## Phase 224 — Dieline primitives
-建立 cut / crease / perforation / glue zones 幾何語意，輸出 SVG/DXF-friendly manifest。
-
-## Phase 225 — Bleed / safe area metadata
-Artwork zones 加 bleed/safe-area metadata；真正印前 trapping/color/preflight 未接時標 PARTIAL。
-
-## Phase 226 — Paperboard / corrugated sheet registry
-建立 sheet size、caliper、grain/flute direction、CONFIG cost。ECT/BCT/壓縮強度沒有真模型時不得宣稱 REAL structural certification。
-
-## Phase 227 — Packaging nesting
-將 dielines 做 sheet nesting，沿用 Waste V2 概念：used / trim / reusable remainder / true scrap；若演算法與木板 nesting 不同，用 adapter/strategy，不建第二個 Scheduler/DAM。
-
-## Phase 228 — Fold preview
-Blender 自動產 flat → folded box preview / simple assembly animation；REAL artifact 才標 REAL。
-
-## Phase 229 — Packaging + Retail bundle
-同一商品 Digital Twin 可一次產 consumer package + PDQ + retail fixture proposal，保留 lineage。
-
-## Phase 230 — Packaging structure acceptance
-建立 `docs/PACKAGING_STRUCTURE_REAL_ACCEPTANCE.md` + JSON：商品尺寸 → box definition → dieline → nesting/waste → Blender fold preview。強度/印前仍需誠實 scope。
+## Phase 260 — Provider/Cost Acceptance
+建立 `docs/COMMERCIAL_COST_ACCEPTANCE.md` + JSON；明確區分 imported data execution REAL vs live provider connectivity。沒有真 credential 時 `liveProviderReady=false`。
 
 ---
 
-# Phase 231–235 — Acrylic / Sheet Product Extension
+# Phase 261–270 — Packaging Engineering V2 / Print Preflight
 
-## Phase 231 — Acrylic sheet material registry
-透明/乳白/黑等材料 code、thickness、sheet size、CONFIG cost、grain=none；不要假裝供應商即時價格。
+## Phase 261 — Board Grade Registry
+Paperboard / corrugated 加 caliper、flute、ECT input、basis weight、grain/flute direction、source label。
 
-## Phase 232 — Acrylic product families
-至少 MENU_STAND、SIGN_HOLDER、RISER_STAND、DISPLAY_BOX、PRODUCT_STAND。
+## Phase 262 — Box Compression Estimate
+若參數足夠可實作 deterministic engineering estimate（例如基於可追溯公式/參數），輸出 assumptions / safety factor / source；沒有實驗室測試不得標 certification。
 
-## Phase 233 — Acrylic sheet nesting
-沿用 Nesting Strategy Registry / Waste V2 / remnant semantics；材質厚度必須相容。
+## Phase 263 — Shipping Load Scenario
+疊箱數、產品重量、storage/transport config 產 load scenarios；label=`ENGINEERING_ESTIMATE`。
 
-## Phase 234 — Cut/Bend manifest boundary
-可產 laser/CNC cut geometry interface 與 bend line manifest；bend radius / heat parameters 若只是 config，標 CONFIG/PARTIAL；LIVE LASER/CNC 永遠 BLOCKED。
+## Phase 264 — Dieline Geometry Validator
+檢查 cut/crease/perf/glue zone：self-intersection、非法 overlap、過短 flap、panel bounds、fold consistency。
 
-## Phase 235 — Acrylic REAL previews
-至少 3 種 product REAL Blender preview + BOM + nesting + packing evidence。
+## Phase 265 — Bleed / Safe-area Validator
+依 packaging artwork zone 驗證 bleed/safe area metadata。不要宣稱完整印刷廠 preflight。
+
+## Phase 266 — Artwork Asset Preflight
+對 PDF/image artwork 做可取得的客觀檢查：page/artboard size、pixel dimensions、DPI estimate、color-space metadata、missing asset/font reference（能檢查才報）。不可憑猜測 PASS。
+
+## Phase 267 — Barcode/Label Zone
+建立 barcode/label placement keep-out/quiet-zone metadata；若未接正式條碼驗證器，標 PARTIAL。
+
+## Phase 268 — Package/Product Fit Regression
+至少 20 組產品尺寸/箱型做 fit/clearance/fold regression，包含 impossible cases。
+
+## Phase 269 — Carton Optimization
+在工程合法前提下比較 box family、board area、waste、shipping CBM、estimated compression margin；Engineering veto 優先。
+
+## Phase 270 — Packaging V2 Acceptance
+新增 `docs/PACKAGING_V2_ACCEPTANCE.md` + JSON；strength 仍只能 ESTIMATE/PARTIAL，除非真測試資料存在。
 
 ---
 
-# Phase 236–240 — Unified AI Physical Product OS V1
+# Phase 271–280 — Product Safety / DFM Risk Engine
 
-## Phase 236 — PhysicalProductFamily Registry
-建立上層 registry 統一 furniture/KD/retail fixture/packaging/acrylic capabilities，但底層仍 reuse 現有 Twin/Queue/DAM/Engineering adapters。不得重寫既有 CabinetSpec；以 adapter/typed definition 漸進抽象。
+> 這輪建立工程風險檢查，不宣稱法規認證。
 
-## Phase 237 — Inventory-to-Product reverse R&D
-輸入可用 new sheets + remnants + material lots，產可製造 product candidates。分數至少含：material utilization、true scrap、remnant consumption、common parts、packing、assembly、estimated margin。Market demand 未有 REAL Provider 時明確 MARKET_UNVERIFIED。
+## Phase 271 — SafetyRule Registry
+家具/KD/retail/acrylic/packaging 共用 rule registry，規則帶 scope、severity、assumption、version。
 
-## Phase 238 — Unified Admin/API
-沿用現有 Admin/API 增加：Materials、Remnants、Nesting Benchmarks、KD Candidates、Retail Fixtures、Packaging Structures、Acrylic Products、Approval。不得另開第二個平台。
+## Phase 272 — Furniture Stability Estimate
+建立重心/底面/傾倒風險的 deterministic approximate check；輸出 `ENGINEERING_ESTIMATE`，不是實驗室防傾倒認證。
 
-## Phase 239 — PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE
-建立 `docs/PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE.md` + JSON，至少證明三條 REAL E2E：
-1. KD furniture → BOM/Nesting/Waste/Packing/Blender
-2. Retail display → Product slots/Planogram/BOM/Nesting/Blender
-3. Packaging or acrylic → Engineering/Dieline-or-Cut/Nesting/Blender
-全部停在 Human Approval / prototype boundary。
+## Phase 273 — Wall-anchor / Tall-product Warnings
+高窄家具依 configurable policy 產 wall-anchor warning / approval requirement。
 
-## Phase 240 — Full regression / readiness matrix
-跑完整 local pytest + GitHub Actions ubuntu/windows。Readiness 必須逐項：REAL / ESTIMATED-CONFIG / MOCK / PARTIAL / BLOCKED。`fullAutonomousFactoryReady` 除非 Vision/Demand/ProviderCost/OS sandbox/machine boundaries 全部真的打通，否則保持 false。
+## Phase 274 — Pinch / Sweep / Sharp-edge Zones
+延伸門片/抽屜 opening sweep，加入 pinch zone、可接觸銳邊/角 metadata。
+
+## Phase 275 — Shelf/Panel Load Assumptions
+由 span、material config、thickness 產 conservative load warning；無結構分析資料時 PARTIAL/ESTIMATE。
+
+## Phase 276 — Retail Fixture Stability / Load
+商品 planogram 總重、重心高度、base footprint 做 risk score；electrical compliance 保持 BLOCKED。
+
+## Phase 277 — Acrylic Risk Rules
+厚度、unsupported span、bend line proximity、edge exposure、heat-bend config 產 warnings；LIVE LASER 仍 BLOCKED。
+
+## Phase 278 — Assembly Safety Instructions
+Assembly V2 加工具、pinch、orientation、two-person-lift、wall-anchor warnings，來源可追。
+
+## Phase 279 — Compliance Boundary Manifest
+每個候選輸出：checkedRules / assumptions / unresolved / certificationRequired / notCertified=true。
+
+## Phase 280 — Safety Acceptance
+至少 KD 10 cases + retail 6 families + acrylic 3 products regression；包含應被 veto 的危險案例。
+
+---
+
+# Phase 281–290 — Commerce / Web3D / Asset Publication Package
+
+## Phase 281 — ProductPublicationPackage
+同一 ProductVersion 產可發布 bundle：spec JSON、BOM summary、packing summary、preview assets、360、3D references、assembly instructions、warnings。
+
+## Phase 282 — GLB Publication Export
+沿用 Digital Twin/DAM，建立 final GLB export + hash + dimensions validation，不另建 asset store。
+
+## Phase 283 — Web 360 Package
+統一 36-frame/manifest/thumb metadata，保留 recipe/worker lineage。
+
+## Phase 284 — Web3D Manifest
+產 viewer-neutral manifest：GLB URL/ref、camera bounds、units、dimensions、materials、variant IDs。AR runtime 若只是 manifest 仍 PARTIAL。
+
+## Phase 285 — AR Export Boundary
+若本機可真產 USDZ/AR artifact 才標 REAL；否則只做 adapter + BLOCKED/PARTIAL，不得假產檔名。
+
+## Phase 286 — E-commerce Image Recipe Pack
+由同一 Twin 產 WHITE_STUDIO、detail、scale-reference、dimension overlay reference、material close-up 等 recipe manifests；真 render 才 REAL。
+
+## Phase 287 — Assembly Instruction Asset Pack
+Part labels + step manifests + exploded images/MP4 統一成 publication asset set。
+
+## Phase 288 — Packaging Artwork Template Export
+Dieline + artwork zones + bleed/safe metadata產可供設計軟體使用的 SVG/DXF-friendly package，保持工程 hash。
+
+## Phase 289 — SKU Family Catalog Builder
+將 KD / retail / packaging / acrylic variants 編成 immutable catalog release，支援 superseded/stale 狀態。
+
+## Phase 290 — Publication Acceptance
+至少選 5 個不同 family 產完整 ProductPublicationPackage，驗證所有 artifact lineage/hash。
+
+---
+
+# Phase 291–300 — Closed-loop Product R&D / External Intelligence Boundary
+
+## Phase 291 — OutcomeFeedback Schema
+建立可匯入的 sales/traffic/margin/return/customer-feedback outcome schema；不另建 CRM/ERP。
+
+## Phase 292 — DemandSignal Provider Registry V2
+支援 LIVE_PROVIDER / IMPORTED / MANUAL / MOCK / UNAVAILABLE label。沒有真 provider 時保持 MARKET_UNVERIFIED。
+
+## Phase 293 — Outcome Import
+支援 CSV/JSON 匯入 SKU outcome，綁 productVersion/timeWindow/source；fixture data 不得標 real market data。
+
+## Phase 294 — Experiment Lineage
+Recipe/variant experiment 綁 productVersion、publication release、outcome window，避免把不同版本成效混在一起。
+
+## Phase 295 — Evidence-weighted Ranking
+只有有真 outcome source 時才能加入 market score；沒有時 ranking 明確標 engineering/material-only。
+
+## Phase 296 — Inventory-to-Product R&D V2
+將 remnants/material lots/common hardware/packing/logistics/safety/estimated margin 一起評分；Demand 不可偽造。
+
+## Phase 297 — Material Shortage/Substitution Candidates
+缺料時產 compatible alternatives + cost/waste impact；任何工程材料變更都建立新 immutable version並重新 approval。
+
+## Phase 298 — Autonomous Research Queue
+沿用現有 Queue/Scheduler，在 GPU idle/低優先級條件下產 experimental previews；Agent 不能直接改 PRODUCTION recipe/catalog。
+
+## Phase 299 — Physical Product OS KPI Read Model
+沿用現有 Admin，顯示：true scrap、remnant reuse、sheet savings、packing CBM、assembly difficulty、estimated vs provider cost coverage、approval stale、REAL/MOCK/PARTIAL/BLOCKED counts。
+
+## Phase 300 — PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE
+建立 `docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.md` + JSON，至少驗證：
+1. KD → engineering → nesting/remnant → provider-sourced/estimated cost split → safety → Blender/publication → approval gate
+2. Retail → planogram/load-risk → nesting → Blender/publication → approval
+3. Packaging → fit/dieline/preflight/strength-estimate → nesting → fold preview → publication
+4. Acrylic → engineering/nesting/risk → Blender/publication
+5. EvidenceBundle verifier + stale approval + tenant isolation
+
+最後跑完整 pytest + GitHub Actions ubuntu/windows。Readiness 必須逐項 REAL / IMPORTED / MANUAL / CONFIG_ESTIMATE / MOCK / PARTIAL / BLOCKED。
+
+`fullAutonomousFactoryReady` 只有在 Vision/Demand/live Provider/OS sandbox/machine boundaries 真正符合定義後才可 true；本輪預期仍為 false。
 
 ---
 
 # 本輪不可違反規則
 
-1. 不重寫既有 Scheduler / Queue / DAM / Recipe Registry / TwinStore / Cabinet Engineering SoT。
-2. 新產品族優先 adapter / registry / typed definition，禁止每種產品各自一套平台。
-3. 所有 dimensions / BOM / nesting / packing 必須有 lineage/hash；不要靠 Blender scene 反推正式工程尺寸。
-4. Mock pytest 只代表 regression，不是 Production Ready。
-5. REAL Blender 必須實際 artifact + usedMock=false。
-6. CONFIG/ESTIMATED cost 不得叫 REAL supplier/commercial quote。
-7. Demand / Vision / Video 沒 live provider 就維持 MOCK。
-8. OS sandbox 沒 OS jail 就維持 PARTIAL。
-9. CNC / saw / laser / print machine live control 一律 BLOCKED；Human Approval Gate 保留。
-10. Packaging strength/electrical/structural certifications 沒真工程模型就標 PARTIAL/BLOCKED。
-11. 每個 Phase 要有 execution path 或 regression evidence；禁止空 class/schema 湊 Phase 數量。
-12. 所有新的 durable inventory 路徑要 tenant isolation + crash/restart tests。
-13. GitHub Actions 必須真的 GREEN 才可寫 CI ready；不要預測 PASS。
+1. 不重寫 Scheduler / Queue / DAM / Recipe Registry / TwinStore / Cabinet Engineering SoT。
+2. 不建立第二套 ERP/WMS/CRM；外部資料一律 adapter/import/provider boundary。
+3. Mock pytest 是 regression，不是 Production Ready。
+4. REAL Blender 必須真 artifact、hash、usedMock=false。
+5. Imported/manual/config price 必須清楚標 source，不得冒充 LIVE_PROVIDER。
+6. Engineering estimate 不得冒充法規/結構/電氣認證。
+7. LIVE_CNC / LIVE_LASER 一律保持 BLOCKED，除非未來另有明確安全旨令；Human Approval Gate 不可移除。
+8. AI-generated Python 若無真正 OS jail，sandbox 只能 PARTIAL。
+9. 每個 Phase 要有 execution path + regression/evidence，不要空 schema/UI。
+10. 若某外部 provider/工具/credential 不存在，標 BLOCKED/MOCK/PARTIAL 後繼續其他可完成項，不得造假。
 
-# 回報契約
+## 回報契約
 
 完成後：
-- 更新 `docs/GROK_PROGRESS_REPORT.md`。
-- 更新 `docs/CURRENT_IMPLEMENTATION_AUDIT.md`。
-- 依各段建立上述 REAL acceptance docs + JSON evidence。
-- 更新 `docs/REAL_E2E_ACCEPTANCE.md` 只做 scope/readiness 同步，不破壞舊 REAL 證據。
-- commit + push main。
-- GitHub Issue #1 留：commit SHA、local pytest、GitHub Actions run、REAL/MOCK/PARTIAL/BLOCKED 摘要、blockers、下一輪建議。
-- 不要求使用者複製貼上；ChatGPT 直接從 GitHub 接手。
+- 更新 `docs/GROK_PROGRESS_REPORT.md`、`docs/CURRENT_IMPLEMENTATION_AUDIT.md`、readiness matrix。
+- 新增本輪 acceptance docs + machine-readable JSON。
+- 報 local pytest 結果與 GitHub Actions run ID / exact commit SHA。
+- REAL Blender evidence 要列 worker/GPU/Blender/job/artifact/hash/usedMock。
+- 明列哪些 provider 是 LIVE / IMPORTED / MANUAL / CONFIG / MOCK。
+- 明列 PARTIAL/BLOCKED 與原因。
+- commit + push `main`。
+- Issue #1 留 code SHA、CI、REAL evidence、blockers、下一輪建議。
+- 不要求使用者 copy/paste；ChatGPT 直接從 GitHub 接手。
 
-**現在直接從 Phase 181 開始，先修兩個文件一致性問題，再依依賴順序實作。已 REAL 的 Phase 1–180 不重做。**
+現在直接從 `f2f9eec` 後的 repo state 開始。先做 truth/evidence hygiene，再依依賴順序完成 Phase 241–300。
