@@ -213,6 +213,26 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def factory_revise(product_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         return get_platform().factory.revise_cabinet(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k != "tenantId"})
 
+    @app.get("/api/kd/product-types")
+    def kd_types() -> dict[str, Any]:
+        from fox3d.kd import FLATPACK_PRODUCT_TYPES
+
+        return {"items": list(FLATPACK_PRODUCT_TYPES)}
+
+    @app.post("/api/kd/skus")
+    def kd_sku(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        return get_platform().kd.build_sku(tenant_id=tid, kind=str(payload.get("kind") or "BEDSIDE_CABINET"), render=bool(payload.get("render")), **{k: v for k, v in payload.items() if k not in {"tenantId", "kind", "render"}})
+
+    @app.post("/api/kd/catalog")
+    def kd_catalog(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        return get_platform().kd.generate_candidates(tenant_id=body.get("tenantId") or tenant(x_tenant_id), count=int(body.get("count") or 24), render=bool(body.get("render")))
+
+    @app.get("/api/kd/readiness")
+    def kd_readiness() -> dict[str, Any]:
+        return get_platform().kd.readiness()
+
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
         return render_admin(get_platform())

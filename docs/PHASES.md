@@ -56,3 +56,12 @@
 | 115–116 Vision Provider | `rd.py` | MOCK heuristic; engineering veto |
 | 117–119 Factory pipeline + API | `factory.py` + `/api/factory/*` | existing Admin |
 | 120 Factory REAL acceptance | `docs/FURNITURE_FACTORY_REAL_ACCEPTANCE.md` | 3600mm wall E2E |
+| 121–130 KD product family | `kd.py` | 12 types, grid, fingerprints, SKU family |
+| 131–140 Packing / logistics / assembly | `kd.py` | carton from panels, CBM, difficulty, KD gate |
+| 141–150 Waste V2 / remnants / cross-SKU | `manufacturing.py` | remnant vs true scrap; batch nesting |
+| 151–160 Cost / margin / batch | `kd_factory.py` | landed cost ESTIMATED; quantity breaks |
+| 161–170 Reverse remnant R&D | `kd_factory.py` | MOCK demand; engineering veto |
+| 171–176 E-com / AR / retail | existing queue + TwinStore | AR runtime PARTIAL |
+| 177 CI | `.github/workflows/pytest.yml` | unit tests on GitHub-hosted |
+| 178 Scoped readiness | `KdFactory.readiness` | computed booleans |
+| 179–180 KD acceptance + catalog | `docs/KD_FACTORY_REAL_ACCEPTANCE.md` | 24 small-space SKUs |

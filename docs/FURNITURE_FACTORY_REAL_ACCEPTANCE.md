@@ -34,3 +34,5 @@ pytest mock PASS is **not** production ready.
 - gate: `WAITING_APPROVAL` liveMachineControl=`False`
 
 LIVE_CNC remains **BLOCKED**. Human Approval Gate is mandatory.
+
+`productionReady` on this document is **scoped to core furniture preview E2E** (`coreFactoryE2EReady`). It does not imply Vision/AI Video/OS sandbox/CNC/demand are production ready. See `docs/KD_FACTORY_REAL_ACCEPTANCE.md` for the Phase 121–180 scoped readiness matrix.

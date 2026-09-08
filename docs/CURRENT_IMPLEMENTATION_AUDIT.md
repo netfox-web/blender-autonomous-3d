@@ -100,6 +100,24 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | AI Video | MOCK | no live adapter |
 | OS sandbox | PARTIAL | not a full OS jail |
 
+## Phase 121–180 KD / Flat-Pack (this round)
+
+| Phase | Status | Notes |
+|---|---|---|
+| 121–130 product family | REAL | 12 types with geometry+BOM |
+| 131–140 packing/logistics | REAL (prices ESTIMATED) | carton from panels; oversize gate CONFIG |
+| 141–145 waste/remnants | REAL | conservation err=0; consume-once |
+| 146–150 batch/cross-SKU | REAL | lineage on placements |
+| 151–160 landed cost | ESTIMATED/CONFIG | remnant credit; quantity breaks non-linear |
+| 166 demand | MOCK | UNAVAILABLE |
+| 167–170 R&D + approval | REAL deterministic / MOCK demand-vision | prototype only |
+| 171–176 e-com/AR | REAL queue, AR PARTIAL | same TwinStore |
+| 177 CI | REAL workflow file | check after push |
+| 178 readiness | REAL computed | `fullAutonomousFactoryReady=false` |
+| 179–180 KD acceptance | REAL | `docs/KD_FACTORY_REAL_ACCEPTANCE.md` |
+| LIVE_CNC | BLOCKED | |
+| Vision/Video | MOCK | |
+
 ## Do not redo
 
 Blender discovery, OptiX probe, smoke render, WHITE_STUDIO, 360, DAM, parametric geometry/BOM/cost/NL, production no-mock-fallback.

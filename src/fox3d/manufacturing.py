@@ -40,6 +40,41 @@ HARDWARE_REGISTRY: dict[str, dict[str, Any]] = {
     "HW_CAM_LOCK_15": {"category": "connector", "boardThicknessMin": 15, "boardThicknessMax": 25, "diameter": 15, "vendorNeutral": True, "price": 3.0},
     "HW_DOWEL_8": {"category": "connector", "diameter": 8, "depth": 25, "vendorNeutral": True, "price": 0.5},
     "HW_LEG_100": {"category": "leg", "heightMin": 80, "heightMax": 150, "vendorNeutral": True, "price": 40.0},
+    "HW_CASTER_50": {"category": "caster", "vendorNeutral": True, "price": 45.0},
+    "HW_SCREW_M4": {"category": "screw", "vendorNeutral": True, "price": 0.4},
+    "HW_BOLT_M6": {"category": "bolt", "vendorNeutral": True, "price": 1.2},
+    "HW_BRACKET_L": {"category": "bracket", "vendorNeutral": True, "price": 8.0},
+    "HW_HANGING_RAIL": {"category": "rail", "vendorNeutral": True, "price": 60.0},
+}
+
+CONNECTOR_RECIPES: dict[str, dict[str, Any]] = {
+    "KD_CAM_DOWEL_V1": {
+        "version": 1,
+        "connectors": ["HW_CAM_LOCK_15", "HW_DOWEL_8"],
+        "tools": ["hex_key", "mallet"],
+        "vendorNeutral": True,
+    },
+    "KD_SCREW_V1": {
+        "version": 1,
+        "connectors": ["HW_SCREW_M4", "HW_BRACKET_L"],
+        "tools": ["screwdriver"],
+        "vendorNeutral": True,
+    },
+    "KD_BOLT_CASTER_V1": {
+        "version": 1,
+        "connectors": ["HW_BOLT_M6", "HW_CASTER_50"],
+        "tools": ["wrench"],
+        "vendorNeutral": True,
+    },
+}
+
+DEFAULT_REMNANT_POLICY: dict[str, Any] = {
+    "minWidthMm": 200.0,
+    "minHeightMm": 200.0,
+    "minAreaMm2": 60000.0,
+    "requireSameMaterial": True,
+    "requireSameThickness": True,
+    "requireGrainCompatible": True,
 }
 
 SHEET_MATERIALS: dict[str, dict[str, Any]] = {
@@ -261,6 +296,8 @@ class NestingEngine:
         kerf_mm: float = 4.0,
         trim_mm: float = 10.0,
         sheet: dict[str, Any] | None = None,
+        remnants: list[dict[str, Any]] | None = None,
+        remnant_policy: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         sheetspec = sheet or SheetMaterialRegistry().for_cabinet_material(material, thickness=thickness)
         sheet_w = float(sheetspec.get("length") or MAX_PANEL_W)
@@ -282,31 +319,90 @@ class NestingEngine:
             for i in range(qty):
                 parts.append(
                     {
-                        "partId": f"{line.get('partId') or line.get('partName')}#{i+1}",
+                        "partId": f"{line.get('skuId') or bom.get('productId') or 'sku'}:{line.get('partId') or line.get('partName')}#{i+1}",
                         "partName": line.get("partName"),
                         "length": length,
                         "width": width,
                         "grain": grain,
+                        "skuId": line.get("skuId") or bom.get("productId"),
+                        "productVersion": line.get("productVersion") or bom.get("revision") or 1,
                     }
                 )
-        parts.sort(key=lambda p: (-max(p["length"], p["width"]), -min(p["length"], p["width"]), p["partId"]))
+        return self.nest_parts(
+            parts,
+            material=material,
+            thickness=thickness,
+            kerf_mm=kerf_mm,
+            trim_mm=trim_mm,
+            sheet=sheetspec,
+            remnants=remnants,
+            remnant_policy=remnant_policy,
+        )
+
+    def nest_parts(
+        self,
+        parts: list[dict[str, Any]],
+        *,
+        material: str = "WOOD_WHITE",
+        thickness: float = 18,
+        kerf_mm: float = 4.0,
+        trim_mm: float = 10.0,
+        sheet: dict[str, Any] | None = None,
+        remnants: list[dict[str, Any]] | None = None,
+        remnant_policy: dict[str, Any] | None = None,
+        objective: str = "min_sheets",
+        seed: str = "baseline",
+    ) -> dict[str, Any]:
+        sheetspec = sheet or SheetMaterialRegistry().for_cabinet_material(material, thickness=thickness)
+        sheet_w = float(sheetspec.get("length") or MAX_PANEL_W)
+        sheet_h = float(sheetspec.get("width") or MAX_PANEL_H)
+        grain_axis = str(sheetspec.get("grain") or "length")
+        policy = {**DEFAULT_REMNANT_POLICY, **(remnant_policy or {})}
+        ordered = sorted(parts, key=lambda p: (-max(float(p["length"]), float(p["width"])), -min(float(p["length"]), float(p["width"])), str(p.get("partId"))))
         usable_w = sheet_w - 2 * trim_mm
         usable_h = sheet_h - 2 * trim_mm
+        remnant_used: list[dict[str, Any]] = []
+        remaining = list(ordered)
+        if remnants:
+            for rem in remnants:
+                if remaining and self._remnant_compatible(rem, material, thickness, grain_axis, policy):
+                    free = [_Free(0.0, 0.0, float(rem["w"]), float(rem["h"]))]
+                    placed: list[dict[str, Any]] = []
+                    leftover: list[dict[str, Any]] = []
+                    for part in remaining:
+                        hit = self._place(part, free, kerf_mm, grain_axis)
+                        if hit:
+                            hit["skuId"] = part.get("skuId")
+                            hit["productVersion"] = part.get("productVersion")
+                            hit["remnantId"] = rem.get("remnantId")
+                            placed.append(hit)
+                        else:
+                            leftover.append(part)
+                    if placed:
+                        remnant_used.append(
+                            {
+                                "remnantId": rem.get("remnantId"),
+                                "placements": placed,
+                                "usedAreaMm2": sum(p["w"] * p["h"] for p in placed),
+                            }
+                        )
+                        remaining = leftover
         sheets: list[dict[str, Any]] = []
-        remaining = list(parts)
         unplaceable: list[str] = []
         while remaining:
             free = [_Free(trim_mm, trim_mm, usable_w, usable_h)]
             placements: list[dict[str, Any]] = []
-            leftover: list[dict[str, Any]] = []
+            leftover_parts: list[dict[str, Any]] = []
             for part in remaining:
                 placed = self._place(part, free, kerf_mm, grain_axis)
                 if placed:
+                    placed["skuId"] = part.get("skuId")
+                    placed["productVersion"] = part.get("productVersion")
                     placements.append(placed)
                 else:
-                    leftover.append(part)
+                    leftover_parts.append(part)
             if not placements:
-                unplaceable.extend(p["partId"] for p in leftover)
+                unplaceable.extend(p["partId"] for p in leftover_parts)
                 break
             used = sum(p["w"] * p["h"] for p in placements)
             area = sheet_w * sheet_h
@@ -316,13 +412,17 @@ class NestingEngine:
                     "placements": placements,
                     "usedAreaMm2": used,
                     "utilization": round(used / area, 4),
+                    "freeRects": [{"x": f.x, "y": f.y, "w": f.w, "h": f.h} for f in free if f.w >= 1 and f.h >= 1],
                 }
             )
-            remaining = leftover
-        used_total = sum(s["usedAreaMm2"] for s in sheets)
+            remaining = leftover_parts
+        used_total = sum(s["usedAreaMm2"] for s in sheets) + sum(r["usedAreaMm2"] for r in remnant_used)
         sheet_area = sheet_w * sheet_h
-        total_area = sheet_area * max(len(sheets), 1)
-        waste = max(0.0, total_area - used_total)
+        n_sheets = len(sheets)
+        total_area = sheet_area * max(n_sheets, 1 if not remnant_used else 0) if n_sheets else (0.0 if remnant_used else sheet_area)
+        if n_sheets == 0:
+            total_area = 0.0
+        waste_v2 = self._waste_v2(sheets, sheet_w, sheet_h, usable_w, usable_h, kerf_mm, trim_mm, policy)
         result = {
             "sheetSku": sheetspec.get("sku") or "PB_18_WHITE",
             "sheetMm": [sheet_w, sheet_h],
@@ -330,20 +430,100 @@ class NestingEngine:
             "kerfMm": kerf_mm,
             "trimMm": trim_mm,
             "grainConstraint": grain_axis,
-            "sheetCount": len(sheets),
+            "sheetCount": n_sheets,
             "usedAreaMm2": used_total,
             "usedAreaM2": round(used_total / 1e6, 4),
-            "wasteAreaMm2": waste,
-            "wasteAreaM2": round(waste / 1e6, 4),
-            "utilization": round(used_total / total_area, 4) if total_area else 0,
+            "partUsedArea": waste_v2["partUsedArea"],
+            "kerfLossArea": waste_v2["kerfLossArea"],
+            "trimLossArea": waste_v2["trimLossArea"],
+            "reusableRemnantArea": waste_v2["reusableRemnantArea"],
+            "trueScrapArea": waste_v2["trueScrapArea"],
+            "utilizationRatio": waste_v2["utilizationRatio"],
+            "reusableRemnantRatio": waste_v2["reusableRemnantRatio"],
+            "trueWasteRatio": waste_v2["trueWasteRatio"],
+            "areaConservationError": waste_v2["areaConservationError"],
+            "wasteAreaMm2": waste_v2["trueScrapArea"],
+            "wasteAreaM2": round(waste_v2["trueScrapArea"] / 1e6, 4),
+            "utilization": waste_v2["utilizationRatio"],
             "sheets": sheets,
             "unplaceable": unplaceable,
+            "remnantUsed": remnant_used,
+            "savedNewSheetCount": 1 if remnant_used and n_sheets == 0 else (1 if remnant_used else 0),
+            "remnantConsumedArea": sum(r["usedAreaMm2"] for r in remnant_used),
+            "candidateRemnants": waste_v2["candidateRemnants"],
+            "objective": objective,
+            "seed": seed,
             "liveMachineControl": False,
         }
+        if remnant_used and n_sheets == 0:
+            result["savedNewSheetCount"] = 1
+        elif remnant_used:
+            result["savedNewSheetCount"] = max(0, int(round(result["remnantConsumedArea"] / max(sheet_area, 1))))
         result["svg"] = self.to_svg(result)
         result["dxfInterface"] = self.to_dxf_interface(result)
-        result["nestingHash"] = stable_hash({k: result[k] for k in ("sheetMm", "kerfMm", "trimMm", "grainConstraint", "sheets")})
+        result["nestingHash"] = stable_hash({k: result[k] for k in ("sheetMm", "kerfMm", "trimMm", "grainConstraint", "sheets", "remnantUsed", "seed", "objective")})
         return result
+
+    def _remnant_compatible(self, rem: dict[str, Any], material: str, thickness: float, grain_axis: str, policy: dict[str, Any]) -> bool:
+        if policy.get("requireSameThickness") and rem.get("thickness") is not None and abs(float(rem["thickness"]) - thickness) > 0.5:
+            return False
+        rem_mat = rem.get("materialCode") or rem.get("texture") or rem.get("material")
+        if policy.get("requireSameMaterial") and rem_mat:
+            mapped = str(map_cabinet_material(material).get("code") or material).upper()
+            if str(rem_mat).upper() not in {mapped, str(material).upper()}:
+                return False
+        _ = grain_axis
+        return float(rem.get("w") or 0) >= 1 and float(rem.get("h") or 0) >= 1
+
+    def _waste_v2(
+        self,
+        sheets: list[dict[str, Any]],
+        sheet_w: float,
+        sheet_h: float,
+        usable_w: float,
+        usable_h: float,
+        kerf_mm: float,
+        trim_mm: float,
+        policy: dict[str, Any],
+    ) -> dict[str, Any]:
+        n = max(len(sheets), 0)
+        sheet_total = sheet_w * sheet_h * n
+        usable_total = usable_w * usable_h * n
+        trim_loss = max(0.0, sheet_total - usable_total)
+        part_used = sum(s.get("usedAreaMm2") or 0 for s in sheets)
+        leftover = 0.0
+        candidates: list[dict[str, Any]] = []
+        scrap = 0.0
+        reusable = 0.0
+        for s in sheets:
+            for fr in s.get("freeRects") or []:
+                area = float(fr["w"]) * float(fr["h"])
+                leftover += area
+                if self.qualify_remnant(fr["w"], fr["h"], policy):
+                    reusable += area
+                    candidates.append({**fr, "sheetIndex": s["index"], "area": area})
+                else:
+                    scrap += area
+        kerf_loss = max(0.0, usable_total - part_used - leftover)
+        conserved = part_used + kerf_loss + trim_loss + leftover
+        err = abs(conserved - sheet_total) if n else 0.0
+        util = (part_used / sheet_total) if sheet_total else 1.0
+        return {
+            "partUsedArea": round(part_used, 3),
+            "kerfLossArea": round(kerf_loss, 3),
+            "trimLossArea": round(trim_loss, 3),
+            "reusableRemnantArea": round(reusable, 3),
+            "trueScrapArea": round(scrap + kerf_loss + trim_loss, 3),
+            "utilizationRatio": round(util, 4),
+            "reusableRemnantRatio": round((reusable / sheet_total) if sheet_total else 0.0, 4),
+            "trueWasteRatio": round(((scrap + kerf_loss + trim_loss) / sheet_total) if sheet_total else 0.0, 4),
+            "areaConservationError": round(err, 3),
+            "candidateRemnants": candidates,
+        }
+
+    def qualify_remnant(self, w: float, h: float, policy: dict[str, Any] | None = None) -> bool:
+        p = {**DEFAULT_REMNANT_POLICY, **(policy or {})}
+        return float(w) >= float(p["minWidthMm"]) and float(h) >= float(p["minHeightMm"]) and (float(w) * float(h)) >= float(p["minAreaMm2"])
 
     def _orientations(self, part: dict[str, Any], grain_axis: str) -> list[tuple[float, float, bool]]:
         L, W = float(part["length"]), float(part["width"])
@@ -524,7 +704,10 @@ class QuoteEngine:
         sheet = SheetMaterialRegistry().for_cabinet_material(spec.material, thickness=spec.boardThickness)
         sheet_count = int(nesting.get("sheetCount") or 1)
         sheet_cost = sheet_count * float(sheet.get("costPerSheet") or 850)
-        waste_cost = float(nesting.get("wasteAreaM2") or 0) * float(sheet.get("costPerM2") or 280) * 0.25
+        true_scrap_m2 = float(nesting.get("trueScrapArea") or 0) / 1e6 if nesting.get("trueScrapArea") is not None else float(nesting.get("wasteAreaM2") or 0)
+        remnant_m2 = float(nesting.get("reusableRemnantArea") or 0) / 1e6
+        waste_cost = true_scrap_m2 * float(sheet.get("costPerM2") or 280) * 0.25
+        remnant_credit = remnant_m2 * float(sheet.get("costPerM2") or 280) * 0.5
         edge_m = 0.0
         for line in bom.get("lines") or []:
             if line.get("hardware"):
@@ -551,7 +734,7 @@ class QuoteEngine:
 
         assembly = max(0.5, volume_m3 * 8) * ASSEMBLY_PER_HOUR
         packaging = PACKAGING_BASE + volume_m3 * 120
-        estimated = sheet_cost + waste_cost + banding_cost + hardware_cost + processing + assembly + packaging
+        estimated = sheet_cost + waste_cost - remnant_credit + banding_cost + hardware_cost + processing + assembly + packaging
         suggested = estimated * (1 + margin)
         rec = QuoteRecord(
             engineeringHash=spec.engineering_hash(),
@@ -563,6 +746,8 @@ class QuoteEngine:
             breakdown={
                 "SheetCost": round(sheet_cost, 2),
                 "SheetWasteCost": round(waste_cost, 2),
+                "RemnantCredit": round(remnant_credit, 2),
+                "costSource": "CONFIG",
                 "EdgeBandingCost": round(banding_cost, 2),
                 "HardwareCost": round(hardware_cost, 2),
                 "DrillingCost": round(drilling_cost, 2),
@@ -603,3 +788,62 @@ def build_manufacturing_pack(spec: Any, bom: dict[str, Any], *, kerf_mm: float =
         "manufacturingHash": manifest.manifest_hash(),
         "liveMachineControl": False,
     }
+
+
+class RemnantInventory:
+    """In-process remnant ledger. Not a WMS. Consume-once reservation."""
+
+    def __init__(self) -> None:
+        self.items: dict[str, dict[str, Any]] = {}
+
+    def add_from_nesting(self, nesting: dict[str, Any], *, material: str, thickness: float, source_run: str, policy: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        created: list[dict[str, Any]] = []
+        from fox3d.infra import utcnow
+
+        for rem in nesting.get("candidateRemnants") or []:
+            rec = {
+                "remnantId": new_id(),
+                "sourceNestingRun": source_run,
+                "material": material,
+                "materialCode": map_cabinet_material(material).get("code"),
+                "thickness": thickness,
+                "w": rem["w"],
+                "h": rem["h"],
+                "grain": nesting.get("grainConstraint") or "length",
+                "location": f"sheet:{rem.get('sheetIndex')}",
+                "status": "available",
+                "reservedBy": None,
+                "consumedBy": None,
+                "createdAt": utcnow().isoformat(),
+                "area": rem.get("area") or rem["w"] * rem["h"],
+            }
+            self.items[rec["remnantId"]] = rec
+            created.append(rec)
+        return created
+
+    def available(self) -> list[dict[str, Any]]:
+        return [v for v in self.items.values() if v["status"] == "available"]
+
+    def reserve(self, remnant_id: str, *, by: str) -> dict[str, Any]:
+        rec = self.items[remnant_id]
+        if rec["status"] != "available":
+            raise PermissionError(f"remnant {remnant_id} not available ({rec['status']})")
+        rec["status"] = "reserved"
+        rec["reservedBy"] = by
+        return rec
+
+    def consume(self, remnant_id: str, *, by: str) -> dict[str, Any]:
+        rec = self.items[remnant_id]
+        if rec["status"] not in {"available", "reserved"}:
+            raise PermissionError(f"remnant {remnant_id} already {rec['status']}")
+        rec["status"] = "consumed"
+        rec["consumedBy"] = by
+        return rec
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "source": "CONFIG",
+            "label": "MOCK",
+            "items": list(self.items.values()),
+            "availableCount": len(self.available()),
+        }

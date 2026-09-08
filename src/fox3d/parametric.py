@@ -24,6 +24,18 @@ CabinetKind = Literal[
     "KITCHEN_WALL",
     "DISPLAY_CABINET",
     "CABINET",
+    "BEDSIDE_CABINET",
+    "DESK_RISER",
+    "OPEN_SHELF",
+    "NARROW_BOOKCASE",
+    "MOBILE_SIDE_TABLE",
+    "STUDENT_DESK",
+    "VANITY_DESK",
+    "GARMENT_RACK",
+    "APPLIANCE_RACK",
+    "STORAGE_BENCH",
+    "PET_FURNITURE",
+    "RETAIL_DISPLAY",
 ]
 
 # 4x8 sheet in mm — Taiwan/CN furniture panel standard.
@@ -41,6 +53,18 @@ TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
     "KITCHEN_WALL": {"width": 800, "height": 720, "depth": 330, "doorCount": 2, "shelfCount": 2, "drawerCount": 0},
     "DISPLAY_CABINET": {"width": 900, "height": 1800, "depth": 400, "doorCount": 2, "shelfCount": 3, "drawerCount": 0},
     "CABINET": {"width": 800, "height": 1800, "depth": 400, "doorCount": 2, "shelfCount": 2, "drawerCount": 0},
+    "BEDSIDE_CABINET": {"width": 400, "height": 400, "depth": 400, "doorCount": 1, "shelfCount": 1, "drawerCount": 0},
+    "DESK_RISER": {"width": 600, "height": 120, "depth": 250, "doorCount": 0, "shelfCount": 1, "drawerCount": 0, "backPanel": False},
+    "OPEN_SHELF": {"width": 800, "height": 1200, "depth": 300, "doorCount": 0, "shelfCount": 4, "drawerCount": 0, "backPanel": False},
+    "NARROW_BOOKCASE": {"width": 400, "height": 1600, "depth": 250, "doorCount": 0, "shelfCount": 5, "drawerCount": 0},
+    "MOBILE_SIDE_TABLE": {"width": 400, "height": 500, "depth": 400, "doorCount": 0, "shelfCount": 1, "drawerCount": 1, "legs": True, "plinthHeight": 80},
+    "STUDENT_DESK": {"width": 1200, "height": 750, "depth": 600, "doorCount": 0, "shelfCount": 0, "drawerCount": 0, "backPanel": False, "legs": True, "plinthHeight": 720},
+    "VANITY_DESK": {"width": 800, "height": 750, "depth": 400, "doorCount": 0, "shelfCount": 0, "drawerCount": 2, "legs": True, "plinthHeight": 150},
+    "GARMENT_RACK": {"width": 800, "height": 1600, "depth": 400, "doorCount": 0, "shelfCount": 1, "drawerCount": 0, "backPanel": False},
+    "APPLIANCE_RACK": {"width": 600, "height": 800, "depth": 500, "doorCount": 0, "shelfCount": 2, "drawerCount": 0},
+    "STORAGE_BENCH": {"width": 800, "height": 450, "depth": 400, "doorCount": 0, "shelfCount": 0, "drawerCount": 0},
+    "PET_FURNITURE": {"width": 600, "height": 400, "depth": 400, "doorCount": 0, "shelfCount": 1, "drawerCount": 0, "backPanel": False},
+    "RETAIL_DISPLAY": {"width": 600, "height": 1600, "depth": 400, "doorCount": 0, "shelfCount": 5, "drawerCount": 0, "backPanel": False},
 }
 
 MATERIAL_PRICE_PER_M2 = {
@@ -58,6 +82,10 @@ HARDWARE_PRICE = {
     "cam_lock": 3.0,
     "dowel": 0.5,
     "hanging_rail": 60.0,
+    "caster": 45.0,
+    "screw": 0.4,
+    "bolt": 1.2,
+    "bracket": 8.0,
 }
 EDGE_BANDING_PER_M = 8.0
 PROCESSING_CUT_PER_PART = 12.0
@@ -367,8 +395,10 @@ class CabinetEngine:
         # Cams + dowels per carcass joint (4 corners × 2).
         hw.append({"partName": "cam_lock", "quantity": 16, "sku": "cam_lock"})
         hw.append({"partName": "dowel", "quantity": 16, "sku": "dowel"})
-        if spec.kind == "WARDROBE":
+        if spec.kind in {"WARDROBE", "GARMENT_RACK"}:
             hw.append({"partName": "hanging_rail", "quantity": 1, "sku": "hanging_rail", "vendorNeutralId": "HW_HANGING_RAIL"})
+        if spec.kind == "MOBILE_SIDE_TABLE" or spec.metadata.get("casters"):
+            hw.append({"partName": "caster", "quantity": 4, "sku": "caster", "vendorNeutralId": "HW_CASTER_50"})
         for item in hw:
             if item["sku"] == "hinge":
                 item["vendorNeutralId"] = "HW_HINGE_CLIP_110"
@@ -674,6 +704,18 @@ def parse_design_intent(text: str, *, tenant_id: str) -> dict[str, Any]:
         kind = "KITCHEN_WALL"
     elif re.search(r"廚|kitchen", text, re.I):
         kind = "KITCHEN_BASE"
+    elif re.search(r"收納凳|storage bench", text, re.I):
+        kind = "STORAGE_BENCH"
+    elif re.search(r"床頭|bedside", text, re.I):
+        kind = "BEDSIDE_CABINET"
+    elif re.search(r"螢幕架|desk riser|桌上架", text, re.I):
+        kind = "DESK_RISER"
+    elif re.search(r"書桌|student desk", text, re.I):
+        kind = "STUDENT_DESK"
+    elif re.search(r"衣架|garment", text, re.I):
+        kind = "GARMENT_RACK"
+    elif re.search(r"寵物", text):
+        kind = "PET_FURNITURE"
     elif re.search(r"收納|儲物|storage", text, re.I):
         kind = "STORAGE_CABINET"
     else:

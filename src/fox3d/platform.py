@@ -51,6 +51,7 @@ from fox3d.ops import (
 )
 from fox3d.packaging import PackagingEngine
 from fox3d.factory import FurnitureFactory
+from fox3d.kd_factory import KdFactory
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
 from fox3d.rd import GatewayVisionProvider, ProductRDAgent, VisionJudge
 from fox3d.recipes import BlenderRecipeResearchAgent, RecipeIntelligence
@@ -90,6 +91,7 @@ class Platform:
         self.judge = VisionJudge(GatewayVisionProvider(self.gateway))
         self.rd = ProductRDAgent(self.cabinets, self.cost, self.judge, self.studio)
         self.factory = FurnitureFactory(self)
+        self.kd = KdFactory(self)
         self.p360 = Product360Engine()
         self.ar = ARExporter()
         self.synthetic = SyntheticFactory()

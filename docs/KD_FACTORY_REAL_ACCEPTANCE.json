@@ -1,0 +1,400 @@
+{
+  "generatedAt": "2026-09-08T14:40:57.418501+00:00",
+  "coreFactoryE2EReady": true,
+  "kdDfMReady": true,
+  "commercialCostModelReady": true,
+  "fullAutonomousFactoryReady": false,
+  "productionReady": true,
+  "productionReadyScope": "coreFactoryE2E",
+  "note": "productionReady scope is coreFactoryE2E only; Vision/Video/CNC/demand are not included",
+  "probe": {
+    "blender": true,
+    "blenderBinary": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe",
+    "blenderVersion": "5.2.1",
+    "blenderVersionRaw": "Blender 5.2.1 LTS (hash 9e2066aef7ef built 2026-08-25 02:38:20)\nBlender 5.2.1 LTS\n\tbuild date: 2026-08-25\n\tbuild time: 02:38:20\n\tbuild commit date: 2026-08-24\n\tbuild commit time: 16:50\n\tbuild hash: 9e2066aef7ef\n\tbuild branch: blender-v5.2-release\n\tbuild platform: Windows\n\tbuild type: Release\n\tbuild c flags:  /W3 -Werror=implicit-function-declaration -Werror=return-type -Wno-tautological-compare -Wno-unknown-pragmas -Wno-char-subscripts -Wstrict-prototypes -Wmissing-prototypes -Wunused-parameter -Wundef -Wundef-prefix -Werror=unguarded-availability-new /DWIN32 /D_WINDOWS /MP /nologo /J /Gy /Gd /showFilenames -Wno-unused-command-line-argument -Wno-microsoft-enum-forward-reference /clang:-funsigned-char /clang:-fno-strict-aliasing /clang:-ffp-contract=off -march=x86-64-v2 \n\tbuild c++ flags:  /W3 -Wno-tautological-compare -Wno-unknown-pragmas -Wno-char-subscripts -Wno-overloaded-virtual -Wno-sign-compare -Wno-invalid-offsetof -Wno-suggest-override -Wundef -Wundef-prefix -Wunused-parameter -Wmismatched-tags -Werror=unguarded-availability-new /DWIN32 /D_WINDOWS /EHsc  /Gy /MP /nologo /J /Gd /showFilenames /EHsc -Wno-unused-command-line-argument -Wno-microsoft-enum-forward-reference /clang:-funsigned-char /clang:-fno-strict-aliasing /clang:-ffp-contract=off -march=x86-64-v2 \n\tbuild link flags: /MACHINE:X64  /SUBSYSTEM:CONSOLE /STACK:2097152 /ignore:4049 /ignore:4217 /ignore:4221\n\tbuild system: CMake\n",
+    "cycles": true,
+    "cuda": true,
+    "optix": true,
+    "cyclesDevices": [
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "OPTIX"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "CUDA"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "CUDA"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "CUDA"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "HIP"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "HIP"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "HIP"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "CUDA",
+        "kind": "ONEAPI"
+      },
+      {
+        "name": "Intel Core i9-14900K",
+        "type": "CPU",
+        "kind": "ONEAPI"
+      },
+      {
+        "name": "NVIDIA T1000",
+        "type": "OPTIX",
+        "kind": "ONEAPI"
+      }
+    ],
+    "gpus": [
+      {
+        "gpuIndex": 0,
+        "uuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+        "name": "NVIDIA T1000",
+        "vramGb": 4.0,
+        "vramUsedGb": 0.0,
+        "vramFreeGb": 3.84,
+        "driver": "596.86"
+      }
+    ],
+    "gpuName": "NVIDIA T1000",
+    "gpuUuid": "GPU-2e26e16d-f319-2019-eff0-efd8b405a21e",
+    "vramGb": 4.0,
+    "vramUsedGb": 0.0,
+    "vramFreeGb": 3.84,
+    "driver": "596.86",
+    "hostname": "home",
+    "osName": "Windows",
+    "discoverySource": "REAL_DISCOVERY",
+    "blocked": [],
+    "realBlender": true,
+    "realGPU": true,
+    "realCycles": true,
+    "realOptix": true
+  },
+  "rows": [
+    {
+      "check": "Blender",
+      "status": "REAL",
+      "evidence": "C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe"
+    },
+    {
+      "check": "OptiX",
+      "status": "REAL",
+      "evidence": "NVIDIA T1000"
+    },
+    {
+      "check": "3 KD SKU families",
+      "status": "REAL",
+      "evidence": "BEDSIDE_CABINET,OPEN_SHELF,STUDENT_DESK"
+    },
+    {
+      "check": "quantity batch nesting",
+      "status": "REAL",
+      "evidence": "q=10 sheets=5 util=0.7098"
+    },
+    {
+      "check": "cross-SKU nesting",
+      "status": "REAL",
+      "evidence": "sheets=7 waste=0.1026"
+    },
+    {
+      "check": "waste V2 conservation",
+      "status": "REAL",
+      "evidence": "err=0.0 trueWaste=0.053 remnant=0.2601"
+    },
+    {
+      "check": "remnants extract+consume",
+      "status": "REAL",
+      "evidence": "extracted=4 savedSheets=1 consumed=480720.0"
+    },
+    {
+      "check": "pack/weight/assembly",
+      "status": "REAL",
+      "evidence": "carton=424.0x424.0x180.0 kg=12.699 score=0.5947"
+    },
+    {
+      "check": "landed cost lineage",
+      "status": "REAL",
+      "evidence": "cost=1448.69 hashes=['engineeringHash', 'bomHash', 'nestingHash', 'packagingHash']"
+    },
+    {
+      "check": "Blender KD product preview",
+      "status": "REAL",
+      "evidence": "status=completed job=c132b8fc-eb70-46f1-a26d-238d4f46fb65"
+    },
+    {
+      "check": "WAITING_PRODUCT_APPROVAL",
+      "status": "REAL",
+      "evidence": "WAITING_PRODUCT_APPROVAL"
+    },
+    {
+      "check": "Vision Judge",
+      "status": "MOCK",
+      "evidence": "no live provider"
+    },
+    {
+      "check": "AI Video",
+      "status": "MOCK",
+      "evidence": "no ProviderAdapter"
+    },
+    {
+      "check": "Demand",
+      "status": "MOCK",
+      "evidence": "DemandSignalProvider UNAVAILABLE"
+    },
+    {
+      "check": "OS sandbox",
+      "status": "PARTIAL",
+      "evidence": "path guard only"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "small-space catalog",
+      "status": "REAL",
+      "evidence": "n=24 kinds=['APPLIANCE_RACK', 'BEDSIDE_CABINET', 'DESK_RISER', 'GARMENT_RACK', 'MOBILE_SIDE_TABLE', 'NARROW_BOOKCASE', 'OPEN_SHELF', 'PET_FURNITURE', 'RETAIL_DISPLAY', 'STORAGE_BENCH', 'STUDENT_DESK', 'VANITY_DESK']"
+    },
+    {
+      "check": "scoped readiness",
+      "status": "REAL",
+      "evidence": "{\"coreFactoryE2EReady\": true, \"kdDfMReady\": true, \"commercialCostModelReady\": true, \"liveVisionReady\": false, \"liveVideoReady\": false, \"osSandboxReady\": false, \"liveMachineControlReady\": false, \"ciEvidenceReady\": true, \"fullAutonomousFactoryReady\": false, \"productionReady\": true, \"productionReadyScope\": \"coreFactoryE2E\"}"
+    }
+  ],
+  "readiness": {
+    "coreFactoryE2EReady": true,
+    "kdDfMReady": true,
+    "commercialCostModelReady": true,
+    "marketDemandVerified": false,
+    "liveVisionReady": false,
+    "liveVideoReady": false,
+    "osSandboxReady": false,
+    "liveMachineControlReady": false,
+    "ciEvidenceReady": true,
+    "fullAutonomousFactoryReady": false,
+    "requiredChecks": {
+      "coreFactoryE2EReady": [
+        "real Blender furniture factory E2E"
+      ],
+      "kdDfMReady": [
+        "waste V2 conservation",
+        "remnant extract/consume-once",
+        "packing derived from panels"
+      ],
+      "commercialCostModelReady": [
+        "landed cost lineage hashes"
+      ],
+      "marketDemandVerified": [
+        "live DemandSignal Provider"
+      ],
+      "liveVisionReady": [
+        "registered vision adapter"
+      ],
+      "liveVideoReady": [
+        "registered video ProviderAdapter"
+      ],
+      "osSandboxReady": [
+        "OS jail"
+      ],
+      "liveMachineControlReady": [
+        "forbidden this round"
+      ],
+      "ciEvidenceReady": [
+        "GitHub Actions pytest"
+      ]
+    },
+    "productionReady": true,
+    "productionReadyScope": "coreFactoryE2E"
+  },
+  "catalogTop": [
+    {
+      "productId": "68f52114-eff2-437e-b8b7-115247a3b654",
+      "kind": "OPEN_SHELF",
+      "dimensions": {
+        "width": 800.0,
+        "height": 1200.0,
+        "depth": 300.0
+      },
+      "engineeringHash": "a201477f5ced42e6669fbff5f2c0489d6fbb64fa19cc3dfbc61fdd67c52a25c3",
+      "bomHash": "c02c39bd150fe5ad824d88e9d28e57c033e72a5c89b337b20f25a7179c8646e0",
+      "commonPartRatio": 0.5,
+      "sheetCount": 1,
+      "utilizationRatio": 0.6869,
+      "trueWasteRatio": 0.053,
+      "reusableRemnantRatio": 0.2601,
+      "carton": {
+        "L": 1224.0,
+        "W": 324.0,
+        "H": 213.0
+      },
+      "packedWeight": 26.099,
+      "assemblyDifficulty": 0.572,
+      "estimatedMinutes": 26.4,
+      "landedCost": 1761.26,
+      "suggestedPrice": 2553.83,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7718,
+      "engineeringVeto": false
+    },
+    {
+      "productId": "71462a77-b5f4-4e60-9d1c-f91cd5328484",
+      "kind": "OPEN_SHELF",
+      "dimensions": {
+        "width": 800.0,
+        "height": 1200.0,
+        "depth": 300.0
+      },
+      "engineeringHash": "e6388feaa3024ee957f659b48d3bf2faeb4b926fab9911ef9225a5549423718b",
+      "bomHash": "c02c39bd150fe5ad824d88e9d28e57c033e72a5c89b337b20f25a7179c8646e0",
+      "commonPartRatio": 0.5,
+      "sheetCount": 1,
+      "utilizationRatio": 0.6869,
+      "trueWasteRatio": 0.053,
+      "reusableRemnantRatio": 0.2601,
+      "carton": {
+        "L": 1224.0,
+        "W": 324.0,
+        "H": 213.0
+      },
+      "packedWeight": 26.099,
+      "assemblyDifficulty": 0.572,
+      "estimatedMinutes": 26.4,
+      "landedCost": 1761.26,
+      "suggestedPrice": 2553.83,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7718,
+      "engineeringVeto": false
+    },
+    {
+      "productId": "ddc70383-ddc4-4cea-a9fe-430d5c971086",
+      "kind": "VANITY_DESK",
+      "dimensions": {
+        "width": 800.0,
+        "height": 750.0,
+        "depth": 400.0
+      },
+      "engineeringHash": "8e859a121981c6be6433aee748c886db51270b21a389dd62f7850b713235b4d0",
+      "bomHash": "3003abe090bb75d550488bddd5d8ebfd76949774ccc829fa6b9135ebf4671ed4",
+      "commonPartRatio": 0.4615,
+      "sheetCount": 1,
+      "utilizationRatio": 0.8627,
+      "trueWasteRatio": 0.1373,
+      "reusableRemnantRatio": 0.0,
+      "carton": {
+        "L": 824.0,
+        "W": 738.0,
+        "H": 364.0
+      },
+      "packedWeight": 25.352,
+      "assemblyDifficulty": 0.6203,
+      "estimatedMinutes": 29.8,
+      "landedCost": 2595.63,
+      "suggestedPrice": 3763.67,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7652,
+      "engineeringVeto": false
+    },
+    {
+      "productId": "66059408-dbbb-466a-a21d-ffc19bf82fb9",
+      "kind": "VANITY_DESK",
+      "dimensions": {
+        "width": 800.0,
+        "height": 750.0,
+        "depth": 400.0
+      },
+      "engineeringHash": "5ea163aa95c7d5e464cfb281f2c11a7d42cdaae2a7b4e964aa184e5806c6db22",
+      "bomHash": "3003abe090bb75d550488bddd5d8ebfd76949774ccc829fa6b9135ebf4671ed4",
+      "commonPartRatio": 0.4615,
+      "sheetCount": 1,
+      "utilizationRatio": 0.8627,
+      "trueWasteRatio": 0.1373,
+      "reusableRemnantRatio": 0.0,
+      "carton": {
+        "L": 824.0,
+        "W": 738.0,
+        "H": 364.0
+      },
+      "packedWeight": 25.352,
+      "assemblyDifficulty": 0.6203,
+      "estimatedMinutes": 29.8,
+      "landedCost": 2595.63,
+      "suggestedPrice": 3763.67,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7652,
+      "engineeringVeto": false
+    },
+    {
+      "productId": "e139f216-9ac5-4716-93b3-96c9cad5d3eb",
+      "kind": "DESK_RISER",
+      "dimensions": {
+        "width": 600.0,
+        "height": 120.0,
+        "depth": 250.0
+      },
+      "engineeringHash": "2eff0acb8f8ec0bd111c83cd5e9f0c2928301f1ac5a6716dae6391f07807e82f",
+      "bomHash": "fd5325f96ca8b17e5c2ccd0172e6ef73df746f639576696a593e4f976a8ffe69",
+      "commonPartRatio": 0.2,
+      "sheetCount": 1,
+      "utilizationRatio": 0.1615,
+      "trueWasteRatio": 0.0636,
+      "reusableRemnantRatio": 0.7749,
+      "carton": {
+        "L": 624.0,
+        "W": 274.0,
+        "H": 159.0
+      },
+      "packedWeight": 6.924,
+      "assemblyDifficulty": 0.2567,
+      "estimatedMinutes": 11.5,
+      "landedCost": 1187.25,
+      "suggestedPrice": 1721.51,
+      "demandDataConfidence": "MOCK",
+      "previewAsset": null,
+      "approvalState": "COMMERCIAL_CANDIDATE",
+      "rdScore": 0.7408,
+      "engineeringVeto": false
+    }
+  ]
+}
