@@ -102,7 +102,7 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 
 ## Phase 121–180 review fix (`704d058` CHANGES REQUIRED)
 
-Local pytest 77 passed after: multipart runtime dep, OS-agnostic path guard, remnant ownership, paired saved sheets, 8-kind REAL Blender previews. **GitHub CI @ 2aea774 FAILED 3 tests.** Acceptance `ciEvidenceReady` stays false until a GREEN GitHub run on the fix SHA. Cost model scope=`CONFIG_ESTIMATE_ONLY`. Phase 130 upgraded from 1 preview to 8 REAL kinds. OS sandbox still PARTIAL.
+Local pytest 77 passed after: multipart runtime dep, OS-agnostic path guard, remnant ownership, paired saved sheets, 8-kind REAL Blender previews. **GitHub CI @ 2aea774 FAILED 3 tests.** **GitHub CI @ e7d911d run 34245840051 GREEN** (ubuntu-latest + windows-latest, MOCK suite). Cost model scope=`CONFIG_ESTIMATE_ONLY`. Phase 130: 8/8 REAL KD previews. OS sandbox still PARTIAL.
 
 ## Phase 121–180 KD / Flat-Pack (this round)
 

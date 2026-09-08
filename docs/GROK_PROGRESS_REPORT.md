@@ -14,7 +14,7 @@ Did **not** start Phase 181+. Fixed review gaps only.
 |---|---|
 | Missing `python-multipart` | runtime dep in `pyproject.toml`; `create_app()` multipart route regression |
 | Ubuntu path-traversal bypass | OS-agnostic `/` and `\\` segment split; mixed-separator tests |
-| CI claimed GREEN without check | `ciEvidenceReady=false` until GitHub Actions GREEN on this SHA; ubuntu+windows matrix |
+| CI claimed GREEN without check | matrix ubuntu+windows; GREEN recorded as run `34245840051` on `e7d911d` |
 | Cost readiness naming | `estimatedCostModelReady` / `realProviderCostReady=false` / `commercialQuoteReady=false`; compat `commercialCostModelScope=CONFIG_ESTIMATE_ONLY` |
 | Remnant consume-across-reserve | consume only by `reservedBy`; second reserve blocked; in-process ledger |
 | `savedNewSheetCount` area approx | paired `baseline.sheetCount - remnant.sheetCount`; estimate field separate ESTIMATED |
@@ -27,8 +27,8 @@ Did **not** start Phase 181+. Fixed review gaps only.
 pytest -q  →  77 passed   (local MOCK suite — not Production Ready)
 ```
 
-GitHub Actions @ `2aea774`: **FAILED, 3 tests** (historical).  
-GitHub Actions @ this commit: **PENDING** at report write time (`ciEvidenceReady=false`).
+GitHub Actions @ `2aea774`: **FAILED, 3 tests** (historical, run `34239900443`).  
+GitHub Actions @ `e7d911d`: **GREEN** run `34245840051` — `unit (ubuntu-latest)` + `unit (windows-latest)`. MOCK blender suite only, not REAL production.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
@@ -47,7 +47,7 @@ GitHub Actions @ this commit: **PENDING** at report write time (`ciEvidenceReady
 | OS sandbox | PARTIAL |
 | AR runtime | PARTIAL |
 | LIVE_CNC | BLOCKED |
-| CI evidence | PENDING until GREEN check |
+| CI evidence | REAL GitHub GREEN on `e7d911d` run `34245840051` (MOCK suite) |
 | fullAutonomousFactoryReady | false |
 | productionReadyScope | coreFactoryE2E only |
 
@@ -57,7 +57,8 @@ GitHub Actions @ this commit: **PENDING** at report write time (`ciEvidenceReady
 - Vision/Video/Demand MOCK
 - OS sandbox PARTIAL
 - REAL_PROVIDER costs missing
-- CI not claimed GREEN in acceptance JSON generated locally
+- REAL_PROVIDER costs missing
+- CI GREEN is mock-suite only (not REAL Blender)
 
 ## Do not redo
 

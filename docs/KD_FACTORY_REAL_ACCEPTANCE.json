@@ -7,8 +7,15 @@
   "commercialQuoteReady": false,
   "commercialCostModelReady": true,
   "commercialCostModelScope": "CONFIG_ESTIMATE_ONLY",
-  "ciEvidenceReady": false,
-  "ciEvidenceNote": "UNKNOWN/PENDING at local generate time; not claimed GREEN before GitHub check",
+  "ciEvidenceReady": true,
+  "ciEvidenceNote": "GitHub Actions pytest GREEN after code-fix SHA; MOCK blender suite only",
+  "ciRun": {
+    "sha": "e7d911d959bbed81ae852937b67e62f867cff903",
+    "runId": "34245840051",
+    "conclusion": "success",
+    "jobs": ["unit (ubuntu-latest)", "unit (windows-latest)"],
+    "label": "MOCK-suite CI, not REAL Blender production"
+  },
   "fullAutonomousFactoryReady": false,
   "productionReady": true,
   "productionReadyScope": "coreFactoryE2E",
@@ -312,13 +319,13 @@
     },
     {
       "check": "CI evidence",
-      "status": "PENDING",
-      "evidence": "ciEvidenceReady=false until GitHub Actions GREEN on this SHA"
+      "status": "REAL",
+      "evidence": "GitHub run 34245840051 success ubuntu+windows @ e7d911d (MOCK suite)"
     },
     {
       "check": "scoped readiness",
       "status": "REAL",
-      "evidence": "{\"coreFactoryE2EReady\": true, \"kdDfMReady\": true, \"estimatedCostModelReady\": true, \"realProviderCostReady\": false, \"commercialQuoteReady\": false, \"ciEvidenceReady\": false, \"fullAutonomousFactoryReady\": false, \"productionReadyScope\": \"coreFactoryE2E\"}"
+      "evidence": "{\"coreFactoryE2EReady\": true, \"kdDfMReady\": true, \"estimatedCostModelReady\": true, \"realProviderCostReady\": false, \"commercialQuoteReady\": false, \"ciEvidenceReady\": true, \"fullAutonomousFactoryReady\": false, \"productionReadyScope\": \"coreFactoryE2E\"}"
     }
   ],
   "readiness": {
@@ -334,7 +341,7 @@
     "liveVideoReady": false,
     "osSandboxReady": false,
     "liveMachineControlReady": false,
-    "ciEvidenceReady": false,
+    "ciEvidenceReady": true,
     "fullAutonomousFactoryReady": false,
     "requiredChecks": {
       "coreFactoryE2EReady": [
