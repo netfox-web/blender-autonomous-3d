@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
 import json
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +12,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from fox3d.commerce import mixed_landed_cost  # noqa: E402
-from fox3d.evidence import evidence_bundle, verify_bundle  # noqa: E402
+from fox3d.evidence import (  # noqa: E402
+    ACCEPTANCE_RUNNER_VERSION,
+    DirtyTreeError,
+    evidence_bundle,
+    inspect_repo_lineage,
+    verify_bundle,
+)
 from fox3d.packv2 import board_grade, carton_optimize, fit_regression  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
 from fox3d.publish import publication_package  # noqa: E402
@@ -27,18 +33,20 @@ def _ok(job: dict) -> bool:
     return job.get("status") in {"completed", "succeeded"} and bool(real) and not used
 
 
-def _sha() -> str:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--allow-dirty", action="store_true", help="dev-only; output is PARTIAL/UNVERIFIED, never REAL")
+    args = parser.parse_args(argv)
     try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    except Exception:
-        return "HEAD"
-
-
-def main() -> int:
+        lineage = inspect_repo_lineage(ROOT, allow_dirty=args.allow_dirty)
+    except DirtyTreeError as exc:
+        print(json.dumps({"ok": False, "error": str(exc), "label": "FAIL"}, indent=2))
+        return 2
+    sha = lineage["evidenceCodeCommit"]
+    real_ok = bool(lineage["realAcceptanceAllowed"])
     plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
     probe = plat.register_detected_workers()
     rows: list[dict] = []
-    sha = _sha()
 
     def add(name: str, status: str, evidence: str) -> None:
         rows.append({"check": name, "status": status, "evidence": evidence})
@@ -96,14 +104,18 @@ def main() -> int:
                 engineering_hash=rec.get("engineeringHash") or (rec.get("engineering") or {}).get("engineeringHash"),
                 bom_hash=(rec.get("bom") or {}).get("bomHash"),
             )
-            ver = verify_bundle(bun, require_real=True)
-            previews.append({"family": family, "jobId": job.get("jobId"), "usedMock": job.get("usedMock"), "realBlender": job.get("realBlender"), "outputHash": job.get("outputHash"), "gpuUuid": job.get("gpuUuid"), "blenderVersion": job.get("blenderVersion"), "workerId": job.get("worker"), "verify": ver, "bundle": bun, "label": "REAL" if ver["ok"] and _ok(job) else "PARTIAL"})
+            ver = verify_bundle(bun, require_real=True, expected_commit_sha=sha)
+            label = "REAL" if real_ok and ver["ok"] and _ok(job) else "PARTIAL"
+            if not real_ok:
+                label = "UNVERIFIED"
+            previews.append({"family": family, "jobId": job.get("jobId"), "usedMock": job.get("usedMock"), "realBlender": job.get("realBlender"), "outputHash": job.get("outputHash"), "gpuUuid": job.get("gpuUuid"), "blenderVersion": job.get("blenderVersion"), "workerId": job.get("worker"), "verify": ver, "bundle": bun, "label": label})
         n_real = sum(1 for p in previews if p["label"] == "REAL")
-        add("publication 5-family Blender+EvidenceBundle", "REAL" if n_real >= 5 else "PARTIAL", f"real={n_real}/5")
+        add("publication 5-family Blender+EvidenceBundle", "REAL" if n_real >= 5 and real_ok else "PARTIAL", f"real={n_real}/5 clean={lineage['workingTreeClean']}")
     else:
         add("publication 5-family Blender+EvidenceBundle", "BLOCKED_NO_OPTIX" if probe.realBlender else "BLOCKED_NO_BLENDER", "skipped")
 
     gate = plat.release
+    adv: dict = {}
     ev_ok = bool(previews) and all(p.get("verify", {}).get("ok") for p in previews)
     try:
         adv = gate.advance(kd["spec"]["productId"], target="ENGINEERING_VALID", actor="ops", entity=kd)
@@ -113,12 +125,18 @@ def main() -> int:
         add("release gate APPROVED_FOR_EXPORT", "REAL", adv["state"])
     except Exception as exc:
         add("release gate APPROVED_FOR_EXPORT", "PARTIAL", str(exc))
-    live_blocked = False
+    live_cnc_blocked = False
+    live_laser_blocked = False
     try:
         gate.advance("nope", target="LIVE_CNC", actor="ops", entity=kd)
     except PermissionError:
-        live_blocked = True
-    add("forbidden LIVE_CNC transition", "REAL" if live_blocked else "FAIL", "blocked")
+        live_cnc_blocked = True
+    try:
+        gate.advance("nope2", target="LIVE_LASER", actor="ops", entity=kd)
+    except PermissionError:
+        live_laser_blocked = True
+    add("forbidden LIVE_CNC transition", "REAL" if live_cnc_blocked else "FAIL", "blocked")
+    add("forbidden LIVE_LASER transition", "REAL" if live_laser_blocked else "FAIL", "blocked")
 
     kd_changed = dict(kd)
     kd_changed["engineeringHash"] = "mutated"
@@ -152,6 +170,15 @@ def main() -> int:
     generated = datetime.now(timezone.utc).isoformat()
 
     def write_acc(name: str, title: str, extra_rows: list[dict], payload: dict) -> None:
+        if not real_ok:
+            return
+        payload = {
+            **payload,
+            "evidenceCodeCommit": sha,
+            "workingTreeClean": lineage["workingTreeClean"],
+            "acceptanceRunnerVersion": ACCEPTANCE_RUNNER_VERSION,
+            "generatedAt": generated,
+        }
         (docs / f"{name}.json").write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
         lines = [f"# {title}", "", f"generatedAt: {generated}", "pytest mock PASS is **not** production ready.", "", "## Domain evidence (machine-verifiable)", "", "| Check | Status | Evidence |", "|---|---|---|"]
         for r in extra_rows:
@@ -182,8 +209,22 @@ def main() -> int:
     write_acc(
         "RELEASE_GATE_REAL_ACCEPTANCE",
         "RELEASE_GATE_REAL_ACCEPTANCE",
-        [r for r in rows if "release" in r["check"] or "stale" in r["check"] or "LIVE_CNC" in r["check"] or "Evidence" in r["check"]],
-        {"rows": rows, "previews": previews, "generatedAt": generated, "liveMachineControl": False},
+        [r for r in rows if "release" in r["check"] or "stale" in r["check"] or "LIVE_" in r["check"] or "Evidence" in r["check"]],
+        {
+            "rows": rows,
+            "previews": previews,
+            "liveMachineControl": False,
+            "expectedCodeCommit": sha,
+            "evidenceBundleVerifier": {
+                "ok": bool(previews) and all(p.get("verify", {}).get("ok") for p in previews),
+                "results": [p.get("verify") for p in previews],
+            },
+            "approvalAuditEventHash": (adv.get("audit") or {}).get("auditHash") if isinstance(adv, dict) else None,
+            "staleOnEngineeringHashMutation": bool(stale.get("stale")),
+            "forbiddenLiveCnc": live_cnc_blocked,
+            "forbiddenLiveLaser": live_laser_blocked,
+            "approvedForExportEqualsLiveCnc": False,
+        },
     )
     write_acc(
         "COMMERCIAL_COST_ACCEPTANCE",
@@ -204,6 +245,7 @@ def main() -> int:
         {
             "generatedAt": generated,
             "commitSha": sha,
+            "evidenceCodeCommit": sha,
             "probe": {"blender": probe.blenderBinary, "gpu": probe.gpuName, "optix": probe.realOptix},
             "rows": rows,
             "previews": previews,
@@ -213,8 +255,10 @@ def main() -> int:
             "liveMachineControl": False,
         },
     )
-    print(json.dumps({"rows": rows, "ready": ready["fullAutonomousFactoryReady"]}, indent=2, default=str))
-    return 0
+    print(json.dumps({"rows": rows, "ready": ready["fullAutonomousFactoryReady"], "lineage": lineage, "realOk": real_ok}, indent=2, default=str))
+    if not real_ok:
+        return 3
+    return 0 if all(p.get("label") == "REAL" for p in previews) or not previews else 0
 
 
 if __name__ == "__main__":

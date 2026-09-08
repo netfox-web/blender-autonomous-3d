@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
 from fox3d.commerce import mixed_landed_cost, quote_binding, quote_stale, supplier_alternatives
-from fox3d.evidence import evidence_bundle, verify_bundle
+from fox3d.evidence import DirtyTreeError, evidence_bundle, prepare_evidence_lineage, verify_bundle
 from fox3d.ids import sha256_bytes
 from fox3d.ops import assert_job_paths_safe
 from fox3d.packv2 import (
@@ -64,6 +64,23 @@ def test_evidence_bundle_verifier(tmp_path):
     bun_miss = dict(bun)
     bun_miss["artifactPath"] = str(tmp_path / "nope.png")
     assert "artifact_missing" in verify_bundle(bun_miss)["errors"]
+    assert verify_bundle(bun, expected_commit_sha="abc")["ok"] is True
+    stale = verify_bundle(bun, expected_commit_sha="b9e7861be28c6f94a1bc7c985c77877b98b70720")
+    assert stale["ok"] is False
+    assert "commit_sha_mismatch" in stale["errors"]
+
+
+def test_dirty_tree_rejects_real_acceptance():
+    with pytest.raises(DirtyTreeError):
+        prepare_evidence_lineage(head_sha="abc123", porcelain=" M src/fox3d/evidence.py\n", allow_dirty=False)
+    dirty = prepare_evidence_lineage(head_sha="abc123", porcelain=" M src/fox3d/evidence.py\n", allow_dirty=True)
+    assert dirty["realAcceptanceAllowed"] is False
+    assert dirty["label"] == "UNVERIFIED"
+    assert dirty["workingTreeClean"] is False
+    clean = prepare_evidence_lineage(head_sha="f695eef", porcelain="", allow_dirty=False)
+    assert clean["realAcceptanceAllowed"] is True
+    assert clean["evidenceCodeCommit"] == "f695eef"
+    assert clean["workingTreeClean"] is True
 
 
 def test_approval_audit_and_stale(platform):
