@@ -111,4 +111,10 @@ def capability_flags(detected: dict[str, object]) -> dict[str, object]:
         "realOptix": bool(detected.get("realOptix")),
         "blocked": detected.get("blocked") or [],
         "mock": bool(detected.get("mock")),
+        "gpuUuid": detected.get("gpuUuid"),
+        "vramUsedGb": detected.get("vramUsedGb"),
+        "vramFreeGb": detected.get("vramFreeGb"),
+        "hostname": detected.get("hostname"),
+        "os": detected.get("osName"),
+        "discoverySource": detected.get("discoverySource") or ("MOCK" if detected.get("mock") else None),
     }

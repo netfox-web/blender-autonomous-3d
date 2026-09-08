@@ -19,7 +19,7 @@ from fox3d.blender import (
 )
 from fox3d.capabilities import BLENDER_PREVIEW, BLENDER_RENDER, capability_flags, foxstudio_operations
 from fox3d.gpu import GpuPolicy
-from fox3d.ids import new_id
+from fox3d.ids import new_id, sha256_bytes
 from fox3d.infra import (
     AIGateway,
     CapabilityRegistry,
@@ -161,6 +161,16 @@ class Platform:
                 "realCycles": probe.realCycles,
                 "realOptix": probe.realOptix,
             }
+            detected.update(
+                {
+                    "gpuUuid": gpu.get("uuid"),
+                    "vramUsedGb": gpu.get("vramUsedGb"),
+                    "vramFreeGb": gpu.get("vramFreeGb"),
+                    "hostname": probe.hostname,
+                    "osName": probe.osName,
+                    "discoverySource": probe.discoverySource,
+                }
+            )
             node = self.register_node(target_key=key, name=str(gpu.get("name") or key), detected=detected)
             if not probe.blender:
                 node.status = "offline"
@@ -169,6 +179,23 @@ class Platform:
                 node.telemetry["blocked"] = BLOCKED_NO_OPTIX
             node.capabilities["blenderVersion"] = probe.blenderVersion or "NOT_INSTALLED"
             node.capabilities["mock"] = False
+            node.capabilities["hostname"] = probe.hostname
+            node.capabilities["os"] = probe.osName
+            node.capabilities["gpuUuid"] = gpu.get("uuid")
+            node.capabilities["vramUsedGb"] = gpu.get("vramUsedGb")
+            node.capabilities["vramFreeGb"] = gpu.get("vramFreeGb")
+            node.capabilities["discoverySource"] = probe.discoverySource
+            node.gpus = [
+                {
+                    "gpuIndex": gpu.get("gpuIndex", 0),
+                    "name": gpu.get("name"),
+                    "uuid": gpu.get("uuid"),
+                    "vramGb": gpu.get("vramGb"),
+                    "vramUsedGb": gpu.get("vramUsedGb"),
+                    "vramFreeGb": gpu.get("vramFreeGb") if gpu.get("vramFreeGb") is not None else gpu.get("vramGb"),
+                    "freeVramGb": gpu.get("vramFreeGb") if gpu.get("vramFreeGb") is not None else gpu.get("vramGb"),
+                }
+            ]
         return probe
 
     def worker_offline_recovery(self) -> list[str]:
@@ -248,7 +275,9 @@ class Platform:
             return job
 
         job["gpu"] = placement.get("gpuName")
+        job["gpuUuid"] = (self.probe.gpuUuid if self.probe else None)
         job["worker"] = self.worker_id
+        job["discoverySource"] = (self.probe.discoverySource if self.probe else ("MOCK" if self.mock_blender else "REAL_DISCOVERY"))
         self._enter_running(job)
         blender_version = str(
             (job.get("render") or {}).get("blenderVersion")
@@ -344,6 +373,8 @@ class Platform:
         except Exception:
             pass
         stored = self._upload_outputs(job["tenantId"], job["jobId"], result.outputs or {})
+        job["outputHash"] = stored.get("beautyHash")
+        job["outputSize"] = stored.get("beautySize")
         output = {
             "files": stored,
             "engine": result.engine,
@@ -437,7 +468,10 @@ class Platform:
         if status == "retry_scheduled":
             self.queue.set_status(job["jobId"], "reserved", leaseOwner=self.worker_id)
         status = (self.queue.get(job["jobId"]) or job).get("status")
-        if status in {"reserved", "leased"}:
+        if status == "reserved":
+            self.queue.set_status(job["jobId"], "dispatched")
+        status = (self.queue.get(job["jobId"]) or job).get("status")
+        if status in {"dispatched", "leased"}:
             self.queue.set_status(job["jobId"], "running")
         elif status != "running":
             job["status"] = "running"
@@ -462,14 +496,18 @@ class Platform:
                 continue
             if not path or not Path(str(path)).exists():
                 continue
+            data = Path(str(path)).read_bytes()
             obj = self.dam.put(
                 tenant_id=tenant_id,
                 kind="render",
                 name=name,
-                data=Path(str(path)).read_bytes(),
-                metadata={"jobId": job_id},
+                data=data,
+                metadata={"jobId": job_id, "sha256": sha256_bytes(data), "bytes": len(data)},
             )
             stored[name] = obj.asset_id
+            if name == "beauty.png":
+                stored["beautyHash"] = obj.sha256
+                stored["beautySize"] = len(data)
         return stored
 
     def _release(self, job: dict[str, Any]) -> None:
@@ -493,12 +531,15 @@ class Platform:
         )
         bom = self.bom.build(spec)
         quote = self.cost.quote(spec, bom)
+        from fox3d.parametric import map_cabinet_material
+
         record = {
             "spec": spec.model_dump(mode="json"),
             "report": report.model_dump(),
             "bom": bom,
             "quote": quote,
             "engineeringHash": spec.engineering_hash(),
+            "material": map_cabinet_material(str(spec.material)),
         }
         self.parametrics[spec.productId] = record
         return record

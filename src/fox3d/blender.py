@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import platform as py_platform
 import re
 import shutil
+import socket
 import subprocess
 import threading
 import time
@@ -66,42 +68,72 @@ def find_blender(explicit: str | None = None) -> str | None:
     return str(candidates[0])
 
 
+def _vram_gb(raw: str) -> float:
+    value = float(raw)
+    return round(value / 1024.0, 2) if value > 128 else value
+
+
 def detect_gpu(probe: ProbeFn | None = None) -> dict[str, Any]:
-    """NVIDIA GPU / VRAM / driver from nvidia-smi. Does NOT claim OptiX."""
+    """NVIDIA GPU from nvidia-smi. Does NOT claim OptiX. Never hardcodes 5090/5080."""
     runner = probe or (lambda cmd: _run(cmd)[1])
     query = [
         "nvidia-smi",
-        "--query-gpu=name,memory.total,driver_version",
+        "--query-gpu=index,uuid,name,memory.total,memory.used,memory.free,driver_version",
         "--format=csv,noheader,nounits",
     ]
     raw = runner(query)
+    source = "MOCK" if probe is not None else "REAL_DISCOVERY"
     gpus: list[dict[str, Any]] = []
     for line in raw.splitlines():
         parts = [p.strip() for p in line.split(",")]
         if len(parts) < 3:
             continue
-        if parts[0].lower().startswith("failed") or "nvidia-smi" in parts[0].lower():
+        joined = " ".join(parts).lower()
+        if joined.startswith("failed") or "nvidia-smi" in parts[0].lower():
             continue
         try:
-            vram_mb = float(parts[1])
+            if len(parts) >= 7:
+                gpus.append(
+                    {
+                        "gpuIndex": int(float(parts[0])),
+                        "uuid": parts[1],
+                        "name": parts[2],
+                        "vramGb": _vram_gb(parts[3]),
+                        "vramUsedGb": _vram_gb(parts[4]),
+                        "vramFreeGb": _vram_gb(parts[5]),
+                        "driver": parts[6],
+                    }
+                )
+            else:
+                gpus.append(
+                    {
+                        "gpuIndex": len(gpus),
+                        "uuid": None,
+                        "name": parts[0],
+                        "vramGb": _vram_gb(parts[1]),
+                        "vramUsedGb": None,
+                        "vramFreeGb": None,
+                        "driver": parts[2],
+                    }
+                )
         except ValueError:
             continue
-        gpus.append(
-            {
-                "name": parts[0],
-                "vramGb": round(vram_mb / 1024.0, 2) if vram_mb > 128 else vram_mb,
-                "driver": parts[2],
-                "gpuIndex": len(gpus),
-            }
-        )
+    if probe is None and not gpus:
+        source = "MISSING"
+    elif probe is None:
+        source = "REAL_DISCOVERY"
     return {
         "gpus": gpus,
         "gpuCount": len(gpus),
         "gpuName": gpus[0]["name"] if gpus else None,
+        "gpuUuid": gpus[0].get("uuid") if gpus else None,
         "vramGb": gpus[0]["vramGb"] if gpus else 0,
+        "vramUsedGb": gpus[0].get("vramUsedGb") if gpus else None,
+        "vramFreeGb": gpus[0].get("vramFreeGb") if gpus else None,
         "cuda": bool(gpus),
         "driver": gpus[0]["driver"] if gpus else None,
         "realGPU": bool(gpus),
+        "discoverySource": source,
     }
 
 
@@ -188,8 +220,14 @@ class HostProbe:
     cyclesDevices: list[dict[str, Any]] = field(default_factory=list)
     gpus: list[dict[str, Any]] = field(default_factory=list)
     gpuName: str | None = None
+    gpuUuid: str | None = None
     vramGb: float = 0
+    vramUsedGb: float | None = None
+    vramFreeGb: float | None = None
     driver: str | None = None
+    hostname: str | None = None
+    osName: str | None = None
+    discoverySource: str = "MISSING"
     blocked: list[str] = field(default_factory=list)
     realBlender: bool = False
     realGPU: bool = False
@@ -223,8 +261,14 @@ def probe_host(*, blender_bin: str | None = None, script_path: Path | None = Non
         cyclesDevices=list(cycles.get("devices") or []),
         gpus=list(gpu.get("gpus") or []),
         gpuName=gpu.get("gpuName"),
+        gpuUuid=gpu.get("gpuUuid"),
         vramGb=float(gpu.get("vramGb") or 0),
+        vramUsedGb=gpu.get("vramUsedGb"),
+        vramFreeGb=gpu.get("vramFreeGb"),
         driver=gpu.get("driver"),
+        hostname=socket.gethostname(),
+        osName=py_platform.system(),
+        discoverySource=str(gpu.get("discoverySource") or "MISSING"),
         blocked=blocked,
         realBlender=bool(blender.get("realBlender")),
         realGPU=bool(gpu.get("realGPU")),

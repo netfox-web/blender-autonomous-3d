@@ -21,8 +21,9 @@ from fox3d.jobs import JobStatus
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "blocked": frozenset({"queued", "cancel_requested", "skipped", "expired"}),
     "queued": frozenset({"reserved", "leased", "cancel_requested", "expired", "blocked"}),
-    "reserved": frozenset({"running", "retry_scheduled", "cancel_requested", "failed", "queued", "blocked"}),
-    "leased": frozenset({"running", "reserved", "retry_scheduled", "cancel_requested", "failed", "queued"}),
+    "reserved": frozenset({"dispatched", "running", "retry_scheduled", "cancel_requested", "failed", "queued", "blocked"}),
+    "dispatched": frozenset({"running", "retry_scheduled", "cancel_requested", "failed", "queued", "blocked"}),
+    "leased": frozenset({"running", "reserved", "dispatched", "retry_scheduled", "cancel_requested", "failed", "queued"}),
     "running": frozenset(
         {
             "rendering",
@@ -522,7 +523,7 @@ class JobQueue:
             job["status"] = "cancel_requested"
             job["status"] = transition("cancel_requested", "cancelled")
             job["completedAt"] = utcnow().isoformat()
-        elif job["status"] in {"leased", "reserved", "running", "rendering", "uploading", "waiting_approval"}:
+        elif job["status"] in {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "waiting_approval"}:
             job["status"] = transition(job["status"], "cancel_requested")
         return job
 
@@ -565,7 +566,7 @@ class JobQueue:
         now = utcnow()
         recovered: list[str] = []
         for job in self._jobs.values():
-            if job["status"] not in {"leased", "reserved", "running", "rendering"}:
+            if job["status"] not in {"leased", "reserved", "dispatched", "running", "rendering"}:
                 continue
             beat = job.get("heartbeatAt") or job.get("startedAt")
             if not beat:

@@ -24,14 +24,42 @@ def render_admin(platform: Any) -> str:
     else:
         banner = '<div class="banner blocked">尚未完成 host probe。</div>'
 
-    rows_nodes = "".join(
-        f"<tr><td>{escape(n.target_key)}</td><td>{escape(n.status)}</td>"
-        f"<td>{escape(str(n.capabilities.get('gpu')))}</td>"
-        f"<td>{escape(str(n.capabilities.get('blenderVersion')))}</td>"
-        f"<td>{escape(str(n.capabilities.get('optix')))}</td>"
-        f"<td>{escape(str(n.capabilities.get('realBlender')))}</td></tr>"
-        for n in nodes
-    )
+    def _worker_row(n: Any) -> str:
+        mock = bool(n.capabilities.get("mock")) or str(n.capabilities.get("blenderVersion") or "").startswith("mock")
+        source = n.capabilities.get("discoverySource") or ("MOCK" if mock else "REAL_DISCOVERY")
+        badge = "MOCK" if mock or source == "MOCK" else "REAL"
+        current = next(
+            (
+                j.get("jobId")
+                for j in jobs
+                if j.get("assignedComputeTargetKey") == n.target_key
+                and j.get("status") in {"reserved", "dispatched", "running", "rendering", "uploading"}
+            ),
+            "",
+        )
+        beat = n.last_heartbeat_at.isoformat() if getattr(n, "last_heartbeat_at", None) else ""
+        gpu0 = (n.gpus or [{}])[0]
+        vram = f"{gpu0.get('vramUsedGb')}/{gpu0.get('vramGb')} free={gpu0.get('vramFreeGb') or gpu0.get('freeVramGb')}"
+        return (
+            "<tr>"
+            f"<td><span class='badge {badge.lower()}'>{badge}</span></td>"
+            f"<td>{escape(n.target_key)}</td>"
+            f"<td>{escape(str(n.capabilities.get('hostname') or ''))}</td>"
+            f"<td>{escape(str(n.capabilities.get('os') or ''))}</td>"
+            f"<td>{escape(str(n.capabilities.get('gpu')))}</td>"
+            f"<td>{escape(str(n.capabilities.get('gpuUuid') or gpu0.get('uuid') or ''))}</td>"
+            f"<td>{escape(vram)}</td>"
+            f"<td>{escape(str(n.capabilities.get('blenderVersion')))}</td>"
+            f"<td>{escape(str(n.capabilities.get('cycles', n.capabilities.get('blender'))))}</td>"
+            f"<td>{escape(str(n.capabilities.get('cuda')))}</td>"
+            f"<td>{escape(str(n.capabilities.get('optix')))}</td>"
+            f"<td>{escape(n.status)}</td>"
+            f"<td>{escape(str(current))}</td>"
+            f"<td>{escape(beat)}</td>"
+            "</tr>"
+        )
+
+    rows_nodes = "".join(_worker_row(n) for n in nodes)
     rows_jobs = []
     for j in jobs:
         files = ((j.get("output") or {}).get("files") or {})
@@ -44,12 +72,12 @@ def render_admin(platform: Any) -> str:
             f"<td>{escape(str(j.get('jobType')))}</td>"
             f"<td>{escape(str(j.get('status')))}</td>"
             f"<td>{escape(str(j.get('worker')))}</td>"
-            f"<td>{escape(str(j.get('gpu') or j.get('assignedComputeTargetKey')))}</td>"
+            f"<td>{escape(str(j.get('gpu') or j.get('assignedComputeTargetKey')))} {escape(str(j.get('gpuUuid') or ''))}</td>"
             f"<td>{escape(str(j.get('blenderVersion') or (j.get('output') or {}).get('blenderVersion')))}</td>"
             f"<td>{escape(str(j.get('renderEngine') or (j.get('output') or {}).get('engine')))}</td>"
             f"<td>{escape(str(j.get('samples') or (j.get('output') or {}).get('samples')))}</td>"
             f"<td>{escape(str(j.get('renderTimeSec') or (j.get('output') or {}).get('renderTimeSec')))}</td>"
-            f"<td>{img}{escape(str(asset))}</td>"
+            f"<td>{img}{escape(str(asset))} {escape(str(j.get('outputHash') or ''))} {escape(str(j.get('outputSize') or ''))}</td>"
             f"<td class='log'>{log}</td>"
             "</tr>"
         )
@@ -58,7 +86,11 @@ def render_admin(platform: Any) -> str:
         preview = t.previewAssetId
         img = f'<img src="/api/assets/{escape(str(preview))}" class="preview"/>' if preview else "<em>no preview</em>"
         twin_cards.append(
-            f"<div class='card'><h3>{escape(t.sku)}</h3><p>{escape(t.twinId)}</p>{img}</div>"
+            f"<div class='card'><h3>{escape(t.sku)}</h3>"
+            f"<p>{escape(t.twinId)}</p>{img}"
+            f"<p>format: GLB v{escape(str(t.version))}</p>"
+            f"<p>dims: {escape(str(t.dimensions))}</p>"
+            f"<p>asset: {escape(str(t.damAssetId or t.glb or ''))}</p></div>"
         )
     return f"""<!doctype html>
 <html lang="zh-Hant">
@@ -75,6 +107,9 @@ def render_admin(platform: Any) -> str:
     .banner.ok {{ background: #132; color: #8f8; }}
     .banner.blocked {{ background: #311; color: #f88; }}
     .banner.mock {{ background: #321; color: #fc6; }}
+    .badge {{ display:inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; }}
+    .badge.real {{ background:#163; color:#9f9; }}
+    .badge.mock {{ background:#532; color:#fc6; }}
     .thumb, .preview {{ max-width: 128px; max-height: 128px; display: block; }}
     .log {{ max-width: 280px; white-space: pre-wrap; color: #8b949e; font-family: ui-monospace, monospace; font-size: 11px; }}
     .card {{ display: inline-block; margin: 8px; padding: 12px; border: 1px solid #30363d; min-width: 160px; }}
@@ -89,8 +124,12 @@ def render_admin(platform: Any) -> str:
   {banner}
   <section>
     <h2>Blender Workers</h2>
-    <table><thead><tr><th>target</th><th>status</th><th>GPU</th><th>Blender</th><th>OptiX</th><th>realBlender</th></tr></thead>
-    <tbody>{rows_nodes or '<tr><td colspan="6">no workers registered</td></tr>'}</tbody></table>
+    <table><thead><tr>
+      <th>badge</th><th>target</th><th>hostname</th><th>OS</th><th>GPU</th><th>UUID</th>
+      <th>VRAM used/total/free</th><th>Blender</th><th>Cycles</th><th>CUDA</th><th>OptiX</th>
+      <th>status</th><th>current job</th><th>last heartbeat</th>
+    </tr></thead>
+    <tbody>{rows_nodes or '<tr><td colspan="14">no workers registered</td></tr>'}</tbody></table>
     <h2>3D Jobs / Render Queue</h2>
     <table><thead><tr>
       <th>job</th><th>type</th><th>status</th><th>worker</th><th>GPU</th>

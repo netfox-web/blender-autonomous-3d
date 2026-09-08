@@ -15,6 +15,7 @@ JobStatus = Literal[
     "blocked",
     "queued",
     "reserved",
+    "dispatched",
     "leased",
     "running",
     "rendering",

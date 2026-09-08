@@ -314,10 +314,64 @@ def _bay_count(inner_w: float, limit: float) -> int:
     return max(1, math.ceil(inner_w / limit))
 
 
+CABINET_MATERIALS = {
+    "WOOD_WHITE": {
+        "visual": "white_wood",
+        "engineering": "particle_board",
+        "costUnit": "TWD/m2",
+        "thicknessOptionsMm": [15, 18, 25],
+        "textureAsset": "wood_white",
+        "baseColor": (0.86, 0.82, 0.74),
+    },
+    "WOOD_OAK": {
+        "visual": "oak",
+        "engineering": "particle_board",
+        "costUnit": "TWD/m2",
+        "thicknessOptionsMm": [15, 18, 25],
+        "textureAsset": "wood_oak",
+        "baseColor": (0.62, 0.45, 0.28),
+    },
+    "WOOD_WALNUT": {
+        "visual": "walnut",
+        "engineering": "particle_board",
+        "costUnit": "TWD/m2",
+        "thicknessOptionsMm": [15, 18, 25],
+        "textureAsset": "wood_walnut",
+        "baseColor": (0.28, 0.18, 0.12),
+    },
+    "WOOD_BLACK": {
+        "visual": "black_wood",
+        "engineering": "mdf",
+        "costUnit": "TWD/m2",
+        "thicknessOptionsMm": [16, 18],
+        "textureAsset": "wood_black",
+        "baseColor": (0.08, 0.08, 0.09),
+    },
+    "WOOD_CREAM": {
+        "visual": "cream_wood",
+        "engineering": "particle_board",
+        "costUnit": "TWD/m2",
+        "thicknessOptionsMm": [15, 18, 25],
+        "textureAsset": "wood_cream",
+        "baseColor": (0.90, 0.84, 0.72),
+    },
+}
+
+
+def map_cabinet_material(name: str) -> dict[str, Any]:
+    key = (name or "").upper()
+    if key in CABINET_MATERIALS:
+        return {"code": key, **CABINET_MATERIALS[key]}
+    if "白" in (name or "") or name in {"white_wood", "particle_board"}:
+        return {"code": "WOOD_WHITE", **CABINET_MATERIALS["WOOD_WHITE"]}
+    return {"code": "WOOD_WHITE", **CABINET_MATERIALS["WOOD_WHITE"]}
+
+
 def _panel(name: str, length: float, width: float, thickness: float, role: str) -> dict[str, Any]:
     return {
         "partId": name.lower(),
         "partName": name,
+        "partType": role,
         "length": round(length, 2),
         "width": round(width, 2),
         "thickness": thickness,
@@ -335,6 +389,7 @@ class BOMEngine:
                 {
                     "partId": part.get("partId") or part["partName"].lower(),
                     "partName": part["partName"],
+                    "partType": part.get("partType") or part.get("role"),
                     "material": spec.material,
                     "length": part.get("length"),
                     "width": part.get("width"),
@@ -379,7 +434,8 @@ class CostEngine:
             length = float(line.get("length") or 0) / 1000.0
             width = float(line.get("width") or 0) / 1000.0
             area = length * width * qty
-            material_cost += area * MATERIAL_PRICE_PER_M2.get(spec.material, 300.0)
+            eng_mat = map_cabinet_material(str(spec.material)).get("engineering") or spec.material
+            material_cost += area * MATERIAL_PRICE_PER_M2.get(eng_mat, MATERIAL_PRICE_PER_M2.get(spec.material, 300.0))
             processing += PROCESSING_CUT_PER_PART * qty
             if line.get("edgeBanding"):
                 perim = 2 * (length + width) * qty
@@ -413,6 +469,23 @@ class CostEngine:
             "suggestedPrice": round(suggested, 2),
             "currency": "TWD",
             "engineeringHash": bom["engineeringHash"],
+        }
+
+
+class CADAdapter:
+    """Interface only. Same engineering JSON as Blender/BOM. No live CAD control."""
+
+    name = "CADAdapter"
+
+    def export(self, spec: CabinetSpec, bom: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "adapter": self.name,
+            "format": "ManufacturingManifest",
+            "engineeringHash": spec.engineering_hash(),
+            "liveMachineControl": False,
+            "requiresApproval": True,
+            "dxfInterface": True,
+            "parts": [{"partId": line.get("partId"), "partType": line.get("partType"), "cut": {"length": line.get("length"), "width": line.get("width"), "thickness": line.get("thickness")}} for line in bom["lines"] if not line.get("hardware")],
         }
 
 
@@ -497,7 +570,7 @@ def parse_design_intent(text: str, *, tenant_id: str) -> dict[str, Any]:
     metadata: dict[str, Any] = {"style": "cream" if cream else "neutral", "sourceText": text}
     if re.search(r"白|木紋", text):
         metadata["style"] = "white_wood"
-        metadata["materialHint"] = "particle_board"
+        metadata["materialHint"] = "WOOD_WHITE"
     if tv:
         metadata["tvInches"] = tv
         width = max(width, tv_width_mm(tv) + 200)
@@ -506,6 +579,8 @@ def parse_design_intent(text: str, *, tenant_id: str) -> dict[str, Any]:
         width = min(width, wall)
     width = min(width, MAX_PANEL_W)
     params: dict[str, Any] = {"width": width, "metadata": metadata}
+    if metadata.get("materialHint") == "WOOD_WHITE":
+        params["material"] = "WOOD_WHITE"
     if named_h:
         params["height"] = named_h
     if named_d:
