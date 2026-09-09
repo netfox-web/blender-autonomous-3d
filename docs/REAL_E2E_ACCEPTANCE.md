@@ -3,7 +3,7 @@
 Scoped readiness (not a global Production Ready flag):
 - `coreRenderE2EReady`: **true** — Blender 5.2.1 + T1000 OptiX smoke/preview/360/parametric PNG
 - `physicalProductOsPrototypeReady`: **true** — KD/retail/packaging/acrylic prototype E2E with Human Approval Gate
-- `manufacturingReleasePackageReady`: **true** — see `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` (CODE `cdc1b5b`, 4/4 T1000 OptiX, release-bound)
+- `manufacturingReleasePackageReady`: **true** — see `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` (CODE `997db34`, 4/4 T1000 OptiX, release-bound)
 - `manualPilotOpsReady`: **true** — see `docs/PILOT_OPERATIONS_ACCEPTANCE.md` (manual execution, not live factory)
 - `pilotReliabilityReady`: **FIXTURE** — see `docs/PILOT_RELIABILITY_ACCEPTANCE.md` (50 WO stress, not factory throughput)
 - `qcTraceabilityReady`: **true** — see `docs/QC_TRACEABILITY_ACCEPTANCE.md`
@@ -50,3 +50,5 @@ KD / flat-pack Phase 121–180 evidence: `docs/KD_FACTORY_REAL_ACCEPTANCE.md`. W
 Physical Product OS Phase 181–240 evidence: `docs/PHYSICAL_PRODUCT_OS_REAL_ACCEPTANCE.md` (+ material/nesting/retail/packaging JSON). Scope is prototype / Human Approval Gate only. Retail 6/6 and acrylic 3/3 REAL T1000 OptiX previews. Packaging strength and print preflight stay **PARTIAL**. LIVE_LASER/CNC **BLOCKED**.
 
 Phase 241–300 evidence: `docs/PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.md` (+ release/cost/packaging V2 JSON). REAL Blender EvidenceBundles bind to **CODE_EVIDENCE_SHA** `513ae9d` on a clean tree (`workingTreeClean=true`); runner is fail-closed and publishes canonical files atomically (shared `acceptanceGenerationId`). `globalProductionReady=false`. `fullAutonomousFactoryReady=false`. CI GREEN is MOCK-suite only.
+
+Phase 361–420 final integrity (`1129ae6`) clean-tree REAL: CODE_EVIDENCE_SHA `997db345183367709597738c12c65bbf6800ae4c`; generation `1cb61fad-63ba-4158-bf2e-4abfd3663d36`; 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX EvidenceBundles, `usedMock=false`, verifier PASS, exact `commitSha=997db34`, non-null matching ManufacturingRelease `releaseHash`. Reliability stress is actual FIXTURE (50 WO / 652 ops), not a fabricated fallback. `liveFactoryExecutionReady=false`. `fullAutonomousFactoryReady=false`. `globalProductionReady=false`.

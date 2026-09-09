@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 361–420 integrity CODE_EVIDENCE_SHA `cdc1b5b`; prior `068cbe8` / docs `450993f`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c6e9874`. Historical Phase 1–360 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 361–420 final integrity CODE_EVIDENCE_SHA `997db34`; prior `cdc1b5b` / docs `ce77f88`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1129ae6`. Historical Phase 1–360 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -27,14 +27,14 @@ This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 
 | Item | Status | Evidence |
 |---|---|---|
-| 361–368 STRICT_STOCK | REAL | atomic `allocate_requirement`; partial shortage rollback; SKU/thickness match; no phantom lots |
+| 361–368 STRICT_STOCK | REAL | atomic `allocate_requirement`; partial shortage rollback; SKU/thickness/length/width/grain match; leftover durable lots cannot satisfy a unique-SKU shortage; no phantom lots |
 | 369–376 WO transitions | REAL | TRANSITIONS table; ops require reserve; complete needs ops+QC+packing |
 | 377–384 QC plan pin | REAL | release-pinned qcPlanHash; rework append-only |
 | 385–392 supersession | REAL | superseded cannot open WO; approval exact-hash |
-| 393–400 receipts | REAL logic / IMPORTED data | idempotent; quarantine not allocatable; no PO |
-| 401–408 shipment draft | REAL logic | SHIPMENT_DRAFT not booked; pack shortage/duplicate fail |
-| 409–414 console/API | REAL | X-Tenant-Id authoritative; receipt key tenant-scoped; shipment tenant-bound |
-| 415–420 fixture stress + REAL | FIXTURE + REAL | reliability_gate in required_ok; 4/4 T1000 OptiX `cdc1b5b`; partialShortageRollback/materialCompatibility/tenantIsolation |
+| 393–400 receipts | REAL logic / IMPORTED data | tenant-scoped idempotent; persist length/width/grain; expected mismatch quarantined; no PO |
+| 401–408 shipment draft | REAL logic | SHIPMENT_DRAFT not booked; pack shortage/duplicate fail; carton vs shipment idem namespaces |
+| 409–414 console/API | REAL | X-Tenant-Id authoritative; WO/release/carton keys `{tenant}::{kind}::{raw}` |
+| 415–420 fixture stress + REAL | FIXTURE + REAL | no fabricated stress fallback; reliability_gate in required_ok; 4/4 T1000 OptiX `997db34`; partialShortageRollback/materialCompatibility/tenantIsolation |
 
 ## Mock vs Real split
 

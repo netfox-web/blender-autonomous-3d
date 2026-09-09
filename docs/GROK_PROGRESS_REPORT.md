@@ -1,9 +1,9 @@
 # Grok Progress Report
 
 Repo: `netfox-web/blender-autonomous-3d`  
-Date: 2026-09-08  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c6e9874` (**CHANGES REQUIRED** — Phase 361–420 stock/tenant integrity)  
-Review head: `450993f` / prior evidence code `068cbe8`  
+Date: 2026-09-09  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1129ae6` (**CHANGES REQUIRED** — Phase 361–420 final integrity)  
+Review head: `ce77f88` / prior evidence code `cdc1b5b`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
@@ -12,31 +12,33 @@ Executed **GAPS ONLY**. Did not start Phase 421+. Did not rewrite Scheduler / Qu
 
 | Blocker | Fix |
 |---|---|
-| 1 Partial STRICT_STOCK hold | `allocate_requirement` preflights compatible stock under registry lock; SHORTAGE mutates nothing; 10× retry + concurrent shortage leave lots unchanged |
-| 2 Material substitution | Candidate lots must match SKU + thickness; OAK/12mm cannot satisfy PB 18mm; quarantined matching SKU excluded |
-| 3 Tenant fail-open | `X-Tenant-Id` authoritative; body mismatch 403; receipt idempotency `(tenant, key)`; shipment tenant-bound; cross-tenant carton mix rejected; console filtered |
-| 4 Reliability not in `required_ok` | `reliability_gate()` required; broken noOversell/conservation/negatives/WO count/shipment/partial/tenant → non-zero, no publish |
+| 1 Acceptance hook fabricates PASS | Hook uses `data["stress"] if "stress" in data else None`; no `passing_reliability_stress()` fallback. Missing / `None` / `{}` / missing label or boolean / missing negatives fail-closed, no canonical publish. Valid runner injects a complete FIXTURE stress object. |
+| 2 Release sheetMm ignored | `reserve_materials` passes frozen nesting `length`/`width`/`grain` into `allocate_requirement`. Wrong size or grain (including missing/`any`/`none` when grain is required) → SHORTAGE, lots unchanged. Receipts persist optional geometry/grain; expected mismatch quarantines. |
+| 3 Global idempotency keys | WorkOrder / ManufacturingRelease / carton keys are `{tenant}::{kind}::{raw}`. Same-tenant retry returns the same object; other tenants do not. Carton vs shipment namespaces cannot collide. Lookup asserts tenant. |
+| REAL leftover stock | Reliability partial-shortage uses a unique tenant + unique SKU each run so durable `.fox3d-data` leftover `PB_18_WHITE` cannot satisfy need=5. `partialShortageRollback` requires an actual SHORTAGE plus unchanged lots. |
 
-**CODE_EVIDENCE_SHA:** `cdc1b5b32dd96d13730c6a1c46703cc69e120886`  
+**CODE_EVIDENCE_SHA:** `997db345183367709597738c12c65bbf6800ae4c`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34294248563` on `cdc1b5b` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34299148581` on `997db34` ubuntu+windows.
 
-Clean-tree REAL e2e: `requiredRealAcceptanceOk=true`; reliabilityGate ok; 4/4 T1000 OptiX `commitSha=cdc1b5b`; `usedMock=false`; non-null matching `releaseHash`; generation `67761512-8a44-4572-a490-84bcf8f038c8`.  
-`PILOT_RELIABILITY_ACCEPTANCE.json`: `partialShortageRollback=true`, `materialCompatibility=true`, `tenantIsolation=true`.
+Clean-tree REAL e2e: `requiredRealAcceptanceOk=true`; reliabilityGate ok; 4/4 T1000 OptiX `commitSha=997db34`; `usedMock=false`; non-null matching `releaseHash`; generation `1cb61fad-63ba-4158-bf2e-4abfd3663d36`.  
+`PILOT_RELIABILITY_ACCEPTANCE.json`: actual FIXTURE `wo=50 ops=652`; `partialShortageRollback=true`, `materialCompatibility=true`, `tenantIsolation=true`; negatives include `partial-shortage-failed` (not fabricated).
 
 ## Tests
 
 ```
-pytest -q  →  166 passed   (MOCK/unit/integration + FIXTURE — not Production Ready)
+pytest -q  →  175 passed   (MOCK/unit/integration + FIXTURE — not Production Ready)
 ```
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
 | Item | Label |
 |---|---|
-| STRICT_STOCK atomic + material match | REAL (unit) |
-| Tenant isolation / receipt keys | REAL (unit) |
-| Reliability gate fail-closed | REAL (unit) |
+| Reliability gate fail-closed (omit/None/empty/incomplete stress) | REAL (unit) |
+| Release sheet length/width/grain STRICT_STOCK | REAL (unit) |
+| Receipt geometry + expected mismatch quarantine | REAL (unit) |
+| Tenant-scoped WO / release / carton idempotency | REAL (unit) |
+| Partial-shortage isolation from leftover durable stock | REAL (unit + FIXTURE) |
 | 4-family Blender EvidenceBundles | REAL — Blender 5.2.1 LTS + NVIDIA T1000 OptiX, release-bound |
 | 50-WO stress | FIXTURE |
 | Supplier/carrier/FX/receipts | IMPORTED / MANUAL |
@@ -44,6 +46,9 @@ pytest -q  →  166 passed   (MOCK/unit/integration + FIXTURE — not Production
 | OS sandbox / AR / barcode / McKee | PARTIAL / ENGINEERING_ESTIMATE |
 | LIVE_CNC / LIVE_LASER / liveFactory | BLOCKED |
 | `fullAutonomousFactoryReady` | false |
+| `liveFactoryExecutionReady` | false |
+| `liveProviderReady` | false |
+| `globalProductionReady` | false |
 
 ## Blockers (unchanged policy)
 
@@ -54,4 +59,4 @@ pytest -q  →  166 passed   (MOCK/unit/integration + FIXTURE — not Production
 
 ## Next round
 
-ChatGPT re-review `c6e9874` exit criteria. No Phase 421+ until **ACCEPT WITH SCOPE**.
+ChatGPT re-review `1129ae6` exit criteria. No Phase 421+ until **ACCEPT WITH SCOPE**.
