@@ -18,6 +18,7 @@ PILOT_JSON = (
     "MANUFACTURING_RELEASE_REAL_ACCEPTANCE.json",
     "PILOT_OPERATIONS_ACCEPTANCE.json",
     "QC_TRACEABILITY_ACCEPTANCE.json",
+    "PILOT_RELIABILITY_ACCEPTANCE.json",
 )
 FAMILIES = (
     "KD_FURNITURE",
@@ -102,6 +103,7 @@ def _pipeline(*, release_hash="rel-kd"):
             "previews": previews,
             "quotes": {"quotes": [{}, {}, {}], "staleOnReleaseChange": True, "fxSource": "MANUAL"},
             "ready": {"fullAutonomousFactoryReady": False, "liveFactoryExecutionReady": False},
+            "stress": None,
             "rows": [],
         }
 
@@ -177,3 +179,49 @@ def test_runner_release_hash_mismatch_nonzero_unchanged(tmp_path):
     code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": pipeline})
     assert code != 0
     assert _all_keep(docs)
+
+
+def _run_reliability_break(tmp_path, **overrides):
+    mod = _load_runner()
+    docs = tmp_path / "docs"
+    _seed_six(docs)
+    _seed_pilot_keep(docs)
+    stress = mod.passing_reliability_stress()
+    stress.update(overrides)
+
+    def pipeline(*, lineage, sha, real_ok):
+        data = _pipeline()(lineage=lineage, sha=sha, real_ok=real_ok)
+        data["stress"] = stress
+        return data
+
+    code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": pipeline})
+    assert code != 0
+    assert _all_keep(docs)
+
+
+def test_runner_reliability_no_oversell_false(tmp_path):
+    _run_reliability_break(tmp_path, noOversell=False)
+
+
+def test_runner_reliability_not_conserved(tmp_path):
+    _run_reliability_break(tmp_path, materialConserved=False)
+
+
+def test_runner_reliability_missing_negatives(tmp_path):
+    _run_reliability_break(tmp_path, negatives=["op-before-reserve-failed"])
+
+
+def test_runner_reliability_too_few_wo_ops(tmp_path):
+    _run_reliability_break(tmp_path, workOrderCount=3, operationTransitions=10)
+
+
+def test_runner_reliability_shipment_booked(tmp_path):
+    _run_reliability_break(tmp_path, shipmentDraft=False)
+
+
+def test_runner_reliability_partial_shortage_false(tmp_path):
+    _run_reliability_break(tmp_path, partialShortageRollback=False)
+
+
+def test_runner_reliability_tenant_isolation_false(tmp_path):
+    _run_reliability_break(tmp_path, tenantIsolation=False)

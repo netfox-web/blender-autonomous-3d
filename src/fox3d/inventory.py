@@ -271,6 +271,99 @@ class MaterialLotRegistry:
         rows = [self.quantities(lot["lotId"], tenant_id=tenant_id) for lot in self.list(tenant_id=tenant_id)]
         return {"ok": all(r["conserved"] for r in rows) if rows else True, "lots": rows}
 
+    def lot_compatible(
+        self,
+        lot: dict[str, Any],
+        *,
+        material: str,
+        thickness: float,
+        grain: str | None = None,
+        length: float | None = None,
+        width: float | None = None,
+    ) -> bool:
+        if lot.get("quarantined") or lot.get("qualityState") == "QUARANTINED":
+            return False
+        if str(lot.get("material") or "") != str(material):
+            return False
+        if abs(float(lot.get("thickness") or 0) - float(thickness)) > 1e-6:
+            return False
+        if grain and lot.get("grain") and str(lot.get("grain")) != str(grain):
+            return False
+        if length is not None and lot.get("length") is not None and abs(float(lot.get("length")) - float(length)) > 1e-3:
+            return False
+        if width is not None and lot.get("width") is not None and abs(float(lot.get("width")) - float(width)) > 1e-3:
+            return False
+        return True
+
+    def allocate_requirement(
+        self,
+        *,
+        tenant_id: str,
+        work_order_id: str,
+        quantity: int,
+        material: str,
+        thickness: float,
+        grain: str | None = None,
+        length: float | None = None,
+        width: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Preflight compatible stock then reserve atomically. SHORTAGE mutates nothing."""
+        qty = int(quantity)
+        with self._lock:
+            candidates = [
+                l
+                for l in self.list(tenant_id=tenant_id, allocatable=True)
+                if self.lot_compatible(l, material=material, thickness=thickness, grain=grain, length=length, width=width)
+            ]
+            total = sum(int(l.get("remainingSheets") or 0) for l in candidates)
+            if total < qty:
+                raise StockShortage(
+                    {
+                        "code": "SHORTAGE",
+                        "needed": qty,
+                        "available": total,
+                        "material": material,
+                        "thickness": thickness,
+                        "message": "STRICT_STOCK: insufficient compatible material, no phantom lot",
+                    }
+                )
+            taken: list[dict[str, Any]] = []
+            remaining = qty
+            for lot in candidates:
+                avail = int(lot.get("remainingSheets") or 0)
+                if avail <= 0 or remaining <= 0:
+                    continue
+                take = min(remaining, avail)
+                item = self.reserve_sheets(
+                    lot["lotId"], tenant_id=tenant_id, work_order_id=work_order_id, quantity=take
+                )
+                taken.append(
+                    {
+                        "kind": "lot",
+                        "lotId": lot["lotId"],
+                        "quantity": take,
+                        "reservationId": item["reservationId"],
+                        "state": "RESERVED",
+                    }
+                )
+                remaining -= take
+            if remaining > 0:
+                for item in taken:
+                    try:
+                        self.release_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=work_order_id)
+                    except (KeyError, PermissionError):
+                        continue
+                raise StockShortage(
+                    {
+                        "code": "SHORTAGE",
+                        "needed": qty,
+                        "available": qty - remaining,
+                        "material": material,
+                        "message": "STRICT_STOCK: reservation raced to shortage; rolled back",
+                    }
+                )
+            return taken
+
     def _reservation_key(self, *, tenant_id: str, work_order_id: str, lot_id: str, quantity: int) -> str:
         return f"{tenant_id}:{work_order_id}:{lot_id}:{int(quantity)}"
 

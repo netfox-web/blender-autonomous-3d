@@ -210,8 +210,12 @@ class LogisticsService:
         service: str = "ground",
     ) -> dict[str, Any]:
         cartons = [self.cartons[i] for i in carton_ids]
+        tenants = {c.get("tenantId") for c in cartons}
+        if len(tenants) != 1 or None in tenants:
+            raise PermissionError("cross-tenant carton mix")
         rec = {
             "shipmentId": new_id(),
+            "tenantId": next(iter(tenants)),
             "origin": origin,
             "destination": destination,
             "service": service,

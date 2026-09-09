@@ -26,14 +26,14 @@ class ReliabilityHarness:
             tenant_id=tenant_id,
             actor="recv",
             source="IMPORTED",
-            idempotency_key=f"{tenant_id}:LOT-REL-1",
+            idempotency_key="LOT-REL-1",
         )
         dup = self.pilot.receiving.import_receipt(
             {"supplierId": "S-REL", "supplierLot": "LOT-REL-1", "material": "PB_18_WHITE", "thickness": 18, "quantity": 800},
             tenant_id=tenant_id,
             actor="recv",
             source="IMPORTED",
-            idempotency_key=f"{tenant_id}:LOT-REL-1",
+            idempotency_key="LOT-REL-1",
         )
         qrec = self.pilot.receiving.import_receipt(
             {
@@ -47,7 +47,7 @@ class ReliabilityHarness:
             tenant_id=tenant_id,
             actor="recv",
             source="IMPORTED",
-            idempotency_key=f"{tenant_id}:Q1",
+            idempotency_key="Q1",
         )
         q_alloc = False
         try:
@@ -61,6 +61,16 @@ class ReliabilityHarness:
             product = self.pilot.build_product(tenant_id=tenant_id, family=family, kind=kind)
             rel = self.pilot.open_release(product, tenant_id=tenant_id, family=family, actor="eng")
             releases.append(rel)
+            nest = (rel.get("snapshot") or {}).get("nesting") or {}
+            sku = str(nest.get("sheetSku") or "PB_18_WHITE")
+            th = float(nest.get("thickness") or 18)
+            self.pilot.receiving.import_receipt(
+                {"supplierLot": f"FAM-{family}", "material": sku, "thickness": th, "quantity": 200},
+                tenant_id=tenant_id,
+                actor="recv",
+                source="IMPORTED",
+                idempotency_key=f"FAM-{family}",
+            )
 
         wo_ids = []
         op_count = 0
@@ -112,7 +122,7 @@ class ReliabilityHarness:
             tenant_id=tenant_id,
             actor="recv",
             source="MANUAL",
-            idempotency_key=f"{tenant_id}:RACE",
+            idempotency_key="RACE",
         )
         wins = []
         lock = threading.Lock()
@@ -151,7 +161,99 @@ class ReliabilityHarness:
         except PermissionError:
             negatives.append("complete-open-ops-failed")
 
-        # stale WO
+        # pack mismatch
+        pack_bad = self.pilot.logistics.pack_completeness(work_order_id=wo_ids[0], expected_qty=99)
+        pack_ok = self.pilot.logistics.pack_completeness(work_order_id=wo_ids[0], expected_qty=1)
+
+        ship = self.pilot.logistics.shipment_draft(origin="TW", destination="TW-TPE", carton_ids=self.pilot.workorders.get(wo_ids[0]).get("cartonIds") or [])
+        cons = self.pilot.workorders.lots.conservation_ok(tenant_id=tenant_id)
+
+        # partial-shortage rollback: isolated tenant, A=2 B=1 need 5
+        pst = f"{tenant_id}-ps"
+        a = self.pilot.receiving.import_receipt(
+            {"supplierLot": "PS-A", "material": "PB_18_WHITE", "thickness": 18, "quantity": 2},
+            tenant_id=pst,
+            actor="recv",
+            source="MANUAL",
+            idempotency_key="PS-A",
+        )
+        b = self.pilot.receiving.import_receipt(
+            {"supplierLot": "PS-B", "material": "PB_18_WHITE", "thickness": 18, "quantity": 1},
+            tenant_id=pst,
+            actor="recv",
+            source="MANUAL",
+            idempotency_key="PS-B",
+        )
+        before_a = self.pilot.workorders.lots.quantities(a["lotId"], tenant_id=pst)
+        before_b = self.pilot.workorders.lots.quantities(b["lotId"], tenant_id=pst)
+        try:
+            self.pilot.workorders.lots.allocate_requirement(
+                tenant_id=pst, work_order_id="ps-short", quantity=5, material="PB_18_WHITE", thickness=18
+            )
+            negatives.append("partial-shortage-passed")
+        except StockShortage:
+            negatives.append("partial-shortage-failed")
+        after_a = self.pilot.workorders.lots.quantities(a["lotId"], tenant_id=pst)
+        after_b = self.pilot.workorders.lots.quantities(b["lotId"], tenant_id=pst)
+        partial_ok = after_a == before_a and after_b == before_b
+
+        # material mismatch
+        oak = self.pilot.receiving.import_receipt(
+            {"supplierLot": "OAK-ONLY", "material": "OAK", "thickness": 18, "quantity": 8},
+            tenant_id=tenant_id,
+            actor="recv",
+            source="MANUAL",
+            idempotency_key="OAK-ONLY",
+        )
+        oak_before = self.pilot.workorders.lots.quantities(oak["lotId"], tenant_id=tenant_id)
+        try:
+            self.pilot.workorders.lots.allocate_requirement(
+                tenant_id=tenant_id,
+                work_order_id="mm",
+                quantity=1,
+                material="MISSING_SKU",
+                thickness=18,
+            )
+            negatives.append("material-mismatch-passed")
+        except StockShortage:
+            negatives.append("material-mismatch-failed")
+        oak_after = self.pilot.workorders.lots.quantities(oak["lotId"], tenant_id=tenant_id)
+        material_ok = oak_after == oak_before
+
+        # tenant isolation
+        other = "rel-other"
+        a_key = self.pilot.receiving.import_receipt(
+            {"supplierLot": "ISO", "material": "PB_18_WHITE", "quantity": 1, "thickness": 18},
+            tenant_id=tenant_id,
+            actor="recv",
+            source="MANUAL",
+            idempotency_key="same-key",
+        )
+        b_key = self.pilot.receiving.import_receipt(
+            {"supplierLot": "ISO", "material": "PB_18_WHITE", "quantity": 1, "thickness": 18},
+            tenant_id=other,
+            actor="recv",
+            source="MANUAL",
+            idempotency_key="same-key",
+        )
+        tenant_ok = a_key["receiptId"] != b_key["receiptId"] and a_key["tenantId"] == tenant_id and b_key["tenantId"] == other
+        cons_a = self.pilot.console(tenant_id=tenant_id)
+        tenant_ok = tenant_ok and all(s.get("tenantId") == tenant_id for s in cons_a.get("shipments") or [])
+        mix_rejected = False
+        try:
+            ca = self.pilot.logistics.instantiate_cartons(
+                tenant_id=tenant_id, work_order_id="wa", batch_id="ba", plan={"length": 1, "width": 1, "height": 1}, quantity=1
+            )
+            cb = self.pilot.logistics.instantiate_cartons(
+                tenant_id=other, work_order_id="wb", batch_id="bb", plan={"length": 1, "width": 1, "height": 1}, quantity=1
+            )
+            self.pilot.logistics.shipment_draft(origin="TW", destination="X", carton_ids=[ca[0]["cartonId"], cb[0]["cartonId"]])
+        except PermissionError:
+            mix_rejected = True
+            negatives.append("tenant-isolation-failed")
+        if not mix_rejected:
+            negatives.append("tenant-isolation-passed")
+
         mutated = dict(rel0["snapshot"])
         mutated["engineeringHash"] = "deadbeef" * 8
         self.pilot.releases.refresh_stale(rel0["releaseId"], mutated)
@@ -161,11 +263,6 @@ class ReliabilityHarness:
         except PermissionError:
             negatives.append("stale-wo-failed")
 
-        # pack mismatch
-        pack_bad = self.pilot.logistics.pack_completeness(work_order_id=wo_ids[0], expected_qty=99)
-        pack_ok = self.pilot.logistics.pack_completeness(work_order_id=wo_ids[0], expected_qty=1)
-
-        ship = self.pilot.logistics.shipment_draft(origin="TW", destination="TW-TPE", carton_ids=self.pilot.workorders.get(wo_ids[0]).get("cartonIds") or [])
         cons = self.pilot.workorders.lots.conservation_ok(tenant_id=tenant_id)
         return {
             "label": "FIXTURE",
@@ -179,5 +276,8 @@ class ReliabilityHarness:
             "packMismatchFails": pack_bad["ok"] is False and pack_bad["code"] in {"shortage", "duplicate"},
             "packOk": pack_ok["ok"] is True,
             "shipmentDraft": ship["status"] == "SHIPMENT_DRAFT" and ship["submittedToCarrier"] is False and ship["booked"] is False,
+            "partialShortageRollback": partial_ok,
+            "materialCompatibility": material_ok,
+            "tenantIsolation": tenant_ok and mix_rejected,
             "liveFactoryExecutionReady": False,
         }

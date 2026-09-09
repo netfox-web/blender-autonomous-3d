@@ -183,57 +183,71 @@ class WorkOrderService:
         sheet_n = max(int(nesting.get("sheetCount") or 1), 1) * int(rec["quantity"])
         material = str(nesting.get("sheetSku") or "PB_18_WHITE")
         thickness = float(nesting.get("thickness") or 18)
-        lots = self.lots.list(tenant_id=tid, allocatable=True)
+        grain = nesting.get("grain") or nesting.get("grainConstraint")
+        sheet_mm = nesting.get("sheetMm") or []
+        length = float(sheet_mm[0]) if len(sheet_mm) >= 1 else None
+        width = float(sheet_mm[1]) if len(sheet_mm) >= 2 else None
         lot_reservations: list[dict[str, Any]] = []
         remaining = sheet_n
-        for lot in lots:
-            avail = int(lot.get("remainingSheets") or 0)
-            if avail <= 0 or remaining <= 0:
-                continue
-            take = min(remaining, avail)
-            item = self.lots.reserve_sheets(
-                lot["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=take
-            )
-            lot_reservations.append(
-                {
-                    "kind": "lot",
-                    "lotId": lot["lotId"],
-                    "quantity": take,
-                    "reservationId": item["reservationId"],
-                    "state": "RESERVED",
-                }
-            )
-            remaining -= take
-        if remaining > 0:
-            if policy != FIXTURE_AUTO_SEED:
-                payload = {
-                    "code": "SHORTAGE",
-                    "workOrderId": rec["workOrderId"],
-                    "needed": sheet_n,
-                    "shortBy": remaining,
-                    "available": sheet_n - remaining,
-                    "policy": STRICT_STOCK,
-                    "message": "STRICT_STOCK: insufficient material, no phantom lot",
-                }
-                rec["shortage"] = payload
-                raise StockShortage(payload)
-            extra = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=remaining)
-            extra["truthLabel"] = "FIXTURE"
-            extra["allocationPolicy"] = FIXTURE_AUTO_SEED
-            item = self.lots.reserve_sheets(
-                extra["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=remaining
-            )
-            lot_reservations.append(
-                {
-                    "kind": "lot",
-                    "lotId": extra["lotId"],
-                    "quantity": remaining,
-                    "reservationId": item["reservationId"],
-                    "state": "RESERVED",
-                    "truthLabel": "FIXTURE",
-                }
-            )
-            remaining = 0
+        if policy == STRICT_STOCK:
+            try:
+                lot_reservations = self.lots.allocate_requirement(
+                    tenant_id=tid,
+                    work_order_id=rec["workOrderId"],
+                    quantity=sheet_n,
+                    material=material,
+                    thickness=thickness,
+                    grain=grain if grain not in {None, "any", "none"} else None,
+                    length=None,
+                    width=None,
+                )
+                remaining = 0
+            except StockShortage as exc:
+                rec["shortage"] = {**exc.payload, "workOrderId": rec["workOrderId"], "policy": STRICT_STOCK}
+                raise
+        else:
+            lots = [
+                l
+                for l in self.lots.list(tenant_id=tid, allocatable=True)
+                if self.lots.lot_compatible(l, material=material, thickness=thickness)
+            ]
+            remaining = sheet_n
+            for lot in lots:
+                avail = int(lot.get("remainingSheets") or 0)
+                if avail <= 0 or remaining <= 0:
+                    continue
+                take = min(remaining, avail)
+                item = self.lots.reserve_sheets(
+                    lot["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=take
+                )
+                lot_reservations.append(
+                    {
+                        "kind": "lot",
+                        "lotId": lot["lotId"],
+                        "quantity": take,
+                        "reservationId": item["reservationId"],
+                        "state": "RESERVED",
+                    }
+                )
+                remaining -= take
+            if remaining > 0:
+                extra = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=remaining)
+                extra["truthLabel"] = "FIXTURE"
+                extra["allocationPolicy"] = FIXTURE_AUTO_SEED
+                item = self.lots.reserve_sheets(
+                    extra["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=remaining
+                )
+                lot_reservations.append(
+                    {
+                        "kind": "lot",
+                        "lotId": extra["lotId"],
+                        "quantity": remaining,
+                        "reservationId": item["reservationId"],
+                        "state": "RESERVED",
+                        "truthLabel": "FIXTURE",
+                    }
+                )
+                remaining = 0
         remnant_ids: list[str] = []
         if self.remnants is not None:
             for rem in list(self.remnants.available(tenant_id=tid)):

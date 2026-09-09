@@ -13,6 +13,146 @@ from fox3d.qc import FAMILY_TOLERANCES, plan_hash
 from fox3d.workorder import FIXTURE_AUTO_SEED, STRICT_STOCK
 
 
+def test_partial_shortage_rolls_back_and_is_repeatable(platform):
+    a = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "A2", "material": "PB_18_WHITE", "thickness": 18, "quantity": 2},
+        tenant_id="ps",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="A2",
+    )
+    b = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "B1", "material": "PB_18_WHITE", "thickness": 18, "quantity": 1},
+        tenant_id="ps",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="B1",
+    )
+    wo, _rel, wo_svc = _wo(platform, tenant="ps")
+    wo["quantity"] = 5
+    wo_svc.release_for_execution(wo["workOrderId"], actor="ops")
+    before = {
+        "a": wo_svc.lots.quantities(a["lotId"], tenant_id="ps"),
+        "b": wo_svc.lots.quantities(b["lotId"], tenant_id="ps"),
+    }
+    for _ in range(10):
+        with pytest.raises(StockShortage):
+            wo_svc.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="ps", allocation_policy=STRICT_STOCK)
+        assert wo_svc.lots.quantities(a["lotId"], tenant_id="ps") == before["a"]
+        assert wo_svc.lots.quantities(b["lotId"], tenant_id="ps") == before["b"]
+    restarted = __import__("fox3d.inventory", fromlist=["MaterialLotRegistry"]).MaterialLotRegistry(platform.lots.root)
+    assert restarted.quantities(a["lotId"], tenant_id="ps") == before["a"]
+    wins = []
+
+    def _go(i: int) -> None:
+        try:
+            wo_svc.lots.allocate_requirement(tenant_id="ps", work_order_id=f"c{i}", quantity=5, material="PB_18_WHITE", thickness=18)
+            wins.append(i)
+        except StockShortage:
+            pass
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed as _ac
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(_ac([pool.submit(_go, i) for i in range(8)]))
+    assert wins == []
+    assert wo_svc.lots.quantities(a["lotId"], tenant_id="ps") == before["a"]
+
+
+def test_material_and_thickness_compatibility(platform):
+    oak = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "OAK", "material": "OAK", "thickness": 18, "quantity": 6},
+        tenant_id="mat",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="OAK",
+    )
+    thin = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "THIN", "material": "PB_18_WHITE", "thickness": 12, "quantity": 6},
+        tenant_id="mat",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="THIN",
+    )
+    wo, rel, wo_svc = _wo(platform, tenant="mat")
+    wo_svc.release_for_execution(wo["workOrderId"], actor="ops")
+    oak_before = wo_svc.lots.quantities(oak["lotId"], tenant_id="mat")
+    thin_before = wo_svc.lots.quantities(thin["lotId"], tenant_id="mat")
+    with pytest.raises(StockShortage):
+        wo_svc.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="mat", allocation_policy=STRICT_STOCK)
+    assert wo_svc.lots.quantities(oak["lotId"], tenant_id="mat") == oak_before
+    assert wo_svc.lots.quantities(thin["lotId"], tenant_id="mat") == thin_before
+    qrec = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "QPB", "material": "PB_18_WHITE", "thickness": 18, "quantity": 4, "expectedMaterial": "MDF"},
+        tenant_id="mat",
+        actor="recv",
+        source="IMPORTED",
+        idempotency_key="QPB",
+    )
+    assert qrec["quarantined"] is True
+    with pytest.raises(StockShortage):
+        wo_svc.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="mat", allocation_policy=STRICT_STOCK)
+    good1 = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "G1", "material": "PB_18_WHITE", "thickness": 18, "quantity": 1},
+        tenant_id="mat",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="G1",
+    )
+    good2 = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "G2", "material": "PB_18_WHITE", "thickness": 18, "quantity": 10},
+        tenant_id="mat",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="G2",
+    )
+    reserved = wo_svc.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="mat", allocation_policy=STRICT_STOCK)
+    assert reserved["materialReserved"] is True
+    tot = wo_svc.lots.quantities(good1["lotId"], tenant_id="mat")["reserved"] + wo_svc.lots.quantities(good2["lotId"], tenant_id="mat")["reserved"]
+    assert tot >= 1
+    assert wo_svc.lots.conservation_ok(tenant_id="mat")["ok"] is True
+    _ = rel
+
+
+def test_tenant_scoped_receipt_and_console(platform):
+    a = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "K", "material": "PB_18_WHITE", "quantity": 1, "thickness": 18},
+        tenant_id="ta",
+        actor="a",
+        source="IMPORTED",
+        idempotency_key="same-key",
+    )
+    b = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "K", "material": "PB_18_WHITE", "quantity": 1, "thickness": 18},
+        tenant_id="tb",
+        actor="b",
+        source="IMPORTED",
+        idempotency_key="same-key",
+    )
+    assert a["receiptId"] != b["receiptId"]
+    client = TestClient(create_app(platform))
+    denied = client.post(
+        "/api/pilot/receipts",
+        json={"tenantId": "tb", "material": "PB_18_WHITE", "quantity": 1, "supplierLot": "X"},
+        headers={"X-Tenant-Id": "ta"},
+    )
+    assert denied.status_code == 403
+    ca = platform.pilot.logistics.instantiate_cartons(
+        tenant_id="ta", work_order_id="wa", batch_id="ba", plan={"length": 1, "width": 1, "height": 1}, quantity=1
+    )
+    cb = platform.pilot.logistics.instantiate_cartons(
+        tenant_id="tb", work_order_id="wb", batch_id="bb", plan={"length": 1, "width": 1, "height": 1}, quantity=1
+    )
+    with pytest.raises(PermissionError):
+        platform.pilot.logistics.shipment_draft(origin="TW", destination="X", carton_ids=[ca[0]["cartonId"], cb[0]["cartonId"]])
+    sa = platform.pilot.logistics.shipment_draft(origin="TW", destination="A", carton_ids=[ca[0]["cartonId"]])
+    cons_a = platform.pilot.console(tenant_id="ta")
+    cons_b = platform.pilot.console(tenant_id="tb")
+    assert sa["shipmentId"] in {s["shipmentId"] for s in cons_a["shipments"]}
+    assert sa["shipmentId"] not in {s["shipmentId"] for s in cons_b["shipments"]}
+    assert all(s.get("tenantId") == "ta" for s in cons_a["shipments"])
+
+
 def test_strict_stock_no_phantom_lot(platform):
     wo, rel, wo_svc = _wo(platform, tenant="strict")
     wo_svc.release_for_execution(wo["workOrderId"], actor="ops")
@@ -273,6 +413,12 @@ def test_reliability_fixture_stress(platform):
     assert "stale-wo-failed" in result["negatives"]
     assert result["packMismatchFails"] is True
     assert result["shipmentDraft"] is True
+    assert result["partialShortageRollback"] is True
+    assert result["materialCompatibility"] is True
+    assert result["tenantIsolation"] is True
+    assert "partial-shortage-failed" in result["negatives"]
+    assert "material-mismatch-failed" in result["negatives"]
+    assert "tenant-isolation-failed" in result["negatives"]
     assert result["liveFactoryExecutionReady"] is False
 
 

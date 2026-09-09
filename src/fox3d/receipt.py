@@ -64,9 +64,13 @@ class ReceivingService:
     ) -> dict[str, Any]:
         if source not in ALLOWED:
             raise PermissionError("receipt source must be MANUAL/IMPORTED")
-        key = idempotency_key or f"{tenant_id}:{row.get('supplierLot') or row.get('supplierId')}:{row.get('material')}:{row.get('quantity')}"
+        raw_key = idempotency_key or f"{row.get('supplierLot') or row.get('supplierId')}:{row.get('material')}:{row.get('quantity')}"
+        key = f"{tenant_id}::{raw_key}"
         if key in self._idem:
-            return self.receipts[self._idem[key]]
+            existing = self.receipts[self._idem[key]]
+            if existing.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: receipt")
+            return existing
         qty = int(row.get("quantity") or row.get("sheetCount") or 0)
         material = str(row.get("material") or "PB_18_WHITE")
         thickness = float(row.get("thickness") or 18)

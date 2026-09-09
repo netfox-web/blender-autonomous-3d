@@ -33,6 +33,13 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(400, "X-Tenant-Id required")
         return x_tenant_id
 
+    def require_tenant(x_tenant_id: str | None, payload: dict[str, Any] | None = None) -> str:
+        header = tenant(x_tenant_id)
+        body_tid = (payload or {}).get("tenantId")
+        if body_tid not in {None, "", header}:
+            raise HTTPException(403, "body tenantId does not match X-Tenant-Id")
+        return header
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         plat = get_platform()
@@ -251,7 +258,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/materials/lots")
     def create_lot(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         if str(payload.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
             raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
         return get_platform().pilot.receiving.import_receipt(
@@ -395,24 +402,25 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/pilot/console")
     def pilot_console(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        return get_platform().pilot.console(tenant_id=tenant(x_tenant_id))
+        return get_platform().pilot.console(tenant_id=require_tenant(x_tenant_id))
 
     @app.get("/api/pilot/work-orders")
     def pilot_work_orders(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id)
         items = [wo for wo in get_platform().pilot.workorders.orders.values() if wo.get("tenantId") == tid]
         return {"items": items, "liveMachineControl": False}
 
     @app.post("/api/pilot/work-orders/{work_order_id}/reserve")
     def pilot_reserve(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
         if str(body.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
             raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
         try:
             return get_platform().pilot.workorders.reserve_materials(
                 work_order_id,
                 actor=str(body.get("actor") or "api"),
-                tenant_id=tenant(x_tenant_id),
+                tenant_id=tid,
                 allocation_policy="STRICT_STOCK",
             )
         except PermissionError as exc:
@@ -420,7 +428,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/pilot/receipts")
     def pilot_receipt(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         return get_platform().pilot.receiving.import_receipt(
             payload,
             tenant_id=tid,
@@ -431,7 +439,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/pilot/purchase-requests")
     def pilot_pr(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         return get_platform().pilot.receiving.draft_purchase_request(
             tenant_id=tid,
             material=str(payload.get("material") or "PB_18_WHITE"),

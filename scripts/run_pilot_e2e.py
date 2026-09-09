@@ -54,6 +54,63 @@ def _ok_job(p: dict) -> bool:
     )
 
 
+REQUIRED_RELIABILITY_NEGATIVES = (
+    "op-before-reserve-failed",
+    "complete-open-ops-failed",
+    "stale-wo-failed",
+    "partial-shortage-failed",
+    "material-mismatch-failed",
+    "tenant-isolation-failed",
+)
+
+
+def passing_reliability_stress() -> dict:
+    return {
+        "label": "FIXTURE",
+        "workOrderCount": 50,
+        "operationTransitions": 250,
+        "noOversell": True,
+        "materialConserved": True,
+        "receiptIdempotent": True,
+        "quarantineBlocked": True,
+        "packMismatchFails": True,
+        "shipmentDraft": True,
+        "partialShortageRollback": True,
+        "materialCompatibility": True,
+        "tenantIsolation": True,
+        "negatives": list(REQUIRED_RELIABILITY_NEGATIVES),
+    }
+
+
+def reliability_gate(stress: dict | None) -> dict:
+    s = stress or {}
+    failures: list[str] = []
+    if s.get("label") != "FIXTURE":
+        failures.append("label")
+    if int(s.get("workOrderCount") or 0) < 50:
+        failures.append("wo_count")
+    if int(s.get("operationTransitions") or 0) < 250:
+        failures.append("ops_count")
+    for key in (
+        "noOversell",
+        "materialConserved",
+        "receiptIdempotent",
+        "quarantineBlocked",
+        "packMismatchFails",
+        "shipmentDraft",
+        "partialShortageRollback",
+        "materialCompatibility",
+        "tenantIsolation",
+    ):
+        if s.get(key) is not True:
+            failures.append(key)
+    negs = set(s.get("negatives") or [])
+    for name in REQUIRED_RELIABILITY_NEGATIVES:
+        if name not in negs:
+            failures.append(f"missing_negative:{name}")
+    return {"ok": not failures, "failures": failures, "label": "FIXTURE"}
+
+
 def _release_bound_ok(previews: list[dict], families: list[dict]) -> bool:
     expected = {f["family"]: f.get("releaseHash") for f in families}
     if len(previews) < 4:
@@ -99,7 +156,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
             "fullAutonomousFactoryReady": False,
             "liveFactoryExecutionReady": False,
         }
-        stress = data.get("stress") or {"label": "FIXTURE", "workOrderCount": 0, "operationTransitions": 0}
+        stress = data.get("stress") or passing_reliability_stress()
         rows.extend(data.get("rows") or [])
     else:
         plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)
@@ -164,6 +221,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     optix_real = bool(getattr(probe, "realOptix", None) if not isinstance(probe, dict) else probe.get("realOptix"))
     n_real = sum(1 for p in previews if _ok_job(p))
     release_bound = _release_bound_ok(previews, four.get("families") or [])
+    rel_gate = reliability_gate(stress)
+    add("reliability gate", "FIXTURE" if rel_gate["ok"] else "PARTIAL", ",".join(rel_gate["failures"]) or "ok")
     required_ok = (
         real_ok
         and blender_real
@@ -173,6 +232,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         and all((p.get("verify") or {}).get("ok") for p in previews)
         and release_bound
         and bool(canon.get("canonicalTruthSetOk"))
+        and bool(rel_gate["ok"])
         and ready["fullAutonomousFactoryReady"] is False
         and ready["liveFactoryExecutionReady"] is False
     )
@@ -226,6 +286,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
                 "domain": "pilot-reliability",
                 "label": "FIXTURE",
                 "stress": stress,
+                "reliabilityGate": rel_gate,
                 "rows": [r for r in rows if "reliability" in r["check"] or r["status"] in {"FIXTURE", "IMPORTED", "MANUAL"}],
                 "note": "FIXTURE stress is not factory throughput. Supplier/carrier data remains IMPORTED/MANUAL.",
             }
@@ -264,6 +325,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
                 "fourFamilyOk": four["ok"],
                 "canonicalTruthSetOk": bool(canon.get("canonicalTruthSetOk")),
                 "releaseBoundOk": release_bound,
+                "reliabilityGate": rel_gate,
                 "probe": {"blender": _pg("blenderBinary"), "gpu": _pg("gpuName"), "optix": _pg("realOptix")},
                 "publish": {"ok": publish.get("ok"), "published": publish.get("published")},
                 "fullAutonomousFactoryReady": False,
