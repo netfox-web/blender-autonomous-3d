@@ -154,6 +154,10 @@ class PilotOps:
             return aid in proto.plans
         if proto is not None and atype == "EngineeringChange":
             return aid in proto.ecos
+        if proto is not None and atype == "PrototypeLabor":
+            return aid in proto.labor
+        if proto is not None and atype == "PrototypeDecision":
+            return aid in proto.decisions
         return False
 
     def _reconcile_startup(self) -> dict[str, Any]:

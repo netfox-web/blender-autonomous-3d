@@ -78,6 +78,7 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
         "packages": TENANT_OWNED,
         "launchDecisions": TENANT_OWNED,
         "pilotPlans": TENANT_OWNED,
+        "labor": TENANT_OWNED,
     },
 }
 MIXED_JSON = {rel: tuple(spec.keys()) for rel, spec in MIXED_SPEC.items()}
@@ -122,6 +123,7 @@ TENANT_MATRIX_DOMAINS = (
     "prototypePackages",
     "prototypeLaunchDecisions",
     "prototypePilotPlans",
+    "prototypeLabor",
 )
 OPTIONAL_EMPTY_DOMAINS = frozenset(
     {
@@ -142,6 +144,7 @@ OPTIONAL_EMPTY_DOMAINS = frozenset(
         "prototypePackages",
         "prototypeLaunchDecisions",
         "prototypePilotPlans",
+        "prototypeLabor",
     }
 )
 
@@ -1336,6 +1339,22 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                 key=lambda r: str(r.get("planId")),
             ),
             "planId",
+        ),
+        "prototypeLabor": _entry(
+            sorted(
+                [
+                    {
+                        "laborId": r.get("laborId"),
+                        "prototypeUnitId": r.get("prototypeUnitId"),
+                        "workOrderId": r.get("workOrderId"),
+                        "minutes": r.get("minutes"),
+                        "engineeringHash": r.get("engineeringHash"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "prototype", None), "labor", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("laborId")),
+            ),
+            "laborId",
         ),
     }
     compact = {k: domains[k]["digest"] for k in TENANT_MATRIX_DOMAINS}

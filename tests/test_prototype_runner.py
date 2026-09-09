@@ -741,3 +741,47 @@ def test_prototype_runner_missing_packages_fail(tmp_path):
         return body
 
     _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_manual_go_without_dam_fails(tmp_path):
+    def scenario(plat):
+        body = _passing(plat)
+        body["launchDecision"] = "HUMAN_GO"
+        body["physicalPrototypeValidated"] = True
+        body["label"] = "MANUAL_EVIDENCE"
+        for pkg in body["evidencePackages"]:
+            pkg["evidenceSource"] = "MANUAL_EVIDENCE"
+            pkg["damRefs"] = []
+        for unit in body["units"]:
+            unit["physicalPrototypeValidated"] = True
+            unit["evidenceSource"] = "MANUAL"
+            unit["truthLabel"] = "MANUAL_EVIDENCE"
+        return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_complete_cost_without_qty_fails(tmp_path):
+    def scenario(plat):
+        body = _passing(plat)
+        body["launchDecision"] = "HUMAN_GO"
+        body["label"] = "MANUAL_EVIDENCE"
+        for row in body["matrix"]:
+            row["costCompleteness"] = "COMPLETE"
+            row["observedCostLabel"] = "MANUAL"
+            row["launchDecision"] = "HUMAN_GO"
+            row["evidenceSource"] = "MANUAL"
+        for pkg in body["evidencePackages"]:
+            pkg["evidenceSource"] = "MANUAL_EVIDENCE"
+            pkg["damRefs"] = [
+                {"role": "AS_BUILT", "assetId": "a", "sha256": "aa", "size": 12},
+                {"role": "PACKAGING", "assetId": "b", "sha256": "bb", "size": 12},
+            ]
+        for unit in body["units"]:
+            unit["physicalPrototypeValidated"] = True
+            unit["materialConsumed"] = False
+            unit["inventoryLineage"] = None
+            unit["evidenceSource"] = "MANUAL"
+        return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)

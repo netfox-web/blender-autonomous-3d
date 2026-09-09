@@ -96,6 +96,11 @@ def _seed_lot(plat, tenant, unit, sheets=8, **over):
     )
 
 
+def _dam_ref(plat, tenant, name, role):
+    obj = plat.dam.put(tenant_id=tenant, kind="photo", name=name, data=b"photo-" + name.encode() + b"-bytesxx")
+    return {"assetId": obj.asset_id, "role": role}
+
+
 def _ops(plat, tenant="pa"):
     ident = plat.pilot.identity
     fixture = ident.register_operator(tenant_id=tenant, display_name="fixture-pm", capabilities=["FIXTURE"])
@@ -610,7 +615,7 @@ def test_cost_separates_quantity_and_currency(tmp_path):
         currency="TWD",
     )
     assert mixed["monetaryTotal"] == 160
-    assert mixed["completeness"] == "COMPLETE"
+    assert mixed["completeness"] == "PARTIAL"
     snap = mixed["estimateSnapshot"]
     plat2 = Platform(root=tmp_path / "live", mock_blender=True)
     assert plat2.prototype.costs[mixed["costId"]]["estimateSnapshot"] == snap
@@ -804,6 +809,18 @@ def test_pilot_requires_packaging_cost_and_go_path(tmp_path):
         values=_vals(cand),
         observations=GOOD_QC,
     )
+    with pytest.raises(PrototypeError, match="DAM"):
+        plat.prototype.decide(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="PASS_AS_BUILT", reason="ok")
+    plat.prototype.record_as_built(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        values=_vals(cand),
+        observations=GOOD_QC,
+        dam_refs=[_dam_ref(plat, "pa", "asbuilt.bin", "AS_BUILT")],
+    )
     plat.prototype.decide(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="PASS_AS_BUILT", reason="ok")
     with pytest.raises(PrototypeError, match="packaging"):
         plat.prototype.approve_pilot_batch(cid, tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="no-pack")
@@ -825,6 +842,46 @@ def test_pilot_requires_packaging_cost_and_go_path(tmp_path):
     )
     with pytest.raises(PrototypeError, match="PARTIAL"):
         plat.prototype.approve_pilot_batch(cid, tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="partial-cost")
+    plat.prototype.record_actual_cost(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    money = plat.prototype.costs[plat.prototype.units[unit["prototypeUnitId"]]["actualCostId"]]
+    assert money["completeness"] == "PARTIAL"
+    with pytest.raises(PrototypeError, match="PARTIAL|DAM"):
+        plat.prototype.approve_pilot_batch(cid, tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="money-only")
+    plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat, cand),
+        dam_refs=[_dam_ref(plat, "pa", "pack.bin", "PACKAGING")],
+    )
+    qty = int(plat.prototype._material_requirement(unit)["sheets"])
+    _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    plat.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    plat.prototype.record_labor(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        minutes=40,
+        reason="build",
+    )
     plat.prototype.record_actual_cost(
         unit["prototypeUnitId"],
         tenant_id="pa",
@@ -1552,6 +1609,7 @@ def test_stale_package_after_eco_and_human_go_gates(tmp_path):
         source="MANUAL",
         values=_vals(cand),
         observations=GOOD_QC,
+        dam_refs=[_dam_ref(plat, "pa", "stale-asbuilt.bin", "AS_BUILT")],
     )
     plat.prototype.decide(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="PASS_AS_BUILT", reason="ok")
     plat.prototype.packaging_checklist(
@@ -1561,6 +1619,7 @@ def test_stale_package_after_eco_and_human_go_gates(tmp_path):
         shift_id=human_shift["shiftId"],
         source="MANUAL",
         observed=_pack_obs(plat, cand),
+        dam_refs=[_dam_ref(plat, "pa", "stale-pack.bin", "PACKAGING")],
     )
     plat.prototype.record_actual_cost(
         unit["prototypeUnitId"],
@@ -1631,9 +1690,10 @@ def test_human_go_rejects_fixture_partial_demand_and_duplicate(tmp_path):
         source="MANUAL",
         values=_vals(cand),
         observations=GOOD_QC,
+        dam_refs=[_dam_ref(plat2, "pa", "go-asbuilt.bin", "AS_BUILT")],
     )
     plat2.prototype.decide(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="PASS_AS_BUILT", reason="ok")
-    with pytest.raises(PrototypeError, match="packaging|partial|cost|launch-ready"):
+    with pytest.raises(PrototypeError, match="packaging|partial|cost|launch-ready|DAM"):
         plat2.prototype.record_launch_decision(
             cand["candidateId"],
             tenant_id="pa",
@@ -1649,6 +1709,43 @@ def test_human_go_rejects_fixture_partial_demand_and_duplicate(tmp_path):
         shift_id=human_shift["shiftId"],
         source="MANUAL",
         observed=_pack_obs(plat2, cand),
+        dam_refs=[_dam_ref(plat2, "pa", "go-pack.bin", "PACKAGING")],
+    )
+    plat2.prototype.record_actual_cost(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    with pytest.raises(PrototypeError, match="PARTIAL|launch-ready"):
+        plat2.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="money-only",
+        )
+    qty = int(plat2.prototype._material_requirement(unit)["sheets"])
+    _seed_lot(plat2, "pa", unit, sheets=qty + 2)
+    plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    plat2.prototype.record_labor(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        minutes=35,
+        reason="assembly",
     )
     plat2.prototype.record_actual_cost(
         unit["prototypeUnitId"],
@@ -1706,7 +1803,7 @@ def test_package_crash_prepare_reconciles(tmp_path):
     run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
     fixture, shift, human, human_shift = _ops(plat)
     cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
-    plat.prototype._crash_mode = "after-package-prepare"
+    plat.prototype._crash_mode = "after-outbox-prepare"
     with pytest.raises(CrashInjected):
         plat.prototype.create_evidence_package(
             unit["prototypeUnitId"],
@@ -1718,6 +1815,8 @@ def test_package_crash_prepare_reconciles(tmp_path):
     plat.prototype._crash_mode = ""
     plat2 = Platform(root=tmp_path / "live", mock_blender=True)
     _, _, human2, human_shift2 = _ops(plat2)
+    assert plat2.prototype.packages == {}
+    assert plat2.pilot.outbox.list_open(tenant_id="pa") == []
     again = plat2.prototype.create_evidence_package(
         unit["prototypeUnitId"],
         tenant_id="pa",
@@ -1725,6 +1824,112 @@ def test_package_crash_prepare_reconciles(tmp_path):
         shift_id=human_shift2["shiftId"],
         source="MANUAL",
     )
+    events = [e for e in plat2.pilot.journal.list("pa") if e.get("eventType") == "prototype.evidence_package.create"]
     assert len(plat2.prototype.packages) == 1
-    assert again["state"] in {"OPEN", "PREPARED", "FINALIZED"}
+    assert len(events) == 1
+    assert plat2.pilot.outbox.list_open(tenant_id="pa") == []
+    assert plat2.pilot.journal.verify("pa")["ok"] is True
+    third = plat2.prototype.create_evidence_package(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        source="MANUAL",
+    )
+    assert third["evidencePackageId"] == again["evidencePackageId"]
+    assert len([e for e in plat2.pilot.journal.list("pa") if e.get("eventType") == "prototype.evidence_package.create"]) == 1
     _ = cand
+
+
+def test_package_crash_after_business_persist_reconciles_journal(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    plat.prototype._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat.prototype.create_evidence_package(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+        )
+    plat.prototype._crash_mode = ""
+    assert len(plat.prototype.packages) == 1
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    events = [e for e in plat2.pilot.journal.list("pa") if e.get("eventType") == "prototype.evidence_package.create"]
+    assert len(plat2.prototype.packages) == 1
+    assert len(events) == 1
+    assert plat2.pilot.outbox.list_open(tenant_id="pa") == []
+    assert plat2.pilot.journal.verify("pa")["ok"] is True
+    _ = cand
+
+
+def test_package_create_subprocess_crash_windows(tmp_path):
+    import os
+    import subprocess
+    import sys
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    env = dict(os.environ)
+    root = str(tmp_path / "live")
+    src = str((__import__("pathlib").Path(__file__).resolve().parents[1] / "src"))
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fox3d.crashfix",
+            "--root",
+            root,
+            "--action",
+            "proto-package-create",
+            "--tenant",
+            "pa",
+            "--unit",
+            unit["prototypeUnitId"],
+            "--operator",
+            human["operatorId"],
+            "--shift",
+            human_shift["shiftId"],
+            "--crash",
+            "after-business-persist",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    events = [e for e in plat2.pilot.journal.list("pa") if e.get("eventType") == "prototype.evidence_package.create"]
+    assert len(plat2.prototype.packages) == 1
+    assert len(events) == 1
+    assert plat2.pilot.outbox.list_open(tenant_id="pa") == []
+    assert plat2.pilot.journal.verify("pa")["ok"] is True
+    _ = cand
+
+
+def test_zero_byte_required_dam_rejected(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    empty = plat.dam.put(tenant_id="pa", kind="photo", name="empty.bin", data=b"")
+    with pytest.raises(PrototypeError, match="non-empty"):
+        plat.prototype.record_as_built(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            values=_vals(cand),
+            observations=GOOD_QC,
+            dam_refs=[{"assetId": empty.asset_id, "role": "AS_BUILT"}],
+        )

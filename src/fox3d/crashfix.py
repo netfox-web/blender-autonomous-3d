@@ -72,6 +72,59 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps({"ok": True, "consumed": rec.get("consumedSheets"), "lineage": rec.get("inventoryLineage")}))
         return 0
+    if args.action == "proto-package-create":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.create_evidence_package(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            source="MANUAL",
+        )
+        print(json.dumps({"ok": True, "evidencePackageId": rec.get("evidencePackageId"), "state": rec.get("state")}))
+        return 0
+    if args.action == "proto-package-finalize":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.finalize_evidence_package(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+        )
+        print(json.dumps({"ok": True, "evidencePackageId": rec.get("evidencePackageId"), "state": rec.get("state")}))
+        return 0
+    if args.action == "proto-launch-go":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.record_launch_decision(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            decision="HUMAN_GO",
+            reason="crash-go",
+        )
+        print(json.dumps({"ok": True, "launchDecisionId": rec.get("launchDecisionId"), "decision": rec.get("decision")}))
+        return 0
+    if args.action == "proto-pilot-plan":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.create_pilot_plan(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            reason="crash-plan",
+            quantity=1,
+        )
+        print(json.dumps({"ok": True, "planId": rec.get("planId"), "releaseId": rec.get("releaseId"), "workOrderId": rec.get("workOrderId")}))
+        return 0
     raise SystemExit(f"unknown action {args.action}")
 
 

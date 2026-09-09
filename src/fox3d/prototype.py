@@ -50,6 +50,12 @@ LAUNCH_DECISIONS = (
 PACKAGE_STATES = ("OPEN", "PREPARED", "FINALIZED", "SUPERSEDED", "INVALIDATED")
 EVIDENCE_SOURCES = frozenset({"MANUAL", "IMPORTED", "FIXTURE", "MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"})
 PACKAGE_SOURCES = frozenset({"FIXTURE", "MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"})
+REQUIRED_DAM_ROLES = ("AS_BUILT", "PACKAGING")
+DAM_EVIDENCE_POLICY = {
+    "requiredRoles": list(REQUIRED_DAM_ROLES),
+    "minBytes": 1,
+    "source": "CONFIG",
+}
 REQUIRED_MEASUREMENTS = ("widthMm", "depthMm", "heightMm", "assembledWeightKg", "assemblyMinutes")
 PACK_MEASUREMENTS = ("cartonLengthMm", "cartonWidthMm", "cartonHeightMm", "packedWeightKg")
 QC_FIELDS = ("hardware", "panelEdgeFinish", "wobbleStability", "doorDrawerFit")
@@ -138,6 +144,7 @@ CANONICAL_PACKAGE_FIELDS = LINEAGE_KEYS + (
     "revision",
     "operatorId",
     "shiftId",
+    "damRefs",
 )
 REQUIRED_BOARD_FIELDS = (
     "selectionId",
@@ -582,11 +589,35 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append("package_id_mismatch")
         if pkg.get("evidenceSource") == "FIXTURE" and result.get("physicalPrototypeValidated") is True:
             failures.append("fixture_physical")
+        refs = pkg.get("damRefs") or pkg.get("damEvidence") or []
+        if result.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"} or (
+            pkg.get("evidenceSource") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"} and result.get("physicalPrototypeValidated") is True
+        ):
+            roles = {str(r.get("role") or "").upper() for r in refs if isinstance(r, dict)}
+            if "AS_BUILT" not in roles:
+                failures.append("dam_as_built_missing")
+            if result.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"} and "PACKAGING" not in roles:
+                failures.append("dam_packaging_missing")
+            for role in (("AS_BUILT",) if result.get("physicalPrototypeValidated") else ()) + (("PACKAGING",) if result.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"} else ()):
+                hit = next((r for r in refs if isinstance(r, dict) and str(r.get("role") or "").upper() == role), None)
+                if not hit or not hit.get("assetId") or not hit.get("sha256") or not hit.get("size"):
+                    failures.append(f"dam_{role.lower()}_identity")
     launch = result.get("launchDecision")
     if launch not in LAUNCH_DECISIONS:
         failures.append("launch_decision_missing")
     if result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"} and launch in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"}:
         failures.append("fixture_upgraded")
+    if launch in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"}:
+        for u in units:
+            if not isinstance(u, dict):
+                continue
+            if not isinstance(u.get("inventoryLineage"), dict) or not u.get("materialConsumed"):
+                failures.append("material_qty_lineage")
+        for row in matrix:
+            if not isinstance(row, dict):
+                continue
+            if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL", "FIXTURE"}:
+                failures.append("cost_complete_without_qty")
     if result.get("physicalPrototypeValidated") is False and result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"}:
         if launch not in {"WAITING_HUMAN_EVIDENCE", "HOLD_REWORK"}:
             failures.append("fixture_launch_not_waiting")
@@ -612,6 +643,7 @@ class PrototypeFactory:
         self.packages: dict[str, dict[str, Any]] = {}
         self.launch_decisions: dict[str, dict[str, Any]] = {}
         self.plans: dict[str, dict[str, Any]] = {}
+        self.labor: dict[str, dict[str, Any]] = {}
         self.idem: dict[str, str] = {}
         self.journal: Any | None = None
         self.outbox: Any | None = None
@@ -638,6 +670,7 @@ class PrototypeFactory:
         self.packages = {r["evidencePackageId"]: r for r in payload.get("packages") or [] if isinstance(r, dict) and r.get("evidencePackageId")}
         self.launch_decisions = {r["launchDecisionId"]: r for r in payload.get("launchDecisions") or [] if isinstance(r, dict) and r.get("launchDecisionId")}
         self.plans = {r["planId"]: r for r in payload.get("pilotPlans") or [] if isinstance(r, dict) and r.get("planId")}
+        self.labor = {r["laborId"]: r for r in payload.get("labor") or [] if isinstance(r, dict) and r.get("laborId")}
         self._bind_journal()
 
     def persist(self) -> None:
@@ -655,6 +688,7 @@ class PrototypeFactory:
                 "packages": list(self.packages.values()),
                 "launchDecisions": list(self.launch_decisions.values()),
                 "pilotPlans": list(self.plans.values()),
+                "labor": list(self.labor.values()),
                 "idem": self.idem,
                 "liveMachineControl": False,
                 "truthLabel": "REAL_LOGIC",
@@ -731,6 +765,7 @@ class PrototypeFactory:
                 self.packages,
                 self.launch_decisions,
                 self.plans,
+                self.labor,
             ):
                 if existing in store:
                     return store[existing]
@@ -747,6 +782,7 @@ class PrototypeFactory:
             or rec.get("evidencePackageId")
             or rec.get("launchDecisionId")
             or rec.get("planId")
+            or rec.get("laborId")
         )
         self.idem[key] = str(rid)
         self.persist()
@@ -789,7 +825,7 @@ class PrototypeFactory:
             "sheets": max(sheets, 1),
         }
 
-    def _resolve_dam(self, refs: list[dict[str, Any]] | None, *, tenant_id: str, src: str) -> list[dict[str, Any]]:
+    def _resolve_dam(self, refs: list[dict[str, Any]] | None, *, tenant_id: str, src: str, default_role: str | None = None) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         dam = getattr(self.platform, "dam", None)
         for ref in refs or []:
@@ -809,22 +845,152 @@ class PrototypeFactory:
             if obj.tenant_id != tenant_id:
                 raise PrototypeError("BLOCKED", "cross-tenant DAM/evidence reference")
             size = Path(obj.path).stat().st_size if obj.path else 0
-            if ref.get("sha256") and str(ref.get("sha256")) != str(obj.sha256):
+            sha = str(obj.sha256 or "")
+            if not sha or size <= 0:
+                raise PrototypeError("BLOCKED", "required DAM evidence must have non-empty bytes/SHA")
+            if ref.get("sha256") and str(ref.get("sha256")) != sha:
                 raise PrototypeError("BLOCKED", "DAM hash mismatch")
             if ref.get("size") is not None and int(ref["size"]) != int(size):
                 raise PrototypeError("BLOCKED", "DAM size mismatch")
-            if src == "IMPORTED" and (not obj.sha256 or size <= 0):
-                raise PrototypeError("BLOCKED", "imported evidence requires SHA/size")
+            role = str(ref.get("role") or default_role or "").upper()
             out.append(
                 {
                     "assetId": obj.asset_id,
                     "tenantId": obj.tenant_id,
-                    "sha256": obj.sha256,
+                    "sha256": sha,
                     "size": size,
                     "kind": obj.kind,
+                    "role": role,
+                    "engineeringHash": ref.get("engineeringHash"),
                 }
             )
         return out
+
+    def _merge_dam(self, existing: list[dict[str, Any]] | None, incoming: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        seen: set[tuple[Any, Any]] = set()
+        for row in list(existing or []) + list(incoming or []):
+            if not isinstance(row, dict):
+                continue
+            key = (row.get("assetId"), row.get("role"))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(row)
+        return out
+
+    def _has_dam_role(self, refs: list[dict[str, Any]] | None, role: str, *, engineering_hash: str | None = None) -> bool:
+        want = str(role or "").upper()
+        for row in refs or []:
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("role") or "").upper() != want:
+                continue
+            if not row.get("assetId") or not row.get("sha256") or int(row.get("size") or 0) <= 0:
+                continue
+            if engineering_hash and row.get("engineeringHash") and row.get("engineeringHash") != engineering_hash:
+                continue
+            return True
+        return False
+
+    def _package_dam(self, pkg: dict[str, Any] | None, meas: dict[str, Any] | None = None, pack: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        return self._merge_dam(self._merge_dam((pkg or {}).get("damRefs"), (meas or {}).get("damRefs")), (pack or {}).get("damRefs"))
+
+    def _authoritative_material_qty(self, unit: dict[str, Any]) -> float | None:
+        lin = unit.get("inventoryLineage") if isinstance(unit.get("inventoryLineage"), dict) else None
+        if not unit.get("materialConsumed") or not lin:
+            return None
+        wo = unit.get("inventoryWorkOrderId") or f"proto:{unit.get('prototypeUnitId')}"
+        if lin.get("workOrderId") != wo or not lin.get("reservationIds") or lin.get("consumedQuantity") is None:
+            return None
+        if lin.get("intentId") and unit.get("inventoryIntentId") and lin.get("intentId") != unit.get("inventoryIntentId"):
+            return None
+        return float(lin["consumedQuantity"])
+
+    def _labor_records(self, unit: dict[str, Any]) -> list[dict[str, Any]]:
+        uid = unit.get("prototypeUnitId")
+        tenant = unit.get("tenantId")
+        eng = unit.get("engineeringHash")
+        rows = [
+            r
+            for r in self.labor.values()
+            if r.get("prototypeUnitId") == uid and r.get("tenantId") == tenant and r.get("engineeringHash") == eng
+        ]
+        wo_id = unit.get("inventoryWorkOrderId") or unit.get("laborWorkOrderId")
+        orders = getattr(getattr(self.platform, "pilot", None), "workorders", None)
+        if wo_id and orders is not None and wo_id in getattr(orders, "orders", {}):
+            try:
+                summary = orders.labor_summary(wo_id)
+            except (KeyError, PermissionError):
+                summary = None
+            if summary and float(summary.get("actualManualLaborMinutes") or 0) > 0:
+                rows.append(
+                    {
+                        "laborId": f"wo:{wo_id}",
+                        "tenantId": tenant,
+                        "prototypeUnitId": uid,
+                        "workOrderId": wo_id,
+                        "minutes": float(summary["actualManualLaborMinutes"]),
+                        "source": "WORKORDER",
+                        "engineeringHash": eng,
+                    }
+                )
+        return rows
+
+    def _authoritative_labor_minutes(self, unit: dict[str, Any]) -> float | None:
+        rows = self._labor_records(unit)
+        if not rows:
+            return None
+        return float(sum(float(r.get("minutes") or 0) for r in rows))
+
+    def _authoritative_hardware_qty(self, unit: dict[str, Any]) -> float | None:
+        pack = self.checklists.get(unit.get("packagingChecklistId") or "")
+        if pack and pack.get("countOk") is True and isinstance(pack.get("expectedCounts"), dict):
+            qty = pack["expectedCounts"].get("hardwareQty")
+            if qty is not None:
+                return float(qty)
+        meas = self.measurements.get(unit.get("latestMeasurementId") or "")
+        obs = (meas or {}).get("observations") or {}
+        hw = obs.get("hardware") if isinstance(obs, dict) else None
+        if isinstance(hw, dict) and hw.get("count") is not None:
+            return float(hw["count"])
+        return None
+
+    def _authoritative_packaging_qty(self, unit: dict[str, Any]) -> float | None:
+        pack = self.checklists.get(unit.get("packagingChecklistId") or "")
+        if not pack or pack.get("ok") is not True:
+            return None
+        observed = pack.get("observed") if isinstance(pack.get("observed"), dict) else {}
+        if observed.get("packagingQty") is not None:
+            return float(observed["packagingQty"])
+        return 1.0
+
+    def _cost_qty_complete(self, unit: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+        material = self._authoritative_material_qty(unit)
+        labor = self._authoritative_labor_minutes(unit)
+        hardware = self._authoritative_hardware_qty(unit)
+        packaging = self._authoritative_packaging_qty(unit)
+        sources = {
+            "materialQty": "MATERIAL_LOT" if material is not None else "MISSING",
+            "laborMinutes": "LABOR_RECORD" if labor is not None else "MISSING",
+            "hardwareQty": "PACKAGING_QC" if hardware is not None else "MISSING",
+            "packagingQty": "PACKAGING_CHECKLIST" if packaging is not None else "MISSING",
+        }
+        ok = all(v != "MISSING" for v in sources.values())
+        return ok, {
+            "ok": ok,
+            "materialQty": material,
+            "laborMinutes": labor,
+            "hardwareQty": hardware,
+            "packagingQty": packaging,
+            "sources": sources,
+        }
+
+    def _launch_cost_complete(self, unit: dict[str, Any], cost: dict[str, Any] | None) -> bool:
+        if not cost or cost.get("completeness") != "COMPLETE":
+            return False
+        qty_ok, _meta = self._cost_qty_complete(unit)
+        return qty_ok
 
     def _parse_qc(self, raw: dict[str, Any] | None, spec: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
         src = raw or {}
@@ -965,8 +1131,6 @@ class PrototypeFactory:
             self.packages[body["evidencePackageId"]] = body
             unit["evidencePackageId"] = body["evidencePackageId"]
             unit["evidenceSource"] = src
-            self.persist()
-            self._die("after-package-prepare")
             self._emit(
                 "prototype.evidence_package.create",
                 tenant_id=tenant_id,
@@ -980,7 +1144,7 @@ class PrototypeFactory:
 
         return self._idem(key, _make)
 
-    def _attach_to_package(self, unit: dict[str, Any], *, field: str, value: str, ident: dict[str, Any], src: str) -> dict[str, Any]:
+    def _attach_to_package(self, unit: dict[str, Any], *, field: str, value: str, ident: dict[str, Any], src: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         pkg = self._active_package(unit)
         if pkg is None:
             pkg = self.create_evidence_package(
@@ -999,9 +1163,21 @@ class PrototypeFactory:
         if pkg.get("tenantId") != unit.get("tenantId"):
             raise PrototypeError("BLOCKED", "cross-tenant prototype/evidence/DAM reference")
         pkg[field] = value
+        extra_body = dict(extra or {})
+        if "damRefs" in extra_body:
+            pkg["damRefs"] = self._merge_dam(pkg.get("damRefs"), extra_body.pop("damRefs"))
+        pkg.update(extra_body)
         unit["evidencePackageId"] = pkg["evidencePackageId"]
         self.packages[pkg["evidencePackageId"]] = pkg
-        self.persist()
+        self._emit(
+            "prototype.evidence_package.update",
+            tenant_id=unit["tenantId"],
+            aggregate_type="PhysicalEvidencePackage",
+            aggregate_id=pkg["evidencePackageId"],
+            actor=ident["operator"]["operatorId"],
+            payload={"field": field, "value": value, "state": pkg.get("state"), "engineeringHash": pkg.get("engineeringHash"), "roles": [r.get("role") for r in (pkg.get("damRefs") or [])]},
+            semantic_key=f"{unit['tenantId']}::pkg-upd::{pkg['evidencePackageId']}::{field}::{value}",
+        )
         return pkg
 
     def _supersede_package(self, old: dict[str, Any], *, ident: dict[str, Any], src: str, reason: str) -> dict[str, Any]:
@@ -1037,7 +1213,6 @@ class PrototypeFactory:
         self.packages[old["evidencePackageId"]] = old
         self.packages[body["evidencePackageId"]] = body
         unit["evidencePackageId"] = body["evidencePackageId"]
-        self.persist()
         self._emit(
             "prototype.evidence_package.supersede",
             tenant_id=old["tenantId"],
@@ -1068,14 +1243,10 @@ class PrototypeFactory:
         cand = self._candidate(unit["candidateId"], tenant_id)
         if cand.get("engineeringHash") != pkg.get("engineeringHash") or cand.get("state") == "SUPERSEDED":
             raise PrototypeError("BLOCKED", "stale engineeringHash/revision evidence after ECO")
-        pkg["state"] = "PREPARED"
-        self.persist()
-        self._die("after-package-prepare")
         pkg["state"] = "FINALIZED"
         pkg["finalizedAt"] = _now()
         pkg["finalizedBy"] = ident["operator"]["operatorId"]
         self.packages[evidence_package_id] = pkg
-        self.persist()
         self._emit(
             "prototype.evidence_package.finalize",
             tenant_id=tenant_id,
@@ -1630,7 +1801,9 @@ class PrototypeFactory:
         }
         required_tol = [tol_rows[k] for k in REQUIRED_MEASUREMENTS]
         tol_ok = all(row.get("ok") for row in required_tol) and not [f for f in REQUIRED_MEASUREMENTS if f not in numeric]
-        refs = self._resolve_dam(dam_refs, tenant_id=tenant_id, src=src)
+        refs = self._resolve_dam(dam_refs, tenant_id=tenant_id, src=src, default_role="AS_BUILT")
+        for row in refs:
+            row["engineeringHash"] = unit.get("engineeringHash")
         missing = [f for f in REQUIRED_MEASUREMENTS if f not in numeric]
         qc, qc_missing = self._parse_qc(observations if observations is not None else notes, spec)
         label = self._label_for(src)
@@ -1667,11 +1840,14 @@ class PrototypeFactory:
         unit["latestMeasurementId"] = body["measurementId"]
         unit["evidenceSource"] = src
         unit["physicalPrototypeValidated"] = False
-        pkg = self._attach_to_package(unit, field="measurementId", value=body["measurementId"], ident=ident, src=src)
-        pkg["damRefs"] = refs
-        pkg["observations"] = qc
-        pkg["qcMissing"] = qc_missing
-        self.packages[pkg["evidencePackageId"]] = pkg
+        self._attach_to_package(
+            unit,
+            field="measurementId",
+            value=body["measurementId"],
+            ident=ident,
+            src=src,
+            extra={"damRefs": refs, "observations": qc, "qcMissing": qc_missing},
+        )
         if missing or src == "FIXTURE" or qc_missing:
             if unit["state"] in {"VALIDATED", "HOLD"}:
                 unit["state"] = "WAITING_VALIDATION"
@@ -1679,7 +1855,6 @@ class PrototypeFactory:
             unit["state"] = "HOLD"
         elif unit["state"] in {"HOLD", "WAITING_VALIDATION", "VALIDATED"}:
             unit["state"] = "WAITING_VALIDATION"
-        self.persist()
         return body
 
     def record_actual_cost(
@@ -1702,21 +1877,15 @@ class PrototypeFactory:
         if (components or {}).get("engineeringHash") and components.get("engineeringHash") != unit.get("engineeringHash"):
             raise PrototypeError("BLOCKED", "stale engineeringHash cannot reuse the old observed cost")
         components = dict(components or {})
-        lineage = unit.get("inventoryLineage") if isinstance(unit.get("inventoryLineage"), dict) else None
-        if lineage and unit.get("materialConsumed"):
-            consumed = lineage.get("consumedQuantity")
-            if consumed is not None and "sheetsConsumed" not in components:
-                components["sheetsConsumed"] = consumed
-            area = None
-            try:
-                area = float(lineage.get("length") or 0) * float(lineage.get("width") or 0) * float(consumed or 0) / 1_000_000.0
-            except (TypeError, ValueError):
-                area = None
-            if area is not None and "materialArea" not in components:
-                components["materialArea"] = area
-        pack = self.checklists.get(unit.get("packagingChecklistId") or "")
-        if pack and "packagingQty" not in components:
-            components["packagingQty"] = 1
+        qty_ok, qty_meta = self._cost_qty_complete(unit)
+        if qty_meta["materialQty"] is not None:
+            components["sheetsConsumed"] = qty_meta["materialQty"]
+        if qty_meta["laborMinutes"] is not None:
+            components["laborMinutes"] = qty_meta["laborMinutes"]
+        if qty_meta["hardwareQty"] is not None:
+            components["hardwareQty"] = qty_meta["hardwareQty"]
+        if qty_meta["packagingQty"] is not None:
+            components["packagingQty"] = qty_meta["packagingQty"]
         estimate = dict(cand.get("commercial") or {})
         snapshot = {
             k: estimate.get(k)
@@ -1783,17 +1952,23 @@ class PrototypeFactory:
                 "remnantReturnId": rem.get("remnantId") or rid,
                 "amount": _finite_number(components["remnantCreditAmount"], "remnantCreditAmount", allow_zero=True),
             }
-        complete = not any(k in missing for k in REQUIRED_CURRENCY) and all(
+        money_complete = not any(k in missing for k in REQUIRED_CURRENCY) and all(
             monetary.get(k) is not None for k in REQUIRED_CURRENCY
         )
+        complete = bool(money_complete and qty_ok)
+        if not qty_ok:
+            for key, src_name in (qty_meta.get("sources") or {}).items():
+                if src_name == "MISSING":
+                    missing.append(key)
+                    sources[key] = "MISSING"
         monetary_total = None
-        if complete:
+        if money_complete:
             monetary_total = sum(float(monetary[k]) for k in CURRENCY_FIELDS if monetary.get(k) is not None)
             if remnant_credit:
                 monetary_total -= float(remnant_credit["amount"])
         est_landed = snapshot.get("landedCost")
         monetary_variance = None
-        if complete and est_landed is not None:
+        if money_complete and est_landed is not None:
             monetary_variance = {
                 "estimate": est_landed,
                 "observed": monetary_total,
@@ -1824,6 +1999,7 @@ class PrototypeFactory:
             "remnantCredit": remnant_credit,
             "source": src,
             "truthLabel": label,
+            "quantityLineage": qty_meta,
             "liveProvider": False,
             "operatorId": ident["operator"]["operatorId"],
             "shiftId": ident["shift"]["shiftId"],
@@ -1833,8 +2009,58 @@ class PrototypeFactory:
         self.costs[body["costId"]] = body
         unit["actualCostId"] = body["costId"]
         self._attach_to_package(unit, field="costId", value=body["costId"], ident=ident, src=src)
-        self.persist()
         return body
+
+    def record_labor(
+        self,
+        prototype_unit_id: str,
+        *,
+        tenant_id: str,
+        operator_id: str,
+        shift_id: str,
+        minutes: float,
+        reason: str,
+        source: str = "MANUAL",
+    ) -> dict[str, Any]:
+        ident = self._identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
+        unit = self.units[prototype_unit_id]
+        self._require_tenant(unit, tenant_id)
+        src = self._source_for(ident, source)
+        qty = _finite_number(minutes, "laborMinutes", allow_zero=True)
+        wo_id = unit.get("inventoryWorkOrderId") or unit.get("laborWorkOrderId") or f"proto:{prototype_unit_id}"
+        key = f"{tenant_id}::labor::{prototype_unit_id}::{unit.get('engineeringHash')}::{qty}::{reason}"
+
+        def _make():
+            rec = {
+                "laborId": new_id(),
+                "tenantId": tenant_id,
+                "prototypeUnitId": prototype_unit_id,
+                "engineeringHash": unit.get("engineeringHash"),
+                "workOrderId": wo_id,
+                "minutes": qty,
+                "kind": "correction",
+                "reason": reason,
+                "source": src,
+                "truthLabel": self._label_for(src),
+                "operatorId": ident["operator"]["operatorId"],
+                "shiftId": ident["shift"]["shiftId"],
+                "at": _now(),
+                "historyAppendOnly": True,
+            }
+            self.labor[rec["laborId"]] = rec
+            unit["laborWorkOrderId"] = wo_id
+            self._emit(
+                "prototype.labor.append",
+                tenant_id=tenant_id,
+                aggregate_type="PrototypeLabor",
+                aggregate_id=rec["laborId"],
+                actor=ident["operator"]["operatorId"],
+                payload={"minutes": qty, "workOrderId": wo_id, "prototypeUnitId": prototype_unit_id, "engineeringHash": unit.get("engineeringHash")},
+                semantic_key=key,
+            )
+            return rec
+
+        return self._idem(key, _make)
 
     def packaging_checklist(
         self,
@@ -1897,7 +2123,9 @@ class PrototypeFactory:
             if not isinstance(report, dict) or not report.get("assetId"):
                 raise PrototypeError("BLOCKED", "ISTA/certified transit testing requires certified test report DAM")
             dam_refs = list(dam_refs or []) + [report]
-        refs = self._resolve_dam(dam_refs, tenant_id=tenant_id, src=src)
+        refs = self._resolve_dam(dam_refs, tenant_id=tenant_id, src=src, default_role="PACKAGING")
+        for row in refs:
+            row["engineeringHash"] = unit.get("engineeringHash")
         packing_fit = str(observed.get("packingFit") or obs.get("packingFit") or "").upper()
         missing_parts = str(observed.get("missingParts") or obs.get("missingParts") or "").upper()
         damage = str(observed.get("damageDefect") or obs.get("damageDefect") or "").upper()
@@ -1970,11 +2198,14 @@ class PrototypeFactory:
         }
         self.checklists[body["checklistId"]] = body
         unit["packagingChecklistId"] = body["checklistId"]
-        pkg = self._attach_to_package(unit, field="checklistId", value=body["checklistId"], ident=ident, src=src)
-        if refs:
-            pkg["damRefs"] = list(pkg.get("damRefs") or []) + refs
-            self.packages[pkg["evidencePackageId"]] = pkg
-        self.persist()
+        self._attach_to_package(
+            unit,
+            field="checklistId",
+            value=body["checklistId"],
+            ident=ident,
+            src=src,
+            extra={"damRefs": refs},
+        )
         return body
 
     def decide(
@@ -2015,6 +2246,12 @@ class PrototypeFactory:
                     unit["state"] = "HOLD"
                     unit["physicalPrototypeValidated"] = False
                     raise PrototypeError("BLOCKED", "out-of-tolerance cannot validate")
+                pkg = self.packages.get(unit.get("evidencePackageId") or "")
+                dam = self._package_dam(pkg, meas, None)
+                if not self._has_dam_role(dam, "AS_BUILT", engineering_hash=unit.get("engineeringHash")):
+                    unit["physicalPrototypeValidated"] = False
+                    unit["state"] = "WAITING_VALIDATION"
+                    raise PrototypeError("BLOCKED", "required as-built DAM evidence missing")
                 unit["physicalPrototypeValidated"] = True
                 unit["state"] = "VALIDATED"
         elif decision == "REWORK_CURRENT_UNIT":
@@ -2044,7 +2281,15 @@ class PrototypeFactory:
             "liveMachineControl": False,
         }
         self.decisions[body["decisionId"]] = body
-        self.persist()
+        self._emit(
+            "prototype.decision",
+            tenant_id=tenant_id,
+            aggregate_type="PrototypeDecision",
+            aggregate_id=body["decisionId"],
+            actor=ident["operator"]["operatorId"],
+            payload={"decision": decision, "prototypeUnitId": prototype_unit_id, "state": unit.get("state")},
+            semantic_key=f"{tenant_id}::decision::{prototype_unit_id}::{decision}::{body['decisionId']}",
+        )
         return body
 
     def create_eco(
@@ -2082,7 +2327,15 @@ class PrototypeFactory:
                 "truthLabel": "REAL_LOGIC",
             }
             self.ecos[eco_id] = body
-            self.persist()
+            self._emit(
+                "prototype.eco.reject",
+                tenant_id=tenant_id,
+                aggregate_type="EngineeringChange",
+                aggregate_id=eco_id,
+                actor=ident["operator"]["operatorId"],
+                payload={"status": "REJECTED", "candidateId": candidate_id},
+                semantic_key=f"{tenant_id}::eco-reject::{eco_id}",
+            )
             return body
         kind = classification.upper()
         payload = dict(changes or {})
@@ -2120,7 +2373,15 @@ class PrototypeFactory:
                 "truthLabel": "REAL_LOGIC",
             }
             self.ecos[eco_id] = body
-            self.persist()
+            self._emit(
+                "prototype.eco.non_engineering",
+                tenant_id=tenant_id,
+                aggregate_type="EngineeringChange",
+                aggregate_id=eco_id,
+                actor=ident["operator"]["operatorId"],
+                payload={"status": "ACCEPTED_NON_ENGINEERING", "candidateId": candidate_id},
+                semantic_key=f"{tenant_id}::eco-noneng::{eco_id}",
+            )
             return body
         if not field_changes:
             raise PrototypeError("BLOCKED", "no-op engineering ECO rejects")
@@ -2232,7 +2493,6 @@ class PrototypeFactory:
                 unit["physicalPrototypeValidated"] = False
                 if unit.get("state") == "VALIDATED":
                     unit["state"] = "HOLD"
-        self.persist()
         self._emit(
             "prototype.eco.accept",
             tenant_id=tenant_id,
@@ -2330,7 +2590,12 @@ class PrototypeFactory:
             cost = self.costs.get(unit.get("actualCostId") or "")
             if not pack or pack.get("ok") is not True:
                 raise PrototypeError("BLOCKED", "packaging missing/malformed/variance failure cannot become launch-ready")
-            if not cost or cost.get("completeness") != "COMPLETE":
+            dam = self._package_dam(pkg, meas, pack)
+            if not self._has_dam_role(dam, "AS_BUILT", engineering_hash=unit.get("engineeringHash")) or not self._has_dam_role(
+                dam, "PACKAGING", engineering_hash=unit.get("engineeringHash")
+            ):
+                raise PrototypeError("BLOCKED", "required DAM evidence missing for HUMAN_GO")
+            if not self._launch_cost_complete(unit, cost):
                 raise PrototypeError("BLOCKED", "partial required actual-cost evidence cannot become launch-ready")
             if pkg.get("state") in {"OPEN", "PREPARED"}:
                 self.finalize_evidence_package(
@@ -2372,7 +2637,6 @@ class PrototypeFactory:
                 "globalProductionReady": False,
             }
             self.launch_decisions[body["launchDecisionId"]] = body
-            self.persist()
             self._emit(
                 "prototype.launch_decision",
                 tenant_id=tenant_id,
@@ -2484,7 +2748,6 @@ class PrototypeFactory:
         }
         self.plans[body["planId"]] = body
         self.idem[key] = body["planId"]
-        self.persist()
         self._emit(
             "prototype.pilot_plan.create",
             tenant_id=tenant_id,
@@ -2528,9 +2791,8 @@ class PrototypeFactory:
             raise PrototypeError("BLOCKED", "required tolerance/QC evidence")
         if not pack or pack.get("ok") is not True:
             raise PrototypeError("BLOCKED", "PROTOTYPE_VALIDATED with no packaging cannot create pilot approval")
-        if not cost or cost.get("completeness") != "COMPLETE":
-            if not cost_exception_reason:
-                raise PrototypeError("BLOCKED", "validated prototype with PARTIAL required actual cost cannot auto-qualify")
+        if not self._launch_cost_complete(unit, cost):
+            raise PrototypeError("BLOCKED", "validated prototype with PARTIAL required actual cost cannot auto-qualify")
         if board.get("demandLabel") == "REAL":
             raise PrototypeError("BLOCKED", "MOCK demand cannot be labeled REAL")
         go = self.record_launch_decision(
@@ -2570,7 +2832,15 @@ class PrototypeFactory:
             "at": _now(),
         }
         self.decisions[rec["decisionId"]] = rec
-        self.persist()
+        self._emit(
+            "prototype.pilot_batch.approve",
+            tenant_id=tenant_id,
+            aggregate_type="PrototypeDecision",
+            aggregate_id=rec["decisionId"],
+            actor=ident["operator"]["operatorId"],
+            payload={"decision": rec["decision"], "planId": rec.get("planId"), "candidateId": candidate_id},
+            semantic_key=f"{tenant_id}::pilot-approve::{candidate_id}::{rec['decisionId']}",
+        )
         return rec
 
     def readiness(self, candidate_id: str, *, tenant_id: str) -> dict[str, Any]:
@@ -2618,11 +2888,13 @@ class PrototypeFactory:
             and pack
             and pack.get("ok")
             and cost
-            and cost.get("completeness") == "COMPLETE"
+            and self._launch_cost_complete(unit, cost)
             and not self._lineage_stale(candidate_id, tenant_id)
             and pkg
             and pkg.get("evidenceSource") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"}
             and pkg.get("state") != "INVALIDATED"
+            and self._has_dam_role(self._package_dam(pkg, meas, pack), "AS_BUILT", engineering_hash=(unit or {}).get("engineeringHash"))
+            and self._has_dam_role(self._package_dam(pkg, meas, pack), "PACKAGING", engineering_hash=(unit or {}).get("engineeringHash"))
         )
         if evidence_ok and state == "PROTOTYPE_VALIDATED":
             state = "READY_FOR_HUMAN_GO_NO_GO"
@@ -2652,7 +2924,9 @@ class PrototypeFactory:
                 ("tolerance", bool(meas) and not (meas.get("tolerance") or {}).get("ok")),
                 ("qc", bool(meas) and bool(meas.get("qcMissing"))),
                 ("packaging", (not pack) or pack.get("ok") is False),
-                ("cost_partial", (not cost) or cost.get("completeness") != "COMPLETE"),
+                ("cost_partial", (not cost) or not self._launch_cost_complete(unit, cost) if unit else True),
+                ("dam_as_built", bool(unit) and (meas or {}).get("truthLabel") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"} and not self._has_dam_role(self._package_dam(pkg, meas, pack), "AS_BUILT", engineering_hash=(unit or {}).get("engineeringHash"))),
+                ("dam_packaging", bool(unit) and (meas or {}).get("truthLabel") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"} and not self._has_dam_role(self._package_dam(pkg, meas, pack), "PACKAGING", engineering_hash=(unit or {}).get("engineeringHash"))),
                 ("eco", bool(eco)),
                 ("stale_lineage", self._lineage_stale(candidate_id, tenant_id) if sel else False),
             )
@@ -2839,6 +3113,8 @@ def run_prototype_scenario(
             "cartonHeightMm": pack.get("height"),
             "packedWeightKg": weight.get("grossKg") or weight.get("netKg"),
         }
+        as_built_asset = plat.dam.put(tenant_id=tenant_a, kind="photo", name=f"asbuilt-{sel['candidateId']}.bin", data=b"fixture-as-built-photo")
+        pack_asset = plat.dam.put(tenant_id=tenant_a, kind="photo", name=f"pack-{sel['candidateId']}.bin", data=b"fixture-packaging-photo")
         pf.record_as_built(
             unit["prototypeUnitId"],
             tenant_id=tenant_a,
@@ -2847,6 +3123,7 @@ def run_prototype_scenario(
             source="FIXTURE",
             values=predicted,
             observations=fixture_obs,
+            dam_refs=[{"assetId": as_built_asset.asset_id, "role": "AS_BUILT"}],
         )
         pf.record_actual_cost(
             unit["prototypeUnitId"],
@@ -2874,6 +3151,7 @@ def run_prototype_scenario(
                 "damageDefect": "OK",
                 "assemblyMinutes": predicted["assemblyMinutes"],
             },
+            dam_refs=[{"assetId": pack_asset.asset_id, "role": "PACKAGING"}],
         )
         units.append(unit)
         pkg_id = pf.units[unit["prototypeUnitId"]].get("evidencePackageId")

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,16 @@ SCHEMA = "fox3d.journal.v1"
 
 class JournalCommitError(RuntimeError):
     """Required durable audit append could not be committed."""
+
+
+def _maybe_crash(owner: Any, point: str) -> None:
+    if getattr(owner, "_crash_mode", "") != point:
+        return
+    if getattr(owner, "_hard_crash", False):
+        os._exit(1)
+    from fox3d.storelock import CrashInjected
+
+    raise CrashInjected(point)
 
 
 def emit(
@@ -56,9 +67,11 @@ def emit(
         return None
     if outbox is not None and callable(persist) and getattr(owner, "_tx_depth", 0) == 0:
         tx = outbox.prepare(event)
+        _maybe_crash(owner, "after-outbox-prepare")
         persist()
         if hasattr(outbox, "mark_business_committed"):
             outbox.mark_business_committed(tx["txId"])
+        _maybe_crash(owner, "after-business-persist")
         rec = journal.append(
             event_type,
             tenant_id=tenant_id,
