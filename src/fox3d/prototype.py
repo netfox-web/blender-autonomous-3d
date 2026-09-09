@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ from fox3d.inventory import StockShortage, atomic_write_json, read_json
 from fox3d.kd import DEFAULT_LOGISTICS_POLICY
 from fox3d.mfg_release import FAMILY_STEPS
 from fox3d.parametric import CabinetSpec
+from fox3d.storelock import CrashInjected
 
 UNIT_STATES = (
     "PLANNED",
@@ -84,6 +86,13 @@ VOLUMETRIC_POLICY = {
     "maxLongestSideMm": float(DEFAULT_LOGISTICS_POLICY.get("maxLongestSideMm") or 1500.0),
     "maxPackedWeightKg": float(DEFAULT_LOGISTICS_POLICY.get("maxPackedWeightKg") or 30.0),
 }
+PACKAGING_POLICY = {
+    "tolerance": dict(DEFAULT_TOLERANCE),
+    "volumetric": dict(VOLUMETRIC_POLICY),
+    "requiredVarianceFields": list(PACK_MEASUREMENTS) + ["assemblyMinutes"],
+    "source": "CONFIG",
+}
+PACKAGING_POLICY_HASH = stable_hash(PACKAGING_POLICY)
 PRIOR_REAL_BLENDER = {
     "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
     "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
@@ -261,6 +270,20 @@ def verify_prior_real_blender(docs: Path | str) -> dict[str, Any]:
     }
 
 
+def _packaging_variance_contradicts(row: dict[str, Any]) -> bool:
+    pack_val = row.get("packagingValidation")
+    vars_ = row.get("packagingPredictedVsObserved") or {}
+    if not isinstance(pack_val, dict) or pack_val.get("ok") is not True:
+        return False
+    if not isinstance(vars_, dict):
+        return True
+    for field in PACK_MEASUREMENTS:
+        item = vars_.get(field)
+        if isinstance(item, dict) and item.get("ok") is False:
+            return True
+    return False
+
+
 def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     selected = result.get("selected") or []
@@ -284,6 +307,41 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
         for key in REQUIRED_MATRIX_KEYS:
             if key not in row:
                 failures.append(f"matrix[{i}]:missing:{key}")
+        if row.get("buildCompleted") is not True:
+            failures.append(f"matrix[{i}]:build_incomplete")
+        if "toleranceStatus" not in row:
+            failures.append("tolerance_contract_missing")
+        elif row.get("toleranceStatus") is not True:
+            failures.append("tolerance_contract_false")
+        qc = row.get("qcStatus")
+        if not isinstance(qc, dict) or qc.get("complete") is not True:
+            failures.append("qc_incomplete")
+        pack = row.get("packagingCompleteness")
+        if pack == "MISSING":
+            failures.append("packaging_missing")
+        elif pack == "PARTIAL":
+            failures.append("packaging_partial")
+        elif pack != "COMPLETE":
+            failures.append("packaging_contract_missing")
+        pack_val = row.get("packagingValidation") or {}
+        if isinstance(pack_val, dict) and pack_val.get("ok") is False:
+            failures.append("packaging_validation_false")
+        elif pack == "COMPLETE" and (not isinstance(pack_val, dict) or pack_val.get("ok") is not True):
+            failures.append("packaging_validation_false")
+        if _packaging_variance_contradicts(row):
+            failures.append("packaging_variance_contradiction")
+        if row.get("staleLineage"):
+            failures.append("stale_lineage")
+        if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL"}:
+            failures.append("cost_complete_incorrect")
+        if row.get("physicalPrototypeValidated") and row.get("evidenceSource") == "FIXTURE":
+            failures.append("fixture_physical_unit")
+        if row.get("decisionState") in {"READY_FOR_HUMAN_GO_NO_GO", "READY_FOR_MANUAL_PILOT_BATCH"} and row.get("evidenceSource") == "FIXTURE":
+            failures.append("fixture_upgraded")
+        if row.get("toleranceStatus") is not True:
+            blockers = row.get("blockers") or []
+            if isinstance(blockers, list) and "tolerance" not in blockers and "fixture_evidence" not in blockers:
+                failures.append("tolerance_false_unblocked")
     for i, row in enumerate(rows[:4] or []):
         if not isinstance(row, dict):
             failures.append(f"board[{i}]:malformed")
@@ -291,6 +349,11 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
         for key in REQUIRED_BOARD_FIELDS:
             if key not in row:
                 failures.append(f"board[{i}]:missing:{key}")
+        if _packaging_variance_contradicts(row):
+            failures.append("packaging_variance_contradiction")
+        pack_val = row.get("packagingValidation") or {}
+        if isinstance(pack_val, dict) and pack_val.get("ok") is False:
+            failures.append("packaging_validation_false")
     if result.get("physicalPrototypeValidated") is True:
         fixture_units = [u for u in units if (u.get("evidenceSource") == "FIXTURE" or u.get("truthLabel") == "FIXTURE")]
         if fixture_units or result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"}:
@@ -304,18 +367,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("boolean_only_consume")
         if u.get("physicalPrototypeValidated") and (u.get("evidenceSource") == "FIXTURE" or u.get("truthLabel") == "FIXTURE"):
             failures.append("fixture_physical_unit")
-    for row in matrix:
-        if not isinstance(row, dict):
-            continue
-        if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL"}:
-            failures.append("cost_complete_incorrect")
-        if "toleranceStatus" not in row:
-            failures.append("tolerance_contract_missing")
-        if row.get("staleLineage"):
-            failures.append("stale_lineage")
-        pack = row.get("packagingCompleteness")
-        if pack not in {"COMPLETE", "PARTIAL", "MISSING", "FIXTURE"}:
-            failures.append("packaging_contract_missing")
+        if u.get("buildCompleted") is not True and u.get("state") not in {"WAITING_VALIDATION", "VALIDATED", "HOLD"}:
+            failures.append("build_incomplete")
     return failures
 
 
@@ -331,7 +384,10 @@ class PrototypeFactory:
         self.costs: dict[str, dict[str, Any]] = {}
         self.checklists: dict[str, dict[str, Any]] = {}
         self.decisions: dict[str, dict[str, Any]] = {}
+        self.intents: dict[str, dict[str, Any]] = {}
         self.idem: dict[str, str] = {}
+        self._crash_mode = ""
+        self._hard_crash = False
         self.load()
 
     def _path(self) -> Path:
@@ -348,6 +404,7 @@ class PrototypeFactory:
         self.decisions = {r["decisionId"]: r for r in payload.get("decisions") or [] if isinstance(r, dict) and r.get("decisionId")}
         raw_idem = payload.get("idem") or {}
         self.idem = dict(raw_idem) if isinstance(raw_idem, dict) else {}
+        self.intents = {r["intentId"]: r for r in payload.get("inventoryIntents") or [] if isinstance(r, dict) and r.get("intentId")}
 
     def persist(self) -> None:
         atomic_write_json(
@@ -360,6 +417,7 @@ class PrototypeFactory:
                 "costs": list(self.costs.values()),
                 "checklists": list(self.checklists.values()),
                 "decisions": list(self.decisions.values()),
+                "inventoryIntents": list(self.intents.values()),
                 "idem": self.idem,
                 "liveMachineControl": False,
                 "truthLabel": "REAL_LOGIC",
@@ -692,6 +750,75 @@ class PrototypeFactory:
         self.persist()
         return rec
 
+    def _die(self, point: str) -> None:
+        if getattr(self, "_crash_mode", "") != point:
+            return
+        if getattr(self, "_hard_crash", False):
+            os._exit(1)
+        raise CrashInjected(point)
+
+    def _intent_key(self, rec: dict[str, Any], qty: int) -> str:
+        return f"{rec['tenantId']}::proto-consume::{rec['prototypeUnitId']}::{int(qty)}"
+
+    def _find_intent(self, rec: dict[str, Any], qty: int) -> dict[str, Any] | None:
+        key = self._intent_key(rec, qty)
+        for intent in self.intents.values():
+            if intent.get("idempotencyKey") == key and intent.get("tenantId") == rec["tenantId"]:
+                return intent
+        if rec.get("inventoryIntentId") and rec["inventoryIntentId"] in self.intents:
+            return self.intents[rec["inventoryIntentId"]]
+        return None
+
+    def _refresh_intent_reservations(self, intent: dict[str, Any], *, tenant_id: str) -> list[dict[str, Any]]:
+        lots = self.platform.lots
+        refreshed: list[dict[str, Any]] = []
+        for item in intent.get("reservations") or []:
+            try:
+                live, lot = lots._find_reservation(item["reservationId"], tenant_id=tenant_id)
+            except KeyError as exc:
+                raise PrototypeError("HOLD", "inventory intent cannot reconcile reservation") from exc
+            refreshed.append(
+                {
+                    "lotId": lot.get("lotId") or item.get("lotId"),
+                    "reservationId": live["reservationId"],
+                    "quantity": int(live["quantity"]),
+                    "state": live.get("state"),
+                }
+            )
+        intent["reservations"] = refreshed
+        return refreshed
+
+    def _apply_inventory_lineage(self, rec: dict[str, Any], intent: dict[str, Any], req: dict[str, Any], qty: int) -> dict[str, Any]:
+        pinned = list(intent.get("reservations") or [])
+        consumed_qty = sum(int(i.get("quantity") or 0) for i in pinned if i.get("state") == "CONSUMED")
+        if consumed_qty != int(qty):
+            raise PrototypeError("HOLD", "inventory lineage does not match required quantity")
+        rec["materialConsumed"] = True
+        rec["consumesInventory"] = True
+        rec["consumedSheets"] = qty
+        rec["inventoryWorkOrderId"] = intent["workOrderId"]
+        rec["materialObservationLabel"] = "REAL_LOGIC"
+        rec["materialRequirement"] = req
+        rec["inventoryIntentId"] = intent["intentId"]
+        rec["inventoryLineage"] = {
+            "workOrderId": intent["workOrderId"],
+            "intentId": intent["intentId"],
+            "idempotencyKey": intent["idempotencyKey"],
+            "lotIds": [item.get("lotId") for item in pinned],
+            "reservationIds": [item.get("reservationId") for item in pinned],
+            "quantities": [item.get("quantity") for item in pinned],
+            "consumedQuantity": consumed_qty,
+            "material": req["material"],
+            "thickness": req["thickness"],
+            "grain": req["grain"],
+            "length": req["length"],
+            "width": req["width"],
+        }
+        intent["status"] = "CONSUMED"
+        self.intents[intent["intentId"]] = intent
+        self.persist()
+        return rec
+
     def consume_material_once(
         self,
         prototype_unit_id: str,
@@ -737,73 +864,86 @@ class PrototypeFactory:
             if int(lineage.get("consumedQuantity") or 0) != qty:
                 raise PrototypeError("BLOCKED", "no double consume after restart/retry")
             return rec
+        intent = self._find_intent(rec, qty)
         reserved: list[dict[str, Any]] = []
         try:
-            if lot_id:
-                lot = lots.get(lot_id, tenant_id=tenant_id)
-                if not lots.lot_compatible(
-                    lot,
-                    material=req["material"],
-                    thickness=req["thickness"],
-                    grain=req["grain"],
-                    length=req["length"],
-                    width=req["width"],
-                ):
-                    raise PrototypeError("BLOCKED", "wrong SKU/thickness/grain cannot satisfy the prototype requirement")
-                item = lots.reserve_sheets(lot_id, tenant_id=tenant_id, work_order_id=wo_id, quantity=qty)
-                reserved = [{"lotId": lot_id, "reservationId": item["reservationId"], "quantity": qty, "state": "RESERVED"}]
-            else:
-                reserved = lots.allocate_requirement(
-                    tenant_id=tenant_id,
-                    work_order_id=wo_id,
-                    quantity=qty,
-                    material=req["material"],
-                    thickness=req["thickness"],
-                    grain=req["grain"],
-                    length=req["length"],
-                    width=req["width"],
-                )
-            consumed_items = []
-            for item in reserved:
-                consumed_items.append(
-                    lots.consume_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=wo_id)
-                )
+            if intent is None:
+                if lot_id:
+                    lot = lots.get(lot_id, tenant_id=tenant_id)
+                    if not lots.lot_compatible(
+                        lot,
+                        material=req["material"],
+                        thickness=req["thickness"],
+                        grain=req["grain"],
+                        length=req["length"],
+                        width=req["width"],
+                    ):
+                        raise PrototypeError("BLOCKED", "wrong SKU/thickness/grain cannot satisfy the prototype requirement")
+                    item = lots.reserve_sheets(lot_id, tenant_id=tenant_id, work_order_id=wo_id, quantity=qty)
+                    reserved = [{"lotId": lot_id, "reservationId": item["reservationId"], "quantity": qty, "state": "RESERVED"}]
+                else:
+                    reserved = lots.allocate_requirement(
+                        tenant_id=tenant_id,
+                        work_order_id=wo_id,
+                        quantity=qty,
+                        material=req["material"],
+                        thickness=req["thickness"],
+                        grain=req["grain"],
+                        length=req["length"],
+                        width=req["width"],
+                    )
+                intent = {
+                    "intentId": new_id(),
+                    "tenantId": tenant_id,
+                    "prototypeUnitId": prototype_unit_id,
+                    "workOrderId": wo_id,
+                    "idempotencyKey": self._intent_key(rec, qty),
+                    "requirement": req,
+                    "quantity": qty,
+                    "reservations": reserved,
+                    "status": "PINNED",
+                    "createdAt": _now(),
+                }
+                self.intents[intent["intentId"]] = intent
+                rec["inventoryIntentId"] = intent["intentId"]
+                rec["inventoryWorkOrderId"] = wo_id
+                self.persist()
+            pinned = self._refresh_intent_reservations(intent, tenant_id=tenant_id)
+            consumed_now = 0
+            for item in pinned:
+                if item.get("state") == "CONSUMED":
+                    continue
+                if item.get("state") != "RESERVED":
+                    raise PrototypeError("HOLD", "inventory intent reservation not consumable")
+                lots.consume_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=intent["workOrderId"])
+                consumed_now += 1
+                self._refresh_intent_reservations(intent, tenant_id=tenant_id)
+                intent["status"] = "CONSUMING"
+                self.persist()
+                if consumed_now == 1:
+                    self._die("after-first-consume")
+            self._refresh_intent_reservations(intent, tenant_id=tenant_id)
+            return self._apply_inventory_lineage(rec, intent, req, qty)
         except StockShortage as exc:
             raise PrototypeError("SHORTAGE", str(exc.payload.get("message") or exc)) from exc
+        except CrashInjected:
+            raise
         except PrototypeError:
-            for item in reserved:
-                try:
-                    lots.release_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=wo_id)
-                except (KeyError, PermissionError):
-                    continue
+            if intent is None:
+                for item in reserved:
+                    try:
+                        lots.release_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=wo_id)
+                    except (KeyError, PermissionError):
+                        continue
             raise
         except Exception:
-            for item in reserved:
-                try:
-                    lots.release_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=wo_id)
-                except (KeyError, PermissionError):
-                    continue
+            if intent is None:
+                for item in reserved:
+                    try:
+                        lots.release_reservation(item["reservationId"], tenant_id=tenant_id, work_order_id=wo_id)
+                    except (KeyError, PermissionError):
+                        continue
             raise
-        rec["materialConsumed"] = True
-        rec["consumesInventory"] = True
-        rec["consumedSheets"] = qty
-        rec["inventoryWorkOrderId"] = wo_id
-        rec["materialObservationLabel"] = "REAL_LOGIC"
-        rec["materialRequirement"] = req
-        rec["inventoryLineage"] = {
-            "workOrderId": wo_id,
-            "lotIds": [item.get("lotId") for item in reserved],
-            "reservationIds": [item.get("reservationId") for item in reserved],
-            "quantities": [item.get("quantity") for item in reserved],
-            "consumedQuantity": qty,
-            "material": req["material"],
-            "thickness": req["thickness"],
-            "grain": req["grain"],
-            "length": req["length"],
-            "width": req["width"],
-        }
-        self.persist()
-        return rec
 
     def record_as_built(
         self,
@@ -1120,9 +1260,14 @@ class PrototypeFactory:
             reasons.append("missing-part")
         if fit_fail:
             reasons.append("packing-fit")
+        for field in PACK_MEASUREMENTS:
+            if not vars_[field].get("ok"):
+                reasons.append(f"{field} out of tolerance")
+        if not assembly_var.get("ok"):
+            reasons.append("assemblyMinutes out of tolerance")
         ok = not reasons
         if not ok:
-            unit["state"] = "HOLD" if (oversize or overweight or damage_fail or mismatch or missing_fail or fit_fail) else "WAITING_VALIDATION"
+            unit["state"] = "HOLD"
         body = {
             "checklistId": new_id(),
             "tenantId": tenant_id,
@@ -1135,6 +1280,8 @@ class PrototypeFactory:
             "certification": False,
             "ok": ok,
             "reason": "ok" if ok else ",".join(reasons),
+            "packagingPolicyHash": PACKAGING_POLICY_HASH,
+            "packagingPolicy": dict(PACKAGING_POLICY),
             "observed": {**observed, **numeric},
             "predicted": predicted,
             "variance": vars_,
@@ -1565,7 +1712,14 @@ class PrototypeFactory:
             "observedMonetaryVariance": (cost or {}).get("monetaryVariance"),
             "costCompleteness": (cost or {}).get("completeness"),
             "packagingPredictedVsObserved": (pack or {}).get("variance"),
-            "packagingValidation": None if not pack else {"ok": pack.get("ok"), "reason": pack.get("reason"), "volumetricWeightKg": pack.get("volumetricWeightKg")},
+            "packagingValidation": None
+            if not pack
+            else {
+                "ok": pack.get("ok"),
+                "reason": pack.get("reason"),
+                "volumetricWeightKg": pack.get("volumetricWeightKg"),
+                "packagingPolicyHash": pack.get("packagingPolicyHash"),
+            },
             "qcStatus": None if not meas else {"missing": meas.get("qcMissing") or [], "observations": meas.get("observations"), "complete": not meas.get("qcMissing")},
             "realBlenderLineage": {
                 "reused": True,
@@ -1631,6 +1785,14 @@ class PrototypeFactory:
             "monetaryVarianceStatus": None if not cost else ("COMPLETE" if cost.get("monetaryVariance") else cost.get("completeness")),
             "packagingCompleteness": "MISSING" if not pack else ("COMPLETE" if pack.get("ok") else "PARTIAL"),
             "packagingVarianceStatus": None if not pack else pack.get("reason"),
+            "packagingValidation": None
+            if not pack
+            else {
+                "ok": pack.get("ok"),
+                "reason": pack.get("reason"),
+                "packagingPolicyHash": pack.get("packagingPolicyHash"),
+            },
+            "packagingPredictedVsObserved": (pack or {}).get("variance"),
             "ecoStatus": None if not eco else eco.get("status"),
             "decisionState": board.get("state"),
             "blockers": board.get("blockers"),
@@ -1687,23 +1849,26 @@ def run_prototype_scenario(
         spec = cand["spec"]
         counts = pf._bom_counts(cand)
         pack = ((cand.get("sku") or {}).get("packing") or {})
+        weight = ((cand.get("sku") or {}).get("weight") or {})
+        dfm = cand.get("dfm") or {}
+        predicted = {
+            "widthMm": spec["width"],
+            "depthMm": spec["depth"],
+            "heightMm": spec["height"],
+            "assembledWeightKg": weight.get("grossKg") or weight.get("netKg"),
+            "assemblyMinutes": dfm.get("assemblyMinutes"),
+            "cartonLengthMm": pack.get("length"),
+            "cartonWidthMm": pack.get("width"),
+            "cartonHeightMm": pack.get("height"),
+            "packedWeightKg": weight.get("grossKg") or weight.get("netKg"),
+        }
         pf.record_as_built(
             unit["prototypeUnitId"],
             tenant_id=tenant_a,
             operator_id=fixture["operatorId"],
             shift_id=shift["shiftId"],
             source="FIXTURE",
-            values={
-                "widthMm": spec["width"],
-                "depthMm": spec["depth"],
-                "heightMm": spec["height"],
-                "assembledWeightKg": 12,
-                "assemblyMinutes": 40,
-                "cartonLengthMm": pack.get("length") or 800,
-                "cartonWidthMm": pack.get("width") or 400,
-                "cartonHeightMm": pack.get("height") or 200,
-                "packedWeightKg": 13,
-            },
+            values=predicted,
             observations=fixture_obs,
         )
         pf.record_actual_cost(
@@ -1721,16 +1886,16 @@ def run_prototype_scenario(
             shift_id=shift["shiftId"],
             source="FIXTURE",
             observed={
-                "cartonLengthMm": pack.get("length") or 800,
-                "cartonWidthMm": pack.get("width") or 400,
-                "cartonHeightMm": pack.get("height") or 200,
-                "packedWeightKg": 13,
+                "cartonLengthMm": predicted["cartonLengthMm"],
+                "cartonWidthMm": predicted["cartonWidthMm"],
+                "cartonHeightMm": predicted["cartonHeightMm"],
+                "packedWeightKg": predicted["packedWeightKg"],
                 "hardwareQty": counts["hardwareQty"],
                 "partCount": counts["partCount"],
                 "packingFit": "OK",
                 "missingParts": "NO",
                 "damageDefect": "OK",
-                "assemblyMinutes": 40,
+                "assemblyMinutes": predicted["assemblyMinutes"],
             },
         )
         units.append(unit)

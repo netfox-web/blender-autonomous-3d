@@ -26,6 +26,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--crash", default="")
     p.add_argument("--station", default="")
     p.add_argument("--lease", default="")
+    p.add_argument("--unit", default="")
+    p.add_argument("--operator", default="")
+    p.add_argument("--shift", default="")
     args = p.parse_args(argv)
     root = Path(args.root)
     plat = _plat(root)
@@ -54,6 +57,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.crash == "after-start":
             os._exit(1)
         print(json.dumps({"ok": True, "leaseId": rec["leaseId"], "opId": rec.get("opId")}))
+        return 0
+    if args.action == "proto-consume":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.consume_material_once(
+            args.unit,
+            tenant_id=args.tenant,
+            sheets=int(args.qty),
+            operator_id=args.operator,
+            shift_id=args.shift,
+            consumes_inventory=True,
+        )
+        print(json.dumps({"ok": True, "consumed": rec.get("consumedSheets"), "lineage": rec.get("inventoryLineage")}))
         return 0
     raise SystemExit(f"unknown action {args.action}")
 

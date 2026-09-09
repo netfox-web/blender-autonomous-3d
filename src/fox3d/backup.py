@@ -74,6 +74,7 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
         "costs": TENANT_OWNED,
         "checklists": TENANT_OWNED,
         "decisions": TENANT_OWNED,
+        "inventoryIntents": TENANT_OWNED,
     },
 }
 MIXED_JSON = {rel: tuple(spec.keys()) for rel, spec in MIXED_SPEC.items()}
@@ -114,6 +115,7 @@ TENANT_MATRIX_DOMAINS = (
     "prototypeCosts",
     "prototypeChecklists",
     "prototypeDecisions",
+    "prototypeInventoryIntents",
 )
 OPTIONAL_EMPTY_DOMAINS = frozenset(
     {
@@ -130,6 +132,7 @@ OPTIONAL_EMPTY_DOMAINS = frozenset(
         "prototypeCosts",
         "prototypeChecklists",
         "prototypeDecisions",
+        "prototypeInventoryIntents",
     }
 )
 
@@ -1259,6 +1262,22 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                 key=lambda r: str(r.get("decisionId")),
             ),
             "decisionId",
+        ),
+        "prototypeInventoryIntents": _entry(
+            sorted(
+                [
+                    {
+                        "intentId": r.get("intentId"),
+                        "prototypeUnitId": r.get("prototypeUnitId"),
+                        "workOrderId": r.get("workOrderId"),
+                        "status": r.get("status"),
+                        "quantity": r.get("quantity"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "prototype", None), "intents", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("intentId")),
+            ),
+            "intentId",
         ),
     }
     compact = {k: domains[k]["digest"] for k in TENANT_MATRIX_DOMAINS}

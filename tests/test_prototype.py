@@ -20,6 +20,43 @@ GOOD_QC = {
 }
 
 
+def _predicted(cand):
+    spec = cand["spec"]
+    pack = ((cand.get("sku") or {}).get("packing") or {})
+    weight = ((cand.get("sku") or {}).get("weight") or {})
+    dfm = cand.get("dfm") or {}
+    return {
+        "widthMm": spec["width"],
+        "depthMm": spec["depth"],
+        "heightMm": spec["height"],
+        "assembledWeightKg": weight.get("grossKg") or weight.get("netKg"),
+        "assemblyMinutes": dfm.get("assemblyMinutes"),
+        "cartonLengthMm": pack.get("length"),
+        "cartonWidthMm": pack.get("width"),
+        "cartonHeightMm": pack.get("height"),
+        "packedWeightKg": weight.get("grossKg") or weight.get("netKg"),
+    }
+
+
+def _pack_obs(plat, cand, **over):
+    pred = _predicted(cand)
+    counts = plat.prototype._bom_counts(cand)
+    body = {
+        "cartonLengthMm": pred["cartonLengthMm"],
+        "cartonWidthMm": pred["cartonWidthMm"],
+        "cartonHeightMm": pred["cartonHeightMm"],
+        "packedWeightKg": pred["packedWeightKg"],
+        "hardwareQty": counts["hardwareQty"],
+        "partCount": counts["partCount"],
+        "packingFit": "OK",
+        "missingParts": "NO",
+        "damageDefect": "OK",
+        "assemblyMinutes": pred["assemblyMinutes"],
+    }
+    body.update(over)
+    return body
+
+
 def _vals(cand, **over):
     spec = cand["spec"]
     weight = ((cand.get("sku") or {}).get("weight") or {})
@@ -778,25 +815,13 @@ def test_pilot_requires_packaging_cost_and_go_path(tmp_path):
         source="MANUAL",
         components={"laborMinutes": 20},
     )
-    counts = plat.prototype._bom_counts(cand)
-    pack = ((cand.get("sku") or {}).get("packing") or {})
     plat.prototype.packaging_checklist(
         unit["prototypeUnitId"],
         tenant_id="pa",
         operator_id=human["operatorId"],
         shift_id=human_shift["shiftId"],
         source="MANUAL",
-        observed={
-            "cartonLengthMm": pack.get("length") or 800,
-            "cartonWidthMm": pack.get("width") or 400,
-            "cartonHeightMm": pack.get("height") or 200,
-            "packedWeightKg": 12,
-            "hardwareQty": counts["hardwareQty"],
-            "partCount": counts["partCount"],
-            "packingFit": "OK",
-            "missingParts": "NO",
-            "damageDefect": "OK",
-        },
+        observed=_pack_obs(plat, cand),
     )
     with pytest.raises(PrototypeError, match="PARTIAL"):
         plat.prototype.approve_pilot_batch(cid, tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="partial-cost")
@@ -819,3 +844,190 @@ def test_pilot_requires_packaging_cost_and_go_path(tmp_path):
     approved = plat.prototype.approve_pilot_batch(cid, tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="pilot")
     assert approved["productionReady"] is False
     assert approved["demandDidNotUpgrade"] is True
+
+
+def test_packaging_enforces_predicted_tolerance(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="tol")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.prototype.start_unit(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.prototype.complete_build(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    cand = plat.portfolio.candidates[cid]
+    plat.prototype.record_as_built(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        values=_vals(cand),
+        observations=GOOD_QC,
+    )
+    pred = _predicted(cand)
+    for field in ("cartonLengthMm", "cartonWidthMm", "cartonHeightMm"):
+        bad = plat.prototype.packaging_checklist(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            observed=_pack_obs(plat, cand, **{field: pred[field] + 80}),
+        )
+        assert bad["ok"] is False
+        assert "out of tolerance" in bad["reason"]
+        assert plat.prototype.units[unit["prototypeUnitId"]]["state"] == "HOLD"
+    weight_bad = plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat, cand, packedWeightKg=min(float(pred["packedWeightKg"]) + 3, 29)),
+    )
+    assert weight_bad["ok"] is False
+    assert "packedWeightKg out of tolerance" in weight_bad["reason"]
+    assembly_bad = plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat, cand, assemblyMinutes=float(pred["assemblyMinutes"]) + 40),
+    )
+    assert assembly_bad["ok"] is False
+    assert "assemblyMinutes out of tolerance" in assembly_bad["reason"]
+    good = plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat, cand),
+    )
+    assert good["ok"] is True
+    assert good["packagingPolicyHash"]
+    for field in ("cartonLengthMm", "cartonWidthMm", "cartonHeightMm", "packedWeightKg"):
+        assert good["variance"][field]["ok"] is True
+
+
+def test_inventory_consume_crash_after_first_lot_reconciles(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="crash")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = max(int(req["sheets"]), 2)
+    lot_a = _seed_lot(plat, "pa", unit, sheets=1)
+    lot_b = _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    before_a = plat.lots.quantities(lot_a["lotId"], tenant_id="pa")
+    before_b = plat.lots.quantities(lot_b["lotId"], tenant_id="pa")
+    plat.prototype._crash_mode = "after-first-consume"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    mid_a = plat.lots.quantities(lot_a["lotId"], tenant_id="pa")
+    assert mid_a["consumed"] == before_a["consumed"] + 1
+    assert plat.prototype.units[unit["prototypeUnitId"]].get("materialConsumed") is not True
+    intent = next(iter(plat.prototype.intents.values()))
+    reservation_ids = [r["reservationId"] for r in intent["reservations"]]
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _f2, _s2, human2, hs2 = _ops(plat2)
+    recovered = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human2["operatorId"],
+        shift_id=hs2["shiftId"],
+        consumes_inventory=True,
+    )
+    assert recovered["inventoryLineage"]["consumedQuantity"] == qty
+    assert recovered["inventoryLineage"]["reservationIds"] == reservation_ids
+    after_a = plat2.lots.quantities(lot_a["lotId"], tenant_id="pa")
+    after_b = plat2.lots.quantities(lot_b["lotId"], tenant_id="pa")
+    assert (after_a["consumed"] - before_a["consumed"]) + (after_b["consumed"] - before_b["consumed"]) == qty
+    again = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human2["operatorId"],
+        shift_id=hs2["shiftId"],
+        consumes_inventory=True,
+    )
+    assert again["inventoryLineage"]["reservationIds"] == reservation_ids
+    assert plat2.pilot.journal.verify("pa")["ok"] is True
+
+
+def test_inventory_consume_subprocess_crash_after_first_lot(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="subcrash")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = max(int(req["sheets"]), 2)
+    _seed_lot(plat, "pa", unit, sheets=1)
+    _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fox3d.crashfix",
+            "--root",
+            str(tmp_path / "live"),
+            "--action",
+            "proto-consume",
+            "--tenant",
+            "pa",
+            "--unit",
+            unit["prototypeUnitId"],
+            "--operator",
+            human["operatorId"],
+            "--shift",
+            human_shift["shiftId"],
+            "--qty",
+            str(qty),
+            "--crash",
+            "after-first-consume",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    intent = next(iter(plat2.prototype.intents.values()))
+    ids = [r["reservationId"] for r in intent["reservations"]]
+    recovered = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    assert recovered["inventoryLineage"]["consumedQuantity"] == qty
+    assert recovered["inventoryLineage"]["reservationIds"] == ids
+    assert plat2.pilot.journal.verify("pa")["ok"] is True

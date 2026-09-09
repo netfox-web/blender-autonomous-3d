@@ -55,7 +55,12 @@ def _board_row(i: int, **over) -> dict:
         "observedCostLabel": "FIXTURE",
         "observedMonetaryVariance": None,
         "costCompleteness": "PARTIAL",
-        "packagingPredictedVsObserved": {},
+        "packagingPredictedVsObserved": {
+            "cartonLengthMm": {"ok": True},
+            "cartonWidthMm": {"ok": True},
+            "cartonHeightMm": {"ok": True},
+            "packedWeightKg": {"ok": True},
+        },
         "packagingValidation": {"ok": True, "complete": True},
         "qcStatus": {"complete": True, "source": "FIXTURE"},
         "realBlenderLineage": {"reused": True, "commitSha": PRIOR_REAL_BLENDER["commitSha"]},
@@ -92,6 +97,13 @@ def _matrix_row(i: int, **over) -> dict:
             "monetaryVarianceStatus": "PARTIAL",
             "packagingCompleteness": "COMPLETE",
             "packagingVarianceStatus": "ok",
+            "packagingValidation": {"ok": True},
+            "packagingPredictedVsObserved": {
+                "cartonLengthMm": {"ok": True},
+                "cartonWidthMm": {"ok": True},
+                "cartonHeightMm": {"ok": True},
+                "packedWeightKg": {"ok": True},
+            },
             "ecoStatus": None,
             "decisionState": "WAITING_PHYSICAL_EVIDENCE",
             "blockers": ["fixture_evidence"],
@@ -302,6 +314,96 @@ def test_prototype_runner_tenant_restore_mismatch_fails(tmp_path):
     )
     assert rc != 0
     assert not (docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").exists()
+
+
+def _assert_no_overwrite(mod, tmp_path, scenario):
+    docs = tmp_path / "docs"
+    docs.mkdir(exist_ok=True)
+    (docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
+    rc = _run(mod, docs, scenario)
+    assert rc != 0
+    kept = json.loads((docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert kept.get("keep") is True
+
+
+def test_prototype_runner_tolerance_false_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["toleranceStatus"] = False
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_missing_tolerance_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        del body["matrix"][0]["toleranceStatus"]
+        return body
+
+    docs = tmp_path / "docs"
+    rc = _run(mod, docs, scenario)
+    assert rc != 0
+
+
+def test_prototype_runner_packaging_missing_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["packagingCompleteness"] = "MISSING"
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_partial_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["packagingCompleteness"] = "PARTIAL"
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_validation_false_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["packagingValidation"] = {"ok": False, "reason": "oversize"}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_variance_contradiction_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["packagingValidation"] = {"ok": True}
+        body["matrix"][0]["packagingPredictedVsObserved"] = {"packedWeightKg": {"ok": False, "target": 20, "actual": 13}}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_qc_incomplete_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["qcStatus"] = {"complete": False, "missing": ["hardware"]}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
 
 
 def test_prototype_runner_prior_media_missing_fails(tmp_path):
