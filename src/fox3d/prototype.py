@@ -97,6 +97,27 @@ PRIOR_REAL_BLENDER = {
     "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
     "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
 }
+LINEAGE_KEYS = (
+    "candidateId",
+    "selectionId",
+    "prototypeUnitId",
+    "engineeringHash",
+    "canonicalHash",
+    "bomHash",
+    "nestingHash",
+    "rankingPolicyHash",
+)
+CANONICAL_SELECTED_FIELDS = LINEAGE_KEYS + ("truthLabel",)
+CANONICAL_UNIT_FIELDS = LINEAGE_KEYS + (
+    "state",
+    "physicalPrototypeValidated",
+    "evidenceSource",
+    "buildCompleted",
+    "consumesInventory",
+    "materialConsumed",
+    "inventoryLineage",
+    "truthLabel",
+)
 REQUIRED_BOARD_FIELDS = (
     "selectionId",
     "prototypeUnitId",
@@ -320,17 +341,39 @@ def _index_by_candidate(rows: list[Any], *, kind: str) -> tuple[dict[str, dict[s
     return indexed, failures
 
 
-def _lineage_value(*rows: dict[str, Any] | None, key: str) -> Any:
-    values = [row.get(key) for row in rows if isinstance(row, dict) and row.get(key) not in {None, ""}]
-    if not values:
-        return None
-    first = values[0]
-    if any(v != first for v in values[1:]):
-        return _MISMATCH
-    return first
+def _lineage_present(value: Any) -> bool:
+    return value is not None and value != ""
 
 
-_MISMATCH = object()
+def project_published_prototype_truth(result: dict[str, Any]) -> dict[str, Any]:
+    """Materialize the serialized canonical four-target proof from in-memory result."""
+    selected = [row for row in (result.get("selected") or []) if isinstance(row, dict)]
+    units = [row for row in (result.get("units") or []) if isinstance(row, dict)]
+    matrix = [row for row in (result.get("matrix") or []) if isinstance(row, dict)]
+    board = result.get("board") if isinstance(result.get("board"), dict) else {}
+    rows = [row for row in (board.get("rows") or []) if isinstance(row, dict)]
+    units_by_cid = {row.get("candidateId"): row for row in units if row.get("candidateId")}
+    board_by_cid = {row.get("candidateId"): row for row in rows if row.get("candidateId")}
+    projected_selected: list[dict[str, Any]] = []
+    selected_board: list[dict[str, Any]] = []
+    for sel in selected:
+        unit = units_by_cid.get(sel.get("candidateId")) or {}
+        projected_selected.append({key: sel[key] if key in sel else unit.get(key) for key in CANONICAL_SELECTED_FIELDS})
+        cid = sel.get("candidateId")
+        if cid in board_by_cid:
+            selected_board.append(board_by_cid[cid])
+    projected_units = [{key: unit.get(key) for key in CANONICAL_UNIT_FIELDS} for unit in units]
+    published_selected_board = result.get("selectedBoard")
+    if not isinstance(published_selected_board, list):
+        published_selected_board = selected_board
+    return {
+        **result,
+        "selected": projected_selected,
+        "units": projected_units,
+        "matrix": matrix,
+        "board": board,
+        "selectedBoard": published_selected_board,
+    }
 
 
 def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
@@ -340,40 +383,54 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
     matrix = result.get("matrix") or []
     board = result.get("board") or {}
     rows = board.get("rows") if isinstance(board, dict) else None
+    selected_board = result.get("selectedBoard")
     if not isinstance(rows, list) or not rows:
         failures.append("empty_board")
         rows = []
+    if not isinstance(selected_board, list):
+        failures.append("selected_board_missing")
+        selected_board = []
     if len(selected) != 4:
         failures.append("selected_4")
     if len(units) != 4:
         failures.append("units_4")
     if len(matrix) != 4:
         failures.append("matrix_4")
+    if len(selected_board) != 4:
+        failures.append("selected_board_4")
     selected_by, sel_fail = _index_by_candidate(selected, kind="selected")
     units_by, unit_fail = _index_by_candidate(units, kind="unit")
     matrix_by, matrix_fail = _index_by_candidate(matrix, kind="matrix")
     board_by, board_fail = _index_by_candidate(rows, kind="board")
-    failures.extend(sel_fail + unit_fail + matrix_fail + board_fail)
-    lineage_keys = ("candidateId", "selectionId", "prototypeUnitId", "engineeringHash", "canonicalHash", "bomHash", "nestingHash", "rankingPolicyHash")
+    selected_board_by, selected_board_fail = _index_by_candidate(selected_board, kind="selected_board")
+    failures.extend(sel_fail + unit_fail + matrix_fail + board_fail + selected_board_fail)
     for s in selected:
         if not isinstance(s, dict):
             continue
         cid = s.get("candidateId")
         unit = units_by.get(cid)
         mat = matrix_by.get(cid)
-        brd = board_by.get(cid)
+        brd = selected_board_by.get(cid)
         if unit is None:
             failures.append("selected_unit_missing")
         if mat is None:
             failures.append("selected_matrix_missing")
         if brd is None:
             failures.append("selected_board_missing")
+        parties = (("selected", s), ("unit", unit), ("matrix", mat), ("selected_board", brd))
+        for key in LINEAGE_KEYS:
+            present: list[Any] = []
+            for kind, row in parties:
+                if row is None:
+                    continue
+                if not _lineage_present(row.get(key)):
+                    failures.append(f"{kind}_{key}_missing")
+                    continue
+                present.append(row.get(key))
+            if present and any(value != present[0] for value in present[1:]):
+                failures.append(f"{key}_mismatch")
         if unit is None or mat is None:
             continue
-        for key in lineage_keys:
-            value = _lineage_value(s, unit, mat, brd if brd and brd.get(key) not in {None, ""} else None, key=key)
-            if value is _MISMATCH:
-                failures.append(f"{key}_mismatch")
         if unit.get("buildCompleted") is not True:
             failures.append("build_incomplete")
         if mat.get("buildCompleted") is not True or mat.get("buildCompleted") != (unit.get("buildCompleted") is True):
@@ -399,6 +456,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
         for key in REQUIRED_MATRIX_KEYS:
             if key not in row:
                 failures.append(f"matrix[{i}]:missing:{key}")
+            elif key in LINEAGE_KEYS and not _lineage_present(row.get(key)):
+                failures.append(f"matrix[{i}]:empty:{key}")
         if row.get("buildCompleted") is not True:
             failures.append(f"matrix[{i}]:build_incomplete")
         if "toleranceStatus" not in row:
@@ -433,12 +492,15 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             blockers = row.get("blockers") or []
             if isinstance(blockers, list) and "tolerance" not in blockers and "fixture_evidence" not in blockers:
                 failures.append("tolerance_false_unblocked")
-    for cid, row in board_by.items():
+    proof_rows = {**board_by, **selected_board_by}
+    for cid, row in proof_rows.items():
         if cid not in selected_by:
             continue
         for key in REQUIRED_BOARD_FIELDS:
             if key not in row:
                 failures.append(f"board:{cid}:missing:{key}")
+            elif key in LINEAGE_KEYS and not _lineage_present(row.get(key)):
+                failures.append(f"board:{cid}:empty:{key}")
         failures.extend(_packaging_complete_failures({**row, "packagingCompleteness": "COMPLETE" if (row.get("packagingValidation") or {}).get("ok") is True else row.get("packagingCompleteness")}))
         pack_val = row.get("packagingValidation") or {}
         if isinstance(pack_val, dict) and pack_val.get("ok") is False:
@@ -849,14 +911,80 @@ class PrototypeFactory:
     def _intent_key(self, rec: dict[str, Any], qty: int) -> str:
         return f"{rec['tenantId']}::proto-consume::{rec['prototypeUnitId']}::{int(qty)}"
 
-    def _find_intent(self, rec: dict[str, Any], qty: int) -> dict[str, Any] | None:
-        key = self._intent_key(rec, qty)
-        for intent in self.intents.values():
-            if intent.get("idempotencyKey") == key and intent.get("tenantId") == rec["tenantId"]:
-                return intent
-        if rec.get("inventoryIntentId") and rec["inventoryIntentId"] in self.intents:
-            return self.intents[rec["inventoryIntentId"]]
-        return None
+    def _intent_identity(self, rec: dict[str, Any], qty: int, req: dict[str, Any] | None = None) -> dict[str, Any]:
+        requirement = req or rec.get("materialRequirement") or self._material_requirement(rec)
+        return {
+            "tenantId": rec["tenantId"],
+            "prototypeUnitId": rec["prototypeUnitId"],
+            "workOrderId": rec.get("inventoryWorkOrderId") or f"proto:{rec['prototypeUnitId']}",
+            "idempotencyKey": self._intent_key(rec, qty),
+            "quantity": int(qty),
+            "material": str(requirement["material"]),
+            "thickness": float(requirement["thickness"]),
+            "grain": str(requirement["grain"]),
+            "length": float(requirement["length"]),
+            "width": float(requirement["width"]),
+        }
+
+    def _intent_matches_identity(self, intent: dict[str, Any] | None, identity: dict[str, Any]) -> bool:
+        if not isinstance(intent, dict):
+            return False
+        for key in ("intentId", "tenantId", "prototypeUnitId", "workOrderId", "idempotencyKey", "quantity", "requirement"):
+            if key not in intent:
+                return False
+            value = intent.get(key)
+            if value is None or value == "":
+                return False
+        req = intent.get("requirement")
+        if not isinstance(req, dict):
+            return False
+        for key in ("material", "thickness", "grain", "length", "width"):
+            if key not in req:
+                return False
+            value = req.get(key)
+            if value is None or value == "":
+                return False
+        if intent.get("tenantId") != identity["tenantId"]:
+            return False
+        if intent.get("prototypeUnitId") != identity["prototypeUnitId"]:
+            return False
+        if intent.get("workOrderId") != identity["workOrderId"]:
+            return False
+        if intent.get("idempotencyKey") != identity["idempotencyKey"]:
+            return False
+        try:
+            if int(intent.get("quantity")) != int(identity["quantity"]):
+                return False
+            if str(req.get("material")) != str(identity["material"]):
+                return False
+            if str(req.get("grain")) != str(identity["grain"]):
+                return False
+            if abs(float(req["thickness"]) - float(identity["thickness"])) > 1e-6:
+                return False
+            if abs(float(req["length"]) - float(identity["length"])) > 1e-6:
+                return False
+            if abs(float(req["width"]) - float(identity["width"])) > 1e-6:
+                return False
+        except (TypeError, ValueError):
+            return False
+        return True
+
+    def _find_intent(self, rec: dict[str, Any], qty: int, req: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        identity = self._intent_identity(rec, qty, req)
+        matches = [intent for intent in self.intents.values() if self._intent_matches_identity(intent, identity)]
+        if len(matches) > 1:
+            raise PrototypeError("HOLD", "ambiguous inventory intent identity")
+        ptr = rec.get("inventoryIntentId")
+        if ptr:
+            pointed = self.intents.get(ptr)
+            if pointed is None:
+                raise PrototypeError("HOLD", "inventoryIntentId missing")
+            if not self._intent_matches_identity(pointed, identity):
+                raise PrototypeError("HOLD", "inventoryIntentId identity mismatch")
+            if matches and matches[0].get("intentId") != pointed.get("intentId"):
+                raise PrototypeError("HOLD", "ambiguous inventory intent identity")
+            return pointed
+        return matches[0] if matches else None
 
     def _reservations_for_work_order(self, *, tenant_id: str, work_order_id: str) -> list[dict[str, Any]]:
         found: list[dict[str, Any]] = []
@@ -992,7 +1120,7 @@ class PrototypeFactory:
                 raise PrototypeError("BLOCKED", "no double consume after restart/retry")
             return rec
         rec["inventoryWorkOrderId"] = wo_id
-        intent = self._find_intent(rec, qty)
+        intent = self._find_intent(rec, qty, req)
         reserved: list[dict[str, Any]] = []
         try:
             if intent is None:
@@ -2055,6 +2183,8 @@ def run_prototype_scenario(
     board = pf.decision_board(portfolio["portfolioId"], tenant_id=tenant_a)
     live_units = [pf.units[u["prototypeUnitId"]] for u in units]
     matrix = [pf.matrix_row(u) for u in live_units]
+    board_by_cid = {row.get("candidateId"): row for row in (board.get("rows") or []) if isinstance(row, dict)}
+    selected_board = [board_by_cid[sel["candidateId"]] for sel in selected if sel.get("candidateId") in board_by_cid]
     physical = any(u.get("physicalPrototypeValidated") for u in pf.units.values())
     return {
         "ok": True,
@@ -2063,6 +2193,7 @@ def run_prototype_scenario(
         "units": live_units,
         "matrix": matrix,
         "board": board,
+        "selectedBoard": selected_board,
         "physicalPrototypeValidated": physical,
         "fixtureCannotValidate": physical is False,
         "demandLabel": portfolio.get("demandLabel"),

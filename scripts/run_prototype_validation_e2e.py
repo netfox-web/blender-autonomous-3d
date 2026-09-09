@@ -23,6 +23,7 @@ from fox3d.platform import Platform  # noqa: E402
 from fox3d.portfolio import media_case_real  # noqa: E402
 from fox3d.prototype import (  # noqa: E402
     PRIOR_REAL_BLENDER,
+    project_published_prototype_truth,
     run_prototype_scenario,
     validate_prototype_acceptance_result,
     verify_prior_real_blender,
@@ -46,6 +47,15 @@ def _md(title: str, rows: list[dict], generated: str) -> str:
     lines.append("`fullAutonomousFactoryReady=false`. `liveFactoryExecutionReady=false`. `globalProductionReady=false`.")
     lines.append("")
     return "\n".join(lines)
+
+
+def _restore_snapshot(docs: Path, snapshot: dict[str, bytes], names: list[str]) -> None:
+    for name in names:
+        path = docs / name
+        if name in snapshot:
+            path.write_bytes(snapshot[name])
+        elif path.exists():
+            path.unlink()
 
 
 def _refuse_overwrite(docs: Path, failures: list[str]) -> int:
@@ -115,6 +125,10 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         result = run_prototype_scenario(plat, render=render, evidence_commit=sha)
     generated = datetime.now(timezone.utc).isoformat()
     missing: list[str] = []
+    projector = hooks.get("project_truth") or project_published_prototype_truth
+    result = projector(result)
+    if hooks.get("mutate_published"):
+        result = hooks["mutate_published"](result)
     selected = result.get("selected") or []
     missing.extend(validate_prototype_acceptance_result(result))
     prior_docs = Path(hooks["prior_docs"]) if hooks.get("prior_docs") else ROOT / "docs"
@@ -199,26 +213,11 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         **payload_common,
         "domain": "prototype-validation",
         "selectedCount": len(selected),
-        "selected": [{k: s.get(k) for k in ("selectionId", "candidateId", "engineeringHash", "canonicalHash", "bomHash", "nestingHash", "truthLabel")} for s in selected],
-        "units": [
-            {
-                k: u.get(k)
-                for k in (
-                    "prototypeUnitId",
-                    "candidateId",
-                    "engineeringHash",
-                    "state",
-                    "physicalPrototypeValidated",
-                    "evidenceSource",
-                    "buildCompleted",
-                    "consumesInventory",
-                    "inventoryLineage",
-                )
-            }
-            for u in (result.get("units") or [])
-        ],
+        "selected": result.get("selected") or [],
+        "units": result.get("units") or [],
         "matrix": result.get("matrix") or [],
         "board": result.get("board"),
+        "selectedBoard": result.get("selectedBoard") or [],
         "rows": rows,
         "acceptanceFailures": missing,
         "waitingPhysicalEvidence": True,
@@ -231,6 +230,12 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "demandLabel": result.get("demandLabel"),
         "rows": [r for r in rows if r["check"] in {"MOCK demand not REAL", "fixture cannot physically validate", "LIVE_CNC", "LIVE_LASER", "decision board", "prior REAL blender"}],
     }
+    serialized_proto = json.loads(json.dumps(proto_doc, indent=2, default=str))
+    missing.extend(validate_prototype_acceptance_result(serialized_proto))
+    gate_ok = not missing and clean and matches_head
+    proto_doc["ok"] = gate_ok
+    proto_doc["acceptanceFailures"] = missing
+    launch_doc["ok"] = gate_ok
     if not gate_ok:
         return _refuse_overwrite(docs, missing)
     artifacts = {}
@@ -240,13 +245,21 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     ):
         artifacts[f"{name}.json"] = json.dumps(body, indent=2, default=str)
         artifacts[f"{name}.md"] = _md(name, body["rows"], generated)
+    snapshot = {name: (docs / name).read_bytes() for name in artifacts if (docs / name).exists()}
     published = atomic_publish_canonical(docs, artifacts, generation_id=generation_id, replace_fn=hooks.get("replace"))
     if published.get("ok") is not True:
+        _restore_snapshot(docs, snapshot, list(artifacts))
         print(json.dumps({"ok": False, "label": "FIXTURE/REAL_LOGIC", "failures": ["atomic_publish", published.get("error")], "rolledBack": True}))
         return 1
     bundle = read_prototype_truth_set(docs)
     if bundle.get("ok") is not True:
+        _restore_snapshot(docs, snapshot, list(artifacts))
         return _refuse_overwrite(docs, list(bundle.get("errors") or ["bundle_inconsistent"]))
+    published_proto = (bundle.get("payloads") or {}).get("PROTOTYPE_VALIDATION_ACCEPTANCE") or {}
+    post_fail = validate_prototype_acceptance_result(published_proto)
+    if post_fail:
+        _restore_snapshot(docs, snapshot, list(artifacts))
+        return _refuse_overwrite(docs, post_fail + ["post_publish_semantic"])
     print(
         json.dumps(
             {

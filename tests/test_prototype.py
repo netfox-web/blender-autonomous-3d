@@ -1244,3 +1244,202 @@ def test_inventory_consume_crash_after_reserve_multi_lot_subprocess(tmp_path):
     )
     assert again["inventoryLineage"]["reservationIds"] == ids
     assert plat2.pilot.journal.verify("pa")["ok"] is True
+
+
+def test_inventory_intent_qty_mismatch_fails_before_allocation(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="qty")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = int(req["sheets"])
+    lot = _seed_lot(plat, "pa", unit, sheets=qty + 4)
+    before = plat.lots.quantities(lot["lotId"], tenant_id="pa")
+    plat.prototype._crash_mode = "after-reserve"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    reserved = plat.lots.quantities(lot["lotId"], tenant_id="pa")
+    with pytest.raises(PrototypeError):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty + 1,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    after = plat.lots.quantities(lot["lotId"], tenant_id="pa")
+    assert after == reserved
+    assert after["reserved"] - before["reserved"] == qty
+
+
+def test_inventory_intent_requirement_mismatch_fails_closed(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="mat")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = int(req["sheets"])
+    lot = _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    plat.prototype._crash_mode = "after-reserve"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    intent = next(iter(plat.prototype.intents.values()))
+    intent["requirement"] = {**intent["requirement"], "material": "OTHER_SKU"}
+    plat.prototype.intents[intent["intentId"]] = intent
+    plat.prototype.persist()
+    before = plat.lots.quantities(lot["lotId"], tenant_id="pa")
+    with pytest.raises(PrototypeError):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    assert plat.lots.quantities(lot["lotId"], tenant_id="pa") == before
+
+
+def test_inventory_intent_pointer_other_unit_fails_closed(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    ranking = next(iter(plat.portfolio.rankings.values()))
+    cid_a = ranking["top10"][0]["candidateId"]
+    cid_b = ranking["top10"][1]["candidateId"]
+    sel_a = plat.prototype.select(tenant_id="pa", candidate_id=cid_a, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="a")
+    sel_b = plat.prototype.select(tenant_id="pa", candidate_id=cid_b, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="b")
+    unit_a = plat.prototype.create_unit(tenant_id="pa", selection_id=sel_a["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    unit_b = plat.prototype.create_unit(tenant_id="pa", selection_id=sel_b["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit_a)
+    qty = int(req["sheets"])
+    _seed_lot(plat, "pa", unit_a, sheets=qty + 2)
+    _seed_lot(plat, "pa", unit_b, sheets=qty + 2)
+    plat.prototype._crash_mode = "after-reserve"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit_a["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    intent_id = plat.prototype.units[unit_a["prototypeUnitId"]]["inventoryIntentId"]
+    plat.prototype.units[unit_b["prototypeUnitId"]]["inventoryIntentId"] = intent_id
+    plat.prototype.persist()
+    with pytest.raises(PrototypeError):
+        plat.prototype.consume_material_once(
+            unit_b["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+
+
+def test_inventory_intent_duplicate_identity_ambiguous(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="dup")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = int(req["sheets"])
+    _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    plat.prototype._crash_mode = "after-reserve"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    original = next(iter(plat.prototype.intents.values()))
+    clone = dict(original)
+    clone["intentId"] = "dup-intent"
+    plat.prototype.intents[clone["intentId"]] = clone
+    plat.prototype.units[unit["prototypeUnitId"]].pop("inventoryIntentId", None)
+    plat.prototype.persist()
+    with pytest.raises(PrototypeError):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+
+
+def test_inventory_intent_malformed_missing_identity_fails(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="mal")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = int(req["sheets"])
+    _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    plat.prototype._crash_mode = "after-reserve"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    intent = next(iter(plat.prototype.intents.values()))
+    intent.pop("tenantId", None)
+    plat.prototype.intents[intent["intentId"]] = intent
+    plat.prototype.persist()
+    with pytest.raises(PrototypeError):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )

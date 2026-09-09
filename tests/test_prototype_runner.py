@@ -192,6 +192,13 @@ def test_prototype_runner_binds_clean_head(tmp_path):
     assert len(body["matrix"]) == 4
     assert body["priorRealBlenderEvidence"]["verified"] is True
     assert (docs / "SKU_LAUNCH_READINESS_ACCEPTANCE.md").exists()
+    for unit in body["units"]:
+        for key in ("selectionId", "canonicalHash", "bomHash", "nestingHash", "rankingPolicyHash", "prototypeUnitId"):
+            assert unit.get(key)
+    for sel in body["selected"]:
+        assert sel.get("rankingPolicyHash")
+        assert sel.get("prototypeUnitId")
+    assert len(body["selectedBoard"]) == 4
 
 
 def test_prototype_runner_dirty_does_not_overwrite(tmp_path):
@@ -588,3 +595,78 @@ def test_prototype_runner_board_matrix_physical_contradiction_fails(tmp_path):
         return body
 
     _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def _lineage_drop_scenario(field, target="units"):
+    def scenario(plat):
+        body = _passing(plat)
+        if target == "units":
+            body["units"][0][field] = None
+        elif target == "selected":
+            body["selected"][0][field] = None
+        elif target == "board":
+            body["board"]["rows"][0][field] = ""
+        return body
+
+    return scenario
+
+
+def test_prototype_runner_unit_selection_id_missing_fails(tmp_path):
+    _assert_no_overwrite(_load(), tmp_path, _lineage_drop_scenario("selectionId"))
+
+
+def test_prototype_runner_unit_canonical_hash_missing_fails(tmp_path):
+    _assert_no_overwrite(_load(), tmp_path, _lineage_drop_scenario("canonicalHash"))
+
+
+def test_prototype_runner_unit_bom_nesting_ranking_missing_fails(tmp_path):
+    mod = _load()
+    for field in ("bomHash", "nestingHash", "rankingPolicyHash"):
+        _assert_no_overwrite(mod, tmp_path / field, _lineage_drop_scenario(field))
+
+
+def test_prototype_runner_selected_ranking_policy_missing_fails(tmp_path):
+    _assert_no_overwrite(_load(), tmp_path, _lineage_drop_scenario("rankingPolicyHash", "selected"))
+
+
+def test_prototype_runner_empty_lineage_string_fails(tmp_path):
+    def scenario(plat):
+        body = _passing(plat)
+        body["units"][0]["engineeringHash"] = ""
+        return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_board_hash_empty_fails(tmp_path):
+    _assert_no_overwrite(_load(), tmp_path, _lineage_drop_scenario("rankingPolicyHash", "board"))
+
+
+def test_prototype_runner_selected_board_duplicate_fails(tmp_path):
+    def scenario(plat):
+        body = _passing(plat)
+        body["selectedBoard"] = [body["board"]["rows"][0], body["board"]["rows"][0], body["board"]["rows"][2], body["board"]["rows"][3]]
+        return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_serializer_drop_rolls_back(tmp_path):
+    mod = _load()
+    docs = tmp_path / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    (docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
+
+    def mutate(result):
+        units = list(result.get("units") or [])
+        if units:
+            dropped = dict(units[0])
+            dropped.pop("canonicalHash", None)
+            result = dict(result)
+            result["units"] = [dropped, *units[1:]]
+        return result
+
+    rc = _run(mod, docs, _passing, mutate_published=mutate)
+    assert rc != 0
+    kept = json.loads((docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert kept.get("keep") is True
