@@ -1,23 +1,19 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 601–660 integrity CODE_EVIDENCE_SHA `244c707`; prior CODE `66a66d1` / instruction `d6d9458`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `d6d9458`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 601–660 final integrity CODE_EVIDENCE_SHA `0b9caed`; prior CODE `244c707` / instruction `df5c29e`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `df5c29e`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
 
-## Phase 601–660 Prototype Validation integrity corrections
+## Phase 601–660 Prototype Validation final integrity
 
 | Item | Status | Evidence |
 |---|---|---|
-| Blocker 1 inventory | REAL_LOGIC | MaterialLot reserve+consume; fixture `consumesInventory=false`; shortage rollback; boolean-only consume fails runner |
-| Blocker 2 as-built/QC | REAL_LOGIC / FIXTURE | completed-build gate; structured tolerance; QC required; DAM authoritative tenant/hash/size; IMPORTED label kept |
-| Blocker 3 actual cost | FIXTURE / PARTIAL | qty vs currency split; omitted required currency PARTIAL; minutes not in monetary total |
-| Blocker 4 packaging | REAL_LOGIC / FIXTURE | no default dim=1; volumetric CONFIG; hardware/part mismatch + damage fail-closed |
-| Blocker 5 ECO payload | REAL_LOGIC | allowed parametric fields through KD engine; no-op/invalid reject; fieldChanges persisted |
-| Blocker 6 decision/pilot | REAL_LOGIC | required board fields; READY_FOR_HUMAN_GO_NO_GO; fixture/PARTIAL/no-pack cannot approve |
-| Blocker 7 runner | FIXTURE + REAL_LOGIC | independent matrix; empty board fails; prior 4/4 T1000 OptiX verified on `7a87ea5` |
-| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `2934a4aa-…`; CODE CI `34365524103`; tenant digest equal `d39bca21…`; `physicalPrototypeValidated=false` |
+| Packaging predicted-vs-observed | REAL_LOGIC / FIXTURE | L/W/H/weight/assembly tolerance now gate `ok`; HOLD; `packagingPolicyHash` |
+| Runner semantics | FIXTURE + REAL_LOGIC | `toleranceStatus=true` required; packaging COMPLETE+ok; variance cannot contradict; overwrite refused |
+| Inventory crash recovery | REAL_LOGIC | intent pinned before consume; CrashInjected + subprocess `os._exit`; exact reservation lineage |
+| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `0d6fc75a-…`; CODE CI `34372952091`; tenant digest equal `80f24665…`; `physicalPrototypeValidated=false` |
 
 ## Phase 541–600 Small-Space KD SKU Portfolio Factory V1
 

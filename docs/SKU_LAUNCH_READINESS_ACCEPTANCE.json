@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T14:47:01.155743+00:00",
-  "acceptanceGenerationId": "2934a4aa-6d6c-4d2c-a1fe-35863475f8e5",
-  "evidenceCodeCommit": "244c707b67dffff0bdd3824fc5f46a5e16dadde0",
+  "generatedAt": "2026-09-09T15:54:11.709475+00:00",
+  "acceptanceGenerationId": "0d6fc75a-9337-4144-8227-e9a49f0abaa7",
+  "evidenceCodeCommit": "0b9caedd008b4d1f924cdcad529d87a4ac59154c",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -68,11 +68,11 @@
   },
   "domain": "sku-launch-readiness",
   "board": {
-    "portfolioId": "068afe4a-9e90-465b-ba7c-a9d148404dc7",
+    "portfolioId": "732f5615-f55d-430e-80fe-fe430b8a099b",
     "tenantId": "pv-a",
     "rows": [
       {
-        "candidateId": "cb6e75f5-fef5-45d4-9361-82aaa7d6723f",
+        "candidateId": "118d5ffe-9c4e-4b85-a8d0-20e1e277bd4a",
         "tenantId": "pv-a",
         "state": "WAITING_PHYSICAL_EVIDENCE",
         "rankingScore": 0.7159642293951043,
@@ -83,7 +83,7 @@
         "reusableRemnant": 988736.0,
         "prototypeStatus": "WAITING_VALIDATION",
         "toleranceResult": {
-          "ok": false,
+          "ok": true,
           "policy": {
             "dimMm": 3.0,
             "dimPct": 0.02,
@@ -126,23 +126,23 @@
             },
             "assembledWeightKg": {
               "target": 20.672,
-              "actual": 12.0,
-              "abs": -8.672,
-              "pct": -0.4195046439628483,
+              "actual": 20.672,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assembledWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "assemblyMinutes": {
               "target": 22.3,
-              "actual": 40.0,
-              "abs": 17.7,
-              "pct": 0.7937219730941704,
+              "actual": 22.3,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assemblyMinutes",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "cartonLengthMm": {
               "target": 824.0,
@@ -176,19 +176,16 @@
             },
             "packedWeightKg": {
               "target": 20.672,
-              "actual": 13.0,
-              "abs": -7.672000000000001,
-              "pct": -0.37113003095975233,
+              "actual": 20.672,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "packedWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             }
           },
-          "failed": [
-            "assembledWeightKg",
-            "assemblyMinutes"
-          ]
+          "failed": []
         },
         "dimensionalVariance": {
           "widthMm": {
@@ -214,16 +211,16 @@
           },
           "assembledWeightKg": {
             "target": 20.672,
-            "actual": 12.0,
-            "abs": -8.672,
-            "pct": -0.4195046439628483,
+            "actual": 20.672,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "assemblyMinutes": {
             "target": 22.3,
-            "actual": 40.0,
-            "abs": 17.7,
-            "pct": 0.7937219730941704,
+            "actual": 22.3,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "cartonLengthMm": {
@@ -249,17 +246,17 @@
           },
           "packedWeightKg": {
             "target": 20.672,
-            "actual": 13.0,
-            "abs": -7.672000000000001,
-            "pct": -0.37113003095975233,
+            "actual": 20.672,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           }
         },
         "assemblyObservedVsEstimated": {
           "target": 22.3,
-          "actual": 40.0,
-          "abs": 17.7,
-          "pct": 0.7937219730941704,
+          "actual": 22.3,
+          "abs": 0.0,
+          "pct": 0.0,
           "complete": true
         },
         "observedCostLabel": "FIXTURE",
@@ -298,19 +295,20 @@
           },
           "packedWeightKg": {
             "target": 20.672,
-            "actual": 13.0,
-            "abs": -7.672000000000001,
-            "pct": -0.37113003095975233,
+            "actual": 20.672,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true,
             "field": "packedWeightKg",
-            "ok": false,
-            "reason": "out_of_tolerance"
+            "ok": true,
+            "reason": "ok"
           }
         },
         "packagingValidation": {
           "ok": true,
           "reason": "ok",
-          "volumetricWeightKg": 10.481280000000002
+          "volumetricWeightKg": 10.481280000000002,
+          "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
         },
         "qcStatus": {
           "missing": [],
@@ -353,12 +351,11 @@
         "evidenceSource": "FIXTURE",
         "blockers": [
           "fixture_evidence",
-          "tolerance",
           "cost_partial"
         ]
       },
       {
-        "candidateId": "a2a8896b-f8f5-4c10-8dee-1343a950faab",
+        "candidateId": "20e8a0f9-c9a4-4c0f-b9de-c93eacf4eb26",
         "tenantId": "pv-a",
         "state": "WAITING_PHYSICAL_EVIDENCE",
         "rankingScore": 0.6940600704797649,
@@ -369,7 +366,7 @@
         "reusableRemnant": 1245256.0,
         "prototypeStatus": "WAITING_VALIDATION",
         "toleranceResult": {
-          "ok": false,
+          "ok": true,
           "policy": {
             "dimMm": 3.0,
             "dimPct": 0.02,
@@ -412,23 +409,23 @@
             },
             "assembledWeightKg": {
               "target": 17.203,
-              "actual": 12.0,
-              "abs": -5.202999999999999,
-              "pct": -0.3024472475730977,
+              "actual": 17.203,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assembledWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "assemblyMinutes": {
               "target": 22.3,
-              "actual": 40.0,
-              "abs": 17.7,
-              "pct": 0.7937219730941704,
+              "actual": 22.3,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assemblyMinutes",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "cartonLengthMm": {
               "target": 624.0,
@@ -462,19 +459,16 @@
             },
             "packedWeightKg": {
               "target": 17.203,
-              "actual": 13.0,
-              "abs": -4.202999999999999,
-              "pct": -0.2443178515375225,
+              "actual": 17.203,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "packedWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             }
           },
-          "failed": [
-            "assembledWeightKg",
-            "assemblyMinutes"
-          ]
+          "failed": []
         },
         "dimensionalVariance": {
           "widthMm": {
@@ -500,16 +494,16 @@
           },
           "assembledWeightKg": {
             "target": 17.203,
-            "actual": 12.0,
-            "abs": -5.202999999999999,
-            "pct": -0.3024472475730977,
+            "actual": 17.203,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "assemblyMinutes": {
             "target": 22.3,
-            "actual": 40.0,
-            "abs": 17.7,
-            "pct": 0.7937219730941704,
+            "actual": 22.3,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "cartonLengthMm": {
@@ -535,17 +529,17 @@
           },
           "packedWeightKg": {
             "target": 17.203,
-            "actual": 13.0,
-            "abs": -4.202999999999999,
-            "pct": -0.2443178515375225,
+            "actual": 17.203,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           }
         },
         "assemblyObservedVsEstimated": {
           "target": 22.3,
-          "actual": 40.0,
-          "abs": 17.7,
-          "pct": 0.7937219730941704,
+          "actual": 22.3,
+          "abs": 0.0,
+          "pct": 0.0,
           "complete": true
         },
         "observedCostLabel": "FIXTURE",
@@ -584,19 +578,20 @@
           },
           "packedWeightKg": {
             "target": 17.203,
-            "actual": 13.0,
-            "abs": -4.202999999999999,
-            "pct": -0.2443178515375225,
+            "actual": 17.203,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true,
             "field": "packedWeightKg",
-            "ok": false,
-            "reason": "out_of_tolerance"
+            "ok": true,
+            "reason": "ok"
           }
         },
         "packagingValidation": {
           "ok": true,
           "reason": "ok",
-          "volumetricWeightKg": 8.199359999999999
+          "volumetricWeightKg": 8.199359999999999,
+          "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
         },
         "qcStatus": {
           "missing": [],
@@ -639,12 +634,11 @@
         "evidenceSource": "FIXTURE",
         "blockers": [
           "fixture_evidence",
-          "tolerance",
           "cost_partial"
         ]
       },
       {
-        "candidateId": "14a236a1-8ed4-454b-b454-ed6e3c5d6e82",
+        "candidateId": "c49d0f79-1701-4f40-8113-648f71f5608c",
         "tenantId": "pv-a",
         "state": "WAITING_PHYSICAL_EVIDENCE",
         "rankingScore": 0.6881712097382667,
@@ -655,7 +649,7 @@
         "reusableRemnant": 1291968.0,
         "prototypeStatus": "WAITING_VALIDATION",
         "toleranceResult": {
-          "ok": false,
+          "ok": true,
           "policy": {
             "dimMm": 3.0,
             "dimPct": 0.02,
@@ -698,23 +692,23 @@
             },
             "assembledWeightKg": {
               "target": 16.655,
-              "actual": 12.0,
-              "abs": -4.655000000000001,
-              "pct": -0.27949564695286705,
+              "actual": 16.655,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assembledWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "assemblyMinutes": {
               "target": 22.3,
-              "actual": 40.0,
-              "abs": 17.7,
-              "pct": 0.7937219730941704,
+              "actual": 22.3,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assemblyMinutes",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "cartonLengthMm": {
               "target": 624.0,
@@ -748,19 +742,16 @@
             },
             "packedWeightKg": {
               "target": 16.655,
-              "actual": 13.0,
-              "abs": -3.655000000000001,
-              "pct": -0.21945361753227263,
+              "actual": 16.655,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "packedWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             }
           },
-          "failed": [
-            "assembledWeightKg",
-            "assemblyMinutes"
-          ]
+          "failed": []
         },
         "dimensionalVariance": {
           "widthMm": {
@@ -786,16 +777,16 @@
           },
           "assembledWeightKg": {
             "target": 16.655,
-            "actual": 12.0,
-            "abs": -4.655000000000001,
-            "pct": -0.27949564695286705,
+            "actual": 16.655,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "assemblyMinutes": {
             "target": 22.3,
-            "actual": 40.0,
-            "abs": 17.7,
-            "pct": 0.7937219730941704,
+            "actual": 22.3,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "cartonLengthMm": {
@@ -821,17 +812,17 @@
           },
           "packedWeightKg": {
             "target": 16.655,
-            "actual": 13.0,
-            "abs": -3.655000000000001,
-            "pct": -0.21945361753227263,
+            "actual": 16.655,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           }
         },
         "assemblyObservedVsEstimated": {
           "target": 22.3,
-          "actual": 40.0,
-          "abs": 17.7,
-          "pct": 0.7937219730941704,
+          "actual": 22.3,
+          "abs": 0.0,
+          "pct": 0.0,
           "complete": true
         },
         "observedCostLabel": "FIXTURE",
@@ -870,19 +861,20 @@
           },
           "packedWeightKg": {
             "target": 16.655,
-            "actual": 13.0,
-            "abs": -3.655000000000001,
-            "pct": -0.21945361753227263,
+            "actual": 16.655,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true,
             "field": "packedWeightKg",
-            "ok": false,
-            "reason": "out_of_tolerance"
+            "ok": true,
+            "reason": "ok"
           }
         },
         "packagingValidation": {
           "ok": true,
           "reason": "ok",
-          "volumetricWeightKg": 7.937279999999999
+          "volumetricWeightKg": 7.937279999999999,
+          "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
         },
         "qcStatus": {
           "missing": [],
@@ -925,12 +917,11 @@
         "evidenceSource": "FIXTURE",
         "blockers": [
           "fixture_evidence",
-          "tolerance",
           "cost_partial"
         ]
       },
       {
-        "candidateId": "69a3c4c7-d67b-4f45-aa5a-4156a58a89f1",
+        "candidateId": "95b89131-b219-4d88-bd55-c25a23d5e15f",
         "tenantId": "pv-a",
         "state": "WAITING_PHYSICAL_EVIDENCE",
         "rankingScore": 0.6753818626845383,
@@ -941,7 +932,7 @@
         "reusableRemnant": 1060704.0,
         "prototypeStatus": "WAITING_VALIDATION",
         "toleranceResult": {
-          "ok": false,
+          "ok": true,
           "policy": {
             "dimMm": 3.0,
             "dimPct": 0.02,
@@ -984,19 +975,19 @@
             },
             "assembledWeightKg": {
               "target": 23.97,
-              "actual": 12.0,
-              "abs": -11.969999999999999,
-              "pct": -0.49937421777221525,
+              "actual": 23.97,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assembledWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             },
             "assemblyMinutes": {
               "target": 27.4,
-              "actual": 40.0,
-              "abs": 12.600000000000001,
-              "pct": 0.4598540145985402,
+              "actual": 27.4,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "assemblyMinutes",
               "ok": true,
@@ -1034,18 +1025,16 @@
             },
             "packedWeightKg": {
               "target": 23.97,
-              "actual": 13.0,
-              "abs": -10.969999999999999,
-              "pct": -0.4576554025865665,
+              "actual": 23.97,
+              "abs": 0.0,
+              "pct": 0.0,
               "complete": true,
               "field": "packedWeightKg",
-              "ok": false,
-              "reason": "out_of_tolerance"
+              "ok": true,
+              "reason": "ok"
             }
           },
-          "failed": [
-            "assembledWeightKg"
-          ]
+          "failed": []
         },
         "dimensionalVariance": {
           "widthMm": {
@@ -1071,16 +1060,16 @@
           },
           "assembledWeightKg": {
             "target": 23.97,
-            "actual": 12.0,
-            "abs": -11.969999999999999,
-            "pct": -0.49937421777221525,
+            "actual": 23.97,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "assemblyMinutes": {
             "target": 27.4,
-            "actual": 40.0,
-            "abs": 12.600000000000001,
-            "pct": 0.4598540145985402,
+            "actual": 27.4,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           },
           "cartonLengthMm": {
@@ -1106,17 +1095,17 @@
           },
           "packedWeightKg": {
             "target": 23.97,
-            "actual": 13.0,
-            "abs": -10.969999999999999,
-            "pct": -0.4576554025865665,
+            "actual": 23.97,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true
           }
         },
         "assemblyObservedVsEstimated": {
           "target": 27.4,
-          "actual": 40.0,
-          "abs": 12.600000000000001,
-          "pct": 0.4598540145985402,
+          "actual": 27.4,
+          "abs": 0.0,
+          "pct": 0.0,
           "complete": true
         },
         "observedCostLabel": "FIXTURE",
@@ -1155,19 +1144,20 @@
           },
           "packedWeightKg": {
             "target": 23.97,
-            "actual": 13.0,
-            "abs": -10.969999999999999,
-            "pct": -0.4576554025865665,
+            "actual": 23.97,
+            "abs": 0.0,
+            "pct": 0.0,
             "complete": true,
             "field": "packedWeightKg",
-            "ok": false,
-            "reason": "out_of_tolerance"
+            "ok": true,
+            "reason": "ok"
           }
         },
         "packagingValidation": {
           "ok": true,
           "reason": "ok",
-          "volumetricWeightKg": 19.623285333333335
+          "volumetricWeightKg": 19.623285333333335,
+          "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
         },
         "qcStatus": {
           "missing": [],
@@ -1210,12 +1200,11 @@
         "evidenceSource": "FIXTURE",
         "blockers": [
           "fixture_evidence",
-          "tolerance",
           "cost_partial"
         ]
       },
       {
-        "candidateId": "6bef455b-0b5d-452f-b719-1b4e8fdf7303",
+        "candidateId": "08aa4493-4c5c-43f8-b5e5-ac5d41bd1d9d",
         "tenantId": "pv-a",
         "state": "NOT_SELECTED",
         "rankingScore": null,
@@ -1253,7 +1242,7 @@
         ]
       },
       {
-        "candidateId": "72929f1d-fe8b-4404-939c-797c3b85a178",
+        "candidateId": "8ebfeffe-c099-47be-a9fa-611f6adafb19",
         "tenantId": "pv-a",
         "state": "NOT_SELECTED",
         "rankingScore": null,
@@ -1291,7 +1280,7 @@
         ]
       },
       {
-        "candidateId": "434fb02e-df2c-4b39-9831-ce520187d9de",
+        "candidateId": "ad5c13a1-89c1-42fe-84f3-84447fe74601",
         "tenantId": "pv-a",
         "state": "NOT_SELECTED",
         "rankingScore": null,
@@ -1329,7 +1318,7 @@
         ]
       },
       {
-        "candidateId": "6454d947-ee86-4f4a-9df6-77de483c0a58",
+        "candidateId": "a044f7ab-6bb9-4237-9340-30da6cfd70c4",
         "tenantId": "pv-a",
         "state": "NOT_SELECTED",
         "rankingScore": null,
@@ -1367,7 +1356,7 @@
         ]
       },
       {
-        "candidateId": "6464aa71-0fda-4436-ac8d-e11744702f12",
+        "candidateId": "71cb0970-a3ee-4aa8-aa32-c76e25caa5ee",
         "tenantId": "pv-a",
         "state": "NOT_SELECTED",
         "rankingScore": null,
@@ -1405,7 +1394,7 @@
         ]
       },
       {
-        "candidateId": "f40bde5f-fb03-417e-89fd-53a3ef87d336",
+        "candidateId": "437502f0-3831-4fe5-8e83-8bd9e444578b",
         "tenantId": "pv-a",
         "state": "NOT_SELECTED",
         "rankingScore": null,
@@ -1450,19 +1439,19 @@
   },
   "matrix": [
     {
-      "selectionId": "98ac06e5-d3cd-4e72-a5f4-a977d6e077fc",
-      "candidateId": "cb6e75f5-fef5-45d4-9361-82aaa7d6723f",
-      "engineeringHash": "c6d0a337e1f43030cddcebe3e5d36749644b4eae92d53aa0d9ce52ec5c62a3bf",
+      "selectionId": "abdad286-543c-445c-9d9c-2c3d4ccbf14f",
+      "candidateId": "118d5ffe-9c4e-4b85-a8d0-20e1e277bd4a",
+      "engineeringHash": "e0f779e767cb920089e1b937b7d51a02fe8b07a1292aad6264f9a8550c6feac6",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "2b7a43b2394855abb9bf476f09c7f1342e494f2ec2e196988621c3f5f6bbdd30",
+      "nestingHash": "e538379bf82581d67a3d766da1515e5a19f54b7456ac47d9149a7657cda6b328",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "costSnapshotHash": "ffd605b3cbc6e4d32023d6a4a2f820ad8c94edc60366d8a098ab29bb44fad34a",
-      "prototypeUnitId": "ebd56630-6d45-43fa-9f1b-c8feb7973908",
+      "costSnapshotHash": "ce5cfe6447e164cd449492a95fa71fae1592bacccc63f295f09808e92b4912d7",
+      "prototypeUnitId": "69d99ee5-6988-4a61-8e5b-4d0a20f82cbf",
       "unitState": "WAITING_VALIDATION",
       "evidenceSource": "FIXTURE",
       "buildCompleted": true,
-      "toleranceStatus": false,
+      "toleranceStatus": true,
       "qcStatus": {
         "complete": true,
         "missing": []
@@ -1472,11 +1461,57 @@
       "monetaryVarianceStatus": "PARTIAL",
       "packagingCompleteness": "COMPLETE",
       "packagingVarianceStatus": "ok",
+      "packagingValidation": {
+        "ok": true,
+        "reason": "ok",
+        "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
+      },
+      "packagingPredictedVsObserved": {
+        "cartonLengthMm": {
+          "target": 824.0,
+          "actual": 824.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonLengthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonWidthMm": {
+          "target": 424.0,
+          "actual": 424.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonWidthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonHeightMm": {
+          "target": 180.0,
+          "actual": 180.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonHeightMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "packedWeightKg": {
+          "target": 20.672,
+          "actual": 20.672,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "packedWeightKg",
+          "ok": true,
+          "reason": "ok"
+        }
+      },
       "ecoStatus": null,
       "decisionState": "WAITING_PHYSICAL_EVIDENCE",
       "blockers": [
         "fixture_evidence",
-        "tolerance",
         "cost_partial"
       ],
       "physicalPrototypeValidated": false,
@@ -1486,19 +1521,19 @@
       "staleLineage": false
     },
     {
-      "selectionId": "056156e7-82cb-482d-8f0a-bc5ee3fc0a47",
-      "candidateId": "a2a8896b-f8f5-4c10-8dee-1343a950faab",
-      "engineeringHash": "a5576cb3a245000f968998ce008cd23a586dbb6662e9399e40b8369a55fbc2e2",
+      "selectionId": "78e99643-4deb-4a67-953c-fa8be62aa275",
+      "candidateId": "20e8a0f9-c9a4-4c0f-b9de-c93eacf4eb26",
+      "engineeringHash": "f4d030ad100c54c859b51474387eb38f8976c02b28843df83da019c8725771b3",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "ccb8a1a9da77c171db0e32344708b4c690c25682612507415f0968db638d3373",
+      "nestingHash": "807128f070156b494ab822d9f42ed31d7c81e2e4df8a3c051f7c71d78327622c",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "costSnapshotHash": "74625b6c79718615daae199710258bd5a038dc9a9616a557a7b68520912826e4",
-      "prototypeUnitId": "4e0f0a0f-24b2-4e30-93b4-f117c809c1ad",
+      "costSnapshotHash": "a4cd093ae732aa805f5dfac4a65daeb59adc537da26fc13bdebe862c715089a8",
+      "prototypeUnitId": "cecd03a4-1263-494f-a761-4873ee661a21",
       "unitState": "WAITING_VALIDATION",
       "evidenceSource": "FIXTURE",
       "buildCompleted": true,
-      "toleranceStatus": false,
+      "toleranceStatus": true,
       "qcStatus": {
         "complete": true,
         "missing": []
@@ -1508,11 +1543,57 @@
       "monetaryVarianceStatus": "PARTIAL",
       "packagingCompleteness": "COMPLETE",
       "packagingVarianceStatus": "ok",
+      "packagingValidation": {
+        "ok": true,
+        "reason": "ok",
+        "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
+      },
+      "packagingPredictedVsObserved": {
+        "cartonLengthMm": {
+          "target": 624.0,
+          "actual": 624.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonLengthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonWidthMm": {
+          "target": 438.0,
+          "actual": 438.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonWidthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonHeightMm": {
+          "target": 180.0,
+          "actual": 180.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonHeightMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "packedWeightKg": {
+          "target": 17.203,
+          "actual": 17.203,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "packedWeightKg",
+          "ok": true,
+          "reason": "ok"
+        }
+      },
       "ecoStatus": null,
       "decisionState": "WAITING_PHYSICAL_EVIDENCE",
       "blockers": [
         "fixture_evidence",
-        "tolerance",
         "cost_partial"
       ],
       "physicalPrototypeValidated": false,
@@ -1522,19 +1603,19 @@
       "staleLineage": false
     },
     {
-      "selectionId": "bc1ea643-38e6-4928-bcc2-f8c549388468",
-      "candidateId": "14a236a1-8ed4-454b-b454-ed6e3c5d6e82",
-      "engineeringHash": "ebbb8f1e688a41b691e81cbcb16dab11de2be01f8ccd26f0e31d093ae105b5ae",
+      "selectionId": "852cefd7-1065-4f2a-88a6-1f1d1812dd82",
+      "candidateId": "c49d0f79-1701-4f40-8113-648f71f5608c",
+      "engineeringHash": "c2e7727911bc5afbf11a65cd3ed2c07e4d851a48d8b172e8fbe9f29a8ef54d86",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "e54894fcb2613fe6c7fab3220905587d3c93fb34b87e2f054b063be8e9ec72c4",
+      "nestingHash": "e64d9afd3367febb491057f24cd8fcdb652938b9c76e00589a16ceee8aa42008",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "costSnapshotHash": "3437281c1a36d5b66b8b9adfead24057f0a7f3bc0b0d2ed4f155a7cdf33b7614",
-      "prototypeUnitId": "02207757-0322-437f-aabc-00eb6903d939",
+      "costSnapshotHash": "d48610548d42378017c3d0c453b904365983f9102b38fb9e0c3d71f9ae448e7f",
+      "prototypeUnitId": "f1bf22b1-2f20-4883-9c70-880bf492b32a",
       "unitState": "WAITING_VALIDATION",
       "evidenceSource": "FIXTURE",
       "buildCompleted": true,
-      "toleranceStatus": false,
+      "toleranceStatus": true,
       "qcStatus": {
         "complete": true,
         "missing": []
@@ -1544,11 +1625,57 @@
       "monetaryVarianceStatus": "PARTIAL",
       "packagingCompleteness": "COMPLETE",
       "packagingVarianceStatus": "ok",
+      "packagingValidation": {
+        "ok": true,
+        "reason": "ok",
+        "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
+      },
+      "packagingPredictedVsObserved": {
+        "cartonLengthMm": {
+          "target": 624.0,
+          "actual": 624.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonLengthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonWidthMm": {
+          "target": 424.0,
+          "actual": 424.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonWidthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonHeightMm": {
+          "target": 180.0,
+          "actual": 180.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonHeightMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "packedWeightKg": {
+          "target": 16.655,
+          "actual": 16.655,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "packedWeightKg",
+          "ok": true,
+          "reason": "ok"
+        }
+      },
       "ecoStatus": null,
       "decisionState": "WAITING_PHYSICAL_EVIDENCE",
       "blockers": [
         "fixture_evidence",
-        "tolerance",
         "cost_partial"
       ],
       "physicalPrototypeValidated": false,
@@ -1558,19 +1685,19 @@
       "staleLineage": false
     },
     {
-      "selectionId": "f4e2bf73-70fa-4dea-8179-2adbd368c368",
-      "candidateId": "69a3c4c7-d67b-4f45-aa5a-4156a58a89f1",
-      "engineeringHash": "e80039917eba280aa9e9053b52584dde3c8839fc6676a89a819d1252f462709b",
+      "selectionId": "d1466baa-a9d7-4c60-923a-60821c4d777b",
+      "candidateId": "95b89131-b219-4d88-bd55-c25a23d5e15f",
+      "engineeringHash": "a2dae2de5199cf407a74ee3e3e51626938f22fd9a45241f96a80d44f9eab9524",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "06d28bd2ab10440c3f2763a3ea1fc3615651fbc12d18ba60e29dc1c10265fc21",
+      "nestingHash": "84ef96cb769b1a7f2ea599bfa3216d4d7a5d729377b4fc94a8430fda4ffc682c",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "costSnapshotHash": "c67465f5c2481bc13a872466c8d8ea3b5a0d7f5b87d55fac43cc9bb8931ece06",
-      "prototypeUnitId": "0ff19966-fb6b-4360-a72d-48e08260ba4e",
+      "costSnapshotHash": "3e95176489971eea553d3561e206b6688f1bb5ecd82548d8d9de253211407e0f",
+      "prototypeUnitId": "b3fa36fa-809e-406b-991a-5778054dca81",
       "unitState": "WAITING_VALIDATION",
       "evidenceSource": "FIXTURE",
       "buildCompleted": true,
-      "toleranceStatus": false,
+      "toleranceStatus": true,
       "qcStatus": {
         "complete": true,
         "missing": []
@@ -1580,11 +1707,57 @@
       "monetaryVarianceStatus": "PARTIAL",
       "packagingCompleteness": "COMPLETE",
       "packagingVarianceStatus": "ok",
+      "packagingValidation": {
+        "ok": true,
+        "reason": "ok",
+        "packagingPolicyHash": "a94e2aca1c157ed850a3a69a3e0c18a9d34f703b70e213f0c90563ec4432d3dc"
+      },
+      "packagingPredictedVsObserved": {
+        "cartonLengthMm": {
+          "target": 824.0,
+          "actual": 824.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonLengthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonWidthMm": {
+          "target": 424.0,
+          "actual": 424.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonWidthMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "cartonHeightMm": {
+          "target": 337.0,
+          "actual": 337.0,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "cartonHeightMm",
+          "ok": true,
+          "reason": "ok"
+        },
+        "packedWeightKg": {
+          "target": 23.97,
+          "actual": 23.97,
+          "abs": 0.0,
+          "pct": 0.0,
+          "complete": true,
+          "field": "packedWeightKg",
+          "ok": true,
+          "reason": "ok"
+        }
+      },
       "ecoStatus": null,
       "decisionState": "WAITING_PHYSICAL_EVIDENCE",
       "blockers": [
         "fixture_evidence",
-        "tolerance",
         "cost_partial"
       ],
       "physicalPrototypeValidated": false,
