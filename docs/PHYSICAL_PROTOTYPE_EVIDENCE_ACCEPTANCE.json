@@ -1,0 +1,352 @@
+{
+  "generatedAt": "2026-09-09T18:06:24.132243+00:00",
+  "acceptanceGenerationId": "78560c82-9909-44e7-b868-677c88875d20",
+  "evidenceCodeCommit": "39208fbf86c51f897fecf9190deb6225797df76d",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "evidenceLabel": "FIXTURE",
+  "physicalPrototypeValidated": false,
+  "launchDecision": "WAITING_HUMAN_EVIDENCE",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "ok": true,
+  "priorRealBlenderEvidence": {
+    "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+    "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+    "verified": true,
+    "cases": 4,
+    "media": [
+      {
+        "candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8",
+        "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8",
+        "jobId": "c2d96d5c-f569-449c-bd39-9faac4d70ad0",
+        "artifactSha256": "e5a853452c57a5bfb9a9ba1319dca96bf515c11f8b57e2f07ec9d2de185e6d3a",
+        "artifactSize": 52574,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "5b8d48af-066e-4738-811d-0518833ce071",
+        "engineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898",
+        "jobId": "5608af7c-230a-4253-ad20-4a64b815bf1e",
+        "artifactSha256": "da9512ac365d9f3b3b13254673ecaf94ffbbc8369a733ba42b6daaa028dce3cc",
+        "artifactSize": 54141,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "9e838170-2fba-45da-91f1-63ee967a9ea4",
+        "engineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d",
+        "jobId": "cda2642f-c0fd-4d6a-9dca-8f7626a4deda",
+        "artifactSha256": "c4c5690cb495184dc4abb629dd292c706ed913081cf3703ef69a71bb4897ae49",
+        "artifactSize": 53325,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "c8d8edb8-e96e-443c-99bf-8a0c5e496f15",
+        "engineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04",
+        "jobId": "22c0d21e-e7b4-45fa-a6fd-77ac0937423b",
+        "artifactSha256": "40069c7abd5073037104cd229997c4415fb7c08683b5589463ba51047cc2d02e",
+        "artifactSize": 54424,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      }
+    ],
+    "reason": "Portfolio/media/engineering render path unchanged; Phase 601\u2013660 adds prototype workflow only. Prior REAL 4/4 T1000 OptiX verified fail-closed from SKU_PORTFOLIO_FACTORY_ACCEPTANCE.json"
+  },
+  "domain": "physical-prototype-evidence",
+  "selected": [
+    {
+      "candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b",
+      "selectionId": "d75be475-da32-4a67-9255-f704d48e8e64",
+      "prototypeUnitId": "bf536b14-a62b-4f3e-abb9-792c424c723c",
+      "engineeringHash": "5e784a6d0edb77364e92b6484ec7b7511fa966d4deeb67f2fbbe4116daf2692d",
+      "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
+      "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
+      "nestingHash": "bd3dd0b6f42926a0b549f842fa06340a57a067d80ea15cc4f9fee3f23c7d58f4",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9",
+      "selectionId": "d0ce1882-19cf-45e3-95b6-e32536a8d7e9",
+      "prototypeUnitId": "a2594dd3-f6d1-4afd-ac1d-2ef199c161a4",
+      "engineeringHash": "e9375557bb2194de3cdaad80e6f13d5868a0f77124794ccf8b1a70b0363fa82d",
+      "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
+      "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
+      "nestingHash": "8f2ea60f43e2d4a466c27c87f2f8971bfe11f22e06b44b2ce9db870d2a3728a6",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "candidateId": "e44de73a-b546-4b37-997e-53294aef929e",
+      "selectionId": "60ca306b-1f26-4a12-85da-4efe5f9ba109",
+      "prototypeUnitId": "07b30493-fd34-4277-a311-133a8d1a77ae",
+      "engineeringHash": "60ac555b1fba0318d65d519c8703ad927941edc433bd97b0df85b6f753c2daa8",
+      "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
+      "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
+      "nestingHash": "4c428425644cb6bd5570bd99f53579aeb1b7452fd732477a3d47efeb06bb61a1",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "candidateId": "3353b05e-7724-4774-af77-d9783687a94e",
+      "selectionId": "0883abf4-730b-46e2-bdd8-be2c96d3848a",
+      "prototypeUnitId": "f2127878-8b3c-4da7-883a-57fb30722a23",
+      "engineeringHash": "f936a14021db68ea3b60dd847f3f91cfbc018c407eed278c5bd3d270adba470c",
+      "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
+      "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
+      "nestingHash": "6f8360dfcac74350227d505d8acfc5018313afe4fbf54a26949f7f7b06aa8b2b",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "truthLabel": "FIXTURE"
+    }
+  ],
+  "units": [
+    {
+      "candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b",
+      "selectionId": "d75be475-da32-4a67-9255-f704d48e8e64",
+      "prototypeUnitId": "bf536b14-a62b-4f3e-abb9-792c424c723c",
+      "engineeringHash": "5e784a6d0edb77364e92b6484ec7b7511fa966d4deeb67f2fbbe4116daf2692d",
+      "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
+      "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
+      "nestingHash": "bd3dd0b6f42926a0b549f842fa06340a57a067d80ea15cc4f9fee3f23c7d58f4",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "state": "WAITING_VALIDATION",
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "evidencePackageId": "7e947112-f902-4d7c-aebe-f6879219840a",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "materialConsumed": false,
+      "inventoryLineage": null,
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9",
+      "selectionId": "d0ce1882-19cf-45e3-95b6-e32536a8d7e9",
+      "prototypeUnitId": "a2594dd3-f6d1-4afd-ac1d-2ef199c161a4",
+      "engineeringHash": "e9375557bb2194de3cdaad80e6f13d5868a0f77124794ccf8b1a70b0363fa82d",
+      "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
+      "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
+      "nestingHash": "8f2ea60f43e2d4a466c27c87f2f8971bfe11f22e06b44b2ce9db870d2a3728a6",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "state": "WAITING_VALIDATION",
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "evidencePackageId": "17c1414c-5992-46eb-9e4b-d7b4e0a51d22",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "materialConsumed": false,
+      "inventoryLineage": null,
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "candidateId": "e44de73a-b546-4b37-997e-53294aef929e",
+      "selectionId": "60ca306b-1f26-4a12-85da-4efe5f9ba109",
+      "prototypeUnitId": "07b30493-fd34-4277-a311-133a8d1a77ae",
+      "engineeringHash": "60ac555b1fba0318d65d519c8703ad927941edc433bd97b0df85b6f753c2daa8",
+      "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
+      "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
+      "nestingHash": "4c428425644cb6bd5570bd99f53579aeb1b7452fd732477a3d47efeb06bb61a1",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "state": "WAITING_VALIDATION",
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "evidencePackageId": "a6ffe70e-ed91-4e3f-a2a4-a679cfa5ce75",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "materialConsumed": false,
+      "inventoryLineage": null,
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "candidateId": "3353b05e-7724-4774-af77-d9783687a94e",
+      "selectionId": "0883abf4-730b-46e2-bdd8-be2c96d3848a",
+      "prototypeUnitId": "f2127878-8b3c-4da7-883a-57fb30722a23",
+      "engineeringHash": "f936a14021db68ea3b60dd847f3f91cfbc018c407eed278c5bd3d270adba470c",
+      "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
+      "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
+      "nestingHash": "6f8360dfcac74350227d505d8acfc5018313afe4fbf54a26949f7f7b06aa8b2b",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "state": "WAITING_VALIDATION",
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "evidencePackageId": "13606f87-a4de-46c1-a4b1-634f3bfdca9a",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "materialConsumed": false,
+      "inventoryLineage": null,
+      "truthLabel": "FIXTURE"
+    }
+  ],
+  "evidencePackages": [
+    {
+      "candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b",
+      "selectionId": "d75be475-da32-4a67-9255-f704d48e8e64",
+      "prototypeUnitId": "bf536b14-a62b-4f3e-abb9-792c424c723c",
+      "engineeringHash": "5e784a6d0edb77364e92b6484ec7b7511fa966d4deeb67f2fbbe4116daf2692d",
+      "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
+      "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
+      "nestingHash": "bd3dd0b6f42926a0b549f842fa06340a57a067d80ea15cc4f9fee3f23c7d58f4",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "evidencePackageId": "7e947112-f902-4d7c-aebe-f6879219840a",
+      "evidenceSource": "FIXTURE",
+      "engineeringRevision": 1,
+      "ecoRevision": null,
+      "state": "FINALIZED",
+      "revision": 1,
+      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
+      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+    },
+    {
+      "candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9",
+      "selectionId": "d0ce1882-19cf-45e3-95b6-e32536a8d7e9",
+      "prototypeUnitId": "a2594dd3-f6d1-4afd-ac1d-2ef199c161a4",
+      "engineeringHash": "e9375557bb2194de3cdaad80e6f13d5868a0f77124794ccf8b1a70b0363fa82d",
+      "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
+      "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
+      "nestingHash": "8f2ea60f43e2d4a466c27c87f2f8971bfe11f22e06b44b2ce9db870d2a3728a6",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "evidencePackageId": "17c1414c-5992-46eb-9e4b-d7b4e0a51d22",
+      "evidenceSource": "FIXTURE",
+      "engineeringRevision": 1,
+      "ecoRevision": null,
+      "state": "FINALIZED",
+      "revision": 1,
+      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
+      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+    },
+    {
+      "candidateId": "e44de73a-b546-4b37-997e-53294aef929e",
+      "selectionId": "60ca306b-1f26-4a12-85da-4efe5f9ba109",
+      "prototypeUnitId": "07b30493-fd34-4277-a311-133a8d1a77ae",
+      "engineeringHash": "60ac555b1fba0318d65d519c8703ad927941edc433bd97b0df85b6f753c2daa8",
+      "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
+      "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
+      "nestingHash": "4c428425644cb6bd5570bd99f53579aeb1b7452fd732477a3d47efeb06bb61a1",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "evidencePackageId": "a6ffe70e-ed91-4e3f-a2a4-a679cfa5ce75",
+      "evidenceSource": "FIXTURE",
+      "engineeringRevision": 1,
+      "ecoRevision": null,
+      "state": "FINALIZED",
+      "revision": 1,
+      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
+      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+    },
+    {
+      "candidateId": "3353b05e-7724-4774-af77-d9783687a94e",
+      "selectionId": "0883abf4-730b-46e2-bdd8-be2c96d3848a",
+      "prototypeUnitId": "f2127878-8b3c-4da7-883a-57fb30722a23",
+      "engineeringHash": "f936a14021db68ea3b60dd847f3f91cfbc018c407eed278c5bd3d270adba470c",
+      "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
+      "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
+      "nestingHash": "6f8360dfcac74350227d505d8acfc5018313afe4fbf54a26949f7f7b06aa8b2b",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "evidencePackageId": "13606f87-a4de-46c1-a4b1-634f3bfdca9a",
+      "evidenceSource": "FIXTURE",
+      "engineeringRevision": 1,
+      "ecoRevision": null,
+      "state": "FINALIZED",
+      "revision": 1,
+      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
+      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+    }
+  ],
+  "evidenceSource": [
+    "FIXTURE",
+    "FIXTURE",
+    "FIXTURE",
+    "FIXTURE"
+  ],
+  "costCompleteness": [
+    "PARTIAL",
+    "PARTIAL",
+    "PARTIAL",
+    "PARTIAL"
+  ],
+  "packagingStatus": [
+    "COMPLETE",
+    "COMPLETE",
+    "COMPLETE",
+    "COMPLETE"
+  ],
+  "qcStatus": [
+    {
+      "complete": true,
+      "missing": []
+    },
+    {
+      "complete": true,
+      "missing": []
+    },
+    {
+      "complete": true,
+      "missing": []
+    },
+    {
+      "complete": true,
+      "missing": []
+    }
+  ],
+  "toleranceStatus": [
+    true,
+    true,
+    true,
+    true
+  ],
+  "tenantBackupSemantic": {
+    "liveA": "67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad",
+    "restoredA": "67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad",
+    "equal": true
+  },
+  "realMockPartialBlocked": {
+    "Demand": "MOCK",
+    "Vision": "MOCK",
+    "AI Video": "MOCK",
+    "OS sandbox / AR / preflight / barcode / McKee-BCT": "PARTIAL",
+    "LIVE_CNC / LIVE_LASER / PLC / live provider / live factory": "BLOCKED",
+    "physical prototype": "FIXTURE",
+    "workflow": "REAL_LOGIC"
+  },
+  "rows": [
+    {
+      "check": "fixture cannot physically validate",
+      "status": "REAL_LOGIC",
+      "evidence": "physicalPrototypeValidated=False"
+    },
+    {
+      "check": "tenant backup semantic",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"liveA\": \"67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad\", \"restoredA\": \"67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad\", \"equal\": true}"
+    },
+    {
+      "check": "prior REAL blender",
+      "status": "REAL",
+      "evidence": "{\"commitSha\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"generation\": \"0b76b09e-02a8-45a6-b4fd-bf34849dd76c\", \"cases\": 4, \"failures\": []}"
+    },
+    {
+      "check": "physical prototype",
+      "status": "FIXTURE",
+      "evidence": "CI measurements are FIXTURE; physicalPrototypeValidated=false; software loop only"
+    },
+    {
+      "check": "evidence packages",
+      "status": "REAL_LOGIC",
+      "evidence": "[{\"candidateId\": \"1328e272-cd3b-435d-bb15-2c898a71069b\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"1039dbb9-30e9-4989-9e60-1d873ccf3cb9\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"e44de73a-b546-4b37-997e-53294aef929e\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"3353b05e-7724-4774-af77-d9783687a94e\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}]"
+    }
+  ]
+}

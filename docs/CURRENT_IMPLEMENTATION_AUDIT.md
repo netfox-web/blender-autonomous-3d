@@ -1,10 +1,24 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 601–660 published-lineage CODE_EVIDENCE_SHA `e66ca9d`; prior CODE `8d2ebd4` / instruction `21b5d90`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `21b5d90`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 661–720 CODE_EVIDENCE_SHA `39208fb`; prior docs `b3f3f95` / CODE `e66ca9d` / instruction `0b48771`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `0b48771`. Historical Phase 1–660 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 661–720 Physical Prototype Evidence & Human Launch Governance V1
+
+| Item | Status | Evidence |
+|---|---|---|
+| PhysicalEvidencePackage | REAL_LOGIC | tenant-scoped lineage + source + finalize/supersede; fixture cannot MANUAL_EVIDENCE |
+| As-built / QC / DAM intake | REAL_LOGIC / FIXTURE | numeric fail-closed; DAM SHA/size authoritative; PASS_AS_BUILT not for FIXTURE |
+| Cost reconciliation V2 | PARTIAL | MaterialLot consume lineage + explicit MANUAL/IMPORTED money; missing money PARTIAL blocks GO |
+| Packaging pilot evidence | REAL_LOGIC / FIXTURE | predicted-vs-observed fail-closed; ISTA claim needs certified DAM; certification=false |
+| ECO invalidates evidence | REAL_LOGIC | old packages INVALIDATED; stale hash cannot HUMAN_GO |
+| Human launch board | REAL_LOGIC | WAITING_HUMAN_EVIDENCE / HOLD_REWORK / READY_FOR_HUMAN_GO_NO_GO / HUMAN_GO / HUMAN_NO_GO |
+| Manual pilot plan | REAL_LOGIC | HUMAN_GO only; ManufacturingRelease + WorkOrder MANUAL_STATION; liveMachineControl=false |
+| Backup/restore | REAL_LOGIC | packages/launchDecisions/pilotPlans in tenant digest; equal `67a4f6ac…` |
+| 719–720 acceptance | FIXTURE + REAL_LOGIC | generation `78560c82-…`; CODE `39208fb`; `physicalPrototypeValidated=false`; `launchDecision=WAITING_HUMAN_EVIDENCE` |
 
 ## Phase 601–660 Prototype Validation published lineage + intent identity
 

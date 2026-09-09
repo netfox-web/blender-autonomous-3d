@@ -1,4 +1,4 @@
-# PROTOTYPE_VALIDATION_ACCEPTANCE
+# PHYSICAL_PROTOTYPE_EVIDENCE_ACCEPTANCE
 
 generatedAt: 2026-09-09T18:06:24.132243+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
@@ -6,20 +6,10 @@ This is a scoped Phase 661–720 physical-evidence / human-launch truth set. Fix
 
 | Check | Status | Evidence |
 |---|---|---|
-| 4 prototype SKUs selected | REAL_LOGIC | `["1328e272-cd3b-435d-bb15-2c898a71069b", "1039dbb9-30e9-4989-9e60-1d873ccf3cb9", "e44de73a-b546-4b37-997e-53294aef929e", "3353b05e-7724-4774-af77-d9783687a94e"]` |
-| decision board | REAL_LOGIC | `rows=10` |
-| per-SKU matrix | REAL_LOGIC | `[{"candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b", "state": "WAITING_VALIDATION", "physical": false}, {"candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9", "state": "WAITING_VALIDATION", "physical": false}, {"candidateId": "e44de73a-b546-4b37-997e-53294aef929e", "state": "WAITING_VALIDATION", "physical": false}, {"candidateId": "3353b05e-7724-4774-af77-d9783687a94e", "state": "WAITING_VALIDATION", "physical": false}]` |
 | fixture cannot physically validate | REAL_LOGIC | `physicalPrototypeValidated=False` |
-| MOCK demand not REAL | REAL_LOGIC | `MOCK` |
 | tenant backup semantic | REAL_LOGIC | `{"liveA": "67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad", "restoredA": "67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad", "equal": true}` |
 | prior REAL blender | REAL | `{"commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14", "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c", "cases": 4, "failures": []}` |
-| REAL blender media | REAL | `real=0/0; prior=4` |
-| evidenceCodeCommit | REAL_LOGIC | `39208fbf86c51f897fecf9190deb6225797df76d` |
-| workingTreeClean | REAL_LOGIC | `True` |
-| LIVE_CNC | BLOCKED | `liveMachineControl=false` |
-| LIVE_LASER | BLOCKED | `liveMachineControl=false` |
 | physical prototype | FIXTURE | `CI measurements are FIXTURE; physicalPrototypeValidated=false; software loop only` |
-| launch decision | REAL_LOGIC | `WAITING_HUMAN_EVIDENCE` |
 | evidence packages | REAL_LOGIC | `[{"candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b", "source": "FIXTURE", "state": "FINALIZED"}, {"candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9", "source": "FIXTURE", "state": "FINALIZED"}, {"candidateId": "e44de73a-b546-4b37-997e-53294aef929e", "source": "FIXTURE", "state": "FINALIZED"}, {"candidateId": "3353b05e-7724-4774-af77-d9783687a94e", "source": "FIXTURE", "state": "FINALIZED"}]` |
 
 `fullAutonomousFactoryReady=false`. `liveFactoryExecutionReady=false`. `globalProductionReady=false`.
