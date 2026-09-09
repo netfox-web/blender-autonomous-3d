@@ -1179,6 +1179,8 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "prototypeUnitId": r.get("prototypeUnitId"),
                         "engineeringHash": r.get("engineeringHash"),
                         "state": r.get("state"),
+                        "consumesInventory": r.get("consumesInventory"),
+                        "inventoryLineage": r.get("inventoryLineage"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "units", {}), tenant_id)
                 ],
@@ -1193,6 +1195,7 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "measurementId": r.get("measurementId"),
                         "prototypeUnitId": r.get("prototypeUnitId"),
                         "engineeringHash": r.get("engineeringHash"),
+                        "toleranceOk": (r.get("tolerance") or {}).get("ok"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "measurements", {}), tenant_id)
                 ],
@@ -1208,6 +1211,7 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "fromEngineeringHash": r.get("fromEngineeringHash"),
                         "toEngineeringHash": r.get("toEngineeringHash"),
                         "status": r.get("status"),
+                        "fieldChanges": r.get("fieldChanges"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "ecos", {}), tenant_id)
                 ],
@@ -1222,6 +1226,8 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "costId": r.get("costId"),
                         "prototypeUnitId": r.get("prototypeUnitId"),
                         "costSnapshotHash": r.get("costSnapshotHash"),
+                        "completeness": r.get("completeness"),
+                        "monetaryTotal": r.get("monetaryTotal"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "costs", {}), tenant_id)
                 ],
@@ -1232,7 +1238,12 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
         "prototypeChecklists": _entry(
             sorted(
                 [
-                    {"checklistId": r.get("checklistId"), "prototypeUnitId": r.get("prototypeUnitId"), "ok": r.get("ok")}
+                    {
+                        "checklistId": r.get("checklistId"),
+                        "prototypeUnitId": r.get("prototypeUnitId"),
+                        "ok": r.get("ok"),
+                        "volumetricWeightKg": r.get("volumetricWeightKg"),
+                    }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "checklists", {}), tenant_id)
                 ],
                 key=lambda r: str(r.get("checklistId")),

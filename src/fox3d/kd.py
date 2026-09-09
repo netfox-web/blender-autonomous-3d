@@ -156,6 +156,7 @@ def build_flatpack_spec(engine: CabinetEngine, *, tenant_id: str, kind: str, **p
         plinthHeight=merged.get("plinthHeight"),
         backPanel=merged.get("backPanel"),
         material=merged.get("material") or "WOOD_WHITE",
+        boardThickness=merged.get("boardThickness"),
     )
     spec.metadata["flatPack"] = True
     spec.metadata["productFamily"] = kind

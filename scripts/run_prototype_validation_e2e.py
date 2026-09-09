@@ -21,7 +21,12 @@ from fox3d.evidence import DirtyTreeError, inspect_repo_lineage  # noqa: E402
 from fox3d.ids import new_id  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
 from fox3d.portfolio import media_case_real  # noqa: E402
-from fox3d.prototype import run_prototype_scenario  # noqa: E402
+from fox3d.prototype import (  # noqa: E402
+    PRIOR_REAL_BLENDER,
+    run_prototype_scenario,
+    validate_prototype_acceptance_result,
+    verify_prior_real_blender,
+)
 
 
 def _md(title: str, rows: list[dict], generated: str) -> str:
@@ -110,18 +115,22 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         result = run_prototype_scenario(plat, render=render, evidence_commit=sha)
     generated = datetime.now(timezone.utc).isoformat()
     missing: list[str] = []
-    if result.get("ok") is not True:
-        missing.append("scenario_ok")
     selected = result.get("selected") or []
-    if len(selected) != 4:
-        missing.append("selected_4")
+    missing.extend(validate_prototype_acceptance_result(result))
+    prior_docs = Path(hooks["prior_docs"]) if hooks.get("prior_docs") else ROOT / "docs"
+    prior_real = verify_prior_real_blender(prior_docs)
+    if prior_real.get("ok") is not True:
+        missing.extend(list(prior_real.get("failures") or ["prior_real_blender"]))
     if result.get("physicalPrototypeValidated") is True:
         missing.append("fixture_physical")
     if result.get("demandLabel") == "REAL":
         missing.append("demand_mislabeled_real")
     if result.get("liveMachineControl") is not False:
         missing.append("liveMachineControl")
-    if hooks.get("scenario"):
+    if hooks.get("restore_matrix") is not None:
+        backup = {"snapshotPathSetBound": True}
+        matrix = hooks["restore_matrix"]
+    elif hooks.get("scenario"):
         backup = {"snapshotPathSetBound": True}
         matrix = {"tenantLeakageAbsent": True, "tenantRequiredStatePreserved": True, "tenantStateDigest": {"equal": True}}
     else:
@@ -148,15 +157,18 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         missing.append("real_media_4")
     rows = [
         {"check": "4 prototype SKUs selected", "status": _status(len(selected) == 4), "evidence": json.dumps([s.get("candidateId") for s in selected])},
+        {"check": "decision board", "status": _status(bool((result.get("board") or {}).get("rows"))), "evidence": f"rows={len((result.get('board') or {}).get('rows') or [])}"},
+        {"check": "per-SKU matrix", "status": _status(len(result.get("matrix") or []) == 4), "evidence": json.dumps([{"candidateId": r.get("candidateId"), "state": r.get("unitState"), "physical": r.get("physicalPrototypeValidated")} for r in (result.get("matrix") or [])], default=str)},
         {"check": "fixture cannot physically validate", "status": _status(result.get("physicalPrototypeValidated") is False), "evidence": f"physicalPrototypeValidated={result.get('physicalPrototypeValidated')}"},
         {"check": "MOCK demand not REAL", "status": _status(result.get("demandLabel") != "REAL"), "evidence": str(result.get("demandLabel"))},
         {"check": "tenant backup semantic", "status": _status(bool(matrix.get("tenantRequiredStatePreserved") and matrix.get("tenantLeakageAbsent"))), "evidence": json.dumps(matrix.get("tenantStateDigest"), default=str)},
-        {"check": "REAL blender media", "status": media_status, "evidence": f"real={len(real_media)}/{len(media) or 0}"},
+        {"check": "prior REAL blender", "status": "REAL" if prior_real.get("ok") else "BLOCKED", "evidence": json.dumps({k: prior_real.get(k) for k in ("commitSha", "generation", "cases", "failures")}, default=str)},
+        {"check": "REAL blender media", "status": media_status if media else ("REAL" if prior_real.get("ok") else "BLOCKED"), "evidence": f"real={len(real_media)}/{len(media) or 0}; prior={prior_real.get('cases')}"},
         {"check": "evidenceCodeCommit", "status": "REAL_LOGIC" if matches_head else "BLOCKED", "evidence": sha},
         {"check": "workingTreeClean", "status": "REAL_LOGIC" if clean else "UNVERIFIED", "evidence": str(clean)},
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "LIVE_LASER", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
-        {"check": "physical prototype", "status": "FIXTURE", "evidence": "CI measurements are FIXTURE; physicalPrototypeValidated=false"},
+        {"check": "physical prototype", "status": "FIXTURE", "evidence": "CI measurements are FIXTURE; physicalPrototypeValidated=false; software loop only"},
     ]
     gate_ok = not missing and clean and matches_head
     payload_common = {
@@ -175,25 +187,49 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "liveMachineControl": False,
         "ok": gate_ok,
         "priorRealBlenderEvidence": {
-            "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
-            "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
-            "reason": "Portfolio/media/engineering render path unchanged; Phase 601–660 adds prototype workflow only",
+            "commitSha": PRIOR_REAL_BLENDER["commitSha"],
+            "generation": PRIOR_REAL_BLENDER["generation"],
+            "verified": bool(prior_real.get("ok")),
+            "cases": prior_real.get("cases"),
+            "media": prior_real.get("media"),
+            "reason": "Portfolio/media/engineering render path unchanged; Phase 601–660 adds prototype workflow only. Prior REAL 4/4 T1000 OptiX verified fail-closed from SKU_PORTFOLIO_FACTORY_ACCEPTANCE.json",
         },
     }
     proto_doc = {
         **payload_common,
         "domain": "prototype-validation",
         "selectedCount": len(selected),
-        "selected": [{k: s.get(k) for k in ("selectionId", "candidateId", "engineeringHash", "truthLabel")} for s in selected],
-        "units": [{k: u.get(k) for k in ("prototypeUnitId", "candidateId", "engineeringHash", "state", "physicalPrototypeValidated")} for u in (result.get("units") or [])],
+        "selected": [{k: s.get(k) for k in ("selectionId", "candidateId", "engineeringHash", "canonicalHash", "bomHash", "nestingHash", "truthLabel")} for s in selected],
+        "units": [
+            {
+                k: u.get(k)
+                for k in (
+                    "prototypeUnitId",
+                    "candidateId",
+                    "engineeringHash",
+                    "state",
+                    "physicalPrototypeValidated",
+                    "evidenceSource",
+                    "buildCompleted",
+                    "consumesInventory",
+                    "inventoryLineage",
+                )
+            }
+            for u in (result.get("units") or [])
+        ],
+        "matrix": result.get("matrix") or [],
+        "board": result.get("board"),
         "rows": rows,
+        "acceptanceFailures": missing,
+        "waitingPhysicalEvidence": True,
     }
     launch_doc = {
         **payload_common,
         "domain": "sku-launch-readiness",
         "board": result.get("board"),
+        "matrix": result.get("matrix") or [],
         "demandLabel": result.get("demandLabel"),
-        "rows": [r for r in rows if r["check"] in {"MOCK demand not REAL", "fixture cannot physically validate", "LIVE_CNC", "LIVE_LASER"}],
+        "rows": [r for r in rows if r["check"] in {"MOCK demand not REAL", "fixture cannot physically validate", "LIVE_CNC", "LIVE_LASER", "decision board", "prior REAL blender"}],
     }
     if not gate_ok:
         return _refuse_overwrite(docs, missing)
