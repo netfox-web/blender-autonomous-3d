@@ -2,8 +2,8 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-09  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `ab8504d` (**CHANGES REQUIRED** — backup/restore & evidence integrity)  
-Review head: `583e74d` / CODE `523b3cb`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `ead6653` (**CHANGES REQUIRED** — final backup completeness / snapshot integrity)  
+Review head: `08212f4` / CODE `ff285a2`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
@@ -12,32 +12,32 @@ Executed **GAPS ONLY**. Did not start Phase 541+. Did not rewrite Scheduler / Qu
 
 | Blocker | Fix |
 |---|---|
-| 1 fail-open noDoubleConsume/Complete | `capture_restore_facts` + event/qty counters; missing/false facts fail; subprocess retry must leave consume/complete counts unchanged |
-| 2 tenant_ids metadata-only | TENANT_SCOPED export filters lots/WO/identity/journal/DAM/tx/etc.; restored A has zero B records |
-| 3 unlisted files restored | verifier requires exact manifest set; restore copies only listed files; extra/missing/traversal/symlink fail |
-| 4 inconsistent snapshot | existing FileLocks + hash-before/after retry; source change fails closed |
-| 5 mixed-generation publish | eight files staged then `atomic_publish_canonical`; reader rejects mixed/missing/malformed |
+| 1 tenant-scoped silent drop of A child state | Collection policies TENANT_OWNED / TENANT_DERIVED / GLOBAL_REFERENCE / AMBIGUOUS fail-closed. Pallet ownership derived from carton parents; cross-tenant/orphan pallets rejected. Carrier quotes labeled GLOBAL_REFERENCE and excluded from TENANT_SCOPED. Matrix proves `tenantLeakageAbsent` and `tenantRequiredStatePreserved` across lots/remnants/releases/packets/idem/WO/ops/receipts/stations/leases/identity/cyclecounts/logistics/QC/exceptions/journal/outbox/DAM |
+| 2 snapshot fingerprint only hashed the first path list | Snapshot identity binds **path set + content hashes**; rediscover after copy; tenant-scoped compares selected-tenant relevant set (filtered mixed JSON, ignore B-only DAM/remnant churn); create/delete/rename of A files retry/fail; `consistentSnapshot` only after equality |
+| 3 restored health from live root, gate/health fail-open | `health` from `restored_plat`; `journalIntegrity.ok` required independently; contradictory gate=true + health.ok=false fails runner and preserves prior 8-file bundle |
 
-**CODE_EVIDENCE_SHA:** `ff285a2f9ef82500b0c0f01caacd18bc1186113f`  
+**CODE_EVIDENCE_SHA:** `1fc86cff1101c8a8e66df59950a8accc7f527d76`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34328790268` on `ff285a2` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34337838018` on `1fc86cf` ubuntu+windows.
 
-Acceptance generation `c53ae456-8757-4abf-add9-dc928001fe97`; runner-bound `evidenceCodeCommit=ff285a2…`; `workingTreeClean=true`. REAL Blender **not** refreshed: render/release path unchanged; reuse 4/4 T1000 OptiX `018cc70` generation `c878d5f3-a3d2-44cd-8223-7b2b94d84af1`.
+Acceptance generation `59bd2549-3cec-4d90-9401-3f6968a0885f`; runner-bound `evidenceCodeCommit=1fc86cf…`; `workingTreeClean=true`. REAL Blender **not** refreshed: render/release path unchanged; reuse 4/4 T1000 OptiX `018cc70` generation `c878d5f3-a3d2-44cd-8223-7b2b94d84af1`.
+
+Tenant backup matrix (restored A vs live A; restored B = 0): lots 7, remnants 5, releases/packets 5, idem 20, WO 6, ops 35, receipts 1, stations/leases 1, operators/shifts 2, cycleCounts 1, cartons 5, palletPlans/shipments/checklists/handoffs 1, qc 15, exceptions 1, journal 180, DAM 1. Carrier quotes excluded (`EXCLUDE_FROM_TENANT_SCOPED`). Restored-root journal health `ok=true/status=REAL` sequence 180.
 
 ## Tests
 
 ```
-pytest -q  →  226 passed   (MOCK/unit/integration + FIXTURE/REAL-logic — not Production Ready)
+pytest -q  →  234 passed   (MOCK/unit/integration + FIXTURE/REAL-logic — not Production Ready)
 ```
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
 | Item | Label |
 |---|---|
-| Tenant-scoped backup/restore | REAL_LOGIC |
-| Exact-set checksum + snapshot retry | REAL_LOGIC |
-| Restore no-double consume/complete counters | REAL_LOGIC |
-| Atomic 8-file acceptance publish | REAL_LOGIC |
+| Tenant backup completeness (no leak + A state preserved) | REAL_LOGIC |
+| Derived pallet ownership + ambiguous fail-closed | REAL_LOGIC |
+| Snapshot path-set + hash bind / retry | REAL_LOGIC |
+| Restored-root health fail-closed | REAL_LOGIC |
 | Four-family scenario | FIXTURE |
 | 4-family Blender EvidenceBundles | REAL — reused `018cc70` T1000 OptiX |
 | Vision / AI Video / Demand | MOCK |
@@ -59,4 +59,4 @@ pytest -q  →  226 passed   (MOCK/unit/integration + FIXTURE/REAL-logic — not
 
 ## Next round
 
-ChatGPT re-review `ab8504d` exit criteria. No Phase 541+ until **ACCEPT WITH SCOPE**.
+ChatGPT re-review `ead6653` exit criteria. No Phase 541+ until **ACCEPT WITH SCOPE**.

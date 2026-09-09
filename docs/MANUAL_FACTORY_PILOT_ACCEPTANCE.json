@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T08:25:56.293044+00:00",
-  "acceptanceGenerationId": "c53ae456-8757-4abf-add9-dc928001fe97",
-  "evidenceCodeCommit": "ff285a2f9ef82500b0c0f01caacd18bc1186113f",
+  "generatedAt": "2026-09-09T10:03:37.649332+00:00",
+  "acceptanceGenerationId": "59bd2549-3cec-4d90-9401-3f6968a0885f",
+  "evidenceCodeCommit": "1fc86cff1101c8a8e66df59950a8accc7f527d76",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -39,18 +39,22 @@
     "restoreReleaseHashPreserved": true,
     "restoreNoDoubleConsume": true,
     "restoreNoDoubleCompletion": true,
+    "restoredRootHealthOk": true,
     "journalHealthyAfterRestore": true,
+    "tenantLeakageAbsent": true,
+    "tenantRequiredStatePreserved": true,
+    "snapshotPathSetBound": true,
     "crossTenantRestoreRejected": true,
     "workingTreeClean": true,
     "evidenceCommitMatchesHead": true
   },
   "scenario": {
-    "workOrderId": "d4bfb32b-70f9-400f-8117-43adc3509040",
-    "releaseHash": "ed32d284a39541e6ed70be50f0f4c9a15fb5add326eb38c84bff1497213fb92f",
+    "workOrderId": "6d8c3955-37b6-4777-89cc-151c48ed1c5d",
+    "releaseHash": "099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4",
     "labor": {
-      "workOrderId": "d4bfb32b-70f9-400f-8117-43adc3509040",
+      "workOrderId": "6d8c3955-37b6-4777-89cc-151c48ed1c5d",
       "estimatedLaborMinutes": 120.0,
-      "actualManualLaborMinutes": 12.0026,
+      "actualManualLaborMinutes": 12.0025,
       "estimatedLaborCost": 720.0,
       "actualManualLaborCost": 72.02,
       "variance": -647.98,
@@ -85,7 +89,7 @@
     {
       "check": "traveler releaseHash pin",
       "status": "REAL_LOGIC",
-      "evidence": "ed32d284a39541e6ed70be50f0f4c9a15fb5add326eb38c84bff1497213fb92f"
+      "evidence": "099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4"
     },
     {
       "check": "scan token tenant-safe",
@@ -140,10 +144,30 @@
     {
       "check": "restore no double consume/complete",
       "status": "REAL_LOGIC",
-      "evidence": "{\"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"releaseHash\": \"ed32d284a39541e6ed70be50f0f4c9a15fb5add326eb38c84bff1497213fb92f\", \"releaseHashAfter\": \"ed32d284a39541e6ed70be50f0f4c9a15fb5add326eb38c84bff1497213fb92f\", \"before\": {\"state\": \"COMPLETED\", \"releaseHash\": \"ed32d284a39541e6ed70be50f0f4c9a15fb5add326eb38c84bff1497213fb92f\", \"reservations\": [{\"reservationId\": \"man-a:d4bfb32b-70f9-400f-8117-43adc3509040:75682b21-dbec-4bd7-baff-67fc0909c9be:2\", \"lotId\": \"75682b21-dbec-4bd7-baff-67fc0909c9be\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"75682b21-dbec-4bd7-baff-67fc0909c9be\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"e4187428fc29911ef339ea3626e8b9d40bb37bd89c636f804f33569f4d3505a4\", \"journalSequence\": 179, \"journalOk\": true}, \"after\": {\"state\": \"COMPLETED\", \"releaseHash\": \"ed32d284a39541e6ed70be50f0f4c9a15fb5add326eb38c84bff1497213fb92f\", \"reservations\": [{\"reservationId\": \"man-a:d4bfb32b-70f9-400f-8117-43adc3509040:75682b21-dbec-4bd7-baff-67fc0909c9be:2\", \"lotId\": \"75682b21-dbec-4bd7-baff-67fc0909c9be\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"75682b21-dbec-4bd7-baff-67fc0909c9be\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"e4187428fc29911ef339ea3626e8b9d40bb37bd89c636f804f33569f4d3505a4\", \"journalSequence\": 179, \"journalOk\": true}, \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"liveMachineControl\": false, \"ok\": true}"
+      "evidence": "{\"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"releaseHashAfter\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"before\": {\"state\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"reservations\": [{\"reservationId\": \"man-a:6d8c3955-37b6-4777-89cc-151c48ed1c5d:34dd09c3-8fae-4fa0-b126-89c7c93f8c48:2\", \"lotId\": \"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"journalSequence\": 180, \"journalOk\": true}, \"after\": {\"state\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"reservations\": [{\"reservationId\": \"man-a:6d8c3955-37b6-4777-89cc-151c48ed1c5d:34dd09c3-8fae-4fa0-b126-89c7c93f8c48:2\", \"lotId\": \"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"journalSequence\": 180, \"journalOk\": true}, \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"liveMachineControl\": false, \"ok\": true}"
     },
     {
       "check": "journal after restore",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "restored-root health",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"ok\": true, \"status\": \"REAL\", \"label\": \"REAL\", \"count\": 180, \"headHash\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"sequence\": 180}"
+    },
+    {
+      "check": "tenant leakage absent",
+      "status": "REAL_LOGIC",
+      "evidence": "{}"
+    },
+    {
+      "check": "tenant required state preserved",
+      "status": "REAL_LOGIC",
+      "evidence": "[]"
+    },
+    {
+      "check": "snapshot path-set bound",
       "status": "REAL_LOGIC",
       "evidence": "True"
     },
@@ -155,7 +179,7 @@
     {
       "check": "evidenceCodeCommit",
       "status": "REAL_LOGIC",
-      "evidence": "ff285a2f9ef82500b0c0f01caacd18bc1186113f"
+      "evidence": "1fc86cff1101c8a8e66df59950a8accc7f527d76"
     },
     {
       "check": "workingTreeClean",
