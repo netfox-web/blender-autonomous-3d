@@ -1,170 +1,138 @@
-# Grok 修正指令：Phase 601–660 Final Integrity Corrections
+# Grok 修正指令：Phase 601–660 Final Integrity — Reservation Intent + Canonical Lineage
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main/docs head: `594a1c11b244320e03bdf090996a74381a9f87c0`  
-> Reviewed CODE_EVIDENCE_SHA: `244c707b67dffff0bdd3824fc5f46a5e16dadde0`  
+> Reviewed main/docs head: `da48e19f0fa631b4389fb757327c3f6b489a3bc0`  
+> Reviewed CODE_EVIDENCE_SHA: `0b9caedd008b4d1f924cdcad529d87a4ac59154c`  
 > ChatGPT review result: **CHANGES REQUIRED**  
-> **Do not start Phase 661+. Fix Phase 601–660 only.**
+> **Do not start Phase 661+. Fix only the remaining Phase 601–660 integrity gaps below.**
 
 ## Accepted evidence — preserve it
 
-This round is substantive and most of `d6d9458` is now correctly implemented. Correct in place; do not rewrite architecture.
+This round is substantive and the three blockers from `df5c29e` are materially improved. Correct in place; do not rewrite architecture.
 
-- `consume_material_once(... consumes_inventory=true)` now delegates to the existing `MaterialLot` reservation/consume path and persists lot/reservation lineage.
-- fixture-only prototype material remains `consumesInventory=false` / `FIXTURE`.
-- as-built now requires completed build, structured tolerance/QC, authoritative DAM ownership/hash/size, and fixture evidence cannot set `physicalPrototypeValidated=true`.
-- actual cost now separates physical quantities/time from currency amounts; required monetary categories can remain `PARTIAL` and minutes/counts are not summed into money.
-- packaging requires explicit carton dimensions/packed weight, computes volumetric weight, count checks and damage/fit observations.
-- ECO now accepts explicit allowed parametric changes and rebuilds through the existing KD / `CabinetSpec` path, with old→new lineage.
-- decision board / manual-pilot gate are materially stronger and keep MOCK demand from upgrading readiness.
-- prior REAL Blender evidence is now verified fail-closed from the prior canonical portfolio truth set: 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, prior CODE `7a87ea5...`.
-- local `pytest -q` is reported as **356 passed**, explicitly MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready.
-- GitHub Actions CODE run `34365524103` is GREEN on Ubuntu + Windows for exact CODE `244c707...`.
-- GitHub Actions docs/head run `34366046118` is GREEN on Ubuntu + Windows for `594a1c1...`.
-- current canonical generation: `2934a4aa-6d6c-4d2c-a1fe-35863475f8e5`, clean-tree bound to CODE `244c707...`.
-- keep Vision / AI Video / Demand = **MOCK**; OS sandbox / AR / preflight / barcode / McKee-BCT = **PARTIAL**; LIVE_CNC / LIVE_LASER / PLC / live provider / live factory = **BLOCKED**.
-- keep `physicalPrototypeValidated=false` for fixture acceptance; keep `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`, `liveMachineControl=false`.
+- Packaging predicted-vs-observed carton L/W/H, packed weight and assembly-time tolerance now participate in `ok`; failures place the unit on HOLD and `packagingPolicyHash` is persisted.
+- The canonical validator now requires `toleranceStatus=true`, QC complete, required packaging `COMPLETE`, `packagingValidation.ok=true`, and rejects required per-field packaging variance contradictions that are present.
+- Prototype inventory now pins reservation lineage and can recover after a crash **after the first consume**; same-process `CrashInjected` and real subprocess `os._exit` regressions recreate `Platform`, resume the pinned reservations and keep final consumed quantity idempotent.
+- `pytest -q`: **366 passed**, explicitly MOCK/unit/integration + FIXTURE/REAL_LOGIC — **not Production Ready**.
+- GitHub Actions CODE run `34372952091` is GREEN on Ubuntu + Windows for exact CODE `0b9caed...`.
+- GitHub Actions docs/head run `34373383049` is GREEN on Ubuntu + Windows for exact docs head `da48e19...`.
+- Canonical generation `0d6fc75a-9337-4144-8227-e9a49f0abaa7` is clean-tree bound to CODE `0b9caed...`; current committed 4/4 FIXTURE rows are internally green and keep `physicalPrototypeValidated=false`.
+- Prior REAL Blender evidence remains verified 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, on CODE `7a87ea5...`; render/media/engineering path was not changed this round.
+- Keep Demand / Vision / AI Video = **MOCK**; OS sandbox / AR / preflight / barcode / McKee-BCT = **PARTIAL**; supplier/carrier/FX/receipts as IMPORTED/MANUAL/CONFIG where already modeled; LIVE_CNC / LIVE_LASER / PLC / live provider / live factory = **BLOCKED**.
+- Keep `physicalPrototypeValidated=false` for fixture acceptance and keep `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `liveMachineControl=false`.
 
-Do **not** replace Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / KD registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture. Extend/reuse the existing transaction, outbox/journal, inventory and acceptance mechanisms only.
+Do **not** replace Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / KD registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture. Reuse the existing transaction, outbox/journal, inventory, backup and acceptance mechanisms.
 
 ---
 
-## BLOCKER 1 — Packaging tolerance is computed but not enforced
+## BLOCKER 1 — Crash window still exists between durable reservation and durable Prototype inventory intent
 
-The current `packaging_checklist()` computes per-field `variance` / `evaluate_tolerance()` for carton L/W/H and packed weight, and also computes `assemblyObservedVsEstimated`, but those failures are not added to `reasons`. `ok` is currently based only on oversize/overweight, count mismatch, missing observations, damage, missing parts and packing-fit.
+The new recovery correctly handles a crash after one reservation has already been consumed, but `consume_material_once()` still performs `reserve_sheets()` / `allocate_requirement()` **before** the new Prototype `inventoryIntent` is persisted. MaterialLot reservation is itself durable. A process death after successful reservation allocation but before `self.persist()` of the Prototype intent can therefore leave durable RESERVED stock with no persisted Prototype intent. On restart `_find_intent()` can see no intent and `allocate_requirement()` can reserve replacement stock, especially for a multi-lot allocation.
 
-This is already visible in the committed canonical evidence: a selected SKU has `packagingPredictedVsObserved.packedWeightKg.ok=false` (target about 20.672kg, actual 13kg) while the same row says `packagingValidation.ok=true` / `reason="ok"`. That is contradictory and fail-open.
-
-### Required correction
-
-1. Packaging `ok=true` must require every required predicted-vs-observed packaging tolerance that is part of the pinned policy to pass.
-2. Explicitly gate:
-   - cartonLengthMm tolerance;
-   - cartonWidthMm tolerance;
-   - cartonHeightMm tolerance;
-   - packedWeightKg tolerance;
-   - assembly observed-vs-estimated tolerance when assembly is required by this acceptance contract.
-3. Any configured tolerance failure must set an explicit blocker/reason and move the unit/SKU to HOLD or NEEDS_ECO according to the existing state model. Do not silently downgrade it to merely informational variance.
-4. Keep oversize/overweight, hardware/part counts, damage, missing-part and packing-fit checks; do not weaken them.
-5. Persist a single deterministic `packagingPolicyHash` / tolerance-policy lineage so the board can prove which policy made the decision.
-6. Do not fabricate carrier/provider truth. Carrier remains CONFIG_ESTIMATE / IMPORTED / MANUAL.
-
-### Required regressions
-
-- each individual carton dimension out of tolerance => packaging `ok=false`;
-- packed weight out of tolerance but under max 30kg => `ok=false`;
-- assembly time out of tolerance => packaging/readiness blocker where policy requires it;
-- exact in-tolerance fixture values => packaging software-loop PASS while physical prototype still remains false;
-- canonical evidence must never contain `packagingValidation.ok=true` while a required packaging variance row has `ok=false`.
-
----
-
-## BLOCKER 2 — Canonical runner still accepts false tolerance / missing-or-partial packaging semantics
-
-`validate_prototype_acceptance_result()` currently checks that `toleranceStatus` exists, not that the required fixture contract passes. It also accepts `packagingCompleteness` values `MISSING` / `PARTIAL` as structurally valid. The runner therefore published `ok=true` even though the committed 4 selected matrix rows have `toleranceStatus=false`.
-
-The previous instruction explicitly required negative regressions for **tolerance contract false** and **missing required packaging evidence**. The current runner tests only reject an invalid packaging string such as `"nope"`; they do not prove that `MISSING` / `PARTIAL` or `toleranceStatus=false` fail the successful software-loop acceptance.
+This is an orphan-reservation / double-reservation crash window. Fix it without creating a second inventory ledger.
 
 ### Required correction
 
-1. Separate **schema validity** from **acceptance semantics**. Presence of a key is not a PASS.
-2. For a canonical Phase 601–660 software-loop PASS:
-   - exactly 4 selected + 4 units + 4 matrix rows;
-   - `buildCompleted=true` for all 4;
-   - required tolerance/QC structure present and semantically valid;
-   - for the fixture software-loop success path, use deterministic in-tolerance fixture observations so `toleranceStatus=true` for all 4;
-   - required packaging must be `COMPLETE` and `packagingValidation.ok=true` for all 4;
-   - packaging per-field required variance cannot contradict packaging overall status;
-   - fixture actual-cost may remain explicitly `PARTIAL` if the contract intentionally demonstrates `WAITING_PHYSICAL_EVIDENCE`, but that state/blocker must be consistent and cannot become pilot approval;
-   - `physicalPrototypeValidated=false` remains mandatory for fixture evidence;
-   - `liveMachineControl=false`, MOCK demand, and global/full/live Production Ready flags remain false.
-3. Fail closed if board/matrix semantic values contradict each other (e.g. matrix tolerance false but board state not blocked; packaging overall true while required variance false).
-4. Do not make `result.ok` authoritative; recompute acceptance from canonical evidence, as intended.
-5. A failed rerun must not overwrite the last valid canonical truth set; preserve atomic publication/rollback.
-
-### Required negative runner tests
-
-Add one independent regression for each:
-
-- `toleranceStatus=false` => non-zero, no overwrite;
-- missing tolerance result => non-zero;
-- `packagingCompleteness=MISSING` => non-zero;
-- `packagingCompleteness=PARTIAL` on a required package => non-zero;
-- `packagingValidation.ok=false` => non-zero;
-- packaging overall true + any required per-field variance `ok=false` => non-zero;
-- missing QC required observation => non-zero;
-- stale lineage => non-zero;
-- fixture physical flag true => non-zero;
-- tenant restore mismatch => non-zero.
-
-After correction, regenerate the canonical acceptance; do not hand-edit the JSON to make it green.
-
----
-
-## BLOCKER 3 — Real inventory consume still has a crash window between lot consumption and PrototypeUnit lineage persistence
-
-The normal retry test is now much better, but the crash/restart guarantee is not complete. `consume_material_once()` first obtains one or more durable reservations, then calls `consume_reservation()` for each reservation, and only after the loop persists `materialConsumed=true` + `inventoryLineage` on the PrototypeUnit.
-
-If the process dies after one durable `consume_reservation()` but before PrototypeUnit lineage is persisted, stock can be partially/fully consumed while the prototype record still looks unconsumed. A restart may allocate/consume additional stock. Ordinary same-process retry does not prove this failure mode.
-
-### Required correction
-
-Reuse the existing MaterialLot transaction/outbox/journal/recovery model; **do not create a second inventory ledger**.
-
-1. Before destructive consume, durably pin a prototype inventory intent containing exact workOrderId, requirement, reservation IDs/lot IDs/quantities and an operation/idempotency key.
-2. Consumption and recovery must be reconcilable from the existing durable reservation states / journal/outbox.
-3. On restart, if some/all pinned reservations are already `CONSUMED`, reconcile those exact records into PrototypeUnit lineage; never allocate replacement stock for already-consumed quantity.
-4. If only part of a multi-lot reservation set was consumed before crash, resume/reconcile the remaining pinned reservation set exactly once.
-5. Final PrototypeUnit lineage must match the actual durable consumed reservation states and total quantity.
-6. If safe reconciliation cannot be proven, fail closed / HOLD; never guess and never double-consume.
+1. Make the prototype inventory operation recoverable **before any new reservation side effect can be duplicated**. Use the existing deterministic workOrder/op key, MaterialLot reservation state, transaction/outbox/journal and Prototype persistence.
+2. A restart/retry must first reconcile existing compatible `RESERVED` or `CONSUMED` MaterialLot reservations belonging to the exact tenant + prototype operation/workOrder before allocating any replacement stock.
+3. If you choose a PREPARED intent state, persist enough deterministic operation identity first and then bind the exact reservation IDs/lot IDs/quantities after allocation. If atomic cross-file commit is not possible, recovery must deterministically reconstruct the reservation set from MaterialLot state/journal and bind it to the intent.
+4. Never silently create a second reservation for quantity already reserved or consumed by the same prototype operation.
+5. If multiple prior reservation sets are ambiguous, incompatible with required material/thickness/grain/size, or cannot be proven to belong to this operation, fail closed / HOLD. Do not guess.
+6. Keep final lineage based on authoritative MaterialLot reservation states; no boolean-only proof.
+7. Tenant backup/restore semantic digest must continue to include the new inventory intent state.
 
 ### Required crash regressions
 
-Use a real subprocess / `os._exit` style test (or the existing crash injection mechanism) against durable files:
+Add durable subprocess tests for both single-lot and multi-lot paths:
 
-- crash immediately after first reservation consumption in a multi-lot requirement;
-- recreate `Platform` and retry the same prototype operation;
-- final total consumed increment equals required quantity exactly once;
-- exact reservation/lot lineage is preserved;
-- no new replacement reservation is created for already-consumed quantity;
-- journal/outbox/health are consistent after recovery;
-- repeat retry after recovery remains idempotent.
+- inject `os._exit` immediately after successful reservation/allocation but before the final Prototype reservation-binding persistence;
+- recreate `Platform` and retry the exact same prototype consume operation;
+- no extra reserved quantity and no orphan reservation remains;
+- no replacement reservation is created for quantity already reserved/consumed;
+- exact workOrder/op key and reservation/lot lineage are preserved;
+- final `available + reserved + consumed == sheetCount` for every affected lot;
+- final consumed increment equals the required quantity exactly once;
+- journal/outbox health is consistent;
+- another retry after recovery is idempotent.
 
-This should extend the existing crash-safe inventory pattern, not introduce new architecture.
+Do not remove the existing **after-first-consume** crash regressions; both crash windows must be covered.
 
 ---
 
-## Acceptance / truth labels for this correction round
+## BLOCKER 2 — Packaging canonical validator is still fail-open for missing required variance fields and assembly variance
 
-A correct result may be **ACCEPT WITH SCOPE** even without a real physical prototype. The software workflow can be accepted as `FIXTURE / REAL_LOGIC` only if its internal contract is fully self-consistent and fail-closed.
+`_packaging_variance_contradicts()` currently rejects a packaging field only when the field exists as a dict and explicitly has `ok=false`. A missing/malformed required field is not a contradiction. It also checks only carton L/W/H + packed weight and does not validate the required `assemblyObservedVsEstimated` contract even though the pinned packaging policy includes assembly tolerance.
 
-Keep these boundaries:
+The generated canonical evidence is currently self-consistent, but the verifier must also reject incomplete/tampered evidence rather than only validate this happy-path generation.
 
-| Slice | Required truth |
-|---|---|
-| Prototype orchestration / ECO / validation logic | REAL_LOGIC |
-| CI prototype measurements / packaging / cost | FIXTURE (cost may be PARTIAL) |
-| Physical prototype built and measured | false / WAITING_PHYSICAL_EVIDENCE unless genuinely manual/imported evidence exists |
-| Prior Blender portfolio media | REAL only via verified prior canonical 4/4 T1000 OptiX evidence |
-| Demand / Vision / AI Video | MOCK |
-| OS sandbox / AR / preflight / barcode / McKee-BCT | PARTIAL |
-| Supplier/carrier/FX/receipts where applicable | IMPORTED / MANUAL / CONFIG as already modeled |
-| LIVE_CNC / LIVE_LASER / PLC / live provider | BLOCKED |
-| global/full/live Production Ready | false |
+### Required correction
+
+For `packagingCompleteness=COMPLETE` + `packagingValidation.ok=true`, require fail-closed proof of the pinned policy:
+
+1. `cartonLengthMm`, `cartonWidthMm`, `cartonHeightMm`, `packedWeightKg` must each exist, be dicts, be `complete=true`, and be `ok=true`.
+2. Required assembly observed-vs-estimated evidence must exist, be `complete=true`, and be `ok=true` under the same acceptance policy.
+3. Missing, malformed, `complete=false`, null, or `ok!=true` is failure; presence is not PASS.
+4. Validate deterministic `packagingPolicyHash` lineage between the checklist/readiness board/matrix/canonical evidence wherever that hash is exposed. A stale or contradictory policy hash must fail closed.
+5. Keep oversize, overweight, hardware/part-count, damage, missing-part and packing-fit rules unchanged.
+
+### Required negative runner regressions
+
+- remove each required packaging variance field one at a time => non-zero + no overwrite;
+- required variance item malformed / `complete=false` / missing `ok` => non-zero;
+- assembly variance missing => non-zero;
+- assembly variance `complete=false` => non-zero;
+- assembly variance `ok=false` while overall packaging says true => non-zero;
+- packaging policy hash mismatch/stale => non-zero.
+
+---
+
+## BLOCKER 3 — Canonical success needs exact one-to-one selected → unit → matrix → board lineage
+
+The validator currently verifies counts and many row fields, but it does not prove that the four selected SKUs, four PrototypeUnits, four matrix rows and corresponding decision-board rows are the **same four objects with the same lineage**. It also allows a unit with `buildCompleted != true` when its state is `WAITING_VALIDATION` / `VALIDATED` / `HOLD`, while the matrix can independently say `buildCompleted=true`.
+
+The board is checked using the first four rows rather than by the exact selected candidate IDs. A shuffled, duplicated or unrelated board slice can therefore satisfy structural checks.
+
+### Required correction
+
+1. Build a canonical target map keyed by selected `candidateId` (and `selectionId`/`prototypeUnitId` where applicable). Reject duplicates.
+2. For each of exactly four selected prototype targets, require exact one-to-one agreement across selected/unit/matrix/board for all applicable lineage:
+   - `candidateId`;
+   - `selectionId`;
+   - `prototypeUnitId`;
+   - `engineeringHash`;
+   - `canonicalHash`;
+   - `bomHash`;
+   - `nestingHash`;
+   - `rankingPolicyHash`;
+   - evidence source / physical-validation state where applicable.
+3. Do not infer `buildCompleted` from state. The authoritative unit must have `buildCompleted=true`, and matrix `buildCompleted` must exactly match it.
+4. Validate the decision-board row by selected `candidateId`, not `rows[:4]`. If the board remains Top-10, that is fine, but all four selected candidates must have exactly one corresponding row.
+5. The selected board row must not contradict matrix tolerance/QC/packaging/physical/evidence state.
+6. Missing target, duplicate target, stale engineering lineage or cross-object mismatch => fail closed and do not overwrite the prior canonical truth set.
+
+### Required negative runner regressions
+
+- unit `buildCompleted=false` + state `WAITING_VALIDATION`, while matrix says true => non-zero;
+- selected candidateId differs from matrix candidateId => non-zero;
+- unit/matrix engineeringHash mismatch => non-zero;
+- BOM/nesting/ranking lineage mismatch => non-zero;
+- duplicate selected candidate or duplicate board candidate => non-zero;
+- a selected candidate absent from decision board => non-zero;
+- board tolerance/QC/packaging/physical state contradicts that candidate's matrix row => non-zero.
 
 ---
 
 ## Required delivery before re-review
 
-1. Fix **only** the three Phase 601–660 integrity blockers above. Do not start Phase 661+.
-2. Add all positive + negative regressions listed above, including durable crash/restart inventory recovery.
-3. Run full `pytest -q`; report honestly as MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready.
-4. Commit implementation/tests as a new **CODE_EVIDENCE_SHA**.
-5. Require GitHub Actions Ubuntu + Windows GREEN on that exact CODE SHA.
-6. Run the acceptance runner on a clean tree bound to exact CODE SHA.
-7. Regenerate `PROTOTYPE_VALIDATION_ACCEPTANCE` and `SKU_LAUNCH_READINESS_ACCEPTANCE` from the runner; canonical 4/4 fixture software-loop rows must be semantically consistent.
-8. Prior REAL Blender 4/4 on `7a87ea5...` may continue to be reused only if the existing fail-closed verifier still passes and the render/engineering/media path remains unchanged. If that path changes, run fresh REAL Blender evidence instead.
-9. Commit docs/evidence separately, then require Ubuntu + Windows GREEN on docs/head.
-10. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`; update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet truth actually changed.
-11. Leave Issue #1 a concise completion comment containing CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, inventory crash-recovery result, fixture tolerance/packaging result, prior/fresh REAL Blender status, and remaining MOCK/PARTIAL/BLOCKED boundaries.
-12. Stop and wait for ChatGPT review. **Do not enter Phase 661+ until ACCEPT WITH SCOPE.**
+1. Fix **only** the three integrity gaps above. **Do not start Phase 661+.**
+2. Preserve all accepted logic and all prior regressions; add the new fail-closed/crash tests above.
+3. Run full `pytest -q`; label it honestly as MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready.
+4. Commit implementation/tests as a new **CODE_EVIDENCE_SHA** and require GitHub Actions Ubuntu + Windows GREEN on that exact SHA.
+5. Run the acceptance runner on a clean tree bound to exact CODE SHA; regenerate canonical `PROTOTYPE_VALIDATION_ACCEPTANCE` + `SKU_LAUNCH_READINESS_ACCEPTANCE` from code, never by hand-editing JSON.
+6. Canonical fixture software-loop may remain `FIXTURE / REAL_LOGIC`, cost may remain explicitly PARTIAL, and `physicalPrototypeValidated=false` is correct until genuine physical MANUAL/IMPORTED evidence exists.
+7. Prior REAL Blender 4/4 on `7a87ea5...` may be reused only if the existing fail-closed verifier still passes and render/engineering/media path remains unchanged. If that path changes, generate fresh REAL Blender evidence.
+8. Re-run tenant backup/restore semantic validation with inventory intents included.
+9. Commit docs/evidence separately and require Ubuntu + Windows GREEN on docs/head.
+10. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`; update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet truth actually changes.
+11. Leave Issue #1 a concise completion comment with CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, pre-intent + post-consume crash recovery results, exact canonical lineage results, prior/fresh REAL Blender status, and remaining MOCK/PARTIAL/BLOCKED boundaries.
+12. Stop for ChatGPT review. Do not enter Phase 661+ until **ACCEPT WITH SCOPE**.
