@@ -1,346 +1,231 @@
-# Grok 開發指令：Phase 541–600 Small-Space KD SKU Portfolio Factory V1
+# Grok 修正指令：Phase 541–600 Portfolio Integrity Gate
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main/docs head: `90f7d592243922f3a8dd6c9f70a641efb06d66ca`  
-> Accepted CODE_EVIDENCE_SHA: `11c79d12d06c4c6f355fd0d2dc8058f0fef2f825`  
-> ChatGPT review result: **ACCEPT WITH SCOPE**  
-> Phase 481–540 exit gate is accepted. Start **Phase 541–600** only. Do not rewrite existing architecture.
+> Reviewed main/docs head: `936025191d7723dcec96b1d2b6e0ba30de8c863c`  
+> Reviewed CODE_EVIDENCE_SHA: `655ea994bdd7e5505324b10ea02f0166abefb08e`  
+> ChatGPT review result: **CHANGES REQUIRED**  
+> **Do not start Phase 601+. Do not rewrite existing architecture. Fix Phase 541–600 gaps only.**
 
-## Accepted baseline
+## What is accepted in this round
 
-The `142d062` correction is accepted within its declared scope:
+The following work is substantive and may be preserved:
 
-- malformed TENANT_SCOPED shared collections now fail closed instead of being silently copied/coerced;
-- `idem`, `releases.packets`, MIXED_SPEC and TENANT_DERIVED malformed container cases are covered by negative regressions;
-- `tenant_state_digest()` binds exact tenant-A identity/lineage/state rather than counts only;
-- same-count record replacement, releaseHash / WorkOrder / pallet parent / idempotency target mutation, DAM byte mutation and journal event-ID mutation fail semantic preservation;
-- normal tenant-A restore reports `tenantStateDigest.equal=true`, `identityMismatch=[]`, `tenantLeakageAbsent=true`;
-- acceptance generation: `2d0cc206-ed80-4c32-a82f-491ae8842220`;
-- restored-root journal health is healthy and backup snapshot path-set remains hash-bound;
-- GitHub Actions CODE run `34342453890` on `11c79d1`: Ubuntu + Windows **GREEN**;
-- GitHub Actions docs/head run `34342811475` on `90f7d59`: Ubuntu + Windows **GREEN**;
-- test suite: **244 passed** under `FOX3D_MOCK_BLENDER=1`; this is MOCK/unit/integration + REAL_LOGIC regression evidence, **not Production Ready**;
-- ManufacturingRelease / Blender render path did not change, so prior accepted REAL Blender evidence `018cc70` (4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`) remains a valid referenced baseline for that unchanged path.
+- 28 candidates across 8 KD kinds; invalid candidates retained and Top 10 excludes invalid rows.
+- Candidate/DFM/ranking are correctly scoped as `REAL_LOGIC`, not global Production Ready.
+- Commercial values remain `CONFIG_ESTIMATE`; Demand remains `MOCK`.
+- Tenant portfolio state is included in TENANT_SCOPED backup and current semantic restore digest reports equal.
+- Human prototype state remains separate from live machine execution.
+- GitHub Actions run `34346220584` on CODE `655ea99` is GREEN on Ubuntu + Windows.
+- Docs/head run `34346553169` on `9360251` is GREEN on Ubuntu + Windows.
+- Local `pytest -q` is reported as 257 passed, explicitly MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready.
+- LIVE_CNC / LIVE_LASER / live factory / live provider remain BLOCKED; global/full/live readiness flags remain false.
 
-Truth boundaries remain mandatory:
-
-- Vision / AI Video / Demand = **MOCK** unless an actual provider is independently proven;
-- OS sandbox / AR / print preflight / barcode hardware / McKee-BCT = **PARTIAL / ENGINEERING_ESTIMATE**;
-- supplier / carrier / FX / receipts = **IMPORTED / MANUAL** unless independently proven live;
-- LIVE_CNC / LIVE_LASER / PLC / autonomous machine actuation = **BLOCKED**;
-- `liveMachineControl=false`;
-- `liveFactoryExecutionReady=false`;
-- `liveProviderReady=false`;
-- `globalProductionReady=false`;
-- `fullAutonomousFactoryReady=false`;
-- unscoped `productionReady=true` is forbidden.
+However, the current acceptance is still fail-open in several Phase 541–600 requirements. Fix the items below before any Phase 601+ work.
 
 ---
 
-# Phase objective
+# Blocker 1 — Manufacturing envelope validation must be fully fail-closed
 
-Use the existing Physical Product OS / KD / ManufacturingRelease / WorkOrder / nesting / remnant / costing / Blender / Manual Factory Pilot capabilities to build a **Small-Space KD SKU Portfolio Factory V1**.
+Current `PortfolioFactory.create_intent()` validates `maxWidthMm`, but other manufacturing-critical envelope fields can still be zero, negative, malformed, NaN/Infinity, missing via override, or otherwise invalid without an equivalent fail-closed gate.
 
-The goal is not to invent another product engine. The goal is to let the existing engine evaluate a batch of student / rental / small-space KD product candidates and produce a traceable shortlist for human prototype approval based on manufacturability, material yield, remnant reuse, carton/logistics constraints, assembly effort and clearly-labeled commercial assumptions.
+Required fix:
 
-Do **not** add live marketplace demand claims, automatic purchasing, automatic supplier ordering, automatic CNC execution, or autonomous factory control.
+1. Validate every manufacturing-authoritative envelope field before persisting the intent:
+   - `maxWidthMm`
+   - `maxDepthMm`
+   - `maxHeightMm`
+   - `maxLongestCartonMm`
+   - `maxPackedWeightKg`
+   - `maxAssemblyMinutes`
+   - `thicknessMm`
+2. Numeric fields must be finite, numeric, and `> 0`.
+3. `thicknessMm` must be a non-empty finite positive list and must pass the existing material/thickness policy; do not silently coerce an invalid list to the default.
+4. Invalid/missing explicitly supplied constraints must return `NEEDS_INPUT`/BLOCKED and must not create a valid PortfolioIntent.
+5. Keep safe configured defaults only when the caller did not explicitly provide an invalid value. Never let `0`, negative, NaN, Infinity, non-numeric, empty list, or `None` become an accepted manufacturing envelope.
 
-Do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture. Extend/reuse them.
+Required regressions:
 
----
-
-# Phase 541–546 — Portfolio Intent & Opportunity Spec
-
-Create a versioned `PortfolioIntent` / equivalent domain object for batch product exploration.
-
-Minimum fields:
-
-- `tenantId`
-- `portfolioId`
-- target segment (`STUDENT`, `RENTAL_SMALL_SPACE`, `ENTRY_STORAGE`, etc.)
-- allowed existing product families/types
-- dimension envelope / footprint limits
-- target material catalog / thickness constraints
-- max carton constraints
-- target assembly difficulty / time range
-- target landed-cost / margin scenario ranges
-- candidate count target
-- explicit data-source labels for every commercial signal
-
-Rules:
-
-1. LLM/NL may propose intent, names and non-authoritative preferences only.
-2. LLM may **not** directly set manufacturing-authoritative mm, BOM, material quantity, releaseHash or machine parameters without validation through existing engineering rules.
-3. Demand source must be one of `MOCK`, `IMPORTED`, `MANUAL`, `UNAVAILABLE`, or a separately proven provider label. Never call MOCK demand REAL.
-4. Bad/missing manufacturing constraints fail closed or enter `NEEDS_INPUT`; never silently substitute unsafe values.
-5. Tenant boundary is authoritative.
+- parameterized negative tests for every field above: `0`, negative, `None`, non-numeric and non-finite where applicable;
+- empty / malformed thickness list;
+- assert no valid persisted intent is produced from malformed manufacturing constraints.
 
 ---
 
-# Phase 547–552 — Deterministic Candidate Generator
+# Blocker 2 — DFM area conservation currently trusts a possibly-missing derived error
 
-Generate a portfolio of valid parametric SKU candidates using the **existing product registry and parametric engine**.
+Current `_scorecard()` effectively does:
 
-Requirements:
+`err = float(nest.get("areaConservationError") or 0)`
 
-- deterministic candidate generation for the same normalized intent + seed/config;
-- candidate canonical hash / engineering hash;
-- no duplicate canonical geometry/BOM candidate in one portfolio;
-- invalid engineering variants are retained as rejected evidence with rule codes, not silently discarded;
-- candidate states at minimum: `CANDIDATE`, `REJECTED_DFM`, `NEEDS_INPUT`, `SHORTLISTED`, `WAITING_PRODUCT_APPROVAL`, `APPROVED_FOR_PROTOTYPE`;
-- no candidate can become a ManufacturingRelease merely because it ranked highly.
+and then `conservation = err < 2`.
 
-Acceptance fixture target: **at least 24 candidates across at least 6 existing KD / flat-pack product types**, with both valid and intentionally-invalid variants.
+That means a missing/None `areaConservationError` can become zero and PASS. This violates the required fail-closed invariant.
 
----
+Required fix:
 
-# Phase 553–558 — Batch DFM Scorecard
+1. Do not use missing `areaConservationError` as zero.
+2. Independently recompute material conservation from authoritative nesting fields:
 
-For every candidate run existing authoritative paths and produce a machine-readable DFM scorecard:
+   `inputSheetArea ≈ placedArea + reusableRemnantArea + trueScrapArea`
 
-- engineering-rule result and rejection codes;
-- BOM and BOM hash;
-- sheet/material requirement;
-- single-SKU nesting;
-- reusable remnant vs true scrap;
-- material utilization / waste conservation;
-- hardware count;
-- carton plan, weight/volume and oversize gate;
-- assembly operation count / configured assembly effort;
-- any required QC plan hash;
-- lineage back to candidate hash.
+3. Require all source fields used in that equation to exist, be finite, and be non-negative.
+4. Bind `inputSheetArea` to actual sheet dimensions × sheet count. Do not accept a contradictory precomputed total.
+5. If panel BOM is non-empty, zero/missing sheet count or missing placed/remnant/scrap fields must fail DFM.
+6. Store the recomputed error and tolerance in the DFM scorecard so acceptance does not rely only on a boolean.
+7. Ranking, prototype readiness, and Phase 541–600 acceptance must all use this fail-closed recomputed result.
 
-No new fake DFM engine. Reuse the existing rules/BOM/nesting/packing logic.
+Required regressions:
 
-Required invariants:
-
-- `inputSheetArea = placedArea + reusableRemnantArea + trueScrapArea` within tolerance;
-- no part appears twice or disappears;
-- no rejected/oversize/engineering-invalid candidate may receive an APPROVED status;
-- all estimates have an explicit truth/source label.
+- remove `areaConservationError` while other data is malformed: must not PASS;
+- remove/None/tamper `partUsedArea` / `reusableRemnantArea` / `trueScrapArea` / `sheetCount` / `sheetMm`: must fail or reject the candidate;
+- create an arithmetic mismatch larger than tolerance: candidate cannot enter Top 10 or prototype readiness;
+- valid known nesting still passes with conservation error within tolerance.
 
 ---
 
-# Phase 559–564 — Cross-SKU Material Synergy & Remnant Planning
+# Blocker 3 — Remnant-first planning must enforce material compatibility, not thickness only
 
-Add a portfolio planning mode on top of the existing batch/cross-SKU nesting and remnant system.
+Current portfolio planning filters available remnants by tenant and thickness, then passes a planning remnant list that does not preserve/enforce the remnant material identity. A same-thickness remnant of the wrong material can therefore be considered by the planning nester.
 
-It must compare at least:
+Required fix:
 
-1. independent single-SKU production;
-2. batch same-SKU production;
-3. cross-SKU portfolio batch;
-4. remnant-first portfolio batch where compatible inventory exists.
+1. Preserve and validate remnant lineage fields needed by the existing material policy, including at least:
+   - `remnantId`
+   - tenant
+   - material / material SKU
+   - thickness
+   - dimensions
+   - grain/orientation where the existing nesting/remnant model supports it
+   - source run / source lineage
+2. A remnant may enter a candidate planning pool only if it is compatible with the BOM/material requirement. Same thickness alone is insufficient.
+3. For mixed-material cross-SKU portfolios, partition planning by compatible material/thickness/grain group rather than allowing the final loop value to define one global material.
+4. Distinguish `candidateRemnantIds` (eligible pool) from `usedRemnantIds` (actually placed/allocated by the planning result), or an equivalent exact lineage model.
+5. `noDoubleAllocation` / remnant double-use must be proven against actual planned placements, not merely against the list of available remnant IDs.
+6. This remains PLANNING only and must not consume/reserve live inventory.
 
-Expose:
+Required regressions:
 
-- sheet count delta;
-- true-scrap area delta;
-- reusable-remnant created/consumed;
-- material compatibility constraints (SKU/thickness/size/grain);
-- candidate-to-sheet lineage;
-- candidate-to-remnant lineage;
-- normalized material-saving metric.
-
-This is **PLANNING only**. Portfolio evaluation must not silently consume live inventory. Any reservation/consumption must go through existing inventory/WorkOrder semantics and human-approved execution paths.
-
-Required regression: cross-SKU planning must never double-allocate one remnant or exceed available stock.
-
----
-
-# Phase 565–570 — Commercial Scenario Engine
-
-Build a scenario layer using the existing cost engine; do not pretend estimates are live supplier/customer prices.
-
-Per candidate expose:
-
-- material cost;
-- hardware cost;
-- processing/config estimate;
-- packaging estimate;
-- shipping/imported/manual quote where available;
-- labor/config or manual estimate;
-- remnant credit;
-- scrap cost;
-- landed cost;
-- configurable selling-price scenario;
-- gross-margin amount / rate;
-- source/truth label per component;
-- cost snapshot/version hash.
-
-Rules:
-
-- `CONFIG_ESTIMATE`, `IMPORTED`, `MANUAL`, `MOCK`, `LIVE_PROVIDER` must remain distinct;
-- missing supplier/carrier data may not be filled with invented REAL values;
-- stale price/cost snapshot after engineering hash/release quantity change must be detected;
-- ranking may use configured target margin, but may not claim real market willingness-to-pay without real evidence.
+- same tenant, same thickness, wrong material remnant: must not be used;
+- right material but incompatible thickness: must not be used;
+- grain/orientation incompatibility if supported by current model: must not be used;
+- mixed-material portfolio: each planned remnant placement must trace to a compatible candidate/material group;
+- duplicate actual `usedRemnantId` across two planned allocations must fail closed.
 
 ---
 
-# Phase 571–576 — Explainable Portfolio Ranking
+# Blocker 4 — REAL Blender media evidence is summarized, not sufficiently committed/bound
 
-Create a deterministic ranking/shortlist layer.
+Current committed acceptance says only `REAL blender media = real=4/4`. The runner counts rows with `label=REAL` and `usedMock=false`, but the canonical acceptance JSON does not commit the four detailed media evidence records. `media_pack()` also labels REAL from `realBlender + !usedMock + completed + digest`, without requiring a positive artifact size or persisting a per-media code/evidence lineage binding.
 
-Score dimensions should include at least:
+Therefore the statement “4/4 beautyHash bound on 655ea99” is not yet adequately proven by the committed canonical truth set.
 
-- manufacturing validity (hard gate, not a soft score);
-- material utilization / true scrap;
-- remnant reuse benefit;
-- landed-cost scenario;
-- carton/logistics burden;
-- assembly burden;
-- part/hardware complexity;
-- configurable margin scenario;
-- demand signal only with its actual truth label.
+Required fix:
 
-Requirements:
+1. Commit the exact four representative REAL media evidence records into the canonical Phase 541–600 acceptance JSON (or an atomically-published companion file included in `PORTFOLIO_ACCEPTANCE_FILES`).
+2. For each media case persist and gate at minimum:
+   - `candidateId`
+   - candidate `engineeringHash`
+   - render job ID / unique execution identity
+   - preview artifact reference
+   - alternate/exploded artifact reference when generated
+   - `usedMock=false`
+   - `realBlender=true`
+   - Blender version
+   - GPU / device / OptiX truth from the actual job/worker evidence when available
+   - artifact SHA-256
+   - artifact size, strictly `> 0`
+   - generated/executed timestamp or equivalent fresh-run identity
+   - exact `evidenceCodeCommit` binding for this acceptance generation
+3. Do not call a media case REAL if digest is present but size is missing/zero.
+4. Do not allow an old cached artifact from another CODE_EVIDENCE_SHA to satisfy “fresh clean-tree REAL media” without explicit verified lineage.
+5. If the underlying render job already has commit/evidence lineage, use it. If it does not, add only the minimum runner/evidence binding needed; do not build a second renderer or scheduler.
+6. The canonical committed evidence must allow ChatGPT to audit the actual 4 cases without trusting only `real=4/4` prose/count.
 
-- weights/config are versioned and included in a `rankingPolicyHash`;
-- each score has a contribution breakdown;
-- tie-breaking is deterministic;
-- a MOCK demand score can influence a MOCK/EXPERIMENTAL ranking only and must not upgrade readiness to REAL;
-- DFM-invalid candidates cannot rank into the prototype shortlist;
-- human override requires actor/reason/audit entry; it cannot rewrite the computed score.
+Required negative regressions:
 
-Acceptance target: produce an explainable **Top 10** shortlist from the >=24 candidate fixture portfolio.
+- four fake rows marked REAL but missing SHA-256 -> fail;
+- SHA present but `artifactSize=0`/missing -> fail;
+- `usedMock=true` -> fail REAL media gate;
+- `realBlender=false` -> fail;
+- wrong/missing evidence code commit -> fail;
+- fewer than four valid detailed cases with `--real-media` -> fail;
+- a failed run must not overwrite the previous valid canonical generation.
 
----
-
-# Phase 577–582 — Prototype Approval & Release Candidate Pack
-
-For shortlisted candidates create a release-candidate package reusing existing DAM / ManufacturingRelease validation paths.
-
-Package should bind:
-
-- portfolioId / candidateId;
-- candidate engineering hash;
-- BOM hash;
-- nesting/remnant plan hash;
-- cost snapshot hash;
-- ranking policy hash and score;
-- carton/assembly/QC plan summary;
-- preview artifact references if available;
-- human approval state and audit.
-
-Important:
-
-- Top 10 means **shortlisted**, not automatically approved.
-- ManufacturingRelease remains authoritative and immutable according to existing rules.
-- `WAITING_PRODUCT_APPROVAL` / `APPROVED_FOR_PROTOTYPE` is not `APPROVED_FOR_LIVE_CNC`.
-- superseded candidate/release lineage must fail closed.
+After changing this evidence path, rerun **fresh clean-tree 4/4 REAL Blender** media on the new CODE_EVIDENCE_SHA. Do not reuse the current `655ea99` 4/4 claim as the final evidence for the modified instrumentation.
 
 ---
 
-# Phase 583–588 — Product Media Pack via Existing Blender Pipeline
+# Blocker 5 — Acceptance runner must gate the scenario itself and exact Top-10 lineage
 
-For representative shortlisted products generate product-media evidence with the existing Blender queue/DAM path:
+The Phase 595–600 requirement says every Top-10 candidate must have exact engineering/BOM/cost/ranking lineage. The current canonical acceptance mostly records aggregate counts/hash and does not prove each Top-10 lineage row.
 
-- white studio preview;
-- at least one alternate useful product angle or 360 artifact where existing capability supports it;
-- artifact SHA-256 + size;
-- candidate/release lineage;
-- `usedMock` truth flag;
-- worker/GPU/Blender evidence when REAL.
+Required fix:
 
-Do not build a second renderer.
+1. `run_portfolio_factory_e2e.py` must require `result.ok is True`; a scenario returning `ok=false` must fail even if all aggregate booleans look good.
+2. Persist an auditable Top-10 manifest with, per candidate:
+   - candidateId / canonicalHash
+   - engineeringHash
+   - BOM hash
+   - nesting/plan hash or exact planning lineage
+   - cost snapshot hash
+   - ranking policy hash
+   - score/contribution reference
+   - current state
+   - prototype approval status if applicable
+3. Gate that no Top-10 row has missing/empty required hashes.
+4. Gate that the candidate state is not `REJECTED_DFM`, `NEEDS_INPUT`, or `SUPERSEDED`.
+5. Cost snapshot lineage must be fresh relative to the candidate engineering hash.
+6. Store this Top-10 manifest inside the atomic canonical generation so it is directly reviewable.
 
-For this phase acceptance, run **fresh clean-tree REAL Blender evidence for at least 4 representative shortlisted KD candidates** on the accepted CODE_EVIDENCE_SHA if the real Blender/OptiX host is available. The current T1000 host is acceptable; do not fabricate RTX 5090. If a media subcase cannot run REAL, label it BLOCKED/PARTIAL rather than using mock as production evidence.
+Required regressions:
 
-AI Video remains MOCK unless a real provider is independently connected and proven.
-
----
-
-# Phase 589–594 — Manual Prototype Pilot Pack
-
-Use the existing Manual Factory Pilot / traveler / operator / QC / logistics concepts to produce a human-executable prototype pack for selected shortlist items.
-
-At minimum include:
-
-- immutable candidate/release identity;
-- traveler and operation sequence;
-- BOM/material list;
-- nesting/cut planning reference;
-- hardware list;
-- assembly steps/effort estimate;
-- QC checks;
-- carton/packing checklist;
-- exception/hold path;
-- explicit `MANUAL_STATION` / human execution label.
-
-Do not issue live CNC/laser/PLC commands. Do not auto-book carrier or auto-order supplier material.
-
-A prototype pack may be marked `READY_FOR_MANUAL_PROTOTYPE` only when all required upstream hashes/evidence agree and human approval exists.
+- fake scenario `ok=false` with otherwise passing fields -> runner must fail;
+- Top-10 row missing BOM/cost/ranking lineage -> fail;
+- stale engineering/cost hash mismatch -> fail;
+- rejected/superseded candidate manually injected into manifest -> fail;
+- prior successful truth set remains intact on failure.
 
 ---
 
-# Phase 595–600 — Fail-Closed Portfolio Acceptance
+# Truth labels — do not promote scope
 
-Add a dedicated clean-tree acceptance runner, e.g. `scripts/run_portfolio_factory_e2e.py`, without weakening existing runners.
+Keep these labels unless independently proven otherwise:
 
-Required committed evidence:
-
-- `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.json`
-- `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.md`
-- `docs/PORTFOLIO_DFM_ACCEPTANCE.json`
-- `docs/PORTFOLIO_DFM_ACCEPTANCE.md`
-- `docs/PORTFOLIO_COMMERCIAL_ACCEPTANCE.json`
-- `docs/PORTFOLIO_COMMERCIAL_ACCEPTANCE.md`
-
-All six new files must share one `acceptanceGenerationId`, exact `evidenceCodeCommit`, `workingTreeClean=true`, and be published atomically or rolled back as one generation.
-
-Minimum fail-closed acceptance gates:
-
-1. >=24 candidates across >=6 existing product types generated deterministically;
-2. invalid candidates retained with explicit rejection evidence;
-3. no invalid candidate in Top 10;
-4. Top 10 deterministic under the same normalized inputs/policy;
-5. every Top-10 candidate has exact engineering/BOM/cost/ranking lineage;
-6. DFM material conservation passes;
-7. cross-SKU/remnant plan has no double allocation / oversell;
-8. cost components expose source/truth labels and stale snapshots fail;
-9. MOCK/UNAVAILABLE demand cannot become REAL;
-10. tenant isolation proven for portfolio/candidate/ranking records;
-11. any new durable portfolio state is included in existing tenant backup/semantic restore contract; no new tenant-owned state may be omitted from TENANT_SCOPED backup;
-12. manual prototype readiness requires human approval and cannot imply live machine execution;
-13. four representative media cases have fresh REAL Blender evidence (`usedMock=false`) if the host is available, otherwise the scope is explicitly BLOCKED/PARTIAL;
-14. runner rejects dirty tree, expected-commit mismatch, mixed generation, missing/malformed evidence and leaves previous valid evidence unchanged;
-15. `liveMachineControl=false`, `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `globalProductionReady=false`, `fullAutonomousFactoryReady=false` remain enforced.
-
-## Required negative regressions
-
-At minimum test:
-
-- duplicate candidate canonical hash;
-- engineering-invalid candidate forced into shortlist;
-- same candidate geometry with stale BOM/cost hash;
-- remnant double-use in two portfolio candidates;
-- material incompatibility (SKU/thickness/size/grain);
-- stale/missing cost source;
-- MOCK demand mislabeled REAL;
-- cross-tenant portfolio/candidate lookup;
-- human approval missing but prototype readiness requested;
-- superseded release/candidate used for pack;
-- dirty-tree / wrong CODE_EVIDENCE_SHA acceptance run;
-- mixed/missing new acceptance generation;
-- persisted new portfolio state omitted from tenant backup/restore semantic digest.
+- Candidate generation / DFM / ranking: `REAL_LOGIC`
+- Cross-SKU/remnant portfolio planning: `REAL_LOGIC / PLANNING`; **no live inventory consume**
+- Automated acceptance scenario / automatic actor `pm`: `FIXTURE / REAL_LOGIC`; it is not proof a physical human approved a real prototype
+- Commercial cost: `CONFIG_ESTIMATE` unless an imported/manual/live source is independently evidenced
+- Demand: `MOCK`
+- Vision Judge: `MOCK`
+- AI Video: `MOCK`
+- OS sandbox / AR / preflight / barcode hardware / McKee-BCT: `PARTIAL / ENGINEERING_ESTIMATE`
+- LIVE_CNC / LIVE_LASER / PLC / live factory execution / live provider: `BLOCKED`
+- `liveMachineControl=false`
+- `liveFactoryExecutionReady=false`
+- `liveProviderReady=false`
+- `globalProductionReady=false`
+- `fullAutonomousFactoryReady=false`
+- Unscoped `productionReady=true` remains forbidden.
 
 ---
 
-# Evidence / CI sequence
+# Required evidence sequence for this correction
 
-1. Implement Phase 541–600 without starting Phase 601+.
-2. Run `pytest -q`; preserve exact truth labels.
-3. Commit code/tests as a new **CODE_EVIDENCE_SHA**.
-4. Push and require GitHub Actions Ubuntu + Windows GREEN on that exact code SHA.
-5. From a clean committed tree run the new portfolio acceptance with `--expected-commit <CODE_EVIDENCE_SHA>`.
-6. Run the four representative REAL Blender portfolio media cases on the same code SHA when available and verify hashes/sizes/lineage; never substitute mock evidence.
-7. Commit evidence/docs separately.
-8. Require docs/head Ubuntu + Windows GREEN.
-9. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`. Update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet-specific evidence truly changes.
-10. Leave Issue #1 a concise handoff with CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, candidate/Top-10 counts, material-conservation/remnant results, commercial truth labels, REAL Blender count, backup/tenant result and readiness matrix.
+1. Fix **only** the Phase 541–600 integrity gaps above. Do not start Phase 601+.
+2. Do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture.
+3. Add the negative regressions above.
+4. Run full `pytest -q` and report the exact count, labeled MOCK/unit/integration + REAL_LOGIC/FIXTURE, not Production Ready.
+5. Commit code/tests as a new `CODE_EVIDENCE_SHA`.
+6. Push and require Ubuntu + Windows GitHub Actions GREEN on that exact code SHA.
+7. From a clean tree run the Phase 541–600 acceptance with `--expected-commit <new CODE_EVIDENCE_SHA>` and `--real-media` on the real T1000/OptiX host.
+8. Produce a new atomic acceptance generation containing detailed Top-10 lineage and detailed 4/4 REAL media evidence.
+9. Re-run TENANT_SCOPED backup/restore semantic digest with the new portfolio evidence/state if any durable schema changed.
+10. Commit docs/evidence separately and require docs/head Ubuntu + Windows GREEN.
+11. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`; update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet-specific truth actually changes.
+12. Leave Issue #1 a concise completion handoff with new CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, Top-10 lineage result, DFM conservation result, remnant material-compatibility result, 4 detailed REAL media cases, tenant backup result and readiness matrix.
 
-## Exit definition
+## Exit gate
 
-Phase 541–600 is accepted only as a **Small-Space KD SKU Portfolio / Manual Prototype Pilot** scope.
+Phase 541–600 may be accepted only when all five blockers above are fail-closed and auditable from committed evidence.
 
-It is not live demand intelligence, not a live procurement system, not an MES replacement, and not an autonomous factory. MOCK/PARTIAL/BLOCKED paths must remain honestly labeled.
+Until then: **CHANGES REQUIRED — Phase 601+ is not authorized.**
