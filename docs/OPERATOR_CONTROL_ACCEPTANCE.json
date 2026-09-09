@@ -1,49 +1,30 @@
 {
   "domain": "operator-control",
-  "generatedAt": "2026-09-09T04:01:31.178860+00:00",
-  "acceptanceGenerationId": "fd9af90b-46bb-4fc8-8960-d804667c413e",
-  "evidenceCodeCommit": "94719576b00f33a9fc26e8087d8233c78c302805",
+  "generatedAt": "2026-09-09T05:21:51.977026+00:00",
+  "acceptanceGenerationId": "3d04bc63-a132-4e11-9409-fad65bcf8264",
+  "evidenceCodeCommit": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+  "workingTreeClean": true,
   "operator": {
     "tenantId": "chaos-a",
-    "waiting": 200,
-    "leases": 4,
+    "waiting": 100,
+    "leases": 2,
     "exceptions": 4,
     "barcodeHardware": "PARTIAL",
     "liveMachineControl": false
   },
   "health": {
-    "tenantId": "chaos-a",
-    "at": "2026-09-09T04:01:31.195558+00:00",
-    "queuedManualOperations": 1196,
-    "activeStationLeases": 0,
-    "expiredStationLeases": 2,
-    "workOrdersByState": {
-      "IN_PROGRESS": 16,
-      "MATERIAL_RESERVED": 184
-    },
-    "reservationShortageCount": 0,
-    "staleReleaseRejects": 0,
-    "qcPass": 1,
-    "qcFail": 1,
-    "qcRework": 1,
-    "packingExceptions": 1,
+    "queuedManualOperations": 598,
     "journalIntegrity": {
-      "ok": false,
-      "status": "BLOCKED_EVIDENCE",
-      "reason": "payload-tamper",
-      "label": "BLOCKED_EVIDENCE"
+      "ok": true,
+      "status": "REAL",
+      "label": "REAL",
+      "count": 545,
+      "headHash": "49c218a9fd3c15e154c86b79ecb4a9eed77122b75f33b4e7bcf74a2e774b3da7",
+      "sequence": 545
     },
     "liveCnc": "BLOCKED",
     "liveLaser": "BLOCKED",
-    "liveMachineControl": false,
-    "latencyLabel": "local/runtime measurement",
-    "notFactorySla": true,
-    "capabilityMapSize": 19,
-    "lastSuccessfulRealAcceptance": {
-      "commit": null,
-      "generation": null,
-      "note": "filled by acceptance runner when REAL evidence is published"
-    }
+    "notFactorySla": true
   },
   "rows": [
     {
@@ -70,10 +51,16 @@
       "check": "health notFactorySla",
       "status": "FIXTURE",
       "evidence": "True"
+    },
+    {
+      "check": "shared journal health",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"ok\": true, \"status\": \"REAL\", \"label\": \"REAL\", \"count\": 545, \"headHash\": \"49c218a9fd3c15e154c86b79ecb4a9eed77122b75f33b4e7bcf74a2e774b3da7\", \"sequence\": 545}"
     }
   ],
   "fullAutonomousFactoryReady": false,
   "liveFactoryExecutionReady": false,
   "globalProductionReady": false,
-  "notCanonicalSixFile": true
+  "notCanonicalSixFile": true,
+  "ok": true
 }

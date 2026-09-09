@@ -1,6 +1,6 @@
 # PILOT_OPERATIONS_ACCEPTANCE
 
-generatedAt: 2026-09-09T04:00:45.075890+00:00
+generatedAt: 2026-09-09T05:21:18.005337+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 
 | Check | Status | Evidence |
@@ -9,20 +9,20 @@ pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCK
 | OptiX | REAL | `NVIDIA T1000` |
 | workingTreeClean | REAL | `True` |
 | four-family manual E2E | REAL | `ok=True n=4` |
-| KD_FURNITURE packet checksum | REAL | `68376338b3af` |
+| KD_FURNITURE packet checksum | REAL | `b2f050f8bc65` |
 | KD_FURNITURE WO COMPLETED | REAL | `COMPLETED` |
-| RETAIL_FIXTURE packet checksum | REAL | `070be3fbe1d2` |
+| RETAIL_FIXTURE packet checksum | REAL | `841c4b628de4` |
 | RETAIL_FIXTURE WO COMPLETED | REAL | `COMPLETED` |
-| PACKAGING_STRUCTURE packet checksum | REAL | `22ae26e0045e` |
+| PACKAGING_STRUCTURE packet checksum | REAL | `ed674fb7f89a` |
 | PACKAGING_STRUCTURE WO COMPLETED | REAL | `COMPLETED` |
-| ACRYLIC_SHEET packet checksum | REAL | `5ffd7d040c9b` |
+| ACRYLIC_SHEET packet checksum | REAL | `cb2ce7f29e30` |
 | ACRYLIC_SHEET WO COMPLETED | REAL | `COMPLETED` |
 | supplier quote import/compare logic | REAL | `n=3 parser=REAL` |
 | supplier quote business data | IMPORTED | `IMPORTED snapshots, not LIVE_PROVIDER` |
 | supplier compare stale | REAL | `True` |
 | FX business data | MANUAL | `MANUAL` |
 | reliability fixture stress | FIXTURE | `wo=50 ops=652 oversell=False` |
-| carrier quote | IMPORTED | `4ba97da5` |
+| carrier quote | IMPORTED | `7956adef` |
 | pilot 4-family Blender EvidenceBundle | REAL | `real=4/4 clean=True` |
 | liveFactoryExecutionReady | BLOCKED | `False` |
 | fullAutonomousFactoryReady | BLOCKED | `False` |

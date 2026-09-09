@@ -1,9 +1,11 @@
 {
   "domain": "pilot-deployment",
   "label": "FIXTURE/CHAOS",
-  "generatedAt": "2026-09-09T04:01:31.178860+00:00",
-  "acceptanceGenerationId": "fd9af90b-46bb-4fc8-8960-d804667c413e",
-  "evidenceCodeCommit": "94719576b00f33a9fc26e8087d8233c78c302805",
+  "generatedAt": "2026-09-09T05:21:51.977026+00:00",
+  "acceptanceGenerationId": "3d04bc63-a132-4e11-9409-fad65bcf8264",
+  "evidenceCodeCommit": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
   "chaos": {
     "label": "FIXTURE/CHAOS",
     "workOrderCount": 110,
@@ -36,8 +38,19 @@
       "restartPreserved": true,
       "duplicateSuppressed": true,
       "tenantIsolated": true,
-      "chainOkBefore": false,
-      "tamperDetected": true
+      "chainOkBefore": true,
+      "journalHealthyBeforeTamper": true,
+      "tamperDetected": true,
+      "journalTamperDetected": true,
+      "tamperDetectionIsolated": true,
+      "sharedJournalHealthyAfterAcceptance": true,
+      "scratch": {
+        "journalHealthyBeforeTamper": true,
+        "journalTamperDetected": true,
+        "tamperDetectionIsolated": true,
+        "scratchStatus": "BLOCKED_EVIDENCE",
+        "scratchRoot": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\3d04bc63-a132-4e11-9409-fad65bcf8264\\journal-tamper\\966c9458-0cb5-498c-9939-f6ff02315268"
+      }
     },
     "scanTenantSafe": true,
     "noDuplicateCompletion": true,
@@ -46,12 +59,14 @@
     "liveLaser": false,
     "liveMachineControl": false,
     "health": {
-      "queuedManualOperations": 1196,
+      "queuedManualOperations": 598,
       "journalIntegrity": {
-        "ok": false,
-        "status": "BLOCKED_EVIDENCE",
-        "reason": "payload-tamper",
-        "label": "BLOCKED_EVIDENCE"
+        "ok": true,
+        "status": "REAL",
+        "label": "REAL",
+        "count": 545,
+        "headHash": "49c218a9fd3c15e154c86b79ecb4a9eed77122b75f33b4e7bcf74a2e774b3da7",
+        "sequence": 545
       },
       "liveCnc": "BLOCKED",
       "liveLaser": "BLOCKED",
@@ -71,6 +86,10 @@
       "journal-tamper"
     ],
     "notFactoryThroughput": true,
+    "journalHealthyBeforeTamper": true,
+    "tamperDetectionIsolated": true,
+    "journalTamperDetected": true,
+    "sharedJournalHealthyAfterAcceptance": true,
     "journalBusinessCommitConsistent": true,
     "noCommittedGhostJournalEvents": true,
     "processRestartRecovery": true,
@@ -132,7 +151,22 @@
     {
       "check": "journal tamper detected",
       "status": "REAL_LOGIC",
-      "evidence": "{\"restartPreserved\": true, \"duplicateSuppressed\": true, \"tenantIsolated\": true, \"chainOkBefore\": false, \"tamperDetected\": true}"
+      "evidence": "{\"restartPreserved\": true, \"duplicateSuppressed\": true, \"tenantIsolated\": true, \"chainOkBefore\": true, \"journalHealthyBeforeTamper\": true, \"tamperDetected\": true, \"journalTamperDetected\": true, \"tamperDetectionIsolated\": true, \"sharedJournalHealthyAfterAcceptance\": true, \"scratch\": {\"journalHealthyBeforeTamper\": true, \"journalTamperDetected\": true, \"tamperDetectionIsolated\": true, \"scratchStatus\": \"BLOCKED_EVIDENCE\", \"scratchRoot\": \"E:\\\\projects\\\\\\u958b\\u767c Blender Autonomous 3D\\\\.fox3d-data\\\\acceptance\\\\3d04bc63-a132-4e11-9409-fad65bcf8264\\\\journal-tamper\\\\966c9458-0cb5-498c-9939-f6ff02315268\"}}"
+    },
+    {
+      "check": "journalHealthyBeforeTamper",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "sharedJournalHealthyAfterAcceptance",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "tamperDetectionIsolated",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
     },
     {
       "check": "scan tenant isolation",
@@ -145,17 +179,12 @@
       "evidence": "confirm required"
     },
     {
-      "check": "journalBusinessCommitConsistent",
+      "check": "evidenceCodeCommit",
       "status": "REAL_LOGIC",
-      "evidence": "True"
+      "evidence": "018cc70997a420e82358c0bb37677aa6b4de7eeb"
     },
     {
-      "check": "processRestartRecovery",
-      "status": "REAL_LOGIC",
-      "evidence": "True"
-    },
-    {
-      "check": "noDoubleCompletionAfterRestart",
+      "check": "workingTreeClean",
       "status": "REAL_LOGIC",
       "evidence": "True"
     },
@@ -190,7 +219,13 @@
     "noDoubleCompletionAfterRestart": true,
     "releaseHashPreservedAfterRestart": true,
     "materialConservedAfterCrash": true,
-    "tenantIsolationAfterRestart": true
+    "tenantIsolationAfterRestart": true,
+    "journalHealthyBeforeTamper": true,
+    "tamperDetectionIsolated": true,
+    "journalTamperDetected": true,
+    "sharedJournalHealthyAfterAcceptance": true,
+    "evidenceCommitMatchesHead": true,
+    "workingTreeClean": true
   },
   "ok": true
 }

@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 421–480 integrity CODE_EVIDENCE_SHA `9471957`; prior `4069cef` / docs `6646298`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a3c150f`. Historical Phase 1–420 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 421–480 evidence-integrity CODE_EVIDENCE_SHA `018cc70`; prior `9471957` / docs `b0e67c0`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a827459`. Historical Phase 1–420 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -17,7 +17,7 @@ This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 453–460 exceptions | REAL | catalog + inbox; fail-closed; journaled |
 | 461–468 contracts | REAL logic / IMPORTED | schema-versioned import; rejected rows listed; adjustment WAITING_HUMAN_APPROVAL |
 | 469–474 health | FIXTURE | `/api/pilot/health` tenant-safe on mock platform; LIVE_CNC/LASER BLOCKED |
-| 475–480 chaos + REAL | FIXTURE + REAL | 110 WO FIXTURE/CHAOS (no plain REAL rows); 4/4 T1000 OptiX `9471957` usedMock=false release-bound |
+| 475–480 chaos + REAL | FIXTURE + REAL | 110 WO FIXTURE/CHAOS; hermetic scratch tamper; runner-bound HEAD `018cc70`; shared journal health REAL after; 4/4 T1000 OptiX `018cc70` usedMock=false release-bound |
 
 ## Phase 301–360 Manufacturing Release & Pilot Operations
 
