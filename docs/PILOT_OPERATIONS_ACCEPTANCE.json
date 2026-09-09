@@ -24,7 +24,7 @@
     {
       "check": "KD_FURNITURE packet checksum",
       "status": "REAL",
-      "evidence": "3c868d745af0"
+      "evidence": "30fbb25f2e3b"
     },
     {
       "check": "KD_FURNITURE WO COMPLETED",
@@ -34,7 +34,7 @@
     {
       "check": "RETAIL_FIXTURE packet checksum",
       "status": "REAL",
-      "evidence": "edf11b30b73d"
+      "evidence": "8db1896e98d9"
     },
     {
       "check": "RETAIL_FIXTURE WO COMPLETED",
@@ -44,7 +44,7 @@
     {
       "check": "PACKAGING_STRUCTURE packet checksum",
       "status": "REAL",
-      "evidence": "4243648039f2"
+      "evidence": "e92ac8780ffb"
     },
     {
       "check": "PACKAGING_STRUCTURE WO COMPLETED",
@@ -54,7 +54,7 @@
     {
       "check": "ACRYLIC_SHEET packet checksum",
       "status": "REAL",
-      "evidence": "d1f2bc25abc8"
+      "evidence": "8052ef5f1b5b"
     },
     {
       "check": "ACRYLIC_SHEET WO COMPLETED",
@@ -89,7 +89,7 @@
     {
       "check": "carrier quote",
       "status": "IMPORTED",
-      "evidence": "c8c2ac7c"
+      "evidence": "e3a38272"
     },
     {
       "check": "pilot 4-family Blender EvidenceBundle",
@@ -119,6 +119,11 @@
     {
       "check": "canonical six-file reader",
       "status": "REAL",
+      "evidence": "ok"
+    },
+    {
+      "check": "reliability gate",
+      "status": "FIXTURE",
       "evidence": "ok"
     }
   ],
@@ -195,10 +200,10 @@
     "path": "PHYSICAL_PRODUCT_OS_V2_ACCEPTANCE.canonicalTruthSet",
     "secondAcceptanceSystem": false
   },
-  "evidenceCodeCommit": "068cbe8218a47d69edd9cbe79db9fe169e37b509",
+  "evidenceCodeCommit": "cdc1b5b32dd96d13730c6a1c46703cc69e120886",
   "workingTreeClean": true,
-  "acceptanceGenerationId": "a6b65566-65fe-4ea3-9f74-a1a16815970c",
-  "generatedAt": "2026-09-08T23:23:06.983817+00:00",
+  "acceptanceGenerationId": "67761512-8a44-4572-a490-84bcf8f038c8",
+  "generatedAt": "2026-09-09T00:15:59.959099+00:00",
   "fullAutonomousFactoryReady": false,
   "liveFactoryExecutionReady": false,
   "liveMachineControl": false

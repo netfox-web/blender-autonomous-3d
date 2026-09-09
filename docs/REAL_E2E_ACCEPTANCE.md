@@ -3,7 +3,7 @@
 Scoped readiness (not a global Production Ready flag):
 - `coreRenderE2EReady`: **true** — Blender 5.2.1 + T1000 OptiX smoke/preview/360/parametric PNG
 - `physicalProductOsPrototypeReady`: **true** — KD/retail/packaging/acrylic prototype E2E with Human Approval Gate
-- `manufacturingReleasePackageReady`: **true** — see `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` (CODE `068cbe8`, 4/4 T1000 OptiX, release-bound)
+- `manufacturingReleasePackageReady`: **true** — see `docs/MANUFACTURING_RELEASE_REAL_ACCEPTANCE.md` (CODE `cdc1b5b`, 4/4 T1000 OptiX, release-bound)
 - `manualPilotOpsReady`: **true** — see `docs/PILOT_OPERATIONS_ACCEPTANCE.md` (manual execution, not live factory)
 - `pilotReliabilityReady`: **FIXTURE** — see `docs/PILOT_RELIABILITY_ACCEPTANCE.md` (50 WO stress, not factory throughput)
 - `qcTraceabilityReady`: **true** — see `docs/QC_TRACEABILITY_ACCEPTANCE.md`
