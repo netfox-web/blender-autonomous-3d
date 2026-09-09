@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fox3d.backup import BackupError, backup_pilot, restore_pilot
+from fox3d.backup import BackupError, backup_pilot, evaluate_tenant_restore_matrix, restore_pilot
 from fox3d.platform import Platform
 from fox3d.station import STATION_CAPS
 from fox3d.workorder import FIXTURE_AUTO_SEED
@@ -29,6 +29,10 @@ REQUIRED_GATES = (
     "restoreNoDoubleCompletion",
     "journalHealthyAfterRestore",
     "crossTenantRestoreRejected",
+    "tenantLeakageAbsent",
+    "tenantRequiredStatePreserved",
+    "snapshotPathSetBound",
+    "restoredRootHealthOk",
     "liveMachineControl",
     "globalProductionReady",
     "liveFactoryExecutionReady",
@@ -57,6 +61,114 @@ def _complete_remaining(pilot: Any, wo_id: str, *, actor: str, skip: set[str] | 
         if op.get("status") != "COMPLETED":
             pilot.workorders.complete_operation(wo_id, op["opId"], actor=actor)
         done.add(op_name)
+
+
+def seed_tenant_backup_fixture(plat: Platform, *, tenant_id: str, actor: str = "seed") -> dict[str, Any]:
+    lot = plat.lots.receive(
+        tenant_id=tenant_id, material="PB_18_WHITE", thickness=18, quantity=6, actor=actor, source="MANUAL"
+    )
+    remnants = plat.remnants.add_from_nesting(
+        {"candidateRemnants": [{"w": 120, "h": 80, "area": 9600, "sheetIndex": 0}]},
+        material="PB_18_WHITE",
+        thickness=18,
+        source_run=f"{tenant_id}-backup-seed",
+        tenant_id=tenant_id,
+        material_lot_id=lot["lotId"],
+    )
+    op = plat.pilot.identity.register_operator(
+        tenant_id=tenant_id, display_name=f"Op {tenant_id}", capabilities=["MANUAL"]
+    )
+    shift = plat.pilot.identity.open_shift(
+        tenant_id=tenant_id, operator_id=op["operatorId"], station_id=f"st-{tenant_id}"
+    )
+    station = plat.pilot.stations.register(
+        tenant_id=tenant_id, capabilities=list(STATION_CAPS), actor=op["operatorId"]
+    )
+    product = plat.kd.build_sku(tenant_id=tenant_id, kind="OPEN_SHELF")
+    rel = plat.pilot.open_release(product, tenant_id=tenant_id, family="KD_FURNITURE", actor=actor)
+    wo = plat.pilot.workorders.create(tenant_id=tenant_id, release=rel, quantity=1, actor=actor)
+    plat.pilot.workorders.release_for_execution(wo["workOrderId"], actor=actor)
+    plat.pilot.workorders.reserve_materials(
+        wo["workOrderId"], actor=actor, tenant_id=tenant_id, allocation_policy=FIXTURE_AUTO_SEED
+    )
+    first = wo["traveler"]["steps"][0]["operation"]
+    plat.pilot.workorders.start_operation(wo["workOrderId"], first, actor=op["operatorId"])
+    plat.pilot.dispatcher.dispatch(
+        tenant_id=tenant_id,
+        work_order_id=wo["workOrderId"],
+        operation=first,
+        station_id=station["stationId"],
+        actor=op["operatorId"],
+        operator_id=op["operatorId"],
+        shift_id=shift["shiftId"],
+    )
+    plat.pilot.traveler_packet(tenant_id=tenant_id, work_order_id=wo["workOrderId"])
+    plat.pilot.receiving.import_receipt(
+        {"supplierLot": f"{tenant_id}-lot", "material": "PB_18_WHITE", "quantity": 2, "thickness": 18},
+        tenant_id=tenant_id,
+        actor=actor,
+        source="IMPORTED",
+    )
+    plat.pilot.cyclecounts.create(
+        tenant_id=tenant_id, lot_id=lot["lotId"], counted=5, reason="seed", actor=op["operatorId"]
+    )
+    packing = (rel.get("snapshot") or {}).get("packing") or {"length": 400, "width": 300, "height": 200}
+    cartons = plat.pilot.logistics.instantiate_cartons(
+        tenant_id=tenant_id,
+        work_order_id=wo["workOrderId"],
+        batch_id=wo["batchId"],
+        plan=packing,
+        quantity=1,
+        release_hash=rel["releaseHash"],
+        product_version=rel.get("productVersion"),
+    )
+    pallet = plat.pilot.logistics.palletize([c["cartonId"] for c in cartons])
+    ship = plat.pilot.logistics.shipment_draft(
+        origin="TW", destination="TW-TPE", carton_ids=[c["cartonId"] for c in cartons]
+    )
+    plat.pilot.logistics.packing_checklist(
+        tenant_id=tenant_id, work_order_id=wo["workOrderId"], release_hash=rel["releaseHash"]
+    )
+    plat.pilot.logistics.shipment_handoff(
+        ship["shipmentId"], tenant_id=tenant_id, carrier="VAN", tracking=f"TRK-{tenant_id}", actor=op["operatorId"]
+    )
+    plat.pilot.qc.final(
+        tenant_id=tenant_id,
+        work_order_id=wo["workOrderId"],
+        check_id="THICKNESS",
+        measured=18.0,
+        nominal=18.0,
+        tol=0.5,
+        unit="mm",
+        operator=op["operatorId"],
+        source="MANUAL",
+    )
+    plat.pilot.qc.defect(
+        tenant_id=tenant_id,
+        work_order_id=wo["workOrderId"],
+        code="DEF_THICKNESS",
+        disposition="REWORK",
+        actor=op["operatorId"],
+    )
+    plat.pilot.qc.persist()
+    plat.pilot.inbox.record(
+        tenant_id=tenant_id,
+        code="PACKING_MISMATCH",
+        work_order_id=wo["workOrderId"],
+        release_hash=rel["releaseHash"],
+        actor=op["operatorId"],
+    )
+    return {
+        "lotId": lot["lotId"],
+        "workOrderId": wo["workOrderId"],
+        "releaseId": rel["releaseId"],
+        "releaseHash": rel["releaseHash"],
+        "cartonId": cartons[0]["cartonId"],
+        "palletPlanId": pallet["palletPlanId"],
+        "operatorId": op["operatorId"],
+        "batchId": wo["batchId"],
+        "remnantIds": [r["remnantId"] for r in remnants],
+    }
 
 
 def run_manual_factory_scenario(
@@ -262,6 +374,24 @@ def run_manual_factory_scenario(
         and (handed.get("handoff") or {}).get("deliveryConfirmed") is False
         and again_hand.get("handoff", {}).get("handoffId") == handed.get("handoff", {}).get("handoffId")
     )
+    plat.pilot.logistics.palletize([c["cartonId"] for c in cartons])
+    plat.pilot.receiving.import_receipt(
+        {"supplierLot": f"{a}-lot", "material": "PB_18_WHITE", "quantity": 2, "thickness": 18},
+        tenant_id=a,
+        actor=op_a["operatorId"],
+        source="IMPORTED",
+    )
+    plat.pilot.logistics.import_carrier_quote(
+        {"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000}, source="IMPORTED"
+    )
+    plat.pilot.qc.defect(
+        tenant_id=a,
+        work_order_id=wo_id,
+        code="DEF_THICKNESS",
+        disposition="REWORK",
+        actor=op_a["operatorId"],
+    )
+    plat.pilot.qc.persist()
 
     plat.pilot.workorders.consume_reserved(wo_id, actor=op_a["operatorId"])
     plat.pilot.workorders.complete(wo_id, actor=op_a["operatorId"], qc_ok=True)
@@ -304,10 +434,16 @@ def run_manual_factory_scenario(
     gates["shiftRestartRecovery"] = recovered_shift.get("status") == "OPEN" and recovered_wo.get("state") == "IN_PROGRESS"
     plat2.pilot.identity.require_active(tenant_id=a, operator_id=op_a["operatorId"], shift_id=shift["shiftId"])
 
-    plat.lots.receive(
-        tenant_id=b, material="PB_18_WHITE", thickness=18, quantity=4, actor=op_b["operatorId"], source="MANUAL"
+    seed_tenant_backup_fixture(plat, tenant_id=b, actor=op_b["operatorId"])
+    plat.pilot.outbox.prepare(
+        {
+            "tenant_id": b,
+            "aggregate_type": "Seed",
+            "aggregate_id": f"{b}-tx",
+            "semantic_key": f"{b}::seed-tx",
+        }
     )
-    plat.pilot.stations.register(tenant_id=b, capabilities=list(STATION_CAPS), actor=op_b["operatorId"])
+    live_event_ids = {e.get("eventId") for e in plat.pilot.journal.list(a) if e.get("eventId")}
 
     backup_dir = Path(backup_dir or (plat.root.parent / "backup-export"))
     restore_root = Path(restore_root or (plat.root.parent / "restore-root"))
@@ -325,13 +461,20 @@ def run_manual_factory_scenario(
     except PermissionError:
         cross_restore = True
     restored_plat = Platform(root=restore_root, mock_blender=True)
-    b_absent = (
-        restored_plat.lots.list(tenant_id=b) == []
-        and not any(o.get("tenantId") == b for o in restored_plat.pilot.identity.operators.values())
-        and not any(wo.get("tenantId") == b for wo in restored_plat.pilot.workorders.orders.values())
-        and restored_plat.pilot.journal.list(b) == []
-        and restored_plat.pilot.stations.list(tenant_id=b) == []
+    matrix = evaluate_tenant_restore_matrix(
+        live=plat, restored=restored_plat, tenant_a=a, tenant_b=b, live_event_ids=live_event_ids
     )
+    carton_retry = restored_plat.pilot.logistics.instantiate_cartons(
+        tenant_id=a,
+        work_order_id=wo_id,
+        batch_id=wo["batchId"],
+        plan=packing,
+        quantity=1,
+        release_hash=rel["releaseHash"],
+        product_version=rel.get("productVersion"),
+    )
+    idem_a = bool(carton_retry) and carton_retry[0]["cartonId"] == cartons[0]["cartonId"] and carton_retry[0].get("tenantId") == a
+    b_absent = matrix.get("tenantLeakageAbsent") is True
     from shutil import copytree
 
     tamper_dir = backup_dir.parent / "backup-tamper"
@@ -365,9 +508,16 @@ def run_manual_factory_scenario(
     )
     gates["restoreNoDoubleConsume"] = restarted.get("noDoubleConsume") is True
     gates["restoreNoDoubleCompletion"] = restarted.get("noDoubleCompletion") is True
+    health = restored_plat.pilot.health(tenant_id=a)
+    gates["restoredRootHealthOk"] = bool((health.get("journalIntegrity") or {}).get("ok") is True)
     gates["journalHealthyAfterRestore"] = bool(
-        restarted.get("journalOk") is True and restored_plat.pilot.journal.verify(a).get("ok") is True
+        restarted.get("journalOk") is True
+        and restored_plat.pilot.journal.verify(a).get("ok") is True
+        and gates["restoredRootHealthOk"] is True
     )
+    gates["tenantLeakageAbsent"] = bool(b_absent)
+    gates["tenantRequiredStatePreserved"] = bool(matrix.get("tenantRequiredStatePreserved") is True and idem_a)
+    gates["snapshotPathSetBound"] = bool(backup.get("consistentSnapshot") is True and backup.get("snapshotPathSetBound") is True)
     gates["crossTenantRestoreRejected"] = bool(cross_restore and b_absent)
     other = False
     try:
@@ -376,7 +526,6 @@ def run_manual_factory_scenario(
         other = True
     gates["operatorTenantIsolation"] = bool(gates["operatorTenantIsolation"] and other)
 
-    health = plat2.pilot.health(tenant_id=a)
     return {
         "ok": all(gates[k] is True for k in REQUIRED_GATES if k not in _false_ready())
         and gates["liveMachineControl"] is False
@@ -392,6 +541,7 @@ def run_manual_factory_scenario(
         "restart": restarted,
         "labor": labor,
         "health": health,
+        "tenantBackupMatrix": matrix,
         "label": "FIXTURE/REAL_LOGIC",
         "liveCnc": "BLOCKED",
         "liveLaser": "BLOCKED",

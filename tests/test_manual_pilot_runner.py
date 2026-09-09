@@ -195,3 +195,33 @@ def test_manual_runner_missing_gate_does_not_overwrite(tmp_path):
     kept = json.loads((docs / "MANUAL_FACTORY_PILOT_ACCEPTANCE.json").read_text(encoding="utf-8"))
     assert kept["acceptanceGenerationId"] == prior["acceptanceGenerationId"]
     assert kept["ok"] is True
+
+
+def test_contradictory_restored_health_preserves_prior_bundle(tmp_path):
+    mod = _load()
+    docs = tmp_path / "docs"
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", SHA],
+        hooks={"inspect": _inspect(SHA), "acceptance_root": tmp_path / "acc1", "platform": _FakePlat, "scenario": _passing_scenario},
+    )
+    assert rc == 0
+    prior = json.loads((docs / "MANUAL_FACTORY_PILOT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+
+    def contradictory(plat):
+        body = _passing_scenario(plat)
+        body["gates"]["journalHealthyAfterRestore"] = True
+        body["gates"]["restoredRootHealthOk"] = True
+        body["health"] = {"journalIntegrity": {"ok": False, "status": "BLOCKED_EVIDENCE"}, "liveCnc": "BLOCKED", "liveLaser": "BLOCKED"}
+        return body
+
+    rc2 = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", SHA],
+        hooks={"inspect": _inspect(SHA), "acceptance_root": tmp_path / "acc2", "platform": _FakePlat, "scenario": contradictory},
+    )
+    assert rc2 != 0
+    kept = json.loads((docs / "MANUAL_FACTORY_PILOT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert kept["acceptanceGenerationId"] == prior["acceptanceGenerationId"]
+    assert kept["ok"] is True
+    for name in MANUAL_PILOT_ACCEPTANCE_FILES:
+        assert (docs / f"{name}.json").exists()
+        assert (docs / f"{name}.md").exists()

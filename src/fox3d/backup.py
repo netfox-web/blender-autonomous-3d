@@ -34,20 +34,57 @@ BACKUP_DIRS = (
     "exceptions",
 )
 VOLATILE_SUFFIXES = {".lock", ".tmp", ".staging"}
-MIXED_JSON = {
-    "lots/lots.json": ("lots",),
-    "workorders/workorders.json": ("orders", "operations"),
-    "identity/identity.json": ("operators", "shifts"),
-    "receipts/receipts.json": ("receipts", "requests"),
-    "stations/stations.json": ("stations",),
-    "leases/leases.json": ("leases", "jobs"),
-    "cyclecounts/cyclecounts.json": ("counts",),
-    "logistics/logistics.json": ("cartons", "pallets", "shipments", "carrier_quotes", "checklists", "handoffs"),
-    "qc/qc.json": ("checks", "defects"),
-    "exceptions/exceptions.json": ("items",),
-    "releases/releases.json": ("releases",),
+TENANT_OWNED = "TENANT_OWNED"
+TENANT_DERIVED = "TENANT_DERIVED"
+GLOBAL_REFERENCE = "GLOBAL_REFERENCE"
+GLOBAL_REFERENCE_POLICY = "EXCLUDE_FROM_TENANT_SCOPED"
+MIXED_SPEC: dict[str, dict[str, str]] = {
+    "lots/lots.json": {"lots": TENANT_OWNED},
+    "workorders/workorders.json": {"orders": TENANT_OWNED, "operations": TENANT_DERIVED},
+    "identity/identity.json": {"operators": TENANT_OWNED, "shifts": TENANT_OWNED},
+    "receipts/receipts.json": {"receipts": TENANT_OWNED, "requests": TENANT_OWNED},
+    "stations/stations.json": {"stations": TENANT_OWNED},
+    "leases/leases.json": {"leases": TENANT_OWNED, "jobs": TENANT_OWNED},
+    "cyclecounts/cyclecounts.json": {"counts": TENANT_OWNED},
+    "logistics/logistics.json": {
+        "cartons": TENANT_OWNED,
+        "pallets": TENANT_DERIVED,
+        "shipments": TENANT_OWNED,
+        "carrier_quotes": GLOBAL_REFERENCE,
+        "checklists": TENANT_OWNED,
+        "handoffs": TENANT_OWNED,
+    },
+    "qc/qc.json": {"checks": TENANT_OWNED, "defects": TENANT_OWNED},
+    "exceptions/exceptions.json": {"items": TENANT_OWNED},
+    "releases/releases.json": {"releases": TENANT_OWNED},
 }
+MIXED_JSON = {rel: tuple(spec.keys()) for rel, spec in MIXED_SPEC.items()}
 SNAPSHOT_RETRIES = 5
+TENANT_MATRIX_DOMAINS = (
+    "materialLots",
+    "remnants",
+    "releases",
+    "packets",
+    "idempotency",
+    "workOrders",
+    "operations",
+    "receipts",
+    "stations",
+    "leases",
+    "operators",
+    "shifts",
+    "cycleCounts",
+    "cartons",
+    "palletPlans",
+    "shipments",
+    "checklists",
+    "handoffs",
+    "qc",
+    "exceptions",
+    "journal",
+    "outbox",
+    "dam",
+)
 
 
 class BackupError(PermissionError):
@@ -101,31 +138,117 @@ def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
     return out
 
 
+def _pallet_carton_ids(rec: dict[str, Any]) -> list[str]:
+    ids = [str(x) for x in (rec.get("cartonIds") or [])]
+    for pal in rec.get("pallets") or []:
+        if isinstance(pal, dict):
+            ids.extend(str(x) for x in (pal.get("cartonIds") or []))
+    return ids
+
+
+def _parent_tenants(payload: dict[str, Any], rel: str, key: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if rel == "logistics/logistics.json" and key == "pallets":
+        rows = payload.get("cartons") or []
+        id_key = "cartonId"
+    elif rel == "workorders/workorders.json" and key == "operations":
+        rows = payload.get("orders") or []
+        id_key = "workOrderId"
+    else:
+        return out
+    if not isinstance(rows, list):
+        raise BackupError("BLOCKED", f"malformed parent collection for {rel}:{key}")
+    for rec in rows:
+        if not isinstance(rec, dict) or not rec.get(id_key):
+            raise BackupError("BLOCKED", f"ambiguous parent row in {rel}:{key}")
+        tid = _tenant_of(rec)
+        if not tid:
+            raise BackupError("BLOCKED", f"ambiguous {id_key} tenantId")
+        out[str(rec[id_key])] = tid
+    return out
+
+
+def _derive_tenants(rel: str, key: str, rec: dict[str, Any], parents: dict[str, str]) -> set[str]:
+    if rel == "logistics/logistics.json" and key == "pallets":
+        carton_ids = _pallet_carton_ids(rec)
+        if not carton_ids:
+            raise BackupError("BLOCKED", "ambiguous pallet plan with no carton parent")
+        tenants: set[str] = set()
+        for cid in carton_ids:
+            tid = parents.get(cid)
+            if not tid:
+                raise BackupError("BLOCKED", f"ambiguous pallet parent carton {cid}")
+            tenants.add(tid)
+        if len(tenants) != 1:
+            raise BackupError("BLOCKED", "cross-tenant pallet plan")
+        stamped = _tenant_of(rec)
+        if stamped is not None and stamped not in tenants:
+            raise BackupError("BLOCKED", "pallet tenantId mismatches derived owner")
+        return tenants
+    if rel == "workorders/workorders.json" and key == "operations":
+        stamped = _tenant_of(rec)
+        derived = parents.get(str(rec.get("workOrderId") or ""))
+        if stamped and derived and stamped != derived:
+            raise BackupError("BLOCKED", "operation tenantId mismatches work order")
+        tid = stamped or derived
+        if not tid:
+            raise BackupError("BLOCKED", "ambiguous work order operation ownership")
+        return {tid}
+    stamped = _tenant_of(rec)
+    if stamped:
+        return {stamped}
+    raise BackupError("BLOCKED", f"ambiguous {rel}:{key} ownership")
+
+
 def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[str, Any]:
-    keys = MIXED_JSON.get(rel)
-    if not keys:
+    spec = MIXED_SPEC.get(rel)
+    if not spec:
         return payload
     filtered = dict(payload)
-    kept_ids: set[str] = set()
-    for key in keys:
+    for key, policy in spec.items():
         rows = payload.get(key) or []
         if not isinstance(rows, list):
             continue
-        kept = [r for r in rows if isinstance(r, dict) and _tenant_of(r) in tids]
+        if policy == GLOBAL_REFERENCE:
+            filtered[key] = []
+            continue
+        kept: list[dict[str, Any]] = []
+        parents = _parent_tenants(payload, rel, key) if policy == TENANT_DERIVED else {}
+        for rec in rows:
+            if not isinstance(rec, dict):
+                raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:{key}")
+            if policy == TENANT_OWNED:
+                tid = _tenant_of(rec)
+                if tid is None:
+                    raise BackupError("BLOCKED", f"ambiguous {rel}:{key} missing tenantId")
+                if tid in tids:
+                    kept.append(rec)
+            elif policy == TENANT_DERIVED:
+                owners = _derive_tenants(rel, key, rec, parents)
+                if owners <= tids:
+                    kept.append(rec)
+                elif owners & tids:
+                    raise BackupError("BLOCKED", f"cross-tenant {rel}:{key}")
+            else:
+                raise BackupError("BLOCKED", f"unknown collection policy {policy}")
         filtered[key] = kept
-        for rec in kept:
-            for id_key in ("workOrderId", "releaseId", "lotId", "stationId", "leaseId", "jobId"):
-                if rec.get(id_key):
-                    kept_ids.add(str(rec[id_key]))
-    if rel == "workorders/workorders.json":
-        filtered["operations"] = [
-            o
-            for o in (payload.get("operations") or [])
-            if isinstance(o, dict) and (o.get("workOrderId") in kept_ids or _tenant_of(o) in tids)
-        ]
     if rel == "releases/releases.json":
+        kept_ids = {str(r.get("releaseId")) for r in filtered.get("releases") or [] if isinstance(r, dict) and r.get("releaseId")}
+        all_ids = {
+            str(r.get("releaseId"))
+            for r in (payload.get("releases") or [])
+            if isinstance(r, dict) and r.get("releaseId")
+        }
         packets = payload.get("packets") or {}
-        filtered["packets"] = {k: v for k, v in packets.items() if k in kept_ids} if isinstance(packets, dict) else {}
+        if packets and not isinstance(packets, dict):
+            raise BackupError("BLOCKED", "ambiguous packets payload")
+        out_packets: dict[str, Any] = {}
+        for pkt_id, value in (packets.items() if isinstance(packets, dict) else []):
+            if pkt_id not in all_ids:
+                raise BackupError("BLOCKED", f"ambiguous packet parent {pkt_id}")
+            if pkt_id in kept_ids:
+                out_packets[pkt_id] = value
+        filtered["packets"] = out_packets
     if "idem" in payload:
         filtered["idem"] = _filter_idem(payload.get("idem"), tids)
     return filtered
@@ -168,6 +291,39 @@ def _fingerprint(root: Path, paths: list[Path]) -> dict[str, str]:
     return out
 
 
+def _payload_fingerprint(payload: dict[str, Any]) -> str:
+    slim = {k: v for k, v in payload.items() if k != "generation"}
+    return stable_hash(slim)
+
+
+def _relevant_fingerprint(root: Path, tids: set[str] | None) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for path in _source_files(root):
+        rel = _validate_rel(path.relative_to(root).as_posix())
+        if not _include_file(rel, tids):
+            continue
+        if tids and rel.startswith("tx/"):
+            payload = read_json(path)
+            if not isinstance(payload, dict):
+                raise BackupError("BLOCKED", f"malformed tx {rel}")
+            tid = _tenant_of(payload)
+            if tid is None:
+                raise BackupError("BLOCKED", f"ambiguous tx tenant {rel}")
+            if tid not in tids:
+                continue
+            out[rel] = sha256_bytes(path.read_bytes())
+            continue
+        if tids and rel in MIXED_SPEC:
+            payload = read_json(path)
+            if not isinstance(payload, dict):
+                raise BackupError("BLOCKED", f"malformed {rel}")
+            filtered = _filter_payload(payload, rel, tids)
+            out[rel] = _payload_fingerprint(filtered)
+            continue
+        out[rel] = sha256_bytes(path.read_bytes())
+    return out
+
+
 def _lock_paths(root: Path, tenant_ids: list[str] | None) -> list[Path]:
     paths = [
         root / "lots" / "lots.lock",
@@ -188,10 +344,15 @@ def _copy_one(src: Path, root: Path, data_root: Path, tids: set[str] | None) -> 
         raise BackupError("BLOCKED", f"symlink {rel}")
     if rel.startswith("tx/") and tids:
         payload = read_json(src)
-        if isinstance(payload, dict) and _tenant_of(payload) not in tids and payload.get("tenantId") not in tids:
+        if not isinstance(payload, dict):
+            raise BackupError("BLOCKED", f"malformed tx {rel}")
+        tid = _tenant_of(payload)
+        if tid is None:
+            raise BackupError("BLOCKED", f"ambiguous tx tenant {rel}")
+        if tid not in tids:
             return None
     target.parent.mkdir(parents=True, exist_ok=True)
-    if tids and rel in MIXED_JSON:
+    if tids and rel in MIXED_SPEC:
         payload = read_json(src)
         if not isinstance(payload, dict):
             raise BackupError("BLOCKED", f"malformed {rel}")
@@ -217,24 +378,43 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
         try:
             for lock in locks:
                 lock.acquire()
-            sources = _source_files(root)
-            before = _fingerprint(root, sources)
+            try:
+                before = _relevant_fingerprint(root, tids)
+                sources = _source_files(root)
+            except FileNotFoundError:
+                last_error = "source path-set or hash changed during snapshot"
+                continue
             if data_root.exists():
                 shutil.rmtree(data_root)
             data_root.mkdir(parents=True, exist_ok=True)
             files: list[dict[str, Any]] = []
             seen: set[str] = set()
+            vanished = False
             for src in sources:
-                row = _copy_one(src, root, data_root, tids)
+                if not src.exists():
+                    vanished = True
+                    break
+                try:
+                    row = _copy_one(src, root, data_root, tids)
+                except FileNotFoundError:
+                    vanished = True
+                    break
                 if row is None:
                     continue
                 if row["path"] in seen:
                     raise BackupError("BLOCKED", f"duplicate path {row['path']}")
                 seen.add(row["path"])
                 files.append(row)
-            after = _fingerprint(root, sources)
+            if vanished:
+                last_error = "source path-set or hash changed during snapshot"
+                continue
+            try:
+                after = _relevant_fingerprint(root, tids)
+            except FileNotFoundError:
+                last_error = "source path-set or hash changed during snapshot"
+                continue
             if before != after:
-                last_error = "source changed during snapshot"
+                last_error = "source path-set or hash changed during snapshot"
                 continue
             files = sorted(files, key=lambda r: r["path"])
             scope = "TENANT_SCOPED" if tids else "WHOLE_PILOT_ROOT"
@@ -250,6 +430,13 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
                 "notCloudHaDr": True,
                 "liveMachineControl": False,
                 "consistentSnapshot": True,
+                "snapshotPathSetBound": True,
+                "collectionPolicy": {
+                    "TENANT_OWNED": "record.tenantId authoritative; missing tenantId fail-closed",
+                    "TENANT_DERIVED": "pallet->carton, operation->workOrder, packet->release; cross-tenant fail-closed",
+                    "GLOBAL_REFERENCE": "logistics.carrier_quotes",
+                    "GLOBAL_REFERENCE_POLICY": GLOBAL_REFERENCE_POLICY,
+                },
             }
             manifest["manifestHash"] = stable_hash({k: manifest[k] for k in manifest if k != "manifestHash"})
             atomic_write_json(dest / "manifest.json", manifest)
@@ -503,3 +690,136 @@ def restart_after_restore(
         raise BackupError("BLOCKED", "restore retry mutated consume/complete facts")
     payload["ok"] = True
     return payload
+
+
+def _owned(items: Any, tenant_id: str) -> list[dict[str, Any]]:
+    rows = items.values() if isinstance(items, dict) else list(items or [])
+    return [r for r in rows if isinstance(r, dict) and r.get("tenantId") == tenant_id]
+
+
+def _idem_count(mapping: Any, tenant_id: str) -> int:
+    if not isinstance(mapping, dict):
+        return 0
+    return sum(1 for key in mapping if str(key).startswith(f"{tenant_id}::"))
+
+
+def _file_count(root: Path, rel: str) -> int:
+    path = Path(root) / rel
+    if not path.exists():
+        return 0
+    if path.is_file():
+        return 1
+    return sum(1 for p in path.rglob("*") if p.is_file())
+
+
+def _tx_count(root: Path, tenant_id: str) -> int:
+    tx_root = Path(root) / "tx"
+    if not tx_root.exists():
+        return 0
+    n = 0
+    for path in tx_root.glob("*.json"):
+        rec = read_json(path) or {}
+        if isinstance(rec, dict) and rec.get("tenantId") == tenant_id:
+            n += 1
+    return n
+
+
+def tenant_domain_counts(plat: Any, tenant_id: str) -> dict[str, int]:
+    pilot = plat.pilot
+    release_ids = {r["releaseId"] for r in _owned(pilot.releases.releases, tenant_id) if r.get("releaseId")}
+    wo_ids = {w["workOrderId"] for w in _owned(pilot.workorders.orders, tenant_id) if w.get("workOrderId")}
+    packets = [k for k in (pilot.releases.packets or {}) if k in release_ids]
+    ops = [
+        o
+        for o in (pilot.workorders.operations or [])
+        if isinstance(o, dict) and str(o.get("workOrderId") or "") in wo_ids
+    ]
+    remnants = [r for r in (plat.remnants.items or {}).values() if r.get("tenantId") == tenant_id]
+    return {
+        "materialLots": len(plat.lots.list(tenant_id=tenant_id)),
+        "remnants": len(remnants),
+        "releases": len(release_ids),
+        "packets": len(packets),
+        "idempotency": (
+            _idem_count(pilot.workorders._idem, tenant_id)
+            + _idem_count(pilot.releases._idem, tenant_id)
+            + _idem_count(pilot.logistics._idem, tenant_id)
+            + _idem_count(pilot.receiving._idem, tenant_id)
+            + _idem_count(pilot.cyclecounts._idem, tenant_id)
+        ),
+        "workOrders": len(wo_ids),
+        "operations": len(ops),
+        "receipts": len(_owned(pilot.receiving.receipts, tenant_id)),
+        "stations": len(pilot.stations.list(tenant_id=tenant_id)),
+        "leases": len(_owned(pilot.dispatcher.leases, tenant_id)),
+        "operators": len(_owned(pilot.identity.operators, tenant_id)),
+        "shifts": len(_owned(pilot.identity.shifts, tenant_id)),
+        "cycleCounts": len(_owned(pilot.cyclecounts.counts, tenant_id)),
+        "cartons": len(_owned(pilot.logistics.cartons, tenant_id)),
+        "palletPlans": len(
+            [
+                p
+                for p in (pilot.logistics.pallets or {}).values()
+                if isinstance(p, dict)
+                and (
+                    p.get("tenantId") == tenant_id
+                    or set(_pallet_carton_ids(p)) <= {c["cartonId"] for c in _owned(pilot.logistics.cartons, tenant_id)}
+                    and bool(_pallet_carton_ids(p))
+                )
+            ]
+        ),
+        "shipments": len(_owned(pilot.logistics.shipments, tenant_id)),
+        "checklists": len(_owned(pilot.logistics.checklists, tenant_id)),
+        "handoffs": len(_owned(pilot.logistics.handoffs, tenant_id)),
+        "qc": len(_owned(pilot.qc.checks, tenant_id)) + len(_owned(pilot.qc.defects, tenant_id)),
+        "exceptions": len(_owned(pilot.inbox.items, tenant_id)),
+        "journal": len(pilot.journal.list(tenant_id)),
+        "outbox": _tx_count(plat.root, tenant_id),
+        "dam": _file_count(plat.root, f"dam/{tenant_id}"),
+    }
+
+
+def evaluate_tenant_restore_matrix(
+    *,
+    live: Any,
+    restored: Any,
+    tenant_a: str,
+    tenant_b: str,
+    live_event_ids: set[str] | None = None,
+) -> dict[str, Any]:
+    live_a = tenant_domain_counts(live, tenant_a)
+    restored_a = tenant_domain_counts(restored, tenant_a)
+    restored_b = tenant_domain_counts(restored, tenant_b)
+    quotes = list((restored.pilot.logistics.carrier_quotes or {}).values())
+    leakage = {k: restored_b[k] for k in TENANT_MATRIX_DOMAINS if restored_b[k]}
+    missing = []
+    for key in TENANT_MATRIX_DOMAINS:
+        if key == "outbox":
+            if restored_a[key] != live_a[key]:
+                missing.append(key)
+            continue
+        if live_a[key] <= 0:
+            missing.append(f"{key}:empty-live")
+            continue
+        if key == "journal":
+            live_ids = live_event_ids
+            if live_ids is None:
+                live_ids = {e.get("eventId") for e in live.pilot.journal.list(tenant_a) if e.get("eventId")}
+            restored_ids = {e.get("eventId") for e in restored.pilot.journal.list(tenant_a) if e.get("eventId")}
+            if not live_ids or not live_ids <= restored_ids:
+                missing.append("journal")
+            continue
+        if restored_a[key] < live_a[key]:
+            missing.append(key)
+    return {
+        "domains": {
+            key: {"liveA": live_a[key], "restoredA": restored_a[key], "restoredB": restored_b[key]}
+            for key in TENANT_MATRIX_DOMAINS
+        },
+        "tenantLeakageAbsent": not leakage and quotes == [],
+        "tenantRequiredStatePreserved": not missing,
+        "leakage": leakage,
+        "missing": missing,
+        "carrierQuotesPolicy": GLOBAL_REFERENCE_POLICY,
+        "truthLabel": "REAL_LOGIC",
+    }

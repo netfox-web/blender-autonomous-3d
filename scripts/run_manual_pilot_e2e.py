@@ -119,9 +119,16 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     if gates.get("evidenceCommitMatchesHead") is not True:
         missing.append("evidenceCommitMatchesHead")
     health = result.get("health") or {}
-    if (health.get("journalIntegrity") or {}).get("ok") is not True and "journalHealthyAfterRestore" not in missing:
-        if gates.get("journalHealthyAfterRestore") is not True:
+    health_ok = (health.get("journalIntegrity") or {}).get("ok") is True
+    if health_ok is not True:
+        if "journalHealthyAfterRestore" not in missing:
             missing.append("journalHealthyAfterRestore")
+        if "restoredRootHealthOk" not in missing:
+            missing.append("restoredRootHealthOk")
+    if gates.get("journalHealthyAfterRestore") is True and health_ok is not True:
+        missing.append("contradictoryHealthEvidence")
+    if health.get("liveCnc") not in (None, "BLOCKED", False) or health.get("liveLaser") not in (None, "BLOCKED", False):
+        missing.append("liveMachineControl")
     rows = [
         {"check": "four-family FIXTURE e2e", "status": "FIXTURE", "evidence": str((result.get("families") or {}).get("ok"))},
         {"check": "operator/shift isolation", "status": _status(bool(gates.get("operatorTenantIsolation"))), "evidence": "disabled/closed/cross-tenant fail closed"},
@@ -139,6 +146,10 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         {"check": "restore releaseHash", "status": _status(bool(gates.get("restoreReleaseHashPreserved"))), "evidence": str(gates.get("restoreReleaseHashPreserved"))},
         {"check": "restore no double consume/complete", "status": _status(bool(gates.get("restoreNoDoubleConsume") and gates.get("restoreNoDoubleCompletion"))), "evidence": json.dumps(result.get("restart"), default=str)},
         {"check": "journal after restore", "status": _status(bool(gates.get("journalHealthyAfterRestore"))), "evidence": str(gates.get("journalHealthyAfterRestore"))},
+        {"check": "restored-root health", "status": _status(bool(gates.get("restoredRootHealthOk") and health_ok)), "evidence": json.dumps(health.get("journalIntegrity"), default=str)},
+        {"check": "tenant leakage absent", "status": _status(bool(gates.get("tenantLeakageAbsent"))), "evidence": json.dumps((result.get("tenantBackupMatrix") or {}).get("leakage"), default=str)},
+        {"check": "tenant required state preserved", "status": _status(bool(gates.get("tenantRequiredStatePreserved"))), "evidence": json.dumps((result.get("tenantBackupMatrix") or {}).get("missing"), default=str)},
+        {"check": "snapshot path-set bound", "status": _status(bool(gates.get("snapshotPathSetBound"))), "evidence": str((result.get("backup") or {}).get("snapshotPathSetBound"))},
         {"check": "cross-tenant restore", "status": _status(bool(gates.get("crossTenantRestoreRejected"))), "evidence": str(gates.get("crossTenantRestoreRejected"))},
         {"check": "evidenceCodeCommit", "status": "REAL_LOGIC" if gates["evidenceCommitMatchesHead"] else "BLOCKED", "evidence": sha},
         {"check": "workingTreeClean", "status": "REAL_LOGIC" if clean else "UNVERIFIED", "evidence": str(clean)},
@@ -199,7 +210,18 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "restoreNoDoubleCompletion": gates.get("restoreNoDoubleCompletion"),
         "journalHealthyAfterRestore": gates.get("journalHealthyAfterRestore"),
         "crossTenantRestoreRejected": gates.get("crossTenantRestoreRejected"),
-        "rows": [r for r in rows if "restore" in r["check"] or "backup" in r["check"] or r["check"] == "journal after restore"],
+        "tenantLeakageAbsent": gates.get("tenantLeakageAbsent"),
+        "tenantRequiredStatePreserved": gates.get("tenantRequiredStatePreserved"),
+        "snapshotPathSetBound": gates.get("snapshotPathSetBound"),
+        "restoredRootHealthOk": gates.get("restoredRootHealthOk"),
+        "tenantBackupMatrix": result.get("tenantBackupMatrix"),
+        "rows": [
+            r
+            for r in rows
+            if "restore" in r["check"]
+            or "backup" in r["check"]
+            or r["check"] in {"journal after restore", "restored-root health", "tenant leakage absent", "tenant required state preserved", "snapshot path-set bound"}
+        ],
     }
     docs.mkdir(parents=True, exist_ok=True)
     if not gate_ok:

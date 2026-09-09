@@ -229,6 +229,9 @@ class LogisticsService:
 
     def palletize(self, carton_ids: list[str]) -> dict[str, Any]:
         cartons = [self.cartons[i] for i in carton_ids]
+        tenants = {c.get("tenantId") for c in cartons}
+        if not cartons or len(tenants) != 1 or None in tenants:
+            raise PermissionError("cross-tenant pallet mix")
         layers: list[list[str]] = []
         current: list[str] = []
         used_w = 0.0
@@ -267,6 +270,8 @@ class LogisticsService:
         flush()
         rec = {
             "palletPlanId": new_id(),
+            "tenantId": next(iter(tenants)),
+            "cartonIds": list(carton_ids),
             "pallets": pallets,
             "palletCount": len(pallets),
             "constraints": {"footprintMm": list(PALLET_MM), "maxHeightMm": PALLET_MAX_H, "maxWeightKg": PALLET_MAX_KG},
@@ -275,6 +280,7 @@ class LogisticsService:
         }
         rec["planHash"] = stable_hash({k: rec[k] for k in rec if k not in {"palletPlanId", "planHash"}})
         self.pallets[rec["palletPlanId"]] = rec
+        self.persist()
         return rec
 
     def shipping_request(
@@ -358,7 +364,9 @@ class LogisticsService:
             "rawSourceHash": stable_hash(raw if raw is not None else json.dumps(row, sort_keys=True, default=str)),
         }
         rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
+        rec["ownership"] = "GLOBAL_REFERENCE"
         self.carrier_quotes[rec["quoteId"]] = rec
+        self.persist()
         return rec
 
     def quote_stale(self, quote: dict[str, Any], *, service: str, dim_divisor: float | None = None) -> bool:
