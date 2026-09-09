@@ -41,6 +41,7 @@ OP_CAPABILITY = {
     "inspection": "QC_MANUAL",
     "print_inspection": "QC_MANUAL",
     "load_label": "QC_MANUAL",
+    "rework": "QC_MANUAL",
 }
 LEASE_SECONDS = 120.0
 
@@ -169,8 +170,25 @@ class StationDispatcher:
         self.leases: dict[str, dict[str, Any]] = {}
         self.journal: Any | None = None
         self.outbox: Any | None = None
+        self.identity: Any | None = None
         self._lock = threading.RLock()
         self.load()
+
+    def _require_identity(
+        self,
+        *,
+        tenant_id: str,
+        operator_id: str | None,
+        shift_id: str | None,
+        capability: str | None = None,
+    ) -> dict[str, Any] | None:
+        if self.identity is None or (operator_id is None and shift_id is None):
+            return None
+        if not operator_id or not shift_id:
+            raise PermissionError("operatorId and shiftId required together")
+        return self.identity.require_active(
+            tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id, capability=capability
+        )
 
     def load(self) -> None:
         if not self.root:
@@ -215,6 +233,8 @@ class StationDispatcher:
         return {"cleared": cleared}
 
     def capability_for(self, operation: str) -> str:
+        if str(operation).startswith("rework"):
+            return "QC_MANUAL"
         cap = OP_CAPABILITY.get(operation)
         if not cap:
             raise PermissionError(f"no MANUAL_STATION capability for {operation}")
@@ -251,8 +271,11 @@ class StationDispatcher:
         operation: str,
         station_id: str,
         actor: str = "ops",
+        operator_id: str | None = None,
+        shift_id: str | None = None,
     ) -> dict[str, Any]:
         wo = self._require_wo(work_order_id, tenant_id)
+        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         station = self.stations.get(station_id, tenant_id=tenant_id)
         if station.get("status") != "ONLINE":
             self.inbox.record(
@@ -311,6 +334,8 @@ class StationDispatcher:
             "started": False,
             "completed": False,
             "actor": actor,
+            "operatorId": operator_id,
+            "shiftId": shift_id,
             "createdAt": _now(),
             "machineCommand": False,
         }
@@ -332,8 +357,18 @@ class StationDispatcher:
         )
         return lease
 
-    def ack(self, lease_id: str, *, tenant_id: str, actor: str, confirm: bool = True) -> dict[str, Any]:
+    def ack(
+        self,
+        lease_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        confirm: bool = True,
+        operator_id: str | None = None,
+        shift_id: str | None = None,
+    ) -> dict[str, Any]:
         lease = self._lease(lease_id, tenant_id)
+        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         if lease.get("acked"):
             return lease
         lease["acked"] = True
@@ -355,13 +390,29 @@ class StationDispatcher:
         )
         return lease
 
-    def start(self, lease_id: str, *, tenant_id: str, actor: str) -> dict[str, Any]:
+    def start(
+        self,
+        lease_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        operator_id: str | None = None,
+        shift_id: str | None = None,
+    ) -> dict[str, Any]:
         lease = self._lease(lease_id, tenant_id)
+        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         if not lease.get("acked"):
-            self.ack(lease_id, tenant_id=tenant_id, actor=actor)
+            self.ack(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
         if lease.get("started"):
             return lease
-        op = self.workorders.start_operation(lease["workOrderId"], lease["operation"], actor=actor, tenant_id=tenant_id)
+        op = self.workorders.start_operation(
+            lease["workOrderId"],
+            lease["operation"],
+            actor=actor,
+            tenant_id=tenant_id,
+            operator_id=operator_id,
+            shift_id=shift_id,
+        )
         lease["started"] = True
         lease["status"] = "STARTED"
         lease["opId"] = op["opId"]
@@ -380,16 +431,28 @@ class StationDispatcher:
         )
         return lease
 
-    def complete(self, lease_id: str, *, tenant_id: str, actor: str, confirm: bool = True) -> dict[str, Any]:
+    def complete(
+        self,
+        lease_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        confirm: bool = True,
+        operator_id: str | None = None,
+        shift_id: str | None = None,
+    ) -> dict[str, Any]:
         if not confirm:
             raise PermissionError("human confirmation required")
         lease = self._lease(lease_id, tenant_id)
+        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         if lease.get("completed"):
             return lease
         if not lease.get("started"):
-            self.start(lease_id, tenant_id=tenant_id, actor=actor)
+            self.start(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
         op_id = lease.get("opId")
-        self.workorders.complete_operation(lease["workOrderId"], op_id, actor=actor)
+        self.workorders.complete_operation(
+            lease["workOrderId"], op_id, actor=actor, operator_id=operator_id, shift_id=shift_id
+        )
         lease["completed"] = True
         lease["status"] = "COMPLETED"
         lease["completedBy"] = actor

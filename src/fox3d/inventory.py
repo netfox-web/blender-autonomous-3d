@@ -715,6 +715,39 @@ class MaterialLotRegistry:
             )
             return rec
 
+    def apply_counted_available(self, lot_id: str, *, tenant_id: str, counted: int, actor: str, reason: str) -> dict[str, Any]:
+        """Set available sheets to a counted value. Does not rewrite consumed/reserved."""
+        qty = int(counted)
+        if qty < 0:
+            raise PermissionError("counted quantity cannot be negative")
+        with self._transaction():
+            rec = self.get(lot_id, tenant_id=tenant_id)
+            reserved = int(rec.get("reservedSheets") or 0)
+            consumed = int(rec.get("consumedSheets") or 0)
+            rec["remainingSheets"] = qty
+            rec["sheetCount"] = qty + reserved + consumed
+            rec["version"] = int(rec.get("version") or 1) + 1
+            rec.setdefault("adjustments", []).append(
+                {
+                    "actor": actor,
+                    "reason": reason,
+                    "source": "CYCLE_COUNT",
+                    "counted": qty,
+                    "reservedUnchanged": reserved,
+                    "consumedUnchanged": consumed,
+                    "at": _now_iso(),
+                }
+            )
+            self._emit(
+                "material.cyclecount",
+                tenant_id=tenant_id,
+                aggregate_id=lot_id,
+                actor=actor,
+                payload={"counted": qty, "reserved": reserved, "consumed": consumed},
+                semantic_key=f"{tenant_id}::cyclecount::{lot_id}::{qty}:{reason}",
+            )
+            return rec
+
     def quarantine(self, lot_id: str, *, tenant_id: str, actor: str, reason: str) -> dict[str, Any]:
         with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)

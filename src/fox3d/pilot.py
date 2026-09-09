@@ -8,8 +8,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from fox3d.backup import backup_pilot, restore_pilot, restart_after_restore, verify_backup
 from fox3d.contracts import ContractService
+from fox3d.cyclecount import CycleCountService
 from fox3d.ids import new_id, sha256_bytes
+from fox3d.identity import OperatorShiftService
 from fox3d.journal import EventJournal
 from fox3d.logistics import LogisticsService
 from fox3d.outbox import CommitOutbox
@@ -24,6 +27,7 @@ from fox3d.recovery import ExceptionInbox
 from fox3d.reliability import ReliabilityHarness
 from fox3d.station import StationDispatcher, StationRegistry
 from fox3d.supplier import SupplierQuoteService
+from fox3d.traveler import build_traveler_packet, resolve_traveler_token, store_traveler
 from fox3d.workorder import FIXTURE_AUTO_SEED, WorkOrderService
 
 PILOT_FAMILIES = ("KD_FURNITURE", "RETAIL_FIXTURE", "PACKAGING_STRUCTURE", "ACRYLIC_SHEET")
@@ -67,13 +71,15 @@ class PilotOps:
             releases=self.releases,
             root=platform.root / "workorders",
         )
-        self.qc = QcService(dam=platform.dam, workorders=self.workorders)
+        self.qc = QcService(dam=platform.dam, workorders=self.workorders, root=platform.root / "qc")
         self.workorders.bind_qc(self.qc)
-        self.logistics = LogisticsService()
+        self.logistics = LogisticsService(root=platform.root / "logistics")
         self.econ = PilotEconomics()
         self.receiving = ReceivingService(lots=platform.lots, root=platform.root / "receipts")
         self.reliability = ReliabilityHarness(self)
-        self.inbox = ExceptionInbox()
+        self.inbox = ExceptionInbox(root=platform.root / "exceptions")
+        self.identity = OperatorShiftService(platform.root / "identity")
+        self.cyclecounts = CycleCountService(platform.lots, root=platform.root / "cyclecounts")
         self.stations = StationRegistry(platform.root / "stations")
         self.dispatcher = StationDispatcher(
             stations=self.stations,
@@ -83,6 +89,7 @@ class PilotOps:
             inbox=self.inbox,
             root=platform.root / "leases",
         )
+        self.dispatcher.identity = self.identity
         self.contracts = ContractService(self)
         for svc in (
             self.releases,
@@ -94,6 +101,8 @@ class PilotOps:
             self.stations,
             self.dispatcher,
             self.contracts,
+            self.identity,
+            self.cyclecounts,
             platform.lots,
         ):
             svc.journal = self.journal
@@ -127,6 +136,12 @@ class PilotOps:
             return aid in self.dispatcher.leases
         if atype == "Station":
             return aid in self.stations.stations
+        if atype == "Operator":
+            return aid in self.identity.operators
+        if atype == "Shift":
+            return aid in self.identity.shifts
+        if atype == "CycleCount":
+            return aid in self.cyclecounts.counts
         return False
 
     def _reconcile_startup(self) -> dict[str, Any]:
@@ -619,3 +634,34 @@ class PilotOps:
 
     def confirm_action(self, *, tenant_id: str, action: str, work_order_id: str, actor: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         return irreversible_action(self, tenant_id=tenant_id, action=action, work_order_id=work_order_id, actor=actor, payload=payload)
+
+    def require_shift(self, *, tenant_id: str, operator_id: str | None = None, shift_id: str | None = None) -> dict[str, Any] | None:
+        if operator_id is None and shift_id is None:
+            return None
+        if not operator_id or not shift_id:
+            raise PermissionError("operatorId and shiftId required together")
+        return self.identity.require_active(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
+
+    def traveler_packet(self, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
+        packet = build_traveler_packet(self, tenant_id=tenant_id, work_order_id=work_order_id)
+        stored = store_traveler(self, packet)
+        return stored
+
+    def resolve_traveler(self, token: str, *, tenant_id: str) -> dict[str, Any]:
+        return resolve_traveler_token(self, token, tenant_id=tenant_id)
+
+    def backup_state(self, dest, *, tenant_ids: list[str] | None = None) -> dict[str, Any]:
+        tenants = tenant_ids or sorted({wo.get("tenantId") for wo in self.workorders.orders.values() if wo.get("tenantId")})
+        return backup_pilot(self.platform.root, dest, tenant_ids=list(tenants))
+
+    def restore_state(self, backup_dir, dest_root, *, tenant_id: str | None = None) -> dict[str, Any]:
+        return restore_pilot(backup_dir, dest_root, tenant_id=tenant_id)
+
+    def verify_backup(self, backup_dir) -> dict[str, Any]:
+        return verify_backup(backup_dir)
+
+    def restart_restored(self, dest_root, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
+        from pathlib import Path
+
+        src_root = Path(__file__).resolve().parents[1]
+        return restart_after_restore(dest_root, tenant_id=tenant_id, work_order_id=work_order_id, src_root=src_root)

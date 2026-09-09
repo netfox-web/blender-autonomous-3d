@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import emit
 
 CATALOG: dict[str, dict[str, Any]] = {
@@ -117,10 +119,26 @@ def catalog_entry(code: str) -> dict[str, Any]:
 
 
 class ExceptionInbox:
-    def __init__(self) -> None:
+    def __init__(self, root: Path | None = None) -> None:
+        self.root = Path(root) if root else None
+        if self.root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.items: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
         self.journal: Any | None = None
+        self.outbox: Any | None = None
+        self.load()
+
+    def load(self) -> None:
+        if not self.root:
+            return
+        payload = read_json(self.root / "exceptions.json") or {}
+        self.items = {r["exceptionId"]: r for r in payload.get("items") or []}
+
+    def persist(self) -> None:
+        if not self.root:
+            return
+        atomic_write_json(self.root / "exceptions.json", {"items": list(self.items.values())})
 
     def record(
         self,

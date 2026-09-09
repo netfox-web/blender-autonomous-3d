@@ -5,6 +5,7 @@ Binds to ManufacturingRelease.releaseHash. Reuses MaterialLot / RemnantStore.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from fox3d.infra import utcnow
 from fox3d.inventory import MaterialLotRegistry, StockShortage, atomic_write_json, normalize_status, read_json
 from fox3d.journal import emit
 from fox3d.mfg_release import FAMILY_STEPS
+from fox3d.operator import require_confirm
 from fox3d.qc import plan_for_family, plan_hash
 
 WO_STATES = (
@@ -44,6 +46,14 @@ TRANSITIONS = {
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _elapsed_minutes(start: str | None, end: str | None) -> float:
+    if not start or not end:
+        return 0.0
+    a = datetime.fromisoformat(str(start))
+    b = datetime.fromisoformat(str(end))
+    return max((b - a).total_seconds() / 60.0, 0.0)
 
 
 class WorkOrderService:
@@ -151,6 +161,9 @@ class WorkOrderService:
             "mes": False,
             "audit": [],
             "allocationPolicy": None,
+            "holds": [],
+            "reworkHistory": [],
+            "remnantDispositions": [],
         }
         snap = release.get("snapshot") or {}
         rec["qcPlan"] = list(snap.get("qcPlan") or plan_for_family(family))
@@ -356,6 +369,8 @@ class WorkOrderService:
         notes: str = "",
         dam_asset_id: str | None = None,
         tenant_id: str | None = None,
+        operator_id: str | None = None,
+        shift_id: str | None = None,
     ) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=tenant_id)
         self._assert_release_fresh(rec, allow_bound_finish=True)
@@ -374,7 +389,8 @@ class WorkOrderService:
             "opId": new_id(),
             "workOrderId": rec["workOrderId"],
             "operation": operation,
-            "operatorId": actor,
+            "operatorId": operator_id or actor,
+            "shiftId": shift_id,
             "startedAt": _now(),
             "completedAt": None,
             "notes": notes,
@@ -387,6 +403,7 @@ class WorkOrderService:
         rec["ops"].append(op)
         rec["lineage"]["operators"] = sorted(set(list(rec["lineage"].get("operators") or []) + [actor]))
         self.operations.append(op)
+        op["labor"] = {"segments": [{"start": op["startedAt"], "end": None, "kind": "manual"}], "corrections": [], "paused": False}
         emit(
             self,
             "workorder.operation_start",
@@ -400,7 +417,16 @@ class WorkOrderService:
         )
         return op
 
-    def complete_operation(self, work_order_id: str, op_id: str, *, actor: str, notes: str = "") -> dict[str, Any]:
+    def complete_operation(
+        self,
+        work_order_id: str,
+        op_id: str,
+        *,
+        actor: str,
+        notes: str = "",
+        operator_id: str | None = None,
+        shift_id: str | None = None,
+    ) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
         op = next(o for o in rec["ops"] if o["opId"] == op_id)
         if op.get("status") == "COMPLETED":
@@ -410,6 +436,15 @@ class WorkOrderService:
         if notes:
             op["notes"] = (op.get("notes") or "") + (" " + notes if op.get("notes") else notes)
         op["completedBy"] = actor
+        if operator_id:
+            op["completedOperatorId"] = operator_id
+        if shift_id:
+            op["completedShiftId"] = shift_id
+        labor = op.setdefault("labor", {"segments": [], "corrections": [], "paused": False})
+        segs = labor.setdefault("segments", [])
+        if segs and segs[-1].get("end") is None:
+            segs[-1]["end"] = op["completedAt"]
+        labor["paused"] = False
         emit(
             self,
             "workorder.operation_complete",
@@ -526,6 +561,9 @@ class WorkOrderService:
             return rec
         if rec["state"] in {"REJECTED"}:
             raise PermissionError("cannot complete rejected work order")
+        open_holds = [h for h in rec.get("holds") or [] if h.get("open") and h.get("blocking")]
+        if open_holds:
+            raise PermissionError("blocking hold prevents completion")
         open_ops = [o for o in rec.get("ops") or [] if o.get("status") != "COMPLETED"]
         needed = [s["operation"] for s in rec.get("traveler", {}).get("steps") or []]
         done = {o.get("operation") for o in rec.get("ops") or [] if o.get("status") == "COMPLETED"}
@@ -652,6 +690,281 @@ class WorkOrderService:
             semantic_key=f"{rec['tenantId']}::wo-rework::{rec['workOrderId']}:{reason}",
         )
         return rec
+
+    def pause_operation(self, work_order_id: str, op_id: str, *, actor: str) -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        op = next(o for o in rec["ops"] if o["opId"] == op_id)
+        labor = op.setdefault("labor", {"segments": [], "corrections": [], "paused": False})
+        if labor.get("paused"):
+            return op
+        segs = labor.setdefault("segments", [])
+        if segs and segs[-1].get("end") is None:
+            segs[-1]["end"] = _now()
+        labor["paused"] = True
+        emit(
+            self,
+            "workorder.operation_pause",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"opId": op_id},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::op-pause::{op_id}",
+        )
+        return op
+
+    def resume_operation(self, work_order_id: str, op_id: str, *, actor: str) -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        op = next(o for o in rec["ops"] if o["opId"] == op_id)
+        labor = op.setdefault("labor", {"segments": [], "corrections": [], "paused": False})
+        if not labor.get("paused"):
+            return op
+        labor["paused"] = False
+        labor.setdefault("segments", []).append({"start": _now(), "end": None, "kind": "manual"})
+        emit(
+            self,
+            "workorder.operation_resume",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"opId": op_id},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::op-resume::{op_id}",
+        )
+        return op
+
+    def correct_labor(
+        self,
+        work_order_id: str,
+        op_id: str,
+        *,
+        actor: str,
+        minutes: float,
+        reason: str,
+    ) -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        op = next(o for o in rec["ops"] if o["opId"] == op_id)
+        labor = op.setdefault("labor", {"segments": [], "corrections": [], "paused": False})
+        labor.setdefault("corrections", []).append(
+            {
+                "minutes": float(minutes),
+                "reason": reason,
+                "actor": actor,
+                "at": _now(),
+                "appendOnly": True,
+            }
+        )
+        emit(
+            self,
+            "workorder.labor_correct",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"opId": op_id, "minutes": minutes, "reason": reason},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::labor-correct::{op_id}::{reason}::{minutes}",
+        )
+        return op
+
+    def labor_summary(self, work_order_id: str) -> dict[str, Any]:
+        rec = self.get(work_order_id)
+        minutes = 0.0
+        for op in rec.get("ops") or []:
+            labor = op.get("labor") or {}
+            for seg in labor.get("segments") or []:
+                minutes += _elapsed_minutes(seg.get("start"), seg.get("end"))
+            for corr in labor.get("corrections") or []:
+                minutes += float(corr.get("minutes") or 0)
+        n_ops = max(len((rec.get("traveler") or {}).get("steps") or []), 1)
+        est_minutes = 15.0 * n_ops
+        rate = 6.0
+        estimated = est_minutes * rate
+        actual = minutes * rate
+        return {
+            "workOrderId": work_order_id,
+            "estimatedLaborMinutes": est_minutes,
+            "actualManualLaborMinutes": round(minutes, 4),
+            "estimatedLaborCost": round(estimated, 2),
+            "actualManualLaborCost": round(actual, 2),
+            "variance": round(actual - estimated, 2),
+            "estimateSource": "CONFIG_ESTIMATE",
+            "actualSource": "MANUAL",
+            "accountingActual": "NOT_IMPLEMENTED",
+            "rateSource": "CONFIG_ESTIMATE",
+            "wageClaim": False,
+            "historyAppendOnly": True,
+            "truthLabel": "REAL_LOGIC / MANUAL",
+        }
+
+    def hold(
+        self,
+        work_order_id: str,
+        *,
+        actor: str,
+        reason: str,
+        blocking: bool = True,
+        operator_id: str | None = None,
+        shift_id: str | None = None,
+    ) -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        h = {
+            "holdId": new_id(),
+            "reason": reason,
+            "actor": actor,
+            "open": True,
+            "blocking": bool(blocking),
+            "operatorId": operator_id,
+            "shiftId": shift_id,
+            "at": _now(),
+        }
+        rec.setdefault("holds", []).append(h)
+        if blocking and rec["state"] not in TERMINAL and rec["state"] != "QC_HOLD":
+            self._transition(rec, "QC_HOLD", actor=actor, reason=f"hold:{reason}")
+        emit(
+            self,
+            "workorder.hold",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"holdId": h["holdId"], "reason": reason, "blocking": bool(blocking)},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::hold::{rec['workOrderId']}::{h['holdId']}",
+        )
+        return h
+
+    def resolve_hold(self, work_order_id: str, hold_id: str, *, actor: str) -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        h = next(x for x in rec.get("holds") or [] if x["holdId"] == hold_id)
+        if not h.get("open"):
+            return h
+        h["open"] = False
+        h["resolvedBy"] = actor
+        h["resolvedAt"] = _now()
+        open_blocking = [x for x in rec.get("holds") or [] if x.get("open") and x.get("blocking")]
+        if rec["state"] == "QC_HOLD" and not open_blocking:
+            gate = self._authoritative_qc_gate(rec)
+            if gate.get("ok"):
+                self._transition(rec, "IN_PROGRESS", actor=actor, reason="hold-resolved")
+        emit(
+            self,
+            "workorder.hold_resolve",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"holdId": hold_id},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::hold-resolve::{hold_id}",
+        )
+        return h
+
+    def authorize_rework(
+        self,
+        work_order_id: str,
+        *,
+        actor: str,
+        reason: str,
+        operation: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        require_confirm(payload, action="rework")
+        rec = self._require(work_order_id, tenant_id=None)
+        rec.setdefault("reworkHistory", []).append(
+            {
+                "reworkId": new_id(),
+                "reason": reason,
+                "actor": actor,
+                "operation": operation,
+                "at": _now(),
+                "appendOnly": True,
+            }
+        )
+        rec["rework"] = True
+        rec["reworkBy"] = actor
+        if rec["state"] == "QC_HOLD":
+            self._transition(rec, "IN_PROGRESS", actor=actor, reason=reason)
+        op_name = operation or f"rework_{len(rec.get('reworkHistory') or [])}"
+        steps = rec.setdefault("traveler", {}).setdefault("steps", [])
+        if not any(s.get("operation") == op_name and s.get("rework") for s in steps):
+            steps.append(
+                {
+                    "seq": len(steps) + 1,
+                    "operation": op_name,
+                    "kind": "rework",
+                    "machineCommand": False,
+                    "liveLaser": False,
+                    "liveCnc": False,
+                    "rework": True,
+                }
+            )
+        emit(
+            self,
+            "workorder.rework_authorize",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"reason": reason, "operation": op_name},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-rework-auth::{rec['workOrderId']}:{op_name}:{reason}",
+        )
+        return rec
+
+    def scrap(
+        self,
+        work_order_id: str,
+        *,
+        actor: str,
+        quantity: float,
+        remnant_rects: list[dict[str, Any]] | None = None,
+        payload: dict[str, Any] | None = None,
+        reason: str = "scrap",
+    ) -> dict[str, Any]:
+        require_confirm(payload, action="scrap")
+        rec = self._require(work_order_id, tenant_id=None)
+        qty = float(quantity)
+        if qty < 0:
+            raise PermissionError("scrap quantity cannot be negative")
+        created: list[dict[str, Any]] = []
+        if remnant_rects and self.remnants is not None:
+            created = self.remnants.add_from_nesting(
+                {"candidateRemnants": remnant_rects, "grainConstraint": "length"},
+                material="WOOD_WHITE",
+                thickness=18,
+                source_run=rec["workOrderId"],
+                tenant_id=rec["tenantId"],
+            )
+            rec["lineage"]["remnants"] = list(rec["lineage"].get("remnants") or []) + [r["remnantId"] for r in created]
+            rec.setdefault("remnantDispositions", []).append(
+                {"kind": "REMNANT", "ids": [r["remnantId"] for r in created], "at": _now(), "silentScrap": False}
+            )
+        rec.setdefault("scrap", []).append(
+            {
+                "qty": qty,
+                "kind": "scrapWithRemnantSplit" if created else "trueScrap",
+                "source": "MANUAL",
+                "actor": actor,
+                "reason": reason,
+                "silentScrap": False,
+                "at": _now(),
+            }
+        )
+        emit(
+            self,
+            "workorder.scrap",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"qty": qty, "remnants": [r["remnantId"] for r in created]},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-scrap::{rec['workOrderId']}:{qty}:{reason}",
+        )
+        return {"workOrder": rec, "remnants": created, "silentScrap": False}
 
     def _require(self, work_order_id: str, tenant_id: str | None) -> dict[str, Any]:
         rec = self.orders[work_order_id]

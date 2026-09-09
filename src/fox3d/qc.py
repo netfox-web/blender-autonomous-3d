@@ -5,10 +5,12 @@ QC photos reference existing DAM. Not a second media store.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import emit
 
 DISPOSITIONS = ("REWORK", "SCRAP", "USE_AS_IS_WITH_APPROVAL", "REJECT")
@@ -65,12 +67,29 @@ def in_tolerance(*, measured: float, nominal: float, tol: float) -> bool:
 
 
 class QcService:
-    def __init__(self, *, dam: Any | None = None, workorders: Any | None = None) -> None:
+    def __init__(self, *, dam: Any | None = None, workorders: Any | None = None, root: Path | None = None) -> None:
         self.dam = dam
         self.workorders = workorders
+        self.root = Path(root) if root else None
+        if self.root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.journal: Any | None = None
+        self.outbox: Any | None = None
         self.checks: dict[str, dict[str, Any]] = {}
         self.defects: dict[str, dict[str, Any]] = {}
+        self.load()
+
+    def load(self) -> None:
+        if not self.root:
+            return
+        payload = read_json(self.root / "qc.json") or {}
+        self.checks = {r["qcId"]: r for r in payload.get("checks") or []}
+        self.defects = {r["defectId"]: r for r in payload.get("defects") or []}
+
+    def persist(self) -> None:
+        if not self.root:
+            return
+        atomic_write_json(self.root / "qc.json", {"checks": list(self.checks.values()), "defects": list(self.defects.values())})
 
     def schema(self, family: str) -> list[dict[str, Any]]:
         return plan_for_family(family)

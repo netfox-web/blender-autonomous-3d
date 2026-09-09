@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import emit
 
 ALLOWED_SOURCES = frozenset({"MANUAL", "IMPORTED"})
@@ -21,13 +23,48 @@ def _now() -> str:
 
 
 class LogisticsService:
-    def __init__(self) -> None:
+    def __init__(self, root: Path | None = None) -> None:
+        self.root = Path(root) if root else None
+        if self.root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.journal: Any | None = None
+        self.outbox: Any | None = None
         self.cartons: dict[str, dict[str, Any]] = {}
         self.pallets: dict[str, dict[str, Any]] = {}
         self.shipments: dict[str, dict[str, Any]] = {}
         self.carrier_quotes: dict[str, dict[str, Any]] = {}
-        self._idem: dict[str, list[str]] = {}
+        self.checklists: dict[str, dict[str, Any]] = {}
+        self.handoffs: dict[str, dict[str, Any]] = {}
+        self._idem: dict[str, Any] = {}
+        self.load()
+
+    def load(self) -> None:
+        if not self.root:
+            return
+        payload = read_json(self.root / "logistics.json") or {}
+        self.cartons = {r["cartonId"]: r for r in payload.get("cartons") or []}
+        self.pallets = {r["palletPlanId"]: r for r in payload.get("pallets") or []}
+        self.shipments = {r["shipmentId"]: r for r in payload.get("shipments") or []}
+        self.carrier_quotes = {r["quoteId"]: r for r in payload.get("carrier_quotes") or []}
+        self.checklists = {r["checklistId"]: r for r in payload.get("checklists") or []}
+        self.handoffs = {r["handoffId"]: r for r in payload.get("handoffs") or []}
+        self._idem = dict(payload.get("idem") or {})
+
+    def persist(self) -> None:
+        if not self.root:
+            return
+        atomic_write_json(
+            self.root / "logistics.json",
+            {
+                "cartons": list(self.cartons.values()),
+                "pallets": list(self.pallets.values()),
+                "shipments": list(self.shipments.values()),
+                "carrier_quotes": list(self.carrier_quotes.values()),
+                "checklists": list(self.checklists.values()),
+                "handoffs": list(self.handoffs.values()),
+                "idem": self._idem,
+            },
+        )
 
     def instantiate_cartons(
         self,
@@ -118,6 +155,14 @@ class LogisticsService:
             "truthLabel": "MEASURED",
         }
         rec["expected"] = expected
+        mismatch = (
+            abs(float(length) - float(expected["length"])) > 5
+            or abs(float(width) - float(expected["width"])) > 5
+            or abs(float(height) - float(expected["height"])) > 5
+            or abs(float(weight_kg) - float(expected.get("weightKg") or 0)) > 1.0
+        )
+        rec["mismatch"] = mismatch
+        rec["autoOverride"] = False
         emit(
             self,
             "carton.measured",
@@ -334,3 +379,106 @@ class LogisticsService:
             "printerPath": None,
             "scannerPath": None,
         }
+
+    def packing_checklist(
+        self,
+        *,
+        tenant_id: str,
+        work_order_id: str,
+        release_hash: str,
+    ) -> dict[str, Any]:
+        cartons = [c for c in self.cartons.values() if c["workOrderId"] == work_order_id]
+        if any(c.get("tenantId") != tenant_id for c in cartons):
+            raise PermissionError("tenant isolation: packing")
+        pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
+        rec = {
+            "checklistId": new_id(),
+            "tenantId": tenant_id,
+            "workOrderId": work_order_id,
+            "releaseHash": release_hash,
+            "pinned": pinned,
+            "items": [
+                {
+                    "cartonId": c["cartonId"],
+                    "expected": c.get("expected"),
+                    "measured": c.get("measured"),
+                    "mismatch": bool(c.get("mismatch")),
+                }
+                for c in cartons
+            ],
+            "mismatchHold": any(bool(c.get("mismatch")) for c in cartons),
+            "autoOverride": False,
+            "truthLabel": "REAL_LOGIC",
+            "carrierProvider": "BLOCKED/NOT_CONNECTED",
+        }
+        rec["checklistHash"] = stable_hash({k: rec[k] for k in rec if k != "checklistHash"})
+        self.checklists[rec["checklistId"]] = rec
+        emit(
+            self,
+            "packing.checklist",
+            tenant_id=tenant_id,
+            aggregate_type="PackingChecklist",
+            aggregate_id=rec["checklistId"],
+            actor="ops",
+            payload={"workOrderId": work_order_id, "pinned": pinned},
+            release_hash=release_hash,
+            semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}",
+        )
+        return rec
+
+    def shipment_handoff(
+        self,
+        shipment_id: str,
+        *,
+        tenant_id: str,
+        carrier: str,
+        tracking: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        rec = self.shipments[shipment_id]
+        if rec.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: shipment")
+        key = f"{tenant_id}::handoff::{tracking}"
+        if key in self._idem:
+            hid = self._idem[key]
+            existing = self.handoffs.get(hid)
+            if existing is None:
+                raise PermissionError("idempotency namespace collision: handoff")
+            if existing.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: handoff")
+            return rec
+        handoff = {
+            "handoffId": new_id(),
+            "shipmentId": shipment_id,
+            "tenantId": tenant_id,
+            "carrier": carrier,
+            "tracking": tracking,
+            "actor": actor,
+            "at": _now(),
+            "source": "MANUAL",
+            "truthLabel": "MANUAL/IMPORTED",
+            "liveProvider": False,
+            "booked": False,
+            "submittedToCarrier": False,
+            "deliveryConfirmed": False,
+            "status": "HANDED_OFF_MANUAL",
+        }
+        rec["handoff"] = handoff
+        rec["status"] = "HANDED_OFF_MANUAL"
+        rec["booked"] = False
+        rec["submittedToCarrier"] = False
+        rec["shipped"] = False
+        rec["liveCarrier"] = False
+        self.handoffs[handoff["handoffId"]] = handoff
+        self._idem[key] = handoff["handoffId"]
+        emit(
+            self,
+            "shipment.handoff",
+            tenant_id=tenant_id,
+            aggregate_type="Shipment",
+            aggregate_id=shipment_id,
+            actor=actor,
+            payload={"carrier": carrier, "tracking": tracking, "liveProvider": False, "deliveryConfirmed": False},
+            semantic_key=key,
+        )
+        return rec

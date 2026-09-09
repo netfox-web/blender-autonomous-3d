@@ -52,6 +52,7 @@ def resolve_scan(pilot: Any, token: str, *, tenant_id: str) -> dict[str, Any]:
         "record": rec,
         "barcodeHardware": "PARTIAL",
         "liveMachineControl": False,
+        "authorizesOperation": False,
     }
 
 
