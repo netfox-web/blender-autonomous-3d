@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T13:29:25.990910+00:00",
-  "acceptanceGenerationId": "03680045-41c9-4144-b97f-a0edfc905ef4",
-  "evidenceCodeCommit": "66a66d1feda59cfe77fe8f5ceb21032d86f2c3f8",
+  "generatedAt": "2026-09-09T14:47:01.155743+00:00",
+  "acceptanceGenerationId": "2934a4aa-6d6c-4d2c-a1fe-35863475f8e5",
+  "evidenceCodeCommit": "244c707b67dffff0bdd3824fc5f46a5e16dadde0",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -16,71 +16,1684 @@
   "priorRealBlenderEvidence": {
     "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
     "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
-    "reason": "Portfolio/media/engineering render path unchanged; Phase 601\u2013660 adds prototype workflow only"
+    "verified": true,
+    "cases": 4,
+    "media": [
+      {
+        "candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8",
+        "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8",
+        "jobId": "c2d96d5c-f569-449c-bd39-9faac4d70ad0",
+        "artifactSha256": "e5a853452c57a5bfb9a9ba1319dca96bf515c11f8b57e2f07ec9d2de185e6d3a",
+        "artifactSize": 52574,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "5b8d48af-066e-4738-811d-0518833ce071",
+        "engineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898",
+        "jobId": "5608af7c-230a-4253-ad20-4a64b815bf1e",
+        "artifactSha256": "da9512ac365d9f3b3b13254673ecaf94ffbbc8369a733ba42b6daaa028dce3cc",
+        "artifactSize": 54141,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "9e838170-2fba-45da-91f1-63ee967a9ea4",
+        "engineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d",
+        "jobId": "cda2642f-c0fd-4d6a-9dca-8f7626a4deda",
+        "artifactSha256": "c4c5690cb495184dc4abb629dd292c706ed913081cf3703ef69a71bb4897ae49",
+        "artifactSize": 53325,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "c8d8edb8-e96e-443c-99bf-8a0c5e496f15",
+        "engineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04",
+        "jobId": "22c0d21e-e7b4-45fa-a6fd-77ac0937423b",
+        "artifactSha256": "40069c7abd5073037104cd229997c4415fb7c08683b5589463ba51047cc2d02e",
+        "artifactSize": 54424,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      }
+    ],
+    "reason": "Portfolio/media/engineering render path unchanged; Phase 601\u2013660 adds prototype workflow only. Prior REAL 4/4 T1000 OptiX verified fail-closed from SKU_PORTFOLIO_FACTORY_ACCEPTANCE.json"
   },
   "domain": "prototype-validation",
   "selectedCount": 4,
   "selected": [
     {
-      "selectionId": "1186f077-9d71-474e-9073-294f4e2ea7b8",
-      "candidateId": "9b74415e-a621-42de-880b-58b7b6727e17",
-      "engineeringHash": "298ce934378532379e28cd022793a5ace67d53dfeda892a167836ea29e693154",
+      "selectionId": "98ac06e5-d3cd-4e72-a5f4-a977d6e077fc",
+      "candidateId": "cb6e75f5-fef5-45d4-9361-82aaa7d6723f",
+      "engineeringHash": "c6d0a337e1f43030cddcebe3e5d36749644b4eae92d53aa0d9ce52ec5c62a3bf",
+      "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
+      "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
+      "nestingHash": "2b7a43b2394855abb9bf476f09c7f1342e494f2ec2e196988621c3f5f6bbdd30",
       "truthLabel": "FIXTURE"
     },
     {
-      "selectionId": "a1267390-ffe4-4e2c-9c37-40165b3f3745",
-      "candidateId": "3abe9165-5b1f-4434-85cf-5c7980b9f2a1",
-      "engineeringHash": "e22d5cae7570c8839d0110799dab0b89a892af6c19fa6ea195e27a9c4b9e28bb",
+      "selectionId": "056156e7-82cb-482d-8f0a-bc5ee3fc0a47",
+      "candidateId": "a2a8896b-f8f5-4c10-8dee-1343a950faab",
+      "engineeringHash": "a5576cb3a245000f968998ce008cd23a586dbb6662e9399e40b8369a55fbc2e2",
+      "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
+      "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
+      "nestingHash": "ccb8a1a9da77c171db0e32344708b4c690c25682612507415f0968db638d3373",
       "truthLabel": "FIXTURE"
     },
     {
-      "selectionId": "202bfdf3-a0ee-43de-a470-3395ca64b144",
-      "candidateId": "ae5e85d0-1629-4e8c-b7b4-bc5be4e4a0ca",
-      "engineeringHash": "912dd3a94535c5d8742d422319947fc440e9901e7a7fcd3ab637dfed99efc03b",
+      "selectionId": "bc1ea643-38e6-4928-bcc2-f8c549388468",
+      "candidateId": "14a236a1-8ed4-454b-b454-ed6e3c5d6e82",
+      "engineeringHash": "ebbb8f1e688a41b691e81cbcb16dab11de2be01f8ccd26f0e31d093ae105b5ae",
+      "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
+      "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
+      "nestingHash": "e54894fcb2613fe6c7fab3220905587d3c93fb34b87e2f054b063be8e9ec72c4",
       "truthLabel": "FIXTURE"
     },
     {
-      "selectionId": "77215c2d-f0fc-48ea-9608-b46609508faa",
-      "candidateId": "ba00a326-36f8-4b5d-9e6c-64ad5862983a",
-      "engineeringHash": "aee54a4881ab1a60bf2dcf7f5ea166aeb545184b54d23783f8ff6bbcf74221b0",
+      "selectionId": "f4e2bf73-70fa-4dea-8179-2adbd368c368",
+      "candidateId": "69a3c4c7-d67b-4f45-aa5a-4156a58a89f1",
+      "engineeringHash": "e80039917eba280aa9e9053b52584dde3c8839fc6676a89a819d1252f462709b",
+      "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
+      "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
+      "nestingHash": "06d28bd2ab10440c3f2763a3ea1fc3615651fbc12d18ba60e29dc1c10265fc21",
       "truthLabel": "FIXTURE"
     }
   ],
   "units": [
     {
-      "prototypeUnitId": "d5259d6c-0682-4a33-bdec-d02afbefbbcb",
-      "candidateId": "9b74415e-a621-42de-880b-58b7b6727e17",
-      "engineeringHash": "298ce934378532379e28cd022793a5ace67d53dfeda892a167836ea29e693154",
+      "prototypeUnitId": "ebd56630-6d45-43fa-9f1b-c8feb7973908",
+      "candidateId": "cb6e75f5-fef5-45d4-9361-82aaa7d6723f",
+      "engineeringHash": "c6d0a337e1f43030cddcebe3e5d36749644b4eae92d53aa0d9ce52ec5c62a3bf",
       "state": "WAITING_VALIDATION",
-      "physicalPrototypeValidated": false
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "inventoryLineage": null
     },
     {
-      "prototypeUnitId": "4a649d57-780f-4ad3-977b-ff49e9a34c35",
-      "candidateId": "3abe9165-5b1f-4434-85cf-5c7980b9f2a1",
-      "engineeringHash": "e22d5cae7570c8839d0110799dab0b89a892af6c19fa6ea195e27a9c4b9e28bb",
+      "prototypeUnitId": "4e0f0a0f-24b2-4e30-93b4-f117c809c1ad",
+      "candidateId": "a2a8896b-f8f5-4c10-8dee-1343a950faab",
+      "engineeringHash": "a5576cb3a245000f968998ce008cd23a586dbb6662e9399e40b8369a55fbc2e2",
       "state": "WAITING_VALIDATION",
-      "physicalPrototypeValidated": false
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "inventoryLineage": null
     },
     {
-      "prototypeUnitId": "15a5d1d7-9359-443c-bd7f-e6e15817108c",
-      "candidateId": "ae5e85d0-1629-4e8c-b7b4-bc5be4e4a0ca",
-      "engineeringHash": "912dd3a94535c5d8742d422319947fc440e9901e7a7fcd3ab637dfed99efc03b",
+      "prototypeUnitId": "02207757-0322-437f-aabc-00eb6903d939",
+      "candidateId": "14a236a1-8ed4-454b-b454-ed6e3c5d6e82",
+      "engineeringHash": "ebbb8f1e688a41b691e81cbcb16dab11de2be01f8ccd26f0e31d093ae105b5ae",
       "state": "WAITING_VALIDATION",
-      "physicalPrototypeValidated": false
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "inventoryLineage": null
     },
     {
-      "prototypeUnitId": "5d43a31e-ec89-42a1-9481-3ac1d5d6732d",
-      "candidateId": "ba00a326-36f8-4b5d-9e6c-64ad5862983a",
-      "engineeringHash": "aee54a4881ab1a60bf2dcf7f5ea166aeb545184b54d23783f8ff6bbcf74221b0",
+      "prototypeUnitId": "0ff19966-fb6b-4360-a72d-48e08260ba4e",
+      "candidateId": "69a3c4c7-d67b-4f45-aa5a-4156a58a89f1",
+      "engineeringHash": "e80039917eba280aa9e9053b52584dde3c8839fc6676a89a819d1252f462709b",
       "state": "WAITING_VALIDATION",
-      "physicalPrototypeValidated": false
+      "physicalPrototypeValidated": false,
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "consumesInventory": false,
+      "inventoryLineage": null
     }
   ],
+  "matrix": [
+    {
+      "selectionId": "98ac06e5-d3cd-4e72-a5f4-a977d6e077fc",
+      "candidateId": "cb6e75f5-fef5-45d4-9361-82aaa7d6723f",
+      "engineeringHash": "c6d0a337e1f43030cddcebe3e5d36749644b4eae92d53aa0d9ce52ec5c62a3bf",
+      "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
+      "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
+      "nestingHash": "2b7a43b2394855abb9bf476f09c7f1342e494f2ec2e196988621c3f5f6bbdd30",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "costSnapshotHash": "ffd605b3cbc6e4d32023d6a4a2f820ad8c94edc60366d8a098ab29bb44fad34a",
+      "prototypeUnitId": "ebd56630-6d45-43fa-9f1b-c8feb7973908",
+      "unitState": "WAITING_VALIDATION",
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "toleranceStatus": false,
+      "qcStatus": {
+        "complete": true,
+        "missing": []
+      },
+      "costCompleteness": "PARTIAL",
+      "observedCostLabel": "FIXTURE",
+      "monetaryVarianceStatus": "PARTIAL",
+      "packagingCompleteness": "COMPLETE",
+      "packagingVarianceStatus": "ok",
+      "ecoStatus": null,
+      "decisionState": "WAITING_PHYSICAL_EVIDENCE",
+      "blockers": [
+        "fixture_evidence",
+        "tolerance",
+        "cost_partial"
+      ],
+      "physicalPrototypeValidated": false,
+      "liveMachineControl": false,
+      "consumesInventory": false,
+      "inventoryLineage": null,
+      "staleLineage": false
+    },
+    {
+      "selectionId": "056156e7-82cb-482d-8f0a-bc5ee3fc0a47",
+      "candidateId": "a2a8896b-f8f5-4c10-8dee-1343a950faab",
+      "engineeringHash": "a5576cb3a245000f968998ce008cd23a586dbb6662e9399e40b8369a55fbc2e2",
+      "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
+      "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
+      "nestingHash": "ccb8a1a9da77c171db0e32344708b4c690c25682612507415f0968db638d3373",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "costSnapshotHash": "74625b6c79718615daae199710258bd5a038dc9a9616a557a7b68520912826e4",
+      "prototypeUnitId": "4e0f0a0f-24b2-4e30-93b4-f117c809c1ad",
+      "unitState": "WAITING_VALIDATION",
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "toleranceStatus": false,
+      "qcStatus": {
+        "complete": true,
+        "missing": []
+      },
+      "costCompleteness": "PARTIAL",
+      "observedCostLabel": "FIXTURE",
+      "monetaryVarianceStatus": "PARTIAL",
+      "packagingCompleteness": "COMPLETE",
+      "packagingVarianceStatus": "ok",
+      "ecoStatus": null,
+      "decisionState": "WAITING_PHYSICAL_EVIDENCE",
+      "blockers": [
+        "fixture_evidence",
+        "tolerance",
+        "cost_partial"
+      ],
+      "physicalPrototypeValidated": false,
+      "liveMachineControl": false,
+      "consumesInventory": false,
+      "inventoryLineage": null,
+      "staleLineage": false
+    },
+    {
+      "selectionId": "bc1ea643-38e6-4928-bcc2-f8c549388468",
+      "candidateId": "14a236a1-8ed4-454b-b454-ed6e3c5d6e82",
+      "engineeringHash": "ebbb8f1e688a41b691e81cbcb16dab11de2be01f8ccd26f0e31d093ae105b5ae",
+      "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
+      "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
+      "nestingHash": "e54894fcb2613fe6c7fab3220905587d3c93fb34b87e2f054b063be8e9ec72c4",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "costSnapshotHash": "3437281c1a36d5b66b8b9adfead24057f0a7f3bc0b0d2ed4f155a7cdf33b7614",
+      "prototypeUnitId": "02207757-0322-437f-aabc-00eb6903d939",
+      "unitState": "WAITING_VALIDATION",
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "toleranceStatus": false,
+      "qcStatus": {
+        "complete": true,
+        "missing": []
+      },
+      "costCompleteness": "PARTIAL",
+      "observedCostLabel": "FIXTURE",
+      "monetaryVarianceStatus": "PARTIAL",
+      "packagingCompleteness": "COMPLETE",
+      "packagingVarianceStatus": "ok",
+      "ecoStatus": null,
+      "decisionState": "WAITING_PHYSICAL_EVIDENCE",
+      "blockers": [
+        "fixture_evidence",
+        "tolerance",
+        "cost_partial"
+      ],
+      "physicalPrototypeValidated": false,
+      "liveMachineControl": false,
+      "consumesInventory": false,
+      "inventoryLineage": null,
+      "staleLineage": false
+    },
+    {
+      "selectionId": "f4e2bf73-70fa-4dea-8179-2adbd368c368",
+      "candidateId": "69a3c4c7-d67b-4f45-aa5a-4156a58a89f1",
+      "engineeringHash": "e80039917eba280aa9e9053b52584dde3c8839fc6676a89a819d1252f462709b",
+      "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
+      "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
+      "nestingHash": "06d28bd2ab10440c3f2763a3ea1fc3615651fbc12d18ba60e29dc1c10265fc21",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "costSnapshotHash": "c67465f5c2481bc13a872466c8d8ea3b5a0d7f5b87d55fac43cc9bb8931ece06",
+      "prototypeUnitId": "0ff19966-fb6b-4360-a72d-48e08260ba4e",
+      "unitState": "WAITING_VALIDATION",
+      "evidenceSource": "FIXTURE",
+      "buildCompleted": true,
+      "toleranceStatus": false,
+      "qcStatus": {
+        "complete": true,
+        "missing": []
+      },
+      "costCompleteness": "PARTIAL",
+      "observedCostLabel": "FIXTURE",
+      "monetaryVarianceStatus": "PARTIAL",
+      "packagingCompleteness": "COMPLETE",
+      "packagingVarianceStatus": "ok",
+      "ecoStatus": null,
+      "decisionState": "WAITING_PHYSICAL_EVIDENCE",
+      "blockers": [
+        "fixture_evidence",
+        "tolerance",
+        "cost_partial"
+      ],
+      "physicalPrototypeValidated": false,
+      "liveMachineControl": false,
+      "consumesInventory": false,
+      "inventoryLineage": null,
+      "staleLineage": false
+    }
+  ],
+  "board": {
+    "portfolioId": "068afe4a-9e90-465b-ba7c-a9d148404dc7",
+    "tenantId": "pv-a",
+    "rows": [
+      {
+        "candidateId": "cb6e75f5-fef5-45d4-9361-82aaa7d6723f",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.7159642293951043,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "expectedUtilization": 0.6161,
+        "trueScrap": 154048.0,
+        "reusableRemnant": 988736.0,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "toleranceResult": {
+          "ok": false,
+          "policy": {
+            "dimMm": 3.0,
+            "dimPct": 0.02,
+            "weightKg": 0.5,
+            "assemblyMinutes": 15.0,
+            "label": "ENGINEERING_POLICY",
+            "certification": false
+          },
+          "policyHash": "5149b5eab06a63098f39c0ebcba57f950f91eb6c8e4702c4d74eaf4bac7397f6",
+          "fields": {
+            "widthMm": {
+              "target": 800.0,
+              "actual": 800.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "widthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "depthMm": {
+              "target": 400.0,
+              "actual": 400.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "depthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "heightMm": {
+              "target": 400.0,
+              "actual": 400.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "heightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "assembledWeightKg": {
+              "target": 20.672,
+              "actual": 12.0,
+              "abs": -8.672,
+              "pct": -0.4195046439628483,
+              "complete": true,
+              "field": "assembledWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "assemblyMinutes": {
+              "target": 22.3,
+              "actual": 40.0,
+              "abs": 17.7,
+              "pct": 0.7937219730941704,
+              "complete": true,
+              "field": "assemblyMinutes",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "cartonLengthMm": {
+              "target": 824.0,
+              "actual": 824.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonLengthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonWidthMm": {
+              "target": 424.0,
+              "actual": 424.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonWidthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonHeightMm": {
+              "target": 180.0,
+              "actual": 180.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonHeightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "packedWeightKg": {
+              "target": 20.672,
+              "actual": 13.0,
+              "abs": -7.672000000000001,
+              "pct": -0.37113003095975233,
+              "complete": true,
+              "field": "packedWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            }
+          },
+          "failed": [
+            "assembledWeightKg",
+            "assemblyMinutes"
+          ]
+        },
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 800.0,
+            "actual": 800.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 20.672,
+            "actual": 12.0,
+            "abs": -8.672,
+            "pct": -0.4195046439628483,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 22.3,
+            "actual": 40.0,
+            "abs": 17.7,
+            "pct": 0.7937219730941704,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 824.0,
+            "actual": 824.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 424.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 180.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 20.672,
+            "actual": 13.0,
+            "abs": -7.672000000000001,
+            "pct": -0.37113003095975233,
+            "complete": true
+          }
+        },
+        "assemblyObservedVsEstimated": {
+          "target": 22.3,
+          "actual": 40.0,
+          "abs": 17.7,
+          "pct": 0.7937219730941704,
+          "complete": true
+        },
+        "observedCostLabel": "FIXTURE",
+        "observedMonetaryVariance": null,
+        "costCompleteness": "PARTIAL",
+        "packagingPredictedVsObserved": {
+          "cartonLengthMm": {
+            "target": 824.0,
+            "actual": 824.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonLengthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 424.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonWidthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 180.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonHeightMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "packedWeightKg": {
+            "target": 20.672,
+            "actual": 13.0,
+            "abs": -7.672000000000001,
+            "pct": -0.37113003095975233,
+            "complete": true,
+            "field": "packedWeightKg",
+            "ok": false,
+            "reason": "out_of_tolerance"
+          }
+        },
+        "packagingValidation": {
+          "ok": true,
+          "reason": "ok",
+          "volumetricWeightKg": 10.481280000000002
+        },
+        "qcStatus": {
+          "missing": [],
+          "observations": {
+            "hardware": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "panelEdgeFinish": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "wobbleStability": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "doorDrawerFit": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "reworkCount": 0,
+            "defectCount": 0
+          },
+          "complete": true
+        },
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": "FIXTURE",
+        "blockers": [
+          "fixture_evidence",
+          "tolerance",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "a2a8896b-f8f5-4c10-8dee-1343a950faab",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.6940600704797649,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "expectedUtilization": 0.5084,
+        "trueScrap": 218128.0,
+        "reusableRemnant": 1245256.0,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "toleranceResult": {
+          "ok": false,
+          "policy": {
+            "dimMm": 3.0,
+            "dimPct": 0.02,
+            "weightKg": 0.5,
+            "assemblyMinutes": 15.0,
+            "label": "ENGINEERING_POLICY",
+            "certification": false
+          },
+          "policyHash": "5149b5eab06a63098f39c0ebcba57f950f91eb6c8e4702c4d74eaf4bac7397f6",
+          "fields": {
+            "widthMm": {
+              "target": 600.0,
+              "actual": 600.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "widthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "depthMm": {
+              "target": 400.0,
+              "actual": 400.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "depthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "heightMm": {
+              "target": 450.0,
+              "actual": 450.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "heightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "assembledWeightKg": {
+              "target": 17.203,
+              "actual": 12.0,
+              "abs": -5.202999999999999,
+              "pct": -0.3024472475730977,
+              "complete": true,
+              "field": "assembledWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "assemblyMinutes": {
+              "target": 22.3,
+              "actual": 40.0,
+              "abs": 17.7,
+              "pct": 0.7937219730941704,
+              "complete": true,
+              "field": "assemblyMinutes",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "cartonLengthMm": {
+              "target": 624.0,
+              "actual": 624.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonLengthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonWidthMm": {
+              "target": 438.0,
+              "actual": 438.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonWidthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonHeightMm": {
+              "target": 180.0,
+              "actual": 180.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonHeightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "packedWeightKg": {
+              "target": 17.203,
+              "actual": 13.0,
+              "abs": -4.202999999999999,
+              "pct": -0.2443178515375225,
+              "complete": true,
+              "field": "packedWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            }
+          },
+          "failed": [
+            "assembledWeightKg",
+            "assemblyMinutes"
+          ]
+        },
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 600.0,
+            "actual": 600.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 450.0,
+            "actual": 450.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 17.203,
+            "actual": 12.0,
+            "abs": -5.202999999999999,
+            "pct": -0.3024472475730977,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 22.3,
+            "actual": 40.0,
+            "abs": 17.7,
+            "pct": 0.7937219730941704,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 624.0,
+            "actual": 624.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 438.0,
+            "actual": 438.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 180.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 17.203,
+            "actual": 13.0,
+            "abs": -4.202999999999999,
+            "pct": -0.2443178515375225,
+            "complete": true
+          }
+        },
+        "assemblyObservedVsEstimated": {
+          "target": 22.3,
+          "actual": 40.0,
+          "abs": 17.7,
+          "pct": 0.7937219730941704,
+          "complete": true
+        },
+        "observedCostLabel": "FIXTURE",
+        "observedMonetaryVariance": null,
+        "costCompleteness": "PARTIAL",
+        "packagingPredictedVsObserved": {
+          "cartonLengthMm": {
+            "target": 624.0,
+            "actual": 624.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonLengthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonWidthMm": {
+            "target": 438.0,
+            "actual": 438.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonWidthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 180.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonHeightMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "packedWeightKg": {
+            "target": 17.203,
+            "actual": 13.0,
+            "abs": -4.202999999999999,
+            "pct": -0.2443178515375225,
+            "complete": true,
+            "field": "packedWeightKg",
+            "ok": false,
+            "reason": "out_of_tolerance"
+          }
+        },
+        "packagingValidation": {
+          "ok": true,
+          "reason": "ok",
+          "volumetricWeightKg": 8.199359999999999
+        },
+        "qcStatus": {
+          "missing": [],
+          "observations": {
+            "hardware": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "panelEdgeFinish": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "wobbleStability": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "doorDrawerFit": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "reworkCount": 0,
+            "defectCount": 0
+          },
+          "complete": true
+        },
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": "FIXTURE",
+        "blockers": [
+          "fixture_evidence",
+          "tolerance",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "14a236a1-8ed4-454b-b454-ed6e3c5d6e82",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.6881712097382667,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "expectedUtilization": 0.4855,
+        "trueScrap": 239616.0,
+        "reusableRemnant": 1291968.0,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "toleranceResult": {
+          "ok": false,
+          "policy": {
+            "dimMm": 3.0,
+            "dimPct": 0.02,
+            "weightKg": 0.5,
+            "assemblyMinutes": 15.0,
+            "label": "ENGINEERING_POLICY",
+            "certification": false
+          },
+          "policyHash": "5149b5eab06a63098f39c0ebcba57f950f91eb6c8e4702c4d74eaf4bac7397f6",
+          "fields": {
+            "widthMm": {
+              "target": 600.0,
+              "actual": 600.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "widthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "depthMm": {
+              "target": 400.0,
+              "actual": 400.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "depthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "heightMm": {
+              "target": 400.0,
+              "actual": 400.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "heightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "assembledWeightKg": {
+              "target": 16.655,
+              "actual": 12.0,
+              "abs": -4.655000000000001,
+              "pct": -0.27949564695286705,
+              "complete": true,
+              "field": "assembledWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "assemblyMinutes": {
+              "target": 22.3,
+              "actual": 40.0,
+              "abs": 17.7,
+              "pct": 0.7937219730941704,
+              "complete": true,
+              "field": "assemblyMinutes",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "cartonLengthMm": {
+              "target": 624.0,
+              "actual": 624.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonLengthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonWidthMm": {
+              "target": 424.0,
+              "actual": 424.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonWidthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonHeightMm": {
+              "target": 180.0,
+              "actual": 180.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonHeightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "packedWeightKg": {
+              "target": 16.655,
+              "actual": 13.0,
+              "abs": -3.655000000000001,
+              "pct": -0.21945361753227263,
+              "complete": true,
+              "field": "packedWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            }
+          },
+          "failed": [
+            "assembledWeightKg",
+            "assemblyMinutes"
+          ]
+        },
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 600.0,
+            "actual": 600.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 16.655,
+            "actual": 12.0,
+            "abs": -4.655000000000001,
+            "pct": -0.27949564695286705,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 22.3,
+            "actual": 40.0,
+            "abs": 17.7,
+            "pct": 0.7937219730941704,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 624.0,
+            "actual": 624.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 424.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 180.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 16.655,
+            "actual": 13.0,
+            "abs": -3.655000000000001,
+            "pct": -0.21945361753227263,
+            "complete": true
+          }
+        },
+        "assemblyObservedVsEstimated": {
+          "target": 22.3,
+          "actual": 40.0,
+          "abs": 17.7,
+          "pct": 0.7937219730941704,
+          "complete": true
+        },
+        "observedCostLabel": "FIXTURE",
+        "observedMonetaryVariance": null,
+        "costCompleteness": "PARTIAL",
+        "packagingPredictedVsObserved": {
+          "cartonLengthMm": {
+            "target": 624.0,
+            "actual": 624.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonLengthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 424.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonWidthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 180.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonHeightMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "packedWeightKg": {
+            "target": 16.655,
+            "actual": 13.0,
+            "abs": -3.655000000000001,
+            "pct": -0.21945361753227263,
+            "complete": true,
+            "field": "packedWeightKg",
+            "ok": false,
+            "reason": "out_of_tolerance"
+          }
+        },
+        "packagingValidation": {
+          "ok": true,
+          "reason": "ok",
+          "volumetricWeightKg": 7.937279999999999
+        },
+        "qcStatus": {
+          "missing": [],
+          "observations": {
+            "hardware": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "panelEdgeFinish": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "wobbleStability": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "doorDrawerFit": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "reworkCount": 0,
+            "defectCount": 0
+          },
+          "complete": true
+        },
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": "FIXTURE",
+        "blockers": [
+          "fixture_evidence",
+          "tolerance",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "69a3c4c7-d67b-4f45-aa5a-4156a58a89f1",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.6753818626845383,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "expectedUtilization": 0.5784,
+        "trueScrap": 194176.0,
+        "reusableRemnant": 1060704.0,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "toleranceResult": {
+          "ok": false,
+          "policy": {
+            "dimMm": 3.0,
+            "dimPct": 0.02,
+            "weightKg": 0.5,
+            "assemblyMinutes": 15.0,
+            "label": "ENGINEERING_POLICY",
+            "certification": false
+          },
+          "policyHash": "5149b5eab06a63098f39c0ebcba57f950f91eb6c8e4702c4d74eaf4bac7397f6",
+          "fields": {
+            "widthMm": {
+              "target": 800.0,
+              "actual": 800.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "widthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "depthMm": {
+              "target": 400.0,
+              "actual": 400.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "depthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "heightMm": {
+              "target": 750.0,
+              "actual": 750.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "heightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "assembledWeightKg": {
+              "target": 23.97,
+              "actual": 12.0,
+              "abs": -11.969999999999999,
+              "pct": -0.49937421777221525,
+              "complete": true,
+              "field": "assembledWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            },
+            "assemblyMinutes": {
+              "target": 27.4,
+              "actual": 40.0,
+              "abs": 12.600000000000001,
+              "pct": 0.4598540145985402,
+              "complete": true,
+              "field": "assemblyMinutes",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonLengthMm": {
+              "target": 824.0,
+              "actual": 824.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonLengthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonWidthMm": {
+              "target": 424.0,
+              "actual": 424.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonWidthMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "cartonHeightMm": {
+              "target": 337.0,
+              "actual": 337.0,
+              "abs": 0.0,
+              "pct": 0.0,
+              "complete": true,
+              "field": "cartonHeightMm",
+              "ok": true,
+              "reason": "ok"
+            },
+            "packedWeightKg": {
+              "target": 23.97,
+              "actual": 13.0,
+              "abs": -10.969999999999999,
+              "pct": -0.4576554025865665,
+              "complete": true,
+              "field": "packedWeightKg",
+              "ok": false,
+              "reason": "out_of_tolerance"
+            }
+          },
+          "failed": [
+            "assembledWeightKg"
+          ]
+        },
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 800.0,
+            "actual": 800.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 750.0,
+            "actual": 750.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 23.97,
+            "actual": 12.0,
+            "abs": -11.969999999999999,
+            "pct": -0.49937421777221525,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 27.4,
+            "actual": 40.0,
+            "abs": 12.600000000000001,
+            "pct": 0.4598540145985402,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 824.0,
+            "actual": 824.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 424.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 337.0,
+            "actual": 337.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 23.97,
+            "actual": 13.0,
+            "abs": -10.969999999999999,
+            "pct": -0.4576554025865665,
+            "complete": true
+          }
+        },
+        "assemblyObservedVsEstimated": {
+          "target": 27.4,
+          "actual": 40.0,
+          "abs": 12.600000000000001,
+          "pct": 0.4598540145985402,
+          "complete": true
+        },
+        "observedCostLabel": "FIXTURE",
+        "observedMonetaryVariance": null,
+        "costCompleteness": "PARTIAL",
+        "packagingPredictedVsObserved": {
+          "cartonLengthMm": {
+            "target": 824.0,
+            "actual": 824.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonLengthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 424.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonWidthMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "cartonHeightMm": {
+            "target": 337.0,
+            "actual": 337.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true,
+            "field": "cartonHeightMm",
+            "ok": true,
+            "reason": "ok"
+          },
+          "packedWeightKg": {
+            "target": 23.97,
+            "actual": 13.0,
+            "abs": -10.969999999999999,
+            "pct": -0.4576554025865665,
+            "complete": true,
+            "field": "packedWeightKg",
+            "ok": false,
+            "reason": "out_of_tolerance"
+          }
+        },
+        "packagingValidation": {
+          "ok": true,
+          "reason": "ok",
+          "volumetricWeightKg": 19.623285333333335
+        },
+        "qcStatus": {
+          "missing": [],
+          "observations": {
+            "hardware": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "panelEdgeFinish": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "wobbleStability": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "doorDrawerFit": {
+              "status": "NOT_APPLICABLE",
+              "reason": "FIXTURE_CI",
+              "note": null
+            },
+            "reworkCount": 0,
+            "defectCount": 0
+          },
+          "complete": true
+        },
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": "FIXTURE",
+        "blockers": [
+          "fixture_evidence",
+          "tolerance",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "6bef455b-0b5d-452f-b719-1b4e8fdf7303",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "expectedUtilization": 0.5704,
+        "trueScrap": 218176.0,
+        "reusableRemnant": 1060704.0,
+        "prototypeStatus": null,
+        "toleranceResult": null,
+        "dimensionalVariance": null,
+        "assemblyObservedVsEstimated": null,
+        "observedCostLabel": null,
+        "observedMonetaryVariance": null,
+        "costCompleteness": null,
+        "packagingPredictedVsObserved": null,
+        "packagingValidation": null,
+        "qcStatus": null,
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": null,
+        "blockers": [
+          "not_selected",
+          "no_unit",
+          "packaging",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "72929f1d-fe8b-4404-939c-797c3b85a178",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "expectedUtilization": 0.3031,
+        "trueScrap": 144176.0,
+        "reusableRemnant": 1930384.0,
+        "prototypeStatus": null,
+        "toleranceResult": null,
+        "dimensionalVariance": null,
+        "assemblyObservedVsEstimated": null,
+        "observedCostLabel": null,
+        "observedMonetaryVariance": null,
+        "costCompleteness": null,
+        "packagingPredictedVsObserved": null,
+        "packagingValidation": null,
+        "qcStatus": null,
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": null,
+        "blockers": [
+          "not_selected",
+          "no_unit",
+          "packaging",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "434fb02e-df2c-4b39-9831-ce520187d9de",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "expectedUtilization": 0.304,
+        "trueScrap": 135488.0,
+        "reusableRemnant": 1936272.0,
+        "prototypeStatus": null,
+        "toleranceResult": null,
+        "dimensionalVariance": null,
+        "assemblyObservedVsEstimated": null,
+        "observedCostLabel": null,
+        "observedMonetaryVariance": null,
+        "costCompleteness": null,
+        "packagingPredictedVsObserved": null,
+        "packagingValidation": null,
+        "qcStatus": null,
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": null,
+        "blockers": [
+          "not_selected",
+          "no_unit",
+          "packaging",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "6454d947-ee86-4f4a-9df6-77de483c0a58",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "expectedUtilization": 0.3505,
+        "trueScrap": 156944.0,
+        "reusableRemnant": 1776440.0,
+        "prototypeStatus": null,
+        "toleranceResult": null,
+        "dimensionalVariance": null,
+        "assemblyObservedVsEstimated": null,
+        "observedCostLabel": null,
+        "observedMonetaryVariance": null,
+        "costCompleteness": null,
+        "packagingPredictedVsObserved": null,
+        "packagingValidation": null,
+        "qcStatus": null,
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": null,
+        "blockers": [
+          "not_selected",
+          "no_unit",
+          "packaging",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "6464aa71-0fda-4436-ac8d-e11744702f12",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "expectedUtilization": 0.5041,
+        "trueScrap": 269040.0,
+        "reusableRemnant": 1207264.0,
+        "prototypeStatus": null,
+        "toleranceResult": null,
+        "dimensionalVariance": null,
+        "assemblyObservedVsEstimated": null,
+        "observedCostLabel": null,
+        "observedMonetaryVariance": null,
+        "costCompleteness": null,
+        "packagingPredictedVsObserved": null,
+        "packagingValidation": null,
+        "qcStatus": null,
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": null,
+        "blockers": [
+          "not_selected",
+          "no_unit",
+          "packaging",
+          "cost_partial"
+        ]
+      },
+      {
+        "candidateId": "f40bde5f-fb03-417e-89fd-53a3ef87d336",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "expectedUtilization": 0.2261,
+        "trueScrap": 146192.0,
+        "reusableRemnant": 2157568.0,
+        "prototypeStatus": null,
+        "toleranceResult": null,
+        "dimensionalVariance": null,
+        "assemblyObservedVsEstimated": null,
+        "observedCostLabel": null,
+        "observedMonetaryVariance": null,
+        "costCompleteness": null,
+        "packagingPredictedVsObserved": null,
+        "packagingValidation": null,
+        "qcStatus": null,
+        "realBlenderLineage": {
+          "reused": true,
+          "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+          "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+          "label": "REAL"
+        },
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "physicalPrototypeValidated": false,
+        "evidenceSource": null,
+        "blockers": [
+          "not_selected",
+          "no_unit",
+          "packaging",
+          "cost_partial"
+        ]
+      }
+    ],
+    "missingRequiredFields": [],
+    "liveMachineControl": false,
+    "globalProductionReady": false,
+    "truthLabel": "REAL_LOGIC"
+  },
   "rows": [
     {
       "check": "4 prototype SKUs selected",
       "status": "REAL_LOGIC",
-      "evidence": "[\"9b74415e-a621-42de-880b-58b7b6727e17\", \"3abe9165-5b1f-4434-85cf-5c7980b9f2a1\", \"ae5e85d0-1629-4e8c-b7b4-bc5be4e4a0ca\", \"ba00a326-36f8-4b5d-9e6c-64ad5862983a\"]"
+      "evidence": "[\"cb6e75f5-fef5-45d4-9361-82aaa7d6723f\", \"a2a8896b-f8f5-4c10-8dee-1343a950faab\", \"14a236a1-8ed4-454b-b454-ed6e3c5d6e82\", \"69a3c4c7-d67b-4f45-aa5a-4156a58a89f1\"]"
+    },
+    {
+      "check": "decision board",
+      "status": "REAL_LOGIC",
+      "evidence": "rows=10"
+    },
+    {
+      "check": "per-SKU matrix",
+      "status": "REAL_LOGIC",
+      "evidence": "[{\"candidateId\": \"cb6e75f5-fef5-45d4-9361-82aaa7d6723f\", \"state\": \"WAITING_VALIDATION\", \"physical\": false}, {\"candidateId\": \"a2a8896b-f8f5-4c10-8dee-1343a950faab\", \"state\": \"WAITING_VALIDATION\", \"physical\": false}, {\"candidateId\": \"14a236a1-8ed4-454b-b454-ed6e3c5d6e82\", \"state\": \"WAITING_VALIDATION\", \"physical\": false}, {\"candidateId\": \"69a3c4c7-d67b-4f45-aa5a-4156a58a89f1\", \"state\": \"WAITING_VALIDATION\", \"physical\": false}]"
     },
     {
       "check": "fixture cannot physically validate",
@@ -95,17 +1708,22 @@
     {
       "check": "tenant backup semantic",
       "status": "REAL_LOGIC",
-      "evidence": "{\"liveA\": \"f5667189da32cf056bbb787607ee092bba7f46b881b6f58f7d38c60dafddc67d\", \"restoredA\": \"f5667189da32cf056bbb787607ee092bba7f46b881b6f58f7d38c60dafddc67d\", \"equal\": true}"
+      "evidence": "{\"liveA\": \"d39bca218618cc3b59b70121765852285990246c9d429687a7c98492ea289e36\", \"restoredA\": \"d39bca218618cc3b59b70121765852285990246c9d429687a7c98492ea289e36\", \"equal\": true}"
+    },
+    {
+      "check": "prior REAL blender",
+      "status": "REAL",
+      "evidence": "{\"commitSha\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"generation\": \"0b76b09e-02a8-45a6-b4fd-bf34849dd76c\", \"cases\": 4, \"failures\": []}"
     },
     {
       "check": "REAL blender media",
-      "status": "BLOCKED",
-      "evidence": "real=0/0"
+      "status": "REAL",
+      "evidence": "real=0/0; prior=4"
     },
     {
       "check": "evidenceCodeCommit",
       "status": "REAL_LOGIC",
-      "evidence": "66a66d1feda59cfe77fe8f5ceb21032d86f2c3f8"
+      "evidence": "244c707b67dffff0bdd3824fc5f46a5e16dadde0"
     },
     {
       "check": "workingTreeClean",
@@ -125,7 +1743,9 @@
     {
       "check": "physical prototype",
       "status": "FIXTURE",
-      "evidence": "CI measurements are FIXTURE; physicalPrototypeValidated=false"
+      "evidence": "CI measurements are FIXTURE; physicalPrototypeValidated=false; software loop only"
     }
-  ]
+  ],
+  "acceptanceFailures": [],
+  "waitingPhysicalEvidence": true
 }
