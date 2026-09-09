@@ -7,6 +7,7 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import MaterialLotRegistry
+from fox3d.journal import emit
 
 ALLOWED = frozenset({"MANUAL", "IMPORTED"})
 
@@ -18,6 +19,7 @@ def _now() -> str:
 class ReceivingService:
     def __init__(self, lots: MaterialLotRegistry | None = None) -> None:
         self.lots = lots or MaterialLotRegistry()
+        self.journal: Any | None = None
         self.requests: dict[str, dict[str, Any]] = {}
         self.receipts: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, str] = {}
@@ -160,4 +162,19 @@ class ReceivingService:
             rec["status"] = "ACCEPTED"
         self.receipts[rec["receiptId"]] = rec
         self._idem[key] = rec["receiptId"]
+        try:
+            emit(
+                self,
+                "receipt.quarantined" if rec.get("quarantined") else "receipt.accepted",
+                tenant_id=tenant_id,
+                aggregate_type="Receipt",
+                aggregate_id=rec["receiptId"],
+                actor=actor,
+                payload={"status": rec.get("status"), "lotId": rec.get("lotId"), "source": source},
+                semantic_key=key,
+            )
+        except Exception:
+            del self.receipts[rec["receiptId"]]
+            del self._idem[key]
+            raise
         return rec

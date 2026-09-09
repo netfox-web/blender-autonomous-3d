@@ -7,6 +7,7 @@ from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.journal import emit
 
 ALLOWED_SOURCES = frozenset({"MANUAL", "IMPORTED"})
 PALLET_MM = (1200.0, 1000.0)
@@ -21,6 +22,7 @@ def _now() -> str:
 
 class LogisticsService:
     def __init__(self) -> None:
+        self.journal: Any | None = None
         self.cartons: dict[str, dict[str, Any]] = {}
         self.pallets: dict[str, dict[str, Any]] = {}
         self.shipments: dict[str, dict[str, Any]] = {}
@@ -82,6 +84,17 @@ class LogisticsService:
             rows.append(rec)
             ids.append(rec["cartonId"])
         self._idem[key] = ids
+        emit(
+            self,
+            "carton.instantiate",
+            tenant_id=tenant_id,
+            aggregate_type="Carton",
+            aggregate_id=ids[0] if ids else key,
+            actor="ops",
+            payload={"count": len(ids), "workOrderId": work_order_id},
+            release_hash=release_hash,
+            semantic_key=key,
+        )
         return rows
 
     def record_measured(
@@ -105,6 +118,17 @@ class LogisticsService:
             "truthLabel": "MEASURED",
         }
         rec["expected"] = expected
+        emit(
+            self,
+            "carton.measured",
+            tenant_id=rec.get("tenantId") or "",
+            aggregate_type="Carton",
+            aggregate_id=carton_id,
+            actor="ops",
+            payload={"measured": rec["measured"]},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec.get('tenantId')}::carton-measured::{carton_id}",
+        )
         return rec
 
     def packing_list(self, *, work_order_id: str) -> dict[str, Any]:
@@ -259,6 +283,16 @@ class LogisticsService:
         rec["shipped"] = False
         rec["status"] = "SHIPMENT_DRAFT"
         rec["liveCarrier"] = False
+        emit(
+            self,
+            "shipment.draft",
+            tenant_id=rec.get("tenantId") or "",
+            aggregate_type="Shipment",
+            aggregate_id=rec["shipmentId"],
+            actor="ops",
+            payload={"status": "SHIPMENT_DRAFT", "booked": False},
+            semantic_key=f"{rec.get('tenantId')}::shipment::{rec['shipmentId']}",
+        )
         return rec
 
     def import_carrier_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:

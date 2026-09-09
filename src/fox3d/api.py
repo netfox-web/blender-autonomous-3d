@@ -9,7 +9,9 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from fox3d.admin import render_admin
+from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
+from fox3d.recovery import PilotException
 
 _PLATFORM: Platform | None = None
 
@@ -448,6 +450,136 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             shortage=payload.get("shortage"),
             release_hash=payload.get("releaseHash"),
         )
+
+    @app.get("/api/pilot/health")
+    def pilot_health_ep(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return get_platform().pilot.health(tenant_id=require_tenant(x_tenant_id))
+
+    @app.get("/api/pilot/operator")
+    def pilot_operator(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return get_platform().pilot.operator(tenant_id=require_tenant(x_tenant_id))
+
+    @app.post("/api/pilot/scan")
+    def pilot_scan(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        try:
+            return get_platform().pilot.scan(str(payload.get("token") or ""), tenant_id=tid)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+    @app.post("/api/pilot/stations")
+    def pilot_station(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        return get_platform().pilot.stations.register(
+            tenant_id=tid,
+            capabilities=list(payload.get("capabilities") or []),
+            station_id=payload.get("stationId"),
+            actor=str(payload.get("actor") or "api"),
+            status=str(payload.get("status") or "ONLINE"),
+        )
+
+    @app.post("/api/pilot/stations/{station_id}/heartbeat")
+    def pilot_station_hb(station_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        try:
+            return get_platform().pilot.stations.heartbeat(station_id, tenant_id=tid, actor=body.get("actor"))
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+    @app.post("/api/pilot/dispatch")
+    def pilot_dispatch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        try:
+            return get_platform().pilot.dispatcher.dispatch(
+                tenant_id=tid,
+                work_order_id=str(payload["workOrderId"]),
+                operation=str(payload["operation"]),
+                station_id=str(payload["stationId"]),
+                actor=str(payload.get("actor") or "api"),
+            )
+        except PilotException as exc:
+            raise HTTPException(409, exc.code) from exc
+        except PermissionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/pilot/leases/{lease_id}/ack")
+    def pilot_ack(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        return get_platform().pilot.dispatcher.ack(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"))
+
+    @app.post("/api/pilot/leases/{lease_id}/start")
+    def pilot_start(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        return get_platform().pilot.dispatcher.start(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"))
+
+    @app.post("/api/pilot/leases/{lease_id}/complete")
+    def pilot_lease_complete(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        try:
+            require_confirm(body, action="complete_operation")
+            return get_platform().pilot.dispatcher.complete(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"), confirm=True)
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+    @app.get("/api/pilot/exceptions")
+    def pilot_exceptions(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        return {"items": get_platform().pilot.inbox.list(tenant_id=tid)}
+
+    @app.post("/api/pilot/import")
+    def pilot_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        return get_platform().pilot.contracts.import_bundle(
+            payload,
+            tenant_id=tid,
+            actor=str(payload.get("actor") or "api"),
+            source=str(payload.get("source") or "IMPORTED"),
+            idempotency_key=payload.get("idempotencyKey"),
+        )
+
+    @app.get("/api/pilot/export")
+    def pilot_export(releaseHash: str | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        return get_platform().pilot.contracts.export_bundle(tenant_id=tid, release_hash=releaseHash)
+
+    @app.post("/api/pilot/work-orders/{work_order_id}/consume")
+    def pilot_consume(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        try:
+            return get_platform().pilot.confirm_action(
+                tenant_id=tid,
+                action="consume",
+                work_order_id=work_order_id,
+                actor=str(body.get("actor") or "api"),
+                payload=body,
+            )
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+    @app.post("/api/pilot/work-orders/{work_order_id}/complete")
+    def pilot_complete_wo(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        try:
+            return get_platform().pilot.confirm_action(
+                tenant_id=tid,
+                action="complete_wo",
+                work_order_id=work_order_id,
+                actor=str(body.get("actor") or "api"),
+                payload=body,
+            )
+        except PermissionError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/api/pilot/scan-token/{kind}/{object_id}")
+    def pilot_token(kind: str, object_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        _ = require_tenant(x_tenant_id)
+        return {"token": make_token(kind, object_id), "barcodeHardware": "PARTIAL"}
 
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:

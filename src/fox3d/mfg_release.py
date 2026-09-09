@@ -13,6 +13,7 @@ from typing import Any
 
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
+from fox3d.journal import emit
 from fox3d.manufacturing import HARDWARE_REGISTRY, NestingEngine, edge_banding_edges, edge_banding_length_mm
 
 RELEASE_STATES = (
@@ -100,6 +101,7 @@ def _bound_hashes(snap: dict[str, Any]) -> dict[str, str | None]:
 class ManufacturingReleaseService:
     def __init__(self, dam: Any | None = None) -> None:
         self.dam = dam
+        self.journal: Any | None = None
         self.releases: dict[str, dict[str, Any]] = {}
         self.packets: dict[str, dict[str, str]] = {}
         self._idem: dict[str, str] = {}
@@ -155,6 +157,22 @@ class ManufacturingReleaseService:
         rec["releaseHash"] = self._release_hash(rec)
         self.releases[rec["releaseId"]] = rec
         self._idem[key] = rec["releaseId"]
+        try:
+            emit(
+                self,
+                "release.create",
+                tenant_id=tenant_id,
+                aggregate_type="ManufacturingRelease",
+                aggregate_id=rec["releaseId"],
+                actor=created_by,
+                payload={"status": "DRAFT"},
+                release_hash=rec["releaseHash"],
+                semantic_key=key,
+            )
+        except Exception:
+            del self.releases[rec["releaseId"]]
+            del self._idem[key]
+            raise
         return rec
 
     def _release_hash(self, rec: dict[str, Any]) -> str:
@@ -189,6 +207,17 @@ class ManufacturingReleaseService:
         rec["status"] = "VALIDATED"
         rec["validatedAt"] = _now()
         rec["releaseHash"] = self._release_hash(rec)
+        emit(
+            self,
+            "release.validate",
+            tenant_id=rec["tenantId"],
+            aggregate_type="ManufacturingRelease",
+            aggregate_id=rec["releaseId"],
+            actor="system",
+            payload={"status": "VALIDATED"},
+            release_hash=rec["releaseHash"],
+            semantic_key=f"{rec['tenantId']}::rel-validate::{rec['releaseId']}",
+        )
         return rec
 
     def submit_approval(self, release_id: str, *, actor: str) -> dict[str, Any]:
@@ -198,6 +227,17 @@ class ManufacturingReleaseService:
         rec["status"] = "WAITING_APPROVAL"
         rec["submittedBy"] = actor
         rec["submittedAt"] = _now()
+        emit(
+            self,
+            "release.submit_approval",
+            tenant_id=rec["tenantId"],
+            aggregate_type="ManufacturingRelease",
+            aggregate_id=rec["releaseId"],
+            actor=actor,
+            payload={"status": "WAITING_APPROVAL"},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::rel-submit::{rec['releaseId']}",
+        )
         return rec
 
     def approve(
@@ -227,6 +267,17 @@ class ManufacturingReleaseService:
         rec["frozenCost"] = self._freeze_cost(rec["snapshot"])
         rec["equalsLiveCnc"] = False
         rec["liveMachineControl"] = False
+        emit(
+            self,
+            "release.approve",
+            tenant_id=rec["tenantId"],
+            aggregate_type="ManufacturingRelease",
+            aggregate_id=rec["releaseId"],
+            actor=actor,
+            payload={"status": rec["status"], "approvedReleaseHash": rec.get("approvedReleaseHash")},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::rel-approve::{rec['releaseId']}",
+        )
         return rec
 
     def release_for_manual_execution(self, release_id: str, *, actor: str) -> dict[str, Any]:
@@ -239,6 +290,17 @@ class ManufacturingReleaseService:
         rec["releasedAt"] = _now()
         rec["releasedBy"] = actor
         rec["liveMachineControl"] = False
+        emit(
+            self,
+            "release.release_for_manual_execution",
+            tenant_id=rec["tenantId"],
+            aggregate_type="ManufacturingRelease",
+            aggregate_id=rec["releaseId"],
+            actor=actor,
+            payload={"status": rec["status"]},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::rel-exec::{rec['releaseId']}",
+        )
         return rec
 
     def cancel(self, release_id: str, *, actor: str) -> dict[str, Any]:
@@ -247,6 +309,17 @@ class ManufacturingReleaseService:
         rec["cancelledBy"] = actor
         rec["cancelledAt"] = _now()
         rec["immutable"] = True
+        emit(
+            self,
+            "release.cancel",
+            tenant_id=rec["tenantId"],
+            aggregate_type="ManufacturingRelease",
+            aggregate_id=rec["releaseId"],
+            actor=actor,
+            payload={"status": "CANCELLED"},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::rel-cancel::{rec['releaseId']}",
+        )
         return rec
 
     def refresh_stale(self, release_id: str, current: dict[str, Any]) -> dict[str, Any]:
@@ -264,6 +337,17 @@ class ManufacturingReleaseService:
             rec["staleReason"] = "upstream engineering/BOM/material/nesting/packaging/cost-policy hash changed"
             rec["staleAt"] = _now()
             self.releases[release_id] = rec
+            emit(
+                self,
+                "release.stale",
+                tenant_id=rec["tenantId"],
+                aggregate_type="ManufacturingRelease",
+                aggregate_id=rec["releaseId"],
+                actor="system",
+                payload={"status": "STALE"},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{rec['tenantId']}::rel-stale::{rec['releaseId']}",
+            )
         return rec
 
     def is_stale(self, release_id: str, current: dict[str, Any]) -> bool:
@@ -287,6 +371,17 @@ class ManufacturingReleaseService:
         old["supersededAt"] = _now()
         new["supersedes"] = old["releaseId"]
         new["supersedesHash"] = old.get("releaseHash")
+        emit(
+            self,
+            "release.supersede",
+            tenant_id=tenant_id,
+            aggregate_type="ManufacturingRelease",
+            aggregate_id=old["releaseId"],
+            actor=actor,
+            payload={"supersededBy": new["releaseId"]},
+            release_hash=old.get("releaseHash"),
+            semantic_key=f"{tenant_id}::rel-supersede::{old['releaseId']}",
+        )
         return {"old": old, "new": new, "diff": self.diff(old, new)}
 
     def packet(self, release_id: str) -> dict[str, str]:

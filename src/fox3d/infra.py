@@ -538,10 +538,21 @@ class JobQueue:
             job["progress"] = progress
         return job
 
-    def claim(self, owner: str, *, target_key: str | None = None) -> dict[str, Any] | None:
+    def claim(
+        self,
+        owner: str,
+        *,
+        target_key: str | None = None,
+        job_type: str | None = None,
+        capability: str | None = None,
+    ) -> dict[str, Any] | None:
         with self._lock:
             for job in self._jobs.values():
                 if job["status"] not in {"queued", "retry_scheduled"}:
+                    continue
+                if job_type and job.get("jobType") != job_type:
+                    continue
+                if capability and job.get("capability") != capability:
                     continue
                 if job.get("cancelRequested"):
                     job["status"] = "cancelled"

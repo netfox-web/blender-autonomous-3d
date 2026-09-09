@@ -170,7 +170,13 @@ def render_admin(platform: Any) -> str:
       · quotes <span class="badge mock">IMPORTED</span>
       · OS sandbox <span class="badge mock">PARTIAL</span>
     </p>
-    <p class="note">API: /api/pilot/console /api/pilot/work-orders /api/pilot/receipts /api/pilot/purchase-requests — tenant header required. No LIVE_CNC/LASER controls.</p>
+    <p class="note">API: /api/pilot/console /api/pilot/work-orders /api/pilot/receipts /api/pilot/purchase-requests /api/pilot/health /api/pilot/operator /api/pilot/scan /api/pilot/dispatch /api/pilot/exceptions /api/pilot/import /api/pilot/export — tenant header required. No LIVE_CNC/LASER controls.</p>
+    <h2>Operator Control Plane / Manual Station</h2>
+    <p class="note">
+      MANUAL_STATION dispatch only · scan tokens FOX3D:WO|LOT|REL|CTN · barcode hardware <span class="badge mock">PARTIAL</span>
+      · exception inbox tenant-filtered · journal hash-chain · LIVE_CNC <span class="badge mock">BLOCKED</span>
+      · LIVE_LASER <span class="badge mock">BLOCKED</span> · human confirmation on consume/complete/finalize QC
+    </p>
   </section>
 </body>
 </html>"""

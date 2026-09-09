@@ -10,6 +10,7 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import MaterialLotRegistry, StockShortage, normalize_status
+from fox3d.journal import emit
 from fox3d.mfg_release import FAMILY_STEPS
 from fox3d.qc import plan_for_family, plan_hash
 
@@ -58,6 +59,7 @@ class WorkOrderService:
         self.dam = dam
         self.releases = releases
         self.qc: Any | None = None
+        self.journal: Any | None = None
         self.orders: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, str] = {}
         self.operations: list[dict[str, Any]] = []
@@ -137,6 +139,22 @@ class WorkOrderService:
         self.orders[rec["workOrderId"]] = rec
         self._idem[key] = rec["workOrderId"]
         self._audit(rec, actor=actor, from_state=None, to="DRAFT", reason="create", key=key)
+        try:
+            emit(
+                self,
+                "workorder.create",
+                tenant_id=tenant_id,
+                aggregate_type="WorkOrder",
+                aggregate_id=rec["workOrderId"],
+                actor=actor,
+                payload={"releaseHash": rec["releaseHash"], "state": "DRAFT"},
+                release_hash=rec["releaseHash"],
+                semantic_key=key,
+            )
+        except Exception:
+            del self.orders[rec["workOrderId"]]
+            del self._idem[key]
+            raise
         return rec
 
     def _traveler(self, family: str) -> dict[str, Any]:
@@ -164,6 +182,17 @@ class WorkOrderService:
             return rec
         self._transition(rec, "RELEASED_FOR_MANUAL_EXECUTION", actor=actor, reason="release")
         rec["releasedBy"] = actor
+        emit(
+            self,
+            "workorder.release_for_execution",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"state": rec["state"]},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-release::{rec['workOrderId']}",
+        )
         return rec
 
     def reserve_materials(
@@ -279,6 +308,17 @@ class WorkOrderService:
         rec["reservedBy"] = actor
         rec["reservedAt"] = _now()
         self._transition(rec, "MATERIAL_RESERVED", actor=actor, reason=f"reserve:{policy}")
+        emit(
+            self,
+            "workorder.reserve",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"policy": policy, "lots": rec["lineage"]["materialLots"]},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-reserve::{rec['workOrderId']}",
+        )
         return rec
 
     def start_operation(
@@ -321,6 +361,17 @@ class WorkOrderService:
         rec["ops"].append(op)
         rec["lineage"]["operators"] = sorted(set(list(rec["lineage"].get("operators") or []) + [actor]))
         self.operations.append(op)
+        emit(
+            self,
+            "workorder.operation_start",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"opId": op["opId"], "operation": operation},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::op-start::{rec['workOrderId']}::{operation}",
+        )
         return op
 
     def complete_operation(self, work_order_id: str, op_id: str, *, actor: str, notes: str = "") -> dict[str, Any]:
@@ -333,6 +384,17 @@ class WorkOrderService:
         if notes:
             op["notes"] = (op.get("notes") or "") + (" " + notes if op.get("notes") else notes)
         op["completedBy"] = actor
+        emit(
+            self,
+            "workorder.operation_complete",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"opId": op_id, "operation": op.get("operation")},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::op-complete::{op_id}",
+        )
         return op
 
     def record_cut_outcome(
@@ -395,6 +457,17 @@ class WorkOrderService:
                 rec["consumed"].append(item)
         rec["consumedFlag"] = True
         rec["consumedBy"] = actor
+        emit(
+            self,
+            "workorder.consume",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"consumed": True},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-consume::{rec['workOrderId']}",
+        )
         return rec
 
     def consume_one(self, work_order_id: str, reservation_id: str, *, actor: str) -> dict[str, Any]:
@@ -454,6 +527,17 @@ class WorkOrderService:
         rec["completedBy"] = actor
         rec["completedAt"] = _now()
         self._transition(rec, "COMPLETED", actor=actor, reason="complete")
+        emit(
+            self,
+            "workorder.complete",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"state": "COMPLETED"},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-complete::{rec['workOrderId']}",
+        )
         return rec
 
     def _authoritative_qc_gate(self, rec: dict[str, Any]) -> dict[str, Any]:
@@ -506,6 +590,40 @@ class WorkOrderService:
         rec["cancelledAt"] = _now()
         rec["materialReserved"] = False
         self._transition(rec, "CANCELLED", actor=actor, reason="cancel")
+        emit(
+            self,
+            "workorder.cancel",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"state": "CANCELLED"},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-cancel::{rec['workOrderId']}",
+        )
+        return rec
+
+    def rework(self, work_order_id: str, *, actor: str, reason: str = "rework") -> dict[str, Any]:
+        rec = self._require(work_order_id, tenant_id=None)
+        if rec.get("rework") and rec["state"] == "IN_PROGRESS":
+            return rec
+        if rec["state"] == "QC_HOLD":
+            self._transition(rec, "IN_PROGRESS", actor=actor, reason=reason)
+        elif rec["state"] != "IN_PROGRESS":
+            raise PermissionError(rec["state"])
+        rec["rework"] = True
+        rec["reworkBy"] = actor
+        emit(
+            self,
+            "workorder.rework",
+            tenant_id=rec["tenantId"],
+            aggregate_type="WorkOrder",
+            aggregate_id=rec["workOrderId"],
+            actor=actor,
+            payload={"reason": reason},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{rec['tenantId']}::wo-rework::{rec['workOrderId']}:{reason}",
+        )
         return rec
 
     def _require(self, work_order_id: str, tenant_id: str | None) -> dict[str, Any]:

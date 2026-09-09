@@ -8,14 +8,20 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from fox3d.contracts import ContractService
 from fox3d.ids import new_id, sha256_bytes
+from fox3d.journal import EventJournal
 from fox3d.logistics import LogisticsService
 from fox3d.mfg_release import ManufacturingReleaseService, product_snapshot
+from fox3d.observability import pilot_health
+from fox3d.operator import irreversible_action, operator_view, resolve_scan
 from fox3d.pilot_econ import PilotEconomics
 from fox3d.qc import QcService
 from fox3d.readiness import scoped_readiness
 from fox3d.receipt import ReceivingService
+from fox3d.recovery import ExceptionInbox
 from fox3d.reliability import ReliabilityHarness
+from fox3d.station import StationDispatcher, StationRegistry
 from fox3d.supplier import SupplierQuoteService
 from fox3d.workorder import FIXTURE_AUTO_SEED, WorkOrderService
 
@@ -62,6 +68,30 @@ class PilotOps:
         self.econ = PilotEconomics()
         self.receiving = ReceivingService(lots=platform.lots)
         self.reliability = ReliabilityHarness(self)
+        self.journal = EventJournal(platform.root / "journal")
+        self.inbox = ExceptionInbox()
+        self.stations = StationRegistry(platform.root / "stations")
+        self.dispatcher = StationDispatcher(
+            stations=self.stations,
+            queue=platform.queue,
+            workorders=self.workorders,
+            releases=self.releases,
+            inbox=self.inbox,
+        )
+        self.contracts = ContractService(self)
+        for svc in (
+            self.releases,
+            self.workorders,
+            self.qc,
+            self.logistics,
+            self.receiving,
+            self.inbox,
+            self.stations,
+            self.dispatcher,
+            self.contracts,
+            platform.lots,
+        ):
+            svc.journal = self.journal
 
     def build_product(self, *, tenant_id: str, family: str, kind: str, render: bool = False) -> dict[str, Any]:
         if family == "KD_FURNITURE":
@@ -523,6 +553,9 @@ class PilotOps:
             "liveCnc": False,
             "liveLaser": False,
             "liveMachineControl": False,
+            "stations": self.stations.list(tenant_id=tenant_id),
+            "exceptions": self.inbox.list(tenant_id=tenant_id),
+            "journal": self.journal.verify(tenant_id),
             "badges": {
                 "LIVE_CNC": "BLOCKED",
                 "LIVE_LASER": "BLOCKED",
@@ -533,3 +566,15 @@ class PilotOps:
                 "sandbox": "PARTIAL",
             },
         }
+
+    def health(self, *, tenant_id: str) -> dict[str, Any]:
+        return pilot_health(self, tenant_id=tenant_id)
+
+    def operator(self, *, tenant_id: str) -> dict[str, Any]:
+        return operator_view(self, tenant_id=tenant_id)
+
+    def scan(self, token: str, *, tenant_id: str) -> dict[str, Any]:
+        return resolve_scan(self, token, tenant_id=tenant_id)
+
+    def confirm_action(self, *, tenant_id: str, action: str, work_order_id: str, actor: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        return irreversible_action(self, tenant_id=tenant_id, action=action, work_order_id=work_order_id, actor=actor, payload=payload)

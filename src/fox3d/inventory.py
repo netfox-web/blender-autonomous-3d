@@ -6,13 +6,17 @@ In-memory behaviour stays compatible; durable JSON lives under `.fox3d-data`.
 
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Iterator, Protocol
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.storelock import CrashInjected, FileLock, StaleGeneration
 
 QUALITY_STATES = ("available", "reserved", "consumed", "quarantined", "damaged")
 QUALITY_UPPER = {
@@ -176,19 +180,79 @@ class MaterialLotRegistry:
             self.root.mkdir(parents=True, exist_ok=True)
         self.lots: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
+        self._tx_depth = 0
+        self._tx_expected = 0
+        self.generation = 0
+        self.journal: Any | None = None
+        self._crash_after_first_stage = False
+        self._crash_before_commit = False
         self.load()
+
+    def _lock_path(self) -> Path | None:
+        return (self.root / "lots.lock") if self.root else None
+
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        with self._lock:
+            flock: FileLock | None = None
+            if self._tx_depth == 0 and self.root:
+                flock = FileLock(self._lock_path())  # type: ignore[arg-type]
+                flock.acquire()
+                self.load()
+                self._tx_expected = self.generation
+            self._tx_depth += 1
+            try:
+                yield
+                if self._tx_depth == 1:
+                    self.persist(expected_generation=self._tx_expected)
+            except Exception:
+                if self._tx_depth == 1 and self.root:
+                    self.load()
+                raise
+            finally:
+                self._tx_depth -= 1
+                if self._tx_depth == 0 and flock is not None:
+                    flock.release()
+
+    def _emit(self, event_type: str, *, tenant_id: str, aggregate_id: str, actor: str, payload: dict[str, Any], semantic_key: str | None = None) -> None:
+        if self.journal is None:
+            return
+        self.journal.append(
+            event_type,
+            tenant_id=tenant_id,
+            aggregate_type="MaterialLot",
+            aggregate_id=aggregate_id,
+            actor=actor,
+            payload=payload,
+            semantic_key=semantic_key,
+        )
 
     def load(self) -> None:
         if not self.root:
+            self.generation = 0
             return
         path = self.root / "lots.json"
         payload = read_json(path) or {}
+        self.generation = int(payload.get("generation") or 0)
         self.lots = {rec["lotId"]: rec for rec in payload.get("lots") or []}
 
-    def persist(self) -> None:
+    def persist(self, *, expected_generation: int | None = None) -> None:
         if not self.root:
             return
-        atomic_write_json(self.root / "lots.json", {"lots": list(self.lots.values())})
+        path = self.root / "lots.json"
+        disk = read_json(path) or {}
+        disk_gen = int(disk.get("generation") or 0)
+        want = self.generation if expected_generation is None else int(expected_generation)
+        if disk_gen != want:
+            raise StaleGeneration(f"stale lot store generation disk={disk_gen} expected={want}")
+        payload = {"generation": disk_gen + 1, "lots": list(self.lots.values())}
+        staging = self.root / "lots.json.staging"
+        atomic_write_json(staging, payload)
+        if self._crash_before_commit:
+            self._crash_before_commit = False
+            raise CrashInjected("before commit")
+        staging.replace(path)
+        self.generation = disk_gen + 1
 
     def create(
         self,
@@ -226,9 +290,8 @@ class MaterialLotRegistry:
             "version": 1,
         }
         rec["lotHash"] = stable_hash({k: rec[k] for k in rec if k not in {"lotHash"}})
-        with self._lock:
+        with self._transaction():
             self.lots[rec["lotId"]] = rec
-            self.persist()
         return rec
 
     def get(self, lot_id: str, *, tenant_id: str) -> dict[str, Any]:
@@ -319,7 +382,7 @@ class MaterialLotRegistry:
     ) -> list[dict[str, Any]]:
         """Preflight compatible stock then reserve atomically. SHORTAGE mutates nothing."""
         qty = int(quantity)
-        with self._lock:
+        with self._transaction():
             candidates = [
                 l
                 for l in self.list(tenant_id=tenant_id, allocatable=True)
@@ -357,6 +420,10 @@ class MaterialLotRegistry:
                     }
                 )
                 remaining -= take
+                if self._crash_after_first_stage and taken:
+                    if self.root:
+                        atomic_write_json(self.root / "lots.json.staging", {"partial": True, "taken": taken})
+                    raise CrashInjected("after first lot staging")
             if remaining > 0:
                 for item in taken:
                     try:
@@ -401,7 +468,7 @@ class MaterialLotRegistry:
         quantity: int,
         expected_version: int | None = None,
     ) -> dict[str, Any]:
-        with self._lock:
+        with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
             if rec.get("quarantined") or rec.get("qualityState") == "QUARANTINED":
                 raise PermissionError("quarantined lot not allocatable")
@@ -439,11 +506,18 @@ class MaterialLotRegistry:
                 "state": "RESERVED",
             }
             rec.setdefault("reservations", {})[key] = item
-            self.persist()
+            self._emit(
+                "material.reserve",
+                tenant_id=tenant_id,
+                aggregate_id=lot_id,
+                actor=work_order_id,
+                payload={"reservationId": key, "quantity": qty, "workOrderId": work_order_id},
+                semantic_key=f"{tenant_id}::reserve::{key}",
+            )
             return item
 
     def consume_reservation(self, reservation_id: str, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
-        with self._lock:
+        with self._transaction():
             item, rec = self._find_reservation(reservation_id, tenant_id=tenant_id)
             if rec.get("tenantId") != tenant_id:
                 raise PermissionError("tenant isolation: material lot")
@@ -458,11 +532,18 @@ class MaterialLotRegistry:
             rec["consumedSheets"] = int(rec.get("consumedSheets") or 0) + qty
             item["state"] = "CONSUMED"
             rec["version"] = int(rec.get("version") or 1) + 1
-            self.persist()
+            self._emit(
+                "material.consume",
+                tenant_id=tenant_id,
+                aggregate_id=rec["lotId"],
+                actor=work_order_id,
+                payload={"reservationId": reservation_id, "quantity": qty, "workOrderId": work_order_id},
+                semantic_key=f"{tenant_id}::consume::{reservation_id}",
+            )
             return item
 
     def release_reservation(self, reservation_id: str, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
-        with self._lock:
+        with self._transaction():
             item, rec = self._find_reservation(reservation_id, tenant_id=tenant_id)
             if rec.get("tenantId") != tenant_id:
                 raise PermissionError("tenant isolation: material lot")
@@ -479,11 +560,18 @@ class MaterialLotRegistry:
             rec["remainingSheets"] = int(rec.get("remainingSheets") or 0) + qty
             item["state"] = "RELEASED"
             rec["version"] = int(rec.get("version") or 1) + 1
-            self.persist()
+            self._emit(
+                "material.rollback",
+                tenant_id=tenant_id,
+                aggregate_id=rec["lotId"],
+                actor=work_order_id,
+                payload={"reservationId": reservation_id, "quantity": qty, "workOrderId": work_order_id},
+                semantic_key=f"{tenant_id}::rollback::{reservation_id}",
+            )
             return item
 
     def allocate_sheet(self, lot_id: str, *, tenant_id: str) -> dict[str, Any]:
-        with self._lock:
+        with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
             if rec.get("quarantined"):
                 raise PermissionError("quarantined lot not allocatable")
@@ -492,7 +580,6 @@ class MaterialLotRegistry:
             rec["remainingSheets"] = int(rec["remainingSheets"]) - 1
             rec["consumedSheets"] = int(rec.get("consumedSheets") or 0) + 1
             rec["version"] = int(rec.get("version") or 1) + 1
-            self.persist()
             return rec
 
     def receive(
@@ -518,7 +605,7 @@ class MaterialLotRegistry:
         qty = int(quantity)
         if qty <= 0:
             raise PermissionError("receipt quantity must be positive")
-        with self._lock:
+        with self._transaction():
             if lot_id:
                 rec = self.get(lot_id, tenant_id=tenant_id)
                 before = dict(self.quantities(lot_id, tenant_id=tenant_id))
@@ -554,18 +641,24 @@ class MaterialLotRegistry:
                     "hash": stable_hash({"lotId": rec["lotId"], "qty": qty, "actor": actor, "reason": reason}),
                 }
             )
-            self.persist()
             return rec
 
     def quarantine(self, lot_id: str, *, tenant_id: str, actor: str, reason: str) -> dict[str, Any]:
-        with self._lock:
+        with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
             rec["quarantined"] = True
             rec["qualityState"] = "QUARANTINED"
             rec["quarantineReason"] = reason
             rec["quarantinedBy"] = actor
             rec["version"] = int(rec.get("version") or 1) + 1
-            self.persist()
+            self._emit(
+                "material.quarantine",
+                tenant_id=tenant_id,
+                aggregate_id=lot_id,
+                actor=actor,
+                payload={"reason": reason},
+                semantic_key=f"{tenant_id}::quarantine::{lot_id}::{reason}",
+            )
             return rec
 
     def list(self, *, tenant_id: str, allocatable: bool = False) -> list[dict[str, Any]]:
@@ -643,3 +736,33 @@ def inventory_delta_manifest(
 
 def lease_token(remnant_id: str, version: int, by: str) -> str:
     return f"{remnant_id}:{int(version)}:{by}"
+
+
+def worker_main(argv: list[str] | None = None) -> int:
+    """Cross-process STRICT_STOCK worker. Invoked as `python -m fox3d.inventory`."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", required=True)
+    parser.add_argument("--tenant", required=True)
+    parser.add_argument("--wo", required=True)
+    parser.add_argument("--qty", type=int, required=True)
+    parser.add_argument("--material", default="PB_18_WHITE")
+    parser.add_argument("--thickness", type=float, default=18)
+    args = parser.parse_args(argv)
+    reg = MaterialLotRegistry(Path(args.root))
+    try:
+        items = reg.allocate_requirement(
+            tenant_id=args.tenant,
+            work_order_id=args.wo,
+            quantity=int(args.qty),
+            material=args.material,
+            thickness=float(args.thickness),
+        )
+        print(json.dumps({"ok": True, "qty": sum(int(i["quantity"]) for i in items)}))
+        return 0
+    except StockShortage as exc:
+        print(json.dumps({"ok": False, "shortage": True, **exc.payload}))
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(worker_main())

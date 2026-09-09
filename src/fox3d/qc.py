@@ -9,6 +9,7 @@ from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.journal import emit
 
 DISPOSITIONS = ("REWORK", "SCRAP", "USE_AS_IS_WITH_APPROVAL", "REJECT")
 DEFECT_CODES = {
@@ -67,6 +68,7 @@ class QcService:
     def __init__(self, *, dam: Any | None = None, workorders: Any | None = None) -> None:
         self.dam = dam
         self.workorders = workorders
+        self.journal: Any | None = None
         self.checks: dict[str, dict[str, Any]] = {}
         self.defects: dict[str, dict[str, Any]] = {}
 
@@ -132,6 +134,23 @@ class QcService:
             wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
             if not ok and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}:
                 wo["state"] = "QC_HOLD"
+        release_hash = None
+        if self.workorders is not None:
+            try:
+                release_hash = self.workorders.get(work_order_id).get("releaseHash")
+            except KeyError:
+                release_hash = None
+        emit(
+            self,
+            "qc.final" if stage == "FINAL" else "qc.record",
+            tenant_id=tenant_id,
+            aggregate_type="QC",
+            aggregate_id=rec["qcId"],
+            actor=operator,
+            payload={"result": rec["result"], "stage": stage, "workOrderId": work_order_id, "checkId": check_id},
+            release_hash=release_hash,
+            semantic_key=f"{tenant_id}::qc::{work_order_id}::{stage}::{check_id}::{rec['at']}",
+        )
         return rec
 
     def incoming_material(self, **kwargs: Any) -> dict[str, Any]:
