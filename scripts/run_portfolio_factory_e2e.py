@@ -19,7 +19,7 @@ from fox3d.backup import backup_pilot, evaluate_tenant_restore_matrix, restore_p
 from fox3d.evidence import DirtyTreeError, inspect_repo_lineage  # noqa: E402
 from fox3d.ids import new_id  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
-from fox3d.portfolio import run_portfolio_scenario  # noqa: E402
+from fox3d.portfolio import media_case_real, run_portfolio_scenario, validate_top10_lineage  # noqa: E402
 
 ACCEPTANCE_FILES = PORTFOLIO_ACCEPTANCE_FILES
 
@@ -107,15 +107,21 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
                 plat.register_detected_workers()
             except Exception:
                 render = False
-        result = run_portfolio_scenario(plat, render=render)
+        result = run_portfolio_scenario(plat, render=render, evidence_commit=sha)
     generated = datetime.now(timezone.utc).isoformat()
     missing: list[str] = []
+    if result.get("ok") is not True:
+        missing.append("scenario_ok")
+    lineage_rows = list(result.get("top10Lineage") or [])
+    missing.extend(validate_top10_lineage(lineage_rows))
     if result.get("candidateCount", 0) < 24:
         missing.append("candidate_count")
     if result.get("kindCount", 0) < 6:
         missing.append("kind_count")
     if result.get("top10") != 10:
         missing.append("top10")
+    if int(result.get("top10") or 0) == 10 and len(lineage_rows) != 10:
+        missing.append("top10_lineage_count")
     if result.get("invalidInTop10"):
         missing.append("invalid_in_top10")
     if result.get("demandLabel") == "REAL":
@@ -149,22 +155,35 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     if backup.get("snapshotPathSetBound") is not True:
         missing.append("snapshot")
     media = result.get("media") or []
-    real_media = [m for m in media if m.get("label") == "REAL" and m.get("usedMock") is False]
+    detailed_media = []
+    for row in media:
+        case = {k: row.get(k) for k in (
+            "candidateId", "engineeringHash", "jobId", "alternateJobId", "previewArtifact", "alternateArtifact",
+            "usedMock", "realBlender", "realOptix", "blenderVersion", "device", "gpu", "engine", "executedAt",
+            "evidenceCodeCommit", "artifactSha256", "artifactSize", "label",
+        )}
+        detailed_media.append(case)
+    real_media = [m for m in detailed_media if media_case_real(m, expected_commit=sha)]
     media_status = "REAL" if len(real_media) >= 4 else ("PARTIAL" if media else "BLOCKED")
-    if args.real_media and len(real_media) < 4:
-        missing.append("real_media_4")
+    if args.real_media:
+        if len(real_media) < 4:
+            missing.append("real_media_4")
+        for i, row in enumerate(detailed_media[:4]):
+            if not media_case_real(row, expected_commit=sha):
+                missing.append(f"real_media[{i}]")
     rows = [
         {"check": ">=24 candidates / >=6 kinds", "status": _status(result.get("candidateCount", 0) >= 24 and result.get("kindCount", 0) >= 6), "evidence": f"n={result.get('candidateCount')} kinds={result.get('kinds')}"},
         {"check": "invalid retained, not in Top 10", "status": _status(result.get("rejected", 0) >= 1 and not result.get("invalidInTop10")), "evidence": f"rejected={result.get('rejected')} invalidInTop={result.get('invalidInTop10')}"},
         {"check": "Top 10 deterministic", "status": _status(result.get("top10") == 10), "evidence": str(result.get("rankingPolicyHash"))},
-        {"check": "DFM conservation", "status": _status(bool(result.get("conservationOk"))), "evidence": str(result.get("conservationOk"))},
+        {"check": "DFM conservation", "status": _status(bool(result.get("conservationOk"))), "evidence": json.dumps({"conservationOk": result.get("conservationOk"), "toleranceMm2": 2.0}, default=str)},
         {"check": "cross-SKU planning no consume", "status": _status((result.get("plan") or {}).get("consumesInventory") is False), "evidence": json.dumps({k: (result.get("plan") or {}).get(k) for k in ("sheetCountDelta", "consumesInventory", "doubleAllocation")}, default=str)},
         {"check": "commercial truth labels", "status": "CONFIG_ESTIMATE", "evidence": str(result.get("demandLabel"))},
         {"check": "MOCK demand not REAL", "status": _status(result.get("demandLabel") != "REAL"), "evidence": str(result.get("demandLabel"))},
         {"check": "tenant isolation", "status": _status(bool(result.get("tenantIsolation"))), "evidence": str(result.get("tenantIsolation"))},
         {"check": "tenant backup semantic", "status": _status(bool(matrix.get("tenantRequiredStatePreserved") and matrix.get("tenantLeakageAbsent"))), "evidence": json.dumps(matrix.get("tenantStateDigest"), default=str)},
         {"check": "manual prototype approval", "status": _status(bool(result.get("prototypeReady"))), "evidence": str((result.get("pack") or {}).get("status"))},
-        {"check": "REAL blender media", "status": media_status, "evidence": f"real={len(real_media)}/{max(len(media), 4)}"},
+        {"check": "Top 10 lineage", "status": _status(not validate_top10_lineage(lineage_rows)), "evidence": json.dumps(lineage_rows, default=str)[:800]},
+        {"check": "REAL blender media", "status": media_status, "evidence": json.dumps([{k: m.get(k) for k in ("candidateId", "engineeringHash", "jobId", "artifactSha256", "artifactSize", "blenderVersion", "device", "gpu", "evidenceCodeCommit", "usedMock", "realBlender", "realOptix", "executedAt")} for m in detailed_media], default=str)},
         {"check": "evidenceCodeCommit", "status": "REAL_LOGIC" if matches_head else "BLOCKED", "evidence": sha},
         {"check": "workingTreeClean", "status": "REAL_LOGIC" if clean else "UNVERIFIED", "evidence": str(clean)},
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
@@ -198,13 +217,16 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "top10": result.get("top10"),
         "rejected": result.get("rejected"),
         "rankingPolicyHash": result.get("rankingPolicyHash"),
+        "top10Lineage": lineage_rows,
+        "realMediaCases": detailed_media,
         "rows": rows,
     }
     dfm_doc = {
         **payload_common,
         "domain": "portfolio-dfm",
         "conservationOk": result.get("conservationOk"),
-        "plan": {k: (result.get("plan") or {}).get(k) for k in ("sheetCountDelta", "trueScrapDelta", "consumesInventory", "doubleAllocation", "oversell")},
+        "conservationToleranceMm2": 2.0,
+        "plan": {k: (result.get("plan") or {}).get(k) for k in ("sheetCountDelta", "trueScrapDelta", "consumesInventory", "doubleAllocation", "oversell", "remnantFirst")},
         "rows": [r for r in rows if r["check"] in {"DFM conservation", "cross-SKU planning no consume", "invalid retained, not in Top 10"}],
     }
     commercial_doc = {
@@ -213,7 +235,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "demandLabel": result.get("demandLabel"),
         "prototypeReady": result.get("prototypeReady"),
         "realMediaCount": len(real_media),
-        "rows": [r for r in rows if r["check"] in {"commercial truth labels", "MOCK demand not REAL", "manual prototype approval", "REAL blender media"}],
+        "realMediaCases": detailed_media,
+        "rows": [r for r in rows if r["check"] in {"commercial truth labels", "MOCK demand not REAL", "manual prototype approval", "REAL blender media", "Top 10 lineage"}],
     }
     if not gate_ok:
         return _refuse_overwrite(docs, missing)

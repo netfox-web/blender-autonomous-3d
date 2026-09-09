@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -9,7 +10,9 @@ from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.kd import FLATPACK_PRODUCT_TYPES, FlatPackProductTypeRegistry
+from fox3d.manufacturing import DEFAULT_REMNANT_POLICY
 from fox3d.mfg_release import FAMILY_STEPS
+from fox3d.parametric import ALLOWED_THICKNESS as BOARD_THICKNESS_POLICY
 from fox3d.parametric import CabinetSpec, map_cabinet_material
 from fox3d.qc import plan_for_family, plan_hash
 
@@ -49,10 +52,168 @@ DEFAULT_RANKING_POLICY = {
     "truthLabel": "CONFIG_ESTIMATE",
 }
 ALLOWED_THICKNESS = (18,)
+CONSERVATION_TOLERANCE_MM2 = 2.0
+ENVELOPE_NUMERIC = (
+    "maxWidthMm",
+    "maxDepthMm",
+    "maxHeightMm",
+    "maxLongestCartonMm",
+    "maxPackedWeightKg",
+    "maxAssemblyMinutes",
+)
+DEFAULT_ENVELOPE = {
+    "maxWidthMm": 1200,
+    "maxDepthMm": 600,
+    "maxHeightMm": 1800,
+    "maxLongestCartonMm": 1500,
+    "maxPackedWeightKg": 30,
+    "maxAssemblyMinutes": 90,
+    "thicknessMm": list(ALLOWED_THICKNESS),
+}
 
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _finite_positive(value: Any, field: str) -> float:
+    if value is None or isinstance(value, bool) or isinstance(value, (list, dict)):
+        raise PortfolioError("NEEDS_INPUT", f"invalid {field}")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise PortfolioError("NEEDS_INPUT", f"non-numeric {field}") from None
+    if not math.isfinite(number) or number <= 0:
+        raise PortfolioError("NEEDS_INPUT", f"invalid {field}")
+    return number
+
+
+def _finite_nonneg(value: Any, field: str) -> float:
+    if value is None or isinstance(value, bool):
+        raise PortfolioError("BLOCKED", f"missing {field}")
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise PortfolioError("BLOCKED", f"non-numeric {field}") from None
+    if not math.isfinite(number) or number < 0:
+        raise PortfolioError("BLOCKED", f"invalid {field}")
+    return number
+
+
+def validate_envelope(envelope: dict[str, Any] | None) -> dict[str, Any]:
+    supplied = dict(envelope or {})
+    env = dict(DEFAULT_ENVELOPE)
+    for key in ENVELOPE_NUMERIC:
+        if key in supplied:
+            env[key] = _finite_positive(supplied[key], key)
+        else:
+            env[key] = _finite_positive(DEFAULT_ENVELOPE[key], key)
+    if "thicknessMm" in supplied:
+        raw = supplied["thicknessMm"]
+        if not isinstance(raw, (list, tuple)) or not raw:
+            raise PortfolioError("NEEDS_INPUT", "empty / malformed thickness list")
+        thick: list[float] = []
+        for item in raw:
+            number = _finite_positive(item, "thicknessMm")
+            if number not in BOARD_THICKNESS_POLICY:
+                raise PortfolioError("NEEDS_INPUT", f"thickness {number} not in material policy")
+            thick.append(number)
+        env["thicknessMm"] = thick
+    else:
+        env["thicknessMm"] = list(ALLOWED_THICKNESS)
+    return env
+
+
+def recompute_conservation(nest: dict[str, Any], *, panel_count: int) -> dict[str, Any]:
+    try:
+        sheet_mm = nest.get("sheetMm")
+        if not isinstance(sheet_mm, (list, tuple)) or len(sheet_mm) < 2:
+            raise PortfolioError("BLOCKED", "missing sheetMm")
+        sheet_w = _finite_positive(sheet_mm[0], "sheetMm[0]")
+        sheet_h = _finite_positive(sheet_mm[1], "sheetMm[1]")
+        if "sheetCount" not in nest or nest.get("sheetCount") is None:
+            raise PortfolioError("BLOCKED", "missing sheetCount")
+        sheet_count = _finite_nonneg(nest.get("sheetCount"), "sheetCount")
+        if panel_count > 0 and sheet_count <= 0:
+            raise PortfolioError("BLOCKED", "zero sheetCount with non-empty BOM")
+        for field in ("partUsedArea", "reusableRemnantArea", "trueScrapArea"):
+            if field not in nest or nest.get(field) is None:
+                raise PortfolioError("BLOCKED", f"missing {field}")
+        placed = _finite_nonneg(nest.get("partUsedArea"), "partUsedArea")
+        remnant = _finite_nonneg(nest.get("reusableRemnantArea"), "reusableRemnantArea")
+        scrap = _finite_nonneg(nest.get("trueScrapArea"), "trueScrapArea")
+        input_area = sheet_w * sheet_h * sheet_count
+        if "inputSheetArea" in nest and nest.get("inputSheetArea") is not None:
+            claimed = _finite_nonneg(nest.get("inputSheetArea"), "inputSheetArea")
+            if abs(claimed - input_area) > CONSERVATION_TOLERANCE_MM2:
+                raise PortfolioError("BLOCKED", "contradictory inputSheetArea")
+        recomputed = placed + remnant + scrap
+        err = abs(input_area - recomputed)
+        ok = err <= CONSERVATION_TOLERANCE_MM2
+        return {
+            "ok": ok,
+            "inputSheetArea": input_area,
+            "placedArea": placed,
+            "reusableRemnantArea": remnant,
+            "trueScrapArea": scrap,
+            "recomputedArea": recomputed,
+            "areaConservationError": err,
+            "toleranceMm2": CONSERVATION_TOLERANCE_MM2,
+        }
+    except PortfolioError as exc:
+        return {
+            "ok": False,
+            "error": str(exc),
+            "areaConservationError": None,
+            "toleranceMm2": CONSERVATION_TOLERANCE_MM2,
+        }
+
+
+def media_case_real(row: dict[str, Any], *, expected_commit: str | None = None) -> bool:
+    if not isinstance(row, dict):
+        return False
+    if row.get("usedMock") is True or row.get("realBlender") is not True:
+        return False
+    if not row.get("candidateId") or not row.get("jobId") or not row.get("engineeringHash"):
+        return False
+    if not row.get("blenderVersion") or not row.get("executedAt"):
+        return False
+    if not (row.get("device") or row.get("gpu")):
+        return False
+    digest = row.get("artifactSha256")
+    size = row.get("artifactSize")
+    if not digest or size is None:
+        return False
+    try:
+        if int(size) <= 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    commit = row.get("evidenceCodeCommit")
+    if not commit:
+        return False
+    if expected_commit and commit != expected_commit:
+        return False
+    return True
+
+
+def validate_top10_lineage(rows: list[dict[str, Any]]) -> list[str]:
+    missing: list[str] = []
+    required = ("candidateId", "canonicalHash", "engineeringHash", "bomHash", "nestingHash", "costSnapshotHash", "rankingPolicyHash")
+    for i, row in enumerate(rows or []):
+        if not isinstance(row, dict):
+            missing.append(f"top10[{i}]:malformed")
+            continue
+        if row.get("state") in {"REJECTED_DFM", "NEEDS_INPUT", "SUPERSEDED"}:
+            missing.append(f"top10[{i}]:illegal-state")
+        for key in required:
+            if not row.get(key):
+                missing.append(f"top10[{i}]:missing-{key}")
+        if row.get("costEngineeringHash") and row.get("engineeringHash") and row["costEngineeringHash"] != row["engineeringHash"]:
+            missing.append(f"top10[{i}]:stale-cost")
+        if row.get("conservationOk") is not True:
+            missing.append(f"top10[{i}]:conservation")
+    return missing
 
 
 class PortfolioError(PermissionError):
@@ -115,18 +276,7 @@ class PortfolioFactory:
             raise PortfolioError("BLOCKED", "demand source must be MOCK/IMPORTED/MANUAL/UNAVAILABLE")
         if demand_source == "REAL":
             raise PortfolioError("BLOCKED", "MOCK demand cannot be labeled REAL")
-        env = {
-            "maxWidthMm": 1200,
-            "maxDepthMm": 600,
-            "maxHeightMm": 1800,
-            "maxLongestCartonMm": 1500,
-            "maxPackedWeightKg": 30,
-            "thicknessMm": list(ALLOWED_THICKNESS),
-            "maxAssemblyMinutes": 90,
-            **(envelope or {}),
-        }
-        if not env.get("maxWidthMm") or float(env["maxWidthMm"]) <= 0:
-            raise PortfolioError("NEEDS_INPUT", "missing manufacturing envelope")
+        env = validate_envelope(envelope)
         rec = {
             "portfolioId": new_id(),
             "tenantId": tenant_id,
@@ -135,7 +285,7 @@ class PortfolioFactory:
             "allowedKinds": list(PORTFOLIO_KINDS),
             "envelope": env,
             "materialCatalog": ["WOOD_WHITE", "PB_18_WHITE"],
-            "thicknessMm": list(ALLOWED_THICKNESS),
+            "thicknessMm": list(env["thicknessMm"]),
             "maxCarton": {"longestMm": env["maxLongestCartonMm"], "weightKg": env["maxPackedWeightKg"]},
             "assembly": {"maxMinutes": env["maxAssemblyMinutes"], "source": "CONFIG_ESTIMATE"},
             "landedCostScenario": {"targetMargin": 0.3, "source": "CONFIG_ESTIMATE"},
@@ -275,8 +425,10 @@ class PortfolioFactory:
         longest = max(float(pack.get("length") or 0), float(pack.get("width") or 0), float(pack.get("height") or 0))
         if longest > float(env["maxLongestCartonMm"]):
             codes.append("CARTON_OVERSIZE")
-        state = "REJECTED_DFM" if codes else "CANDIDATE"
         dfm = self._scorecard(sku)
+        if not dfm.get("conservationOk"):
+            codes.append("CONSERVATION")
+        state = "REJECTED_DFM" if codes else "CANDIDATE"
         commercial = self._commercial(sku, intent)
         rec = {
             "candidateId": new_id(),
@@ -331,29 +483,26 @@ class PortfolioFactory:
         lines = list(bom.get("lines") or [])
         panels = [ln for ln in lines if not ln.get("hardware")]
         hardware = [ln for ln in lines if ln.get("hardware")]
-        placed = float(nest.get("partUsedArea") or nest.get("usedAreaMm2") or 0)
-        remnant = float(nest.get("reusableRemnantArea") or 0)
-        scrap = float(nest.get("trueScrapArea") or 0)
-        sheet_area = float((nest.get("sheetMm") or [2440, 1220])[0]) * float((nest.get("sheetMm") or [2440, 1220])[1]) * max(int(nest.get("sheetCount") or 0), 0)
-        err = float(nest.get("areaConservationError") or 0)
-        conservation = err < 2
+        conservation = recompute_conservation(nest, panel_count=len(panels))
         qc = plan_hash(plan_for_family("KD_FURNITURE"))
         return {
-            "ok": bool((sku.get("report") or {}).get("ok")) and conservation,
+            "ok": bool((sku.get("report") or {}).get("ok")) and bool(conservation.get("ok")),
             "engineeringOk": bool((sku.get("report") or {}).get("ok")),
             "violations": (sku.get("report") or {}).get("violations") or [],
             "bomHash": bom.get("bomHash"),
             "sheetCount": nest.get("sheetCount"),
             "material": (sku.get("spec") or {}).get("material"),
             "thickness": (sku.get("spec") or {}).get("boardThickness"),
-            "placedArea": placed,
-            "reusableRemnantArea": remnant,
-            "trueScrapArea": scrap,
-            "inputSheetArea": sheet_area,
+            "placedArea": conservation.get("placedArea"),
+            "reusableRemnantArea": conservation.get("reusableRemnantArea"),
+            "trueScrapArea": conservation.get("trueScrapArea"),
+            "inputSheetArea": conservation.get("inputSheetArea"),
             "utilization": nest.get("utilizationRatio"),
             "trueWasteRatio": nest.get("trueWasteRatio"),
-            "conservationOk": conservation,
-            "areaConservationError": err,
+            "conservationOk": bool(conservation.get("ok")),
+            "areaConservationError": conservation.get("areaConservationError"),
+            "conservationToleranceMm2": conservation.get("toleranceMm2"),
+            "conservationError": conservation.get("error"),
             "hardwareCount": sum(int(h.get("quantity") or 1) for h in hardware),
             "partCount": len(panels),
             "carton": {"length": pack.get("length"), "width": pack.get("width"), "height": pack.get("height")},
@@ -442,46 +591,98 @@ class PortfolioFactory:
                 batch_sheets += int(batch.get("sheetCount") or 0)
             except Exception:
                 batch_sheets += int(nest.get("sheetCount") or 0) * 2
-        recs = [{"spec": r["spec"], "bom": r["sku"]["bom"]} for r in valid]
-        cross = self.platform.kd.nest_cross_sku(recs, [1] * len(recs)) if recs else {"sheetCount": 0, "trueScrapArea": 0, "reusableRemnantArea": 0}
-        planning_rems = []
-        used_ids: set[str] = set()
-        for rem in self.platform.remnants.available(tenant_id=tenant_id):
-            rid = rem.get("remnantId")
-            if not rid or rid in used_ids:
-                continue
-            if float(rem.get("thickness") or 0) not in set(intent["thicknessMm"]):
-                continue
-            used_ids.add(str(rid))
-            planning_rems.append(
-                {
-                    "remnantId": rid,
+        recs = [{"spec": r["spec"], "bom": r["sku"]["bom"], "candidateId": r["candidateId"]} for r in valid]
+        groups: dict[tuple[str, float, str], list[dict[str, Any]]] = {}
+        for rec in recs:
+            spec = CabinetSpec.model_validate(rec["spec"])
+            material = str(spec.material)
+            thickness = float(spec.boardThickness)
+            grain = str((spec.metadata or {}).get("grain") or "length")
+            key = (map_cabinet_material(material).get("code") or material, thickness, grain)
+            groups.setdefault(key, []).append(rec)
+        available = list(self.platform.remnants.available(tenant_id=tenant_id))
+        eligible: list[str] = []
+        used: list[str] = []
+        group_plans: list[dict[str, Any]] = []
+        remnant_first_sheets = 0
+        remnant_first_scrap = 0.0
+        remnant_first_reuse = 0.0
+        for (mat_code, thickness, grain), group in groups.items():
+            pool = []
+            for rem in available:
+                if rem.get("tenantId") not in {None, tenant_id}:
+                    continue
+                rec_like = {
+                    "remnantId": rem.get("remnantId"),
+                    "tenantId": rem.get("tenantId") or tenant_id,
+                    "material": rem.get("material"),
+                    "materialCode": rem.get("materialCode") or map_cabinet_material(str(rem.get("material") or "")).get("code"),
+                    "thickness": rem.get("thickness"),
                     "w": rem.get("w"),
                     "h": rem.get("h"),
-                    "thickness": rem.get("thickness"),
-                    "materialCode": rem.get("materialCode") or map_cabinet_material(str(rem.get("material") or "WOOD_WHITE")).get("code"),
-                    "status": "available",
+                    "grain": rem.get("grain") or "length",
+                    "sourceRun": rem.get("sourceNestingRun") or rem.get("sourceRun"),
+                    "status": rem.get("status") or "available",
+                    "materialLotId": rem.get("materialLotId"),
+                }
+                if not self.platform.kd.nester._remnant_compatible(rec_like, mat_code, thickness, grain, dict(DEFAULT_REMNANT_POLICY)):
+                    continue
+                pool.append(rec_like)
+                eligible.append(str(rec_like["remnantId"]))
+            lines: list[dict[str, Any]] = []
+            for rec in group:
+                spec = CabinetSpec.model_validate(rec["spec"])
+                for ln in rec["bom"]["lines"]:
+                    item = dict(ln)
+                    item["skuId"] = spec.productId
+                    item["candidateId"] = rec["candidateId"]
+                    lines.append(item)
+            nest = self.platform.kd.nester.nest(
+                {"productId": f"portfolio-plan:{mat_code}:{thickness}", "lines": lines},
+                material=mat_code,
+                thickness=thickness,
+                remnants=pool,
+            )
+            placed_ids = [str(r.get("remnantId")) for r in (nest.get("remnantUsed") or []) if r.get("remnantId")]
+            if len(placed_ids) != len(set(placed_ids)):
+                raise PortfolioError("BLOCKED", "remnant double-use in portfolio planning")
+            used.extend(placed_ids)
+            remnant_first_sheets += int(nest.get("sheetCount") or 0)
+            remnant_first_scrap += float(nest.get("trueScrapArea") or 0)
+            remnant_first_reuse += float(nest.get("reusableRemnantArea") or 0)
+            group_plans.append(
+                {
+                    "material": mat_code,
+                    "thickness": thickness,
+                    "grain": grain,
+                    "candidateIds": [r["candidateId"] for r in group],
+                    "candidateRemnantIds": [p["remnantId"] for p in pool],
+                    "usedRemnantIds": placed_ids,
+                    "sheetCount": nest.get("sheetCount"),
                 }
             )
-        remnant_first = cross
-        if recs:
+        if len(used) != len(set(used)):
+            raise PortfolioError("BLOCKED", "remnant double-use in portfolio planning")
+        cross_sheets = 0
+        cross_scrap = 0.0
+        cross_reuse = 0.0
+        for (mat_code, thickness, grain), group in groups.items():
             lines: list[dict[str, Any]] = []
-            material = "WOOD_WHITE"
-            thickness = 18.0
-            for rec in recs:
+            for rec in group:
                 spec = CabinetSpec.model_validate(rec["spec"])
-                material = str(spec.material)
-                thickness = float(spec.boardThickness)
                 for ln in rec["bom"]["lines"]:
                     item = dict(ln)
                     item["skuId"] = spec.productId
                     lines.append(item)
-            remnant_first = self.platform.kd.nester.nest(
-                {"productId": "portfolio-plan", "lines": lines},
-                material=material,
+            nest = self.platform.kd.nester.nest(
+                {"productId": f"portfolio-cross:{mat_code}:{thickness}:{grain}", "lines": lines},
+                material=mat_code,
                 thickness=thickness,
-                remnants=planning_rems,
             )
+            cross_sheets += int(nest.get("sheetCount") or 0)
+            cross_scrap += float(nest.get("trueScrapArea") or 0)
+            cross_reuse += float(nest.get("reusableRemnantArea") or 0)
+        cross = {"sheetCount": cross_sheets, "trueScrapArea": cross_scrap, "reusableRemnantArea": cross_reuse}
         plan = {
             "planId": new_id(),
             "tenantId": tenant_id,
@@ -496,10 +697,12 @@ class PortfolioFactory:
                 "reusableRemnantArea": float(cross.get("reusableRemnantArea") or 0),
             },
             "remnantFirst": {
-                "sheetCount": int(remnant_first.get("sheetCount") or 0),
-                "trueScrapArea": float(remnant_first.get("trueScrapArea") or 0),
-                "reusableRemnantArea": float(remnant_first.get("reusableRemnantArea") or 0),
-                "remnantIds": sorted(used_ids),
+                "sheetCount": remnant_first_sheets,
+                "trueScrapArea": remnant_first_scrap,
+                "reusableRemnantArea": remnant_first_reuse,
+                "candidateRemnantIds": sorted(set(eligible)),
+                "usedRemnantIds": used,
+                "groups": group_plans,
                 "planningOnly": True,
             },
             "sheetCountDelta": int(cross.get("sheetCount") or 0) - independent_sheets,
@@ -530,7 +733,12 @@ class PortfolioFactory:
             self._require_tenant(rec, tenant_id)
         scored = []
         for rec in rows:
-            valid = rec.get("state") != "REJECTED_DFM" and bool((rec.get("dfm") or {}).get("engineeringOk"))
+            valid = (
+                rec.get("state") not in {"REJECTED_DFM", "NEEDS_INPUT", "SUPERSEDED"}
+                and bool((rec.get("dfm") or {}).get("engineeringOk"))
+                and bool((rec.get("dfm") or {}).get("conservationOk"))
+                and not (rec.get("commercial") or {}).get("stale")
+            )
             breakdown = self._score_breakdown(rec, pol)
             total = sum(breakdown[k]["weighted"] for k in pol["weights"]) if valid else None
             scored.append(
@@ -545,6 +753,7 @@ class PortfolioFactory:
                     "engineeringHash": rec.get("engineeringHash"),
                     "bomHash": rec.get("bomHash"),
                     "costSnapshotHash": (rec.get("commercial") or {}).get("costSnapshotHash"),
+                    "conservationOk": bool((rec.get("dfm") or {}).get("conservationOk")),
                     "demand": rec.get("demand"),
                 }
             )
@@ -683,6 +892,8 @@ class PortfolioFactory:
         }
         if rec.get("commercial", {}).get("stale"):
             raise PortfolioError("BLOCKED", "stale cost snapshot")
+        if (rec.get("dfm") or {}).get("conservationOk") is not True:
+            raise PortfolioError("BLOCKED", "conservation")
         ready = bool(approved and rec.get("engineeringHash") and rec.get("bomHash") and (rec.get("commercial") or {}).get("costSnapshotHash"))
         pack = {
             "candidateId": candidate_id,
@@ -710,38 +921,82 @@ class PortfolioFactory:
             raise PortfolioError("BLOCKED", "human approval missing")
         return pack
 
-    def media_pack(self, candidate_id: str, *, tenant_id: str, render: bool = False) -> dict[str, Any]:
+    def media_pack(
+        self,
+        candidate_id: str,
+        *,
+        tenant_id: str,
+        render: bool = False,
+        evidence_commit: str | None = None,
+    ) -> dict[str, Any]:
         rec = self.candidates[candidate_id]
         self._require_tenant(rec, tenant_id)
         preview = None
         alt = None
         if render and rec.get("productId") and rec.get("spec"):
-            self.platform.parametrics[rec["productId"]] = {"spec": rec["spec"], "report": rec.get("report") or {}, "bom": (rec.get("sku") or {}).get("bom") or {}, "engineeringHash": rec.get("engineeringHash")}
-            preview = self.platform.render_parametric(rec["productId"], tenant_id=tenant_id, explode=False)
-            alt = self.platform.render_parametric(rec["productId"], tenant_id=tenant_id, explode=True)
+            self.platform.parametrics[rec["productId"]] = {
+                "spec": rec["spec"],
+                "report": rec.get("report") or {},
+                "bom": (rec.get("sku") or {}).get("bom") or {},
+                "engineeringHash": rec.get("engineeringHash"),
+            }
+            job_body = {
+                "tenantId": tenant_id,
+                "jobType": "PARAMETRIC_3D",
+                "mode": "PARAMETRIC_CABINET",
+                "engineering": rec["spec"],
+                "evidenceCodeCommit": evidence_commit,
+                "render": {"width": 256, "height": 256, "engine": "CYCLES", "device": "OPTIX", "samples": 8},
+                "timeoutSeconds": 180,
+            }
+            preview_job = self.platform.execute_job(self.platform.submit_job({**job_body, "explode": False}))
+            alt_job = self.platform.execute_job(self.platform.submit_job({**job_body, "explode": True}))
+            preview = {"job": preview_job}
+            alt = {"job": alt_job}
         job = (preview or {}).get("job") or {}
-        used_mock = bool(job.get("usedMock"))
-        real = bool(job.get("realBlender")) and not used_mock and job.get("status") in {"completed", "succeeded"}
-        files = (job.get("output") or {}).get("files") or {}
-        digest = files.get("beautyHash") or files.get("sha256")
-        size = files.get("beautySize") or files.get("size")
-        art = files.get("png") or files.get("preview") or files.get("beauty.png") or job.get("outputPath")
-        if not digest and art:
-            path = Path(str(art))
-            if path.exists() and path.is_file():
-                blob = path.read_bytes()
-                digest = sha256_bytes(blob)
-                size = len(blob)
-        label = "REAL" if real and digest else ("MOCK" if used_mock else "BLOCKED")
+        alt_job = (alt or {}).get("job") or {}
+        out = job.get("output") or {}
+        files = out.get("files") or {}
+        used_mock = bool(job.get("usedMock") if job.get("usedMock") is not None else out.get("usedMock"))
+        digest = files.get("beautyHash") or job.get("outputHash")
+        size = files.get("beautySize") or job.get("outputSize")
+        try:
+            size_n = int(size) if size is not None else 0
+        except (TypeError, ValueError):
+            size_n = 0
+        job_commit = job.get("evidenceCodeCommit") or out.get("evidenceCodeCommit")
+        if not job_commit and evidence_commit and not job.get("cacheHit"):
+            job_commit = evidence_commit
+        real = (
+            bool(job.get("realBlender") or out.get("realBlender"))
+            and not used_mock
+            and job.get("status") in {"completed", "succeeded"}
+            and bool(digest)
+            and size_n > 0
+            and bool(job_commit)
+            and (not evidence_commit or job_commit == evidence_commit)
+        )
+        label = "REAL" if real else ("MOCK" if used_mock else "BLOCKED")
         pack = {
             "candidateId": candidate_id,
             "tenantId": tenant_id,
             "engineeringHash": rec.get("engineeringHash"),
+            "jobId": job.get("jobId"),
+            "alternateJobId": alt_job.get("jobId"),
+            "previewArtifact": files.get("beauty.png"),
+            "alternateArtifact": ((alt_job.get("output") or {}).get("files") or {}).get("beauty.png"),
             "usedMock": used_mock,
-            "realBlender": bool(job.get("realBlender")),
+            "realBlender": bool(job.get("realBlender") or out.get("realBlender")),
+            "realOptix": bool(job.get("realOptix") or out.get("realOptix")),
+            "blenderVersion": job.get("blenderVersion") or out.get("blenderVersion"),
+            "device": out.get("device") or job.get("gpu"),
+            "gpu": job.get("gpu") or out.get("gpu"),
+            "engine": out.get("engine") or job.get("renderEngine"),
+            "executedAt": job.get("completedAt") or job.get("updatedAt") or _now(),
+            "evidenceCodeCommit": job_commit,
             "label": label,
             "artifactSha256": digest,
-            "artifactSize": size,
+            "artifactSize": size_n if size is not None else None,
             "preview": preview,
             "alternate": alt,
             "liveMachineControl": False,
@@ -750,12 +1005,49 @@ class PortfolioFactory:
         self.persist()
         return pack
 
+    def top10_lineage(self, ranking: dict[str, Any]) -> list[dict[str, Any]]:
+        rows = []
+        policy = ranking.get("rankingPolicyHash")
+        for item in ranking.get("top10") or []:
+            rec = self.candidates.get(item["candidateId"]) or {}
+            approval = next(
+                (a.get("status") for a in self.approvals.values() if a.get("candidateId") == item["candidateId"]),
+                None,
+            )
+            rows.append(
+                {
+                    "candidateId": item.get("candidateId"),
+                    "canonicalHash": item.get("canonicalHash") or rec.get("canonicalHash"),
+                    "engineeringHash": rec.get("engineeringHash") or item.get("engineeringHash"),
+                    "bomHash": rec.get("bomHash") or item.get("bomHash"),
+                    "nestingHash": rec.get("nestingHash") or (rec.get("dfm") or {}).get("lineage", {}).get("nestingHash"),
+                    "costSnapshotHash": (rec.get("commercial") or {}).get("costSnapshotHash") or item.get("costSnapshotHash"),
+                    "costEngineeringHash": (rec.get("commercial") or {}).get("engineeringHash"),
+                    "rankingPolicyHash": policy,
+                    "score": item.get("score"),
+                    "breakdown": item.get("breakdown"),
+                    "state": rec.get("state") or item.get("state"),
+                    "approvalStatus": approval,
+                    "conservationOk": (rec.get("dfm") or {}).get("conservationOk"),
+                    "areaConservationError": (rec.get("dfm") or {}).get("areaConservationError"),
+                    "conservationToleranceMm2": (rec.get("dfm") or {}).get("conservationToleranceMm2"),
+                }
+            )
+        return rows
+
     def list_candidates(self, portfolio_id: str, *, tenant_id: str) -> list[dict[str, Any]]:
         self.get_intent(portfolio_id, tenant_id=tenant_id)
         return [c for c in self.candidates.values() if c.get("portfolioId") == portfolio_id and c.get("tenantId") == tenant_id]
 
 
-def run_portfolio_scenario(plat: Any, *, tenant_a: str = "pf-a", tenant_b: str = "pf-b", render: bool = False) -> dict[str, Any]:
+def run_portfolio_scenario(
+    plat: Any,
+    *,
+    tenant_a: str = "pf-a",
+    tenant_b: str = "pf-b",
+    render: bool = False,
+    evidence_commit: str | None = None,
+) -> dict[str, Any]:
     pf = plat.portfolio
     intent = pf.create_intent(tenant_id=tenant_a, segment="STUDENT", demand_source="MOCK", seed="phase541")
     generated = pf.generate_candidates(intent["portfolioId"], tenant_id=tenant_a)
@@ -766,30 +1058,47 @@ def run_portfolio_scenario(plat: Any, *, tenant_a: str = "pf-a", tenant_b: str =
     except PermissionError:
         cross = True
     plan = pf.plan_material(intent["portfolioId"], tenant_id=tenant_a)
-    pf.assert_no_double_remnant(plan["remnantFirst"]["remnantIds"])
+    pf.assert_no_double_remnant(list(plan["remnantFirst"].get("usedRemnantIds") or []))
     ranking = pf.rank(intent["portfolioId"], tenant_id=tenant_a)
     top = ranking["top10"]
+    lineage = pf.top10_lineage(ranking)
+    lineage_errors = validate_top10_lineage(lineage)
     invalid_in_top = [r for r in top if not r["valid"]]
     media_rows = []
     if render:
         for row in top[:4]:
-            media_rows.append(pf.media_pack(row["candidateId"], tenant_id=tenant_a, render=True))
+            media_rows.append(pf.media_pack(row["candidateId"], tenant_id=tenant_a, render=True, evidence_commit=evidence_commit))
     approval = None
     pack = None
     if top:
         approval = pf.submit_approval(top[0]["candidateId"], tenant_id=tenant_a, actor="pm")
         approval = pf.approve_prototype(approval["approvalId"], tenant_id=tenant_a, actor="pm", reason="prototype-pilot")
         pack = pf.prototype_pack(top[0]["candidateId"], tenant_id=tenant_a)
+        lineage = pf.top10_lineage(ranking)
     kinds = sorted({c["kind"] for c in generated["candidates"]})
-    conservation = all((c.get("dfm") or {}).get("conservationOk") is not False or c["state"] == "REJECTED_DFM" for c in generated["candidates"])
+    conservation = all(
+        c["state"] == "REJECTED_DFM" or (c.get("dfm") or {}).get("conservationOk") is True for c in generated["candidates"]
+    )
+    ok = (
+        generated["count"] >= 24
+        and len(kinds) >= 6
+        and len(top) == 10
+        and not invalid_in_top
+        and not lineage_errors
+        and conservation
+        and cross
+        and bool(pack and pack.get("readyForManualPrototype"))
+    )
     return {
-        "ok": True,
+        "ok": ok,
         "portfolioId": intent["portfolioId"],
         "candidateCount": generated["count"],
         "kindCount": len(kinds),
         "kinds": kinds,
         "rejected": generated["rejected"],
         "top10": len(top),
+        "top10Lineage": lineage,
+        "lineageErrors": lineage_errors,
         "invalidInTop10": len(invalid_in_top),
         "rankingPolicyHash": ranking["rankingPolicyHash"],
         "plan": plan,

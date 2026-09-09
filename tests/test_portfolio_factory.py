@@ -81,7 +81,7 @@ def test_remnant_double_use_and_incompatible_thickness(tmp_path):
     )
     result = run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
     plan = plat.portfolio.plans[next(iter(plat.portfolio.plans))]
-    ids = plan["remnantFirst"]["remnantIds"]
+    ids = plan["remnantFirst"]["usedRemnantIds"]
     plat.portfolio.assert_no_double_remnant(ids)
     with pytest.raises(PortfolioError, match="double-use"):
         plat.portfolio.assert_no_double_remnant(ids + ids)
