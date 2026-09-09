@@ -156,7 +156,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
             "fullAutonomousFactoryReady": False,
             "liveFactoryExecutionReady": False,
         }
-        stress = data.get("stress") or passing_reliability_stress()
+        stress = data["stress"] if "stress" in data else None
         rows.extend(data.get("rows") or [])
     else:
         plat = Platform(root=ROOT / ".fox3d-data", mock_blender=False)

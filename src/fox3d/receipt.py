@@ -74,9 +74,15 @@ class ReceivingService:
         qty = int(row.get("quantity") or row.get("sheetCount") or 0)
         material = str(row.get("material") or "PB_18_WHITE")
         thickness = float(row.get("thickness") or 18)
+        length = row.get("length")
+        width = row.get("width")
+        grain = row.get("grain")
         expected_material = row.get("expectedMaterial")
         expected_qty = row.get("expectedQuantity")
         expected_thickness = row.get("expectedThickness")
+        expected_length = row.get("expectedLength")
+        expected_width = row.get("expectedWidth")
+        expected_grain = row.get("expectedGrain")
         mismatch = False
         reasons = []
         if expected_material and str(expected_material) != material:
@@ -88,6 +94,15 @@ class ReceivingService:
         if expected_thickness is not None and abs(float(expected_thickness) - thickness) > 1e-6:
             mismatch = True
             reasons.append("thickness")
+        if expected_length is not None and (length is None or abs(float(length) - float(expected_length)) > 1e-3):
+            mismatch = True
+            reasons.append("length")
+        if expected_width is not None and (width is None or abs(float(width) - float(expected_width)) > 1e-3):
+            mismatch = True
+            reasons.append("width")
+        if expected_grain is not None and str(grain or "") != str(expected_grain):
+            mismatch = True
+            reasons.append("grain")
         rec = {
             "receiptId": new_id(),
             "tenantId": tenant_id,
@@ -95,6 +110,9 @@ class ReceivingService:
             "supplierLot": row.get("supplierLot"),
             "material": material,
             "thickness": thickness,
+            "length": float(length) if length is not None else None,
+            "width": float(width) if width is not None else None,
+            "grain": grain,
             "quantity": qty,
             "unitCost": float(row.get("unitCost") or row.get("costPerSheet") or 850),
             "source": source,
@@ -116,6 +134,9 @@ class ReceivingService:
                 sheet_count=qty,
                 supplier_lot=row.get("supplierLot"),
                 cost_per_sheet=rec["unitCost"],
+                length=float(length) if length is not None else 2440,
+                width=float(width) if width is not None else 1220,
+                grain=str(grain or "length"),
             )
             self.lots.quarantine(lot["lotId"], tenant_id=tenant_id, actor=actor, reason=",".join(reasons) or "mismatch")
             rec["lotId"] = lot["lotId"]
@@ -131,6 +152,9 @@ class ReceivingService:
                 supplier_id=row.get("supplierId"),
                 supplier_lot=row.get("supplierLot"),
                 unit_cost=rec["unitCost"],
+                length=float(length) if length is not None else None,
+                width=float(width) if width is not None else None,
+                grain=str(grain) if grain is not None else None,
             )
             rec["lotId"] = lot["lotId"]
             rec["status"] = "ACCEPTED"

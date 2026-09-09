@@ -64,8 +64,16 @@ class ReliabilityHarness:
             nest = (rel.get("snapshot") or {}).get("nesting") or {}
             sku = str(nest.get("sheetSku") or "PB_18_WHITE")
             th = float(nest.get("thickness") or 18)
+            sheet_mm = nest.get("sheetMm") or []
+            row = {"supplierLot": f"FAM-{family}", "material": sku, "thickness": th, "quantity": 200}
+            if len(sheet_mm) >= 2:
+                row["length"] = float(sheet_mm[0])
+                row["width"] = float(sheet_mm[1])
+            g = nest.get("grain") or nest.get("grainConstraint")
+            if isinstance(g, str) and g not in {"any", "none", ""}:
+                row["grain"] = g
             self.pilot.receiving.import_receipt(
-                {"supplierLot": f"FAM-{family}", "material": sku, "thickness": th, "quantity": 200},
+                row,
                 tenant_id=tenant_id,
                 actor="recv",
                 source="IMPORTED",

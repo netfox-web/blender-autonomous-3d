@@ -42,9 +42,16 @@ class LogisticsService:
         product_version: Any = None,
         lot_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        key = idempotency_key or f"{tenant_id}:{work_order_id}:{batch_id}"
+        raw_key = idempotency_key or f"{work_order_id}:{batch_id}"
+        key = f"{tenant_id}::carton::{raw_key}"
         if key in self._idem:
-            return [self.cartons[i] for i in self._idem[key]]
+            ids = self._idem[key]
+            if not isinstance(ids, list):
+                raise PermissionError("idempotency namespace collision: carton")
+            rows = [self.cartons[i] for i in ids]
+            if any(r.get("tenantId") != tenant_id for r in rows):
+                raise PermissionError("tenant isolation: carton")
+            return rows
         n = max(int(quantity), 1)
         rows = []
         ids = []
@@ -229,12 +236,19 @@ class LogisticsService:
             "createdAt": _now(),
         }
         rec["requestHash"] = stable_hash({k: rec[k] for k in rec if k not in {"shipmentId", "requestHash"}})
-        idem = f"{origin}:{destination}:{','.join(carton_ids)}:{service}"
+        tenant = rec["tenantId"]
+        raw = f"{origin}:{destination}:{','.join(carton_ids)}:{service}"
+        idem = f"{tenant}::shipment::{raw}"
         if idem in self._idem:
-            sid = self._idem[idem][0] if isinstance(self._idem[idem], list) else self._idem[idem]
-            if sid in self.shipments:
-                return self.shipments[sid]
-        self._idem[idem] = [rec["shipmentId"]]
+            stored = self._idem[idem]
+            sid = stored[0] if isinstance(stored, list) else stored
+            if sid not in self.shipments:
+                raise PermissionError("idempotency namespace collision: shipment")
+            existing = self.shipments[sid]
+            if existing.get("tenantId") != tenant:
+                raise PermissionError("tenant isolation: shipment")
+            return existing
+        self._idem[idem] = rec["shipmentId"]
         self.shipments[rec["shipmentId"]] = rec
         return rec
 

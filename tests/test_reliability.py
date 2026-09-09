@@ -153,6 +153,123 @@ def test_tenant_scoped_receipt_and_console(platform):
     assert all(s.get("tenantId") == "ta" for s in cons_a["shipments"])
 
 
+def test_sheet_dimensions_and_grain_enforced(platform):
+    small = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "SM", "material": "PB_18_WHITE", "thickness": 18, "quantity": 4, "length": 2000, "width": 1000, "grain": "length"},
+        tenant_id="dim",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="SM",
+    )
+    wrong_grain = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "WG", "material": "PB_18_WHITE", "thickness": 18, "quantity": 4, "length": 2440, "width": 1220, "grain": "width"},
+        tenant_id="dim",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="WG",
+    )
+    no_grain = platform.lots.create(tenant_id="dim", material="PB_18_WHITE", thickness=18, sheet_count=4, length=2440, width=1220, grain="any")
+    wo, rel, wo_svc = _wo(platform, tenant="dim")
+    wo_svc.release_for_execution(wo["workOrderId"], actor="ops")
+    small_before = wo_svc.lots.quantities(small["lotId"], tenant_id="dim")
+    grain_before = wo_svc.lots.quantities(wrong_grain["lotId"], tenant_id="dim")
+    none_before = wo_svc.lots.quantities(no_grain["lotId"], tenant_id="dim")
+    with pytest.raises(StockShortage):
+        wo_svc.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="dim", allocation_policy=STRICT_STOCK)
+    assert wo_svc.lots.quantities(small["lotId"], tenant_id="dim") == small_before
+    assert wo_svc.lots.quantities(wrong_grain["lotId"], tenant_id="dim") == grain_before
+    assert wo_svc.lots.quantities(no_grain["lotId"], tenant_id="dim") == none_before
+    good = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "OK", "material": "PB_18_WHITE", "thickness": 18, "quantity": 6, "length": 2440, "width": 1220, "grain": "length"},
+        tenant_id="dim",
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="OK",
+    )
+    reserved = wo_svc.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="dim", allocation_policy=STRICT_STOCK)
+    assert reserved["materialReserved"] is True
+    assert wo_svc.lots.quantities(good["lotId"], tenant_id="dim")["reserved"] >= 1
+    _ = rel
+
+
+def test_receipt_geometry_roundtrip_and_expected_mismatch(platform):
+    rec = platform.pilot.receiving.import_receipt(
+        {"supplierLot": "GEO", "material": "PB_18_WHITE", "thickness": 18, "quantity": 2, "length": 2100, "width": 1100, "grain": "width"},
+        tenant_id="geo",
+        actor="ops",
+        source="IMPORTED",
+        idempotency_key="GEO",
+    )
+    lot = platform.lots.get(rec["lotId"], tenant_id="geo")
+    assert lot["length"] == 2100
+    assert lot["width"] == 1100
+    assert lot["grain"] == "width"
+    bad = platform.pilot.receiving.import_receipt(
+        {
+            "supplierLot": "GEO2",
+            "material": "PB_18_WHITE",
+            "thickness": 18,
+            "quantity": 2,
+            "length": 2000,
+            "width": 1000,
+            "grain": "length",
+            "expectedLength": 2440,
+            "expectedWidth": 1220,
+            "expectedGrain": "length",
+        },
+        tenant_id="geo",
+        actor="ops",
+        source="IMPORTED",
+        idempotency_key="GEO2",
+    )
+    assert bad["quarantined"] is True
+    with pytest.raises(PermissionError):
+        platform.lots.reserve_sheets(bad["lotId"], tenant_id="geo", work_order_id="x", quantity=1)
+
+
+def test_tenant_scoped_wo_release_carton_idempotency(platform):
+    product_a = platform.kd.build_sku(tenant_id="ia", kind="OPEN_SHELF")
+    product_b = platform.kd.build_sku(tenant_id="ib", kind="OPEN_SHELF")
+    rel_a = platform.pilot.open_release(product_a, tenant_id="ia", family="KD_FURNITURE")
+    rel_b = platform.pilot.open_release(product_b, tenant_id="ib", family="KD_FURNITURE")
+    wo_a = platform.pilot.workorders.create(tenant_id="ia", release=rel_a, quantity=1, actor="ops", idempotency_key="same-key")
+    wo_b = platform.pilot.workorders.create(tenant_id="ib", release=rel_b, quantity=1, actor="ops", idempotency_key="same-key")
+    assert wo_a["workOrderId"] != wo_b["workOrderId"]
+    again = platform.pilot.workorders.create(tenant_id="ia", release=rel_a, quantity=1, actor="ops", idempotency_key="same-key")
+    assert again["workOrderId"] == wo_a["workOrderId"]
+    snap = product_snapshot(platform.kd.build_sku(tenant_id="ia", kind="DESK_RISER"), family="KD_FURNITURE")
+    r1 = platform.pilot.releases.create(snap, tenant_id="ia", created_by="eng", idempotency_key="same-key")
+    r2 = platform.pilot.releases.create(snap, tenant_id="ib", created_by="eng", idempotency_key="same-key")
+    assert r1["releaseId"] != r2["releaseId"]
+    r1b = platform.pilot.releases.create(snap, tenant_id="ia", created_by="eng", idempotency_key="same-key")
+    assert r1b["releaseId"] == r1["releaseId"]
+    c_a = platform.pilot.logistics.instantiate_cartons(
+        tenant_id="ia", work_order_id="wa", batch_id="ba", plan={"length": 1, "width": 1, "height": 1}, quantity=1, idempotency_key="same-key"
+    )
+    c_b = platform.pilot.logistics.instantiate_cartons(
+        tenant_id="ib", work_order_id="wb", batch_id="bb", plan={"length": 1, "width": 1, "height": 1}, quantity=1, idempotency_key="same-key"
+    )
+    assert c_a[0]["cartonId"] != c_b[0]["cartonId"]
+    c_a2 = platform.pilot.logistics.instantiate_cartons(
+        tenant_id="ia", work_order_id="wa", batch_id="ba", plan={"length": 1, "width": 1, "height": 1}, quantity=1, idempotency_key="same-key"
+    )
+    assert c_a2[0]["cartonId"] == c_a[0]["cartonId"]
+    ship = platform.pilot.logistics.shipment_draft(origin="TW", destination="A", carton_ids=[c_a[0]["cartonId"]])
+    collide = platform.pilot.logistics.instantiate_cartons(
+        tenant_id="ia",
+        work_order_id="wx",
+        batch_id="bx",
+        plan={"length": 1, "width": 1, "height": 1},
+        quantity=1,
+        idempotency_key=f"TW:A:{c_a[0]['cartonId']}:ground",
+    )
+    assert collide[0]["cartonId"] != ship["shipmentId"]
+    cons_a = platform.pilot.console(tenant_id="ia")
+    cons_b = platform.pilot.console(tenant_id="ib")
+    assert wo_a["workOrderId"] in {w["workOrderId"] for w in cons_a["workOrders"]}
+    assert wo_a["workOrderId"] not in {w["workOrderId"] for w in cons_b["workOrders"]}
+
+
 def test_strict_stock_no_phantom_lot(platform):
     wo, rel, wo_svc = _wo(platform, tenant="strict")
     wo_svc.release_for_execution(wo["workOrderId"], actor="ops")

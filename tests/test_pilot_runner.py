@@ -71,7 +71,10 @@ def _all_keep(docs: Path) -> bool:
     return all((docs / name).read_text(encoding="utf-8") == "KEEP-OLD" for name in PILOT_JSON)
 
 
-def _pipeline(*, release_hash="rel-kd"):
+_PASSING = None
+
+
+def _pipeline(*, release_hash="rel-kd", include_stress="pass"):
     hashes = {
         "KD_FURNITURE": release_hash,
         "RETAIL_FIXTURE": "rel-retail",
@@ -97,17 +100,32 @@ def _pipeline(*, release_hash="rel-kd"):
     four = {"ok": True, "families": families, "liveFactoryExecutionReady": False}
 
     def pipeline(*, lineage, sha, real_ok):
-        return {
+        payload = {
             "probe": SimpleNamespace(realBlender=True, realOptix=True, blenderBinary="blender", gpuName="T1000"),
             "four": four,
             "previews": previews,
             "quotes": {"quotes": [{}, {}, {}], "staleOnReleaseChange": True, "fxSource": "MANUAL"},
             "ready": {"fullAutonomousFactoryReady": False, "liveFactoryExecutionReady": False},
-            "stress": None,
             "rows": [],
         }
+        if include_stress == "pass":
+            payload["stress"] = _passing_stress()
+        elif include_stress == "omit":
+            pass
+        elif include_stress == "none":
+            payload["stress"] = None
+        elif include_stress == "empty":
+            payload["stress"] = {}
+        else:
+            payload["stress"] = include_stress
+        return payload
 
     return pipeline
+
+
+def _passing_stress():
+    mod = _load_runner()
+    return mod.passing_reliability_stress()
 
 
 def test_runner_valid_six_file_set_can_proceed(tmp_path):
@@ -225,3 +243,61 @@ def test_runner_reliability_partial_shortage_false(tmp_path):
 
 def test_runner_reliability_tenant_isolation_false(tmp_path):
     _run_reliability_break(tmp_path, tenantIsolation=False)
+
+
+def test_runner_missing_stress_key_nonzero(tmp_path):
+    mod = _load_runner()
+    docs = tmp_path / "docs"
+    _seed_six(docs)
+    _seed_pilot_keep(docs)
+    code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": _pipeline(include_stress="omit")})
+    assert code != 0
+    assert _all_keep(docs)
+
+
+def test_runner_stress_none_nonzero(tmp_path):
+    mod = _load_runner()
+    docs = tmp_path / "docs"
+    _seed_six(docs)
+    _seed_pilot_keep(docs)
+    code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": _pipeline(include_stress="none")})
+    assert code != 0
+    assert _all_keep(docs)
+
+
+def test_runner_stress_empty_nonzero(tmp_path):
+    mod = _load_runner()
+    docs = tmp_path / "docs"
+    _seed_six(docs)
+    _seed_pilot_keep(docs)
+    code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": _pipeline(include_stress="empty")})
+    assert code != 0
+    assert _all_keep(docs)
+
+
+def _run_with_stress(tmp_path, stress):
+    mod = _load_runner()
+    docs = tmp_path / "docs"
+    _seed_six(docs)
+    _seed_pilot_keep(docs)
+
+    def pipeline(*, lineage, sha, real_ok):
+        data = _pipeline()(lineage=lineage, sha=sha, real_ok=real_ok)
+        data["stress"] = stress
+        return data
+
+    code = mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": pipeline})
+    assert code != 0
+    assert _all_keep(docs)
+
+
+def test_runner_stress_missing_label_nonzero(tmp_path):
+    stress = _passing_stress()
+    del stress["label"]
+    _run_with_stress(tmp_path, stress)
+
+
+def test_runner_stress_missing_boolean_nonzero(tmp_path):
+    stress = _passing_stress()
+    del stress["partialShortageRollback"]
+    _run_with_stress(tmp_path, stress)

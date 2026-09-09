@@ -287,12 +287,22 @@ class MaterialLotRegistry:
             return False
         if abs(float(lot.get("thickness") or 0) - float(thickness)) > 1e-6:
             return False
-        if grain and lot.get("grain") and str(lot.get("grain")) != str(grain):
-            return False
-        if length is not None and lot.get("length") is not None and abs(float(lot.get("length")) - float(length)) > 1e-3:
-            return False
-        if width is not None and lot.get("width") is not None and abs(float(lot.get("width")) - float(width)) > 1e-3:
-            return False
+        if grain:
+            lot_grain = lot.get("grain")
+            if not lot_grain or str(lot_grain) in {"any", "none"}:
+                return False
+            if str(lot_grain) != str(grain):
+                return False
+        if length is not None:
+            if lot.get("length") is None:
+                return False
+            if abs(float(lot.get("length")) - float(length)) > 1e-3:
+                return False
+        if width is not None:
+            if lot.get("width") is None:
+                return False
+            if abs(float(lot.get("width")) - float(width)) > 1e-3:
+                return False
         return True
 
     def allocate_requirement(
@@ -499,6 +509,9 @@ class MaterialLotRegistry:
         lot_id: str | None = None,
         unit_cost: float = 850.0,
         reason: str = "receipt",
+        length: float | None = None,
+        width: float | None = None,
+        grain: str | None = None,
     ) -> dict[str, Any]:
         if source not in {"MANUAL", "IMPORTED"}:
             raise PermissionError("receipt source must be MANUAL/IMPORTED")
@@ -520,6 +533,9 @@ class MaterialLotRegistry:
                     sheet_count=qty,
                     supplier_lot=supplier_lot,
                     cost_per_sheet=unit_cost,
+                    length=float(length) if length is not None else 2440,
+                    width=float(width) if width is not None else 1220,
+                    grain=str(grain or "length"),
                 )
                 before = {"available": 0, "reserved": 0, "consumed": 0, "sheetCount": 0}
             rec["supplierId"] = supplier_id

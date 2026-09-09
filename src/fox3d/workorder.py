@@ -84,9 +84,13 @@ class WorkOrderService:
         if release.get("stale") or release.get("status") in {"STALE", "SUPERSEDED", "CANCELLED"} or release.get("supersededBy"):
             raise PermissionError("stale/superseded release cannot open a work order")
         batch = batch_id or new_id()
-        key = idempotency_key or f"{tenant_id}:{release['releaseHash']}:{batch}"
+        raw_key = idempotency_key or f"{release['releaseHash']}:{batch}"
+        key = f"{tenant_id}::wo::{raw_key}"
         if key in self._idem:
-            return self.orders[self._idem[key]]
+            existing = self.orders[self._idem[key]]
+            if existing.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: work order")
+            return existing
         family = release.get("productFamily") or "KD_FURNITURE"
         rec = {
             "workOrderId": new_id(),
@@ -184,9 +188,11 @@ class WorkOrderService:
         material = str(nesting.get("sheetSku") or "PB_18_WHITE")
         thickness = float(nesting.get("thickness") or 18)
         grain = nesting.get("grain") or nesting.get("grainConstraint")
+        if not isinstance(grain, str) or grain in {"any", "none", ""}:
+            grain = None
         sheet_mm = nesting.get("sheetMm") or []
-        length = float(sheet_mm[0]) if len(sheet_mm) >= 1 else None
-        width = float(sheet_mm[1]) if len(sheet_mm) >= 2 else None
+        length = float(sheet_mm[0]) if len(sheet_mm) >= 1 and sheet_mm[0] is not None else None
+        width = float(sheet_mm[1]) if len(sheet_mm) >= 2 and sheet_mm[1] is not None else None
         lot_reservations: list[dict[str, Any]] = []
         remaining = sheet_n
         if policy == STRICT_STOCK:
@@ -197,9 +203,9 @@ class WorkOrderService:
                     quantity=sheet_n,
                     material=material,
                     thickness=thickness,
-                    grain=grain if grain not in {None, "any", "none"} else None,
-                    length=None,
-                    width=None,
+                    grain=grain,
+                    length=length,
+                    width=width,
                 )
                 remaining = 0
             except StockShortage as exc:
@@ -209,7 +215,7 @@ class WorkOrderService:
             lots = [
                 l
                 for l in self.lots.list(tenant_id=tid, allocatable=True)
-                if self.lots.lot_compatible(l, material=material, thickness=thickness)
+                if self.lots.lot_compatible(l, material=material, thickness=thickness, grain=grain, length=length, width=width)
             ]
             remaining = sheet_n
             for lot in lots:
@@ -231,7 +237,15 @@ class WorkOrderService:
                 )
                 remaining -= take
             if remaining > 0:
-                extra = self.lots.create(tenant_id=tid, material=material, thickness=thickness, sheet_count=remaining)
+                extra = self.lots.create(
+                    tenant_id=tid,
+                    material=material,
+                    thickness=thickness,
+                    sheet_count=remaining,
+                    length=length if length is not None else 2440,
+                    width=width if width is not None else 1220,
+                    grain=str(grain or "length"),
+                )
                 extra["truthLabel"] = "FIXTURE"
                 extra["allocationPolicy"] = FIXTURE_AUTO_SEED
                 item = self.lots.reserve_sheets(

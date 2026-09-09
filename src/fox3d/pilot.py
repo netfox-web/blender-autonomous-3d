@@ -230,7 +230,12 @@ class PilotOps:
             op_count += row["ops"]
         # idempotency: retry create
         first = self.releases.get(releases[0])
-        again = self.releases.create(first["snapshot"], tenant_id=tenant_id, created_by="pilot", idempotency_key=f"{tenant_id}:{first['productId']}:{first['productVersion']}:{first['engineeringHash']}")
+        again = self.releases.create(
+            first["snapshot"],
+            tenant_id=tenant_id,
+            created_by="pilot",
+            idempotency_key=f"{first['productId']}:{first['productVersion']}:{first['engineeringHash']}",
+        )
         no_double = self.observe_no_double_consume(wo_ids[0], consume=consume_retry)
         conservation = self.lot_conservation(tenant_id)
         # tenant isolation

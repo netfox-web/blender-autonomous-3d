@@ -115,9 +115,13 @@ class ManufacturingReleaseService:
         created_by: str,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        key = idempotency_key or f"{tenant_id}:{snap['productId']}:{snap['productVersion']}:{snap.get('engineeringHash')}"
+        raw_key = idempotency_key or f"{snap['productId']}:{snap['productVersion']}:{snap.get('engineeringHash')}"
+        key = f"{tenant_id}::rel::{raw_key}"
         if key in self._idem:
-            return self.releases[self._idem[key]]
+            existing = self.releases[self._idem[key]]
+            if existing.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: manufacturing release")
+            return existing
         bound = _bound_hashes(snap)
         rec = {
             "releaseId": new_id(),
