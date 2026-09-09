@@ -1,6 +1,6 @@
 # INVENTORY_RECONCILIATION_ACCEPTANCE
 
-generatedAt: 2026-09-09T10:03:37.649332+00:00
+generatedAt: 2026-09-09T10:54:46.854124+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 This is a scoped Phase 481–540 Manual Factory Pilot truth set.
 

@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T10:03:37.649332+00:00",
-  "acceptanceGenerationId": "59bd2549-3cec-4d90-9401-3f6968a0885f",
-  "evidenceCodeCommit": "1fc86cff1101c8a8e66df59950a8accc7f527d76",
+  "generatedAt": "2026-09-09T10:54:46.854124+00:00",
+  "acceptanceGenerationId": "2d0cc206-ed80-4c32-a82f-491ae8842220",
+  "evidenceCodeCommit": "11c79d12d06c4c6f355fd0d2dc8058f0fef2f825",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -49,15 +49,15 @@
     "evidenceCommitMatchesHead": true
   },
   "scenario": {
-    "workOrderId": "6d8c3955-37b6-4777-89cc-151c48ed1c5d",
-    "releaseHash": "099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4",
+    "workOrderId": "0beea259-df39-4772-8547-5b34fa494fcb",
+    "releaseHash": "09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48",
     "labor": {
-      "workOrderId": "6d8c3955-37b6-4777-89cc-151c48ed1c5d",
+      "workOrderId": "0beea259-df39-4772-8547-5b34fa494fcb",
       "estimatedLaborMinutes": 120.0,
-      "actualManualLaborMinutes": 12.0025,
+      "actualManualLaborMinutes": 12.0023,
       "estimatedLaborCost": 720.0,
-      "actualManualLaborCost": 72.02,
-      "variance": -647.98,
+      "actualManualLaborCost": 72.01,
+      "variance": -647.99,
       "estimateSource": "CONFIG_ESTIMATE",
       "actualSource": "MANUAL",
       "accountingActual": "NOT_IMPLEMENTED",
@@ -89,7 +89,7 @@
     {
       "check": "traveler releaseHash pin",
       "status": "REAL_LOGIC",
-      "evidence": "099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4"
+      "evidence": "09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48"
     },
     {
       "check": "scan token tenant-safe",
@@ -144,7 +144,7 @@
     {
       "check": "restore no double consume/complete",
       "status": "REAL_LOGIC",
-      "evidence": "{\"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"releaseHashAfter\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"before\": {\"state\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"reservations\": [{\"reservationId\": \"man-a:6d8c3955-37b6-4777-89cc-151c48ed1c5d:34dd09c3-8fae-4fa0-b126-89c7c93f8c48:2\", \"lotId\": \"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"journalSequence\": 180, \"journalOk\": true}, \"after\": {\"state\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"reservations\": [{\"reservationId\": \"man-a:6d8c3955-37b6-4777-89cc-151c48ed1c5d:34dd09c3-8fae-4fa0-b126-89c7c93f8c48:2\", \"lotId\": \"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"journalSequence\": 180, \"journalOk\": true}, \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"liveMachineControl\": false, \"ok\": true}"
+      "evidence": "{\"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"releaseHash\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"releaseHashAfter\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"before\": {\"state\": \"COMPLETED\", \"releaseHash\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"reservations\": [{\"reservationId\": \"man-a:0beea259-df39-4772-8547-5b34fa494fcb:c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4:2\", \"lotId\": \"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"4cb7007e98b0390c4667fb3cf992dad1d47099495e34aee430dbe6fd994a1255\", \"journalSequence\": 180, \"journalOk\": true}, \"after\": {\"state\": \"COMPLETED\", \"releaseHash\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"reservations\": [{\"reservationId\": \"man-a:0beea259-df39-4772-8547-5b34fa494fcb:c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4:2\", \"lotId\": \"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"4cb7007e98b0390c4667fb3cf992dad1d47099495e34aee430dbe6fd994a1255\", \"journalSequence\": 180, \"journalOk\": true}, \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"liveMachineControl\": false, \"ok\": true}"
     },
     {
       "check": "journal after restore",
@@ -154,7 +154,7 @@
     {
       "check": "restored-root health",
       "status": "REAL_LOGIC",
-      "evidence": "{\"ok\": true, \"status\": \"REAL\", \"label\": \"REAL\", \"count\": 180, \"headHash\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"sequence\": 180}"
+      "evidence": "{\"ok\": true, \"status\": \"REAL\", \"label\": \"REAL\", \"count\": 180, \"headHash\": \"4cb7007e98b0390c4667fb3cf992dad1d47099495e34aee430dbe6fd994a1255\", \"sequence\": 180}"
     },
     {
       "check": "tenant leakage absent",
@@ -179,7 +179,7 @@
     {
       "check": "evidenceCodeCommit",
       "status": "REAL_LOGIC",
-      "evidence": "1fc86cff1101c8a8e66df59950a8accc7f527d76"
+      "evidence": "11c79d12d06c4c6f355fd0d2dc8058f0fef2f825"
     },
     {
       "check": "workingTreeClean",

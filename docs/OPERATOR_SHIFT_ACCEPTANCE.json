@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T10:03:37.649332+00:00",
-  "acceptanceGenerationId": "59bd2549-3cec-4d90-9401-3f6968a0885f",
-  "evidenceCodeCommit": "1fc86cff1101c8a8e66df59950a8accc7f527d76",
+  "generatedAt": "2026-09-09T10:54:46.854124+00:00",
+  "acceptanceGenerationId": "2d0cc206-ed80-4c32-a82f-491ae8842220",
+  "evidenceCodeCommit": "11c79d12d06c4c6f355fd0d2dc8058f0fef2f825",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",

@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 481–540 completeness CODE_EVIDENCE_SHA `1fc86cf`; prior integrity `ff285a2` / docs `08212f4`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `ead6653`. Historical Phase 1–480 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 481–540 schema/identity CODE_EVIDENCE_SHA `11c79d1`; prior completeness `1fc86cf` / docs `3a08009`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `142d062`. Historical Phase 1–480 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -16,8 +16,8 @@ This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 505–512 labor | REAL_LOGIC / MANUAL | append-only segments/corrections; CONFIG_ESTIMATE vs MANUAL; accounting NOT_IMPLEMENTED |
 | 513–520 hold/rework/scrap | REAL_LOGIC | blocking hold prevents complete; reworkHistory; remnant path not silent scrap |
 | 521–528 packing/handoff | REAL_LOGIC / MANUAL | checklist pinned; mismatch no auto-override; handoff not booked/not delivery |
-| 529–536 backup/restore | REAL_LOGIC | TENANT_OWNED/DERIVED/GLOBAL_REFERENCE/AMBIGUOUS; pallet derived from cartons; snapshot path-set+hash; restored-root health fail-closed; exact-set verifier; durable consume/complete counters |
-| 537–540 acceptance | FIXTURE + REAL_LOGIC | generation `59bd2549-…`; runner-bound `1fc86cf`; tenantLeakageAbsent+tenantRequiredStatePreserved; atomic 8-file publish; CI `34337838018`; REAL blender reused `018cc70` |
+| 529–536 backup/restore | REAL_LOGIC | malformed MIXED_SPEC/idem/packets fail-closed; tenant_state_digest exact IDs+lineage; snapshot path-set+hash; restored-root health; exact-set verifier; durable consume/complete counters |
+| 537–540 acceptance | FIXTURE + REAL_LOGIC | generation `2d0cc206-…`; runner-bound `11c79d1`; tenantStateDigest.equal; identityMismatch=[]; atomic 8-file publish; CI `34342453890`; REAL blender reused `018cc70` |
 
 ## Phase 421–480 Pilot Deployment Hardening / Operator Control Plane
 

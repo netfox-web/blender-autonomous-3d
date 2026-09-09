@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T10:03:37.649332+00:00",
-  "acceptanceGenerationId": "59bd2549-3cec-4d90-9401-3f6968a0885f",
-  "evidenceCodeCommit": "1fc86cff1101c8a8e66df59950a8accc7f527d76",
+  "generatedAt": "2026-09-09T10:54:46.854124+00:00",
+  "acceptanceGenerationId": "2d0cc206-ed80-4c32-a82f-491ae8842220",
+  "evidenceCodeCommit": "11c79d12d06c4c6f355fd0d2dc8058f0fef2f825",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -33,119 +33,171 @@
       "materialLots": {
         "liveA": 7,
         "restoredA": 7,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "84d7f002a9e50cbce4a6a40c5fc36367d1930033480a1678c1d07a929b672bb1",
+        "restoredDigest": "84d7f002a9e50cbce4a6a40c5fc36367d1930033480a1678c1d07a929b672bb1"
       },
       "remnants": {
         "liveA": 5,
         "restoredA": 5,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "9d5c0985a602c849e34f073a2db27b36875502ad878c74065b6097232c996920",
+        "restoredDigest": "9d5c0985a602c849e34f073a2db27b36875502ad878c74065b6097232c996920"
       },
       "releases": {
         "liveA": 5,
         "restoredA": 5,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "4a892f7277d8edd10e26ff61ad877c85764dce7bae35f40c9dcae98afb6ce9b6",
+        "restoredDigest": "4a892f7277d8edd10e26ff61ad877c85764dce7bae35f40c9dcae98afb6ce9b6"
       },
       "packets": {
         "liveA": 5,
         "restoredA": 5,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "64edd65ba267b672faeff2acf2aa3cb09a483402579501a026001c095a2fedc2",
+        "restoredDigest": "64edd65ba267b672faeff2acf2aa3cb09a483402579501a026001c095a2fedc2"
       },
       "idempotency": {
         "liveA": 20,
         "restoredA": 20,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "a255e65a57aaac0e30b7fafaaea1af2799fc0b5f8c14a4804777d406a64e17b7",
+        "restoredDigest": "a255e65a57aaac0e30b7fafaaea1af2799fc0b5f8c14a4804777d406a64e17b7"
       },
       "workOrders": {
         "liveA": 6,
         "restoredA": 6,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "4a80ccd5f83244642deffb611f48d61714436a1ad52fb078261c90a11d1af03a",
+        "restoredDigest": "4a80ccd5f83244642deffb611f48d61714436a1ad52fb078261c90a11d1af03a"
       },
       "operations": {
         "liveA": 35,
         "restoredA": 35,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "59750635db6f3b6ea29db50a7c81fc3261cf938daf81653339590cc92f2cded1",
+        "restoredDigest": "59750635db6f3b6ea29db50a7c81fc3261cf938daf81653339590cc92f2cded1"
       },
       "receipts": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "ad22e791b4967c983541c8b8fba4e72195d48cb46203e9514242a0ca47b19a94",
+        "restoredDigest": "ad22e791b4967c983541c8b8fba4e72195d48cb46203e9514242a0ca47b19a94"
       },
       "stations": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "6dc05f401736bda3b1c4b16c824047555074168ba9733177cd02ade7e862502a",
+        "restoredDigest": "6dc05f401736bda3b1c4b16c824047555074168ba9733177cd02ade7e862502a"
       },
       "leases": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "e711d264251a6cc2c84d4ccac98d93a6d85cd67bd0db041281d96a3f8c61ac15",
+        "restoredDigest": "e711d264251a6cc2c84d4ccac98d93a6d85cd67bd0db041281d96a3f8c61ac15"
       },
       "operators": {
         "liveA": 2,
         "restoredA": 2,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "d0938659a9d51848108833493a04f7f1d1643d1552bca7762cb4bf1c9574c1e6",
+        "restoredDigest": "d0938659a9d51848108833493a04f7f1d1643d1552bca7762cb4bf1c9574c1e6"
       },
       "shifts": {
         "liveA": 2,
         "restoredA": 2,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "bb3444ba94ef53bd5196bf4743121bc47dfac322775069864ebf5c006a0c62f7",
+        "restoredDigest": "bb3444ba94ef53bd5196bf4743121bc47dfac322775069864ebf5c006a0c62f7"
       },
       "cycleCounts": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "30e16bc430e9148d9da1b64a3c41c17400a6b3e0b3bb95121300fd90ac929a76",
+        "restoredDigest": "30e16bc430e9148d9da1b64a3c41c17400a6b3e0b3bb95121300fd90ac929a76"
       },
       "cartons": {
         "liveA": 5,
         "restoredA": 5,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "6012b522e839c0d53fc7314f291000d7aa8945f32c42bf34d41b2eff609dd216",
+        "restoredDigest": "6012b522e839c0d53fc7314f291000d7aa8945f32c42bf34d41b2eff609dd216"
       },
       "palletPlans": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "5cd5c2658a80f316207b3ac9e7b4d5c7a7178ec76d4d111dbd94c45ecc74ee6c",
+        "restoredDigest": "5cd5c2658a80f316207b3ac9e7b4d5c7a7178ec76d4d111dbd94c45ecc74ee6c"
       },
       "shipments": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "46ded80825a5b6d4667e1a63a3724783c08ad58ffb8b1ea18bf17bd5790f855e",
+        "restoredDigest": "46ded80825a5b6d4667e1a63a3724783c08ad58ffb8b1ea18bf17bd5790f855e"
       },
       "checklists": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "4b38904e8454f4383f03347c30e3a98e62e2d7776813fff2e781b6edd4b20b93",
+        "restoredDigest": "4b38904e8454f4383f03347c30e3a98e62e2d7776813fff2e781b6edd4b20b93"
       },
       "handoffs": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "80a703cf2bc5878e012e5df805a3d01ca38b30b2c3a7fbb55a1c73283eda080e",
+        "restoredDigest": "80a703cf2bc5878e012e5df805a3d01ca38b30b2c3a7fbb55a1c73283eda080e"
       },
       "qc": {
         "liveA": 15,
         "restoredA": 15,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "0583983a307a07f1f0f02da3d568c480c32f474c2a96af8d6843e50558c4506b",
+        "restoredDigest": "0583983a307a07f1f0f02da3d568c480c32f474c2a96af8d6843e50558c4506b"
       },
       "exceptions": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "b3cfa5e848cb7633eea7a0a92c56ee6fa0717860daadb8e67566147683eaf887",
+        "restoredDigest": "b3cfa5e848cb7633eea7a0a92c56ee6fa0717860daadb8e67566147683eaf887"
       },
       "journal": {
         "liveA": 180,
         "restoredA": 180,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "168e21bfdb3df10c8000c4d3e03a66fc183fb8e629bfa92c2998be774735c9ca",
+        "restoredDigest": "168e21bfdb3df10c8000c4d3e03a66fc183fb8e629bfa92c2998be774735c9ca"
       },
       "outbox": {
         "liveA": 0,
         "restoredA": 0,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "restoredDigest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
       },
       "dam": {
         "liveA": 1,
         "restoredA": 1,
-        "restoredB": 0
+        "restoredB": 0,
+        "liveDigest": "11c72e50810910a793d1fd601c2656c2011966908d2510b1f14ef87f1a8eda00",
+        "restoredDigest": "11c72e50810910a793d1fd601c2656c2011966908d2510b1f14ef87f1a8eda00"
       }
     },
+    "tenantStateDigest": {
+      "liveA": "63c97b8f34a56a40bc257b44437c451b2d927acbe30540290720f74737f4ebea",
+      "restoredA": "63c97b8f34a56a40bc257b44437c451b2d927acbe30540290720f74737f4ebea",
+      "equal": true
+    },
+    "identityMismatch": [],
     "tenantLeakageAbsent": true,
     "tenantRequiredStatePreserved": true,
     "leakage": {},
@@ -167,7 +219,7 @@
     {
       "check": "restore no double consume/complete",
       "status": "REAL_LOGIC",
-      "evidence": "{\"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"releaseHashAfter\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"before\": {\"state\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"reservations\": [{\"reservationId\": \"man-a:6d8c3955-37b6-4777-89cc-151c48ed1c5d:34dd09c3-8fae-4fa0-b126-89c7c93f8c48:2\", \"lotId\": \"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"journalSequence\": 180, \"journalOk\": true}, \"after\": {\"state\": \"COMPLETED\", \"releaseHash\": \"099b54e948d90ce12c3295947c583d4032f2792490bb69f5b5e6e78f773b19a4\", \"reservations\": [{\"reservationId\": \"man-a:6d8c3955-37b6-4777-89cc-151c48ed1c5d:34dd09c3-8fae-4fa0-b126-89c7c93f8c48:2\", \"lotId\": \"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"34dd09c3-8fae-4fa0-b126-89c7c93f8c48\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"journalSequence\": 180, \"journalOk\": true}, \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"liveMachineControl\": false, \"ok\": true}"
+      "evidence": "{\"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"releaseHash\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"releaseHashAfter\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"before\": {\"state\": \"COMPLETED\", \"releaseHash\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"reservations\": [{\"reservationId\": \"man-a:0beea259-df39-4772-8547-5b34fa494fcb:c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4:2\", \"lotId\": \"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"4cb7007e98b0390c4667fb3cf992dad1d47099495e34aee430dbe6fd994a1255\", \"journalSequence\": 180, \"journalOk\": true}, \"after\": {\"state\": \"COMPLETED\", \"releaseHash\": \"09736ccddf8f0dc2afdbbc2520ad67312268d90eb014eac23e6fcab6ab952a48\", \"reservations\": [{\"reservationId\": \"man-a:0beea259-df39-4772-8547-5b34fa494fcb:c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4:2\", \"lotId\": \"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\", \"quantity\": 2, \"state\": \"CONSUMED\"}, {\"reservationId\": null, \"lotId\": null, \"quantity\": 0, \"state\": null}], \"consumedQty\": 2, \"lotConsumed\": {\"c87a98cc-00ca-4ce0-9e8e-46441c3ae6c4\": 2}, \"consumeEventCount\": 2, \"completeEventCount\": 1, \"journalHead\": \"4cb7007e98b0390c4667fb3cf992dad1d47099495e34aee430dbe6fd994a1255\", \"journalSequence\": 180, \"journalOk\": true}, \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"liveMachineControl\": false, \"ok\": true}"
     },
     {
       "check": "journal after restore",
@@ -177,7 +229,7 @@
     {
       "check": "restored-root health",
       "status": "REAL_LOGIC",
-      "evidence": "{\"ok\": true, \"status\": \"REAL\", \"label\": \"REAL\", \"count\": 180, \"headHash\": \"201ccd07f4b40db59c465f81c0aa5bb439ece86ff0897ebe8b2736931e9b02d2\", \"sequence\": 180}"
+      "evidence": "{\"ok\": true, \"status\": \"REAL\", \"label\": \"REAL\", \"count\": 180, \"headHash\": \"4cb7007e98b0390c4667fb3cf992dad1d47099495e34aee430dbe6fd994a1255\", \"sequence\": 180}"
     },
     {
       "check": "tenant leakage absent",
