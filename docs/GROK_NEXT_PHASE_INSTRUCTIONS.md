@@ -1,27 +1,26 @@
-# Grok 下一輪開發指令：Phase 421–480 Pilot Deployment Hardening / Operator Control Plane V1
+# Grok 修正指令：Phase 421–480 Integrity Correction — Restart Recovery / Audit Commit Consistency
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed head: `527634dd5413ba41c009e5f02d7a614198aea9f2`  
-> Reviewed CODE_EVIDENCE_SHA: `997db345183367709597738c12c65bbf6800ae4c`  
-> ChatGPT review result: **ACCEPT WITH SCOPE**  
-> Phase 361–420 final integrity blockers are accepted within the evidence scope below. You may start **Phase 421–480**.
+> Reviewed head: `6646298669ad40a59527c288c973b993f9b3e0e1`  
+> Reviewed CODE_EVIDENCE_SHA: `4069cef05d33112e8166c357e29459254bdf2ae8`  
+> ChatGPT review result: **CHANGES REQUIRED**  
+> **Do not start Phase 481+ yet.** Fix only the integrity gaps below. Do not rewrite existing Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / ManufacturingRelease / WorkOrder / QC / Logistics / Pilot architecture.
 
-## Review decision / accepted evidence
+## What is accepted in this round
 
-The prior `1129ae6` correction round is accepted with the following scope boundaries:
+Phase 421–480 contains substantive implementation and is not rejected wholesale:
 
-- `main` advanced from `1129ae6` through implementation commits `4c30151` and `997db34`, then evidence/docs commit `527634d`.
-- Local `pytest -q`: **175 passed** according to the handoff. This remains **MOCK/unit/integration + FIXTURE evidence**, never global Production Ready evidence.
-- GitHub Actions code run `34299148581` on `997db34`: **ubuntu-latest SUCCESS + windows-latest SUCCESS**.
-- GitHub Actions docs/head run `34299272260` on `527634d`: **ubuntu-latest SUCCESS + windows-latest SUCCESS**.
-- Acceptance hook no longer replaces missing/None/empty/incomplete reliability evidence with an implicit passing stress object. Direct runner regressions exist for omitted / `None` / empty / incomplete reliability data, and failed gates do not publish canonical acceptance.
-- STRICT_STOCK now enforces frozen ManufacturingRelease `sheetSku`, thickness, sheet length/width, and required grain when present. Wrong/missing geometry or grain is unavailable rather than silently compatible.
-- MANUAL/IMPORTED receipts can preserve lot length/width/grain, and expected-geometry/grain mismatches are quarantined.
-- WorkOrder / ManufacturingRelease / carton caller-supplied idempotency keys are tenant-scoped; carton and shipment namespaces are separated; same-tenant retry remains idempotent.
-- Reliability partial-shortage test is isolated from durable leftover stock using unique tenant/SKU and requires an actual `StockShortage` plus unchanged lot quantities.
-- Clean-tree REAL acceptance is **4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX**, `usedMock=false`, exact `commitSha=997db34`, verifier PASS, and non-null matching ManufacturingRelease `releaseHash`.
-- `PILOT_RELIABILITY_ACCEPTANCE.json` is correctly **FIXTURE**, with 50 WorkOrders / 652 operation transitions and explicit reliability booleans/negative cases. It is not factory throughput evidence.
-- `CABINET_REAL_ACCEPTANCE.md` did not change this round and remains scoped cabinet evidence only.
+- durable tenant-scoped journal with hash-chain verification and tamper detection;
+- cross-process MaterialLot locking / generation-CAS logic;
+- STRICT_STOCK no-oversell/conservation tests;
+- MANUAL_STATION boundary using the existing Queue rather than a second scheduler;
+- tenant-authoritative scan/operator APIs and explicit human confirmation;
+- exception inbox, versioned MANUAL/IMPORTED contracts and pilot health view;
+- local `pytest -q` handoff reports **191 passed**, but this remains **MOCK/unit/integration + FIXTURE evidence**, never Production Ready;
+- GitHub Actions run `34305663843` on `4069cef` is GREEN on both `ubuntu-latest` and `windows-latest`;
+- clean-tree render evidence is acceptable for its narrow render/release scope: 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, exact `commitSha=4069cef`, non-null matching ManufacturingRelease `releaseHash`;
+- `PILOT_RELIABILITY_ACCEPTANCE` remains FIXTURE and `PILOT_DEPLOYMENT_ACCEPTANCE` remains FIXTURE/CHAOS;
+- LIVE_CNC / LIVE_LASER / live provider / live factory execution remain BLOCKED, which is correct.
 
 Truth labels remain mandatory:
 
@@ -33,391 +32,158 @@ Truth labels remain mandatory:
 - `liveFactoryExecutionReady=false`.
 - `liveProviderReady=false`.
 - `fullAutonomousFactoryReady=false`.
-
-Do not use the unscoped word `productionReady=true`.
-
----
-
-# Global constraints for Phase 421–480
-
-Do **not** rewrite the existing Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, MaterialLot, ManufacturingRelease, WorkOrder, QC, Logistics, Receipt, or Pilot service architecture. Extend the current services/adapters and their durable stores.
-
-Do not create a second ERP/WMS/MES/QMS/scheduler/inventory engine. The objective is to make the existing Pilot boundary safer and deployable for **human-controlled pilot operations**, not to replace company systems.
-
-Do not add any command path that can actuate a CNC, laser, spindle, relay, PLC, robot, conveyor, cutter, heater, or other machine. No G-code execution, serial/Modbus/PLC writes, spindle/laser enable, or automatic machine start. Manufacturing packets/travelers may be generated/exported, but actual machine execution remains human-controlled and **BLOCKED** in Fox3D.
-
-Every state transition introduced in this phase must preserve:
-
-- tenant isolation;
-- exact ManufacturingRelease / `releaseHash` lineage;
-- idempotency;
-- stale/superseded release blocking;
-- append-only QC/rework history where applicable;
-- material quantity conservation;
-- no mock fallback on REAL acceptance paths;
-- fail-closed acceptance behavior.
+- Unscoped `productionReady=true` remains forbidden.
 
 ---
 
-# Phase 421–428 — Durable Pilot Event Journal V1
+# Blocking gap 1 — Business mutation and journal commit are not transactionally consistent
 
-Add a durable, append-only event journal around the existing pilot aggregates. Do not move business state into a new event-sourcing system; the journal is an audit/recovery evidence layer around the current stores.
+Current MaterialLot mutation flow changes in-memory lot state and calls the durable journal **before** the outer `_transaction()` persists `lots.json`. If journal append succeeds and the later lot persist/CAS/atomic-replace fails, the journal can contain a successful `material.reserve`, `material.consume`, or rollback event for state that never committed. Reloading the lot file cannot roll that journal record back.
 
-## Required events
+That violates the Phase 421 requirement that journaled actions represent mutations that actually succeeded and that audit failure/business failure cannot silently diverge.
 
-At minimum journal these existing actions when they actually succeed:
+## Required correction
 
-- ManufacturingRelease create / validate / submit approval / approve / stale / supersede / cancel;
-- receipt imported/manual accepted or quarantined;
-- MaterialLot reserve / rollback / consume / release reservation / quarantine;
-- WorkOrder create / release-for-execution / reserve / operation start / operation complete / rework / complete / cancel;
-- QC record / FINAL gate result;
-- carton instantiate / measured capture;
-- shipment draft create;
-- manual station dispatch events added later in this phase.
+Keep the current JSON durable-root architecture. Do **not** introduce Kafka/Postgres/event sourcing just for this fix. Implement a minimal crash-recoverable commit protocol around required business+journal changes.
 
-## Event contract
+Acceptable shapes include either:
 
-Each journal record must include at least:
+1. **PREPARED -> durable business commit -> COMMITTED** audit semantics, where PREPARED is never treated as a successful business event and startup reconciliation deterministically resolves/blocks incomplete transactions; or
+2. an equivalent staged transaction/outbox/commit-marker scheme under the existing durable root.
 
-- `eventId`;
-- `eventType`;
-- `tenantId`;
-- `aggregateType`;
-- `aggregateId`;
-- `sequence` or monotonic aggregate version;
-- `actor` / source;
-- UTC timestamp;
-- `releaseHash` when the event belongs to a release/work order/product execution lineage;
-- payload hash;
-- `previousEventHash`;
-- `eventHash`.
+Whatever implementation is chosen must guarantee all of the following:
 
-Persist under the existing Fox3D durable root. Use atomic append/replace semantics appropriate to the current persistence model. Do not require Kafka, Redis, Postgres, or another infrastructure service just for this phase.
+- no **COMMITTED/success** audit event exists for a business state change that did not durably commit;
+- a durably committed business mutation cannot be reported as fully successful without its required committed audit record;
+- retry after crash is idempotent and does not create two committed semantic events;
+- startup can detect incomplete PREPARED/in-flight records and either reconcile safely or return `BLOCKED_EVIDENCE`; never silently mark them successful;
+- tenant isolation and `releaseHash` lineage remain intact;
+- reserve / release-reservation / consume / quarantine / receipt and other journal-required pilot mutations use the same integrity rule.
 
-## Required behavior
-
-- restart must preserve the journal;
-- tenant A cannot read/export tenant B events;
-- duplicate/idempotent retries must not create duplicate semantic events;
-- tampering or broken hash chain must be detected and reported as `PARTIAL/BLOCKED_EVIDENCE`, never silently accepted;
-- journal failure must not fabricate a successful audit record;
-- do not mark a business mutation successful if its required durable audit append cannot be committed consistently.
-
-## Tests
-
-Add restart, tenant-isolation, duplicate retry, tamper, sequence, and hash-chain regressions.
-
----
-
-# Phase 429–436 — Cross-process Material Reservation / Crash Safety
-
-The current thread/concurrency tests are useful but do not prove separate-process safety. Harden the existing `MaterialLotRegistry` persistence boundary without replacing it.
-
-## Required behavior
-
-- multi-lot STRICT_STOCK allocation must be atomic from the caller’s perspective;
-- two OS processes attempting to reserve the same scarce stock must never oversell;
-- reserve/rollback/consume must survive process termination/restart without losing quantity conservation;
-- durable writes must be temp/stage + atomic replace or equivalent fail-safe pattern;
-- introduce deterministic store generation/version/CAS semantics where needed;
-- stale writers must fail/retry rather than overwrite newer lot state;
-- partial multi-lot reservations must roll back after an injected crash/failure before commit;
-- quarantined and incompatible lots remain unavailable under concurrent access;
-- no FIXTURE auto-seed in normal STRICT_STOCK paths.
-
-Use a small cross-platform lock abstraction compatible with both GitHub Actions Windows and Linux. Keep lock scope narrow. Do not create a database just to solve locking.
+Do not weaken `EventJournal.verify()`. Extend the journal record/status contract only as needed and preserve hash-chain verification.
 
 ## Mandatory regressions
 
-- subprocess race: scarce stock 10 sheets, multiple processes request >10 total -> consumed/reserved total never exceeds 10;
-- two-process same WO idempotent retry -> one semantic reservation;
-- injected failure after first lot staging -> restart shows all-or-nothing state;
-- stale generation writer cannot overwrite a newer commit;
-- restart conservation: `sheetCount == available + reserved + consumed` for every lot;
-- tenant isolation remains true during concurrent races.
+Add tests that inject each failure boundary independently:
 
-Label these as **REAL persistence/concurrency logic tests** but not factory throughput.
-
----
-
-# Phase 437–444 — Manual Station Dispatch Boundary V1
-
-Reuse the existing Scheduler/Queue. Add a **MANUAL_STATION** capability boundary for pilot execution. This is a dispatch/traveler workflow only, not machine control.
-
-## Station model
-
-A station may represent examples such as:
-
-- PANEL_CUTTING_MANUAL;
-- EDGE_BANDING_MANUAL;
-- DRILLING_MANUAL;
-- ASSEMBLY_MANUAL;
-- PACKING_MANUAL;
-- QC_MANUAL.
-
-Required fields:
-
-- `stationId`;
-- `tenantId`;
-- capabilities;
-- status ONLINE/OFFLINE/PAUSED;
-- heartbeat;
-- current lease/job;
-- operator/actor if supplied;
-- no actuator endpoint.
-
-## Dispatch contract
-
-Reuse the existing queue/lease concepts:
-
-- dispatch a WorkOrder traveler operation only when WorkOrder state permits it;
-- dispatch item must pin `workOrderId`, `releaseId`, exact `releaseHash`, operation, and required material/QC lineage;
-- stale/superseded release or cancelled WO cannot dispatch;
-- offline station cannot receive a new lease;
-- lease timeout/recovery must return the operation to a safe queue state without duplicating completion;
-- ACK / START / COMPLETE are explicit human/operator acknowledgements;
-- operation completion remains governed by WorkOrder state machine and QC requirements;
-- no station adapter may execute machine commands.
-
-## Tests
-
-Cover same-tenant dispatch, cross-tenant denial, stale release, duplicate ACK, duplicate COMPLETE, offline station, lease expiry, restart/recovery, and one-operation-only ownership.
+- journal prepare/write fails before durable business commit -> business state unchanged;
+- business store stage/persist fails after audit preparation -> restart shows no successful/COMMITTED ghost event;
+- process exits after business staging but before final commit -> restart resolves to one deterministic state;
+- journal finalization fails after business commit -> startup reconciliation must not silently present a healthy complete transaction; recover deterministically or block evidence;
+- same semantic retry after recovery -> one committed semantic event only;
+- material conservation remains true after every failure/restart case.
 
 ---
 
-# Phase 445–452 — Operator Control Plane / Scan Workflow V1
+# Blocking gap 2 — MANUAL_STATION restart/recovery is still in-memory
 
-Extend the existing Admin/API rather than building a second frontend stack.
+`StationRegistry` persists stations/currentLease, but `StationDispatcher.leases` is in-memory, and the existing `JobQueue` adapter is also in-memory. `WorkOrderService.orders` / operations are likewise in-memory. A process restart can therefore reload a station with a non-null `currentLease` while the dispatcher has no corresponding lease/job, or lose the WorkOrder operation state needed to recover safely.
 
-Provide a tenant-scoped operator view for:
+The current lease-expiry test only modifies an in-memory heartbeat and calls recovery in the same process. That is useful, but it does **not** prove the required process restart/recovery boundary.
 
-- WorkOrders waiting for manual operation;
-- active station leases;
-- required material lots and release hash;
-- traveler steps;
-- FINAL/in-process QC requirements;
-- cartons / packing status;
-- exceptions and rework state;
-- audit journal link/export.
+## Required correction
 
-## Scan identifiers
+Do not build a second scheduler or MES. Keep the current Queue/WorkOrder/Station services and add the **minimum durable recovery snapshot/reconciliation layer** necessary for MANUAL_STATION pilot execution.
 
-Support deterministic scan tokens for at least:
+Required behavior:
 
-- WorkOrder;
-- MaterialLot;
-- ManufacturingRelease packet;
-- carton.
+- the state needed to recover an active manual station operation survives process restart: at minimum tenant, stationId, lease/job id, workOrderId, releaseId/releaseHash, operation, lease state, timestamps, idempotency/completion marker;
+- the WorkOrder state needed to decide whether ACK/START/COMPLETE is legal also survives/reloads from the existing durable root or an existing service snapshot adapter;
+- startup reconciliation handles a persisted `station.currentLease` whose lease/job is missing, expired, stale, cancelled, or already completed;
+- an orphaned/expired lease must be cleared/requeued to a safe manual state or surfaced as a deterministic exception; it must not strand the station forever;
+- a STARTED operation recovered after restart cannot be completed twice;
+- duplicate ACK / START / COMPLETE after restart remain idempotent;
+- stale/superseded `releaseHash` remains blocked;
+- no machine actuation path is added.
 
-A scan token may be QR/barcode-friendly text, but barcode rendering/reader hardware itself remains **PARTIAL** unless real hardware is exercised.
+The journal is an audit layer, **not event sourcing**. Do not reconstruct the whole WorkOrder solely by replaying journal events.
 
-Scanning must never mutate another tenant’s object. A token must resolve to an authoritative tenant/object pair; body-provided tenant must not override the authenticated/authoritative request tenant boundary already used by the Pilot API.
+## Mandatory restart regressions
 
-## Human confirmation
+Use a durable temp root and actually recreate the service/platform/process from that same root:
 
-Destructive/irreversible pilot actions (consume material, complete final operation, finalize QC, complete WO) require an explicit operator action. Do not add unattended auto-complete.
-
-Record actor/source in the journal.
-
----
-
-# Phase 453–460 — Exception / Recovery State Machine V1
-
-Use the existing WorkOrder/QC/MaterialLot states and add explicit recovery handling, not a parallel engine.
-
-Required exception classes / deterministic recovery paths:
-
-- material shortage;
-- wrong material / thickness / dimensions / grain;
-- quarantined receipt;
-- stale/superseded ManufacturingRelease;
-- QC FINAL failure;
-- rework required;
-- duplicate scan/idempotent retry;
-- station offline/lease expired;
-- partial packing / wrong carton count;
-- process restart during reservation or operation acknowledgement.
-
-For each class, define:
-
-- error code;
-- whether retry is safe;
-- whether human intervention is required;
-- allowed next WorkOrder states;
-- what event is journaled;
-- whether release/QC/material lineage remains valid.
-
-No error path may silently flip to success.
-
-Add an operator exception inbox in the existing Admin view with tenant filtering and stable identifiers.
+- create/release/reserve WO -> dispatch lease -> recreate platform -> lease is safely reconciled;
+- dispatch + ACK -> recreate -> retry ACK is idempotent;
+- dispatch + START -> recreate -> COMPLETE once -> recreate -> duplicate COMPLETE produces no second operation completion;
+- persisted station `currentLease` + missing lease -> startup clears/blocks deterministically and station can recover;
+- expired lease across restart returns operation to safe queue/manual state;
+- cross-tenant restart recovery cannot attach tenant A lease/WO to tenant B station;
+- restart preserves exact `releaseHash` binding.
 
 ---
 
-# Phase 461–468 — Versioned Import / Export Contracts
+# Blocking gap 3 — “crash-restart” acceptance must include a real separate-process boundary
 
-Do not connect live providers in this phase. Build safe, versioned file/API contracts for later company-system integration.
+Current `CrashInjected` + object reconstruction is a useful logic test but is not equivalent to process termination/restart. Phase 421–480 acceptance explicitly asked for process restart during reservation / operation acknowledgement.
 
-## Imports
+Add deterministic subprocess fixtures that:
 
-Keep the existing MANUAL/IMPORTED truth labels and add schema-versioned validation for:
+- start a child process against a shared durable root;
+- terminate/exit the child at a controlled boundary after staging or during acknowledgement;
+- start a new process against the same root;
+- verify material conservation, no oversell, journal/business consistency, lease recovery, tenant isolation, and no double completion.
 
-- material receipts;
-- supplier quote snapshots;
-- carrier quote snapshots;
-- optional inventory adjustment request that **must require explicit human approval** before changing lot state.
-
-Invalid rows go to a rejected/quarantine result; no partial silent import.
-
-## Exports
-
-Provide deterministic tenant-scoped export bundles for:
-
-- ManufacturingRelease packet metadata + checksums;
-- WorkOrder traveler;
-- reserved/consumed MaterialLot lineage;
-- QC report/rework history;
-- packing/carton manifest;
-- shipment draft;
-- audit journal slice.
-
-Include schema version, export timestamp, tenant, releaseHash, content hashes, and truth labels.
-
-Exports are documents/data only. They do not submit carrier bookings or machine jobs.
-
-## Idempotency
-
-Same import file/key retry must not double receive stock or duplicate supplier/carrier snapshots when the semantic idempotency key matches.
+This remains **FIXTURE/REAL-LOGIC process evidence**, not real factory throughput.
 
 ---
 
-# Phase 469–474 — Pilot Observability / Reliability Dashboard V1
+# Blocking gap 4 — FIXTURE/CHAOS rows must not be labeled plain REAL
 
-Add lightweight observability from the existing services. Do not require a new observability platform.
+`scripts/run_pilot_deploy_e2e.py` runs a `Platform(..., mock_blender=True)` FIXTURE/CHAOS harness, but several harness-derived rows currently emit status `REAL` when their booleans pass.
 
-Expose tenant-safe counters/health for at least:
+Correct the truth labels:
 
-- queued/manual operations;
-- active/expired station leases;
-- WorkOrders by state;
-- reservation conflict/shortage count;
-- stale/superseded release rejects;
-- QC pass/fail/rework counts;
-- packing exceptions;
-- journal integrity status;
-- last successful REAL acceptance commit/generation;
-- LIVE_CNC/LIVE_LASER = BLOCKED badges.
+- harness business-E2E rows generated from MOCK/FIXTURE Platform data -> **FIXTURE** (preferred) or an explicitly named **REAL_LOGIC** only where the evidence is an actual OS/process/persistence property and the scope is stated;
+- do not use plain `REAL` for a mock-platform fixture merely because a boolean is true;
+- actual clean-tree Blender/OptiX EvidenceBundles can remain **REAL** because they are separately executed with `usedMock=false`;
+- imported supplier/carrier/FX/receipt data remains IMPORTED/MANUAL;
+- barcode hardware remains PARTIAL;
+- all global/live-factory readiness flags remain false.
 
-Where latency is measured, clearly label it local/runtime measurement. Do not describe FIXTURE timing as real factory SLA.
-
-Add a deterministic `/api/pilot/health` or equivalent existing-admin endpoint with no cross-tenant data leakage.
+Update `GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md`, and the new deployment/operator acceptance files so the wording is consistent. `CABINET_REAL_ACCEPTANCE.md` only changes if cabinet evidence itself changes.
 
 ---
 
-# Phase 475–480 — Deployment Acceptance / Chaos Fixture / REAL Evidence Refresh
+# Acceptance must fail closed on these integrity properties
 
-Create the new acceptance package without weakening or replacing the existing canonical evidence.
+Extend Phase 421–480 acceptance with explicit machine-readable booleans such as:
 
-Suggested files:
+- `journalBusinessCommitConsistent`;
+- `noCommittedGhostJournalEvents`;
+- `processRestartRecovery`;
+- `stationRestartRecovered`;
+- `workOrderRestartRecovered`;
+- `noDoubleCompletionAfterRestart`;
+- `releaseHashPreservedAfterRestart`;
+- `materialConservedAfterCrash`;
+- `tenantIsolationAfterRestart`.
 
-- `docs/PILOT_DEPLOYMENT_ACCEPTANCE.md`
-- `docs/PILOT_DEPLOYMENT_ACCEPTANCE.json`
-- `docs/OPERATOR_CONTROL_ACCEPTANCE.md`
-- `docs/OPERATOR_CONTROL_ACCEPTANCE.json`
-
-Do not silently add new files to the existing canonical six-file reader unless the reader/version contract is explicitly migrated with backward/failure regressions. New Phase 421–480 acceptance can be an additional scoped truth set.
-
-## Required FIXTURE stress
-
-Run a deterministic **FIXTURE/CHAOS** test, not factory throughput, including at least:
-
-- 100 WorkOrders;
-- multiple tenants;
-- multi-process scarce-stock contention;
-- station offline/lease expiry;
-- injected process restart during reservation;
-- duplicate ACK/COMPLETE retries;
-- QC fail -> rework -> final pass;
-- stale release rejection;
-- packing mismatch rejection;
-- journal tamper detection negative test.
-
-Acceptance must explicitly report:
-
-- no oversell;
-- material conservation;
-- no cross-tenant object exposure;
-- no duplicate semantic completion;
-- journal integrity;
-- stale release protection;
-- human approval/control boundary intact;
-- LIVE_CNC/LIVE_LASER still blocked.
-
-Label this **FIXTURE/CHAOS**, not REAL factory throughput.
-
-## REAL evidence refresh
-
-Because the code SHA will change, rerun the existing clean-tree REAL Blender acceptance on the final code commit:
-
-- 4/4 families;
-- Blender 5.2.1 LTS + NVIDIA T1000 OptiX on the currently detected host, unless hardware legitimately changes;
-- `usedMock=false`;
-- exact final CODE_EVIDENCE_SHA;
-- verifier PASS;
-- non-null exact matching ManufacturingRelease `releaseHash`;
-- artifact hash/size;
-- shared acceptance generation where required by the existing runner.
-
-If Blender/OptiX is unavailable at execution time, mark the REAL render slice BLOCKED; do not fall back to Mock and do not publish it as REAL.
+The runner `ok` / exit code must require every mandatory property. Missing/None/malformed evidence must fail closed; do not synthesize a passing default. Failed acceptance must not overwrite a previously valid successful acceptance package as if it were current success.
 
 ---
 
-# Required test / commit / evidence sequence
+# Required evidence sequence after correction
 
-1. Implement Phase 421–480 without rewriting existing architecture.
-2. Add targeted unit/integration/process-concurrency tests.
-3. Run `pytest -q`; report exact count and label it MOCK/unit/integration/FIXTURE/REAL-logic as appropriate, never global Production Ready.
+1. Fix only the Phase 421–480 integrity gaps above. **Do not start Phase 481+.**
+2. Add targeted transaction-failure, separate-process restart, lease/workorder recovery, tenant, and truth-label regressions.
+3. Run `pytest -q` and report the exact count. Label it MOCK/unit/integration/FIXTURE/REAL-logic as appropriate, never Production Ready.
 4. Commit code/tests first as a new **CODE_EVIDENCE_SHA**.
-5. Push and require GitHub Actions ubuntu + windows GREEN on the code commit.
-6. From a **clean committed tree**, run the scoped Phase 421–480 acceptance plus existing REAL 4-family Blender acceptance.
-7. Commit evidence/docs separately where practical.
-8. Require current-head GitHub Actions GREEN.
-9. Update:
-   - `docs/GROK_PROGRESS_REPORT.md`;
-   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`;
-   - `docs/REAL_E2E_ACCEPTANCE.md` only with facts actually re-proven;
-   - `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet evidence itself changes.
-10. Leave Issue #1 a concise completion comment with CODE_EVIDENCE_SHA, docs SHA, pytest count, code/head CI run IDs, FIXTURE/CHAOS summary, REAL Blender summary, and unchanged truth labels.
+5. Push and require GitHub Actions `ubuntu-latest` + `windows-latest` GREEN on that code commit.
+6. From a clean committed tree, run the revised Phase 421–480 FIXTURE/process-restart acceptance.
+7. Because code SHA changes, rerun clean-tree REAL Blender evidence: 4/4 families, Blender 5.2.1 LTS + currently detected real NVIDIA OptiX device, `usedMock=false`, exact new CODE_EVIDENCE_SHA, verifier PASS, non-null matching ManufacturingRelease `releaseHash`, artifact hash/size.
+8. Commit evidence/docs separately where practical and require current-head CI GREEN.
+9. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`, deployment/operator acceptance files; update cabinet acceptance only if cabinet evidence changed.
+10. Leave Issue #1 a concise completion comment with code SHA, docs SHA, pytest count, code/head CI runs, restart evidence, truth labels, and remaining BLOCKED/PARTIAL/MOCK boundaries.
 
----
+## Exit gate for next ChatGPT review
 
-# Phase 421–480 exit criteria
+Phase 481+ remains blocked until all of the following are true:
 
-Do not claim this phase accepted unless all applicable items are true:
-
-- durable tenant-scoped audit journal exists and restart/tamper tests pass;
-- successful required business mutations cannot silently omit required audit evidence;
-- multi-process STRICT_STOCK contention does not oversell;
-- crash/restart preserves material conservation and atomic allocation semantics;
-- stale writers cannot overwrite newer lot state;
-- MANUAL_STATION dispatch uses the existing Queue/Scheduler boundary and has lease/recovery/idempotency tests;
-- dispatch and operator actions pin exact `releaseHash`;
-- no stale/superseded/cancelled WorkOrder can dispatch or complete;
-- operator scan/control paths are tenant-safe;
-- exception paths are fail-closed and journaled;
-- imports are MANUAL/IMPORTED, versioned, validated, idempotent, and do not create live-provider claims;
-- exports are deterministic/hashable and never actuate machines or book carriers;
-- observability has tenant-safe status and no fake factory SLA claims;
-- FIXTURE/CHAOS acceptance passes with explicit negative cases;
-- code CI and current-head CI are GREEN on Ubuntu + Windows;
-- clean-tree 4/4 REAL Blender evidence is bound to the final code SHA and exact release hashes;
-- Vision / AI Video / Demand remain MOCK unless truly connected and proven;
-- OS sandbox / AR / barcode / preflight / McKee remain PARTIAL unless separately proven;
-- LIVE_CNC / LIVE_LASER / PLC / machine actuation remain BLOCKED;
-- `globalProductionReady=false`;
-- `liveFactoryExecutionReady=false`;
-- `liveProviderReady=false`;
-- `fullAutonomousFactoryReady=false`;
-- no second Scheduler / ERP / WMS / MES / QMS / inventory engine is introduced.
-
-When complete, stop and report to GitHub for re-review. Do not automatically start Phase 481+.
+- no successful audit record can survive for an uncommitted business mutation;
+- process restart can recover manual station + required WorkOrder execution state without stranded leases or duplicate completion;
+- separate-process crash/restart regressions pass on Linux and Windows CI where applicable;
+- FIXTURE/CHAOS acceptance no longer labels mock-platform business checks as plain REAL;
+- clean-tree 4/4 REAL Blender evidence is rebound to the new code SHA;
+- CI is GREEN on code and evidence/docs head;
+- `globalProductionReady=false`, `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `fullAutonomousFactoryReady=false` remain true boundaries;
+- LIVE_CNC / LIVE_LASER remain BLOCKED.
