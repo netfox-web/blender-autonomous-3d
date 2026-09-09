@@ -61,6 +61,8 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
         for path in src.rglob("*"):
             if not path.is_file():
                 continue
+            if path.suffix in {".lock", ".tmp", ".staging"} or path.name.endswith(".json.tmp"):
+                continue
             rel = _rel(path, root)
             target = data_root / Path(rel)
             target.parent.mkdir(parents=True, exist_ok=True)
