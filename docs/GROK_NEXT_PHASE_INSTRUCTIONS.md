@@ -1,33 +1,32 @@
-# Grok 修正指令：Phase 481–540 Final Tenant Backup Fail-Closed Proof
+# Grok 開發指令：Phase 541–600 Small-Space KD SKU Portfolio Factory V1
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed head: `3a080097f6daf102801334de084b759320f8e920`  
-> Reviewed CODE_EVIDENCE_SHA: `1fc86cff1101c8a8e66df59950a8accc7f527d76`  
-> ChatGPT review result: **CHANGES REQUIRED**  
-> **Do not start Phase 541+.** Do not rewrite existing architecture.
+> Reviewed main/docs head: `90f7d592243922f3a8dd6c9f70a641efb06d66ca`  
+> Accepted CODE_EVIDENCE_SHA: `11c79d12d06c4c6f355fd0d2dc8058f0fef2f825`  
+> ChatGPT review result: **ACCEPT WITH SCOPE**  
+> Phase 481–540 exit gate is accepted. Start **Phase 541–600** only. Do not rewrite existing architecture.
 
-## Review result
+## Accepted baseline
 
-The `ead6653` round contains substantial real fixes and most prior blockers are accepted within scope:
+The `142d062` correction is accepted within its declared scope:
 
-- tenant ownership is now explicit as `TENANT_OWNED / TENANT_DERIVED / GLOBAL_REFERENCE`;
-- pallet ownership is derived from carton parents and cross-tenant/orphan pallet plans fail closed;
-- carrier quotes are explicitly `GLOBAL_REFERENCE` and excluded from tenant-scoped backups;
-- snapshot identity now re-discovers the selected tenant's relevant path set and hashes before/after copy;
-- A-only DAM/remnant create/delete races retry/fail and B-only churn does not leak into A;
-- post-restore health is computed from `restored_plat` and contradictory health/gate evidence fails closed;
-- exact manifest file-set verification and restore-only-listed-files remain intact;
-- runner evidence is bound to clean CODE `1fc86cf...`, acceptance generation `59bd2549-3cec-4d90-9401-3f6968a0885f`;
-- local report: `pytest -q = 234 passed` — **MOCK/unit/integration + FIXTURE/REAL_LOGIC only**, never Production Ready;
-- GitHub Actions CODE run `34337838018`: Ubuntu + Windows GREEN;
-- GitHub Actions docs/head run `34338258033`: Ubuntu + Windows GREEN;
-- ManufacturingRelease / Blender render paths were not changed, so previously accepted 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX evidence at `018cc70` may continue to be referenced. Do not fabricate a refresh.
+- malformed TENANT_SCOPED shared collections now fail closed instead of being silently copied/coerced;
+- `idem`, `releases.packets`, MIXED_SPEC and TENANT_DERIVED malformed container cases are covered by negative regressions;
+- `tenant_state_digest()` binds exact tenant-A identity/lineage/state rather than counts only;
+- same-count record replacement, releaseHash / WorkOrder / pallet parent / idempotency target mutation, DAM byte mutation and journal event-ID mutation fail semantic preservation;
+- normal tenant-A restore reports `tenantStateDigest.equal=true`, `identityMismatch=[]`, `tenantLeakageAbsent=true`;
+- acceptance generation: `2d0cc206-ed80-4c32-a82f-491ae8842220`;
+- restored-root journal health is healthy and backup snapshot path-set remains hash-bound;
+- GitHub Actions CODE run `34342453890` on `11c79d1`: Ubuntu + Windows **GREEN**;
+- GitHub Actions docs/head run `34342811475` on `90f7d59`: Ubuntu + Windows **GREEN**;
+- test suite: **244 passed** under `FOX3D_MOCK_BLENDER=1`; this is MOCK/unit/integration + REAL_LOGIC regression evidence, **not Production Ready**;
+- ManufacturingRelease / Blender render path did not change, so prior accepted REAL Blender evidence `018cc70` (4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`) remains a valid referenced baseline for that unchanged path.
 
-Truth boundaries remain unchanged:
+Truth boundaries remain mandatory:
 
-- Vision / AI Video / Demand = **MOCK**;
+- Vision / AI Video / Demand = **MOCK** unless an actual provider is independently proven;
 - OS sandbox / AR / print preflight / barcode hardware / McKee-BCT = **PARTIAL / ENGINEERING_ESTIMATE**;
-- supplier / carrier / FX / receipts = **IMPORTED / MANUAL** unless separately proven live;
+- supplier / carrier / FX / receipts = **IMPORTED / MANUAL** unless independently proven live;
 - LIVE_CNC / LIVE_LASER / PLC / autonomous machine actuation = **BLOCKED**;
 - `liveMachineControl=false`;
 - `liveFactoryExecutionReady=false`;
@@ -36,109 +35,312 @@ Truth boundaries remain unchanged:
 - `fullAutonomousFactoryReady=false`;
 - unscoped `productionReady=true` is forbidden.
 
-There are still two evidence-integrity gaps in the tenant backup contract. Fix these only; do not expand scope.
+---
+
+# Phase objective
+
+Use the existing Physical Product OS / KD / ManufacturingRelease / WorkOrder / nesting / remnant / costing / Blender / Manual Factory Pilot capabilities to build a **Small-Space KD SKU Portfolio Factory V1**.
+
+The goal is not to invent another product engine. The goal is to let the existing engine evaluate a batch of student / rental / small-space KD product candidates and produce a traceable shortlist for human prototype approval based on manufacturability, material yield, remnant reuse, carton/logistics constraints, assembly effort and clearly-labeled commercial assumptions.
+
+Do **not** add live marketplace demand claims, automatic purchasing, automatic supplier ordering, automatic CNC execution, or autonomous factory control.
+
+Do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture. Extend/reuse them.
 
 ---
 
-# Blocking issue 1 — Malformed shared collection types can bypass tenant filtering
+# Phase 541–546 — Portfolio Intent & Opportunity Spec
 
-`src/fox3d/backup.py::_filter_payload()` currently starts with `filtered = dict(payload)` and then does:
+Create a versioned `PortfolioIntent` / equivalent domain object for batch product exploration.
 
-```python
-rows = payload.get(key) or []
-if not isinstance(rows, list):
-    continue
-```
+Minimum fields:
 
-For a declared shared collection such as `logistics.cartons`, `workorders.operations`, `qc.checks`, etc., a malformed non-list value therefore remains in `filtered` unchanged. In a TENANT_SCOPED backup that can copy malformed/unfiltered shared state instead of failing closed. This contradicts the explicit `AMBIGUOUS => BLOCKED` contract.
+- `tenantId`
+- `portfolioId`
+- target segment (`STUDENT`, `RENTAL_SMALL_SPACE`, `ENTRY_STORAGE`, etc.)
+- allowed existing product families/types
+- dimension envelope / footprint limits
+- target material catalog / thickness constraints
+- max carton constraints
+- target assembly difficulty / time range
+- target landed-cost / margin scenario ranges
+- candidate count target
+- explicit data-source labels for every commercial signal
 
-Related helpers also need the same strictness:
+Rules:
 
-- if `idem` is present but is not a dict, `_filter_idem()` must not silently return `{}`;
-- if `releases.packets` is present but is not a dict, it must fail even when the malformed value is empty/falsy;
-- declared tenant-owned / tenant-derived collections missing their expected container type must never be silently copied, silently emptied, or skipped.
+1. LLM/NL may propose intent, names and non-authoritative preferences only.
+2. LLM may **not** directly set manufacturing-authoritative mm, BOM, material quantity, releaseHash or machine parameters without validation through existing engineering rules.
+3. Demand source must be one of `MOCK`, `IMPORTED`, `MANUAL`, `UNAVAILABLE`, or a separately proven provider label. Never call MOCK demand REAL.
+4. Bad/missing manufacturing constraints fail closed or enter `NEEDS_INPUT`; never silently substitute unsafe values.
+5. Tenant boundary is authoritative.
 
-## Required correction
+---
 
-1. For every key declared in `MIXED_SPEC`, if the key is present and its value is not a list, raise `BackupError("BLOCKED", ...)`.
-2. If a required/declared collection is absent, preserve existing valid empty semantics only where the runtime schema legitimately permits absence; do not use type coercion (`or []`) to hide malformed non-list values.
-3. Make `_filter_idem()` fail closed when `idem` is present and is not a dict.
-4. Make `releases.packets` fail closed whenever present and non-dict, including `[]`, `""`, `0`, etc.
-5. Keep GLOBAL_REFERENCE policy explicit; do not solve this by copying unknown data wholesale.
-6. Whole-root backup behavior may remain byte-for-byte; this correction is specifically required for TENANT_SCOPED filtering.
+# Phase 547–552 — Deterministic Candidate Generator
+
+Generate a portfolio of valid parametric SKU candidates using the **existing product registry and parametric engine**.
+
+Requirements:
+
+- deterministic candidate generation for the same normalized intent + seed/config;
+- candidate canonical hash / engineering hash;
+- no duplicate canonical geometry/BOM candidate in one portfolio;
+- invalid engineering variants are retained as rejected evidence with rule codes, not silently discarded;
+- candidate states at minimum: `CANDIDATE`, `REJECTED_DFM`, `NEEDS_INPUT`, `SHORTLISTED`, `WAITING_PRODUCT_APPROVAL`, `APPROVED_FOR_PROTOTYPE`;
+- no candidate can become a ManufacturingRelease merely because it ranked highly.
+
+Acceptance fixture target: **at least 24 candidates across at least 6 existing KD / flat-pack product types**, with both valid and intentionally-invalid variants.
+
+---
+
+# Phase 553–558 — Batch DFM Scorecard
+
+For every candidate run existing authoritative paths and produce a machine-readable DFM scorecard:
+
+- engineering-rule result and rejection codes;
+- BOM and BOM hash;
+- sheet/material requirement;
+- single-SKU nesting;
+- reusable remnant vs true scrap;
+- material utilization / waste conservation;
+- hardware count;
+- carton plan, weight/volume and oversize gate;
+- assembly operation count / configured assembly effort;
+- any required QC plan hash;
+- lineage back to candidate hash.
+
+No new fake DFM engine. Reuse the existing rules/BOM/nesting/packing logic.
+
+Required invariants:
+
+- `inputSheetArea = placedArea + reusableRemnantArea + trueScrapArea` within tolerance;
+- no part appears twice or disappears;
+- no rejected/oversize/engineering-invalid candidate may receive an APPROVED status;
+- all estimates have an explicit truth/source label.
+
+---
+
+# Phase 559–564 — Cross-SKU Material Synergy & Remnant Planning
+
+Add a portfolio planning mode on top of the existing batch/cross-SKU nesting and remnant system.
+
+It must compare at least:
+
+1. independent single-SKU production;
+2. batch same-SKU production;
+3. cross-SKU portfolio batch;
+4. remnant-first portfolio batch where compatible inventory exists.
+
+Expose:
+
+- sheet count delta;
+- true-scrap area delta;
+- reusable-remnant created/consumed;
+- material compatibility constraints (SKU/thickness/size/grain);
+- candidate-to-sheet lineage;
+- candidate-to-remnant lineage;
+- normalized material-saving metric.
+
+This is **PLANNING only**. Portfolio evaluation must not silently consume live inventory. Any reservation/consumption must go through existing inventory/WorkOrder semantics and human-approved execution paths.
+
+Required regression: cross-SKU planning must never double-allocate one remnant or exceed available stock.
+
+---
+
+# Phase 565–570 — Commercial Scenario Engine
+
+Build a scenario layer using the existing cost engine; do not pretend estimates are live supplier/customer prices.
+
+Per candidate expose:
+
+- material cost;
+- hardware cost;
+- processing/config estimate;
+- packaging estimate;
+- shipping/imported/manual quote where available;
+- labor/config or manual estimate;
+- remnant credit;
+- scrap cost;
+- landed cost;
+- configurable selling-price scenario;
+- gross-margin amount / rate;
+- source/truth label per component;
+- cost snapshot/version hash.
+
+Rules:
+
+- `CONFIG_ESTIMATE`, `IMPORTED`, `MANUAL`, `MOCK`, `LIVE_PROVIDER` must remain distinct;
+- missing supplier/carrier data may not be filled with invented REAL values;
+- stale price/cost snapshot after engineering hash/release quantity change must be detected;
+- ranking may use configured target margin, but may not claim real market willingness-to-pay without real evidence.
+
+---
+
+# Phase 571–576 — Explainable Portfolio Ranking
+
+Create a deterministic ranking/shortlist layer.
+
+Score dimensions should include at least:
+
+- manufacturing validity (hard gate, not a soft score);
+- material utilization / true scrap;
+- remnant reuse benefit;
+- landed-cost scenario;
+- carton/logistics burden;
+- assembly burden;
+- part/hardware complexity;
+- configurable margin scenario;
+- demand signal only with its actual truth label.
+
+Requirements:
+
+- weights/config are versioned and included in a `rankingPolicyHash`;
+- each score has a contribution breakdown;
+- tie-breaking is deterministic;
+- a MOCK demand score can influence a MOCK/EXPERIMENTAL ranking only and must not upgrade readiness to REAL;
+- DFM-invalid candidates cannot rank into the prototype shortlist;
+- human override requires actor/reason/audit entry; it cannot rewrite the computed score.
+
+Acceptance target: produce an explainable **Top 10** shortlist from the >=24 candidate fixture portfolio.
+
+---
+
+# Phase 577–582 — Prototype Approval & Release Candidate Pack
+
+For shortlisted candidates create a release-candidate package reusing existing DAM / ManufacturingRelease validation paths.
+
+Package should bind:
+
+- portfolioId / candidateId;
+- candidate engineering hash;
+- BOM hash;
+- nesting/remnant plan hash;
+- cost snapshot hash;
+- ranking policy hash and score;
+- carton/assembly/QC plan summary;
+- preview artifact references if available;
+- human approval state and audit.
+
+Important:
+
+- Top 10 means **shortlisted**, not automatically approved.
+- ManufacturingRelease remains authoritative and immutable according to existing rules.
+- `WAITING_PRODUCT_APPROVAL` / `APPROVED_FOR_PROTOTYPE` is not `APPROVED_FOR_LIVE_CNC`.
+- superseded candidate/release lineage must fail closed.
+
+---
+
+# Phase 583–588 — Product Media Pack via Existing Blender Pipeline
+
+For representative shortlisted products generate product-media evidence with the existing Blender queue/DAM path:
+
+- white studio preview;
+- at least one alternate useful product angle or 360 artifact where existing capability supports it;
+- artifact SHA-256 + size;
+- candidate/release lineage;
+- `usedMock` truth flag;
+- worker/GPU/Blender evidence when REAL.
+
+Do not build a second renderer.
+
+For this phase acceptance, run **fresh clean-tree REAL Blender evidence for at least 4 representative shortlisted KD candidates** on the accepted CODE_EVIDENCE_SHA if the real Blender/OptiX host is available. The current T1000 host is acceptable; do not fabricate RTX 5090. If a media subcase cannot run REAL, label it BLOCKED/PARTIAL rather than using mock as production evidence.
+
+AI Video remains MOCK unless a real provider is independently connected and proven.
+
+---
+
+# Phase 589–594 — Manual Prototype Pilot Pack
+
+Use the existing Manual Factory Pilot / traveler / operator / QC / logistics concepts to produce a human-executable prototype pack for selected shortlist items.
+
+At minimum include:
+
+- immutable candidate/release identity;
+- traveler and operation sequence;
+- BOM/material list;
+- nesting/cut planning reference;
+- hardware list;
+- assembly steps/effort estimate;
+- QC checks;
+- carton/packing checklist;
+- exception/hold path;
+- explicit `MANUAL_STATION` / human execution label.
+
+Do not issue live CNC/laser/PLC commands. Do not auto-book carrier or auto-order supplier material.
+
+A prototype pack may be marked `READY_FOR_MANUAL_PROTOTYPE` only when all required upstream hashes/evidence agree and human approval exists.
+
+---
+
+# Phase 595–600 — Fail-Closed Portfolio Acceptance
+
+Add a dedicated clean-tree acceptance runner, e.g. `scripts/run_portfolio_factory_e2e.py`, without weakening existing runners.
+
+Required committed evidence:
+
+- `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.json`
+- `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.md`
+- `docs/PORTFOLIO_DFM_ACCEPTANCE.json`
+- `docs/PORTFOLIO_DFM_ACCEPTANCE.md`
+- `docs/PORTFOLIO_COMMERCIAL_ACCEPTANCE.json`
+- `docs/PORTFOLIO_COMMERCIAL_ACCEPTANCE.md`
+
+All six new files must share one `acceptanceGenerationId`, exact `evidenceCodeCommit`, `workingTreeClean=true`, and be published atomically or rolled back as one generation.
+
+Minimum fail-closed acceptance gates:
+
+1. >=24 candidates across >=6 existing product types generated deterministically;
+2. invalid candidates retained with explicit rejection evidence;
+3. no invalid candidate in Top 10;
+4. Top 10 deterministic under the same normalized inputs/policy;
+5. every Top-10 candidate has exact engineering/BOM/cost/ranking lineage;
+6. DFM material conservation passes;
+7. cross-SKU/remnant plan has no double allocation / oversell;
+8. cost components expose source/truth labels and stale snapshots fail;
+9. MOCK/UNAVAILABLE demand cannot become REAL;
+10. tenant isolation proven for portfolio/candidate/ranking records;
+11. any new durable portfolio state is included in existing tenant backup/semantic restore contract; no new tenant-owned state may be omitted from TENANT_SCOPED backup;
+12. manual prototype readiness requires human approval and cannot imply live machine execution;
+13. four representative media cases have fresh REAL Blender evidence (`usedMock=false`) if the host is available, otherwise the scope is explicitly BLOCKED/PARTIAL;
+14. runner rejects dirty tree, expected-commit mismatch, mixed generation, missing/malformed evidence and leaves previous valid evidence unchanged;
+15. `liveMachineControl=false`, `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `globalProductionReady=false`, `fullAutonomousFactoryReady=false` remain enforced.
 
 ## Required negative regressions
 
-At minimum, corrupt one shared state file at a time and prove TENANT_SCOPED backup fails with no successful manifest:
+At minimum test:
 
-- `logistics.cartons` = object/dict instead of list, containing A/B-like rows;
-- `workorders.operations` = object/dict instead of list;
-- `qc.checks` = string/object instead of list;
-- `idem` = list/string instead of dict;
-- `releases.packets` = list instead of dict;
-- one declared TENANT_DERIVED collection malformed.
-
-The regression must prove that malformed schema cannot result in `consistentSnapshot=true`, `tenantLeakageAbsent=true`, or a successful restore.
-
----
-
-# Blocking issue 2 — `tenantRequiredStatePreserved` is still mostly count-based
-
-`evaluate_tenant_restore_matrix()` currently compares integer counts for most domains. Count equality is useful, but it does not prove that the same tenant-A records and lineage survived. A lost record plus a different duplicate/replacement can preserve the count and still make `tenantRequiredStatePreserved=true`.
-
-The previous exit criterion required A's required records **and lineage** to survive, not only the same number of rows.
-
-## Required correction
-
-Without changing storage architecture, add deterministic semantic fingerprints/identity sets for the selected tenant and compare live-A vs restored-A for the backup matrix.
-
-Minimum evidence by domain:
-
-- MaterialLots: `lotId` + quantities/state digest;
-- remnants: `remnantId` + material/size/source lineage digest;
-- ManufacturingRelease: `releaseId`, `releaseHash`, packet hash/size, productVersion;
-- WorkOrders: `workOrderId`, `releaseHash`, state, traveler/operation IDs and status digest;
-- idempotency: exact tenant-scoped key set and referenced object IDs;
-- receipts/stations/leases/operators/shifts/cycleCounts: exact record identity sets + essential state;
-- cartons/pallet plans/shipments/checklists/handoffs: exact IDs + parent/tenant/release lineage;
-- QC/exceptions: exact IDs + workOrder/release linkage;
-- journal: exact selected event ID set (already partly implemented) plus sequence/head integrity;
-- outbox/tx: exact selected transaction IDs or path+hash set;
-- DAM: exact selected relative path + sha256 set.
-
-`tenantRequiredStatePreserved=true` must require semantic equality for every required domain, not merely `restored_count >= live_count`.
-
-The acceptance JSON should expose a compact `tenantStateDigest` / `identityMismatch` section so the claim is machine-verifiable.
-
-## Required regressions
-
-Add at least these negative tests:
-
-1. after producing a valid A backup, replace one restored A record with another same-count record -> semantic preservation gate must fail;
-2. mutate one restored A releaseHash / WO releaseHash / pallet parent / idempotency target while keeping row counts identical -> fail;
-3. alter one restored A DAM file byte without changing file count -> fail;
-4. alter one restored journal event ID or transaction file while keeping counts equal -> fail;
-5. the normal A restore must still pass with zero B tenant-owned state and exact A semantic equality.
+- duplicate candidate canonical hash;
+- engineering-invalid candidate forced into shortlist;
+- same candidate geometry with stale BOM/cost hash;
+- remnant double-use in two portfolio candidates;
+- material incompatibility (SKU/thickness/size/grain);
+- stale/missing cost source;
+- MOCK demand mislabeled REAL;
+- cross-tenant portfolio/candidate lookup;
+- human approval missing but prototype readiness requested;
+- superseded release/candidate used for pack;
+- dirty-tree / wrong CODE_EVIDENCE_SHA acceptance run;
+- mixed/missing new acceptance generation;
+- persisted new portfolio state omitted from tenant backup/restore semantic digest.
 
 ---
 
-# Re-acceptance sequence
+# Evidence / CI sequence
 
-1. Fix only the two issues above. **Do not start Phase 541+.**
-2. Do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / ManufacturingRelease / WorkOrder / QC / Logistics architecture.
-3. Run `pytest -q`; report the exact count and keep MOCK/FIXTURE/REAL_LOGIC labels honest.
-4. Commit code/tests as a new **CODE_EVIDENCE_SHA**.
-5. Push and require GitHub Actions Ubuntu + Windows GREEN on that exact code SHA.
-6. From a clean committed tree run `scripts/run_manual_pilot_e2e.py --expected-commit <CODE_EVIDENCE_SHA>`.
-7. Runner must self-bind exact code SHA, clean tree, one acceptance generation, strict schema validation, exact A semantic preservation, zero B leakage, snapshot path-set/hash consistency, restored-root health and existing no-double-consume/complete gates.
-8. Keep existing 8-file atomic publication + rollback. Any negative integrity case must exit non-zero and leave the prior valid 8-file bundle unchanged.
-9. If ManufacturingRelease / Blender render code remains unchanged, continue referencing REAL Blender `018cc70` with an explicit reason. If those paths change, rerun clean-tree 4/4 REAL Blender evidence on the new code SHA.
-10. Commit docs/evidence separately and require docs/head Ubuntu + Windows GREEN.
-11. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`, `docs/PILOT_BACKUP_RESTORE_ACCEPTANCE.*` and the Phase 481–540 truth set. Update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet evidence actually changes.
-12. Leave Issue #1 a concise completion handoff with code SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, strict-schema negative test summary, semantic tenant-state digest result, snapshot result, restored-health result and REAL/MOCK/PARTIAL/BLOCKED matrix.
+1. Implement Phase 541–600 without starting Phase 601+.
+2. Run `pytest -q`; preserve exact truth labels.
+3. Commit code/tests as a new **CODE_EVIDENCE_SHA**.
+4. Push and require GitHub Actions Ubuntu + Windows GREEN on that exact code SHA.
+5. From a clean committed tree run the new portfolio acceptance with `--expected-commit <CODE_EVIDENCE_SHA>`.
+6. Run the four representative REAL Blender portfolio media cases on the same code SHA when available and verify hashes/sizes/lineage; never substitute mock evidence.
+7. Commit evidence/docs separately.
+8. Require docs/head Ubuntu + Windows GREEN.
+9. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`. Update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet-specific evidence truly changes.
+10. Leave Issue #1 a concise handoff with CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, candidate/Top-10 counts, material-conservation/remnant results, commercial truth labels, REAL Blender count, backup/tenant result and readiness matrix.
 
-## Exit gate
+## Exit definition
 
-Phase 481–540 remains **CHANGES REQUIRED** until TENANT_SCOPED backup rejects malformed shared schemas and `tenantRequiredStatePreserved` proves exact tenant-A semantic state/lineage rather than count-only equality.
+Phase 541–600 is accepted only as a **Small-Space KD SKU Portfolio / Manual Prototype Pilot** scope.
 
-Do not call this Production Ready. LIVE_CNC / LIVE_LASER / PLC / autonomous machine execution remain BLOCKED.
+It is not live demand intelligence, not a live procurement system, not an MES replacement, and not an autonomous factory. MOCK/PARTIAL/BLOCKED paths must remain honestly labeled.
