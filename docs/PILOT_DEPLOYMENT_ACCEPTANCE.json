@@ -1,0 +1,159 @@
+{
+  "domain": "pilot-deployment",
+  "label": "FIXTURE/CHAOS",
+  "generatedAt": "2026-09-09T03:04:22.274035+00:00",
+  "acceptanceGenerationId": "2b8b0770-573b-4978-85dd-c47a9cfb2416",
+  "evidenceCodeCommit": "4069cef05d33112e8166c357e29459254bdf2ae8",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "notCanonicalSixFile": true,
+  "chaos": {
+    "label": "FIXTURE/CHAOS",
+    "workOrderCount": 110,
+    "tenants": [
+      "chaos-a",
+      "chaos-b"
+    ],
+    "operationTransitions": 104,
+    "noOversell": true,
+    "materialConserved": true,
+    "crashAllOrNothing": true,
+    "staleWriterBlocked": true,
+    "station": {
+      "offlineDenied": true,
+      "duplicateAck": true,
+      "duplicateComplete": true,
+      "noDuplicateComplete": true,
+      "leaseExpiry": true,
+      "started": true,
+      "crossTenantDenied": true
+    },
+    "qcRework": {
+      "failed": true,
+      "passed": true,
+      "rework": true
+    },
+    "staleReleaseRejected": true,
+    "packingMismatchRejected": true,
+    "journalIntegrity": {
+      "restartPreserved": true,
+      "duplicateSuppressed": true,
+      "tenantIsolated": true,
+      "chainOkBefore": true,
+      "tamperDetected": true
+    },
+    "scanTenantSafe": true,
+    "noDuplicateCompletion": true,
+    "humanApprovalGate": true,
+    "liveCnc": false,
+    "liveLaser": false,
+    "liveMachineControl": false,
+    "health": {
+      "queuedManualOperations": 598,
+      "journalIntegrity": {
+        "ok": false,
+        "status": "BLOCKED_EVIDENCE",
+        "reason": "payload-tamper",
+        "label": "BLOCKED_EVIDENCE"
+      },
+      "liveCnc": "BLOCKED",
+      "liveLaser": "BLOCKED",
+      "notFactorySla": true
+    },
+    "negatives": [
+      "tenant-isolation-held",
+      "subprocess-race",
+      "crash-restart",
+      "stale-writer",
+      "station-offline",
+      "lease-expiry",
+      "duplicate-ack-complete",
+      "qc-fail-rework",
+      "stale-release",
+      "packing-mismatch",
+      "journal-tamper"
+    ],
+    "notFactoryThroughput": true,
+    "ok": true
+  },
+  "rows": [
+    {
+      "check": "FIXTURE/CHAOS workOrders",
+      "status": "FIXTURE",
+      "evidence": "n=110"
+    },
+    {
+      "check": "no oversell",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "material conservation",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "crash all-or-nothing",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "stale writer blocked",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "station offline/lease/duplicate",
+      "status": "REAL",
+      "evidence": "{\"offlineDenied\": true, \"duplicateAck\": true, \"duplicateComplete\": true, \"noDuplicateComplete\": true, \"leaseExpiry\": true, \"started\": true, \"crossTenantDenied\": true}"
+    },
+    {
+      "check": "QC fail rework pass",
+      "status": "REAL",
+      "evidence": "{\"failed\": true, \"passed\": true, \"rework\": true}"
+    },
+    {
+      "check": "stale release rejected",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "packing mismatch rejected",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "journal tamper detected",
+      "status": "REAL",
+      "evidence": "{\"restartPreserved\": true, \"duplicateSuppressed\": true, \"tenantIsolated\": true, \"chainOkBefore\": true, \"tamperDetected\": true}"
+    },
+    {
+      "check": "scan tenant isolation",
+      "status": "REAL",
+      "evidence": "True"
+    },
+    {
+      "check": "human approval gate",
+      "status": "REAL",
+      "evidence": "confirm required"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "LIVE_LASER",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "not factory throughput",
+      "status": "FIXTURE",
+      "evidence": "FIXTURE/CHAOS"
+    }
+  ]
+}

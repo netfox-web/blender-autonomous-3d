@@ -49,7 +49,7 @@
     {
       "check": "carrier quote",
       "status": "IMPORTED",
-      "evidence": "4dbe7dc9"
+      "evidence": "892b6234"
     },
     {
       "check": "reliability gate",
@@ -58,10 +58,10 @@
     }
   ],
   "note": "FIXTURE stress is not factory throughput. Supplier/carrier data remains IMPORTED/MANUAL.",
-  "evidenceCodeCommit": "997db345183367709597738c12c65bbf6800ae4c",
+  "evidenceCodeCommit": "4069cef05d33112e8166c357e29459254bdf2ae8",
   "workingTreeClean": true,
-  "acceptanceGenerationId": "1cb61fad-63ba-4158-bf2e-4abfd3663d36",
-  "generatedAt": "2026-09-09T01:26:03.844325+00:00",
+  "acceptanceGenerationId": "1e95ff3c-961b-4816-8aad-6a7407886dac",
+  "generatedAt": "2026-09-09T03:05:19.690770+00:00",
   "fullAutonomousFactoryReady": false,
   "liveFactoryExecutionReady": false,
   "liveMachineControl": false

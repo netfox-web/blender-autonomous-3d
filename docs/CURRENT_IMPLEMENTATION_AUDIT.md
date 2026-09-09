@@ -1,10 +1,23 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 361–420 final integrity CODE_EVIDENCE_SHA `997db34`; prior `cdc1b5b` / docs `ce77f88`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1129ae6`. Historical Phase 1–360 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 421–480 CODE_EVIDENCE_SHA `4069cef`; prior `997db34` / docs `527634d`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `3669871`. Historical Phase 1–420 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
-This machine (2026-09-08): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 421–480 Pilot Deployment Hardening / Operator Control Plane
+
+| Item | Status | Evidence |
+|---|---|---|
+| 421–428 event journal | REAL | tenant JSONL-equivalent JSON; hash chain; restart; duplicate semantic key; tamper → BLOCKED_EVIDENCE; journal fail rolls back create |
+| 429–436 cross-process stock | REAL logic | FileLock + generation CAS; subprocess 10-sheet race no oversell; crash-after-first-stage all-or-nothing; stale persist denied |
+| 437–444 MANUAL_STATION | REAL | existing JobQueue; pin releaseHash; offline/stale/cancel denied; duplicate ACK/COMPLETE; lease expiry; no actuator |
+| 445–452 operator/scan | REAL / PARTIAL | FOX3D tokens tenant-safe; confirm required; barcode hardware PARTIAL |
+| 453–460 exceptions | REAL | catalog + inbox; fail-closed; journaled |
+| 461–468 contracts | REAL logic / IMPORTED | schema-versioned import; rejected rows listed; adjustment WAITING_HUMAN_APPROVAL; export hashed, no booking/actuation |
+| 469–474 health | REAL | `/api/pilot/health` tenant-safe; notFactorySla; LIVE_CNC/LASER BLOCKED |
+| 475–480 chaos + REAL | FIXTURE + REAL | 110 WO FIXTURE/CHAOS; 4/4 T1000 OptiX `4069cef` usedMock=false release-bound; additional scoped docs not canonical six-file |
 
 ## Phase 301–360 Manufacturing Release & Pilot Operations
 

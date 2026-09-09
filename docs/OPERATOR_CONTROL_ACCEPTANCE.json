@@ -1,0 +1,79 @@
+{
+  "domain": "operator-control",
+  "generatedAt": "2026-09-09T03:04:22.274035+00:00",
+  "acceptanceGenerationId": "2b8b0770-573b-4978-85dd-c47a9cfb2416",
+  "evidenceCodeCommit": "4069cef05d33112e8166c357e29459254bdf2ae8",
+  "operator": {
+    "tenantId": "chaos-a",
+    "waiting": 100,
+    "leases": 2,
+    "exceptions": 4,
+    "barcodeHardware": "PARTIAL",
+    "liveMachineControl": false
+  },
+  "health": {
+    "tenantId": "chaos-a",
+    "at": "2026-09-09T03:04:22.283251+00:00",
+    "queuedManualOperations": 598,
+    "activeStationLeases": 0,
+    "expiredStationLeases": 1,
+    "workOrdersByState": {
+      "IN_PROGRESS": 8,
+      "MATERIAL_RESERVED": 92
+    },
+    "reservationShortageCount": 0,
+    "staleReleaseRejects": 0,
+    "qcPass": 1,
+    "qcFail": 1,
+    "qcRework": 1,
+    "packingExceptions": 1,
+    "journalIntegrity": {
+      "ok": false,
+      "status": "BLOCKED_EVIDENCE",
+      "reason": "payload-tamper",
+      "label": "BLOCKED_EVIDENCE"
+    },
+    "liveCnc": "BLOCKED",
+    "liveLaser": "BLOCKED",
+    "liveMachineControl": false,
+    "latencyLabel": "local/runtime measurement",
+    "notFactorySla": true,
+    "capabilityMapSize": 19,
+    "lastSuccessfulRealAcceptance": {
+      "commit": null,
+      "generation": null,
+      "note": "filled by acceptance runner when REAL evidence is published"
+    }
+  },
+  "rows": [
+    {
+      "check": "operator view tenant scoped",
+      "status": "REAL",
+      "evidence": "chaos-a"
+    },
+    {
+      "check": "barcode hardware",
+      "status": "PARTIAL",
+      "evidence": "scan token only"
+    },
+    {
+      "check": "LIVE_CNC badge",
+      "status": "BLOCKED",
+      "evidence": "BLOCKED"
+    },
+    {
+      "check": "LIVE_LASER badge",
+      "status": "BLOCKED",
+      "evidence": "BLOCKED"
+    },
+    {
+      "check": "health notFactorySla",
+      "status": "REAL",
+      "evidence": "True"
+    }
+  ],
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "globalProductionReady": false,
+  "notCanonicalSixFile": true
+}

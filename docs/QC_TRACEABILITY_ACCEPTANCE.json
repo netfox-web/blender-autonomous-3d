@@ -38,15 +38,15 @@
     }
   ],
   "traces": [
-    "b793fc63-6aed-4673-a846-719da1ff32a8",
-    "d187cc85-8c13-4349-a042-c034ef6abab3",
-    "5c6b3325-3883-4ad0-af52-fea74cc5c6a5",
-    "2b40f718-e8c9-4d83-a7bf-8aca230cfd65"
+    "be19ff0a-9daa-4135-a0df-35a69c43768a",
+    "f6545492-6179-4fc9-8202-b90b80d64951",
+    "bd19930a-784e-41f6-8573-b19f0f9cf357",
+    "c74c01c1-bd64-4cd9-bb8b-8d4d4d4842b0"
   ],
-  "evidenceCodeCommit": "997db345183367709597738c12c65bbf6800ae4c",
+  "evidenceCodeCommit": "4069cef05d33112e8166c357e29459254bdf2ae8",
   "workingTreeClean": true,
-  "acceptanceGenerationId": "1cb61fad-63ba-4158-bf2e-4abfd3663d36",
-  "generatedAt": "2026-09-09T01:26:03.844325+00:00",
+  "acceptanceGenerationId": "1e95ff3c-961b-4816-8aad-6a7407886dac",
+  "generatedAt": "2026-09-09T03:05:19.690770+00:00",
   "fullAutonomousFactoryReady": false,
   "liveFactoryExecutionReady": false,
   "liveMachineControl": false
