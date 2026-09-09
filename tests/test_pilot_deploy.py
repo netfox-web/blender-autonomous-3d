@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -12,7 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
-from fox3d.deploy_chaos import ChaosHarness
+from fox3d.deploy_chaos import ChaosHarness, isolated_journal_tamper
+from fox3d.evidence import prepare_evidence_lineage
 from fox3d.inventory import MaterialLotRegistry, StockShortage
 from fox3d.journal import EventJournal, JournalCommitError
 from fox3d.operator import make_token, require_confirm, resolve_scan
@@ -618,8 +620,170 @@ def test_chaos_fixture_small(platform):
     assert result["staleReleaseRejected"] is True
     assert result["packingMismatchRejected"] is True
     assert result["journalIntegrity"]["tamperDetected"] is True
+    assert result["journalHealthyBeforeTamper"] is True
+    assert result["tamperDetectionIsolated"] is True
+    assert result["journalTamperDetected"] is True
+    assert result["sharedJournalHealthyAfterAcceptance"] is True
+    assert result["health"]["journalIntegrity"]["ok"] is True
+    assert result["health"]["journalIntegrity"]["status"] != "BLOCKED_EVIDENCE"
     assert result["scanTenantSafe"] is True
     assert result["liveCnc"] is False
     assert result["liveLaser"] is False
     assert result["ok"] is True
     assert result["notFactoryThroughput"] is True
+
+
+def test_isolated_tamper_does_not_break_shared_journal(tmp_path):
+    j = EventJournal(tmp_path / "shared")
+    j.append("seed", tenant_id="live", aggregate_type="WorkOrder", aggregate_id="w", actor="ops", payload={"k": 1})
+    assert j.verify("live")["ok"] is True
+    tamper = isolated_journal_tamper(tmp_path / "scratch" / "g1")
+    assert tamper["journalHealthyBeforeTamper"] is True
+    assert tamper["journalTamperDetected"] is True
+    assert tamper["tamperDetectionIsolated"] is True
+    assert j.verify("live")["ok"] is True
+
+
+def test_poisoned_scratch_generation_does_not_poison_next(tmp_path):
+    first = isolated_journal_tamper(tmp_path / "scratch" / "gen-old")
+    assert first["journalTamperDetected"] is True
+    second = isolated_journal_tamper(tmp_path / "scratch" / "gen-new")
+    assert second["journalHealthyBeforeTamper"] is True
+    assert second["journalTamperDetected"] is True
+    shared = EventJournal(tmp_path / "shared-pilot")
+    shared.append("ok", tenant_id="t", aggregate_type="Chaos", aggregate_id="c", actor="a", payload={})
+    assert shared.verify("t")["ok"] is True
+
+
+def test_shared_blocked_journal_fails_chaos(platform):
+    platform.pilot.journal.append(
+        "pre",
+        tenant_id="blk-a",
+        aggregate_type="Chaos",
+        aggregate_id="x",
+        actor="t",
+        payload={"k": 1},
+    )
+    platform.pilot.journal.tamper("blk-a", 0, payload={"hacked": True})
+    result = ChaosHarness(platform).run(n_orders=4, tenants=("blk-a", "blk-b"))
+    assert result["ok"] is False
+    assert result["journalHealthyBeforeTamper"] is False
+    assert "journalHealthyBeforeTamper" in (result.get("gateFailures") or []) or result["sharedJournalHealthyAfterAcceptance"] is False
+
+
+def _load_deploy_runner():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_pilot_deploy_e2e.py"
+    spec = importlib.util.spec_from_file_location("run_pilot_deploy_e2e", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["run_pilot_deploy_e2e"] = mod
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class _FakePilot:
+    def operator(self, *, tenant_id: str) -> dict:
+        return {"tenantId": tenant_id, "workOrdersWaiting": [], "stationLeases": [], "exceptions": []}
+
+    def health(self, *, tenant_id: str) -> dict:
+        return {
+            "journalIntegrity": {"ok": True, "status": "REAL"},
+            "liveCnc": "BLOCKED",
+            "liveLaser": "BLOCKED",
+            "notFactorySla": True,
+        }
+
+
+class _FakePlat:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.mock_blender = True
+        self.pilot = _FakePilot()
+
+
+def _inspect(sha: str, *, clean: bool = True, empty: bool = False):
+    def inspect(root, allow_dirty=False):
+        if empty:
+            return {"evidenceCodeCommit": "", "workingTreeClean": True}
+        porcelain = "" if clean else " M src/fox3d/pilot.py\n"
+        return prepare_evidence_lineage(head_sha=sha, porcelain=porcelain, allow_dirty=allow_dirty)
+
+    return inspect
+
+
+def test_deploy_runner_binds_clean_head(tmp_path):
+    mod = _load_deploy_runner()
+    docs = tmp_path / "docs"
+    acc = tmp_path / "acc"
+    sha = "a" * 40
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", sha],
+        hooks={
+            "inspect": _inspect(sha),
+            "acceptance_root": acc,
+            "platform": _FakePlat,
+            "chaos": lambda plat: mod.passing_chaos_stub(),
+        },
+    )
+    assert rc == 0
+    deploy = json.loads((docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    operator = json.loads((docs / "OPERATOR_CONTROL_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert deploy["evidenceCodeCommit"] == sha
+    assert operator["evidenceCodeCommit"] == sha
+    assert deploy["workingTreeClean"] is True
+    assert operator["workingTreeClean"] is True
+    assert deploy["acceptanceGenerationId"] == operator["acceptanceGenerationId"]
+    assert deploy["ok"] is True
+
+
+def test_deploy_runner_mismatch_does_not_overwrite(tmp_path):
+    mod = _load_deploy_runner()
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", "b" * 40],
+        hooks={"inspect": _inspect("a" * 40), "acceptance_root": tmp_path / "acc", "platform": _FakePlat, "chaos": lambda plat: mod.passing_chaos_stub()},
+    )
+    assert rc == 1
+    prev = json.loads((docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert prev.get("keep") is True
+
+
+def test_deploy_runner_dirty_does_not_overwrite(tmp_path):
+    mod = _load_deploy_runner()
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", "a" * 40],
+        hooks={"inspect": _inspect("a" * 40, clean=False), "acceptance_root": tmp_path / "acc", "platform": _FakePlat, "chaos": lambda plat: mod.passing_chaos_stub()},
+    )
+    assert rc == 1
+    prev = json.loads((docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert prev.get("keep") is True
+
+
+def test_deploy_runner_missing_lineage(tmp_path):
+    mod = _load_deploy_runner()
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
+    rc = mod.main(
+        ["--docs-root", str(docs)],
+        hooks={"inspect": _inspect("", empty=True), "acceptance_root": tmp_path / "acc", "platform": _FakePlat, "chaos": lambda plat: mod.passing_chaos_stub()},
+    )
+    assert rc == 1
+    prev = json.loads((docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert prev.get("keep") is True
+
+
+def test_consecutive_chaos_fresh_roots(tmp_path):
+    from fox3d.platform import Platform
+
+    a = ChaosHarness(Platform(root=tmp_path / "g1", mock_blender=True)).run(n_orders=4, tenants=("a1", "b1"))
+    b = ChaosHarness(Platform(root=tmp_path / "g2", mock_blender=True)).run(n_orders=4, tenants=("a2", "b2"))
+    assert a["ok"] is True
+    assert b["ok"] is True
+    assert a["sharedJournalHealthyAfterAcceptance"] is True
+    assert b["sharedJournalHealthyAfterAcceptance"] is True

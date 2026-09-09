@@ -11,10 +11,37 @@ from typing import Any
 
 from fox3d.ids import new_id
 from fox3d.inventory import StockShortage
+from fox3d.journal import EventJournal
 from fox3d.operator import make_token, resolve_scan
 from fox3d.recovery import PilotException
 from fox3d.storelock import CrashInjected, StaleGeneration
 from fox3d.workorder import STRICT_STOCK
+
+
+def isolated_journal_tamper(scratch_root: Path) -> dict[str, Any]:
+    """Hermetic tamper evidence. Never touches the shared Pilot journal."""
+    scratch_root = Path(scratch_root)
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    j = EventJournal(scratch_root)
+    j.append(
+        "tamper.seed",
+        tenant_id="scratch",
+        aggregate_type="ScratchJournal",
+        aggregate_id="s1",
+        actor="acceptance",
+        payload={"k": 1},
+        semantic_key="scratch::tamper.seed::s1",
+    )
+    before = j.verify("scratch")
+    j.tamper("scratch", 0, payload={"k": 99})
+    after = j.verify("scratch")
+    return {
+        "journalHealthyBeforeTamper": bool(before.get("ok")),
+        "journalTamperDetected": after.get("ok") is False and after.get("status") == "BLOCKED_EVIDENCE",
+        "tamperDetectionIsolated": True,
+        "scratchStatus": after.get("status"),
+        "scratchRoot": str(scratch_root),
+    }
 
 FAMILIES = (
     ("KD_FURNITURE", "OPEN_SHELF"),
@@ -44,7 +71,6 @@ class ChaosHarness:
         qc_rework = self._qc_rework(a, wo_ids_a[1] if len(wo_ids_a) > 1 else wo_ids_a[0])
         stale_rel = self._stale_release(a, releases_a[0])
         pack = self._packing_mismatch(a, wo_ids_a[2] if len(wo_ids_a) > 2 else wo_ids_a[0])
-        journal = self._journal_cases(a, b)
         scan = self._scan_isolation(a, b, wo_ids_a[0], wo_ids_b[0])
         cons_a = self.pilot.lot_conservation(a)
         cons_b = self.pilot.lot_conservation(b)
@@ -54,7 +80,10 @@ class ChaosHarness:
             negatives.append("cross-tenant-leak")
         else:
             negatives.append("tenant-isolation-held")
+        shared_before = self.pilot.journal.verify(a)
+        journal = self._journal_cases(a, b)
         health = self.pilot.health(tenant_id=a)
+        shared_after = (health.get("journalIntegrity") or {}) if isinstance(health.get("journalIntegrity"), dict) else self.pilot.journal.verify(a)
         integrity = self._integrity_gates()
         result = {
             "label": "FIXTURE/CHAOS",
@@ -91,6 +120,10 @@ class ChaosHarness:
                 "journal-tamper",
             ],
             "notFactoryThroughput": True,
+            "journalHealthyBeforeTamper": bool(shared_before.get("ok")) and bool(journal.get("journalHealthyBeforeTamper")),
+            "tamperDetectionIsolated": bool(journal.get("tamperDetectionIsolated")),
+            "journalTamperDetected": bool(journal.get("journalTamperDetected")),
+            "sharedJournalHealthyAfterAcceptance": bool(shared_after.get("ok")),
             **integrity,
         }
         required = (
@@ -111,12 +144,20 @@ class ChaosHarness:
             "releaseHashPreservedAfterRestart",
             "materialConservedAfterCrash",
             "tenantIsolationAfterRestart",
+            "journalHealthyBeforeTamper",
+            "tamperDetectionIsolated",
+            "journalTamperDetected",
+            "sharedJournalHealthyAfterAcceptance",
         )
         failures = [k for k in required if result.get(k) is not True]
         if result["journalIntegrity"].get("tamperDetected") is not True:
             failures.append("journalTamper")
         if result["liveCnc"] is not False or result["liveLaser"] is not False:
             failures.append("liveMachine")
+        if (result.get("health") or {}).get("journalIntegrity", {}).get("ok") is not True:
+            failures.append("sharedHealthJournal")
+        if (result.get("health") or {}).get("journalIntegrity", {}).get("status") == "BLOCKED_EVIDENCE":
+            failures.append("sharedHealthBlocked")
         result["gateFailures"] = failures
         result["ok"] = not failures
         return result
@@ -476,20 +517,25 @@ class ChaosHarness:
 
     def _journal_cases(self, tenant_a: str, tenant_b: str) -> dict[str, Any]:
         j = self.pilot.journal
+        before = j.verify(tenant_a)
         ev = j.append("chaos.ping", tenant_id=tenant_a, aggregate_type="Chaos", aggregate_id="c1", actor="t", payload={"k": 1}, semantic_key=f"{tenant_a}::chaos.ping::c1")
         again = j.append("chaos.ping", tenant_id=tenant_a, aggregate_type="Chaos", aggregate_id="c1", actor="t", payload={"k": 1}, semantic_key=f"{tenant_a}::chaos.ping::c1")
         b_events = j.list(tenant_b)
         a_ids = {e["eventId"] for e in j.list(tenant_a)}
         leak = any(e["eventId"] in a_ids for e in b_events)
-        ok = j.verify(tenant_a)
-        j.tamper(tenant_a, 0, payload={"k": 99})
-        broken = j.verify(tenant_a)
+        tamper = isolated_journal_tamper(self.platform.root / "journal-tamper" / new_id())
+        after = j.verify(tenant_a)
         return {
             "restartPreserved": True,
             "duplicateSuppressed": ev["eventId"] == again["eventId"],
             "tenantIsolated": not leak,
-            "chainOkBefore": bool(ok.get("ok")),
-            "tamperDetected": broken.get("ok") is False and broken.get("status") == "BLOCKED_EVIDENCE",
+            "chainOkBefore": bool(before.get("ok")),
+            "journalHealthyBeforeTamper": bool(before.get("ok")),
+            "tamperDetected": bool(tamper.get("journalTamperDetected")),
+            "journalTamperDetected": bool(tamper.get("journalTamperDetected")),
+            "tamperDetectionIsolated": bool(tamper.get("tamperDetectionIsolated")),
+            "sharedJournalHealthyAfterAcceptance": bool(after.get("ok")),
+            "scratch": tamper,
         }
 
     def _scan_isolation(self, tenant_a: str, tenant_b: str, wo_a: str, wo_b: str) -> bool:
