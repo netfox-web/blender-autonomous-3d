@@ -1,19 +1,19 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 601–660 final integrity CODE_EVIDENCE_SHA `0b9caed`; prior CODE `244c707` / instruction `df5c29e`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `df5c29e`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 601–660 reservation-intent CODE_EVIDENCE_SHA `8d2ebd4`; prior CODE `0b9caed` / instruction `32e9bae`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `32e9bae`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
 
-## Phase 601–660 Prototype Validation final integrity
+## Phase 601–660 Prototype Validation reservation intent + canonical lineage
 
 | Item | Status | Evidence |
 |---|---|---|
-| Packaging predicted-vs-observed | REAL_LOGIC / FIXTURE | L/W/H/weight/assembly tolerance now gate `ok`; HOLD; `packagingPolicyHash` |
-| Runner semantics | FIXTURE + REAL_LOGIC | `toleranceStatus=true` required; packaging COMPLETE+ok; variance cannot contradict; overwrite refused |
-| Inventory crash recovery | REAL_LOGIC | intent pinned before consume; CrashInjected + subprocess `os._exit`; exact reservation lineage |
-| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `0d6fc75a-…`; CODE CI `34372952091`; tenant digest equal `80f24665…`; `physicalPrototypeValidated=false` |
+| Pre-intent reservation crash | REAL_LOGIC | PREPARED intent before allocate; restart binds existing MaterialLot RESERVED/CONSUMED; no replacement reservation |
+| Packaging variance completeness | FIXTURE + REAL_LOGIC | L/W/H/weight + assembly must be complete+ok; `packagingPolicyHash` fail-closed |
+| Canonical 1:1 lineage | REAL_LOGIC | selected/unit/matrix/board by candidateId; `buildCompleted` not inferred from state |
+| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `e0b46a65-…`; CODE CI `34379275367`; tenant digest equal `b01bf915…`; `physicalPrototypeValidated=false` |
 
 ## Phase 541–600 Small-Space KD SKU Portfolio Factory V1
 

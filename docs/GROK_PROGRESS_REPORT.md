@@ -2,32 +2,32 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-09  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `df5c29e` (**CHANGES REQUIRED** — Phase 601–660 final integrity only)  
-Review head: `594a1c1` / CODE `244c707`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `32e9bae` (**CHANGES REQUIRED** — Phase 601–660 reservation intent + canonical lineage; hold Phase 661)  
+Review head: `da48e19` / CODE `0b9caed`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 601–660 final integrity GAPS ONLY**. Did not start Phase 661+. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / Nesting / ManufacturingRelease / WorkOrder.
+Executed **Phase 601–660 remaining integrity GAPS ONLY**. Did not start Phase 661+. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / Nesting / ManufacturingRelease / WorkOrder.
 
 | Blocker | What landed |
 |---|---|
-| 1 packaging tolerance | predicted-vs-observed L/W/H/weight/assembly now gate `ok`; HOLD on failure; `packagingPolicyHash` pinned |
-| 2 runner semantics | presence ≠ PASS; fixture software-loop requires `toleranceStatus=true`, packaging `COMPLETE` + `validation.ok=true`, no variance contradiction; negative overwrite regressions |
-| 3 inventory crash | durable inventory intent pinned before consume; restart reconciles CONSUMED/RESERVED from MaterialLot; CrashInjected + subprocess `os._exit` after first consume; no replacement reservation |
+| 1 pre-intent reservation crash | PREPARED intent persisted before allocate; restart binds existing MaterialLot RESERVED/CONSUMED for exact `proto:{unit}` workOrder; no replacement reservation; CrashInjected + subprocess `os._exit` after-reserve (single-lot + multi-lot); after-first-consume regressions kept |
+| 2 packaging variance completeness | COMPLETE+ok requires each L/W/H/weight dict `complete=true`/`ok=true`; assembly observed-vs-estimated same; `packagingPolicyHash` must match pinned policy |
+| 3 canonical 1:1 lineage | selected/unit/matrix/board keyed by `candidateId`; hashes/selectionId/prototypeUnitId must agree; `buildCompleted` not inferred from state; board looked up by candidate, not `rows[:4]` |
 
-**CODE_EVIDENCE_SHA:** `0b9caedd008b4d1f924cdcad529d87a4ac59154c`  
+**CODE_EVIDENCE_SHA:** `8d2ebd4aa098b8193b69f61a028749d6ee49498d`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34372952091` on `0b9caed` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34379275367` on `8d2ebd4` ubuntu+windows.
 
-Acceptance generation `0d6fc75a-9337-4144-8227-e9a49f0abaa7`; runner-bound `evidenceCodeCommit=0b9caed…`; `workingTreeClean=true`.
+Acceptance generation `e0b46a65-0d0f-4c33-9bc5-ac72375b8603`; runner-bound `evidenceCodeCommit=8d2ebd4…`; `workingTreeClean=true`.
 
-Selected 4 FIXTURE SKUs; units WAITING_VALIDATION; `physicalPrototypeValidated=false`; matrix `toleranceStatus=true` and packaging `ok=true` with in-tolerance predicted=observed (e.g. packedWeightKg 20.672=20.672). Tenant digest equal `80f24665…`. Prior REAL Blender **verified** 4/4 T1000 OptiX on `7a87ea5` generation `0b76b09e-…`. Inventory crash recovery: first-lot consume + Platform recreate + retry consumes remaining pinned reservations only.
+Selected 4 FIXTURE SKUs; units WAITING_VALIDATION; `physicalPrototypeValidated=false`; cost PARTIAL. Tenant digest equal `b01bf915…`. Prior REAL Blender **verified** 4/4 T1000 OptiX on `7a87ea5` generation `0b76b09e-…`. Inventory: after-reserve crash leaves reserved qty with PREPARED intent; retry consumes exact pinned reservations once.
 
 ## Tests
 
 ```
-pytest -q  →  366 passed   (MOCK/unit/integration + FIXTURE/REAL-logic — not Production Ready)
+pytest -q  →  382 passed   (MOCK/unit/integration + FIXTURE/REAL-logic — not Production Ready)
 ```
 
 ## REAL / MOCK / PARTIAL / BLOCKED
@@ -53,4 +53,4 @@ pytest -q  →  366 passed   (MOCK/unit/integration + FIXTURE/REAL-logic — not
 
 ## Next round
 
-ChatGPT re-review `df5c29e` Phase 601–660 final integrity exit criteria.
+ChatGPT re-review `32e9bae` Phase 601–660 reservation-intent + canonical lineage exit criteria.
