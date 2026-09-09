@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T18:06:24.132243+00:00",
-  "acceptanceGenerationId": "78560c82-9909-44e7-b868-677c88875d20",
-  "evidenceCodeCommit": "39208fbf86c51f897fecf9190deb6225797df76d",
+  "generatedAt": "2026-09-09T20:05:16.635506+00:00",
+  "acceptanceGenerationId": "feefa00a-ac2f-44ee-91bc-3e28531d8485",
+  "evidenceCodeCommit": "8f3bbdae8690b532c01aed74539b61e36a412e89",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -70,64 +70,64 @@
   "domain": "physical-prototype-evidence",
   "selected": [
     {
-      "candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b",
-      "selectionId": "d75be475-da32-4a67-9255-f704d48e8e64",
-      "prototypeUnitId": "bf536b14-a62b-4f3e-abb9-792c424c723c",
-      "engineeringHash": "5e784a6d0edb77364e92b6484ec7b7511fa966d4deeb67f2fbbe4116daf2692d",
+      "candidateId": "2168f72f-abec-4667-b9d4-6ac9c13d2f77",
+      "selectionId": "3dcab556-b7bb-4fa3-9623-cde5cf4c2f9c",
+      "prototypeUnitId": "671595f7-6cf6-47fb-98bf-a4d862271ea7",
+      "engineeringHash": "14ce5a97cc8211ecc34bc83ad85e7d58c040aeb1d7c884b9c5a656db8cec9172",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "bd3dd0b6f42926a0b549f842fa06340a57a067d80ea15cc4f9fee3f23c7d58f4",
+      "nestingHash": "81c1ef7b0ef27e8357d3c1a0a752f489f01838aead649613a3835f42fa5bd12b",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9",
-      "selectionId": "d0ce1882-19cf-45e3-95b6-e32536a8d7e9",
-      "prototypeUnitId": "a2594dd3-f6d1-4afd-ac1d-2ef199c161a4",
-      "engineeringHash": "e9375557bb2194de3cdaad80e6f13d5868a0f77124794ccf8b1a70b0363fa82d",
+      "candidateId": "b60913e0-88fc-43b4-9b72-9c3c08d50994",
+      "selectionId": "f6661c72-8e98-413b-80f6-a5af68d7d85e",
+      "prototypeUnitId": "ac66232f-ced3-4ae1-8323-4df4a9538981",
+      "engineeringHash": "66b205676868e98b74bf592a40dcc61e74b4682919722204b38456674f50c6c4",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "8f2ea60f43e2d4a466c27c87f2f8971bfe11f22e06b44b2ce9db870d2a3728a6",
+      "nestingHash": "af4a92af3d269403adeba49a5eb7d73a7c13e4e84eb0bba505748435370cbeac",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "e44de73a-b546-4b37-997e-53294aef929e",
-      "selectionId": "60ca306b-1f26-4a12-85da-4efe5f9ba109",
-      "prototypeUnitId": "07b30493-fd34-4277-a311-133a8d1a77ae",
-      "engineeringHash": "60ac555b1fba0318d65d519c8703ad927941edc433bd97b0df85b6f753c2daa8",
+      "candidateId": "d50866eb-6258-4949-ae1e-0d2a06538b33",
+      "selectionId": "923c59eb-6bd7-43d4-a5f9-35a133492a8c",
+      "prototypeUnitId": "25893def-3be6-4d32-93f7-3d81e2bdb42e",
+      "engineeringHash": "2455e8a25777236664c999b7ee3da2724941a5d0ba99923401bc83e5f4706d3c",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "4c428425644cb6bd5570bd99f53579aeb1b7452fd732477a3d47efeb06bb61a1",
+      "nestingHash": "6a3645fd730f3fd837d2c4a49448d717e5688089b7f0f51688c8623958656ac9",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "3353b05e-7724-4774-af77-d9783687a94e",
-      "selectionId": "0883abf4-730b-46e2-bdd8-be2c96d3848a",
-      "prototypeUnitId": "f2127878-8b3c-4da7-883a-57fb30722a23",
-      "engineeringHash": "f936a14021db68ea3b60dd847f3f91cfbc018c407eed278c5bd3d270adba470c",
+      "candidateId": "5722710d-fd84-46ae-b0d9-60645ea85a2c",
+      "selectionId": "67917be1-d446-4441-be9d-24f59e223142",
+      "prototypeUnitId": "f044458f-436d-4a54-b064-3dca97a9805f",
+      "engineeringHash": "39119a11ed9600b10f2538a2a8dc7d5b7dcb9ab78a9009c545cbaedaa8ab2d88",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "6f8360dfcac74350227d505d8acfc5018313afe4fbf54a26949f7f7b06aa8b2b",
+      "nestingHash": "dcbc5d01b0d5909c50555bb65e47625a21f0d141229f45434a811a4740275b63",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     }
   ],
   "units": [
     {
-      "candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b",
-      "selectionId": "d75be475-da32-4a67-9255-f704d48e8e64",
-      "prototypeUnitId": "bf536b14-a62b-4f3e-abb9-792c424c723c",
-      "engineeringHash": "5e784a6d0edb77364e92b6484ec7b7511fa966d4deeb67f2fbbe4116daf2692d",
+      "candidateId": "2168f72f-abec-4667-b9d4-6ac9c13d2f77",
+      "selectionId": "3dcab556-b7bb-4fa3-9623-cde5cf4c2f9c",
+      "prototypeUnitId": "671595f7-6cf6-47fb-98bf-a4d862271ea7",
+      "engineeringHash": "14ce5a97cc8211ecc34bc83ad85e7d58c040aeb1d7c884b9c5a656db8cec9172",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "bd3dd0b6f42926a0b549f842fa06340a57a067d80ea15cc4f9fee3f23c7d58f4",
+      "nestingHash": "81c1ef7b0ef27e8357d3c1a0a752f489f01838aead649613a3835f42fa5bd12b",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "7e947112-f902-4d7c-aebe-f6879219840a",
+      "evidencePackageId": "9956eb94-3e73-469c-9ad7-809fbe2d2495",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -135,18 +135,18 @@
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9",
-      "selectionId": "d0ce1882-19cf-45e3-95b6-e32536a8d7e9",
-      "prototypeUnitId": "a2594dd3-f6d1-4afd-ac1d-2ef199c161a4",
-      "engineeringHash": "e9375557bb2194de3cdaad80e6f13d5868a0f77124794ccf8b1a70b0363fa82d",
+      "candidateId": "b60913e0-88fc-43b4-9b72-9c3c08d50994",
+      "selectionId": "f6661c72-8e98-413b-80f6-a5af68d7d85e",
+      "prototypeUnitId": "ac66232f-ced3-4ae1-8323-4df4a9538981",
+      "engineeringHash": "66b205676868e98b74bf592a40dcc61e74b4682919722204b38456674f50c6c4",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "8f2ea60f43e2d4a466c27c87f2f8971bfe11f22e06b44b2ce9db870d2a3728a6",
+      "nestingHash": "af4a92af3d269403adeba49a5eb7d73a7c13e4e84eb0bba505748435370cbeac",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "17c1414c-5992-46eb-9e4b-d7b4e0a51d22",
+      "evidencePackageId": "b9a8bf8d-9ec7-4aef-a9a1-b845fb8d9ed0",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -154,18 +154,18 @@
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "e44de73a-b546-4b37-997e-53294aef929e",
-      "selectionId": "60ca306b-1f26-4a12-85da-4efe5f9ba109",
-      "prototypeUnitId": "07b30493-fd34-4277-a311-133a8d1a77ae",
-      "engineeringHash": "60ac555b1fba0318d65d519c8703ad927941edc433bd97b0df85b6f753c2daa8",
+      "candidateId": "d50866eb-6258-4949-ae1e-0d2a06538b33",
+      "selectionId": "923c59eb-6bd7-43d4-a5f9-35a133492a8c",
+      "prototypeUnitId": "25893def-3be6-4d32-93f7-3d81e2bdb42e",
+      "engineeringHash": "2455e8a25777236664c999b7ee3da2724941a5d0ba99923401bc83e5f4706d3c",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "4c428425644cb6bd5570bd99f53579aeb1b7452fd732477a3d47efeb06bb61a1",
+      "nestingHash": "6a3645fd730f3fd837d2c4a49448d717e5688089b7f0f51688c8623958656ac9",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "a6ffe70e-ed91-4e3f-a2a4-a679cfa5ce75",
+      "evidencePackageId": "f363c708-0622-4d9c-bb98-7059b6497272",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -173,18 +173,18 @@
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "3353b05e-7724-4774-af77-d9783687a94e",
-      "selectionId": "0883abf4-730b-46e2-bdd8-be2c96d3848a",
-      "prototypeUnitId": "f2127878-8b3c-4da7-883a-57fb30722a23",
-      "engineeringHash": "f936a14021db68ea3b60dd847f3f91cfbc018c407eed278c5bd3d270adba470c",
+      "candidateId": "5722710d-fd84-46ae-b0d9-60645ea85a2c",
+      "selectionId": "67917be1-d446-4441-be9d-24f59e223142",
+      "prototypeUnitId": "f044458f-436d-4a54-b064-3dca97a9805f",
+      "engineeringHash": "39119a11ed9600b10f2538a2a8dc7d5b7dcb9ab78a9009c545cbaedaa8ab2d88",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "6f8360dfcac74350227d505d8acfc5018313afe4fbf54a26949f7f7b06aa8b2b",
+      "nestingHash": "dcbc5d01b0d5909c50555bb65e47625a21f0d141229f45434a811a4740275b63",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "13606f87-a4de-46c1-a4b1-634f3bfdca9a",
+      "evidencePackageId": "c249c8b5-5aac-4f83-b3f4-a878b49c2c4e",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -194,76 +194,156 @@
   ],
   "evidencePackages": [
     {
-      "candidateId": "1328e272-cd3b-435d-bb15-2c898a71069b",
-      "selectionId": "d75be475-da32-4a67-9255-f704d48e8e64",
-      "prototypeUnitId": "bf536b14-a62b-4f3e-abb9-792c424c723c",
-      "engineeringHash": "5e784a6d0edb77364e92b6484ec7b7511fa966d4deeb67f2fbbe4116daf2692d",
+      "candidateId": "2168f72f-abec-4667-b9d4-6ac9c13d2f77",
+      "selectionId": "3dcab556-b7bb-4fa3-9623-cde5cf4c2f9c",
+      "prototypeUnitId": "671595f7-6cf6-47fb-98bf-a4d862271ea7",
+      "engineeringHash": "14ce5a97cc8211ecc34bc83ad85e7d58c040aeb1d7c884b9c5a656db8cec9172",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "bd3dd0b6f42926a0b549f842fa06340a57a067d80ea15cc4f9fee3f23c7d58f4",
+      "nestingHash": "81c1ef7b0ef27e8357d3c1a0a752f489f01838aead649613a3835f42fa5bd12b",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "7e947112-f902-4d7c-aebe-f6879219840a",
+      "evidencePackageId": "9956eb94-3e73-469c-9ad7-809fbe2d2495",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
-      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+      "operatorId": "8d9177b1-495d-4c3f-9be8-7d50cc7e45a8",
+      "shiftId": "1e4b6b54-8c27-4d4a-b617-c67221671c39",
+      "damRefs": [
+        {
+          "assetId": "8fb03ee8-52ad-4d98-828b-dd94248d524b",
+          "tenantId": "pv-a",
+          "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
+          "size": 22,
+          "kind": "photo",
+          "role": "AS_BUILT",
+          "engineeringHash": "14ce5a97cc8211ecc34bc83ad85e7d58c040aeb1d7c884b9c5a656db8cec9172"
+        },
+        {
+          "assetId": "a9ad0b13-ef2e-4cc4-a037-47dfe557da7d",
+          "tenantId": "pv-a",
+          "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
+          "size": 23,
+          "kind": "photo",
+          "role": "PACKAGING",
+          "engineeringHash": "14ce5a97cc8211ecc34bc83ad85e7d58c040aeb1d7c884b9c5a656db8cec9172"
+        }
+      ]
     },
     {
-      "candidateId": "1039dbb9-30e9-4989-9e60-1d873ccf3cb9",
-      "selectionId": "d0ce1882-19cf-45e3-95b6-e32536a8d7e9",
-      "prototypeUnitId": "a2594dd3-f6d1-4afd-ac1d-2ef199c161a4",
-      "engineeringHash": "e9375557bb2194de3cdaad80e6f13d5868a0f77124794ccf8b1a70b0363fa82d",
+      "candidateId": "b60913e0-88fc-43b4-9b72-9c3c08d50994",
+      "selectionId": "f6661c72-8e98-413b-80f6-a5af68d7d85e",
+      "prototypeUnitId": "ac66232f-ced3-4ae1-8323-4df4a9538981",
+      "engineeringHash": "66b205676868e98b74bf592a40dcc61e74b4682919722204b38456674f50c6c4",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "8f2ea60f43e2d4a466c27c87f2f8971bfe11f22e06b44b2ce9db870d2a3728a6",
+      "nestingHash": "af4a92af3d269403adeba49a5eb7d73a7c13e4e84eb0bba505748435370cbeac",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "17c1414c-5992-46eb-9e4b-d7b4e0a51d22",
+      "evidencePackageId": "b9a8bf8d-9ec7-4aef-a9a1-b845fb8d9ed0",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
-      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+      "operatorId": "8d9177b1-495d-4c3f-9be8-7d50cc7e45a8",
+      "shiftId": "1e4b6b54-8c27-4d4a-b617-c67221671c39",
+      "damRefs": [
+        {
+          "assetId": "b7279c2e-1d3b-4862-8ddd-986bec6aebad",
+          "tenantId": "pv-a",
+          "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
+          "size": 22,
+          "kind": "photo",
+          "role": "AS_BUILT",
+          "engineeringHash": "66b205676868e98b74bf592a40dcc61e74b4682919722204b38456674f50c6c4"
+        },
+        {
+          "assetId": "3171a7ab-ba42-4b6a-83b3-dfb61f39759e",
+          "tenantId": "pv-a",
+          "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
+          "size": 23,
+          "kind": "photo",
+          "role": "PACKAGING",
+          "engineeringHash": "66b205676868e98b74bf592a40dcc61e74b4682919722204b38456674f50c6c4"
+        }
+      ]
     },
     {
-      "candidateId": "e44de73a-b546-4b37-997e-53294aef929e",
-      "selectionId": "60ca306b-1f26-4a12-85da-4efe5f9ba109",
-      "prototypeUnitId": "07b30493-fd34-4277-a311-133a8d1a77ae",
-      "engineeringHash": "60ac555b1fba0318d65d519c8703ad927941edc433bd97b0df85b6f753c2daa8",
+      "candidateId": "d50866eb-6258-4949-ae1e-0d2a06538b33",
+      "selectionId": "923c59eb-6bd7-43d4-a5f9-35a133492a8c",
+      "prototypeUnitId": "25893def-3be6-4d32-93f7-3d81e2bdb42e",
+      "engineeringHash": "2455e8a25777236664c999b7ee3da2724941a5d0ba99923401bc83e5f4706d3c",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "4c428425644cb6bd5570bd99f53579aeb1b7452fd732477a3d47efeb06bb61a1",
+      "nestingHash": "6a3645fd730f3fd837d2c4a49448d717e5688089b7f0f51688c8623958656ac9",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "a6ffe70e-ed91-4e3f-a2a4-a679cfa5ce75",
+      "evidencePackageId": "f363c708-0622-4d9c-bb98-7059b6497272",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
-      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+      "operatorId": "8d9177b1-495d-4c3f-9be8-7d50cc7e45a8",
+      "shiftId": "1e4b6b54-8c27-4d4a-b617-c67221671c39",
+      "damRefs": [
+        {
+          "assetId": "ad812d8f-328a-4f38-a0ed-af5195866521",
+          "tenantId": "pv-a",
+          "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
+          "size": 22,
+          "kind": "photo",
+          "role": "AS_BUILT",
+          "engineeringHash": "2455e8a25777236664c999b7ee3da2724941a5d0ba99923401bc83e5f4706d3c"
+        },
+        {
+          "assetId": "d6814e8f-c2a4-4b33-9e73-bad06a9c5838",
+          "tenantId": "pv-a",
+          "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
+          "size": 23,
+          "kind": "photo",
+          "role": "PACKAGING",
+          "engineeringHash": "2455e8a25777236664c999b7ee3da2724941a5d0ba99923401bc83e5f4706d3c"
+        }
+      ]
     },
     {
-      "candidateId": "3353b05e-7724-4774-af77-d9783687a94e",
-      "selectionId": "0883abf4-730b-46e2-bdd8-be2c96d3848a",
-      "prototypeUnitId": "f2127878-8b3c-4da7-883a-57fb30722a23",
-      "engineeringHash": "f936a14021db68ea3b60dd847f3f91cfbc018c407eed278c5bd3d270adba470c",
+      "candidateId": "5722710d-fd84-46ae-b0d9-60645ea85a2c",
+      "selectionId": "67917be1-d446-4441-be9d-24f59e223142",
+      "prototypeUnitId": "f044458f-436d-4a54-b064-3dca97a9805f",
+      "engineeringHash": "39119a11ed9600b10f2538a2a8dc7d5b7dcb9ab78a9009c545cbaedaa8ab2d88",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "6f8360dfcac74350227d505d8acfc5018313afe4fbf54a26949f7f7b06aa8b2b",
+      "nestingHash": "dcbc5d01b0d5909c50555bb65e47625a21f0d141229f45434a811a4740275b63",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "13606f87-a4de-46c1-a4b1-634f3bfdca9a",
+      "evidencePackageId": "c249c8b5-5aac-4f83-b3f4-a878b49c2c4e",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "1839ab12-01d7-46ab-b6e0-6a5d530a7007",
-      "shiftId": "c75c8b66-28e7-4439-bef3-35e2a19afe4c"
+      "operatorId": "8d9177b1-495d-4c3f-9be8-7d50cc7e45a8",
+      "shiftId": "1e4b6b54-8c27-4d4a-b617-c67221671c39",
+      "damRefs": [
+        {
+          "assetId": "e74fe9a2-4c96-49e6-8dea-defd4fe82864",
+          "tenantId": "pv-a",
+          "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
+          "size": 22,
+          "kind": "photo",
+          "role": "AS_BUILT",
+          "engineeringHash": "39119a11ed9600b10f2538a2a8dc7d5b7dcb9ab78a9009c545cbaedaa8ab2d88"
+        },
+        {
+          "assetId": "ff49c72c-bfd8-4236-9648-60dcdb7f670e",
+          "tenantId": "pv-a",
+          "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
+          "size": 23,
+          "kind": "photo",
+          "role": "PACKAGING",
+          "engineeringHash": "39119a11ed9600b10f2538a2a8dc7d5b7dcb9ab78a9009c545cbaedaa8ab2d88"
+        }
+      ]
     }
   ],
   "evidenceSource": [
@@ -309,8 +389,8 @@
     true
   ],
   "tenantBackupSemantic": {
-    "liveA": "67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad",
-    "restoredA": "67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad",
+    "liveA": "e403d9e210355eeab09f30a87636ab9fd472049f95761ab8c8b1fd153f6ddb5a",
+    "restoredA": "e403d9e210355eeab09f30a87636ab9fd472049f95761ab8c8b1fd153f6ddb5a",
     "equal": true
   },
   "realMockPartialBlocked": {
@@ -331,7 +411,7 @@
     {
       "check": "tenant backup semantic",
       "status": "REAL_LOGIC",
-      "evidence": "{\"liveA\": \"67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad\", \"restoredA\": \"67a4f6ac8c389e119b3cef358206c90c8220a20b2b5040430d363777cf215cad\", \"equal\": true}"
+      "evidence": "{\"liveA\": \"e403d9e210355eeab09f30a87636ab9fd472049f95761ab8c8b1fd153f6ddb5a\", \"restoredA\": \"e403d9e210355eeab09f30a87636ab9fd472049f95761ab8c8b1fd153f6ddb5a\", \"equal\": true}"
     },
     {
       "check": "prior REAL blender",
@@ -346,7 +426,7 @@
     {
       "check": "evidence packages",
       "status": "REAL_LOGIC",
-      "evidence": "[{\"candidateId\": \"1328e272-cd3b-435d-bb15-2c898a71069b\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"1039dbb9-30e9-4989-9e60-1d873ccf3cb9\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"e44de73a-b546-4b37-997e-53294aef929e\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"3353b05e-7724-4774-af77-d9783687a94e\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}]"
+      "evidence": "[{\"candidateId\": \"2168f72f-abec-4667-b9d4-6ac9c13d2f77\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"b60913e0-88fc-43b4-9b72-9c3c08d50994\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"d50866eb-6258-4949-ae1e-0d2a06538b33\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"5722710d-fd84-46ae-b0d9-60645ea85a2c\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}]"
     }
   ]
 }
