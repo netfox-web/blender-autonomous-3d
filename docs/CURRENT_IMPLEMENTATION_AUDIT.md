@@ -1,19 +1,20 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 601–660 reservation-intent CODE_EVIDENCE_SHA `8d2ebd4`; prior CODE `0b9caed` / instruction `32e9bae`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `32e9bae`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 601–660 published-lineage CODE_EVIDENCE_SHA `e66ca9d`; prior CODE `8d2ebd4` / instruction `21b5d90`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `21b5d90`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
-This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
 
-## Phase 601–660 Prototype Validation reservation intent + canonical lineage
+## Phase 601–660 Prototype Validation published lineage + intent identity
 
 | Item | Status | Evidence |
 |---|---|---|
-| Pre-intent reservation crash | REAL_LOGIC | PREPARED intent before allocate; restart binds existing MaterialLot RESERVED/CONSUMED; no replacement reservation |
+| Published canonical 1:1 lineage | REAL_LOGIC | selected/units/matrix/selectedBoard publish non-null lineage hashes; post-serialize/post-publish re-validation |
+| inventoryIntent identity | REAL_LOGIC | pointer reuse requires tenant/unit/WO/qty/material/thickness/grain/size; duplicate HOLD |
+| Pre-intent reservation crash | REAL_LOGIC | PREPARED intent before allocate; restart binds existing MaterialLot RESERVED/CONSUMED |
 | Packaging variance completeness | FIXTURE + REAL_LOGIC | L/W/H/weight + assembly must be complete+ok; `packagingPolicyHash` fail-closed |
-| Canonical 1:1 lineage | REAL_LOGIC | selected/unit/matrix/board by candidateId; `buildCompleted` not inferred from state |
-| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `e0b46a65-…`; CODE CI `34379275367`; tenant digest equal `b01bf915…`; `physicalPrototypeValidated=false` |
+| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `10207d34-…`; CODE `e66ca9d`; tenant digest equal `cd6cb783…`; `physicalPrototypeValidated=false` |
 
 ## Phase 541–600 Small-Space KD SKU Portfolio Factory V1
 
