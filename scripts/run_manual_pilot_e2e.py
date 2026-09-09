@@ -12,17 +12,17 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from fox3d.acceptance_gate import (  # noqa: E402
+    MANUAL_PILOT_ACCEPTANCE_FILES,
+    atomic_publish_canonical,
+    read_manual_pilot_truth_set,
+)
 from fox3d.evidence import DirtyTreeError, inspect_repo_lineage  # noqa: E402
 from fox3d.ids import new_id  # noqa: E402
 from fox3d.manual_pilot import REQUIRED_GATES, run_manual_factory_scenario  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
 
-ACCEPTANCE_FILES = (
-    "MANUAL_FACTORY_PILOT_ACCEPTANCE",
-    "OPERATOR_SHIFT_ACCEPTANCE",
-    "INVENTORY_RECONCILIATION_ACCEPTANCE",
-    "PILOT_BACKUP_RESTORE_ACCEPTANCE",
-)
+ACCEPTANCE_FILES = MANUAL_PILOT_ACCEPTANCE_FILES
 
 
 def _md(title: str, rows: list[dict], generated: str) -> str:
@@ -45,6 +45,10 @@ def _md(title: str, rows: list[dict], generated: str) -> str:
 
 
 def _refuse_overwrite(docs: Path, failures: list[str]) -> int:
+    prior = read_manual_pilot_truth_set(docs)
+    if prior.get("ok") is True:
+        print(json.dumps({"ok": False, "label": "FIXTURE/REAL_LOGIC", "refusedOverwrite": True, "failures": failures}))
+        return 1
     dest = docs / "MANUAL_FACTORY_PILOT_ACCEPTANCE.json"
     if dest.exists():
         try:
@@ -206,13 +210,26 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "INVENTORY_RECONCILIATION_ACCEPTANCE": inv_doc,
         "PILOT_BACKUP_RESTORE_ACCEPTANCE": bak_doc,
     }
+    artifacts = {}
     for name, body in mapping.items():
-        (docs / f"{name}.json").write_text(json.dumps(body, indent=2, default=str), encoding="utf-8")
-        (docs / f"{name}.md").write_text(_md(name, body["rows"], generated), encoding="utf-8")
+        artifacts[f"{name}.json"] = json.dumps(body, indent=2, default=str)
+        artifacts[f"{name}.md"] = _md(name, body["rows"], generated)
+    published = atomic_publish_canonical(
+        docs,
+        artifacts,
+        generation_id=generation_id,
+        replace_fn=hooks.get("replace"),
+    )
+    if published.get("ok") is not True:
+        print(json.dumps({"ok": False, "label": "FIXTURE/REAL_LOGIC", "failures": ["atomic_publish", published.get("error")], "rolledBack": True}))
+        return 1
+    bundle = read_manual_pilot_truth_set(docs)
+    if bundle.get("ok") is not True:
+        return _refuse_overwrite(docs, list(bundle.get("errors") or ["bundle_inconsistent"]))
     print(
         json.dumps(
             {
-                "ok": gate_ok,
+                "ok": True,
                 "label": "FIXTURE/REAL_LOGIC",
                 "generation": generation_id,
                 "evidenceCodeCommit": sha,
@@ -222,7 +239,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
             default=str,
         )
     )
-    return 0 if gate_ok else 1
+    return 0
 
 
 if __name__ == "__main__":

@@ -304,8 +304,17 @@ def run_manual_factory_scenario(
     gates["shiftRestartRecovery"] = recovered_shift.get("status") == "OPEN" and recovered_wo.get("state") == "IN_PROGRESS"
     plat2.pilot.identity.require_active(tenant_id=a, operator_id=op_a["operatorId"], shift_id=shift["shiftId"])
 
-    backup_dir = Path(backup_dir or (plat.root / "backup-export"))
+    plat.lots.receive(
+        tenant_id=b, material="PB_18_WHITE", thickness=18, quantity=4, actor=op_b["operatorId"], source="MANUAL"
+    )
+    plat.pilot.stations.register(tenant_id=b, capabilities=list(STATION_CAPS), actor=op_b["operatorId"])
+
+    backup_dir = Path(backup_dir or (plat.root.parent / "backup-export"))
     restore_root = Path(restore_root or (plat.root.parent / "restore-root"))
+    if backup_dir.exists():
+        from shutil import rmtree
+
+        rmtree(backup_dir)
     backup = backup_pilot(plat.root, backup_dir, tenant_ids=[a])
     verified = plat.pilot.verify_backup(backup_dir)
     restored = restore_pilot(backup_dir, restore_root, tenant_id=a)
@@ -315,6 +324,14 @@ def run_manual_factory_scenario(
         restore_pilot(backup_dir, restore_root.parent / "restore-b", tenant_id=b)
     except PermissionError:
         cross_restore = True
+    restored_plat = Platform(root=restore_root, mock_blender=True)
+    b_absent = (
+        restored_plat.lots.list(tenant_id=b) == []
+        and not any(o.get("tenantId") == b for o in restored_plat.pilot.identity.operators.values())
+        and not any(wo.get("tenantId") == b for wo in restored_plat.pilot.workorders.orders.values())
+        and restored_plat.pilot.journal.list(b) == []
+        and restored_plat.pilot.stations.list(tenant_id=b) == []
+    )
     from shutil import copytree
 
     tamper_dir = backup_dir.parent / "backup-tamper"
@@ -323,23 +340,35 @@ def run_manual_factory_scenario(
 
         rmtree(tamper_dir)
     copytree(backup_dir, tamper_dir)
+    extra = tamper_dir / "data" / "lots" / "unlisted.json"
+    extra.write_text("{}", encoding="utf-8")
+    extra_blocked = False
+    try:
+        plat.pilot.verify_backup(tamper_dir)
+    except (BackupError, PermissionError, ValueError):
+        extra_blocked = True
     man = tamper_dir / "manifest.json"
     payload = json.loads(man.read_text(encoding="utf-8"))
     payload["manifestHash"] = "0" * 64
+    extra.unlink(missing_ok=True)
     man.write_text(json.dumps(payload), encoding="utf-8")
     tamper_blocked = False
     try:
         plat.pilot.verify_backup(tamper_dir)
     except (BackupError, PermissionError, ValueError):
         tamper_blocked = True
-    gates["backupChecksumVerified"] = bool(verified.get("ok") and tamper_blocked)
-    gates["restoreReleaseHashPreserved"] = restarted.get("releaseHash") == rel["releaseHash"] and restarted.get(
-        "releaseHashAfter"
-    ) == rel["releaseHash"]
-    gates["restoreNoDoubleConsume"] = bool(restarted.get("consumedAfter") and restarted.get("noDoubleConsume"))
-    gates["restoreNoDoubleCompletion"] = bool(restarted.get("noDoubleCompletion") and restarted.get("stateAfter") == "COMPLETED")
-    gates["journalHealthyAfterRestore"] = bool(restarted.get("journalOk") and plat2.pilot.journal.verify(a).get("ok"))
-    gates["crossTenantRestoreRejected"] = cross_restore
+    gates["backupChecksumVerified"] = bool(verified.get("ok") and tamper_blocked and extra_blocked and backup.get("consistentSnapshot") is True)
+    gates["restoreReleaseHashPreserved"] = (
+        restarted.get("releaseHash") == rel["releaseHash"]
+        and restarted.get("releaseHashAfter") == rel["releaseHash"]
+        and (restarted.get("before") or {}).get("releaseHash") == rel["releaseHash"]
+    )
+    gates["restoreNoDoubleConsume"] = restarted.get("noDoubleConsume") is True
+    gates["restoreNoDoubleCompletion"] = restarted.get("noDoubleCompletion") is True
+    gates["journalHealthyAfterRestore"] = bool(
+        restarted.get("journalOk") is True and restored_plat.pilot.journal.verify(a).get("ok") is True
+    )
+    gates["crossTenantRestoreRejected"] = bool(cross_restore and b_absent)
     other = False
     try:
         plat2.pilot.workorders._require(wo_id, tenant_id=b)
