@@ -280,7 +280,8 @@ class ChaosHarness:
         root = self.platform.lots.root
         if not root:
             return False
-        self.platform.lots.create(tenant_id=tenant, material="CHAOS_RACE", thickness=18, sheet_count=10, length=2440, width=1220, grain="length")
+        sku = f"CHAOS_RACE_{new_id()[:8]}"
+        self.platform.lots.create(tenant_id=tenant, material=sku, thickness=18, sheet_count=10, length=2440, width=1220, grain="length")
         repo = Path(__file__).resolve().parents[2]
         env = os.environ.copy()
         src = str(repo / "src")
@@ -302,7 +303,7 @@ class ChaosHarness:
                         "--qty",
                         "3",
                         "--material",
-                        "CHAOS_RACE",
+                        sku,
                         "--thickness",
                         "18",
                     ],
@@ -325,7 +326,7 @@ class ChaosHarness:
             if payload.get("ok"):
                 ok_qty += int(payload.get("qty") or 0)
         restarted = type(self.platform.lots)(root)
-        qrows = [restarted.quantities(l["lotId"], tenant_id=tenant) for l in restarted.list(tenant_id=tenant) if l.get("material") == "CHAOS_RACE"]
+        qrows = [restarted.quantities(l["lotId"], tenant_id=tenant) for l in restarted.list(tenant_id=tenant) if l.get("material") == sku]
         held = sum(r["reserved"] + r["consumed"] for r in qrows)
         conserved = all(r["conserved"] for r in qrows) if qrows else False
         return held <= 10 and conserved and ok_qty <= 10
