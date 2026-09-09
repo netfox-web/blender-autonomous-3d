@@ -1,0 +1,51 @@
+{
+  "generatedAt": "2026-09-09T07:15:44.223288+00:00",
+  "acceptanceGenerationId": "d029f78f-7dfa-4461-a645-516d1c0560d3",
+  "evidenceCodeCommit": "523b3cb2ed1dc960785fcea43256198425d2e77e",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "realBlenderRefreshRequired": false,
+  "priorRealBlenderEvidence": {
+    "commitSha": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+    "generation": "c878d5f3-a3d2-44cd-8223-7b2b94d84af1",
+    "reason": "ManufacturingRelease/Blender render code unchanged in Phase 481-540"
+  },
+  "ok": true,
+  "domain": "operator-shift",
+  "operatorTenantIsolation": true,
+  "shiftRestartRecovery": true,
+  "scanTokenTenantSafe": true,
+  "rows": [
+    {
+      "check": "operator/shift isolation",
+      "status": "REAL_LOGIC",
+      "evidence": "disabled/closed/cross-tenant fail closed"
+    },
+    {
+      "check": "shift restart",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "scan token tenant-safe",
+      "status": "REAL_LOGIC",
+      "evidence": "authorizesOperation=false"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "LIVE_LASER",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    }
+  ]
+}

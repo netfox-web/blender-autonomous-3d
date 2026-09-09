@@ -1,0 +1,181 @@
+{
+  "generatedAt": "2026-09-09T07:15:44.223288+00:00",
+  "acceptanceGenerationId": "d029f78f-7dfa-4461-a645-516d1c0560d3",
+  "evidenceCodeCommit": "523b3cb2ed1dc960785fcea43256198425d2e77e",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "realBlenderRefreshRequired": false,
+  "priorRealBlenderEvidence": {
+    "commitSha": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+    "generation": "c878d5f3-a3d2-44cd-8223-7b2b94d84af1",
+    "reason": "ManufacturingRelease/Blender render code unchanged in Phase 481-540"
+  },
+  "ok": true,
+  "domain": "manual-factory-pilot",
+  "gates": {
+    "liveMachineControl": false,
+    "globalProductionReady": false,
+    "liveFactoryExecutionReady": false,
+    "fullAutonomousFactoryReady": false,
+    "operatorTenantIsolation": true,
+    "duplicateCompletionIdempotent": true,
+    "travelerReleasePinned": true,
+    "scanTokenTenantSafe": true,
+    "blockingHoldPreventsCompletion": true,
+    "reworkLineagePreserved": true,
+    "laborHistoryAppendOnly": true,
+    "packingReleasePinned": true,
+    "manualShipmentNoProviderClaim": true,
+    "cycleCountApprovalRequired": true,
+    "inventoryConservedAfterAdjustment": true,
+    "shiftRestartRecovery": true,
+    "backupChecksumVerified": true,
+    "restoreReleaseHashPreserved": true,
+    "restoreNoDoubleConsume": true,
+    "restoreNoDoubleCompletion": true,
+    "journalHealthyAfterRestore": true,
+    "crossTenantRestoreRejected": true,
+    "workingTreeClean": true,
+    "evidenceCommitMatchesHead": true
+  },
+  "scenario": {
+    "workOrderId": "f304fb6c-0b61-41bc-a709-cedb414fe37d",
+    "releaseHash": "4be1aa5a51d71add3c664067dbaa185e3dff73d4c65a73aef0b9a58a4de99ad6",
+    "labor": {
+      "workOrderId": "f304fb6c-0b61-41bc-a709-cedb414fe37d",
+      "estimatedLaborMinutes": 120.0,
+      "actualManualLaborMinutes": 12.0023,
+      "estimatedLaborCost": 720.0,
+      "actualManualLaborCost": 72.01,
+      "variance": -647.99,
+      "estimateSource": "CONFIG_ESTIMATE",
+      "actualSource": "MANUAL",
+      "accountingActual": "NOT_IMPLEMENTED",
+      "rateSource": "CONFIG_ESTIMATE",
+      "wageClaim": false,
+      "historyAppendOnly": true,
+      "truthLabel": "REAL_LOGIC / MANUAL"
+    },
+    "liveCnc": "BLOCKED",
+    "liveLaser": "BLOCKED"
+  },
+  "familiesOk": true,
+  "rows": [
+    {
+      "check": "four-family FIXTURE e2e",
+      "status": "FIXTURE",
+      "evidence": "True"
+    },
+    {
+      "check": "operator/shift isolation",
+      "status": "REAL_LOGIC",
+      "evidence": "disabled/closed/cross-tenant fail closed"
+    },
+    {
+      "check": "shift restart",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "traveler releaseHash pin",
+      "status": "REAL_LOGIC",
+      "evidence": "4be1aa5a51d71add3c664067dbaa185e3dff73d4c65a73aef0b9a58a4de99ad6"
+    },
+    {
+      "check": "scan token tenant-safe",
+      "status": "REAL_LOGIC",
+      "evidence": "authorizesOperation=false"
+    },
+    {
+      "check": "cycle-count approval",
+      "status": "REAL_LOGIC",
+      "evidence": "WAITING_HUMAN_APPROVAL"
+    },
+    {
+      "check": "inventory conserved",
+      "status": "REAL_LOGIC",
+      "evidence": "consumed/reserved unchanged"
+    },
+    {
+      "check": "labor append-only",
+      "status": "REAL_LOGIC",
+      "evidence": "CONFIG_ESTIMATE vs MANUAL; accounting NOT_IMPLEMENTED"
+    },
+    {
+      "check": "blocking hold",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "rework lineage",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "packing pin",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "manual shipment",
+      "status": "REAL_LOGIC",
+      "evidence": "MANUAL/IMPORTED, no provider"
+    },
+    {
+      "check": "backup checksum",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "restore releaseHash",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "restore no double consume/complete",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"ok\": true, \"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"consumedBefore\": true, \"consumedAfter\": true, \"releaseHash\": \"4be1aa5a51d71add3c664067dbaa185e3dff73d4c65a73aef0b9a58a4de99ad6\", \"releaseHashAfter\": \"4be1aa5a51d71add3c664067dbaa185e3dff73d4c65a73aef0b9a58a4de99ad6\", \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"conserved\": true, \"liveMachineControl\": false}"
+    },
+    {
+      "check": "journal after restore",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "cross-tenant restore",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "evidenceCodeCommit",
+      "status": "REAL_LOGIC",
+      "evidence": "523b3cb2ed1dc960785fcea43256198425d2e77e"
+    },
+    {
+      "check": "workingTreeClean",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "LIVE_LASER",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "REAL blender refresh",
+      "status": "REAL",
+      "evidence": "unchanged render/release path; reuse 4/4 T1000 OptiX CODE 018cc70 generation c878d5f3-a3d2-44cd-8223-7b2b94d84af1"
+    }
+  ]
+}

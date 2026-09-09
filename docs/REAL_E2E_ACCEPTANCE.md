@@ -9,6 +9,10 @@ Scoped readiness (not a global Production Ready flag):
 - `pilotDeploymentReady`: **FIXTURE** — see `docs/PILOT_DEPLOYMENT_ACCEPTANCE.md` (110 WO FIXTURE/CHAOS, not factory throughput)
 - `operatorControlReady`: **true** (scoped) — see `docs/OPERATOR_CONTROL_ACCEPTANCE.md` (scan/dispatch/health; barcode hardware PARTIAL)
 - `qcTraceabilityReady`: **true** — see `docs/QC_TRACEABILITY_ACCEPTANCE.md`
+- `manualFactoryPilotReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/MANUAL_FACTORY_PILOT_ACCEPTANCE.md` (CODE `523b3cb`, generation `d029f78f-7dfa-4461-a645-516d1c0560d3`; REAL blender reused `018cc70`)
+- `operatorShiftReady`: **REAL_LOGIC / MANUAL_IDENTITY** — see `docs/OPERATOR_SHIFT_ACCEPTANCE.md`
+- `inventoryReconciliationReady`: **REAL_LOGIC / MANUAL** — see `docs/INVENTORY_RECONCILIATION_ACCEPTANCE.md`
+- `pilotBackupRestoreReady`: **REAL_LOGIC** (local operational, not cloud HA/DR) — see `docs/PILOT_BACKUP_RESTORE_ACCEPTANCE.md`
 - `liveFactoryExecutionReady`: **false**
 - `globalProductionReady`: **false** — Vision/Demand/live provider cost/OS jail/LIVE_CNC are not REAL
 - `fullAutonomousFactoryReady`: **false**

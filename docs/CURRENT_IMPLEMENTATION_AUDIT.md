@@ -1,10 +1,23 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 421–480 evidence-integrity CODE_EVIDENCE_SHA `018cc70`; prior `9471957` / docs `b0e67c0`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a827459`. Historical Phase 1–420 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 481–540 CODE_EVIDENCE_SHA `523b3cb`; prior evidence-integrity `018cc70` / docs `f492b6b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8d56724`. Historical Phase 1–480 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 481–540 Manual Factory Pilot V1 / Operational Control & Recovery
+
+| Item | Status | Evidence |
+|---|---|---|
+| 481–488 operator/shift | REAL_LOGIC / MANUAL_IDENTITY | persist identity.json; disabled/closed/cross-tenant fail closed; restart preserves OPEN shift; not IAM |
+| 489–496 traveler | REAL_LOGIC / PARTIAL hardware | releaseHash pin; DAM HTML; scan token does not authorize; barcode hardware PARTIAL |
+| 497–504 cycle count | REAL_LOGIC / MANUAL | WAITING_HUMAN_APPROVAL; consumed/reserved unchanged; conserved after apply |
+| 505–512 labor | REAL_LOGIC / MANUAL | append-only segments/corrections; CONFIG_ESTIMATE vs MANUAL; accounting NOT_IMPLEMENTED |
+| 513–520 hold/rework/scrap | REAL_LOGIC | blocking hold prevents complete; reworkHistory; remnant path not silent scrap |
+| 521–528 packing/handoff | REAL_LOGIC / MANUAL | checklist pinned; mismatch no auto-override; handoff not booked/not delivery |
+| 529–536 backup/restore | REAL_LOGIC | checksums; lock files skipped; restore fresh root + subprocess; not cloud HA/DR |
+| 537–540 acceptance | FIXTURE + REAL_LOGIC | generation `d029f78f-…`; runner-bound `523b3cb`; workingTreeClean; CI `34322747430`; REAL blender reused `018cc70` |
 
 ## Phase 421–480 Pilot Deployment Hardening / Operator Control Plane
 

@@ -1,0 +1,54 @@
+{
+  "generatedAt": "2026-09-09T07:15:44.223288+00:00",
+  "acceptanceGenerationId": "d029f78f-7dfa-4461-a645-516d1c0560d3",
+  "evidenceCodeCommit": "523b3cb2ed1dc960785fcea43256198425d2e77e",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "realBlenderRefreshRequired": false,
+  "priorRealBlenderEvidence": {
+    "commitSha": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+    "generation": "c878d5f3-a3d2-44cd-8223-7b2b94d84af1",
+    "reason": "ManufacturingRelease/Blender render code unchanged in Phase 481-540"
+  },
+  "ok": true,
+  "domain": "pilot-backup-restore",
+  "backupChecksumVerified": true,
+  "restoreReleaseHashPreserved": true,
+  "restoreNoDoubleConsume": true,
+  "restoreNoDoubleCompletion": true,
+  "journalHealthyAfterRestore": true,
+  "crossTenantRestoreRejected": true,
+  "rows": [
+    {
+      "check": "backup checksum",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "restore releaseHash",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "restore no double consume/complete",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"ok\": true, \"stateBefore\": \"COMPLETED\", \"stateAfter\": \"COMPLETED\", \"consumedBefore\": true, \"consumedAfter\": true, \"releaseHash\": \"4be1aa5a51d71add3c664067dbaa185e3dff73d4c65a73aef0b9a58a4de99ad6\", \"releaseHashAfter\": \"4be1aa5a51d71add3c664067dbaa185e3dff73d4c65a73aef0b9a58a4de99ad6\", \"noDoubleConsume\": true, \"noDoubleCompletion\": true, \"journalOk\": true, \"conserved\": true, \"liveMachineControl\": false}"
+    },
+    {
+      "check": "journal after restore",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "cross-tenant restore",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    }
+  ]
+}
