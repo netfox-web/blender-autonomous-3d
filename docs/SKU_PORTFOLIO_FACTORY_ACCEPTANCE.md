@@ -1,6 +1,6 @@
 # SKU_PORTFOLIO_FACTORY_ACCEPTANCE
 
-generatedAt: 2026-09-09T11:36:46.590800+00:00
+generatedAt: 2026-09-09T12:33:24.774560+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 This is a scoped Phase 541–600 Small-Space KD SKU Portfolio Factory truth set.
 
@@ -9,15 +9,16 @@ This is a scoped Phase 541–600 Small-Space KD SKU Portfolio Factory truth set.
 | >=24 candidates / >=6 kinds | REAL_LOGIC | `n=28 kinds=['BEDSIDE_CABINET', 'DESK_RISER', 'MOBILE_SIDE_TABLE', 'NARROW_BOOKCASE', 'OPEN_SHELF', 'PET_FURNITURE', 'STORAGE_BENCH', 'STUDENT_DESK']` |
 | invalid retained, not in Top 10 | REAL_LOGIC | `rejected=3 invalidInTop=0` |
 | Top 10 deterministic | REAL_LOGIC | `a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017` |
-| DFM conservation | REAL_LOGIC | `True` |
+| DFM conservation | REAL_LOGIC | `{"conservationOk": true, "toleranceMm2": 2.0}` |
 | cross-SKU planning no consume | REAL_LOGIC | `{"sheetCountDelta": -15, "consumesInventory": false, "doubleAllocation": false}` |
 | commercial truth labels | CONFIG_ESTIMATE | `MOCK` |
 | MOCK demand not REAL | REAL_LOGIC | `MOCK` |
 | tenant isolation | REAL_LOGIC | `True` |
-| tenant backup semantic | REAL_LOGIC | `{"liveA": "bd5a9bb260a53ee982aaa9a1f3ea56fd8fcdc3c79a6c5bdfa0d77ac0cf5174c7", "restoredA": "bd5a9bb260a53ee982aaa9a1f3ea56fd8fcdc3c79a6c5bdfa0d77ac0cf5174c7", "equal": true}` |
+| tenant backup semantic | REAL_LOGIC | `{"liveA": "f22b593fd1fd143412c3aca87994db9bb02498b888706214a7109ed428062aa6", "restoredA": "f22b593fd1fd143412c3aca87994db9bb02498b888706214a7109ed428062aa6", "equal": true}` |
 | manual prototype approval | REAL_LOGIC | `READY_FOR_MANUAL_PROTOTYPE` |
-| REAL blender media | REAL | `real=4/4` |
-| evidenceCodeCommit | REAL_LOGIC | `655ea994bdd7e5505324b10ea02f0166abefb08e` |
+| Top 10 lineage | REAL_LOGIC | `[{"candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8", "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e", "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8", "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774", "nestingHash": "55518e7841ecff422c44793f189556823e661acfb11c63fb7280081dce5920fc", "costSnapshotHash": "9e2b8d73bcebf7362113c66ee5471828cbab3dec2d8f74bd07df6fea2e590376", "costEngineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8", "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017", "score": 0.7159642293951043, "breakdown": {"utilization": {"raw": 0.6161, "weight": 0.25, "weighted": 0.154025}, "trueScrap": {"raw": 0.9483,` |
+| REAL blender media | REAL | `[{"candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8", "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8", "jobId": "c2d96d5c-f569-449c-bd39-9faac4d70ad0", "artifactSha256": "e5a853452c57a5bfb9a9ba1319dca96bf515c11f8b57e2f07ec9d2de185e6d3a", "artifactSize": 52574, "blenderVersion": "5.2.1 LTS", "device": "OPTIX", "gpu": "NVIDIA T1000", "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14", "usedMock": false, "realBlender": true, "realOptix": true, "executedAt": "2026-09-09T12:33:09.182885+00:00"}, {"candidateId": "5b8d48af-066e-4738-811d-0518833ce071", "engineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898", "jobId": "5608af7c-230a-4253-ad20-4a64b815bf1e", "artifactSha256": "da9512ac365d9f3b3b13254673ecaf94ffbbc8369a733ba42b6daaa028dce3cc", "artifactSize": 54141, "blenderVersion": "5.2.1 LTS", "device": "OPTIX", "gpu": "NVIDIA T1000", "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14", "usedMock": false, "realBlender": true, "realOptix": true, "executedAt": "2026-09-09T12:33:13.664060+00:00"}, {"candidateId": "9e838170-2fba-45da-91f1-63ee967a9ea4", "engineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d", "jobId": "cda2642f-c0fd-4d6a-9dca-8f7626a4deda", "artifactSha256": "c4c5690cb495184dc4abb629dd292c706ed913081cf3703ef69a71bb4897ae49", "artifactSize": 53325, "blenderVersion": "5.2.1 LTS", "device": "OPTIX", "gpu": "NVIDIA T1000", "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14", "usedMock": false, "realBlender": true, "realOptix": true, "executedAt": "2026-09-09T12:33:17.947511+00:00"}, {"candidateId": "c8d8edb8-e96e-443c-99bf-8a0c5e496f15", "engineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04", "jobId": "22c0d21e-e7b4-45fa-a6fd-77ac0937423b", "artifactSha256": "40069c7abd5073037104cd229997c4415fb7c08683b5589463ba51047cc2d02e", "artifactSize": 54424, "blenderVersion": "5.2.1 LTS", "device": "OPTIX", "gpu": "NVIDIA T1000", "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14", "usedMock": false, "realBlender": true, "realOptix": true, "executedAt": "2026-09-09T12:33:22.427771+00:00"}]` |
+| evidenceCodeCommit | REAL_LOGIC | `7a87ea5cedc5242178d7e072de1b9b89c4c60d14` |
 | workingTreeClean | REAL_LOGIC | `True` |
 | LIVE_CNC | BLOCKED | `liveMachineControl=false` |
 | LIVE_LASER | BLOCKED | `liveMachineControl=false` |

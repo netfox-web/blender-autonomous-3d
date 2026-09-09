@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T11:36:46.590800+00:00",
-  "acceptanceGenerationId": "d9311329-d9b4-4fa7-a367-8eea8267799f",
-  "evidenceCodeCommit": "655ea994bdd7e5505324b10ea02f0166abefb08e",
+  "generatedAt": "2026-09-09T12:33:24.774560+00:00",
+  "acceptanceGenerationId": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+  "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -18,12 +18,58 @@
   },
   "domain": "portfolio-dfm",
   "conservationOk": true,
+  "conservationToleranceMm2": 2.0,
   "plan": {
     "sheetCountDelta": -15,
     "trueScrapDelta": -1733120.0,
     "consumesInventory": false,
     "doubleAllocation": false,
-    "oversell": false
+    "oversell": false,
+    "remnantFirst": {
+      "sheetCount": 10,
+      "trueScrapArea": 3302112.0,
+      "reusableRemnantArea": 1764520.0,
+      "candidateRemnantIds": [],
+      "usedRemnantIds": [],
+      "groups": [
+        {
+          "material": "WOOD_WHITE",
+          "thickness": 18.0,
+          "grain": "length",
+          "candidateIds": [
+            "aaadf571-33a5-48b4-ae6f-11cc40887220",
+            "e971509e-cea5-4225-83e0-837765765c49",
+            "9ca0399e-dab4-459a-91a7-7b7ac2a41645",
+            "f19024db-957e-4b33-af04-512aadd89edb",
+            "64729bde-9bc8-4ae3-b83f-740042931bec",
+            "15578b9c-3c20-4171-9591-2385a3a18f91",
+            "c4435063-af21-482d-a5bd-1e76cfe5bc2e",
+            "e7e52776-29aa-479e-9e6d-a6b60ce29c91",
+            "a54ca904-be47-4110-a08d-b5fa5a923c31",
+            "d2d2c4c5-79fd-40b3-a0cf-88b9056717e8",
+            "904ff3c4-489b-4554-9e15-e1079ca92b58",
+            "6f2ff38c-e98b-447c-adf6-e360b8a75825",
+            "9e838170-2fba-45da-91f1-63ee967a9ea4",
+            "5b8d48af-066e-4738-811d-0518833ce071",
+            "a48568be-24f8-4389-91b9-c47f8c8d9bb8",
+            "a72d8fdf-164f-49b6-86c5-906c020efb2c",
+            "c8d8edb8-e96e-443c-99bf-8a0c5e496f15",
+            "fcf57efa-b053-4e75-9ada-8c9a89b74e74",
+            "e6c7766a-61d9-4f95-a389-9943981bfcb1",
+            "8f0ab088-c8b6-4efa-93e1-2f08059d94fc",
+            "6c2b624c-6713-409f-8804-d2abff9ff9d4",
+            "732709e4-af3f-426b-95f5-6213ae38ef35",
+            "33c4acea-ad16-4470-98f4-7899d00db415",
+            "a0be2655-84ed-4a0d-83cd-bfd7df9652a5",
+            "39e7f747-ba71-4ffe-9362-106a2920ff45"
+          ],
+          "candidateRemnantIds": [],
+          "usedRemnantIds": [],
+          "sheetCount": 10
+        }
+      ],
+      "planningOnly": true
+    }
   },
   "rows": [
     {
@@ -34,7 +80,7 @@
     {
       "check": "DFM conservation",
       "status": "REAL_LOGIC",
-      "evidence": "True"
+      "evidence": "{\"conservationOk\": true, \"toleranceMm2\": 2.0}"
     },
     {
       "check": "cross-SKU planning no consume",

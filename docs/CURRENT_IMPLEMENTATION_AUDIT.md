@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 541–600 portfolio CODE_EVIDENCE_SHA `655ea99`; prior Phase 481–540 `11c79d1` / docs `90f7d59`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c1ba8cd`. Historical Phase 1–540 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 541–600 integrity CODE_EVIDENCE_SHA `7a87ea5`; prior portfolio `655ea99` / docs `9360251`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `45cd12a`. Historical Phase 1–540 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -10,16 +10,16 @@ This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 
 | Item | Status | Evidence |
 |---|---|---|
-| 541–546 PortfolioIntent | REAL_LOGIC | tenant envelope; demand MOCK/IMPORTED/MANUAL/UNAVAILABLE; missing constraints fail-closed |
+| 541–546 PortfolioIntent | REAL_LOGIC | all envelope fields finite >0; thickness policy list; explicit invalid not persisted |
 | 547–552 candidates | REAL_LOGIC | 28 / 8 KD kinds; REJECTED_DFM retained; duplicate canonical hash blocked |
-| 553–558 DFM scorecard | REAL_LOGIC | reuses BOM/nest/pack; conservationOk |
-| 559–564 cross-SKU plan | REAL_LOGIC / PLANNING | independent/batch/cross/remnant-first; no inventory consume; no double remnant |
+| 553–558 DFM scorecard | REAL_LOGIC | independent conservation recompute; missing nest fields fail; ranking/prototype gated |
+| 559–564 cross-SKU plan | REAL_LOGIC / PLANNING | material+thickness+grain groups; candidate vs used remnant IDs; no consume; no double remnant |
 | 565–570 commercial | CONFIG_ESTIMATE | labeled components; stale snapshot fail-closed |
-| 571–576 ranking | REAL_LOGIC | rankingPolicyHash; Top 10; invalid excluded; MOCK demand not REAL |
+| 571–576 ranking | REAL_LOGIC | rankingPolicyHash; Top 10 exact lineage; conservationOk required; MOCK demand not REAL |
 | 577–582 approval pack | REAL_LOGIC | WAITING_PRODUCT_APPROVAL / APPROVED_FOR_PROTOTYPE ≠ LIVE_CNC |
-| 583–588 media | REAL | 4/4 T1000 OptiX usedMock=false beautyHash on `655ea99` |
-| 589–594 prototype pack | REAL_LOGIC | MANUAL_STATION traveler; READY only after human approval |
-| 595–600 acceptance | FIXTURE + REAL | generation `d9311329-…`; six-file atomic; CI `34346220584`; tenant backup digest |
+| 583–588 media | REAL | 4/4 T1000 OptiX usedMock=false SHA/size/job/GPU bound on `7a87ea5` generation `0b76b09e-…` |
+| 589–594 prototype pack | REAL_LOGIC | MANUAL_STATION traveler; READY only after human approval; conservation fail-closed |
+| 595–600 acceptance | FIXTURE + REAL | generation `0b76b09e-…`; six-file atomic; runner requires `ok`; CI `34351349710`; tenant digest equal |
 
 ## Phase 481–540 Manual Factory Pilot V1 / Operational Control & Recovery
 

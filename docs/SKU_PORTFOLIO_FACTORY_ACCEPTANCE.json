@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-09T11:36:46.590800+00:00",
-  "acceptanceGenerationId": "d9311329-d9b4-4fa7-a367-8eea8267799f",
-  "evidenceCodeCommit": "655ea994bdd7e5505324b10ea02f0166abefb08e",
+  "generatedAt": "2026-09-09T12:33:24.774560+00:00",
+  "acceptanceGenerationId": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+  "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -22,6 +22,620 @@
   "top10": 10,
   "rejected": 3,
   "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+  "top10Lineage": [
+    {
+      "candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8",
+      "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
+      "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8",
+      "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
+      "nestingHash": "55518e7841ecff422c44793f189556823e661acfb11c63fb7280081dce5920fc",
+      "costSnapshotHash": "9e2b8d73bcebf7362113c66ee5471828cbab3dec2d8f74bd07df6fea2e590376",
+      "costEngineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.7159642293951043,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.6161,
+          "weight": 0.25,
+          "weighted": 0.154025
+        },
+        "trueScrap": {
+          "raw": 0.9483,
+          "weight": 0.15,
+          "weighted": 0.142245
+        },
+        "remnantReuse": {
+          "raw": 0.988736,
+          "weight": 0.1,
+          "weighted": 0.0988736
+        },
+        "landedCost": {
+          "raw": 0.7631315867795084,
+          "weight": 0.2,
+          "weighted": 0.1526263173559017
+        },
+        "carton": {
+          "raw": 0.6139199723392217,
+          "weight": 0.1,
+          "weighted": 0.06139199723392217
+        },
+        "assembly": {
+          "raw": 0.7290400972053463,
+          "weight": 0.1,
+          "weighted": 0.07290400972053464
+        },
+        "complexity": {
+          "raw": 0.3389830508474576,
+          "weight": 0.1,
+          "weighted": 0.03389830508474576
+        }
+      },
+      "state": "APPROVED_FOR_PROTOTYPE",
+      "approvalStatus": "APPROVED_FOR_PROTOTYPE",
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "5b8d48af-066e-4738-811d-0518833ce071",
+      "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
+      "engineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898",
+      "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
+      "nestingHash": "82efd3989c61a303ba1bbba61293391ce1acdcbd3a5be3457bf8e22c0cb1a000",
+      "costSnapshotHash": "aa74616e005eb7d6bae03cbf9ed04de89e80111da25f990e4f21bd84b88de134",
+      "costEngineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6940600704797649,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.5084,
+          "weight": 0.25,
+          "weighted": 0.1271
+        },
+        "trueScrap": {
+          "raw": 0.9267,
+          "weight": 0.15,
+          "weighted": 0.139005
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7706345096298488,
+          "weight": 0.2,
+          "weighted": 0.15412690192596978
+        },
+        "carton": {
+          "raw": 0.6702585374851471,
+          "weight": 0.1,
+          "weighted": 0.0670258537485147
+        },
+        "assembly": {
+          "raw": 0.7290400972053463,
+          "weight": 0.1,
+          "weighted": 0.07290400972053464
+        },
+        "complexity": {
+          "raw": 0.3389830508474576,
+          "weight": 0.1,
+          "weighted": 0.03389830508474576
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "9e838170-2fba-45da-91f1-63ee967a9ea4",
+      "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
+      "engineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d",
+      "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
+      "nestingHash": "d8293c4a45f66439614a254bc421d57d268999a27fb7ff3d6b584124a3637938",
+      "costSnapshotHash": "9772353078d2c3a01c99dc8186c142e0400c92fdb6fb4621e5b3d289a9ec4b8b",
+      "costEngineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6881712097382667,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.4855,
+          "weight": 0.25,
+          "weighted": 0.121375
+        },
+        "trueScrap": {
+          "raw": 0.9195,
+          "weight": 0.15,
+          "weighted": 0.137925
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7716454258402446,
+          "weight": 0.2,
+          "weighted": 0.15432908516804894
+        },
+        "carton": {
+          "raw": 0.6773980976493743,
+          "weight": 0.1,
+          "weighted": 0.06773980976493743
+        },
+        "assembly": {
+          "raw": 0.7290400972053463,
+          "weight": 0.1,
+          "weighted": 0.07290400972053464
+        },
+        "complexity": {
+          "raw": 0.3389830508474576,
+          "weight": 0.1,
+          "weighted": 0.03389830508474576
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "c8d8edb8-e96e-443c-99bf-8a0c5e496f15",
+      "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
+      "engineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04",
+      "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
+      "nestingHash": "e2fb35ee222b1f193a89656c47faba705fa75f782efc3f9f7095ee4c5f6dacea",
+      "costSnapshotHash": "7d75f636f12a05cde327af79ce1b869524ea27b27feca578d7725244a6606cad",
+      "costEngineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6753818626845383,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.5784,
+          "weight": 0.25,
+          "weighted": 0.1446
+        },
+        "trueScrap": {
+          "raw": 0.9348,
+          "weight": 0.15,
+          "weighted": 0.14021999999999998
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7284127594606249,
+          "weight": 0.2,
+          "weighted": 0.14568255189212498
+        },
+        "carton": {
+          "raw": 0.4592639490585897,
+          "weight": 0.1,
+          "weighted": 0.045926394905858973
+        },
+        "assembly": {
+          "raw": 0.6864988558352403,
+          "weight": 0.1,
+          "weighted": 0.06864988558352403
+        },
+        "complexity": {
+          "raw": 0.30303030303030304,
+          "weight": 0.1,
+          "weighted": 0.030303030303030304
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "a72d8fdf-164f-49b6-86c5-906c020efb2c",
+      "canonicalHash": "14cce44f81580ae49437e379cdee2aa51b0078dbb7bef86cda9b9a6116454086",
+      "engineeringHash": "07b4a36aa533a81f0cd1f5023fe4eb6ec4023efff0a155ba8b0c8c55ff65fea5",
+      "bomHash": "1d748c7af1a9381dcc6549e856a72124e2a3a5b04727f2520f92df334e2e9249",
+      "nestingHash": "c08441386e826f4642fd3e4ea67b541d7454e6177435907c693856e1411e7f53",
+      "costSnapshotHash": "3692d1b80acb1ff1a64c2581464259fbad6cbd0bc3d2fac89bffe4af54f8425a",
+      "costEngineeringHash": "07b4a36aa533a81f0cd1f5023fe4eb6ec4023efff0a155ba8b0c8c55ff65fea5",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.672117004749676,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.5704,
+          "weight": 0.25,
+          "weighted": 0.1426
+        },
+        "trueScrap": {
+          "raw": 0.9267,
+          "weight": 0.15,
+          "weighted": 0.139005
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7281634697863131,
+          "weight": 0.2,
+          "weighted": 0.1456326939572626
+        },
+        "carton": {
+          "raw": 0.4592639490585897,
+          "weight": 0.1,
+          "weighted": 0.045926394905858973
+        },
+        "assembly": {
+          "raw": 0.6864988558352403,
+          "weight": 0.1,
+          "weighted": 0.06864988558352403
+        },
+        "complexity": {
+          "raw": 0.30303030303030304,
+          "weight": 0.1,
+          "weighted": 0.030303030303030304
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "732709e4-af3f-426b-95f5-6213ae38ef35",
+      "canonicalHash": "18a2ff8e625d1b8e74f4718a3ad89d8174f3ebda9ba2d9875b8a21a15fa5e410",
+      "engineeringHash": "ee0656ffdedcbadcc22497f4dff69cfcbe972a8a2e268f4a734d729b3698d93b",
+      "bomHash": "b1f720621cb07088b9099f34c13d9e69bf79c601340022db191d7bb8d98db079",
+      "nestingHash": "2b11bdb507445c42b2f3b298afd348aeca93a2ad0213d11d163924e9247bfbdd",
+      "costSnapshotHash": "715d94698c191a8f0dd8b4e30e04a7d7104b3558fb30270b63da6e6b43ee94ad",
+      "costEngineeringHash": "ee0656ffdedcbadcc22497f4dff69cfcbe972a8a2e268f4a734d729b3698d93b",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6614086436589248,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.3031,
+          "weight": 0.25,
+          "weighted": 0.075775
+        },
+        "trueScrap": {
+          "raw": 0.9516,
+          "weight": 0.15,
+          "weighted": 0.14274
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7960021587578545,
+          "weight": 0.2,
+          "weighted": 0.15920043175157092
+        },
+        "carton": {
+          "raw": 0.7586082003483043,
+          "weight": 0.1,
+          "weighted": 0.07586082003483044
+        },
+        "assembly": {
+          "raw": 0.7334963325183375,
+          "weight": 0.1,
+          "weighted": 0.07334963325183375
+        },
+        "complexity": {
+          "raw": 0.3448275862068966,
+          "weight": 0.1,
+          "weighted": 0.03448275862068966
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "33c4acea-ad16-4470-98f4-7899d00db415",
+      "canonicalHash": "39ac0dcc2cac898bd43f6f31b555c80b9a363b2c6425d48e97428ea99ce002c6",
+      "engineeringHash": "0275ce1715b59c6ba1a2c526b5d3e1a6c7bd52037b34e8fa4372c9f7605a5687",
+      "bomHash": "2d82160e156e1f9e2f642431592eee5906dea13a73360e35f33fdf3e4b3f58fd",
+      "nestingHash": "f0f14f90b8e56bb81f234d630fccd14c3e4cd8f7ac77244d1507aef7b05b3c2a",
+      "costSnapshotHash": "07ac358eda30196bb3a95995cafa5f553f3eb602e9e785d67fac5c1a984bdaed",
+      "costEngineeringHash": "0275ce1715b59c6ba1a2c526b5d3e1a6c7bd52037b34e8fa4372c9f7605a5687",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6597125330137988,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.304,
+          "weight": 0.25,
+          "weighted": 0.076
+        },
+        "trueScrap": {
+          "raw": 0.9545,
+          "weight": 0.15,
+          "weighted": 0.143175
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7952969320625548,
+          "weight": 0.2,
+          "weighted": 0.15905938641251097
+        },
+        "carton": {
+          "raw": 0.7364575472876445,
+          "weight": 0.1,
+          "weighted": 0.07364575472876445
+        },
+        "assembly": {
+          "raw": 0.7334963325183375,
+          "weight": 0.1,
+          "weighted": 0.07334963325183375
+        },
+        "complexity": {
+          "raw": 0.3448275862068966,
+          "weight": 0.1,
+          "weighted": 0.03448275862068966
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "64729bde-9bc8-4ae3-b83f-740042931bec",
+      "canonicalHash": "37121fdd02843d7c8dc20a42addfa1fd4f641f424b384a96c0d14ebb7bf937ac",
+      "engineeringHash": "1df80f5ddb34490d1fa6b1ebb12f21184d12cc2f24384a9b70462e77cbef4d34",
+      "bomHash": "d42e0f9109e59d797bd898670bbac0e4bfd93896655fce098107c88ca1d0d12d",
+      "nestingHash": "0cc25e6f1c7d67e674ee75a35bf3cb48815f55f60183e34b5bfce114c5af2a1e",
+      "costSnapshotHash": "94f1c86d29b162d18bea35c9c764766cc3f1517fc316670bc6746947f5abf8e7",
+      "costEngineeringHash": "1df80f5ddb34490d1fa6b1ebb12f21184d12cc2f24384a9b70462e77cbef4d34",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6573877916682382,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.3505,
+          "weight": 0.25,
+          "weighted": 0.087625
+        },
+        "trueScrap": {
+          "raw": 0.9473,
+          "weight": 0.15,
+          "weighted": 0.142095
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7748178015939552,
+          "weight": 0.2,
+          "weighted": 0.15496356031879105
+        },
+        "carton": {
+          "raw": 0.6754215711278352,
+          "weight": 0.1,
+          "weighted": 0.06754215711278352
+        },
+        "assembly": {
+          "raw": 0.7290400972053463,
+          "weight": 0.1,
+          "weighted": 0.07290400972053464
+        },
+        "complexity": {
+          "raw": 0.3225806451612903,
+          "weight": 0.1,
+          "weighted": 0.03225806451612903
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "a0be2655-84ed-4a0d-83cd-bfd7df9652a5",
+      "canonicalHash": "07b3e036806e2e1f79c6dc4698b7dd2f8b92321f2d512ee55cc94c3db90904f9",
+      "engineeringHash": "f24c53c39b488740f9622068c3baa4121c19fdeb462e2b2edae4df429eb676a9",
+      "bomHash": "ff8695c111bdf8a28b85be64632a98ef8dc10dd7b9d60a0cda96dac0eb75c048",
+      "nestingHash": "0fbb6f1382fac64fc9979fa102ae5338491dfee3c6ff079c730d88e073796fb9",
+      "costSnapshotHash": "f3ef699bc037eec7f73b76631db019b56a57dab3b1c878d0bda7117473b876f5",
+      "costEngineeringHash": "f24c53c39b488740f9622068c3baa4121c19fdeb462e2b2edae4df429eb676a9",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.655095180887755,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.3855,
+          "weight": 0.25,
+          "weighted": 0.096375
+        },
+        "trueScrap": {
+          "raw": 0.945,
+          "weight": 0.15,
+          "weighted": 0.14175
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7699616405110696,
+          "weight": 0.2,
+          "weighted": 0.15399232810221394
+        },
+        "carton": {
+          "raw": 0.6185383769909265,
+          "weight": 0.1,
+          "weighted": 0.061853837699092654
+        },
+        "assembly": {
+          "raw": 0.683371298405467,
+          "weight": 0.1,
+          "weighted": 0.0683371298405467
+        },
+        "complexity": {
+          "raw": 0.32786885245901637,
+          "weight": 0.1,
+          "weighted": 0.03278688524590164
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    },
+    {
+      "candidateId": "39e7f747-ba71-4ffe-9362-106a2920ff45",
+      "canonicalHash": "53d0d6c1fba6d22740511e29fa6c78d016ff3b8034eeec31540882920ffdd863",
+      "engineeringHash": "859070b6bab72d343ff18e9743fb0ac885082c5ae88a593f5d04887987e8a258",
+      "bomHash": "c4831935515650e9f2fcbbd301b7da6d3966c5641bd068c74ad5f8e089f7b7f5",
+      "nestingHash": "d254f21ad445e1b28dec3de4b64270086b01a91a81c20e1009d0c1b98725e476",
+      "costSnapshotHash": "9974a11ba90a86cf9f38ffbd838dc73ca36ed004bfc6cc17d13d668bf8c7f00e",
+      "costEngineeringHash": "859070b6bab72d343ff18e9743fb0ac885082c5ae88a593f5d04887987e8a258",
+      "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+      "score": 0.6525656399130958,
+      "breakdown": {
+        "utilization": {
+          "raw": 0.2901,
+          "weight": 0.25,
+          "weighted": 0.072525
+        },
+        "trueScrap": {
+          "raw": 0.952,
+          "weight": 0.15,
+          "weighted": 0.14279999999999998
+        },
+        "remnantReuse": {
+          "raw": 1.0,
+          "weight": 0.1,
+          "weighted": 0.1
+        },
+        "landedCost": {
+          "raw": 0.7826342843905157,
+          "weight": 0.2,
+          "weighted": 0.15652685687810317
+        },
+        "carton": {
+          "raw": 0.7555170879832892,
+          "weight": 0.1,
+          "weighted": 0.07555170879832893
+        },
+        "assembly": {
+          "raw": 0.7290400972053463,
+          "weight": 0.1,
+          "weighted": 0.07290400972053464
+        },
+        "complexity": {
+          "raw": 0.3225806451612903,
+          "weight": 0.1,
+          "weighted": 0.03225806451612903
+        }
+      },
+      "state": "SHORTLISTED",
+      "approvalStatus": null,
+      "conservationOk": true,
+      "areaConservationError": 0.0,
+      "conservationToleranceMm2": 2.0
+    }
+  ],
+  "realMediaCases": [
+    {
+      "candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8",
+      "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8",
+      "jobId": "c2d96d5c-f569-449c-bd39-9faac4d70ad0",
+      "alternateJobId": "c9815268-2980-496f-a6ae-bc00c6676ba1",
+      "previewArtifact": "140f85ad-5e2a-47a3-a9b5-b6be850a2aaf",
+      "alternateArtifact": "1db7cb97-8bc4-470d-892c-6a216d66b052",
+      "usedMock": false,
+      "realBlender": true,
+      "realOptix": true,
+      "blenderVersion": "5.2.1 LTS",
+      "device": "OPTIX",
+      "gpu": "NVIDIA T1000",
+      "engine": "CYCLES",
+      "executedAt": "2026-09-09T12:33:09.182885+00:00",
+      "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+      "artifactSha256": "e5a853452c57a5bfb9a9ba1319dca96bf515c11f8b57e2f07ec9d2de185e6d3a",
+      "artifactSize": 52574,
+      "label": "REAL"
+    },
+    {
+      "candidateId": "5b8d48af-066e-4738-811d-0518833ce071",
+      "engineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898",
+      "jobId": "5608af7c-230a-4253-ad20-4a64b815bf1e",
+      "alternateJobId": "8aa81be1-1b6d-4867-986a-dd7a8b372071",
+      "previewArtifact": "f9d2b503-a921-4cba-b289-1fd871b8dde8",
+      "alternateArtifact": "909104d1-84b8-456d-aff4-a0c8d2b86593",
+      "usedMock": false,
+      "realBlender": true,
+      "realOptix": true,
+      "blenderVersion": "5.2.1 LTS",
+      "device": "OPTIX",
+      "gpu": "NVIDIA T1000",
+      "engine": "CYCLES",
+      "executedAt": "2026-09-09T12:33:13.664060+00:00",
+      "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+      "artifactSha256": "da9512ac365d9f3b3b13254673ecaf94ffbbc8369a733ba42b6daaa028dce3cc",
+      "artifactSize": 54141,
+      "label": "REAL"
+    },
+    {
+      "candidateId": "9e838170-2fba-45da-91f1-63ee967a9ea4",
+      "engineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d",
+      "jobId": "cda2642f-c0fd-4d6a-9dca-8f7626a4deda",
+      "alternateJobId": "db5aa75f-1154-4560-b831-b490ea1a35fe",
+      "previewArtifact": "dae7dcbe-16d3-404b-9190-91989989021f",
+      "alternateArtifact": "309b6e3a-54a8-4032-8338-5b79877343b5",
+      "usedMock": false,
+      "realBlender": true,
+      "realOptix": true,
+      "blenderVersion": "5.2.1 LTS",
+      "device": "OPTIX",
+      "gpu": "NVIDIA T1000",
+      "engine": "CYCLES",
+      "executedAt": "2026-09-09T12:33:17.947511+00:00",
+      "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+      "artifactSha256": "c4c5690cb495184dc4abb629dd292c706ed913081cf3703ef69a71bb4897ae49",
+      "artifactSize": 53325,
+      "label": "REAL"
+    },
+    {
+      "candidateId": "c8d8edb8-e96e-443c-99bf-8a0c5e496f15",
+      "engineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04",
+      "jobId": "22c0d21e-e7b4-45fa-a6fd-77ac0937423b",
+      "alternateJobId": "d483bebb-4f7f-495e-a4e5-b9fb5dedf421",
+      "previewArtifact": "1c83f0da-0ae6-4ecf-a367-a7d69ea569fe",
+      "alternateArtifact": "bbfe1632-17bf-41eb-b0f0-731c60f927b1",
+      "usedMock": false,
+      "realBlender": true,
+      "realOptix": true,
+      "blenderVersion": "5.2.1 LTS",
+      "device": "OPTIX",
+      "gpu": "NVIDIA T1000",
+      "engine": "CYCLES",
+      "executedAt": "2026-09-09T12:33:22.427771+00:00",
+      "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+      "artifactSha256": "40069c7abd5073037104cd229997c4415fb7c08683b5589463ba51047cc2d02e",
+      "artifactSize": 54424,
+      "label": "REAL"
+    }
+  ],
   "rows": [
     {
       "check": ">=24 candidates / >=6 kinds",
@@ -41,7 +655,7 @@
     {
       "check": "DFM conservation",
       "status": "REAL_LOGIC",
-      "evidence": "True"
+      "evidence": "{\"conservationOk\": true, \"toleranceMm2\": 2.0}"
     },
     {
       "check": "cross-SKU planning no consume",
@@ -66,7 +680,7 @@
     {
       "check": "tenant backup semantic",
       "status": "REAL_LOGIC",
-      "evidence": "{\"liveA\": \"bd5a9bb260a53ee982aaa9a1f3ea56fd8fcdc3c79a6c5bdfa0d77ac0cf5174c7\", \"restoredA\": \"bd5a9bb260a53ee982aaa9a1f3ea56fd8fcdc3c79a6c5bdfa0d77ac0cf5174c7\", \"equal\": true}"
+      "evidence": "{\"liveA\": \"f22b593fd1fd143412c3aca87994db9bb02498b888706214a7109ed428062aa6\", \"restoredA\": \"f22b593fd1fd143412c3aca87994db9bb02498b888706214a7109ed428062aa6\", \"equal\": true}"
     },
     {
       "check": "manual prototype approval",
@@ -74,14 +688,19 @@
       "evidence": "READY_FOR_MANUAL_PROTOTYPE"
     },
     {
+      "check": "Top 10 lineage",
+      "status": "REAL_LOGIC",
+      "evidence": "[{\"candidateId\": \"a48568be-24f8-4389-91b9-c47f8c8d9bb8\", \"canonicalHash\": \"a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e\", \"engineeringHash\": \"7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8\", \"bomHash\": \"22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774\", \"nestingHash\": \"55518e7841ecff422c44793f189556823e661acfb11c63fb7280081dce5920fc\", \"costSnapshotHash\": \"9e2b8d73bcebf7362113c66ee5471828cbab3dec2d8f74bd07df6fea2e590376\", \"costEngineeringHash\": \"7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8\", \"rankingPolicyHash\": \"a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017\", \"score\": 0.7159642293951043, \"breakdown\": {\"utilization\": {\"raw\": 0.6161, \"weight\": 0.25, \"weighted\": 0.154025}, \"trueScrap\": {\"raw\": 0.9483,"
+    },
+    {
       "check": "REAL blender media",
       "status": "REAL",
-      "evidence": "real=4/4"
+      "evidence": "[{\"candidateId\": \"a48568be-24f8-4389-91b9-c47f8c8d9bb8\", \"engineeringHash\": \"7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8\", \"jobId\": \"c2d96d5c-f569-449c-bd39-9faac4d70ad0\", \"artifactSha256\": \"e5a853452c57a5bfb9a9ba1319dca96bf515c11f8b57e2f07ec9d2de185e6d3a\", \"artifactSize\": 52574, \"blenderVersion\": \"5.2.1 LTS\", \"device\": \"OPTIX\", \"gpu\": \"NVIDIA T1000\", \"evidenceCodeCommit\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"usedMock\": false, \"realBlender\": true, \"realOptix\": true, \"executedAt\": \"2026-09-09T12:33:09.182885+00:00\"}, {\"candidateId\": \"5b8d48af-066e-4738-811d-0518833ce071\", \"engineeringHash\": \"15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898\", \"jobId\": \"5608af7c-230a-4253-ad20-4a64b815bf1e\", \"artifactSha256\": \"da9512ac365d9f3b3b13254673ecaf94ffbbc8369a733ba42b6daaa028dce3cc\", \"artifactSize\": 54141, \"blenderVersion\": \"5.2.1 LTS\", \"device\": \"OPTIX\", \"gpu\": \"NVIDIA T1000\", \"evidenceCodeCommit\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"usedMock\": false, \"realBlender\": true, \"realOptix\": true, \"executedAt\": \"2026-09-09T12:33:13.664060+00:00\"}, {\"candidateId\": \"9e838170-2fba-45da-91f1-63ee967a9ea4\", \"engineeringHash\": \"628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d\", \"jobId\": \"cda2642f-c0fd-4d6a-9dca-8f7626a4deda\", \"artifactSha256\": \"c4c5690cb495184dc4abb629dd292c706ed913081cf3703ef69a71bb4897ae49\", \"artifactSize\": 53325, \"blenderVersion\": \"5.2.1 LTS\", \"device\": \"OPTIX\", \"gpu\": \"NVIDIA T1000\", \"evidenceCodeCommit\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"usedMock\": false, \"realBlender\": true, \"realOptix\": true, \"executedAt\": \"2026-09-09T12:33:17.947511+00:00\"}, {\"candidateId\": \"c8d8edb8-e96e-443c-99bf-8a0c5e496f15\", \"engineeringHash\": \"898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04\", \"jobId\": \"22c0d21e-e7b4-45fa-a6fd-77ac0937423b\", \"artifactSha256\": \"40069c7abd5073037104cd229997c4415fb7c08683b5589463ba51047cc2d02e\", \"artifactSize\": 54424, \"blenderVersion\": \"5.2.1 LTS\", \"device\": \"OPTIX\", \"gpu\": \"NVIDIA T1000\", \"evidenceCodeCommit\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"usedMock\": false, \"realBlender\": true, \"realOptix\": true, \"executedAt\": \"2026-09-09T12:33:22.427771+00:00\"}]"
     },
     {
       "check": "evidenceCodeCommit",
       "status": "REAL_LOGIC",
-      "evidence": "655ea994bdd7e5505324b10ea02f0166abefb08e"
+      "evidence": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
     },
     {
       "check": "workingTreeClean",

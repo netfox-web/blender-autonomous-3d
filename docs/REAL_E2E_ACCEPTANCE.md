@@ -10,7 +10,7 @@ Scoped readiness (not a global Production Ready flag):
 - `operatorControlReady`: **true** (scoped) — see `docs/OPERATOR_CONTROL_ACCEPTANCE.md` (scan/dispatch/health; barcode hardware PARTIAL)
 - `qcTraceabilityReady`: **true** — see `docs/QC_TRACEABILITY_ACCEPTANCE.md`
 - `manualFactoryPilotReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/MANUAL_FACTORY_PILOT_ACCEPTANCE.md` (CODE `11c79d1`, generation `2d0cc206-ed80-4c32-a82f-491ae8842220`; REAL blender reused `018cc70`)
-- `skuPortfolioFactoryReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.md` (CODE `655ea99`, generation `d9311329-d9b4-4fa7-a367-8eea8267799f`; 4/4 T1000 OptiX media)
+- `skuPortfolioFactoryReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.md` (CODE `7a87ea5`, generation `0b76b09e-02a8-45a6-b4fd-bf34849dd76c`; 4/4 T1000 OptiX media with per-case SHA/size/job/GPU)
 - `operatorShiftReady`: **REAL_LOGIC / MANUAL_IDENTITY** — see `docs/OPERATOR_SHIFT_ACCEPTANCE.md`
 - `inventoryReconciliationReady`: **REAL_LOGIC / MANUAL** — see `docs/INVENTORY_RECONCILIATION_ACCEPTANCE.md`
 - `pilotBackupRestoreReady`: **REAL_LOGIC** (local operational, not cloud HA/DR) — see `docs/PILOT_BACKUP_RESTORE_ACCEPTANCE.md`
