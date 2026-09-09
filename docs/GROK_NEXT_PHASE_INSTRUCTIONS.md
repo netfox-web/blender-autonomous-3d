@@ -1,356 +1,304 @@
-# Grok 開發指令：Phase 601–660 Prototype Validation & SKU Launch Readiness V1
+# Grok 修正指令：Phase 601–660 Prototype Validation Integrity Corrections
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main/docs head: `ac12f93628cf00b522146f3a2b71db3425b63141`  
-> Reviewed CODE_EVIDENCE_SHA: `7a87ea5cedc5242178d7e072de1b9b89c4c60d14`  
-> ChatGPT review result: **ACCEPT WITH SCOPE**  
-> Phase 541–600 integrity blockers are accepted. **Phase 601–660 is authorized.**
+> Reviewed main/docs head: `900191c86d2593ca6c1ea9de60cdf5be2ab33e7e`  
+> Reviewed CODE_EVIDENCE_SHA: `66a66d1feda59cfe77fe8f5ceb21032d86f2c3f8`  
+> ChatGPT review result: **CHANGES REQUIRED**  
+> **Do not start Phase 661+. Fix Phase 601–660 only.**
 
-## Accepted baseline — preserve, do not rewrite
+## Accepted evidence — preserve it
 
-Phase 541–600 now has auditable fail-closed evidence:
+The new Phase 601–660 implementation is substantive and should be corrected in place, not rewritten:
 
-- manufacturing envelope fields are finite and `>0`; invalid explicit inputs fail before persistence;
-- DFM material conservation is independently recomputed from `sheetMm × sheetCount` vs placed + remnant + true scrap; missing authoritative fields do not become zero;
-- remnant-first planning enforces tenant + material + thickness + grain compatibility and distinguishes candidate vs actually-used remnant IDs; planning does not consume inventory;
-- canonical acceptance contains 10/10 Top-10 lineage rows and 4 detailed REAL Blender media cases bound to CODE `7a87ea5`;
-- fresh REAL media = Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`, artifact SHA-256 and positive size, exact evidence code commit;
-- local `pytest -q`: **327 passed**, explicitly MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready;
-- GitHub Actions CODE run `34351349710`: Ubuntu + Windows SUCCESS on `7a87ea5`;
-- docs/head run `34351867909`: Ubuntu + Windows SUCCESS on `ac12f936`;
-- `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`, `liveMachineControl=false` remain correct.
+- durable prototype selection / PrototypeUnit / as-built / ECO / observed-cost / packaging / decision records exist;
+- fixture actor is prevented from producing `MANUAL_EVIDENCE` in the canonical scenario;
+- canonical acceptance is bound to clean CODE SHA and uses atomic publication;
+- TENANT_SCOPED backup now includes prototype state and current restore digest is equal;
+- local `pytest -q` is reported as **341 passed**, explicitly MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready;
+- GitHub Actions CODE run `34357037364` is GREEN on Ubuntu + Windows for `66a66d1`;
+- docs/head run `34357513520` is GREEN on Ubuntu + Windows for `900191c`;
+- `physicalPrototypeValidated=false` for CI fixture evidence;
+- Demand remains MOCK; Vision / AI Video remain MOCK; OS sandbox / AR / preflight / barcode / McKee-BCT remain PARTIAL; LIVE_CNC / LIVE_LASER / PLC / live provider / live factory execution remain BLOCKED;
+- `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`, `liveMachineControl=false` are correct;
+- prior 4/4 REAL Blender evidence on `7a87ea5` may be reused because this phase did not change the portfolio/media/engineering render path, but the reuse reference must itself be verified fail-closed as described below.
 
-Do **not** rebuild Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / KD registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup. Extend the existing paths only.
-
----
-
-# Goal of Phase 601–660
-
-Move from “software-ranked SKU portfolio” to a **human-controlled physical prototype validation loop** for small-space / student / rental KD products.
-
-The system must support:
-
-`Top 10 → human selects prototype set → manual prototype work orders → as-built measurements/evidence → QC/assembly/packing/actual-cost variance → ECO/revision loop → pilot-batch readiness → human go/no-go`
-
-This phase does **not** authorize live CNC, laser, PLC, automatic factory execution, automatic purchasing, automatic carrier booking, or unreviewed product launch.
-
-The key truth boundary is:
-
-- software workflow / deterministic calculations = `REAL_LOGIC`;
-- operator-entered measurements / photos / timestamps = `MANUAL_EVIDENCE` or `IMPORTED_EVIDENCE`;
-- CI-generated prototype data = `FIXTURE`;
-- a fixture must never be called a real physical prototype;
-- only evidence originating from an explicit human/operator import may qualify as physical pilot evidence;
-- physical safety / load / tip-over checks are engineering observations unless backed by a real certified test; do not label them certification.
+Do **not** replace Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / KD registry / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture. Extend existing paths only.
 
 ---
 
-## Phase 601–608 — Prototype Selection & Human Identity Gate
+## BLOCKER 1 — `consume_material_once` currently does not consume real durable inventory
 
-1. Add a durable prototype-selection record for Top-10 candidates.
-2. Selection must pin:
-   - tenantId
-   - candidateId
-   - canonicalHash
-   - engineeringHash
-   - bomHash
-   - nestingHash
-   - costSnapshotHash
-   - rankingPolicyHash
-   - selected ranking score
-   - selectedAt
-   - selectedBy operator identity
-   - shift/session identity where available
-   - reason
-3. Reuse existing Operator/Shift identity. Do not accept an arbitrary string as proof of a physical human action.
-4. CI/FIXTURE may use a clearly labeled fixture actor, but must produce `FIXTURE`, never `MANUAL_EVIDENCE`.
-5. A stale/superseded/rejected candidate cannot be selected.
-6. Default pilot target: select **4 representative SKUs** from Top 10; preserve Top-10 ranking and human override separately.
-7. Selection is not machine authorization and must keep `liveMachineControl=false`.
+Current code sets `materialConsumed=true`, `consumedSheets=N`, `consumesInventory=true` inside `PrototypeUnit`, but does not reserve/consume from the existing MaterialLot / WorkOrder inventory path. This proves only an internal boolean/counter, not inventory conservation.
 
-Required tests:
+### Required correction
 
-- disabled/closed-shift/cross-tenant operator cannot select;
-- stale candidate lineage blocks selection;
-- fixture actor cannot produce MANUAL_EVIDENCE;
-- superseded/rejected candidate blocks selection;
-- restart preserves selection exactly.
+1. If a prototype unit declares `consumesInventory=true`, delegate to the **existing** MaterialLot / WorkOrder reservation+consume mechanism. Do not create a second inventory ledger.
+2. Pin the exact required material SKU / thickness / dimensions / grain policy and exact lot/reservation IDs used.
+3. Retry/restart/idempotency must not consume a second time.
+4. A shortage or incompatible material must fail closed and leave all lots unchanged.
+5. Persist enough lineage on the PrototypeUnit to audit the existing inventory transaction IDs / lot IDs / consumed quantities.
+6. If a prototype uses no real inventory path (e.g. CI fixture-only), keep `consumesInventory=false` and label the material observation `FIXTURE`; do not claim inventory consumption.
+
+### Required regressions
+
+- before/after durable lot quantities prove exact conservation;
+- retry + recreate `Platform` + retry again => same consumed quantity and same transaction/lot lineage;
+- wrong SKU/thickness/grain cannot satisfy the prototype requirement;
+- partial shortage rolls back with zero orphan reservation/consume;
+- boolean-only `materialConsumed=true` with unchanged stock must cause acceptance failure.
 
 ---
 
-## Phase 609–616 — Prototype Unit & Manual Build Traveler
+## BLOCKER 2 — as-built evidence can validate a prototype without enforcing engineering tolerances / completed build state
 
-1. Introduce a durable `PrototypeUnit` (or equivalent existing-domain record) for each physical prototype unit.
-2. Each unit must pin the selected candidate/version hashes and a unique prototypeUnitId.
-3. Build traveler must reuse existing ManufacturingRelease / WorkOrder / MANUAL_STATION conventions where practical; do not create a second MES.
-4. Traveler contains human-readable operations only; `machineCommand=false`, `liveCnc=false`, `liveLaser=false`.
-5. Build states should be fail-closed, e.g.:
-   - `PLANNED`
-   - `WAITING_HUMAN_START`
-   - `IN_BUILD`
-   - `WAITING_VALIDATION`
-   - `VALIDATED`
-   - `HOLD`
-   - `REWORK`
-   - `SCRAPPED`
-6. Only a selected, non-superseded engineering version may create a prototype unit.
-7. If actual inventory reservation is invoked, use the existing MaterialLot/WorkOrder reservation path and tenant isolation. CI must use fixture inventory only.
-8. Restart/retry must not create duplicate prototype units or duplicate material consumption.
+Current `PASS_AS_BUILT` effectively allows a non-fixture actor to set `physicalPrototypeValidated=true` when the five required numbers merely exist and engineeringHash matches. It does not require the unit to have completed the build, does not evaluate tolerance policy, and does not require the defect/QC observations that Phase 601–660 specified.
 
-Required tests:
+### Required correction
 
-- idempotent create/start/complete;
-- no double consume after restart/retry;
-- exact engineering/release lineage preserved;
-- cross-tenant access blocked;
-- superseded engineering version cannot silently continue as current.
+1. `record_as_built` / `PASS_AS_BUILT` must require the unit to be at the correct completed-build state (`WAITING_VALIDATION` or equivalent existing state). A `PLANNED`, `WAITING_HUMAN_START`, or `IN_BUILD` unit cannot become physically validated.
+2. Compute a structured tolerance result for every required numeric field using the pinned engineering-policy tolerance. Do not merely store variance.
+3. Out-of-tolerance required dimensions/weight/assembly observations must result in HOLD / REWORK / NEEDS_ECO according to explicit policy; they must not silently become `VALIDATED`.
+4. Add required structured observations, with explicit `NOT_APPLICABLE + reason` only where truly inapplicable:
+   - missing/damaged/incorrect hardware;
+   - panel/edge/finish defects;
+   - wobble/stability observation;
+   - door/drawer fit where applicable;
+   - rework count / defect count.
+5. Physical safety/load/tip-over remains engineering/manual observation only; never certification unless separately evidenced.
+6. For DAM refs, do not trust caller-supplied `tenantId`, `sha256`, or `size` as ownership proof. Resolve the referenced DAM object from the existing DAM store and verify authoritative tenant ownership + hash/size. Forged or missing ownership metadata must fail closed.
+7. `IMPORTED` packaging/as-built evidence must stay `IMPORTED_EVIDENCE`, not be relabeled `MANUAL_EVIDENCE`.
 
----
+### Required regressions
 
-## Phase 617–624 — As-Built Measurement & Physical Evidence Capture
-
-Add operator/imported as-built evidence without pretending CI can measure a real object.
-
-Per prototype unit capture at minimum:
-
-- measured width/depth/height;
-- measured assembled weight;
-- measured carton length/width/height and packed weight when available;
-- actual assembly minutes;
-- actual operation/rework count;
-- missing/damaged/incorrect hardware observations;
-- panel/edge/finish defects;
-- wobble/stability observation;
-- door/drawer fit observation where applicable;
-- operator identity + timestamp;
-- evidence source (`MANUAL`, `IMPORTED`, `FIXTURE`);
-- DAM references for photos/video/documents if supplied;
-- SHA/size for imported evidence artifacts when DAM exposes them.
-
-Rules:
-
-1. Preserve engineering target and as-built values separately; never overwrite target dimensions.
-2. Calculate absolute and percentage variance for every numeric observation.
-3. Define configurable prototype tolerances; label them engineering policy, not certification.
-4. Missing required real measurements => `WAITING_VALIDATION`, not PASS.
-5. FIXTURE measurements may test logic but cannot set `physicalPrototypeValidated=true`.
-6. Manual/imported evidence must be tenant-scoped and operator-attributed.
-7. Do not fabricate physical photographs or measurement values in REAL acceptance.
-
-Required negative tests:
-
-- NaN/Inf/non-numeric/negative impossible values fail closed;
-- fixture source cannot become MANUAL/REAL;
-- missing required measurements cannot validate;
-- wrong engineeringHash / prototypeUnitId rejects evidence;
-- cross-tenant DAM/evidence reference rejects.
+- a PLANNED unit with perfect manual values cannot validate;
+- a completed unit with a large width/height/weight/time deviation cannot validate;
+- missing required defect/QC observations cannot validate;
+- forged Tenant-B DAM ref carrying `tenantId=A` must reject after authoritative lookup;
+- fixture evidence still cannot set physical validated;
+- old engineeringHash evidence still cannot validate a new ECO revision.
 
 ---
 
-## Phase 625–632 — QC Variance, ECO & Revision Loop
+## BLOCKER 3 — actual prototype cost currently mixes physical units into a currency total and is fail-open on omitted components
 
-1. Compare as-built evidence to the pinned Engineering Definition/BOM/packing target.
-2. Produce a structured variance report with severity and source evidence.
-3. Support Human decisions:
-   - `PASS_AS_BUILT`
-   - `REWORK_CURRENT_UNIT`
-   - `CREATE_ECO`
-   - `HOLD_SKU`
-   - `SCRAP_UNIT`
-4. `CREATE_ECO` must create a **new immutable engineering version/hash**. Never mutate the accepted engineering hash in place.
-5. Existing prototype evidence remains pinned to the old version.
-6. New ECO version must invalidate stale BOM/nesting/cost/media/release/ranking lineage and force recomputation through existing engines.
-7. A superseded version cannot be newly approved for prototype/pilot batch.
-8. Preserve append-only revision reason, actor, timestamps and old→new lineage.
-9. If geometry/BOM changes, regenerate cost/nesting and update the portfolio candidate lineage; do not silently reuse stale values.
+Current `record_actual_cost()` sums whatever numeric values are supplied. For example `laborMinutes` + sheet counts + hardware counts can become a numeric `total`, which is not a monetary cost. It also marks a record complete when omitted required categories are absent from the input; only explicitly supplied `None` becomes missing.
 
-Required regressions:
+### Required correction
 
-- old prototype evidence cannot validate a new engineeringHash;
-- ECO changes engineering hash and invalidates stale cost/nesting;
-- rejected ECO cannot replace current version;
-- restart preserves revision chain;
-- tenant A cannot inspect/approve tenant B ECO.
+1. Separate **quantity/time observations** from **monetary cost components**. Examples:
+   - quantities/time: sheetsConsumed, materialArea, hardwareQty, laborMinutes, reworkMinutes, packagingQty;
+   - currency: materialAmount, hardwareAmount, laborAmount, reworkAmount, packagingAmount, shippingAmount, externalProcessingAmount.
+2. Never sum minutes/counts/sheets into a currency total.
+3. Define the required accounting categories for a complete observed prototype cost. Omitted required categories must be `MISSING`, not silently ignored.
+4. If material accounting is incomplete, total observed cost remains `PARTIAL` / `None` as specified; do not zero-fill.
+5. Preserve original CONFIG_ESTIMATE snapshot separately and calculate comparable estimate-vs-observed monetary variance only when the observed monetary set is complete enough.
+6. Pin exact prototypeUnitId + engineeringHash + source label + currency + costSnapshotHash / lineage.
+7. MANUAL / IMPORTED remains MANUAL / IMPORTED, never LIVE_PROVIDER.
+8. Remnant credit may only enter observed monetary variance when an existing real/manual remnant-return record is referenced.
 
----
+### Required regressions
 
-## Phase 633–640 — Actual Prototype Cost & Time Variance
-
-Keep estimates and actual observations separate.
-
-Capture actual/manual/imported values where available:
-
-- material used / sheets consumed;
-- remnant returned;
-- true scrap observed;
-- hardware actually consumed;
-- labor minutes;
-- rework minutes;
-- packaging material used;
-- prototype shipping/courier amount if manually imported;
-- external processing amount if manually imported.
-
-Requirements:
-
-1. Do not overwrite `CONFIG_ESTIMATE` snapshot.
-2. Create a separate `actualPrototypeCost` / `observedCostSnapshot` with per-component source labels.
-3. `FIXTURE` actual costs stay FIXTURE.
-4. `MANUAL` / `IMPORTED` values are not `LIVE_PROVIDER`.
-5. Compute estimate vs observed variance with exact engineeringHash and prototypeUnitId lineage.
-6. If material accounting is incomplete, mark total actual cost `PARTIAL`, not zero-filled PASS.
-7. Remnant credit may only be observed when a real/manual remnant return record exists; otherwise keep estimate separate.
-
-Required tests:
-
-- missing actual component does not become 0 silently;
-- estimate and observed snapshots remain immutable and distinguishable;
-- stale engineering version cannot reuse observed cost;
-- tenant isolation and restart persistence.
+- `{laborMinutes: 40}` alone cannot become a complete actual monetary cost;
+- omission of material accounting remains PARTIAL even if all supplied values are numeric;
+- unit quantities are not added to currency total;
+- stale engineeringHash cannot reuse the old observed cost;
+- estimate and observed cost snapshots remain immutable across restart;
+- wrong currency / non-finite / negative invalid monetary inputs fail closed.
 
 ---
 
-## Phase 641–648 — Packaging, Assembly & Logistics Validation
+## BLOCKER 4 — packaging validation is incomplete and missing dimensions can silently become `1`
 
-1. Build a physical-validation checklist for the 4 selected prototype SKUs.
-2. Compare predicted vs observed:
-   - carton dimensions;
-   - packed weight;
-   - volumetric weight calculation;
-   - assembly time;
-   - hardware count;
-   - packing fit / part count;
-   - damage/defect observations.
-3. Carrier price remains `IMPORTED/MANUAL/CONFIG_ESTIMATE` unless a real provider adapter is independently present; no carrier booking.
-4. Barcode hardware remains PARTIAL unless real scan hardware evidence exists.
-5. Packaging drop/compression/load observations are MANUAL evidence only; no certification claim.
-6. A failed packing/assembly validation must place SKU on HOLD or ECO, not still become pilot-batch ready.
-7. Record final carton target revision only through an explicit revision/ECO path.
+Current packaging logic uses `observed.get(dim) or 1`; missing carton dimensions may therefore pass. It only gates longest side and packed weight, and does not implement the required predicted-vs-observed / volumetric / assembly / hardware / part-count / defect validation.
 
-Required tests:
+### Required correction
 
-- oversize/overweight observed carton blocks readiness;
-- missing packed weight does not PASS;
-- predicted vs observed comparison uses same SKU engineering version;
-- no automatic provider/carrier truth promotion.
+1. Require all authoritative carton dimensions and packed weight for a completed packaging validation. Missing values must be `WAITING_VALIDATION` / BLOCKED, never replaced by `1` or another default.
+2. Pin the same engineeringHash / prototypeUnitId for predicted and observed packaging.
+3. Compute and store:
+   - predicted vs observed carton L/W/H variance;
+   - predicted vs observed packed weight variance;
+   - volumetric weight using an explicit CONFIG policy/divisor;
+   - assembly observed vs estimate;
+   - expected vs observed hardware/part count;
+   - packing-fit / missing-part / damage/defect observations.
+4. Oversize, overweight, missing required observations, packing mismatch, or configured tolerance failure must put the SKU/unit on HOLD or NEEDS_ECO.
+5. Carrier remains CONFIG_ESTIMATE / IMPORTED / MANUAL; no booking.
+6. Barcode hardware remains PARTIAL unless separately evidenced.
+7. `IMPORTED` packaging evidence must keep the imported label.
+
+### Required regressions
+
+- missing each individual carton dimension fails;
+- missing packed weight fails;
+- oversize/overweight fails;
+- hardware-count/part-count mismatch fails;
+- material packing damage/defect observation fails according to explicit policy;
+- predicted and observed different engineeringHash fails;
+- volumetric-weight computation is deterministic and policy-hash pinned.
 
 ---
 
-## Phase 649–654 — Pilot Batch Readiness & Decision Board
+## BLOCKER 5 — ECO currently changes revision/hash but has no actual engineering-change input
 
-Create a human-facing decision model for Top-10 / selected-4, but do not auto-launch products.
+Current accepted ECO creates a new revision/hash, but it rebuilds the same geometry parameters and does not accept an explicit engineering change. This is not sufficient for a physical-prototype feedback loop where a dimensional/assembly/packing problem must be corrected.
 
-Per candidate show:
+### Required correction
 
-- ranking score + policy hash;
-- DFM / conservation;
-- expected sheet utilization / scrap / remnant;
-- prototype status;
-- measured dimensional variance;
+1. Extend the existing ECO path with an explicit, validated engineering change payload (only allowed parametric/product fields; no arbitrary mutation).
+2. Apply changes through the existing `CabinetSpec` / KD engine / rule engine. Do not hand-edit generated BOM/nesting/cost.
+3. Recompute engineeringHash, BOM, nesting, DFM, commercial snapshot, packing and any affected media/release lineage through existing engines.
+4. Store exact old→new field changes and hashes in the append-only ECO record.
+5. A no-op ECO must fail unless explicitly classified as a documented non-engineering revision; a non-engineering revision must not pretend BOM/nesting/cost changed.
+6. Old prototype evidence/cost/packaging/ranking/release cannot validate the new engineering version.
+
+### Required regressions
+
+- change width/height/thickness through ECO => authoritative engineering/BOM/nesting lineage changes appropriately;
+- invalid rule/geometry ECO rejects before replacing current candidate;
+- no-op engineering ECO rejects;
+- restart preserves full revision chain and old→new changes;
+- stale evidence cannot qualify the new candidate.
+
+---
+
+## BLOCKER 6 — decision board and pilot-approval gate do not yet meet Phase 649–654
+
+Current readiness output omits several required decision fields, `READY_FOR_HUMAN_GO_NO_GO` is not concretely produced, and `approve_pilot_batch()` can record a pilot decision before it directly verifies all required packaging/cost/QC evidence.
+
+### Required correction
+
+For every selected candidate, decision board must expose and pin:
+
+- ranking score + rankingPolicyHash;
+- DFM/conservation;
+- expected sheet utilization / true scrap / reusable remnant;
+- prototype/build state;
+- tolerance result and dimensional variance;
 - assembly observed vs estimated;
-- observed vs estimated cost;
-- packaging observed vs estimated;
-- QC/rework status;
-- REAL Blender media evidence;
+- observed vs estimated monetary cost + completeness label;
+- packaging predicted vs observed + validation result;
+- QC/defects/rework status;
+- REAL Blender media lineage (or verified prior REAL media reference);
 - demand truth label;
-- blockers.
+- exact blockers and evidence source labels.
 
-Allowed readiness states:
+`approve_pilot_batch()` must independently fail closed unless:
 
-- `NOT_SELECTED`
-- `READY_FOR_PROTOTYPE`
-- `PROTOTYPE_IN_PROGRESS`
-- `WAITING_PHYSICAL_EVIDENCE`
-- `HOLD`
-- `NEEDS_ECO`
-- `PROTOTYPE_VALIDATED`
-- `READY_FOR_MANUAL_PILOT_BATCH`
-- `READY_FOR_HUMAN_GO_NO_GO`
+- current engineering/ranking/cost/nesting lineage is non-stale;
+- physical prototype validation is MANUAL_EVIDENCE / IMPORTED_EVIDENCE, not FIXTURE;
+- required tolerance/QC evidence passes;
+- required packaging evidence exists and passes;
+- required actual-cost completeness policy is satisfied or an explicit human exception policy is recorded (do not silently treat PARTIAL as complete);
+- human/operator + open shift + reason are valid;
+- MOCK demand did not upgrade the state.
 
-Rules:
+Define a deterministic path to `READY_FOR_HUMAN_GO_NO_GO`; it must still keep `productionReady=false` and `liveMachineControl=false`.
 
-1. `READY_FOR_MANUAL_PILOT_BATCH` requires explicit human approval and complete required validation evidence.
-2. It is not Production Ready and not automatic machine execution.
-3. MOCK demand must not positively upgrade readiness.
-4. A human may override ranking only with actor + reason; preserve deterministic score.
-5. Never create an unscoped `productionReady=true`.
+### Required regressions
 
----
-
-## Phase 655–660 — Acceptance, Backup/Restore, CI & REAL Evidence
-
-Create/update canonical acceptance:
-
-- `docs/PROTOTYPE_VALIDATION_ACCEPTANCE.md` + JSON
-- `docs/SKU_LAUNCH_READINESS_ACCEPTANCE.md` + JSON
-- update `docs/REAL_E2E_ACCEPTANCE.md`
-- update `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-- update `docs/GROK_PROGRESS_REPORT.md`
-- update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet-specific truth changed.
-
-Acceptance requirements:
-
-1. New durable prototype/evidence/ECO/actual-cost state must be included in TENANT_SCOPED backup/restore semantic contract.
-2. Tenant A restore must preserve exact prototypeUnit IDs, engineering lineage, evidence hashes, ECO chain and cost snapshot identity, with zero Tenant B leakage.
-3. Runner must be bound to exact clean `CODE_EVIDENCE_SHA` and fail closed on dirty tree / wrong SHA.
-4. Acceptance files must be published atomically with one generation ID; failed run must not overwrite prior truth set.
-5. Full `pytest -q` count must be reported as MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready.
-6. Require Ubuntu + Windows Actions GREEN on exact CODE SHA; then GREEN on docs/head.
-7. Run fresh clean-tree **4/4 REAL Blender** for the four prototype-selected SKU engineering versions on final CODE SHA if portfolio/media/engineering render path changed. Each case must retain the existing per-case SHA/size/job/GPU/commit requirements.
-8. Physical prototype acceptance truth:
-   - if only fixture measurements exist: `physicalPrototypeValidated=false`, label `FIXTURE`;
-   - if real operator/imported evidence is actually supplied and lineage-valid: label `MANUAL_EVIDENCE` / `IMPORTED_EVIDENCE`, not automated REAL sensor truth;
-   - never fabricate a physical PASS to satisfy acceptance.
-9. Pilot batch acceptance must remain MANUAL-STATION scoped; `liveFactoryExecutionReady=false`.
-
-Minimum acceptance regressions:
-
-- fixture actor/evidence cannot set physical validated;
-- missing required measurement blocks validation;
-- stale engineering/ECO lineage blocks validation/readiness;
-- incomplete actual cost stays PARTIAL;
-- packaging validation failure blocks pilot readiness;
-- backup/restore preserves exact new durable identities;
-- cross-tenant leakage fails;
-- dirty tree / mismatched expected SHA fails without overwriting prior acceptance;
-- MOCK demand cannot influence GO state;
-- LIVE_CNC/LASER/PLC remains BLOCKED.
+- `PROTOTYPE_VALIDATED` with no packaging cannot create pilot approval;
+- validated prototype with PARTIAL required actual cost cannot auto-qualify;
+- stale ECO/ranking/cost lineage blocks;
+- decision board missing any required field fails acceptance;
+- MOCK demand never upgrades GO state;
+- fixture actor/evidence cannot approve pilot batch.
 
 ---
 
-# Truth labels that remain unchanged unless independently proven
+## BLOCKER 7 — canonical acceptance runner is fail-open on the substantive Phase 601–660 contract
 
-- Candidate generation / DFM / ranking: `REAL_LOGIC`
-- Cross-SKU/remnant planning: `REAL_LOGIC / PLANNING`
-- Prototype workflow code: `REAL_LOGIC`
-- CI prototype units / measurements: `FIXTURE`
-- Human-entered physical measurements/photos: `MANUAL_EVIDENCE`
-- Imported physical records: `IMPORTED_EVIDENCE`
-- Commercial estimate: `CONFIG_ESTIMATE`
-- Actual manual/imported prototype cost: `MANUAL / IMPORTED`, possibly `PARTIAL`
-- Demand: `MOCK` unless a separately evidenced imported/manual source exists; never relabel MOCK as REAL
-- Vision Judge: `MOCK`
-- AI Video: `MOCK`
+The current runner can return/publish `ok=true` with a hook scenario containing four selected FIXTURE records, `physicalPrototypeValidated=false`, **empty decision board**, no cost/packaging/tolerance evidence, and no media. `result.ok` is currently hardcoded true by the scenario and is too weak as the acceptance authority.
+
+### Required correction
+
+1. The acceptance runner must independently validate the Phase 601–660 evidence structure; do not rely on `result.ok=True`.
+2. Canonical acceptance must contain a per-selected-4 structured matrix with at least:
+   - selection and exact lineage hashes;
+   - PrototypeUnit state and evidence source;
+   - build completed status;
+   - tolerance/QC status;
+   - actual-cost completeness + monetary variance status;
+   - packaging completeness + variance status;
+   - ECO/current-version status;
+   - decision-board state/blockers;
+   - physicalPrototypeValidated flag;
+   - live-machine flags.
+3. Fixture canonical acceptance may correctly finish with `WAITING_PHYSICAL_EVIDENCE`; that is a PASS for the **software workflow only** if all fixture-path contracts are verified. Do not fabricate a physical PASS.
+4. Add negative runner tests where each of these is broken independently: empty/malformed board, missing required packaging evidence, cost marked complete incorrectly, tolerance contract missing/false, stale lineage, physical flag from fixture, tenant restore mismatch.
+5. Failed acceptance must remain non-zero and must not overwrite prior successful canonical files.
+6. Keep generation/commit/clean-tree atomic publication checks already implemented.
+
+### Prior REAL Blender evidence reuse
+
+Because Phase 601–660 did not change portfolio/media/engineering render paths, a new render is not mandatory. However, do not accept a free-form metadata pointer as proof.
+
+The runner/canonical verifier must fail closed unless the referenced prior REAL evidence can be read and verifies:
+
+- exact prior code commit `7a87ea5...` and generation `0b76b09e-...` (or the actual accepted prior canonical values);
+- 4/4 cases;
+- Blender 5.2.1 LTS + NVIDIA T1000 OptiX;
+- `usedMock=false`;
+- per-case job ID, artifact SHA-256, positive size, GPU/Blender lineage and exact engineering candidate lineage;
+- prior canonical truth set itself is internally valid.
+
+If implementing this verification is awkward, rerunning fresh clean-tree 4/4 REAL Blender on the corrected CODE SHA is an acceptable stronger alternative. Do not label CI mock media as REAL.
+
+---
+
+## Backup/restore — keep current direction, tighten acceptance only
+
+Current `prototype/prototype.json` tenant filtering and prototype domain digest are accepted as the baseline. Do not redesign backup.
+
+For the corrected round, acceptance must still prove exact Tenant-A identity/lineage preservation and zero Tenant-B leakage for:
+
+- selections;
+- units;
+- measurements/evidence refs;
+- ECO chain + field changes;
+- observed-cost snapshots;
+- packaging checklists;
+- decisions/idempotency.
+
+Any newly added durable fields must be included in the semantic digest, not merely counted.
+
+---
+
+## Required delivery before re-review
+
+1. Fix **only Phase 601–660 integrity gaps** above. Do not start Phase 661+.
+2. Add negative regressions for every blocker.
+3. Run full `pytest -q`; report it honestly as MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready.
+4. Commit implementation/tests as a new **CODE_EVIDENCE_SHA**.
+5. Push and require Ubuntu + Windows Actions GREEN on exact CODE SHA.
+6. Run clean-tree acceptance bound to that exact CODE SHA.
+7. Produce a separate docs/evidence commit and require Ubuntu + Windows Actions GREEN on docs/head.
+8. Update:
+   - `docs/GROK_PROGRESS_REPORT.md`
+   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
+   - `docs/PROTOTYPE_VALIDATION_ACCEPTANCE.md` + JSON
+   - `docs/SKU_LAUNCH_READINESS_ACCEPTANCE.md` + JSON
+   - `docs/REAL_E2E_ACCEPTANCE.md`
+   - `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet-specific truth actually changed.
+9. Leave Issue #1 a concise completion comment with CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, prior/fresh REAL Blender evidence status, and remaining truth boundaries.
+10. Stop and wait for ChatGPT review. **Do not begin Phase 661+.**
+
+## Truth boundaries remain mandatory
+
+- Prototype workflow logic: `REAL_LOGIC`
+- CI-generated physical values: `FIXTURE`
+- Actual human-entered physical evidence: `MANUAL_EVIDENCE`
+- Imported evidence: `IMPORTED_EVIDENCE`
+- Commercial: `CONFIG_ESTIMATE`
+- Actual cost: `MANUAL / IMPORTED / FIXTURE / PARTIAL` as applicable, never LIVE_PROVIDER without proof
+- Demand / Vision Judge / AI Video: `MOCK`
 - OS sandbox / AR / preflight / barcode hardware / McKee-BCT: `PARTIAL / ENGINEERING_ESTIMATE`
-- supplier / carrier / FX / receipt data: `IMPORTED / MANUAL` unless separately live-proven
-- LIVE_CNC / LIVE_LASER / PLC / automatic machine execution / live provider: `BLOCKED`
+- supplier / carrier / FX / receipts: `IMPORTED / MANUAL` unless independently live-proven
+- LIVE_CNC / LIVE_LASER / PLC / automatic factory execution / live provider: `BLOCKED`
 - `liveMachineControl=false`
 - `liveFactoryExecutionReady=false`
 - `liveProviderReady=false`
 - `globalProductionReady=false`
 - `fullAutonomousFactoryReady=false`
 
-# Delivery / handoff
-
-When Phase 601–660 is complete:
-
-1. Commit implementation/tests as a new CODE_EVIDENCE_SHA.
-2. Push and capture CODE Ubuntu + Windows CI run ID.
-3. Run clean-tree acceptance bound to that exact SHA.
-4. Generate canonical docs/evidence separately and capture docs/head CI run ID.
-5. Update `docs/GROK_PROGRESS_REPORT.md` with REAL/MOCK/PARTIAL/BLOCKED matrix, pytest count, evidence generation, selected prototype SKUs, backup semantic result, REAL Blender cases, and remaining blockers.
-6. Leave Issue #1 a concise completion comment with CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation and truth-label summary.
-7. Do not start Phase 661+ until ChatGPT reviews the committed evidence.
-
-## Exit gate
-
-Phase 601–660 is successful only when the software prototype loop is fail-closed and auditable. A successful fixture acceptance proves the software workflow, **not** that real physical prototypes were built or Production Ready.
+A corrected Phase 601–660 acceptance proves an auditable prototype-validation **software loop**. It does not prove that a real physical prototype has been built, tested, certified, or launched.
