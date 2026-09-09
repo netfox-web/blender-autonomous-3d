@@ -1,25 +1,25 @@
 {
   "domain": "operator-control",
-  "generatedAt": "2026-09-09T03:04:22.274035+00:00",
-  "acceptanceGenerationId": "2b8b0770-573b-4978-85dd-c47a9cfb2416",
-  "evidenceCodeCommit": "4069cef05d33112e8166c357e29459254bdf2ae8",
+  "generatedAt": "2026-09-09T04:01:31.178860+00:00",
+  "acceptanceGenerationId": "fd9af90b-46bb-4fc8-8960-d804667c413e",
+  "evidenceCodeCommit": "94719576b00f33a9fc26e8087d8233c78c302805",
   "operator": {
     "tenantId": "chaos-a",
-    "waiting": 100,
-    "leases": 2,
+    "waiting": 200,
+    "leases": 4,
     "exceptions": 4,
     "barcodeHardware": "PARTIAL",
     "liveMachineControl": false
   },
   "health": {
     "tenantId": "chaos-a",
-    "at": "2026-09-09T03:04:22.283251+00:00",
-    "queuedManualOperations": 598,
+    "at": "2026-09-09T04:01:31.195558+00:00",
+    "queuedManualOperations": 1196,
     "activeStationLeases": 0,
-    "expiredStationLeases": 1,
+    "expiredStationLeases": 2,
     "workOrdersByState": {
-      "IN_PROGRESS": 8,
-      "MATERIAL_RESERVED": 92
+      "IN_PROGRESS": 16,
+      "MATERIAL_RESERVED": 184
     },
     "reservationShortageCount": 0,
     "staleReleaseRejects": 0,
@@ -48,7 +48,7 @@
   "rows": [
     {
       "check": "operator view tenant scoped",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "chaos-a"
     },
     {
@@ -68,7 +68,7 @@
     },
     {
       "check": "health notFactorySla",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "True"
     }
   ],

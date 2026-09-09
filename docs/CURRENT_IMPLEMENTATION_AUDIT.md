@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 421–480 CODE_EVIDENCE_SHA `4069cef`; prior `997db34` / docs `527634d`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `3669871`. Historical Phase 1–420 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 421–480 integrity CODE_EVIDENCE_SHA `9471957`; prior `4069cef` / docs `6646298`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a3c150f`. Historical Phase 1–420 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -10,14 +10,14 @@ This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 
 | Item | Status | Evidence |
 |---|---|---|
-| 421–428 event journal | REAL | tenant JSONL-equivalent JSON; hash chain; restart; duplicate semantic key; tamper → BLOCKED_EVIDENCE; journal fail rolls back create |
-| 429–436 cross-process stock | REAL logic | FileLock + generation CAS; subprocess 10-sheet race no oversell; crash-after-first-stage all-or-nothing; stale persist denied |
-| 437–444 MANUAL_STATION | REAL | existing JobQueue; pin releaseHash; offline/stale/cancel denied; duplicate ACK/COMPLETE; lease expiry; no actuator |
-| 445–452 operator/scan | REAL / PARTIAL | FOX3D tokens tenant-safe; confirm required; barcode hardware PARTIAL |
+| 421–428 event journal | REAL_LOGIC | PREPARED outbox then COMMITTED journal; open tx → BLOCKED_EVIDENCE; tamper still fail-closed |
+| 429–436 cross-process stock | REAL_LOGIC | FileLock + CAS; unique-SKU subprocess race; `os._exit` after-staging/after-business |
+| 437–444 MANUAL_STATION | REAL_LOGIC | durable WO/release/lease snapshots; recreate Platform recovers ACK/COMPLETE; orphan currentLease cleared |
+| 445–452 operator/scan | FIXTURE / PARTIAL | mock-platform operator view FIXTURE; barcode hardware PARTIAL |
 | 453–460 exceptions | REAL | catalog + inbox; fail-closed; journaled |
-| 461–468 contracts | REAL logic / IMPORTED | schema-versioned import; rejected rows listed; adjustment WAITING_HUMAN_APPROVAL; export hashed, no booking/actuation |
-| 469–474 health | REAL | `/api/pilot/health` tenant-safe; notFactorySla; LIVE_CNC/LASER BLOCKED |
-| 475–480 chaos + REAL | FIXTURE + REAL | 110 WO FIXTURE/CHAOS; 4/4 T1000 OptiX `4069cef` usedMock=false release-bound; additional scoped docs not canonical six-file |
+| 461–468 contracts | REAL logic / IMPORTED | schema-versioned import; rejected rows listed; adjustment WAITING_HUMAN_APPROVAL |
+| 469–474 health | FIXTURE | `/api/pilot/health` tenant-safe on mock platform; LIVE_CNC/LASER BLOCKED |
+| 475–480 chaos + REAL | FIXTURE + REAL | 110 WO FIXTURE/CHAOS (no plain REAL rows); 4/4 T1000 OptiX `9471957` usedMock=false release-bound |
 
 ## Phase 301–360 Manufacturing Release & Pilot Operations
 

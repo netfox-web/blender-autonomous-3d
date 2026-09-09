@@ -1,15 +1,9 @@
 {
   "domain": "pilot-deployment",
   "label": "FIXTURE/CHAOS",
-  "generatedAt": "2026-09-09T03:04:22.274035+00:00",
-  "acceptanceGenerationId": "2b8b0770-573b-4978-85dd-c47a9cfb2416",
-  "evidenceCodeCommit": "4069cef05d33112e8166c357e29459254bdf2ae8",
-  "fullAutonomousFactoryReady": false,
-  "liveFactoryExecutionReady": false,
-  "liveProviderReady": false,
-  "globalProductionReady": false,
-  "liveMachineControl": false,
-  "notCanonicalSixFile": true,
+  "generatedAt": "2026-09-09T04:01:31.178860+00:00",
+  "acceptanceGenerationId": "fd9af90b-46bb-4fc8-8960-d804667c413e",
+  "evidenceCodeCommit": "94719576b00f33a9fc26e8087d8233c78c302805",
   "chaos": {
     "label": "FIXTURE/CHAOS",
     "workOrderCount": 110,
@@ -42,7 +36,7 @@
       "restartPreserved": true,
       "duplicateSuppressed": true,
       "tenantIsolated": true,
-      "chainOkBefore": true,
+      "chainOkBefore": false,
       "tamperDetected": true
     },
     "scanTenantSafe": true,
@@ -52,7 +46,7 @@
     "liveLaser": false,
     "liveMachineControl": false,
     "health": {
-      "queuedManualOperations": 598,
+      "queuedManualOperations": 1196,
       "journalIntegrity": {
         "ok": false,
         "status": "BLOCKED_EVIDENCE",
@@ -77,6 +71,16 @@
       "journal-tamper"
     ],
     "notFactoryThroughput": true,
+    "journalBusinessCommitConsistent": true,
+    "noCommittedGhostJournalEvents": true,
+    "processRestartRecovery": true,
+    "stationRestartRecovered": true,
+    "workOrderRestartRecovered": true,
+    "noDoubleCompletionAfterRestart": true,
+    "releaseHashPreservedAfterRestart": true,
+    "materialConservedAfterCrash": true,
+    "tenantIsolationAfterRestart": true,
+    "gateFailures": [],
     "ok": true
   },
   "rows": [
@@ -87,58 +91,73 @@
     },
     {
       "check": "no oversell",
-      "status": "REAL",
-      "evidence": "True"
+      "status": "REAL_LOGIC",
+      "evidence": "subprocess/persistence scope=True"
     },
     {
       "check": "material conservation",
-      "status": "REAL",
+      "status": "REAL_LOGIC",
       "evidence": "True"
     },
     {
       "check": "crash all-or-nothing",
-      "status": "REAL",
-      "evidence": "True"
+      "status": "REAL_LOGIC",
+      "evidence": "in-process CrashInjected + subprocess after-staging"
     },
     {
       "check": "stale writer blocked",
-      "status": "REAL",
+      "status": "REAL_LOGIC",
       "evidence": "True"
     },
     {
       "check": "station offline/lease/duplicate",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "{\"offlineDenied\": true, \"duplicateAck\": true, \"duplicateComplete\": true, \"noDuplicateComplete\": true, \"leaseExpiry\": true, \"started\": true, \"crossTenantDenied\": true}"
     },
     {
       "check": "QC fail rework pass",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "{\"failed\": true, \"passed\": true, \"rework\": true}"
     },
     {
       "check": "stale release rejected",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "True"
     },
     {
       "check": "packing mismatch rejected",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "True"
     },
     {
       "check": "journal tamper detected",
-      "status": "REAL",
-      "evidence": "{\"restartPreserved\": true, \"duplicateSuppressed\": true, \"tenantIsolated\": true, \"chainOkBefore\": true, \"tamperDetected\": true}"
+      "status": "REAL_LOGIC",
+      "evidence": "{\"restartPreserved\": true, \"duplicateSuppressed\": true, \"tenantIsolated\": true, \"chainOkBefore\": false, \"tamperDetected\": true}"
     },
     {
       "check": "scan tenant isolation",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "True"
     },
     {
       "check": "human approval gate",
-      "status": "REAL",
+      "status": "FIXTURE",
       "evidence": "confirm required"
+    },
+    {
+      "check": "journalBusinessCommitConsistent",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "processRestartRecovery",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "noDoubleCompletionAfterRestart",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
     },
     {
       "check": "LIVE_CNC",
@@ -155,5 +174,23 @@
       "status": "FIXTURE",
       "evidence": "FIXTURE/CHAOS"
     }
-  ]
+  ],
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "notCanonicalSixFile": true,
+  "integrityGates": {
+    "journalBusinessCommitConsistent": true,
+    "noCommittedGhostJournalEvents": true,
+    "processRestartRecovery": true,
+    "stationRestartRecovered": true,
+    "workOrderRestartRecovered": true,
+    "noDoubleCompletionAfterRestart": true,
+    "releaseHashPreservedAfterRestart": true,
+    "materialConservedAfterCrash": true,
+    "tenantIsolationAfterRestart": true
+  },
+  "ok": true
 }
