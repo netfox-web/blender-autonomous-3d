@@ -723,12 +723,12 @@ class PortfolioFactory:
         used_mock = bool(job.get("usedMock"))
         real = bool(job.get("realBlender")) and not used_mock and job.get("status") in {"completed", "succeeded"}
         files = (job.get("output") or {}).get("files") or {}
-        art = files.get("png") or files.get("preview") or job.get("outputPath")
-        digest = None
-        size = None
-        if art:
+        digest = files.get("beautyHash") or files.get("sha256")
+        size = files.get("beautySize") or files.get("size")
+        art = files.get("png") or files.get("preview") or files.get("beauty.png") or job.get("outputPath")
+        if not digest and art:
             path = Path(str(art))
-            if path.exists():
+            if path.exists() and path.is_file():
                 blob = path.read_bytes()
                 digest = sha256_bytes(blob)
                 size = len(blob)
