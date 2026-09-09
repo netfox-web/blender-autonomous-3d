@@ -1,6 +1,6 @@
 # OPERATOR_SHIFT_ACCEPTANCE
 
-generatedAt: 2026-09-09T07:15:44.223288+00:00
+generatedAt: 2026-09-09T08:25:56.293044+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 This is a scoped Phase 481–540 Manual Factory Pilot truth set.
 

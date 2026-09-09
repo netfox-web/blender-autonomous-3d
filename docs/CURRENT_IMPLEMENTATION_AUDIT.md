@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 481–540 CODE_EVIDENCE_SHA `523b3cb`; prior evidence-integrity `018cc70` / docs `f492b6b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8d56724`. Historical Phase 1–480 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 481–540 integrity CODE_EVIDENCE_SHA `ff285a2`; prior `523b3cb` / docs `583e74d`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `ab8504d`. Historical Phase 1–480 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -16,8 +16,8 @@ This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 505–512 labor | REAL_LOGIC / MANUAL | append-only segments/corrections; CONFIG_ESTIMATE vs MANUAL; accounting NOT_IMPLEMENTED |
 | 513–520 hold/rework/scrap | REAL_LOGIC | blocking hold prevents complete; reworkHistory; remnant path not silent scrap |
 | 521–528 packing/handoff | REAL_LOGIC / MANUAL | checklist pinned; mismatch no auto-override; handoff not booked/not delivery |
-| 529–536 backup/restore | REAL_LOGIC | checksums; lock files skipped; restore fresh root + subprocess; not cloud HA/DR |
-| 537–540 acceptance | FIXTURE + REAL_LOGIC | generation `d029f78f-…`; runner-bound `523b3cb`; workingTreeClean; CI `34322747430`; REAL blender reused `018cc70` |
+| 529–536 backup/restore | REAL_LOGIC | tenant-scoped export; exact-set verifier; lock+hash snapshot; restore listed files only; durable consume/complete counters |
+| 537–540 acceptance | FIXTURE + REAL_LOGIC | generation `c53ae456-…`; runner-bound `ff285a2`; atomic 8-file publish; CI `34328790268`; REAL blender reused `018cc70` |
 
 ## Phase 421–480 Pilot Deployment Hardening / Operator Control Plane
 
