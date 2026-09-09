@@ -80,6 +80,8 @@ def _board_row(i: int, **over) -> dict:
         "liveMachineControl": False,
         "evidenceSource": "FIXTURE",
         "productionReady": False,
+        "launchDecision": "WAITING_HUMAN_EVIDENCE",
+        "evidencePackageId": f"p{i}",
     }
     row.update(over)
     return row
@@ -123,6 +125,8 @@ def _matrix_row(i: int, **over) -> dict:
             "consumesInventory": False,
             "inventoryLineage": None,
             "staleLineage": False,
+            "launchDecision": "WAITING_HUMAN_EVIDENCE",
+            "evidencePackageId": f"p{i}",
         }
     )
     row.update(over)
@@ -153,6 +157,7 @@ def _passing(plat):
                 "consumesInventory": False,
                 "materialConsumed": False,
                 "truthLabel": "FIXTURE",
+                "evidencePackageId": f"p{i}",
             }
             for i in range(4)
         ],
@@ -160,8 +165,34 @@ def _passing(plat):
         "physicalPrototypeValidated": False,
         "demandLabel": "MOCK",
         "liveMachineControl": False,
+        "globalProductionReady": False,
+        "fullAutonomousFactoryReady": False,
+        "liveFactoryExecutionReady": False,
+        "liveProviderReady": False,
         "media": [],
         "board": {"rows": [_board_row(i) for i in range(4)]},
+        "evidencePackages": [
+            {
+                "evidencePackageId": f"p{i}",
+                "candidateId": f"c{i}",
+                "selectionId": f"s{i}",
+                "prototypeUnitId": f"u{i}",
+                "engineeringHash": f"e{i}",
+                "canonicalHash": f"h{i}",
+                "bomHash": f"b{i}",
+                "nestingHash": f"n{i}",
+                "rankingPolicyHash": "p" * 64,
+                "evidenceSource": "FIXTURE",
+                "engineeringRevision": 1,
+                "ecoRevision": None,
+                "state": "FINALIZED",
+                "revision": 1,
+                "operatorId": "fixture",
+                "shiftId": "sh1",
+            }
+            for i in range(4)
+        ],
+        "launchDecision": "WAITING_HUMAN_EVIDENCE",
         "label": "FIXTURE/REAL_LOGIC",
     }
 
@@ -670,3 +701,43 @@ def test_prototype_runner_serializer_drop_rolls_back(tmp_path):
     assert rc != 0
     kept = json.loads((docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").read_text(encoding="utf-8"))
     assert kept.get("keep") is True
+
+
+def test_prototype_runner_package_lineage_drop_rolls_back(tmp_path):
+    mod = _load()
+    docs = tmp_path / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    (docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
+
+    def mutate(result):
+        pkgs = list(result.get("evidencePackages") or [])
+        if pkgs:
+            dropped = dict(pkgs[0])
+            dropped.pop("evidencePackageId", None)
+            dropped.pop("engineeringHash", None)
+            result = dict(result)
+            result["evidencePackages"] = [dropped, *pkgs[1:]]
+        return result
+
+    rc = _run(mod, docs, _passing, mutate_published=mutate)
+    assert rc != 0
+    kept = json.loads((docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").read_text(encoding="utf-8"))
+    assert kept.get("keep") is True
+
+
+def test_prototype_runner_fixture_human_go_fails(tmp_path):
+    def scenario(plat):
+        body = _passing(plat)
+        body["launchDecision"] = "HUMAN_GO"
+        return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_missing_packages_fail(tmp_path):
+    def scenario(plat):
+        body = _passing(plat)
+        body["evidencePackages"] = []
+        return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)

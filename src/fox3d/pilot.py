@@ -104,7 +104,10 @@ class PilotOps:
             self.identity,
             self.cyclecounts,
             platform.lots,
+            getattr(platform, "prototype", None),
         ):
+            if svc is None:
+                continue
             svc.journal = self.journal
             svc.outbox = self.outbox
         self._reconcile_startup()
@@ -142,6 +145,15 @@ class PilotOps:
             return aid in self.identity.shifts
         if atype == "CycleCount":
             return aid in self.cyclecounts.counts
+        proto = getattr(self.platform, "prototype", None)
+        if proto is not None and atype == "PhysicalEvidencePackage":
+            return aid in proto.packages
+        if proto is not None and atype == "LaunchDecision":
+            return aid in proto.launch_decisions
+        if proto is not None and atype == "PilotBatchPlan":
+            return aid in proto.plans
+        if proto is not None and atype == "EngineeringChange":
+            return aid in proto.ecos
         return False
 
     def _reconcile_startup(self) -> dict[str, Any]:

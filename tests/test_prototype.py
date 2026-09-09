@@ -1443,3 +1443,288 @@ def test_inventory_intent_malformed_missing_identity_fails(tmp_path):
             shift_id=human_shift["shiftId"],
             consumes_inventory=True,
         )
+
+
+def _built_unit(plat, *, fixture, shift, human, human_shift, seq=1, source="MANUAL"):
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][seq - 1]["candidateId"]
+    actor = human if source != "FIXTURE" else fixture
+    sh = human_shift if source != "FIXTURE" else shift
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=actor["operatorId"], shift_id=sh["shiftId"], reason=f"p661-{seq}")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=actor["operatorId"], shift_id=sh["shiftId"])
+    plat.prototype.start_unit(unit["prototypeUnitId"], tenant_id="pa", operator_id=actor["operatorId"], shift_id=sh["shiftId"])
+    plat.prototype.complete_build(unit["prototypeUnitId"], tenant_id="pa", operator_id=actor["operatorId"], shift_id=sh["shiftId"])
+    return plat.portfolio.candidates[cid], plat.prototype.units[unit["prototypeUnitId"]], actor, sh
+
+
+def test_fixture_cannot_create_manual_evidence_package(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift, source="FIXTURE")
+    with pytest.raises(PrototypeError, match="MANUAL_EVIDENCE"):
+        plat.prototype.create_evidence_package(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=fixture["operatorId"],
+            shift_id=shift["shiftId"],
+            source="MANUAL_EVIDENCE",
+        )
+    _ = cand
+
+
+def test_cross_tenant_and_missing_dam_rejected(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    foreign = plat.dam.put(tenant_id="pb", kind="photo", name="x.bin", data=b"foreign-bytes")
+    with pytest.raises(PrototypeError, match="cross-tenant"):
+        plat.prototype.record_as_built(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            values=_vals(cand),
+            observations=GOOD_QC,
+            dam_refs=[{"assetId": foreign.asset_id, "sha256": foreign.sha256}],
+        )
+    local = plat.dam.put(tenant_id="pa", kind="photo", name="ok.bin", data=b"local-photo-bytes")
+    with pytest.raises(PrototypeError, match="DAM hash"):
+        plat.prototype.record_as_built(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            values=_vals(cand),
+            observations=GOOD_QC,
+            dam_refs=[{"assetId": local.asset_id, "sha256": "deadbeef"}],
+        )
+    with pytest.raises(PrototypeError, match="DAM object missing"):
+        plat.prototype.record_as_built(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            values=_vals(cand),
+            observations=GOOD_QC,
+            dam_refs=[{"assetId": "missing-asset"}],
+        )
+
+
+def test_ista_claim_without_certified_report_rejected(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    plat.prototype.record_as_built(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        values=_vals(cand),
+        observations=GOOD_QC,
+    )
+    with pytest.raises(PrototypeError, match="ISTA"):
+        plat.prototype.packaging_checklist(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            observed=_pack_obs(plat, cand, certificationClaim="ISTA-6A"),
+        )
+
+
+def test_stale_package_after_eco_and_human_go_gates(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    plat.prototype.record_as_built(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        values=_vals(cand),
+        observations=GOOD_QC,
+    )
+    plat.prototype.decide(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="PASS_AS_BUILT", reason="ok")
+    plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat, cand),
+    )
+    plat.prototype.record_actual_cost(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    pkg_id = plat.prototype.units[unit["prototypeUnitId"]]["evidencePackageId"]
+    change = _eco_change(cand)
+    plat.prototype.create_eco(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="resize", changes=change)
+    assert plat.prototype.packages[pkg_id]["state"] == "INVALIDATED"
+    with pytest.raises(PrototypeError, match="stale|ECO|lineage|incomplete"):
+        plat.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="stale",
+        )
+
+
+def test_human_go_rejects_fixture_partial_demand_and_duplicate(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    result = run_prototype_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift = result["fixture"], result["fixtureShift"]
+    human, human_shift = result["human"], result["humanShift"]
+    cid = result["selected"][0]["candidateId"]
+    with pytest.raises(PrototypeError, match="fixture"):
+        plat.prototype.record_launch_decision(
+            cid,
+            tenant_id="pa",
+            operator_id=fixture["operatorId"],
+            shift_id=shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="no",
+        )
+    with pytest.raises(PrototypeError, match="MOCK demand"):
+        plat.prototype.record_launch_decision(
+            cid,
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="no",
+            demand_upgrade=True,
+        )
+    with pytest.raises(PrototypeError):
+        plat.prototype.create_pilot_plan(
+            cid,
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            reason="no-go",
+        )
+    plat2 = Platform(root=tmp_path / "live2", mock_blender=True)
+    run_portfolio_scenario(plat2, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat2)
+    cand, unit, actor, sh = _built_unit(plat2, fixture=fixture, shift=shift, human=human, human_shift=human_shift, seq=1)
+    plat2.prototype.record_as_built(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        values=_vals(cand),
+        observations=GOOD_QC,
+    )
+    plat2.prototype.decide(unit["prototypeUnitId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="PASS_AS_BUILT", reason="ok")
+    with pytest.raises(PrototypeError, match="packaging|partial|cost|launch-ready"):
+        plat2.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="partial",
+        )
+    plat2.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat2, cand),
+    )
+    plat2.prototype.record_actual_cost(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    go = plat2.prototype.record_launch_decision(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        decision="HUMAN_GO",
+        reason="go",
+    )
+    again = plat2.prototype.record_launch_decision(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        decision="HUMAN_GO",
+        reason="go-again",
+    )
+    assert again["launchDecisionId"] == go["launchDecisionId"]
+    plan = plat2.prototype.create_pilot_plan(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        reason="pilot",
+        quantity=2,
+    )
+    assert plan["liveMachineControl"] is False
+    assert plan["quantity"] == 2
+    assert plan["releaseId"]
+    assert plan["workOrderId"]
+    dest = tmp_path / "bak"
+    backup_pilot(plat2.root, dest, tenant_ids=["pa"])
+    restore_pilot(dest, tmp_path / "r", tenant_id="pa")
+    restored = Platform(root=tmp_path / "r", mock_blender=True)
+    matrix = evaluate_tenant_restore_matrix(live=plat2, restored=restored, tenant_a="pa", tenant_b="pb")
+    assert matrix["tenantLeakageAbsent"] is True
+    assert matrix["tenantRequiredStatePreserved"] is True
+    assert restored.prototype.packages[go["evidencePackageId"]]["state"] == "FINALIZED"
+    assert restored.prototype.launch_decisions[go["launchDecisionId"]]["decision"] == "HUMAN_GO"
+
+
+def test_package_crash_prepare_reconciles(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    plat.prototype._crash_mode = "after-package-prepare"
+    with pytest.raises(CrashInjected):
+        plat.prototype.create_evidence_package(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+        )
+    plat.prototype._crash_mode = ""
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    again = plat2.prototype.create_evidence_package(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        source="MANUAL",
+    )
+    assert len(plat2.prototype.packages) == 1
+    assert again["state"] in {"OPEN", "PREPARED", "FINALIZED"}
+    _ = cand

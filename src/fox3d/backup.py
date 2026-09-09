@@ -75,6 +75,9 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
         "checklists": TENANT_OWNED,
         "decisions": TENANT_OWNED,
         "inventoryIntents": TENANT_OWNED,
+        "packages": TENANT_OWNED,
+        "launchDecisions": TENANT_OWNED,
+        "pilotPlans": TENANT_OWNED,
     },
 }
 MIXED_JSON = {rel: tuple(spec.keys()) for rel, spec in MIXED_SPEC.items()}
@@ -116,6 +119,9 @@ TENANT_MATRIX_DOMAINS = (
     "prototypeChecklists",
     "prototypeDecisions",
     "prototypeInventoryIntents",
+    "prototypePackages",
+    "prototypeLaunchDecisions",
+    "prototypePilotPlans",
 )
 OPTIONAL_EMPTY_DOMAINS = frozenset(
     {
@@ -133,6 +139,9 @@ OPTIONAL_EMPTY_DOMAINS = frozenset(
         "prototypeChecklists",
         "prototypeDecisions",
         "prototypeInventoryIntents",
+        "prototypePackages",
+        "prototypeLaunchDecisions",
+        "prototypePilotPlans",
     }
 )
 
@@ -1278,6 +1287,55 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                 key=lambda r: str(r.get("intentId")),
             ),
             "intentId",
+        ),
+        "prototypePackages": _entry(
+            sorted(
+                [
+                    {
+                        "evidencePackageId": r.get("evidencePackageId"),
+                        "prototypeUnitId": r.get("prototypeUnitId"),
+                        "engineeringHash": r.get("engineeringHash"),
+                        "evidenceSource": r.get("evidenceSource"),
+                        "state": r.get("state"),
+                        "revision": r.get("revision"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "prototype", None), "packages", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("evidencePackageId")),
+            ),
+            "evidencePackageId",
+        ),
+        "prototypeLaunchDecisions": _entry(
+            sorted(
+                [
+                    {
+                        "launchDecisionId": r.get("launchDecisionId"),
+                        "candidateId": r.get("candidateId"),
+                        "decision": r.get("decision"),
+                        "engineeringHash": r.get("engineeringHash"),
+                        "evidencePackageId": r.get("evidencePackageId"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "prototype", None), "launch_decisions", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("launchDecisionId")),
+            ),
+            "launchDecisionId",
+        ),
+        "prototypePilotPlans": _entry(
+            sorted(
+                [
+                    {
+                        "planId": r.get("planId"),
+                        "candidateId": r.get("candidateId"),
+                        "releaseId": r.get("releaseId"),
+                        "workOrderId": r.get("workOrderId"),
+                        "quantity": r.get("quantity"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "prototype", None), "plans", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("planId")),
+            ),
+            "planId",
         ),
     }
     compact = {k: domains[k]["digest"] for k in TENANT_MATRIX_DOMAINS}

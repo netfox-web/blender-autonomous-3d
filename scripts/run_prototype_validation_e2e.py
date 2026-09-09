@@ -1,4 +1,4 @@
-"""Phase 601–660 prototype validation acceptance. FIXTURE/REAL_LOGIC, not Production Ready."""
+"""Phase 601–720 prototype validation + physical evidence / human launch acceptance. FIXTURE/REAL_LOGIC, not Production Ready."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _md(title: str, rows: list[dict], generated: str) -> str:
         "",
         f"generatedAt: {generated}",
         "pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.",
-        "This is a scoped Phase 601–660 prototype validation truth set. Fixture ≠ physical prototype.",
+        "This is a scoped Phase 661–720 physical-evidence / human-launch truth set. Fixture ≠ physical prototype.",
         "",
         "| Check | Status | Evidence |",
         "|---|---|---|",
@@ -183,6 +183,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "LIVE_LASER", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "physical prototype", "status": "FIXTURE", "evidence": "CI measurements are FIXTURE; physicalPrototypeValidated=false; software loop only"},
+        {"check": "launch decision", "status": _status(result.get("launchDecision") == "WAITING_HUMAN_EVIDENCE"), "evidence": str(result.get("launchDecision"))},
+        {"check": "evidence packages", "status": _status(len(result.get("evidencePackages") or []) == 4), "evidence": json.dumps([{"candidateId": p.get("candidateId"), "source": p.get("evidenceSource"), "state": p.get("state")} for p in (result.get("evidencePackages") or [])], default=str)},
     ]
     gate_ok = not missing and clean and matches_head
     payload_common = {
@@ -194,6 +196,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "label": "FIXTURE/REAL_LOGIC",
         "evidenceLabel": "FIXTURE",
         "physicalPrototypeValidated": False,
+        "launchDecision": result.get("launchDecision") or "WAITING_HUMAN_EVIDENCE",
         "fullAutonomousFactoryReady": False,
         "liveFactoryExecutionReady": False,
         "liveProviderReady": False,
@@ -221,6 +224,9 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "rows": rows,
         "acceptanceFailures": missing,
         "waitingPhysicalEvidence": True,
+        "evidencePackages": result.get("evidencePackages") or [],
+        "launchDecision": result.get("launchDecision") or "WAITING_HUMAN_EVIDENCE",
+        "costCompleteness": [r.get("costCompleteness") for r in (result.get("matrix") or [])],
     }
     launch_doc = {
         **payload_common,
@@ -228,7 +234,44 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "board": result.get("board"),
         "matrix": result.get("matrix") or [],
         "demandLabel": result.get("demandLabel"),
-        "rows": [r for r in rows if r["check"] in {"MOCK demand not REAL", "fixture cannot physically validate", "LIVE_CNC", "LIVE_LASER", "decision board", "prior REAL blender"}],
+        "rows": [r for r in rows if r["check"] in {"MOCK demand not REAL", "fixture cannot physically validate", "LIVE_CNC", "LIVE_LASER", "decision board", "prior REAL blender", "launch decision"}],
+        "launchDecision": result.get("launchDecision") or "WAITING_HUMAN_EVIDENCE",
+        "evidencePackages": result.get("evidencePackages") or [],
+    }
+    evidence_doc = {
+        **payload_common,
+        "domain": "physical-prototype-evidence",
+        "selected": result.get("selected") or [],
+        "units": result.get("units") or [],
+        "evidencePackages": result.get("evidencePackages") or [],
+        "evidenceSource": [p.get("evidenceSource") for p in (result.get("evidencePackages") or [])],
+        "launchDecision": result.get("launchDecision") or "WAITING_HUMAN_EVIDENCE",
+        "costCompleteness": [r.get("costCompleteness") for r in (result.get("matrix") or [])],
+        "packagingStatus": [r.get("packagingCompleteness") for r in (result.get("matrix") or [])],
+        "qcStatus": [r.get("qcStatus") for r in (result.get("matrix") or [])],
+        "toleranceStatus": [r.get("toleranceStatus") for r in (result.get("matrix") or [])],
+        "tenantBackupSemantic": matrix.get("tenantStateDigest"),
+        "realMockPartialBlocked": {
+            "Demand": "MOCK",
+            "Vision": "MOCK",
+            "AI Video": "MOCK",
+            "OS sandbox / AR / preflight / barcode / McKee-BCT": "PARTIAL",
+            "LIVE_CNC / LIVE_LASER / PLC / live provider / live factory": "BLOCKED",
+            "physical prototype": "FIXTURE",
+            "workflow": "REAL_LOGIC",
+        },
+        "rows": [r for r in rows if r["check"] in {"evidence packages", "fixture cannot physically validate", "physical prototype", "tenant backup semantic", "prior REAL blender"}],
+    }
+    human_doc = {
+        **payload_common,
+        "domain": "human-launch-gate",
+        "board": result.get("board"),
+        "matrix": result.get("matrix") or [],
+        "selectedBoard": result.get("selectedBoard") or [],
+        "launchDecision": result.get("launchDecision") or "WAITING_HUMAN_EVIDENCE",
+        "physicalPrototypeValidated": False,
+        "pilotPlans": [],
+        "rows": [r for r in rows if r["check"] in {"launch decision", "fixture cannot physically validate", "MOCK demand not REAL", "LIVE_CNC", "LIVE_LASER"}],
     }
     serialized_proto = json.loads(json.dumps(proto_doc, indent=2, default=str))
     missing.extend(validate_prototype_acceptance_result(serialized_proto))
@@ -236,12 +279,16 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     proto_doc["ok"] = gate_ok
     proto_doc["acceptanceFailures"] = missing
     launch_doc["ok"] = gate_ok
+    evidence_doc["ok"] = gate_ok
+    human_doc["ok"] = gate_ok
     if not gate_ok:
         return _refuse_overwrite(docs, missing)
     artifacts = {}
     for name, body in (
         ("PROTOTYPE_VALIDATION_ACCEPTANCE", proto_doc),
         ("SKU_LAUNCH_READINESS_ACCEPTANCE", launch_doc),
+        ("PHYSICAL_PROTOTYPE_EVIDENCE_ACCEPTANCE", evidence_doc),
+        ("HUMAN_LAUNCH_GATE_ACCEPTANCE", human_doc),
     ):
         artifacts[f"{name}.json"] = json.dumps(body, indent=2, default=str)
         artifacts[f"{name}.md"] = _md(name, body["rows"], generated)

@@ -31,6 +31,8 @@ PORTFOLIO_ACCEPTANCE_FILES = (
 PROTOTYPE_ACCEPTANCE_FILES = (
     "PROTOTYPE_VALIDATION_ACCEPTANCE",
     "SKU_LAUNCH_READINESS_ACCEPTANCE",
+    "PHYSICAL_PROTOTYPE_EVIDENCE_ACCEPTANCE",
+    "HUMAN_LAUNCH_GATE_ACCEPTANCE",
 )
 
 
@@ -283,6 +285,8 @@ def read_prototype_truth_set(docs: Path) -> dict[str, Any]:
             errors.append(f"unbound:{name}")
         if payload.get("physicalPrototypeValidated") is True and payload.get("evidenceLabel") == "FIXTURE":
             errors.append(f"fixture_physical:{name}")
+        if payload.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"} and payload.get("evidenceLabel") == "FIXTURE":
+            errors.append(f"fixture_launch:{name}")
         for flag in (
             "fullAutonomousFactoryReady",
             "liveFactoryExecutionReady",
