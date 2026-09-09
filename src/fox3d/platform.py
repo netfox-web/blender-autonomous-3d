@@ -57,6 +57,7 @@ from fox3d.kd_factory import KdFactory
 from fox3d.manufacturing import RemnantInventory
 from fox3d.physical_os import PhysicalProductOS
 from fox3d.pilot import PilotOps
+from fox3d.portfolio import PortfolioFactory
 from fox3d.publish import CatalogRelease
 from fox3d.release import ReleaseGate
 from fox3d.sandbox import SandboxRegistry
@@ -103,6 +104,7 @@ class Platform:
         self.remnants = RemnantInventory(DurableRemnantStore(self.root / "remnants"), default_tenant="default")
         self.kd = KdFactory(self)
         self.physical = PhysicalProductOS(self)
+        self.portfolio = PortfolioFactory(self)
         self.pilot = PilotOps(self)
         self.retail_fixtures = self.physical.retail
         self.providers = ProviderRegistry(self.root / "providers")

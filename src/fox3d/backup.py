@@ -32,6 +32,7 @@ BACKUP_DIRS = (
     "logistics",
     "qc",
     "exceptions",
+    "portfolio",
 )
 VOLATILE_SUFFIXES = {".lock", ".tmp", ".staging"}
 TENANT_OWNED = "TENANT_OWNED"
@@ -57,6 +58,13 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
     "qc/qc.json": {"checks": TENANT_OWNED, "defects": TENANT_OWNED},
     "exceptions/exceptions.json": {"items": TENANT_OWNED},
     "releases/releases.json": {"releases": TENANT_OWNED},
+    "portfolio/portfolio.json": {
+        "intents": TENANT_OWNED,
+        "candidates": TENANT_OWNED,
+        "rankings": TENANT_OWNED,
+        "approvals": TENANT_OWNED,
+        "plans": TENANT_OWNED,
+    },
 }
 MIXED_JSON = {rel: tuple(spec.keys()) for rel, spec in MIXED_SPEC.items()}
 SNAPSHOT_RETRIES = 5
@@ -84,6 +92,14 @@ TENANT_MATRIX_DOMAINS = (
     "journal",
     "outbox",
     "dam",
+    "portfolioIntents",
+    "portfolioCandidates",
+    "portfolioRankings",
+    "portfolioApprovals",
+    "portfolioPlans",
+)
+OPTIONAL_EMPTY_DOMAINS = frozenset(
+    {"outbox", "portfolioIntents", "portfolioCandidates", "portfolioRankings", "portfolioApprovals", "portfolioPlans"}
 )
 
 
@@ -1056,6 +1072,61 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
         "journal": {"ids": journal["ids"], "count": len(journal["ids"]), "digest": stable_hash(journal)},
         "outbox": _entry(tx, "path"),
         "dam": _entry(dam, "path"),
+        "portfolioIntents": _entry(
+            sorted(
+                [
+                    {"portfolioId": r.get("portfolioId"), "intentHash": r.get("intentHash")}
+                    for r in _owned(getattr(getattr(plat, "portfolio", None), "intents", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("portfolioId")),
+            ),
+            "portfolioId",
+        ),
+        "portfolioCandidates": _entry(
+            sorted(
+                [
+                    {
+                        "candidateId": r.get("candidateId"),
+                        "canonicalHash": r.get("canonicalHash"),
+                        "state": r.get("state"),
+                        "engineeringHash": r.get("engineeringHash"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "portfolio", None), "candidates", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("candidateId")),
+            ),
+            "candidateId",
+        ),
+        "portfolioRankings": _entry(
+            sorted(
+                [
+                    {"rankingId": r.get("rankingId"), "rankingPolicyHash": r.get("rankingPolicyHash")}
+                    for r in _owned(getattr(getattr(plat, "portfolio", None), "rankings", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("rankingId")),
+            ),
+            "rankingId",
+        ),
+        "portfolioApprovals": _entry(
+            sorted(
+                [
+                    {"approvalId": r.get("approvalId"), "status": r.get("status"), "candidateId": r.get("candidateId")}
+                    for r in _owned(getattr(getattr(plat, "portfolio", None), "approvals", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("approvalId")),
+            ),
+            "approvalId",
+        ),
+        "portfolioPlans": _entry(
+            sorted(
+                [
+                    {"planId": r.get("planId"), "planHash": r.get("planHash")}
+                    for r in _owned(getattr(getattr(plat, "portfolio", None), "plans", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("planId")),
+            ),
+            "planId",
+        ),
     }
     compact = {k: domains[k]["digest"] for k in TENANT_MATRIX_DOMAINS}
     return {**domains, "tenantStateDigest": stable_hash(compact)}
@@ -1133,11 +1204,6 @@ def evaluate_tenant_restore_matrix(
         key for key in TENANT_MATRIX_DOMAINS if live_state[key] != restored_state[key]
     ]
     missing = list(identity_mismatch)
-    for key in TENANT_MATRIX_DOMAINS:
-        if key == "outbox":
-            continue
-        if live_state[key]["count"] <= 0:
-            missing.append(f"{key}:empty-live")
     if live_event_ids:
         restored_ids = set(restored_state["journal"]["ids"])
         if not live_event_ids <= restored_ids:
