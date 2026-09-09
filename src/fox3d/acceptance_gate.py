@@ -28,6 +28,10 @@ PORTFOLIO_ACCEPTANCE_FILES = (
     "PORTFOLIO_DFM_ACCEPTANCE",
     "PORTFOLIO_COMMERCIAL_ACCEPTANCE",
 )
+PROTOTYPE_ACCEPTANCE_FILES = (
+    "PROTOTYPE_VALIDATION_ACCEPTANCE",
+    "SKU_LAUNCH_READINESS_ACCEPTANCE",
+)
 
 
 def required_real_acceptance_ok(
@@ -249,6 +253,36 @@ def read_portfolio_truth_set(docs: Path) -> dict[str, Any]:
             errors.append(f"dirty:{name}")
         if payload.get("evidenceCommitMatchesHead") is not True:
             errors.append(f"unbound:{name}")
+        for flag in (
+            "fullAutonomousFactoryReady",
+            "liveFactoryExecutionReady",
+            "liveProviderReady",
+            "globalProductionReady",
+            "liveMachineControl",
+        ):
+            if payload.get(flag) is not False:
+                errors.append(f"readiness:{name}:{flag}")
+    result["errors"] = errors
+    result["ok"] = not errors
+    return result
+
+
+def read_prototype_truth_set(docs: Path) -> dict[str, Any]:
+    result = read_canonical_truth_set(docs, names=PROTOTYPE_ACCEPTANCE_FILES)
+    errors = list(result.get("errors") or [])
+    for name in PROTOTYPE_ACCEPTANCE_FILES:
+        md = docs / f"{name}.md"
+        if not md.exists() or md.stat().st_size < 1:
+            errors.append(f"missing:{name}.md")
+    for name, payload in (result.get("payloads") or {}).items():
+        if payload.get("ok") is not True:
+            errors.append(f"ok_not_true:{name}")
+        if payload.get("workingTreeClean") is not True:
+            errors.append(f"dirty:{name}")
+        if payload.get("evidenceCommitMatchesHead") is not True:
+            errors.append(f"unbound:{name}")
+        if payload.get("physicalPrototypeValidated") is True and payload.get("evidenceLabel") == "FIXTURE":
+            errors.append(f"fixture_physical:{name}")
         for flag in (
             "fullAutonomousFactoryReady",
             "liveFactoryExecutionReady",

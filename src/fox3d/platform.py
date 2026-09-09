@@ -105,6 +105,9 @@ class Platform:
         self.kd = KdFactory(self)
         self.physical = PhysicalProductOS(self)
         self.portfolio = PortfolioFactory(self)
+        from fox3d.prototype import PrototypeFactory
+
+        self.prototype = PrototypeFactory(self)
         self.pilot = PilotOps(self)
         self.retail_fixtures = self.physical.retail
         self.providers = ProviderRegistry(self.root / "providers")
