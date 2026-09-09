@@ -11,6 +11,7 @@ Scoped readiness (not a global Production Ready flag):
 - `qcTraceabilityReady`: **true** — see `docs/QC_TRACEABILITY_ACCEPTANCE.md`
 - `manualFactoryPilotReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/MANUAL_FACTORY_PILOT_ACCEPTANCE.md` (CODE `11c79d1`, generation `2d0cc206-ed80-4c32-a82f-491ae8842220`; REAL blender reused `018cc70`)
 - `skuPortfolioFactoryReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.md` (CODE `7a87ea5`, generation `0b76b09e-02a8-45a6-b4fd-bf34849dd76c`; 4/4 T1000 OptiX media with per-case SHA/size/job/GPU)
+- `prototypeValidationReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/PROTOTYPE_VALIDATION_ACCEPTANCE.md` (CODE `66a66d1`, generation `03680045-41c9-4144-b97f-a0edfc905ef4`; `physicalPrototypeValidated=false`; REAL blender reused `7a87ea5`)
 - `operatorShiftReady`: **REAL_LOGIC / MANUAL_IDENTITY** — see `docs/OPERATOR_SHIFT_ACCEPTANCE.md`
 - `inventoryReconciliationReady`: **REAL_LOGIC / MANUAL** — see `docs/INVENTORY_RECONCILIATION_ACCEPTANCE.md`
 - `pilotBackupRestoreReady`: **REAL_LOGIC** (local operational, not cloud HA/DR) — see `docs/PILOT_BACKUP_RESTORE_ACCEPTANCE.md`

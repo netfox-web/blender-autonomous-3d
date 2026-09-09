@@ -1,10 +1,23 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 541–600 integrity CODE_EVIDENCE_SHA `7a87ea5`; prior portfolio `655ea99` / docs `9360251`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `45cd12a`. Historical Phase 1–540 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 601–660 prototype CODE_EVIDENCE_SHA `66a66d1`; prior integrity `7a87ea5` / docs `ac12f936`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c2f369f`. Historical Phase 1–600 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 601–660 Prototype Validation & SKU Launch Readiness V1
+
+| Item | Status | Evidence |
+|---|---|---|
+| 601–608 selection | REAL_LOGIC / FIXTURE actor | operator/shift required; 4 Top-10 SKUs; fixture ≠ MANUAL_EVIDENCE |
+| 609–616 PrototypeUnit | REAL_LOGIC | durable units + MANUAL_STATION traveler; idempotent; no double consume |
+| 617–624 as-built | FIXTURE (CI) | variance vs target; missing measurements block validate; `physicalPrototypeValidated=false` |
+| 625–632 ECO | REAL_LOGIC | new engineeringHash; rejected ECO does not replace; old evidence cannot validate new |
+| 633–640 actual cost | FIXTURE / PARTIAL | estimate snapshot preserved; missing component ≠ 0 |
+| 641–648 packaging | FIXTURE / REAL_LOGIC | oversize/missing packed weight blocks; no carrier booking |
+| 649–654 decision board | REAL_LOGIC | WAITING_PHYSICAL_EVIDENCE on fixture; MOCK demand cannot GO |
+| 655–660 acceptance | FIXTURE + REAL_LOGIC | generation `03680045-…`; CI `34357037364`; tenant digest equal; REAL blender reused `7a87ea5` |
 
 ## Phase 541–600 Small-Space KD SKU Portfolio Factory V1
 

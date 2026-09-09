@@ -1,0 +1,506 @@
+{
+  "generatedAt": "2026-09-09T13:29:25.990910+00:00",
+  "acceptanceGenerationId": "03680045-41c9-4144-b97f-a0edfc905ef4",
+  "evidenceCodeCommit": "66a66d1feda59cfe77fe8f5ceb21032d86f2c3f8",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "evidenceLabel": "FIXTURE",
+  "physicalPrototypeValidated": false,
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "ok": true,
+  "priorRealBlenderEvidence": {
+    "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+    "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+    "reason": "Portfolio/media/engineering render path unchanged; Phase 601\u2013660 adds prototype workflow only"
+  },
+  "domain": "sku-launch-readiness",
+  "board": {
+    "portfolioId": "270859cd-2cd6-40b0-9a81-41cedbb9d674",
+    "tenantId": "pv-a",
+    "rows": [
+      {
+        "candidateId": "9b74415e-a621-42de-880b-58b7b6727e17",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.7159642293951043,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 800.0,
+            "actual": 800.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 20.672,
+            "actual": 12.0,
+            "abs": -8.672,
+            "pct": -0.4195046439628483,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 22.3,
+            "actual": 40.0,
+            "abs": 17.7,
+            "pct": 0.7937219730941704,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 824.0,
+            "actual": 800.0,
+            "abs": -24.0,
+            "pct": -0.02912621359223301,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 400.0,
+            "abs": -24.0,
+            "pct": -0.05660377358490566,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 200.0,
+            "abs": 20.0,
+            "pct": 0.1111111111111111,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 20.672,
+            "actual": 13.0,
+            "abs": -7.672000000000001,
+            "pct": -0.37113003095975233,
+            "complete": true
+          }
+        },
+        "observedCostLabel": "FIXTURE",
+        "packagingOk": true,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "fixture_evidence"
+        ]
+      },
+      {
+        "candidateId": "3abe9165-5b1f-4434-85cf-5c7980b9f2a1",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.6940600704797649,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 600.0,
+            "actual": 600.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 450.0,
+            "actual": 450.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 17.203,
+            "actual": 12.0,
+            "abs": -5.202999999999999,
+            "pct": -0.3024472475730977,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 22.3,
+            "actual": 40.0,
+            "abs": 17.7,
+            "pct": 0.7937219730941704,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 624.0,
+            "actual": 800.0,
+            "abs": 176.0,
+            "pct": 0.28205128205128205,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 438.0,
+            "actual": 400.0,
+            "abs": -38.0,
+            "pct": -0.0867579908675799,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 200.0,
+            "abs": 20.0,
+            "pct": 0.1111111111111111,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 17.203,
+            "actual": 13.0,
+            "abs": -4.202999999999999,
+            "pct": -0.2443178515375225,
+            "complete": true
+          }
+        },
+        "observedCostLabel": "FIXTURE",
+        "packagingOk": true,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "fixture_evidence"
+        ]
+      },
+      {
+        "candidateId": "ae5e85d0-1629-4e8c-b7b4-bc5be4e4a0ca",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.6881712097382667,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 600.0,
+            "actual": 600.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 16.655,
+            "actual": 12.0,
+            "abs": -4.655000000000001,
+            "pct": -0.27949564695286705,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 22.3,
+            "actual": 40.0,
+            "abs": 17.7,
+            "pct": 0.7937219730941704,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 624.0,
+            "actual": 800.0,
+            "abs": 176.0,
+            "pct": 0.28205128205128205,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 400.0,
+            "abs": -24.0,
+            "pct": -0.05660377358490566,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 180.0,
+            "actual": 200.0,
+            "abs": 20.0,
+            "pct": 0.1111111111111111,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 16.655,
+            "actual": 13.0,
+            "abs": -3.655000000000001,
+            "pct": -0.21945361753227263,
+            "complete": true
+          }
+        },
+        "observedCostLabel": "FIXTURE",
+        "packagingOk": true,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "fixture_evidence"
+        ]
+      },
+      {
+        "candidateId": "ba00a326-36f8-4b5d-9e6c-64ad5862983a",
+        "tenantId": "pv-a",
+        "state": "WAITING_PHYSICAL_EVIDENCE",
+        "rankingScore": 0.6753818626845383,
+        "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+        "conservationOk": true,
+        "prototypeStatus": "WAITING_VALIDATION",
+        "dimensionalVariance": {
+          "widthMm": {
+            "target": 800.0,
+            "actual": 800.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "depthMm": {
+            "target": 400.0,
+            "actual": 400.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "heightMm": {
+            "target": 750.0,
+            "actual": 750.0,
+            "abs": 0.0,
+            "pct": 0.0,
+            "complete": true
+          },
+          "assembledWeightKg": {
+            "target": 23.97,
+            "actual": 12.0,
+            "abs": -11.969999999999999,
+            "pct": -0.49937421777221525,
+            "complete": true
+          },
+          "assemblyMinutes": {
+            "target": 27.4,
+            "actual": 40.0,
+            "abs": 12.600000000000001,
+            "pct": 0.4598540145985402,
+            "complete": true
+          },
+          "cartonLengthMm": {
+            "target": 824.0,
+            "actual": 800.0,
+            "abs": -24.0,
+            "pct": -0.02912621359223301,
+            "complete": true
+          },
+          "cartonWidthMm": {
+            "target": 424.0,
+            "actual": 400.0,
+            "abs": -24.0,
+            "pct": -0.05660377358490566,
+            "complete": true
+          },
+          "cartonHeightMm": {
+            "target": 337.0,
+            "actual": 200.0,
+            "abs": -137.0,
+            "pct": -0.4065281899109792,
+            "complete": true
+          },
+          "packedWeightKg": {
+            "target": 23.97,
+            "actual": 13.0,
+            "abs": -10.969999999999999,
+            "pct": -0.4576554025865665,
+            "complete": true
+          }
+        },
+        "observedCostLabel": "FIXTURE",
+        "packagingOk": true,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "fixture_evidence"
+        ]
+      },
+      {
+        "candidateId": "068c0a6a-7644-43bd-bc47-505382f9b4b7",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "prototypeStatus": null,
+        "dimensionalVariance": null,
+        "observedCostLabel": null,
+        "packagingOk": null,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "not_selected",
+          "no_unit"
+        ]
+      },
+      {
+        "candidateId": "9a54e698-37ed-4193-a1d2-7fbc676db149",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "prototypeStatus": null,
+        "dimensionalVariance": null,
+        "observedCostLabel": null,
+        "packagingOk": null,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "not_selected",
+          "no_unit"
+        ]
+      },
+      {
+        "candidateId": "11e1b3ac-1db5-4048-a889-cbef1adbc84f",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "prototypeStatus": null,
+        "dimensionalVariance": null,
+        "observedCostLabel": null,
+        "packagingOk": null,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "not_selected",
+          "no_unit"
+        ]
+      },
+      {
+        "candidateId": "4c23f170-1c11-45d1-a772-f96ac2e13c05",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "prototypeStatus": null,
+        "dimensionalVariance": null,
+        "observedCostLabel": null,
+        "packagingOk": null,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "not_selected",
+          "no_unit"
+        ]
+      },
+      {
+        "candidateId": "240682c5-1324-447b-9717-9dc397752551",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "prototypeStatus": null,
+        "dimensionalVariance": null,
+        "observedCostLabel": null,
+        "packagingOk": null,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "not_selected",
+          "no_unit"
+        ]
+      },
+      {
+        "candidateId": "1c47e6c5-b0fd-4a5d-8371-6c8aada3781b",
+        "tenantId": "pv-a",
+        "state": "NOT_SELECTED",
+        "rankingScore": null,
+        "rankingPolicyHash": null,
+        "conservationOk": true,
+        "prototypeStatus": null,
+        "dimensionalVariance": null,
+        "observedCostLabel": null,
+        "packagingOk": null,
+        "physicalPrototypeValidated": false,
+        "demandLabel": "MOCK",
+        "liveMachineControl": false,
+        "productionReady": false,
+        "blockers": [
+          "not_selected",
+          "no_unit"
+        ]
+      }
+    ],
+    "liveMachineControl": false,
+    "globalProductionReady": false,
+    "truthLabel": "REAL_LOGIC"
+  },
+  "demandLabel": "MOCK",
+  "rows": [
+    {
+      "check": "fixture cannot physically validate",
+      "status": "REAL_LOGIC",
+      "evidence": "physicalPrototypeValidated=False"
+    },
+    {
+      "check": "MOCK demand not REAL",
+      "status": "REAL_LOGIC",
+      "evidence": "MOCK"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "LIVE_LASER",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    }
+  ]
+}
