@@ -131,8 +131,10 @@ def _tenant_of(rec: Any) -> str | None:
 
 
 def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
+    if not isinstance(idem, dict):
+        raise BackupError("BLOCKED", "malformed idem container")
     out: dict[str, Any] = {}
-    for key, value in (idem or {}).items() if isinstance(idem, dict) else []:
+    for key, value in idem.items():
         if any(str(key).startswith(f"{tid}::") for tid in tids):
             out[key] = value
     return out
@@ -146,18 +148,26 @@ def _pallet_carton_ids(rec: dict[str, Any]) -> list[str]:
     return ids
 
 
+def _require_list(payload: dict[str, Any], rel: str, key: str) -> list[Any] | None:
+    if key not in payload:
+        return None
+    rows = payload[key]
+    if not isinstance(rows, list):
+        raise BackupError("BLOCKED", f"malformed {rel}:{key} expected list")
+    return rows
+
+
 def _parent_tenants(payload: dict[str, Any], rel: str, key: str) -> dict[str, str]:
     out: dict[str, str] = {}
     if rel == "logistics/logistics.json" and key == "pallets":
-        rows = payload.get("cartons") or []
-        id_key = "cartonId"
+        parent_key, id_key = "cartons", "cartonId"
     elif rel == "workorders/workorders.json" and key == "operations":
-        rows = payload.get("orders") or []
-        id_key = "workOrderId"
+        parent_key, id_key = "orders", "workOrderId"
     else:
         return out
-    if not isinstance(rows, list):
-        raise BackupError("BLOCKED", f"malformed parent collection for {rel}:{key}")
+    rows = _require_list(payload, rel, parent_key)
+    if rows is None:
+        return out
     for rec in rows:
         if not isinstance(rec, dict) or not rec.get(id_key):
             raise BackupError("BLOCKED", f"ambiguous parent row in {rel}:{key}")
@@ -206,8 +216,8 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
         return payload
     filtered = dict(payload)
     for key, policy in spec.items():
-        rows = payload.get(key) or []
-        if not isinstance(rows, list):
+        rows = _require_list(payload, rel, key)
+        if rows is None:
             continue
         if policy == GLOBAL_REFERENCE:
             filtered[key] = []
@@ -233,24 +243,23 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
                 raise BackupError("BLOCKED", f"unknown collection policy {policy}")
         filtered[key] = kept
     if rel == "releases/releases.json":
-        kept_ids = {str(r.get("releaseId")) for r in filtered.get("releases") or [] if isinstance(r, dict) and r.get("releaseId")}
-        all_ids = {
-            str(r.get("releaseId"))
-            for r in (payload.get("releases") or [])
-            if isinstance(r, dict) and r.get("releaseId")
-        }
-        packets = payload.get("packets") or {}
-        if packets and not isinstance(packets, dict):
-            raise BackupError("BLOCKED", "ambiguous packets payload")
-        out_packets: dict[str, Any] = {}
-        for pkt_id, value in (packets.items() if isinstance(packets, dict) else []):
-            if pkt_id not in all_ids:
-                raise BackupError("BLOCKED", f"ambiguous packet parent {pkt_id}")
-            if pkt_id in kept_ids:
-                out_packets[pkt_id] = value
-        filtered["packets"] = out_packets
+        release_rows = _require_list(filtered, rel, "releases") or []
+        kept_ids = {str(r.get("releaseId")) for r in release_rows if isinstance(r, dict) and r.get("releaseId")}
+        source_rows = _require_list(payload, rel, "releases") or []
+        all_ids = {str(r.get("releaseId")) for r in source_rows if isinstance(r, dict) and r.get("releaseId")}
+        if "packets" in payload:
+            packets = payload["packets"]
+            if not isinstance(packets, dict):
+                raise BackupError("BLOCKED", "malformed packets payload")
+            out_packets: dict[str, Any] = {}
+            for pkt_id, value in packets.items():
+                if pkt_id not in all_ids:
+                    raise BackupError("BLOCKED", f"ambiguous packet parent {pkt_id}")
+                if pkt_id in kept_ids:
+                    out_packets[pkt_id] = value
+            filtered["packets"] = out_packets
     if "idem" in payload:
-        filtered["idem"] = _filter_idem(payload.get("idem"), tids)
+        filtered["idem"] = _filter_idem(payload["idem"], tids)
     return filtered
 
 
@@ -724,6 +733,334 @@ def _tx_count(root: Path, tenant_id: str) -> int:
     return n
 
 
+def _entry(rows: list[dict[str, Any]], id_key: str) -> dict[str, Any]:
+    ids = sorted(str(r.get(id_key)) for r in rows if r.get(id_key) is not None)
+    return {"ids": ids, "count": len(rows), "digest": stable_hash(rows)}
+
+
+def _idem_entries(mapping: Any, tenant_id: str) -> list[dict[str, Any]]:
+    if not isinstance(mapping, dict):
+        return []
+    rows = [{"key": str(key), "ref": value} for key, value in mapping.items() if str(key).startswith(f"{tenant_id}::")]
+    return sorted(rows, key=lambda r: r["key"])
+
+
+def _dam_entries(root: Path, tenant_id: str) -> list[dict[str, Any]]:
+    base = Path(root) / "dam" / tenant_id
+    rows: list[dict[str, Any]] = []
+    if not base.exists():
+        return rows
+    for path in sorted(p for p in base.rglob("*") if p.is_file() and not _is_volatile(p)):
+        rel = _validate_rel(path.relative_to(Path(root)).as_posix())
+        rows.append({"path": rel, "sha256": sha256_bytes(path.read_bytes())})
+    return rows
+
+
+def _tx_entries(root: Path, tenant_id: str) -> list[dict[str, Any]]:
+    tx_root = Path(root) / "tx"
+    rows: list[dict[str, Any]] = []
+    if not tx_root.exists():
+        return rows
+    for path in sorted(tx_root.glob("*.json")):
+        rec = read_json(path) or {}
+        if isinstance(rec, dict) and rec.get("tenantId") == tenant_id:
+            rows.append({"path": path.name, "txId": rec.get("txId"), "sha256": sha256_bytes(path.read_bytes())})
+    return rows
+
+
+def _a_pallets(pilot: Any, tenant_id: str) -> list[dict[str, Any]]:
+    carton_ids = {c["cartonId"] for c in _owned(pilot.logistics.cartons, tenant_id) if c.get("cartonId")}
+    rows = []
+    for pal in (pilot.logistics.pallets or {}).values():
+        if not isinstance(pal, dict):
+            continue
+        ids = _pallet_carton_ids(pal)
+        if pal.get("tenantId") == tenant_id or (ids and set(ids) <= carton_ids):
+            rows.append(pal)
+    return rows
+
+
+def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
+    pilot = plat.pilot
+    lots = []
+    for lot in plat.lots.list(tenant_id=tenant_id):
+        qty = plat.lots.quantities(lot["lotId"], tenant_id=tenant_id)
+        lots.append(
+            {
+                "lotId": lot["lotId"],
+                "material": lot.get("material"),
+                "thickness": lot.get("thickness"),
+                "available": qty.get("available"),
+                "reserved": qty.get("reserved"),
+                "consumed": qty.get("consumed"),
+                "sheetCount": qty.get("sheetCount"),
+                "quarantined": lot.get("quarantined"),
+            }
+        )
+    remnants = [
+        {
+            "remnantId": r.get("remnantId"),
+            "material": r.get("material"),
+            "w": r.get("w"),
+            "h": r.get("h"),
+            "area": r.get("area"),
+            "source": r.get("sourceNestingRun") or r.get("sourceRun"),
+            "materialLotId": r.get("materialLotId"),
+            "status": r.get("status"),
+        }
+        for r in (plat.remnants.items or {}).values()
+        if r.get("tenantId") == tenant_id
+    ]
+    releases = [
+        {
+            "releaseId": r.get("releaseId"),
+            "releaseHash": r.get("releaseHash"),
+            "productVersion": r.get("productVersion"),
+            "status": r.get("status"),
+        }
+        for r in _owned(pilot.releases.releases, tenant_id)
+    ]
+    release_ids = {str(r["releaseId"]) for r in releases if r.get("releaseId")}
+    packets = []
+    for rid, pkt in (pilot.releases.packets or {}).items():
+        if rid not in release_ids:
+            continue
+        blob = json.dumps(pkt, sort_keys=True, default=str).encode()
+        packets.append({"releaseId": rid, "sha256": sha256_bytes(blob), "size": len(blob)})
+    work_orders = [
+        {
+            "workOrderId": w.get("workOrderId"),
+            "releaseHash": w.get("releaseHash"),
+            "state": w.get("state"),
+            "traveler": [s.get("operation") for s in ((w.get("traveler") or {}).get("steps") or [])],
+            "ops": sorted(
+                [
+                    {"opId": o.get("opId"), "operation": o.get("operation"), "status": o.get("status")}
+                    for o in (w.get("ops") or [])
+                    if isinstance(o, dict)
+                ],
+                key=lambda o: str(o.get("opId") or ""),
+            ),
+        }
+        for w in _owned(pilot.workorders.orders, tenant_id)
+    ]
+    wo_ids = {str(w["workOrderId"]) for w in work_orders if w.get("workOrderId")}
+    operations = [
+        {
+            "opId": o.get("opId"),
+            "workOrderId": o.get("workOrderId"),
+            "operation": o.get("operation"),
+            "status": o.get("status"),
+        }
+        for o in (pilot.workorders.operations or [])
+        if isinstance(o, dict) and str(o.get("workOrderId") or "") in wo_ids
+    ]
+    idem = (
+        _idem_entries(pilot.workorders._idem, tenant_id)
+        + _idem_entries(pilot.releases._idem, tenant_id)
+        + _idem_entries(pilot.logistics._idem, tenant_id)
+        + _idem_entries(pilot.receiving._idem, tenant_id)
+        + _idem_entries(pilot.cyclecounts._idem, tenant_id)
+    )
+    journal_events = [e for e in pilot.journal.list(tenant_id) if e.get("eventId")]
+    integrity = pilot.journal.verify(tenant_id)
+    journal = {
+        "ids": sorted(str(e["eventId"]) for e in journal_events),
+        "sequence": integrity.get("sequence"),
+        "headHash": integrity.get("headHash"),
+        "ok": bool(integrity.get("ok") is True),
+    }
+    dam = _dam_entries(plat.root, tenant_id)
+    tx = _tx_entries(plat.root, tenant_id)
+    domains = {
+        "materialLots": _entry(sorted(lots, key=lambda r: str(r["lotId"])), "lotId"),
+        "remnants": _entry(sorted(remnants, key=lambda r: str(r.get("remnantId"))), "remnantId"),
+        "releases": _entry(sorted(releases, key=lambda r: str(r.get("releaseId"))), "releaseId"),
+        "packets": _entry(sorted(packets, key=lambda r: str(r.get("releaseId"))), "releaseId"),
+        "idempotency": _entry(sorted(idem, key=lambda r: r["key"]), "key"),
+        "workOrders": _entry(sorted(work_orders, key=lambda r: str(r.get("workOrderId"))), "workOrderId"),
+        "operations": _entry(sorted(operations, key=lambda r: str(r.get("opId"))), "opId"),
+        "receipts": _entry(
+            sorted(
+                [
+                    {
+                        "receiptId": r.get("receiptId"),
+                        "status": r.get("status"),
+                        "lotId": r.get("lotId"),
+                        "quantity": r.get("quantity"),
+                    }
+                    for r in _owned(pilot.receiving.receipts, tenant_id)
+                ],
+                key=lambda r: str(r.get("receiptId")),
+            ),
+            "receiptId",
+        ),
+        "stations": _entry(
+            sorted(
+                [
+                    {"stationId": s.get("stationId"), "status": s.get("status"), "capabilities": s.get("capabilities")}
+                    for s in _owned(pilot.stations.stations, tenant_id)
+                ],
+                key=lambda r: str(r.get("stationId")),
+            ),
+            "stationId",
+        ),
+        "leases": _entry(
+            sorted(
+                [
+                    {
+                        "leaseId": l.get("leaseId"),
+                        "workOrderId": l.get("workOrderId"),
+                        "stationId": l.get("stationId"),
+                        "status": l.get("status"),
+                        "jobId": l.get("jobId"),
+                    }
+                    for l in _owned(pilot.dispatcher.leases, tenant_id)
+                ],
+                key=lambda r: str(r.get("leaseId")),
+            ),
+            "leaseId",
+        ),
+        "operators": _entry(
+            sorted(
+                [
+                    {"operatorId": o.get("operatorId"), "enabled": o.get("enabled")}
+                    for o in _owned(pilot.identity.operators, tenant_id)
+                ],
+                key=lambda r: str(r.get("operatorId")),
+            ),
+            "operatorId",
+        ),
+        "shifts": _entry(
+            sorted(
+                [
+                    {"shiftId": s.get("shiftId"), "status": s.get("status"), "operatorId": s.get("operatorId")}
+                    for s in _owned(pilot.identity.shifts, tenant_id)
+                ],
+                key=lambda r: str(r.get("shiftId")),
+            ),
+            "shiftId",
+        ),
+        "cycleCounts": _entry(
+            sorted(
+                [
+                    {
+                        "cycleCountId": c.get("cycleCountId"),
+                        "lotId": c.get("lotId"),
+                        "status": c.get("status"),
+                        "counted": c.get("counted"),
+                    }
+                    for c in _owned(pilot.cyclecounts.counts, tenant_id)
+                ],
+                key=lambda r: str(r.get("cycleCountId")),
+            ),
+            "cycleCountId",
+        ),
+        "cartons": _entry(
+            sorted(
+                [
+                    {
+                        "cartonId": c.get("cartonId"),
+                        "workOrderId": c.get("workOrderId"),
+                        "releaseHash": c.get("releaseHash"),
+                        "tenantId": c.get("tenantId"),
+                    }
+                    for c in _owned(pilot.logistics.cartons, tenant_id)
+                ],
+                key=lambda r: str(r.get("cartonId")),
+            ),
+            "cartonId",
+        ),
+        "palletPlans": _entry(
+            sorted(
+                [
+                    {
+                        "palletPlanId": p.get("palletPlanId"),
+                        "cartonIds": _pallet_carton_ids(p),
+                        "tenantId": p.get("tenantId"),
+                    }
+                    for p in _a_pallets(pilot, tenant_id)
+                ],
+                key=lambda r: str(r.get("palletPlanId")),
+            ),
+            "palletPlanId",
+        ),
+        "shipments": _entry(
+            sorted(
+                [
+                    {
+                        "shipmentId": s.get("shipmentId"),
+                        "cartonIds": list(s.get("cartonIds") or []),
+                        "status": s.get("status"),
+                        "tenantId": s.get("tenantId"),
+                    }
+                    for s in _owned(pilot.logistics.shipments, tenant_id)
+                ],
+                key=lambda r: str(r.get("shipmentId")),
+            ),
+            "shipmentId",
+        ),
+        "checklists": _entry(
+            sorted(
+                [
+                    {
+                        "checklistId": c.get("checklistId"),
+                        "workOrderId": c.get("workOrderId"),
+                        "releaseHash": c.get("releaseHash"),
+                    }
+                    for c in _owned(pilot.logistics.checklists, tenant_id)
+                ],
+                key=lambda r: str(r.get("checklistId")),
+            ),
+            "checklistId",
+        ),
+        "handoffs": _entry(
+            sorted(
+                [
+                    {"handoffId": h.get("handoffId"), "shipmentId": h.get("shipmentId"), "tenantId": h.get("tenantId")}
+                    for h in _owned(pilot.logistics.handoffs, tenant_id)
+                ],
+                key=lambda r: str(r.get("handoffId")),
+            ),
+            "handoffId",
+        ),
+        "qc": _entry(
+            sorted(
+                [
+                    {"id": c.get("qcId"), "workOrderId": c.get("workOrderId"), "kind": "check"}
+                    for c in _owned(pilot.qc.checks, tenant_id)
+                ]
+                + [
+                    {"id": d.get("defectId"), "workOrderId": d.get("workOrderId"), "kind": "defect"}
+                    for d in _owned(pilot.qc.defects, tenant_id)
+                ],
+                key=lambda r: str(r.get("id")),
+            ),
+            "id",
+        ),
+        "exceptions": _entry(
+            sorted(
+                [
+                    {
+                        "exceptionId": e.get("exceptionId"),
+                        "workOrderId": e.get("workOrderId"),
+                        "errorCode": e.get("errorCode"),
+                        "releaseHash": e.get("releaseHash"),
+                    }
+                    for e in _owned(pilot.inbox.items, tenant_id)
+                ],
+                key=lambda r: str(r.get("exceptionId")),
+            ),
+            "exceptionId",
+        ),
+        "journal": {"ids": journal["ids"], "count": len(journal["ids"]), "digest": stable_hash(journal)},
+        "outbox": _entry(tx, "path"),
+        "dam": _entry(dam, "path"),
+    }
+    compact = {k: domains[k]["digest"] for k in TENANT_MATRIX_DOMAINS}
+    return {**domains, "tenantStateDigest": stable_hash(compact)}
+
+
 def tenant_domain_counts(plat: Any, tenant_id: str) -> dict[str, int]:
     pilot = plat.pilot
     release_ids = {r["releaseId"] for r in _owned(pilot.releases.releases, tenant_id) if r.get("releaseId")}
@@ -787,35 +1124,43 @@ def evaluate_tenant_restore_matrix(
     tenant_b: str,
     live_event_ids: set[str] | None = None,
 ) -> dict[str, Any]:
-    live_a = tenant_domain_counts(live, tenant_a)
-    restored_a = tenant_domain_counts(restored, tenant_a)
-    restored_b = tenant_domain_counts(restored, tenant_b)
+    live_state = tenant_state_digest(live, tenant_a)
+    restored_state = tenant_state_digest(restored, tenant_a)
+    restored_b = tenant_state_digest(restored, tenant_b)
     quotes = list((restored.pilot.logistics.carrier_quotes or {}).values())
-    leakage = {k: restored_b[k] for k in TENANT_MATRIX_DOMAINS if restored_b[k]}
-    missing = []
+    leakage = {k: restored_b[k]["count"] for k in TENANT_MATRIX_DOMAINS if restored_b[k]["count"]}
+    identity_mismatch = [
+        key for key in TENANT_MATRIX_DOMAINS if live_state[key] != restored_state[key]
+    ]
+    missing = list(identity_mismatch)
     for key in TENANT_MATRIX_DOMAINS:
         if key == "outbox":
-            if restored_a[key] != live_a[key]:
-                missing.append(key)
             continue
-        if live_a[key] <= 0:
+        if live_state[key]["count"] <= 0:
             missing.append(f"{key}:empty-live")
-            continue
-        if key == "journal":
-            live_ids = live_event_ids
-            if live_ids is None:
-                live_ids = {e.get("eventId") for e in live.pilot.journal.list(tenant_a) if e.get("eventId")}
-            restored_ids = {e.get("eventId") for e in restored.pilot.journal.list(tenant_a) if e.get("eventId")}
-            if not live_ids or not live_ids <= restored_ids:
+    if live_event_ids:
+        restored_ids = set(restored_state["journal"]["ids"])
+        if not live_event_ids <= restored_ids:
+            if "journal" not in identity_mismatch:
+                identity_mismatch.append("journal")
                 missing.append("journal")
-            continue
-        if restored_a[key] < live_a[key]:
-            missing.append(key)
     return {
         "domains": {
-            key: {"liveA": live_a[key], "restoredA": restored_a[key], "restoredB": restored_b[key]}
+            key: {
+                "liveA": live_state[key]["count"],
+                "restoredA": restored_state[key]["count"],
+                "restoredB": restored_b[key]["count"],
+                "liveDigest": live_state[key]["digest"],
+                "restoredDigest": restored_state[key]["digest"],
+            }
             for key in TENANT_MATRIX_DOMAINS
         },
+        "tenantStateDigest": {
+            "liveA": live_state["tenantStateDigest"],
+            "restoredA": restored_state["tenantStateDigest"],
+            "equal": live_state["tenantStateDigest"] == restored_state["tenantStateDigest"],
+        },
+        "identityMismatch": identity_mismatch,
         "tenantLeakageAbsent": not leakage and quotes == [],
         "tenantRequiredStatePreserved": not missing,
         "leakage": leakage,

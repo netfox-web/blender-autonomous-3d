@@ -16,6 +16,7 @@ from fox3d.backup import (
     no_double_complete_ok,
     no_double_consume_ok,
     restore_pilot,
+    tenant_domain_counts,
     verify_backup,
 )
 from fox3d.inventory import atomic_write_json, read_json
@@ -359,3 +360,152 @@ def test_snapshot_not_accepted_from_lots_hash_alone(tmp_path, monkeypatch):
     man = backup_pilot(plat.root, dest, tenant_ids=["ta"])
     assert (plat.root / "lots" / "lots.json").read_bytes() == lots_before
     assert any(row["path"].endswith("ghost.bin") for row in man["files"])
+
+
+def _seed_ab(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    seed_a = seed_tenant_backup_fixture(plat, tenant_id="ta", actor="ops-a")
+    seed_tenant_backup_fixture(plat, tenant_id="tb", actor="ops-b")
+    return plat, seed_a
+
+
+def _assert_no_manifest(dest: Path) -> None:
+    assert not (dest / "manifest.json").exists()
+
+
+def test_malformed_cartons_object_fail_closed(tmp_path):
+    plat, _ = _seed_ab(tmp_path)
+    path = plat.root / "logistics" / "logistics.json"
+    payload = read_json(path)
+    payload["cartons"] = {c["cartonId"]: c for c in payload["cartons"]}
+    atomic_write_json(path, payload)
+    dest = tmp_path / "bak"
+    with pytest.raises(BackupError, match="malformed"):
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    _assert_no_manifest(dest)
+
+
+def test_malformed_operations_object_fail_closed(tmp_path):
+    plat, _ = _seed_ab(tmp_path)
+    path = plat.root / "workorders" / "workorders.json"
+    payload = read_json(path)
+    payload["operations"] = {o.get("opId") or str(i): o for i, o in enumerate(payload["operations"])}
+    atomic_write_json(path, payload)
+    dest = tmp_path / "bak"
+    with pytest.raises(BackupError, match="malformed"):
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    _assert_no_manifest(dest)
+
+
+def test_malformed_qc_checks_string_fail_closed(tmp_path):
+    plat, _ = _seed_ab(tmp_path)
+    path = plat.root / "qc" / "qc.json"
+    payload = read_json(path)
+    payload["checks"] = "not-a-list"
+    atomic_write_json(path, payload)
+    dest = tmp_path / "bak"
+    with pytest.raises(BackupError, match="malformed"):
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    _assert_no_manifest(dest)
+
+
+def test_malformed_idem_list_fail_closed(tmp_path):
+    plat, _ = _seed_ab(tmp_path)
+    path = plat.root / "workorders" / "workorders.json"
+    payload = read_json(path)
+    payload["idem"] = list((payload.get("idem") or {}).items())
+    atomic_write_json(path, payload)
+    dest = tmp_path / "bak"
+    with pytest.raises(BackupError, match="malformed idem"):
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    _assert_no_manifest(dest)
+
+
+def test_malformed_packets_list_fail_closed(tmp_path):
+    plat, _ = _seed_ab(tmp_path)
+    path = plat.root / "releases" / "releases.json"
+    payload = read_json(path)
+    payload["packets"] = list((payload.get("packets") or {}).items())
+    atomic_write_json(path, payload)
+    dest = tmp_path / "bak"
+    with pytest.raises(BackupError, match="malformed packets"):
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    _assert_no_manifest(dest)
+
+
+def test_malformed_derived_pallets_object_fail_closed(tmp_path):
+    plat, _ = _seed_ab(tmp_path)
+    path = plat.root / "logistics" / "logistics.json"
+    payload = read_json(path)
+    payload["pallets"] = {p["palletPlanId"]: p for p in payload["pallets"]}
+    atomic_write_json(path, payload)
+    dest = tmp_path / "bak"
+    with pytest.raises(BackupError, match="malformed"):
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    _assert_no_manifest(dest)
+
+
+def test_semantic_preservation_rejects_same_count_lot_replacement(tmp_path):
+    plat, _seed = _seed_ab(tmp_path)
+    dest = tmp_path / "bak"
+    backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    restore_pilot(dest, tmp_path / "r", tenant_id="ta")
+    restored = Platform(root=tmp_path / "r", mock_blender=True)
+    good = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="ta", tenant_b="tb")
+    assert good["tenantRequiredStatePreserved"] is True
+    assert good["tenantStateDigest"]["equal"] is True
+    lot = restored.lots.list(tenant_id="ta")[0]
+    rec = dict(restored.lots.lots[lot["lotId"]])
+    del restored.lots.lots[lot["lotId"]]
+    rec["lotId"] = "swap-" + lot["lotId"]
+    restored.lots.lots[rec["lotId"]] = rec
+    bad = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="ta", tenant_b="tb")
+    assert bad["tenantRequiredStatePreserved"] is False
+    assert "materialLots" in bad["identityMismatch"]
+    assert tenant_domain_counts(plat, "ta")["materialLots"] == tenant_domain_counts(restored, "ta")["materialLots"]
+
+
+def test_semantic_preservation_rejects_mutated_lineage(tmp_path):
+    plat, seed_a = _seed_ab(tmp_path)
+    dest = tmp_path / "bak"
+    backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    restore_pilot(dest, tmp_path / "r", tenant_id="ta")
+    restored = Platform(root=tmp_path / "r", mock_blender=True)
+    restored.pilot.workorders.orders[seed_a["workOrderId"]]["releaseHash"] = "0" * 64
+    restored.pilot.releases.releases[seed_a["releaseId"]]["releaseHash"] = "0" * 64
+    restored.pilot.logistics.pallets[seed_a["palletPlanId"]]["cartonIds"] = ["not-parent"]
+    key = next(k for k in restored.pilot.workorders._idem if str(k).startswith("ta::"))
+    restored.pilot.workorders._idem[key] = "other-object"
+    bad = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="ta", tenant_b="tb")
+    assert bad["tenantRequiredStatePreserved"] is False
+    assert set(bad["identityMismatch"]) >= {"workOrders", "releases", "palletPlans", "idempotency"}
+
+
+def test_semantic_preservation_rejects_dam_byte_change(tmp_path):
+    plat, _seed = _seed_ab(tmp_path)
+    dest = tmp_path / "bak"
+    backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    restore_pilot(dest, tmp_path / "r", tenant_id="ta")
+    restored = Platform(root=tmp_path / "r", mock_blender=True)
+    files = [p for p in (restored.root / "dam" / "ta").rglob("*") if p.is_file()]
+    files[0].write_bytes(files[0].read_bytes() + b"x")
+    bad = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="ta", tenant_b="tb")
+    assert bad["tenantRequiredStatePreserved"] is False
+    assert "dam" in bad["identityMismatch"]
+    assert tenant_domain_counts(plat, "ta")["dam"] == tenant_domain_counts(restored, "ta")["dam"]
+
+
+def test_semantic_preservation_rejects_journal_id_swap(tmp_path):
+    plat, _seed = _seed_ab(tmp_path)
+    dest = tmp_path / "bak"
+    backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    restore_pilot(dest, tmp_path / "r", tenant_id="ta")
+    jpath = tmp_path / "r" / "journal" / "ta.json"
+    payload = json.loads(jpath.read_text(encoding="utf-8"))
+    payload["events"][0]["eventId"] = "mutated-event"
+    jpath.write_text(json.dumps(payload), encoding="utf-8")
+    restored = Platform(root=tmp_path / "r", mock_blender=True)
+    bad = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="ta", tenant_b="tb")
+    assert bad["tenantRequiredStatePreserved"] is False
+    assert "journal" in bad["identityMismatch"]
+    assert tenant_domain_counts(plat, "ta")["journal"] == tenant_domain_counts(restored, "ta")["journal"]
