@@ -12,6 +12,7 @@ from fox3d.contracts import ContractService
 from fox3d.ids import new_id, sha256_bytes
 from fox3d.journal import EventJournal
 from fox3d.logistics import LogisticsService
+from fox3d.outbox import CommitOutbox
 from fox3d.mfg_release import ManufacturingReleaseService, product_snapshot
 from fox3d.observability import pilot_health
 from fox3d.operator import irreversible_action, operator_view, resolve_scan
@@ -54,21 +55,24 @@ STRESS_PLAN = [
 class PilotOps:
     def __init__(self, platform: Any) -> None:
         self.platform = platform
-        self.releases = ManufacturingReleaseService(dam=getattr(platform, "dam", None))
+        self.outbox = CommitOutbox(platform.root / "tx")
+        self.journal = EventJournal(platform.root / "journal")
+        self.journal.outbox = self.outbox
+        self.releases = ManufacturingReleaseService(dam=getattr(platform, "dam", None), root=platform.root / "releases")
         self.suppliers = SupplierQuoteService(getattr(platform, "providers", None))
         self.workorders = WorkOrderService(
             lots=platform.lots,
             remnants=platform.remnants,
             dam=platform.dam,
             releases=self.releases,
+            root=platform.root / "workorders",
         )
         self.qc = QcService(dam=platform.dam, workorders=self.workorders)
         self.workorders.bind_qc(self.qc)
         self.logistics = LogisticsService()
         self.econ = PilotEconomics()
-        self.receiving = ReceivingService(lots=platform.lots)
+        self.receiving = ReceivingService(lots=platform.lots, root=platform.root / "receipts")
         self.reliability = ReliabilityHarness(self)
-        self.journal = EventJournal(platform.root / "journal")
         self.inbox = ExceptionInbox()
         self.stations = StationRegistry(platform.root / "stations")
         self.dispatcher = StationDispatcher(
@@ -77,6 +81,7 @@ class PilotOps:
             workorders=self.workorders,
             releases=self.releases,
             inbox=self.inbox,
+            root=platform.root / "leases",
         )
         self.contracts = ContractService(self)
         for svc in (
@@ -92,6 +97,42 @@ class PilotOps:
             platform.lots,
         ):
             svc.journal = self.journal
+            svc.outbox = self.outbox
+        self._reconcile_startup()
+
+    def _business_committed(self, tx: dict[str, Any]) -> bool:
+        atype = tx.get("aggregateType")
+        aid = tx.get("aggregateId")
+        tenant_id = tx.get("tenantId")
+        payload = (tx.get("event") or {}).get("payload") or {}
+        if atype == "MaterialLot":
+            try:
+                lot = self.platform.lots.get(str(aid), tenant_id=str(tenant_id))
+            except (KeyError, PermissionError):
+                return False
+            rid = payload.get("reservationId")
+            if rid:
+                item = (lot.get("reservations") or {}).get(rid)
+                return bool(item and item.get("state") in {"RESERVED", "CONSUMED", "RELEASED"})
+            if payload.get("reason") and lot.get("quarantined"):
+                return True
+            return True
+        if atype == "WorkOrder":
+            return aid in self.workorders.orders
+        if atype == "ManufacturingRelease":
+            return aid in self.releases.releases
+        if atype == "Receipt":
+            return aid in self.receiving.receipts
+        if atype == "StationLease":
+            return aid in self.dispatcher.leases
+        if atype == "Station":
+            return aid in self.stations.stations
+        return False
+
+    def _reconcile_startup(self) -> dict[str, Any]:
+        recovered = self.outbox.reconcile(journal=self.journal, business_committed=self._business_committed)
+        station = self.dispatcher.reconcile()
+        return {"outbox": recovered, "station": station}
 
     def build_product(self, *, tenant_id: str, family: str, kind: str, render: bool = False) -> dict[str, Any]:
         if family == "KD_FURNITURE":

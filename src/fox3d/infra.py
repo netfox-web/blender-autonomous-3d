@@ -499,6 +499,13 @@ class JobQueue:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
 
+    def restore(self, job: dict[str, Any]) -> dict[str, Any]:
+        """Reload a snapshot without resetting queue status (restart recovery)."""
+        rec = dict(job)
+        with self._lock:
+            self._jobs[rec["jobId"]] = rec
+        return rec
+
     def enqueue(self, job: dict[str, Any]) -> dict[str, Any]:
         job = dict(job)
         job.setdefault("status", "queued")

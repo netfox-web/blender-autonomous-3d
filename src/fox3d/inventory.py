@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import threading
 from contextlib import contextmanager
@@ -184,8 +185,14 @@ class MaterialLotRegistry:
         self._tx_expected = 0
         self.generation = 0
         self.journal: Any | None = None
+        self.outbox: Any | None = None
         self._crash_after_first_stage = False
         self._crash_before_commit = False
+        self._crash_mode = ""
+        self._hard_crash = False
+        self._fail_after_prepare = False
+        self._fail_journal_finalize = False
+        self._pending_audit: list[dict[str, Any]] = []
         self.load()
 
     def _lock_path(self) -> Path | None:
@@ -201,12 +208,16 @@ class MaterialLotRegistry:
                 self.load()
                 self._tx_expected = self.generation
             self._tx_depth += 1
+            if self._tx_depth == 1:
+                self._pending_audit = []
+            persisted = False
             try:
                 yield
                 if self._tx_depth == 1:
-                    self.persist(expected_generation=self._tx_expected)
+                    self._commit_business_and_audit()
+                    persisted = True
             except Exception:
-                if self._tx_depth == 1 and self.root:
+                if self._tx_depth == 1 and self.root and not persisted:
                     self.load()
                 raise
             finally:
@@ -214,8 +225,68 @@ class MaterialLotRegistry:
                 if self._tx_depth == 0 and flock is not None:
                     flock.release()
 
+    def _die(self, point: str) -> None:
+        if self._crash_mode != point:
+            return
+        if self._hard_crash:
+            os._exit(1)
+        raise CrashInjected(point)
+
+    def _commit_business_and_audit(self) -> None:
+        pending = list(self._pending_audit)
+        self._pending_audit = []
+        txs: list[dict[str, Any]] = []
+        outbox = self.outbox
+        if self.journal is not None and outbox is not None and pending:
+            for ev in pending:
+                txs.append(outbox.prepare(ev, expected_generation=self._tx_expected))
+            if self._fail_after_prepare:
+                self._fail_after_prepare = False
+                from fox3d.journal import JournalCommitError
+
+                raise JournalCommitError("injected prepare-then-business-fail")
+            self._die("after-prepare")
+        self.persist(expected_generation=self._tx_expected)
+        if outbox is not None:
+            for tx in txs:
+                outbox.mark_business_committed(tx["txId"], observed_generation=self.generation)
+        self._die("after-business")
+        if self.journal is not None:
+            if self._fail_journal_finalize:
+                self._fail_journal_finalize = False
+                from fox3d.journal import JournalCommitError
+
+                raise JournalCommitError("injected journal finalize failure")
+            for ev in pending:
+                self.journal.append(
+                    ev["event_type"],
+                    tenant_id=ev["tenant_id"],
+                    aggregate_type=ev["aggregate_type"],
+                    aggregate_id=ev["aggregate_id"],
+                    actor=ev["actor"],
+                    payload=ev["payload"],
+                    semantic_key=ev.get("semantic_key"),
+                    source=ev.get("source"),
+                )
+            if outbox is not None:
+                for tx in txs:
+                    outbox.complete(tx["txId"])
+
     def _emit(self, event_type: str, *, tenant_id: str, aggregate_id: str, actor: str, payload: dict[str, Any], semantic_key: str | None = None) -> None:
         if self.journal is None:
+            return
+        rec = {
+            "event_type": event_type,
+            "tenant_id": tenant_id,
+            "aggregate_type": "MaterialLot",
+            "aggregate_id": aggregate_id,
+            "actor": actor,
+            "payload": payload,
+            "semantic_key": semantic_key,
+            "source": actor,
+        }
+        if self._tx_depth > 0:
+            self._pending_audit.append(rec)
             return
         self.journal.append(
             event_type,
@@ -248,8 +319,9 @@ class MaterialLotRegistry:
         payload = {"generation": disk_gen + 1, "lots": list(self.lots.values())}
         staging = self.root / "lots.json.staging"
         atomic_write_json(staging, payload)
-        if self._crash_before_commit:
+        if self._crash_before_commit or self._crash_mode == "after-staging":
             self._crash_before_commit = False
+            self._die("after-staging")
             raise CrashInjected("before commit")
         staging.replace(path)
         self.generation = disk_gen + 1
@@ -747,8 +819,22 @@ def worker_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--qty", type=int, required=True)
     parser.add_argument("--material", default="PB_18_WHITE")
     parser.add_argument("--thickness", type=float, default=18)
+    parser.add_argument("--crash", default="")
+    parser.add_argument("--tx", default="")
+    parser.add_argument("--journal", default="")
     args = parser.parse_args(argv)
     reg = MaterialLotRegistry(Path(args.root))
+    if args.tx:
+        from fox3d.journal import EventJournal
+        from fox3d.outbox import CommitOutbox
+
+        reg.outbox = CommitOutbox(Path(args.tx))
+        jroot = Path(args.journal) if args.journal else Path(args.tx).parent / "journal"
+        reg.journal = EventJournal(jroot)
+        reg.journal.outbox = reg.outbox
+    if args.crash:
+        reg._crash_mode = args.crash
+        reg._hard_crash = True
     try:
         items = reg.allocate_requirement(
             tenant_id=args.tenant,

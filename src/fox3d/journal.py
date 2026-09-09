@@ -32,9 +32,48 @@ def emit(
     semantic_key: str | None = None,
     source: str | None = None,
 ) -> dict[str, Any] | None:
+    """Persist business snapshot first when possible, then COMMITTED journal."""
+    persist = getattr(owner, "persist", None)
+    if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
+        # Defer persist to the outbox path below so PREPARED exists first.
+        pass
+    event = {
+        "event_type": event_type,
+        "tenant_id": tenant_id,
+        "aggregate_type": aggregate_type,
+        "aggregate_id": aggregate_id,
+        "actor": actor,
+        "payload": payload or {},
+        "release_hash": release_hash,
+        "semantic_key": semantic_key,
+        "source": source,
+    }
     journal = getattr(owner, "journal", None)
+    outbox = getattr(owner, "outbox", None) or getattr(journal, "outbox", None) if journal is not None else getattr(owner, "outbox", None)
     if journal is None:
+        if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
+            persist()
         return None
+    if outbox is not None and callable(persist) and getattr(owner, "_tx_depth", 0) == 0:
+        tx = outbox.prepare(event)
+        persist()
+        if hasattr(outbox, "mark_business_committed"):
+            outbox.mark_business_committed(tx["txId"])
+        rec = journal.append(
+            event_type,
+            tenant_id=tenant_id,
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            actor=actor,
+            payload=payload or {},
+            release_hash=release_hash,
+            semantic_key=semantic_key,
+            source=source,
+        )
+        outbox.complete(tx["txId"])
+        return rec
+    if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
+        persist()
     return journal.append(
         event_type,
         tenant_id=tenant_id,
@@ -54,6 +93,7 @@ class EventJournal:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._fail_next = False
+        self.outbox: Any | None = None
 
     def _safe(self, tenant_id: str) -> str:
         return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tenant_id)
@@ -123,6 +163,7 @@ class EventJournal:
                     "previousEventHash": data.get("headHash") or GENESIS,
                     "semanticKey": semantic_key,
                     "schemaVersion": SCHEMA,
+                    "commitStatus": "COMMITTED",
                 }
                 rec["eventHash"] = self._event_hash(rec)
                 data["events"].append(rec)
@@ -152,6 +193,17 @@ class EventJournal:
             prev = ev.get("eventHash")
         if (data.get("headHash") or GENESIS) != prev:
             return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "head-mismatch", "label": "BLOCKED_EVIDENCE"}
+        open_tx = []
+        if self.outbox is not None:
+            open_tx = self.outbox.list_open(tenant_id=tenant_id)
+        if open_tx:
+            return {
+                "ok": False,
+                "status": "BLOCKED_EVIDENCE",
+                "reason": "incomplete-tx",
+                "label": "BLOCKED_EVIDENCE",
+                "openTransactions": len(open_tx),
+            }
         return {
             "ok": True,
             "status": "REAL",

@@ -48,14 +48,32 @@ def test_journal_restart_tenant_duplicate_tamper(tmp_path):
     assert all(e["tenantId"] == "tb" for e in exported["events"])
 
 
-def test_journal_failure_does_not_succeed(platform):
-    platform.pilot.journal._fail_next = True
+def test_journal_prepare_fail_leaves_business_unchanged(platform):
+    platform.pilot.outbox._fail_prepare = True
     product = platform.kd.build_sku(tenant_id="jf", kind="OPEN_SHELF")
     snap = __import__("fox3d.mfg_release", fromlist=["product_snapshot"]).product_snapshot(product, family="KD_FURNITURE")
     before = len(platform.pilot.releases.releases)
     with pytest.raises(JournalCommitError):
         platform.pilot.releases.create(snap, tenant_id="jf", created_by="eng", idempotency_key="jf-fail")
     assert len(platform.pilot.releases.releases) == before
+    assert platform.pilot.outbox.list_open(tenant_id="jf") == []
+
+
+def test_journal_finalize_fail_blocks_until_reconcile(platform):
+    platform.pilot.journal._fail_next = True
+    product = platform.kd.build_sku(tenant_id="jz", kind="OPEN_SHELF")
+    snap = __import__("fox3d.mfg_release", fromlist=["product_snapshot"]).product_snapshot(product, family="KD_FURNITURE")
+    with pytest.raises(JournalCommitError):
+        platform.pilot.releases.create(snap, tenant_id="jz", created_by="eng", idempotency_key="jz-fail")
+    committed = [e for e in platform.pilot.journal.list("jz") if e.get("eventType") == "release.create" and e.get("commitStatus") == "COMMITTED"]
+    assert committed == []
+    verify = platform.pilot.journal.verify("jz")
+    assert verify["ok"] is False
+    assert verify["status"] == "BLOCKED_EVIDENCE"
+    platform.pilot._reconcile_startup()
+    again = [e for e in platform.pilot.journal.list("jz") if e.get("eventType") == "release.create"]
+    assert len(again) == 1
+    assert platform.pilot.journal.verify("jz")["ok"] is True
 
 
 def test_subprocess_scarce_stock_no_oversell(tmp_path):
@@ -333,6 +351,261 @@ def test_health_and_operator_api(platform):
         json={"actor": "api"},
     )
     assert no_confirm.status_code == 403
+
+
+def test_lots_prepare_then_business_fail_no_ghost(tmp_path):
+    from fox3d.journal import EventJournal
+    from fox3d.outbox import CommitOutbox
+
+    root = tmp_path / "lots"
+    lots = MaterialLotRegistry(root)
+    lots.outbox = CommitOutbox(tmp_path / "tx")
+    lots.journal = EventJournal(tmp_path / "journal")
+    lots.journal.outbox = lots.outbox
+    lot = lots.create(tenant_id="g", material="PB_18_WHITE", thickness=18, sheet_count=4)
+    lots._fail_after_prepare = True
+    with pytest.raises(JournalCommitError):
+        lots.reserve_sheets(lot["lotId"], tenant_id="g", work_order_id="w", quantity=1)
+    restarted = MaterialLotRegistry(root)
+    q = restarted.quantities(lot["lotId"], tenant_id="g")
+    assert q["reserved"] == 0 and q["conserved"]
+    committed = [e for e in lots.journal.list("g") if e.get("eventType") == "material.reserve" and e.get("commitStatus") == "COMMITTED"]
+    assert committed == []
+
+
+def test_lots_journal_finalize_fail_then_reconcile(tmp_path):
+    from fox3d.journal import EventJournal
+    from fox3d.outbox import CommitOutbox
+    from fox3d.platform import Platform
+
+    data = tmp_path / "data"
+    plat = Platform(root=data, mock_blender=True)
+    lot = plat.lots.create(tenant_id="gf", material="PB_18_WHITE", thickness=18, sheet_count=3)
+    plat.lots._fail_journal_finalize = True
+    with pytest.raises(JournalCommitError):
+        plat.lots.reserve_sheets(lot["lotId"], tenant_id="gf", work_order_id="w1", quantity=1)
+    assert plat.lots.quantities(lot["lotId"], tenant_id="gf")["reserved"] == 1
+    assert plat.pilot.journal.verify("gf")["ok"] is False
+    plat2 = Platform(root=data, mock_blender=True)
+    q = plat2.lots.quantities(lot["lotId"], tenant_id="gf")
+    assert q["reserved"] == 1 and q["conserved"]
+    reserved = [e for e in plat2.pilot.journal.list("gf") if e.get("eventType") == "material.reserve"]
+    assert len(reserved) == 1
+    assert plat2.pilot.journal.verify("gf")["ok"] is True
+    plat2.lots.reserve_sheets(lot["lotId"], tenant_id="gf", work_order_id="w1", quantity=1)
+    reserved2 = [e for e in plat2.pilot.journal.list("gf") if e.get("eventType") == "material.reserve"]
+    assert len(reserved2) == 1
+
+
+def test_subprocess_crash_after_staging(tmp_path):
+    from fox3d.journal import EventJournal
+    from fox3d.outbox import CommitOutbox
+
+    root = tmp_path / "lots"
+    tx = tmp_path / "tx"
+    journal = tmp_path / "journal"
+    lots = MaterialLotRegistry(root)
+    lots.outbox = CommitOutbox(tx)
+    lots.journal = EventJournal(journal)
+    lots.journal.outbox = lots.outbox
+    lots.create(tenant_id="sc", material="PB_18_WHITE", thickness=18, sheet_count=4)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _src() + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fox3d.inventory",
+            "--root",
+            str(root),
+            "--tenant",
+            "sc",
+            "--wo",
+            "crash-wo",
+            "--qty",
+            "2",
+            "--material",
+            "PB_18_WHITE",
+            "--thickness",
+            "18",
+            "--crash",
+            "after-staging",
+            "--tx",
+            str(tx),
+            "--journal",
+            str(journal),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    restarted = MaterialLotRegistry(root)
+    restarted.outbox = CommitOutbox(tx)
+    restarted.journal = EventJournal(journal)
+    restarted.journal.outbox = restarted.outbox
+    lot = restarted.list(tenant_id="sc")[0]
+    q = restarted.quantities(lot["lotId"], tenant_id="sc")
+    assert q["reserved"] == 0 and q["conserved"]
+    restarted.outbox.reconcile(
+        journal=restarted.journal,
+        business_committed=lambda tx: False,
+    )
+    committed = [e for e in restarted.journal.list("sc") if e.get("eventType") == "material.reserve"]
+    assert committed == []
+    q2 = restarted.quantities(lot["lotId"], tenant_id="sc")
+    assert q2["sheetCount"] == q2["available"] + q2["reserved"] + q2["consumed"]
+
+
+def test_subprocess_crash_after_business_reconciles_journal(tmp_path):
+    root = tmp_path / "data"
+    from fox3d.platform import Platform
+
+    plat = Platform(root=root, mock_blender=True)
+    plat.lots.create(tenant_id="ab", material="PB_18_WHITE", thickness=18, sheet_count=4)
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _src() + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fox3d.inventory",
+            "--root",
+            str(root / "lots"),
+            "--tenant",
+            "ab",
+            "--wo",
+            "wo-ab",
+            "--qty",
+            "1",
+            "--material",
+            "PB_18_WHITE",
+            "--thickness",
+            "18",
+            "--crash",
+            "after-business",
+            "--tx",
+            str(root / "tx"),
+            "--journal",
+            str(root / "journal"),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    plat2 = Platform(root=root, mock_blender=True)
+    lot = plat2.lots.list(tenant_id="ab")[0]
+    q = plat2.lots.quantities(lot["lotId"], tenant_id="ab")
+    assert q["reserved"] == 1 and q["conserved"]
+    reserved = [e for e in plat2.pilot.journal.list("ab") if e.get("eventType") == "material.reserve"]
+    assert len(reserved) == 1
+    assert plat2.pilot.journal.verify("ab")["ok"] is True
+
+
+def test_manual_station_process_restart(tmp_path):
+    from fox3d.platform import Platform
+
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    wo, rel = _ready_wo(plat, tenant="rs")
+    op = wo["traveler"]["steps"][0]["operation"]
+    st = plat.pilot.stations.register(
+        tenant_id="rs",
+        capabilities=["PANEL_CUTTING_MANUAL", "EDGE_BANDING_MANUAL", "DRILLING_MANUAL", "ASSEMBLY_MANUAL", "PACKING_MANUAL", "QC_MANUAL"],
+        actor="op",
+    )
+    lease = plat.pilot.dispatcher.dispatch(tenant_id="rs", work_order_id=wo["workOrderId"], operation=op, station_id=st["stationId"], actor="op")
+    plat2 = Platform(root=root, mock_blender=True)
+    recovered = plat2.pilot.dispatcher.leases[lease["leaseId"]]
+    assert recovered["releaseHash"] == rel["releaseHash"]
+    assert recovered["tenantId"] == "rs"
+    ack1 = plat2.pilot.dispatcher.ack(lease["leaseId"], tenant_id="rs", actor="op")
+    plat3 = Platform(root=root, mock_blender=True)
+    ack2 = plat3.pilot.dispatcher.ack(lease["leaseId"], tenant_id="rs", actor="op")
+    assert ack1["leaseId"] == ack2["leaseId"]
+    started = plat3.pilot.dispatcher.start(lease["leaseId"], tenant_id="rs", actor="op")
+    plat4 = Platform(root=root, mock_blender=True)
+    done1 = plat4.pilot.dispatcher.complete(lease["leaseId"], tenant_id="rs", actor="op", confirm=True)
+    plat5 = Platform(root=root, mock_blender=True)
+    done2 = plat5.pilot.dispatcher.complete(lease["leaseId"], tenant_id="rs", actor="op", confirm=True)
+    wo5 = plat5.pilot.workorders.get(wo["workOrderId"])
+    completed_ops = [o for o in wo5["ops"] if o.get("status") == "COMPLETED" and o.get("operation") == op]
+    assert len(completed_ops) == 1
+    assert done1["opId"] == done2["opId"] == started["opId"]
+    assert wo5["releaseHash"] == rel["releaseHash"]
+
+
+def test_orphaned_current_lease_cleared_on_restart(tmp_path):
+    from fox3d.platform import Platform
+
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    st = plat.pilot.stations.register(
+        tenant_id="or",
+        capabilities=["PANEL_CUTTING_MANUAL"],
+        actor="op",
+    )
+    st["currentLease"] = "missing-lease"
+    plat.pilot.stations.persist()
+    plat2 = Platform(root=root, mock_blender=True)
+    rec = plat2.pilot.stations.get(st["stationId"], tenant_id="or")
+    assert rec.get("currentLease") is None
+    st2 = plat2.pilot.stations.register(
+        tenant_id="or",
+        capabilities=["PANEL_CUTTING_MANUAL", "EDGE_BANDING_MANUAL", "DRILLING_MANUAL", "ASSEMBLY_MANUAL", "PACKING_MANUAL", "QC_MANUAL"],
+        actor="op",
+    )
+    assert st2["stationId"]
+
+
+def test_expired_lease_across_restart(tmp_path):
+    from fox3d.platform import Platform
+
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    wo, _rel = _ready_wo(plat, tenant="ex")
+    op = wo["traveler"]["steps"][0]["operation"]
+    st = plat.pilot.stations.register(
+        tenant_id="ex",
+        capabilities=["PANEL_CUTTING_MANUAL", "EDGE_BANDING_MANUAL", "DRILLING_MANUAL", "ASSEMBLY_MANUAL", "PACKING_MANUAL", "QC_MANUAL"],
+        actor="op",
+    )
+    lease = plat.pilot.dispatcher.dispatch(tenant_id="ex", work_order_id=wo["workOrderId"], operation=op, station_id=st["stationId"], actor="op")
+    job = plat.queue.get(lease["jobId"])
+    job["heartbeatAt"] = "2000-01-01T00:00:00+00:00"
+    job["startedAt"] = "2000-01-01T00:00:00+00:00"
+    plat.pilot.dispatcher.persist()
+    plat2 = Platform(root=root, mock_blender=True)
+    expired = plat2.pilot.dispatcher.expire_leases(max_age_seconds=1)
+    assert lease["leaseId"] in expired
+    st_after = plat2.pilot.stations.get(st["stationId"], tenant_id="ex")
+    assert st_after.get("currentLease") is None
+
+
+def test_cross_tenant_restart_cannot_attach(tmp_path):
+    from fox3d.platform import Platform
+
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    wo, _rel = _ready_wo(plat, tenant="ta")
+    op = wo["traveler"]["steps"][0]["operation"]
+    st_a = plat.pilot.stations.register(
+        tenant_id="ta",
+        capabilities=["PANEL_CUTTING_MANUAL", "EDGE_BANDING_MANUAL", "DRILLING_MANUAL", "ASSEMBLY_MANUAL", "PACKING_MANUAL", "QC_MANUAL"],
+        actor="op",
+    )
+    lease = plat.pilot.dispatcher.dispatch(tenant_id="ta", work_order_id=wo["workOrderId"], operation=op, station_id=st_a["stationId"], actor="op")
+    st_b = plat.pilot.stations.register(tenant_id="tb", capabilities=["PANEL_CUTTING_MANUAL"], actor="x")
+    st_b["currentLease"] = lease["leaseId"]
+    plat.pilot.stations.persist()
+    plat2 = Platform(root=root, mock_blender=True)
+    rec_b = plat2.pilot.stations.get(st_b["stationId"], tenant_id="tb")
+    assert rec_b.get("currentLease") != lease["leaseId"]
+    with pytest.raises(PermissionError):
+        plat2.pilot.dispatcher.ack(lease["leaseId"], tenant_id="tb", actor="x")
 
 
 def test_chaos_fixture_small(platform):

@@ -9,10 +9,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
+from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import emit
 from fox3d.manufacturing import HARDWARE_REGISTRY, NestingEngine, edge_banding_edges, edge_banding_length_mm
 
@@ -99,12 +101,33 @@ def _bound_hashes(snap: dict[str, Any]) -> dict[str, str | None]:
 
 
 class ManufacturingReleaseService:
-    def __init__(self, dam: Any | None = None) -> None:
+    def __init__(self, dam: Any | None = None, root: Path | None = None) -> None:
         self.dam = dam
+        self.root = Path(root) if root else None
+        if self.root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.journal: Any | None = None
+        self.outbox: Any | None = None
         self.releases: dict[str, dict[str, Any]] = {}
         self.packets: dict[str, dict[str, str]] = {}
         self._idem: dict[str, str] = {}
+        self.load()
+
+    def load(self) -> None:
+        if not self.root:
+            return
+        payload = read_json(self.root / "releases.json") or {}
+        self.releases = {r["releaseId"]: r for r in payload.get("releases") or []}
+        self._idem = dict(payload.get("idem") or {})
+        self.packets = dict(payload.get("packets") or {})
+
+    def persist(self) -> None:
+        if not self.root:
+            return
+        atomic_write_json(
+            self.root / "releases.json",
+            {"releases": list(self.releases.values()), "idem": self._idem, "packets": self.packets},
+        )
 
     def get(self, release_id: str) -> dict[str, Any]:
         return self.releases[release_id]
@@ -170,8 +193,11 @@ class ManufacturingReleaseService:
                 semantic_key=key,
             )
         except Exception:
-            del self.releases[rec["releaseId"]]
-            del self._idem[key]
+            if self.root:
+                self.load()
+            else:
+                del self.releases[rec["releaseId"]]
+                del self._idem[key]
             raise
         return rec
 

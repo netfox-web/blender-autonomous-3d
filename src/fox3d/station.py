@@ -155,6 +155,7 @@ class StationDispatcher:
         releases: Any | None = None,
         inbox: ExceptionInbox | None = None,
         lease_seconds: float = LEASE_SECONDS,
+        root: Path | None = None,
     ) -> None:
         self.stations = stations
         self.queue = queue
@@ -162,9 +163,56 @@ class StationDispatcher:
         self.releases = releases
         self.inbox = inbox or ExceptionInbox()
         self.lease_seconds = lease_seconds
+        self.root = Path(root) if root else None
+        if self.root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.leases: dict[str, dict[str, Any]] = {}
         self.journal: Any | None = None
+        self.outbox: Any | None = None
         self._lock = threading.RLock()
+        self.load()
+
+    def load(self) -> None:
+        if not self.root:
+            return
+        payload = read_json(self.root / "leases.json") or {}
+        self.leases = {l["leaseId"]: l for l in payload.get("leases") or []}
+        for job in payload.get("jobs") or []:
+            if self.queue.get(job["jobId"]) is None:
+                self.queue.restore(job)
+
+    def persist(self) -> None:
+        if not self.root:
+            return
+        jobs = []
+        for lease in self.leases.values():
+            job = self.queue.get(lease.get("jobId") or "")
+            if job:
+                jobs.append(job)
+        atomic_write_json(self.root / "leases.json", {"leases": list(self.leases.values()), "jobs": jobs})
+
+    def reconcile(self) -> dict[str, Any]:
+        cleared = 0
+        for station in list(self.stations.stations.values()):
+            lid = station.get("currentLease")
+            if not lid:
+                continue
+            lease = self.leases.get(lid)
+            if lease is None or lease.get("status") in {"COMPLETED", "EXPIRED"} or lease.get("tenantId") != station.get("tenantId"):
+                station["currentLease"] = None
+                cleared += 1
+                self.inbox.record(
+                    tenant_id=str(station.get("tenantId") or ""),
+                    code="PROCESS_RESTART",
+                    work_order_id=(lease or {}).get("workOrderId"),
+                    release_hash=(lease or {}).get("releaseHash"),
+                    actor="reconcile",
+                    detail="orphaned or cross-tenant currentLease cleared",
+                )
+        if cleared:
+            self.stations.persist()
+            self.persist()
+        return {"cleared": cleared}
 
     def capability_for(self, operation: str) -> str:
         cap = OP_CAPABILITY.get(operation)
@@ -394,6 +442,7 @@ class StationDispatcher:
             expired.append(job_id)
         if recovered:
             self.stations.persist()
+            self.persist()
         return expired
 
     def _lease(self, lease_id: str, tenant_id: str) -> dict[str, Any]:

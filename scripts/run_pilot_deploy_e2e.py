@@ -48,23 +48,45 @@ def main(argv: list[str] | None = None) -> int:
     chaos = ChaosHarness(plat).run(n_orders=int(args.orders))
     generated = datetime.now(timezone.utc).isoformat()
     generation_id = new_id()
+    def _fix(ok: bool) -> str:
+        return "FIXTURE" if ok else "PARTIAL"
+
+    def _logic(ok: bool) -> str:
+        return "REAL_LOGIC" if ok else "PARTIAL"
+
+    required = {
+        "journalBusinessCommitConsistent": chaos.get("journalBusinessCommitConsistent"),
+        "noCommittedGhostJournalEvents": chaos.get("noCommittedGhostJournalEvents"),
+        "processRestartRecovery": chaos.get("processRestartRecovery"),
+        "stationRestartRecovered": chaos.get("stationRestartRecovered"),
+        "workOrderRestartRecovered": chaos.get("workOrderRestartRecovered"),
+        "noDoubleCompletionAfterRestart": chaos.get("noDoubleCompletionAfterRestart"),
+        "releaseHashPreservedAfterRestart": chaos.get("releaseHashPreservedAfterRestart"),
+        "materialConservedAfterCrash": chaos.get("materialConservedAfterCrash"),
+        "tenantIsolationAfterRestart": chaos.get("tenantIsolationAfterRestart"),
+    }
+    missing = [k for k, v in required.items() if v is not True]
     rows = [
         {"check": "FIXTURE/CHAOS workOrders", "status": "FIXTURE", "evidence": f"n={chaos['workOrderCount']}"},
-        {"check": "no oversell", "status": "REAL" if chaos["noOversell"] else "PARTIAL", "evidence": str(chaos["noOversell"])},
-        {"check": "material conservation", "status": "REAL" if chaos["materialConserved"] else "PARTIAL", "evidence": str(chaos["materialConserved"])},
-        {"check": "crash all-or-nothing", "status": "REAL" if chaos["crashAllOrNothing"] else "PARTIAL", "evidence": str(chaos["crashAllOrNothing"])},
-        {"check": "stale writer blocked", "status": "REAL" if chaos["staleWriterBlocked"] else "PARTIAL", "evidence": str(chaos["staleWriterBlocked"])},
-        {"check": "station offline/lease/duplicate", "status": "REAL" if chaos["station"].get("offlineDenied") and chaos["noDuplicateCompletion"] else "PARTIAL", "evidence": json.dumps(chaos["station"], default=str)},
-        {"check": "QC fail rework pass", "status": "REAL" if chaos["qcRework"].get("passed") else "PARTIAL", "evidence": json.dumps(chaos["qcRework"])},
-        {"check": "stale release rejected", "status": "REAL" if chaos["staleReleaseRejected"] else "PARTIAL", "evidence": str(chaos["staleReleaseRejected"])},
-        {"check": "packing mismatch rejected", "status": "REAL" if chaos["packingMismatchRejected"] else "PARTIAL", "evidence": str(chaos["packingMismatchRejected"])},
-        {"check": "journal tamper detected", "status": "REAL" if chaos["journalIntegrity"].get("tamperDetected") else "BLOCKED_EVIDENCE", "evidence": json.dumps(chaos["journalIntegrity"])},
-        {"check": "scan tenant isolation", "status": "REAL" if chaos["scanTenantSafe"] else "PARTIAL", "evidence": str(chaos["scanTenantSafe"])},
-        {"check": "human approval gate", "status": "REAL" if chaos["humanApprovalGate"] else "PARTIAL", "evidence": "confirm required"},
+        {"check": "no oversell", "status": _logic(bool(chaos.get("noOversell"))), "evidence": f"subprocess/persistence scope={chaos.get('noOversell')}"},
+        {"check": "material conservation", "status": _logic(bool(chaos.get("materialConserved"))), "evidence": str(chaos.get("materialConserved"))},
+        {"check": "crash all-or-nothing", "status": _logic(bool(chaos.get("crashAllOrNothing"))), "evidence": "in-process CrashInjected + subprocess after-staging"},
+        {"check": "stale writer blocked", "status": _logic(bool(chaos.get("staleWriterBlocked"))), "evidence": str(chaos.get("staleWriterBlocked"))},
+        {"check": "station offline/lease/duplicate", "status": _fix(bool(chaos.get("station", {}).get("offlineDenied") and chaos.get("noDuplicateCompletion"))), "evidence": json.dumps(chaos.get("station"), default=str)},
+        {"check": "QC fail rework pass", "status": _fix(bool((chaos.get("qcRework") or {}).get("passed"))), "evidence": json.dumps(chaos.get("qcRework"))},
+        {"check": "stale release rejected", "status": _fix(bool(chaos.get("staleReleaseRejected"))), "evidence": str(chaos.get("staleReleaseRejected"))},
+        {"check": "packing mismatch rejected", "status": _fix(bool(chaos.get("packingMismatchRejected"))), "evidence": str(chaos.get("packingMismatchRejected"))},
+        {"check": "journal tamper detected", "status": _logic(bool((chaos.get("journalIntegrity") or {}).get("tamperDetected"))), "evidence": json.dumps(chaos.get("journalIntegrity"))},
+        {"check": "scan tenant isolation", "status": _fix(bool(chaos.get("scanTenantSafe"))), "evidence": str(chaos.get("scanTenantSafe"))},
+        {"check": "human approval gate", "status": _fix(bool(chaos.get("humanApprovalGate"))), "evidence": "confirm required"},
+        {"check": "journalBusinessCommitConsistent", "status": _logic(required["journalBusinessCommitConsistent"] is True), "evidence": str(required["journalBusinessCommitConsistent"])},
+        {"check": "processRestartRecovery", "status": _logic(required["processRestartRecovery"] is True), "evidence": str(required["processRestartRecovery"])},
+        {"check": "noDoubleCompletionAfterRestart", "status": _logic(required["noDoubleCompletionAfterRestart"] is True), "evidence": str(required["noDoubleCompletionAfterRestart"])},
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "LIVE_LASER", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "not factory throughput", "status": "FIXTURE", "evidence": "FIXTURE/CHAOS"},
     ]
+    gate_ok = bool(chaos.get("ok")) and not missing
     op_view = plat.pilot.operator(tenant_id="chaos-a")
     health = plat.pilot.health(tenant_id="chaos-a")
     deploy = {
@@ -95,25 +117,36 @@ def main(argv: list[str] | None = None) -> int:
         },
         "health": health,
         "rows": [
-            {"check": "operator view tenant scoped", "status": "REAL", "evidence": op_view.get("tenantId")},
+            {"check": "operator view tenant scoped", "status": "FIXTURE", "evidence": op_view.get("tenantId")},
             {"check": "barcode hardware", "status": "PARTIAL", "evidence": "scan token only"},
             {"check": "LIVE_CNC badge", "status": "BLOCKED", "evidence": health.get("liveCnc")},
             {"check": "LIVE_LASER badge", "status": "BLOCKED", "evidence": health.get("liveLaser")},
-            {"check": "health notFactorySla", "status": "REAL", "evidence": str(health.get("notFactorySla"))},
+            {"check": "health notFactorySla", "status": "FIXTURE", "evidence": str(health.get("notFactorySla"))},
         ],
         "fullAutonomousFactoryReady": False,
         "liveFactoryExecutionReady": False,
         "globalProductionReady": False,
         "notCanonicalSixFile": True,
     }
+    deploy["integrityGates"] = required
+    deploy["ok"] = gate_ok
     docs.mkdir(parents=True, exist_ok=True)
+    dest = docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json"
+    if not gate_ok and dest.exists():
+        try:
+            prev = json.loads(dest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            prev = {}
+        if prev.get("ok") is True or (prev.get("chaos") or {}).get("ok") is True:
+            print(json.dumps({"ok": False, "label": "FIXTURE/CHAOS", "refusedOverwrite": True, "failures": missing + list(chaos.get("gateFailures") or [])}))
+            return 1
     (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").write_text(json.dumps(deploy, indent=2, default=str), encoding="utf-8")
     (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.md").write_text(_md("PILOT_DEPLOYMENT_ACCEPTANCE", rows, generated), encoding="utf-8")
     (docs / "OPERATOR_CONTROL_ACCEPTANCE.json").write_text(json.dumps(operator, indent=2, default=str), encoding="utf-8")
     (docs / "OPERATOR_CONTROL_ACCEPTANCE.md").write_text(_md("OPERATOR_CONTROL_ACCEPTANCE", operator["rows"], generated), encoding="utf-8")
-    payload = {"ok": bool(chaos.get("ok")), "label": "FIXTURE/CHAOS", "workOrderCount": chaos.get("workOrderCount"), "generation": generation_id}
+    payload = {"ok": gate_ok, "label": "FIXTURE/CHAOS", "workOrderCount": chaos.get("workOrderCount"), "generation": generation_id, "failures": missing}
     print(json.dumps(payload, default=str))
-    return 0 if chaos.get("ok") else 1
+    return 0 if gate_ok else 1
 
 
 if __name__ == "__main__":

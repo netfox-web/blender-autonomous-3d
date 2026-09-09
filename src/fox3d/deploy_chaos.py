@@ -55,6 +55,7 @@ class ChaosHarness:
         else:
             negatives.append("tenant-isolation-held")
         health = self.pilot.health(tenant_id=a)
+        integrity = self._integrity_gates()
         result = {
             "label": "FIXTURE/CHAOS",
             "workOrderCount": len(wo_ids_a) + len(wo_ids_b),
@@ -90,23 +91,147 @@ class ChaosHarness:
                 "journal-tamper",
             ],
             "notFactoryThroughput": True,
+            **integrity,
         }
-        result["ok"] = all(
-            [
-                result["noOversell"],
-                result["materialConserved"],
-                result["crashAllOrNothing"],
-                result["staleWriterBlocked"],
-                result["staleReleaseRejected"],
-                result["packingMismatchRejected"],
-                result["journalIntegrity"].get("tamperDetected"),
-                result["scanTenantSafe"],
-                result["noDuplicateCompletion"],
-                result["liveCnc"] is False,
-                result["liveLaser"] is False,
-            ]
+        required = (
+            "noOversell",
+            "materialConserved",
+            "crashAllOrNothing",
+            "staleWriterBlocked",
+            "staleReleaseRejected",
+            "packingMismatchRejected",
+            "scanTenantSafe",
+            "noDuplicateCompletion",
+            "journalBusinessCommitConsistent",
+            "noCommittedGhostJournalEvents",
+            "processRestartRecovery",
+            "stationRestartRecovered",
+            "workOrderRestartRecovered",
+            "noDoubleCompletionAfterRestart",
+            "releaseHashPreservedAfterRestart",
+            "materialConservedAfterCrash",
+            "tenantIsolationAfterRestart",
         )
+        failures = [k for k in required if result.get(k) is not True]
+        if result["journalIntegrity"].get("tamperDetected") is not True:
+            failures.append("journalTamper")
+        if result["liveCnc"] is not False or result["liveLaser"] is not False:
+            failures.append("liveMachine")
+        result["gateFailures"] = failures
+        result["ok"] = not failures
         return result
+
+    def _integrity_gates(self) -> dict[str, Any]:
+        from fox3d.platform import Platform
+
+        root = self.platform.root / "integrity-harness"
+        plat = Platform(root=root, mock_blender=True)
+        product = plat.kd.build_sku(tenant_id="ig", kind="OPEN_SHELF")
+        rel = plat.pilot.open_release(product, tenant_id="ig", family="KD_FURNITURE")
+        nest = (rel.get("snapshot") or {}).get("nesting") or {}
+        row = {"supplierLot": "ig-lot", "material": nest.get("sheetSku") or "PB_18_WHITE", "thickness": nest.get("thickness") or 18, "quantity": 20}
+        sheet_mm = nest.get("sheetMm") or []
+        if len(sheet_mm) >= 2:
+            row["length"] = float(sheet_mm[0])
+            row["width"] = float(sheet_mm[1])
+        plat.pilot.receiving.import_receipt(row, tenant_id="ig", actor="recv", source="MANUAL", idempotency_key="ig-lot")
+        wo = plat.pilot.workorders.create(tenant_id="ig", release=rel, quantity=1, actor="ops")
+        plat.pilot.workorders.release_for_execution(wo["workOrderId"], actor="ops")
+        plat.pilot.workorders.reserve_materials(wo["workOrderId"], actor="ops", tenant_id="ig", allocation_policy=STRICT_STOCK)
+        op = wo["traveler"]["steps"][0]["operation"]
+        st = plat.pilot.stations.register(
+            tenant_id="ig",
+            capabilities=["PANEL_CUTTING_MANUAL", "EDGE_BANDING_MANUAL", "DRILLING_MANUAL", "ASSEMBLY_MANUAL", "PACKING_MANUAL", "QC_MANUAL"],
+            actor="op",
+        )
+        lease = plat.pilot.dispatcher.dispatch(tenant_id="ig", work_order_id=wo["workOrderId"], operation=op, station_id=st["stationId"], actor="op")
+        plat2 = Platform(root=root, mock_blender=True)
+        rec2 = plat2.pilot.dispatcher.leases[lease["leaseId"]]
+        wo2 = plat2.pilot.workorders.get(wo["workOrderId"])
+        plat2.pilot.dispatcher.ack(lease["leaseId"], tenant_id="ig", actor="op")
+        plat2.pilot.dispatcher.start(lease["leaseId"], tenant_id="ig", actor="op")
+        plat3 = Platform(root=root, mock_blender=True)
+        plat3.pilot.dispatcher.complete(lease["leaseId"], tenant_id="ig", actor="op", confirm=True)
+        plat4 = Platform(root=root, mock_blender=True)
+        plat4.pilot.dispatcher.complete(lease["leaseId"], tenant_id="ig", actor="op", confirm=True)
+        wo4 = plat4.pilot.workorders.get(wo["workOrderId"])
+        completed = [o for o in wo4["ops"] if o.get("operation") == op and o.get("status") == "COMPLETED"]
+        st_b = plat4.pilot.stations.register(tenant_id="ig-b", capabilities=["PANEL_CUTTING_MANUAL"], actor="x")
+        st_b["currentLease"] = lease["leaseId"]
+        plat4.pilot.stations.persist()
+        plat5 = Platform(root=root, mock_blender=True)
+        rec_b = plat5.pilot.stations.get(st_b["stationId"], tenant_id="ig-b")
+        ghost = [e for e in plat5.pilot.journal.list("ig") if e.get("commitStatus") not in {None, "COMMITTED"}]
+        cons = plat5.pilot.lot_conservation("ig")
+        subprocess_ok = self._subprocess_crash_gate(root)
+        return {
+            "journalBusinessCommitConsistent": plat5.pilot.journal.verify("ig").get("ok") is True and not ghost,
+            "noCommittedGhostJournalEvents": not ghost,
+            "processRestartRecovery": rec2.get("leaseId") == lease["leaseId"],
+            "stationRestartRecovered": rec2.get("stationId") == st["stationId"],
+            "workOrderRestartRecovered": wo2.get("workOrderId") == wo["workOrderId"],
+            "noDoubleCompletionAfterRestart": len(completed) == 1,
+            "releaseHashPreservedAfterRestart": wo4.get("releaseHash") == rel["releaseHash"] and rec2.get("releaseHash") == rel["releaseHash"],
+            "materialConservedAfterCrash": bool(cons.get("ok")) and bool(subprocess_ok),
+            "tenantIsolationAfterRestart": rec_b.get("currentLease") != lease["leaseId"],
+        }
+
+    def _subprocess_crash_gate(self, platform_root: Path) -> bool:
+        lots_root = platform_root / "crash-lots"
+        tx = platform_root / "crash-tx"
+        journal = platform_root / "crash-journal"
+        from fox3d.inventory import MaterialLotRegistry
+        from fox3d.journal import EventJournal
+        from fox3d.outbox import CommitOutbox
+
+        lots = MaterialLotRegistry(lots_root)
+        lots.outbox = CommitOutbox(tx)
+        lots.journal = EventJournal(journal)
+        lots.journal.outbox = lots.outbox
+        lots.create(tenant_id="cg", material="PB_18_WHITE", thickness=18, sheet_count=4)
+        env = os.environ.copy()
+        repo = Path(__file__).resolve().parents[2]
+        env["PYTHONPATH"] = str(repo / "src") + os.pathsep + env.get("PYTHONPATH", "")
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "fox3d.inventory",
+                "--root",
+                str(lots_root),
+                "--tenant",
+                "cg",
+                "--wo",
+                "cg-wo",
+                "--qty",
+                "2",
+                "--material",
+                "PB_18_WHITE",
+                "--thickness",
+                "18",
+                "--crash",
+                "after-staging",
+                "--tx",
+                str(tx),
+                "--journal",
+                str(journal),
+            ],
+            cwd=str(repo),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return False
+        restarted = MaterialLotRegistry(lots_root)
+        restarted.outbox = CommitOutbox(tx)
+        restarted.journal = EventJournal(journal)
+        lot = restarted.list(tenant_id="cg")[0]
+        q = restarted.quantities(lot["lotId"], tenant_id="cg")
+        restarted.outbox.reconcile(journal=restarted.journal, business_committed=lambda tx: False)
+        reserved_events = [e for e in restarted.journal.list("cg") if e.get("eventType") == "material.reserve"]
+        return q["reserved"] == 0 and q["conserved"] and not reserved_events
 
     def _seed_tenant(self, tenant: str) -> list[dict[str, Any]]:
         releases = []

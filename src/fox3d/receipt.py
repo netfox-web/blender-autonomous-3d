@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
-from fox3d.inventory import MaterialLotRegistry
+from fox3d.inventory import MaterialLotRegistry, atomic_write_json, read_json
 from fox3d.journal import emit
 
 ALLOWED = frozenset({"MANUAL", "IMPORTED"})
@@ -17,12 +18,33 @@ def _now() -> str:
 
 
 class ReceivingService:
-    def __init__(self, lots: MaterialLotRegistry | None = None) -> None:
+    def __init__(self, lots: MaterialLotRegistry | None = None, root: Path | None = None) -> None:
         self.lots = lots or MaterialLotRegistry()
+        self.root = Path(root) if root else None
+        if self.root:
+            self.root.mkdir(parents=True, exist_ok=True)
         self.journal: Any | None = None
+        self.outbox: Any | None = None
         self.requests: dict[str, dict[str, Any]] = {}
         self.receipts: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, str] = {}
+        self.load()
+
+    def load(self) -> None:
+        if not self.root:
+            return
+        payload = read_json(self.root / "receipts.json") or {}
+        self.receipts = {r["receiptId"]: r for r in payload.get("receipts") or []}
+        self.requests = {r["requestId"]: r for r in payload.get("requests") or []}
+        self._idem = dict(payload.get("idem") or {})
+
+    def persist(self) -> None:
+        if not self.root:
+            return
+        atomic_write_json(
+            self.root / "receipts.json",
+            {"receipts": list(self.receipts.values()), "requests": list(self.requests.values()), "idem": self._idem},
+        )
 
     def draft_purchase_request(
         self,
@@ -174,7 +196,10 @@ class ReceivingService:
                 semantic_key=key,
             )
         except Exception:
-            del self.receipts[rec["receiptId"]]
-            del self._idem[key]
+            if self.root:
+                self.load()
+            else:
+                del self.receipts[rec["receiptId"]]
+                del self._idem[key]
             raise
         return rec
