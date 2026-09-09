@@ -1,28 +1,25 @@
-# Grok 修正指令：Phase 481–540 Backup / Restore & Evidence Integrity
+# Grok 修正指令：Phase 481–540 Final Backup Completeness / Snapshot Integrity
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed head: `583e74dd7d39003ba4f164c60041513656ecf88e`  
-> Reviewed CODE_EVIDENCE_SHA: `523b3cb2ed1dc960785fcea43256198425d2e77e`  
+> Reviewed head: `08212f4f3b3e59fd9608cc016623bf5adc1a07cc`  
+> Reviewed CODE_EVIDENCE_SHA: `ff285a2f9ef82500b0c0f01caacd18bc1186113f`  
 > ChatGPT review result: **CHANGES REQUIRED**  
-> **Do not start Phase 541+.** Fix the Phase 481–540 integrity gaps below first.
+> **Do not start Phase 541+.** Do not rewrite existing architecture.
 
 ## Review result
 
-Phase 481–540 contains substantial real implementation and may be retained. Do **not** rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / ManufacturingRelease / WorkOrder / QC / Logistics / Pilot architecture.
+This round is substantial and most of the prior integrity work is accepted within scope:
 
-Accepted within current scope:
+- durable before/after consume + completion counters: **REAL_LOGIC**;
+- exact manifest file-set verification and restore-only-listed-files: **REAL_LOGIC**;
+- 8-file staged/rollback publication: **REAL_LOGIC**;
+- runner-bound `evidenceCodeCommit=ff285a2...`, `workingTreeClean=true`;
+- local report: `pytest -q = 226 passed` — **MOCK/unit/integration + FIXTURE/REAL_LOGIC only**, never Production Ready;
+- GitHub Actions CODE `34328790268`: Ubuntu + Windows GREEN;
+- GitHub Actions docs/head `34329200409`: Ubuntu + Windows GREEN;
+- ManufacturingRelease / Blender render path did not change, so previously accepted clean-tree 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX evidence at `018cc70` may continue to be referenced. Do not fabricate a refresh.
 
-- operator / shift persistence and tenant checks: **REAL_LOGIC / MANUAL_IDENTITY**;
-- traveler `releaseHash` pin and scan-token tenant boundary: **REAL_LOGIC**, physical barcode/scanner hardware remains **PARTIAL**;
-- cycle-count human approval and stock adjustment logic: **REAL_LOGIC / MANUAL**, not ERP/accounting valuation;
-- labor history and manual observation: **REAL_LOGIC / MANUAL**, accounting actual remains `NOT_IMPLEMENTED`;
-- hold / rework / scrap-remnant workflow: **REAL_LOGIC** within manual-pilot scope;
-- packing and handoff planning: **REAL_LOGIC / MANUAL**, no live carrier claim;
-- CODE GitHub Actions run `34322747430` on `523b3cb` is GREEN on Ubuntu + Windows;
-- local report says `pytest -q = 217 passed`, but this is **MOCK/unit/integration + FIXTURE/REAL_LOGIC**, never Production Ready;
-- REAL Blender render evidence may continue to reference accepted clean-tree 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX evidence at `018cc70` **only if ManufacturingRelease / Blender render paths remain unchanged**.
-
-Truth boundaries remain mandatory:
+Truth boundaries remain unchanged:
 
 - Vision / AI Video / Demand = **MOCK**;
 - OS sandbox / AR / print preflight / barcode hardware / McKee-BCT = **PARTIAL / ENGINEERING_ESTIMATE**;
@@ -35,229 +32,135 @@ Truth boundaries remain mandatory:
 - `fullAutonomousFactoryReady=false`;
 - unscoped `productionReady=true` is forbidden.
 
+The remaining problems are **backup semantic completeness and snapshot evidence integrity**, not a request for new architecture.
+
 ---
 
-# Blocking issue 1 — Restore no-double-consume / no-double-complete evidence is fail-open
+# Blocking issue 1 — Tenant-scoped backup can silently lose valid tenant-owned child state
 
-Current `restart_after_restore()` evidence is not acceptable:
+The new tenant filter is directionally correct, but the current implementation is not yet a complete tenant backup contract.
 
-- `noDoubleConsume` is calculated using an expression equivalent to `... or consumedAfter`, so when consumption is already true the result can pass without proving that no second consumption occurred;
-- `noDoubleCompletion` is hard-coded `True`;
-- these values flow directly into `restoreNoDoubleConsume` / `restoreNoDoubleCompletion` mandatory gates.
+`_filter_payload()` filters every list in shared JSON by `tenantId`. However some records in those lists do not carry an authoritative `tenantId`:
 
-This violates the previous instruction: **no `or True`, no fallback-generated PASS, no default-success booleans**.
+- `LogisticsService.palletize()` creates pallet-plan records without `tenantId` even though they are derived from tenant-owned cartons;
+- `import_carrier_quote()` creates quote records without tenant ownership and currently shares the same durable logistics file.
+
+Under `TENANT_SCOPED` export those records are silently dropped because `_tenant_of(record)` returns `None`. A backup that excludes tenant B but also silently loses tenant A state is not a valid tenant backup.
+
+The current acceptance proof is also incomplete: `b_absent` checks only B lots, operators, WorkOrders, journal and stations. The previous exit criterion required the tenant boundary to be proven across all tenant-bearing durable domains, and also requires **A's required state to survive**, not only B to be absent.
 
 ## Required correction
 
-Measure durable facts before and after the subprocess restart / retry, not booleans invented by the harness.
+Do not redesign storage. Add explicit ownership/derivation rules at the backup boundary:
 
-At minimum capture and compare:
+1. For every shared durable collection, define one of these semantics:
+   - `TENANT_OWNED`: record has authoritative `tenantId` and is filtered directly;
+   - `TENANT_DERIVED`: ownership is derived from a verified parent ID (for example pallet plan -> carton IDs -> one tenant); cross-tenant parent sets must fail closed;
+   - `GLOBAL_REFERENCE`: intentionally global/reference data, not claimed as tenant state; copy/exclude only under an explicit documented policy;
+   - `AMBIGUOUS`: backup must fail closed instead of silently dropping/copying it.
+2. Pallet plans must preserve tenant-A plans when all referenced cartons belong to A. A cross-tenant pallet plan must be rejected.
+3. Carrier quote semantics must be explicit. If quotes are global imported reference data, label them `GLOBAL_REFERENCE` and do not count them as tenant-restored state. If they are tenant-owned, persist/derive tenant ownership and filter accordingly.
+4. Preserve ManufacturingRelease packets, WorkOrder operations/travelers, idempotency namespaces and every child record needed to reopen the restored A workflow.
+5. Add a machine-verifiable tenant backup matrix to acceptance with at least:
+   - MaterialLots;
+   - remnants;
+   - ManufacturingRelease + packet + idempotency;
+   - WorkOrder + operations/traveler + idempotency;
+   - receipts;
+   - stations + leases;
+   - operators + shifts;
+   - cycle counts;
+   - cartons + pallet plans + shipment + checklist + handoff;
+   - QC + exceptions;
+   - journal + outbox/tx;
+   - required DAM assets.
+6. The gate must prove both:
+   - `tenantLeakageAbsent=true` — B has zero restored tenant-owned state;
+   - `tenantRequiredStatePreserved=true` — A's required records and lineage still exist and can be reopened after restore.
+7. `crossTenantRestoreRejected=true` alone is not sufficient evidence.
 
-- WorkOrder state before retry and after retry;
-- exact reservation IDs and quantities;
-- exact consumed quantity per reservation / lot and aggregate consumed quantity for the WorkOrder;
-- count of material-consume journal events for that WorkOrder / semantic key;
-- count of WorkOrder completion state-transition / journal events;
-- releaseHash before and after;
-- journal head / integrity after retry.
+## Required regressions
 
-`restoreNoDoubleConsume=true` is allowed only when a second consume attempt leaves consumed quantities and consume-event counts unchanged.
+Create meaningful A and B records in every domain above before backup. Restore A and assert:
 
-`restoreNoDoubleCompletion=true` is allowed only when a second completion attempt leaves the WorkOrder terminal state and completion-event count unchanged.
-
-Do not infer these properties only from `consumedFlag=true` or `state=COMPLETED`.
-
-## Required negative regressions
-
-Add tests proving the gate fails when:
-
-- consumed quantity increases on the retry;
-- a second consume journal event is inserted;
-- a second completion transition/event is inserted;
-- `noDoubleConsume` or `noDoubleCompletion` evidence is missing / false / malformed.
+- no B tenant-owned record is accessible/restored anywhere;
+- A's release, packet, WO, operations, lot/remnant, station/lease, identity, QC, logistics, journal/outbox and DAM dependencies are present;
+- A idempotency retry still resolves to A's existing object and never to B's;
+- tenant-derived pallet ownership is retained correctly;
+- ambiguous/cross-tenant child ownership fails closed instead of being silently omitted.
 
 ---
 
-# Blocking issue 2 — `tenant_ids` backup is metadata-only, not tenant-isolated
+# Blocking issue 2 — Snapshot fingerprint does not detect newly created/deleted source files
 
-Current `backup_pilot(..., tenant_ids=[A])` copies all files under the configured Pilot durable directories. `tenantIds` is written into the manifest, but the exported bytes are not filtered by tenant. Shared files such as `identity.json` can therefore contain tenant B records even when the manifest says the backup is for tenant A.
+Current `backup_pilot()` calls `_source_files(root)` once, then fingerprints only that original list before and after copy.
 
-Current `restore_pilot(..., tenant_id=A)` checks only that A appears in the manifest, then copies the complete backup data tree. The present `crossTenantRestoreRejected` gate therefore does **not** prove tenant-A backup content excludes tenant-B state.
+If a relevant durable file is created after the initial scan — for example a new selected-tenant DAM object or remnant file in a domain not covered by the small lock set — that path is not in the original `sources` list. The before/after hashes can therefore remain equal and the manifest can still claim `consistentSnapshot=true` while the new file was omitted.
+
+The current concurrent regression mutates `lots.json`, which is protected by `lots.lock`; it does not prove file-set consistency for unlocked/per-file domains.
 
 ## Required correction
 
-Implement one honest semantic and test it end-to-end:
+Reuse the existing storage model; do not introduce a new database.
 
-### Preferred: real tenant-scoped export
+1. Snapshot identity must bind **both path set and content hashes**.
+2. For each attempt:
+   - discover the relevant source file set before copy;
+   - normalize/filter it according to backup scope;
+   - capture `{relativePath -> sha256}`;
+   - copy/filter the snapshot;
+   - rediscover the relevant source file set after copy;
+   - capture the second `{relativePath -> sha256}`;
+   - require exact path-set equality and hash equality.
+3. A relevant file created, deleted or renamed during collection must cause retry/fail closed.
+4. For tenant-scoped backup, compare the **selected tenant's relevant source set** so unrelated B-only churn does not invalidate A forever.
+5. `consistentSnapshot=true` may only be emitted after that full path+hash equality check.
+6. Continue to use deterministic existing locks where available; the re-scan is required even when locks are used.
 
-For `tenant_ids=[A]`, export only records belonging to A from every tenant-bearing durable domain, including at minimum:
+## Required regressions
 
-- MaterialLots / remnants;
-- ManufacturingRelease snapshots;
-- WorkOrders / travelers;
-- receipts;
-- stations / leases;
-- operator / shift identity;
-- cycle counts;
-- logistics / carton / shipment records;
-- QC / exceptions;
-- journal / outbox / tx state;
-- DAM references required by the restored records.
+At minimum:
 
-After restore of A, tenant B data must be absent / inaccessible across all of those domains.
-
-If a safe subset cannot be produced for a particular shared file without architectural rewrite, fail closed and label that slice **PARTIAL/BLOCKED** rather than claiming tenant-scoped backup.
-
-### Temporary fallback if tenant-scoped export cannot be made safe
-
-You may temporarily define the supported backup as `WHOLE_PILOT_ROOT` only. If so:
-
-- remove / disable `tenant_id` as a security claim;
-- do not report `crossTenantRestoreRejected=true` as tenant-aware backup proof;
-- label tenant-scoped restore **PARTIAL/BLOCKED**;
-- keep Phase 541+ blocked until the original tenant-aware exit criterion is satisfied.
-
-## Required tests
-
-Create tenant A **and** tenant B state before backup. Then restore the A-scoped backup and assert tenant B has zero accessible/restored records in all tenant-bearing domains above.
-
-Also verify idempotency namespaces remain tenant-scoped after restore.
+- concurrently create a new tenant-A DAM file during backup -> backup must include a consistent version or retry/fail;
+- concurrently create/update a tenant-A remnant file -> include consistently or retry/fail;
+- delete/rename a relevant source file during backup -> retry/fail;
+- unrelated tenant-B file creation during A-scoped backup must not leak into A and should not cause false tenant-A PASS with mixed state;
+- no test may accept `consistentSnapshot=true` merely because `lots.json` stayed unchanged.
 
 ---
 
-# Blocking issue 3 — Backup verifier accepts unlisted files and restore copies them
+# Blocking issue 3 — Runner health evidence must come from the restored root and fail closed
 
-Current verifier hashes/checks files listed in the manifest, but does not require the actual `backup/data` file set to equal the manifest set. `restore_pilot()` then copies every file found under `backup/data`, including an extra file that was never checksummed.
-
-That makes the manifest incomplete as a restore integrity boundary.
+`run_manual_factory_scenario()` currently returns `health = plat2.pilot.health(tenant_id=a)`, where `plat2` points to the original live root, not the restored root. The runner's health check also only appends a failure when `journalHealthyAfterRestore` is already false, so a contradictory `health.journalIntegrity.ok=false` plus gate=true can still pass.
 
 ## Required correction
 
-- normalize and validate every manifest path;
-- reject absolute paths, `..`, path traversal, duplicate paths and symlinks;
-- after excluding explicitly documented volatile lock/tmp/staging files, require **exact equality** between manifest file paths and actual files in `backup/data`;
-- reject unlisted/extra files;
-- reject missing files;
-- reject hash or size mismatch;
-- restore **only** files in the verified manifest, not arbitrary directory contents;
-- restore to a fresh/empty destination by default; unexpected existing state must fail closed unless an explicit, separately tested reconciliation mode exists;
-- manifest format/version mismatch remains BLOCKED.
+- compute post-restore health from `restored_plat`;
+- if post-restore health is part of acceptance evidence, `journalIntegrity.ok` must be true independently of the boolean gate;
+- contradictory health/gate evidence must fail closed;
+- keep `liveCnc`, `liveLaser`, provider and global readiness false/BLOCKED.
 
-Required regressions:
-
-- inject an extra unlisted file -> verify/restore must fail;
-- remove a listed file -> fail;
-- alter a listed file -> fail;
-- duplicate manifest path -> fail;
-- traversal / absolute path / symlink -> fail;
-- non-empty destination containing unexpected Pilot state -> fail.
+Required regression: inject `journalHealthyAfterRestore=true` but restored health `journalIntegrity.ok=false`; runner must exit non-zero and preserve the prior valid 8-file bundle.
 
 ---
 
-# Blocking issue 4 — Backup must represent one consistent durable snapshot
+# Re-acceptance sequence
 
-Per-file copying while state is mutating can create a backup whose WorkOrder, lot, journal, lease or QC files came from different points in time.
-
-Do not redesign storage. Reuse the existing lock / atomic-write / reconciliation boundaries.
-
-## Required correction
-
-Implement a bounded snapshot strategy, for example:
-
-- acquire the existing relevant storage locks in a deterministic order while collecting/copying the snapshot; **or**
-- capture version/hash markers before copy, copy files, then re-read/revalidate and fail/retry if any durable source changed during collection.
-
-Acceptance must prove the snapshot is internally consistent enough to reopen the selected WorkOrder/release/material/journal set after restore.
-
-Add a concurrent-mutation regression in which another process/thread updates Pilot state during backup; the backup must either be a valid consistent snapshot or fail/retry. It must never silently publish an inconsistent package as `ok=true`.
-
-This remains **local operational backup**, not cloud HA/DR.
-
----
-
-# Blocking issue 5 — Phase 481–540 acceptance bundle publication is not atomic
-
-`run_manual_pilot_e2e.py` currently writes the four JSON and four Markdown acceptance files sequentially. A crash/write error in the middle can leave a mixed old/new truth set while some files still look valid.
-
-## Required correction
-
-Treat the entire Phase 481–540 acceptance set as one generation:
-
-- `MANUAL_FACTORY_PILOT_ACCEPTANCE.{json,md}`;
-- `OPERATOR_SHIFT_ACCEPTANCE.{json,md}`;
-- `INVENTORY_RECONCILIATION_ACCEPTANCE.{json,md}`;
-- `PILOT_BACKUP_RESTORE_ACCEPTANCE.{json,md}`.
-
-Stage all eight files under a generation-specific temporary location, validate them, then publish with atomic replace semantics and rollback/cleanup on failure.
-
-All four JSON documents must contain and agree on:
-
-- exact same `acceptanceGenerationId`;
-- exact same `evidenceCodeCommit`;
-- `workingTreeClean=true`;
-- `evidenceCommitMatchesHead=true`;
-- `ok=true` only after every mandatory gate passed;
-- unchanged false global/live readiness flags.
-
-Add a scoped reader/verifier that rejects:
-
-- mixed generation IDs;
-- mixed code commits;
-- missing file;
-- malformed JSON;
-- `ok != true`;
-- dirty/unbound evidence;
-- contradictory truth/readiness fields.
-
-A publication error after file N must leave the previous valid acceptance bundle completely untouched.
-
-Required regressions:
-
-- injected failure during publication -> previous generation preserved in all eight files;
-- mixed-generation bundle -> reader rejects/non-zero;
-- missing/malformed member -> rejects/non-zero;
-- missing/false mandatory gate -> runner exits non-zero and does not overwrite prior valid evidence.
-
----
-
-# Required Phase 481–540 re-acceptance drill
-
-After implementing the fixes, rerun the manual-pilot acceptance using real durable facts for the scoped logic. It must still exercise at least:
-
-1. two tenants;
-2. four product-family FIXTURE paths, explicitly labeled FIXTURE;
-3. exact ManufacturingRelease/releaseHash pinning;
-4. STRICT_STOCK where the scenario claims real stock behavior; `FIXTURE_AUTO_SEED` must remain visibly FIXTURE only;
-5. operator + shift + station validation;
-6. QC fail -> blocking hold -> rework -> pass;
-7. cycle-count variance -> explicit human approval -> conserved stock;
-8. labor observation with estimate/manual/accounting labels kept distinct;
-9. packing mismatch -> hold, manual handoff, no carrier booking claim;
-10. hard subprocess restart at a mid-flow point;
-11. local backup -> verified restore to a fresh root;
-12. second consume and second complete attempts with durable counters proving no duplication;
-13. tenant-A export/restore proving tenant-B content is not restored;
-14. journal/outbox integrity healthy after restore;
-15. LIVE_CNC / LIVE_LASER / provider execution remain BLOCKED.
-
----
-
-# Evidence / CI sequence
-
-1. Fix the five blockers above only. Do not expand feature scope and do not start Phase 541+.
-2. Add focused unit/integration/FIXTURE/REAL_LOGIC regressions.
-3. Run `pytest -q`; report the exact count. Label it correctly — MOCK/FIXTURE tests are not Production Ready.
+1. Fix only the three issues above. Do not start Phase 541+ and do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / ManufacturingRelease / WorkOrder / QC / Logistics architecture.
+2. Add focused regressions for full tenant backup completeness and dynamic source-file-set snapshot races.
+3. Run `pytest -q` and report exact count with correct MOCK/FIXTURE/REAL_LOGIC labels.
 4. Commit code/tests as a new **CODE_EVIDENCE_SHA**.
 5. Push and require GitHub Actions Ubuntu + Windows GREEN on that exact code SHA.
-6. From a clean committed tree, run `scripts/run_manual_pilot_e2e.py --expected-commit <CODE_EVIDENCE_SHA>` (or equivalent exact runner contract).
-7. Runner must self-bind `evidenceCodeCommit`, `workingTreeClean`, generation ID and fail closed.
-8. If ManufacturingRelease / Blender render code did **not** change, the previously accepted REAL Blender evidence at `018cc70` may be referenced with an explicit reason; do not fabricate a refresh. If those paths changed, rerun clean-tree 4/4 REAL Blender evidence against the new code SHA.
-9. Commit the acceptance/docs separately and require docs/head Ubuntu + Windows CI GREEN.
-10. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md` and the four Phase 481–540 scoped acceptance docs. Update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet evidence actually changed.
-11. Leave Issue #1 a concise handoff: code SHA, docs SHA, pytest count, both CI run IDs, acceptance generation, fixed blockers, REAL/MOCK/PARTIAL/BLOCKED matrix and remaining blockers.
+6. From a clean committed tree run `scripts/run_manual_pilot_e2e.py --expected-commit <CODE_EVIDENCE_SHA>`.
+7. Runner must self-bind exact commit, clean tree and one acceptance generation; all mandatory gates must fail closed.
+8. Keep the existing 8-file atomic publication + rollback behavior and add the new tenant/snapshot/health gates into the JSON truth set.
+9. If ManufacturingRelease / Blender render code remains unchanged, continue referencing REAL Blender `018cc70` with explicit reason. If those paths change, rerun clean-tree 4/4 REAL Blender evidence on the new code SHA.
+10. Commit docs/evidence separately and require docs/head Ubuntu + Windows GREEN.
+11. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md` and Phase 481–540 scoped acceptance files. Update `docs/CABINET_REAL_ACCEPTANCE.md` only if cabinet evidence actually changed.
+12. Leave Issue #1 a concise completion handoff with code SHA, docs SHA, pytest count, both CI run IDs, generation, tenant backup matrix result, source-set snapshot result, restored-health result, and REAL/MOCK/PARTIAL/BLOCKED matrix.
 
 ## Exit gate
 
-Phase 481–540 remains **CHANGES REQUIRED** until all five integrity blockers are fixed with tests and clean runner-bound evidence.
+Phase 481–540 remains **CHANGES REQUIRED** until tenant backup proves both no leakage and no required-state loss, snapshot evidence binds the complete selected source file set, and restored-root health is fail-closed.
 
-Do not start Phase 541+ yet. Do not call this Production Ready. LIVE_CNC / LIVE_LASER / PLC / autonomous machine execution remain BLOCKED.
+Do not call this Production Ready. LIVE_CNC / LIVE_LASER / PLC / autonomous machine execution remain BLOCKED.
