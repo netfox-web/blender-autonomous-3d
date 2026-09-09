@@ -1031,3 +1031,216 @@ def test_inventory_consume_subprocess_crash_after_first_lot(tmp_path):
     assert recovered["inventoryLineage"]["consumedQuantity"] == qty
     assert recovered["inventoryLineage"]["reservationIds"] == ids
     assert plat2.pilot.journal.verify("pa")["ok"] is True
+
+
+def _assert_lot_conserved(plat, tenant, lot_id):
+    q = plat.lots.quantities(lot_id, tenant_id=tenant)
+    assert q["available"] + q["reserved"] + q["consumed"] == q["sheetCount"]
+    return q
+
+
+def test_inventory_consume_crash_after_reserve_single_lot(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="rsv")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = int(req["sheets"])
+    lot = _seed_lot(plat, "pa", unit, sheets=qty + 3)
+    before = plat.lots.quantities(lot["lotId"], tenant_id="pa")
+    plat.prototype._crash_mode = "after-reserve"
+    with pytest.raises(CrashInjected):
+        plat.prototype.consume_material_once(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            sheets=qty,
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            consumes_inventory=True,
+        )
+    plat.prototype._crash_mode = ""
+    mid = _assert_lot_conserved(plat, "pa", lot["lotId"])
+    assert mid["reserved"] - before["reserved"] == qty
+    assert mid["consumed"] == before["consumed"]
+    intent = next(iter(plat.prototype.intents.values()))
+    assert intent["status"] == "PREPARED"
+    pinned = plat.prototype._reservations_for_work_order(tenant_id="pa", work_order_id=f"proto:{unit['prototypeUnitId']}")
+    ids = [r["reservationId"] for r in pinned]
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _f2, _s2, human2, hs2 = _ops(plat2)
+    recovered = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human2["operatorId"],
+        shift_id=hs2["shiftId"],
+        consumes_inventory=True,
+    )
+    assert recovered["inventoryLineage"]["consumedQuantity"] == qty
+    assert recovered["inventoryLineage"]["reservationIds"] == ids
+    after = _assert_lot_conserved(plat2, "pa", lot["lotId"])
+    assert after["consumed"] - before["consumed"] == qty
+    assert after["reserved"] == before["reserved"]
+    again = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human2["operatorId"],
+        shift_id=hs2["shiftId"],
+        consumes_inventory=True,
+    )
+    assert again["inventoryLineage"]["reservationIds"] == ids
+    assert plat2.pilot.journal.verify("pa")["ok"] is True
+
+
+def test_inventory_consume_crash_after_reserve_single_lot_subprocess(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="rsv1s")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = int(req["sheets"])
+    lot = _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    before = plat.lots.quantities(lot["lotId"], tenant_id="pa")
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fox3d.crashfix",
+            "--root",
+            str(tmp_path / "live"),
+            "--action",
+            "proto-consume",
+            "--tenant",
+            "pa",
+            "--unit",
+            unit["prototypeUnitId"],
+            "--operator",
+            human["operatorId"],
+            "--shift",
+            human_shift["shiftId"],
+            "--qty",
+            str(qty),
+            "--crash",
+            "after-reserve",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    pinned = plat2.prototype._reservations_for_work_order(tenant_id="pa", work_order_id=f"proto:{unit['prototypeUnitId']}")
+    ids = [r["reservationId"] for r in pinned]
+    mid = _assert_lot_conserved(plat2, "pa", lot["lotId"])
+    assert mid["reserved"] - before["reserved"] == qty
+    recovered = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    assert recovered["inventoryLineage"]["reservationIds"] == ids
+    assert recovered["inventoryLineage"]["consumedQuantity"] == qty
+    after = _assert_lot_conserved(plat2, "pa", lot["lotId"])
+    assert after["consumed"] - before["consumed"] == qty
+    assert plat2.pilot.journal.verify("pa")["ok"] is True
+
+
+def test_inventory_consume_crash_after_reserve_multi_lot_subprocess(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    _f, _s, human, human_shift = _ops(plat)
+    cid = next(iter(plat.portfolio.rankings.values()))["top10"][0]["candidateId"]
+    sel = plat.prototype.select(tenant_id="pa", candidate_id=cid, operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="rsv2")
+    unit = plat.prototype.create_unit(tenant_id="pa", selection_id=sel["selectionId"], operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    req = plat.prototype._material_requirement(unit)
+    qty = max(int(req["sheets"]), 2)
+    lot_a = _seed_lot(plat, "pa", unit, sheets=1)
+    lot_b = _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    before_a = plat.lots.quantities(lot_a["lotId"], tenant_id="pa")
+    before_b = plat.lots.quantities(lot_b["lotId"], tenant_id="pa")
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "fox3d.crashfix",
+            "--root",
+            str(tmp_path / "live"),
+            "--action",
+            "proto-consume",
+            "--tenant",
+            "pa",
+            "--unit",
+            unit["prototypeUnitId"],
+            "--operator",
+            human["operatorId"],
+            "--shift",
+            human_shift["shiftId"],
+            "--qty",
+            str(qty),
+            "--crash",
+            "after-reserve",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    wo = f"proto:{unit['prototypeUnitId']}"
+    pinned = plat2.prototype._reservations_for_work_order(tenant_id="pa", work_order_id=wo)
+    ids = [r["reservationId"] for r in pinned]
+    assert sum(int(r["quantity"]) for r in pinned) == qty
+    mid_a = _assert_lot_conserved(plat2, "pa", lot_a["lotId"])
+    mid_b = _assert_lot_conserved(plat2, "pa", lot_b["lotId"])
+    assert (mid_a["reserved"] - before_a["reserved"]) + (mid_b["reserved"] - before_b["reserved"]) == qty
+    recovered = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    assert recovered["inventoryLineage"]["consumedQuantity"] == qty
+    assert recovered["inventoryLineage"]["reservationIds"] == ids
+    after_a = _assert_lot_conserved(plat2, "pa", lot_a["lotId"])
+    after_b = _assert_lot_conserved(plat2, "pa", lot_b["lotId"])
+    assert (after_a["consumed"] - before_a["consumed"]) + (after_b["consumed"] - before_b["consumed"]) == qty
+    again = plat2.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    assert again["inventoryLineage"]["reservationIds"] == ids
+    assert plat2.pilot.journal.verify("pa")["ok"] is True

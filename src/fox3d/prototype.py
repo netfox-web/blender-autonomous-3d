@@ -98,6 +98,12 @@ PRIOR_REAL_BLENDER = {
     "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
 }
 REQUIRED_BOARD_FIELDS = (
+    "selectionId",
+    "prototypeUnitId",
+    "engineeringHash",
+    "canonicalHash",
+    "bomHash",
+    "nestingHash",
     "rankingScore",
     "rankingPolicyHash",
     "conservationOk",
@@ -270,18 +276,61 @@ def verify_prior_real_blender(docs: Path | str) -> dict[str, Any]:
     }
 
 
-def _packaging_variance_contradicts(row: dict[str, Any]) -> bool:
-    pack_val = row.get("packagingValidation")
-    vars_ = row.get("packagingPredictedVsObserved") or {}
-    if not isinstance(pack_val, dict) or pack_val.get("ok") is not True:
-        return False
+def _required_variance_ok(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("complete") is True and item.get("ok") is True
+
+
+def _packaging_complete_failures(row: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    pack = row.get("packagingCompleteness")
+    pack_val = row.get("packagingValidation") or {}
+    if pack != "COMPLETE" or not isinstance(pack_val, dict) or pack_val.get("ok") is not True:
+        return failures
+    vars_ = row.get("packagingPredictedVsObserved")
     if not isinstance(vars_, dict):
-        return True
+        failures.append("packaging_variance_missing")
+        return failures
     for field in PACK_MEASUREMENTS:
-        item = vars_.get(field)
-        if isinstance(item, dict) and item.get("ok") is False:
-            return True
-    return False
+        if not _required_variance_ok(vars_.get(field)):
+            failures.append(f"packaging_variance_{field}")
+    assembly = row.get("assemblyObservedVsEstimated")
+    if not _required_variance_ok(assembly):
+        failures.append("assembly_variance")
+    policy_hash = pack_val.get("packagingPolicyHash") or row.get("packagingPolicyHash")
+    if policy_hash != PACKAGING_POLICY_HASH:
+        failures.append("packaging_policy_hash")
+    return failures
+
+
+def _index_by_candidate(rows: list[Any], *, kind: str) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    failures: list[str] = []
+    indexed: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            failures.append(f"{kind}_malformed")
+            continue
+        cid = row.get("candidateId")
+        if not cid:
+            failures.append(f"{kind}_missing_candidate")
+            continue
+        if cid in indexed:
+            failures.append(f"duplicate_{kind}_candidate")
+            continue
+        indexed[cid] = row
+    return indexed, failures
+
+
+def _lineage_value(*rows: dict[str, Any] | None, key: str) -> Any:
+    values = [row.get(key) for row in rows if isinstance(row, dict) and row.get(key) not in {None, ""}]
+    if not values:
+        return None
+    first = values[0]
+    if any(v != first for v in values[1:]):
+        return _MISMATCH
+    return first
+
+
+_MISMATCH = object()
 
 
 def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
@@ -300,6 +349,49 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
         failures.append("units_4")
     if len(matrix) != 4:
         failures.append("matrix_4")
+    selected_by, sel_fail = _index_by_candidate(selected, kind="selected")
+    units_by, unit_fail = _index_by_candidate(units, kind="unit")
+    matrix_by, matrix_fail = _index_by_candidate(matrix, kind="matrix")
+    board_by, board_fail = _index_by_candidate(rows, kind="board")
+    failures.extend(sel_fail + unit_fail + matrix_fail + board_fail)
+    lineage_keys = ("candidateId", "selectionId", "prototypeUnitId", "engineeringHash", "canonicalHash", "bomHash", "nestingHash", "rankingPolicyHash")
+    for s in selected:
+        if not isinstance(s, dict):
+            continue
+        cid = s.get("candidateId")
+        unit = units_by.get(cid)
+        mat = matrix_by.get(cid)
+        brd = board_by.get(cid)
+        if unit is None:
+            failures.append("selected_unit_missing")
+        if mat is None:
+            failures.append("selected_matrix_missing")
+        if brd is None:
+            failures.append("selected_board_missing")
+        if unit is None or mat is None:
+            continue
+        for key in lineage_keys:
+            value = _lineage_value(s, unit, mat, brd if brd and brd.get(key) not in {None, ""} else None, key=key)
+            if value is _MISMATCH:
+                failures.append(f"{key}_mismatch")
+        if unit.get("buildCompleted") is not True:
+            failures.append("build_incomplete")
+        if mat.get("buildCompleted") is not True or mat.get("buildCompleted") != (unit.get("buildCompleted") is True):
+            failures.append("buildCompleted_mismatch")
+        if brd:
+            if brd.get("physicalPrototypeValidated") != mat.get("physicalPrototypeValidated"):
+                failures.append("board_matrix_physical_mismatch")
+            b_pack = (brd.get("packagingValidation") or {}).get("ok") if isinstance(brd.get("packagingValidation"), dict) else None
+            m_pack = (mat.get("packagingValidation") or {}).get("ok") if isinstance(mat.get("packagingValidation"), dict) else None
+            if b_pack != m_pack:
+                failures.append("board_matrix_packaging_mismatch")
+            b_tol = brd.get("toleranceResult") if isinstance(brd.get("toleranceResult"), dict) else {}
+            if mat.get("toleranceStatus") is True and b_tol.get("ok") is False:
+                failures.append("board_matrix_tolerance_mismatch")
+            b_qc = brd.get("qcStatus") if isinstance(brd.get("qcStatus"), dict) else {}
+            m_qc = mat.get("qcStatus") if isinstance(mat.get("qcStatus"), dict) else {}
+            if b_qc.get("complete") != m_qc.get("complete"):
+                failures.append("board_matrix_qc_mismatch")
     for i, row in enumerate(matrix):
         if not isinstance(row, dict):
             failures.append(f"matrix[{i}]:malformed")
@@ -328,8 +420,7 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("packaging_validation_false")
         elif pack == "COMPLETE" and (not isinstance(pack_val, dict) or pack_val.get("ok") is not True):
             failures.append("packaging_validation_false")
-        if _packaging_variance_contradicts(row):
-            failures.append("packaging_variance_contradiction")
+        failures.extend(_packaging_complete_failures(row))
         if row.get("staleLineage"):
             failures.append("stale_lineage")
         if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL"}:
@@ -342,15 +433,13 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             blockers = row.get("blockers") or []
             if isinstance(blockers, list) and "tolerance" not in blockers and "fixture_evidence" not in blockers:
                 failures.append("tolerance_false_unblocked")
-    for i, row in enumerate(rows[:4] or []):
-        if not isinstance(row, dict):
-            failures.append(f"board[{i}]:malformed")
+    for cid, row in board_by.items():
+        if cid not in selected_by:
             continue
         for key in REQUIRED_BOARD_FIELDS:
             if key not in row:
-                failures.append(f"board[{i}]:missing:{key}")
-        if _packaging_variance_contradicts(row):
-            failures.append("packaging_variance_contradiction")
+                failures.append(f"board:{cid}:missing:{key}")
+        failures.extend(_packaging_complete_failures({**row, "packagingCompleteness": "COMPLETE" if (row.get("packagingValidation") or {}).get("ok") is True else row.get("packagingCompleteness")}))
         pack_val = row.get("packagingValidation") or {}
         if isinstance(pack_val, dict) and pack_val.get("ok") is False:
             failures.append("packaging_validation_false")
@@ -367,7 +456,7 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("boolean_only_consume")
         if u.get("physicalPrototypeValidated") and (u.get("evidenceSource") == "FIXTURE" or u.get("truthLabel") == "FIXTURE"):
             failures.append("fixture_physical_unit")
-        if u.get("buildCompleted") is not True and u.get("state") not in {"WAITING_VALIDATION", "VALIDATED", "HOLD"}:
+        if u.get("buildCompleted") is not True:
             failures.append("build_incomplete")
     return failures
 
@@ -769,6 +858,44 @@ class PrototypeFactory:
             return self.intents[rec["inventoryIntentId"]]
         return None
 
+    def _reservations_for_work_order(self, *, tenant_id: str, work_order_id: str) -> list[dict[str, Any]]:
+        found: list[dict[str, Any]] = []
+        for lot in self.platform.lots.list(tenant_id=tenant_id):
+            for item in (lot.get("reservations") or {}).values():
+                if not isinstance(item, dict):
+                    continue
+                if item.get("workOrderId") != work_order_id:
+                    continue
+                if item.get("state") not in {"RESERVED", "CONSUMED"}:
+                    continue
+                found.append(
+                    {
+                        "lotId": lot.get("lotId") or item.get("lotId"),
+                        "reservationId": item.get("reservationId"),
+                        "quantity": int(item.get("quantity") or 0),
+                        "state": item.get("state"),
+                    }
+                )
+        return found
+
+    def _reservations_compatible(self, items: list[dict[str, Any]], req: dict[str, Any], *, tenant_id: str) -> bool:
+        lots = self.platform.lots
+        for item in items:
+            try:
+                lot = lots.get(str(item.get("lotId")), tenant_id=tenant_id)
+            except (KeyError, PermissionError):
+                return False
+            if not lots.lot_compatible(
+                lot,
+                material=req["material"],
+                thickness=req["thickness"],
+                grain=req["grain"],
+                length=req["length"],
+                width=req["width"],
+            ):
+                return False
+        return True
+
     def _refresh_intent_reservations(self, intent: dict[str, Any], *, tenant_id: str) -> list[dict[str, Any]]:
         lots = self.platform.lots
         refreshed: list[dict[str, Any]] = []
@@ -864,10 +991,38 @@ class PrototypeFactory:
             if int(lineage.get("consumedQuantity") or 0) != qty:
                 raise PrototypeError("BLOCKED", "no double consume after restart/retry")
             return rec
+        rec["inventoryWorkOrderId"] = wo_id
         intent = self._find_intent(rec, qty)
         reserved: list[dict[str, Any]] = []
         try:
             if intent is None:
+                intent = {
+                    "intentId": new_id(),
+                    "tenantId": tenant_id,
+                    "prototypeUnitId": prototype_unit_id,
+                    "workOrderId": wo_id,
+                    "idempotencyKey": self._intent_key(rec, qty),
+                    "requirement": req,
+                    "quantity": qty,
+                    "reservations": [],
+                    "status": "PREPARED",
+                    "createdAt": _now(),
+                }
+                self.intents[intent["intentId"]] = intent
+                rec["inventoryIntentId"] = intent["intentId"]
+                self.persist()
+            existing = self._reservations_for_work_order(tenant_id=tenant_id, work_order_id=wo_id)
+            if existing:
+                total = sum(int(i.get("quantity") or 0) for i in existing)
+                if total != qty:
+                    raise PrototypeError("HOLD", "ambiguous prior reservation set for prototype operation")
+                if not self._reservations_compatible(existing, req, tenant_id=tenant_id):
+                    raise PrototypeError("HOLD", "prior reservation incompatible with prototype requirement")
+                intent["reservations"] = existing
+                intent["status"] = "PINNED"
+                rec["inventoryIntentId"] = intent["intentId"]
+                self.persist()
+            else:
                 if lot_id:
                     lot = lots.get(lot_id, tenant_id=tenant_id)
                     if not lots.lot_compatible(
@@ -892,21 +1047,10 @@ class PrototypeFactory:
                         length=req["length"],
                         width=req["width"],
                     )
-                intent = {
-                    "intentId": new_id(),
-                    "tenantId": tenant_id,
-                    "prototypeUnitId": prototype_unit_id,
-                    "workOrderId": wo_id,
-                    "idempotencyKey": self._intent_key(rec, qty),
-                    "requirement": req,
-                    "quantity": qty,
-                    "reservations": reserved,
-                    "status": "PINNED",
-                    "createdAt": _now(),
-                }
-                self.intents[intent["intentId"]] = intent
+                self._die("after-reserve")
+                intent["reservations"] = reserved
+                intent["status"] = "PINNED"
                 rec["inventoryIntentId"] = intent["intentId"]
-                rec["inventoryWorkOrderId"] = wo_id
                 self.persist()
             pinned = self._refresh_intent_reservations(intent, tenant_id=tenant_id)
             consumed_now = 0
@@ -1698,6 +1842,12 @@ class PrototypeFactory:
             "candidateId": candidate_id,
             "tenantId": tenant_id,
             "state": state,
+            "selectionId": sel.get("selectionId") if sel else None,
+            "prototypeUnitId": (unit or {}).get("prototypeUnitId"),
+            "engineeringHash": (unit or sel or cand).get("engineeringHash"),
+            "canonicalHash": (unit or sel or {}).get("canonicalHash") if (unit or sel) else None,
+            "bomHash": (unit or sel or {}).get("bomHash") if (unit or sel) else None,
+            "nestingHash": (unit or sel or {}).get("nestingHash") if (unit or sel) else None,
             "rankingScore": sel.get("score") if sel else None,
             "rankingPolicyHash": sel.get("rankingPolicyHash") if sel else None,
             "conservationOk": dfm.get("conservationOk"),
@@ -1707,7 +1857,8 @@ class PrototypeFactory:
             "prototypeStatus": (unit or {}).get("state"),
             "toleranceResult": (meas or {}).get("tolerance"),
             "dimensionalVariance": (meas or {}).get("variance"),
-            "assemblyObservedVsEstimated": (meas or {}).get("variance", {}).get("assemblyMinutes") if meas else None,
+            "assemblyObservedVsEstimated": (pack or {}).get("assemblyObservedVsEstimated")
+            or ((meas or {}).get("variance") or {}).get("assemblyMinutes"),
             "observedCostLabel": (cost or {}).get("truthLabel"),
             "observedMonetaryVariance": (cost or {}).get("monetaryVariance"),
             "costCompleteness": (cost or {}).get("completeness"),
@@ -1777,9 +1928,11 @@ class PrototypeFactory:
             "prototypeUnitId": unit.get("prototypeUnitId"),
             "unitState": unit.get("state"),
             "evidenceSource": unit.get("evidenceSource") or (meas or {}).get("source"),
-            "buildCompleted": bool(unit.get("buildCompleted") or unit.get("state") in {"WAITING_VALIDATION", "VALIDATED", "HOLD"}),
+            "buildCompleted": unit.get("buildCompleted") is True,
             "toleranceStatus": (meas or {}).get("tolerance", {}).get("ok") if meas else False,
             "qcStatus": None if not meas else {"complete": not meas.get("qcMissing"), "missing": meas.get("qcMissing") or []},
+            "assemblyObservedVsEstimated": (pack or {}).get("assemblyObservedVsEstimated")
+            or ((meas or {}).get("variance") or {}).get("assemblyMinutes"),
             "costCompleteness": (cost or {}).get("completeness") or "MISSING",
             "observedCostLabel": (cost or {}).get("truthLabel"),
             "monetaryVarianceStatus": None if not cost else ("COMPLETE" if cost.get("monetaryVariance") else cost.get("completeness")),

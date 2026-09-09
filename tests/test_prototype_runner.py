@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from fox3d.evidence import prepare_evidence_lineage
-from fox3d.prototype import PRIOR_REAL_BLENDER, REQUIRED_BOARD_FIELDS, REQUIRED_MATRIX_KEYS
+from fox3d.prototype import PACKAGING_POLICY_HASH, PRIOR_REAL_BLENDER, REQUIRED_BOARD_FIELDS, REQUIRED_MATRIX_KEYS
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "c" * 40
@@ -38,9 +38,19 @@ class _FakePlat:
         self.mock_blender = True
 
 
+def _ok_var():
+    return {"ok": True, "complete": True}
+
+
 def _board_row(i: int, **over) -> dict:
     row = {
         "candidateId": f"c{i}",
+        "selectionId": f"s{i}",
+        "prototypeUnitId": f"u{i}",
+        "engineeringHash": f"e{i}",
+        "canonicalHash": f"h{i}",
+        "bomHash": f"b{i}",
+        "nestingHash": f"n{i}",
         "state": "WAITING_PHYSICAL_EVIDENCE",
         "rankingScore": 0.7,
         "rankingPolicyHash": "p" * 64,
@@ -51,17 +61,17 @@ def _board_row(i: int, **over) -> dict:
         "prototypeStatus": "WAITING_VALIDATION",
         "toleranceResult": {"ok": True, "failed": []},
         "dimensionalVariance": {},
-        "assemblyObservedVsEstimated": {"complete": True},
+        "assemblyObservedVsEstimated": _ok_var(),
         "observedCostLabel": "FIXTURE",
         "observedMonetaryVariance": None,
         "costCompleteness": "PARTIAL",
         "packagingPredictedVsObserved": {
-            "cartonLengthMm": {"ok": True},
-            "cartonWidthMm": {"ok": True},
-            "cartonHeightMm": {"ok": True},
-            "packedWeightKg": {"ok": True},
+            "cartonLengthMm": _ok_var(),
+            "cartonWidthMm": _ok_var(),
+            "cartonHeightMm": _ok_var(),
+            "packedWeightKg": _ok_var(),
         },
-        "packagingValidation": {"ok": True, "complete": True},
+        "packagingValidation": {"ok": True, "complete": True, "packagingPolicyHash": PACKAGING_POLICY_HASH},
         "qcStatus": {"complete": True, "source": "FIXTURE"},
         "realBlenderLineage": {"reused": True, "commitSha": PRIOR_REAL_BLENDER["commitSha"]},
         "demandLabel": "MOCK",
@@ -97,13 +107,14 @@ def _matrix_row(i: int, **over) -> dict:
             "monetaryVarianceStatus": "PARTIAL",
             "packagingCompleteness": "COMPLETE",
             "packagingVarianceStatus": "ok",
-            "packagingValidation": {"ok": True},
+            "packagingValidation": {"ok": True, "packagingPolicyHash": PACKAGING_POLICY_HASH},
             "packagingPredictedVsObserved": {
-                "cartonLengthMm": {"ok": True},
-                "cartonWidthMm": {"ok": True},
-                "cartonHeightMm": {"ok": True},
-                "packedWeightKg": {"ok": True},
+                "cartonLengthMm": _ok_var(),
+                "cartonWidthMm": _ok_var(),
+                "cartonHeightMm": _ok_var(),
+                "packedWeightKg": _ok_var(),
             },
+            "assemblyObservedVsEstimated": _ok_var(),
             "ecoStatus": None,
             "decisionState": "WAITING_PHYSICAL_EVIDENCE",
             "blockers": ["fixture_evidence"],
@@ -122,14 +133,19 @@ def _passing(plat):
     return {
         "ok": True,
         "selected": [
-            {"selectionId": f"s{i}", "candidateId": f"c{i}", "engineeringHash": f"e{i}", "canonicalHash": f"h{i}", "bomHash": f"b{i}", "nestingHash": f"n{i}", "truthLabel": "FIXTURE"}
+            {"selectionId": f"s{i}", "candidateId": f"c{i}", "engineeringHash": f"e{i}", "canonicalHash": f"h{i}", "bomHash": f"b{i}", "nestingHash": f"n{i}", "rankingPolicyHash": "p" * 64, "truthLabel": "FIXTURE"}
             for i in range(4)
         ],
         "units": [
             {
                 "prototypeUnitId": f"u{i}",
                 "candidateId": f"c{i}",
+                "selectionId": f"s{i}",
                 "engineeringHash": f"e{i}",
+                "canonicalHash": f"h{i}",
+                "bomHash": f"b{i}",
+                "nestingHash": f"n{i}",
+                "rankingPolicyHash": "p" * 64,
                 "state": "WAITING_VALIDATION",
                 "physicalPrototypeValidated": False,
                 "evidenceSource": "FIXTURE",
@@ -318,7 +334,7 @@ def test_prototype_runner_tenant_restore_mismatch_fails(tmp_path):
 
 def _assert_no_overwrite(mod, tmp_path, scenario):
     docs = tmp_path / "docs"
-    docs.mkdir(exist_ok=True)
+    docs.mkdir(parents=True, exist_ok=True)
     (docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").write_text(json.dumps({"ok": True, "keep": True}), encoding="utf-8")
     rc = _run(mod, docs, scenario)
     assert rc != 0
@@ -423,3 +439,152 @@ def test_prototype_runner_prior_media_missing_fails(tmp_path):
     )
     assert rc != 0
     assert not (docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").exists()
+
+
+def test_prototype_runner_missing_each_packaging_variance_field_fails(tmp_path):
+    mod = _load()
+    for field in ("cartonLengthMm", "cartonWidthMm", "cartonHeightMm", "packedWeightKg"):
+
+        def scenario(plat, missing=field):
+            body = _passing(plat)
+            del body["matrix"][0]["packagingPredictedVsObserved"][missing]
+            return body
+
+        _assert_no_overwrite(mod, tmp_path / field, scenario)
+
+
+def test_prototype_runner_malformed_packaging_variance_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["packagingPredictedVsObserved"]["cartonLengthMm"] = {"ok": True, "complete": False}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_assembly_variance_missing_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        del body["matrix"][0]["assemblyObservedVsEstimated"]
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_assembly_variance_incomplete_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["assemblyObservedVsEstimated"] = {"ok": True, "complete": False}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_assembly_variance_false_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["assemblyObservedVsEstimated"] = {"ok": False, "complete": True}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_policy_hash_mismatch_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["packagingValidation"] = {"ok": True, "packagingPolicyHash": "stale"}
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_buildcompleted_mismatch_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["units"][0]["buildCompleted"] = False
+        body["units"][0]["state"] = "WAITING_VALIDATION"
+        body["matrix"][0]["buildCompleted"] = True
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_selected_matrix_candidate_mismatch_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["candidateId"] = "other"
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_engineering_hash_mismatch_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["units"][0]["engineeringHash"] = "other-hash"
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_bom_nesting_ranking_mismatch_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["matrix"][0]["bomHash"] = "other-bom"
+        body["matrix"][0]["nestingHash"] = "other-nest"
+        body["matrix"][0]["rankingPolicyHash"] = "other-rank"
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_duplicate_selected_candidate_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["selected"][1]["candidateId"] = body["selected"][0]["candidateId"]
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_selected_absent_from_board_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["board"]["rows"] = body["board"]["rows"][1:]
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
+
+
+def test_prototype_runner_board_matrix_physical_contradiction_fails(tmp_path):
+    mod = _load()
+
+    def scenario(plat):
+        body = _passing(plat)
+        body["board"]["rows"][0]["physicalPrototypeValidated"] = True
+        body["matrix"][0]["physicalPrototypeValidated"] = False
+        return body
+
+    _assert_no_overwrite(mod, tmp_path, scenario)
