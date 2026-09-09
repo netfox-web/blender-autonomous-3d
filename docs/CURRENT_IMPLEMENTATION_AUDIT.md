@@ -1,10 +1,25 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 481–540 schema/identity CODE_EVIDENCE_SHA `11c79d1`; prior completeness `1fc86cf` / docs `3a08009`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `142d062`. Historical Phase 1–480 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 541–600 portfolio CODE_EVIDENCE_SHA `655ea99`; prior Phase 481–540 `11c79d1` / docs `90f7d59`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c1ba8cd`. Historical Phase 1–540 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-09): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 541–600 Small-Space KD SKU Portfolio Factory V1
+
+| Item | Status | Evidence |
+|---|---|---|
+| 541–546 PortfolioIntent | REAL_LOGIC | tenant envelope; demand MOCK/IMPORTED/MANUAL/UNAVAILABLE; missing constraints fail-closed |
+| 547–552 candidates | REAL_LOGIC | 28 / 8 KD kinds; REJECTED_DFM retained; duplicate canonical hash blocked |
+| 553–558 DFM scorecard | REAL_LOGIC | reuses BOM/nest/pack; conservationOk |
+| 559–564 cross-SKU plan | REAL_LOGIC / PLANNING | independent/batch/cross/remnant-first; no inventory consume; no double remnant |
+| 565–570 commercial | CONFIG_ESTIMATE | labeled components; stale snapshot fail-closed |
+| 571–576 ranking | REAL_LOGIC | rankingPolicyHash; Top 10; invalid excluded; MOCK demand not REAL |
+| 577–582 approval pack | REAL_LOGIC | WAITING_PRODUCT_APPROVAL / APPROVED_FOR_PROTOTYPE ≠ LIVE_CNC |
+| 583–588 media | REAL | 4/4 T1000 OptiX usedMock=false beautyHash on `655ea99` |
+| 589–594 prototype pack | REAL_LOGIC | MANUAL_STATION traveler; READY only after human approval |
+| 595–600 acceptance | FIXTURE + REAL | generation `d9311329-…`; six-file atomic; CI `34346220584`; tenant backup digest |
 
 ## Phase 481–540 Manual Factory Pilot V1 / Operational Control & Recovery
 

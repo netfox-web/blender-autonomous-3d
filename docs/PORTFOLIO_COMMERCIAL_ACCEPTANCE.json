@@ -1,0 +1,45 @@
+{
+  "generatedAt": "2026-09-09T11:36:46.590800+00:00",
+  "acceptanceGenerationId": "d9311329-d9b4-4fa7-a367-8eea8267799f",
+  "evidenceCodeCommit": "655ea994bdd7e5505324b10ea02f0166abefb08e",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "ok": true,
+  "priorRealBlenderEvidence": {
+    "commitSha": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+    "generation": "c878d5f3-a3d2-44cd-8223-7b2b94d84af1",
+    "reason": "ManufacturingRelease/Blender render path unchanged; portfolio media is additional scoped evidence"
+  },
+  "domain": "portfolio-commercial",
+  "demandLabel": "MOCK",
+  "prototypeReady": true,
+  "realMediaCount": 4,
+  "rows": [
+    {
+      "check": "commercial truth labels",
+      "status": "CONFIG_ESTIMATE",
+      "evidence": "MOCK"
+    },
+    {
+      "check": "MOCK demand not REAL",
+      "status": "REAL_LOGIC",
+      "evidence": "MOCK"
+    },
+    {
+      "check": "manual prototype approval",
+      "status": "REAL_LOGIC",
+      "evidence": "READY_FOR_MANUAL_PROTOTYPE"
+    },
+    {
+      "check": "REAL blender media",
+      "status": "REAL",
+      "evidence": "real=4/4"
+    }
+  ]
+}

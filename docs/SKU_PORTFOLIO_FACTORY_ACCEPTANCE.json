@@ -1,0 +1,102 @@
+{
+  "generatedAt": "2026-09-09T11:36:46.590800+00:00",
+  "acceptanceGenerationId": "d9311329-d9b4-4fa7-a367-8eea8267799f",
+  "evidenceCodeCommit": "655ea994bdd7e5505324b10ea02f0166abefb08e",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveProviderReady": false,
+  "globalProductionReady": false,
+  "liveMachineControl": false,
+  "ok": true,
+  "priorRealBlenderEvidence": {
+    "commitSha": "018cc70997a420e82358c0bb37677aa6b4de7eeb",
+    "generation": "c878d5f3-a3d2-44cd-8223-7b2b94d84af1",
+    "reason": "ManufacturingRelease/Blender render path unchanged; portfolio media is additional scoped evidence"
+  },
+  "domain": "sku-portfolio-factory",
+  "candidateCount": 28,
+  "kindCount": 8,
+  "top10": 10,
+  "rejected": 3,
+  "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
+  "rows": [
+    {
+      "check": ">=24 candidates / >=6 kinds",
+      "status": "REAL_LOGIC",
+      "evidence": "n=28 kinds=['BEDSIDE_CABINET', 'DESK_RISER', 'MOBILE_SIDE_TABLE', 'NARROW_BOOKCASE', 'OPEN_SHELF', 'PET_FURNITURE', 'STORAGE_BENCH', 'STUDENT_DESK']"
+    },
+    {
+      "check": "invalid retained, not in Top 10",
+      "status": "REAL_LOGIC",
+      "evidence": "rejected=3 invalidInTop=0"
+    },
+    {
+      "check": "Top 10 deterministic",
+      "status": "REAL_LOGIC",
+      "evidence": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017"
+    },
+    {
+      "check": "DFM conservation",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "cross-SKU planning no consume",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"sheetCountDelta\": -15, \"consumesInventory\": false, \"doubleAllocation\": false}"
+    },
+    {
+      "check": "commercial truth labels",
+      "status": "CONFIG_ESTIMATE",
+      "evidence": "MOCK"
+    },
+    {
+      "check": "MOCK demand not REAL",
+      "status": "REAL_LOGIC",
+      "evidence": "MOCK"
+    },
+    {
+      "check": "tenant isolation",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "tenant backup semantic",
+      "status": "REAL_LOGIC",
+      "evidence": "{\"liveA\": \"bd5a9bb260a53ee982aaa9a1f3ea56fd8fcdc3c79a6c5bdfa0d77ac0cf5174c7\", \"restoredA\": \"bd5a9bb260a53ee982aaa9a1f3ea56fd8fcdc3c79a6c5bdfa0d77ac0cf5174c7\", \"equal\": true}"
+    },
+    {
+      "check": "manual prototype approval",
+      "status": "REAL_LOGIC",
+      "evidence": "READY_FOR_MANUAL_PROTOTYPE"
+    },
+    {
+      "check": "REAL blender media",
+      "status": "REAL",
+      "evidence": "real=4/4"
+    },
+    {
+      "check": "evidenceCodeCommit",
+      "status": "REAL_LOGIC",
+      "evidence": "655ea994bdd7e5505324b10ea02f0166abefb08e"
+    },
+    {
+      "check": "workingTreeClean",
+      "status": "REAL_LOGIC",
+      "evidence": "True"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "LIVE_LASER",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    }
+  ]
+}
