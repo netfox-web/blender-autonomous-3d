@@ -516,6 +516,21 @@ def test_api_pilot_console_and_fixture_blocked(platform):
     assert "LIVE_CNC" in admin.text
 
 
+def test_reliability_partial_shortage_isolated_from_leftover_stock(platform):
+    leftover = "pilot-real-fix-ps"
+    platform.pilot.receiving.import_receipt(
+        {"supplierLot": "LEFTOVER", "material": "PB_18_WHITE", "thickness": 18, "quantity": 80},
+        tenant_id=leftover,
+        actor="recv",
+        source="MANUAL",
+        idempotency_key="LEFTOVER",
+    )
+    result = platform.pilot.reliability.run(tenant_id="pilot-real-fix", n_orders=4)
+    assert result["partialShortageRollback"] is True
+    assert "partial-shortage-failed" in result["negatives"]
+    assert "partial-shortage-passed" not in result["negatives"]
+
+
 def test_reliability_fixture_stress(platform):
     result = platform.pilot.reliability.run(tenant_id="stress50", n_orders=50)
     assert result["label"] == "FIXTURE"

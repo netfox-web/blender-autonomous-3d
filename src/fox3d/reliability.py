@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
+from fox3d.ids import new_id
 from fox3d.inventory import StockShortage
 
 FAMILIES = (
@@ -176,34 +177,37 @@ class ReliabilityHarness:
         ship = self.pilot.logistics.shipment_draft(origin="TW", destination="TW-TPE", carton_ids=self.pilot.workorders.get(wo_ids[0]).get("cartonIds") or [])
         cons = self.pilot.workorders.lots.conservation_ok(tenant_id=tenant_id)
 
-        # partial-shortage rollback: isolated tenant, A=2 B=1 need 5
-        pst = f"{tenant_id}-ps"
+        # partial-shortage rollback: unique tenant+SKU so leftover durable lots cannot satisfy need=5
+        pst = f"ps-{new_id()}"
+        sku = f"PS_{new_id()[:8]}"
         a = self.pilot.receiving.import_receipt(
-            {"supplierLot": "PS-A", "material": "PB_18_WHITE", "thickness": 18, "quantity": 2},
+            {"supplierLot": "PS-A", "material": sku, "thickness": 18, "quantity": 2},
             tenant_id=pst,
             actor="recv",
             source="MANUAL",
-            idempotency_key="PS-A",
+            idempotency_key=f"PS-A-{pst}",
         )
         b = self.pilot.receiving.import_receipt(
-            {"supplierLot": "PS-B", "material": "PB_18_WHITE", "thickness": 18, "quantity": 1},
+            {"supplierLot": "PS-B", "material": sku, "thickness": 18, "quantity": 1},
             tenant_id=pst,
             actor="recv",
             source="MANUAL",
-            idempotency_key="PS-B",
+            idempotency_key=f"PS-B-{pst}",
         )
         before_a = self.pilot.workorders.lots.quantities(a["lotId"], tenant_id=pst)
         before_b = self.pilot.workorders.lots.quantities(b["lotId"], tenant_id=pst)
+        shortage_hit = False
         try:
             self.pilot.workorders.lots.allocate_requirement(
-                tenant_id=pst, work_order_id="ps-short", quantity=5, material="PB_18_WHITE", thickness=18
+                tenant_id=pst, work_order_id="ps-short", quantity=5, material=sku, thickness=18
             )
             negatives.append("partial-shortage-passed")
         except StockShortage:
+            shortage_hit = True
             negatives.append("partial-shortage-failed")
         after_a = self.pilot.workorders.lots.quantities(a["lotId"], tenant_id=pst)
         after_b = self.pilot.workorders.lots.quantities(b["lotId"], tenant_id=pst)
-        partial_ok = after_a == before_a and after_b == before_b
+        partial_ok = shortage_hit and after_a == before_a and after_b == before_b
 
         # material mismatch
         oak = self.pilot.receiving.import_receipt(
