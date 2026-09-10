@@ -300,6 +300,134 @@ def test_backup_restore_batch_state_no_tenant_b_leak(tmp_path):
     assert not any(b.get("tenantId") == "pb" for b in restored.pilot_batch.batches.values())
 
 
+def _manual_batch_unit(tmp_path, qty=1):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio = __import__("fox3d.portfolio", fromlist=["run_portfolio_scenario"]).run_portfolio_scenario
+    run_portfolio(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    _manual_launch_ready(plat, cand, unit, human, human_shift)
+    plat.prototype.record_launch_decision(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="HUMAN_GO", reason="go")
+    batch = plat.pilot_batch.create(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], quantity=qty, source="MANUAL", reason="pack-id")
+    plat.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    bu = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")[0]
+    plat.pilot_batch.start_unit(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.consume_unit(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.record_labor(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], minutes=10, reason="assembly")
+    plat.pilot_batch.record_qc(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], ok=True, stage="FINAL")
+    counts = plat.prototype._bom_counts(plat.prototype._candidate(cand["candidateId"], "pa"))
+    live = plat.prototype.units[unit["prototypeUnitId"]]
+    measured = {
+        "cartonLengthMm": 400,
+        "cartonWidthMm": 300,
+        "cartonHeightMm": 200,
+        "packedWeightKg": 8,
+        "hardwareQty": counts.get("hardwareQty"),
+        "partCount": counts.get("partCount"),
+        "damageDefect": "OK",
+    }
+    _ = actor
+    _ = sh
+    _ = fixture
+    _ = shift
+    return plat, batch, bu, human, human_shift, live, measured
+
+
+def test_manual_bogus_checklist_blocks_pack(tmp_path):
+    plat, batch, bu, human, human_shift, live, measured = _manual_batch_unit(tmp_path)
+    with pytest.raises(PilotBatchError, match="checklist"):
+        plat.pilot_batch.pack_units(
+            batch["batchId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            unit_execution_ids=[bu["unitExecutionId"]],
+            measured=measured,
+            packaging_qty=1,
+            checklist_id="bogus-checklist",
+        )
+    _ = live
+
+
+def test_manual_wrong_checklist_tenant_blocks_pack(tmp_path):
+    plat, batch, bu, human, human_shift, live, measured = _manual_batch_unit(tmp_path)
+    pack = plat.prototype.checklists[live["packagingChecklistId"]]
+    pack["tenantId"] = "pb"
+    with pytest.raises(PilotBatchError, match="tenant|checklist"):
+        plat.pilot_batch.pack_units(
+            batch["batchId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            unit_execution_ids=[bu["unitExecutionId"]],
+            measured=measured,
+            packaging_qty=1,
+            checklist_id=pack["checklistId"],
+        )
+
+
+def test_manual_wrong_checklist_unit_or_hash_blocks_pack(tmp_path):
+    plat, batch, bu, human, human_shift, live, measured = _manual_batch_unit(tmp_path)
+    pack = plat.prototype.checklists[live["packagingChecklistId"]]
+    pack["prototypeUnitId"] = "other-unit"
+    with pytest.raises(PilotBatchError, match="prototypeUnit|checklist"):
+        plat.pilot_batch.pack_units(
+            batch["batchId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            unit_execution_ids=[bu["unitExecutionId"]],
+            measured=measured,
+            packaging_qty=1,
+            checklist_id=pack["checklistId"],
+        )
+    pack["prototypeUnitId"] = batch["prototypeUnitId"]
+    pack["engineeringHash"] = "stale-hash"
+    with pytest.raises(PilotBatchError, match="engineeringHash|checklist"):
+        plat.pilot_batch.pack_units(
+            batch["batchId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            unit_execution_ids=[bu["unitExecutionId"]],
+            measured=measured,
+            packaging_qty=1,
+            checklist_id=pack["checklistId"],
+        )
+
+
+def test_manual_packaging_qty_from_other_checklist_blocks(tmp_path):
+    plat, batch, bu, human, human_shift, live, measured = _manual_batch_unit(tmp_path)
+    with pytest.raises(PilotBatchError, match="packagingQty|different checklist"):
+        plat.pilot_batch.pack_units(
+            batch["batchId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            unit_execution_ids=[bu["unitExecutionId"]],
+            measured=measured,
+            packaging_qty=99,
+            checklist_id=live["packagingChecklistId"],
+        )
+
+
+def test_manual_valid_checklist_packs(tmp_path):
+    plat, batch, bu, human, human_shift, live, measured = _manual_batch_unit(tmp_path)
+    carton = plat.pilot_batch.pack_units(
+        batch["batchId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        unit_execution_ids=[bu["unitExecutionId"]],
+        measured=measured,
+        packaging_qty=1,
+        checklist_id=live["packagingChecklistId"],
+    )
+    assert carton["checklistId"] == live["packagingChecklistId"]
+    assert plat.pilot_batch._carton_packaging_ok(carton, plat.pilot_batch.get(batch["batchId"], tenant_id="pa")) is True
+
+
 def test_pack_planned_unit_fails(tmp_path):
     plat, proto = _proto(tmp_path)
     fixture, shift = proto["fixture"], proto["fixtureShift"]
