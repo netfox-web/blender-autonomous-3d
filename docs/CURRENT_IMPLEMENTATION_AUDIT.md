@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 721–780 Re-Gate Round 5 CODE_EVIDENCE_SHA `d0f5bbd`; prior CODE `25a583a` / docs `b783b05` / instruction `ff5ec47`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `ff5ec47`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten. No second BOM/checklist engine.
+Audit of `main` (Phase 721–780 Re-Gate Round 6 CODE_EVIDENCE_SHA `12ef546`; prior CODE `d0f5bbd` / docs `d70d43f` / instruction `c839fb3`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c839fb3`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten. Round 6 is evidence-only (exact CODE SHA CI).
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -28,8 +28,8 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | BOM canonical authority | REAL_LOGIC | `bomAuthority` lines hashed with existing `stable_hash`; carton expected from BOM not carton copy; coordinated fake expected/observed fail-closed |
 | Packaging checklist canonical | REAL_LOGIC | published Prototype checklist identity/qty/source + PACKAGING DAM sha/size; FIXTURE source stays MISSING; fake id / duplicate / lineage mismatch fail-closed |
 | WO nested owner | REAL_LOGIC | reservation/consumed snapshot owner derived from durable parent; blank tenantId/workOrderId fail-closed |
-| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `a7d6e46c…` |
-| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `75f9d22c-…`; CODE `d0f5bbd`; 4×5 units; `physicalPilotBatchValidated=false` |
+| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `88986645…` |
+| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `4c1fa7ed-…`; CODE `12ef546`; Actions `34481806339` exact CODE SHA Ubuntu+Windows SUCCESS; 4×5 units; `physicalPilotBatchValidated=false` |
 
 ## Phase 661–720 Physical Prototype Evidence & Human Launch Governance V1
 

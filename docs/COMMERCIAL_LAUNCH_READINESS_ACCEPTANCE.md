@@ -1,6 +1,6 @@
 # COMMERCIAL_LAUNCH_READINESS_ACCEPTANCE
 
-generatedAt: 2026-09-10T12:45:47.845693+00:00
+generatedAt: 2026-09-10T13:33:40.891103+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 This is a scoped Phase 721–780 FIXTURE/REAL_LOGIC pilot-batch truth set. Fixture ≠ physical batch.
 
