@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         {"check": "wrong artwork path BLOCK", "status": "REAL_LOGIC", "evidence": (result.get("negatives") or {}).get("forged_artwork_path")},
         {"check": "CONTAIN letterbox canvas", "status": "REAL_LOGIC", "evidence": json.dumps((result.get("scenarios") or {}).get("containCenter"))},
         {"check": "COVER anchor source crop", "status": "REAL_LOGIC", "evidence": json.dumps((result.get("scenarios") or {}).get("coverAnchor"))},
-        {"check": "rotation/finalUv parity", "status": "REAL_LOGIC", "evidence": json.dumps((result.get("scenarios") or {}).get("rotationParity"))},
+        {"check": "orientation landmark parity", "status": "REAL_LOGIC", "evidence": json.dumps((result.get("scenarios") or {}).get("orientationParity"))},
         {"check": "master seam replay", "status": "REAL_LOGIC", "evidence": json.dumps((result.get("scenarios") or {}).get("masterSeam"))},
         {"check": "prior REAL blender", "status": "REAL" if prior_real.get("ok") else "PARTIAL", "evidence": json.dumps({"commitSha": (PRIOR_REAL_BLENDER or {}).get("commitSha"), "ok": prior_real.get("ok")})},
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},

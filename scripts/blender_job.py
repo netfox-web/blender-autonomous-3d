@@ -517,6 +517,19 @@ def final_uv_sampling(mapping: dict) -> list:
     return list(mapping.get("finalSampling") or mapping.get("corners") or [])
 
 
+def _quarter_turn_local_corners(*, rotation_deg: float = 0.0, mirrored: bool = False) -> list:
+    rot = float(rotation_deg or 0.0) % 360.0
+    if rot not in _SUPPORTED_ROT:
+        raise ArtworkApplyError("unsupported rotation")
+    pts = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    steps = int(rot // 90.0)
+    for _ in range(steps):
+        pts = [(1.0 - t, s) for s, t in pts]
+    if mirrored:
+        pts = [(1.0 - s, t) for s, t in pts]
+    return pts
+
+
 def canonical_uv_mapping(uv_rect: dict, *, rotation_deg: float = 0.0, mirrored: bool = False) -> dict:
     """Scheme A: mesh FRONT UV is the final source UV. Shader mapping stays identity."""
     if not isinstance(uv_rect, dict):
@@ -533,13 +546,13 @@ def canonical_uv_mapping(uv_rect: dict, *, rotation_deg: float = 0.0, mirrored: 
     rot = float(rotation_deg or 0.0) % 360.0
     if rot not in _SUPPORTED_ROT:
         raise ArtworkApplyError("unsupported rotation")
-    cx, cy = (u0 + u1) / 2.0, (v0 + v1) / 2.0
-    corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
-    steps = int(rot // 90.0)
-    for _ in range(steps):
-        corners = [(cx - (y - cy), cy + (x - cx)) for x, y in corners]
-    if mirrored:
-        corners = [(u0 + u1 - x, y) for x, y in corners]
+    local = _quarter_turn_local_corners(rotation_deg=rot, mirrored=bool(mirrored))
+    corners = [(u0 + s * (u1 - u0), v0 + t * (v1 - v0)) for s, t in local]
+    umin, umax = (u0, u1) if u0 <= u1 else (u1, u0)
+    vmin, vmax = (v0, v1) if v0 <= v1 else (v1, v0)
+    for u, v in corners:
+        if u < umin - 1e-9 or u > umax + 1e-9 or v < vmin - 1e-9 or v > vmax + 1e-9:
+            raise ArtworkApplyError("uv rotation escaped rect")
     return {
         "uvRect": {"u0": u0, "v0": v0, "u1": u1, "v1": v1},
         "rotationDeg": rot,

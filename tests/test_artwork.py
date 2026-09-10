@@ -12,18 +12,25 @@ from fox3d.artwork import (
     FIT_CONTAIN,
     FIT_COVER,
     FIT_STRETCH,
+    canonical_final_sampling,
     checkerboard_rgb,
     decode_png_rgb,
+    derived_master_id,
     derive_printable_surfaces,
     effective_dpi,
     final_uv_identity,
+    landmark_grid_rgb,
     master_canvas,
+    master_relation_hash,
+    measure_orientation_parity,
     mm_to_uv,
     placement_payload,
     preview_ready_from_job,
+    quarter_turn_local_corners,
     roundtrip_ok,
     run_artwork_scenario,
     split_master,
+    uv_corners_in_rect,
     uv_to_mm,
     validate_artwork_acceptance_result,
 )
@@ -1008,3 +1015,131 @@ def test_master_seam_round_trip_and_relation_integrity(tmp_path):
     rec["placementHash"] = stable_hash(placement_payload(rec))
     with pytest.raises(ArtworkError, match="masterId"):
         plat.artwork.require_placement(places[2]["placementId"], tenant_id="ta")
+
+
+def test_nonsquare_uv_quarter_turn_stays_in_bounds():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_local_uv", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    rects = [
+        {"u0": 0.0, "v0": 0.375, "u1": 1.0, "v1": 0.625},
+        {"u0": 0.0, "v0": 0.0, "u1": 0.25, "v1": 1.0},
+    ]
+    for uv in rects:
+        for rot in (0.0, 90.0, 180.0, 270.0):
+            for mirrored in (False, True):
+                got = canonical_final_sampling(uv, rotation_deg=rot, mirrored=mirrored)
+                assert uv_corners_in_rect(got, uv)
+                worker = bj.canonical_uv_mapping(uv, rotation_deg=rot, mirrored=mirrored)
+                for a, b in zip(got, worker["finalSampling"], strict=True):
+                    assert a[0] == pytest.approx(b[0])
+                    assert a[1] == pytest.approx(b[1])
+        acc = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+        for _ in range(4):
+            acc = [(1.0 - t, s) for s, t in acc]
+        assert acc == [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+        with pytest.raises(ArtworkError, match="unsupported rotation"):
+            canonical_final_sampling(uv, rotation_deg=45)
+
+
+def test_orientation_pixel_oracle_contain(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    rgb = landmark_grid_rgb(48, 32)
+    p = tmp_path / "lm.png"
+    write_png(p, 48, 32, rgb)
+    art = plat.artwork.register_artwork(tenant_id="ta", data=p.read_bytes(), source="GENERATED")
+    for key, deg, mir in (("0", 0.0, False), ("90", 90.0, False), ("180", 180.0, False), ("270", 270.0, False), ("mirror", 0.0, True), ("mirror90", 90.0, True)):
+        row = measure_orientation_parity(
+            plat.artwork,
+            tenant_id="ta",
+            surface=doors[0],
+            artwork=art,
+            engineering_hash=cab.engineering_hash(),
+            product_id=cab.productId,
+            rotation_deg=deg,
+            mirrored=mir,
+            src_rgb=rgb,
+            src_w=48,
+            src_h=32,
+        )
+        assert row["status"] == "PASS", key
+        assert row["boundsOk"] is True
+
+
+def test_master_id_bound_in_relation_hash(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    doors.sort(key=lambda s: float(s["origin"]["xMm"]))
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    master, _crops, places = plat.artwork.place_across_panels(
+        tenant_id="ta",
+        artwork_id=art["artworkId"],
+        surfaces=doors,
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    rel = plat.artwork.masters[master["masterHash"]]
+    assert rel["masterId"] == derived_master_id(rel)
+    plat.artwork.produce_panel(
+        tenant_id="ta",
+        placement_id=places[0]["placementId"],
+        placement_hash=places[0]["placementHash"],
+        engineering_hash=cab.engineering_hash(),
+    )
+    rel["masterId"] = "other-id"
+    with pytest.raises(ArtworkError, match="masterId|relationHash"):
+        plat.artwork.require_placement(places[0]["placementId"], tenant_id="ta")
+    rel["masterId"] = "other-id"
+    rel["relationHash"] = master_relation_hash(rel)
+    for p in places:
+        rec = plat.artwork.placements[p["placementId"]]
+        rec["masterId"] = "other-id"
+        rec["placementHash"] = stable_hash(placement_payload(rec))
+    with pytest.raises(ArtworkError, match="masterId"):
+        plat.artwork.require_placement(places[1]["placementId"], tenant_id="ta")
+
+
+def test_validator_required_scenarios_fail_closed(tmp_path):
+    plat = _plat(tmp_path)
+    result = run_artwork_scenario(plat, tenant_a="ta", tenant_b="tb")
+    assert validate_artwork_acceptance_result(result) == []
+    for name in ("cabinet4Single", "containCenter", "coverAnchor", "orientationParity", "masterSeam"):
+        missing = dict(result)
+        missing["scenarios"] = dict(result["scenarios"])
+        missing["scenarios"].pop(name, None)
+        assert f"missing_{name}" in validate_artwork_acceptance_result(missing)
+        empty = dict(result)
+        empty["scenarios"] = dict(result["scenarios"])
+        empty["scenarios"][name] = {}
+        assert f"missing_{name}" in validate_artwork_acceptance_result(empty)
+        badtype = dict(result)
+        badtype["scenarios"] = dict(result["scenarios"])
+        badtype["scenarios"][name] = []
+        assert f"missing_{name}" in validate_artwork_acceptance_result(badtype)
+    neg = dict(result)
+    neg["negatives"] = dict(result["negatives"])
+    neg["negatives"]["forged_preview_art"] = "passed"
+    assert "negative_forged_preview_art" in validate_artwork_acceptance_result(neg)
+    neg2 = dict(result)
+    neg2["negatives"] = dict(result["negatives"])
+    neg2["negatives"].pop("missing_masterId")
+    assert "negative_missing_masterId" in validate_artwork_acceptance_result(neg2)
+    orient = dict(result)
+    orient["scenarios"] = dict(result["scenarios"])
+    op = dict(result["scenarios"]["orientationParity"])
+    op.pop("180", None)
+    op.pop("270", None)
+    op.pop("mirror", None)
+    orient["scenarios"]["orientationParity"] = op
+    fails = validate_artwork_acceptance_result(orient)
+    assert "orientation_180" in fails
+    assert "orientation_270" in fails
+    assert "orientation_mirror" in fails

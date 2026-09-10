@@ -552,6 +552,49 @@ _APPLIED_IDENTITY_KEYS = (
 )
 
 
+UV_BOUNDS_EPS = 1e-9
+_ORIENTATION_CASES = (
+    ("0", 0.0, False),
+    ("90", 90.0, False),
+    ("180", 180.0, False),
+    ("270", 270.0, False),
+    ("mirror", 0.0, True),
+    ("mirror90", 90.0, True),
+)
+
+
+def quarter_turn_local_corners(*, rotation_deg: float = 0.0, mirrored: bool = False) -> list[tuple[float, float]]:
+    """Quarter-turn CCW in unit square, then optional mirror local-X. Matches production orient_rgb."""
+    rot = float(rotation_deg or 0.0) % 360.0
+    if rot not in {0.0, 90.0, 180.0, 270.0}:
+        raise ArtworkError("BLOCKED", "unsupported rotation")
+    pts = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+    steps = int(rot // 90.0)
+    for _ in range(steps):
+        pts = [(1.0 - t, s) for s, t in pts]
+    if mirrored:
+        pts = [(1.0 - s, t) for s, t in pts]
+    return pts
+
+
+def map_local_corners_to_uv(pts: list[tuple[float, float]], uv_rect: dict[str, Any]) -> list[list[float]]:
+    u0 = float(uv_rect["u0"])
+    v0 = float(uv_rect["v0"])
+    u1 = float(uv_rect["u1"])
+    v1 = float(uv_rect["v1"])
+    return [[u0 + s * (u1 - u0), v0 + t * (v1 - v0)] for s, t in pts]
+
+
+def uv_corners_in_rect(corners: list[Any], uv_rect: dict[str, Any], *, eps: float = UV_BOUNDS_EPS) -> bool:
+    u0, u1 = sorted((float(uv_rect["u0"]), float(uv_rect["u1"])))
+    v0, v1 = sorted((float(uv_rect["v0"]), float(uv_rect["v1"])))
+    for pair in corners:
+        u, v = float(pair[0]), float(pair[1])
+        if u < u0 - eps or u > u1 + eps or v < v0 - eps or v > v1 + eps:
+            return False
+    return True
+
+
 def canonical_final_sampling(
     uv_rect: dict[str, Any],
     *,
@@ -570,14 +613,11 @@ def canonical_final_sampling(
     rot = float(rotation_deg or 0.0) % 360.0
     if rot not in {0.0, 90.0, 180.0, 270.0}:
         raise ArtworkError("BLOCKED", "unsupported rotation")
-    cx, cy = (u0 + u1) / 2.0, (v0 + v1) / 2.0
-    corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
-    steps = int(rot // 90.0)
-    for _ in range(steps):
-        corners = [(cx - (y - cy), cy + (x - cx)) for x, y in corners]
-    if mirrored:
-        corners = [(u0 + u1 - x, y) for x, y in corners]
-    return [[float(x), float(y)] for x, y in corners]
+    pts = quarter_turn_local_corners(rotation_deg=rot, mirrored=bool(mirrored))
+    corners = map_local_corners_to_uv(pts, {"u0": u0, "v0": v0, "u1": u1, "v1": v1})
+    if not uv_corners_in_rect(corners, {"u0": u0, "v0": v0, "u1": u1, "v1": v1}):
+        raise ArtworkError("BLOCKED", "uv rotation escaped rect")
+    return corners
 
 
 def final_uv_identity(
@@ -759,7 +799,151 @@ def production_transform(
     return {**payload, "transformHash": stable_hash(payload)}
 
 
+def landmark_grid_rgb(width: int = 48, height: int = 32) -> bytes:
+    buf = bytearray(width * height * 3)
+    for i in range(0, len(buf), 3):
+        buf[i : i + 3] = (80, 80, 80)
+    marks = (
+        (0, 0, (220, 30, 30)),
+        (width - 8, 0, (30, 180, 40)),
+        (0, height - 8, (30, 80, 220)),
+        (width - 8, height - 8, (230, 200, 20)),
+        (width // 2 - 4, height // 2 - 4, (200, 40, 200)),
+    )
+    for x0, y0, color in marks:
+        for y in range(y0, min(height, y0 + 8)):
+            for x in range(x0, min(width, x0 + 8)):
+                i = (y * width + x) * 3
+                buf[i : i + 3] = color
+    return bytes(buf)
+
+
+def _rgb_at_buf(rgb: bytes, width: int, height: int, x: int, y: int) -> tuple[int, int, int]:
+    x = min(width - 1, max(0, int(x)))
+    y = min(height - 1, max(0, int(y)))
+    i = (y * width + x) * 3
+    return (rgb[i], rgb[i + 1], rgb[i + 2])
+
+
+def _rgb_close(a: tuple[int, int, int], b: tuple[int, int, int], *, tol: int = 48) -> bool:
+    return all(abs(int(a[i]) - int(b[i])) <= tol for i in range(3))
+
+
+def sample_uv_source(u: float, v: float, uv_rect: dict[str, Any], rgb: bytes, sw: int, sh: int) -> tuple[int, int, int]:
+    u0 = float(uv_rect["u0"])
+    v0 = float(uv_rect["v0"])
+    u1 = float(uv_rect["u1"])
+    v1 = float(uv_rect["v1"])
+    du = u1 - u0
+    dv = v1 - v0
+    s = 0.0 if abs(du) < 1e-12 else (float(u) - u0) / du
+    t = 0.0 if abs(dv) < 1e-12 else (float(v) - v0) / dv
+    s = min(1.0, max(0.0, s))
+    t = min(1.0, max(0.0, t))
+    sx = s * (sw - 1)
+    sy = (1.0 - t) * (sh - 1)
+    return _rgb_at_buf(rgb, sw, sh, round(sx), round(sy))
+
+
+def sample_placed_corners(
+    rgb: bytes,
+    pw: int,
+    ph: int,
+    *,
+    placed: dict[str, Any],
+    surface: dict[str, Any],
+    inset_mm: float = 2.0,
+) -> dict[str, tuple[int, int, int]]:
+    sw = float(surface["widthMm"])
+    sh = float(surface["heightMm"])
+    x0 = float(placed["xMm"]) + inset_mm
+    y0 = float(placed["yMm"]) + inset_mm
+    x1 = float(placed["xMm"]) + float(placed["widthMm"]) - inset_mm
+    y1 = float(placed["yMm"]) + float(placed["heightMm"]) - inset_mm
+
+    def to_px(xmm: float, ymm: float) -> tuple[int, int]:
+        x = int(round(xmm * pw / sw))
+        y = int(round((sh - ymm) * ph / sh))
+        return x, y
+
+    bl, br, tr, tl = to_px(x0, y0), to_px(x1, y0), to_px(x1, y1), to_px(x0, y1)
+    return {
+        "BL": _rgb_at_buf(rgb, pw, ph, *bl),
+        "BR": _rgb_at_buf(rgb, pw, ph, *br),
+        "TR": _rgb_at_buf(rgb, pw, ph, *tr),
+        "TL": _rgb_at_buf(rgb, pw, ph, *tl),
+    }
+
+
+def measure_orientation_parity(
+    factory: Any,
+    *,
+    tenant_id: str,
+    surface: dict[str, Any],
+    artwork: dict[str, Any],
+    engineering_hash: str,
+    product_id: str,
+    rotation_deg: float,
+    mirrored: bool,
+    src_rgb: bytes,
+    src_w: int,
+    src_h: int,
+) -> dict[str, Any]:
+    rec = factory.place(
+        tenant_id=tenant_id,
+        surface_id=surface["surfaceId"],
+        artwork_id=artwork["artworkId"],
+        engineering_hash=engineering_hash,
+        product_id=product_id,
+        fit=FIT_CONTAIN,
+        anchor="CENTER",
+        rotation_deg=rotation_deg,
+        mirrored=mirrored,
+    )
+    prod = factory.produce_panel(
+        tenant_id=tenant_id,
+        placement_id=rec["placementId"],
+        placement_hash=rec["placementHash"],
+        engineering_hash=engineering_hash,
+    )
+    live = factory.require_placement(rec["placementId"], tenant_id=tenant_id)
+    ident = factory.applied_identity(live)
+    sampling = ident.get("finalSampling") or []
+    uv_rect = ident.get("uvRect") or rec.get("uv") or {}
+    labels = ("BL", "BR", "TR", "TL")
+    expected = {}
+    for i, name in enumerate(labels):
+        u, v = sampling[i]
+        expected[name] = list(sample_uv_source(u, v, uv_rect, src_rgb, src_w, src_h))
+    dest = Path(factory.platform.root) / "artwork-out" / f"{surface['surfaceId']}.png"
+    _pw, _ph, prgb = decode_png_rgb(dest.read_bytes())
+    observed_t = sample_placed_corners(
+        prgb,
+        _pw,
+        _ph,
+        placed=prod.get("placedArtworkMm") or rec,
+        surface=surface,
+    )
+    observed = {k: list(v) for k, v in observed_t.items()}
+    bounds_ok = uv_corners_in_rect(sampling, uv_rect)
+    match = bounds_ok and all(_rgb_close(tuple(expected[k]), tuple(observed[k])) for k in labels)
+    if not match:
+        prod["productionArtworkFileReady"] = False
+    return {
+        "rotationDeg": float(rotation_deg),
+        "mirrored": bool(mirrored),
+        "uvRect": uv_rect,
+        "boundsOk": bounds_ok,
+        "expected": expected,
+        "observed": observed,
+        "finalUvHash": ident.get("finalUvHash"),
+        "transformHash": prod.get("transformHash"),
+        "status": "PASS" if match else "BLOCK",
+    }
+
+
 _MASTER_RELATION_FIELDS = (
+    "masterId",
     "masterHash",
     "tenantId",
     "productId",
@@ -774,6 +958,10 @@ _MASTER_RELATION_FIELDS = (
     "seamSource",
     "cropGeometry",
 )
+
+
+def derived_master_id(rel: dict[str, Any]) -> str:
+    return stable_hash({k: rel.get(k) for k in _MASTER_RELATION_FIELDS if k != "masterId"})
 
 
 def master_relation_hash(rel: dict[str, Any]) -> str:
@@ -1055,6 +1243,7 @@ class ArtworkFactory:
         width_mm: float | None = None,
         height_mm: float | None = None,
         rotation_deg: float = 0.0,
+        mirrored: bool | None = None,
         anchor: str = "BOTTOM_LEFT",
         fit: str = FIT_CONTAIN,
         protected_regions: list[dict[str, Any]] | None = None,
@@ -1111,7 +1300,7 @@ class ArtworkFactory:
             "candidateId": surface.get("candidateId"),
             "version": surface.get("version"),
             "objectName": surface.get("objectName") or surface.get("componentId"),
-            "mirrored": bool(surface.get("mirrored")),
+            "mirrored": bool(surface.get("mirrored") if mirrored is None else mirrored),
             "engineeringHash": surface["engineeringHash"],
             "surfaceId": surface["surfaceId"],
             "surfaceHash": surface["surfaceHash"],
@@ -1168,7 +1357,6 @@ class ArtworkFactory:
         crops = split_master(master)
         canonical_ids = [p["surfaceId"] for p in master["panels"]]
         relation = {
-            "masterId": new_id(),
             "masterHash": master["masterHash"],
             "tenantId": master["tenantId"],
             "productId": master["productId"],
@@ -1183,6 +1371,7 @@ class ArtworkFactory:
             "seamSource": master.get("seamSource"),
             "cropGeometry": [c.get("cropMm") for c in crops],
         }
+        relation["masterId"] = derived_master_id(relation)
         relation["relationHash"] = master_relation_hash(relation)
         stored_master = self._store_master(relation)
         rows: list[dict[str, Any]] = []
@@ -1266,6 +1455,8 @@ class ArtworkFactory:
             raise ArtworkError("BLOCKED", "master relation missing")
         if rec.get("relationHash") != master_relation_hash(rec):
             raise ArtworkError("BLOCKED", "forged relationHash")
+        if rec.get("masterId") != derived_master_id(rec):
+            raise ArtworkError("BLOCKED", "forged masterId")
         if rec.get("tenantId") != tenant_id:
             raise ArtworkError("BLOCKED", "cross-tenant master")
         if product_id and rec.get("productId") != product_id:
@@ -1881,6 +2072,7 @@ _REQUIRED_NEGATIVES = {
     "forged_artwork_path": "BLOCKED",
     "master_relation": "BLOCKED",
     "missing_masterId": "BLOCKED",
+    "master_id_coordinated": "BLOCKED",
 }
 
 
@@ -1977,8 +2169,15 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
                 continue
             if not _shader_identity(row):
                 failures.append("double_uv")
-    single = scenarios.get("cabinet4Single") if isinstance(scenarios.get("cabinet4Single"), dict) else {}
-    if single:
+    def _need(name: str) -> dict[str, Any] | None:
+        row = scenarios.get(name)
+        if not isinstance(row, dict) or not row:
+            failures.append(f"missing_{name}")
+            return None
+        return row
+
+    single = _need("cabinet4Single")
+    if single is not None:
         if single.get("relation") != "SINGLE_SURFACE":
             failures.append("single_relation")
         if single.get("masterHash") not in {None, ""}:
@@ -1987,27 +2186,41 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
         if int(crop.get("x") or 0) != 0:
             failures.append("single_quarter")
         out_mm = single.get("outputPhysicalMm") if isinstance(single.get("outputPhysicalMm"), dict) else {}
-        if out_mm and float(out_mm.get("widthMm") or 0) <= 0:
+        if float(out_mm.get("widthMm") or 0) <= 0:
             failures.append("single_physical")
-    contain = scenarios.get("containCenter") if isinstance(scenarios.get("containCenter"), dict) else {}
-    if contain:
+    contain = _need("containCenter")
+    if contain is not None:
         placed = contain.get("placedMm") if isinstance(contain.get("placedMm"), dict) else {}
         canvas = contain.get("outputPhysicalMm") if isinstance(contain.get("outputPhysicalMm"), dict) else {}
-        if float(placed.get("heightMm") or 0) <= 0 or float(canvas.get("heightMm") or 0) <= float(placed.get("heightMm") or 0):
+        if not placed or not canvas:
+            failures.append("contain_letterbox")
+        elif float(placed.get("heightMm") or 0) <= 0 or float(canvas.get("heightMm") or 0) <= float(placed.get("heightMm") or 0):
             failures.append("contain_letterbox")
         if not contain.get("transformHash") or not contain.get("finalUvHash"):
             failures.append("contain_transform")
         if int(contain.get("pixelWidth") or 0) <= int(placed.get("widthMm") or 0):
             failures.append("contain_canvas")
-    cover = scenarios.get("coverAnchor") if isinstance(scenarios.get("coverAnchor"), dict) else {}
-    if cover and int(cover.get("leftSourceXPx") or 0) >= int(cover.get("rightSourceXPx") or 0):
-        failures.append("cover_anchor")
-    rotp = scenarios.get("rotationParity") if isinstance(scenarios.get("rotationParity"), dict) else {}
-    if rotp and (float(rotp.get("rotationDeg") or 0) != 90.0 or not rotp.get("finalUvHash")):
-        failures.append("rotation_parity")
-    seam = scenarios.get("masterSeam") if isinstance(scenarios.get("masterSeam"), dict) else {}
-    if seam and (abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True):
-        failures.append("master_seam")
+    cover = _need("coverAnchor")
+    if cover is not None:
+        if int(cover.get("leftSourceXPx") or 0) >= int(cover.get("rightSourceXPx") or 0):
+            failures.append("cover_anchor")
+    rotp = _need("orientationParity")
+    if rotp is not None:
+        for key, _deg, _mir in _ORIENTATION_CASES:
+            row = rotp.get(key)
+            if not isinstance(row, dict) or not row:
+                failures.append(f"orientation_{key}")
+                continue
+            if row.get("status") != "PASS":
+                failures.append(f"orientation_{key}")
+            if not row.get("boundsOk") or not row.get("expected") or not row.get("observed"):
+                failures.append(f"orientation_{key}_oracle")
+            if not row.get("uvRect") or not row.get("finalUvHash"):
+                failures.append(f"orientation_{key}_uv")
+    seam = _need("masterSeam")
+    if seam is not None:
+        if abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True:
+            failures.append("master_seam")
     if preview.get("status") in {"completed", "succeeded"} or preview.get("realBlender") is True:
         if preview.get("artworkApplied") is not True:
             failures.append("preview_missing_artworkApplied")
@@ -2246,6 +2459,32 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         negatives["missing_masterId"] = "BLOCKED"
     rec_mid["masterId"] = orig_mid
     rec_mid["placementHash"] = stable_hash(placement_payload(rec_mid))
+    rel_coord = factory.masters.get(master4["masterHash"])
+    if rel_coord is not None:
+        orig_rel_id = rel_coord.get("masterId")
+        orig_rel_hash = rel_coord.get("relationHash")
+        fake_id = "tampered-master-id"
+        rel_coord["masterId"] = fake_id
+        rel_coord["relationHash"] = master_relation_hash(rel_coord)
+        saved_places = []
+        for p in places4:
+            row = factory.placements[p["placementId"]]
+            saved_places.append((p["placementId"], row.get("masterId"), row.get("placementHash")))
+            row["masterId"] = fake_id
+            row["placementHash"] = stable_hash(placement_payload(row))
+        try:
+            factory.require_placement(places4[0]["placementId"], tenant_id=tenant_a)
+            negatives["master_id_coordinated"] = "passed"
+        except ArtworkError:
+            negatives["master_id_coordinated"] = "BLOCKED"
+        rel_coord["masterId"] = orig_rel_id
+        rel_coord["relationHash"] = orig_rel_hash
+        for pid, mid, ph in saved_places:
+            row = factory.placements[pid]
+            row["masterId"] = mid
+            row["placementHash"] = ph
+    else:
+        negatives["master_id_coordinated"] = "BLOCKED"
     contain_center = factory.place(
         tenant_id=tenant_a,
         surface_id=doors4[0]["surfaceId"],
@@ -2279,22 +2518,25 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         fit=FIT_COVER,
         anchor="BOTTOM_RIGHT",
     )
-    rot_place = factory.place(
-        tenant_id=tenant_a,
-        surface_id=doors4[3]["surfaceId"],
-        artwork_id=art["artworkId"],
-        engineering_hash=cab4.engineering_hash(),
-        product_id=cab4.productId,
-        fit=FIT_CONTAIN,
-        anchor="CENTER",
-        rotation_deg=90,
-    )
-    rot_prod = factory.produce_panel(
-        tenant_id=tenant_a,
-        placement_id=rot_place["placementId"],
-        placement_hash=rot_place["placementHash"],
-        engineering_hash=cab4.engineering_hash(),
-    )
+    lm_rgb = landmark_grid_rgb(48, 32)
+    lm_path = Path(plat.root) / "landmark-art.png"
+    write_png(lm_path, 48, 32, lm_rgb)
+    lm_art = factory.register_artwork(tenant_id=tenant_a, data=lm_path.read_bytes(), name="landmark.png", source="GENERATED")
+    orientation = {}
+    for key, deg, mir in _ORIENTATION_CASES:
+        orientation[key] = measure_orientation_parity(
+            factory,
+            tenant_id=tenant_a,
+            surface=doors4[3],
+            artwork=lm_art,
+            engineering_hash=cab4.engineering_hash(),
+            product_id=cab4.productId,
+            rotation_deg=deg,
+            mirrored=mir,
+            src_rgb=lm_rgb,
+            src_w=48,
+            src_h=32,
+        )
     seam_master, _seam_crops, seam_places = factory.place_across_panels(
         tenant_id=tenant_a,
         artwork_id=art["artworkId"],
@@ -2347,8 +2589,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         and contain_prod.get("canvasPx", {}).get("w") == contain_prod.get("pixelWidth")
         and float((contain_prod.get("placedArtworkMm") or {}).get("heightMm") or 0) < float(doors4[0]["heightMm"])
         and int((cover_left.get("crop") or {}).get("sourceXPx") or 0) < int((cover_right.get("crop") or {}).get("sourceXPx") or 0)
-        and rot_prod.get("rotationDeg") == 90.0
-        and rot_prod.get("finalUvHash")
+        and all(orientation.get(k, {}).get("status") == "PASS" for k, _d, _m in _ORIENTATION_CASES)
         and abs(float(seam_master.get("seamMm") or 0) - 25.0) < MM_EPS
         and seam_prod.get("productionArtworkFileReady") is True
         and all(row.get("artworkSha256") for row in payload.get("artworkPlacements") or [])
@@ -2430,11 +2671,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
                 "leftSourceXPx": (cover_left.get("crop") or {}).get("sourceXPx"),
                 "rightSourceXPx": (cover_right.get("crop") or {}).get("sourceXPx"),
             },
-            "rotationParity": {
-                "rotationDeg": rot_prod.get("rotationDeg"),
-                "finalUvHash": rot_prod.get("finalUvHash"),
-                "transformHash": rot_prod.get("transformHash"),
-            },
+            "orientationParity": orientation,
             "masterSeam": {
                 "seamMm": seam_master.get("seamMm"),
                 "seamSource": seam_master.get("seamSource"),
