@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 721–780 re-gate CODE_EVIDENCE_SHA `83f4fe0`; prior CODE `0ecc1a2` / docs `1a4d4ce` / instruction `7dfdad5`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `7dfdad5`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 721–780 residual authority CODE_EVIDENCE_SHA `f4c2df8`; prior CODE `83f4fe0` / docs `ae791be` / instruction `f4ea94c`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `f4ea94c`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -20,8 +20,12 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Canonical authority | REAL_LOGIC | exact-set batch/unit/carton/labor/QC/material/cost; empty cartons/board fail-closed |
 | HUMAN_BATCH_GO gates | REAL_LOGIC | FINAL QC + qcPlanHash; pack requires measurements/execution chain; MANUAL qty/checklist/DAM |
 | Crash matrix | REAL_LOGIC | subprocess os._exit after-business-persist and after-outbox-complete on create/release/reserve/start/consume/labor/QC/pack/GO |
-| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `de695548…` |
-| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `64077573-…`; CODE `83f4fe0`; 4×5 units; `physicalPilotBatchValidated=false` |
+| MANUAL checklist identity | REAL_LOGIC | exactly one checklist; exact tenant/unit/hash; bogus ID BLOCK; `_carton_packaging_ok` re-resolves |
+| Canonical QC PASS | REAL_LOGIC | sampled FINAL must be PASS + qcPlan/WO/release lineage; FAIL/duplicate fail-closed |
+| Board/decision authority | REAL_LOGIC | DERIVED_READINESS WAITING on fixture; exact one row/batch |
+| Execution completeness | REAL_LOGIC | requested == unit set == start/consume/labor/QC/carton; PLANNED skip fail-closed |
+| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `6fa15cd1…` |
+| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `11ee2235-…`; CODE `f4c2df8`; 4×5 units; `physicalPilotBatchValidated=false` |
 
 ## Phase 661–720 Physical Prototype Evidence & Human Launch Governance V1
 
