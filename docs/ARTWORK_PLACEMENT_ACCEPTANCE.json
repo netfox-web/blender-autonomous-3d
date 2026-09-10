@@ -1,11 +1,11 @@
 {
   "ok": true,
   "label": "FIXTURE/REAL_LOGIC",
-  "acceptanceGenerationId": "e9e36a84-9a9a-48e3-a558-e59dd9c88067",
-  "evidenceCodeCommit": "48869d49a12c594d4ab40097afd0bd51adaf72e0",
+  "acceptanceGenerationId": "6ae08726-2ec8-43ab-b9da-c0fc76974574",
+  "evidenceCodeCommit": "81496b5cf8f63345183bdf69a6f4d1fe972a6ee6",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
-  "generatedAt": "2026-09-10T15:26:24.373099+00:00",
+  "generatedAt": "2026-09-10T16:35:23.729076+00:00",
   "physicalPrintValidated": false,
   "realArtworkPreviewReady": false,
   "surfaceDecorationLogicReady": true,
@@ -37,16 +37,32 @@
       "check": "realArtworkPreviewReady",
       "status": "MOCK",
       "evidence": {
-        "engineeringHash": "700e14733a94679df04e2a929c5bfd8cb07e8b69870c700e644727f6d4b54cf2",
-        "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8",
-        "artworkHash": "004d66ec12d1ef56389a44ead3944ea2c8bd0f35c8b5f8e91e56159aa0655bfa",
-        "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
+        "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+        "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+        "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+        "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64",
         "usedMock": true,
         "realBlender": false,
         "realArtworkPreviewReady": false,
         "physicalPrintValidated": false,
         "label": "MOCK",
-        "productionArtworkFileReady": true
+        "productionArtworkFileReady": true,
+        "jobPayload": {
+          "hasEngineering": true,
+          "objectName": "DOOR_1",
+          "uvRect": {
+            "u0": 0.0,
+            "v0": 0.0,
+            "u1": 0.25,
+            "v1": 1.0
+          },
+          "hashes": {
+            "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+            "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+            "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+            "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64"
+          }
+        }
       }
     },
     {
@@ -78,14 +94,61 @@
   "scenarios": {
     "cabinet2": {
       "surfaceIds": [
-        "21468159-51c1-4eed-b3cd-63dbce0513ef",
-        "1c8921cb-d500-492e-87b3-5db01137dec2"
+        "6ca792bd-8a64-4ac4-ac1e-569bfc154015",
+        "8bcc1605-c263-4cb6-b659-09b8b56a2016"
       ],
-      "placementHash": "f319a40fbb413bcc8be720dab064a3c6475c911a23b7fe274a378f389aa23118"
+      "panelCrops": [
+        {
+          "xMm": 0.0,
+          "yMm": 0.0,
+          "widthMm": 400.0,
+          "heightMm": 1800.0
+        },
+        {
+          "xMm": 400.0,
+          "yMm": 0.0,
+          "widthMm": 400.0,
+          "heightMm": 1800.0
+        }
+      ],
+      "placementHash": "152bf170f1d719604b584a2a1fa16dc3f9002ebd0f236690f3811e0063342638"
+    },
+    "cabinet3": {
+      "surfaceIds": [
+        "e541c76f-9659-478b-abc5-02948305d368",
+        "7ee9db25-2971-4955-95bb-98c69fcafb6c",
+        "8a38c75b-4857-4760-a804-41840f468eb2"
+      ],
+      "panelCrops": [
+        {
+          "xMm": 0.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        },
+        {
+          "xMm": 600.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        },
+        {
+          "xMm": 1200.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        }
+      ],
+      "placementHashes": [
+        "45c91ce00aa92e3987b0009494234e8154e17a43901c50fde5f873a5f341ba6e",
+        "34bd9848f3149d6903647663a2c430529655b4661a4bb43cc7067f33346f46ee",
+        "e6ac8357738e3c254a16bc6b97fba968068d997c42d916122818882a791cfd10"
+      ]
     },
     "cabinet4": {
-      "masterHash": "86d596e84b3998c1679f6cdef0733641b24e7b2112d5484156dd726354481555",
+      "masterHash": "2098061926b9574d96d941c8c53760c02e5a271cb591e31a494fc574c3cf369d",
       "widthMm": 2400.0,
+      "seamSource": "ENGINEERING",
       "panelCrops": [
         {
           "xMm": 0.0,
@@ -113,62 +176,384 @@
         }
       ],
       "placementHashes": [
-        "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
-        "7b3cbc87f4ad8d5868d891ac4a740fcf227ebe7f77160cf2ca324cf6429f8f05",
-        "d6ecc9365e90658a53217ef108f51b3345d979bc966b28183656529fe49f5d20",
-        "974c06a42bc7391b58e38bbef9fd67835cdd41dc5083ff5715515409182a6cfe"
+        "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64",
+        "caee9b952b025ec6471e4423148103c1e0db8c0ee5e39ee79f4e3881d95d3472",
+        "67a5c3457b369673263433e9c4af3b31b5dcd822b430d85039bdf6dc00015183",
+        "53b5c3318516c1d64e60d584a1d85d6a1625ef4f9fb2aed2d7ceb3509e91f9ee"
       ],
       "production": [
         {
           "sha256": "0656d647ca4a9378ce265315f48acfd600b2bbb31a612ba81f9ac54b9983a9e2",
-          "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
-          "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8"
+          "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64",
+          "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "productionArtworkFileReady": true
         },
         {
           "sha256": "a1fccff63468720591e04ca182a8fdb0633732f6fd33583e7c4c666eda932112",
-          "placementHash": "7b3cbc87f4ad8d5868d891ac4a740fcf227ebe7f77160cf2ca324cf6429f8f05",
-          "surfaceHash": "d22241bc26da25bff257a476e6bcb9a17bc86bc8c4c429630265f6de8917feb3"
+          "placementHash": "caee9b952b025ec6471e4423148103c1e0db8c0ee5e39ee79f4e3881d95d3472",
+          "surfaceHash": "a6ba024acedf4e53d258984268d5d8ebe50aabf9895782154915977dcf6ce89e",
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "productionArtworkFileReady": true
         },
         {
           "sha256": "e23b6f614263ce0f6d69d560b01c97248fbb0993d62abff3f16838a8b9afb97c",
-          "placementHash": "d6ecc9365e90658a53217ef108f51b3345d979bc966b28183656529fe49f5d20",
-          "surfaceHash": "28da6a2482653c55350f24e58e820c724d85f43238e612f10826956e57873e2b"
+          "placementHash": "67a5c3457b369673263433e9c4af3b31b5dcd822b430d85039bdf6dc00015183",
+          "surfaceHash": "9099fe20b5d0eb61ee52e12bd110be8e0fc32bb3a9ec1e9e1b7e312480b96e32",
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "productionArtworkFileReady": true
         },
         {
           "sha256": "d03ac56409721228ca80346c21a7932e0bc4371832f09effced18711439a5f15",
-          "placementHash": "974c06a42bc7391b58e38bbef9fd67835cdd41dc5083ff5715515409182a6cfe",
-          "surfaceHash": "0e68053cf0072775175fa30c56797868e943d83e5d1439a5e766f74b8221c6ca"
+          "placementHash": "53b5c3318516c1d64e60d584a1d85d6a1625ef4f9fb2aed2d7ceb3509e91f9ee",
+          "surfaceHash": "4672b0d50c2d7157362c6d27d77a2be2e5de33f692d03f0cb4ed33f1d42ad5d4",
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "productionArtworkFileReady": true
+        }
+      ],
+      "doorLayout": [
+        {
+          "name": "DOOR_1",
+          "partId": "door_1",
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "thicknessMm": 18.0,
+          "sizeMm": [
+            600.0,
+            18.0,
+            1800.0
+          ],
+          "locMm": [
+            -900.0,
+            -209.0,
+            900.0
+          ],
+          "sizeM": [
+            0.6,
+            0.018,
+            1.8
+          ],
+          "locM": [
+            -0.9,
+            -0.209,
+            0.9
+          ]
+        },
+        {
+          "name": "DOOR_2",
+          "partId": "door_2",
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "thicknessMm": 18.0,
+          "sizeMm": [
+            600.0,
+            18.0,
+            1800.0
+          ],
+          "locMm": [
+            -300.0,
+            -209.0,
+            900.0
+          ],
+          "sizeM": [
+            0.6,
+            0.018,
+            1.8
+          ],
+          "locM": [
+            -0.3,
+            -0.209,
+            0.9
+          ]
+        },
+        {
+          "name": "DOOR_3",
+          "partId": "door_3",
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "thicknessMm": 18.0,
+          "sizeMm": [
+            600.0,
+            18.0,
+            1800.0
+          ],
+          "locMm": [
+            300.0,
+            -209.0,
+            900.0
+          ],
+          "sizeM": [
+            0.6,
+            0.018,
+            1.8
+          ],
+          "locM": [
+            0.3,
+            -0.209,
+            0.9
+          ]
+        },
+        {
+          "name": "DOOR_4",
+          "partId": "door_4",
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "thicknessMm": 18.0,
+          "sizeMm": [
+            600.0,
+            18.0,
+            1800.0
+          ],
+          "locMm": [
+            900.0,
+            -209.0,
+            900.0
+          ],
+          "sizeM": [
+            0.6,
+            0.018,
+            1.8
+          ],
+          "locM": [
+            0.9,
+            -0.209,
+            0.9
+          ]
+        }
+      ],
+      "blenderDoors": [
+        {
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "name": "DOOR_1"
+        },
+        {
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "name": "DOOR_2"
+        },
+        {
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "name": "DOOR_3"
+        },
+        {
+          "widthMm": 600.0,
+          "heightMm": 1800.0,
+          "name": "DOOR_4"
+        }
+      ],
+      "appliedUv": [
+        {
+          "objectName": "DOOR_1",
+          "applied": true,
+          "uvRect": {
+            "u0": 0.0,
+            "v0": 0.0,
+            "u1": 0.25,
+            "v1": 1.0
+          },
+          "rotationDeg": 0.0,
+          "mirrored": false,
+          "corners": [
+            [
+              0.0,
+              0.0
+            ],
+            [
+              0.25,
+              0.0
+            ],
+            [
+              0.25,
+              1.0
+            ],
+            [
+              0.0,
+              1.0
+            ]
+          ],
+          "location": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.25,
+            1.0,
+            1.0
+          ],
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64"
+        },
+        {
+          "objectName": "DOOR_2",
+          "applied": true,
+          "uvRect": {
+            "u0": 0.25,
+            "v0": 0.0,
+            "u1": 0.5,
+            "v1": 1.0
+          },
+          "rotationDeg": 0.0,
+          "mirrored": false,
+          "corners": [
+            [
+              0.25,
+              0.0
+            ],
+            [
+              0.5,
+              0.0
+            ],
+            [
+              0.5,
+              1.0
+            ],
+            [
+              0.25,
+              1.0
+            ]
+          ],
+          "location": [
+            0.25,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.25,
+            1.0,
+            1.0
+          ],
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "surfaceHash": "a6ba024acedf4e53d258984268d5d8ebe50aabf9895782154915977dcf6ce89e",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "placementHash": "caee9b952b025ec6471e4423148103c1e0db8c0ee5e39ee79f4e3881d95d3472"
+        },
+        {
+          "objectName": "DOOR_3",
+          "applied": true,
+          "uvRect": {
+            "u0": 0.5,
+            "v0": 0.0,
+            "u1": 0.75,
+            "v1": 1.0
+          },
+          "rotationDeg": 0.0,
+          "mirrored": false,
+          "corners": [
+            [
+              0.5,
+              0.0
+            ],
+            [
+              0.75,
+              0.0
+            ],
+            [
+              0.75,
+              1.0
+            ],
+            [
+              0.5,
+              1.0
+            ]
+          ],
+          "location": [
+            0.5,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.25,
+            1.0,
+            1.0
+          ],
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "surfaceHash": "9099fe20b5d0eb61ee52e12bd110be8e0fc32bb3a9ec1e9e1b7e312480b96e32",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "placementHash": "67a5c3457b369673263433e9c4af3b31b5dcd822b430d85039bdf6dc00015183"
+        },
+        {
+          "objectName": "DOOR_4",
+          "applied": true,
+          "uvRect": {
+            "u0": 0.75,
+            "v0": 0.0,
+            "u1": 1.0,
+            "v1": 1.0
+          },
+          "rotationDeg": 0.0,
+          "mirrored": false,
+          "corners": [
+            [
+              0.75,
+              0.0
+            ],
+            [
+              1.0,
+              0.0
+            ],
+            [
+              1.0,
+              1.0
+            ],
+            [
+              0.75,
+              1.0
+            ]
+          ],
+          "location": [
+            0.75,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.25,
+            1.0,
+            1.0
+          ],
+          "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+          "surfaceHash": "4672b0d50c2d7157362c6d27d77a2be2e5de33f692d03f0cb4ed33f1d42ad5d4",
+          "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+          "placementHash": "53b5c3318516c1d64e60d584a1d85d6a1625ef4f9fb2aed2d7ceb3509e91f9ee"
         }
       ]
     },
     "desk": {
       "surfaceIds": [
-        "88bf8852-686a-4524-87f6-729ca156730c",
-        "6ac80ea3-4ec9-4b0a-9631-97ba29b48ad6"
+        "5e1fad78-df90-4abe-b2eb-a2c88e3fb6bc",
+        "e58363b4-f253-414b-8ada-880cbf84de17"
       ]
     },
     "retail": {
       "surfaceIds": [
-        "7ce8b7e2-8d15-454b-9ac3-ab8d1357909f",
-        "9e06ead8-d06d-4774-899d-3587d2623448"
+        "9755f676-7f00-48a7-9b2c-17164283d7bf",
+        "d9884595-5226-41ff-8993-f6d66e886c0a"
       ]
     },
     "acrylic": {
       "surfaceIds": [
-        "8d22277c-6838-4d09-b5f2-20a0b878b2e2"
+        "0aaaa4da-0e35-460d-b07e-ef0d158910d5"
       ]
     },
     "packaging": {
       "surfaceIds": [
-        "25cfd1eb-3764-4ba6-9fb6-408d8359343e"
+        "e84c0ac3-72c4-417c-8bc1-3ff0de87ed5a"
       ]
     }
   },
   "lineage": {
-    "engineeringHash": "700e14733a94679df04e2a929c5bfd8cb07e8b69870c700e644727f6d4b54cf2",
-    "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8",
-    "artworkHash": "004d66ec12d1ef56389a44ead3944ea2c8bd0f35c8b5f8e91e56159aa0655bfa",
-    "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4"
+    "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+    "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+    "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+    "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64"
   },
   "negatives": {
     "keepout": "BLOCKED_PLACEMENT",
@@ -177,19 +562,38 @@
     "cross_product": "BLOCKED",
     "tamper": "BLOCKED",
     "stretch": "BLOCKED",
-    "nan": "BLOCKED"
+    "nan": "BLOCKED",
+    "cross_version": "BLOCKED",
+    "forged_production": "BLOCKED",
+    "duplicate": "BLOCKED"
   },
   "preview": {
-    "engineeringHash": "700e14733a94679df04e2a929c5bfd8cb07e8b69870c700e644727f6d4b54cf2",
-    "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8",
-    "artworkHash": "004d66ec12d1ef56389a44ead3944ea2c8bd0f35c8b5f8e91e56159aa0655bfa",
-    "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
+    "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+    "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+    "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+    "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64",
     "usedMock": true,
     "realBlender": false,
     "realArtworkPreviewReady": false,
     "physicalPrintValidated": false,
     "label": "MOCK",
-    "productionArtworkFileReady": true
+    "productionArtworkFileReady": true,
+    "jobPayload": {
+      "hasEngineering": true,
+      "objectName": "DOOR_1",
+      "uvRect": {
+        "u0": 0.0,
+        "v0": 0.0,
+        "u1": 0.25,
+        "v1": 1.0
+      },
+      "hashes": {
+        "engineeringHash": "35f50517995b368c0d8e3ab36c7d2b9ba97b798099d1046d2ccd746728cca323",
+        "surfaceHash": "4c2359115bd0929e3afdcb8415aa4f9d2860acb9f8ec4d86aec75610b88f09bd",
+        "artworkHash": "9b33ffc8e3d300a7697ae3afb8e136969f102a9163b856f20465dddd451baf14",
+        "placementHash": "ed0018c18ab3bd09b45f5059ec0fb95db0dbf99c32ddbfa756181e23caa21f64"
+      }
+    }
   },
   "priorRealBlender": {
     "ok": true,

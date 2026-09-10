@@ -2,37 +2,36 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-10  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a461dcb` (**ACCEPT WITH SCOPE / GO** — Phase 781–840 Artwork Placement)  
-Review head: `0be2da4` / accepted CODE `12ef546`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1fcbc3a` (**CHANGES REQUIRED** — Phase 781–840 artwork parity/authority)  
+Review head: `bbb5ba2` / prior CODE `48869d4`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 781–840 Artwork Placement / Surface Decoration Engine V1**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
+Executed **Phase 781–840 correction-only**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
 
-| Item | What landed |
+| Gap | Fix |
 |---|---|
-| PrintableSurface | Derived from existing engineering components (cabinet door, desktop, retail kick/top, acrylic face, packaging dieline). `surfaceHash` stale after resize. |
-| Artwork + Placement | DAM-backed artwork sha/size/mime/pixels; CONTAIN/COVER; STRETCH forbidden; placementHash deterministic. |
-| mm↔UV | Round-trip ≤ 0.001 mm; NaN/Inf/zero fail-closed. |
-| Keep-out / DPI | Handle/hinge/drill CONFIG keep-outs; important-region collision `BLOCKED_PLACEMENT`; DPI CONFIG 150/72; printPreflight PARTIAL. |
-| 4-door master | 2400×1800 mm, 4×600 mm engineering doors, checkerboard crop continuity, no per-panel stretch. |
-| Production package | PNG + manifest hashed from actual bytes; productionArtworkFileReady=GENERATED/REAL_LOGIC; physicalPrintValidated=false. |
-| Blender | `blender_job.py` consumes canonical UV/hashes only. Mock preview `realArtworkPreviewReady=false`. |
+| Blender door mesh | Uses engineering component width/height/thickness; removed hidden `-0.002m`. Layout compared to PrintableSurface. |
+| Canonical UV | `apply_canonical_artwork()` fail-closed; Mapping node + UV corners from `uvRect`/rotation. Missing object/image/UV BLOCK. |
+| 4-door crop | Panel UV is exact master crop (`0/.25/.5/.75`), not per-door COVER refit. |
+| Production | `produce_panel(placementId)` re-resolves master/split; forged crop/hash BLOCK. |
+| Runner | Full negative matrix; readiness derived not hardcoded; corrupted scenario does not publish. |
+| DPI | min(horizontal, vertical) effective DPI. Rotation 0/90/180/270 only. |
 
-**CODE_EVIDENCE_SHA:** `48869d49a12c594d4ab40097afd0bd51adaf72e0`  
+**CODE_EVIDENCE_SHA:** `81496b5cf8f63345183bdf69a6f4d1fe972a6ee6`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34495629561` on exact `48869d4` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34503006687` on exact `81496b5` ubuntu+windows.
 
-Acceptance generation `e9e36a84-9a9a-48e3-a558-e59dd9c88067`; runner-bound `evidenceCodeCommit=48869d4…`; `workingTreeClean=true`. `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md`. Prior REAL Blender remains scoped `7a87ea5` 4/4 T1000 OptiX — this round's preview is MOCK.
+Acceptance generation `6ae08726-2ec8-43ab-b9da-c0fc76974574`; runner-bound `evidenceCodeCommit=81496b5…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
 
 ## Tests
 
 ```
-pytest -q  →  578 passed   (567 prior + 11 artwork; MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  584 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
-Local Windows `atomic_write_json` PermissionError flakes reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
+Local Windows PermissionError flake reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
@@ -54,8 +53,8 @@ Local Windows `atomic_write_json` PermissionError flakes reran PASS. CI `FOX3D_M
 - LIVE_CNC / LIVE_LASER BLOCKED (`liveMachineControl=false`)
 - Vision/Video/Demand MOCK
 - Fixture batch ≠ physical batch
-- Do not start Phase 781+ until **ACCEPT WITH SCOPE**
-- Artwork Placement / Surface Decoration Engine is queued **after** Re-Gate; not started.
+- Do not start Phase 841+ until ChatGPT Re-Gate says GO
+- Artwork Placement V1 is in correction/Re-Gate; not Production Ready; no REAL artwork OptiX this round
 
 ## Next round
 

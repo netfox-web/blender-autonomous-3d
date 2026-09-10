@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Artwork Placement CODE_EVIDENCE_SHA `48869d4`; prior Phase 721–780 CODE `12ef546` / instruction `a461dcb`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a461dcb`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 correction CODE_EVIDENCE_SHA `81496b5`; prior `48869d4` / instruction `1fcbc3a`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1fcbc3a`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -17,9 +17,11 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Keep-out / DPI | CONFIG / PARTIAL | handle/hinge CONFIG; DPI policy CONFIG 150/72; printPreflight PARTIAL |
 | 4-door master | REAL_LOGIC | 2400×1800 / 4×600 engineering; crop continuity |
 | Production artwork | REAL_LOGIC / GENERATED | PNG+manifest byte hash; not physical print |
-| Blender preview | MOCK | mock_blender usedMock=true; realArtworkPreviewReady=false |
+| Blender preview | MOCK | apply_canonical_artwork consumes uvRect; mock usedMock=true; realArtworkPreviewReady=false |
+| Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
+| Production authority | REAL_LOGIC | placementId re-resolve; forged crop/hash BLOCK |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `e9e36a84-…`; CODE `48869d4` |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `6ae08726-…`; CODE `81496b5` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
