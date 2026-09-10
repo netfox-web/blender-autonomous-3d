@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 721–780 CODE_EVIDENCE_SHA `0ecc1a2`; prior CODE `7060037` / docs `d3f4694` / instruction `982d898`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `982d898`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 721–780 re-gate CODE_EVIDENCE_SHA `83f4fe0`; prior CODE `0ecc1a2` / docs `1a4d4ce` / instruction `7dfdad5`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `7dfdad5`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -17,8 +17,11 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Packing / cartons | REAL_LOGIC | unique unit-to-carton; shipment DRAFT; no booked carrier |
 | Batch cost | PARTIAL on fixture | four money fields without packaging qty stay PARTIAL |
 | Human batch board | REAL_LOGIC | WAITING_HUMAN_EVIDENCE on fixture; HUMAN_BATCH_GO blocked |
-| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `c76e144c…` |
-| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `8c6aa9d1-…`; CODE `0ecc1a2`; 4×5 units; `physicalPilotBatchValidated=false` |
+| Canonical authority | REAL_LOGIC | exact-set batch/unit/carton/labor/QC/material/cost; empty cartons/board fail-closed |
+| HUMAN_BATCH_GO gates | REAL_LOGIC | FINAL QC + qcPlanHash; pack requires measurements/execution chain; MANUAL qty/checklist/DAM |
+| Crash matrix | REAL_LOGIC | subprocess os._exit after-business-persist and after-outbox-complete on create/release/reserve/start/consume/labor/QC/pack/GO |
+| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `de695548…` |
+| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `64077573-…`; CODE `83f4fe0`; 4×5 units; `physicalPilotBatchValidated=false` |
 
 ## Phase 661–720 Physical Prototype Evidence & Human Launch Governance V1
 
