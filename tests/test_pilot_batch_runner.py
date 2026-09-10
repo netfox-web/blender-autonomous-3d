@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from fox3d.evidence import prepare_evidence_lineage
+from fox3d.ids import stable_hash
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "c" * 40
@@ -47,7 +48,14 @@ def _passing(plat):
     materials = []
     costs = []
     board_rows = []
+    bom_auth = []
+    checklist_auth = []
     for i in range(4):
+        bom_lines = [
+            {"partId": "hw", "quantity": 4, "hardware": True},
+            {"partId": "panel", "quantity": 6, "hardware": False},
+        ]
+        bom_hash = stable_hash(bom_lines)
         bid = f"b{i}"
         wo = f"wo{i}"
         rel = f"rel{i}"
@@ -120,7 +128,7 @@ def _passing(plat):
                 "prototypeUnitId": f"pu{i}",
                 "engineeringHash": f"e{i}",
                 "canonicalHash": f"h{i}",
-                "bomHash": f"bom{i}",
+                "bomHash": bom_hash,
                 "nestingHash": f"n{i}",
                 "rankingPolicyHash": "p" * 64,
                 "releaseId": rel,
@@ -261,6 +269,29 @@ def _passing(plat):
                 "blockers": ["cost_partial", "fixture_evidence"],
             }
         )
+        bom_auth.append(
+            {
+                "tenantId": "pa",
+                "candidateId": f"c{i}",
+                "engineeringHash": f"e{i}",
+                "bomHash": bom_hash,
+                "lines": copy.deepcopy(bom_lines),
+                "hardwareExpected": 4,
+                "partExpected": 6,
+            }
+        )
+        checklist_auth.append(
+            {
+                "checklistId": f"ck{i}",
+                "tenantId": "pa",
+                "prototypeUnitId": f"pu{i}",
+                "engineeringHash": f"e{i}",
+                "packagingQty": None,
+                "source": "MISSING",
+                "truthLabel": "FIXTURE",
+                "damRefs": [],
+            }
+        )
     decisions = [
         {
             "decisionId": f"derived:{b['batchId']}",
@@ -299,6 +330,8 @@ def _passing(plat):
         "costs": copy.deepcopy(costs),
         "decisions": copy.deepcopy(decisions),
         "workOrders": copy.deepcopy(work_orders),
+        "bomAuthority": copy.deepcopy(bom_auth),
+        "packagingChecklistAuthority": copy.deepcopy(checklist_auth),
     }
     return {
         "ok": True,
@@ -920,5 +953,238 @@ def test_pilot_batch_runner_carton_blank_source(tmp_path):
         body["cartons"][0]["truthLabel"] = ""
         body["batchAuthority"]["cartons"][0]["source"] = ""
         body["batchAuthority"]["cartons"][0]["truthLabel"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def _cost_lineages(body):
+    return (
+        body["batches"][0]["cost"]["quantityLineage"],
+        body["batchAuthority"]["costs"][0]["quantityLineage"],
+    )
+
+
+def test_pilot_batch_runner_coordinated_fake_hardware_vs_bom(tmp_path):
+    def mutate(body):
+        for carton in (body["cartons"][0], body["batchAuthority"]["cartons"][0]):
+            carton["hardwareExpected"] = 9
+            carton["hardwareObserved"] = 9
+        for lin in _cost_lineages(body):
+            lin["hardwareExpected"] = 9
+            lin["hardwareObserved"] = 9
+            lin["sources"]["hardwareQty"] = "BOM"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_coordinated_fake_part_vs_bom(tmp_path):
+    def mutate(body):
+        for carton in (body["cartons"][0], body["batchAuthority"]["cartons"][0]):
+            carton["partExpected"] = 99
+            carton["partObserved"] = 99
+        for lin in _cost_lineages(body):
+            lin["sources"]["hardwareQty"] = "BOM"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_source_missing_hardware_expected(tmp_path):
+    def mutate(body):
+        for lin in _cost_lineages(body):
+            lin["sources"]["hardwareQty"] = "BOM"
+            lin["hardwareExpected"] = None
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_source_missing_hardware_observed(tmp_path):
+    def mutate(body):
+        for lin in _cost_lineages(body):
+            lin["sources"]["hardwareQty"] = "BOM"
+            lin["hardwareObserved"] = None
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_missing_bom_authority(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"] = []
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_duplicate_bom_authority(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"].append(copy.deepcopy(body["batchAuthority"]["bomAuthority"][0]))
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_cross_tenant(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"][0]["tenantId"] = "pb"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_wrong_candidate(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"][0]["candidateId"] = "other-cand"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_wrong_engineering_hash(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"][0]["engineeringHash"] = "other-eng"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_wrong_hash(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"][0]["bomHash"] = "other-bom-hash"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bom_lines_hash_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["bomAuthority"][0]["lines"][0]["quantity"] = 99
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_coordinated_fake_checklist(tmp_path):
+    def mutate(body):
+        for carton in (body["cartons"][0], body["batchAuthority"]["cartons"][0]):
+            carton["checklistId"] = "fake-ck"
+            carton["packagingQty"] = 3
+        for lin in _cost_lineages(body):
+            lin["sources"]["packagingQty"] = "PACKAGING_CHECKLIST"
+            lin["packagingQty"] = 3
+            lin["ok"] = True
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_checklist_missing_from_authority(tmp_path):
+    def mutate(body):
+        body["cartons"][0]["checklistId"] = "ghost-ck"
+        body["batchAuthority"]["cartons"][0]["checklistId"] = "ghost-ck"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_checklist_tenant_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["packagingChecklistAuthority"][0]["tenantId"] = "pb"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_checklist_unit_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["packagingChecklistAuthority"][0]["prototypeUnitId"] = "other-pu"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_checklist_engineering_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["packagingChecklistAuthority"][0]["engineeringHash"] = "other-e"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_duplicate_checklist_authority(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["packagingChecklistAuthority"].append(
+            copy.deepcopy(body["batchAuthority"]["packagingChecklistAuthority"][0])
+        )
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_fixture_forged_packaging_checklist_source(tmp_path):
+    def mutate(body):
+        for carton in body["cartons"] + body["batchAuthority"]["cartons"]:
+            carton["packagingQty"] = 1
+        for i in range(4):
+            for lin in (
+                body["batches"][i]["cost"]["quantityLineage"],
+                body["batchAuthority"]["costs"][i]["quantityLineage"],
+            ):
+                lin["sources"]["packagingQty"] = "PACKAGING_CHECKLIST"
+                lin["packagingQty"] = 1
+                lin["ok"] = True
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_one_carton_missing_checklist_blocks_complete(tmp_path):
+    def mutate(body):
+        for batch in body["batches"] + body["batchAuthority"]["batches"]:
+            batch["source"] = "MANUAL"
+            batch["truthLabel"] = "MANUAL_EVIDENCE"
+        for carton in body["cartons"] + body["batchAuthority"]["cartons"]:
+            carton["source"] = "MANUAL"
+            carton["truthLabel"] = "MANUAL_EVIDENCE"
+            carton["packagingQty"] = 1
+        for ck in body["batchAuthority"]["packagingChecklistAuthority"]:
+            ck["packagingQty"] = 1
+            ck["source"] = "PACKAGING_CHECKLIST"
+            ck["truthLabel"] = "MANUAL_EVIDENCE"
+            ck["damRefs"] = [
+                {
+                    "assetId": "dam-pack",
+                    "role": "PACKAGING",
+                    "sha256": "a" * 64,
+                    "size": 12,
+                    "engineeringHash": ck["engineeringHash"],
+                }
+            ]
+        for i in range(4):
+            for target in (body["batches"][i]["cost"], body["batchAuthority"]["costs"][i]):
+                target["completeness"] = "COMPLETE"
+                target["truthLabel"] = "MANUAL"
+                lin = target["quantityLineage"]
+                lin["sources"]["packagingQty"] = "PACKAGING_CHECKLIST"
+                lin["packagingQty"] = 1
+                lin["ok"] = True
+        body["cartons"][1]["checklistId"] = None
+        body["cartons"][1]["packagingQty"] = None
+        body["batchAuthority"]["cartons"][1]["checklistId"] = None
+        body["batchAuthority"]["cartons"][1]["packagingQty"] = None
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_wo_reservation_blank_tenant(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["workOrders"][0]["reservations"][0]["tenantId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_wo_reservation_blank_work_order(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["workOrders"][0]["reservations"][0]["workOrderId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_wo_consumed_blank_tenant(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["workOrders"][0]["consumed"][0]["tenantId"] = ""
+        body["batchAuthority"]["workOrders"][0]["consumed"][0]["workOrderId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_wo_reservation_cross_tenant(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["workOrders"][0]["reservations"][0]["tenantId"] = "pb"
+        body["batchAuthority"]["workOrders"][0]["consumed"][0]["tenantId"] = "pb"
 
     _assert_fail(tmp_path, mutate)

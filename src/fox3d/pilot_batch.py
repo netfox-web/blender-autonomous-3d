@@ -178,6 +178,189 @@ def _optional_num_equal(left: Any, right: Any) -> bool:
     return _same_num(left, right)
 
 
+def _bom_line_quantities(lines: Any) -> tuple[float | None, float | None]:
+    if not isinstance(lines, list) or not lines:
+        return None, None
+    hardware = 0.0
+    parts = 0.0
+    for ln in lines:
+        if not isinstance(ln, dict):
+            return None, None
+        try:
+            qty = float(ln.get("quantity") if ln.get("quantity") is not None else 1)
+        except (TypeError, ValueError):
+            return None, None
+        if not math.isfinite(qty) or qty <= 0:
+            return None, None
+        if ln.get("hardware"):
+            hardware += qty
+        else:
+            parts += qty
+    return hardware, parts
+
+
+def _bom_snapshot(
+    *,
+    tenant_id: Any,
+    candidate_id: Any,
+    engineering_hash: Any,
+    bom_hash: Any,
+    lines: Any,
+) -> dict[str, Any]:
+    payload_lines = copy.deepcopy(lines) if isinstance(lines, list) else []
+    hardware, parts = _bom_line_quantities(payload_lines)
+    return {
+        "tenantId": tenant_id,
+        "candidateId": candidate_id,
+        "engineeringHash": engineering_hash,
+        "bomHash": bom_hash,
+        "lines": payload_lines,
+        "hardwareExpected": hardware,
+        "partExpected": parts,
+    }
+
+
+def _bom_hash_matches(row: dict[str, Any]) -> bool:
+    lines = row.get("lines")
+    if not isinstance(lines, list):
+        return False
+    return _present(row.get("bomHash")) and row.get("bomHash") == stable_hash(lines)
+
+
+def _authority_rows(authority: dict[str, Any], *keys: str) -> list[dict[str, Any]]:
+    for key in keys:
+        rows = authority.get(key)
+        if isinstance(rows, list):
+            return [r for r in rows if isinstance(r, dict)]
+    return []
+
+
+def _resolve_bom_authority(boms: Any, batch: dict[str, Any] | None) -> tuple[dict[str, Any] | None, str | None]:
+    batch = batch if isinstance(batch, dict) else {}
+    rows = [r for r in (boms or []) if isinstance(r, dict)]
+    cid = batch.get("candidateId")
+    if not _present(cid):
+        return None, "bom_authority_missing"
+    related = [r for r in rows if r.get("candidateId") == cid]
+    if not related:
+        return None, "bom_authority_missing"
+    if any(r.get("tenantId") != batch.get("tenantId") for r in related):
+        return None, "bom_authority_lineage"
+    if any(_present(r.get("engineeringHash")) and r.get("engineeringHash") != batch.get("engineeringHash") for r in related):
+        return None, "bom_authority_lineage"
+    if any(_present(r.get("bomHash")) and r.get("bomHash") != batch.get("bomHash") for r in related):
+        return None, "bom_authority_lineage"
+    exact = [
+        r
+        for r in related
+        if r.get("tenantId") == batch.get("tenantId")
+        and r.get("engineeringHash") == batch.get("engineeringHash")
+        and r.get("bomHash") == batch.get("bomHash")
+    ]
+    if len(exact) != 1:
+        return None, "bom_authority_duplicate" if len(exact) > 1 else "bom_authority_missing"
+    rec = exact[0]
+    if not _bom_hash_matches(rec):
+        return None, "bom_authority_hash"
+    hardware, parts = _bom_line_quantities(rec.get("lines"))
+    if hardware is None or parts is None:
+        return None, "bom_authority_missing"
+    pinned = dict(rec)
+    pinned["hardwareExpected"] = hardware
+    pinned["partExpected"] = parts
+    return pinned, None
+
+
+def _compact_dam_refs(refs: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in refs or []:
+        if not isinstance(row, dict):
+            continue
+        out.append(
+            {
+                "assetId": row.get("assetId"),
+                "role": row.get("role"),
+                "sha256": row.get("sha256"),
+                "size": row.get("size"),
+                "engineeringHash": row.get("engineeringHash"),
+            }
+        )
+    return out
+
+
+def _compact_packaging_checklist(pack: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(pack, dict) or not _present(pack.get("checklistId")):
+        return None
+    qty = _checklist_qty(pack)
+    source = pack.get("source")
+    if source not in {"PACKAGING_CHECKLIST", "MISSING"}:
+        source = "PACKAGING_CHECKLIST" if _qty_ok(qty) else "MISSING"
+    return {
+        "checklistId": pack.get("checklistId"),
+        "tenantId": pack.get("tenantId"),
+        "prototypeUnitId": pack.get("prototypeUnitId"),
+        "engineeringHash": pack.get("engineeringHash"),
+        "packagingQty": qty,
+        "source": source,
+        "truthLabel": pack.get("truthLabel"),
+        "damRefs": _compact_dam_refs(pack.get("damRefs")),
+    }
+
+
+def _resolve_checklist_authority(
+    checklists: Any,
+    checklist_id: Any,
+    batch: dict[str, Any] | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not _present(checklist_id):
+        return None, "checklist_authority_missing"
+    rows = [r for r in (checklists or []) if isinstance(r, dict)]
+    matches = [r for r in rows if r.get("checklistId") == checklist_id]
+    if len(matches) != 1:
+        return None, "checklist_authority_duplicate" if len(matches) > 1 else "checklist_authority_missing"
+    rec = matches[0]
+    batch = batch if isinstance(batch, dict) else {}
+    if rec.get("tenantId") != batch.get("tenantId"):
+        return None, "checklist_authority_lineage"
+    if rec.get("prototypeUnitId") != batch.get("prototypeUnitId"):
+        return None, "checklist_authority_lineage"
+    if rec.get("engineeringHash") != batch.get("engineeringHash"):
+        return None, "checklist_authority_lineage"
+    return rec, None
+
+
+def _packaging_dam_ok(pack: dict[str, Any] | None, engineering_hash: Any) -> bool:
+    if not isinstance(pack, dict):
+        return False
+    for row in pack.get("damRefs") or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("role") or "").upper() != "PACKAGING":
+            continue
+        if not _present(row.get("assetId")) or not _present(row.get("sha256")) or not _qty_ok(row.get("size")):
+            continue
+        if engineering_hash and row.get("engineeringHash") and row.get("engineeringHash") != engineering_hash:
+            continue
+        return True
+    return False
+
+
+def _wo_owner_row_ok(item: dict[str, Any], *, tenant_id: Any, work_order_id: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if not _present(item.get("reservationId")) or not _present(item.get("lotId")):
+        return False
+    if not _present(item.get("state")) or not _present(item.get("kind")):
+        return False
+    if not _qty_ok(item.get("quantity")):
+        return False
+    if not _present(item.get("tenantId")) or item.get("tenantId") != tenant_id:
+        return False
+    if not _present(item.get("workOrderId")) or item.get("workOrderId") != work_order_id:
+        return False
+    return True
+
+
 def _durable_rows_match(proj: list[dict[str, Any]], pin: list[dict[str, Any]]) -> bool:
     if len(proj) != len(pin):
         return False
@@ -204,8 +387,12 @@ def _recompute_qty_sources(
     cartons: list[dict[str, Any]],
     fixture: bool,
     wo: dict[str, Any] | None = None,
+    boms: list[dict[str, Any]] | None = None,
+    checklists: list[dict[str, Any]] | None = None,
+    batch: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     wo = wo if isinstance(wo, dict) else {}
+    batch = batch if isinstance(batch, dict) else {}
     labor_ids = [str(r.get("laborId")) for r in labor_rows if r.get("laborId")]
     semantic_keys = [derived_labor_semantic_key(r) for r in labor_rows]
     minutes_ok = bool(labor_rows) and all(_qty_ok(r.get("minutes")) for r in labor_rows) and len(labor_ids) == len(labor_rows)
@@ -228,26 +415,42 @@ def _recompute_qty_sources(
             material_qty = float(material.get("consumedQuantity"))
         except (TypeError, ValueError):
             material_qty = None
-    hardware_ok = bool(cartons)
-    hw_expected = 0.0
-    hw_observed = 0.0
-    for carton in cartons:
-        exp = carton.get("hardwareExpected")
-        obs = carton.get("hardwareObserved")
-        if exp is None or obs is None or not _same_num(exp, obs):
-            hardware_ok = False
-            break
-        hw_expected += float(exp)
-        hw_observed += float(obs)
-    if not hardware_ok:
-        hw_expected = None
-        hw_observed = None
+    bom, _bom_err = _resolve_bom_authority(boms, batch)
+    hardware_ok = False
+    hw_expected = None
+    hw_observed = None
+    if bom is not None and cartons:
+        hw_expected = float(bom["hardwareExpected"])
+        part_expected = float(bom["partExpected"])
+        hardware_ok = True
+        observed_total = 0.0
+        for carton in cartons:
+            obs = carton.get("hardwareObserved")
+            part_obs = carton.get("partObserved")
+            if not _same_num(obs, hw_expected) or not _same_num(part_obs, part_expected):
+                hardware_ok = False
+                break
+            observed_total += float(obs)
+        if hardware_ok:
+            hw_observed = observed_total
+        else:
+            hw_expected = None
+            hw_observed = None
     packaging_qty = None
     packaging_ok = False
     if not fixture and cartons:
-        packaging_ok = all(_present(c.get("checklistId")) and _qty_ok(c.get("packagingQty")) for c in cartons)
+        packaging_ok = True
+        pack_total = 0.0
+        for carton in cartons:
+            pack, _err = _resolve_checklist_authority(checklists, carton.get("checklistId"), batch)
+            qty = carton.get("packagingQty")
+            auth_qty = None if pack is None else pack.get("packagingQty")
+            if pack is None or not _qty_ok(qty) or not _qty_ok(auth_qty) or not _same_num(qty, auth_qty):
+                packaging_ok = False
+                break
+            pack_total += float(qty)
         if packaging_ok:
-            packaging_qty = float(sum(float(c.get("packagingQty")) for c in cartons))
+            packaging_qty = pack_total
     sources = {
         "materialQty": "MATERIAL_LOT" if _qty_ok(material_qty) else "MISSING",
         "laborMinutes": "LABOR_RECORD" if minutes_ok and minutes_total is not None else "MISSING",
@@ -298,10 +501,19 @@ def _lineage_matches(stored: dict[str, Any], recomputed: dict[str, Any]) -> bool
         return False
     if not _same_id_set(stored.get("lotIds") or [], recomputed.get("lotIds") or []):
         return False
-    if stored.get("hardwareExpected") is not None and not _optional_num_equal(stored.get("hardwareExpected"), recomputed.get("hardwareExpected")):
-        return False
-    if stored.get("hardwareObserved") is not None and not _optional_num_equal(stored.get("hardwareObserved"), recomputed.get("hardwareObserved")):
-        return False
+    hw_src = (recomputed.get("sources") or {}).get("hardwareQty")
+    if hw_src == "BOM":
+        if stored.get("hardwareExpected") is None or stored.get("hardwareObserved") is None:
+            return False
+        if not _same_num(stored.get("hardwareExpected"), recomputed.get("hardwareExpected")):
+            return False
+        if not _same_num(stored.get("hardwareObserved"), recomputed.get("hardwareObserved")):
+            return False
+    else:
+        if stored.get("hardwareExpected") is not None and not _optional_num_equal(stored.get("hardwareExpected"), recomputed.get("hardwareExpected")):
+            return False
+        if stored.get("hardwareObserved") is not None and not _optional_num_equal(stored.get("hardwareObserved"), recomputed.get("hardwareObserved")):
+            return False
     return True
 
 
@@ -322,6 +534,8 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
     auth_costs = [r for r in (authority.get("costs") or []) if isinstance(r, dict)]
     auth_decisions = [r for r in (authority.get("decisions") or []) if isinstance(r, dict)]
     auth_workorders = [r for r in (authority.get("workOrders") or []) if isinstance(r, dict)]
+    auth_boms = _authority_rows(authority, "bomAuthority", "boms")
+    auth_checklists = _authority_rows(authority, "packagingChecklistAuthority", "packagingChecklists")
     if len(batches) < 4:
         failures.append("batches_4")
     if len(units) < 20:
@@ -378,6 +592,20 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
     wo_ids = {r.get("workOrderId") for r in auth_workorders if r.get("workOrderId")}
     if not auth_workorders or wo_ids != batch_wo_ids:
         failures.append("qc_authority_lineage")
+    bom_idents: list[tuple[Any, Any, Any, Any]] = []
+    for row in auth_boms:
+        ident = (row.get("tenantId"), row.get("candidateId"), row.get("engineeringHash"), row.get("bomHash"))
+        if ident in bom_idents:
+            failures.append("bom_authority_duplicate")
+        bom_idents.append(ident)
+        if not _bom_hash_matches(row):
+            failures.append("bom_authority_hash")
+    ck_idents: list[Any] = []
+    for row in auth_checklists:
+        cid = row.get("checklistId")
+        if not _present(cid) or cid in ck_idents:
+            failures.append("checklist_authority_duplicate" if cid in ck_idents else "checklist_authority_missing")
+        ck_idents.append(cid)
     packed_units = [u for u in units if str(u.get("state") or "") == "PACKED" or u.get("cartonId")]
     if packed_units and not cartons:
         failures.append("cartons_missing")
@@ -515,9 +743,7 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
                 if set(wo_lots) != set(durable_lots):
                     failures.append("material_reservation_authority")
                 for item in wo_res + wo_cons:
-                    if item.get("tenantId") and item.get("tenantId") != auth.get("tenantId"):
-                        failures.append("material_reservation_authority")
-                    if item.get("workOrderId") and item.get("workOrderId") != auth.get("workOrderId"):
+                    if not _wo_owner_row_ok(item, tenant_id=auth.get("tenantId"), work_order_id=auth.get("workOrderId")):
                         failures.append("material_reservation_authority")
                 try:
                     wo_consume_qty = float(sum(float(c.get("quantity") or 0) for c in wo_cons))
@@ -552,12 +778,44 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
             if cost.get("completeness") != cost_auth.get("completeness") or cost.get("truthLabel") != cost_auth.get("truthLabel"):
                 failures.append("cost_authority_lineage")
             wo_for_cost = (auth_wo_by.get(auth.get("workOrderId")) or [None])[0]
+            bom, bom_err = _resolve_bom_authority(auth_boms, auth)
+            if bom_err in {"bom_authority_lineage", "bom_authority_duplicate", "bom_authority_hash"}:
+                failures.append(bom_err)
+            batch_cartons = [c for c in auth_cartons if c.get("batchId") == bid]
+            if bom is not None:
+                for carton in batch_cartons:
+                    if not _same_num(carton.get("hardwareExpected"), bom.get("hardwareExpected")):
+                        failures.append("carton_counts")
+                    if not _same_num(carton.get("partExpected"), bom.get("partExpected")):
+                        failures.append("carton_counts")
+            fixture = auth.get("source") == "FIXTURE" or auth.get("truthLabel") == "FIXTURE"
+            packaging_bound = True
+            seen_ck: set[Any] = set()
+            for carton in batch_cartons:
+                ck_id = carton.get("checklistId")
+                if not _present(ck_id):
+                    packaging_bound = False
+                    continue
+                pack, ck_err = _resolve_checklist_authority(auth_checklists, ck_id, auth)
+                if ck_err:
+                    failures.append(ck_err)
+                    packaging_bound = False
+                    continue
+                if ck_id in seen_ck:
+                    failures.append("checklist_authority_duplicate")
+                seen_ck.add(ck_id)
+                if not fixture:
+                    if not _qty_ok(carton.get("packagingQty")) or not _same_num(carton.get("packagingQty"), pack.get("packagingQty")):
+                        packaging_bound = False
             recomputed = _recompute_qty_sources(
                 material=(auth_mat_by_batch.get(bid) or [None])[0],
                 labor_rows=[r for r in auth_labor if r.get("batchId") == bid],
-                cartons=[c for c in auth_cartons if c.get("batchId") == bid],
-                fixture=auth.get("source") == "FIXTURE" or auth.get("truthLabel") == "FIXTURE",
+                cartons=batch_cartons,
+                fixture=fixture,
                 wo=wo_for_cost,
+                boms=auth_boms,
+                checklists=auth_checklists,
+                batch=auth,
             )
             lineage = cost_auth.get("quantityLineage") if isinstance(cost_auth.get("quantityLineage"), dict) else {}
             top_lineage = cost.get("quantityLineage") if isinstance(cost.get("quantityLineage"), dict) else {}
@@ -571,6 +829,14 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
                 cost_auth.get("completeness") != "PARTIAL" or cost_auth.get("truthLabel") != "FIXTURE" or recomputed.get("ok") is True
             ):
                 failures.append("cost_complete_incorrect")
+            go_like = cost.get("completeness") == "COMPLETE" or (auth.get("state") in {"HUMAN_BATCH_GO", "READY_FOR_HUMAN_BATCH_GO_NO_GO"})
+            if not fixture and go_like:
+                if not packaging_bound or recomputed.get("sources", {}).get("packagingQty") != "PACKAGING_CHECKLIST":
+                    failures.append("checklist_authority_missing")
+                for carton in batch_cartons:
+                    pack, _ck_err = _resolve_checklist_authority(auth_checklists, carton.get("checklistId"), auth)
+                    if not _packaging_dam_ok(pack, auth.get("engineeringHash")):
+                        failures.append("checklist_authority_lineage")
         batch_units = [u for u in auth_units if u.get("batchId") == bid]
         complete_units = [u for u in batch_units if _unit_execution_complete(u)]
         requested = int(auth.get("requestedQuantity") or 0)
@@ -728,7 +994,20 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append("carton_authority_field_mismatch")
             if auth_c.get("truthLabel") != parent.get("truthLabel") or carton.get("truthLabel") != parent.get("truthLabel"):
                 failures.append("carton_authority_field_mismatch")
-        for key in ("tenantId", "batchId", "engineeringHash", "checklistId", "packagingQty", "damageDefect", "source", "truthLabel"):
+        for key in (
+            "tenantId",
+            "batchId",
+            "engineeringHash",
+            "checklistId",
+            "packagingQty",
+            "damageDefect",
+            "source",
+            "truthLabel",
+            "hardwareExpected",
+            "partExpected",
+            "hardwareObserved",
+            "partObserved",
+        ):
             if carton.get(key) != auth_c.get(key):
                 failures.append("carton_authority_field_mismatch")
         if set(carton.get("unitExecutionIds") or []) != set(auth_c.get("unitExecutionIds") or []):
@@ -1384,7 +1663,9 @@ class PilotBatchFactory:
         proto_unit = proto.units.get(batch.get("prototypeUnitId") or "")
         pack = None
         qty = packaging_qty
-        counts = proto._bom_counts(proto._candidate(batch["candidateId"], tenant_id))
+        cand = proto._candidate(batch["candidateId"], tenant_id)
+        bom_obj = ((cand.get("sku") or {}).get("bom") or cand.get("bom") or {})
+        hw_exp, part_exp = _bom_line_quantities(list(bom_obj.get("lines") or []))
         if batch.get("source") != "FIXTURE":
             pack = self._require_packaging_checklist(batch, checklist_id or (proto_unit or {}).get("packagingChecklistId"))
             auth_qty = _checklist_qty(pack)
@@ -1400,9 +1681,9 @@ class PilotBatchFactory:
                 raise PilotBatchError("BLOCKED", "explicit packaging quantity required")
             if measured.get("hardwareQty") is None or measured.get("partCount") is None:
                 raise PilotBatchError("HOLD", "part/hardware counts required")
-            if counts.get("hardwareQty") is not None and float(measured.get("hardwareQty")) != float(counts.get("hardwareQty")):
+            if hw_exp is not None and float(measured.get("hardwareQty")) != float(hw_exp):
                 raise PilotBatchError("HOLD", "hardware count mismatch")
-            if counts.get("partCount") is not None and float(measured.get("partCount")) != float(counts.get("partCount")):
+            if part_exp is not None and float(measured.get("partCount")) != float(part_exp):
                 raise PilotBatchError("HOLD", "part count mismatch")
             if str(damage).upper() not in {"OK", "PASS", "NONE", "NO"}:
                 raise PilotBatchError("HOLD", "damage/defect blocks packing")
@@ -1425,9 +1706,9 @@ class PilotBatchFactory:
             "checklistEngineeringHash": (pack or {}).get("engineeringHash"),
             "packagingQty": qty,
             "measured": {"lengthMm": float(length), "widthMm": float(width), "heightMm": float(height), "weightKg": float(weight)},
-            "hardwareExpected": counts.get("hardwareQty"),
+            "hardwareExpected": hw_exp,
             "hardwareObserved": measured.get("hardwareQty"),
-            "partExpected": counts.get("partCount"),
+            "partExpected": part_exp,
             "partObserved": measured.get("partCount"),
             "damageDefect": damage,
             "damRefs": list(dam_refs or []),
@@ -1566,6 +1847,34 @@ class PilotBatchFactory:
             return False
         return True
 
+    def _live_bom_and_checklists(self, batch: dict[str, Any], cartons: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        proto = self.platform.prototype
+        cand = proto._candidate(batch["candidateId"], batch["tenantId"])
+        bom_obj = ((cand.get("sku") or {}).get("bom") or cand.get("bom") or {})
+        boms = [
+            _bom_snapshot(
+                tenant_id=batch.get("tenantId"),
+                candidate_id=batch.get("candidateId"),
+                engineering_hash=batch.get("engineeringHash"),
+                bom_hash=batch.get("bomHash") or cand.get("bomHash") or bom_obj.get("bomHash"),
+                lines=list(bom_obj.get("lines") or []),
+            )
+        ]
+        checklists: list[dict[str, Any]] = []
+        seen: set[Any] = set()
+        for carton in cartons:
+            pack = proto.checklists.get(carton.get("checklistId") or "")
+            rec = _compact_packaging_checklist(pack)
+            if rec and rec["checklistId"] not in seen:
+                checklists.append(rec)
+                seen.add(rec["checklistId"])
+        unit = proto.units.get(batch.get("prototypeUnitId") or "")
+        if unit:
+            rec = _compact_packaging_checklist(proto.checklists.get(unit.get("packagingChecklistId") or ""))
+            if rec and rec["checklistId"] not in seen:
+                checklists.append(rec)
+        return boms, checklists
+
     def record_cost(self, batch_id: str, *, tenant_id: str, operator_id: str, shift_id: str, amounts: dict[str, Any] | None = None, currency: str = "TWD") -> dict[str, Any]:
         ident = self._identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         batch = self.get(batch_id, tenant_id=tenant_id)
@@ -1582,12 +1891,16 @@ class PilotBatchFactory:
             "consumed": [i for i in (wo.get("consumed") or []) if isinstance(i, dict) and i.get("kind") == "lot"],
             "materialLots": list((wo.get("lineage") or {}).get("materialLots") or []),
         }
+        boms, checklists = self._live_bom_and_checklists(batch, cartons)
         recomputed = _recompute_qty_sources(
             material={"consumedQuantity": material},
             labor_rows=labor_rows,
             cartons=cartons,
             fixture=fixture,
             wo=wo_snap,
+            boms=boms,
+            checklists=checklists,
+            batch=batch,
         )
         sources = dict(recomputed.get("sources") or {})
         packaging = recomputed.get("packagingQty")
@@ -1907,6 +2220,11 @@ class PilotBatchFactory:
         cost_rows = []
         decision_rows = []
         workorder_rows = []
+        bom_rows: list[dict[str, Any]] = []
+        checklist_rows: list[dict[str, Any]] = []
+        seen_bom: set[tuple[Any, Any, Any, Any]] = set()
+        seen_ck: set[Any] = set()
+        proto = getattr(self.platform, "prototype", None)
         for batch in batches:
             wo = self.platform.pilot.workorders.get(batch.get("workOrderId")) if batch.get("workOrderId") else None
             consumed = float(sum(float(i.get("quantity") or 0) for i in ((wo or {}).get("consumed") or []) if i.get("kind") == "lot")) if wo else float(batch.get("consumedQuantity") or 0)
@@ -1939,6 +2257,7 @@ class PilotBatchFactory:
                     "consumeKind": batch.get("consumeKind") or "BATCH_ALLOCATION_PROJECTION",
                 }
             )
+            # Owner fields are derived from durable parent WorkOrder/batch; reservation rows do not persist tenant/WO ids.
             wo_res = [
                 {
                     "reservationId": item.get("reservationId"),
@@ -2103,6 +2422,36 @@ class PilotBatchFactory:
                             "workOrderId": row.get("workOrderId") or batch.get("workOrderId"),
                         }
                     )
+            cand: dict[str, Any] = {}
+            if proto is not None:
+                try:
+                    cand = proto._candidate(batch.get("candidateId"), batch.get("tenantId"))
+                except (KeyError, TypeError, PermissionError):
+                    cand = {}
+            bom_obj = ((cand.get("sku") or {}).get("bom") or cand.get("bom") or {})
+            bom_row = _bom_snapshot(
+                tenant_id=batch.get("tenantId"),
+                candidate_id=batch.get("candidateId"),
+                engineering_hash=batch.get("engineeringHash"),
+                bom_hash=batch.get("bomHash") or cand.get("bomHash") or bom_obj.get("bomHash"),
+                lines=list(bom_obj.get("lines") or []),
+            )
+            bom_ident = (bom_row.get("tenantId"), bom_row.get("candidateId"), bom_row.get("engineeringHash"), bom_row.get("bomHash"))
+            if bom_ident not in seen_bom:
+                bom_rows.append(bom_row)
+                seen_bom.add(bom_ident)
+            if proto is not None:
+                proto_unit = proto.units.get(batch.get("prototypeUnitId") or "")
+                pack_ids = [proto_unit.get("packagingChecklistId")] if proto_unit else []
+                for carton in self.cartons.values():
+                    if carton.get("batchId") == batch.get("batchId"):
+                        pack_ids.append(carton.get("checklistId"))
+                for ck_id in pack_ids:
+                    pack = proto.checklists.get(ck_id or "")
+                    rec = _compact_packaging_checklist(pack)
+                    if rec and rec["checklistId"] not in seen_ck:
+                        checklist_rows.append(rec)
+                        seen_ck.add(rec["checklistId"])
             cost = self.costs.get(batch.get("costId") or "")
             if cost:
                 cost_rows.append(
@@ -2153,6 +2502,8 @@ class PilotBatchFactory:
             "costs": cost_rows,
             "decisions": decision_rows,
             "workOrders": workorder_rows,
+            "bomAuthority": bom_rows,
+            "packagingChecklistAuthority": checklist_rows,
         }
 
 

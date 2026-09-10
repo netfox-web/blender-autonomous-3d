@@ -316,15 +316,19 @@ def _manual_batch_unit(tmp_path, qty=1):
     plat.pilot_batch.consume_unit(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
     plat.pilot_batch.record_labor(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], minutes=10, reason="assembly")
     plat.pilot_batch.record_qc(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], ok=True, stage="FINAL")
-    counts = plat.prototype._bom_counts(plat.prototype._candidate(cand["candidateId"], "pa"))
+    from fox3d.pilot_batch import _bom_line_quantities
+
+    live_cand = plat.prototype._candidate(cand["candidateId"], "pa")
+    bom_obj = ((live_cand.get("sku") or {}).get("bom") or live_cand.get("bom") or {})
+    hw_exp, part_exp = _bom_line_quantities(list(bom_obj.get("lines") or []))
     live = plat.prototype.units[unit["prototypeUnitId"]]
     measured = {
         "cartonLengthMm": 400,
         "cartonWidthMm": 300,
         "cartonHeightMm": 200,
         "packedWeightKg": 8,
-        "hardwareQty": counts.get("hardwareQty"),
-        "partCount": counts.get("partCount"),
+        "hardwareQty": hw_exp,
+        "partCount": part_exp,
         "damageDefect": "OK",
     }
     _ = actor
@@ -618,7 +622,11 @@ def test_subprocess_human_batch_go_crash(tmp_path, crash):
     plat.pilot_batch.consume_unit(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
     plat.pilot_batch.record_labor(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], minutes=10, reason="assembly")
     plat.pilot_batch.record_qc(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], ok=True, stage="FINAL")
-    counts = plat.prototype._bom_counts(plat.prototype._candidate(cand["candidateId"], "pa"))
+    from fox3d.pilot_batch import _bom_line_quantities
+
+    live_cand = plat.prototype._candidate(cand["candidateId"], "pa")
+    bom_obj = ((live_cand.get("sku") or {}).get("bom") or live_cand.get("bom") or {})
+    hw_exp, part_exp = _bom_line_quantities(list(bom_obj.get("lines") or []))
     plat.pilot_batch.pack_units(
         batch["batchId"],
         tenant_id="pa",
@@ -630,8 +638,8 @@ def test_subprocess_human_batch_go_crash(tmp_path, crash):
             "cartonWidthMm": 300,
             "cartonHeightMm": 200,
             "packedWeightKg": 8,
-            "hardwareQty": counts.get("hardwareQty"),
-            "partCount": counts.get("partCount"),
+            "hardwareQty": hw_exp,
+            "partCount": part_exp,
             "damageDefect": "OK",
         },
         packaging_qty=1,
@@ -701,3 +709,44 @@ def test_recompute_packaging_requires_every_carton():
         fixture=False,
     )
     assert hw["sources"]["hardwareQty"] == "MISSING"
+    from fox3d.ids import stable_hash
+
+    lines = [{"partId": "hw", "quantity": 4, "hardware": True}, {"partId": "p", "quantity": 6, "hardware": False}]
+    bom = {
+        "tenantId": "pa",
+        "candidateId": "c1",
+        "engineeringHash": "e",
+        "bomHash": stable_hash(lines),
+        "lines": lines,
+    }
+    ck = {
+        "checklistId": "ck",
+        "tenantId": "pa",
+        "prototypeUnitId": "pu",
+        "engineeringHash": "e",
+        "packagingQty": 1,
+        "source": "PACKAGING_CHECKLIST",
+        "truthLabel": "MANUAL_EVIDENCE",
+    }
+    batch = {"tenantId": "pa", "candidateId": "c1", "engineeringHash": "e", "bomHash": bom["bomHash"], "prototypeUnitId": "pu"}
+    ok_hw = _recompute_qty_sources(
+        material={"consumedQuantity": 5},
+        labor_rows=labor,
+        cartons=[{"hardwareObserved": 4, "partObserved": 6, "packagingQty": 1, "checklistId": "ck"}],
+        fixture=False,
+        boms=[bom],
+        checklists=[ck],
+        batch=batch,
+    )
+    assert ok_hw["sources"]["hardwareQty"] == "BOM"
+    assert ok_hw["sources"]["packagingQty"] == "PACKAGING_CHECKLIST"
+    forged = _recompute_qty_sources(
+        material={"consumedQuantity": 5},
+        labor_rows=labor,
+        cartons=[{"hardwareObserved": 9, "partObserved": 9, "hardwareExpected": 9, "partExpected": 9, "packagingQty": 1, "checklistId": "ck"}],
+        fixture=False,
+        boms=[bom],
+        checklists=[ck],
+        batch=batch,
+    )
+    assert forged["sources"]["hardwareQty"] == "MISSING"
