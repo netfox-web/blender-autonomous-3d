@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 721–780 residual canonical authority CODE_EVIDENCE_SHA `b1f29f8`; prior CODE `f4c2df8` / docs `2987dbf` / instruction `6df3fff`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `6df3fff`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 721–780 independent material/cost lineage CODE_EVIDENCE_SHA `25a583a`; prior CODE `b1f29f8` / docs `58bf2fe` / instruction `84c103f`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `84c103f`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -17,16 +17,16 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Packing / cartons | REAL_LOGIC | unique unit-to-carton; shipment DRAFT; no booked carrier |
 | Batch cost | PARTIAL on fixture | four money fields without packaging qty stay PARTIAL |
 | Human batch board | REAL_LOGIC | WAITING_HUMAN_EVIDENCE on fixture; HUMAN_BATCH_GO blocked |
-| Canonical authority | REAL_LOGIC | exact-set batch/unit/carton/labor/QC/material/cost/decision/workOrder; carton L/W/H/weight exact; durable WO reservation snapshot |
+| Canonical authority | REAL_LOGIC | exact-set batch/unit/carton/labor/QC/material/cost/decision/workOrder; carton L/W/H/weight + required source/truthLabel; WO durable reservation/consume snapshot independent of projection |
 | HUMAN_BATCH_GO gates | REAL_LOGIC | FINAL QC + pinned qcPlanHash from workOrders; pack requires measurements/execution chain; MANUAL qty/checklist/DAM |
 | Crash matrix | REAL_LOGIC | subprocess os._exit after-business-persist and after-outbox-complete on create/release/reserve/start/consume/labor/QC/pack/GO |
 | MANUAL checklist identity | REAL_LOGIC | exactly one checklist; exact tenant/unit/hash; bogus ID BLOCK; `_carton_packaging_ok` re-resolves |
 | Canonical QC PASS | REAL_LOGIC | sampled FINAL must be PASS + qcId/WO/release/qcPlanHash pinned to workOrders snapshot; coordinated copy tamper fail-closed |
 | Board/decision authority | REAL_LOGIC | DERIVED_READINESS WAITING on fixture; blockers recomputed `{fixture_evidence, cost_partial}`; coordinated state/blocker fail-closed |
 | Execution completeness | REAL_LOGIC | requested == unit set == start/consume `_qty_ok`/labor/QC/carton; PLANNED skip fail-closed |
-| Cost lineage | PARTIAL on fixture | quantityLineage recomputed; fixture packagingQty MISSING → ok=false; costId required both sides |
-| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `09a21bd3…` |
-| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `31913444-…`; CODE `b1f29f8`; 4×5 units; `physicalPilotBatchValidated=false` |
+| Cost lineage | PARTIAL on fixture | quantityLineage recomputes IDs/minutes/qty/hardware expected-vs-observed; fixture packagingQty MISSING → ok=false; hardware BOM only on exact expected match |
+| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `c966a9d3…` |
+| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `63023672-…`; CODE `25a583a`; 4×5 units; `physicalPilotBatchValidated=false` |
 
 ## Phase 661–720 Physical Prototype Evidence & Human Launch Governance V1
 

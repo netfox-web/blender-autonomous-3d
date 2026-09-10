@@ -2,39 +2,35 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-10  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `6df3fff` (**CHANGES REQUIRED** — residual canonical authority; hold 781+)  
-Review head: `2987dbf` / CODE `f4c2df8`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `84c103f` (**CHANGES REQUIRED** — independent material/cost lineage; hold 781+)  
+Review head: `58bf2fe` / CODE `b1f29f8`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 721–780 residual canonical authority GAPS ONLY**. Did not start Phase 781+. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / ManufacturingRelease / WorkOrder.
+Executed **Phase 721–780 independent-authority GAPS ONLY**. Did not start Phase 781+. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / ManufacturingRelease / WorkOrder.
 
 | Blocker | What landed |
 |---|---|
-| 1 FINAL QC exact binding | Required `qcId`/`qcFinalId` exact; `tenant/batch/unit/WO/engineering/releaseId/releaseHash/qcPlanHash` required. `qcPlanHash` pinned to canonical `workOrders` snapshot (not summary+copy). Coordinated bogus plan still fails. |
-| 2 Decision / board exact-set | `kind=DERIVED_READINESS` required; board vs decision tenant/state/engineering/decision/blockers required exact; blockers recomputed `{fixture_evidence, cost_partial}`; coordinated HOLD/blockers fail-closed; extra ghost decision fails. |
-| 3 Carton measured / damage | Top vs authority exact L/W/H/weight (independent deepcopy); damage success only OK/PASS/NONE/NO; source/truthLabel vs parent; fixture skips BOM expected-count. |
-| 4 Material durable snapshot | `reservations`/`consumed`/`lotIds` from WorkOrder; per-unit qty vs allocated/consumed; `_qty_ok` for completeness; top reservation/lot exact bind; ghost/cross-tenant fail. |
-| 5 Labor exact-set | Required `idempotencyKey` recompute; unit `laborId` exact; extra ghost labor fails. |
-| 6 Cost quantityLineage | `costId` required both sides; lineage recomputed from material/labor/hardware/packaging; fixture packaging `MISSING` → PARTIAL `ok=false` (not faked). |
-| 7 Independent serialized truth | Authority nested objects deepcopy; pre/post-serialize/post-publish semantic validate PASS. |
+| 1 Independent WO material | `batchAuthority.workOrders` publishes durable reservations/consumed/materialLots. Material projection exact-resolves to that snapshot (ID/lot/qty/state/kind). Coordinated forged reservation/lot on top+batch+material without WO change fails. Ghost/missing WO reservation fails. |
+| 2 Cost quantity/identity recompute | `_recompute_qty_sources` returns sources **and** materialQty, reservation/lot IDs, laborIds/semanticKeys/minutes, hardware expected vs observed, packagingQty. Top + cost authority must exact-match. Hardware `BOM` only if expected exists and matches observed. Non-fixture packaging `PACKAGING_CHECKLIST` only if **every** carton has checklist qty. Fixture packaging stays MISSING / PARTIAL / ok=false. |
+| 3 Carton source/truthLabel | Required nonblank on top and authority; exact match parent batch; blank coordinated mutation fails. |
 
-**CODE_EVIDENCE_SHA:** `b1f29f8a6581de72e26b9215bd54719592f2c3d4`  
+**CODE_EVIDENCE_SHA:** `25a583ad6ff2286b18f7d9c73a2b6aff3f5b1546`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34464884088` on `b1f29f8` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34470882499` on `25a583a` ubuntu+windows.
 
-Acceptance generation `31913444-645f-462a-acdf-d3dc61d102f5`; runner-bound `evidenceCodeCommit=b1f29f8…`; `workingTreeClean=true`.
+Acceptance generation `63023672-b1ec-4ba2-823a-3153a0b45d52`; runner-bound `evidenceCodeCommit=25a583a…`; `workingTreeClean=true`.
 
-4×5 units; authority 4/20/4/20/20/4/4/4/4 (batches/units/cartons/labor/qc/materials/costs/decisions/workOrders; decisions=`DERIVED_READINESS`); `physicalPilotBatchValidated=false`; `batchLaunchDecision=WAITING_HUMAN_EVIDENCE`; cost PARTIAL, `quantityLineage.ok=false`, packagingQty=MISSING. Tenant digest equal `09a21bd3e65e6d5ac4a2aa1d472795787e04193d5aa2367b259e5316abc92c06`. Prior REAL Blender **verified** 4/4 T1000 OptiX on `7a87ea5`. Crash matrix unchanged PASS.
+4×5 units; authority 4/20/4/20/20/4/4/4/4; decisions `DERIVED_READINESS` / `WAITING_HUMAN_EVIDENCE`; cost PARTIAL, `quantityLineage.ok=false`, packagingQty=MISSING (live hardwareQty also MISSING — expected vs observed not exact, not faked as BOM). `physicalPilotBatchValidated=false`. Tenant digest equal `c966a9d318cbd5edb6f985dd05a8d7503dab6cf63bfa5cee2f14e90bb35b988e`. Prior REAL Blender **verified** 4/4 T1000 OptiX on `7a87ea5`. Crash matrix PASS.
 
 ## Tests
 
 ```
-pytest -q  →  533 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  545 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
-Local Windows `atomic_write_json` `PermissionError` on 2 unrelated tests flaked once and reran PASS. Ubuntu+Windows Actions `34464884088` SUCCESS.
+Local Windows `atomic_write_json` PermissionError flakes reran PASS except transient ops-stress; Ubuntu+Windows Actions `34470882499` SUCCESS.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
@@ -57,7 +53,8 @@ Local Windows `atomic_write_json` `PermissionError` on 2 unrelated tests flaked 
 - Vision/Video/Demand MOCK
 - Fixture batch ≠ physical batch
 - Do not start Phase 781+ until **ACCEPT WITH SCOPE**
+- Artwork Placement / Surface Decoration Engine is queued **after** Re-Gate; not started.
 
 ## Next round
 
-ChatGPT re-review `6df3fff` residual canonical-authority exit criteria. Stop here.
+ChatGPT re-review `84c103f` independent material/cost lineage exit criteria. Stop here.
