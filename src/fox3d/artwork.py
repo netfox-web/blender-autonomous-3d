@@ -7,6 +7,7 @@ placementHash. FIXTURE/REAL_LOGIC — not physical print, not Production Ready.
 
 from __future__ import annotations
 
+import importlib.util
 import math
 import struct
 import zlib
@@ -259,6 +260,7 @@ def derive_printable_surfaces(
         width_mm, height_mm = mm
         role = str(part.get("role") or part.get("partType") or "face").lower()
         cid = str(part.get("partId") or part.get("partName") or role)
+        object_name = str(part.get("partName") or cid)
         origin_x = 0.0
         hinge = "NONE"
         if role == "door":
@@ -276,7 +278,9 @@ def derive_printable_surfaces(
             "kind": eng.get("kind") or family or "CABINET",
             "engineeringHash": eng_hash,
             "componentId": cid,
+            "objectName": object_name,
             "face": "FRONT",
+            "mirrored": False,
             "origin": {"xMm": origin_x, "yMm": 0.0},
             "basisX": list(basis_x),
             "basisY": list(basis_y),
@@ -440,13 +444,24 @@ def _fit_rect(
     return {"xMm": x, "yMm": y, "widthMm": fw, "heightMm": fh}
 
 
-def effective_dpi(pixel_w: int | None, placed_width_mm: float) -> float | None:
-    if not pixel_w or placed_width_mm <= 0:
+def effective_dpi(
+    pixel_w: int | None,
+    placed_width_mm: float,
+    pixel_h: int | None = None,
+    placed_height_mm: float | None = None,
+) -> float | None:
+    values: list[float] = []
+    if pixel_w and placed_width_mm and placed_width_mm > 0:
+        inches_w = placed_width_mm / 25.4
+        if inches_w > 0:
+            values.append(float(pixel_w) / inches_w)
+    if pixel_h and placed_height_mm and placed_height_mm > 0:
+        inches_h = placed_height_mm / 25.4
+        if inches_h > 0:
+            values.append(float(pixel_h) / inches_h)
+    if not values:
         return None
-    inches = placed_width_mm / 25.4
-    if inches <= 0:
-        return None
-    return float(pixel_w) / inches
+    return min(values)
 
 
 def evaluate_placement_policy(
@@ -515,8 +530,23 @@ def master_canvas(surfaces: list[dict[str, Any]], *, seam_mm: float | None = Non
     tenant = surfaces[0]["tenantId"]
     product = surfaces[0]["productId"]
     eng = surfaces[0]["engineeringHash"]
-    ordered = list(surfaces)
-    seam = 0.0 if seam_mm is None else _finite(seam_mm, "seamMm")
+    ordered = sorted(list(surfaces), key=lambda s: float((s.get("origin") or {}).get("xMm") or 0.0))
+    derived_seams: list[float] = []
+    for i in range(1, len(ordered)):
+        prev = ordered[i - 1]
+        cur = ordered[i]
+        gap = float((cur.get("origin") or {}).get("xMm") or 0.0) - (
+            float((prev.get("origin") or {}).get("xMm") or 0.0) + float(prev.get("widthMm") or 0.0)
+        )
+        derived_seams.append(gap)
+    if seam_mm is None:
+        seam = derived_seams[0] if derived_seams else 0.0
+        seam_source = "ENGINEERING" if derived_seams else "CONFIG"
+        if derived_seams and any(abs(s - seam) > MM_EPS for s in derived_seams):
+            raise ArtworkError("BLOCKED", "inconsistent engineering seam")
+    else:
+        seam = _finite(seam_mm, "seamMm")
+        seam_source = "CONFIG"
     if seam < 0:
         raise ArtworkError("BLOCKED", "negative seam")
     width = 0.0
@@ -530,6 +560,10 @@ def master_canvas(surfaces: list[dict[str, Any]], *, seam_mm: float | None = Non
             raise ArtworkError("BLOCKED", "cross-product surface")
         if surf.get("engineeringHash") != eng:
             raise ArtworkError("BLOCKED", "stale engineeringHash")
+        if surf.get("candidateId") not in {None, surfaces[0].get("candidateId")}:
+            raise ArtworkError("BLOCKED", "cross-candidate surface")
+        if surf.get("version") not in {None, surfaces[0].get("version")}:
+            raise ArtworkError("BLOCKED", "cross-version surface")
         w = _finite(surf["widthMm"], "widthMm", positive=True)
         h = _finite(surf["heightMm"], "heightMm", positive=True)
         panels.append(
@@ -556,7 +590,9 @@ def master_canvas(surfaces: list[dict[str, Any]], *, seam_mm: float | None = Non
         "widthMm": width,
         "heightMm": height,
         "seamMm": seam,
-        "seamSource": "ENGINEERING" if seam_mm is None else "CONFIG",
+        "seamSource": seam_source,
+        "candidateId": surfaces[0].get("candidateId"),
+        "version": surfaces[0].get("version"),
         "panels": panels,
     }
     rec["masterHash"] = stable_hash({k: rec[k] for k in rec if k != "masterHash"})
@@ -594,9 +630,13 @@ class ArtworkFactory:
         self.surfaces: dict[str, dict[str, Any]] = {}
         self.placements: dict[str, dict[str, Any]] = {}
         self.by_hash: dict[str, str] = {}
+        self.engineering: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
 
     def register_surfaces(self, spec: Any, *, tenant_id: str, **kwargs: Any) -> list[dict[str, Any]]:
         rows = derive_printable_surfaces(spec, tenant_id=tenant_id, **kwargs)
+        eng = _engineering(spec)
+        if rows:
+            self.engineering[(tenant_id, rows[0]["productId"], rows[0]["engineeringHash"])] = eng
         out = []
         for row in rows:
             if row["surfaceId"] in self.surfaces:
@@ -608,7 +648,16 @@ class ArtworkFactory:
             out.append(row)
         return out
 
-    def require_surface(self, surface_id: str, *, tenant_id: str, engineering_hash: str | None = None, product_id: str | None = None) -> dict[str, Any]:
+    def require_surface(
+        self,
+        surface_id: str,
+        *,
+        tenant_id: str,
+        engineering_hash: str | None = None,
+        product_id: str | None = None,
+        candidate_id: str | None = None,
+        version: Any = None,
+    ) -> dict[str, Any]:
         rec = self.surfaces.get(surface_id)
         if rec is None:
             raise ArtworkError("BLOCKED", "surface missing")
@@ -618,6 +667,10 @@ class ArtworkFactory:
             raise ArtworkError("STALE", "stale engineeringHash")
         if product_id and rec.get("productId") != product_id:
             raise ArtworkError("BLOCKED", "cross-product surface")
+        if candidate_id and rec.get("candidateId") not in {None, candidate_id}:
+            raise ArtworkError("BLOCKED", "cross-candidate surface")
+        if version is not None and rec.get("version") not in {None, version}:
+            raise ArtworkError("BLOCKED", "cross-version surface")
         return rec
 
     def register_artwork(
@@ -634,7 +687,11 @@ class ArtworkFactory:
         if not data:
             raise ArtworkError("BLOCKED", "empty artwork bytes")
         digest = sha256_bytes(data)
+        if mime == "image/png" and data[:8] != b"\x89PNG\r\n\x1a\n":
+            raise ArtworkError("BLOCKED", "MIME contradicts bytes")
         px_w, px_h = png_size(data)
+        if mime == "image/png" and (not px_w or not px_h):
+            raise ArtworkError("BLOCKED", "PNG size missing")
         obj = self.platform.dam.put(
             tenant_id=tenant_id,
             kind="artwork",
@@ -698,6 +755,8 @@ class ArtworkFactory:
         rot = _finite(rotation_deg, "rotationDeg")
         if not math.isfinite(rot):
             raise ArtworkError("BLOCKED", "non-finite rotation")
+        if (rot % 360.0) not in {0.0, 90.0, 180.0, 270.0}:
+            raise ArtworkError("BLOCKED", "unsupported rotation")
         surface = self.require_surface(surface_id, tenant_id=tenant_id, engineering_hash=engineering_hash, product_id=product_id)
         artwork = self.require_artwork(artwork_id, tenant_id=tenant_id)
         box_w = _finite(width_mm if width_mm is not None else surface["widthMm"], "widthMm", positive=True)
@@ -741,7 +800,12 @@ class ArtworkFactory:
                     "sourceHPx": artwork["pixelHeight"],
                 }
             )
-        dpi = effective_dpi(artwork.get("pixelWidth"), placed["widthMm"])
+        dpi = effective_dpi(
+            artwork.get("pixelWidth"),
+            placed["widthMm"],
+            artwork.get("pixelHeight"),
+            placed["heightMm"],
+        )
         policy = evaluate_placement_policy(surface, placed, dpi=dpi, protected=protected_regions)
         if policy["blockers"]:
             raise ArtworkError("BLOCKED_PLACEMENT", "important region hits keep-out")
@@ -750,6 +814,9 @@ class ArtworkFactory:
             "tenantId": tenant_id,
             "productId": surface["productId"],
             "candidateId": surface.get("candidateId"),
+            "version": surface.get("version"),
+            "objectName": surface.get("objectName") or surface.get("componentId"),
+            "mirrored": bool(surface.get("mirrored")),
             "engineeringHash": surface["engineeringHash"],
             "surfaceId": surface["surfaceId"],
             "surfaceHash": surface["surfaceHash"],
@@ -832,25 +899,81 @@ class ArtworkFactory:
             raise ArtworkError("STALE", "stale artworkHash")
         return rec
 
+    def _authoritative_master(self, placement: dict[str, Any], *, tenant_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        siblings = [
+            s
+            for s in self.surfaces.values()
+            if s.get("tenantId") == tenant_id
+            and s.get("productId") == placement.get("productId")
+            and s.get("engineeringHash") == placement.get("engineeringHash")
+            and str(s.get("componentId") or "").upper().startswith("DOOR")
+        ]
+        if not siblings:
+            siblings = [
+                s
+                for s in self.surfaces.values()
+                if s.get("tenantId") == tenant_id
+                and s.get("productId") == placement.get("productId")
+                and s.get("engineeringHash") == placement.get("engineeringHash")
+            ]
+        siblings.sort(key=lambda s: float((s.get("origin") or {}).get("xMm") or 0.0))
+        master = master_canvas(siblings)
+        crops = split_master(master)
+        crop = next((c for c in crops if c.get("surfaceId") == placement.get("surfaceId")), None)
+        if crop is None:
+            raise ArtworkError("BLOCKED", "authoritative crop missing")
+        return master, crop
+
     def produce_panel(
         self,
         *,
         tenant_id: str,
-        artwork_id: str,
-        master: dict[str, Any],
-        crop: dict[str, Any],
-        placement_hash: str,
-        engineering_hash: str,
+        placement_id: str,
+        artwork_id: str | None = None,
+        master: dict[str, Any] | None = None,
+        crop: dict[str, Any] | None = None,
+        placement_hash: str | None = None,
+        engineering_hash: str | None = None,
         output_px_per_mm: float = 2.0,
     ) -> dict[str, Any]:
-        art = self.require_artwork(artwork_id, tenant_id=tenant_id)
+        rec = self.require_placement(placement_id, tenant_id=tenant_id, engineering_hash=engineering_hash)
+        if placement_hash and placement_hash != rec.get("placementHash"):
+            raise ArtworkError("BLOCKED", "forged placementHash")
+        if artwork_id and artwork_id != rec.get("artworkId"):
+            raise ArtworkError("BLOCKED", "forged artworkId")
+        if engineering_hash and engineering_hash != rec.get("engineeringHash"):
+            raise ArtworkError("STALE", "stale engineeringHash")
+        surface = self.require_surface(
+            rec["surfaceId"],
+            tenant_id=tenant_id,
+            engineering_hash=rec["engineeringHash"],
+            product_id=rec.get("productId"),
+            candidate_id=rec.get("candidateId"),
+            version=rec.get("version"),
+        )
+        if surface.get("surfaceHash") != rec.get("surfaceHash"):
+            raise ArtworkError("STALE", "stale surfaceHash")
+        art = self.require_artwork(rec["artworkId"], tenant_id=tenant_id)
+        auth_master, auth_crop = self._authoritative_master(rec, tenant_id=tenant_id)
+        if rec.get("masterHash") and rec.get("masterHash") != auth_master.get("masterHash"):
+            raise ArtworkError("BLOCKED", "forged masterHash")
+        if master is not None and master.get("masterHash") not in {None, auth_master.get("masterHash")}:
+            raise ArtworkError("BLOCKED", "forged master")
+        if crop is not None:
+            caller_box = crop.get("cropMm") if isinstance(crop.get("cropMm"), dict) else crop
+            auth_box = auth_crop["cropMm"]
+            for key in ("xMm", "yMm", "widthMm", "heightMm"):
+                if caller_box.get(key) is not None and abs(float(caller_box[key]) - float(auth_box[key])) > MM_EPS:
+                    raise ArtworkError("BLOCKED", "forged crop")
+            if crop.get("surfaceHash") and crop.get("surfaceHash") != surface.get("surfaceHash"):
+                raise ArtworkError("BLOCKED", "forged surfaceHash")
         data = Path(art["path"]).read_bytes()
         if sha256_bytes(data) != art["sha256"]:
             raise ArtworkError("BLOCKED", "tampered artwork bytes")
         src_w, src_h, rgb = decode_png_rgb(data)
-        master_w = _finite(master["widthMm"], "master width", positive=True)
-        master_h = _finite(master["heightMm"], "master height", positive=True)
-        box = crop["cropMm"]
+        master_w = _finite(auth_master["widthMm"], "master width", positive=True)
+        master_h = _finite(auth_master["heightMm"], "master height", positive=True)
+        box = auth_crop["cropMm"]
         x0 = int(round((_finite(box["xMm"], "crop x") / master_w) * src_w))
         y0 = int(round((1.0 - (_finite(box["yMm"], "crop y") + _finite(box["heightMm"], "crop h", positive=True)) / master_h) * src_h))
         w_px = max(1, int(round((_finite(box["widthMm"], "crop w", positive=True) / master_w) * src_w)))
@@ -864,36 +987,48 @@ class ArtworkFactory:
         out_h = max(1, int(round(_finite(box["heightMm"], "h", positive=True) * output_px_per_mm)))
         # Keep exact crop pixels as production bytes (no stretch).
         out_w, out_h = w_px, h_px
-        dest = Path(self.platform.root) / "artwork-out" / f"{crop['surfaceId']}.png"
+        dest = Path(self.platform.root) / "artwork-out" / f"{surface['surfaceId']}.png"
         write_png(dest, out_w, out_h, cropped)
         raw = dest.read_bytes()
         digest = sha256_bytes(raw)
         obj = self.platform.dam.put(
             tenant_id=tenant_id,
             kind="production_artwork",
-            name=f"{crop['componentId']}.png",
+            name=f"{surface['componentId']}.png",
             data=raw,
             metadata={
                 "role": "PRODUCTION_ARTWORK",
-                "engineeringHash": engineering_hash,
-                "surfaceHash": crop["surfaceHash"],
+                "engineeringHash": rec["engineeringHash"],
+                "surfaceHash": surface["surfaceHash"],
                 "artworkHash": art["artworkHash"],
-                "placementHash": placement_hash,
-                "masterHash": crop.get("masterHash") or master.get("masterHash"),
+                "placementHash": rec["placementHash"],
+                "masterHash": auth_master.get("masterHash"),
+                "placementId": rec["placementId"],
             },
         )
-        dpi = effective_dpi(out_w, float(box["widthMm"]))
-        policy = evaluate_placement_policy(self.surfaces[crop["surfaceId"]], box, dpi=dpi)
+        dpi = effective_dpi(out_w, float(box["widthMm"]), out_h, float(box["heightMm"]))
+        policy = evaluate_placement_policy(surface, box, dpi=dpi)
+        verified = (
+            obj.sha256 == digest
+            and rec.get("placementHash") == rec["placementHash"]
+            and surface.get("surfaceHash") == rec.get("surfaceHash")
+            and art.get("artworkHash") == rec.get("artworkHash")
+        )
         manifest = {
             "tenantId": tenant_id,
-            "productId": master.get("productId"),
-            "engineeringHash": engineering_hash,
-            "surfaceId": crop["surfaceId"],
-            "surfaceHash": crop["surfaceHash"],
-            "componentId": crop["componentId"],
+            "productId": rec.get("productId"),
+            "candidateId": rec.get("candidateId"),
+            "version": rec.get("version"),
+            "placementId": rec["placementId"],
+            "engineeringHash": rec["engineeringHash"],
+            "surfaceId": surface["surfaceId"],
+            "surfaceHash": surface["surfaceHash"],
+            "componentId": surface["componentId"],
+            "artworkId": art["artworkId"],
             "masterArtworkHash": art["artworkHash"],
-            "placementHash": placement_hash,
-            "masterHash": crop.get("masterHash") or master.get("masterHash"),
+            "artworkHash": art["artworkHash"],
+            "placementHash": rec["placementHash"],
+            "masterHash": auth_master.get("masterHash"),
             "cropMm": box,
             "cropPx": {"x": x0, "y": y0, "w": w_px, "h": h_px},
             "outputPhysicalMm": {"widthMm": box["widthMm"], "heightMm": box["heightMm"]},
@@ -908,11 +1043,11 @@ class ArtworkFactory:
             "generatedAt": utcnow().isoformat(),
             "source": "GENERATED",
             "truthLabel": "REAL_LOGIC",
-            "productionArtworkFileReady": True,
+            "productionArtworkFileReady": bool(verified),
             "physicalPrintValidated": False,
             "printPreflight": "PARTIAL",
         }
-        if obj.sha256 != digest:
+        if not verified:
             raise ArtworkError("BLOCKED", "production hash mismatch")
         return manifest
 
@@ -928,13 +1063,16 @@ class ArtworkFactory:
         for rec in placements:
             items.append(
                 {
-                    "objectName": rec.get("componentId") or rec.get("surfaceId"),
+                    "objectName": rec.get("objectName") or rec.get("componentId") or rec.get("surfaceId"),
                     "imagePath": artwork_path,
                     "uvRect": rec.get("uv") or rec.get("uvRect"),
+                    "rotationDeg": rec.get("rotationDeg") or 0.0,
+                    "mirrored": bool(rec.get("mirrored")),
                     "engineeringHash": rec.get("engineeringHash"),
                     "surfaceHash": rec.get("surfaceHash"),
                     "artworkHash": rec.get("artworkHash"),
                     "placementHash": rec.get("placementHash"),
+                    "componentId": rec.get("componentId"),
                 }
             )
         return {
@@ -973,53 +1111,116 @@ class ArtworkFactory:
                         continue
                     raise ArtworkError("BLOCKED", "preview/production hash mismatch")
             rec["productionArtworkFileReady"] = True
+        art = self.require_artwork(placement["artworkId"], tenant_id=tenant_id)
+        eng = self.engineering.get((tenant_id, placement.get("productId"), placement.get("engineeringHash")))
+        payload = self.blender_job_payload(
+            tenant_id=tenant_id,
+            engineering=eng or {},
+            placements=[placement],
+            artwork_path=str(art.get("path") or ""),
+        )
+        rec["jobPayload"] = {
+            "hasEngineering": bool(eng),
+            "objectName": (payload.get("artworkPlacements") or [{}])[0].get("objectName"),
+            "uvRect": (payload.get("artworkPlacements") or [{}])[0].get("uvRect"),
+            "hashes": hashes,
+        }
         if mock:
             rec["realArtworkPreviewReady"] = False
+            rec["label"] = "MOCK"
+            return rec
+        if not eng or not payload.get("artworkPlacements"):
+            rec["realArtworkPreviewReady"] = False
+            rec["label"] = "BLOCKED_ENVIRONMENT"
             return rec
         try:
-            job = {
-                "tenantId": tenant_id,
-                "jobType": "BLENDER_RENDER",
-                "engineering": {"width": 800, "height": 1800, "depth": 400, "components": []},
-                "artworkPlacements": [
-                    {
-                        **hashes,
-                        "uvRect": placement.get("uv"),
-                    }
-                ],
-            }
-            done = self.platform.submit_job(job) if hasattr(self.platform, "submit_job") else job
-            used_mock = bool(done.get("usedMock") if isinstance(done, dict) else True)
+            done = self.platform.submit_job({**payload, "jobType": "BLENDER_RENDER", "tenantId": tenant_id}) if hasattr(self.platform, "submit_job") else None
+            used_mock = bool((done or {}).get("usedMock") if isinstance(done, dict) else True)
+            artifact = ((done or {}).get("output") or {}).get("beauty.png") if isinstance(done, dict) else None
             rec["usedMock"] = used_mock
             rec["realBlender"] = bool(isinstance(done, dict) and done.get("realBlender") and not used_mock)
-            rec["realArtworkPreviewReady"] = rec["realBlender"] is True
-            rec["label"] = "REAL" if rec["realArtworkPreviewReady"] else "MOCK"
             rec["jobId"] = done.get("jobId") if isinstance(done, dict) else None
             rec["blenderVersion"] = (done.get("blenderVersion") if isinstance(done, dict) else None)
+            rec["device"] = (done.get("device") if isinstance(done, dict) else None) or ((done or {}).get("output") or {}).get("device")
+            rec["artifact"] = artifact
+            applied = isinstance(done, dict) and done.get("status") in {"completed", "succeeded"} and done.get("artworkApplied") is not False
+            rec["realArtworkPreviewReady"] = bool(
+                rec["realBlender"]
+                and applied
+                and rec.get("jobId")
+                and rec.get("blenderVersion")
+                and not used_mock
+            )
+            rec["label"] = "REAL" if rec["realArtworkPreviewReady"] else "BLOCKED_ENVIRONMENT"
         except Exception:
             rec["realArtworkPreviewReady"] = False
             rec["label"] = "BLOCKED_ENVIRONMENT"
-        if mock:
-            rec["realArtworkPreviewReady"] = False
         return rec
+
+
+_REQUIRED_NEGATIVES = {
+    "keepout": "BLOCKED_PLACEMENT",
+    "stale": "STALE",
+    "cross_tenant": "BLOCKED",
+    "cross_product": "BLOCKED",
+    "cross_version": "BLOCKED",
+    "tamper": "BLOCKED",
+    "stretch": "BLOCKED",
+    "nan": "BLOCKED",
+    "forged_production": "BLOCKED",
+    "duplicate": "BLOCKED",
+}
 
 
 def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     if result.get("physicalPrintValidated") is True:
         failures.append("physical_print")
-    if result.get("globalProductionReady") not in {None, False}:
-        failures.append("globalProductionReady")
-    if result.get("fullAutonomousFactoryReady") not in {None, False}:
-        failures.append("fullAutonomousFactoryReady")
-    if result.get("liveFactoryExecutionReady") not in {None, False}:
-        failures.append("liveFactoryExecutionReady")
-    if result.get("liveMachineControl") not in {None, False}:
-        failures.append("liveMachineControl")
+    for flag in ("globalProductionReady", "fullAutonomousFactoryReady", "liveFactoryExecutionReady", "liveMachineControl"):
+        if result.get(flag) not in {None, False}:
+            failures.append(flag)
     if result.get("mockBlender") and result.get("realArtworkPreviewReady") is True:
         failures.append("mock_claimed_real_preview")
-    if not result.get("scenarios"):
+    scenarios = result.get("scenarios") if isinstance(result.get("scenarios"), dict) else {}
+    if not scenarios:
         failures.append("scenarios_missing")
+    negatives = result.get("negatives") if isinstance(result.get("negatives"), dict) else {}
+    for key, want in _REQUIRED_NEGATIVES.items():
+        got = negatives.get(key)
+        if got != want:
+            failures.append(f"negative_{key}")
+    for n, name in ((2, "cabinet2"), (3, "cabinet3"), (4, "cabinet4")):
+        row = scenarios.get(name) if isinstance(scenarios.get(name), dict) else {}
+        crops = row.get("panelCrops") or []
+        ids = row.get("surfaceIds") or []
+        if len(crops) != n and len(ids) != n:
+            failures.append(f"split_{n}")
+        if crops:
+            for i in range(1, len(crops)):
+                prev = crops[i - 1]
+                cur = crops[i]
+                if abs(float(cur.get("xMm") or 0) - (float(prev.get("xMm") or 0) + float(prev.get("widthMm") or 0))) > MM_EPS:
+                    failures.append(f"continuity_{name}")
+    cab4 = scenarios.get("cabinet4") if isinstance(scenarios.get("cabinet4"), dict) else {}
+    preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
+    lineage = result.get("lineage") if isinstance(result.get("lineage"), dict) else {}
+    for key in ("engineeringHash", "surfaceHash", "artworkHash", "placementHash"):
+        if not lineage.get(key):
+            failures.append(f"lineage_{key}")
+        if preview.get(key) and preview.get(key) != lineage.get(key):
+            failures.append(f"preview_lineage_{key}")
+        prods = cab4.get("production") or []
+        if prods and prods[0].get(key) not in {None, lineage.get(key)} and key != "artworkHash":
+            if key == "placementHash" and prods[0].get("placementHash") not in (cab4.get("placementHashes") or []):
+                failures.append("production_lineage_placement")
+    if result.get("mockBlender") and result.get("realArtworkPreviewReady"):
+        failures.append("mock_real_preview")
+    if result.get("surfaceDecorationLogicReady") is not True:
+        failures.append("surfaceDecorationLogicReady")
+    if result.get("productionArtworkFileReady") is not True:
+        failures.append("productionArtworkFileReady")
+    if not (cab4.get("blenderDoors") or cab4.get("doorLayout")):
+        failures.append("blender_door_layout")
     return failures
 
 
@@ -1050,14 +1251,20 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         "dieline": {"panels": [{"id": "FRONT", "w": 120, "h": 160}]},
         "components": [],
     }
+    cab3, _r3 = engine.create("STORAGE_CABINET", tenant_id=tenant_a, width=1800, height=1800, doorCount=3, shelfCount=1)
     s2 = factory.register_surfaces(cab2, tenant_id=tenant_a)
     s4 = factory.register_surfaces(cab4, tenant_id=tenant_a)
+    s3 = factory.register_surfaces(cab3, tenant_id=tenant_a)
     s_desk = factory.register_surfaces(desk, tenant_id=tenant_a)
     s_retail = factory.register_surfaces(retail, tenant_id=tenant_a)
     s_acr = factory.register_surfaces(acr, tenant_id=tenant_a)
     s_pkg = factory.register_surfaces(pkg, tenant_id=tenant_a, family="PACKAGING")
     doors2 = [s for s in s2 if str(s["componentId"]).upper().startswith("DOOR")]
+    doors3 = [s for s in s3 if str(s["componentId"]).upper().startswith("DOOR")]
     doors4 = [s for s in s4 if str(s["componentId"]).upper().startswith("DOOR")]
+    doors2.sort(key=lambda s: float((s.get("origin") or {}).get("xMm") or 0))
+    doors3.sort(key=lambda s: float((s.get("origin") or {}).get("xMm") or 0))
+    doors4.sort(key=lambda s: float((s.get("origin") or {}).get("xMm") or 0))
     grid = checkerboard_rgb(480, 360, cell=24)
     path = Path(plat.root) / "fixture-art.png"
     write_png(path, 480, 360, grid)
@@ -1070,24 +1277,35 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         product_id=cab4.productId,
         fit=FIT_COVER,
     )
+    master3, crops3, places3 = factory.place_across_panels(
+        tenant_id=tenant_a,
+        artwork_id=art["artworkId"],
+        surfaces=doors3,
+        engineering_hash=cab3.engineering_hash(),
+        product_id=cab3.productId,
+        fit=FIT_COVER,
+    )
     productions = [
         factory.produce_panel(
             tenant_id=tenant_a,
+            placement_id=place["placementId"],
             artwork_id=art["artworkId"],
             master=master4,
             crop=crop,
-            placement_hash=crop["placementHash"],
+            placement_hash=place["placementHash"],
             engineering_hash=cab4.engineering_hash(),
         )
-        for crop in crops4
+        for place, crop in zip(places4, crops4)
     ]
-    place2 = factory.place(
+    master2, crops2, places2 = factory.place_across_panels(
         tenant_id=tenant_a,
-        surface_id=doors2[0]["surfaceId"],
         artwork_id=art["artworkId"],
+        surfaces=doors2,
         engineering_hash=cab2.engineering_hash(),
         product_id=cab2.productId,
+        fit=FIT_CONTAIN,
     )
+    place2 = places2[0]
     preview = factory.preview(tenant_id=tenant_a, placement=places4[0], production=productions[0])
     negatives: dict[str, str] = {}
     try:
@@ -1153,12 +1371,58 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         negatives["nan"] = "passed"
     except ArtworkError as exc:
         negatives["nan"] = exc.code
+    try:
+        factory.require_surface(doors4[0]["surfaceId"], tenant_id=tenant_a, version="other")
+        negatives["cross_version"] = "passed"
+    except ArtworkError as exc:
+        negatives["cross_version"] = exc.code
+    try:
+        factory.produce_panel(
+            tenant_id=tenant_a,
+            placement_id=places4[0]["placementId"],
+            placement_hash=places4[0]["placementHash"],
+            engineering_hash=cab4.engineering_hash(),
+            crop={"cropMm": {"xMm": 99.0, "yMm": 0.0, "widthMm": 10.0, "heightMm": 10.0}, "surfaceHash": places4[0]["surfaceHash"]},
+            master={"masterHash": master4["masterHash"], "widthMm": master4["widthMm"], "heightMm": master4["heightMm"]},
+        )
+        negatives["forged_production"] = "passed"
+    except ArtworkError:
+        negatives["forged_production"] = "BLOCKED"
+    try:
+        factory.register_surfaces(cab4, tenant_id=tenant_a)
+        negatives["duplicate"] = "passed"
+    except ArtworkError:
+        negatives["duplicate"] = "BLOCKED"
+    bj_path = Path(__file__).resolve().parents[2] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("fox3d_blender_job_art", bj_path)
+    bj = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(bj)
+    door_layout = bj.door_layout_from_engineering(cab4.model_dump(mode="json"))
+    payload = factory.blender_job_payload(
+        tenant_id=tenant_a,
+        engineering=cab4.model_dump(mode="json"),
+        placements=places4,
+        artwork_path=str(path),
+    )
+    applied = bj.apply_canonical_artwork({p["objectName"]: {} for p in payload["artworkPlacements"]}, payload)
+    logic_ok = (
+        len(doors2) == 2
+        and len(doors3) == 3
+        and len(doors4) == 4
+        and len(productions) == 4
+        and all(p.get("productionArtworkFileReady") for p in productions)
+        and applied
+        and all(a.get("applied") for a in applied)
+        and len(door_layout) == 4
+        and all(abs(door_layout[i]["widthMm"] - doors4[i]["widthMm"]) < MM_EPS for i in range(4))
+    )
     mock = bool(getattr(plat, "mock_blender", True))
     result = {
-        "ok": True,
+        "ok": False,
         "label": "FIXTURE/REAL_LOGIC",
-        "surfaceDecorationLogicReady": True,
-        "productionArtworkFileReady": True,
+        "surfaceDecorationLogicReady": False,
+        "productionArtworkFileReady": False,
         "realArtworkPreviewReady": bool(preview.get("realArtworkPreviewReady")) and not mock,
         "physicalPrintValidated": False,
         "artworkContentAwarePlacementReady": False,
@@ -1170,13 +1434,36 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         "demandLabel": "MOCK",
         "printPreflight": "PARTIAL",
         "scenarios": {
-            "cabinet2": {"surfaceIds": [d["surfaceId"] for d in doors2], "placementHash": place2["placementHash"]},
+            "cabinet2": {
+                "surfaceIds": [d["surfaceId"] for d in doors2],
+                "panelCrops": [c["cropMm"] for c in crops2],
+                "placementHash": place2["placementHash"],
+            },
+            "cabinet3": {
+                "surfaceIds": [d["surfaceId"] for d in doors3],
+                "panelCrops": [c["cropMm"] for c in crops3],
+                "placementHashes": [p["placementHash"] for p in places3],
+            },
             "cabinet4": {
                 "masterHash": master4["masterHash"],
                 "widthMm": master4["widthMm"],
+                "seamSource": master4.get("seamSource"),
                 "panelCrops": [c["cropMm"] for c in crops4],
                 "placementHashes": [p["placementHash"] for p in places4],
-                "production": [{"sha256": p["sha256"], "placementHash": p["placementHash"], "surfaceHash": p["surfaceHash"]} for p in productions],
+                "production": [
+                    {
+                        "sha256": p["sha256"],
+                        "placementHash": p["placementHash"],
+                        "surfaceHash": p["surfaceHash"],
+                        "engineeringHash": p["engineeringHash"],
+                        "artworkHash": p.get("artworkHash") or p.get("masterArtworkHash"),
+                        "productionArtworkFileReady": p.get("productionArtworkFileReady"),
+                    }
+                    for p in productions
+                ],
+                "doorLayout": door_layout,
+                "blenderDoors": [{"widthMm": d["widthMm"], "heightMm": d["heightMm"], "name": d["name"]} for d in door_layout],
+                "appliedUv": applied,
             },
             "desk": {"surfaceIds": [s["surfaceId"] for s in s_desk]},
             "retail": {"surfaceIds": [s["surfaceId"] for s in s_retail]},
@@ -1194,7 +1481,9 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
     }
     if mock:
         result["realArtworkPreviewReady"] = False
-    result["ok"] = not validate_artwork_acceptance_result(result) and negatives.get("keepout") == "BLOCKED_PLACEMENT" and negatives.get("stale") == "STALE"
+    result["surfaceDecorationLogicReady"] = bool(logic_ok)
+    result["productionArtworkFileReady"] = bool(logic_ok and all(p.get("productionArtworkFileReady") for p in productions))
+    result["ok"] = not validate_artwork_acceptance_result(result)
     return result
 
 

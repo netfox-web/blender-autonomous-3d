@@ -36,6 +36,41 @@ def test_artwork_runner_refuses_dirty(tmp_path):
     assert rc != 0
 
 
+def test_artwork_runner_corrupted_result_does_not_publish(tmp_path):
+    from fox3d.platform import Platform
+    from fox3d.artwork import run_artwork_scenario
+
+    mod = _load()
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    prior = (docs / "ARTWORK_PLACEMENT_ACCEPTANCE.json")
+    prior.write_text("old", encoding="utf-8")
+
+    def bad(plat):
+        rec = run_artwork_scenario(plat)
+        rec["ok"] = True
+        rec["surfaceDecorationLogicReady"] = True
+        rec["productionArtworkFileReady"] = True
+        rec["negatives"]["keepout"] = "passed"
+        rec["lineage"]["placementHash"] = "forged"
+        rec["preview"]["placementHash"] = "forged"
+        rec["scenarios"]["cabinet4"]["production"][0]["placementHash"] = "forged"
+        return rec
+
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", SHA],
+        hooks={
+            "inspect": _inspect(SHA),
+            "platform": lambda root: Platform(root=root, mock_blender=True),
+            "scenario": bad,
+            "acceptance_root": tmp_path / "acc",
+            "prior_docs": ROOT / "docs",
+        },
+    )
+    assert rc != 0
+    assert prior.read_text(encoding="utf-8") == "old"
+
+
 def test_artwork_runner_publishes_canonical(tmp_path):
     from fox3d.platform import Platform
     from fox3d.artwork import run_artwork_scenario

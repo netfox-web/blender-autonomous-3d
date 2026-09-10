@@ -395,41 +395,163 @@ def import_glb(path: str):
     return root
 
 
-def apply_canonical_artwork(created: dict, job: dict) -> None:
-    """Consume canonical UV/placement hashes. Do not invent a second millimetre SOT."""
+class ArtworkApplyError(Exception):
+    """Fail-closed canonical artwork apply."""
+
+
+_SUPPORTED_ROT = {0.0, 90.0, 180.0, 270.0}
+
+
+def door_layout_from_engineering(engineering: dict) -> list[dict]:
+    """Door mesh size/pose from engineering components only — no hidden clearance."""
+    parts = engineering.get("components") or []
+    width = float(engineering.get("width") or 0)
+    depth = float(engineering.get("depth") or 0)
+    doors = []
+    cursor = 0.0
+    for part in parts:
+        if not isinstance(part, dict) or str(part.get("role") or "") != "door":
+            continue
+        dw = float(part.get("width") or 0)
+        dh = float(part.get("length") or 0)
+        th = float(part.get("thickness") or 18)
+        if dw <= 0 or dh <= 0:
+            raise ArtworkApplyError("engineering door face missing dimensions")
+        x_mm = -width / 2.0 + cursor + dw / 2.0
+        y_mm = -depth / 2.0 - th / 2.0
+        z_mm = dh / 2.0
+        doors.append(
+            {
+                "name": str(part.get("partName") or part.get("partId") or "DOOR"),
+                "partId": str(part.get("partId") or ""),
+                "widthMm": dw,
+                "heightMm": dh,
+                "thicknessMm": th,
+                "sizeMm": (dw, th, dh),
+                "locMm": (x_mm, y_mm, z_mm),
+                "sizeM": (dw / 1000.0, th / 1000.0, dh / 1000.0),
+                "locM": (x_mm / 1000.0, y_mm / 1000.0, z_mm / 1000.0),
+            }
+        )
+        cursor += dw
+    return doors
+
+
+def canonical_uv_mapping(uv_rect: dict, *, rotation_deg: float = 0.0, mirrored: bool = False) -> dict:
+    if not isinstance(uv_rect, dict):
+        raise ArtworkApplyError("missing uvRect")
+    try:
+        u0 = float(uv_rect["u0"])
+        v0 = float(uv_rect["v0"])
+        u1 = float(uv_rect["u1"])
+        v1 = float(uv_rect["v1"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ArtworkApplyError("missing uvRect") from exc
+    if not all(math.isfinite(v) for v in (u0, v0, u1, v1)):
+        raise ArtworkApplyError("non-finite uvRect")
+    rot = float(rotation_deg or 0.0) % 360.0
+    if rot not in _SUPPORTED_ROT:
+        raise ArtworkApplyError("unsupported rotation")
+    cx, cy = (u0 + u1) / 2.0, (v0 + v1) / 2.0
+    corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+    steps = int(rot // 90.0)
+    for _ in range(steps):
+        corners = [(cx - (y - cy), cy + (x - cx)) for x, y in corners]
+    if mirrored:
+        corners = [(u0 + u1 - x, y) for x, y in corners]
+    return {
+        "uvRect": {"u0": u0, "v0": v0, "u1": u1, "v1": v1},
+        "rotationDeg": rot,
+        "mirrored": bool(mirrored),
+        "corners": corners,
+        "location": (u0, v0, 0.0),
+        "scale": (u1 - u0, v1 - v0, 1.0),
+    }
+
+
+def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
+    """Apply canonical UV/crop/rotation to the exact engineering object. Fail closed."""
     items = job.get("artworkPlacements") or []
     if not items:
-        return
+        return []
+    applied: list[dict] = []
+    bpy = None
     try:
-        import bpy
+        import bpy as _bpy
+
+        bpy = _bpy
     except ImportError:
-        return
+        bpy = None
     for item in items:
         if not isinstance(item, dict):
-            continue
-        name = str(item.get("objectName") or "")
-        path = item.get("imagePath")
-        obj = created.get(name) if created else None
-        if obj is None and name:
+            raise ArtworkApplyError("malformed artwork placement")
+        for key in ("objectName", "imagePath", "uvRect", "engineeringHash", "surfaceHash", "artworkHash", "placementHash"):
+            val = item.get(key)
+            if val is None or val == "":
+                raise ArtworkApplyError(f"missing {key}")
+        name = str(item["objectName"])
+        path = Path(str(item["imagePath"]))
+        if not path.exists() or not path.is_file():
+            raise ArtworkApplyError("missing artwork image")
+        mapping = canonical_uv_mapping(
+            item.get("uvRect"),
+            rotation_deg=float(item.get("rotationDeg") or 0.0),
+            mirrored=bool(item.get("mirrored")),
+        )
+        obj = (created or {}).get(name) if created is not None else None
+        if obj is None and bpy is not None:
             obj = bpy.data.objects.get(name)
-        if obj is None or not path or not Path(path).exists():
-            continue
-        img = bpy.data.images.load(str(path))
-        mat = bpy.data.materials.new(f"artwork.{name}")
-        mat.use_nodes = True
-        nt = mat.node_tree
-        principled = nt.nodes.get("Principled BSDF")
-        tex = nt.nodes.new("ShaderNodeTexImage")
-        tex.image = img
-        if principled:
-            nt.links.new(tex.outputs["Color"], principled.inputs["Base Color"])
-        if getattr(obj, "data", None) is not None and hasattr(obj.data, "materials"):
-            obj.data.materials.clear()
-            obj.data.materials.append(mat)
-        obj["engineeringHash"] = item.get("engineeringHash")
-        obj["surfaceHash"] = item.get("surfaceHash")
-        obj["artworkHash"] = item.get("artworkHash")
-        obj["placementHash"] = item.get("placementHash")
+        if obj is None:
+            raise ArtworkApplyError(f"missing object {name}")
+        if bpy is not None and getattr(obj, "data", None) is not None:
+            img = bpy.data.images.load(str(path))
+            mat = bpy.data.materials.new(f"artwork.{name}")
+            mat.use_nodes = True
+            nt = mat.node_tree
+            principled = nt.nodes.get("Principled BSDF")
+            tex = nt.nodes.new("ShaderNodeTexImage")
+            tex.image = img
+            mapping_node = nt.nodes.new("ShaderNodeMapping")
+            texcoord = nt.nodes.new("ShaderNodeTexCoord")
+            mapping_node.inputs["Location"].default_value = mapping["location"]
+            mapping_node.inputs["Scale"].default_value = mapping["scale"]
+            mapping_node.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(mapping["rotationDeg"]))
+            nt.links.new(texcoord.outputs["UV"], mapping_node.inputs["Vector"])
+            nt.links.new(mapping_node.outputs["Vector"], tex.inputs["Vector"])
+            if principled:
+                nt.links.new(tex.outputs["Color"], principled.inputs["Base Color"])
+            if hasattr(obj.data, "materials"):
+                obj.data.materials.clear()
+                obj.data.materials.append(mat)
+            mesh = obj.data
+            if hasattr(mesh, "uv_layers"):
+                uv_layer = mesh.uv_layers.active or mesh.uv_layers.new(name="canonical")
+                corners = mapping["corners"]
+                for i, loop in enumerate(getattr(mesh, "loops", []) or []):
+                    uv_layer.data[loop.index].uv = corners[i % 4]
+        record = {
+            "objectName": name,
+            "applied": True,
+            **mapping,
+            "engineeringHash": item.get("engineeringHash"),
+            "surfaceHash": item.get("surfaceHash"),
+            "artworkHash": item.get("artworkHash"),
+            "placementHash": item.get("placementHash"),
+        }
+        if isinstance(obj, dict):
+            obj["canonicalArtwork"] = record
+        else:
+            try:
+                obj["canonicalArtworkApplied"] = True
+                obj["engineeringHash"] = item.get("engineeringHash")
+                obj["surfaceHash"] = item.get("surfaceHash")
+                obj["artworkHash"] = item.get("artworkHash")
+                obj["placementHash"] = item.get("placementHash")
+                obj["uvRect"] = str(mapping["uvRect"])
+            except Exception:
+                pass
+        applied.append(record)
+    return applied
 
 
 def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0, 0.0), name_prefix: str = "", setup_scene: bool = True) -> dict:
@@ -455,6 +577,7 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         material = "white_wood"
     parts = engineering.get("components") or []
     counts = {"shelf": 0, "door": 0, "divider": 0, "drawer_front": 0}
+    door_cursor = 0.0
     for part in parts:
         role = str(part.get("role") or "")
         name = str(part.get("partName") or role or "PART")
@@ -490,10 +613,14 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
             loc = [-width / 4 if counts["divider"] == 1 else width / 4, 0, height / 2]
         elif role == "door":
             counts["door"] += 1
-            door_w = width / max(1, sum(1 for p in parts if p.get("role") == "door"))
-            x = -width / 2 + door_w * (counts["door"] - 0.5)
-            size = [door_w - 0.002, thick, height]
-            loc = [x, -depth / 2 - thick / 2, height / 2]
+            door_w = width_p if width_p > 0 else 0.0
+            door_h = length if length > 0 else height
+            if door_w <= 0 or door_h <= 0:
+                raise ArtworkApplyError("engineering door face missing dimensions")
+            x = -width / 2 + door_cursor + door_w / 2
+            door_cursor += door_w
+            size = [door_w, thick, door_h]
+            loc = [x, -depth / 2 - thick / 2, door_h / 2]
             if explode:
                 loc[1] -= 0.15 * counts["door"]
         elif role == "drawer_front":
@@ -847,7 +974,10 @@ def build_and_render(job: dict) -> dict:
         created = build_space_preview(job.get("space") or {}, job.get("assembly") or {})
     elif job.get("engineering"):
         created = build_cabinet(job["engineering"], explode=bool(job.get("explode")))
-        apply_canonical_artwork(created, job)
+        try:
+            apply_canonical_artwork(created, job)
+        except ArtworkApplyError as exc:
+            return {"status": "failed", "error": str(exc), "realBlender": True, "artworkApplied": False}
     else:
         graph = job.get("sceneGraph") or {}
         created = build_from_graph(graph)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -128,15 +129,29 @@ def test_four_door_master_continuity_and_no_stretch(tmp_path):
     plat = _plat(tmp_path)
     eng = CabinetEngine()
     cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    eng_doors = [p for p in cab.components if p.get("role") == "door"]
     doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    doors.sort(key=lambda s: float(s["origin"]["xMm"]))
     assert len(doors) == 4
-    assert all(abs(d["widthMm"] - 600) < 1e-6 for d in doors)
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_doors", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    layout = bj.door_layout_from_engineering(cab.model_dump(mode="json"))
+    for i, door in enumerate(doors):
+        assert door["widthMm"] == pytest.approx(eng_doors[i]["width"])
+        assert door["heightMm"] == pytest.approx(eng_doors[i]["length"])
+        assert layout[i]["widthMm"] == pytest.approx(door["widthMm"])
+        assert layout[i]["heightMm"] == pytest.approx(door["heightMm"])
+        assert abs(layout[i]["sizeM"][0] - 0.002) > 1e-9
     master = master_canvas(doors)
-    assert master["widthMm"] == pytest.approx(2400)
+    assert master["widthMm"] == pytest.approx(sum(d["widthMm"] for d in doors))
     crops = split_master(master)
     rights = []
     for i, crop in enumerate(crops):
-        assert crop["cropMm"]["widthMm"] == pytest.approx(600)
+        assert crop["cropMm"]["widthMm"] == pytest.approx(eng_doors[i]["width"])
         if i:
             assert crop["cropMm"]["xMm"] == pytest.approx(rights[-1])
         rights.append(crop["cropMm"]["xMm"] + crop["cropMm"]["widthMm"])
@@ -240,9 +255,128 @@ def test_production_and_preview_share_hashes_mock_not_real(tmp_path):
 def test_three_and_two_panel_split(tmp_path):
     plat = _plat(tmp_path)
     eng = CabinetEngine()
+    cab2, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
     cab3, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=1800, height=1800, doorCount=3)
-    doors = [s for s in plat.artwork.register_surfaces(cab3, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
-    master = master_canvas(doors)
-    crops = split_master(master)
-    assert len(crops) == 3
-    assert master["widthMm"] == pytest.approx(1800)
+    cab4, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    for cab, n in ((cab2, 2), (cab3, 3), (cab4, 4)):
+        doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+        master = master_canvas(doors)
+        crops = split_master(master)
+        assert len(crops) == n
+        assert master["widthMm"] == pytest.approx(sum(d["widthMm"] for d in doors))
+        for i in range(1, n):
+            assert crops[i]["cropMm"]["xMm"] == pytest.approx(crops[i - 1]["cropMm"]["xMm"] + crops[i - 1]["cropMm"]["widthMm"])
+
+
+def test_rotation_changes_mapping_and_unsupported_is_blocked(tmp_path):
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_uv", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    uv = {"u0": 0.1, "v0": 0.2, "u1": 0.4, "v1": 0.8}
+    a = bj.canonical_uv_mapping(uv, rotation_deg=0)
+    b = bj.canonical_uv_mapping(uv, rotation_deg=90)
+    assert a["corners"] != b["corners"]
+    with pytest.raises(bj.ArtworkApplyError):
+        bj.canonical_uv_mapping(uv, rotation_deg=45)
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    door = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()][0]
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path), source="GENERATED")
+    with pytest.raises(ArtworkError, match="unsupported rotation"):
+        plat.artwork.place(
+            tenant_id="ta",
+            surface_id=door["surfaceId"],
+            artwork_id=art["artworkId"],
+            engineering_hash=cab.engineering_hash(),
+            product_id=cab.productId,
+            rotation_deg=33,
+        )
+
+
+def test_blender_apply_consumes_uv_and_fails_closed(tmp_path):
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_apply", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    art = tmp_path / "a.png"
+    write_png(art, 8, 8, checkerboard_rgb(8, 8, cell=2))
+    item = {
+        "objectName": "DOOR_1",
+        "imagePath": str(art),
+        "uvRect": {"u0": 0.0, "v0": 0.0, "u1": 0.25, "v1": 1.0},
+        "rotationDeg": 0,
+        "engineeringHash": "e",
+        "surfaceHash": "s",
+        "artworkHash": "a",
+        "placementHash": "p1",
+    }
+    applied = bj.apply_canonical_artwork({"DOOR_1": {}}, {"artworkPlacements": [item]})
+    assert applied[0]["applied"] is True
+    item2 = dict(item)
+    item2["uvRect"] = {"u0": 0.25, "v0": 0.0, "u1": 0.5, "v1": 1.0}
+    item2["placementHash"] = "p2"
+    applied2 = bj.apply_canonical_artwork({"DOOR_1": {}}, {"artworkPlacements": [item2]})
+    assert applied[0]["corners"] != applied2[0]["corners"]
+    with pytest.raises(bj.ArtworkApplyError):
+        bj.apply_canonical_artwork({}, {"artworkPlacements": [item]})
+    missing = dict(item)
+    missing.pop("uvRect")
+    with pytest.raises(bj.ArtworkApplyError):
+        bj.apply_canonical_artwork({"DOOR_1": {}}, {"artworkPlacements": [missing]})
+
+
+def test_forged_production_crop_blocks(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    _master, _crops, places = plat.artwork.place_across_panels(
+        tenant_id="ta",
+        artwork_id=art["artworkId"],
+        surfaces=doors,
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.produce_panel(
+            tenant_id="ta",
+            placement_id=places[0]["placementId"],
+            placement_hash=places[0]["placementHash"],
+            crop={"cropMm": {"xMm": 12, "yMm": 0, "widthMm": 9, "heightMm": 9}, "surfaceHash": places[0]["surfaceHash"]},
+            master={"masterHash": places[0].get("masterHash")},
+        )
+    with pytest.raises(ArtworkError):
+        plat.artwork.produce_panel(tenant_id="ta", placement_id=places[0]["placementId"], placement_hash="forged-hash")
+
+
+def test_dpi_uses_limiting_axis(tmp_path):
+    assert effective_dpi(100, 25.4, 50, 50.8) == pytest.approx(25.0)
+    assert effective_dpi(300, 25.4) == pytest.approx(300)
+
+
+def test_cross_version_and_resize_invalidates_lineage(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    with pytest.raises(ArtworkError, match="cross-version"):
+        plat.artwork.require_surface(doors[0]["surfaceId"], tenant_id="ta", version="nope")
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path), source="GENERATED")
+    place = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    resized, _ = eng.resize(cab, width=1000)
+    with pytest.raises(ArtworkError) as exc:
+        plat.artwork.require_placement(place["placementId"], tenant_id="ta", engineering_hash=resized.engineering_hash())
+    assert exc.value.code == "STALE"
