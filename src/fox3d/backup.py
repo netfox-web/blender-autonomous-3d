@@ -34,6 +34,7 @@ BACKUP_DIRS = (
     "exceptions",
     "portfolio",
     "prototype",
+    "pilot_batch",
 )
 VOLATILE_SUFFIXES = {".lock", ".tmp", ".staging"}
 TENANT_OWNED = "TENANT_OWNED"
@@ -80,6 +81,16 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
         "pilotPlans": TENANT_OWNED,
         "labor": TENANT_OWNED,
     },
+    "pilot_batch/pilot_batch.json": {
+        "batches": TENANT_OWNED,
+        "units": TENANT_OWNED,
+        "cartons": TENANT_OWNED,
+        "costs": TENANT_OWNED,
+        "ncrs": TENANT_OWNED,
+        "decisions": TENANT_OWNED,
+        "qc": TENANT_OWNED,
+        "labor": TENANT_OWNED,
+    },
 }
 MIXED_JSON = {rel: tuple(spec.keys()) for rel, spec in MIXED_SPEC.items()}
 SNAPSHOT_RETRIES = 5
@@ -124,6 +135,12 @@ TENANT_MATRIX_DOMAINS = (
     "prototypeLaunchDecisions",
     "prototypePilotPlans",
     "prototypeLabor",
+    "pilotBatches",
+    "pilotBatchUnits",
+    "pilotBatchCartons",
+    "pilotBatchDecisions",
+    "pilotBatchNcrs",
+    "pilotBatchCosts",
 )
 OPTIONAL_EMPTY_DOMAINS = frozenset(
     {
@@ -145,6 +162,12 @@ OPTIONAL_EMPTY_DOMAINS = frozenset(
         "prototypeLaunchDecisions",
         "prototypePilotPlans",
         "prototypeLabor",
+        "pilotBatches",
+        "pilotBatchUnits",
+        "pilotBatchCartons",
+        "pilotBatchDecisions",
+        "pilotBatchNcrs",
+        "pilotBatchCosts",
     }
 )
 
@@ -1381,6 +1404,104 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                 key=lambda r: str(r.get("laborId")),
             ),
             "laborId",
+        ),
+        "pilotBatches": _entry(
+            sorted(
+                [
+                    {
+                        "batchId": r.get("batchId"),
+                        "tenantId": r.get("tenantId"),
+                        "candidateId": r.get("candidateId"),
+                        "engineeringHash": r.get("engineeringHash"),
+                        "requestedQuantity": r.get("requestedQuantity"),
+                        "workOrderId": r.get("workOrderId"),
+                        "releaseHash": r.get("releaseHash"),
+                        "state": r.get("state"),
+                        "source": r.get("source"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "pilot_batch", None), "batches", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("batchId")),
+            ),
+            "batchId",
+        ),
+        "pilotBatchUnits": _entry(
+            sorted(
+                [
+                    {
+                        "unitExecutionId": r.get("unitExecutionId"),
+                        "batchId": r.get("batchId"),
+                        "engineeringHash": r.get("engineeringHash"),
+                        "state": r.get("state"),
+                        "consumedQuantity": r.get("consumedQuantity"),
+                        "idempotencyKey": r.get("idempotencyKey"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "pilot_batch", None), "units", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("unitExecutionId")),
+            ),
+            "unitExecutionId",
+        ),
+        "pilotBatchCartons": _entry(
+            sorted(
+                [
+                    {
+                        "cartonId": r.get("cartonId"),
+                        "batchId": r.get("batchId"),
+                        "unitExecutionIds": r.get("unitExecutionIds"),
+                        "packagingQty": r.get("packagingQty"),
+                        "checklistId": r.get("checklistId"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "pilot_batch", None), "cartons", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("cartonId")),
+            ),
+            "cartonId",
+        ),
+        "pilotBatchDecisions": _entry(
+            sorted(
+                [
+                    {
+                        "decisionId": r.get("decisionId"),
+                        "batchId": r.get("batchId"),
+                        "decision": r.get("decision"),
+                        "engineeringHash": r.get("engineeringHash"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "pilot_batch", None), "decisions", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("decisionId")),
+            ),
+            "decisionId",
+        ),
+        "pilotBatchNcrs": _entry(
+            sorted(
+                [
+                    {
+                        "ncrId": r.get("ncrId"),
+                        "batchId": r.get("batchId"),
+                        "unitExecutionId": r.get("unitExecutionId"),
+                        "category": r.get("category"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "pilot_batch", None), "ncrs", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("ncrId")),
+            ),
+            "ncrId",
+        ),
+        "pilotBatchCosts": _entry(
+            sorted(
+                [
+                    {
+                        "costId": r.get("costId"),
+                        "batchId": r.get("batchId"),
+                        "completeness": r.get("completeness"),
+                        "laborIds": ((r.get("quantityLineage") or {}).get("laborLineage") or {}).get("laborIds"),
+                    }
+                    for r in _owned(getattr(getattr(plat, "pilot_batch", None), "costs", {}), tenant_id)
+                ],
+                key=lambda r: str(r.get("costId")),
+            ),
+            "costId",
         ),
     }
     compact = {k: domains[k]["digest"] for k in TENANT_MATRIX_DOMAINS}

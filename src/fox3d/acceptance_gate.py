@@ -34,6 +34,10 @@ PROTOTYPE_ACCEPTANCE_FILES = (
     "PHYSICAL_PROTOTYPE_EVIDENCE_ACCEPTANCE",
     "HUMAN_LAUNCH_GATE_ACCEPTANCE",
 )
+PILOT_BATCH_ACCEPTANCE_FILES = (
+    "PILOT_BATCH_EXECUTION_ACCEPTANCE",
+    "COMMERCIAL_LAUNCH_READINESS_ACCEPTANCE",
+)
 
 
 def required_real_acceptance_ok(
@@ -287,6 +291,38 @@ def read_prototype_truth_set(docs: Path) -> dict[str, Any]:
             errors.append(f"fixture_physical:{name}")
         if payload.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"} and payload.get("evidenceLabel") == "FIXTURE":
             errors.append(f"fixture_launch:{name}")
+        for flag in (
+            "fullAutonomousFactoryReady",
+            "liveFactoryExecutionReady",
+            "liveProviderReady",
+            "globalProductionReady",
+            "liveMachineControl",
+        ):
+            if payload.get(flag) is not False:
+                errors.append(f"readiness:{name}:{flag}")
+    result["errors"] = errors
+    result["ok"] = not errors
+    return result
+
+
+def read_pilot_batch_truth_set(docs: Path) -> dict[str, Any]:
+    result = read_canonical_truth_set(docs, names=PILOT_BATCH_ACCEPTANCE_FILES)
+    errors = list(result.get("errors") or [])
+    for name in PILOT_BATCH_ACCEPTANCE_FILES:
+        md = docs / f"{name}.md"
+        if not md.exists() or md.stat().st_size < 1:
+            errors.append(f"missing:{name}.md")
+    for name, payload in (result.get("payloads") or {}).items():
+        if payload.get("ok") is not True:
+            errors.append(f"ok_not_true:{name}")
+        if payload.get("workingTreeClean") is not True:
+            errors.append(f"dirty:{name}")
+        if payload.get("evidenceCommitMatchesHead") is not True:
+            errors.append(f"unbound:{name}")
+        if payload.get("physicalPilotBatchValidated") is True and payload.get("evidenceLabel") == "FIXTURE":
+            errors.append(f"fixture_physical_batch:{name}")
+        if payload.get("batchLaunchDecision") == "HUMAN_BATCH_GO" and payload.get("evidenceLabel") == "FIXTURE":
+            errors.append(f"fixture_batch_go:{name}")
         for flag in (
             "fullAutonomousFactoryReady",
             "liveFactoryExecutionReady",

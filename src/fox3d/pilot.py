@@ -105,6 +105,7 @@ class PilotOps:
             self.cyclecounts,
             platform.lots,
             getattr(platform, "prototype", None),
+            getattr(platform, "pilot_batch", None),
         ):
             if svc is None:
                 continue
@@ -177,6 +178,31 @@ class PilotOps:
             return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         if proto is not None and atype == "PrototypeDecision":
             rec = proto.decisions.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        batch = getattr(self.platform, "pilot_batch", None)
+        if batch is not None and atype == "PilotBatch":
+            rec = batch.batches.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotUnitExecution":
+            rec = batch.units.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotBatchCarton":
+            rec = batch.cartons.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotBatchDecision":
+            rec = batch.decisions.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotBatchNcr":
+            rec = batch.ncrs.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotBatchCost":
+            rec = batch.costs.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotBatchLabor":
+            rec = batch.labor.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
+        if batch is not None and atype == "PilotBatchQc":
+            rec = batch.qc.get(str(aid))
             return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         return False
 

@@ -171,6 +171,47 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps({"ok": True, "checklistId": rec.get("checklistId"), "packagingQty": rec.get("packagingQty")}))
         return 0
+    if args.action == "pilot-batch-create":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.create(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            quantity=int(args.qty or 5),
+            source=str(extra.get("source") or "FIXTURE"),
+            reason=str(args.reason or extra.get("reason") or "crash-batch"),
+        )
+        print(json.dumps({"ok": True, "batchId": rec.get("batchId"), "workOrderId": rec.get("workOrderId")}))
+        return 0
+    if args.action == "pilot-batch-consume":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.consume_unit(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+        )
+        print(json.dumps({"ok": True, "unitExecutionId": rec.get("unitExecutionId"), "consumedQuantity": rec.get("consumedQuantity")}))
+        return 0
+    if args.action == "pilot-batch-go":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.record_decision(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            decision="HUMAN_BATCH_GO",
+            reason=str(args.reason or "crash-go"),
+        )
+        print(json.dumps({"ok": True, "decisionId": rec.get("decisionId"), "decision": rec.get("decision")}))
+        return 0
     raise SystemExit(f"unknown action {args.action}")
 
 

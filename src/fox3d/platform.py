@@ -106,8 +106,10 @@ class Platform:
         self.physical = PhysicalProductOS(self)
         self.portfolio = PortfolioFactory(self)
         from fox3d.prototype import PrototypeFactory
+        from fox3d.pilot_batch import PilotBatchFactory
 
         self.prototype = PrototypeFactory(self)
+        self.pilot_batch = PilotBatchFactory(self)
         self.pilot = PilotOps(self)
         self.retail_fixtures = self.physical.retail
         self.providers = ProviderRegistry(self.root / "providers")

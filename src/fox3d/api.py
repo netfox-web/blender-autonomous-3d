@@ -412,6 +412,17 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         items = [wo for wo in get_platform().pilot.workorders.orders.values() if wo.get("tenantId") == tid]
         return {"items": items, "liveMachineControl": False}
 
+    @app.get("/api/pilot/batches")
+    def pilot_batches(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        items = [b for b in get_platform().pilot_batch.batches.values() if b.get("tenantId") == tid]
+        return {"items": items, "liveMachineControl": False, "physicalPilotBatchValidated": False}
+
+    @app.get("/api/pilot/batches/board")
+    def pilot_batch_board(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        return get_platform().pilot_batch.decision_board(tenant_id=tid)
+
     @app.post("/api/pilot/work-orders/{work_order_id}/reserve")
     def pilot_reserve(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
