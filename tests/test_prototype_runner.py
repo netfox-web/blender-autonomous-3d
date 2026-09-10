@@ -218,6 +218,8 @@ def test_prototype_runner_binds_clean_head(tmp_path):
     assert rc == 0
     body = json.loads((docs / "PROTOTYPE_VALIDATION_ACCEPTANCE.json").read_text(encoding="utf-8"))
     assert body["ok"] is True
+    assert "packagingChecklistAuthority" in body
+    assert "laborAuthority" in body
     assert body["physicalPrototypeValidated"] is False
     assert body["liveMachineControl"] is False
     assert len(body["matrix"]) == 4
@@ -812,6 +814,27 @@ def _pack_lineage(i: int, **over) -> dict:
     return body
 
 
+def _ck_authority(i: int, **over) -> dict:
+    body = _pack_lineage(i)
+    body.update(over)
+    return body
+
+
+def _lb_authority(i: int, **over) -> dict:
+    body = {
+        "laborId": f"lb{i}",
+        "tenantId": "pa",
+        "prototypeUnitId": f"u{i}",
+        "engineeringHash": f"e{i}",
+        "minutes": 30,
+        "reason": "assembly",
+        "idempotencyKey": f"pa::labor::u{i}::e{i}::30.0::assembly",
+        "source": "LABOR_RECORD",
+    }
+    body.update(over)
+    return body
+
+
 def _manual_go(plat, mutate=None):
     body = _passing(plat)
     body["launchDecision"] = "HUMAN_GO"
@@ -841,6 +864,8 @@ def _manual_go(plat, mutate=None):
                 "launchDecision": "HUMAN_GO",
                 "evidenceSource": "MANUAL",
                 "inventoryLineage": {"reservationIds": ["r1"], "consumedQuantity": 2, "workOrderId": "wo"},
+                "physicalPrototypeValidated": True,
+                "decisionState": "HUMAN_GO",
                 "packagingQty": 1,
                 "packagingLineage": _pack_lineage(i),
                 "quantityLineage": _qty_lineage(i),
@@ -859,6 +884,8 @@ def _manual_go(plat, mutate=None):
         unit["evidenceSource"] = "MANUAL"
         unit["truthLabel"] = "MANUAL_EVIDENCE"
         unit["tenantId"] = "pa"
+    body["packagingChecklistAuthority"] = [_ck_authority(i) for i in range(4)]
+    body["laborAuthority"] = [_lb_authority(i) for i in range(4)]
     if mutate:
         mutate(body)
     return body
@@ -1060,6 +1087,302 @@ def test_prototype_runner_labor_total_inconsistent_fails(tmp_path):
             labor["minutes"] = 12
             lineage["laborLineage"] = labor
             lineage["laborMinutes"] = 30
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_manual_go_authority_validates():
+    from fox3d.prototype import project_published_prototype_truth, validate_prototype_acceptance_result
+
+    body = project_published_prototype_truth(_manual_go(None))
+    assert validate_prototype_acceptance_result(body) == []
+    assert len(body.get("packagingChecklistAuthority") or []) == 4
+    assert len(body.get("laborAuthority") or []) == 4
+
+
+def test_prototype_runner_coordinated_bogus_checklist_id_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            lineage["packagingChecklistId"] = "bogus-ck"
+            body["matrix"][0]["quantityLineage"] = lineage
+            pack = dict(body["matrix"][0]["packagingLineage"])
+            pack["checklistId"] = "bogus-ck"
+            body["matrix"][0]["packagingLineage"] = pack
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_missing_authoritative_checklist_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            body["packagingChecklistAuthority"] = [
+                r for r in body["packagingChecklistAuthority"] if r.get("checklistId") != "ck0"
+            ]
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_duplicate_authoritative_checklist_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["packagingChecklistAuthority"])
+            auth.append(dict(auth[0]))
+            body["packagingChecklistAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_checklist_blank_tenant_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["packagingChecklistAuthority"])
+            rec = dict(auth[0])
+            rec["tenantId"] = ""
+            auth[0] = rec
+            body["packagingChecklistAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_checklist_wrong_tenant_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["packagingChecklistAuthority"])
+            rec = dict(auth[0])
+            rec["tenantId"] = "pb"
+            auth[0] = rec
+            body["packagingChecklistAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_checklist_wrong_unit_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["packagingChecklistAuthority"])
+            rec = dict(auth[0])
+            rec["prototypeUnitId"] = "other-unit"
+            auth[0] = rec
+            body["packagingChecklistAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_checklist_stale_hash_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["packagingChecklistAuthority"])
+            rec = dict(auth[0])
+            rec["engineeringHash"] = "stale-hash"
+            auth[0] = rec
+            body["packagingChecklistAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_checklist_qty_differs_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["packagingChecklistAuthority"])
+            rec = dict(auth[0])
+            rec["packagingQty"] = 9
+            auth[0] = rec
+            body["packagingChecklistAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_quantity_lineage_qty_differs_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            lineage["packagingQty"] = 8
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_contradictory_packaging_source_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            sources = dict(lineage.get("sources") or {})
+            sources["packagingQty"] = "INFERRED"
+            lineage["sources"] = sources
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_fake_labor_lineage_without_authority_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            lineage["laborLineage"] = {
+                "ok": True,
+                "integrityOk": True,
+                "laborIds": ["fake-lb"],
+                "semanticKeys": ["pa::labor::u0::e0::30.0::assembly"],
+                "minutes": 30,
+                "source": "LABOR_RECORD",
+                "duplicateKeys": [],
+            }
+            lineage["laborMinutes"] = 30
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_missing_authoritative_labor_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            body["laborAuthority"] = [r for r in body["laborAuthority"] if r.get("laborId") != "lb0"]
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_duplicate_authoritative_labor_semantic_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            dup = dict(auth[0])
+            dup["laborId"] = "lb0-dup"
+            auth.append(dup)
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_duplicate_authoritative_labor_id_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            auth.append(dict(auth[0]))
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_labor_wrong_tenant_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            rec = dict(auth[0])
+            rec["tenantId"] = "pb"
+            auth[0] = rec
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_labor_wrong_unit_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            rec = dict(auth[0])
+            rec["prototypeUnitId"] = "other-unit"
+            auth[0] = rec
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_labor_stale_hash_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            rec = dict(auth[0])
+            rec["engineeringHash"] = "stale-hash"
+            auth[0] = rec
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_labor_semantic_mismatch_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            rec = dict(auth[0])
+            rec["reason"] = "other-reason"
+            auth[0] = rec
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_authoritative_labor_minutes_differ_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            auth = list(body["laborAuthority"])
+            rec = dict(auth[0])
+            rec["minutes"] = 99
+            auth[0] = rec
+            body["laborAuthority"] = auth
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_workorder_complete_without_labor_authority_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            body["laborAuthority"] = []
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            lineage["laborLineage"] = {
+                "ok": True,
+                "integrityOk": True,
+                "laborIds": ["wo:wo0"],
+                "semanticKeys": ["pa::labor::u0::e0::30.0::"],
+                "minutes": 30,
+                "source": "WORKORDER",
+                "duplicateKeys": [],
+            }
+            lineage["laborMinutes"] = 30
+            sources = dict(lineage.get("sources") or {})
+            sources["laborMinutes"] = "WORKORDER"
+            lineage["sources"] = sources
             body["matrix"][0]["quantityLineage"] = lineage
 
         return _manual_go(plat, mutate)

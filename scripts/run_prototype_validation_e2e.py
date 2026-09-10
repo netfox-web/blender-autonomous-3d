@@ -202,6 +202,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "liveProviderReady": False,
         "globalProductionReady": False,
         "liveMachineControl": False,
+        "packagingChecklistAuthority": result.get("packagingChecklistAuthority") or [],
+        "laborAuthority": result.get("laborAuthority") or [],
         "ok": gate_ok,
         "priorRealBlenderEvidence": {
             "commitSha": PRIOR_REAL_BLENDER["commitSha"],

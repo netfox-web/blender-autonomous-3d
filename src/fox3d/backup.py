@@ -1278,6 +1278,8 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "packagingQty": (r.get("observed") or {}).get("packagingQty")
                         if isinstance(r.get("observed"), dict)
                         else r.get("packagingQty"),
+                        "source": r.get("source"),
+                        "truthLabel": r.get("truthLabel"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "checklists", {}), tenant_id)
                 ],
@@ -1372,6 +1374,7 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "reason": r.get("reason"),
                         "engineeringHash": r.get("engineeringHash"),
                         "idempotencyKey": r.get("idempotencyKey"),
+                        "source": r.get("source"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "labor", {}), tenant_id)
                 ],

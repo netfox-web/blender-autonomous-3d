@@ -348,12 +348,115 @@ def _same_qty(left: Any, right: Any) -> bool:
         return False
 
 
-def _packaging_authority_failures(row: dict[str, Any]) -> list[str]:
+PACKAGING_QTY_SOURCE = "PACKAGING_CHECKLIST"
+
+
+def labor_semantic_key(row: dict[str, Any] | None) -> str:
+    if not isinstance(row, dict):
+        return ""
+    if row.get("idempotencyKey"):
+        return str(row["idempotencyKey"])
+    qty = row.get("minutes")
+    try:
+        qty_s = str(float(qty))
+    except (TypeError, ValueError):
+        qty_s = str(qty or "")
+    return (
+        f"{row.get('tenantId') or ''}::labor::{row.get('prototypeUnitId') or ''}::"
+        f"{row.get('engineeringHash') or ''}::{qty_s}::{row.get('reason') or ''}"
+    )
+
+
+def derived_labor_semantic_key(row: dict[str, Any] | None) -> str:
+    if not isinstance(row, dict):
+        return ""
+    body = dict(row)
+    body.pop("idempotencyKey", None)
+    return labor_semantic_key(body)
+
+
+def compact_checklist_authority(pack: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(pack, dict):
+        return None
+    cid = pack.get("checklistId")
+    if not cid:
+        return None
+    observed = pack.get("observed") if isinstance(pack.get("observed"), dict) else {}
+    raw = observed.get("packagingQty")
+    if raw is None:
+        raw = pack.get("packagingQty")
+    qty: Any = raw
+    try:
+        number = float(raw)
+        if math.isfinite(number):
+            qty = number
+    except (TypeError, ValueError):
+        qty = raw
+    source = pack.get("source")
+    if source not in {PACKAGING_QTY_SOURCE, "MISSING"}:
+        source = PACKAGING_QTY_SOURCE if _finite_positive_qty(qty) else "MISSING"
+    return {
+        "checklistId": cid,
+        "tenantId": pack.get("tenantId"),
+        "prototypeUnitId": pack.get("prototypeUnitId"),
+        "engineeringHash": pack.get("engineeringHash"),
+        "packagingQty": qty,
+        "source": source,
+        "truthLabel": pack.get("truthLabel"),
+    }
+
+
+def compact_labor_authority(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(row, dict):
+        return None
+    lid = row.get("laborId")
+    if not lid:
+        return None
+    minutes: Any = row.get("minutes")
+    try:
+        minutes = float(minutes) if minutes is not None else None
+    except (TypeError, ValueError):
+        pass
+    return {
+        "laborId": lid,
+        "tenantId": row.get("tenantId"),
+        "prototypeUnitId": row.get("prototypeUnitId"),
+        "engineeringHash": row.get("engineeringHash"),
+        "minutes": minutes,
+        "reason": row.get("reason"),
+        "idempotencyKey": row.get("idempotencyKey") or derived_labor_semantic_key(row),
+        "source": row.get("source"),
+    }
+
+
+def _project_authority_list(rows: Any, compact_fn: Any) -> list[Any]:
+    out: list[Any] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        compact = compact_fn(row)
+        out.append(compact if compact is not None else dict(row))
+    return out
+
+
+def _group_authority(rows: Any, id_key: str) -> dict[Any, list[dict[str, Any]]]:
+    grouped: dict[Any, list[dict[str, Any]]] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            grouped.setdefault(None, []).append({"_malformed": True})
+            continue
+        grouped.setdefault(row.get(id_key), []).append(row)
+    return grouped
+
+
+def _packaging_authority_failures(row: dict[str, Any], result: dict[str, Any] | None = None) -> list[str]:
     complete = row.get("costCompleteness") == "COMPLETE"
     launch = row.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"}
     if not complete and not launch:
         return []
     failures: list[str] = []
+    result = result if isinstance(result, dict) else {}
     lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
     sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
     pack = row.get("packagingLineage") if isinstance(row.get("packagingLineage"), dict) else {}
@@ -361,13 +464,18 @@ def _packaging_authority_failures(row: dict[str, Any]) -> list[str]:
         failures.append("packaging_lineage_missing")
         return failures
     cid = pack.get("checklistId")
+    qid = lineage.get("packagingChecklistId")
     if not _lineage_present(cid):
         failures.append("packaging_checklist_id_missing")
-    if pack.get("tenantId") and row.get("tenantId") and pack.get("tenantId") != row.get("tenantId"):
+    if not _lineage_present(qid):
+        failures.append("packaging_checklist_id_missing")
+    elif _lineage_present(cid) and qid != cid:
+        failures.append("packaging_checklist_id_mismatch")
+    if not _lineage_present(pack.get("tenantId")) or pack.get("tenantId") != row.get("tenantId"):
         failures.append("packaging_lineage_tenant")
-    if pack.get("prototypeUnitId") != row.get("prototypeUnitId"):
+    if not _lineage_present(pack.get("prototypeUnitId")) or pack.get("prototypeUnitId") != row.get("prototypeUnitId"):
         failures.append("packaging_lineage_unit")
-    if pack.get("engineeringHash") != row.get("engineeringHash"):
+    if not _lineage_present(pack.get("engineeringHash")) or pack.get("engineeringHash") != row.get("engineeringHash"):
         failures.append("packaging_lineage_engineering")
     if not _finite_positive_qty(pack.get("packagingQty")):
         failures.append("packaging_qty_missing")
@@ -383,40 +491,148 @@ def _packaging_authority_failures(row: dict[str, Any]) -> list[str]:
         row.get("packagingQty"), lineage.get("packagingQty")
     ):
         failures.append("packaging_qty_matrix_mismatch")
-    qid = lineage.get("packagingChecklistId")
-    if not _lineage_present(qid):
-        failures.append("packaging_checklist_id_missing")
-    elif cid and qid != cid:
+    lineage_src = sources.get("packagingQty")
+    pack_src = pack.get("source")
+    if lineage_src != PACKAGING_QTY_SOURCE:
+        failures.append("packaging_qty_source")
+    if pack_src != PACKAGING_QTY_SOURCE:
+        failures.append("packaging_qty_source")
+    lookup_id = cid if _lineage_present(cid) else qid
+    grouped = _group_authority(result.get("packagingChecklistAuthority"), "checklistId")
+    if not _lineage_present(lookup_id):
+        failures.append("packaging_checklist_authority_missing")
+        return failures
+    matches = grouped.get(lookup_id) or []
+    if not matches:
+        failures.append("packaging_checklist_authority_missing")
+        return failures
+    if len(matches) != 1:
+        failures.append("packaging_checklist_authority_duplicate")
+        return failures
+    auth = matches[0]
+    if not isinstance(auth, dict) or auth.get("_malformed"):
+        failures.append("packaging_checklist_authority_malformed")
+        return failures
+    if auth.get("checklistId") != lookup_id or auth.get("checklistId") != cid or auth.get("checklistId") != qid:
         failures.append("packaging_checklist_id_mismatch")
-    src = pack.get("source") or sources.get("packagingQty")
-    if src != "PACKAGING_CHECKLIST":
+    if not _lineage_present(auth.get("tenantId")) or auth.get("tenantId") != row.get("tenantId"):
+        failures.append("packaging_authority_tenant")
+    if not _lineage_present(auth.get("prototypeUnitId")) or auth.get("prototypeUnitId") != row.get("prototypeUnitId"):
+        failures.append("packaging_authority_unit")
+    if not _lineage_present(auth.get("engineeringHash")) or auth.get("engineeringHash") != row.get("engineeringHash"):
+        failures.append("packaging_authority_engineering")
+    if not _finite_positive_qty(auth.get("packagingQty")):
+        failures.append("packaging_qty_missing")
+    if not _same_qty(auth.get("packagingQty"), pack.get("packagingQty")):
+        failures.append("packaging_qty_authority_mismatch")
+    if not _same_qty(auth.get("packagingQty"), row.get("packagingQty")):
+        failures.append("packaging_qty_matrix_mismatch")
+    if not _same_qty(auth.get("packagingQty"), lineage.get("packagingQty")):
+        failures.append("packaging_qty_lineage_mismatch")
+    if auth.get("source") != PACKAGING_QTY_SOURCE:
         failures.append("packaging_qty_source")
     return failures
 
 
-def _labor_authority_failures(row: dict[str, Any]) -> list[str]:
+def _labor_authority_failures(row: dict[str, Any], result: dict[str, Any] | None = None) -> list[str]:
     complete = row.get("costCompleteness") == "COMPLETE"
     launch = row.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"}
     if not complete and not launch:
         return []
     failures: list[str] = []
+    result = result if isinstance(result, dict) else {}
     lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
     labor = lineage.get("laborLineage") if isinstance(lineage.get("laborLineage"), dict) else {}
     if not labor:
         failures.append("labor_lineage_missing")
         return failures
-    if labor.get("integrityOk") is not True:
-        failures.append("labor_integrity")
-    ids = [str(i) for i in (labor.get("laborIds") or []) if i]
-    keys = [str(k) for k in (labor.get("semanticKeys") or []) if k]
-    if len(ids) != len(set(ids)):
+    declared_ids = [str(i) for i in (labor.get("laborIds") or []) if i]
+    declared_keys = [str(k) for k in (labor.get("semanticKeys") or []) if k]
+    if len(declared_ids) != len(set(declared_ids)):
         failures.append("labor_duplicate_id")
-    if len(keys) != len(set(keys)):
-        failures.append("labor_duplicate_semantic")
-    if labor.get("duplicateKeys"):
+    if len(declared_keys) != len(set(declared_keys)) or labor.get("duplicateKeys"):
         failures.append("labor_duplicate_semantic")
     if labor.get("minutes") is None or lineage.get("laborMinutes") is None or not _same_qty(labor.get("minutes"), lineage.get("laborMinutes")):
         failures.append("labor_minutes_mismatch")
+    uid = row.get("prototypeUnitId")
+    tenant = row.get("tenantId")
+    eng = row.get("engineeringHash")
+    grouped = _group_authority(result.get("laborAuthority"), "laborId")
+    auth_rows: list[dict[str, Any]] = []
+    for rec in result.get("laborAuthority") or []:
+        if not isinstance(rec, dict):
+            failures.append("labor_authority_malformed")
+            continue
+        if rec.get("prototypeUnitId") == uid:
+            auth_rows.append(rec)
+    if not auth_rows:
+        failures.append("labor_authority_missing")
+        if declared_ids:
+            failures.append("labor_authority_id_mismatch")
+        if labor.get("integrityOk") is True:
+            failures.append("labor_integrity")
+        return failures
+    auth_ids = [str(r.get("laborId")) for r in auth_rows if r.get("laborId")]
+    if len(auth_ids) != len(set(auth_ids)):
+        failures.append("labor_duplicate_id")
+    for lid in auth_ids:
+        matches = grouped.get(lid) or []
+        if len(matches) != 1:
+            failures.append("labor_duplicate_id")
+    rebuilt_keys: list[str] = []
+    for rec in auth_rows:
+        derived = derived_labor_semantic_key(rec)
+        stored = rec.get("idempotencyKey")
+        if stored:
+            if stored != derived:
+                failures.append("labor_authority_semantic")
+            rebuilt_keys.append(str(stored))
+        else:
+            failures.append("labor_authority_semantic")
+            rebuilt_keys.append(derived)
+        if not _lineage_present(rec.get("tenantId")) or rec.get("tenantId") != tenant:
+            failures.append("labor_authority_tenant")
+        if not _lineage_present(rec.get("prototypeUnitId")) or rec.get("prototypeUnitId") != uid:
+            failures.append("labor_authority_unit")
+        if not _lineage_present(rec.get("engineeringHash")) or rec.get("engineeringHash") != eng:
+            failures.append("labor_authority_engineering")
+    if len(rebuilt_keys) != len(set(rebuilt_keys)):
+        failures.append("labor_duplicate_semantic")
+    if set(auth_ids) != set(declared_ids):
+        failures.append("labor_authority_id_mismatch")
+    if set(rebuilt_keys) != set(declared_keys):
+        failures.append("labor_authority_semantic")
+    try:
+        total = float(sum(float(r.get("minutes") or 0) for r in auth_rows))
+    except (TypeError, ValueError):
+        total = None
+    if total is None or not _same_qty(total, labor.get("minutes")) or not _same_qty(total, lineage.get("laborMinutes")):
+        failures.append("labor_minutes_mismatch")
+    derived_ok = (
+        bool(auth_rows)
+        and len(auth_ids) == len(set(auth_ids))
+        and len(rebuilt_keys) == len(set(rebuilt_keys))
+        and not labor.get("duplicateKeys")
+        and set(auth_ids) == set(declared_ids)
+        and set(rebuilt_keys) == set(declared_keys)
+        and total is not None
+        and _same_qty(total, labor.get("minutes"))
+        and _same_qty(total, lineage.get("laborMinutes"))
+        and all(
+            _lineage_present(r.get("tenantId"))
+            and r.get("tenantId") == tenant
+            and r.get("prototypeUnitId") == uid
+            and r.get("engineeringHash") == eng
+            and (not r.get("idempotencyKey") or r.get("idempotencyKey") == derived_labor_semantic_key(r))
+            for r in auth_rows
+        )
+    )
+    if labor.get("integrityOk") is True and not derived_ok:
+        failures.append("labor_integrity")
+    elif derived_ok and labor.get("integrityOk") is not True:
+        failures.append("labor_integrity")
+    elif not derived_ok:
+        failures.append("labor_integrity")
     return failures
 
 
@@ -496,6 +712,10 @@ def project_published_prototype_truth(result: dict[str, Any]) -> dict[str, Any]:
         "board": board,
         "selectedBoard": published_selected_board,
         "evidencePackages": projected_packages,
+        "packagingChecklistAuthority": _project_authority_list(
+            result.get("packagingChecklistAuthority"), compact_checklist_authority
+        ),
+        "laborAuthority": _project_authority_list(result.get("laborAuthority"), compact_labor_authority),
         "launchDecision": launch,
         "physicalPrototypeValidated": bool(result.get("physicalPrototypeValidated")),
         "globalProductionReady": False,
@@ -621,8 +841,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append("packaging_qty_missing")
             if sources.get("laborMinutes") == "MISSING" and result.get("label") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"}:
                 failures.append("labor_qty_missing")
-        failures.extend(_packaging_authority_failures(row))
-        failures.extend(_labor_authority_failures(row))
+        failures.extend(_packaging_authority_failures(row, result))
+        failures.extend(_labor_authority_failures(row, result))
         if row.get("physicalPrototypeValidated") and row.get("evidenceSource") == "FIXTURE":
             failures.append("fixture_physical_unit")
         if row.get("decisionState") in {"READY_FOR_HUMAN_GO_NO_GO", "READY_FOR_MANUAL_PILOT_BATCH", "HUMAN_GO"} and row.get("evidenceSource") == "FIXTURE":
@@ -720,8 +940,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}
             ):
                 failures.append("packaging_qty_missing")
-            failures.extend(_packaging_authority_failures(row))
-            failures.extend(_labor_authority_failures(row))
+            failures.extend(_packaging_authority_failures(row, result))
+            failures.extend(_labor_authority_failures(row, result))
     if result.get("physicalPrototypeValidated") is False and result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"}:
         if launch not in {"WAITING_HUMAN_EVIDENCE", "HOLD_REWORK"}:
             failures.append("fixture_launch_not_waiting")
@@ -1139,31 +1359,22 @@ class PrototypeFactory:
             except (KeyError, PermissionError):
                 summary = None
             if summary and float(summary.get("actualManualLaborMinutes") or 0) > 0:
-                rows.append(
-                    {
-                        "laborId": f"wo:{wo_id}",
-                        "tenantId": tenant,
-                        "prototypeUnitId": uid,
-                        "workOrderId": wo_id,
-                        "minutes": float(summary["actualManualLaborMinutes"]),
-                        "source": "WORKORDER",
-                        "engineeringHash": eng,
-                    }
-                )
+                wo_row = {
+                    "laborId": f"wo:{wo_id}",
+                    "tenantId": tenant,
+                    "prototypeUnitId": uid,
+                    "workOrderId": wo_id,
+                    "minutes": float(summary["actualManualLaborMinutes"]),
+                    "reason": None,
+                    "source": "WORKORDER",
+                    "engineeringHash": eng,
+                }
+                wo_row["idempotencyKey"] = derived_labor_semantic_key(wo_row)
+                rows.append(wo_row)
         return rows
 
     def _labor_semantic_key(self, row: dict[str, Any]) -> str:
-        if row.get("idempotencyKey"):
-            return str(row["idempotencyKey"])
-        qty = row.get("minutes")
-        try:
-            qty_s = str(float(qty))
-        except (TypeError, ValueError):
-            qty_s = str(qty or "")
-        return (
-            f"{row.get('tenantId')}::labor::{row.get('prototypeUnitId')}::"
-            f"{row.get('engineeringHash')}::{qty_s}::{row.get('reason') or ''}"
-        )
+        return labor_semantic_key(row)
 
     def _prototype_labor_rows(self, unit: dict[str, Any]) -> list[dict[str, Any]]:
         uid = unit.get("prototypeUnitId")
@@ -1175,8 +1386,14 @@ class PrototypeFactory:
             if r.get("prototypeUnitId") == uid and r.get("tenantId") == tenant and r.get("engineeringHash") == eng
         ]
 
+    def _labor_authority_rows(self, unit: dict[str, Any]) -> list[dict[str, Any]]:
+        proto = self._prototype_labor_rows(unit)
+        if proto:
+            return proto
+        return [r for r in self._labor_records(unit) if str(r.get("laborId") or "").startswith("wo:")]
+
     def _labor_integrity(self, unit: dict[str, Any]) -> dict[str, Any]:
-        rows = self._prototype_labor_rows(unit)
+        rows = self._labor_authority_rows(unit)
         grouped: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             grouped.setdefault(self._labor_semantic_key(row), []).append(row)
@@ -1185,30 +1402,50 @@ class PrototypeFactory:
         keys = [self._labor_semantic_key(r) for r in rows]
         ok = bool(rows) and not duplicate_keys and len(ids) == len(set(ids))
         minutes = float(sum(float(r.get("minutes") or 0) for r in rows)) if ok else None
+        proto = [r for r in rows if not str(r.get("laborId") or "").startswith("wo:")]
+        if duplicate_keys:
+            source = "DUPLICATE"
+        elif proto:
+            source = "LABOR_RECORD"
+        elif rows:
+            source = "WORKORDER"
+        else:
+            source = "MISSING"
         return {
             "ok": ok,
             "integrityOk": ok,
             "laborIds": ids,
             "semanticKeys": keys,
             "minutes": minutes,
-            "source": "LABOR_RECORD" if ok else ("DUPLICATE" if duplicate_keys else "MISSING"),
+            "source": source,
             "duplicateKeys": duplicate_keys,
         }
 
     def _authoritative_labor_minutes(self, unit: dict[str, Any]) -> float | None:
         meta = self._labor_integrity(unit)
-        if meta.get("duplicateKeys"):
+        if meta.get("integrityOk") is not True:
             return None
         if meta.get("minutes") is not None:
             return float(meta["minutes"])
-        rows = [
-            r
-            for r in self._labor_records(unit)
-            if str(r.get("laborId") or "").startswith("wo:")
-        ]
-        if not rows:
-            return None
-        return float(sum(float(r.get("minutes") or 0) for r in rows))
+        return None
+
+    def canonical_authority(self, units: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+        checklists: list[dict[str, Any]] = []
+        seen_ck: set[str] = set()
+        labor: list[dict[str, Any]] = []
+        seen_lb: set[str] = set()
+        for unit in units:
+            pack = self.checklists.get(unit.get("packagingChecklistId") or "")
+            rec = compact_checklist_authority(pack)
+            if rec and rec["checklistId"] not in seen_ck:
+                checklists.append(rec)
+                seen_ck.add(str(rec["checklistId"]))
+            for row in self._labor_authority_rows(unit):
+                lb = compact_labor_authority(row)
+                if lb and lb["laborId"] not in seen_lb:
+                    labor.append(lb)
+                    seen_lb.add(str(lb["laborId"]))
+        return {"packagingChecklistAuthority": checklists, "laborAuthority": labor}
 
     def _authoritative_hardware_qty(self, unit: dict[str, Any]) -> float | None:
         pack = self.checklists.get(unit.get("packagingChecklistId") or "")
@@ -1278,7 +1515,11 @@ class PrototypeFactory:
         }
         if labor_meta.get("duplicateKeys"):
             sources["laborMinutes"] = "DUPLICATE"
+        elif labor is not None and labor_meta.get("source") in {"LABOR_RECORD", "WORKORDER"}:
+            sources["laborMinutes"] = labor_meta["source"]
         ok = all(v not in {"MISSING", "DUPLICATE"} for v in sources.values())
+        if labor_meta.get("integrityOk") is not True:
+            ok = False
         return ok, {
             "ok": ok,
             "materialQty": material,
@@ -3523,6 +3764,7 @@ def run_prototype_scenario(
         launch = "HOLD_REWORK"
     elif any(s == "READY_FOR_HUMAN_GO_NO_GO" for s in launch_states):
         launch = "READY_FOR_HUMAN_GO_NO_GO"
+    authority = pf.canonical_authority(live_units)
     return {
         "ok": True,
         "portfolio": portfolio,
@@ -3532,6 +3774,8 @@ def run_prototype_scenario(
         "board": board,
         "selectedBoard": selected_board,
         "evidencePackages": packages,
+        "packagingChecklistAuthority": authority["packagingChecklistAuthority"],
+        "laborAuthority": authority["laborAuthority"],
         "launchDecision": launch,
         "physicalPrototypeValidated": physical,
         "fixtureCannotValidate": physical is False,
