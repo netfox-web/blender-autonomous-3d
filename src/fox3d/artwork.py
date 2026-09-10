@@ -619,6 +619,7 @@ def canonical_source_crop(
     box_h_mm: float,
     placed: dict[str, Any],
     fit: str,
+    anchor: str | None = None,
 ) -> dict[str, Any]:
     if fit == FIT_STRETCH:
         raise ArtworkError("BLOCKED", "STRETCH is forbidden")
@@ -628,22 +629,155 @@ def canonical_source_crop(
         "widthMm": float(placed["widthMm"]),
         "heightMm": float(placed["heightMm"]),
         "fit": fit,
+        "anchor": anchor,
     }
     pw = int(pixel_width) if pixel_width else None
     ph = int(pixel_height) if pixel_height else None
     if fit == FIT_COVER and pw and ph:
         placed_w = float(placed["widthMm"])
-        if placed_w <= 0:
-            raise ArtworkError("BLOCKED", "placed width")
-        scale = pw / placed_w
-        src_w = min(pw, int(round(float(box_w_mm) * scale)))
-        src_h = min(ph, int(round(float(box_h_mm) * scale)))
-        src_x = max(0, (pw - src_w) // 2)
-        src_y = max(0, (ph - src_h) // 2)
+        placed_h = float(placed["heightMm"])
+        if placed_w <= 0 or placed_h <= 0:
+            raise ArtworkError("BLOCKED", "placed size")
+        px = float(placed.get("xMm") or 0.0)
+        py = float(placed.get("yMm") or 0.0)
+        vis_x0 = max(0.0, px)
+        vis_x1 = min(float(box_w_mm), px + placed_w)
+        vis_y0 = max(0.0, py)
+        vis_y1 = min(float(box_h_mm), py + placed_h)
+        vis_w = max(0.0, vis_x1 - vis_x0)
+        vis_h = max(0.0, vis_y1 - vis_y0)
+        src_x = max(0, int(round((vis_x0 - px) * pw / placed_w)))
+        src_y = max(0, int(round((py + placed_h - vis_y1) * ph / placed_h)))
+        src_w = max(1, int(round(vis_w * pw / placed_w)))
+        src_h = max(1, int(round(vis_h * ph / placed_h)))
+        src_x = min(src_x, max(0, pw - 1))
+        src_y = min(src_y, max(0, ph - 1))
+        src_w = min(src_w, pw - src_x)
+        src_h = min(src_h, ph - src_y)
         crop.update({"sourceXPx": src_x, "sourceYPx": src_y, "sourceWPx": src_w, "sourceHPx": src_h})
     elif pw and ph:
         crop.update({"sourceXPx": 0, "sourceYPx": 0, "sourceWPx": pw, "sourceHPx": ph})
     return crop
+
+
+def _copy_rgb_pixel(src: bytes, sw: int, sx: int, sy: int, dest: bytearray, dw: int, dx: int, dy: int) -> None:
+    si = (sy * sw + sx) * 3
+    di = (dy * dw + dx) * 3
+    dest[di : di + 3] = src[si : si + 3]
+
+
+def flip_h_rgb(rgb: bytes, width: int, height: int) -> bytes:
+    out = bytearray(width * height * 3)
+    for y in range(height):
+        for x in range(width):
+            _copy_rgb_pixel(rgb, width, x, y, out, width, width - 1 - x, y)
+    return bytes(out)
+
+
+def rot90_cw_rgb(rgb: bytes, width: int, height: int) -> tuple[bytes, int, int]:
+    nw, nh = height, width
+    out = bytearray(nw * nh * 3)
+    for y in range(height):
+        for x in range(width):
+            _copy_rgb_pixel(rgb, width, x, y, out, nw, height - 1 - y, x)
+    return bytes(out), nw, nh
+
+
+def orient_rgb(rgb: bytes, width: int, height: int, *, rotation_deg: float = 0.0, mirrored: bool = False) -> tuple[bytes, int, int]:
+    rot = float(rotation_deg or 0.0) % 360.0
+    if rot not in {0.0, 90.0, 180.0, 270.0}:
+        raise ArtworkError("BLOCKED", "unsupported rotation")
+    buf = rgb
+    w, h = width, height
+    if mirrored:
+        buf = flip_h_rgb(buf, w, h)
+    if rot == 90.0:
+        buf, w, h = rot90_cw_rgb(buf, w, h)
+    elif rot == 180.0:
+        buf, w, h = rot90_cw_rgb(buf, w, h)
+        buf, w, h = rot90_cw_rgb(buf, w, h)
+    elif rot == 270.0:
+        buf, w, h = rot90_cw_rgb(buf, w, h)
+        buf, w, h = rot90_cw_rgb(buf, w, h)
+        buf, w, h = rot90_cw_rgb(buf, w, h)
+    return buf, w, h
+
+
+def scale_rgb(rgb: bytes, src_w: int, src_h: int, dest_w: int, dest_h: int) -> bytes:
+    if dest_w <= 0 or dest_h <= 0 or src_w <= 0 or src_h <= 0:
+        raise ArtworkError("BLOCKED", "invalid scale")
+    out = bytearray(dest_w * dest_h * 3)
+    for y in range(dest_h):
+        sy = min(src_h - 1, (y * src_h) // dest_h)
+        for x in range(dest_w):
+            sx = min(src_w - 1, (x * src_w) // dest_w)
+            _copy_rgb_pixel(rgb, src_w, sx, sy, out, dest_w, x, y)
+    return bytes(out)
+
+
+def blit_rgb(dest: bytearray, dw: int, dh: int, src: bytes, sw: int, sh: int, dx: int, dy: int) -> None:
+    for y in range(sh):
+        ty = dy + y
+        if ty < 0 or ty >= dh:
+            continue
+        for x in range(sw):
+            tx = dx + x
+            if tx < 0 or tx >= dw:
+                continue
+            _copy_rgb_pixel(src, sw, x, y, dest, dw, tx, ty)
+
+
+def production_transform(
+    *,
+    rec: dict[str, Any],
+    surface: dict[str, Any],
+    source_crop: dict[str, Any],
+    final_uv_hash: str,
+) -> dict[str, Any]:
+    payload = {
+        "fit": rec.get("fit") or FIT_CONTAIN,
+        "anchor": rec.get("anchor") or "BOTTOM_LEFT",
+        "rotationDeg": float(rec.get("rotationDeg") or 0.0) % 360.0,
+        "mirrored": bool(rec.get("mirrored")),
+        "canvasMm": {"widthMm": float(surface["widthMm"]), "heightMm": float(surface["heightMm"])},
+        "placedMm": {
+            "xMm": float(rec.get("xMm") or 0.0),
+            "yMm": float(rec.get("yMm") or 0.0),
+            "widthMm": float(rec.get("widthMm") or surface["widthMm"]),
+            "heightMm": float(rec.get("heightMm") or surface["heightMm"]),
+        },
+        "sourceCropPx": {
+            "x": int(source_crop.get("sourceXPx") or 0),
+            "y": int(source_crop.get("sourceYPx") or 0),
+            "w": int(source_crop.get("sourceWPx") or 0),
+            "h": int(source_crop.get("sourceHPx") or 0),
+        },
+        "background": "BLACK",
+        "placementHash": rec.get("placementHash"),
+        "finalUvHash": final_uv_hash,
+    }
+    return {**payload, "transformHash": stable_hash(payload)}
+
+
+_MASTER_RELATION_FIELDS = (
+    "masterHash",
+    "tenantId",
+    "productId",
+    "candidateId",
+    "version",
+    "engineeringHash",
+    "surfaceIds",
+    "panelOrder",
+    "widthMm",
+    "heightMm",
+    "seamMm",
+    "seamSource",
+    "cropGeometry",
+)
+
+
+def master_relation_hash(rel: dict[str, Any]) -> str:
+    return stable_hash({k: rel.get(k) for k in _MASTER_RELATION_FIELDS})
 
 
 def _source_crop_matches(stored: dict[str, Any] | None, expected: dict[str, Any]) -> bool:
@@ -959,6 +1093,7 @@ class ArtworkFactory:
             box_h_mm=box_h,
             placed=placed,
             fit=fit,
+            anchor=anchor,
         )
         dpi = effective_dpi(
             artwork.get("pixelWidth"),
@@ -1045,9 +1180,10 @@ class ArtworkFactory:
             "widthMm": master["widthMm"],
             "heightMm": master["heightMm"],
             "seamMm": master["seamMm"],
+            "seamSource": master.get("seamSource"),
             "cropGeometry": [c.get("cropMm") for c in crops],
         }
-        relation["relationHash"] = stable_hash({k: relation[k] for k in relation if k not in {"relationHash", "masterId"}})
+        relation["relationHash"] = master_relation_hash(relation)
         stored_master = self._store_master(relation)
         rows: list[dict[str, Any]] = []
         crop_by_sid = {c["surfaceId"]: c for c in crops}
@@ -1103,7 +1239,7 @@ class ArtworkFactory:
         if existing is None:
             self.masters[key] = dict(relation)
             return dict(self.masters[key])
-        if existing.get("relationHash") != relation.get("relationHash"):
+        if existing.get("relationHash") != relation.get("relationHash") or existing.get("relationHash") != master_relation_hash(existing):
             raise ArtworkError("BLOCKED", "master relation collision")
         if existing.get("tenantId") != relation.get("tenantId"):
             raise ArtworkError("BLOCKED", "cross-tenant master")
@@ -1128,6 +1264,8 @@ class ArtworkFactory:
         rec = self.masters.get(master_hash)
         if rec is None:
             raise ArtworkError("BLOCKED", "master relation missing")
+        if rec.get("relationHash") != master_relation_hash(rec):
+            raise ArtworkError("BLOCKED", "forged relationHash")
         if rec.get("tenantId") != tenant_id:
             raise ArtworkError("BLOCKED", "cross-tenant master")
         if product_id and rec.get("productId") != product_id:
@@ -1241,13 +1379,15 @@ class ArtworkFactory:
             candidate_id=placement.get("candidateId"),
             version=placement.get("version"),
         )
-        if placement.get("masterId") not in {None, "", rel.get("masterId")}:
+        if not placement.get("masterId"):
+            raise ArtworkError("BLOCKED", "masterId missing")
+        if placement.get("masterId") != rel.get("masterId"):
             raise ArtworkError("BLOCKED", "forged masterId")
         ids = list(rel.get("surfaceIds") or [])
         if not ids:
             raise ArtworkError("BLOCKED", "masterSurfaceIds missing")
         stored_ids = list(placement.get("masterSurfaceIds") or [])
-        if stored_ids and stored_ids != ids:
+        if stored_ids != ids:
             raise ArtworkError("BLOCKED", "forged masterSurfaceIds")
         siblings = []
         for sid in ids:
@@ -1261,12 +1401,31 @@ class ArtworkFactory:
             if surf.get("engineeringHash") != rel.get("engineeringHash"):
                 raise ArtworkError("STALE", "stale engineeringHash")
             siblings.append(surf)
-        master = master_canvas(siblings)
+        if rel.get("seamSource") == "CONFIG":
+            master = master_canvas(siblings, seam_mm=float(rel.get("seamMm") or 0.0))
+        else:
+            master = master_canvas(siblings)
         if master.get("masterHash") != rel.get("masterHash"):
             raise ArtworkError("BLOCKED", "forged masterHash")
-        if placement.get("masterHash") and placement.get("masterHash") != master.get("masterHash"):
+        if placement.get("masterHash") != master.get("masterHash"):
             raise ArtworkError("BLOCKED", "forged masterHash")
+        if abs(float(master.get("seamMm") or 0) - float(rel.get("seamMm") or 0)) > MM_EPS:
+            raise ArtworkError("BLOCKED", "forged seamMm")
+        if [p.get("componentId") for p in master.get("panels") or []] != list(rel.get("panelOrder") or []):
+            raise ArtworkError("BLOCKED", "forged panelOrder")
+        if abs(float(master.get("widthMm") or 0) - float(rel.get("widthMm") or 0)) > MM_EPS:
+            raise ArtworkError("BLOCKED", "forged master width")
+        if abs(float(master.get("heightMm") or 0) - float(rel.get("heightMm") or 0)) > MM_EPS:
+            raise ArtworkError("BLOCKED", "forged master height")
         crops = split_master(master)
+        stored_geo = list(rel.get("cropGeometry") or [])
+        if len(stored_geo) != len(crops):
+            raise ArtworkError("BLOCKED", "forged cropGeometry")
+        for got, want in zip(crops, stored_geo):
+            box = got.get("cropMm") or {}
+            for key in ("xMm", "yMm", "widthMm", "heightMm"):
+                if abs(float(box.get(key) or 0) - float((want or {}).get(key) or 0)) > MM_EPS:
+                    raise ArtworkError("BLOCKED", "forged cropGeometry")
         crop = next((c for c in crops if c.get("surfaceId") == placement.get("surfaceId")), None)
         if crop is None:
             raise ArtworkError("BLOCKED", "authoritative crop missing")
@@ -1342,13 +1501,26 @@ class ArtworkFactory:
                 "widthMm": rec.get("widthMm") or surface["widthMm"],
                 "heightMm": rec.get("heightMm") or surface["heightMm"],
             }
+            fit = str(rec.get("fit") or FIT_CONTAIN)
+            fitted = _fit_rect(
+                box_w=float(surface["widthMm"]),
+                box_h=float(surface["heightMm"]),
+                art_w_px=art.get("pixelWidth"),
+                art_h_px=art.get("pixelHeight"),
+                fit=fit,
+                anchor=str(rec.get("anchor") or "BOTTOM_LEFT"),
+            )
+            for key in ("xMm", "yMm", "widthMm", "heightMm"):
+                if abs(float(placed[key]) - float(fitted[key])) > MM_EPS:
+                    raise ArtworkError("BLOCKED", "forged placement geometry")
             expected_crop = canonical_source_crop(
                 pixel_width=art.get("pixelWidth"),
                 pixel_height=art.get("pixelHeight"),
                 box_w_mm=float(surface["widthMm"]),
                 box_h_mm=float(surface["heightMm"]),
                 placed=placed,
-                fit=str(rec.get("fit") or FIT_CONTAIN),
+                fit=fit,
+                anchor=str(rec.get("anchor") or "BOTTOM_LEFT"),
             )
             stored_crop = rec.get("crop") if isinstance(rec.get("crop"), dict) else None
             if not _source_crop_matches(stored_crop, expected_crop):
@@ -1358,19 +1530,46 @@ class ArtworkFactory:
             w_px = int(expected_crop.get("sourceWPx") or src_w)
             h_px = int(expected_crop.get("sourceHPx") or src_h)
             auth_master = {"widthMm": box["widthMm"], "heightMm": box["heightMm"], "masterHash": None}
+            y0 = max(0, min(src_h - 1, y0))
+            x0 = max(0, min(src_w - 1, x0))
+            w_px = min(w_px, src_w - x0)
+            h_px = min(h_px, src_h - y0)
+            cropped = crop_rgb(rgb, src_w, src_h, x0, y0, w_px, h_px)
+            oriented, ow, oh = orient_rgb(
+                cropped,
+                w_px,
+                h_px,
+                rotation_deg=float(rec.get("rotationDeg") or 0.0),
+                mirrored=bool(rec.get("mirrored")),
+            )
+            canvas_w = max(1, int(round(_finite(surface["widthMm"], "w", positive=True) * output_px_per_mm)))
+            canvas_h = max(1, int(round(_finite(surface["heightMm"], "h", positive=True) * output_px_per_mm)))
+            if fit == FIT_COVER:
+                panel_rgb = scale_rgb(oriented, ow, oh, canvas_w, canvas_h)
+            else:
+                dest_w = max(1, int(round(_finite(placed["widthMm"], "placed w", positive=True) * output_px_per_mm)))
+                dest_h = max(1, int(round(_finite(placed["heightMm"], "placed h", positive=True) * output_px_per_mm)))
+                scaled = scale_rgb(oriented, ow, oh, dest_w, dest_h)
+                canvas = bytearray(canvas_w * canvas_h * 3)
+                dx = int(round(float(placed["xMm"]) * output_px_per_mm))
+                dy = int(round((float(surface["heightMm"]) - float(placed["yMm"]) - float(placed["heightMm"])) * output_px_per_mm))
+                blit_rgb(canvas, canvas_w, canvas_h, scaled, dest_w, dest_h, dx, dy)
+                panel_rgb = bytes(canvas)
+            out_w, out_h = canvas_w, canvas_h
+            ident = self.applied_identity(rec)
+            xform = production_transform(rec=rec, surface=surface, source_crop=expected_crop, final_uv_hash=ident["finalUvHash"])
         else:
             raise ArtworkError("BLOCKED", "unknown placement relation")
-        y0 = max(0, min(src_h - 1, y0))
-        x0 = max(0, min(src_w - 1, x0))
-        w_px = min(w_px, src_w - x0)
-        h_px = min(h_px, src_h - y0)
-        cropped = crop_rgb(rgb, src_w, src_h, x0, y0, w_px, h_px)
-        out_w = max(1, int(round(_finite(box["widthMm"], "w", positive=True) * output_px_per_mm)))
-        out_h = max(1, int(round(_finite(box["heightMm"], "h", positive=True) * output_px_per_mm)))
-        # Keep exact crop pixels as production bytes (no stretch).
-        out_w, out_h = w_px, h_px
+        if relation == "MASTER_SPLIT":
+            y0 = max(0, min(src_h - 1, y0))
+            x0 = max(0, min(src_w - 1, x0))
+            w_px = min(w_px, src_w - x0)
+            h_px = min(h_px, src_h - y0)
+            panel_rgb = crop_rgb(rgb, src_w, src_h, x0, y0, w_px, h_px)
+            out_w, out_h = w_px, h_px
+            xform = None
         dest = Path(self.platform.root) / "artwork-out" / f"{surface['surfaceId']}.png"
-        write_png(dest, out_w, out_h, cropped)
+        write_png(dest, out_w, out_h, panel_rgb)
         raw = dest.read_bytes()
         digest = sha256_bytes(raw)
         obj = self.platform.dam.put(
@@ -1414,6 +1613,15 @@ class ArtworkFactory:
             "cropMm": box,
             "cropPx": {"x": x0, "y": y0, "w": w_px, "h": h_px},
             "outputPhysicalMm": {"widthMm": box["widthMm"], "heightMm": box["heightMm"]},
+            "placedArtworkMm": None if xform is None else (xform.get("placedMm")),
+            "rotationDeg": rec.get("rotationDeg") or 0.0,
+            "mirrored": bool(rec.get("mirrored")),
+            "anchor": rec.get("anchor"),
+            "fit": rec.get("fit"),
+            "background": None if xform is None else "BLACK",
+            "transformHash": None if xform is None else xform.get("transformHash"),
+            "finalUvHash": None if xform is None else xform.get("finalUvHash"),
+            "canvasPx": {"w": out_w, "h": out_h},
             "bleedSafeKeepOut": policy,
             "pixelWidth": out_w,
             "pixelHeight": out_h,
@@ -1451,9 +1659,14 @@ class ArtworkFactory:
         if not ids:
             raise ArtworkError("BLOCKED", "placement identity missing")
         items = []
+        caller_by_id = {str(r.get("placementId")): r for r in (placements or []) if r.get("placementId")}
         eng = engineering
         for pid in ids:
             rec = self.require_placement(pid, tenant_id=tenant_id)
+            caller = caller_by_id.get(str(pid)) or {}
+            for key in ("artworkId", "productId", "engineeringHash"):
+                if caller.get(key) not in {None, "", rec.get(key)}:
+                    raise ArtworkError("BLOCKED", f"forged {key}")
             surface = self.require_surface(
                 rec["surfaceId"],
                 tenant_id=tenant_id,
@@ -1464,11 +1677,23 @@ class ArtworkFactory:
             )
             uv = self._derive_uv(rec, surface)
             art = self.require_artwork(rec["artworkId"], tenant_id=tenant_id)
-            path = artwork_path or art.get("path")
+            canonical_path = str(art.get("path") or "")
+            digest = str(art.get("sha256") or "")
+            if not digest:
+                raise ArtworkError("BLOCKED", "artwork sha256 missing")
+            if artwork_path:
+                override = Path(str(artwork_path))
+                if not override.is_file() or sha256_bytes(override.read_bytes()) != digest:
+                    raise ArtworkError("BLOCKED", "artwork path digest mismatch")
+            path = canonical_path
+            live_eng = self.engineering.get((tenant_id, rec.get("productId"), rec.get("engineeringHash")))
+            if eng and eng.get("engineeringHash") not in {None, "", rec.get("engineeringHash")}:
+                raise ArtworkError("BLOCKED", "forged engineeringHash")
             items.append(
                 {
                     "objectName": rec.get("objectName") or surface.get("objectName") or surface.get("componentId"),
-                    "imagePath": str(path or ""),
+                    "imagePath": path,
+                    "artworkSha256": digest,
                     "uvRect": uv,
                     "rotationDeg": rec.get("rotationDeg") or 0.0,
                     "mirrored": bool(rec.get("mirrored")),
@@ -1483,7 +1708,7 @@ class ArtworkFactory:
                 }
             )
             if eng is None:
-                eng = self.engineering.get((tenant_id, rec.get("productId"), rec.get("engineeringHash")))
+                eng = live_eng
         return {
             "tenantId": tenant_id,
             "engineering": eng or {},
@@ -1498,7 +1723,12 @@ class ArtworkFactory:
         placement: dict[str, Any],
         production: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        live = self.require_placement(placement["placementId"], tenant_id=tenant_id) if placement.get("placementId") else placement
+        if not placement.get("placementId"):
+            raise ArtworkError("BLOCKED", "placementId required")
+        live = self.require_placement(placement["placementId"], tenant_id=tenant_id)
+        for key in ("artworkId", "productId", "engineeringHash"):
+            if placement.get(key) not in {None, "", live.get(key)}:
+                raise ArtworkError("BLOCKED", f"forged {key}")
         hashes = {
             "engineeringHash": live.get("engineeringHash"),
             "surfaceHash": live.get("surfaceHash"),
@@ -1523,18 +1753,20 @@ class ArtworkFactory:
                         continue
                     raise ArtworkError("BLOCKED", "preview/production hash mismatch")
             rec["productionArtworkFileReady"] = True
-        art = self.require_artwork(placement["artworkId"], tenant_id=tenant_id)
-        eng = self.engineering.get((tenant_id, placement.get("productId"), placement.get("engineeringHash")))
+        art = self.require_artwork(live["artworkId"], tenant_id=tenant_id)
+        eng = self.engineering.get((tenant_id, live.get("productId"), live.get("engineeringHash")))
         payload = self.blender_job_payload(
             tenant_id=tenant_id,
             engineering=eng or {},
-            placements=[placement],
-            artwork_path=str(art.get("path") or ""),
+            placement_ids=[live["placementId"]],
         )
         rec["jobPayload"] = {
             "hasEngineering": bool(eng),
             "objectName": (payload.get("artworkPlacements") or [{}])[0].get("objectName"),
             "uvRect": (payload.get("artworkPlacements") or [{}])[0].get("uvRect"),
+            "imagePath": (payload.get("artworkPlacements") or [{}])[0].get("imagePath"),
+            "artworkSha256": (payload.get("artworkPlacements") or [{}])[0].get("artworkSha256"),
+            "artworkId": live.get("artworkId"),
             "hashes": hashes,
         }
         if mock:
@@ -1645,6 +1877,10 @@ _REQUIRED_NEGATIVES = {
     "nan": "BLOCKED",
     "forged_production": "BLOCKED",
     "duplicate": "BLOCKED",
+    "forged_preview_art": "BLOCKED",
+    "forged_artwork_path": "BLOCKED",
+    "master_relation": "BLOCKED",
+    "missing_masterId": "BLOCKED",
 }
 
 
@@ -1750,6 +1986,28 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
         crop = single.get("cropPx") if isinstance(single.get("cropPx"), dict) else {}
         if int(crop.get("x") or 0) != 0:
             failures.append("single_quarter")
+        out_mm = single.get("outputPhysicalMm") if isinstance(single.get("outputPhysicalMm"), dict) else {}
+        if out_mm and float(out_mm.get("widthMm") or 0) <= 0:
+            failures.append("single_physical")
+    contain = scenarios.get("containCenter") if isinstance(scenarios.get("containCenter"), dict) else {}
+    if contain:
+        placed = contain.get("placedMm") if isinstance(contain.get("placedMm"), dict) else {}
+        canvas = contain.get("outputPhysicalMm") if isinstance(contain.get("outputPhysicalMm"), dict) else {}
+        if float(placed.get("heightMm") or 0) <= 0 or float(canvas.get("heightMm") or 0) <= float(placed.get("heightMm") or 0):
+            failures.append("contain_letterbox")
+        if not contain.get("transformHash") or not contain.get("finalUvHash"):
+            failures.append("contain_transform")
+        if int(contain.get("pixelWidth") or 0) <= int(placed.get("widthMm") or 0):
+            failures.append("contain_canvas")
+    cover = scenarios.get("coverAnchor") if isinstance(scenarios.get("coverAnchor"), dict) else {}
+    if cover and int(cover.get("leftSourceXPx") or 0) >= int(cover.get("rightSourceXPx") or 0):
+        failures.append("cover_anchor")
+    rotp = scenarios.get("rotationParity") if isinstance(scenarios.get("rotationParity"), dict) else {}
+    if rotp and (float(rotp.get("rotationDeg") or 0) != 90.0 or not rotp.get("finalUvHash")):
+        failures.append("rotation_parity")
+    seam = scenarios.get("masterSeam") if isinstance(scenarios.get("masterSeam"), dict) else {}
+    if seam and (abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True):
+        failures.append("master_seam")
     if preview.get("status") in {"completed", "succeeded"} or preview.get("realBlender") is True:
         if preview.get("artworkApplied") is not True:
             failures.append("preview_missing_artworkApplied")
@@ -1950,6 +2208,107 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         negatives["duplicate"] = "passed"
     except ArtworkError:
         negatives["duplicate"] = "BLOCKED"
+    other_art = factory.register_artwork(tenant_id=tenant_a, data=_tiny_png(), name="other.png", source="GENERATED")
+    try:
+        factory.preview(tenant_id=tenant_a, placement={**places4[0], "artworkId": other_art["artworkId"]})
+        negatives["forged_preview_art"] = "passed"
+    except ArtworkError:
+        negatives["forged_preview_art"] = "BLOCKED"
+    try:
+        factory.blender_job_payload(
+            tenant_id=tenant_a,
+            placement_ids=[places4[0]["placementId"]],
+            artwork_path=str(other_art["path"]),
+        )
+        negatives["forged_artwork_path"] = "passed"
+    except ArtworkError:
+        negatives["forged_artwork_path"] = "BLOCKED"
+    rel_row = factory.masters.get(master4["masterHash"])
+    if rel_row is not None:
+        orig_seam = rel_row.get("seamMm")
+        rel_row["seamMm"] = float(orig_seam or 0) + 17.0
+        try:
+            factory.require_placement(places4[0]["placementId"], tenant_id=tenant_a)
+            negatives["master_relation"] = "passed"
+        except ArtworkError:
+            negatives["master_relation"] = "BLOCKED"
+        rel_row["seamMm"] = orig_seam
+    else:
+        negatives["master_relation"] = "BLOCKED"
+    rec_mid = factory.placements[places4[2]["placementId"]]
+    orig_mid = rec_mid.get("masterId")
+    rec_mid["masterId"] = ""
+    rec_mid["placementHash"] = stable_hash(placement_payload(rec_mid))
+    try:
+        factory.require_placement(places4[2]["placementId"], tenant_id=tenant_a)
+        negatives["missing_masterId"] = "passed"
+    except ArtworkError:
+        negatives["missing_masterId"] = "BLOCKED"
+    rec_mid["masterId"] = orig_mid
+    rec_mid["placementHash"] = stable_hash(placement_payload(rec_mid))
+    contain_center = factory.place(
+        tenant_id=tenant_a,
+        surface_id=doors4[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab4.engineering_hash(),
+        product_id=cab4.productId,
+        fit=FIT_CONTAIN,
+        anchor="CENTER",
+    )
+    contain_prod = factory.produce_panel(
+        tenant_id=tenant_a,
+        placement_id=contain_center["placementId"],
+        placement_hash=contain_center["placementHash"],
+        engineering_hash=cab4.engineering_hash(),
+    )
+    cover_left = factory.place(
+        tenant_id=tenant_a,
+        surface_id=doors4[2]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab4.engineering_hash(),
+        product_id=cab4.productId,
+        fit=FIT_COVER,
+        anchor="BOTTOM_LEFT",
+    )
+    cover_right = factory.place(
+        tenant_id=tenant_a,
+        surface_id=doors4[2]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab4.engineering_hash(),
+        product_id=cab4.productId,
+        fit=FIT_COVER,
+        anchor="BOTTOM_RIGHT",
+    )
+    rot_place = factory.place(
+        tenant_id=tenant_a,
+        surface_id=doors4[3]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab4.engineering_hash(),
+        product_id=cab4.productId,
+        fit=FIT_CONTAIN,
+        anchor="CENTER",
+        rotation_deg=90,
+    )
+    rot_prod = factory.produce_panel(
+        tenant_id=tenant_a,
+        placement_id=rot_place["placementId"],
+        placement_hash=rot_place["placementHash"],
+        engineering_hash=cab4.engineering_hash(),
+    )
+    seam_master, _seam_crops, seam_places = factory.place_across_panels(
+        tenant_id=tenant_a,
+        artwork_id=art["artworkId"],
+        surfaces=doors2,
+        engineering_hash=cab2.engineering_hash(),
+        product_id=cab2.productId,
+        seam_mm=25.0,
+    )
+    seam_prod = factory.produce_panel(
+        tenant_id=tenant_a,
+        placement_id=seam_places[0]["placementId"],
+        placement_hash=seam_places[0]["placementHash"],
+        engineering_hash=cab2.engineering_hash(),
+    )
     bj_path = Path(__file__).resolve().parents[2] / "scripts" / "blender_job.py"
     spec = importlib.util.spec_from_file_location("fox3d_blender_job_art", bj_path)
     bj = importlib.util.module_from_spec(spec)
@@ -1984,6 +2343,15 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         and single_w >= max(2 * split_w, 1)
         and len(door_layout) == 4
         and all(abs(door_layout[i]["widthMm"] - doors4[i]["widthMm"]) < MM_EPS for i in range(4))
+        and abs(float((contain_prod.get("outputPhysicalMm") or {}).get("widthMm") or 0) - float(doors4[0]["widthMm"])) < MM_EPS
+        and contain_prod.get("canvasPx", {}).get("w") == contain_prod.get("pixelWidth")
+        and float((contain_prod.get("placedArtworkMm") or {}).get("heightMm") or 0) < float(doors4[0]["heightMm"])
+        and int((cover_left.get("crop") or {}).get("sourceXPx") or 0) < int((cover_right.get("crop") or {}).get("sourceXPx") or 0)
+        and rot_prod.get("rotationDeg") == 90.0
+        and rot_prod.get("finalUvHash")
+        and abs(float(seam_master.get("seamMm") or 0) - 25.0) < MM_EPS
+        and seam_prod.get("productionArtworkFileReady") is True
+        and all(row.get("artworkSha256") for row in payload.get("artworkPlacements") or [])
     )
     mock = bool(getattr(plat, "mock_blender", True))
     result = {
@@ -2045,6 +2413,32 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
                 "masterHash": single_prod.get("masterHash"),
                 "cropPx": single_prod.get("cropPx"),
                 "placementHash": single_place.get("placementHash"),
+                "outputPhysicalMm": single_prod.get("outputPhysicalMm"),
+                "canvasPx": single_prod.get("canvasPx"),
+            },
+            "containCenter": {
+                "anchor": contain_center.get("anchor"),
+                "fit": contain_center.get("fit"),
+                "placedMm": contain_prod.get("placedArtworkMm"),
+                "outputPhysicalMm": contain_prod.get("outputPhysicalMm"),
+                "pixelWidth": contain_prod.get("pixelWidth"),
+                "pixelHeight": contain_prod.get("pixelHeight"),
+                "transformHash": contain_prod.get("transformHash"),
+                "finalUvHash": contain_prod.get("finalUvHash"),
+            },
+            "coverAnchor": {
+                "leftSourceXPx": (cover_left.get("crop") or {}).get("sourceXPx"),
+                "rightSourceXPx": (cover_right.get("crop") or {}).get("sourceXPx"),
+            },
+            "rotationParity": {
+                "rotationDeg": rot_prod.get("rotationDeg"),
+                "finalUvHash": rot_prod.get("finalUvHash"),
+                "transformHash": rot_prod.get("transformHash"),
+            },
+            "masterSeam": {
+                "seamMm": seam_master.get("seamMm"),
+                "seamSource": seam_master.get("seamSource"),
+                "ready": seam_prod.get("productionArtworkFileReady"),
             },
             "desk": {"surfaceIds": [s["surfaceId"] for s in s_desk]},
             "retail": {"surfaceIds": [s["surfaceId"] for s in s_retail]},

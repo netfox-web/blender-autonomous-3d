@@ -9,6 +9,8 @@ import pytest
 
 from fox3d.artwork import (
     ArtworkError,
+    FIT_CONTAIN,
+    FIT_COVER,
     FIT_STRETCH,
     checkerboard_rgb,
     decode_png_rgb,
@@ -25,7 +27,7 @@ from fox3d.artwork import (
     uv_to_mm,
     validate_artwork_acceptance_result,
 )
-from fox3d.ids import stable_hash
+from fox3d.ids import sha256_bytes, stable_hash
 from fox3d.parametric import CabinetEngine
 from fox3d.platform import Platform
 from fox3d.pngutil import write_png
@@ -323,6 +325,7 @@ def test_blender_apply_consumes_uv_and_fails_closed(tmp_path):
     item = {
         "objectName": "DOOR_1",
         "imagePath": str(art),
+        "artworkSha256": sha256_bytes(art.read_bytes()),
         "uvRect": {"u0": 0.0, "v0": 0.0, "u1": 0.25, "v1": 1.0},
         "rotationDeg": 0,
         "engineeringHash": "e",
@@ -416,6 +419,7 @@ def test_artwork_applies_only_unique_front_face(tmp_path):
     item = {
         "objectName": "DOOR_1",
         "imagePath": str(art),
+        "artworkSha256": sha256_bytes(art.read_bytes()),
         "uvRect": {"u0": 0.25, "v0": 0.0, "u1": 0.5, "v1": 1.0},
         "rotationDeg": 0,
         "engineeringHash": "e",
@@ -807,3 +811,200 @@ def test_cross_version_and_resize_invalidates_lineage(tmp_path):
     with pytest.raises(ArtworkError) as exc:
         plat.artwork.require_placement(place["placementId"], tenant_id="ta", engineering_hash=resized.engineering_hash())
     assert exc.value.code == "STALE"
+
+
+def _rgb_at(data: bytes, x: int, y: int) -> tuple[int, int, int]:
+    w, h, rgb = decode_png_rgb(data)
+    i = (y * w + x) * 3
+    return (rgb[i], rgb[i + 1], rgb[i + 2])
+
+
+def test_preview_blocks_caller_forged_artwork_and_wrong_path(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    other = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 64, 48), name="other.png", source="GENERATED")
+    place = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    forged = dict(place)
+    forged["artworkId"] = other["artworkId"]
+    with pytest.raises(ArtworkError, match="forged artworkId"):
+        plat.artwork.preview(tenant_id="ta", placement=forged)
+    forged_eng = dict(place)
+    forged_eng["engineeringHash"] = "other-eng"
+    with pytest.raises(ArtworkError, match="forged engineeringHash"):
+        plat.artwork.preview(tenant_id="ta", placement=forged_eng)
+    forged_prod = dict(place)
+    forged_prod["productId"] = "other-product"
+    with pytest.raises(ArtworkError, match="forged productId"):
+        plat.artwork.preview(tenant_id="ta", placement=forged_prod)
+    with pytest.raises(ArtworkError, match="digest"):
+        plat.artwork.blender_job_payload(
+            tenant_id="ta",
+            placement_ids=[place["placementId"]],
+            artwork_path=str(other["path"]),
+        )
+    payload = plat.artwork.blender_job_payload(tenant_id="ta", placement_ids=[place["placementId"]])
+    assert payload["artworkPlacements"][0]["artworkSha256"] == art["sha256"]
+    assert payload["artworkPlacements"][0]["imagePath"] == str(art["path"])
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_digest", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    item = dict(payload["artworkPlacements"][0])
+    applied = bj.apply_canonical_artwork({item["objectName"]: {}}, {"artworkPlacements": [item]})
+    assert applied[0]["applied"] is True
+    assert applied[0]["artworkSha256"] == art["sha256"]
+    Path(item["imagePath"]).write_bytes(Path(other["path"]).read_bytes())
+    with pytest.raises(bj.ArtworkApplyError, match="digest"):
+        bj.apply_canonical_artwork({item["objectName"]: {}}, {"artworkPlacements": [item]})
+
+
+def test_contain_cover_anchor_rotation_production_parity(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    contain_center = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        fit=FIT_CONTAIN,
+        anchor="CENTER",
+    )
+    prod = plat.artwork.produce_panel(
+        tenant_id="ta",
+        placement_id=contain_center["placementId"],
+        placement_hash=contain_center["placementHash"],
+        engineering_hash=cab.engineering_hash(),
+    )
+    assert prod["outputPhysicalMm"]["widthMm"] == pytest.approx(doors[0]["widthMm"])
+    assert prod["outputPhysicalMm"]["heightMm"] == pytest.approx(doors[0]["heightMm"])
+    assert prod["canvasPx"]["w"] == prod["pixelWidth"]
+    assert prod["placedArtworkMm"]["widthMm"] < doors[0]["widthMm"] or prod["placedArtworkMm"]["heightMm"] < doors[0]["heightMm"]
+    raw = Path(plat.root / "artwork-out" / f"{doors[0]['surfaceId']}.png").read_bytes()
+    w, h, rgb = decode_png_rgb(raw)
+    assert w == prod["pixelWidth"] and h == prod["pixelHeight"]
+    assert _rgb_at(raw, 2, 2) == (0, 0, 0)
+    mid_x = int(round((prod["placedArtworkMm"]["xMm"] + prod["placedArtworkMm"]["widthMm"] / 2) * (w / doors[0]["widthMm"])))
+    mid_y = int(round((doors[0]["heightMm"] - prod["placedArtworkMm"]["yMm"] - prod["placedArtworkMm"]["heightMm"] / 2) * (h / doors[0]["heightMm"])))
+    assert _rgb_at(raw, mid_x, mid_y) != (0, 0, 0)
+    top = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        fit=FIT_CONTAIN,
+        anchor="TOP_LEFT",
+    )
+    bottom = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        fit=FIT_CONTAIN,
+        anchor="BOTTOM_LEFT",
+    )
+    assert top["yMm"] > bottom["yMm"]
+    cover_left = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[1]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        fit=FIT_COVER,
+        anchor="BOTTOM_LEFT",
+    )
+    cover_right = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[1]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        fit=FIT_COVER,
+        anchor="BOTTOM_RIGHT",
+    )
+    assert cover_left["crop"]["sourceXPx"] < cover_right["crop"]["sourceXPx"]
+    rot = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[0]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        fit=FIT_CONTAIN,
+        anchor="CENTER",
+        rotation_deg=90,
+    )
+    rot_prod = plat.artwork.produce_panel(
+        tenant_id="ta",
+        placement_id=rot["placementId"],
+        placement_hash=rot["placementHash"],
+        engineering_hash=cab.engineering_hash(),
+    )
+    ident = plat.artwork.applied_identity(plat.artwork.require_placement(rot["placementId"], tenant_id="ta"))
+    assert rot_prod["finalUvHash"] == ident["finalUvHash"]
+    assert rot_prod["rotationDeg"] == 90.0
+    rec = plat.artwork.placements[contain_center["placementId"]]
+    rec["anchor"] = "TOP_RIGHT"
+    rec["placementHash"] = stable_hash(placement_payload(rec))
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.produce_panel(
+            tenant_id="ta",
+            placement_id=contain_center["placementId"],
+            placement_hash=rec["placementHash"],
+            engineering_hash=cab.engineering_hash(),
+        )
+
+
+def test_master_seam_round_trip_and_relation_integrity(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    doors.sort(key=lambda s: float(s["origin"]["xMm"]))
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    master, crops, places = plat.artwork.place_across_panels(
+        tenant_id="ta",
+        artwork_id=art["artworkId"],
+        surfaces=doors,
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+        seam_mm=40.0,
+    )
+    assert master["seamMm"] == pytest.approx(40.0)
+    assert master["seamSource"] == "CONFIG"
+    out = plat.artwork.produce_panel(
+        tenant_id="ta",
+        placement_id=places[0]["placementId"],
+        placement_hash=places[0]["placementHash"],
+        engineering_hash=cab.engineering_hash(),
+    )
+    assert out["productionArtworkFileReady"] is True
+    rel = plat.artwork.masters[master["masterHash"]]
+    rel["seamMm"] = 99.0
+    with pytest.raises(ArtworkError, match="relationHash|seam"):
+        plat.artwork.require_placement(places[0]["placementId"], tenant_id="ta")
+    rel["seamMm"] = 40.0
+    rel["panelOrder"] = list(reversed(list(rel["panelOrder"])))
+    with pytest.raises(ArtworkError, match="relationHash|panelOrder"):
+        plat.artwork.require_placement(places[1]["placementId"], tenant_id="ta")
+    rel["panelOrder"] = [p.get("componentId") for p in master["panels"]]
+    rec = plat.artwork.placements[places[2]["placementId"]]
+    rec["masterId"] = ""
+    rec["placementHash"] = stable_hash(placement_payload(rec))
+    with pytest.raises(ArtworkError, match="masterId"):
+        plat.artwork.require_placement(places[2]["placementId"], tenant_id="ta")

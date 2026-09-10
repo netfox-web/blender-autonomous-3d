@@ -570,7 +570,7 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
     for item in items:
         if not isinstance(item, dict):
             raise ArtworkApplyError("malformed artwork placement")
-        for key in ("objectName", "imagePath", "uvRect", "engineeringHash", "surfaceHash", "artworkHash", "placementHash"):
+        for key in ("objectName", "imagePath", "uvRect", "engineeringHash", "surfaceHash", "artworkHash", "placementHash", "artworkSha256"):
             val = item.get(key)
             if val is None or val == "":
                 raise ArtworkApplyError(f"missing {key}")
@@ -578,6 +578,10 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
         path = Path(str(item["imagePath"]))
         if not path.exists() or not path.is_file():
             raise ArtworkApplyError("missing artwork image")
+        raw = path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        if digest != str(item.get("artworkSha256")):
+            raise ArtworkApplyError("artwork bytes digest mismatch")
         mapping = canonical_uv_mapping(
             item.get("uvRect"),
             rotation_deg=float(item.get("rotationDeg") or 0.0),
@@ -658,6 +662,7 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             "engineeringHash": item.get("engineeringHash"),
             "surfaceHash": item.get("surfaceHash"),
             "artworkHash": item.get("artworkHash"),
+            "artworkSha256": digest,
             "placementHash": item.get("placementHash"),
             "finalUvHash": compute_final_uv_hash(item, mapping),
         }
