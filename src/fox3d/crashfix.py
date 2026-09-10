@@ -186,6 +186,97 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps({"ok": True, "batchId": rec.get("batchId"), "workOrderId": rec.get("workOrderId")}))
         return 0
+    if args.action == "pilot-batch-release":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.release_for_manual(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+        )
+        print(json.dumps({"ok": True, "batchId": rec.get("batchId"), "state": rec.get("state")}))
+        return 0
+    if args.action == "pilot-batch-reserve":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.reserve_materials(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            policy=str(extra.get("policy") or "FIXTURE_AUTO_SEED"),
+        )
+        print(json.dumps({"ok": True, "batchId": rec.get("batchId"), "materialReserved": rec.get("materialReserved")}))
+        return 0
+    if args.action == "pilot-batch-start":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.start_unit(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+        )
+        print(json.dumps({"ok": True, "unitExecutionId": rec.get("unitExecutionId"), "state": rec.get("state")}))
+        return 0
+    if args.action == "pilot-batch-labor":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.record_labor(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            minutes=float(extra.get("minutes") or args.qty or 12),
+            reason=str(args.reason or extra.get("reason") or "assembly"),
+        )
+        print(json.dumps({"ok": True, "laborId": rec.get("laborId")}))
+        return 0
+    if args.action == "pilot-batch-qc":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.record_qc(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            ok=bool(extra.get("ok", True)),
+            stage=str(extra.get("stage") or "FINAL"),
+        )
+        print(json.dumps({"ok": True, "qcId": rec.get("qcId"), "stage": rec.get("stage")}))
+        return 0
+    if args.action == "pilot-batch-pack":
+        pb = plat.pilot_batch
+        pb._crash_mode = args.crash
+        pb._hard_crash = bool(args.crash)
+        rec = pb.pack_units(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            unit_execution_ids=list(extra.get("unitExecutionIds") or [args.unit]),
+            measured=dict(
+                extra.get("measured")
+                or {
+                    "cartonLengthMm": 400,
+                    "cartonWidthMm": 300,
+                    "cartonHeightMm": 200,
+                    "packedWeightKg": 8,
+                    "hardwareQty": 4,
+                    "partCount": 6,
+                    "damageDefect": "OK",
+                }
+            ),
+            packaging_qty=extra.get("packagingQty"),
+        )
+        print(json.dumps({"ok": True, "cartonId": rec.get("cartonId")}))
+        return 0
     if args.action == "pilot-batch-consume":
         pb = plat.pilot_batch
         pb._crash_mode = args.crash

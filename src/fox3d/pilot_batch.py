@@ -87,6 +87,28 @@ def _same_qty(left: Any, right: Any) -> bool:
         return False
 
 
+def _qty_ok(value: Any) -> bool:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(number) and number > 0
+
+
+def _present(value: Any) -> bool:
+    return value is not None and value != ""
+
+
+def _index_rows(rows: Any, key: str) -> dict[Any, list[dict[str, Any]]]:
+    grouped: dict[Any, list[dict[str, Any]]] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            grouped.setdefault(None, []).append({"_malformed": True})
+            continue
+        grouped.setdefault(row.get(key), []).append(row)
+    return grouped
+
+
 def labor_semantic_key(row: dict[str, Any]) -> str:
     if row.get("idempotencyKey"):
         return str(row["idempotencyKey"])
@@ -104,13 +126,23 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     batches = [b for b in (result.get("batches") or []) if isinstance(b, dict)]
     units = [u for u in (result.get("units") or []) if isinstance(u, dict)]
+    cartons = [c for c in (result.get("cartons") or []) if isinstance(c, dict)]
+    board = result.get("board") if isinstance(result.get("board"), dict) else {}
+    board_rows = [r for r in (board.get("rows") or []) if isinstance(r, dict)]
+    authority = result.get("batchAuthority") if isinstance(result.get("batchAuthority"), dict) else {}
+    auth_batches = [r for r in (authority.get("batches") or []) if isinstance(r, dict)]
+    auth_units = [r for r in (authority.get("units") or []) if isinstance(r, dict)]
+    auth_cartons = [r for r in (authority.get("cartons") or []) if isinstance(r, dict)]
+    auth_labor = [r for r in (authority.get("labor") or []) if isinstance(r, dict)]
+    auth_qc = [r for r in (authority.get("qc") or []) if isinstance(r, dict)]
+    auth_material = [r for r in (authority.get("materials") or []) if isinstance(r, dict)]
+    auth_costs = [r for r in (authority.get("costs") or []) if isinstance(r, dict)]
+    auth_decisions = [r for r in (authority.get("decisions") or []) if isinstance(r, dict)]
     if len(batches) < 4:
         failures.append("batches_4")
     if len(units) < 20:
         failures.append("units_20")
     if result.get("physicalPilotBatchValidated") is True:
-        failures.append("fixture_physical_batch")
-    if result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"} and result.get("physicalPilotBatchValidated") is True:
         failures.append("fixture_physical_batch")
     launch = result.get("batchLaunchDecision") or result.get("launchDecision")
     if result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"} and launch == "HUMAN_BATCH_GO":
@@ -127,47 +159,206 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
     if result.get("demandLabel") == "REAL":
         failures.append("demand_mislabeled_real")
     batch_ids = [b.get("batchId") for b in batches if b.get("batchId")]
+    unit_ids = [u.get("unitExecutionId") for u in units if u.get("unitExecutionId")]
     if len(batch_ids) != len(set(batch_ids)):
         failures.append("duplicate_batch_id")
-    unit_ids = [u.get("unitExecutionId") for u in units if u.get("unitExecutionId")]
     if len(unit_ids) != len(set(unit_ids)):
         failures.append("duplicate_unit_execution_id")
-    authority = result.get("batchAuthority") if isinstance(result.get("batchAuthority"), dict) else {}
-    auth_batches = [r for r in (authority.get("batches") or []) if isinstance(r, dict)]
-    auth_units = [r for r in (authority.get("units") or []) if isinstance(r, dict)]
-    if batches and not auth_batches:
-        failures.append("batch_authority_missing")
-    auth_batch_ids = {r.get("batchId") for r in auth_batches if r.get("batchId")}
-    if set(batch_ids) - auth_batch_ids:
+    auth_batch_ids = [r.get("batchId") for r in auth_batches if r.get("batchId")]
+    auth_unit_ids = [r.get("unitExecutionId") for r in auth_units if r.get("unitExecutionId")]
+    if set(batch_ids) != set(auth_batch_ids) or len(auth_batch_ids) != len(set(auth_batch_ids)):
         failures.append("batch_authority_id_mismatch")
-    auth_unit_ids = {r.get("unitExecutionId") for r in auth_units if r.get("unitExecutionId")}
-    if set(unit_ids) - auth_unit_ids:
+    if set(unit_ids) != set(auth_unit_ids) or len(auth_unit_ids) != len(set(auth_unit_ids)):
         failures.append("unit_authority_id_mismatch")
+    if not auth_batches:
+        failures.append("batch_authority_missing")
+    if not auth_units:
+        failures.append("unit_authority_missing")
+    if not auth_material:
+        failures.append("material_authority_missing")
+    if not auth_labor:
+        failures.append("labor_authority_missing")
+    if not auth_qc:
+        failures.append("qc_authority_missing")
+    if not auth_costs:
+        failures.append("cost_authority_missing")
+    packed_units = [u for u in units if str(u.get("state") or "") == "PACKED" or u.get("cartonId")]
+    if packed_units and not cartons:
+        failures.append("cartons_missing")
+    if len(batches) >= 4 and not board_rows:
+        failures.append("board_rows_missing")
+    batch_by = _index_rows(batches, "batchId")
+    unit_by = _index_rows(units, "unitExecutionId")
+    auth_batch_by = _index_rows(auth_batches, "batchId")
+    auth_unit_by = _index_rows(auth_units, "unitExecutionId")
+    auth_carton_by = _index_rows(auth_cartons, "cartonId")
+    auth_labor_by_unit = _index_rows(auth_labor, "unitExecutionId")
+    auth_qc_by_unit = _index_rows(auth_qc, "unitExecutionId")
+    auth_mat_by_batch = _index_rows(auth_material, "batchId")
+    auth_cost_by_batch = _index_rows(auth_costs, "batchId")
+    board_by = _index_rows(board_rows, "batchId")
+    batch_keys = (
+        "tenantId",
+        "candidateId",
+        "selectionId",
+        "prototypeUnitId",
+        "engineeringHash",
+        "canonicalHash",
+        "bomHash",
+        "nestingHash",
+        "rankingPolicyHash",
+        "releaseId",
+        "releaseHash",
+        "workOrderId",
+        "requestedQuantity",
+        "source",
+        "truthLabel",
+    )
+    unit_keys = (
+        "tenantId",
+        "batchId",
+        "engineeringHash",
+        "releaseId",
+        "releaseHash",
+        "workOrderId",
+        "seq",
+        "state",
+    )
     for batch in batches:
+        bid = batch.get("batchId")
+        matches = auth_batch_by.get(bid) or []
+        if len(matches) != 1:
+            failures.append("batch_authority_missing")
+            continue
+        auth = matches[0]
         if batch.get("truthLabel") == "FIXTURE" and batch.get("state") == "HUMAN_BATCH_GO":
             failures.append("fixture_batch_go")
         if batch.get("liveMachineControl") is True:
             failures.append("liveMachineControl")
-        for key in ("engineeringHash", "canonicalHash", "bomHash", "nestingHash", "rankingPolicyHash", "tenantId"):
-            if not batch.get(key):
+        for key in batch_keys:
+            if not _present(auth.get(key)):
                 failures.append(f"batch_{key}_missing")
-        cost = batch.get("cost") if isinstance(batch.get("cost"), dict) else {}
-        if cost.get("completeness") == "COMPLETE" and cost.get("truthLabel") in {None, "PARTIAL", "FIXTURE"}:
-            failures.append("cost_complete_incorrect")
-        if cost.get("completeness") == "COMPLETE" and not (cost.get("quantityLineage") or {}).get("ok"):
-            failures.append("cost_complete_without_qty")
-    board = result.get("board") if isinstance(result.get("board"), dict) else {}
+            elif _present(batch.get(key)) and batch.get(key) != auth.get(key):
+                failures.append("batch_authority_field_mismatch")
+        if not (board_by.get(bid) or []):
+            failures.append("board_rows_missing")
+        mat = auth_mat_by_batch.get(bid) or []
+        if len(mat) != 1:
+            failures.append("material_authority_missing")
+        else:
+            rec = mat[0]
+            if rec.get("kind") != "BATCH_ALLOCATION_PROJECTION":
+                failures.append("material_allocation_kind")
+            if rec.get("workOrderId") != auth.get("workOrderId"):
+                failures.append("material_authority_lineage")
+            alloc = rec.get("unitAllocations") if isinstance(rec.get("unitAllocations"), list) else []
+            try:
+                total = float(sum(float(a.get("quantity") or 0) for a in alloc if isinstance(a, dict)))
+            except (TypeError, ValueError):
+                total = None
+            if rec.get("consumedQuantity") is None or total is None or abs(total - float(rec.get("consumedQuantity") or 0)) > 1e-9:
+                failures.append("material_allocation_sum")
+        costs = auth_cost_by_batch.get(bid) or []
+        if len(costs) != 1:
+            failures.append("cost_authority_missing")
+        else:
+            cost_auth = costs[0]
+            cost = batch.get("cost") if isinstance(batch.get("cost"), dict) else {}
+            if cost.get("completeness") == "COMPLETE" and cost.get("truthLabel") in {None, "PARTIAL", "FIXTURE"}:
+                failures.append("cost_complete_incorrect")
+            if cost.get("completeness") == "COMPLETE" and cost_auth.get("quantityLineage", {}).get("ok") is not True:
+                failures.append("cost_complete_without_qty")
+    seq_seen: dict[str, set[Any]] = {}
+    packed_ids: list[str] = []
+    executed_ids: list[str] = []
+    for unit in units:
+        uid = unit.get("unitExecutionId")
+        matches = auth_unit_by.get(uid) or []
+        if len(matches) != 1:
+            failures.append("unit_authority_missing")
+            continue
+        auth = matches[0]
+        for key in unit_keys:
+            if not _present(auth.get(key)) and key != "seq":
+                failures.append(f"unit_{key}_missing")
+            elif key in unit and _present(unit.get(key)) and unit.get(key) != auth.get(key):
+                failures.append("unit_authority_field_mismatch")
+        parent = (auth_batch_by.get(auth.get("batchId")) or [None])[0]
+        if parent is None:
+            failures.append("unit_authority_lineage")
+        else:
+            for key in ("tenantId", "engineeringHash", "releaseId", "releaseHash", "workOrderId"):
+                if auth.get(key) != parent.get(key):
+                    failures.append("unit_authority_lineage")
+        seq_seen.setdefault(str(auth.get("batchId")), set())
+        if auth.get("seq") in seq_seen[str(auth.get("batchId"))]:
+            failures.append("unit_seq_duplicate")
+        seq_seen[str(auth.get("batchId"))].add(auth.get("seq"))
+        if auth.get("state") not in {"PLANNED"}:
+            executed_ids.append(str(uid))
+            labs = auth_labor_by_unit.get(uid) or []
+            if len(labs) != 1:
+                failures.append("labor_authority_coverage")
+            else:
+                lab = labs[0]
+                if lab.get("tenantId") != auth.get("tenantId") or lab.get("batchId") != auth.get("batchId"):
+                    failures.append("labor_authority_lineage")
+                if not lab.get("idempotencyKey") and not lab.get("laborId"):
+                    failures.append("labor_authority_missing")
+            if auth.get("sampled") is not False:
+                qcs = [r for r in (auth_qc_by_unit.get(uid) or []) if r.get("stage") == "FINAL"]
+                if len(qcs) != 1:
+                    failures.append("qc_authority_missing")
+                else:
+                    qc = qcs[0]
+                    if qc.get("result") not in {"PASS", "FAIL"} or not qc.get("qcPlanHash"):
+                        failures.append("qc_authority_final")
+                    if qc.get("tenantId") != auth.get("tenantId") or qc.get("engineeringHash") != auth.get("engineeringHash"):
+                        failures.append("qc_authority_lineage")
+            if auth.get("consumedQuantity") is None and auth.get("allocatedQuantity") is None:
+                failures.append("material_authority_missing")
+        if str(auth.get("state") or "") == "PACKED" or unit.get("cartonId"):
+            packed_ids.append(str(uid))
+            cid = unit.get("cartonId") or auth.get("cartonId")
+            found = auth_carton_by.get(cid) or []
+            if not _present(cid) or len(found) != 1:
+                failures.append("carton_authority_missing")
+    labor_ids = [r.get("laborId") for r in auth_labor if r.get("laborId")]
+    if len(labor_ids) != len(set(labor_ids)):
+        failures.append("labor_duplicate_id")
+    keys = [str(r.get("idempotencyKey") or labor_semantic_key(r)) for r in auth_labor]
+    if len(keys) != len(set(keys)):
+        failures.append("labor_duplicate_semantic")
+    covered = {str(r.get("unitExecutionId")) for r in auth_labor if r.get("unitExecutionId")}
+    if set(executed_ids) - covered:
+        failures.append("labor_authority_coverage")
+    carton_unit_ids: list[str] = []
+    for carton in cartons:
+        cid = carton.get("cartonId")
+        matches = auth_carton_by.get(cid) or []
+        if not _present(cid) or len(matches) != 1:
+            failures.append("carton_authority_missing")
+        if carton.get("batchId") and carton.get("batchId") not in set(batch_ids):
+            failures.append("carton_cross_batch")
+        meas = carton.get("measured") if isinstance(carton.get("measured"), dict) else {}
+        if packed_ids and not all(_qty_ok(meas.get(k)) for k in ("lengthMm", "widthMm", "heightMm", "weightKg")):
+            failures.append("carton_measurements")
+    for carton in auth_cartons:
+        if carton.get("batchId") and carton.get("batchId") not in set(batch_ids):
+            failures.append("carton_cross_batch")
+        for uid in carton.get("unitExecutionIds") or []:
+            carton_unit_ids.append(str(uid))
+        meas = carton.get("measured") if isinstance(carton.get("measured"), dict) else {}
+        if packed_ids and not all(_qty_ok(meas.get(k)) for k in ("lengthMm", "widthMm", "heightMm", "weightKg")):
+            failures.append("carton_measurements")
+    if len(carton_unit_ids) != len(set(carton_unit_ids)):
+        failures.append("duplicate_unit_carton")
+    if packed_ids and set(packed_ids) != set(carton_unit_ids):
+        failures.append("carton_unit_coverage")
+    if set(board_by) - {None} != set(batch_ids):
+        failures.append("board_rows_missing")
     if (board.get("decision") or launch) == "HUMAN_BATCH_GO" and result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"}:
         failures.append("fixture_batch_go")
-    cartons = [c for c in (result.get("cartons") or []) if isinstance(c, dict)]
-    seen_units: set[str] = set()
-    for carton in cartons:
-        for uid in carton.get("unitExecutionIds") or []:
-            if uid in seen_units:
-                failures.append("duplicate_unit_carton")
-            seen_units.add(str(uid))
-        if carton.get("tenantId") and batches and carton.get("tenantId") != batches[0].get("tenantId") and carton.get("batchId") not in set(batch_ids):
-            failures.append("carton_cross_batch")
     return failures
 
 
@@ -608,7 +799,11 @@ class PilotBatchFactory:
         qty = float(sum(float(i.get("quantity") or 0) for i in (wo.get("consumed") or []) if i.get("kind") == "lot"))
         share = qty / max(int(batch.get("requestedQuantity") or 1), 1)
         unit["consumedQuantity"] = share
+        unit["allocatedQuantity"] = share
+        unit["consumeKind"] = "BATCH_ALLOCATION_PROJECTION"
         unit["reservationIds"] = list(batch.get("reservationIds") or [])
+        batch["consumedQuantity"] = qty
+        batch["consumeKind"] = "BATCH_ALLOCATION_PROJECTION"
         unit["state"] = "MATERIAL_CONSUMED"
         self.idem[key] = unit["unitExecutionId"]
         self._emit(
@@ -672,9 +867,14 @@ class PilotBatchFactory:
         unit = self.units[unit_execution_id]
         self._require_tenant(unit, tenant_id)
         batch = self.get(unit["batchId"], tenant_id=tenant_id)
-        key = f"{tenant_id}::batch-qc::{unit_execution_id}::{stage}"
-        if unit.get("qcId") and key in self.idem:
-            return self.qc[unit["qcId"]]
+        stage_name = str(stage or "FINAL").upper()
+        key = f"{tenant_id}::batch-qc::{unit_execution_id}::{stage_name}"
+        found = self._lookup_idem(key)
+        if found is not None:
+            return found
+        wo = self.platform.pilot.workorders.get(batch["workOrderId"])
+        if wo.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: work order")
 
         def _make():
             rec = {
@@ -685,8 +885,8 @@ class PilotBatchFactory:
                 "workOrderId": batch["workOrderId"],
                 "engineeringHash": unit.get("engineeringHash"),
                 "releaseHash": batch.get("releaseHash"),
-                "qcPlanHash": (self.platform.pilot.workorders.get(batch["workOrderId"]) or {}).get("qcPlanHash"),
-                "stage": stage,
+                "qcPlanHash": wo.get("qcPlanHash"),
+                "stage": stage_name,
                 "ok": bool(ok),
                 "result": "PASS" if ok else "FAIL",
                 "sampled": True,
@@ -696,12 +896,23 @@ class PilotBatchFactory:
                 "at": _now(),
                 "idempotencyKey": key,
             }
+            if stage_name == "FINAL":
+                prior = [
+                    r
+                    for r in self.qc.values()
+                    if r.get("unitExecutionId") == unit_execution_id and r.get("stage") == "FINAL" and r.get("qcId") != rec["qcId"]
+                ]
+                if prior and any(p.get("ok") is not bool(ok) for p in prior):
+                    raise PilotBatchError("HOLD", "duplicate conflicting FINAL QC")
             self.qc[rec["qcId"]] = rec
-            unit["qcId"] = rec["qcId"]
-            unit["state"] = "QC_PASSED" if ok else "QC_FAILED"
-            if not ok:
-                batch["state"] = "HOLD"
-                unit["state"] = "HOLD"
+            unit["qcIds"] = list(unit.get("qcIds") or []) + [rec["qcId"]]
+            if stage_name == "FINAL":
+                unit["qcId"] = rec["qcId"]
+                unit["qcFinalId"] = rec["qcId"]
+                unit["state"] = "QC_PASSED" if ok else "QC_FAILED"
+                if not ok:
+                    batch["state"] = "HOLD"
+                    unit["state"] = "HOLD"
             self.idem[key] = rec["qcId"]
             self._emit(
                 "pilot_batch.qc",
@@ -727,6 +938,7 @@ class PilotBatchFactory:
         measured: dict[str, Any],
         packaging_qty: float | None = None,
         checklist_id: str | None = None,
+        dam_refs: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         ident = self._identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         batch = self.get(batch_id, tenant_id=tenant_id)
@@ -744,10 +956,23 @@ class PilotBatchFactory:
             self._require_tenant(unit, tenant_id)
             if unit.get("batchId") != batch_id:
                 raise PilotBatchError("BLOCKED", "carton from wrong batch/tenant")
+            if unit.get("state") == "PLANNED" or not unit.get("startedBy") or unit.get("consumedQuantity") is None or not unit.get("laborId"):
+                raise PilotBatchError("BLOCKED", "incomplete unit cannot be packed")
             if unit.get("cartonId"):
                 other = self.cartons.get(unit["cartonId"]) or {}
                 if other and other.get("state") != "CANCELLED":
                     raise PilotBatchError("BLOCKED", "same unit assigned to two active cartons")
+            if batch.get("source") != "FIXTURE" and unit.get("sampled") and not self._final_qc(unit, batch):
+                raise PilotBatchError("BLOCKED", "sampled unit missing FINAL QC")
+        length = measured.get("lengthMm") if measured.get("lengthMm") is not None else measured.get("cartonLengthMm")
+        width = measured.get("widthMm") if measured.get("widthMm") is not None else measured.get("cartonWidthMm")
+        height = measured.get("heightMm") if measured.get("heightMm") is not None else measured.get("cartonHeightMm")
+        weight = measured.get("weightKg") if measured.get("weightKg") is not None else measured.get("packedWeightKg")
+        if not all(_qty_ok(v) for v in (length, width, height, weight)):
+            raise PilotBatchError("BLOCKED", "carton measurements missing")
+        damage = measured.get("damageDefect")
+        if not damage:
+            raise PilotBatchError("BLOCKED", "damage/defect result required")
         proto = self.platform.prototype
         proto_unit = proto.units.get(batch.get("prototypeUnitId") or "")
         pack = proto.checklists.get(checklist_id or (proto_unit or {}).get("packagingChecklistId") or "")
@@ -761,6 +986,29 @@ class PilotBatchFactory:
                 qty = float(raw) if raw is not None else None
             except (TypeError, ValueError):
                 qty = None
+        counts = proto._bom_counts(proto._candidate(batch["candidateId"], tenant_id))
+        if batch.get("source") != "FIXTURE":
+            if not _qty_ok(qty):
+                raise PilotBatchError("BLOCKED", "explicit packaging quantity required")
+            if pack and (
+                pack.get("tenantId") != tenant_id
+                or pack.get("prototypeUnitId") not in {None, batch.get("prototypeUnitId")}
+                or (pack.get("engineeringHash") and pack.get("engineeringHash") != batch.get("engineeringHash"))
+            ):
+                raise PilotBatchError("BLOCKED", "stale/wrong checklist lineage")
+            if measured.get("hardwareQty") is None or measured.get("partCount") is None:
+                raise PilotBatchError("HOLD", "part/hardware counts required")
+            if counts.get("hardwareQty") is not None and float(measured.get("hardwareQty")) != float(counts.get("hardwareQty")):
+                raise PilotBatchError("HOLD", "hardware count mismatch")
+            if counts.get("partCount") is not None and float(measured.get("partCount")) != float(counts.get("partCount")):
+                raise PilotBatchError("HOLD", "part count mismatch")
+            if str(damage).upper() not in {"OK", "PASS", "NONE", "NO"}:
+                raise PilotBatchError("HOLD", "damage/defect blocks packing")
+            pkg = proto.packages.get(batch.get("evidencePackageId") or "")
+            dam = proto._package_dam(pkg, None, pack)
+            dam = proto._merge_dam(dam, dam_refs)
+            if not proto._has_dam_role(dam, "PACKAGING", engineering_hash=batch.get("engineeringHash")):
+                raise PilotBatchError("BLOCKED", "required PACKAGING DAM evidence missing")
         rec = {
             "cartonId": new_id(),
             "tenantId": tenant_id,
@@ -769,18 +1017,16 @@ class PilotBatchFactory:
             "unitExecutionIds": ids,
             "engineeringHash": batch.get("engineeringHash"),
             "checklistId": (pack or {}).get("checklistId") or checklist_id,
+            "checklistTenantId": (pack or {}).get("tenantId"),
+            "checklistEngineeringHash": (pack or {}).get("engineeringHash"),
             "packagingQty": qty,
-            "measured": {
-                "lengthMm": measured.get("lengthMm") or measured.get("cartonLengthMm"),
-                "widthMm": measured.get("widthMm") or measured.get("cartonWidthMm"),
-                "heightMm": measured.get("heightMm") or measured.get("cartonHeightMm"),
-                "weightKg": measured.get("weightKg") or measured.get("packedWeightKg"),
-            },
-            "hardwareExpected": (self.platform.prototype._bom_counts(self.platform.prototype._candidate(batch["candidateId"], tenant_id))).get("hardwareQty"),
+            "measured": {"lengthMm": float(length), "widthMm": float(width), "heightMm": float(height), "weightKg": float(weight)},
+            "hardwareExpected": counts.get("hardwareQty"),
             "hardwareObserved": measured.get("hardwareQty"),
-            "partExpected": (self.platform.prototype._bom_counts(self.platform.prototype._candidate(batch["candidateId"], tenant_id))).get("partCount"),
+            "partExpected": counts.get("partCount"),
             "partObserved": measured.get("partCount"),
-            "damageDefect": measured.get("damageDefect") or "OK",
+            "damageDefect": damage,
+            "damRefs": list(dam_refs or []),
             "state": "ACTIVE",
             "shipmentState": "DRAFT",
             "carrierBooking": False,
@@ -814,7 +1060,15 @@ class PilotBatchFactory:
             grouped.setdefault(labor_semantic_key(row), []).append(row)
         dups = [k for k, g in grouped.items() if len(g) > 1]
         ids = [str(r.get("laborId")) for r in rows if r.get("laborId")]
-        ok = bool(rows) and not dups and len(ids) == len(set(ids))
+        executed = [
+            u
+            for u in self.units.values()
+            if u.get("batchId") == batch["batchId"] and u.get("tenantId") == batch["tenantId"] and u.get("state") not in {"PLANNED"}
+        ]
+        covered = {str(r.get("unitExecutionId")) for r in rows if r.get("unitExecutionId")}
+        need = {str(u.get("unitExecutionId")) for u in executed}
+        coverage_ok = need <= covered
+        ok = bool(rows) and not dups and len(ids) == len(set(ids)) and coverage_ok
         minutes = float(sum(float(r.get("minutes") or 0) for r in rows)) if ok else None
         return {
             "ok": ok,
@@ -823,8 +1077,61 @@ class PilotBatchFactory:
             "semanticKeys": [labor_semantic_key(r) for r in rows],
             "minutes": minutes,
             "duplicateKeys": dups,
-            "source": "LABOR_RECORD" if ok else ("DUPLICATE" if dups else "MISSING"),
+            "missingUnits": sorted(need - covered),
+            "source": "LABOR_RECORD" if ok else ("DUPLICATE" if dups else ("MISSING" if not coverage_ok else "MISSING")),
         }
+
+    def _final_qc(self, unit: dict[str, Any], batch: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        rows = [
+            r
+            for r in self.qc.values()
+            if r.get("unitExecutionId") == unit.get("unitExecutionId") and str(r.get("stage") or "").upper() == "FINAL"
+        ]
+        if len(rows) != 1:
+            return None
+        rec = rows[0]
+        if rec.get("ok") is not True or rec.get("result") != "PASS":
+            return None
+        if not rec.get("qcPlanHash"):
+            return None
+        batch = batch or self.batches.get(unit.get("batchId") or "")
+        if not batch:
+            return None
+        if rec.get("tenantId") != unit.get("tenantId") or rec.get("batchId") != batch.get("batchId"):
+            return None
+        if rec.get("engineeringHash") != unit.get("engineeringHash") or rec.get("releaseHash") != batch.get("releaseHash"):
+            return None
+        wo = self.platform.pilot.workorders.get(batch.get("workOrderId"))
+        if not wo or wo.get("qcPlanHash") != rec.get("qcPlanHash"):
+            return None
+        return rec
+
+    def _carton_packaging_ok(self, carton: dict[str, Any], batch: dict[str, Any]) -> bool:
+        meas = carton.get("measured") if isinstance(carton.get("measured"), dict) else {}
+        if not all(_qty_ok(meas.get(k)) for k in ("lengthMm", "widthMm", "heightMm", "weightKg")):
+            return False
+        if not carton.get("damageDefect"):
+            return False
+        if batch.get("source") == "FIXTURE":
+            return True
+        if not _qty_ok(carton.get("packagingQty")) or not carton.get("checklistId"):
+            return False
+        if carton.get("hardwareObserved") is None or carton.get("partObserved") is None:
+            return False
+        if carton.get("hardwareExpected") is not None and float(carton.get("hardwareObserved")) != float(carton.get("hardwareExpected")):
+            return False
+        if carton.get("partExpected") is not None and float(carton.get("partObserved")) != float(carton.get("partExpected")):
+            return False
+        if str(carton.get("damageDefect") or "").upper() not in {"OK", "PASS", "NONE", "NO"}:
+            return False
+        proto = self.platform.prototype
+        pkg = proto.packages.get(batch.get("evidencePackageId") or "")
+        pack = proto.checklists.get(carton.get("checklistId") or "")
+        dam = proto._package_dam(pkg, None, pack)
+        dam = proto._merge_dam(dam, carton.get("damRefs"))
+        if not proto._has_dam_role(dam, "PACKAGING", engineering_hash=batch.get("engineeringHash")):
+            return False
+        return True
 
     def record_cost(self, batch_id: str, *, tenant_id: str, operator_id: str, shift_id: str, amounts: dict[str, Any] | None = None, currency: str = "TWD") -> dict[str, Any]:
         ident = self._identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
@@ -967,14 +1274,28 @@ class PilotBatchFactory:
         units = self.units_for(batch_id, tenant_id=tenant_id)
         cost = self.costs.get(batch.get("costId") or "")
         labor = self._labor_integrity(batch)
-        sampled = [u for u in units if u.get("sampled")]
-        sampled_qc = [self.qc.get(u.get("qcId") or "") for u in sampled]
-        qc_ok = all(isinstance(r, dict) and r.get("ok") is True for r in sampled_qc) and all(u.get("qcId") for u in sampled)
-        holds = [u for u in units if u.get("state") in {"HOLD", "QC_FAILED"}] or [n for n in self.ncrs.values() if n.get("batchId") == batch_id]
-        packed = [u for u in units if u.get("cartonId")]
+        sampled = [u for u in units if u.get("sampled") is not False]
+        qc_ok = True
+        for unit in sampled:
+            if self._final_qc(unit, batch) is None:
+                qc_ok = False
+                break
+        holds = [u for u in units if u.get("state") in {"HOLD", "QC_FAILED", "REWORK"}] or [
+            n for n in self.ncrs.values() if n.get("batchId") == batch_id
+        ]
+        executed = [
+            u
+            for u in units
+            if u.get("startedBy") and u.get("consumedQuantity") is not None and u.get("laborId")
+        ]
+        packed = [u for u in executed if u.get("cartonId")]
         cartons = [c for c in self.cartons.values() if c.get("batchId") == batch_id and c.get("state") == "ACTIVE"]
-        pack_ok = bool(cartons) and len(packed) == len(units) and all(c.get("packagingQty") for c in cartons)
-        counts_ok = int(batch.get("requestedQuantity") or 0) == len(units)
+        pack_ok = (
+            bool(cartons)
+            and len(packed) == len(units) == len(executed)
+            and all(self._carton_packaging_ok(c, batch) for c in cartons)
+        )
+        counts_ok = int(batch.get("requestedQuantity") or 0) == len(units) == len(executed)
         lineage_ok = not batch.get("staleLineage")
         cost_ok = bool(cost) and cost.get("completeness") == "COMPLETE" and (cost.get("quantityLineage") or {}).get("ok") is True
         fixture = batch.get("source") == "FIXTURE" or batch.get("truthLabel") == "FIXTURE"
@@ -1029,12 +1350,15 @@ class PilotBatchFactory:
         if not reason:
             raise PilotBatchError("BLOCKED", "batch decision requires reason")
         batch = self.get(batch_id, tenant_id=tenant_id)
+        key = f"{tenant_id}::batch-decision::{batch_id}::{decision}::{batch.get('engineeringHash')}"
+        found = self._lookup_idem(key)
+        if found is not None:
+            return found
         ready = self.readiness(batch_id, tenant_id=tenant_id)
         if self._is_fixture(ident) or batch.get("source") == "FIXTURE" or batch.get("truthLabel") == "FIXTURE":
             raise PilotBatchError("BLOCKED", "fixture/mock evidence cannot become HUMAN_BATCH_GO")
         if decision == "HUMAN_BATCH_GO" and ready.get("decision") != "READY_FOR_HUMAN_BATCH_GO_NO_GO":
             raise PilotBatchError("BLOCKED", "batch is not ready for HUMAN_BATCH_GO")
-        key = f"{tenant_id}::batch-decision::{batch_id}::{decision}::{batch.get('engineeringHash')}"
 
         def _make():
             rec = {
@@ -1124,32 +1448,75 @@ class PilotBatchFactory:
         unit_rows = []
         carton_rows = []
         labor_rows = []
+        qc_rows = []
+        material_rows = []
+        cost_rows = []
+        decision_rows = []
         for batch in batches:
             batch_rows.append(
                 {
                     "batchId": batch.get("batchId"),
                     "tenantId": batch.get("tenantId"),
                     "candidateId": batch.get("candidateId"),
+                    "selectionId": batch.get("selectionId"),
+                    "prototypeUnitId": batch.get("prototypeUnitId"),
                     "engineeringHash": batch.get("engineeringHash"),
-                    "requestedQuantity": batch.get("requestedQuantity"),
-                    "workOrderId": batch.get("workOrderId"),
+                    "canonicalHash": batch.get("canonicalHash"),
+                    "bomHash": batch.get("bomHash"),
+                    "nestingHash": batch.get("nestingHash"),
+                    "rankingPolicyHash": batch.get("rankingPolicyHash"),
+                    "releaseId": batch.get("releaseId"),
                     "releaseHash": batch.get("releaseHash"),
+                    "workOrderId": batch.get("workOrderId"),
+                    "requestedQuantity": batch.get("requestedQuantity"),
                     "source": batch.get("source"),
                     "truthLabel": batch.get("truthLabel"),
                     "state": batch.get("state"),
                 }
             )
-            for unit in self.units_for(batch["batchId"], tenant_id=batch["tenantId"]):
+            units = self.units_for(batch["batchId"], tenant_id=batch["tenantId"])
+            alloc = []
+            for unit in units:
                 unit_rows.append(
                     {
                         "unitExecutionId": unit.get("unitExecutionId"),
                         "tenantId": unit.get("tenantId"),
                         "batchId": unit.get("batchId"),
                         "engineeringHash": unit.get("engineeringHash"),
+                        "releaseId": unit.get("releaseId") or batch.get("releaseId"),
+                        "releaseHash": unit.get("releaseHash") or batch.get("releaseHash"),
+                        "workOrderId": unit.get("workOrderId") or batch.get("workOrderId"),
+                        "seq": unit.get("seq"),
                         "state": unit.get("state"),
+                        "sampled": unit.get("sampled"),
+                        "startedBy": unit.get("startedBy"),
                         "consumedQuantity": unit.get("consumedQuantity"),
+                        "allocatedQuantity": unit.get("allocatedQuantity"),
+                        "consumeKind": unit.get("consumeKind"),
+                        "reservationIds": unit.get("reservationIds"),
+                        "laborId": unit.get("laborId"),
+                        "qcId": unit.get("qcId"),
+                        "qcFinalId": unit.get("qcFinalId"),
+                        "qcIds": unit.get("qcIds"),
+                        "cartonId": unit.get("cartonId"),
                     }
                 )
+                if unit.get("allocatedQuantity") is not None or unit.get("consumedQuantity") is not None:
+                    alloc.append({"unitExecutionId": unit.get("unitExecutionId"), "quantity": unit.get("allocatedQuantity", unit.get("consumedQuantity"))})
+            wo = self.platform.pilot.workorders.get(batch.get("workOrderId")) if batch.get("workOrderId") else None
+            consumed = float(sum(float(i.get("quantity") or 0) for i in ((wo or {}).get("consumed") or []) if i.get("kind") == "lot")) if wo else float(batch.get("consumedQuantity") or 0)
+            material_rows.append(
+                {
+                    "batchId": batch.get("batchId"),
+                    "tenantId": batch.get("tenantId"),
+                    "workOrderId": batch.get("workOrderId"),
+                    "kind": "BATCH_ALLOCATION_PROJECTION",
+                    "consumedQuantity": consumed,
+                    "reservationIds": batch.get("reservationIds") or (wo or {}).get("reservations"),
+                    "lotIds": batch.get("lotIds") or ((wo or {}).get("lineage") or {}).get("materialLots"),
+                    "unitAllocations": alloc,
+                }
+            )
             for carton in self.cartons.values():
                 if carton.get("batchId") == batch.get("batchId"):
                     carton_rows.append(
@@ -1160,6 +1527,11 @@ class PilotBatchFactory:
                             "unitExecutionIds": carton.get("unitExecutionIds"),
                             "packagingQty": carton.get("packagingQty"),
                             "checklistId": carton.get("checklistId"),
+                            "engineeringHash": carton.get("engineeringHash"),
+                            "measured": carton.get("measured"),
+                            "damageDefect": carton.get("damageDefect"),
+                            "hardwareObserved": carton.get("hardwareObserved"),
+                            "partObserved": carton.get("partObserved"),
                         }
                     )
             for row in self.labor.values():
@@ -1168,13 +1540,63 @@ class PilotBatchFactory:
                         {
                             "laborId": row.get("laborId"),
                             "tenantId": row.get("tenantId"),
+                            "batchId": row.get("batchId"),
                             "unitExecutionId": row.get("unitExecutionId"),
                             "minutes": row.get("minutes"),
                             "idempotencyKey": row.get("idempotencyKey"),
                             "reason": row.get("reason"),
+                            "engineeringHash": row.get("engineeringHash"),
                         }
                     )
-        return {"batches": batch_rows, "units": unit_rows, "cartons": carton_rows, "labor": labor_rows}
+            for row in self.qc.values():
+                if row.get("batchId") == batch.get("batchId"):
+                    qc_rows.append(
+                        {
+                            "qcId": row.get("qcId"),
+                            "tenantId": row.get("tenantId"),
+                            "batchId": row.get("batchId"),
+                            "unitExecutionId": row.get("unitExecutionId"),
+                            "stage": row.get("stage"),
+                            "ok": row.get("ok"),
+                            "result": row.get("result"),
+                            "qcPlanHash": row.get("qcPlanHash"),
+                            "engineeringHash": row.get("engineeringHash"),
+                            "releaseHash": row.get("releaseHash"),
+                        }
+                    )
+            cost = self.costs.get(batch.get("costId") or "")
+            if cost:
+                cost_rows.append(
+                    {
+                        "costId": cost.get("costId"),
+                        "tenantId": cost.get("tenantId"),
+                        "batchId": cost.get("batchId"),
+                        "completeness": cost.get("completeness"),
+                        "truthLabel": cost.get("truthLabel"),
+                        "quantityLineage": cost.get("quantityLineage"),
+                    }
+                )
+            for row in self.decisions.values():
+                if row.get("batchId") == batch.get("batchId"):
+                    decision_rows.append(
+                        {
+                            "decisionId": row.get("decisionId"),
+                            "tenantId": row.get("tenantId"),
+                            "batchId": row.get("batchId"),
+                            "decision": row.get("decision"),
+                            "engineeringHash": row.get("engineeringHash"),
+                        }
+                    )
+        return {
+            "batches": batch_rows,
+            "units": unit_rows,
+            "cartons": carton_rows,
+            "labor": labor_rows,
+            "qc": qc_rows,
+            "materials": material_rows,
+            "costs": cost_rows,
+            "decisions": decision_rows,
+        }
 
 
 def run_pilot_batch_scenario(plat: Any, *, tenant_a: str = "pv-a", tenant_b: str = "pv-b", evidence_commit: str | None = None) -> dict[str, Any]:

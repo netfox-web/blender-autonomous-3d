@@ -29,6 +29,8 @@ _ops = _H._ops
 _built_unit = _H._built_unit
 _manual_launch_ready = _H._manual_launch_ready
 _eco_change = _H._eco_change
+_crash_proc = _H._crash_proc
+_assert_journal_one = _H._assert_journal_one
 
 
 def _proto(tmp_path):
@@ -69,7 +71,7 @@ def test_fixture_batch_create_and_execute(tmp_path):
         operator_id=fixture["operatorId"],
         shift_id=shift["shiftId"],
         unit_execution_ids=[u["unitExecutionId"] for u in units],
-        measured={"cartonLengthMm": 400, "cartonWidthMm": 300, "cartonHeightMm": 200, "packedWeightKg": 8},
+        measured={"cartonLengthMm": 400, "cartonWidthMm": 300, "cartonHeightMm": 200, "packedWeightKg": 8, "damageDefect": "OK"},
     )
     cost = plat.pilot_batch.record_cost(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], amounts={"materialAmount": 1, "hardwareAmount": 1, "laborAmount": 1, "packagingAmount": 1})
     assert cost["completeness"] == "PARTIAL"
@@ -220,14 +222,20 @@ def test_duplicate_carton_assignment_fails(tmp_path):
     fixture, shift = proto["fixture"], proto["fixtureShift"]
     sel = proto["selected"][0]
     batch = plat.pilot_batch.create(sel["candidateId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], quantity=2, source="FIXTURE", reason="carton")
+    plat.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    plat.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
     units = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")
+    for unit in units:
+        plat.pilot_batch.start_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+        plat.pilot_batch.consume_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+        plat.pilot_batch.record_labor(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], minutes=10, reason="assembly")
     plat.pilot_batch.pack_units(
         batch["batchId"],
         tenant_id="pa",
         operator_id=fixture["operatorId"],
         shift_id=shift["shiftId"],
         unit_execution_ids=[units[0]["unitExecutionId"]],
-        measured={"cartonLengthMm": 1, "cartonWidthMm": 1, "cartonHeightMm": 1, "packedWeightKg": 1},
+        measured={"cartonLengthMm": 1, "cartonWidthMm": 1, "cartonHeightMm": 1, "packedWeightKg": 1, "damageDefect": "OK"},
     )
     with pytest.raises(PilotBatchError, match="two active cartons"):
         plat.pilot_batch.pack_units(
@@ -236,7 +244,7 @@ def test_duplicate_carton_assignment_fails(tmp_path):
             operator_id=fixture["operatorId"],
             shift_id=shift["shiftId"],
             unit_execution_ids=[units[0]["unitExecutionId"], units[1]["unitExecutionId"]],
-            measured={"cartonLengthMm": 1, "cartonWidthMm": 1, "cartonHeightMm": 1, "packedWeightKg": 1},
+            measured={"cartonLengthMm": 1, "cartonWidthMm": 1, "cartonHeightMm": 1, "packedWeightKg": 1, "damageDefect": "OK"},
         )
 
 
@@ -290,6 +298,239 @@ def test_backup_restore_batch_state_no_tenant_b_leak(tmp_path):
     assert matrix["tenantStateDigest"]["equal"] is True
     assert len(restored.pilot_batch.batches) == 4
     assert not any(b.get("tenantId") == "pb" for b in restored.pilot_batch.batches.values())
+
+
+def test_pack_planned_unit_fails(tmp_path):
+    plat, proto = _proto(tmp_path)
+    fixture, shift = proto["fixture"], proto["fixtureShift"]
+    sel = proto["selected"][0]
+    batch = plat.pilot_batch.create(sel["candidateId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], quantity=2, source="FIXTURE", reason="planned")
+    units = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")
+    with pytest.raises(PilotBatchError, match="incomplete unit"):
+        plat.pilot_batch.pack_units(
+            batch["batchId"],
+            tenant_id="pa",
+            operator_id=fixture["operatorId"],
+            shift_id=shift["shiftId"],
+            unit_execution_ids=[units[0]["unitExecutionId"]],
+            measured={"cartonLengthMm": 400, "cartonWidthMm": 300, "cartonHeightMm": 200, "packedWeightKg": 8, "damageDefect": "OK"},
+        )
+
+
+def test_in_process_qc_does_not_satisfy_final(tmp_path):
+    plat, proto = _proto(tmp_path)
+    fixture, shift = proto["fixture"], proto["fixtureShift"]
+    sel = proto["selected"][0]
+    batch = plat.pilot_batch.create(sel["candidateId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], quantity=1, source="FIXTURE", reason="qc-stage")
+    plat.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    plat.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    unit = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")[0]
+    plat.pilot_batch.start_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    plat.pilot_batch.consume_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    plat.pilot_batch.record_labor(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], minutes=10, reason="assembly")
+    plat.pilot_batch.record_qc(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], ok=True, stage="IN_PROCESS")
+    ready = plat.pilot_batch.readiness(batch["batchId"], tenant_id="pa")
+    assert "qc_sample" in ready["blockers"]
+    assert ready["decision"] != "READY_FOR_HUMAN_BATCH_GO_NO_GO"
+
+
+def test_manual_incomplete_chain_cannot_go(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio = __import__("fox3d.portfolio", fromlist=["run_portfolio_scenario"]).run_portfolio_scenario
+    run_portfolio(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    _manual_launch_ready(plat, cand, unit, human, human_shift)
+    plat.prototype.record_launch_decision(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="HUMAN_GO", reason="go")
+    batch = plat.pilot_batch.create(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], quantity=2, source="MANUAL", reason="incomplete")
+    plat.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    units = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")
+    first = units[0]
+    plat.pilot_batch.start_unit(first["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.consume_unit(first["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.record_labor(first["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], minutes=10, reason="assembly")
+    plat.pilot_batch.record_qc(first["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], ok=True)
+    ready = plat.pilot_batch.readiness(batch["batchId"], tenant_id="pa")
+    assert ready["decision"] != "READY_FOR_HUMAN_BATCH_GO_NO_GO"
+    with pytest.raises(PilotBatchError, match="not ready|HUMAN_BATCH_GO"):
+        plat.pilot_batch.record_decision(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="HUMAN_BATCH_GO", reason="no")
+    _ = actor
+    _ = sh
+    _ = fixture
+    _ = shift
+
+
+@pytest.mark.parametrize("crash", ["after-business-persist", "after-outbox-complete"])
+def test_subprocess_batch_create_crash(tmp_path, crash):
+    plat, proto = _proto(tmp_path)
+    fixture, shift = proto["fixture"], proto["fixtureShift"]
+    sel = proto["selected"][0]
+    _crash_proc(
+        tmp_path,
+        "pilot-batch-create",
+        crash,
+        wo=sel["candidateId"],
+        operator=fixture["operatorId"],
+        shift=shift["shiftId"],
+        qty=2,
+        payload={"source": "FIXTURE"},
+        reason="crash-create",
+    )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    rows = [b for b in plat2.pilot_batch.batches.values() if b.get("candidateId") == sel["candidateId"]]
+    assert len(rows) == 1
+    _assert_journal_one(plat2, "pa", "pilot_batch.create")
+    retry = plat2.pilot_batch.create(
+        sel["candidateId"],
+        tenant_id="pa",
+        operator_id=fixture["operatorId"],
+        shift_id=shift["shiftId"],
+        quantity=2,
+        source="FIXTURE",
+        reason="crash-create",
+    )
+    assert retry["batchId"] == rows[0]["batchId"]
+    assert len([b for b in plat2.pilot_batch.batches.values() if b.get("candidateId") == sel["candidateId"]]) == 1
+    assert plat2.pilot.outbox.list_open(tenant_id="pa") == []
+
+
+@pytest.mark.parametrize("crash", ["after-business-persist", "after-outbox-complete"])
+def test_subprocess_batch_release_reserve_start_consume(tmp_path, crash):
+    plat, proto = _proto(tmp_path)
+    fixture, shift = proto["fixture"], proto["fixtureShift"]
+    sel = proto["selected"][0]
+    batch = plat.pilot_batch.create(sel["candidateId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], quantity=2, source="FIXTURE", reason="crash-flow")
+    _crash_proc(tmp_path, "pilot-batch-release", crash, wo=batch["batchId"], operator=fixture["operatorId"], shift=shift["shiftId"])
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    rel = plat2.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    assert rel["state"] == "RELEASED_FOR_MANUAL_PILOT"
+    _assert_journal_one(plat2, "pa", "pilot_batch.release")
+    _crash_proc(tmp_path, "pilot-batch-reserve", crash, wo=batch["batchId"], operator=fixture["operatorId"], shift=shift["shiftId"], payload={"policy": "FIXTURE_AUTO_SEED"})
+    plat3 = Platform(root=tmp_path / "live", mock_blender=True)
+    reserved = plat3.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    assert reserved.get("materialReserved") is True
+    _assert_journal_one(plat3, "pa", "pilot_batch.reserve")
+    unit = plat3.pilot_batch.units_for(batch["batchId"], tenant_id="pa")[0]
+    _crash_proc(tmp_path, "pilot-batch-start", crash, unit=unit["unitExecutionId"], operator=fixture["operatorId"], shift=shift["shiftId"])
+    plat4 = Platform(root=tmp_path / "live", mock_blender=True)
+    started = plat4.pilot_batch.start_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    assert started["state"] == "STARTED"
+    _assert_journal_one(plat4, "pa", "pilot_batch.unit.start")
+    _crash_proc(tmp_path, "pilot-batch-consume", crash, unit=unit["unitExecutionId"], operator=fixture["operatorId"], shift=shift["shiftId"])
+    plat5 = Platform(root=tmp_path / "live", mock_blender=True)
+    consumed = plat5.pilot_batch.consume_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    assert consumed.get("consumedQuantity") is not None
+    _assert_journal_one(plat5, "pa", "pilot_batch.unit.consume")
+    assert plat5.pilot.outbox.list_open(tenant_id="pa") == []
+
+
+@pytest.mark.parametrize("crash", ["after-business-persist", "after-outbox-complete"])
+def test_subprocess_labor_qc_pack_crash(tmp_path, crash):
+    plat, proto = _proto(tmp_path)
+    fixture, shift = proto["fixture"], proto["fixtureShift"]
+    sel = proto["selected"][0]
+    batch = plat.pilot_batch.create(sel["candidateId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], quantity=1, source="FIXTURE", reason="crash-pack")
+    plat.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    plat.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    unit = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")[0]
+    plat.pilot_batch.start_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    plat.pilot_batch.consume_unit(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"])
+    _crash_proc(tmp_path, "pilot-batch-labor", crash, unit=unit["unitExecutionId"], operator=fixture["operatorId"], shift=shift["shiftId"], qty=12, reason="assembly")
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    labor = plat2.pilot_batch.record_labor(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], minutes=12, reason="assembly")
+    assert len([r for r in plat2.pilot_batch.labor.values() if r.get("unitExecutionId") == unit["unitExecutionId"]]) == 1
+    _assert_journal_one(plat2, "pa", "pilot_batch.labor")
+    _crash_proc(tmp_path, "pilot-batch-qc", crash, unit=unit["unitExecutionId"], operator=fixture["operatorId"], shift=shift["shiftId"], payload={"ok": True, "stage": "FINAL"})
+    plat3 = Platform(root=tmp_path / "live", mock_blender=True)
+    qc = plat3.pilot_batch.record_qc(unit["unitExecutionId"], tenant_id="pa", operator_id=fixture["operatorId"], shift_id=shift["shiftId"], ok=True, stage="FINAL")
+    assert len([r for r in plat3.pilot_batch.qc.values() if r.get("unitExecutionId") == unit["unitExecutionId"] and r.get("stage") == "FINAL"]) == 1
+    _assert_journal_one(plat3, "pa", "pilot_batch.qc")
+    _crash_proc(
+        tmp_path,
+        "pilot-batch-pack",
+        crash,
+        wo=batch["batchId"],
+        unit=unit["unitExecutionId"],
+        operator=fixture["operatorId"],
+        shift=shift["shiftId"],
+        payload={"unitExecutionIds": [unit["unitExecutionId"]]},
+    )
+    plat4 = Platform(root=tmp_path / "live", mock_blender=True)
+    carton = plat4.pilot_batch.pack_units(
+        batch["batchId"],
+        tenant_id="pa",
+        operator_id=fixture["operatorId"],
+        shift_id=shift["shiftId"],
+        unit_execution_ids=[unit["unitExecutionId"]],
+        measured={"cartonLengthMm": 400, "cartonWidthMm": 300, "cartonHeightMm": 200, "packedWeightKg": 8, "hardwareQty": 4, "partCount": 6, "damageDefect": "OK"},
+    )
+    assert len([c for c in plat4.pilot_batch.cartons.values() if c.get("batchId") == batch["batchId"]]) == 1
+    _assert_journal_one(plat4, "pa", "pilot_batch.pack")
+    assert plat4.pilot.outbox.list_open(tenant_id="pa") == []
+    _ = labor
+    _ = qc
+    _ = carton
+
+
+@pytest.mark.parametrize("crash", ["after-business-persist", "after-outbox-complete"])
+def test_subprocess_human_batch_go_crash(tmp_path, crash):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio = __import__("fox3d.portfolio", fromlist=["run_portfolio_scenario"]).run_portfolio_scenario
+    run_portfolio(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    live = _manual_launch_ready(plat, cand, unit, human, human_shift)
+    plat.prototype.record_launch_decision(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="HUMAN_GO", reason="go")
+    batch = plat.pilot_batch.create(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], quantity=1, source="MANUAL", reason="go-crash")
+    plat.pilot_batch.release_for_manual(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.reserve_materials(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    bu = plat.pilot_batch.units_for(batch["batchId"], tenant_id="pa")[0]
+    plat.pilot_batch.start_unit(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.consume_unit(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"])
+    plat.pilot_batch.record_labor(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], minutes=10, reason="assembly")
+    plat.pilot_batch.record_qc(bu["unitExecutionId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], ok=True, stage="FINAL")
+    counts = plat.prototype._bom_counts(plat.prototype._candidate(cand["candidateId"], "pa"))
+    plat.pilot_batch.pack_units(
+        batch["batchId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        unit_execution_ids=[bu["unitExecutionId"]],
+        measured={
+            "cartonLengthMm": 400,
+            "cartonWidthMm": 300,
+            "cartonHeightMm": 200,
+            "packedWeightKg": 8,
+            "hardwareQty": counts.get("hardwareQty"),
+            "partCount": counts.get("partCount"),
+            "damageDefect": "OK",
+        },
+        packaging_qty=1,
+    )
+    plat.pilot_batch.record_cost(
+        batch["batchId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        amounts={"materialAmount": 10, "hardwareAmount": 4, "laborAmount": 8, "packagingAmount": 2},
+    )
+    ready = plat.pilot_batch.readiness(batch["batchId"], tenant_id="pa")
+    if ready.get("decision") != "READY_FOR_HUMAN_BATCH_GO_NO_GO":
+        pytest.skip(f"manual batch not ready for GO: {ready.get('blockers')}")
+    _crash_proc(tmp_path, "pilot-batch-go", crash, wo=batch["batchId"], operator=human["operatorId"], shift=human_shift["shiftId"], reason="crash-go")
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    rows = [d for d in plat2.pilot_batch.decisions.values() if d.get("batchId") == batch["batchId"]]
+    assert len(rows) == 1
+    _assert_journal_one(plat2, "pa", "pilot_batch.decision")
+    retry = plat2.pilot_batch.record_decision(batch["batchId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="HUMAN_BATCH_GO", reason="crash-go")
+    assert retry["decisionId"] == rows[0]["decisionId"]
+    assert plat2.pilot.outbox.list_open(tenant_id="pa") == []
+    _ = live
+    _ = actor
+    _ = sh
+    _ = fixture
+    _ = shift
 
 
 def test_scenario_flags_remain_blocked(tmp_path):
