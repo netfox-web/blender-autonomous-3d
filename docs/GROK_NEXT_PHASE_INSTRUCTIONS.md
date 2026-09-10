@@ -1,142 +1,132 @@
-# Grok 修正指令：Phase 781–840 Re-Gate Round 3 — CHANGES REQUIRED / Phase 841+ HOLD
+# Grok 修正指令：Phase 781–840 Re-Gate Round 4 — CHANGES REQUIRED / Phase 841+ HOLD
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main head: `e4c01702dd9dc1ce7d1c4a44f40ffa9214bfd372`  
-> CODE_EVIDENCE_SHA reviewed: `dfe8eaed32192bcde202dee069f741b5884413ec`  
-> Canonical generation reviewed: `01a3f28b-7eb5-4e2b-b17b-64edeff267f2`  
-> CODE Actions: `34514913333` Ubuntu + Windows SUCCESS  
-> docs/head Actions: `34515625153` Ubuntu + Windows SUCCESS  
+> Reviewed main head: `f3ec67a1acdb5e8a8d96ab802eb823f724de2607`  
+> CODE_EVIDENCE_SHA reviewed: `7d99b37f1587081613525409ad185a83b3bdb62d`  
+> Canonical generation reviewed: `97e76079-0527-4313-ad37-6b1bd050a268`  
+> CODE Actions: `34524185358` Ubuntu + Windows SUCCESS  
+> docs/head Actions: `34524773277` Ubuntu + Windows SUCCESS  
 > Re-Gate result: **CHANGES REQUIRED — Phase 841+ MUST NOT START.**
 
-本輪只補 Phase 781–840 最後的 preview / production authority 缺口。**不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore。**
+本輪只補 Phase 781–840 Artwork Placement 的最後 authority / preview↔production parity 缺口。**不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore。**
 
 ## 已接受，不要退步
 
-- `pytest -q`：**595 passed**。
-- exact CODE `dfe8eae...` Actions `34514913333`：Ubuntu + Windows **SUCCESS**。
-- docs/head `e4c017...` Actions `34515625153`：Ubuntu + Windows **SUCCESS**。
-- canonical generation `01a3f28b-...` runner-bound to exact CODE、`workingTreeClean=true`。
-- Scheme A 已成立：**mesh FRONT UV 是 final source UV，shader mapping identity**；不再 double-apply crop/rotation。
-- artwork material/UV 已限制到唯一 FRONT face；side/back 不再一起吃 artwork。
-- `build_and_render()` 已顯式回傳 `artworkApplied` + `appliedPlacements`；missing artworkApplied 已 fail-closed。
-- `placementHash` 已擴充綁定 uv/mirror/object/component/relation/master，`require_placement()` 會重算 UV / hash。
-- `SINGLE_SURFACE` vs `MASTER_SPLIT` 已分流；單門 artwork 不再被錯切成多門 quarter crop。
-- acceptance split count 的 `and` fail-open 已修成 exact/fail-closed；2/3/4 door final UV、duplicate、missing count 等 regression 已加。
-- `realArtworkPreviewReady=false`、`physicalPrintValidated=false`、global/full/live readiness=false 維持正確。
-- CI 仍 `FOX3D_MOCK_BLENDER=1`：只能算 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，不是 Production Ready。
-- LIVE_CNC / LIVE_LASER / PLC 繼續 **BLOCKED**；Demand / Vision / AI Video 繼續 **MOCK**；print preflight 繼續 **PARTIAL**。
+- `pytest -q`：**598 passed**；exact CODE `7d99b37...` Actions `34524185358` Ubuntu/Windows SUCCESS；docs/head `f3ec67a...` Actions `34524773277` SUCCESS。
+- canonical generation `97e76079-0527-4313-ad37-6b1bd050a268` runner-bound to exact CODE、`workingTreeClean=true`。
+- REAL preview gate 已要求 `usedMock=false`、REAL Blender、job/blender/device、artifact hash+size、`artworkApplied=true`、exact placement/object/component/FRONT/relation/final UV identity。
+- `finalUvHash` 已改 deterministic SHA/stable hash，由 authoritative placement 重算比對。
+- SINGLE_SURFACE 已不再誤走多門 quarter crop；stored source crop 會與重新推導值比對。
+- MASTER_SPLIT 已有獨立 master relation store，基本 coordinated surface-set tamper 會 BLOCK。
+- Blender 仍採單一 UV authority：FRONT mesh UV = final source UV、shader mapping identity。
+- `realArtworkPreviewReady=false`、`physicalPrintValidated=false`、`globalProductionReady=false`、`fullAutonomousFactoryReady=false` 維持正確。
+- CI 仍 `FOX3D_MOCK_BLENDER=1`，只能算 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，不是 Production Ready。
+- LIVE_CNC / LIVE_LASER / PLC 維持 **BLOCKED**；Demand / Vision / AI Video 維持 **MOCK**；print preflight 維持 **PARTIAL**。
 
 ---
 
-# Blocker 1 — `realArtworkPreviewReady` 還缺完整的 REAL artifact / applied-lineage gate
+# Blocker 1 — REAL preview 仍會讓 caller projection 影響實際 render bytes
 
-目前 `preview_ready_from_job()` 已要求 `usedMock=false`、`artworkApplied=true`、`realBlender=true`、status、blenderVersion、jobId，這部分接受；但它只拿四個 hash `(engineeringHash, surfaceHash, artworkHash, placementHash)` 做 applied exact-set，**沒有要求 device、實際 render artifact SHA/size，也沒有驗 object/component/face/relation/final UV**。
+目前 `preview()` 已先 `require_placement()` 得到 authoritative `live`，requested identity / hashes 也取自 `live`；但後續仍使用 caller 傳入的 `placement` 取得 `artworkId`、`productId`、`engineeringHash`，並把該 artwork path 當 `artwork_path` override 傳進 `blender_job_payload()`。
 
-目前 test 甚至把一個沒有 device、沒有 artifact hash/size、applied row 只有四個 hash 的 synthetic result 判成 `True`。這還不能證明「REAL Blender 成功套用了正確那一片門、正確那個 FRONT face、正確 final UV，且確實產出可驗證圖片」。
+同時 `blender_job_payload()` 對每個 placementId 雖會重新取得 canonical placement / artwork，卻使用：
 
-Required correction：
+`path = artwork_path or art.get("path")`
 
-- `realArtworkPreviewReady=true` 必須同時要求：
-  - `usedMock is False`
-  - `realBlender is True`
-  - status completed/succeeded
-  - non-empty `blenderVersion`
-  - non-empty `jobId`
-  - non-empty `device`（沿用既有 worker truth，不另造一套 GPU authority）
-  - render artifact 存在，且具 **sha256 + size > 0**；若既有 worker output / DAM 已有 artifact metadata，直接重用，不重建 DAM。
-  - requested placements 與 `appliedPlacements[]` **exact-set** match：至少 `placementId`、`objectName`、`componentId`、`face`、`relation`、`engineeringHash`、`surfaceHash`、`artworkHash`、`placementHash`、final UV identity/hash。
-  - 不可只看四個 lineage hash；wrong object / wrong component / wrong face / wrong relation / wrong final UV 都要 false。
-- `build_and_render()` 的 artwork success result 必須帶回上述 applied identity；若 worker wrapper已有 output artifact hash/size，讓 preview gate驗它。
-- 若本機沒有跑 REAL artwork render，本輪仍可維持 `realArtworkPreviewReady=false`，不得假造 REAL。
+也就是 caller override 優先。Blender worker 目前只檢查 image path 存在，然後把 payload 裡的 `artworkHash` 原樣回報；**worker 沒有對實際載入的 image bytes 做 SHA-256 驗證**。因此存在以下 fail-open：同 tenant 的另一張圖片可被 caller path override 實際 render，但 applied lineage 仍可能帶 canonical artworkHash / placementHash，最後誤過 `realArtworkPreviewReady`。
 
-Required tests：
+### Required correction
 
-1. 現在 synthetic `ok`（缺 device / artifact / final UV identity）必須改成 **False**。
-2. missing device → False。
-3. missing artifact / sha256 / size=0 → False。
-4. wrong `objectName` / `componentId` / `face` / `relation` → False。
-5. wrong final UV / finalUvHash → False。
-6. extra / duplicate / missing applied placement → False。
-7. 只有全部 evidence 完整且 exact match 才 True。
+- 一旦有 `placementId`，`preview()` 後續所有 authority 必須只使用 `live`：
+  - `live.artworkId`
+  - `live.productId`
+  - `live.engineeringHash`
+  - `live.objectName/componentId/face/relation`
+  - `placements=[live]` 或 `placement_ids=[live.placementId]`
+- caller 傳入的 projection 只能是 request/reference，不得決定真正 render 的 artwork path 或 engineering payload。
+- REAL authority path **不得接受未驗證的任意 `artwork_path` override**。最佳做法：`blender_job_payload()` 從 canonical `require_artwork()` 自己取得 path。
+- 為消除 verify→worker load 的 TOCTOU，payload 請一併帶 canonical raw asset digest（例如 `artworkSha256`，來源是 `require_artwork()` 已驗過的 DAM bytes），worker 在 `bpy.data.images.load()` 前重新讀 bytes 做 SHA-256 exact compare；不符就 `ArtworkApplyError`，不得 `artworkApplied=true`。
+- `artworkHash`（metadata/lineage hash）與 raw file SHA-256 不要混用；兩者分開命名、各自驗證。
+- 如果保留 `artwork_path` 只供 unit/diagnostic，必須明確 non-authoritative，且 bytes digest 不符 canonical asset 時 fail-closed。
 
----
+### Required tests
 
-# Blocker 2 — `finalUvHash` 目前不是 hash，也沒有被 authoritative gate 鎖住
-
-目前 Blender applied record 的 `finalUvHash` 是 `str(finalSampling)`。這只是字串表示，不是 deterministic hash authority；preview gate 也沒有拿 authoritative expected final UV 去 exact compare。
-
-Required correction：
-
-- `finalUvHash` 改成 deterministic hash，例如沿用既有 `stable_hash` / SHA-256，內容至少綁：
-  - placementId
-  - objectName / componentId / face
-  - relation
-  - uvRect
-  - rotationDeg
-  - mirrored
-  - finalSampling
-- 不可讓 Blender 自己宣稱一個 hash 就算 PASS；caller/ArtworkFactory 必須從 authoritative placement 重新推導 expected final UV / expected hash，與 worker returned applied record exact compare。
-- 若不打算真正 hash，欄位就不要叫 `finalUvHash`；但本 Phase Definition of Done 仍需要一個 deterministic transform identity。
-
-Required tests：tamper finalSampling、rotation、mirror、object/component 後，就算 copied `placementHash` 不變，也不得通過 REAL preview readiness。
+1. valid `placementId` + caller forged `artworkId`（同 tenant 另一張圖）不得影響實際 payload/render；最好直接 BLOCK caller mismatch，至少必須使用 canonical art。
+2. valid `placementId` + forged `productId` / `engineeringHash` 不得選到另一份 engineering。
+3. canonical lineage + arbitrary wrong `artwork_path` bytes 必須 BLOCK，不能 `artworkApplied=true`。
+4. worker image bytes 在 submit 前後被換掉 → worker-side digest mismatch BLOCK。
+5. canonical artwork path + digest 一致才可產生 applied record。
 
 ---
 
-# Blocker 3 — SINGLE_SURFACE production crop 仍直接吃 stored `rec["crop"]` projection
+# Blocker 2 — SINGLE_SURFACE production file 尚未真正等價於 Blender placement（CONTAIN / anchor / rotation）
 
-`produce_panel()` 的 `SINGLE_SURFACE` 現在已不再走 master split，這個方向正確；但 source pixel crop 仍直接從 stored `rec["crop"][sourceXPx/sourceYPx/sourceWPx/sourceHPx]` 取值。
+目前 `canonical_source_crop()` 雖重新從 artwork pixels + surface/placement/fit 推導，但其 COVER source crop固定置中，實際沒有使用 placement 的 x/y offset 或 `anchor`；`rotationDeg` 也沒有進 production raster transform。
 
-雖然目前 `crop` 被 placementHash 綁住，但**若有人協調修改 stored crop + 重算 copied placementHash**，production path 沒有再從 authoritative Artwork pixel dimensions + surface/placement mm + fit/anchor 重新推導 source crop，因此 authority 還不獨立。
+更重要的是 `produce_panel(SINGLE_SURFACE)` 最後只把 source crop bytes直接寫成 PNG，卻把 manifest 的 `outputPhysicalMm` 標成整個 surface。對 `CONTAIN` 且 artwork aspect ratio ≠ surface 時，Blender preview 會有留白/偏移，但 production PNG 只有 artwork 本體；若把該 PNG當整片門板印刷，實際會被拉到 full surface，與 Blender preview 不一致。這違反本 Phase 的核心目標：**Engineering Surface mm = Artwork Placement = Blender Preview = Production Artwork**。
 
-Required correction：
+### Required correction
 
-- 抽一個 deterministic canonical source-crop derivation helper，`place()` 與 `produce_panel()` 共用同一算法，不要兩套公式。
-- `produce_panel(SINGLE_SURFACE)` 每次從：
-  - authoritative artwork pixelWidth/pixelHeight
-  - authoritative surface dimensions
-  - placement x/y/w/h
-  - fit / anchor / rotation（依既有支援範圍）
-  重新推導 expected source crop。
-- stored `rec["crop"]` 只當 projection；存在時必須 exact compare，缺失/不符 → BLOCK。
-- 不可只靠「重新算 placementHash」證明 production crop正確。
-- 原有 golden regression「4-door 的 DOOR_2 single-surface = full source，不是第二個 quarter」要保持 PASS。
+建立單一 deterministic production transform/composition（可重用現有 helpers，不要另建第二套 placement engine）：
 
-Required negative：同時改 stored `crop` + copied `placementHash`，production 仍必須 BLOCK。
+- `CONTAIN`：production panel output 必須保留 canonical x/y placement、anchor 和留白；不能把 artwork crop 當 full-panel raster。
+- `COVER`：source crop 必須依 authoritative placement offset/anchor 推導，不得一律 center crop。
+- `rotationDeg` / `mirrored`：production output 必須與 Blender `finalSampling` 的方向一致；若某 transform 尚未支援 production，應 fail-closed / PARTIAL，而不是標 `productionArtworkFileReady=true`。
+- 對 full-panel production raster，manifest 必須明確記錄：canvas physical mm、pixel dimensions / dpi、placed artwork rect、source crop、rotation、mirror、background/alpha policy、placementHash、final transform hash。
+- 不准用 resize/stretch 偷偷補滿 surface；STRETCH 仍 BLOCKED。
+- 建議新增一個 parity identity：由同一 canonical placement 推導 Blender final UV 與 production transform，runner 驗兩邊對同一 source region / orientation / panel coordinates。
+
+### Required tests
+
+至少用非等比例 artwork 覆蓋：
+
+1. `CONTAIN + CENTER`：輸出 canvas 有正確留白，內容 rect mm 與 Blender placement一致。
+2. `CONTAIN + LEFT/TOP/RIGHT/BOTTOM`（依既有 ANCHORS 實際枚舉）：留白方向/offset正確。
+3. `COVER + LEFT/CENTER/RIGHT` 或 TOP/CENTER/BOTTOM：sourceXPx/sourceYPx 隨 anchor 改變，不能永遠置中。
+4. 90/180/270 rotation + mirror：production orientation 與 `finalSampling` parity；未支援就 BLOCK。
+5. manifest `outputPhysicalMm` 與 raster/dpi/placement semantics 不可自相矛盾。
+6. negative：coordinated crop + placementHash、anchor/rotation projection tamper 仍 BLOCK。
 
 ---
 
-# Blocker 4 — MASTER_SPLIT 的 surface-set authority 仍可被 coordinated tamper 重建
+# Blocker 3 — MASTER relation authority 尚未完整 replay 自己的 seam / relation integrity
 
-`_authoritative_master()` 現在從 placement 內的 `masterSurfaceIds` 重新抓 surfaces，再重建 master。比上一版好很多，但 `masterSurfaceIds` 本身仍是 placement 的 mutable field；若 coordinated tamper 同時換一組 surface IDs、重算 masterHash、再重算 placementHash，缺少一份**獨立 master relation authority**來判斷原本是哪一組 panel。
+`place_across_panels()` 允許 `master_canvas(surfaces, seam_mm=seam_mm)`，並把 `seamMm`、`panelOrder`、`cropGeometry` 存進 master relation；但 `_authoritative_master()` 之後卻用 `master_canvas(siblings)` 重建，**沒有使用 relation 裡已授權的 `seamMm`**。若合法建立時傳 explicit seam，後續 replay 可能得到不同 masterHash；而 relation 的 `panelOrder/cropGeometry/relationHash` 也沒有被完整 self-verify。
 
-Required correction（最小改動，不准重寫）：
+### Required correction
 
-- 在現有 `ArtworkFactory` 內增加 lightweight immutable master relation record，或等價的獨立 authority：`masterId/masterHash -> exact tenant/product/version/engineeringHash/surfaceIds + panel order + crop geometry`。
-- `place_across_panels()` 建立一次；各 placement 只引用該 master identity。
-- `_authoritative_master()` 必須從這份 authority 取 exact surface set/order，再與 placement projection比較；不能只相信 placement 自己帶的 `masterSurfaceIds`。
-- master relation 仍要 tenant/product/version/engineeringHash scoped。
-- coordinated tamper：換 `masterSurfaceIds + masterHash + placementHash` 必須 BLOCK。
+- master relation record 要能 deterministic replay：使用 authoritative relation 的 canonical seam（或若產品政策只允許 engineering seam，就在建立時拒絕不同 seam，不要存一份之後無法 replay 的 config）。
+- `require_master()` / `_authoritative_master()` 必須驗 relation 自身 integrity：重算 `relationHash`，並 exact check `masterId/masterHash/tenant/product/version/engineeringHash/surfaceIds/panelOrder/seamMm/widthMm/heightMm/cropGeometry`。
+- placement 的 `masterId` 若 Phase schema宣稱必填，就必須 exact match，不可把 missing/blank 當合法；`masterSurfaceIds` projection 若保留，也要明確規則（exact projection或完全移除），不要半信半不信。
+- re-derived master/crops 必須從 independent relation + authoritative surfaces 得出，不能回頭信 placement projection。
 
-若已有等價 immutable source 可直接重用，請重用，不新增第二套 store。
+### Required tests
+
+1. explicit non-default seam 的合法 master create → require_placement → produce_panel 可 deterministic round-trip（若政策允許）。
+2. tamper relation `seamMm` / `panelOrder` / `cropGeometry` / `relationHash` 任一欄 → BLOCK。
+3. missing/forged `masterId` → BLOCK（若 masterId 保留為 authority identity）。
+4. coordinated placement `masterSurfaceIds/masterHash/placementHash` tamper仍 BLOCK，舊 regression維持。
 
 ---
 
 # Re-Gate evidence required
 
-完成以上 correction 後：
+完成 correction 後：
 
 1. source + tests commit/push 新 **CODE_EVIDENCE_SHA**。
 2. full `pytest -q` PASS。
 3. exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS。
 4. 在 exact CODE SHA clean tree 跑 Artwork canonical runner，產生新的 `acceptanceGenerationId`，`evidenceCodeCommit=<exact CODE SHA>`、`workingTreeClean=true`。
-5. 更新 `GROK_PROGRESS_REPORT.md`、`CURRENT_IMPLEMENTATION_AUDIT.md`、`REAL_E2E_ACCEPTANCE.md`、`ARTWORK_PLACEMENT_ACCEPTANCE.md/.json`。`CABINET_REAL_ACCEPTANCE.md` 沒有 truth change 就不要硬改。
-6. 若有 REAL Blender diagnostic artwork render：證據必須含 actual artifact SHA/size/job/GPU/device、exact applied identity、final UV parity；若沒有，維持 `realArtworkPreviewReady=false`。
-7. docs/head Actions Ubuntu + Windows SUCCESS。
-8. Issue #1 留短回報：CODE SHA、pytest count、CODE run、canonical generation、docs SHA/run、REAL/MOCK/PARTIAL/BLOCKED。
-9. **STOP。Phase 841+ 仍不得開始，等 ChatGPT Re-Gate。**
+5. runner 必須新增上述 caller-authority、CONTAIN/COVER/anchor/rotation production parity、master seam/integrity negative/positive evidence；不能只靠 synthetic `preview_ready_from_job()`。
+6. 更新 `docs/GROK_PROGRESS_REPORT.md`、`docs/CURRENT_IMPLEMENTATION_AUDIT.md`、`docs/REAL_E2E_ACCEPTANCE.md`、`docs/ARTWORK_PLACEMENT_ACCEPTANCE.md/.json`。`CABINET_REAL_ACCEPTANCE.md` 沒有 truth change 就不要硬改。
+7. 若本機沒有 REAL artwork OptiX render，維持 `realArtworkPreviewReady=false`；若有，必須含 actual artifact SHA/size/job/GPU/device + worker-verified artwork raw digest + exact applied identity。
+8. `physicalPrintValidated` 仍只能由真實實體印刷/量測證據變 true；本輪軟體 parity不能冒充 physical validation。
+9. docs/head Actions Ubuntu + Windows SUCCESS。
+10. Issue #1 留短回報：CODE SHA、pytest count、CODE run、canonical generation、docs SHA/run、REAL/MOCK/PARTIAL/BLOCKED。
+11. **STOP。Phase 841+ 仍不得開始，等 ChatGPT Re-Gate。**
 
 ## Definition of Done
 
 Phase 781–840 只有在以下情況才可放行：
 
-> REAL artwork preview gate 能證明「指定 placement → 指定 component/FRONT face → 指定 final UV → 指定 render artifact」完整一致；final UV 有真正 deterministic identity；SINGLE_SURFACE production source crop 能從 authoritative inputs獨立重算；MASTER_SPLIT 的 exact panel group 有獨立 authority，可抵抗 coordinated tamper；Mock/physical/live truth boundary維持正確。
+> caller projection 無法替換 canonical artwork/engineering/render bytes；worker 能驗實際載入 artwork bytes identity；SINGLE_SURFACE 的 CONTAIN/COVER/anchor/rotation/mirror 在 production output 與 Blender placement 使用同一 canonical transform且不 stretch；MASTER_SPLIT relation 可以 deterministic replay並自驗 seam/order/crop/integrity；Mock/physical/live truth boundary維持正確。
