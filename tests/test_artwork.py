@@ -16,6 +16,7 @@ from fox3d.artwork import (
     effective_dpi,
     master_canvas,
     mm_to_uv,
+    preview_ready_from_job,
     roundtrip_ok,
     run_artwork_scenario,
     split_master,
@@ -369,6 +370,243 @@ def test_forged_production_crop_blocks(tmp_path):
 def test_dpi_uses_limiting_axis(tmp_path):
     assert effective_dpi(100, 25.4, 50, 50.8) == pytest.approx(25.0)
     assert effective_dpi(300, 25.4) == pytest.approx(300)
+
+
+def test_canonical_uv_is_single_transform_and_identity_shader():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_uv_auth", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    expected = [(0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)]
+    for u0, u1 in expected:
+        mapping = bj.canonical_uv_mapping({"u0": u0, "v0": 0.0, "u1": u1, "v1": 1.0})
+        assert mapping["mappingMode"] == "MESH_UV"
+        assert mapping["shaderMapping"]["location"] == (0.0, 0.0, 0.0)
+        assert mapping["shaderMapping"]["scale"] == (1.0, 1.0, 1.0)
+        assert mapping["shaderMapping"]["rotation"] == (0.0, 0.0, 0.0)
+        assert mapping["finalSampling"] == mapping["corners"]
+        assert mapping["corners"] == [(u0, 0.0), (u1, 0.0), (u1, 1.0), (u0, 1.0)]
+        assert bj.final_uv_sampling(mapping) == mapping["corners"]
+    rotated = bj.canonical_uv_mapping({"u0": 0.0, "v0": 0.0, "u1": 0.25, "v1": 1.0}, rotation_deg=90)
+    assert rotated["shaderMapping"]["rotation"] == (0.0, 0.0, 0.0)
+    assert rotated["corners"] != [(0.0, 0.0), (0.25, 0.0), (0.25, 1.0), (0.0, 1.0)]
+    mirrored = bj.canonical_uv_mapping({"u0": 0.0, "v0": 0.0, "u1": 0.25, "v1": 1.0}, mirrored=True)
+    assert mirrored["corners"][0][0] == pytest.approx(0.25)
+
+
+def test_artwork_applies_only_unique_front_face(tmp_path):
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_front", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+    art = tmp_path / "a.png"
+    write_png(art, 8, 8, checkerboard_rgb(8, 8, cell=2))
+    mesh = {
+        "materials": ["base"],
+        "polygons": bj.cube_polygons_local(),
+        "uv_loops": [(0.0, 0.0)] * 24,
+    }
+    item = {
+        "objectName": "DOOR_1",
+        "imagePath": str(art),
+        "uvRect": {"u0": 0.25, "v0": 0.0, "u1": 0.5, "v1": 1.0},
+        "rotationDeg": 0,
+        "engineeringHash": "e",
+        "surfaceHash": "s",
+        "artworkHash": "a",
+        "placementHash": "p1",
+        "face": "FRONT",
+    }
+    applied = bj.apply_canonical_artwork({"DOOR_1": mesh}, {"artworkPlacements": [item]})
+    assert applied[0]["applied"] is True
+    assert applied[0]["frontFaceIndex"] == 0
+    assert mesh["polygons"][0]["material_index"] == 1
+    assert mesh["polygons"][0]["uv"] == applied[0]["finalSampling"]
+    for poly in mesh["polygons"][1:]:
+        assert poly["material_index"] == 0
+        assert not poly.get("uv")
+    dup = {
+        "materials": ["base"],
+        "polygons": bj.cube_polygons_local() + [{"index": 9, "normal": (0.0, -1.0, 0.0), "loop_start": 24, "loop_total": 4, "material_index": 0}],
+    }
+    with pytest.raises(bj.ArtworkApplyError, match="unique FRONT"):
+        bj.apply_canonical_artwork({"DOOR_1": dup}, {"artworkPlacements": [item]})
+    empty = {"materials": ["base"], "polygons": [p for p in bj.cube_polygons_local() if p["index"] != 0]}
+    with pytest.raises(bj.ArtworkApplyError, match="unique FRONT"):
+        bj.apply_canonical_artwork({"DOOR_1": empty}, {"artworkPlacements": [item]})
+
+
+def test_preview_ready_fail_closed_without_artwork_applied():
+    hashes = {"engineeringHash": "e", "surfaceHash": "s", "artworkHash": "a", "placementHash": "p"}
+    applied = [{**hashes, "applied": True}]
+    ok = {
+        "status": "succeeded",
+        "artworkApplied": True,
+        "appliedPlacements": applied,
+        "realBlender": True,
+        "usedMock": False,
+        "blenderVersion": "5.2.1",
+        "jobId": "job-1",
+    }
+    assert preview_ready_from_job(ok, hashes, mock=False) is True
+    missing = dict(ok)
+    missing.pop("artworkApplied")
+    assert preview_ready_from_job(missing, hashes, mock=False) is False
+    assert preview_ready_from_job({**ok, "artworkApplied": False}, hashes, mock=False) is False
+    no_lineage = dict(ok)
+    no_lineage["appliedPlacements"] = []
+    assert preview_ready_from_job(no_lineage, hashes, mock=False) is False
+    wrong = dict(ok)
+    wrong["appliedPlacements"] = [{**hashes, "placementHash": "other", "applied": True}]
+    assert preview_ready_from_job(wrong, hashes, mock=False) is False
+    extra = dict(ok)
+    extra["appliedPlacements"] = applied + [{**hashes, "placementHash": "p2", "applied": True}]
+    assert preview_ready_from_job(extra, hashes, mock=False) is False
+
+
+def test_placement_hash_binds_uv_mirror_and_object(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    doors.sort(key=lambda s: float(s["origin"]["xMm"]))
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    place = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[1]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    pid = place["placementId"]
+    rec = plat.artwork.placements[pid]
+    orig = {
+        "uv": dict(rec["uv"]),
+        "mirrored": rec.get("mirrored"),
+        "widthMm": rec["widthMm"],
+        "objectName": rec.get("objectName"),
+        "componentId": rec.get("componentId"),
+        "placementHash": rec.get("placementHash"),
+    }
+    rec["uv"] = {**rec["uv"], "u0": 0.9}
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.require_placement(pid, tenant_id="ta")
+    rec["uv"] = dict(orig["uv"])
+    rec["mirrored"] = True
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.require_placement(pid, tenant_id="ta")
+    rec["mirrored"] = orig["mirrored"]
+    rec["uv"] = {"u0": 0.0, "v0": 0.0, "u1": 0.1, "v1": 0.1}
+    rec["widthMm"] = float(orig["widthMm"]) * 0.1
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.require_placement(pid, tenant_id="ta")
+    rec["uv"] = dict(orig["uv"])
+    rec["widthMm"] = orig["widthMm"]
+    rec["objectName"] = "OTHER_DOOR"
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.require_placement(pid, tenant_id="ta")
+    rec["objectName"] = orig["objectName"]
+    rec["componentId"] = "OTHER"
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.blender_job_payload(tenant_id="ta", placements=[{"placementId": pid}])
+    rec["componentId"] = orig["componentId"]
+    payload = plat.artwork.blender_job_payload(tenant_id="ta", placements=[{"placementId": pid}])
+    assert payload["artworkPlacements"][0]["uvRect"] == orig["uv"]
+    with pytest.raises(ArtworkError, match="placementId required"):
+        plat.artwork.blender_job_payload(tenant_id="ta", placements=[{"uvRect": {"u0": 0}}])
+
+
+def test_single_surface_door_is_not_master_quarter(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=2400, height=1800, doorCount=4)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    doors.sort(key=lambda s: float(s["origin"]["xMm"]))
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    _master, _crops, places = plat.artwork.place_across_panels(
+        tenant_id="ta",
+        artwork_id=art["artworkId"],
+        surfaces=doors,
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    split = plat.artwork.produce_panel(
+        tenant_id="ta",
+        placement_id=places[1]["placementId"],
+        placement_hash=places[1]["placementHash"],
+        engineering_hash=cab.engineering_hash(),
+    )
+    single = plat.artwork.place(
+        tenant_id="ta",
+        surface_id=doors[1]["surfaceId"],
+        artwork_id=art["artworkId"],
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    assert single["relation"] == "SINGLE_SURFACE"
+    full = plat.artwork.produce_panel(
+        tenant_id="ta",
+        placement_id=single["placementId"],
+        placement_hash=single["placementHash"],
+        engineering_hash=cab.engineering_hash(),
+    )
+    assert full["masterHash"] is None
+    assert full["cropPx"]["x"] == 0
+    assert full["cropPx"]["w"] == 480
+    assert split["cropPx"]["w"] == 120
+    assert split["cropPx"]["x"] == 120
+    with pytest.raises(ArtworkError, match="single-surface cannot use master"):
+        plat.artwork.produce_panel(
+            tenant_id="ta",
+            placement_id=single["placementId"],
+            master={"masterHash": places[1]["masterHash"]},
+        )
+    rec = plat.artwork.placements[places[1]["placementId"]]
+    rec["masterCropMm"] = {"xMm": 0, "yMm": 0, "widthMm": 1, "heightMm": 1}
+    with pytest.raises(ArtworkError, match="forged"):
+        plat.artwork.require_placement(places[1]["placementId"], tenant_id="ta")
+
+
+def test_validator_fail_closed_on_count_and_uv(tmp_path):
+    plat = _plat(tmp_path)
+    result = run_artwork_scenario(plat, tenant_a="ta", tenant_b="tb")
+    assert validate_artwork_acceptance_result(result) == []
+    assert result["scenarios"]["cabinet4Single"]["relation"] == "SINGLE_SURFACE"
+    crops_only = dict(result)
+    crops_only["scenarios"] = dict(result["scenarios"])
+    crops_only["scenarios"]["cabinet4"] = dict(result["scenarios"]["cabinet4"])
+    crops_only["scenarios"]["cabinet4"]["panelCrops"] = result["scenarios"]["cabinet4"]["panelCrops"][:3]
+    assert "split_4" in validate_artwork_acceptance_result(crops_only)
+    ids_only = dict(result)
+    ids_only["scenarios"] = dict(result["scenarios"])
+    ids_only["scenarios"]["cabinet4"] = dict(result["scenarios"]["cabinet4"])
+    ids_only["scenarios"]["cabinet4"]["surfaceIds"] = result["scenarios"]["cabinet4"]["surfaceIds"][:3]
+    assert "split_4" in validate_artwork_acceptance_result(ids_only)
+    dup = dict(result)
+    dup["scenarios"] = dict(result["scenarios"])
+    dup["scenarios"]["cabinet4"] = dict(result["scenarios"]["cabinet4"])
+    hashes = list(result["scenarios"]["cabinet4"]["placementHashes"])
+    hashes[3] = hashes[0]
+    dup["scenarios"]["cabinet4"]["placementHashes"] = hashes
+    assert "duplicate_placement" in validate_artwork_acceptance_result(dup)
+    uv = dict(result)
+    uv["scenarios"] = dict(result["scenarios"])
+    uv["scenarios"]["cabinet4"] = dict(result["scenarios"]["cabinet4"])
+    applied = [dict(row) for row in result["scenarios"]["cabinet4"]["appliedUv"]]
+    applied[0] = dict(applied[0])
+    applied[0]["uvRect"] = dict(applied[0]["uvRect"])
+    applied[0]["uvRect"]["u0"] = 0.99
+    uv["scenarios"]["cabinet4"]["appliedUv"] = applied
+    assert "wrong_final_uv" in validate_artwork_acceptance_result(uv)
+    preview = dict(result)
+    preview["preview"] = dict(result["preview"])
+    preview["preview"]["status"] = "succeeded"
+    preview["preview"]["realBlender"] = True
+    assert "preview_missing_artworkApplied" in validate_artwork_acceptance_result(preview)
 
 
 def test_cross_version_and_resize_invalidates_lineage(tmp_path):

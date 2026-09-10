@@ -437,7 +437,60 @@ def door_layout_from_engineering(engineering: dict) -> list[dict]:
     return doors
 
 
+def expected_front_normal(face: str = "FRONT") -> tuple[float, float, float]:
+    key = str(face or "FRONT").upper()
+    if key == "FRONT":
+        return (0.0, -1.0, 0.0)
+    if key == "BACK":
+        return (0.0, 1.0, 0.0)
+    raise ArtworkApplyError("unsupported printable face")
+
+
+def select_unique_front_face(polygons: list[dict], face: str = "FRONT") -> dict:
+    want = expected_front_normal(face)
+    hits = []
+    for poly in polygons or []:
+        n = poly.get("normal") or (0, 0, 0)
+        dot = float(n[0]) * want[0] + float(n[1]) * want[1] + float(n[2]) * want[2]
+        if dot >= 0.9:
+            hits.append(poly)
+    if len(hits) != 1:
+        raise ArtworkApplyError("unique FRONT face missing")
+    return hits[0]
+
+
+def cube_polygons_local() -> list[dict]:
+    """Deterministic local-space cube faces. FRONT is -Y, matching cabinet camera."""
+    return [
+        {"index": 0, "normal": (0.0, -1.0, 0.0), "loop_start": 0, "loop_total": 4, "material_index": 0},
+        {"index": 1, "normal": (0.0, 1.0, 0.0), "loop_start": 4, "loop_total": 4, "material_index": 0},
+        {"index": 2, "normal": (1.0, 0.0, 0.0), "loop_start": 8, "loop_total": 4, "material_index": 0},
+        {"index": 3, "normal": (-1.0, 0.0, 0.0), "loop_start": 12, "loop_total": 4, "material_index": 0},
+        {"index": 4, "normal": (0.0, 0.0, 1.0), "loop_start": 16, "loop_total": 4, "material_index": 0},
+        {"index": 5, "normal": (0.0, 0.0, -1.0), "loop_start": 20, "loop_total": 4, "material_index": 0},
+    ]
+
+
+def require_identity_shader(mapping: dict) -> None:
+    sm = mapping.get("shaderMapping") or {}
+    loc = tuple(float(x) for x in (sm.get("location") or ()))
+    scale = tuple(float(x) for x in (sm.get("scale") or ()))
+    rot = tuple(float(x) for x in (sm.get("rotation") or ()))
+    if loc != (0.0, 0.0, 0.0) or scale != (1.0, 1.0, 1.0) or rot != (0.0, 0.0, 0.0):
+        raise ArtworkApplyError("shader mapping not identity")
+    if mapping.get("finalSampling") != mapping.get("corners"):
+        raise ArtworkApplyError("final sampling mismatch")
+    if mapping.get("mappingMode") not in {None, "MESH_UV"}:
+        raise ArtworkApplyError("unsupported mapping mode")
+
+
+def final_uv_sampling(mapping: dict) -> list:
+    require_identity_shader(mapping)
+    return list(mapping.get("finalSampling") or mapping.get("corners") or [])
+
+
 def canonical_uv_mapping(uv_rect: dict, *, rotation_deg: float = 0.0, mirrored: bool = False) -> dict:
+    """Scheme A: mesh FRONT UV is the final source UV. Shader mapping stays identity."""
     if not isinstance(uv_rect, dict):
         raise ArtworkApplyError("missing uvRect")
     try:
@@ -464,8 +517,12 @@ def canonical_uv_mapping(uv_rect: dict, *, rotation_deg: float = 0.0, mirrored: 
         "rotationDeg": rot,
         "mirrored": bool(mirrored),
         "corners": corners,
-        "location": (u0, v0, 0.0),
-        "scale": (u1 - u0, v1 - v0, 1.0),
+        "finalSampling": corners,
+        "mappingMode": "MESH_UV",
+        "shaderMapping": {"location": (0.0, 0.0, 0.0), "scale": (1.0, 1.0, 1.0), "rotation": (0.0, 0.0, 0.0)},
+        "targetFace": "FRONT",
+        "targetNormal": expected_front_normal("FRONT"),
+        "otherFacesUntouched": True,
     }
 
 
@@ -498,6 +555,7 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             rotation_deg=float(item.get("rotationDeg") or 0.0),
             mirrored=bool(item.get("mirrored")),
         )
+        require_identity_shader(mapping)
         obj = (created or {}).get(name) if created is not None else None
         if obj is None and bpy is not None:
             obj = bpy.data.objects.get(name)
@@ -511,32 +569,66 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             principled = nt.nodes.get("Principled BSDF")
             tex = nt.nodes.new("ShaderNodeTexImage")
             tex.image = img
-            mapping_node = nt.nodes.new("ShaderNodeMapping")
             texcoord = nt.nodes.new("ShaderNodeTexCoord")
-            mapping_node.inputs["Location"].default_value = mapping["location"]
-            mapping_node.inputs["Scale"].default_value = mapping["scale"]
-            mapping_node.inputs["Rotation"].default_value = (0.0, 0.0, math.radians(mapping["rotationDeg"]))
-            nt.links.new(texcoord.outputs["UV"], mapping_node.inputs["Vector"])
-            nt.links.new(mapping_node.outputs["Vector"], tex.inputs["Vector"])
+            nt.links.new(texcoord.outputs["UV"], tex.inputs["Vector"])
             if principled:
                 nt.links.new(tex.outputs["Color"], principled.inputs["Base Color"])
-            if hasattr(obj.data, "materials"):
-                obj.data.materials.clear()
-                obj.data.materials.append(mat)
             mesh = obj.data
+            if hasattr(mesh, "materials"):
+                mesh.materials.append(mat)
+                art_idx = len(mesh.materials) - 1
+            else:
+                art_idx = 0
+            polys = []
+            for p in getattr(mesh, "polygons", []) or []:
+                n = p.normal
+                polys.append(
+                    {
+                        "index": p.index,
+                        "normal": (float(n.x), float(n.y), float(n.z)),
+                        "loop_start": p.loop_start,
+                        "loop_total": p.loop_total,
+                    }
+                )
+            hit = select_unique_front_face(polys, item.get("face") or "FRONT")
+            for p in mesh.polygons:
+                if p.index == hit["index"]:
+                    p.material_index = art_idx
             if hasattr(mesh, "uv_layers"):
                 uv_layer = mesh.uv_layers.active or mesh.uv_layers.new(name="canonical")
-                corners = mapping["corners"]
-                for i, loop in enumerate(getattr(mesh, "loops", []) or []):
-                    uv_layer.data[loop.index].uv = corners[i % 4]
+                corners = mapping["finalSampling"]
+                for i in range(int(hit["loop_total"])):
+                    uv_layer.data[hit["loop_start"] + i].uv = corners[i % 4]
+            mapping["frontFaceIndex"] = hit["index"]
+        elif isinstance(obj, dict) and obj.get("polygons"):
+            hit = select_unique_front_face(obj["polygons"], item.get("face") or "FRONT")
+            mats = list(obj.get("materials") or ["base"])
+            mats.append(f"artwork.{name}")
+            obj["materials"] = mats
+            art_idx = len(mats) - 1
+            corners = mapping["finalSampling"]
+            loops = list(obj.get("uv_loops") or [])
+            need = max(int(p.get("loop_start") or 0) + int(p.get("loop_total") or 0) for p in obj["polygons"])
+            if len(loops) < need:
+                loops.extend([(0.0, 0.0)] * (need - len(loops)))
+            for p in obj["polygons"]:
+                if p.get("index") == hit["index"]:
+                    p["material_index"] = art_idx
+                    p["uv"] = list(corners)
+                    for i in range(int(p.get("loop_total") or 4)):
+                        loops[int(p.get("loop_start") or 0) + i] = corners[i % 4]
+            obj["uv_loops"] = loops
+            mapping["frontFaceIndex"] = hit["index"]
         record = {
             "objectName": name,
+            "componentId": item.get("componentId"),
             "applied": True,
             **mapping,
             "engineeringHash": item.get("engineeringHash"),
             "surfaceHash": item.get("surfaceHash"),
             "artworkHash": item.get("artworkHash"),
             "placementHash": item.get("placementHash"),
+            "finalUvHash": str(mapping.get("finalSampling")),
         }
         if isinstance(obj, dict):
             obj["canonicalArtwork"] = record
@@ -961,6 +1053,7 @@ def build_and_render(job: dict) -> dict:
 
     mode = str(job.get("mode") or job.get("jobType") or "")
     created = {}
+    applied_placements: list[dict] = []
     if mode in {"REAL_SMOKE_TEST", "SMOKE"} or job.get("smokeTest"):
         created = build_smoke_scene()
     elif mode in {"PACKAGING_FOLD"} or job.get("foldPreview"):
@@ -975,9 +1068,9 @@ def build_and_render(job: dict) -> dict:
     elif job.get("engineering"):
         created = build_cabinet(job["engineering"], explode=bool(job.get("explode")))
         try:
-            apply_canonical_artwork(created, job)
+            applied_placements = apply_canonical_artwork(created, job)
         except ArtworkApplyError as exc:
-            return {"status": "failed", "error": str(exc), "realBlender": True, "artworkApplied": False}
+            return {"status": "failed", "error": str(exc), "realBlender": True, "artworkApplied": False, "appliedPlacements": []}
     else:
         graph = job.get("sceneGraph") or {}
         created = build_from_graph(graph)
@@ -1074,6 +1167,23 @@ def build_and_render(job: dict) -> dict:
         "objects": sorted(created.keys()),
         "producedPasses": produced,
     }
+    if job.get("artworkPlacements"):
+        want_n = len(job.get("artworkPlacements") or [])
+        ok_applied = (
+            len(applied_placements) == want_n
+            and want_n > 0
+            and all(isinstance(row, dict) and row.get("applied") is True for row in applied_placements)
+        )
+        if not ok_applied:
+            return {
+                "status": "failed",
+                "error": "artwork not applied",
+                "realBlender": True,
+                "artworkApplied": False,
+                "appliedPlacements": applied_placements,
+            }
+        result["artworkApplied"] = True
+        result["appliedPlacements"] = applied_placements
     _write_progress(job, 1.0, "done")
     return result
 

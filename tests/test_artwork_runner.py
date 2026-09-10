@@ -6,6 +6,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 from fox3d.evidence import prepare_evidence_lineage
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +57,79 @@ def test_artwork_runner_corrupted_result_does_not_publish(tmp_path):
         rec["lineage"]["placementHash"] = "forged"
         rec["preview"]["placementHash"] = "forged"
         rec["scenarios"]["cabinet4"]["production"][0]["placementHash"] = "forged"
+        return rec
+
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", SHA],
+        hooks={
+            "inspect": _inspect(SHA),
+            "platform": lambda root: Platform(root=root, mock_blender=True),
+            "scenario": bad,
+            "acceptance_root": tmp_path / "acc",
+            "prior_docs": ROOT / "docs",
+        },
+    )
+    assert rc != 0
+    assert prior.read_text(encoding="utf-8") == "old"
+
+
+def _corrupt_fewer_crops(rec):
+    rec["scenarios"]["cabinet4"]["panelCrops"] = rec["scenarios"]["cabinet4"]["panelCrops"][:3]
+
+
+def _corrupt_fewer_ids(rec):
+    rec["scenarios"]["cabinet4"]["surfaceIds"] = rec["scenarios"]["cabinet4"]["surfaceIds"][:3]
+
+
+def _corrupt_duplicate_placement(rec):
+    hashes = list(rec["scenarios"]["cabinet4"]["placementHashes"])
+    hashes[3] = hashes[0]
+    rec["scenarios"]["cabinet4"]["placementHashes"] = hashes
+
+
+def _corrupt_wrong_final_uv(rec):
+    applied = [dict(row) for row in rec["scenarios"]["cabinet4"]["appliedUv"]]
+    applied[0] = dict(applied[0])
+    applied[0]["uvRect"] = dict(applied[0]["uvRect"])
+    applied[0]["uvRect"]["u0"] = 0.99
+    rec["scenarios"]["cabinet4"]["appliedUv"] = applied
+
+
+def _corrupt_preview_missing_applied(rec):
+    rec["preview"] = dict(rec.get("preview") or {})
+    rec["preview"]["status"] = "succeeded"
+    rec["preview"]["realBlender"] = True
+    rec["preview"].pop("artworkApplied", None)
+    rec["realArtworkPreviewReady"] = True
+    rec["mockBlender"] = False
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    [
+        _corrupt_fewer_crops,
+        _corrupt_fewer_ids,
+        _corrupt_duplicate_placement,
+        _corrupt_wrong_final_uv,
+        _corrupt_preview_missing_applied,
+    ],
+)
+def test_artwork_runner_new_corruptions_do_not_publish(tmp_path, corrupt):
+    from fox3d.platform import Platform
+    from fox3d.artwork import run_artwork_scenario
+
+    mod = _load()
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    prior = docs / "ARTWORK_PLACEMENT_ACCEPTANCE.json"
+    prior.write_text("old", encoding="utf-8")
+
+    def bad(plat):
+        rec = run_artwork_scenario(plat)
+        rec["ok"] = True
+        rec["surfaceDecorationLogicReady"] = True
+        rec["productionArtworkFileReady"] = True
+        corrupt(rec)
         return rec
 
     rc = mod.main(
