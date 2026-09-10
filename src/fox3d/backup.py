@@ -1243,6 +1243,12 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "costSnapshotHash": r.get("costSnapshotHash"),
                         "completeness": r.get("completeness"),
                         "monetaryTotal": r.get("monetaryTotal"),
+                        "packagingQty": (r.get("quantityLineage") or {}).get("packagingQty")
+                        if isinstance(r.get("quantityLineage"), dict)
+                        else None,
+                        "quantitySources": (r.get("quantityLineage") or {}).get("sources")
+                        if isinstance(r.get("quantityLineage"), dict)
+                        else None,
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "costs", {}), tenant_id)
                 ],
@@ -1256,8 +1262,12 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                     {
                         "checklistId": r.get("checklistId"),
                         "prototypeUnitId": r.get("prototypeUnitId"),
+                        "engineeringHash": r.get("engineeringHash"),
                         "ok": r.get("ok"),
                         "volumetricWeightKg": r.get("volumetricWeightKg"),
+                        "packagingQty": (r.get("observed") or {}).get("packagingQty")
+                        if isinstance(r.get("observed"), dict)
+                        else r.get("packagingQty"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "checklists", {}), tenant_id)
                 ],
@@ -1349,6 +1359,7 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "workOrderId": r.get("workOrderId"),
                         "minutes": r.get("minutes"),
                         "engineeringHash": r.get("engineeringHash"),
+                        "idempotencyKey": r.get("idempotencyKey"),
                     }
                     for r in _owned(getattr(getattr(plat, "prototype", None), "labor", {}), tenant_id)
                 ],

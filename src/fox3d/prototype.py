@@ -527,6 +527,13 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("stale_lineage")
         if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL"}:
             failures.append("cost_complete_incorrect")
+        if row.get("costCompleteness") == "COMPLETE":
+            lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
+            sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
+            if lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}:
+                failures.append("packaging_qty_missing")
+            if sources.get("laborMinutes") == "MISSING" and result.get("label") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"}:
+                failures.append("labor_qty_missing")
         if row.get("physicalPrototypeValidated") and row.get("evidenceSource") == "FIXTURE":
             failures.append("fixture_physical_unit")
         if row.get("decisionState") in {"READY_FOR_HUMAN_GO_NO_GO", "READY_FOR_MANUAL_PILOT_BATCH", "HUMAN_GO"} and row.get("evidenceSource") == "FIXTURE":
@@ -618,6 +625,12 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 continue
             if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL", "FIXTURE"}:
                 failures.append("cost_complete_without_qty")
+            lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
+            sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
+            if row.get("costCompleteness") == "COMPLETE" and (
+                lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}
+            ):
+                failures.append("packaging_qty_missing")
     if result.get("physicalPrototypeValidated") is False and result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"}:
         if launch not in {"WAITING_HUMAN_EVIDENCE", "HOLD_REWORK"}:
             failures.append("fixture_launch_not_waiting")
@@ -751,41 +764,145 @@ class PrototypeFactory:
             return "IMPORTED_EVIDENCE"
         return "MANUAL_EVIDENCE"
 
-    def _idem(self, key: str, factory) -> dict[str, Any]:
+    def _idem_stores(self) -> tuple[dict[str, dict[str, Any]], ...]:
+        return (
+            self.selections,
+            self.units,
+            self.measurements,
+            self.ecos,
+            self.costs,
+            self.checklists,
+            self.decisions,
+            self.packages,
+            self.launch_decisions,
+            self.plans,
+            self.labor,
+        )
+
+    def _record_id(self, rec: dict[str, Any] | None) -> str | None:
+        if not isinstance(rec, dict):
+            return None
+        for field in (
+            "laborId",
+            "launchDecisionId",
+            "planId",
+            "ecoId",
+            "evidencePackageId",
+            "checklistId",
+            "costId",
+            "measurementId",
+            "decisionId",
+            "prototypeUnitId",
+            "selectionId",
+        ):
+            value = rec.get(field)
+            if value:
+                return str(value)
+        return None
+
+    def _bind_idem(self, key: str, rec: dict[str, Any]) -> None:
+        rid = self._record_id(rec)
+        if rid:
+            self.idem[key] = rid
+
+    def _recover_semantic(self, key: str) -> dict[str, Any] | None:
+        keyed = []
+        for store in (self.labor, self.launch_decisions, self.plans, self.ecos, self.packages, self.decisions):
+            keyed.extend([row for row in store.values() if row.get("idempotencyKey") == key])
+        if keyed:
+            return sorted(keyed, key=lambda row: str(row.get("at") or self._record_id(row) or ""))[0]
+        parts = str(key or "").split("::")
+        if len(parts) < 3:
+            return None
+        tenant, kind = parts[0], parts[1]
+        rec: dict[str, Any] | None = None
+        if kind == "labor" and len(parts) >= 6:
+            uid, eng, qty_s = parts[2], parts[3], parts[4]
+            reason = "::".join(parts[5:])
+            try:
+                qty = float(qty_s)
+            except (TypeError, ValueError):
+                qty = None
+            matches = [
+                row
+                for row in self.labor.values()
+                if row.get("tenantId") == tenant
+                and row.get("prototypeUnitId") == uid
+                and str(row.get("engineeringHash") or "") == eng
+                and str(row.get("reason") or "") == reason
+                and (qty is None or abs(float(row.get("minutes") or 0) - qty) < 1e-9)
+            ]
+            rec = sorted(matches, key=lambda row: str(row.get("at") or row.get("laborId") or ""))[0] if matches else None
+        elif kind == "launch" and len(parts) >= 5:
+            cid, decision, eng = parts[2], parts[3], parts[4]
+            matches = [
+                row
+                for row in self.launch_decisions.values()
+                if row.get("tenantId") == tenant
+                and row.get("candidateId") == cid
+                and row.get("decision") == decision
+                and str(row.get("engineeringHash") or "") == eng
+            ]
+            rec = sorted(matches, key=lambda row: str(row.get("at") or row.get("launchDecisionId") or ""))[0] if matches else None
+        elif kind == "pkg" and len(parts) >= 4:
+            unit = self.units.get(parts[2])
+            if unit and unit.get("tenantId") == tenant:
+                rec = self._active_package(unit)
+        elif kind == "pilot-plan" and len(parts) >= 5:
+            cid, eng = parts[2], parts[3]
+            try:
+                qty = int(float(parts[4]))
+            except (TypeError, ValueError):
+                qty = None
+            matches = [
+                row
+                for row in self.plans.values()
+                if row.get("tenantId") == tenant
+                and row.get("candidateId") == cid
+                and str(row.get("engineeringHash") or "") == eng
+                and (qty is None or int(row.get("quantity") or 0) == qty)
+            ]
+            rec = sorted(matches, key=lambda row: str(row.get("createdAt") or row.get("planId") or ""))[0] if matches else None
+        elif kind == "eco-accept" and len(parts) >= 4:
+            cid, from_hash = parts[2], parts[3]
+            matches = [
+                row
+                for row in self.ecos.values()
+                if row.get("tenantId") == tenant
+                and row.get("candidateId") == cid
+                and str(row.get("fromEngineeringHash") or "") == from_hash
+                and row.get("status") in {"ACCEPTED", "ACCEPTED_NON_ENGINEERING"}
+            ]
+            rec = sorted(matches, key=lambda row: str(row.get("at") or row.get("ecoId") or ""))[0] if matches else None
+        return rec
+
+    def _lookup_idem(self, key: str) -> dict[str, Any] | None:
         if key in self.idem:
             existing = self.idem[key]
-            for store in (
-                self.selections,
-                self.units,
-                self.measurements,
-                self.ecos,
-                self.costs,
-                self.checklists,
-                self.decisions,
-                self.packages,
-                self.launch_decisions,
-                self.plans,
-                self.labor,
-            ):
+            for store in self._idem_stores():
                 if existing in store:
                     return store[existing]
+            recovered = self._recover_semantic(key)
+            if recovered is not None:
+                self._bind_idem(key, recovered)
+                return recovered
             raise PrototypeError("BLOCKED", "idempotent key missing record")
+        recovered = self._recover_semantic(key)
+        if recovered is not None:
+            self._bind_idem(key, recovered)
+            self.persist()
+            return recovered
+        return None
+
+    def _idem(self, key: str, factory) -> dict[str, Any]:
+        found = self._lookup_idem(key)
+        if found is not None:
+            return found
         rec = factory()
-        rid = (
-            rec.get("prototypeUnitId")
-            or rec.get("measurementId")
-            or rec.get("ecoId")
-            or rec.get("costId")
-            or rec.get("checklistId")
-            or rec.get("decisionId")
-            or rec.get("selectionId")
-            or rec.get("evidencePackageId")
-            or rec.get("launchDecisionId")
-            or rec.get("planId")
-            or rec.get("laborId")
-        )
-        self.idem[key] = str(rid)
-        self.persist()
+        rid = self._record_id(rec)
+        if rid and self.idem.get(key) != str(rid):
+            self.idem[key] = str(rid)
+            self.persist()
         return rec
 
     def _candidate(self, candidate_id: str, tenant_id: str) -> dict[str, Any]:
@@ -960,16 +1077,32 @@ class PrototypeFactory:
         pack = self.checklists.get(unit.get("packagingChecklistId") or "")
         if not pack or pack.get("ok") is not True:
             return None
+        if pack.get("tenantId") != unit.get("tenantId"):
+            return None
+        if pack.get("prototypeUnitId") != unit.get("prototypeUnitId"):
+            return None
+        if pack.get("engineeringHash") != unit.get("engineeringHash"):
+            return None
         observed = pack.get("observed") if isinstance(pack.get("observed"), dict) else {}
-        if observed.get("packagingQty") is not None:
-            return float(observed["packagingQty"])
-        return 1.0
+        raw = observed.get("packagingQty")
+        if raw is None:
+            raw = pack.get("packagingQty")
+        if raw is None:
+            return None
+        try:
+            qty = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(qty) or qty <= 0:
+            return None
+        return qty
 
     def _cost_qty_complete(self, unit: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
         material = self._authoritative_material_qty(unit)
         labor = self._authoritative_labor_minutes(unit)
         hardware = self._authoritative_hardware_qty(unit)
         packaging = self._authoritative_packaging_qty(unit)
+        pack = self.checklists.get(unit.get("packagingChecklistId") or "")
         sources = {
             "materialQty": "MATERIAL_LOT" if material is not None else "MISSING",
             "laborMinutes": "LABOR_RECORD" if labor is not None else "MISSING",
@@ -983,6 +1116,7 @@ class PrototypeFactory:
             "laborMinutes": labor,
             "hardwareQty": hardware,
             "packagingQty": packaging,
+            "packagingChecklistId": pack.get("checklistId") if packaging is not None and pack else None,
             "sources": sources,
         }
 
@@ -1125,12 +1259,14 @@ class PrototypeFactory:
                 "truthLabel": label,
                 "liveMachineControl": False,
                 "physicalPrototypeValidated": False,
+                "idempotencyKey": key,
             }
             if label != "FIXTURE" and (not body.get("operatorId") or not body.get("shiftId")):
                 raise PrototypeError("BLOCKED", "manual evidence requires operatorId+shiftId")
             self.packages[body["evidencePackageId"]] = body
             unit["evidencePackageId"] = body["evidencePackageId"]
             unit["evidenceSource"] = src
+            self._bind_idem(key, body)
             self._emit(
                 "prototype.evidence_package.create",
                 tenant_id=tenant_id,
@@ -2046,9 +2182,11 @@ class PrototypeFactory:
                 "shiftId": ident["shift"]["shiftId"],
                 "at": _now(),
                 "historyAppendOnly": True,
+                "idempotencyKey": key,
             }
             self.labor[rec["laborId"]] = rec
             unit["laborWorkOrderId"] = wo_id
+            self._bind_idem(key, rec)
             self._emit(
                 "prototype.labor.append",
                 tenant_id=tenant_id,
@@ -2058,6 +2196,7 @@ class PrototypeFactory:
                 payload={"minutes": qty, "workOrderId": wo_id, "prototypeUnitId": prototype_unit_id, "engineeringHash": unit.get("engineeringHash")},
                 semantic_key=key,
             )
+            self._die("after-labor-emit-before-idem")
             return rec
 
         return self._idem(key, _make)
@@ -2089,6 +2228,12 @@ class PrototypeFactory:
             if field not in observed or observed.get(field) is None:
                 raise PrototypeError("BLOCKED", f"missing {field}")
             numeric[field] = _finite_number(observed[field], field)
+        pack_qty_raw = observed.get("packagingQty")
+        if pack_qty_raw is None and isinstance(observations, dict):
+            pack_qty_raw = observations.get("packagingQty")
+        pack_qty = None
+        if pack_qty_raw is not None:
+            pack_qty = _finite_number(pack_qty_raw, "packagingQty", allow_zero=False)
         pack = ((cand.get("sku") or {}).get("packing") or {})
         weight = ((cand.get("sku") or {}).get("weight") or {})
         predicted = {
@@ -2177,7 +2322,8 @@ class PrototypeFactory:
             "reason": "ok" if ok else ",".join(reasons),
             "packagingPolicyHash": PACKAGING_POLICY_HASH,
             "packagingPolicy": dict(PACKAGING_POLICY),
-            "observed": {**observed, **numeric},
+            "packagingQty": pack_qty,
+            "observed": {**observed, **numeric, **({"packagingQty": pack_qty} if pack_qty is not None else {})},
             "predicted": predicted,
             "variance": vars_,
             "volumetricWeightKg": vol["volumetricWeightKg"],
@@ -2309,6 +2455,13 @@ class PrototypeFactory:
             raise PrototypeError("BLOCKED", "ECO requires reason")
         old = self._candidate(candidate_id, tenant_id)
         old_hash = old.get("engineeringHash")
+        payload_changes = dict(changes or {})
+        kind = classification.upper()
+        eco_key = f"{tenant_id}::eco-accept::{candidate_id}::{old_hash}::{stable_hash({'changes': payload_changes, 'classification': kind})}"
+        if accept:
+            found_eco = self._lookup_idem(eco_key)
+            if found_eco is not None:
+                return found_eco
         eco_id = new_id()
         if not accept:
             body = {
@@ -2337,8 +2490,7 @@ class PrototypeFactory:
                 semantic_key=f"{tenant_id}::eco-reject::{eco_id}",
             )
             return body
-        kind = classification.upper()
-        payload = dict(changes or {})
+        payload = payload_changes
         unknown = [k for k in payload if k not in ALLOWED_ECO_FIELDS]
         if unknown:
             raise PrototypeError("BLOCKED", f"ECO field not allowed: {unknown[0]}")
@@ -2371,8 +2523,10 @@ class PrototypeFactory:
                 "shiftId": ident["shift"]["shiftId"],
                 "at": _now(),
                 "truthLabel": "REAL_LOGIC",
+                "idempotencyKey": eco_key,
             }
             self.ecos[eco_id] = body
+            self._bind_idem(eco_key, body)
             self._emit(
                 "prototype.eco.non_engineering",
                 tenant_id=tenant_id,
@@ -2380,7 +2534,7 @@ class PrototypeFactory:
                 aggregate_id=eco_id,
                 actor=ident["operator"]["operatorId"],
                 payload={"status": "ACCEPTED_NON_ENGINEERING", "candidateId": candidate_id},
-                semantic_key=f"{tenant_id}::eco-noneng::{eco_id}",
+                semantic_key=eco_key,
             )
             return body
         if not field_changes:
@@ -2481,6 +2635,7 @@ class PrototypeFactory:
             "shiftId": ident["shift"]["shiftId"],
             "at": _now(),
             "truthLabel": "REAL_LOGIC",
+            "idempotencyKey": eco_key,
         }
         self.ecos[eco_id] = body
         for pkg in list(self.packages.values()):
@@ -2493,6 +2648,7 @@ class PrototypeFactory:
                 unit["physicalPrototypeValidated"] = False
                 if unit.get("state") == "VALIDATED":
                     unit["state"] = "HOLD"
+        self._bind_idem(eco_key, body)
         self._emit(
             "prototype.eco.accept",
             tenant_id=tenant_id,
@@ -2500,7 +2656,7 @@ class PrototypeFactory:
             aggregate_id=eco_id,
             actor=ident["operator"]["operatorId"],
             payload={"fromEngineeringHash": old_hash, "toEngineeringHash": new_cand["engineeringHash"]},
-            semantic_key=f"{tenant_id}::eco::{eco_id}",
+            semantic_key=eco_key,
         )
         return body
 
@@ -2635,8 +2791,10 @@ class PrototypeFactory:
                 "productionReady": False,
                 "liveMachineControl": False,
                 "globalProductionReady": False,
+                "idempotencyKey": key,
             }
             self.launch_decisions[body["launchDecisionId"]] = body
+            self._bind_idem(key, body)
             self._emit(
                 "prototype.launch_decision",
                 tenant_id=tenant_id,
@@ -2676,8 +2834,9 @@ class PrototypeFactory:
             raise PrototypeError("BLOCKED", "stale ECO/ranking/cost lineage blocks")
         qty = int(_finite_number(quantity, "quantity", allow_zero=False))
         key = f"{tenant_id}::pilot-plan::{candidate_id}::{unit.get('engineeringHash')}::{qty}"
-        if key in self.idem:
-            return self._idem(key, lambda: {})
+        existing_plan = self._lookup_idem(key)
+        if existing_plan is not None:
+            return existing_plan
         cand = self._candidate(candidate_id, tenant_id)
         sku = cand.get("sku") or {}
         snap = product_snapshot(
@@ -2747,6 +2906,7 @@ class PrototypeFactory:
             "createdAt": _now(),
         }
         self.plans[body["planId"]] = body
+        body["idempotencyKey"] = key
         self.idem[key] = body["planId"]
         self._emit(
             "prototype.pilot_plan.create",
@@ -3052,6 +3212,10 @@ class PrototypeFactory:
             "staleLineage": self._lineage_stale(unit["candidateId"], unit["tenantId"]),
             "launchDecision": board.get("launchDecision"),
             "evidencePackageId": unit.get("evidencePackageId") or board.get("evidencePackageId"),
+            "packagingQty": ((pack or {}).get("observed") or {}).get("packagingQty")
+            if isinstance((pack or {}).get("observed"), dict)
+            else (pack or {}).get("packagingQty"),
+            "quantityLineage": (cost or {}).get("quantityLineage"),
         }
 
 

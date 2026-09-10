@@ -29,7 +29,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--unit", default="")
     p.add_argument("--operator", default="")
     p.add_argument("--shift", default="")
+    p.add_argument("--payload", default="")
+    p.add_argument("--reason", default="")
     args = p.parse_args(argv)
+    extra = json.loads(args.payload) if args.payload else {}
     root = Path(args.root)
     plat = _plat(root)
     lots = plat.lots
@@ -124,6 +127,49 @@ def main(argv: list[str] | None = None) -> int:
             quantity=1,
         )
         print(json.dumps({"ok": True, "planId": rec.get("planId"), "releaseId": rec.get("releaseId"), "workOrderId": rec.get("workOrderId")}))
+        return 0
+    if args.action == "proto-labor":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.record_labor(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            minutes=float(args.qty or 12),
+            reason=args.reason or "crash-labor",
+        )
+        print(json.dumps({"ok": True, "laborId": rec.get("laborId"), "minutes": rec.get("minutes")}))
+        return 0
+    if args.action == "proto-eco":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.create_eco(
+            args.wo,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            reason=args.reason or "crash-eco",
+            changes=extra or None,
+        )
+        print(json.dumps({"ok": True, "ecoId": rec.get("ecoId"), "status": rec.get("status"), "newCandidateId": rec.get("newCandidateId")}))
+        return 0
+    if args.action == "proto-package-attach":
+        pf = plat.prototype
+        pf._crash_mode = args.crash
+        pf._hard_crash = bool(args.crash)
+        rec = pf.packaging_checklist(
+            args.unit,
+            tenant_id=args.tenant,
+            operator_id=args.operator,
+            shift_id=args.shift,
+            source=str(extra.get("source") or "MANUAL"),
+            observed=dict(extra.get("observed") or extra),
+            dam_refs=list(extra.get("damRefs") or []),
+        )
+        print(json.dumps({"ok": True, "checklistId": rec.get("checklistId"), "packagingQty": rec.get("packagingQty")}))
         return 0
     raise SystemExit(f"unknown action {args.action}")
 

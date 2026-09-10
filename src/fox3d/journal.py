@@ -84,6 +84,7 @@ def emit(
             source=source,
         )
         outbox.complete(tx["txId"])
+        _maybe_crash(owner, "after-outbox-complete")
         return rec
     if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
         persist()

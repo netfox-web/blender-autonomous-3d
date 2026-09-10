@@ -146,18 +146,38 @@ class PilotOps:
         if atype == "CycleCount":
             return aid in self.cyclecounts.counts
         proto = getattr(self.platform, "prototype", None)
+        ev = tx.get("event") or {}
+        et = str(ev.get("event_type") or ev.get("eventType") or "")
         if proto is not None and atype == "PhysicalEvidencePackage":
-            return aid in proto.packages
+            pkg = proto.packages.get(str(aid))
+            if not pkg or (tenant_id and pkg.get("tenantId") not in {None, tenant_id}):
+                return False
+            if et.endswith("finalize"):
+                return pkg.get("state") == "FINALIZED"
+            if "supersede" in et:
+                return bool(pkg.get("supersedesPackageId"))
+            if et.endswith("update"):
+                field = payload.get("field")
+                value = payload.get("value")
+                if field:
+                    return pkg.get(field) == value
+                return True
+            return True
         if proto is not None and atype == "LaunchDecision":
-            return aid in proto.launch_decisions
+            rec = proto.launch_decisions.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         if proto is not None and atype == "PilotBatchPlan":
-            return aid in proto.plans
+            rec = proto.plans.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         if proto is not None and atype == "EngineeringChange":
-            return aid in proto.ecos
+            rec = proto.ecos.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         if proto is not None and atype == "PrototypeLabor":
-            return aid in proto.labor
+            rec = proto.labor.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         if proto is not None and atype == "PrototypeDecision":
-            return aid in proto.decisions
+            rec = proto.decisions.get(str(aid))
+            return bool(rec) and (not tenant_id or rec.get("tenantId") in {None, tenant_id})
         return False
 
     def _reconcile_startup(self) -> dict[str, Any]:

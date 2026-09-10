@@ -861,7 +861,7 @@ def test_pilot_requires_packaging_cost_and_go_path(tmp_path):
         operator_id=human["operatorId"],
         shift_id=human_shift["shiftId"],
         source="MANUAL",
-        observed=_pack_obs(plat, cand),
+        observed=_pack_obs(plat, cand, packagingQty=1),
         dam_refs=[_dam_ref(plat, "pa", "pack.bin", "PACKAGING")],
     )
     qty = int(plat.prototype._material_requirement(unit)["sheets"])
@@ -1756,6 +1756,39 @@ def test_human_go_rejects_fixture_partial_demand_and_duplicate(tmp_path):
         components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
         currency="TWD",
     )
+    money = plat2.prototype.costs[plat2.prototype.units[unit["prototypeUnitId"]]["actualCostId"]]
+    assert money["completeness"] == "PARTIAL"
+    assert (money.get("quantityLineage") or {}).get("sources", {}).get("packagingQty") == "MISSING"
+    with pytest.raises(PrototypeError, match="PARTIAL|launch-ready"):
+        plat2.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="no-packaging-qty",
+        )
+    plat2.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat2, cand, packagingQty=1),
+        dam_refs=[_dam_ref(plat2, "pa", "go-pack-qty.bin", "PACKAGING")],
+    )
+    plat2.prototype.record_actual_cost(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    complete = plat2.prototype.costs[plat2.prototype.units[unit["prototypeUnitId"]]["actualCostId"]]
+    assert complete["completeness"] == "COMPLETE"
+    assert complete["quantityLineage"]["packagingQty"] == 1
     go = plat2.prototype.record_launch_decision(
         cand["candidateId"],
         tenant_id="pa",
@@ -1794,6 +1827,13 @@ def test_human_go_rejects_fixture_partial_demand_and_duplicate(tmp_path):
     assert matrix["tenantRequiredStatePreserved"] is True
     assert restored.prototype.packages[go["evidencePackageId"]]["state"] == "FINALIZED"
     assert restored.prototype.launch_decisions[go["launchDecisionId"]]["decision"] == "HUMAN_GO"
+    restored_unit = restored.prototype.units[unit["prototypeUnitId"]]
+    restored_pack = restored.prototype.checklists[restored_unit["packagingChecklistId"]]
+    assert restored_pack.get("packagingQty") == 1
+    assert (restored_pack.get("observed") or {}).get("packagingQty") == 1
+    restored_cost = restored.prototype.costs[restored_unit["actualCostId"]]
+    assert restored_cost["quantityLineage"]["packagingQty"] == 1
+    assert restored_cost["quantityLineage"]["sources"]["packagingQty"] == "PACKAGING_CHECKLIST"
 
 
 def test_package_crash_prepare_reconciles(tmp_path):
@@ -1933,3 +1973,568 @@ def test_zero_byte_required_dam_rejected(tmp_path):
             observations=GOOD_QC,
             dam_refs=[{"assetId": empty.asset_id, "role": "AS_BUILT"}],
         )
+
+
+def _crash_proc(tmp_path, action, crash, *, unit="", operator="", shift="", wo="", qty=12, payload="", reason=""):
+    import json
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    env = dict(os.environ)
+    root = str(tmp_path / "live")
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    cmd = [
+        sys.executable,
+        "-m",
+        "fox3d.crashfix",
+        "--root",
+        root,
+        "--action",
+        action,
+        "--tenant",
+        "pa",
+        "--crash",
+        crash,
+        "--unit",
+        unit,
+        "--operator",
+        operator,
+        "--shift",
+        shift,
+        "--wo",
+        wo,
+        "--qty",
+        str(qty),
+    ]
+    if payload:
+        cmd.extend(["--payload", payload if isinstance(payload, str) else json.dumps(payload)])
+    if reason:
+        cmd.extend(["--reason", reason])
+    proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    return proc
+
+
+def _manual_launch_ready(plat, cand, unit, human, human_shift, *, pack_qty=1, labor_minutes=35):
+    plat.prototype.record_as_built(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        values=_vals(cand),
+        observations=GOOD_QC,
+        dam_refs=[_dam_ref(plat, "pa", "ready-asbuilt.bin", "AS_BUILT")],
+    )
+    plat.prototype.decide(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        decision="PASS_AS_BUILT",
+        reason="ok",
+    )
+    pack_kwargs = _pack_obs(plat, cand)
+    if pack_qty is not None:
+        pack_kwargs["packagingQty"] = pack_qty
+    plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=pack_kwargs,
+        dam_refs=[_dam_ref(plat, "pa", "ready-pack.bin", "PACKAGING")],
+    )
+    qty = int(plat.prototype._material_requirement(unit)["sheets"])
+    _seed_lot(plat, "pa", unit, sheets=qty + 2)
+    plat.prototype.consume_material_once(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        sheets=qty,
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        consumes_inventory=True,
+    )
+    plat.prototype.record_labor(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        minutes=labor_minutes,
+        reason="assembly",
+    )
+    plat.prototype.record_actual_cost(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    live = plat.prototype.units[unit["prototypeUnitId"]]
+    pkg_id = live.get("evidencePackageId")
+    if pkg_id and plat.prototype.packages.get(pkg_id, {}).get("state") in {"OPEN", "PREPARED"}:
+        plat.prototype.finalize_evidence_package(
+            pkg_id,
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+        )
+        live = plat.prototype.units[unit["prototypeUnitId"]]
+    return live
+
+
+def _assert_journal_one(plat, tenant, event_type, n=1):
+    events = [e for e in plat.pilot.journal.list(tenant) if e.get("eventType") == event_type]
+    assert len(events) == n
+    assert plat.pilot.outbox.list_open(tenant_id=tenant) == []
+    assert plat.pilot.journal.verify(tenant)["ok"] is True
+    return events
+
+
+def test_explicit_packaging_qty_required_and_lineage(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    unit = _manual_launch_ready(plat, cand, unit, human, human_shift, pack_qty=None)
+    cost = plat.prototype.costs[unit["actualCostId"]]
+    assert cost["completeness"] == "PARTIAL"
+    assert cost["quantityLineage"]["sources"]["packagingQty"] == "MISSING"
+    with pytest.raises(PrototypeError, match="PARTIAL|launch-ready"):
+        plat.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="missing-qty",
+        )
+    with pytest.raises(PrototypeError, match="invalid packagingQty|non-numeric packagingQty"):
+        plat.prototype.packaging_checklist(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            observed=_pack_obs(plat, cand, packagingQty="nope"),
+            dam_refs=[_dam_ref(plat, "pa", "bad-qty.bin", "PACKAGING")],
+        )
+    with pytest.raises(PrototypeError, match="invalid packagingQty"):
+        plat.prototype.packaging_checklist(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            source="MANUAL",
+            observed=_pack_obs(plat, cand, packagingQty=-2),
+            dam_refs=[_dam_ref(plat, "pa", "neg-qty.bin", "PACKAGING")],
+        )
+    plat.prototype.packaging_checklist(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        observed=_pack_obs(plat, cand, packagingQty=1),
+        dam_refs=[_dam_ref(plat, "pa", "ok-qty.bin", "PACKAGING")],
+    )
+    live = plat.prototype.units[unit["prototypeUnitId"]]
+    pack = plat.prototype.checklists[live["packagingChecklistId"]]
+    pack["prototypeUnitId"] = "other-unit"
+    plat.prototype.checklists[pack["checklistId"]] = pack
+    plat.prototype.persist()
+    wrong = plat.prototype.record_actual_cost(
+        live["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    assert wrong["completeness"] == "PARTIAL"
+    pack["prototypeUnitId"] = live["prototypeUnitId"]
+    pack["engineeringHash"] = "stale-hash"
+    plat.prototype.checklists[pack["checklistId"]] = pack
+    plat.prototype.persist()
+    stale = plat.prototype.record_actual_cost(
+        live["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    assert stale["completeness"] == "PARTIAL"
+    pack["engineeringHash"] = live["engineeringHash"]
+    plat.prototype.checklists[pack["checklistId"]] = pack
+    plat.prototype.persist()
+    ok = plat.prototype.record_actual_cost(
+        live["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    assert ok["completeness"] == "COMPLETE"
+    assert ok["quantityLineage"]["packagingQty"] == 1
+    go = plat.prototype.record_launch_decision(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        decision="HUMAN_GO",
+        reason="qty-ok",
+    )
+    assert go["decision"] == "HUMAN_GO"
+
+
+def test_labor_crash_after_outbox_complete_does_not_duplicate(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    plat.prototype._crash_mode = "after-outbox-complete"
+    with pytest.raises(CrashInjected):
+        plat.prototype.record_labor(
+            unit["prototypeUnitId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            minutes=21,
+            reason="crash-labor",
+        )
+    plat.prototype._crash_mode = ""
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    rows = [r for r in plat2.prototype.labor.values() if r.get("prototypeUnitId") == unit["prototypeUnitId"]]
+    assert len(rows) == 1
+    assert rows[0]["minutes"] == 21
+    _assert_journal_one(plat2, "pa", "prototype.labor.append")
+    again = plat2.prototype.record_labor(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        minutes=21,
+        reason="crash-labor",
+    )
+    assert again["laborId"] == rows[0]["laborId"]
+    rows2 = [r for r in plat2.prototype.labor.values() if r.get("prototypeUnitId") == unit["prototypeUnitId"]]
+    assert len(rows2) == 1
+    _assert_journal_one(plat2, "pa", "prototype.labor.append")
+    _ = cand
+
+
+def test_labor_subprocess_crash_before_idem_index(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    _crash_proc(
+        tmp_path,
+        "proto-labor",
+        "after-labor-emit-before-idem",
+        unit=unit["prototypeUnitId"],
+        operator=human["operatorId"],
+        shift=human_shift["shiftId"],
+        qty=18,
+        reason="crash-labor",
+    )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    rows = [r for r in plat2.prototype.labor.values() if r.get("reason") == "crash-labor"]
+    assert len(rows) == 1
+    assert rows[0]["minutes"] == 18
+    _assert_journal_one(plat2, "pa", "prototype.labor.append")
+    again = plat2.prototype.record_labor(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        minutes=18,
+        reason="crash-labor",
+    )
+    assert again["laborId"] == rows[0]["laborId"]
+    assert len([r for r in plat2.prototype.labor.values() if r.get("reason") == "crash-labor"]) == 1
+    _ = cand
+
+
+def test_finalize_and_attach_crash_windows(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    pkg = plat.prototype.create_evidence_package(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+    )
+    plat.prototype._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat.prototype.finalize_evidence_package(
+            pkg["evidencePackageId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+        )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    assert plat2.prototype.packages[pkg["evidencePackageId"]]["state"] == "FINALIZED"
+    _assert_journal_one(plat2, "pa", "prototype.evidence_package.finalize")
+    again = plat2.prototype.finalize_evidence_package(
+        pkg["evidencePackageId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+    )
+    assert again["evidencePackageId"] == pkg["evidencePackageId"]
+    _assert_journal_one(plat2, "pa", "prototype.evidence_package.finalize")
+    _ = cand
+
+
+def test_finalize_subprocess_crash_window(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    pkg = plat.prototype.create_evidence_package(
+        unit["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+    )
+    _crash_proc(
+        tmp_path,
+        "proto-package-finalize",
+        "after-business-persist",
+        wo=pkg["evidencePackageId"],
+        operator=human["operatorId"],
+        shift=human_shift["shiftId"],
+    )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    assert plat2.prototype.packages[pkg["evidencePackageId"]]["state"] == "FINALIZED"
+    _assert_journal_one(plat2, "pa", "prototype.evidence_package.finalize")
+    again = plat2.prototype.finalize_evidence_package(
+        pkg["evidencePackageId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+    )
+    assert again["evidencePackageId"] == pkg["evidencePackageId"]
+    _assert_journal_one(plat2, "pa", "prototype.evidence_package.finalize")
+    _ = cand
+
+
+def test_human_go_and_pilot_plan_crash_windows(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    _manual_launch_ready(plat, cand, unit, human, human_shift)
+    plat.prototype._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="crash-go",
+        )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    gos = [d for d in plat2.prototype.launch_decisions.values() if d.get("decision") == "HUMAN_GO"]
+    assert len(gos) == 1
+    _assert_journal_one(plat2, "pa", "prototype.launch_decision")
+    again = plat2.prototype.record_launch_decision(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        decision="HUMAN_GO",
+        reason="crash-go-retry",
+    )
+    assert again["launchDecisionId"] == gos[0]["launchDecisionId"]
+    plat2.prototype._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat2.prototype.create_pilot_plan(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human2["operatorId"],
+            shift_id=human_shift2["shiftId"],
+            reason="crash-plan",
+            quantity=1,
+        )
+    plat3 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human3, human_shift3 = _ops(plat3)
+    plans = list(plat3.prototype.plans.values())
+    assert len(plans) == 1
+    _assert_journal_one(plat3, "pa", "prototype.pilot_plan.create")
+    retry_plan = plat3.prototype.create_pilot_plan(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human3["operatorId"],
+        shift_id=human_shift3["shiftId"],
+        reason="crash-plan",
+        quantity=1,
+    )
+    assert retry_plan["planId"] == plans[0]["planId"]
+    assert retry_plan["releaseId"] == plans[0]["releaseId"]
+    assert retry_plan["workOrderId"] == plans[0]["workOrderId"]
+    assert len(plat3.prototype.plans) == 1
+
+
+def test_human_go_pilot_plan_subprocess_crash_windows(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    _manual_launch_ready(plat, cand, unit, human, human_shift)
+    _crash_proc(
+        tmp_path,
+        "proto-launch-go",
+        "after-business-persist",
+        wo=cand["candidateId"],
+        operator=human["operatorId"],
+        shift=human_shift["shiftId"],
+    )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    gos = [d for d in plat2.prototype.launch_decisions.values() if d.get("decision") == "HUMAN_GO"]
+    assert len(gos) == 1
+    _assert_journal_one(plat2, "pa", "prototype.launch_decision")
+    retry_go = plat2.prototype.record_launch_decision(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        decision="HUMAN_GO",
+        reason="retry-go",
+    )
+    assert retry_go["launchDecisionId"] == gos[0]["launchDecisionId"]
+    _crash_proc(
+        tmp_path,
+        "proto-pilot-plan",
+        "after-business-persist",
+        wo=cand["candidateId"],
+        operator=human2["operatorId"],
+        shift=human_shift2["shiftId"],
+    )
+    plat3 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human3, human_shift3 = _ops(plat3)
+    plans = list(plat3.prototype.plans.values())
+    assert len(plans) == 1
+    releases = [r for r in plat3.pilot.releases.releases.values() if r.get("tenantId") == "pa"]
+    wos = [w for w in plat3.pilot.workorders.orders.values() if w.get("tenantId") == "pa"]
+    assert len(plans) == 1
+    retry_plan = plat3.prototype.create_pilot_plan(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human3["operatorId"],
+        shift_id=human_shift3["shiftId"],
+        reason="retry-plan",
+        quantity=1,
+    )
+    assert retry_plan["planId"] == plans[0]["planId"]
+    assert retry_plan["releaseId"] == plans[0]["releaseId"]
+    assert retry_plan["workOrderId"] == plans[0]["workOrderId"]
+    assert len(plat3.prototype.plans) == 1
+    assert len([r for r in plat3.pilot.releases.releases.values() if r.get("tenantId") == "pa"]) == len(releases)
+    assert len([w for w in plat3.pilot.workorders.orders.values() if w.get("tenantId") == "pa"]) == len(wos)
+    _assert_journal_one(plat3, "pa", "prototype.pilot_plan.create")
+    _ = sh
+    _ = actor
+    _ = fixture
+
+
+def test_accepted_eco_crash_window(tmp_path):
+    from fox3d.storelock import CrashInjected
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    change = _eco_change(cand)
+    plat.prototype._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat.prototype.create_eco(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            reason="crash-eco",
+            changes=change,
+        )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    ecos = [e for e in plat2.prototype.ecos.values() if e.get("status") == "ACCEPTED"]
+    assert len(ecos) == 1
+    _assert_journal_one(plat2, "pa", "prototype.eco.accept")
+    retry = plat2.prototype.create_eco(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        reason="crash-eco",
+        changes=change,
+    )
+    assert retry["ecoId"] == ecos[0]["ecoId"]
+    assert len([e for e in plat2.prototype.ecos.values() if e.get("status") == "ACCEPTED"]) == 1
+    _ = unit
+
+
+def test_accepted_eco_subprocess_crash_window(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    change = _eco_change(cand)
+    _crash_proc(
+        tmp_path,
+        "proto-eco",
+        "after-business-persist",
+        wo=cand["candidateId"],
+        operator=human["operatorId"],
+        shift=human_shift["shiftId"],
+        payload=change,
+        reason="crash-eco",
+    )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    _, _, human2, human_shift2 = _ops(plat2)
+    ecos = [e for e in plat2.prototype.ecos.values() if e.get("status") == "ACCEPTED"]
+    assert len(ecos) == 1
+    _assert_journal_one(plat2, "pa", "prototype.eco.accept")
+    retry = plat2.prototype.create_eco(
+        cand["candidateId"],
+        tenant_id="pa",
+        operator_id=human2["operatorId"],
+        shift_id=human_shift2["shiftId"],
+        reason="crash-eco",
+        changes=change,
+    )
+    assert retry["ecoId"] == ecos[0]["ecoId"]
+    assert len([e for e in plat2.prototype.ecos.values() if e.get("status") == "ACCEPTED"]) == 1
+    _ = unit
+    _ = actor
+    _ = sh
+    _ = fixture
