@@ -1,133 +1,129 @@
-# Grok 修正指令：Phase 661–720 final integrity — CHANGES REQUIRED
+# Grok 修正指令：Phase 661–720 final verifier integrity — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main/docs head: `5294848082a1e513c0c482d46907285f9291ee4a`  
-> Reviewed CODE_EVIDENCE_SHA: `8f3bbdae8690b532c01aed74539b61e36a412e89`  
+> Reviewed main/docs head: `75ce68e739d1120c4df5d81d9972ee5dac527b8b`  
+> Reviewed CODE_EVIDENCE_SHA: `15f12cf41c4a39faf06a0c4a497bbb3f40588a08`  
 > Review result: **CHANGES REQUIRED**  
-> **Do not enter Phase 721+. Fix only the residual Phase 661–720 integrity gaps below. Do not rewrite existing architecture.**
+> **Do not enter Phase 721+. Fix only the two residual fail-closed verifier/integrity gaps below. Do not rewrite existing architecture.**
 
-## Accepted evidence — preserve, do not regress
+## Accepted this round — preserve, do not regress
 
-- `pytest -q` reported **409 passed** and remains **MOCK/unit/integration + FIXTURE/REAL_LOGIC**, not Production Ready.
-- GitHub Actions CODE run `34398508992` is SUCCESS on exact CODE `8f3bbda` on Ubuntu + Windows.
-- GitHub Actions docs/head run `34399015958` is SUCCESS on exact docs head `5294848` on Ubuntu + Windows.
-- Canonical generation `feefa00a-ac2f-44ee-91bc-3e28531d8485` is clean-tree/code-bound and honestly keeps `physicalPrototypeValidated=false`, `launchDecision=WAITING_HUMAN_EVIDENCE`, `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`, `liveProviderReady=false`, `liveMachineControl=false`.
-- Required DAM roles are materially improved: MANUAL/IMPORTED PASS_AS_BUILT requires authoritative AS_BUILT DAM; HUMAN_GO requires AS_BUILT + PACKAGING DAM; DAM tenant/SHA/size/non-empty bytes are checked from the authoritative DAM object. FIXTURE remains FIXTURE and cannot HUMAN_GO.
-- Material quantity now comes from exact MaterialLot consume lineage; durable prototype labor records exist; hardware quantity is checked through QC/packaging; four money amounts alone initially remain PARTIAL.
-- Package-create outbox ordering is materially improved: PREPARED outbox precedes durable business persist; startup reconciliation can recover the after-business-persist/before-journal window; package-create subprocess `os._exit` evidence exists.
-- Tenant backup digest includes prototype labor and the reported tenant digest remains equal.
-- Prior REAL Blender evidence remains verified 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX on `7a87ea5`, `usedMock=false`. Render/engineering/media path did not change, so reuse is acceptable only while the verifier continues to pass.
+The implementation in `15f12cf` is a substantive improvement and most of the previous correction is accepted:
+
+- `_authoritative_packaging_qty()` no longer fabricates `1.0`; explicit packaging quantity is required, finite `>0`, and runtime checks tenant + PrototypeUnit + engineeringHash.
+- Missing packaging quantity keeps cost `PARTIAL` and blocks `HUMAN_GO`; malformed/negative/wrong-unit/stale-engineering regressions were added.
+- Packaging quantity is included in backup semantic digest and restored quantity lineage.
+- `record_labor()` now binds the semantic idempotency identity inside the durable snapshot before journal/outbox completion, and restart can recover the same logical labor operation.
+- Hard crash/restart coverage now exists for labor, package finalize, HUMAN_GO, pilot-plan creation (including no duplicate release/WO/plan), and accepted ECO. Tests assert one semantic journal event and zero open outbox where applicable.
+- GitHub Actions CODE run `34428864527` is SUCCESS on exact `15f12cf` on Ubuntu + Windows. The suite is still MOCK/unit/integration + FIXTURE/REAL_LOGIC (`FOX3D_MOCK_BLENDER=1`), not Production Ready; report says `419 passed`.
+- Canonical acceptance generation `dc5cbd4b-811f-49a0-b696-7f3628d5d0f4` is bound to exact CODE `15f12cf`, clean tree, and honestly keeps `physicalPrototypeValidated=false`, `launchDecision=WAITING_HUMAN_EVIDENCE`, and all global/full/live readiness flags false.
+- Tenant backup semantic digest is reported equal (`dd375a40…`).
+- Prior REAL Blender evidence may continue to be reused from `7a87ea5` only because render/engineering/media path is unchanged and the existing verifier passes: 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`.
 - Demand / Vision / AI Video remain MOCK; OS sandbox / AR / preflight / barcode / McKee-BCT remain PARTIAL; LIVE_CNC / LIVE_LASER / PLC / live provider / automatic live factory remain BLOCKED.
+- `docs/CABINET_REAL_ACCEPTANCE.md` has no truth change and should remain untouched unless cabinet truth actually changes.
 
-The round is **not cleared for Phase 721+** because Blocker B still contains a real fail-open and Blocker C is only partially proven.
+The round is **not yet cleared for Phase 721+** because the runtime fixes are stronger than the published/canonical verifier. Two explicit fail-closed requirements from the previous instruction are still not independently provable after serialization.
 
 ---
 
-# Residual Blocker B — packaging quantity lineage is still fabricated by fallback `1.0`
+# Residual Blocker 1 — canonical packaging quantity can still be detached from the authoritative checklist
 
-Current `PrototypeService._authoritative_packaging_qty()` returns `1.0` whenever an `ok=true` packaging checklist exists but `observed.packagingQty` is absent. `packaging_checklist()` does not require `packagingQty`.
+Runtime is now correct, but published acceptance is weaker than runtime.
 
-This means the stronger quantity contract is not actually closed: a checklist with dimensions/weight/counts/observations but **no explicit observed packaging quantity** can be treated as authoritative packaging quantity evidence.
+Current `matrix_row()` publishes `packagingQty` and the cost's `quantityLineage`, and `_cost_qty_complete()` includes a `packagingChecklistId`. However `validate_prototype_acceptance_result()` currently only rejects COMPLETE cost when `quantityLineage.packagingQty` is missing or its source is `MISSING`. It does **not** require/compare the authoritative checklist identity against the serialized unit / engineering revision / quantity.
 
-The current positive HUMAN_GO regression demonstrates the gap: the test creates a valid packaging checklist using `_pack_obs(...)` without `packagingQty`, then consumes MaterialLot, records durable labor, supplies the four required monetary amounts, and successfully reaches HUMAN_GO. That success currently depends on the implicit `packagingQty=1.0` fallback.
+Therefore a malformed or post-serialization-mutated launch-eligible result can potentially claim:
+
+- `costCompleteness=COMPLETE`
+- `quantityLineage.packagingQty=1`
+- `sources.packagingQty=PACKAGING_CHECKLIST`
+
+while the referenced `packagingChecklistId` is missing/bogus, belongs to another unit/tenant/engineering revision, or the matrix-level `packagingQty` differs. That violates the previous requirement: **packaging quantity detached from the exact checklist/unit/engineering revision must fail publication**.
 
 ## Required correction
 
-Reuse the existing packaging checklist/evidence package. Do not create a new packaging ledger.
+Reuse the existing checklist and acceptance runner; do not add a second packaging ledger.
 
-1. Remove the implicit `return 1.0` authority fallback for launch/cost completeness.
-2. `costCompleteness=COMPLETE` must require an **explicit observed packaging quantity** that is:
-   - finite and valid (`>0` for an actually packed unit/batch unless an existing domain rule explicitly allows zero);
-   - stored durably in the existing packaging checklist/evidence record;
-   - exact tenant + PrototypeUnit + engineeringHash lineage;
-   - tied to the same checklist used for launch readiness;
-   - labeled MANUAL/IMPORTED/FIXTURE correctly.
-3. If explicit packaging quantity is missing/null/malformed/stale/wrong-unit/wrong-engineering, packaging quantity source must be `MISSING`/invalid, cost remains PARTIAL, and HUMAN_GO/manual pilot approval stays blocked.
-4. Do not infer packaging quantity from `packagingAmount`, carton dimensions, `ok=true`, expected unit quantity, or a constant.
-5. Preserve existing hardware-count verification, MaterialLot consume lineage, labor lineage, currency separation, and remnant rules.
+1. Publish a compact authoritative packaging lineage object for every matrix row when a checklist exists, for example:
+   - `checklistId`
+   - `tenantId`
+   - `prototypeUnitId`
+   - `engineeringHash`
+   - `packagingQty`
+   - source/truth label if already available
+2. For `costCompleteness=COMPLETE` and for any `READY_FOR_HUMAN_GO_NO_GO` / `HUMAN_GO` path, the verifier must fail closed unless:
+   - authoritative packaging lineage exists;
+   - `checklistId` is non-empty;
+   - tenant matches the result tenant;
+   - PrototypeUnit matches the matrix/unit row;
+   - engineeringHash matches the matrix/unit row;
+   - explicit packagingQty is finite and `>0`;
+   - authoritative `packagingQty == matrix.packagingQty == quantityLineage.packagingQty`;
+   - `quantityLineage.packagingChecklistId == authoritative checklistId`;
+   - source is an allowed source and is not inferred from money/dimensions/`ok=true`.
+3. Do not accept a source string alone as proof of checklist identity.
+4. Keep the normal FIXTURE canonical generation allowed to have cost PARTIAL / missing packagingQty; this strict requirement applies when a row claims COMPLETE/launch-eligible authority.
 
 ## Required regressions
 
-- valid AS_BUILT + valid PACKAGING DAM + MaterialLot consumed + durable labor + correct hardware count + four required money amounts, but **no explicit packagingQty** => cost PARTIAL and HUMAN_GO blocked;
-- explicit packagingQty = null / malformed / negative / wrong-unit or stale engineering => PARTIAL/BLOCKED as appropriate;
-- explicit valid packagingQty with all other authoritative qty lineage + required money fields may become COMPLETE and pass the human launch software gate;
-- backup/restore preserves exact packaging quantity/source/checklist identity and does not synthesize a default after restart;
-- canonical runner negative test: launch-eligible MANUAL/IMPORTED evidence with COMPLETE cost but missing explicit packaging quantity must fail publication and preserve the previous canonical truth set.
+Add publication/runner negative tests that mutate an otherwise launch-eligible MANUAL/IMPORTED truth set and prove `rc != 0` + previous canonical truth set preserved for each of:
+
+- missing `quantityLineage.packagingChecklistId`;
+- bogus/wrong checklist ID;
+- packaging lineage wrong tenant;
+- packaging lineage wrong PrototypeUnit;
+- packaging lineage stale/wrong engineeringHash;
+- matrix `packagingQty` != quantity-lineage packagingQty;
+- authoritative packaging-lineage qty != quantity-lineage qty;
+- source says `PACKAGING_CHECKLIST` but authoritative lineage object is absent.
+
+Also keep the existing missing/null/malformed/negative explicit packaging quantity runtime regressions.
 
 ---
 
-# Residual Blocker C — crash proof is incomplete, and additive labor still has a post-journal/pre-idem duplication window
+# Residual Blocker 2 — duplicate semantic labor aggregates are prevented for the tested crash, but not fail-closed as a durable invariant
 
-The common `emit()` path now correctly does PREPARED outbox → business persist → journal append → outbox complete for the tested package-create path. However the previous correction explicitly required crash/restart proof for other Phase 661–720 state-changing paths, and the current committed tests only substantively exercise evidence-package create.
+The new crash ordering closes the demonstrated post-journal/pre-idem window. However the previous acceptance contract also required the system/verifier to reject **duplicate semantic labor aggregates** rather than merely proving that one current crash path no longer creates them.
 
-There is also a concrete remaining idempotency window in additive prototype labor:
+Current behavior still has two weaknesses:
 
-- `record_labor()` uses `_idem(key, _make)`;
-- `_make()` creates the new labor row and calls `_emit()`;
-- `_emit()` may fully persist the business row, append/deduplicate the semantic journal event, and complete the outbox;
-- only **after `_make()` returns** does `_idem()` persist `self.idem[key]`.
-
-If the process dies after the journal/outbox transaction completes but before the idempotency index is persisted, retry can create a second labor business row. `EventJournal.append()` deduplicates the semantic event by semanticKey, but that does not automatically delete the duplicate labor aggregate. Because authoritative labor minutes sum durable labor rows, this can double observed labor/cost while journal verification still looks healthy.
+- `_recover_semantic()` takes the first matching keyed/semantic labor row when multiple rows exist instead of treating duplicate durable semantic identities as corruption/HOLD.
+- `_authoritative_labor_minutes()` sums all matching durable labor rows. If a legacy/corrupted snapshot contains two rows for the same semantic labor operation, minutes can be doubled while the journal still contains only one deduplicated semantic event.
+- Published `quantityLineage` exposes the summed labor minutes/source but does not expose enough labor identity/integrity evidence for the canonical verifier to detect this contradiction.
 
 ## Required correction
 
-Use the existing CommitOutbox/EventJournal/idempotency machinery; do not add a second transaction system and do not rewrite the architecture.
+Reuse existing `PrototypeLabor`, idempotency key, EventJournal, Outbox and backup stores. **Do not add a second labor ledger or transaction system.**
 
-1. Close the **post-journal / pre-idempotency-index** window for `record_labor()` so one semantic labor operation can produce exactly one durable labor aggregate and one semantic journal event across crash/retry.
-   - Persist the idempotency identity inside the same durable business snapshot/outbox boundary, or reconcile by semantic business identity on restart/retry.
-   - Do not solve this by merely ignoring the second journal event; business aggregate uniqueness is required.
-2. Audit other Phase 661–720 additive/idempotent mutations for the same ordering issue. At minimum verify launch decision and pilot-plan semantics; do not change unrelated older architecture unless the same helper fix is safely shared.
-3. Add a crash hook/test for the window **after journal append/outbox completion but before the outer idempotency mapping would otherwise be persisted**, or an equivalent real `os._exit` point that proves the same failure mode.
-4. After restart/retry assert:
-   - exactly one labor aggregate for the semantic operation;
-   - exact labor minutes are not doubled;
-   - exactly one semantic journal event;
-   - zero unresolved outbox transactions;
-   - `pilot.journal.verify(tenant)["ok"] == true`;
-   - retry returns/reuses the same logical labor operation.
-5. Finish the previously required crash coverage for Phase 661–720 state mutations. Add real subprocess `os._exit` regressions (or equivalent hard process death) for at least:
-   - evidence package finalize or attachment update;
-   - HUMAN_GO launch decision;
-   - pilot-plan creation (must not duplicate release / WorkOrder / plan);
-   - accepted ECO if it is claimed under this journal durability contract.
-6. Each crash test must prove **one business aggregate + one semantic event + no open outbox + idempotent retry**, not merely that restart succeeds.
+1. Define one fail-closed semantic labor uniqueness invariant using the existing durable identity, preferably `idempotencyKey` plus tenant/unit/engineering/minutes/reason semantics.
+2. If two durable PrototypeLabor rows represent the same semantic operation:
+   - do not silently choose the first;
+   - do not sum both into authoritative labor;
+   - mark labor authority invalid / cost PARTIAL or HOLD/BLOCK launch eligibility;
+   - require operator/admin repair rather than guessing which row is correct.
+3. Publish a compact labor lineage/integrity proof in the existing cost quantity lineage, sufficient for the canonical verifier to establish uniqueness and total consistency. For example: durable labor IDs, semantic keys, source, total minutes, and `integrityOk`; use an equivalent structure if cleaner.
+4. For COMPLETE/HUMAN_GO, verifier must require labor integrity PASS, unique semantic keys/IDs, and published authoritative labor total equal to `quantityLineage.laborMinutes`.
+5. Backup/restore must preserve the labor semantic identities and must not collapse or synthesize duplicates.
 
----
+## Required regressions
 
-# Canonical / acceptance requirements for this correction round
-
-Do not hand-edit PASS JSON. Regenerate through the existing runner after code/tests are fixed.
-
-The Phase 661–720 verifier must fail closed when a launch-eligible MANUAL/IMPORTED case has any of:
-
-- missing explicit packaging quantity lineage;
-- packaging quantity detached from the exact checklist/unit/engineering revision;
-- duplicate semantic labor aggregates;
-- labor minutes changed by crash/retry duplication;
-- unresolved outbox transaction or business/journal semantic mismatch;
-- missing required AS_BUILT/PACKAGING DAM evidence;
-- missing MaterialLot consume lineage or durable labor/hardware quantity lineage;
-- stale selected → unit → package → measurement/cost/packaging → launch lineage.
-
-CI may continue to publish a **FIXTURE/REAL_LOGIC software-gate acceptance** with `ok=true`, but it must continue to state:
-
-- `physicalPrototypeValidated=false`;
-- `launchDecision=WAITING_HUMAN_EVIDENCE` or HOLD;
-- fixture cost/evidence truth stays FIXTURE/PARTIAL where appropriate;
-- no HUMAN_GO physical claim;
-- all global/full/live readiness flags remain false.
+- Inject/persist two PrototypeLabor rows with the same semantic/idempotency identity: authoritative labor must not double and cost must not remain COMPLETE; HUMAN_GO blocked.
+- Same corruption after restart: still detected.
+- Same corruption after backup/restore: still detected.
+- Canonical runner negative: an otherwise valid MANUAL/HUMAN_GO result with duplicate labor semantic evidence or labor total inconsistent with its labor records must fail and preserve the previous canonical truth set.
+- Keep the new hard-crash labor regression and prove it still produces exactly one durable labor aggregate + one semantic journal event + zero open outbox + same logical retry.
 
 ---
 
-# Required delivery / stop point
+# Evidence / delivery requirements
 
-1. Fix only the residual Blocker B + C items above; preserve Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/KD/MaterialLot/Nesting/Remnant/ManufacturingRelease/WorkOrder/QC/Logistics/Backup architecture.
-2. Run full `pytest -q`; report exact count and keep MOCK/FIXTURE labeling honest.
-3. Commit implementation/tests first as a new CODE_EVIDENCE_SHA; require Ubuntu + Windows GREEN on exact CODE SHA.
-4. Regenerate clean-tree canonical Phase 661–720 acceptance bound to exact CODE SHA; no hand-edited PASS JSON.
-5. Re-run tenant A backup/restore semantic validation including explicit packaging quantity lineage, labor identity, packages/decisions/plans, and journal/outbox state; prove zero tenant-B leakage.
-6. Reuse prior `7a87ea5` REAL Blender evidence only if render/engineering/media path remains unchanged and verifier passes; otherwise refresh REAL Blender evidence.
-7. Commit evidence/docs separately; require Ubuntu + Windows GREEN on docs/head.
-8. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, and `docs/REAL_E2E_ACCEPTANCE.md`. Do not touch `docs/CABINET_REAL_ACCEPTANCE.md` unless cabinet truth actually changes.
-9. Leave Issue #1 a concise handoff with CODE SHA, docs SHA, pytest count, both Actions run IDs, acceptance generation, explicit packaging-quantity result, post-journal/idempotency crash result, other required crash results, backup semantic result, prior/fresh REAL Blender result, and remaining MOCK/PARTIAL/BLOCKED boundaries.
-10. **Stop for ChatGPT review. Do not enter Phase 721+ until ACCEPT WITH SCOPE.**
+1. Fix only the two residual verifier/integrity items above. Preserve Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / KD / MaterialLot / Nesting / Remnant / ManufacturingRelease / WorkOrder / QC / Logistics / Backup architecture.
+2. Run full `pytest -q`; report exact count and label it MOCK/unit/integration + FIXTURE/REAL_LOGIC, not Production Ready.
+3. Commit implementation/tests first as a new CODE_EVIDENCE_SHA and require Ubuntu + Windows SUCCESS on that exact SHA.
+4. Regenerate the canonical Phase 661–720 truth set from the runner on a clean tree, bound to the exact new CODE SHA; no hand-edited PASS JSON.
+5. Re-run tenant-A backup/restore semantic validation including explicit packaging checklist lineage, packagingQty, labor semantic identities, packages/decisions/plans and journal/outbox state; prove zero tenant-B leakage.
+6. Reuse prior `7a87ea5` REAL Blender evidence only if render/engineering/media path remains unchanged and verifier still passes; otherwise refresh REAL Blender evidence.
+7. Commit evidence/docs separately; require Ubuntu + Windows SUCCESS on the docs/head commit.
+8. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md` and the generated Phase 661–720 acceptance files. Do not touch `docs/CABINET_REAL_ACCEPTANCE.md` unless cabinet truth changed.
+9. Leave Issue #1 a concise completion handoff with CODE SHA, docs SHA, pytest count, both Actions run IDs, acceptance generation, packaging-checklist exact-lineage negative results, duplicate-labor negative results, crash/idempotency result, backup semantic result, prior/fresh REAL Blender result, and remaining MOCK/PARTIAL/BLOCKED boundaries.
+10. **Stop for ChatGPT re-review. Do not enter Phase 721+ until ACCEPT WITH SCOPE.**
