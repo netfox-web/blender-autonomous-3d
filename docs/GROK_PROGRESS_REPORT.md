@@ -2,30 +2,31 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-11  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `283c459` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 4)  
-Issue #1: `IC_kwDOUSTRdc8AAAABT08xWg`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c585df4` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 5)  
+Issue #1: `IC_kwDOUSTRdc8AAAABT1ohOg`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 781–840 Re-Gate Round 4 correction-only** (three blockers). Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
+Executed **Phase 781–840 Re-Gate Round 5 correction-only** (four blockers). Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
 
 | Blocker | Fix |
 |---|---|
-| 1 Preview bytes | `preview()` uses only live placement; no caller artwork_path override. Payload carries `artworkSha256`; worker SHA-256 of loaded bytes must match or `ArtworkApplyError`. Forged artworkId/productId/engineeringHash BLOCK. |
-| 2 SINGLE production | CONTAIN composites onto full-surface canvas with letterbox (BLACK); COVER source crop follows placement/anchor; rotation/mirror orient pixels to match `finalUvHash`. Manifest records canvas mm, placed rect, transformHash. STRETCH still BLOCKED. |
-| 3 MASTER replay | Relation stores `seamSource`; `_authoritative_master` replays CONFIG vs ENGINEERING seam, self-verifies relationHash/panelOrder/cropGeometry/width/height. Required `masterId` exact match. |
+| 1 Non-square UV | Quarter-turn in unit-square local (s,t), then map back to uvRect; corners stay in bounds. Artwork and blender_job share the same local table; 90/180/270+mirror exact parity. |
+| 2 Pixel oracle | Independent landmark grid; CONTAIN 0/90/180/270/mirror/mirror90 expected UV samples vs production PNG corners. |
+| 3 masterId | `masterId` derived from immutable relation fields and included in `relationHash`. Coordinated id+placementHash tamper BLOCKS. |
+| 4 Validator | Required scenarios/negatives/orientation keys fail-closed if missing, empty, or wrong type. |
 
-**CODE_EVIDENCE_SHA:** `ce2c46c0535fb2bbba2208401a51a66d4991ffaa`  
+**CODE_EVIDENCE_SHA:** `b2d9875963c8ee6d274c18a79b47ed7b14d81284`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34532967434` on exact `ce2c46c` Ubuntu + Windows SUCCESS.
+GitHub Actions CODE: **GREEN** `34540810119` on exact `b2d9875` Ubuntu + Windows SUCCESS.
 
-Acceptance generation `2936750f-8a3c-4bb5-90ab-70741ea6f21d`; runner-bound `evidenceCodeCommit=ce2c46c…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK, no REAL artwork diagnostic this round). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
+Acceptance generation `84c3442b-25b3-4d23-8452-cd410123a670`; runner-bound `evidenceCodeCommit=b2d9875…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK, no REAL artwork diagnostic this round). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
 
 ## Tests
 
 ```
-pytest -q  →  601 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  605 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
 CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
@@ -51,8 +52,8 @@ CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
 - Vision/Video/Demand MOCK
 - Fixture batch ≠ physical batch
 - Do not start Phase 841+ until ChatGPT Re-Gate says GO
-- Artwork Placement V1 is in Re-Gate Round 4 correction; not Production Ready; no REAL artwork OptiX this round
+- Artwork Placement V1 is in Re-Gate Round 5 correction; not Production Ready; no REAL artwork OptiX this round
 
 ## Next round
 
-ChatGPT Re-Gate Phase 781–840 after Round 4. Stop here. Do not start Phase 841+.
+ChatGPT Re-Gate Phase 781–840 after Round 5. Stop here. Do not start Phase 841+.

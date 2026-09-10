@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Re-Gate Round 4 CODE_EVIDENCE_SHA `ce2c46c`; prior `7d99b37` / instruction `283c459`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `283c459`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 Re-Gate Round 5 CODE_EVIDENCE_SHA `b2d9875`; prior `ce2c46c` / instruction `c585df4`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c585df4`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -13,16 +13,16 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | PrintableSurface | REAL_LOGIC | derived from CabinetSpec/acrylic/packaging/retail components; surfaceHash |
 | Artwork asset | REAL_LOGIC | DAM sha256/size/mime/pixels; tamper fail-closed |
 | ArtworkPlacement | REAL_LOGIC | mm SOT; CONTAIN/COVER; STRETCH blocked; hash binds uv/mirror/object/relation |
-| mm↔UV | REAL_LOGIC | round-trip 0.001 mm; Blender Scheme A mesh UV once (identity shader) |
+| mm↔UV | REAL_LOGIC | round-trip 0.001 mm; local unit-square quarter-turn; identity shader |
 | Keep-out / DPI | CONFIG / PARTIAL | handle/hinge CONFIG; DPI policy CONFIG 150/72; printPreflight PARTIAL |
 | 4-door master | REAL_LOGIC | 2400×1800 / 4×600; exact quarters `0/.25/.5/.75`; MASTER_SPLIT only |
 | SINGLE_SURFACE | REAL_LOGIC | CONTAIN full-canvas letterbox; COVER anchor crop; rotation/mirror vs finalUvHash; not sibling quarter |
 | Production artwork | REAL_LOGIC / GENERATED | full-panel PNG + canvas/placed/transformHash; not physical print |
 | Blender preview | MOCK | live-only path; worker artworkSha256 of loaded bytes; realArtworkPreviewReady=false |
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
-| Production authority | REAL_LOGIC | caller projection cannot swap artwork bytes; MASTER seam replay + relationHash; masterId required |
+| Production authority | REAL_LOGIC | local UV bounds; landmark oracle; derived masterId in relationHash; required scenarios fail-closed |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `2936750f-…`; CODE `ce2c46c` |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `84c3442b-…`; CODE `b2d9875` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
