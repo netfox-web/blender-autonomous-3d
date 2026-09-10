@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import sys
@@ -23,6 +24,33 @@ def _argv_after_double_dash(argv: list[str]) -> list[str]:
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, default=str), encoding="utf-8")
+
+
+def _stable_hash(payload: object) -> str:
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def compute_final_uv_hash(item: dict, mapping: dict) -> str:
+    sampling = mapping.get("finalSampling") or []
+    uv_rect = mapping.get("uvRect") or item.get("uvRect") or {}
+    payload = {
+        "placementId": item.get("placementId"),
+        "objectName": item.get("objectName"),
+        "componentId": item.get("componentId"),
+        "face": item.get("face") or "FRONT",
+        "relation": item.get("relation") or "SINGLE_SURFACE",
+        "uvRect": {
+            "u0": float(uv_rect.get("u0")),
+            "v0": float(uv_rect.get("v0")),
+            "u1": float(uv_rect.get("u1")),
+            "v1": float(uv_rect.get("v1")),
+        },
+        "rotationDeg": float(mapping.get("rotationDeg") or 0.0) % 360.0,
+        "mirrored": bool(mapping.get("mirrored")),
+        "finalSampling": [[float(a), float(b)] for a, b in sampling],
+    }
+    return _stable_hash(payload)
 
 
 def _load_job(path: str) -> dict:
@@ -622,13 +650,16 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
         record = {
             "objectName": name,
             "componentId": item.get("componentId"),
+            "placementId": item.get("placementId"),
+            "face": item.get("face") or "FRONT",
+            "relation": item.get("relation") or "SINGLE_SURFACE",
             "applied": True,
             **mapping,
             "engineeringHash": item.get("engineeringHash"),
             "surfaceHash": item.get("surfaceHash"),
             "artworkHash": item.get("artworkHash"),
             "placementHash": item.get("placementHash"),
-            "finalUvHash": str(mapping.get("finalSampling")),
+            "finalUvHash": compute_final_uv_hash(item, mapping),
         }
         if isinstance(obj, dict):
             obj["canonicalArtwork"] = record

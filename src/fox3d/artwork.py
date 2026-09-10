@@ -533,8 +533,169 @@ def placement_payload(row: dict[str, Any]) -> dict[str, Any]:
         "masterHash": row.get("masterHash"),
         "masterCropMm": row.get("masterCropMm"),
         "masterSurfaceIds": list(row.get("masterSurfaceIds") or []),
+        "masterId": row.get("masterId"),
         "uv": row.get("uv"),
     }
+
+
+_APPLIED_IDENTITY_KEYS = (
+    "placementId",
+    "objectName",
+    "componentId",
+    "face",
+    "relation",
+    "engineeringHash",
+    "surfaceHash",
+    "artworkHash",
+    "placementHash",
+    "finalUvHash",
+)
+
+
+def canonical_final_sampling(
+    uv_rect: dict[str, Any],
+    *,
+    rotation_deg: float = 0.0,
+    mirrored: bool = False,
+) -> list[list[float]]:
+    try:
+        u0 = float(uv_rect["u0"])
+        v0 = float(uv_rect["v0"])
+        u1 = float(uv_rect["u1"])
+        v1 = float(uv_rect["v1"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ArtworkError("BLOCKED", "missing uvRect") from exc
+    if not all(math.isfinite(v) for v in (u0, v0, u1, v1)):
+        raise ArtworkError("BLOCKED", "non-finite uvRect")
+    rot = float(rotation_deg or 0.0) % 360.0
+    if rot not in {0.0, 90.0, 180.0, 270.0}:
+        raise ArtworkError("BLOCKED", "unsupported rotation")
+    cx, cy = (u0 + u1) / 2.0, (v0 + v1) / 2.0
+    corners = [(u0, v0), (u1, v0), (u1, v1), (u0, v1)]
+    steps = int(rot // 90.0)
+    for _ in range(steps):
+        corners = [(cx - (y - cy), cy + (x - cx)) for x, y in corners]
+    if mirrored:
+        corners = [(u0 + u1 - x, y) for x, y in corners]
+    return [[float(x), float(y)] for x, y in corners]
+
+
+def final_uv_identity(
+    *,
+    placement_id: Any,
+    object_name: Any,
+    component_id: Any,
+    face: Any,
+    relation: Any,
+    uv_rect: dict[str, Any],
+    rotation_deg: Any = 0.0,
+    mirrored: Any = False,
+) -> dict[str, Any]:
+    sampling = canonical_final_sampling(uv_rect, rotation_deg=float(rotation_deg or 0.0), mirrored=bool(mirrored))
+    payload = {
+        "placementId": placement_id,
+        "objectName": object_name,
+        "componentId": component_id,
+        "face": face or "FRONT",
+        "relation": relation or "SINGLE_SURFACE",
+        "uvRect": {
+            "u0": float(uv_rect["u0"]),
+            "v0": float(uv_rect["v0"]),
+            "u1": float(uv_rect["u1"]),
+            "v1": float(uv_rect["v1"]),
+        },
+        "rotationDeg": float(rotation_deg or 0.0) % 360.0,
+        "mirrored": bool(mirrored),
+        "finalSampling": sampling,
+    }
+    return {**payload, "finalUvHash": stable_hash(payload)}
+
+
+def canonical_source_crop(
+    *,
+    pixel_width: int | None,
+    pixel_height: int | None,
+    box_w_mm: float,
+    box_h_mm: float,
+    placed: dict[str, Any],
+    fit: str,
+) -> dict[str, Any]:
+    if fit == FIT_STRETCH:
+        raise ArtworkError("BLOCKED", "STRETCH is forbidden")
+    crop: dict[str, Any] = {
+        "xMm": 0.0,
+        "yMm": 0.0,
+        "widthMm": float(placed["widthMm"]),
+        "heightMm": float(placed["heightMm"]),
+        "fit": fit,
+    }
+    pw = int(pixel_width) if pixel_width else None
+    ph = int(pixel_height) if pixel_height else None
+    if fit == FIT_COVER and pw and ph:
+        placed_w = float(placed["widthMm"])
+        if placed_w <= 0:
+            raise ArtworkError("BLOCKED", "placed width")
+        scale = pw / placed_w
+        src_w = min(pw, int(round(float(box_w_mm) * scale)))
+        src_h = min(ph, int(round(float(box_h_mm) * scale)))
+        src_x = max(0, (pw - src_w) // 2)
+        src_y = max(0, (ph - src_h) // 2)
+        crop.update({"sourceXPx": src_x, "sourceYPx": src_y, "sourceWPx": src_w, "sourceHPx": src_h})
+    elif pw and ph:
+        crop.update({"sourceXPx": 0, "sourceYPx": 0, "sourceWPx": pw, "sourceHPx": ph})
+    return crop
+
+
+def _source_crop_matches(stored: dict[str, Any] | None, expected: dict[str, Any]) -> bool:
+    if not isinstance(stored, dict) or not isinstance(expected, dict):
+        return False
+    for key in ("sourceXPx", "sourceYPx", "sourceWPx", "sourceHPx"):
+        want = expected.get(key)
+        if want is None:
+            continue
+        got = stored.get(key)
+        if got is None:
+            return False
+        try:
+            if int(got) != int(want):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+def _job_artifact_meta(done: dict[str, Any]) -> tuple[str | None, int | None]:
+    output = done.get("output") if isinstance(done.get("output"), dict) else {}
+    files = output.get("files") if isinstance(output.get("files"), dict) else {}
+    artifact = done.get("artifact") if isinstance(done.get("artifact"), dict) else {}
+    sha = done.get("outputHash") or files.get("beautyHash") or artifact.get("sha256")
+    size = done.get("outputSize")
+    if size is None:
+        size = files.get("beautySize")
+    if size is None:
+        size = artifact.get("size")
+    sha_s = str(sha) if sha not in {None, ""} else None
+    try:
+        size_i = int(size) if size is not None else None
+    except (TypeError, ValueError):
+        size_i = None
+    return sha_s, size_i
+
+
+def _norm_sampling(value: Any) -> list[list[float]] | None:
+    if not isinstance(value, (list, tuple)):
+        return None
+    out: list[list[float]] = []
+    try:
+        for pair in value:
+            out.append([float(pair[0]), float(pair[1])])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return out
+
+
+def _applied_identity(row: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(row.get(k) for k in _APPLIED_IDENTITY_KEYS)
 
 
 def master_canvas(surfaces: list[dict[str, Any]], *, seam_mm: float | None = None) -> dict[str, Any]:
@@ -644,6 +805,7 @@ class ArtworkFactory:
         self.placements: dict[str, dict[str, Any]] = {}
         self.by_hash: dict[str, str] = {}
         self.engineering: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
+        self.masters: dict[str, dict[str, Any]] = {}
 
     def register_surfaces(self, spec: Any, *, tenant_id: str, **kwargs: Any) -> list[dict[str, Any]]:
         rows = derive_printable_surfaces(spec, tenant_id=tenant_id, **kwargs)
@@ -790,29 +952,14 @@ class ArtworkFactory:
             "widthMm": fitted["widthMm"],
             "heightMm": fitted["heightMm"],
         }
-        crop = {
-            "xMm": 0.0,
-            "yMm": 0.0,
-            "widthMm": placed["widthMm"],
-            "heightMm": placed["heightMm"],
-            "fit": fit,
-        }
-        if fit == FIT_COVER and artwork.get("pixelWidth") and artwork.get("pixelHeight"):
-            scale = artwork["pixelWidth"] / placed["widthMm"]
-            src_w = min(artwork["pixelWidth"], int(round(box_w * scale)))
-            src_h = min(artwork["pixelHeight"], int(round(box_h * scale)))
-            src_x = max(0, (artwork["pixelWidth"] - src_w) // 2)
-            src_y = max(0, (artwork["pixelHeight"] - src_h) // 2)
-            crop.update({"sourceXPx": src_x, "sourceYPx": src_y, "sourceWPx": src_w, "sourceHPx": src_h})
-        elif artwork.get("pixelWidth") and artwork.get("pixelHeight"):
-            crop.update(
-                {
-                    "sourceXPx": 0,
-                    "sourceYPx": 0,
-                    "sourceWPx": artwork["pixelWidth"],
-                    "sourceHPx": artwork["pixelHeight"],
-                }
-            )
+        crop = canonical_source_crop(
+            pixel_width=artwork.get("pixelWidth"),
+            pixel_height=artwork.get("pixelHeight"),
+            box_w_mm=box_w,
+            box_h_mm=box_h,
+            placed=placed,
+            fit=fit,
+        )
         dpi = effective_dpi(
             artwork.get("pixelWidth"),
             placed["widthMm"],
@@ -858,6 +1005,7 @@ class ArtworkFactory:
             "masterHash": None,
             "masterCropMm": None,
             "masterSurfaceIds": [],
+            "masterId": None,
         }
         rec["placementHash"] = stable_hash(placement_payload(rec))
         if rec["placementId"] in self.placements:
@@ -878,10 +1026,36 @@ class ArtworkFactory:
     ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
         if fit == FIT_STRETCH:
             raise ArtworkError("BLOCKED", "STRETCH is forbidden")
+        by_id = {s["surfaceId"]: s for s in surfaces}
+        if len(by_id) != len(surfaces):
+            raise ArtworkError("BLOCKED", "duplicate surface in master")
         master = master_canvas(surfaces, seam_mm=seam_mm)
         crops = split_master(master)
+        canonical_ids = [p["surfaceId"] for p in master["panels"]]
+        relation = {
+            "masterId": new_id(),
+            "masterHash": master["masterHash"],
+            "tenantId": master["tenantId"],
+            "productId": master["productId"],
+            "candidateId": master.get("candidateId"),
+            "version": master.get("version"),
+            "engineeringHash": master["engineeringHash"],
+            "surfaceIds": list(canonical_ids),
+            "panelOrder": [p.get("componentId") for p in master["panels"]],
+            "widthMm": master["widthMm"],
+            "heightMm": master["heightMm"],
+            "seamMm": master["seamMm"],
+            "cropGeometry": [c.get("cropMm") for c in crops],
+        }
+        relation["relationHash"] = stable_hash({k: relation[k] for k in relation if k not in {"relationHash", "masterId"}})
+        stored_master = self._store_master(relation)
         rows: list[dict[str, Any]] = []
-        for surf, crop in zip(surfaces, crops):
+        crop_by_sid = {c["surfaceId"]: c for c in crops}
+        for panel in master["panels"]:
+            surf = by_id.get(panel["surfaceId"])
+            crop = crop_by_sid.get(panel["surfaceId"])
+            if surf is None or crop is None:
+                raise ArtworkError("BLOCKED", "master surface missing")
             rec = self.place(
                 tenant_id=tenant_id,
                 surface_id=surf["surfaceId"],
@@ -895,9 +1069,10 @@ class ArtworkFactory:
                 fit=fit,
             )
             rec["relation"] = "MASTER_SPLIT"
-            rec["masterHash"] = master["masterHash"]
+            rec["masterHash"] = stored_master["masterHash"]
+            rec["masterId"] = stored_master["masterId"]
             rec["masterCropMm"] = crop["cropMm"]
-            rec["masterSurfaceIds"] = [s["surfaceId"] for s in surfaces]
+            rec["masterSurfaceIds"] = list(canonical_ids)
             rec["componentId"] = surf.get("componentId")
             rec["face"] = surf.get("face") or "FRONT"
             rec["objectName"] = surf.get("objectName") or surf.get("componentId")
@@ -919,6 +1094,77 @@ class ArtworkFactory:
             self.placements[rec["placementId"]] = rec
             rows.append(rec)
         return master, crops, rows
+
+    def _store_master(self, relation: dict[str, Any]) -> dict[str, Any]:
+        key = relation.get("masterHash")
+        if not key:
+            raise ArtworkError("BLOCKED", "masterHash missing")
+        existing = self.masters.get(key)
+        if existing is None:
+            self.masters[key] = dict(relation)
+            return dict(self.masters[key])
+        if existing.get("relationHash") != relation.get("relationHash"):
+            raise ArtworkError("BLOCKED", "master relation collision")
+        if existing.get("tenantId") != relation.get("tenantId"):
+            raise ArtworkError("BLOCKED", "cross-tenant master")
+        if existing.get("productId") != relation.get("productId"):
+            raise ArtworkError("BLOCKED", "cross-product master")
+        if existing.get("engineeringHash") != relation.get("engineeringHash"):
+            raise ArtworkError("BLOCKED", "stale master engineeringHash")
+        return dict(existing)
+
+    def require_master(
+        self,
+        master_hash: str | None,
+        *,
+        tenant_id: str,
+        product_id: str | None = None,
+        engineering_hash: str | None = None,
+        candidate_id: Any = None,
+        version: Any = None,
+    ) -> dict[str, Any]:
+        if not master_hash:
+            raise ArtworkError("BLOCKED", "masterHash missing")
+        rec = self.masters.get(master_hash)
+        if rec is None:
+            raise ArtworkError("BLOCKED", "master relation missing")
+        if rec.get("tenantId") != tenant_id:
+            raise ArtworkError("BLOCKED", "cross-tenant master")
+        if product_id and rec.get("productId") != product_id:
+            raise ArtworkError("BLOCKED", "cross-product master")
+        if engineering_hash and rec.get("engineeringHash") != engineering_hash:
+            raise ArtworkError("STALE", "stale master engineeringHash")
+        if candidate_id not in {None, ""} and rec.get("candidateId") not in {None, candidate_id}:
+            raise ArtworkError("BLOCKED", "cross-candidate master")
+        if version is not None and rec.get("version") not in {None, version}:
+            raise ArtworkError("BLOCKED", "cross-version master")
+        return dict(rec)
+
+    def applied_identity(self, rec: dict[str, Any]) -> dict[str, Any]:
+        ident = final_uv_identity(
+            placement_id=rec.get("placementId"),
+            object_name=rec.get("objectName"),
+            component_id=rec.get("componentId"),
+            face=rec.get("face") or "FRONT",
+            relation=rec.get("relation") or "SINGLE_SURFACE",
+            uv_rect=rec.get("uv") or {},
+            rotation_deg=rec.get("rotationDeg") or 0.0,
+            mirrored=rec.get("mirrored"),
+        )
+        return {
+            "placementId": rec.get("placementId"),
+            "objectName": rec.get("objectName"),
+            "componentId": rec.get("componentId"),
+            "face": rec.get("face") or "FRONT",
+            "relation": rec.get("relation") or "SINGLE_SURFACE",
+            "engineeringHash": rec.get("engineeringHash"),
+            "surfaceHash": rec.get("surfaceHash"),
+            "artworkHash": rec.get("artworkHash"),
+            "placementHash": rec.get("placementHash"),
+            "finalUvHash": ident["finalUvHash"],
+            "finalSampling": ident["finalSampling"],
+            "uvRect": ident["uvRect"],
+        }
 
     def _derive_uv(self, rec: dict[str, Any], surface: dict[str, Any]) -> dict[str, float]:
         if rec.get("relation") == "MASTER_SPLIT":
@@ -987,9 +1233,22 @@ class ArtworkFactory:
     def _authoritative_master(self, placement: dict[str, Any], *, tenant_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
         if placement.get("relation") != "MASTER_SPLIT":
             raise ArtworkError("BLOCKED", "not a master split")
-        ids = list(placement.get("masterSurfaceIds") or [])
+        rel = self.require_master(
+            placement.get("masterHash"),
+            tenant_id=tenant_id,
+            product_id=placement.get("productId"),
+            engineering_hash=placement.get("engineeringHash"),
+            candidate_id=placement.get("candidateId"),
+            version=placement.get("version"),
+        )
+        if placement.get("masterId") not in {None, "", rel.get("masterId")}:
+            raise ArtworkError("BLOCKED", "forged masterId")
+        ids = list(rel.get("surfaceIds") or [])
         if not ids:
             raise ArtworkError("BLOCKED", "masterSurfaceIds missing")
+        stored_ids = list(placement.get("masterSurfaceIds") or [])
+        if stored_ids and stored_ids != ids:
+            raise ArtworkError("BLOCKED", "forged masterSurfaceIds")
         siblings = []
         for sid in ids:
             surf = self.surfaces.get(sid)
@@ -997,8 +1256,14 @@ class ArtworkFactory:
                 raise ArtworkError("BLOCKED", "master surface missing")
             if surf.get("tenantId") != tenant_id:
                 raise ArtworkError("BLOCKED", "cross-tenant surface")
+            if surf.get("productId") != rel.get("productId"):
+                raise ArtworkError("BLOCKED", "cross-product surface")
+            if surf.get("engineeringHash") != rel.get("engineeringHash"):
+                raise ArtworkError("STALE", "stale engineeringHash")
             siblings.append(surf)
         master = master_canvas(siblings)
+        if master.get("masterHash") != rel.get("masterHash"):
+            raise ArtworkError("BLOCKED", "forged masterHash")
         if placement.get("masterHash") and placement.get("masterHash") != master.get("masterHash"):
             raise ArtworkError("BLOCKED", "forged masterHash")
         crops = split_master(master)
@@ -1071,11 +1336,27 @@ class ArtworkFactory:
                 for key in ("xMm", "yMm", "widthMm", "heightMm"):
                     if caller_box.get(key) is not None and abs(float(caller_box[key]) - float(box[key])) > MM_EPS:
                         raise ArtworkError("BLOCKED", "forged crop")
-            src_crop = rec.get("crop") if isinstance(rec.get("crop"), dict) else {}
-            x0 = int(src_crop.get("sourceXPx") or 0)
-            y0 = int(src_crop.get("sourceYPx") or 0)
-            w_px = int(src_crop.get("sourceWPx") or src_w)
-            h_px = int(src_crop.get("sourceHPx") or src_h)
+            placed = {
+                "xMm": rec.get("xMm") or 0.0,
+                "yMm": rec.get("yMm") or 0.0,
+                "widthMm": rec.get("widthMm") or surface["widthMm"],
+                "heightMm": rec.get("heightMm") or surface["heightMm"],
+            }
+            expected_crop = canonical_source_crop(
+                pixel_width=art.get("pixelWidth"),
+                pixel_height=art.get("pixelHeight"),
+                box_w_mm=float(surface["widthMm"]),
+                box_h_mm=float(surface["heightMm"]),
+                placed=placed,
+                fit=str(rec.get("fit") or FIT_CONTAIN),
+            )
+            stored_crop = rec.get("crop") if isinstance(rec.get("crop"), dict) else None
+            if not _source_crop_matches(stored_crop, expected_crop):
+                raise ArtworkError("BLOCKED", "forged source crop")
+            x0 = int(expected_crop.get("sourceXPx") or 0)
+            y0 = int(expected_crop.get("sourceYPx") or 0)
+            w_px = int(expected_crop.get("sourceWPx") or src_w)
+            h_px = int(expected_crop.get("sourceHPx") or src_h)
             auth_master = {"widthMm": box["widthMm"], "heightMm": box["heightMm"], "masterHash": None}
         else:
             raise ArtworkError("BLOCKED", "unknown placement relation")
@@ -1217,12 +1498,14 @@ class ArtworkFactory:
         placement: dict[str, Any],
         production: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        live = self.require_placement(placement["placementId"], tenant_id=tenant_id) if placement.get("placementId") else placement
         hashes = {
-            "engineeringHash": placement.get("engineeringHash"),
-            "surfaceHash": placement.get("surfaceHash"),
-            "artworkHash": placement.get("artworkHash"),
-            "placementHash": placement.get("placementHash"),
+            "engineeringHash": live.get("engineeringHash"),
+            "surfaceHash": live.get("surfaceHash"),
+            "artworkHash": live.get("artworkHash"),
+            "placementHash": live.get("placementHash"),
         }
+        requested = self.applied_identity(live)
         mock = bool(getattr(self.platform, "mock_blender", True))
         rec = {
             **hashes,
@@ -1231,6 +1514,7 @@ class ArtworkFactory:
             "realArtworkPreviewReady": False,
             "physicalPrintValidated": False,
             "label": "MOCK" if mock else "PARTIAL",
+            "requestedIdentity": requested,
         }
         if production:
             for key in ("engineeringHash", "surfaceHash", "artworkHash", "placementHash"):
@@ -1271,7 +1555,21 @@ class ArtworkFactory:
             rec["blenderVersion"] = (done.get("blenderVersion") if isinstance(done, dict) else None)
             rec["device"] = (done.get("device") if isinstance(done, dict) else None) or ((done or {}).get("output") or {}).get("device")
             rec["artifact"] = artifact
-            rec["realArtworkPreviewReady"] = preview_ready_from_job(done if isinstance(done, dict) else None, hashes, mock=False)
+            out = (done.get("output") if isinstance(done, dict) else None) or {}
+            files = out.get("files") if isinstance(out, dict) and isinstance(out.get("files"), dict) else {}
+            rec["outputHash"] = (done.get("outputHash") if isinstance(done, dict) else None) or files.get("beautyHash")
+            rec["outputSize"] = (done.get("outputSize") if isinstance(done, dict) else None) or files.get("beautySize")
+            rec["artworkApplied"] = done.get("artworkApplied") if isinstance(done, dict) else None
+            rec["appliedPlacements"] = done.get("appliedPlacements") if isinstance(done, dict) else None
+            gate = dict(done) if isinstance(done, dict) else None
+            if isinstance(gate, dict):
+                if not gate.get("device"):
+                    gate["device"] = rec.get("device")
+                if not gate.get("outputHash"):
+                    gate["outputHash"] = rec.get("outputHash")
+                if gate.get("outputSize") is None:
+                    gate["outputSize"] = rec.get("outputSize")
+            rec["realArtworkPreviewReady"] = preview_ready_from_job(gate, requested, mock=False)
             rec["label"] = "REAL" if rec["realArtworkPreviewReady"] else "BLOCKED_ENVIRONMENT"
         except Exception:
             rec["realArtworkPreviewReady"] = False
@@ -1280,7 +1578,7 @@ class ArtworkFactory:
 
 
 def preview_ready_from_job(done: dict[str, Any] | None, requested: dict[str, Any], *, mock: bool = False) -> bool:
-    if mock or not isinstance(done, dict):
+    if mock or not isinstance(done, dict) or not isinstance(requested, dict):
         return False
     if done.get("usedMock"):
         return False
@@ -1292,17 +1590,47 @@ def preview_ready_from_job(done: dict[str, Any] | None, requested: dict[str, Any
         return False
     if not done.get("blenderVersion") or not done.get("jobId"):
         return False
+    device = done.get("device") or (done.get("output") if isinstance(done.get("output"), dict) else {}).get("device")
+    if not device:
+        return False
+    sha, size = _job_artifact_meta(done)
+    if not sha or size is None or size <= 0:
+        return False
     applied = done.get("appliedPlacements")
     if not isinstance(applied, list) or not applied:
-        return False
-    got = {(r.get("engineeringHash"), r.get("surfaceHash"), r.get("artworkHash"), r.get("placementHash")) for r in applied if isinstance(r, dict)}
-    want = {(requested.get("engineeringHash"), requested.get("surfaceHash"), requested.get("artworkHash"), requested.get("placementHash"))}
-    if any(part is None or part == "" for part in next(iter(want))):
-        return False
-    if got != want:
+        output = done.get("output") if isinstance(done.get("output"), dict) else {}
+        applied = output.get("appliedPlacements")
+    if not isinstance(applied, list) or not applied:
         return False
     if any(not isinstance(r, dict) or r.get("applied") is not True for r in applied):
         return False
+    want_list = requested.get("placements") if isinstance(requested.get("placements"), list) else [requested]
+    if not want_list or any(not isinstance(w, dict) for w in want_list):
+        return False
+    for want in want_list:
+        if any(want.get(k) in {None, ""} for k in _APPLIED_IDENTITY_KEYS):
+            return False
+    got = [_applied_identity(r) for r in applied]
+    want = [_applied_identity(w) for w in want_list]
+    if len(got) != len(want) or len(set(got)) != len(got) or set(got) != set(want):
+        return False
+    by_pid = {r.get("placementId"): r for r in applied if isinstance(r, dict)}
+    if len(by_pid) != len(applied):
+        return False
+    for want_row in want_list:
+        row = by_pid.get(want_row.get("placementId"))
+        if row is None:
+            return False
+        if row.get("finalUvHash") != want_row.get("finalUvHash"):
+            return False
+        expected_sampling = want_row.get("finalSampling")
+        if expected_sampling is not None:
+            got_sampling = _norm_sampling(row.get("finalSampling") or row.get("corners"))
+            if got_sampling != _norm_sampling(expected_sampling):
+                return False
+        for key in ("objectName", "componentId", "face", "relation"):
+            if row.get(key) != want_row.get(key):
+                return False
     return True
 
 

@@ -346,6 +346,9 @@ class Platform:
             done["realOptix"] = cached.get("realOptix")
             done["outputHash"] = (cached.get("files") or {}).get("beautyHash") or done.get("outputHash")
             done["outputSize"] = (cached.get("files") or {}).get("beautySize") or done.get("outputSize")
+            done["device"] = cached.get("device") or done.get("device")
+            done["artworkApplied"] = cached.get("artworkApplied")
+            done["appliedPlacements"] = cached.get("appliedPlacements") or []
             if done.get("status") not in {"completed", "succeeded"}:
                 done["status"] = term
             self._release(job)
@@ -393,6 +396,9 @@ class Platform:
         job["realCycles"] = result.real_cycles
         job["realRenderOutput"] = result.real_render_output
         job["usedMock"] = result.used_mock
+        job["device"] = result.device
+        job["artworkApplied"] = result.artwork_applied
+        job["appliedPlacements"] = list(result.applied_placements or [])
 
         if result.status == "blocked":
             try:
@@ -447,6 +453,8 @@ class Platform:
             "realBlender": result.real_blender,
             "realOptix": result.real_optix,
             "realRenderOutput": result.real_render_output,
+            "artworkApplied": result.artwork_applied,
+            "appliedPlacements": list(result.applied_placements or []),
         }
         self.cache.put(cache_key, output)
         self.lineage.record(
@@ -485,6 +493,11 @@ class Platform:
         done["cacheHit"] = False
         done["placement"] = placement
         done["outputAsset"] = stored.get("beauty.png") or next(iter(stored.values()), None)
+        done["device"] = result.device or done.get("device")
+        done["artworkApplied"] = result.artwork_applied
+        done["appliedPlacements"] = list(result.applied_placements or [])
+        done["outputHash"] = stored.get("beautyHash") or done.get("outputHash")
+        done["outputSize"] = stored.get("beautySize") or done.get("outputSize")
         return done
 
     def _fail_or_retry(self, job: dict[str, Any], error: str) -> dict[str, Any]:

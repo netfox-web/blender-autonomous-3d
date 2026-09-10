@@ -302,6 +302,8 @@ class RuntimeResult:
     real_optix: bool = False
     real_cycles: bool = False
     real_render_output: bool = False
+    artwork_applied: bool | None = None
+    applied_placements: list[dict[str, Any]] = field(default_factory=list)
 
 
 class BlenderRuntime:
@@ -482,6 +484,8 @@ class BlenderRuntime:
                         real_optix=bool(payload.get("realOptix")),
                         real_render_output=real_png or bool(outputs.get("frames")),
                         error=None if real_png or outputs.get("frames") else "no real PNG",
+                        artwork_applied=payload.get("artworkApplied"),
+                        applied_placements=list(payload.get("appliedPlacements") or []),
                     )
                 (clock_sleep or time.sleep)(0.2)
         finally:
