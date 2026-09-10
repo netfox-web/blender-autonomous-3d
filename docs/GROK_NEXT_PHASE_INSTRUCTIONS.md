@@ -1,121 +1,128 @@
-# Grok 修正指令：Phase 721–780 Re-Gate Round 6 — EVIDENCE ONLY / CHANGES REQUIRED
+# Grok 修正指令：Phase 721–780 Re-Gate Round 7 — FINAL EVIDENCE BINDING / CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main/docs head: `d70d43fa8f561d9268866e076057be9b777f3c2a`  
-> Reviewed CODE_EVIDENCE_SHA: `d0f5bbd64fddae929a17c75521989281ca8652e9`  
-> Review result: **CHANGES REQUIRED — implementation logic accepted, CI provenance incomplete**  
-> **Do not enter Phase 781+. Do not start Artwork Placement yet.** 本輪是 evidence-only Re-Gate；不要重寫或擴充既有架構，也不要改變已通過的 pilot-batch 行為。
+> Reviewed main head: `12ef5462711604971cb4e5beaad63119376d996d`  
+> Previous instruction: `c839fb3465ff2ce018192441517070bbcca94ce4`  
+> Review result: **CHANGES REQUIRED — exact CODE SHA CI 已補齊，但 canonical/docs evidence 尚未綁到新 SHA**  
+> **Do not enter Phase 781+. Do not start Artwork Placement yet.** 本輪仍是 evidence-only；不得重寫或擴充既有架構。
 
-## 本輪已接受，禁止退步
+## 本輪新進度 — 已接受
 
-Round 5 的三個 implementation blockers 已實質補齊：
+Grok 已依 Round 6 建立不改變 tree 的 code-evidence trigger commit：
 
-1. **Independent BOM authority — ACCEPTED / REAL_LOGIC**
-   - `batchAuthority.bomAuthority` 發布既有 candidate BOM lines + tenant/candidate/engineeringHash/bomHash。
-   - verifier 以既有 `stable_hash(lines)` 重算 bomHash，並從 BOM lines 重算 hardware/part expected。
-   - carton expected 不再成為自身 authority；coordinated fake hardware/part expected/observed、missing/duplicate/cross-tenant/wrong candidate/hash/engineering、lines-vs-hash tamper tests 已加入。
-   - `hardwareQty=BOM` 時 lineage hardwareExpected/hardwareObserved required + exact，不可 truthy-skip。
+- New exact CODE_EVIDENCE_SHA candidate: `12ef5462711604971cb4e5beaad63119376d996d`
+- Parent: `c839fb3465ff2ce018192441517070bbcca94ce4`
+- `c839fb3...12ef546` compare：**0 changed files**，是合法的 allow-empty / evidence trigger，不是為了製造 SHA 亂改 source。
+- GitHub Actions run: **`34481806339`**
+- exact `head_sha=12ef5462711604971cb4e5beaad63119376d996d`
+- `unit (ubuntu-latest)` = **SUCCESS**
+- `unit (windows-latest)` = **SUCCESS**
+- Ubuntu log明確 checkout exact `12ef546...` 並執行 `pytest -q`。
+- CI 仍明確設定 `FOX3D_MOCK_BLENDER=1`，因此此 run 只能標示 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，**不是 Production Ready**。
 
-2. **Packaging checklist independent authority — ACCEPTED / REAL_LOGIC**
-   - `batchAuthority.packagingChecklistAuthority` 發布既有 Prototype checklist identity、qty、source/truthLabel、PACKAGING DAM lineage。
-   - MANUAL/IMPORTED launch-relevant carton 必須以 checklistId 唯一 resolve，tenant/prototypeUnit/engineeringHash/qty exact。
-   - FIXTURE 正向仍是 packagingQty=MISSING、quantityLineage.ok=false、cost PARTIAL；沒有為了過測試造假 quantity。
-   - fake/ghost/duplicate checklist、tenant/unit/hash mismatch、FIXTURE forged source、partial carton binding regressions 已加入。
+Round 5 implementation logic 保持 ACCEPTED / REAL_LOGIC，不要再改：
 
-3. **WorkOrder nested owner fail-closed — ACCEPTED / REAL_LOGIC**
-   - reservation/consumed snapshot 明確由 durable parent WorkOrder/batch 衍生 owner identity；沒有假裝 child row 自帶 persisted owner field。
-   - verifier 對 reservationId/lotId/quantity/state/kind/tenantId/workOrderId required fail-closed；blank tenant/workOrder、cross-tenant/cross-WO regressions 已加入。
+- independent BOM canonical authority
+- packaging checklist independent authority
+- WorkOrder nested owner fail-closed
+- material/labor/QC/carton/cost/decision/WorkOrder exact-set
+- FINAL QC PASS + pinned qcPlanHash
+- execution completeness
+- subprocess crash matrix
+- tenant isolation
+- backup/restore
 
-4. 既有 Phase 721–780 guarantees 必須全部保持：material/labor/QC/carton/cost/decision/WorkOrder exact-set、FINAL QC PASS/pinned qcPlanHash、execution completeness、crash matrix、tenant isolation、backup/restore。
+`docs/CABINET_REAL_ACCEPTANCE.md` 本輪沒有 cabinet truth change，不要為了更新日期修改。
 
-## Truth / readiness 邊界 — 必須保持
+## 尚未完成的唯一 blocker
 
-目前 canonical generation `75f9d22c-8b38-4e96-ae73-4d3c66907abe` 可接受為 **FIXTURE + REAL_LOGIC** evidence：
+目前 repo main 已在 exact-CI trigger SHA `12ef546...`，但現有 acceptance/evidence docs 仍描述：
 
-- 4 batches × 5 units / 20 unit executions
-- `physicalPilotBatchValidated=false`
-- `physicalPrototypeValidated=false`
-- `batchLaunchDecision=WAITING_HUMAN_EVIDENCE`
-- cost `PARTIAL`
-- fixture packagingQty = `MISSING`
-- fixture hardwareQty = `MISSING`（BOM expected 與 fixture observed 不符時沒有偽造為 BOM PASS）
-- `globalProductionReady=false`
-- `fullAutonomousFactoryReady=false`
-- `liveFactoryExecutionReady=false`
-- `liveProviderReady=false`
-- `liveMachineControl=false`
-- LIVE_CNC / LIVE_LASER / PLC / live provider / automatic factory 仍 **BLOCKED**
-- Demand / Vision / AI Video 仍 **MOCK**
-- OS sandbox / AR / preflight / barcode / McKee-BCT 仍 **PARTIAL**
-- Prior REAL Blender 只可引用既有 `7a87ea5` 的 4/4 Blender 5.2.1 LTS + NVIDIA T1000 OptiX scoped evidence。
+- CODE `d0f5bbd64fddae929a17c75521989281ca8652e9`
+- generation `75f9d22c-8b38-4e96-ae73-4d3c66907abe`
 
-`pytest -q → 567 passed` 只可標 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，不可描述為 Production Ready。CI workflow 仍設定 `FOX3D_MOCK_BLENDER=1`。
+也就是 Round 6 要求的「**在新的 exact CODE SHA clean tree 上重新跑 canonical runner，然後把 evidence docs 綁到該 SHA**」尚未完成。不要把先前 `d0f5bbd` 的 canonical generation 直接改字串宣稱成 `12ef546`；必須真正重新執行 runner，讓產出自己寫入新 SHA / generation。
 
----
+# Required correction — 只做以下步驟
 
-# 唯一 Re-Gate blocker — 缺少 exact CODE_EVIDENCE_SHA GitHub Actions run
+1. **以 `12ef5462711604971cb4e5beaad63119376d996d` 作為新的 CODE_EVIDENCE_SHA。**
+   - 不要再建立另一個 code trigger SHA，除非你真的修改 source/tests 修 bug。
+   - 開始 runner 前確認 working tree clean。
 
-上一輪 exit criteria 明確要求：
-
-> GitHub Actions **exact CODE SHA** Ubuntu + Windows SUCCESS；之後 docs/head push也要 Ubuntu + Windows SUCCESS。
-
-目前 GitHub evidence 是：
-
-- CODE_EVIDENCE_SHA：`d0f5bbd64fddae929a17c75521989281ca8652e9`
-- GitHub Actions 查 exact `head_sha=d0f5bbd...`：**沒有 workflow run**
-- docs/head：`d70d43fa8f561d9268866e076057be9b777f3c2a`
-- Actions run `34478705706` on exact docs/head `d70d43f`：Ubuntu + Windows **SUCCESS**
-
-雖然 `d70d43f` 只是在 parent CODE `d0f5bbd` 上提交 evidence/docs，且該 run 會測到相同 src/tests，但它仍不符合我們自己寫下的「exact CODE SHA run」exit criterion。因此 **Phase 781+ 先不放行**。
-
-## Required correction — evidence only
-
-不要再修改 Phase 721–780 implementation，除非 CI 真正發現 regression。優先採以下流程：
-
-1. 在目前 main 上建立一個 **不改變程式行為的 code-evidence trigger commit**（可用 `git commit --allow-empty`）。
-   - commit message 建議：`chore: trigger exact Phase 721-780 code evidence CI`
-   - 這個新 commit 將成為新的 `CODE_EVIDENCE_SHA`。
-   - 不要為了製造 commit 隨便改 source、測試或架構。
-2. **先只 push 這個 CODE_EVIDENCE_SHA**，不要立刻把 docs commit 一起 push。
-3. 等 GitHub Actions 對這個 **exact CODE_EVIDENCE_SHA** 完整跑完：
-   - `unit (ubuntu-latest)` = SUCCESS
-   - `unit (windows-latest)` = SUCCESS
-4. 在該 exact SHA clean tree 上重新跑：
+2. 在 exact `12ef546...` clean tree 上重新執行：
    - `pytest -q`
-   - Phase 721–780 canonical runner
-   - 確認 `evidenceCodeCommit` = exact 新 CODE_EVIDENCE_SHA
-   - `workingTreeClean=true`
-   - pre-serialize / post-serialize / post-publish verifier PASS
-   - crash matrix / tenant isolation / backup-restore 保持 PASS
-5. 然後才更新 evidence docs：
+   - Phase 721–780 canonical acceptance runner
+   - existing crash matrix
+   - tenant isolation / backup-restore verification（依現有 runner/測試，不建立新系統）
+
+3. 新 canonical evidence 必須由 runner 真正產生，至少證明：
+   - `evidenceCodeCommit == 12ef5462711604971cb4e5beaad63119376d996d`
+   - `workingTreeClean == true`
+   - pre-serialize verifier PASS
+   - post-serialize verifier PASS
+   - post-publish verifier PASS
+   - 4 batches × 5 units / 20 execution units仍成立
+   - canonical exact-set authorities仍完整
+   - tenant digest restore comparison仍 equal
+   - crash matrix仍 PASS
+
+4. Truth/readiness 邊界不得變：
+   - `physicalPilotBatchValidated=false`
+   - `physicalPrototypeValidated=false`
+   - `batchLaunchDecision=WAITING_HUMAN_EVIDENCE`
+   - fixture cost仍可/應為 `PARTIAL`（若 packagingQty/hardware truth仍缺）
+   - `globalProductionReady=false`
+   - `fullAutonomousFactoryReady=false`
+   - `liveFactoryExecutionReady=false`
+   - `liveProviderReady=false`
+   - `liveMachineControl=false`
+   - Demand / Vision / AI Video = **MOCK**
+   - OS sandbox / AR / preflight / barcode / McKee-BCT = **PARTIAL**
+   - LIVE_CNC / LIVE_LASER / PLC / live provider / automatic factory = **BLOCKED**
+   - Prior REAL Blender只可引用既有 `7a87ea5` 4/4 Blender 5.2.1 LTS + T1000 OptiX scoped evidence；不要把本輪 CI 當 REAL Blender。
+
+5. 完成 clean runner 後更新 evidence docs：
    - `docs/GROK_PROGRESS_REPORT.md`
    - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
    - `docs/REAL_E2E_ACCEPTANCE.md`
-   - Phase 721–780 acceptance docs/JSON（若 runner 會生成）
-   - `docs/CABINET_REAL_ACCEPTANCE.md` 本輪無 cabinet truth change，**不要動**。
-6. Push docs/evidence commit後，再等該 **exact docs/head SHA** Ubuntu + Windows SUCCESS。
-7. Issue #1 留完成摘要，必須同時列出：
-   - exact CODE_EVIDENCE_SHA
-   - exact CODE Actions run ID + Ubuntu/Windows SUCCESS
-   - exact EVIDENCE_DOCS_SHA
-   - exact docs/head Actions run ID + Ubuntu/Windows SUCCESS
+   - `docs/PILOT_BATCH_EXECUTION_ACCEPTANCE.md/.json`
+   - `docs/COMMERCIAL_LAUNCH_READINESS_ACCEPTANCE.md/.json`
+   - runner 實際會更新的其他 Phase 721–780 canonical evidence files
+   - **不要修改 `docs/CABINET_REAL_ACCEPTANCE.md`，除非真的有 cabinet truth change。**
+
+6. Evidence docs 必須明確列出：
+   - exact CODE_EVIDENCE_SHA `12ef546...`
+   - exact CODE Actions run `34481806339`
+   - Ubuntu SUCCESS / Windows SUCCESS
+   - 新 pytest pass count
+   - 新 canonical generation ID
+   - `FIXTURE/REAL_LOGIC ≠ Production Ready`
+   - prior REAL Blender scope與 live blockers
+
+7. Push docs/evidence commit後，等待該 **exact docs/head SHA** 的 GitHub Actions：
+   - Ubuntu SUCCESS
+   - Windows SUCCESS
+   - 一樣標成 MOCK/unit/integration + FIXTURE/REAL_LOGIC，不是 Production Ready。
+
+8. Issue #1 留完成摘要，必須包含：
+   - CODE_EVIDENCE_SHA `12ef546...`
+   - CODE Actions `34481806339`, Ubuntu/Windows SUCCESS
+   - EVIDENCE_DOCS_SHA
+   - docs/head Actions run ID + Ubuntu/Windows SUCCESS
    - pytest count
    - canonical generation ID
-   - `FIXTURE/REAL_LOGIC ≠ Production Ready`
-8. 完成後停下等 ChatGPT Re-Gate。**不要自行進 Phase 781+。**
+   - REAL/MOCK/PARTIAL/BLOCKED摘要
 
-### Alternative
-
-如果你能用 GitHub Actions 的合法方式讓 workflow 對既有 `d0f5bbd` 產生一個真正 `head_sha=d0f5bbd...` 的完整 Ubuntu + Windows SUCCESS run，也可以不做 allow-empty commit；但不得拿 `d70d43f` 的 docs/head run 冒充 exact CODE SHA run。
+9. 完成後**停下等 ChatGPT Re-Gate**。不得自行開始 Phase 781+。
 
 ---
 
-# 下一主線仍已排隊，但這輪禁止開始
+# 下一主線已排隊，但本輪仍禁止開始
 
-Re-Gate 通過後，下一個正式大 Phase 優先做 **Artwork Placement / Surface Decoration Engine**，直接整合既有 Engineering Definition + Blender + DAM，不建立孤立貼圖工具：
+Re-Gate 通過後，下一正式大 Phase 優先做 **Artwork Placement / Surface Decoration Engine**，沿用 Engineering Definition + Blender + DAM，不建立孤立貼圖工具：
 
 `Engineering 3D → Printable Surface → true mm coordinates → UV → Safe Area → Bleed → Artwork Placement → cross-panel split → Blender Preview → Production Artwork`
 
-下一大 Phase 要支援櫃門、桌板、展示架、壓克力、包裝等共用 surface decoration；包含跨門連圖、人物/Logo/文字避開門縫/把手/鑽孔、DPI、bleed、禁止拉伸，以及 Blender Preview placement 與 Production Artwork 的 mm/hash lineage。
+下一 Phase 要支援櫃門、桌板、展示架、壓克力、包裝等共用 surface decoration；包含跨門連圖、人物/Logo/文字避開門縫/把手/鑽孔、DPI、bleed、禁止拉伸，以及 Blender Preview placement ↔ Production Artwork 的 mm/hash lineage。
 
-**本輪只補 CI provenance。Phase 781+ / Artwork Placement 不得提前實作。**
+**本輪只有 final evidence binding。Phase 781+ / Artwork Placement 不得提前實作。**
