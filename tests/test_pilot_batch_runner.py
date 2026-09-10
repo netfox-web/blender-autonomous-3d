@@ -150,6 +150,18 @@ def _passing(plat):
                             "hardwareQty": "BOM",
                             "packagingQty": "MISSING",
                         },
+                        "laborLineage": {
+                            "laborIds": [f"lb{i}-{s}" for s in range(5)],
+                            "semanticKeys": [f"pa::batch-labor::u{i}-{s}::e{i}::12.0::assembly" for s in range(5)],
+                            "minutes": 60.0,
+                        },
+                        "laborMinutes": 60.0,
+                        "materialQty": 5.0,
+                        "reservationIds": [f"r{i}"],
+                        "lotIds": [f"lot{i}"],
+                        "packagingQty": None,
+                        "hardwareExpected": 4,
+                        "hardwareObserved": 4,
                     },
                 },
             }
@@ -165,7 +177,9 @@ def _passing(plat):
                 "engineeringHash": f"e{i}",
                 "measured": {"lengthMm": 400, "widthMm": 300, "heightMm": 200, "weightKg": 8},
                 "damageDefect": "OK",
+                "hardwareExpected": 4,
                 "hardwareObserved": 4,
+                "partExpected": 6,
                 "partObserved": 6,
                 "source": "FIXTURE",
                 "truthLabel": "FIXTURE",
@@ -222,6 +236,18 @@ def _passing(plat):
                         "hardwareQty": "BOM",
                         "packagingQty": "MISSING",
                     },
+                    "laborLineage": {
+                        "laborIds": [f"lb{i}-{s}" for s in range(5)],
+                        "semanticKeys": [f"pa::batch-labor::u{i}-{s}::e{i}::12.0::assembly" for s in range(5)],
+                        "minutes": 60.0,
+                    },
+                    "laborMinutes": 60.0,
+                    "materialQty": 5.0,
+                    "reservationIds": [f"r{i}"],
+                    "lotIds": [f"lot{i}"],
+                    "packagingQty": None,
+                    "hardwareExpected": 4,
+                    "hardwareObserved": 4,
                 },
             }
         )
@@ -256,8 +282,12 @@ def _passing(plat):
             "releaseId": b["releaseId"],
             "releaseHash": b["releaseHash"],
             "qcPlanHash": b["qcPlanHash"],
+            "reservations": copy.deepcopy(m["reservations"]),
+            "consumed": copy.deepcopy(m["consumed"]),
+            "materialLots": list(m.get("lotIds") or []),
+            "allocationPolicy": b.get("allocationPolicy"),
         }
-        for b in batches
+        for b, m in zip(batches, materials)
     ]
     authority = {
         "batches": copy.deepcopy(batches),
@@ -775,5 +805,120 @@ def test_pilot_batch_runner_board_blank_tenant(tmp_path):
     def mutate(body):
         body["board"]["rows"][0]["tenantId"] = ""
         body["batchAuthority"]["decisions"][0]["tenantId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_coordinated_forged_reservation(tmp_path):
+    def mutate(body):
+        fake = "ghost-res"
+        fake_lot = "ghost-lot"
+        body["batches"][0]["reservationIds"] = [fake]
+        body["batches"][0]["lotIds"] = [fake_lot]
+        body["batchAuthority"]["batches"][0]["reservationIds"] = [fake]
+        body["batchAuthority"]["batches"][0]["lotIds"] = [fake_lot]
+        mat = body["batchAuthority"]["materials"][0]
+        mat["reservationIds"] = [fake]
+        mat["lotIds"] = [fake_lot]
+        mat["reservations"][0]["reservationId"] = fake
+        mat["reservations"][0]["lotId"] = fake_lot
+        mat["consumed"][0]["reservationId"] = fake
+        mat["consumed"][0]["lotId"] = fake_lot
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_material_forged_identity_same_total(tmp_path):
+    def mutate(body):
+        mat = body["batchAuthority"]["materials"][0]
+        mat["reservations"][0]["reservationId"] = "forged-res"
+        mat["reservations"][0]["lotId"] = "forged-lot"
+        mat["consumed"][0]["reservationId"] = "forged-res"
+        mat["consumed"][0]["lotId"] = "forged-lot"
+        mat["reservationIds"] = ["forged-res"]
+        mat["lotIds"] = ["forged-lot"]
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_wo_missing_reservation(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["workOrders"][0]["reservations"] = []
+        body["batchAuthority"]["workOrders"][0]["consumed"] = []
+        body["batchAuthority"]["workOrders"][0]["materialLots"] = []
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_wo_ghost_reservation(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["workOrders"][0]["reservations"].append(
+            {
+                "reservationId": "ghost-wo-res",
+                "lotId": "ghost-wo-lot",
+                "quantity": 5,
+                "state": "CONSUMED",
+                "kind": "lot",
+                "tenantId": "pa",
+                "workOrderId": "wo0",
+            }
+        )
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_reservation_qty_vs_wo(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["materials"][0]["reservations"][0]["quantity"] = 9
+        body["batchAuthority"]["materials"][0]["consumed"][0]["quantity"] = 9
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_labor_lineage_minutes_tamper(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["costs"][0]["quantityLineage"]["laborLineage"]["minutes"] = 99.0
+        body["batchAuthority"]["costs"][0]["quantityLineage"]["laborMinutes"] = 99.0
+        body["batches"][0]["cost"]["quantityLineage"]["laborLineage"]["minutes"] = 99.0
+        body["batches"][0]["cost"]["quantityLineage"]["laborMinutes"] = 99.0
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_labor_lineage_ids_tamper(tmp_path):
+    def mutate(body):
+        fake_ids = ["ghost-lb-0", "ghost-lb-1", "ghost-lb-2", "ghost-lb-3", "ghost-lb-4"]
+        fake_keys = [f"pa::batch-labor::ghost-{i}::e0::12.0::assembly" for i in range(5)]
+        for target in (body["batchAuthority"]["costs"][0]["quantityLineage"], body["batches"][0]["cost"]["quantityLineage"]):
+            target["laborLineage"]["laborIds"] = list(fake_ids)
+            target["laborLineage"]["semanticKeys"] = list(fake_keys)
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_material_qty_lineage_tamper(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["costs"][0]["quantityLineage"]["materialQty"] = 9.0
+        body["batchAuthority"]["costs"][0]["quantityLineage"]["lotIds"] = ["forged-lot"]
+        body["batches"][0]["cost"]["quantityLineage"]["materialQty"] = 9.0
+        body["batches"][0]["cost"]["quantityLineage"]["lotIds"] = ["forged-lot"]
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_hardware_expected_mismatch(tmp_path):
+    def mutate(body):
+        body["cartons"][0]["hardwareExpected"] = 9
+        body["batchAuthority"]["cartons"][0]["hardwareExpected"] = 9
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_carton_blank_source(tmp_path):
+    def mutate(body):
+        body["cartons"][0]["source"] = ""
+        body["cartons"][0]["truthLabel"] = ""
+        body["batchAuthority"]["cartons"][0]["source"] = ""
+        body["batchAuthority"]["cartons"][0]["truthLabel"] = ""
 
     _assert_fail(tmp_path, mutate)

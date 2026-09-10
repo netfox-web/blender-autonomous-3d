@@ -672,3 +672,32 @@ def test_scenario_flags_remain_blocked(tmp_path):
     from fox3d.pilot_batch import validate_pilot_batch_acceptance_result
 
     assert validate_pilot_batch_acceptance_result(result) == []
+
+
+def test_recompute_packaging_requires_every_carton():
+    from fox3d.pilot_batch import _recompute_qty_sources
+
+    labor = [
+        {
+            "laborId": "lb1",
+            "tenantId": "pa",
+            "unitExecutionId": "u1",
+            "engineeringHash": "e",
+            "minutes": 12,
+            "reason": "assembly",
+        }
+    ]
+    cartons = [
+        {"packagingQty": 1, "checklistId": "ck", "hardwareExpected": 4, "hardwareObserved": 4},
+        {"packagingQty": None, "checklistId": "ck", "hardwareExpected": 4, "hardwareObserved": 4},
+    ]
+    rec = _recompute_qty_sources(material={"consumedQuantity": 5}, labor_rows=labor, cartons=cartons, fixture=False)
+    assert rec["sources"]["packagingQty"] == "MISSING"
+    assert rec["ok"] is False
+    hw = _recompute_qty_sources(
+        material={"consumedQuantity": 5},
+        labor_rows=labor,
+        cartons=[{"hardwareExpected": 4, "hardwareObserved": 9, "packagingQty": 1, "checklistId": "ck"}],
+        fixture=False,
+    )
+    assert hw["sources"]["hardwareQty"] == "MISSING"

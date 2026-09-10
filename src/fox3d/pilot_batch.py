@@ -166,17 +166,143 @@ def _same_num(left: Any, right: Any) -> bool:
         return left == right
 
 
-def _recompute_qty_sources(*, material: dict[str, Any] | None, labor_rows: list[dict[str, Any]], cartons: list[dict[str, Any]], fixture: bool) -> dict[str, Any]:
+def _same_id_set(left: Any, right: Any) -> bool:
+    a = [str(v) for v in (left or []) if v]
+    b = [str(v) for v in (right or []) if v]
+    return set(a) == set(b) and len(a) == len(set(a)) and len(b) == len(set(b))
+
+
+def _optional_num_equal(left: Any, right: Any) -> bool:
+    if left is None and right is None:
+        return True
+    return _same_num(left, right)
+
+
+def _durable_rows_match(proj: list[dict[str, Any]], pin: list[dict[str, Any]]) -> bool:
+    if len(proj) != len(pin):
+        return False
+    pin_by = _index_rows(pin, "reservationId")
+    seen: set[Any] = set()
+    for item in proj:
+        rid = item.get("reservationId")
+        matches = pin_by.get(rid) or []
+        if not _present(rid) or len(matches) != 1 or rid in seen:
+            return False
+        seen.add(rid)
+        other = matches[0]
+        if item.get("lotId") != other.get("lotId") or item.get("state") != other.get("state") or item.get("kind") != other.get("kind"):
+            return False
+        if not _same_num(item.get("quantity"), other.get("quantity")):
+            return False
+    return True
+
+
+def _recompute_qty_sources(
+    *,
+    material: dict[str, Any] | None,
+    labor_rows: list[dict[str, Any]],
+    cartons: list[dict[str, Any]],
+    fixture: bool,
+    wo: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    wo = wo if isinstance(wo, dict) else {}
+    labor_ids = [str(r.get("laborId")) for r in labor_rows if r.get("laborId")]
+    semantic_keys = [derived_labor_semantic_key(r) for r in labor_rows]
+    minutes_ok = bool(labor_rows) and all(_qty_ok(r.get("minutes")) for r in labor_rows) and len(labor_ids) == len(labor_rows)
+    try:
+        minutes_total = float(sum(float(r.get("minutes")) for r in labor_rows)) if minutes_ok else None
+    except (TypeError, ValueError):
+        minutes_total = None
+    consumed_rows = [r for r in (wo.get("consumed") or []) if isinstance(r, dict)]
+    res_rows = [r for r in (wo.get("reservations") or []) if isinstance(r, dict)]
+    reservation_ids = [str(r.get("reservationId")) for r in res_rows if r.get("reservationId")]
+    lot_ids = [str(i) for i in (wo.get("materialLots") or []) if i]
+    if not lot_ids:
+        lot_ids = [str(r.get("lotId")) for r in res_rows if r.get("lotId")]
+    try:
+        material_qty = float(sum(float(r.get("quantity") or 0) for r in consumed_rows)) if consumed_rows else None
+    except (TypeError, ValueError):
+        material_qty = None
+    if material_qty is None and material and _qty_ok(material.get("consumedQuantity")) and not res_rows:
+        try:
+            material_qty = float(material.get("consumedQuantity"))
+        except (TypeError, ValueError):
+            material_qty = None
+    hardware_ok = bool(cartons)
+    hw_expected = 0.0
+    hw_observed = 0.0
+    for carton in cartons:
+        exp = carton.get("hardwareExpected")
+        obs = carton.get("hardwareObserved")
+        if exp is None or obs is None or not _same_num(exp, obs):
+            hardware_ok = False
+            break
+        hw_expected += float(exp)
+        hw_observed += float(obs)
+    if not hardware_ok:
+        hw_expected = None
+        hw_observed = None
+    packaging_qty = None
+    packaging_ok = False
+    if not fixture and cartons:
+        packaging_ok = all(_present(c.get("checklistId")) and _qty_ok(c.get("packagingQty")) for c in cartons)
+        if packaging_ok:
+            packaging_qty = float(sum(float(c.get("packagingQty")) for c in cartons))
     sources = {
-        "materialQty": "MATERIAL_LOT" if material and _qty_ok(material.get("consumedQuantity")) else "MISSING",
-        "laborMinutes": "LABOR_RECORD" if labor_rows and all(_qty_ok(r.get("minutes")) for r in labor_rows) else "MISSING",
-        "hardwareQty": "BOM" if any(c.get("hardwareObserved") is not None for c in cartons) else "MISSING",
-        "packagingQty": "MISSING"
-        if fixture
-        else ("PACKAGING_CHECKLIST" if any(_qty_ok(c.get("packagingQty")) for c in cartons) else "MISSING"),
+        "materialQty": "MATERIAL_LOT" if _qty_ok(material_qty) else "MISSING",
+        "laborMinutes": "LABOR_RECORD" if minutes_ok and minutes_total is not None else "MISSING",
+        "hardwareQty": "BOM" if hardware_ok else "MISSING",
+        "packagingQty": "PACKAGING_CHECKLIST" if packaging_ok else "MISSING",
     }
     ok = all(v not in {"MISSING", "DUPLICATE"} for v in sources.values())
-    return {"ok": ok, "sources": sources}
+    return {
+        "ok": ok,
+        "sources": sources,
+        "materialQty": material_qty,
+        "reservationIds": reservation_ids,
+        "lotIds": lot_ids,
+        "laborMinutes": minutes_total,
+        "laborIds": labor_ids,
+        "semanticKeys": semantic_keys,
+        "hardwareExpected": hw_expected,
+        "hardwareObserved": hw_observed,
+        "packagingQty": packaging_qty,
+        "laborLineage": {"laborIds": labor_ids, "semanticKeys": semantic_keys, "minutes": minutes_total},
+    }
+
+
+def _lineage_matches(stored: dict[str, Any], recomputed: dict[str, Any]) -> bool:
+    if stored.get("ok") is not recomputed.get("ok"):
+        return False
+    src = stored.get("sources") if isinstance(stored.get("sources"), dict) else {}
+    for key, value in (recomputed.get("sources") or {}).items():
+        if src.get(key) != value:
+            return False
+    labor_l = stored.get("laborLineage") if isinstance(stored.get("laborLineage"), dict) else {}
+    rec_l = recomputed.get("laborLineage") if isinstance(recomputed.get("laborLineage"), dict) else {}
+    if not isinstance(stored.get("laborLineage"), dict):
+        return False
+    if not _same_id_set(labor_l.get("laborIds"), rec_l.get("laborIds")):
+        return False
+    if not _same_id_set(labor_l.get("semanticKeys"), rec_l.get("semanticKeys")):
+        return False
+    if not _optional_num_equal(labor_l.get("minutes"), rec_l.get("minutes")):
+        return False
+    if not _optional_num_equal(stored.get("laborMinutes"), recomputed.get("laborMinutes")):
+        return False
+    if not _optional_num_equal(stored.get("materialQty"), recomputed.get("materialQty")):
+        return False
+    if not _optional_num_equal(stored.get("packagingQty"), recomputed.get("packagingQty")):
+        return False
+    if not _same_id_set(stored.get("reservationIds") or [], recomputed.get("reservationIds") or []):
+        return False
+    if not _same_id_set(stored.get("lotIds") or [], recomputed.get("lotIds") or []):
+        return False
+    if stored.get("hardwareExpected") is not None and not _optional_num_equal(stored.get("hardwareExpected"), recomputed.get("hardwareExpected")):
+        return False
+    if stored.get("hardwareObserved") is not None and not _optional_num_equal(stored.get("hardwareObserved"), recomputed.get("hardwareObserved")):
+        return False
+    return True
 
 
 def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
@@ -369,6 +495,48 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append("material_allocation_sum")
             if auth.get("consumedQuantity") is not None and not _same_num(auth.get("consumedQuantity"), rec.get("consumedQuantity")):
                 failures.append("material_authority_lineage")
+            wo_pin_rows = auth_wo_by.get(rec.get("workOrderId") or auth.get("workOrderId")) or []
+            wo_pin = wo_pin_rows[0] if len(wo_pin_rows) == 1 else None
+            if wo_pin is None:
+                failures.append("material_reservation_authority")
+            else:
+                if wo_pin.get("tenantId") != auth.get("tenantId") or wo_pin.get("workOrderId") != auth.get("workOrderId"):
+                    failures.append("material_reservation_authority")
+                wo_res = [r for r in (wo_pin.get("reservations") or []) if isinstance(r, dict)]
+                wo_cons = [r for r in (wo_pin.get("consumed") or []) if isinstance(r, dict)]
+                wo_res_ids = [str(r.get("reservationId")) for r in wo_res if r.get("reservationId")]
+                wo_lots = [str(i) for i in (wo_pin.get("materialLots") or []) if i] or [str(r.get("lotId")) for r in wo_res if r.get("lotId")]
+                if not _durable_rows_match(durable_res, wo_res):
+                    failures.append("material_reservation_authority")
+                if not _durable_rows_match([c for c in (rec.get("consumed") or []) if isinstance(c, dict)], wo_cons):
+                    failures.append("material_reservation_authority")
+                if set(wo_res_ids) != set(proj_ids) or len(wo_res_ids) != len(set(wo_res_ids)):
+                    failures.append("material_reservation_authority")
+                if set(wo_lots) != set(durable_lots):
+                    failures.append("material_reservation_authority")
+                for item in wo_res + wo_cons:
+                    if item.get("tenantId") and item.get("tenantId") != auth.get("tenantId"):
+                        failures.append("material_reservation_authority")
+                    if item.get("workOrderId") and item.get("workOrderId") != auth.get("workOrderId"):
+                        failures.append("material_reservation_authority")
+                try:
+                    wo_consume_qty = float(sum(float(c.get("quantity") or 0) for c in wo_cons))
+                except (TypeError, ValueError):
+                    wo_consume_qty = None
+                if wo_consume_qty is None or not _same_num(wo_consume_qty, rec.get("consumedQuantity")):
+                    failures.append("material_allocation_sum")
+                if auth.get("consumedQuantity") is not None and not _same_num(wo_consume_qty, auth.get("consumedQuantity")):
+                    failures.append("material_authority_lineage")
+                if batch.get("consumedQuantity") is not None and not _same_num(wo_consume_qty, batch.get("consumedQuantity")):
+                    failures.append("material_authority_lineage")
+                if [str(i) for i in (auth.get("reservationIds") or []) if i] != wo_res_ids:
+                    failures.append("material_authority_lineage")
+                if [str(i) for i in (batch.get("reservationIds") or []) if i] != wo_res_ids:
+                    failures.append("material_authority_lineage")
+                if [str(i) for i in (auth.get("lotIds") or []) if i] != wo_lots:
+                    failures.append("material_authority_lineage")
+                if [str(i) for i in (batch.get("lotIds") or []) if i] != wo_lots:
+                    failures.append("material_authority_lineage")
         costs = auth_cost_by_batch.get(bid) or []
         if len(costs) != 1:
             failures.append("cost_authority_missing")
@@ -383,21 +551,18 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append("cost_authority_lineage")
             if cost.get("completeness") != cost_auth.get("completeness") or cost.get("truthLabel") != cost_auth.get("truthLabel"):
                 failures.append("cost_authority_lineage")
+            wo_for_cost = (auth_wo_by.get(auth.get("workOrderId")) or [None])[0]
             recomputed = _recompute_qty_sources(
                 material=(auth_mat_by_batch.get(bid) or [None])[0],
                 labor_rows=[r for r in auth_labor if r.get("batchId") == bid],
                 cartons=[c for c in auth_cartons if c.get("batchId") == bid],
                 fixture=auth.get("source") == "FIXTURE" or auth.get("truthLabel") == "FIXTURE",
+                wo=wo_for_cost,
             )
             lineage = cost_auth.get("quantityLineage") if isinstance(cost_auth.get("quantityLineage"), dict) else {}
             top_lineage = cost.get("quantityLineage") if isinstance(cost.get("quantityLineage"), dict) else {}
-            if lineage.get("ok") is not recomputed.get("ok") or top_lineage.get("ok") is not recomputed.get("ok"):
+            if not _lineage_matches(lineage, recomputed) or not _lineage_matches(top_lineage, recomputed):
                 failures.append("cost_lineage_recompute")
-            src = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
-            top_src = top_lineage.get("sources") if isinstance(top_lineage.get("sources"), dict) else src
-            for key, value in (recomputed.get("sources") or {}).items():
-                if src.get(key) != value or top_src.get(key) != value:
-                    failures.append("cost_lineage_recompute")
             if cost.get("completeness") == "COMPLETE" and cost.get("truthLabel") in {None, "PARTIAL", "FIXTURE"}:
                 failures.append("cost_complete_incorrect")
             if cost.get("completeness") == "COMPLETE" and recomputed.get("ok") is not True:
@@ -551,14 +716,17 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
         parent = (auth_batch_by.get(auth_c.get("batchId") or carton.get("batchId")) or [None])[0]
         if carton.get("batchId") and carton.get("batchId") not in set(batch_ids):
             failures.append("carton_cross_batch")
+        for req in ("cartonId", "tenantId", "batchId", "engineeringHash", "source", "truthLabel"):
+            if not _present(carton.get(req)) or not _present(auth_c.get(req)):
+                failures.append("carton_authority_field_mismatch")
         if parent is not None:
             if auth_c.get("tenantId") != parent.get("tenantId") or auth_c.get("engineeringHash") != parent.get("engineeringHash"):
                 failures.append("carton_authority_field_mismatch")
-            if carton.get("tenantId") and carton.get("tenantId") != parent.get("tenantId"):
+            if carton.get("tenantId") != parent.get("tenantId"):
                 failures.append("carton_authority_field_mismatch")
-            if auth_c.get("source") and auth_c.get("source") != parent.get("source"):
+            if auth_c.get("source") != parent.get("source") or carton.get("source") != parent.get("source"):
                 failures.append("carton_authority_field_mismatch")
-            if auth_c.get("truthLabel") and auth_c.get("truthLabel") != parent.get("truthLabel"):
+            if auth_c.get("truthLabel") != parent.get("truthLabel") or carton.get("truthLabel") != parent.get("truthLabel"):
                 failures.append("carton_authority_field_mismatch")
         for key in ("tenantId", "batchId", "engineeringHash", "checklistId", "packagingQty", "damageDefect", "source", "truthLabel"):
             if carton.get(key) != auth_c.get(key):
@@ -1406,27 +1574,44 @@ class PilotBatchFactory:
             raise PermissionError("tenant isolation: work order")
         material = float(sum(float(i.get("quantity") or 0) for i in (wo.get("consumed") or []) if i.get("kind") == "lot")) if wo.get("consumed") else None
         labor_meta = self._labor_integrity(batch)
-        hardware = None
-        packaging = None
         cartons = [c for c in self.cartons.values() if c.get("batchId") == batch_id and c.get("state") == "ACTIVE"]
-        if cartons and all(c.get("packagingQty") is not None for c in cartons):
-            packaging = float(sum(float(c.get("packagingQty") or 0) for c in cartons))
-        proto_unit = self.platform.prototype.units.get(batch.get("prototypeUnitId") or "")
-        if proto_unit:
-            counts = self.platform.prototype._bom_counts(self.platform.prototype._candidate(batch["candidateId"], tenant_id))
-            hardware = float(counts.get("hardwareQty") or 0) * int(batch.get("requestedQuantity") or 1)
-        sources = {
-            "materialQty": "MATERIAL_LOT" if material is not None and material > 0 else "MISSING",
-            "laborMinutes": labor_meta.get("source") or "MISSING",
-            "hardwareQty": "BOM" if hardware is not None else "MISSING",
-            "packagingQty": "PACKAGING_CHECKLIST" if packaging is not None and packaging > 0 else "MISSING",
+        labor_rows = [r for r in self.labor.values() if r.get("batchId") == batch_id and r.get("tenantId") == tenant_id]
+        fixture = batch.get("source") == "FIXTURE" or batch.get("truthLabel") == "FIXTURE"
+        wo_snap = {
+            "reservations": [i for i in (wo.get("reservations") or []) if isinstance(i, dict) and i.get("reservationId")],
+            "consumed": [i for i in (wo.get("consumed") or []) if isinstance(i, dict) and i.get("kind") == "lot"],
+            "materialLots": list((wo.get("lineage") or {}).get("materialLots") or []),
         }
-        if batch.get("source") == "FIXTURE" or batch.get("truthLabel") == "FIXTURE":
-            sources["packagingQty"] = "MISSING"
-            packaging = None
+        recomputed = _recompute_qty_sources(
+            material={"consumedQuantity": material},
+            labor_rows=labor_rows,
+            cartons=cartons,
+            fixture=fixture,
+            wo=wo_snap,
+        )
+        sources = dict(recomputed.get("sources") or {})
+        packaging = recomputed.get("packagingQty")
+        hardware = recomputed.get("hardwareObserved")
         if labor_meta.get("integrityOk") is not True:
             sources["laborMinutes"] = "DUPLICATE" if labor_meta.get("duplicateKeys") else sources["laborMinutes"]
-        qty_ok = all(v not in {"MISSING", "DUPLICATE"} for v in sources.values()) and labor_meta.get("integrityOk") is True
+        qty_ok = recomputed.get("ok") is True and labor_meta.get("integrityOk") is True and all(v not in {"MISSING", "DUPLICATE"} for v in sources.values())
+        lineage = {
+            "ok": qty_ok,
+            "sources": sources,
+            "laborLineage": {
+                **labor_meta,
+                "laborIds": list(recomputed.get("laborIds") or []),
+                "semanticKeys": list(recomputed.get("semanticKeys") or []),
+                "minutes": recomputed.get("laborMinutes"),
+            },
+            "laborMinutes": recomputed.get("laborMinutes"),
+            "materialQty": recomputed.get("materialQty"),
+            "reservationIds": list(recomputed.get("reservationIds") or []),
+            "lotIds": list(recomputed.get("lotIds") or []),
+            "packagingQty": packaging,
+            "hardwareExpected": recomputed.get("hardwareExpected"),
+            "hardwareObserved": recomputed.get("hardwareObserved"),
+        }
         money = amounts or {}
         money_fields = ("materialAmount", "hardwareAmount", "laborAmount", "packagingAmount")
         money_ok = all(money.get(k) is not None for k in money_fields)
@@ -1445,7 +1630,7 @@ class PilotBatchFactory:
                 "truthLabel": batch.get("truthLabel") if completeness == "PARTIAL" else "MANUAL",
                 "quantities": {"materialQty": material, "laborMinutes": labor_meta.get("minutes"), "hardwareQty": hardware, "packagingQty": packaging},
                 "amounts": {k: money.get(k) for k in money_fields},
-                "quantityLineage": {"ok": qty_ok, "sources": sources, "laborLineage": labor_meta, "packagingQty": packaging, "laborMinutes": labor_meta.get("minutes")},
+                "quantityLineage": copy.deepcopy(lineage),
                 "estimateVsActual": {"estimated": None, "actual": None, "variance": "PARTIAL" if completeness != "COMPLETE" else "RECORDED"},
                 "liveMachineControl": False,
                 "idempotencyKey": key,
@@ -1471,7 +1656,7 @@ class PilotBatchFactory:
                 {
                     "completeness": completeness,
                     "quantities": {"materialQty": material, "laborMinutes": labor_meta.get("minutes"), "hardwareQty": hardware, "packagingQty": packaging},
-                    "quantityLineage": {"ok": qty_ok, "sources": sources, "laborLineage": labor_meta, "packagingQty": packaging, "laborMinutes": labor_meta.get("minutes")},
+                    "quantityLineage": copy.deepcopy(lineage),
                     "amounts": {k: money.get(k) for k in money_fields},
                     "truthLabel": batch.get("truthLabel") if completeness == "PARTIAL" else existing.get("truthLabel"),
                 }
@@ -1754,6 +1939,32 @@ class PilotBatchFactory:
                     "consumeKind": batch.get("consumeKind") or "BATCH_ALLOCATION_PROJECTION",
                 }
             )
+            wo_res = [
+                {
+                    "reservationId": item.get("reservationId"),
+                    "lotId": item.get("lotId"),
+                    "quantity": item.get("quantity"),
+                    "state": item.get("state"),
+                    "kind": item.get("kind") or "lot",
+                    "tenantId": batch.get("tenantId"),
+                    "workOrderId": batch.get("workOrderId"),
+                }
+                for item in ((wo or {}).get("reservations") or [])
+                if isinstance(item, dict) and item.get("reservationId")
+            ]
+            wo_cons = [
+                {
+                    "reservationId": item.get("reservationId"),
+                    "lotId": item.get("lotId"),
+                    "quantity": item.get("quantity"),
+                    "state": item.get("state") or "CONSUMED",
+                    "kind": item.get("kind") or "lot",
+                    "tenantId": batch.get("tenantId"),
+                    "workOrderId": batch.get("workOrderId"),
+                }
+                for item in ((wo or {}).get("consumed") or [])
+                if isinstance(item, dict) and item.get("kind") == "lot"
+            ]
             workorder_rows.append(
                 {
                     "workOrderId": batch.get("workOrderId"),
@@ -1762,6 +1973,10 @@ class PilotBatchFactory:
                     "releaseId": batch.get("releaseId"),
                     "releaseHash": batch.get("releaseHash"),
                     "qcPlanHash": (wo.get("qcPlanHash") if wo else None) or batch.get("qcPlanHash"),
+                    "reservations": wo_res,
+                    "consumed": wo_cons,
+                    "materialLots": list(((wo or {}).get("lineage") or {}).get("materialLots") or batch.get("lotIds") or []),
+                    "allocationPolicy": (wo or {}).get("allocationPolicy") or batch.get("allocationPolicy"),
                 }
             )
             units = self.units_for(batch["batchId"], tenant_id=batch["tenantId"])
