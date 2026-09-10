@@ -1,212 +1,150 @@
-# Grok 修正指令：Phase 781–840 Re-Gate Round 1 — CHANGES REQUIRED / Phase 841+ HOLD
+# Grok 修正指令：Phase 781–840 Re-Gate Round 2 — CHANGES REQUIRED / Phase 841+ HOLD
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main head: `bbb5ba20345a366f9f45cb186448f13a638b1538`  
-> Phase 781–840 CODE_EVIDENCE_SHA under review: `48869d49a12c594d4ab40097afd0bd51adaf72e0`  
-> Current canonical generation: `e9e36a84-9a9a-48e3-a558-e59dd9c88067`  
-> Re-Gate result: **CHANGES REQUIRED — Phase 841+ MUST NOT START.**  
-> This is a correction-only round. Preserve the existing architecture; fix the specific authority/parity gaps below.
+> Reviewed main head: `3662964d4b807a2a43ce548d729d42cbbcb9d43a`  
+> CODE_EVIDENCE_SHA reviewed: `81496b5cf8f63345183bdf69a6f4d1fe972a6ee6`  
+> Canonical generation reviewed: `6ae08726-2ec8-43ab-b9da-c0fc76974574`  
+> Re-Gate result: **CHANGES REQUIRED — Phase 841+ MUST NOT START.**
 
-## 已接受的證據 — 不要退步
+本輪只修 Phase 781–840 的 artwork render/authority 缺口。**不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore。**
 
-以下內容本輪接受，修正時不得破壞：
+## 已接受，不要退步
 
-- `pytest -q` reported **578 passed**.
-- Exact CODE Actions `34495629561` on `48869d49a12c594d4ab40097afd0bd51adaf72e0`: Ubuntu **SUCCESS**, Windows **SUCCESS**.
-- Exact docs/head Actions `34496259353` on `bbb5ba20345a366f9f45cb186448f13a638b1538`: Ubuntu **SUCCESS**, Windows **SUCCESS**.
-- Canonical generation `e9e36a84-9a9a-48e3-a558-e59dd9c88067` is runner-bound to CODE `48869d4…` with `workingTreeClean=true`.
-- DAM artwork bytes/hash checks, basic PrintableSurface derivation, basic mm↔UV round-trip, keep-out BLOCK, stale engineering BLOCK, cross-tenant/tamper basics, 4-door deterministic crop fixture, PNG output hash generation all represent useful **REAL_LOGIC** work.
-- Mock Blender is correctly kept `realArtworkPreviewReady=false`; `physicalPrintValidated=false`.
-
-Truth boundary remains mandatory:
-
-- GitHub Actions uses `FOX3D_MOCK_BLENDER=1`; CI is **MOCK/unit/integration + FIXTURE/REAL_LOGIC**, not Production Ready.
-- Prior REAL Blender evidence remains only the previously accepted scoped Blender/T1000 evidence. Do not reuse it to claim this new artwork path is REAL-render validated.
-- `physicalPrintValidated=false`, `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`, `liveMachineControl=false`.
-- LIVE_CNC / LIVE_LASER / PLC remain **BLOCKED**. Demand / Vision / AI Video remain **MOCK**. Print preflight remains **PARTIAL**.
-- Do not modify previously accepted Phase 721–780 logic unless a new regression test proves it is necessary.
+- `pytest -q`：**584 passed**。
+- exact CODE Actions `34503006687` on `81496b5…`：Ubuntu + Windows **SUCCESS**。
+- exact docs/head Actions `34503474163` on `3662964…`：Ubuntu + Windows **SUCCESS**。
+- canonical generation `6ae08726-…` runner-bound to `81496b5…`，`workingTreeClean=true`。
+- Engineering door face 與 Blender door mesh 已移除 hidden `-0.002m`；此修正接受。
+- production path 已改由 `placementId` re-resolve surface/artwork/master，forged caller crop/hash 基本 negative 已有。
+- 2/3/4 door fixtures、limiting-axis DPI、keep-out/stale/cross-tenant/cross-product/version/tamper/stretch/NaN/duplicate negatives 有實質進步。
+- `realArtworkPreviewReady=false`、`physicalPrintValidated=false`、global/full/live readiness=false 維持正確。
+- CI 仍 `FOX3D_MOCK_BLENDER=1`：只能算 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，不是 Production Ready。
+- LIVE_CNC / LIVE_LASER / PLC 繼續 **BLOCKED**；Demand / Vision / AI Video 繼續 **MOCK**；print preflight 繼續 **PARTIAL**。
 
 ---
 
-# Blocker 1 — Remove the second millimetre truth in Blender door geometry
+# Blocker 1 — Canonical crop 在 Blender 被套了兩次
 
-Current artwork acceptance cannot pass while Blender geometry and Engineering Definition disagree.
+目前 `scripts/blender_job.py::apply_canonical_artwork()` 同時：
 
-Current issue to fix:
+1. 把 mesh UV layer 寫成 canonical crop corners；又
+2. 把同一個 `uvRect` 寫進 Mapping node `Location/Scale`；rotation 也同時進 corners 與 Mapping rotation。
 
-- Engineering `CabinetEngine._components()` derives door width from the canonical engineering spec.
-- `scripts/blender_job.py` independently recalculates door width and currently creates the door mesh with an additional hidden `-0.002` metre width adjustment.
-- That hidden Blender-only clearance/gap is not the same source of truth used by PrintableSurface / master artwork crop.
+這不是「同一份 SOT」，而是**同一 transform 疊兩次**。例如第一片 `u=0..0.25` 若 UV 已是 `0..0.25`，再乘 `scale=.25`，實際可能只採樣到 `0..0.0625`。目前 pytest 只在無 `bpy` 的 dict path 比 `corners`，沒有驗證 Blender shader 最終採樣結果，因此 584 PASS 不能證明畫面 crop 正確。
 
-Required correction:
+Required correction：
 
-1. **No hidden Blender-side door-size/gap rule.** Any intended door reveal/gap/clearance must either:
-   - exist explicitly in the Engineering Definition and be included in the engineering hash, component dimensions/pose and printable-face derivation; or
-   - Blender must consume the exact already-derived component face dimensions/pose without inventing a second adjustment.
-2. PrintableSurface `widthMm/heightMm`, origin/pose and the physical Blender front face must resolve from the same engineering authority.
-3. `master_canvas(... seam_mm=None)` may label seam source `ENGINEERING` only when a real engineering gap/pose was actually resolved. If no engineering gap exists, use an accurate truth label such as `CONFIG`, `UNKNOWN` or `PARTIAL`; do not label a hardcoded zero as engineering truth.
-4. Golden 2400×1800 / 4-door test must compare exact engineering door dimensions/poses → PrintableSurface dimensions/origins → Blender mesh dimensions/poses. Do not hardcode 600 mm when the engineering truth says otherwise.
-5. Add regression proving a geometry resize/reveal change invalidates the old surface/master/placement lineage.
-
-Do not solve this by creating another Cabinet model or another geometry service.
+- 選 **一種** canonical mapping authority：
+  - A. mesh UV 就是 final source UV，Mapping node保持 identity；或
+  - B. mesh face UV 固定 0..1，全部 canonical crop/rotation/mirror 只由單一 Mapping transform完成。
+- 禁止 UV layer + Mapping 對同一 crop/rotation 重複套用。
+- 4-door master 的最終 source sampling 必須精確為：`0..0.25 / 0.25..0.5 / 0.5..0.75 / 0.75..1.0`，不是只檢查 payload 裡的數字。
+- 90/180/270 rotation 與 mirror 各只能生效一次。
+- 增加可計算的 final UV sampling verifier；若本機 Blender 5.2.1 + T1000 可用，再跑至少一個 REAL diagnostic color-grid render，證明四片門實際畫面取到正確象限/色塊。無 REAL 環境時可保持 `realArtworkPreviewReady=false`，不得假造。
 
 ---
 
-# Blocker 2 — Blender must actually consume canonical UV/crop/rotation/orientation
+# Blocker 2 — Artwork 目前套到整個 cube，不是 exact FRONT printable face
 
-Current `apply_canonical_artwork()` attaches an image material and copies hashes to object custom properties, but that is not proof that canonical placement was applied.
+目前 code `materials.clear(); append(mat)` 後，整個 door object 共用 artwork material；UV 又用 `loop.index % 4` 寫所有 loops。這無法證明 artwork 只作用在 `PrintableSurface.face=FRONT`，側邊/背面也可能吃到同一圖。
 
-Required correction:
+Required correction：
 
-1. `apply_canonical_artwork()` must actually consume the canonical transform (`uvRect` or an equivalent deterministic canonical mapping) and apply it to the target face/material/UV mapping.
-2. The Blender path must not merely copy `engineeringHash/surfaceHash/artworkHash/placementHash` while ignoring placement coordinates.
-3. Requested artwork placement must **fail closed** if the target engineering component/object, image bytes/path, canonical UV/crop data, or lineage is missing or inconsistent. Do not silently `continue` and then let the job look successful.
-4. `objectName` or component identity must resolve to the exact engineering component identity; wrong object/component must BLOCK.
-5. `rotationDeg`, face orientation and mirror policy must be canonical and must affect mapping deterministically. If arbitrary rotation or mirror truly cannot be supported safely in this correction round, explicitly reject unsupported non-zero/non-default values and label that capability PARTIAL — do not accept and hash a value that has no rendering/output effect.
-6. Add deterministic tests that prove changing x/y/crop/rotation changes the actual Blender mapping payload/UV state, not only the hash string.
-7. The 4-door master artwork must use each panel’s exact canonical crop. No per-door refit/stretch inside Blender.
+- 依 existing engineering object + `PrintableSurface.face` 找到**唯一可驗證的 front polygon set**；只對該 printable face 套 artwork material/UV。
+- 其他 non-printable faces 保持原本 base material，不可一起貼圖。
+- 不可用「第 N 個 polygon」硬猜；要用 deterministic local normal / face identity，且 orientation 必須與 canonical FRONT 定義一致。
+- 找不到唯一 target face、normal/orientation 不一致、object geometry 不符 engineering dimensions時 → fail closed。
+- 加 test 驗證 front face material index/UV 被改、side/back 未被 artwork material 污染。
 
 ---
 
-# Blocker 3 — Repair the REAL artwork preview path before it can ever become REAL
+# Blocker 3 — REAL preview proof 仍然 fail-open
 
-Current non-mock `preview()` path is not acceptable proof of artwork rendering because it can submit generic/empty engineering and does not guarantee the artwork image/object mapping is supplied/applied.
+`build_and_render()` 成功結果目前沒有輸出 `artworkApplied=true` 或 exact applied placement lineage；但 `preview()` 使用：
 
-Required correction:
+`done.get("artworkApplied") is not False`
 
-1. Reuse the existing canonical `blender_job_payload()` or equivalent single path. Do not create a second generic preview job schema.
-2. A REAL preview job must contain the real engineering definition plus exact target component/object identity, image path/asset identity, UV/crop/placement lineage.
-3. `realArtworkPreviewReady=true` is allowed only when the result proves all of the following on the exact CODE SHA:
-   - `usedMock=false`
-   - actual Blender version
-   - actual GPU/device
-   - completed render artifact SHA-256 + size + job identity
-   - the requested artwork placement was actually applied
-   - applied `engineeringHash + surfaceHash + artworkHash + placementHash` exact-match the canonical request.
-4. If this machine/run cannot provide such REAL evidence, keep `realArtworkPreviewReady=false/BLOCKED_ENVIRONMENT`. That is acceptable; do not fake it.
-5. Historical REAL Blender evidence may remain referenced only as historical renderer capability, not as proof of this artwork placement path.
+也就是 success result **缺少 `artworkApplied` 欄位時仍被視為 applied**。未來只要 REAL Blender generic render 成功，就可能錯把「有 render」當成「artwork 已正確套用」。
 
----
+Required correction：
 
-# Blocker 4 — Production artwork generation must re-resolve authoritative lineage
-
-Current `produce_panel()` accepts caller-supplied `master`, `crop`, `placement_hash` and `engineering_hash` too trustingly. A coordinated forged crop/hash must not be able to generate a package labeled ready.
-
-Required correction:
-
-1. Production generation must start from an authoritative persisted/in-memory placement identity (`placementId` or equivalent existing authority), then re-resolve the stored Surface, Artwork, Placement and Master/split relation.
-2. Recompute the deterministic master/split crop from authoritative engineering surfaces. Do not trust an arbitrary caller crop as truth.
-3. Exact-match at minimum:
-   - tenantId
-   - productId
-   - candidateId where applicable
-   - version/revision where applicable
-   - engineeringHash
-   - surfaceId + surfaceHash
-   - artworkId + artworkHash + actual byte SHA/size
-   - placementId + placementHash
-   - masterHash
-   - cropMm / cropPx derivation
-   - output physical dimensions.
-4. Reject forged/blank/stale `surfaceHash`, `placementHash`, `masterHash`, crop, wrong product/candidate/version, or mismatched output dimensions.
-5. Production manifest must contain enough authority snapshot/hash data to independently verify the output; `productionArtworkFileReady=true` must be the result of verification, not a caller-controlled flag.
-6. Add coordinated-tamper tests: mutate caller crop + copied hash fields together and prove generation/verification BLOCKS.
-
-Keep using the existing DAM and existing publish/evidence architecture. Do not create a second asset store.
+- `build_and_render()` 在 artwork job 成功時必須明確輸出：
+  - `artworkApplied: true`
+  - exact `appliedPlacements[]`（object/component identity + engineeringHash + surfaceHash + artworkHash + placementHash + final UV transform/hash）
+  - output artifact path/sha256/size（若 worker wrapper已有 canonical artifact metadata就重用，不要第二套 DAM）。
+- `preview()` 只能在 `done["artworkApplied"] is True` 時視為 applied；missing/null/false 一律 fail closed。
+- requested placements 與 `appliedPlacements` 必須 exact-set match，不可只驗第一筆或只看 job success。
+- `realArtworkPreviewReady=true` 至少還需：`usedMock=false`、realBlender、blenderVersion、device、render artifact SHA/size、exact lineage match。
+- 加 negative：REAL-shaped succeeded response 但缺 `artworkApplied` / 缺 applied lineage / wrong placementHash → `realArtworkPreviewReady=false`。
 
 ---
 
-# Blocker 5 — Complete identity, rotation/orientation and DPI semantics
+# Blocker 4 — `placementHash` 沒有綁住所有真正會影響 render 的欄位
 
-Required correction:
+目前 `placement_payload()` 未包含 `uv`、`mirrored`、`objectName`、product/candidate/version 等 render/identity 欄位；`require_placement()` 也沒有重新計算 stored `placementHash`。因此若 in-memory/persisted placement 的 `uv` 或 mirror 被改，Blender payload 可以變，但原 `placementHash` 仍不變。
 
-1. Surface → Placement → Master → Production must carry and verify product/candidate/version/revision identity consistently. Current checks must not stop at tenant/product/engineering only when more identity is present.
-2. `rotationDeg` must not be a hash-only field. Implement it in mm↔UV/output mapping or reject unsupported values fail-closed.
-3. Mirror/front/back orientation must have one deterministic canonical representation and be consumed by Blender and production output.
-4. Effective DPI must use the **minimum of horizontal and vertical effective DPI** based on the actual source crop pixels and actual physical output width/height. Width-only DPI must not overstate print readiness.
-5. Pixel width/height and supported MIME metadata should be derived/validated against actual bytes where feasible. Metadata contradictory to bytes must BLOCK.
-6. Safe/bleed/keep-out source labels remain explicit CONFIG/ENGINEERING/IMPORTED/PARTIAL as appropriate; unknown hardware geometry must not silently become REAL engineering keep-out.
+Required correction：
 
----
-
-# Blocker 6 — Canonical runner must enforce the full acceptance contract
-
-The current runner/validator is too weak. Phase 781–840 cannot be accepted merely because a small subset of negatives pass while the top-level readiness fields are hardcoded true.
-
-Required correction:
-
-1. `validate_artwork_acceptance_result()` must verify the complete acceptance truth, not only global/live flags and scenario presence.
-2. `run_artwork_scenario()` must not set `ok=true` based only on keep-out + stale checks.
-3. The canonical runner must derive `surfaceDecorationLogicReady` and `productionArtworkFileReady` from verified scenario results; do not hardcode them true after a shallow check.
-4. Acceptance must fail closed unless all applicable results are exact:
-   - keep-out collision → `BLOCKED_PLACEMENT`
-   - stale engineering/surface/placement → `STALE` or the project’s exact stale code
-   - cross-tenant → BLOCK
-   - cross-product → BLOCK
-   - cross-candidate/version/revision reuse → BLOCK
-   - tampered artwork/output bytes → BLOCK
-   - STRETCH → BLOCK
-   - NaN / Inf / zero dimension / invalid crop / negative bleed or seam → BLOCK
-   - duplicate surface/placement canonical identity → BLOCK
-   - forged master/crop/hash/placement lineage → BLOCK
-   - 2-door / 3-door / 4-door splits → exact deterministic geometry/crop continuity
-   - preview ↔ production lineage → exact `engineeringHash + surfaceHash + artworkHash + placementHash`
-   - Mock Blender can never make REAL preview true
-   - `physicalPrintValidated=false` without physical evidence.
-5. Runner tests must inject corrupted scenario results and prove:
-   - non-zero return code
-   - canonical acceptance files are not published/replaced as a successful generation.
-6. Add a negative test where multiple fields are coordinately forged, not only a single-field mutation.
+- 不可讓 mutable stored `uv` 成為 Blender authority。
+- 兩種可接受方案擇一：
+  1. 將所有 render-affecting canonical fields 納入 placement hash，讀取時重新 hash exact compare；或
+  2. `uv/mirror/orientation/object target` 每次由 authoritative Surface + Placement mm + MasterCrop 重新推導，stored copy只作 projection，若存在則 exact compare。
+- 至少要綁/驗：tenant/product/candidate/version（where applicable）、engineeringHash、surfaceId/surfaceHash、artworkId/artworkHash、x/y/w/h、rotation、fit、mirror/orientation、object/component identity、masterHash/masterCrop（master split時）、final UV transform。
+- `blender_job_payload()` 不可直接信任任意 mutable rec；必須從 `require_placement()` + authoritative re-derivation 產生。
+- 加 coordinated tamper tests：只改 `uv`、只改 mirror、改 `uv + copied projection fields`、改 objectName/component、改 masterCrop + copied hash field → 全部 BLOCK/STALE，不得進 successful render payload。
 
 ---
 
-# Required regression tests for this correction round
+# Blocker 5 — `produce_panel()` 把所有 door placement 都當成 multi-door master split
 
-At minimum add focused tests for all of these, using existing modules rather than a rewrite:
+目前 production path 不論 placement 是由 `place()` 還是 `place_across_panels()` 產生，最後都呼叫 `_authoritative_master()`，並以同產品所有 `DOOR*` siblings 重算 master/crop。
 
-- exact engineering door face vs PrintableSurface vs Blender door mesh dimensions/pose, including explicit reveal/gap semantics;
-- actual 2-, 3-, and 4-panel split tests (not a test name that only executes 3-panel);
-- non-square artwork rotated 90° changes canonical transform and output/mapping as expected;
-- mirror/orientation round trip or explicit unsupported-value BLOCK;
-- Blender `uvRect`/canonical crop is consumed, and missing object/image/UV does not silently pass;
-- production forged crop/master/placement hash BLOCK;
-- cross-candidate/version/revision BLOCK;
-- horizontal-vs-vertical DPI uses the limiting axis;
-- runner corrupted-result injection fails and does not publish success;
-- existing Phase 1–780 regression suite remains green.
+這會讓**單門 artwork** 出錯：例如只在 4 門櫃 `DOOR_2` 放一張完整單門圖，production 仍可能把原圖當成跨 4 門 master，輸出第二個 1/4 crop。
+
+Required correction：
+
+- Placement 必須有明確、canonical、hash-bound 的 relation/mode，例如 existing schema最小延伸：`SINGLE_SURFACE` vs `MASTER_SPLIT`；不要靠 `componentId.startswith("DOOR")` 猜。
+- `SINGLE_SURFACE`：production 使用該 placement 自己的 authoritative source crop/fit/physical rect，**不得**自動聚合同產品其他 door。
+- `MASTER_SPLIT`：才允許依 explicit master relation/group + exact surface set 重算 master/split crop。
+- `_authoritative_master()` 不可用「所有 door siblings」作隱含 group authority；master surface set 必須被 master hash/relation綁定。
+- 加 golden regression：4-door cabinet 對 `DOOR_2` 做一張 single-surface 100% artwork，輸出必須是完整來源圖對該門的 canonical fit，不是第二個 quarter crop。
+- 再測真正 4-door master split仍維持四個 exact quarters。
 
 ---
 
-# Docs / truth cleanup after code is fixed
+# Blocker 6 — Acceptance validator 還有 fail-open 條件
 
-After the correction implementation and canonical runner succeed:
+目前 `validate_artwork_acceptance_result()` 對 2/3/4 split 使用：
 
-1. Update `docs/GROK_PROGRESS_REPORT.md`; remove the stale contradictory text that still says Artwork Placement is “queued / not started”.
-2. Update `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`, and `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md/.json` from the new runner evidence.
-3. `docs/CABINET_REAL_ACCEPTANCE.md` should only gain a small scoped artwork row if the corrected cabinet artwork truth is actually evidenced. Do not rewrite the historical cabinet acceptance.
-4. If no new REAL Blender artwork render exists, keep `realArtworkPreviewReady=false` and label current preview MOCK/BLOCKED_ENVIRONMENT.
-5. Never convert generated production PNG into a claim that physical printing/proof is complete.
+`if len(crops) != n and len(ids) != n:`
+
+只要其中一個長度正確、另一個錯誤，因為 `and`，validator 仍可能不報錯。
+
+Required correction：
+
+- 此處必須 fail closed：任何 required set/count mismatch 都失敗（邏輯應等價於 OR / exact-set validation）。
+- 2/3/4 scenario 除 count 外，逐片驗 surfaceId ↔ crop ↔ placement ↔ component identity exact mapping、順序、尺寸、continuity、master relation。
+- `logic_ok` 不得只看 `applied` truthy；要驗 final UV result及完整 applied exact set。
+- runner corruption tests至少加入：少一個 crop但 surfaceIds仍正確、少一個 surfaceId但 crops仍正確、duplicate placement、wrong final UV、preview success但缺 artworkApplied。都必須 non-zero 且不得 publish successful canonical generation。
 
 ---
 
 # Re-Gate evidence required
 
-Before asking for the next ChatGPT review:
+完成以上 correction 後：
 
-1. Finish correction source + tests and commit/push a new clear **CODE_EVIDENCE_SHA**.
-2. `pytest -q` full suite must pass.
-3. Exact CODE_EVIDENCE_SHA GitHub Actions must show Ubuntu + Windows SUCCESS.
-4. On that exact CODE SHA with a clean working tree, run the corrected Artwork canonical runner.
-5. Produce a **new** `acceptanceGenerationId`, with `evidenceCodeCommit=<exact CODE SHA>` and `workingTreeClean=true`.
-6. Canonical evidence must include the complete negative matrix, exact 2/3/4-panel lineage, production-authority verification, preview/production hash parity, and truth labels.
-7. Commit/push evidence docs; exact docs/head Actions must also be Ubuntu + Windows SUCCESS.
-8. Leave Issue #1 completion comment with CODE SHA, pytest count, CODE Actions run, canonical generation, docs SHA/run, and REAL/MOCK/PARTIAL/BLOCKED summary.
-9. **STOP. Do not start Phase 841+ until ChatGPT Re-Gate explicitly says GO.**
+1. source + tests commit/push 新 **CODE_EVIDENCE_SHA**。
+2. full `pytest -q` PASS。
+3. exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS。
+4. 在 exact CODE SHA clean tree 跑 Artwork canonical runner，產生新的 `acceptanceGenerationId`，`evidenceCodeCommit=<exact CODE SHA>`、`workingTreeClean=true`。
+5. 更新 `GROK_PROGRESS_REPORT.md`、`CURRENT_IMPLEMENTATION_AUDIT.md`、`REAL_E2E_ACCEPTANCE.md`、`ARTWORK_PLACEMENT_ACCEPTANCE.md/.json`。`CABINET_REAL_ACCEPTANCE.md` 只做必要的小幅 scoped truth 更新。
+6. 若有 REAL Blender diagnostic artwork render：證據要含 actual artifact SHA/size/job/GPU/device、exact applied lineage、final UV parity；若沒有，維持 `realArtworkPreviewReady=false`。
+7. docs/head Actions Ubuntu + Windows SUCCESS。
+8. Issue #1 留短回報：CODE SHA、pytest count、CODE run、canonical generation、docs SHA/run、REAL/MOCK/PARTIAL/BLOCKED。
+9. **STOP。Phase 841+ 仍不得開始，等 ChatGPT Re-Gate。**
 
-## Definition of Done for this correction
+## Definition of Done
 
-Phase 781–840 is accepted only when we can prove, without relying on screenshots or copied hashes, that:
+Phase 781–840 只有在以下情況才可放行：
 
-> The same Engineering Definition determines the real cabinet face dimensions/pose; the same canonical ArtworkPlacement determines the real UV/crop/rotation/orientation; Blender actually applies that mapping; the production panel file is regenerated from authoritative placement/master lineage; coordinated tampering fails closed; and Mock/physical/live boundaries remain truthful.
-
-Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, WorkOrder, MaterialLot, Journal, ManufacturingRelease, PilotBatch or Backup/Restore to accomplish this correction.
+> Placement hash/authority 能鎖住所有真正影響 render 的 transform；Blender 對 exact FRONT face 只套一次 canonical UV/crop/rotation/mirror；REAL preview path 對缺失 applied evidence fail closed；single-surface 與 master-split production 不互相混淆；runner 對 count/lineage/final UV corruption 全部 fail closed；Mock/physical/live truth boundary維持正確。
