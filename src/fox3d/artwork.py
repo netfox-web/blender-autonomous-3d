@@ -877,6 +877,19 @@ class ArtworkFactory:
             )
             rec["masterHash"] = master["masterHash"]
             rec["masterCropMm"] = crop["cropMm"]
+            mw = _finite(master["widthMm"], "master width", positive=True)
+            mh = _finite(master["heightMm"], "master height", positive=True)
+            box = crop["cropMm"]
+            rec["uv"] = {
+                "u0": float(box["xMm"]) / mw,
+                "v0": float(box["yMm"]) / mh,
+                "u1": (float(box["xMm"]) + float(box["widthMm"])) / mw,
+                "v1": (float(box["yMm"]) + float(box["heightMm"])) / mh,
+            }
+            rec["xMm"] = 0.0
+            rec["yMm"] = 0.0
+            rec["widthMm"] = surf["widthMm"]
+            rec["heightMm"] = surf["heightMm"]
             rec["placementHash"] = stable_hash(placement_payload(rec) | {"masterHash": rec["masterHash"], "masterCropMm": rec["masterCropMm"]})
             crop["placementHash"] = rec["placementHash"]
             self.placements[rec["placementId"]] = rec

@@ -157,6 +157,16 @@ def test_four_door_master_continuity_and_no_stretch(tmp_path):
         rights.append(crop["cropMm"]["xMm"] + crop["cropMm"]["widthMm"])
     with pytest.raises(ArtworkError, match="stretch"):
         split_master(master, stretch=True)
+    art = plat.artwork.register_artwork(tenant_id="ta", data=_grid_bytes(tmp_path, 480, 360), source="GENERATED")
+    _m, _c, places = plat.artwork.place_across_panels(
+        tenant_id="ta",
+        artwork_id=art["artworkId"],
+        surfaces=doors,
+        engineering_hash=cab.engineering_hash(),
+        product_id=cab.productId,
+    )
+    assert [round(p["uv"]["u0"], 6) for p in places] == [0.0, 0.25, 0.5, 0.75]
+    assert [round(p["uv"]["u1"], 6) for p in places] == [0.25, 0.5, 0.75, 1.0]
 
 
 def test_keepout_blocks_and_low_dpi_partial(tmp_path):
