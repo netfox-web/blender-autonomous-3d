@@ -395,6 +395,43 @@ def import_glb(path: str):
     return root
 
 
+def apply_canonical_artwork(created: dict, job: dict) -> None:
+    """Consume canonical UV/placement hashes. Do not invent a second millimetre SOT."""
+    items = job.get("artworkPlacements") or []
+    if not items:
+        return
+    try:
+        import bpy
+    except ImportError:
+        return
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("objectName") or "")
+        path = item.get("imagePath")
+        obj = created.get(name) if created else None
+        if obj is None and name:
+            obj = bpy.data.objects.get(name)
+        if obj is None or not path or not Path(path).exists():
+            continue
+        img = bpy.data.images.load(str(path))
+        mat = bpy.data.materials.new(f"artwork.{name}")
+        mat.use_nodes = True
+        nt = mat.node_tree
+        principled = nt.nodes.get("Principled BSDF")
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = img
+        if principled:
+            nt.links.new(tex.outputs["Color"], principled.inputs["Base Color"])
+        if getattr(obj, "data", None) is not None and hasattr(obj.data, "materials"):
+            obj.data.materials.clear()
+            obj.data.materials.append(mat)
+        obj["engineeringHash"] = item.get("engineeringHash")
+        obj["surfaceHash"] = item.get("surfaceHash")
+        obj["artworkHash"] = item.get("artworkHash")
+        obj["placementHash"] = item.get("placementHash")
+
+
 def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0, 0.0), name_prefix: str = "", setup_scene: bool = True) -> dict:
     """Millimetres in engineering JSON are the source of truth. Do not invent sizes."""
     created = add_cabinet_parts(engineering, explode=explode, origin=origin, name_prefix=name_prefix)
@@ -810,6 +847,7 @@ def build_and_render(job: dict) -> dict:
         created = build_space_preview(job.get("space") or {}, job.get("assembly") or {})
     elif job.get("engineering"):
         created = build_cabinet(job["engineering"], explode=bool(job.get("explode")))
+        apply_canonical_artwork(created, job)
     else:
         graph = job.get("sceneGraph") or {}
         created = build_from_graph(graph)

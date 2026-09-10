@@ -110,6 +110,9 @@ class Platform:
 
         self.prototype = PrototypeFactory(self)
         self.pilot_batch = PilotBatchFactory(self)
+        from fox3d.artwork import ArtworkFactory
+
+        self.artwork = ArtworkFactory(self)
         self.pilot = PilotOps(self)
         self.retail_fixtures = self.physical.retail
         self.providers = ProviderRegistry(self.root / "providers")
