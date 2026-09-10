@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 661–720 residual CODE_EVIDENCE_SHA `15f12cf`; prior CODE `8f3bbda` / docs `5294848` / instruction `33579c7`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `33579c7`. Historical Phase 1–660 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 661–720 verifier CODE_EVIDENCE_SHA `92ec8f3`; prior CODE `15f12cf` / docs `75ce68e` / instruction `8ccb803`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8ccb803`. Historical Phase 1–660 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -11,13 +11,15 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Item | Status | Evidence |
 |---|---|---|
 | Required DAM roles | REAL_LOGIC | AS_BUILT + PACKAGING SHA/size from DAM; zero DAM cannot PASS_AS_BUILT / HUMAN_GO |
-| Cost qty + money | REAL_LOGIC / PARTIAL | COMPLETE needs MaterialLot consume + durable labor + hardware qty + **explicit packagingQty** + money; no `1.0` fallback; four amounts alone PARTIAL |
+| Cost qty + money | REAL_LOGIC / PARTIAL | COMPLETE needs MaterialLot consume + unique durable labor + hardware qty + explicit packagingQty bound to checklist/unit/engineering; four amounts alone PARTIAL |
+| Packaging canonical lineage | REAL_LOGIC | published `packagingLineage`; COMPLETE/HUMAN_GO fail-closed on missing/bogus/wrong tenant/unit/hash/qty mismatch |
+| Labor uniqueness | REAL_LOGIC | duplicate semantic/idempotency identity is HOLD/PARTIAL; no silent first-row pick; no doubled minutes |
 | Journal crash window | REAL_LOGIC | emit PREPARED→persist→journal→after-outbox-complete; labor idem inside persist; finalize/HUMAN_GO/pilot-plan/ECO subprocess `os._exit` |
 | PhysicalEvidencePackage | REAL_LOGIC | tenant-scoped lineage + source + finalize/supersede; fixture cannot MANUAL_EVIDENCE |
 | Human launch board | REAL_LOGIC | WAITING_HUMAN_EVIDENCE / HOLD_REWORK / READY_FOR_HUMAN_GO_NO_GO / HUMAN_GO / HUMAN_NO_GO |
 | Manual pilot plan | REAL_LOGIC | HUMAN_GO only; ManufacturingRelease + WorkOrder MANUAL_STATION; liveMachineControl=false |
-| Backup/restore | REAL_LOGIC | packages/launchDecisions/pilotPlans/labor + packagingQty lineage in tenant digest; equal `dd375a40…` |
-| 719–720 acceptance | FIXTURE + REAL_LOGIC | generation `dc5cbd4b-…`; CODE `15f12cf`; `physicalPrototypeValidated=false`; `launchDecision=WAITING_HUMAN_EVIDENCE` |
+| Backup/restore | REAL_LOGIC | packages/launchDecisions/pilotPlans/labor semantic keys + packaging checklist identity in tenant digest; equal `f0ea1661…` |
+| 719–720 acceptance | FIXTURE + REAL_LOGIC | generation `891e4c20-…`; CODE `92ec8f3`; `physicalPrototypeValidated=false`; `launchDecision=WAITING_HUMAN_EVIDENCE` |
 
 ## Phase 601–660 Prototype Validation published lineage + intent identity
 

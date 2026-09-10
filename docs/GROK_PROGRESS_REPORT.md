@@ -2,32 +2,31 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-10  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `33579c7` (**CHANGES REQUIRED** — residual packaging qty + journal/idempotency crash windows; hold Phase 721)  
-Review head: `5294848` / CODE `8f3bbda`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8ccb803` (**CHANGES REQUIRED** — canonical packaging-checklist lineage + labor uniqueness verifier; hold Phase 721)  
+Review head: `75ce68e` / CODE `15f12cf`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 661–720 residual GAPS ONLY**. Did not start Phase 721+. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / Nesting / ManufacturingRelease / WorkOrder.
+Executed **Phase 661–720 residual verifier/integrity GAPS ONLY**. Did not start Phase 721+. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / MaterialLot / Nesting / ManufacturingRelease / WorkOrder.
 
 | Blocker | What landed |
 |---|---|
-| B explicit packagingQty | Removed `_authoritative_packaging_qty()` fallback `1.0`. COMPLETE/HUMAN_GO needs explicit observed packaging quantity, finite `>0`, same tenant + PrototypeUnit + engineeringHash + checklist identity. Missing/null/malformed/negative/wrong-unit/stale engineering stays PARTIAL and blocks HUMAN_GO. Money/carton/`ok=true` cannot invent qty. |
-| C labor post-journal/pre-idem | `record_labor()` binds idempotency inside the emit persist snapshot; restart recovers by semantic labor identity; crash after-outbox-complete / after-labor-emit-before-idem cannot double minutes. |
-| C remaining crash proof | Hard `os._exit` + CrashInjected for package finalize, HUMAN_GO, pilot-plan (no duplicate release/WO/plan), accepted ECO; one aggregate + one journal event + no open outbox + idempotent retry. `_business_committed` now checks finalize/update payload, not mere package existence. |
+| 1 packaging checklist lineage | Matrix publishes `packagingLineage` (checklistId/tenant/unit/engineeringHash/qty/source). COMPLETE/HUMAN_GO verifier fail-closed unless checklist identity matches quantityLineage + matrix qty. Source string alone is not proof. FIXTURE PARTIAL remains allowed. |
+| 2 duplicate semantic labor | Same `idempotencyKey`/semantic identity is corruption: no silent first-row pick, no summing duplicates, labor authority invalid, cost PARTIAL, HUMAN_GO blocked. Published `laborLineage` has laborIds/semanticKeys/minutes/`integrityOk`. Crash retry still one labor + one journal event. |
 
-**CODE_EVIDENCE_SHA:** `15f12cf41c4a39faf06a0c4a497bbb3f40588a08`  
+**CODE_EVIDENCE_SHA:** `92ec8f3c785836e774561a851b3d65ecfd0f4f26`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34428864527` on `15f12cf` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34431835320` on `92ec8f3` ubuntu+windows.
 
-Acceptance generation `dc5cbd4b-811f-49a0-b696-7f3628d5d0f4`; runner-bound `evidenceCodeCommit=15f12cf…`; `workingTreeClean=true`.
+Acceptance generation `891e4c20-a0b3-4b14-91e5-c41eb92d0c4c`; runner-bound `evidenceCodeCommit=92ec8f3…`; `workingTreeClean=true`.
 
-Selected 4 FIXTURE SKUs; 4 FINALIZED FIXTURE packages; `physicalPrototypeValidated=false`; `launchDecision=WAITING_HUMAN_EVIDENCE`; cost PARTIAL (fixture has no explicit packagingQty / MaterialLot consume). Tenant digest equal `dd375a40…`. Prior REAL Blender **verified** 4/4 T1000 OptiX on `7a87ea5` generation `0b76b09e-…`. Render/engineering/media path unchanged.
+Selected 4 FIXTURE SKUs; 4 FINALIZED FIXTURE packages; `physicalPrototypeValidated=false`; `launchDecision=WAITING_HUMAN_EVIDENCE`; cost PARTIAL. Tenant digest equal `f0ea1661…`. Prior REAL Blender **verified** 4/4 T1000 OptiX on `7a87ea5` generation `0b76b09e-…`. Render/engineering/media path unchanged.
 
 ## Tests
 
 ```
-pytest -q  →  419 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  430 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
 ## REAL / MOCK / PARTIAL / BLOCKED
@@ -54,4 +53,4 @@ pytest -q  →  419 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not
 
 ## Next round
 
-ChatGPT re-review `33579c7` residual packaging-qty + labor/idempotency crash-window exit criteria. Stop here.
+ChatGPT re-review `8ccb803` canonical packaging-checklist lineage + labor uniqueness exit criteria. Stop here.
