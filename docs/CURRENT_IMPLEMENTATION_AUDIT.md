@@ -1,10 +1,24 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 661–720 verifier CODE_EVIDENCE_SHA `7060037`; prior CODE `92ec8f3` / docs `c1856ae` / instruction `f925318`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `f925318`. Historical Phase 1–660 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
+Audit of `main` (Phase 721–780 CODE_EVIDENCE_SHA `0ecc1a2`; prior CODE `7060037` / docs `d3f4694` / instruction `982d898`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `982d898`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
+
+| Item | Status | Evidence |
+|---|---|---|
+| PilotBatchSpec | REAL_LOGIC | tenant-scoped batch + unitExecutionId; MANUAL requires HUMAN_GO; FIXTURE cannot inherit GO |
+| Batch material plan | REAL_LOGIC | WorkOrder reserve/consume; STRICT_STOCK shortage rolls back; FIXTURE_AUTO_SEED labeled FIXTURE |
+| MANUAL_STATION execution | REAL_LOGIC | start/consume/labor idempotent; liveMachineControl=false |
+| QC sampling / genealogy | REAL_LOGIC / CONFIG | operational sampleEvery; not ISO/AQL; failed QC holds batch |
+| Packing / cartons | REAL_LOGIC | unique unit-to-carton; shipment DRAFT; no booked carrier |
+| Batch cost | PARTIAL on fixture | four money fields without packaging qty stay PARTIAL |
+| Human batch board | REAL_LOGIC | WAITING_HUMAN_EVIDENCE on fixture; HUMAN_BATCH_GO blocked |
+| Backup/restore | REAL_LOGIC | batches/units/cartons/decisions/ncrs/costs in digest; equal `c76e144c…` |
+| 775–780 acceptance | FIXTURE + REAL_LOGIC | generation `8c6aa9d1-…`; CODE `0ecc1a2`; 4×5 units; `physicalPilotBatchValidated=false` |
 
 ## Phase 661–720 Physical Prototype Evidence & Human Launch Governance V1
 
