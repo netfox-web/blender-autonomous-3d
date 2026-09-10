@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib.util
+from pathlib import Path
+
 import pytest
 
 from fox3d.backup import backup_pilot, evaluate_tenant_restore_matrix, restore_pilot
@@ -10,7 +13,22 @@ from fox3d.pilot_batch import PilotBatchError, run_pilot_batch_scenario
 from fox3d.platform import Platform
 from fox3d.prototype import run_prototype_scenario
 from fox3d.workorder import STRICT_STOCK
-from tests.test_prototype import _built_unit, _manual_launch_ready, _ops
+
+
+def _proto_helpers():
+    path = Path(__file__).resolve().parent / "test_prototype.py"
+    spec = importlib.util.spec_from_file_location("fox3d_test_prototype_helpers", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_H = _proto_helpers()
+_ops = _H._ops
+_built_unit = _H._built_unit
+_manual_launch_ready = _H._manual_launch_ready
+_eco_change = _H._eco_change
 
 
 def _proto(tmp_path):
@@ -249,8 +267,6 @@ def test_accepted_eco_invalidates_batch(tmp_path):
     _manual_launch_ready(plat, cand, unit, human, human_shift)
     plat.prototype.record_launch_decision(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], decision="HUMAN_GO", reason="go")
     batch = plat.pilot_batch.create(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], quantity=2, source="MANUAL", reason="eco")
-    from tests.test_prototype import _eco_change
-
     plat.prototype.create_eco(cand["candidateId"], tenant_id="pa", operator_id=human["operatorId"], shift_id=human_shift["shiftId"], reason="change", changes=_eco_change(cand))
     ready = plat.pilot_batch.readiness(batch["batchId"], tenant_id="pa")
     assert ready["staleLineage"] is True or "stale_lineage" in ready["blockers"]
