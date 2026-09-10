@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Re-Gate Round 2 CODE_EVIDENCE_SHA `dfe8eae`; prior `81496b5` / instruction `486b071`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `486b071`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 Re-Gate Round 3 CODE_EVIDENCE_SHA `7d99b37`; prior `dfe8eae` / instruction `f3a1525`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `f3a1525`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -18,11 +18,11 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 4-door master | REAL_LOGIC | 2400×1800 / 4×600; exact quarters `0/.25/.5/.75`; MASTER_SPLIT only |
 | SINGLE_SURFACE | REAL_LOGIC | one-door 100% artwork is full source fit, not sibling quarter crop |
 | Production artwork | REAL_LOGIC / GENERATED | PNG+manifest byte hash; not physical print |
-| Blender preview | MOCK | FRONT-face-only apply; `artworkApplied is True` + exact-set; realArtworkPreviewReady=false |
+| Blender preview | MOCK | device + artifact sha/size + object/component/face/relation/finalUvHash exact-set; realArtworkPreviewReady=false |
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
-| Production authority | REAL_LOGIC | placementId re-resolve; SINGLE vs MASTER_SPLIT; forged uv/crop/hash BLOCK |
+| Production authority | REAL_LOGIC | placementId re-resolve; SINGLE crop re-derived; MASTER relation store; coordinated crop/surface-set tamper BLOCK |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `01a3f28b-…`; CODE `dfe8eae` |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `97e76079-…`; CODE `7d99b37` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
