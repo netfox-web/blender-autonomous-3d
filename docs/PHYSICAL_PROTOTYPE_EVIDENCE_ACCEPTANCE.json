@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-10T03:07:09.855830+00:00",
-  "acceptanceGenerationId": "891e4c20-a0b3-4b14-91e5-c41eb92d0c4c",
-  "evidenceCodeCommit": "92ec8f3c785836e774561a851b3d65ecfd0f4f26",
+  "generatedAt": "2026-09-10T05:15:21.453963+00:00",
+  "acceptanceGenerationId": "627491fc-5853-4c4d-8325-71d0eb406d5c",
+  "evidenceCodeCommit": "70600377a94c1acf0d5dbbda79304c90c58076a0",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
   "label": "FIXTURE/REAL_LOGIC",
@@ -13,6 +13,45 @@
   "liveProviderReady": false,
   "globalProductionReady": false,
   "liveMachineControl": false,
+  "packagingChecklistAuthority": [
+    {
+      "checklistId": "dee15177-419d-4fa6-b6dc-cc25e7fe30c1",
+      "tenantId": "pv-a",
+      "prototypeUnitId": "ad43c765-106a-436f-9cf8-5e2b42288165",
+      "engineeringHash": "44f9585452178e7a4a4974a34dbd5eeb678eede9b77d2b5c4011b83137b16db2",
+      "packagingQty": null,
+      "source": "MISSING",
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "checklistId": "3fd4d4ca-95aa-4c7a-8a87-5ed82087bb65",
+      "tenantId": "pv-a",
+      "prototypeUnitId": "631b813f-f24c-44b6-8cd6-4e408df7e96d",
+      "engineeringHash": "45efd2d26d058f97e0261c5161c0e248f48848ef0d3db03f89db613a3d8e4394",
+      "packagingQty": null,
+      "source": "MISSING",
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "checklistId": "1c0e3f5c-92e5-4f7d-ad47-b38d1cef7fdc",
+      "tenantId": "pv-a",
+      "prototypeUnitId": "96b663a1-7d9a-43af-bd3f-540186248b3c",
+      "engineeringHash": "0e0c16b9a19fa0ecc0443acf98d1835107309cadc5b1c2567bf2ba9467e49555",
+      "packagingQty": null,
+      "source": "MISSING",
+      "truthLabel": "FIXTURE"
+    },
+    {
+      "checklistId": "c4d91ce6-33a5-4ea1-ab5f-db728ee73400",
+      "tenantId": "pv-a",
+      "prototypeUnitId": "3a9d5026-6f78-437a-97b5-9a046367be76",
+      "engineeringHash": "777c32ba024cf7ac5ca0d2997dfaf0e44967f193a72fcf7235ed10feebc2bd77",
+      "packagingQty": null,
+      "source": "MISSING",
+      "truthLabel": "FIXTURE"
+    }
+  ],
+  "laborAuthority": [],
   "ok": true,
   "priorRealBlenderEvidence": {
     "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
@@ -70,64 +109,64 @@
   "domain": "physical-prototype-evidence",
   "selected": [
     {
-      "candidateId": "f361a9f0-2323-4dba-bc16-1d25fd56d292",
-      "selectionId": "b16d8f60-fc5f-4ebd-a804-e1ec9b0ad7fe",
-      "prototypeUnitId": "378842a6-da61-4129-ad11-3ab57b3a4aff",
-      "engineeringHash": "590e468d6d940c3b9d3615b4b30da71497f75dd739cfe3a1a590ef4e40f7d408",
+      "candidateId": "08a53bd5-a7e5-4393-8ec8-10713e8a11c9",
+      "selectionId": "bb6612e3-6d7b-4a4e-a505-7860aabb7aa7",
+      "prototypeUnitId": "ad43c765-106a-436f-9cf8-5e2b42288165",
+      "engineeringHash": "44f9585452178e7a4a4974a34dbd5eeb678eede9b77d2b5c4011b83137b16db2",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "0e6d77d169b0ab3fcd5d8cb6e447717fba38049d06f4afeae44444d55ec14331",
+      "nestingHash": "bba6e48dc82e3737febe13175514804223d49f0a00ee27b8bec697bab3bb172c",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "c4950e5c-e23c-4fc3-b0fc-928729eb21b1",
-      "selectionId": "7309038b-e1ec-4986-a9b8-82df3f799f3a",
-      "prototypeUnitId": "5c6610b1-349a-47ac-8386-d8fbf9c7fa17",
-      "engineeringHash": "e600b9de98ae6b518954d41770699a0eb2b3f95d0cd49ae806ef0f11744b49c2",
+      "candidateId": "afe3a430-80b6-4fcb-b015-73d998dd2dc0",
+      "selectionId": "c088974a-3be9-4506-9229-128b9ee1f4ba",
+      "prototypeUnitId": "631b813f-f24c-44b6-8cd6-4e408df7e96d",
+      "engineeringHash": "45efd2d26d058f97e0261c5161c0e248f48848ef0d3db03f89db613a3d8e4394",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "e51a646bffbaa78a7568927fd71feb68ba256590628bc22abc1a8c0a31bbc8da",
+      "nestingHash": "48f7a58bfcac2330d05e784a93e8a079ab473b4b7678c040d396f7c0f74d90fc",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "59ea9b20-b5c4-42ab-a219-10d14971ff8c",
-      "selectionId": "052a2464-1154-4382-b263-c6b8288bfeab",
-      "prototypeUnitId": "689975a5-eb46-43c3-8e59-1d7381cc9e96",
-      "engineeringHash": "9426238124156a993977b4c51e29d837b0b4288eee2fd36cf5202c964f99a63a",
+      "candidateId": "20b34aeb-712d-44ad-8c78-2174542be1ed",
+      "selectionId": "f4208e02-7cb6-45b7-9d9b-7d95e8a08a48",
+      "prototypeUnitId": "96b663a1-7d9a-43af-bd3f-540186248b3c",
+      "engineeringHash": "0e0c16b9a19fa0ecc0443acf98d1835107309cadc5b1c2567bf2ba9467e49555",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "1440157221028e86aa5403bc8b2ced54ca532340b7a6b434911e27ed2fc790b8",
+      "nestingHash": "673c1c45f2ccc6dd1a21341221fe84f178d5a2de72e1d1c87f517c495ebf6a47",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "87912a53-0bba-48a9-b3e1-1958e282e85b",
-      "selectionId": "b09f6e52-c4ae-4d4b-938d-a9929fb72272",
-      "prototypeUnitId": "4c399daa-1812-43ce-95a9-ac13926b65a6",
-      "engineeringHash": "cfe4c6ba25a3b7246940fcd9e6925afa3960ccaed221a97e7436bf765f87253b",
+      "candidateId": "bfc7e3ba-4d0f-4e51-b5be-0b7c2a2f4543",
+      "selectionId": "9e874057-a743-4c54-b0ad-ccb868c4269e",
+      "prototypeUnitId": "3a9d5026-6f78-437a-97b5-9a046367be76",
+      "engineeringHash": "777c32ba024cf7ac5ca0d2997dfaf0e44967f193a72fcf7235ed10feebc2bd77",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "c6a38024a4ab10bbcaeb0f86bbd27631e6ebc5dae538bd49c58baf0c5fb191e0",
+      "nestingHash": "82c0c2bce005c82b8ad73d64d364725d0147f3a2a7e652ac39443877d04f0588",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "truthLabel": "FIXTURE"
     }
   ],
   "units": [
     {
-      "candidateId": "f361a9f0-2323-4dba-bc16-1d25fd56d292",
-      "selectionId": "b16d8f60-fc5f-4ebd-a804-e1ec9b0ad7fe",
-      "prototypeUnitId": "378842a6-da61-4129-ad11-3ab57b3a4aff",
-      "engineeringHash": "590e468d6d940c3b9d3615b4b30da71497f75dd739cfe3a1a590ef4e40f7d408",
+      "candidateId": "08a53bd5-a7e5-4393-8ec8-10713e8a11c9",
+      "selectionId": "bb6612e3-6d7b-4a4e-a505-7860aabb7aa7",
+      "prototypeUnitId": "ad43c765-106a-436f-9cf8-5e2b42288165",
+      "engineeringHash": "44f9585452178e7a4a4974a34dbd5eeb678eede9b77d2b5c4011b83137b16db2",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "0e6d77d169b0ab3fcd5d8cb6e447717fba38049d06f4afeae44444d55ec14331",
+      "nestingHash": "bba6e48dc82e3737febe13175514804223d49f0a00ee27b8bec697bab3bb172c",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "976882cf-0e7b-4d5a-bff5-eb330ce89495",
+      "evidencePackageId": "9688bde7-792f-44fa-b31c-eb3576359080",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -135,18 +174,18 @@
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "c4950e5c-e23c-4fc3-b0fc-928729eb21b1",
-      "selectionId": "7309038b-e1ec-4986-a9b8-82df3f799f3a",
-      "prototypeUnitId": "5c6610b1-349a-47ac-8386-d8fbf9c7fa17",
-      "engineeringHash": "e600b9de98ae6b518954d41770699a0eb2b3f95d0cd49ae806ef0f11744b49c2",
+      "candidateId": "afe3a430-80b6-4fcb-b015-73d998dd2dc0",
+      "selectionId": "c088974a-3be9-4506-9229-128b9ee1f4ba",
+      "prototypeUnitId": "631b813f-f24c-44b6-8cd6-4e408df7e96d",
+      "engineeringHash": "45efd2d26d058f97e0261c5161c0e248f48848ef0d3db03f89db613a3d8e4394",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "e51a646bffbaa78a7568927fd71feb68ba256590628bc22abc1a8c0a31bbc8da",
+      "nestingHash": "48f7a58bfcac2330d05e784a93e8a079ab473b4b7678c040d396f7c0f74d90fc",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "f356ea49-8499-4abd-b412-5f65bc709ef2",
+      "evidencePackageId": "6c73e5df-200e-4233-b999-7fd2f677c612",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -154,18 +193,18 @@
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "59ea9b20-b5c4-42ab-a219-10d14971ff8c",
-      "selectionId": "052a2464-1154-4382-b263-c6b8288bfeab",
-      "prototypeUnitId": "689975a5-eb46-43c3-8e59-1d7381cc9e96",
-      "engineeringHash": "9426238124156a993977b4c51e29d837b0b4288eee2fd36cf5202c964f99a63a",
+      "candidateId": "20b34aeb-712d-44ad-8c78-2174542be1ed",
+      "selectionId": "f4208e02-7cb6-45b7-9d9b-7d95e8a08a48",
+      "prototypeUnitId": "96b663a1-7d9a-43af-bd3f-540186248b3c",
+      "engineeringHash": "0e0c16b9a19fa0ecc0443acf98d1835107309cadc5b1c2567bf2ba9467e49555",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "1440157221028e86aa5403bc8b2ced54ca532340b7a6b434911e27ed2fc790b8",
+      "nestingHash": "673c1c45f2ccc6dd1a21341221fe84f178d5a2de72e1d1c87f517c495ebf6a47",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "30e10717-e183-4e64-b561-d3407703d293",
+      "evidencePackageId": "024afc3a-978d-422e-bc71-b2609e04b91e",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -173,18 +212,18 @@
       "truthLabel": "FIXTURE"
     },
     {
-      "candidateId": "87912a53-0bba-48a9-b3e1-1958e282e85b",
-      "selectionId": "b09f6e52-c4ae-4d4b-938d-a9929fb72272",
-      "prototypeUnitId": "4c399daa-1812-43ce-95a9-ac13926b65a6",
-      "engineeringHash": "cfe4c6ba25a3b7246940fcd9e6925afa3960ccaed221a97e7436bf765f87253b",
+      "candidateId": "bfc7e3ba-4d0f-4e51-b5be-0b7c2a2f4543",
+      "selectionId": "9e874057-a743-4c54-b0ad-ccb868c4269e",
+      "prototypeUnitId": "3a9d5026-6f78-437a-97b5-9a046367be76",
+      "engineeringHash": "777c32ba024cf7ac5ca0d2997dfaf0e44967f193a72fcf7235ed10feebc2bd77",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "c6a38024a4ab10bbcaeb0f86bbd27631e6ebc5dae538bd49c58baf0c5fb191e0",
+      "nestingHash": "82c0c2bce005c82b8ad73d64d364725d0147f3a2a7e652ac39443877d04f0588",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
       "state": "WAITING_VALIDATION",
       "physicalPrototypeValidated": false,
       "evidenceSource": "FIXTURE",
-      "evidencePackageId": "71bff930-32f8-411d-9ccc-19b72b1882a4",
+      "evidencePackageId": "c33b4bea-ee4f-45c7-82c0-73fb339b224d",
       "buildCompleted": true,
       "consumesInventory": false,
       "materialConsumed": false,
@@ -194,154 +233,154 @@
   ],
   "evidencePackages": [
     {
-      "candidateId": "f361a9f0-2323-4dba-bc16-1d25fd56d292",
-      "selectionId": "b16d8f60-fc5f-4ebd-a804-e1ec9b0ad7fe",
-      "prototypeUnitId": "378842a6-da61-4129-ad11-3ab57b3a4aff",
-      "engineeringHash": "590e468d6d940c3b9d3615b4b30da71497f75dd739cfe3a1a590ef4e40f7d408",
+      "candidateId": "08a53bd5-a7e5-4393-8ec8-10713e8a11c9",
+      "selectionId": "bb6612e3-6d7b-4a4e-a505-7860aabb7aa7",
+      "prototypeUnitId": "ad43c765-106a-436f-9cf8-5e2b42288165",
+      "engineeringHash": "44f9585452178e7a4a4974a34dbd5eeb678eede9b77d2b5c4011b83137b16db2",
       "canonicalHash": "a810f816d9085bb6541ac09f70c9d0be60e5714a815eecdf13d708c700269b5e",
       "bomHash": "22adab1989dddbc1d714772ff1c7259a8f06f9b505d0b6c1a1d09ca89f1d3774",
-      "nestingHash": "0e6d77d169b0ab3fcd5d8cb6e447717fba38049d06f4afeae44444d55ec14331",
+      "nestingHash": "bba6e48dc82e3737febe13175514804223d49f0a00ee27b8bec697bab3bb172c",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "976882cf-0e7b-4d5a-bff5-eb330ce89495",
+      "evidencePackageId": "9688bde7-792f-44fa-b31c-eb3576359080",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "8fea74da-4f31-4af8-bf9d-51ef7f6070ce",
-      "shiftId": "2ad735d1-bcf0-448e-8d57-6e4b651e938a",
+      "operatorId": "c22c7b25-b784-42ce-910c-346c57e886e4",
+      "shiftId": "0029ae25-1107-4455-a747-6803516e7632",
       "damRefs": [
         {
-          "assetId": "e957c258-5f38-428b-b0a0-dc0cb4e0d691",
+          "assetId": "65355f0b-5dfc-42c7-814d-58e28e7856a4",
           "tenantId": "pv-a",
           "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
           "size": 22,
           "kind": "photo",
           "role": "AS_BUILT",
-          "engineeringHash": "590e468d6d940c3b9d3615b4b30da71497f75dd739cfe3a1a590ef4e40f7d408"
+          "engineeringHash": "44f9585452178e7a4a4974a34dbd5eeb678eede9b77d2b5c4011b83137b16db2"
         },
         {
-          "assetId": "ea26ed38-6bdf-4a7f-91da-ba9004d75936",
+          "assetId": "3ec09faa-37ad-455c-b031-43ee831c0e82",
           "tenantId": "pv-a",
           "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
           "size": 23,
           "kind": "photo",
           "role": "PACKAGING",
-          "engineeringHash": "590e468d6d940c3b9d3615b4b30da71497f75dd739cfe3a1a590ef4e40f7d408"
+          "engineeringHash": "44f9585452178e7a4a4974a34dbd5eeb678eede9b77d2b5c4011b83137b16db2"
         }
       ]
     },
     {
-      "candidateId": "c4950e5c-e23c-4fc3-b0fc-928729eb21b1",
-      "selectionId": "7309038b-e1ec-4986-a9b8-82df3f799f3a",
-      "prototypeUnitId": "5c6610b1-349a-47ac-8386-d8fbf9c7fa17",
-      "engineeringHash": "e600b9de98ae6b518954d41770699a0eb2b3f95d0cd49ae806ef0f11744b49c2",
+      "candidateId": "afe3a430-80b6-4fcb-b015-73d998dd2dc0",
+      "selectionId": "c088974a-3be9-4506-9229-128b9ee1f4ba",
+      "prototypeUnitId": "631b813f-f24c-44b6-8cd6-4e408df7e96d",
+      "engineeringHash": "45efd2d26d058f97e0261c5161c0e248f48848ef0d3db03f89db613a3d8e4394",
       "canonicalHash": "c32429f35a0171046a01b6b94bacc273d4a7c346bbdb085808b034388ac6e582",
       "bomHash": "fc39cd50fe8e94a4cbb060e52b16f75bab14bf9c14921038bce95db6d27499b6",
-      "nestingHash": "e51a646bffbaa78a7568927fd71feb68ba256590628bc22abc1a8c0a31bbc8da",
+      "nestingHash": "48f7a58bfcac2330d05e784a93e8a079ab473b4b7678c040d396f7c0f74d90fc",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "f356ea49-8499-4abd-b412-5f65bc709ef2",
+      "evidencePackageId": "6c73e5df-200e-4233-b999-7fd2f677c612",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "8fea74da-4f31-4af8-bf9d-51ef7f6070ce",
-      "shiftId": "2ad735d1-bcf0-448e-8d57-6e4b651e938a",
+      "operatorId": "c22c7b25-b784-42ce-910c-346c57e886e4",
+      "shiftId": "0029ae25-1107-4455-a747-6803516e7632",
       "damRefs": [
         {
-          "assetId": "043a67d7-47df-47a5-ba5e-c7e6432855aa",
+          "assetId": "7794a3ee-4317-49b5-a865-d6e54e17705d",
           "tenantId": "pv-a",
           "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
           "size": 22,
           "kind": "photo",
           "role": "AS_BUILT",
-          "engineeringHash": "e600b9de98ae6b518954d41770699a0eb2b3f95d0cd49ae806ef0f11744b49c2"
+          "engineeringHash": "45efd2d26d058f97e0261c5161c0e248f48848ef0d3db03f89db613a3d8e4394"
         },
         {
-          "assetId": "867b4280-d34c-4f40-b339-f041feddb89e",
+          "assetId": "9346d31e-e0d6-46fd-b927-f83fef169c6c",
           "tenantId": "pv-a",
           "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
           "size": 23,
           "kind": "photo",
           "role": "PACKAGING",
-          "engineeringHash": "e600b9de98ae6b518954d41770699a0eb2b3f95d0cd49ae806ef0f11744b49c2"
+          "engineeringHash": "45efd2d26d058f97e0261c5161c0e248f48848ef0d3db03f89db613a3d8e4394"
         }
       ]
     },
     {
-      "candidateId": "59ea9b20-b5c4-42ab-a219-10d14971ff8c",
-      "selectionId": "052a2464-1154-4382-b263-c6b8288bfeab",
-      "prototypeUnitId": "689975a5-eb46-43c3-8e59-1d7381cc9e96",
-      "engineeringHash": "9426238124156a993977b4c51e29d837b0b4288eee2fd36cf5202c964f99a63a",
+      "candidateId": "20b34aeb-712d-44ad-8c78-2174542be1ed",
+      "selectionId": "f4208e02-7cb6-45b7-9d9b-7d95e8a08a48",
+      "prototypeUnitId": "96b663a1-7d9a-43af-bd3f-540186248b3c",
+      "engineeringHash": "0e0c16b9a19fa0ecc0443acf98d1835107309cadc5b1c2567bf2ba9467e49555",
       "canonicalHash": "236e67faba200aa6b1babf49fdfb775f7842ef47b0bd0d3786f55636a67d2ba5",
       "bomHash": "d301a503f4c7b1401532ff0e4e45cc4bb031a41c3b227076aaf15a1b6ce54f54",
-      "nestingHash": "1440157221028e86aa5403bc8b2ced54ca532340b7a6b434911e27ed2fc790b8",
+      "nestingHash": "673c1c45f2ccc6dd1a21341221fe84f178d5a2de72e1d1c87f517c495ebf6a47",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "30e10717-e183-4e64-b561-d3407703d293",
+      "evidencePackageId": "024afc3a-978d-422e-bc71-b2609e04b91e",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "8fea74da-4f31-4af8-bf9d-51ef7f6070ce",
-      "shiftId": "2ad735d1-bcf0-448e-8d57-6e4b651e938a",
+      "operatorId": "c22c7b25-b784-42ce-910c-346c57e886e4",
+      "shiftId": "0029ae25-1107-4455-a747-6803516e7632",
       "damRefs": [
         {
-          "assetId": "60896166-fd97-4760-9e9b-03ed1b14b6b0",
+          "assetId": "477bc6dd-c5b5-497f-8a2d-9fcfa11548fa",
           "tenantId": "pv-a",
           "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
           "size": 22,
           "kind": "photo",
           "role": "AS_BUILT",
-          "engineeringHash": "9426238124156a993977b4c51e29d837b0b4288eee2fd36cf5202c964f99a63a"
+          "engineeringHash": "0e0c16b9a19fa0ecc0443acf98d1835107309cadc5b1c2567bf2ba9467e49555"
         },
         {
-          "assetId": "5348db41-a440-4b76-adbe-a14fbe7c7448",
+          "assetId": "92ca2b1a-36f1-4bd2-88df-151025ef9fd1",
           "tenantId": "pv-a",
           "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
           "size": 23,
           "kind": "photo",
           "role": "PACKAGING",
-          "engineeringHash": "9426238124156a993977b4c51e29d837b0b4288eee2fd36cf5202c964f99a63a"
+          "engineeringHash": "0e0c16b9a19fa0ecc0443acf98d1835107309cadc5b1c2567bf2ba9467e49555"
         }
       ]
     },
     {
-      "candidateId": "87912a53-0bba-48a9-b3e1-1958e282e85b",
-      "selectionId": "b09f6e52-c4ae-4d4b-938d-a9929fb72272",
-      "prototypeUnitId": "4c399daa-1812-43ce-95a9-ac13926b65a6",
-      "engineeringHash": "cfe4c6ba25a3b7246940fcd9e6925afa3960ccaed221a97e7436bf765f87253b",
+      "candidateId": "bfc7e3ba-4d0f-4e51-b5be-0b7c2a2f4543",
+      "selectionId": "9e874057-a743-4c54-b0ad-ccb868c4269e",
+      "prototypeUnitId": "3a9d5026-6f78-437a-97b5-9a046367be76",
+      "engineeringHash": "777c32ba024cf7ac5ca0d2997dfaf0e44967f193a72fcf7235ed10feebc2bd77",
       "canonicalHash": "23cd9fd2f773566f3248a0a0179ee716919debdc6be6c2b50acb890b9e1c10b0",
       "bomHash": "187b7d8f838d61a3ebfe73ca7ddfa2533d2a0ff40c1ab6317558798a41b5788e",
-      "nestingHash": "c6a38024a4ab10bbcaeb0f86bbd27631e6ebc5dae538bd49c58baf0c5fb191e0",
+      "nestingHash": "82c0c2bce005c82b8ad73d64d364725d0147f3a2a7e652ac39443877d04f0588",
       "rankingPolicyHash": "a37ef2919e93bd2b44891fcb84a9ee569f003ad64fa62d5063c984e5b787f017",
-      "evidencePackageId": "71bff930-32f8-411d-9ccc-19b72b1882a4",
+      "evidencePackageId": "c33b4bea-ee4f-45c7-82c0-73fb339b224d",
       "evidenceSource": "FIXTURE",
       "engineeringRevision": 1,
       "ecoRevision": null,
       "state": "FINALIZED",
       "revision": 1,
-      "operatorId": "8fea74da-4f31-4af8-bf9d-51ef7f6070ce",
-      "shiftId": "2ad735d1-bcf0-448e-8d57-6e4b651e938a",
+      "operatorId": "c22c7b25-b784-42ce-910c-346c57e886e4",
+      "shiftId": "0029ae25-1107-4455-a747-6803516e7632",
       "damRefs": [
         {
-          "assetId": "aa6495e7-73c9-40ac-862c-c38d0994a43b",
+          "assetId": "af905edb-1b2b-45dc-b0eb-abb4a9d677ae",
           "tenantId": "pv-a",
           "sha256": "138cade4db8e160200c218b4e9ff8963f7ab9044a06fed1af84507418cfeefba",
           "size": 22,
           "kind": "photo",
           "role": "AS_BUILT",
-          "engineeringHash": "cfe4c6ba25a3b7246940fcd9e6925afa3960ccaed221a97e7436bf765f87253b"
+          "engineeringHash": "777c32ba024cf7ac5ca0d2997dfaf0e44967f193a72fcf7235ed10feebc2bd77"
         },
         {
-          "assetId": "70f7b03b-2696-4e90-bce7-43bd1f6efda6",
+          "assetId": "19298470-8fdb-4ca8-9277-1e12e8f873fb",
           "tenantId": "pv-a",
           "sha256": "73c268054009e521817f78cae17c6ae1f291a9c898a782270b1b3eb9fbc2dcda",
           "size": 23,
           "kind": "photo",
           "role": "PACKAGING",
-          "engineeringHash": "cfe4c6ba25a3b7246940fcd9e6925afa3960ccaed221a97e7436bf765f87253b"
+          "engineeringHash": "777c32ba024cf7ac5ca0d2997dfaf0e44967f193a72fcf7235ed10feebc2bd77"
         }
       ]
     }
@@ -389,8 +428,8 @@
     true
   ],
   "tenantBackupSemantic": {
-    "liveA": "f0ea16610bf27061f7691518e539237b17e1ec2c3e03153fbe89d4c608cef6e4",
-    "restoredA": "f0ea16610bf27061f7691518e539237b17e1ec2c3e03153fbe89d4c608cef6e4",
+    "liveA": "a9078fe75c1e5f901813eb00efed38386ad33b83298fcbe91d214d368d4027ce",
+    "restoredA": "a9078fe75c1e5f901813eb00efed38386ad33b83298fcbe91d214d368d4027ce",
     "equal": true
   },
   "realMockPartialBlocked": {
@@ -411,7 +450,7 @@
     {
       "check": "tenant backup semantic",
       "status": "REAL_LOGIC",
-      "evidence": "{\"liveA\": \"f0ea16610bf27061f7691518e539237b17e1ec2c3e03153fbe89d4c608cef6e4\", \"restoredA\": \"f0ea16610bf27061f7691518e539237b17e1ec2c3e03153fbe89d4c608cef6e4\", \"equal\": true}"
+      "evidence": "{\"liveA\": \"a9078fe75c1e5f901813eb00efed38386ad33b83298fcbe91d214d368d4027ce\", \"restoredA\": \"a9078fe75c1e5f901813eb00efed38386ad33b83298fcbe91d214d368d4027ce\", \"equal\": true}"
     },
     {
       "check": "prior REAL blender",
@@ -426,7 +465,7 @@
     {
       "check": "evidence packages",
       "status": "REAL_LOGIC",
-      "evidence": "[{\"candidateId\": \"f361a9f0-2323-4dba-bc16-1d25fd56d292\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"c4950e5c-e23c-4fc3-b0fc-928729eb21b1\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"59ea9b20-b5c4-42ab-a219-10d14971ff8c\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"87912a53-0bba-48a9-b3e1-1958e282e85b\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}]"
+      "evidence": "[{\"candidateId\": \"08a53bd5-a7e5-4393-8ec8-10713e8a11c9\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"afe3a430-80b6-4fcb-b015-73d998dd2dc0\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"20b34aeb-712d-44ad-8c78-2174542be1ed\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}, {\"candidateId\": \"bfc7e3ba-4d0f-4e51-b5be-0b7c2a2f4543\", \"source\": \"FIXTURE\", \"state\": \"FINALIZED\"}]"
     }
   ]
 }

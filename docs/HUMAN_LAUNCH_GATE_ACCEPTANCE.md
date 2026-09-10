@@ -1,6 +1,6 @@
 # HUMAN_LAUNCH_GATE_ACCEPTANCE
 
-generatedAt: 2026-09-10T03:07:09.855830+00:00
+generatedAt: 2026-09-10T05:15:21.453963+00:00
 pytest mock PASS is **not** production ready. LIVE_CNC / LIVE_LASER remain BLOCKED.
 This is a scoped Phase 661–720 physical-evidence / human-launch truth set. Fixture ≠ physical prototype.
 
