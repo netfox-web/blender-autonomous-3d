@@ -2,34 +2,33 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-11  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `f3a1525` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 3)  
-Issue #1: `IC_kwDOUSTRdc8AAAABTzQiGQ`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `283c459` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 4)  
+Issue #1: `IC_kwDOUSTRdc8AAAABT08xWg`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 781–840 Re-Gate Round 3 correction-only** (four blockers). Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
+Executed **Phase 781–840 Re-Gate Round 4 correction-only** (three blockers). Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
 
 | Blocker | Fix |
 |---|---|
-| 1 Preview gate | `realArtworkPreviewReady` requires device + render artifact sha256/size>0 + exact-set object/component/face/relation/final UV identity. Incomplete synthetic result is False. |
-| 2 `finalUvHash` | Deterministic `stable_hash` of placementId/object/component/face/relation/uvRect/rotation/mirror/finalSampling. Factory re-derives expected hash and exact-compares worker applied record. |
-| 3 SINGLE_SURFACE crop | Shared `canonical_source_crop()` from artwork pixels + surface mm + placement + fit. Stored `crop` is projection; coordinated crop+placementHash tamper BLOCKS. DOOR_2 full-source golden kept. |
-| 4 MASTER_SPLIT set | Immutable master relation in ArtworkFactory (`masterId/masterHash` → tenant/product/version/engineeringHash/surfaceIds/order/crop). `_authoritative_master` reads that authority, not placement `masterSurfaceIds`. Coordinated surface-set+hash tamper BLOCKS. |
+| 1 Preview bytes | `preview()` uses only live placement; no caller artwork_path override. Payload carries `artworkSha256`; worker SHA-256 of loaded bytes must match or `ArtworkApplyError`. Forged artworkId/productId/engineeringHash BLOCK. |
+| 2 SINGLE production | CONTAIN composites onto full-surface canvas with letterbox (BLACK); COVER source crop follows placement/anchor; rotation/mirror orient pixels to match `finalUvHash`. Manifest records canvas mm, placed rect, transformHash. STRETCH still BLOCKED. |
+| 3 MASTER replay | Relation stores `seamSource`; `_authoritative_master` replays CONFIG vs ENGINEERING seam, self-verifies relationHash/panelOrder/cropGeometry/width/height. Required `masterId` exact match. |
 
-**CODE_EVIDENCE_SHA:** `7d99b37f1587081613525409ad185a83b3bdb62d`  
+**CODE_EVIDENCE_SHA:** `ce2c46c0535fb2bbba2208401a51a66d4991ffaa`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34524185358` on exact `7d99b37` Ubuntu + Windows SUCCESS.
+GitHub Actions CODE: **GREEN** `34532967434` on exact `ce2c46c` Ubuntu + Windows SUCCESS.
 
-Acceptance generation `97e76079-0527-4313-ad37-6b1bd050a268`; runner-bound `evidenceCodeCommit=7d99b37…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK, no REAL artwork diagnostic this round). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
+Acceptance generation `2936750f-8a3c-4bb5-90ab-70741ea6f21d`; runner-bound `evidenceCodeCommit=ce2c46c…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK, no REAL artwork diagnostic this round). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
 
 ## Tests
 
 ```
-pytest -q  →  598 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  601 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
-Local Windows PermissionError / inventory flake reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
+CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
@@ -52,8 +51,8 @@ Local Windows PermissionError / inventory flake reran PASS. CI `FOX3D_MOCK_BLEND
 - Vision/Video/Demand MOCK
 - Fixture batch ≠ physical batch
 - Do not start Phase 841+ until ChatGPT Re-Gate says GO
-- Artwork Placement V1 is in Re-Gate Round 3 correction; not Production Ready; no REAL artwork OptiX this round
+- Artwork Placement V1 is in Re-Gate Round 4 correction; not Production Ready; no REAL artwork OptiX this round
 
 ## Next round
 
-ChatGPT Re-Gate Phase 781–840 after Round 3. Stop here. Do not start Phase 841+.
+ChatGPT Re-Gate Phase 781–840 after Round 4. Stop here. Do not start Phase 841+.

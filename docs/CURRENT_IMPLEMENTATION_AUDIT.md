@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Re-Gate Round 3 CODE_EVIDENCE_SHA `7d99b37`; prior `dfe8eae` / instruction `f3a1525`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `f3a1525`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 Re-Gate Round 4 CODE_EVIDENCE_SHA `ce2c46c`; prior `7d99b37` / instruction `283c459`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `283c459`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -16,13 +16,13 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | mm↔UV | REAL_LOGIC | round-trip 0.001 mm; Blender Scheme A mesh UV once (identity shader) |
 | Keep-out / DPI | CONFIG / PARTIAL | handle/hinge CONFIG; DPI policy CONFIG 150/72; printPreflight PARTIAL |
 | 4-door master | REAL_LOGIC | 2400×1800 / 4×600; exact quarters `0/.25/.5/.75`; MASTER_SPLIT only |
-| SINGLE_SURFACE | REAL_LOGIC | one-door 100% artwork is full source fit, not sibling quarter crop |
-| Production artwork | REAL_LOGIC / GENERATED | PNG+manifest byte hash; not physical print |
-| Blender preview | MOCK | device + artifact sha/size + object/component/face/relation/finalUvHash exact-set; realArtworkPreviewReady=false |
+| SINGLE_SURFACE | REAL_LOGIC | CONTAIN full-canvas letterbox; COVER anchor crop; rotation/mirror vs finalUvHash; not sibling quarter |
+| Production artwork | REAL_LOGIC / GENERATED | full-panel PNG + canvas/placed/transformHash; not physical print |
+| Blender preview | MOCK | live-only path; worker artworkSha256 of loaded bytes; realArtworkPreviewReady=false |
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
-| Production authority | REAL_LOGIC | placementId re-resolve; SINGLE crop re-derived; MASTER relation store; coordinated crop/surface-set tamper BLOCK |
+| Production authority | REAL_LOGIC | caller projection cannot swap artwork bytes; MASTER seam replay + relationHash; masterId required |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `97e76079-…`; CODE `7d99b37` |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `2936750f-…`; CODE `ce2c46c` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
