@@ -13,7 +13,7 @@ Scoped readiness (not a global Production Ready flag):
 - `skuPortfolioFactoryReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/SKU_PORTFOLIO_FACTORY_ACCEPTANCE.md` (CODE `7a87ea5`, generation `0b76b09e-02a8-45a6-b4fd-bf34849dd76c`; 4/4 T1000 OptiX media with per-case SHA/size/job/GPU)
 - `prototypeValidationReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/PROTOTYPE_VALIDATION_ACCEPTANCE.md` (CODE `7060037`, generation `627491fc-5853-4c4d-8325-71d0eb406d5c`; `physicalPrototypeValidated=false`; `launchDecision=WAITING_HUMAN_EVIDENCE`; packaging/labor canonical authority binding fail-closed; prior REAL blender verified `7a87ea5` 4/4 T1000 OptiX)
 - `pilotBatchExecutionReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/PILOT_BATCH_EXECUTION_ACCEPTANCE.md` (CODE `12ef546`, generation `4c1fa7ed-…`)
-- `surfaceDecorationLogicReady`: **REAL_LOGIC** — see `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md` (CODE `81496b5`, generation `6ae08726-2ec8-43ab-b9da-c0fc76974574`; engineering door mesh + canonical UV crop; production placementId authority; Mock preview; `physicalPrintValidated=false`)
+- `surfaceDecorationLogicReady`: **REAL_LOGIC** — see `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md` (CODE `dfe8eae`, generation `01a3f28b-7eb5-4e2b-b17b-64edeff267f2`; Scheme A single UV; FRONT-face-only; SINGLE_SURFACE vs MASTER_SPLIT; Mock preview; `physicalPrintValidated=false`)
 - `productionArtworkFileReady`: **REAL_LOGIC / GENERATED** (file package + hash, not physical print)
 - `realArtworkPreviewReady`: **false / MOCK** this round (`FOX3D_MOCK_BLENDER=1` / Platform mock)
 - `physicalPrintValidated`: **false**

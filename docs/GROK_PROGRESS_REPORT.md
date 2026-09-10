@@ -1,37 +1,37 @@
 # Grok Progress Report
 
 Repo: `netfox-web/blender-autonomous-3d`  
-Date: 2026-09-10  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1fcbc3a` (**CHANGES REQUIRED** — Phase 781–840 artwork parity/authority)  
-Review head: `bbb5ba2` / prior CODE `48869d4`  
+Date: 2026-09-11  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `486b071` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 2)  
+Issue #1: `IC_kwDOUSTRdc8AAAABTx4y4A`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 781–840 correction-only**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
+Executed **Phase 781–840 Re-Gate Round 2 correction-only** (six blockers). Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
 
-| Gap | Fix |
+| Blocker | Fix |
 |---|---|
-| Blender door mesh | Uses engineering component width/height/thickness; removed hidden `-0.002m`. Layout compared to PrintableSurface. |
-| Canonical UV | `apply_canonical_artwork()` fail-closed; Mapping node + UV corners from `uvRect`/rotation. Missing object/image/UV BLOCK. |
-| 4-door crop | Panel UV is exact master crop (`0/.25/.5/.75`), not per-door COVER refit. |
-| Production | `produce_panel(placementId)` re-resolves master/split; forged crop/hash BLOCK. |
-| Runner | Full negative matrix; readiness derived not hardcoded; corrupted scenario does not publish. |
-| DPI | min(horizontal, vertical) effective DPI. Rotation 0/90/180/270 only. |
+| 1 Double UV | Scheme A: mesh FRONT UV is final source UV; shader Mapping stays identity. Rotation/mirror apply once on corners. |
+| 2 Whole cube | Unique FRONT face by local normal `(0,-1,0)`; artwork material/UV only on that polygon; missing/duplicate FRONT fail-closed. |
+| 3 Preview fail-open | `artworkApplied is True` + exact-set `appliedPlacements`; missing/null/false fail-closed. |
+| 4 Hash not bound | `placementHash` includes uv/mirror/object/relation/master; `require_placement` re-derives UV and re-hashes. |
+| 5 Master heuristic | Canonical `SINGLE_SURFACE` vs `MASTER_SPLIT`; single-door 100% artwork is full source, not quarter crop. |
+| 6 Validator `and` | Split count fail-closed (`or` / exact-set); runner corruption (crop/id/dup/UV/missing artworkApplied) does not publish. |
 
-**CODE_EVIDENCE_SHA:** `81496b5cf8f63345183bdf69a6f4d1fe972a6ee6`  
+**CODE_EVIDENCE_SHA:** `dfe8eaed32192bcde202dee069f741b5884413ec`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34503006687` on exact `81496b5` ubuntu+windows.
+GitHub Actions CODE: **GREEN** `34514913333` on exact `dfe8eae` Ubuntu + Windows SUCCESS.
 
-Acceptance generation `6ae08726-2ec8-43ab-b9da-c0fc76974574`; runner-bound `evidenceCodeCommit=81496b5…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
+Acceptance generation `01a3f28b-7eb5-4e2b-b17b-64edeff267f2`; runner-bound `evidenceCodeCommit=dfe8eae…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK, no REAL artwork diagnostic this round). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
 
 ## Tests
 
 ```
-pytest -q  →  584 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  595 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
-Local Windows PermissionError flake reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
+Local Windows PermissionError / inventory flake reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
 
 ## REAL / MOCK / PARTIAL / BLOCKED
 
@@ -54,8 +54,8 @@ Local Windows PermissionError flake reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **n
 - Vision/Video/Demand MOCK
 - Fixture batch ≠ physical batch
 - Do not start Phase 841+ until ChatGPT Re-Gate says GO
-- Artwork Placement V1 is in correction/Re-Gate; not Production Ready; no REAL artwork OptiX this round
+- Artwork Placement V1 is in Re-Gate Round 2 correction; not Production Ready; no REAL artwork OptiX this round
 
 ## Next round
 
-ChatGPT re-review Phase 781–840 artwork placement. Stop here. Do not start Phase 841+.
+ChatGPT Re-Gate Phase 781–840 after Round 2. Stop here. Do not start Phase 841+.

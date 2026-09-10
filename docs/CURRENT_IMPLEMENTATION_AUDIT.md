@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 correction CODE_EVIDENCE_SHA `81496b5`; prior `48869d4` / instruction `1fcbc3a`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `1fcbc3a`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 Re-Gate Round 2 CODE_EVIDENCE_SHA `dfe8eae`; prior `81496b5` / instruction `486b071`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `486b071`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -12,16 +12,17 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 |---|---|---|
 | PrintableSurface | REAL_LOGIC | derived from CabinetSpec/acrylic/packaging/retail components; surfaceHash |
 | Artwork asset | REAL_LOGIC | DAM sha256/size/mime/pixels; tamper fail-closed |
-| ArtworkPlacement | REAL_LOGIC | mm SOT; CONTAIN/COVER; STRETCH blocked; placementHash |
-| mm↔UV | REAL_LOGIC | round-trip 0.001 mm |
+| ArtworkPlacement | REAL_LOGIC | mm SOT; CONTAIN/COVER; STRETCH blocked; hash binds uv/mirror/object/relation |
+| mm↔UV | REAL_LOGIC | round-trip 0.001 mm; Blender Scheme A mesh UV once (identity shader) |
 | Keep-out / DPI | CONFIG / PARTIAL | handle/hinge CONFIG; DPI policy CONFIG 150/72; printPreflight PARTIAL |
-| 4-door master | REAL_LOGIC | 2400×1800 / 4×600 engineering; crop continuity |
+| 4-door master | REAL_LOGIC | 2400×1800 / 4×600; exact quarters `0/.25/.5/.75`; MASTER_SPLIT only |
+| SINGLE_SURFACE | REAL_LOGIC | one-door 100% artwork is full source fit, not sibling quarter crop |
 | Production artwork | REAL_LOGIC / GENERATED | PNG+manifest byte hash; not physical print |
-| Blender preview | MOCK | apply_canonical_artwork consumes uvRect; mock usedMock=true; realArtworkPreviewReady=false |
+| Blender preview | MOCK | FRONT-face-only apply; `artworkApplied is True` + exact-set; realArtworkPreviewReady=false |
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
-| Production authority | REAL_LOGIC | placementId re-resolve; forged crop/hash BLOCK |
+| Production authority | REAL_LOGIC | placementId re-resolve; SINGLE vs MASTER_SPLIT; forged uv/crop/hash BLOCK |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `6ae08726-…`; CODE `81496b5` |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `01a3f28b-…`; CODE `dfe8eae` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
