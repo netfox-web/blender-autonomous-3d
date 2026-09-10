@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from fox3d.backup import backup_pilot, evaluate_tenant_restore_matrix, restore_pilot
+from fox3d.ids import new_id
 from fox3d.kd import FlatPackProductTypeRegistry
 from fox3d.platform import Platform
 from fox3d.portfolio import run_portfolio_scenario
@@ -2538,3 +2539,69 @@ def test_accepted_eco_subprocess_crash_window(tmp_path):
     _ = actor
     _ = sh
     _ = fixture
+
+
+def _inject_duplicate_labor(plat, unit):
+    live = plat.prototype.units[unit["prototypeUnitId"]]
+    original = next(r for r in plat.prototype.labor.values() if r.get("prototypeUnitId") == live["prototypeUnitId"])
+    dup = dict(original)
+    dup["laborId"] = new_id()
+    plat.prototype.labor[dup["laborId"]] = dup
+    plat.prototype.persist()
+    return original, dup
+
+
+def test_duplicate_semantic_labor_blocks_complete_and_human_go(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    fixture, shift, human, human_shift = _ops(plat)
+    cand, unit, actor, sh = _built_unit(plat, fixture=fixture, shift=shift, human=human, human_shift=human_shift)
+    _manual_launch_ready(plat, cand, unit, human, human_shift)
+    live = plat.prototype.units[unit["prototypeUnitId"]]
+    before = plat.prototype.costs[live["actualCostId"]]
+    assert before["completeness"] == "COMPLETE"
+    original, dup = _inject_duplicate_labor(plat, live)
+    integrity = plat.prototype._labor_integrity(live)
+    assert integrity["integrityOk"] is False
+    assert integrity["duplicateKeys"]
+    assert integrity["minutes"] is None
+    cost = plat.prototype.record_actual_cost(
+        live["prototypeUnitId"],
+        tenant_id="pa",
+        operator_id=human["operatorId"],
+        shift_id=human_shift["shiftId"],
+        source="MANUAL",
+        components={"materialAmount": 100, "hardwareAmount": 20, "laborAmount": 40, "packagingAmount": 10},
+        currency="TWD",
+    )
+    assert cost["completeness"] == "PARTIAL"
+    assert cost["quantityLineage"]["laborLineage"]["integrityOk"] is False
+    assert cost["quantities"].get("laborMinutes") in {None, original["minutes"], dup["minutes"]}
+    assert cost["quantityLineage"]["laborMinutes"] is None
+    with pytest.raises(PrototypeError, match="PARTIAL|launch-ready|duplicate|labor"):
+        plat.prototype.record_launch_decision(
+            cand["candidateId"],
+            tenant_id="pa",
+            operator_id=human["operatorId"],
+            shift_id=human_shift["shiftId"],
+            decision="HUMAN_GO",
+            reason="dup-labor",
+        )
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    live2 = plat2.prototype.units[unit["prototypeUnitId"]]
+    integrity2 = plat2.prototype._labor_integrity(live2)
+    assert integrity2["integrityOk"] is False
+    dest = tmp_path / "bak"
+    backup_pilot(plat2.root, dest, tenant_ids=["pa"])
+    restore_pilot(dest, tmp_path / "r", tenant_id="pa")
+    restored = Platform(root=tmp_path / "r", mock_blender=True)
+    matrix = evaluate_tenant_restore_matrix(live=plat2, restored=restored, tenant_a="pa", tenant_b="pb")
+    assert matrix["tenantLeakageAbsent"] is True
+    live_r = restored.prototype.units[unit["prototypeUnitId"]]
+    integrity_r = restored.prototype._labor_integrity(live_r)
+    assert integrity_r["integrityOk"] is False
+    assert len([r for r in restored.prototype.labor.values() if r.get("prototypeUnitId") == unit["prototypeUnitId"]]) == 2
+    _ = actor
+    _ = sh
+    _ = fixture
+    _ = shift

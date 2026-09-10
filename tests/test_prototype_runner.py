@@ -761,6 +761,109 @@ def test_prototype_runner_manual_go_without_dam_fails(tmp_path):
     _assert_no_overwrite(_load(), tmp_path, scenario)
 
 
+def _qty_lineage(i: int, **over) -> dict:
+    body = {
+        "ok": True,
+        "materialQty": 2,
+        "laborMinutes": 30,
+        "hardwareQty": 4,
+        "packagingQty": 1,
+        "packagingChecklistId": f"ck{i}",
+        "sources": {
+            "materialQty": "MATERIAL_LOT",
+            "laborMinutes": "LABOR_RECORD",
+            "hardwareQty": "PACKAGING_QC",
+            "packagingQty": "PACKAGING_CHECKLIST",
+        },
+        "laborLineage": {
+            "ok": True,
+            "integrityOk": True,
+            "laborIds": [f"lb{i}"],
+            "semanticKeys": [f"pa::labor::u{i}::e{i}::30.0::assembly"],
+            "minutes": 30,
+            "source": "LABOR_RECORD",
+            "duplicateKeys": [],
+        },
+        "packagingLineage": {
+            "checklistId": f"ck{i}",
+            "tenantId": "pa",
+            "prototypeUnitId": f"u{i}",
+            "engineeringHash": f"e{i}",
+            "packagingQty": 1,
+            "source": "PACKAGING_CHECKLIST",
+            "truthLabel": "MANUAL_EVIDENCE",
+        },
+    }
+    body.update(over)
+    return body
+
+
+def _pack_lineage(i: int, **over) -> dict:
+    body = {
+        "checklistId": f"ck{i}",
+        "tenantId": "pa",
+        "prototypeUnitId": f"u{i}",
+        "engineeringHash": f"e{i}",
+        "packagingQty": 1,
+        "source": "PACKAGING_CHECKLIST",
+        "truthLabel": "MANUAL_EVIDENCE",
+    }
+    body.update(over)
+    return body
+
+
+def _manual_go(plat, mutate=None):
+    body = _passing(plat)
+    body["launchDecision"] = "HUMAN_GO"
+    body["physicalPrototypeValidated"] = True
+    body["label"] = "MANUAL_EVIDENCE"
+    body["board"] = {
+        "rows": [
+            _board_row(
+                i,
+                launchDecision="HUMAN_GO",
+                evidenceSource="MANUAL",
+                physicalPrototypeValidated=True,
+                observedCostLabel="MANUAL",
+                costCompleteness="COMPLETE",
+                tenantId="pa",
+            )
+            for i in range(4)
+        ]
+    }
+    body["selectedBoard"] = list(body["board"]["rows"])
+    for i, row in enumerate(body["matrix"]):
+        row.update(
+            {
+                "tenantId": "pa",
+                "costCompleteness": "COMPLETE",
+                "observedCostLabel": "MANUAL",
+                "launchDecision": "HUMAN_GO",
+                "evidenceSource": "MANUAL",
+                "inventoryLineage": {"reservationIds": ["r1"], "consumedQuantity": 2, "workOrderId": "wo"},
+                "packagingQty": 1,
+                "packagingLineage": _pack_lineage(i),
+                "quantityLineage": _qty_lineage(i),
+            }
+        )
+    for pkg in body["evidencePackages"]:
+        pkg["evidenceSource"] = "MANUAL_EVIDENCE"
+        pkg["damRefs"] = [
+            {"role": "AS_BUILT", "assetId": "a", "sha256": "aa", "size": 12},
+            {"role": "PACKAGING", "assetId": "b", "sha256": "bb", "size": 12},
+        ]
+    for unit in body["units"]:
+        unit["physicalPrototypeValidated"] = True
+        unit["materialConsumed"] = True
+        unit["inventoryLineage"] = {"reservationIds": ["r1"], "consumedQuantity": 2, "workOrderId": "wo"}
+        unit["evidenceSource"] = "MANUAL"
+        unit["truthLabel"] = "MANUAL_EVIDENCE"
+        unit["tenantId"] = "pa"
+    if mutate:
+        mutate(body)
+    return body
+
+
 def test_prototype_runner_complete_cost_without_packaging_qty_fails(tmp_path):
     def scenario(plat):
         body = _passing(plat)
@@ -825,5 +928,140 @@ def test_prototype_runner_complete_cost_without_qty_fails(tmp_path):
             unit["inventoryLineage"] = None
             unit["evidenceSource"] = "MANUAL"
         return body
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def _mutate_first_matrix(body, **over):
+    body["matrix"][0].update(over)
+    if "quantityLineage" in over and isinstance(over["quantityLineage"], dict):
+        body["matrix"][0]["quantityLineage"] = over["quantityLineage"]
+    if "packagingLineage" in over:
+        body["matrix"][0]["packagingLineage"] = over["packagingLineage"]
+
+
+def test_prototype_runner_missing_packaging_checklist_id_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            lineage["packagingChecklistId"] = None
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_bogus_packaging_checklist_id_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            lineage["packagingChecklistId"] = "bogus-ck"
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_lineage_wrong_tenant_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            pack = dict(body["matrix"][0]["packagingLineage"])
+            pack["tenantId"] = "pb"
+            body["matrix"][0]["packagingLineage"] = pack
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_lineage_wrong_unit_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            pack = dict(body["matrix"][0]["packagingLineage"])
+            pack["prototypeUnitId"] = "other-unit"
+            body["matrix"][0]["packagingLineage"] = pack
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_lineage_stale_engineering_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            pack = dict(body["matrix"][0]["packagingLineage"])
+            pack["engineeringHash"] = "stale-hash"
+            body["matrix"][0]["packagingLineage"] = pack
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_matrix_packaging_qty_mismatch_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            body["matrix"][0]["packagingQty"] = 9
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_lineage_packaging_qty_mismatch_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            pack = dict(body["matrix"][0]["packagingLineage"])
+            pack["packagingQty"] = 7
+            body["matrix"][0]["packagingLineage"] = pack
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_packaging_source_without_lineage_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            body["matrix"][0]["packagingLineage"] = None
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_duplicate_labor_semantic_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            labor = dict(lineage["laborLineage"])
+            labor["laborIds"] = ["lb0", "lb0-dup"]
+            labor["semanticKeys"] = [labor["semanticKeys"][0], labor["semanticKeys"][0]]
+            labor["duplicateKeys"] = [labor["semanticKeys"][0]]
+            labor["integrityOk"] = False
+            labor["ok"] = False
+            labor["minutes"] = 60
+            lineage["laborLineage"] = labor
+            lineage["laborMinutes"] = 60
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
+
+    _assert_no_overwrite(_load(), tmp_path, scenario)
+
+
+def test_prototype_runner_labor_total_inconsistent_fails(tmp_path):
+    def scenario(plat):
+        def mutate(body):
+            lineage = dict(body["matrix"][0]["quantityLineage"])
+            labor = dict(lineage["laborLineage"])
+            labor["minutes"] = 12
+            lineage["laborLineage"] = labor
+            lineage["laborMinutes"] = 30
+            body["matrix"][0]["quantityLineage"] = lineage
+
+        return _manual_go(plat, mutate)
 
     _assert_no_overwrite(_load(), tmp_path, scenario)

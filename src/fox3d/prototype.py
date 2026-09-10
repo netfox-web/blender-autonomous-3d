@@ -333,6 +333,93 @@ def _required_variance_ok(item: Any) -> bool:
     return isinstance(item, dict) and item.get("complete") is True and item.get("ok") is True
 
 
+def _finite_positive_qty(value: Any) -> bool:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(number) and number > 0
+
+
+def _same_qty(left: Any, right: Any) -> bool:
+    try:
+        return abs(float(left) - float(right)) < 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
+def _packaging_authority_failures(row: dict[str, Any]) -> list[str]:
+    complete = row.get("costCompleteness") == "COMPLETE"
+    launch = row.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"}
+    if not complete and not launch:
+        return []
+    failures: list[str] = []
+    lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
+    sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
+    pack = row.get("packagingLineage") if isinstance(row.get("packagingLineage"), dict) else {}
+    if not pack:
+        failures.append("packaging_lineage_missing")
+        return failures
+    cid = pack.get("checklistId")
+    if not _lineage_present(cid):
+        failures.append("packaging_checklist_id_missing")
+    if pack.get("tenantId") and row.get("tenantId") and pack.get("tenantId") != row.get("tenantId"):
+        failures.append("packaging_lineage_tenant")
+    if pack.get("prototypeUnitId") != row.get("prototypeUnitId"):
+        failures.append("packaging_lineage_unit")
+    if pack.get("engineeringHash") != row.get("engineeringHash"):
+        failures.append("packaging_lineage_engineering")
+    if not _finite_positive_qty(pack.get("packagingQty")):
+        failures.append("packaging_qty_missing")
+    if lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}:
+        failures.append("packaging_qty_missing")
+    if pack.get("packagingQty") is not None and row.get("packagingQty") is not None and not _same_qty(pack.get("packagingQty"), row.get("packagingQty")):
+        failures.append("packaging_qty_matrix_mismatch")
+    if pack.get("packagingQty") is not None and lineage.get("packagingQty") is not None and not _same_qty(
+        pack.get("packagingQty"), lineage.get("packagingQty")
+    ):
+        failures.append("packaging_qty_lineage_mismatch")
+    if row.get("packagingQty") is not None and lineage.get("packagingQty") is not None and not _same_qty(
+        row.get("packagingQty"), lineage.get("packagingQty")
+    ):
+        failures.append("packaging_qty_matrix_mismatch")
+    qid = lineage.get("packagingChecklistId")
+    if not _lineage_present(qid):
+        failures.append("packaging_checklist_id_missing")
+    elif cid and qid != cid:
+        failures.append("packaging_checklist_id_mismatch")
+    src = pack.get("source") or sources.get("packagingQty")
+    if src != "PACKAGING_CHECKLIST":
+        failures.append("packaging_qty_source")
+    return failures
+
+
+def _labor_authority_failures(row: dict[str, Any]) -> list[str]:
+    complete = row.get("costCompleteness") == "COMPLETE"
+    launch = row.get("launchDecision") in {"HUMAN_GO", "READY_FOR_HUMAN_GO_NO_GO"}
+    if not complete and not launch:
+        return []
+    failures: list[str] = []
+    lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
+    labor = lineage.get("laborLineage") if isinstance(lineage.get("laborLineage"), dict) else {}
+    if not labor:
+        failures.append("labor_lineage_missing")
+        return failures
+    if labor.get("integrityOk") is not True:
+        failures.append("labor_integrity")
+    ids = [str(i) for i in (labor.get("laborIds") or []) if i]
+    keys = [str(k) for k in (labor.get("semanticKeys") or []) if k]
+    if len(ids) != len(set(ids)):
+        failures.append("labor_duplicate_id")
+    if len(keys) != len(set(keys)):
+        failures.append("labor_duplicate_semantic")
+    if labor.get("duplicateKeys"):
+        failures.append("labor_duplicate_semantic")
+    if labor.get("minutes") is None or lineage.get("laborMinutes") is None or not _same_qty(labor.get("minutes"), lineage.get("laborMinutes")):
+        failures.append("labor_minutes_mismatch")
+    return failures
+
+
 def _packaging_complete_failures(row: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     pack = row.get("packagingCompleteness")
@@ -534,6 +621,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append("packaging_qty_missing")
             if sources.get("laborMinutes") == "MISSING" and result.get("label") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"}:
                 failures.append("labor_qty_missing")
+        failures.extend(_packaging_authority_failures(row))
+        failures.extend(_labor_authority_failures(row))
         if row.get("physicalPrototypeValidated") and row.get("evidenceSource") == "FIXTURE":
             failures.append("fixture_physical_unit")
         if row.get("decisionState") in {"READY_FOR_HUMAN_GO_NO_GO", "READY_FOR_MANUAL_PILOT_BATCH", "HUMAN_GO"} and row.get("evidenceSource") == "FIXTURE":
@@ -631,6 +720,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}
             ):
                 failures.append("packaging_qty_missing")
+            failures.extend(_packaging_authority_failures(row))
+            failures.extend(_labor_authority_failures(row))
     if result.get("physicalPrototypeValidated") is False and result.get("label") in {"FIXTURE", "FIXTURE/REAL_LOGIC"}:
         if launch not in {"WAITING_HUMAN_EVIDENCE", "HOLD_REWORK"}:
             failures.append("fixture_launch_not_waiting")
@@ -809,7 +900,12 @@ class PrototypeFactory:
         keyed = []
         for store in (self.labor, self.launch_decisions, self.plans, self.ecos, self.packages, self.decisions):
             keyed.extend([row for row in store.values() if row.get("idempotencyKey") == key])
+        labor_keyed = [row for row in keyed if row.get("laborId")]
+        if len(labor_keyed) > 1:
+            raise PrototypeError("HOLD", "duplicate semantic labor aggregates")
         if keyed:
+            if labor_keyed:
+                return labor_keyed[0]
             return sorted(keyed, key=lambda row: str(row.get("at") or self._record_id(row) or ""))[0]
         parts = str(key or "").split("::")
         if len(parts) < 3:
@@ -832,7 +928,9 @@ class PrototypeFactory:
                 and str(row.get("reason") or "") == reason
                 and (qty is None or abs(float(row.get("minutes") or 0) - qty) < 1e-9)
             ]
-            rec = sorted(matches, key=lambda row: str(row.get("at") or row.get("laborId") or ""))[0] if matches else None
+            if len(matches) > 1:
+                raise PrototypeError("HOLD", "duplicate semantic labor aggregates")
+            rec = matches[0] if matches else None
         elif kind == "launch" and len(parts) >= 5:
             cid, decision, eng = parts[2], parts[3], parts[4]
             matches = [
@@ -1054,8 +1152,60 @@ class PrototypeFactory:
                 )
         return rows
 
+    def _labor_semantic_key(self, row: dict[str, Any]) -> str:
+        if row.get("idempotencyKey"):
+            return str(row["idempotencyKey"])
+        qty = row.get("minutes")
+        try:
+            qty_s = str(float(qty))
+        except (TypeError, ValueError):
+            qty_s = str(qty or "")
+        return (
+            f"{row.get('tenantId')}::labor::{row.get('prototypeUnitId')}::"
+            f"{row.get('engineeringHash')}::{qty_s}::{row.get('reason') or ''}"
+        )
+
+    def _prototype_labor_rows(self, unit: dict[str, Any]) -> list[dict[str, Any]]:
+        uid = unit.get("prototypeUnitId")
+        tenant = unit.get("tenantId")
+        eng = unit.get("engineeringHash")
+        return [
+            r
+            for r in self.labor.values()
+            if r.get("prototypeUnitId") == uid and r.get("tenantId") == tenant and r.get("engineeringHash") == eng
+        ]
+
+    def _labor_integrity(self, unit: dict[str, Any]) -> dict[str, Any]:
+        rows = self._prototype_labor_rows(unit)
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            grouped.setdefault(self._labor_semantic_key(row), []).append(row)
+        duplicate_keys = [key for key, group in grouped.items() if len(group) > 1]
+        ids = [str(r.get("laborId")) for r in rows if r.get("laborId")]
+        keys = [self._labor_semantic_key(r) for r in rows]
+        ok = bool(rows) and not duplicate_keys and len(ids) == len(set(ids))
+        minutes = float(sum(float(r.get("minutes") or 0) for r in rows)) if ok else None
+        return {
+            "ok": ok,
+            "integrityOk": ok,
+            "laborIds": ids,
+            "semanticKeys": keys,
+            "minutes": minutes,
+            "source": "LABOR_RECORD" if ok else ("DUPLICATE" if duplicate_keys else "MISSING"),
+            "duplicateKeys": duplicate_keys,
+        }
+
     def _authoritative_labor_minutes(self, unit: dict[str, Any]) -> float | None:
-        rows = self._labor_records(unit)
+        meta = self._labor_integrity(unit)
+        if meta.get("duplicateKeys"):
+            return None
+        if meta.get("minutes") is not None:
+            return float(meta["minutes"])
+        rows = [
+            r
+            for r in self._labor_records(unit)
+            if str(r.get("laborId") or "").startswith("wo:")
+        ]
         if not rows:
             return None
         return float(sum(float(r.get("minutes") or 0) for r in rows))
@@ -1097,11 +1247,28 @@ class PrototypeFactory:
             return None
         return qty
 
+    def _packaging_lineage(self, unit: dict[str, Any]) -> dict[str, Any] | None:
+        pack = self.checklists.get(unit.get("packagingChecklistId") or "")
+        if not pack:
+            return None
+        packaging = self._authoritative_packaging_qty(unit)
+        return {
+            "checklistId": pack.get("checklistId"),
+            "tenantId": pack.get("tenantId"),
+            "prototypeUnitId": pack.get("prototypeUnitId"),
+            "engineeringHash": pack.get("engineeringHash"),
+            "packagingQty": packaging,
+            "source": "PACKAGING_CHECKLIST" if packaging is not None else "MISSING",
+            "truthLabel": pack.get("truthLabel"),
+        }
+
     def _cost_qty_complete(self, unit: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
         material = self._authoritative_material_qty(unit)
+        labor_meta = self._labor_integrity(unit)
         labor = self._authoritative_labor_minutes(unit)
         hardware = self._authoritative_hardware_qty(unit)
         packaging = self._authoritative_packaging_qty(unit)
+        pack_lineage = self._packaging_lineage(unit)
         pack = self.checklists.get(unit.get("packagingChecklistId") or "")
         sources = {
             "materialQty": "MATERIAL_LOT" if material is not None else "MISSING",
@@ -1109,14 +1276,18 @@ class PrototypeFactory:
             "hardwareQty": "PACKAGING_QC" if hardware is not None else "MISSING",
             "packagingQty": "PACKAGING_CHECKLIST" if packaging is not None else "MISSING",
         }
-        ok = all(v != "MISSING" for v in sources.values())
+        if labor_meta.get("duplicateKeys"):
+            sources["laborMinutes"] = "DUPLICATE"
+        ok = all(v not in {"MISSING", "DUPLICATE"} for v in sources.values())
         return ok, {
             "ok": ok,
             "materialQty": material,
             "laborMinutes": labor,
             "hardwareQty": hardware,
             "packagingQty": packaging,
-            "packagingChecklistId": pack.get("checklistId") if packaging is not None and pack else None,
+            "packagingChecklistId": (pack_lineage or {}).get("checklistId") if packaging is not None else None,
+            "packagingLineage": pack_lineage,
+            "laborLineage": labor_meta,
             "sources": sources,
         }
 
@@ -3212,9 +3383,11 @@ class PrototypeFactory:
             "staleLineage": self._lineage_stale(unit["candidateId"], unit["tenantId"]),
             "launchDecision": board.get("launchDecision"),
             "evidencePackageId": unit.get("evidencePackageId") or board.get("evidencePackageId"),
+            "tenantId": unit.get("tenantId"),
             "packagingQty": ((pack or {}).get("observed") or {}).get("packagingQty")
             if isinstance((pack or {}).get("observed"), dict)
             else (pack or {}).get("packagingQty"),
+            "packagingLineage": self._packaging_lineage(unit),
             "quantityLineage": (cost or {}).get("quantityLineage"),
         }
 

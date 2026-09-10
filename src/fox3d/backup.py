@@ -1246,6 +1246,15 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                         "packagingQty": (r.get("quantityLineage") or {}).get("packagingQty")
                         if isinstance(r.get("quantityLineage"), dict)
                         else None,
+                        "packagingChecklistId": (r.get("quantityLineage") or {}).get("packagingChecklistId")
+                        if isinstance(r.get("quantityLineage"), dict)
+                        else None,
+                        "laborIds": ((r.get("quantityLineage") or {}).get("laborLineage") or {}).get("laborIds")
+                        if isinstance(r.get("quantityLineage"), dict)
+                        else None,
+                        "laborSemanticKeys": ((r.get("quantityLineage") or {}).get("laborLineage") or {}).get("semanticKeys")
+                        if isinstance(r.get("quantityLineage"), dict)
+                        else None,
                         "quantitySources": (r.get("quantityLineage") or {}).get("sources")
                         if isinstance(r.get("quantityLineage"), dict)
                         else None,
@@ -1261,6 +1270,7 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                 [
                     {
                         "checklistId": r.get("checklistId"),
+                        "tenantId": r.get("tenantId"),
                         "prototypeUnitId": r.get("prototypeUnitId"),
                         "engineeringHash": r.get("engineeringHash"),
                         "ok": r.get("ok"),
@@ -1355,9 +1365,11 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
                 [
                     {
                         "laborId": r.get("laborId"),
+                        "tenantId": r.get("tenantId"),
                         "prototypeUnitId": r.get("prototypeUnitId"),
                         "workOrderId": r.get("workOrderId"),
                         "minutes": r.get("minutes"),
+                        "reason": r.get("reason"),
                         "engineeringHash": r.get("engineeringHash"),
                         "idempotencyKey": r.get("idempotencyKey"),
                     }
