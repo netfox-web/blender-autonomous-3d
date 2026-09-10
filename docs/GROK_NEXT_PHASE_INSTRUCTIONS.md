@@ -1,111 +1,149 @@
-# Grok 修正指令：Phase 781–840 Re-Gate Round 4 — CHANGES REQUIRED / Phase 841+ HOLD
+# Grok 修正指令：Phase 781–840 Re-Gate Round 5 — CHANGES REQUIRED / Phase 841+ HOLD
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main head: `f3ec67a1acdb5e8a8d96ab802eb823f724de2607`  
-> CODE_EVIDENCE_SHA reviewed: `7d99b37f1587081613525409ad185a83b3bdb62d`  
-> Canonical generation reviewed: `97e76079-0527-4313-ad37-6b1bd050a268`  
-> CODE Actions: `34524185358` Ubuntu + Windows SUCCESS  
-> docs/head Actions: `34524773277` Ubuntu + Windows SUCCESS  
+> Reviewed main head: `27de6c8d0376d89d7678ce77d20e6738c0cc1372`  
+> CODE_EVIDENCE_SHA reviewed: `ce2c46c0535fb2bbba2208401a51a66d4991ffaa`  
+> Canonical generation reviewed: `2936750f-8a3c-4bb5-90ab-70741ea6f21d`  
+> CODE Actions: `34532967434` Ubuntu + Windows SUCCESS  
+> docs/head Actions: `34533523171` Ubuntu + Windows SUCCESS  
+> `pytest -q`: **601 passed**  
 > Re-Gate result: **CHANGES REQUIRED — Phase 841+ MUST NOT START.**
 
-本輪只補 Phase 781–840 Artwork Placement 的最後 authority / preview↔production parity 缺口。**不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore。**
+本輪只補 Artwork Placement V1 最後的 UV rotation / preview↔production parity / master identity / acceptance fail-closed 缺口。**不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore。**
 
-## 已接受，不要退步
+## 本輪已接受，禁止退步
 
-- `pytest -q`：**598 passed**；exact CODE `7d99b37...` Actions `34524185358` Ubuntu/Windows SUCCESS；docs/head `f3ec67a...` Actions `34524773277` SUCCESS。
-- canonical generation `97e76079-0527-4313-ad37-6b1bd050a268` runner-bound to exact CODE、`workingTreeClean=true`。
-- REAL preview gate 已要求 `usedMock=false`、REAL Blender、job/blender/device、artifact hash+size、`artworkApplied=true`、exact placement/object/component/FRONT/relation/final UV identity。
-- `finalUvHash` 已改 deterministic SHA/stable hash，由 authoritative placement 重算比對。
-- SINGLE_SURFACE 已不再誤走多門 quarter crop；stored source crop 會與重新推導值比對。
-- MASTER_SPLIT 已有獨立 master relation store，基本 coordinated surface-set tamper 會 BLOCK。
-- Blender 仍採單一 UV authority：FRONT mesh UV = final source UV、shader mapping identity。
-- `realArtworkPreviewReady=false`、`physicalPrintValidated=false`、`globalProductionReady=false`、`fullAutonomousFactoryReady=false` 維持正確。
-- CI 仍 `FOX3D_MOCK_BLENDER=1`，只能算 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，不是 Production Ready。
-- LIVE_CNC / LIVE_LASER / PLC 維持 **BLOCKED**；Demand / Vision / AI Video 維持 **MOCK**；print preflight 維持 **PARTIAL**。
+- caller projection 已不能替換 canonical artwork/product/engineering；`preview()` 以 live placement 為 authority。
+- Blender payload 帶 canonical `artworkSha256`，worker 在套圖前重讀實際 image bytes 做 SHA-256 exact compare；digest mismatch BLOCK。
+- SINGLE_SURFACE production 已有 full-surface canvas；CONTAIN 有 letterbox；COVER 會依 anchor/placement 推導 source crop；rotation/mirror 已進 production raster transform；STRETCH 仍 BLOCKED。
+- MASTER relation 已保存 `seamSource`；CONFIG seam 可 deterministic replay；relationHash/seam/order/cropGeometry/masterHash 等已有基本 self-check。
+- `realArtworkPreviewReady=false` 維持正確：本輪沒有 REAL artwork OptiX render，不可升 REAL。
+- `physicalPrintValidated=false` 維持正確。
+- CI 仍 `FOX3D_MOCK_BLENDER=1`，601 PASS 只能算 **MOCK/unit/integration + FIXTURE/REAL_LOGIC**，不是 Production Ready。
+- Demand / Vision / AI Video = **MOCK**；print preflight / OS sandbox / AR / barcode / McKee-BCT = **PARTIAL**；LIVE_CNC / LIVE_LASER / PLC / liveFactory = **BLOCKED**。
 
 ---
 
-# Blocker 1 — REAL preview 仍會讓 caller projection 影響實際 render bytes
+# Blocker 1 — 90°/270° UV rotation 對非正方形 uvRect 的數學目前是錯的
 
-目前 `preview()` 已先 `require_placement()` 得到 authoritative `live`，requested identity / hashes 也取自 `live`；但後續仍使用 caller 傳入的 `placement` 取得 `artworkId`、`productId`、`engineeringHash`，並把該 artwork path 當 `artwork_path` override 傳進 `blender_job_payload()`。
+目前 `src/fox3d/artwork.py::canonical_final_sampling()` 與 `scripts/blender_job.py::canonical_uv_mapping()` 都是把 **絕對 UV 座標**直接繞 `(u0+u1)/2,(v0+v1)/2` 做 Euclidean 90° rotation：
 
-同時 `blender_job_payload()` 對每個 placementId 雖會重新取得 canonical placement / artwork，卻使用：
+```python
+(cx - (y - cy), cy + (x - cx))
+```
 
-`path = artwork_path or art.get("path")`
+這只有在 UV rect 為正方形時才不會改變 source region。Artwork Placement 的真實案例通常不是正方形：
 
-也就是 caller override 優先。Blender worker 目前只檢查 image path 存在，然後把 payload 裡的 `artworkHash` 原樣回報；**worker 沒有對實際載入的 image bytes 做 SHA-256 驗證**。因此存在以下 fail-open：同 tenant 的另一張圖片可被 caller path override 實際 render，但 applied lineage 仍可能帶 canonical artworkHash / placementHash，最後誤過 `realArtworkPreviewReady`。
+- SINGLE_SURFACE `CONTAIN` 可能是 `u=0..1, v=.375..625`；
+- MASTER_SPLIT 四門可能是 `u=0..0.25, v=0..1`。
+
+對這種 rect 做現在的 90° rotation，corners 會跑出原 uvRect，甚至可能跑出 `[0,1]`；例如 `u=0..0.25, v=0..1` 旋轉 90° 可得到約 `u=-0.375..0.625`。這代表 Blender preview 可能取到**不同 source pixels**，而 production raster 目前是 `orient_rgb()` 對原 source crop 做旋轉，所以兩邊仍非真正 parity。
 
 ### Required correction
 
-- 一旦有 `placementId`，`preview()` 後續所有 authority 必須只使用 `live`：
-  - `live.artworkId`
-  - `live.productId`
-  - `live.engineeringHash`
-  - `live.objectName/componentId/face/relation`
-  - `placements=[live]` 或 `placement_ids=[live.placementId]`
-- caller 傳入的 projection 只能是 request/reference，不得決定真正 render 的 artwork path 或 engineering payload。
-- REAL authority path **不得接受未驗證的任意 `artwork_path` override**。最佳做法：`blender_job_payload()` 從 canonical `require_artwork()` 自己取得 path。
-- 為消除 verify→worker load 的 TOCTOU，payload 請一併帶 canonical raw asset digest（例如 `artworkSha256`，來源是 `require_artwork()` 已驗過的 DAM bytes），worker 在 `bpy.data.images.load()` 前重新讀 bytes 做 SHA-256 exact compare；不符就 `ArtworkApplyError`，不得 `artworkApplied=true`。
-- `artworkHash`（metadata/lineage hash）與 raw file SHA-256 不要混用；兩者分開命名、各自驗證。
-- 如果保留 `artwork_path` 只供 unit/diagnostic，必須明確 non-authoritative，且 bytes digest 不符 canonical asset 時 fail-closed。
+建立一個唯一 canonical quarter-turn transform，兩邊共用相同語義：
+
+- 先在 **rect-local normalized coordinates** `(s,t) ∈ [0,1]²` 做 0/90/180/270 + mirror，最後才 map 回 `[u0,u1] × [v0,v1]`；或直接用 corner permutation。
+- quarter-turn 後所有 final UV corners **必須仍在原 canonical uvRect bounds 內**（允許浮點 epsilon），不得因 rect aspect ratio 改變而擴張 source region。
+- `canonical_final_sampling()` 與 Blender worker `canonical_uv_mapping()` 不得維護兩份可能漂移的 rotation 規則；至少要用 shared deterministic table/algorithm並互相測 exact parity。
+- 明確定義 transform order（例如 `mirror local-X` → `rotate quarter-turn`，或相反），production `orient_rgb()` 必須完全同一 order。
+- 不要用 shader Mapping node 再套第二次 transform；仍維持 Scheme A / identity shader。
 
 ### Required tests
 
-1. valid `placementId` + caller forged `artworkId`（同 tenant 另一張圖）不得影響實際 payload/render；最好直接 BLOCK caller mismatch，至少必須使用 canonical art。
-2. valid `placementId` + forged `productId` / `engineeringHash` 不得選到另一份 engineering。
-3. canonical lineage + arbitrary wrong `artwork_path` bytes 必須 BLOCK，不能 `artworkApplied=true`。
-4. worker image bytes 在 submit 前後被換掉 → worker-side digest mismatch BLOCK。
-5. canonical artwork path + digest 一致才可產生 applied record。
+用**非正方形 uvRect**直接測：
+
+1. `[0,1] × [.375,.625]` 的 90/180/270 + mirror。
+2. `[0,.25] × [0,1]` 的 90/180/270 + mirror。
+3. 每個 final corner 都在 canonical uvRect bounds 內。
+4. 0/90/180/270 做四次 cycle 回原 orientation。
+5. artwork-side `canonical_final_sampling` 與 worker-side `canonical_uv_mapping.finalSampling` exact/epsilon equal。
+6. malformed/non-quarter rotation 仍 BLOCK。
 
 ---
 
-# Blocker 2 — SINGLE_SURFACE production file 尚未真正等價於 Blender placement（CONTAIN / anchor / rotation）
+# Blocker 2 — 現有 rotation parity 證據只比「同一套邏輯算出的 hash」，沒有證明 source pixels 一致
 
-目前 `canonical_source_crop()` 雖重新從 artwork pixels + surface/placement/fit 推導，但其 COVER source crop固定置中，實際沒有使用 placement 的 x/y offset 或 `anchor`；`rotationDeg` 也沒有進 production raster transform。
+Round 4 的 `test_contain_cover_anchor_rotation_production_parity()` 對 rotation 主要驗：
 
-更重要的是 `produce_panel(SINGLE_SURFACE)` 最後只把 source crop bytes直接寫成 PNG，卻把 manifest 的 `outputPhysicalMm` 標成整個 surface。對 `CONTAIN` 且 artwork aspect ratio ≠ surface 時，Blender preview 會有留白/偏移，但 production PNG 只有 artwork 本體；若把該 PNG當整片門板印刷，實際會被拉到 full surface，與 Blender preview 不一致。這違反本 Phase 的核心目標：**Engineering Surface mm = Artwork Placement = Blender Preview = Production Artwork**。
+- `rot_prod["rotationDeg"] == 90`
+- `rot_prod["finalUvHash"] == applied_identity(...)["finalUvHash"]`
+
+但兩個 hash 都來自同一套 canonical math；若 canonical math 自己錯，這仍會一起 PASS。現有 canonical runner 也只記錄 `rotationDeg=90 + finalUvHash/transformHash`，沒有 180、270、mirror，更沒有 asymmetric pixel landmark 對照。上一輪要求的「90/180/270 rotation + mirror production orientation 與 finalSampling parity」尚未完整證明。
 
 ### Required correction
 
-建立單一 deterministic production transform/composition（可重用現有 helpers，不要另建第二套 placement engine）：
+新增一個**獨立 pixel-oracle parity test**，不能只 hash 自證：
 
-- `CONTAIN`：production panel output 必須保留 canonical x/y placement、anchor 和留白；不能把 artwork crop 當 full-panel raster。
-- `COVER`：source crop 必須依 authoritative placement offset/anchor 推導，不得一律 center crop。
-- `rotationDeg` / `mirrored`：production output 必須與 Blender `finalSampling` 的方向一致；若某 transform 尚未支援 production，應 fail-closed / PARTIAL，而不是標 `productionArtworkFileReady=true`。
-- 對 full-panel production raster，manifest 必須明確記錄：canvas physical mm、pixel dimensions / dpi、placed artwork rect、source crop、rotation、mirror、background/alpha policy、placementHash、final transform hash。
-- 不准用 resize/stretch 偷偷補滿 surface；STRETCH 仍 BLOCKED。
-- 建議新增一個 parity identity：由同一 canonical placement 推導 Blender final UV 與 production transform，runner 驗兩邊對同一 source region / orientation / panel coordinates。
+- 產生非對稱 source artwork，例如四角/中心使用可辨識 RGB marker 或 3×2 / 4×3 landmark grid。
+- 對 CONTAIN 與 COVER 至少各做：0、90、180、270、mirror、mirror+90（建議完整 8 orientations）。
+- 從 canonical finalSampling 推導 Blender FRONT face 四角預期取樣的 source landmark；再讀 production PNG 實際對應 landmark，比對 orientation / source region。
+- COVER 必須同時覆蓋 LEFT/CENTER/RIGHT（或 TOP/CENTER/BOTTOM，依 crop axis），確保 anchor 先決定 source crop，再套 orientation，順序固定。
+- CONTAIN 要檢查 letterbox 位置與 rotated artwork landmarks；不能只驗黑邊存在。
+- 若某組合不能保證 parity，先標 PARTIAL/BLOCK，不可 `productionArtworkFileReady=true`。
 
-### Required tests
+### Canonical evidence required
 
-至少用非等比例 artwork 覆蓋：
+`ARTWORK_PLACEMENT_ACCEPTANCE.json/.md` 至少新增可機器驗證的：
 
-1. `CONTAIN + CENTER`：輸出 canvas 有正確留白，內容 rect mm 與 Blender placement一致。
-2. `CONTAIN + LEFT/TOP/RIGHT/BOTTOM`（依既有 ANCHORS 實際枚舉）：留白方向/offset正確。
-3. `COVER + LEFT/CENTER/RIGHT` 或 TOP/CENTER/BOTTOM：sourceXPx/sourceYPx 隨 anchor 改變，不能永遠置中。
-4. 90/180/270 rotation + mirror：production orientation 與 `finalSampling` parity；未支援就 BLOCK。
-5. manifest `outputPhysicalMm` 與 raster/dpi/placement semantics 不可自相矛盾。
-6. negative：coordinated crop + placementHash、anchor/rotation projection tamper 仍 BLOCK。
+- `orientationParity.0`
+- `orientationParity.90`
+- `orientationParity.180`
+- `orientationParity.270`
+- `orientationParity.mirror`
+- `orientationParity.mirror90`
+
+每項包含 source landmark expectation、production observed landmark、uv bounds/identity、PASS/BLOCK；不要只放一個 hash 字串。
 
 ---
 
-# Blocker 3 — MASTER relation authority 尚未完整 replay 自己的 seam / relation integrity
+# Blocker 3 — MASTER `masterId` 尚未被 relationHash 自身綁定，仍可 coordinated tamper
 
-`place_across_panels()` 允許 `master_canvas(surfaces, seam_mm=seam_mm)`，並把 `seamMm`、`panelOrder`、`cropGeometry` 存進 master relation；但 `_authoritative_master()` 之後卻用 `master_canvas(siblings)` 重建，**沒有使用 relation 裡已授權的 `seamMm`**。若合法建立時傳 explicit seam，後續 replay 可能得到不同 masterHash；而 relation 的 `panelOrder/cropGeometry/relationHash` 也沒有被完整 self-verify。
+目前 `master_relation_hash()` 的 `_MASTER_RELATION_FIELDS` 包含 `masterHash/tenant/product/.../cropGeometry`，**但沒有 `masterId`**。`_authoritative_master()` 雖要求 `placement.masterId == relation.masterId`，若 relation.masterId 與所有 placements.masterId 一起被修改，並重新計算 placementHash，relationHash 本身不會變，因此 `masterId` 沒有 independent integrity binding。
+
+上一輪要求的是 relation 對 `masterId/masterHash/...` 做 exact integrity 驗證，因此這點尚未達標。
 
 ### Required correction
 
-- master relation record 要能 deterministic replay：使用 authoritative relation 的 canonical seam（或若產品政策只允許 engineering seam，就在建立時拒絕不同 seam，不要存一份之後無法 replay 的 config）。
-- `require_master()` / `_authoritative_master()` 必須驗 relation 自身 integrity：重算 `relationHash`，並 exact check `masterId/masterHash/tenant/product/version/engineeringHash/surfaceIds/panelOrder/seamMm/widthMm/heightMm/cropGeometry`。
-- placement 的 `masterId` 若 Phase schema宣稱必填，就必須 exact match，不可把 missing/blank 當合法；`masterSurfaceIds` projection 若保留，也要明確規則（exact projection或完全移除），不要半信半不信。
-- re-derived master/crops 必須從 independent relation + authoritative surfaces 得出，不能回頭信 placement projection。
+二選一，選最小改動：
+
+- 將 `masterId` 納入 `_MASTER_RELATION_FIELDS` / `relationHash`；或
+- 讓 `masterId` deterministic derive from immutable relation identity，require 時重新推導 exact match。
+
+不要同時保留「random masterId」又不讓任何 independent digest 綁它。
 
 ### Required tests
 
-1. explicit non-default seam 的合法 master create → require_placement → produce_panel 可 deterministic round-trip（若政策允許）。
-2. tamper relation `seamMm` / `panelOrder` / `cropGeometry` / `relationHash` 任一欄 → BLOCK。
-3. missing/forged `masterId` → BLOCK（若 masterId 保留為 authority identity）。
-4. coordinated placement `masterSurfaceIds/masterHash/placementHash` tamper仍 BLOCK，舊 regression維持。
+1. 只改 relation.masterId → BLOCK。
+2. coordinated 改 relation.masterId + 所有 placement.masterId + 重新 placementHash → 仍 BLOCK。
+3. legitimate relation round-trip仍 PASS。
+
+---
+
+# Blocker 4 — acceptance validator 對新增 scenario 仍 fail-open
+
+`validate_artwork_acceptance_result()` 現在對 `containCenter / coverAnchor / rotationParity / masterSeam` 多採：
+
+```python
+if scenario:
+    ...validate...
+```
+
+因此 scenario 若整個遺失、變成 `{}`、runner regression 沒產生，validator 可能完全不追加 failure。這不符合 canonical evidence fail-closed。
+
+### Required correction
+
+- Round 4/5 宣稱為 required 的 scenario 必須是 **required set**；missing、wrong type、empty、missing critical field 都要 failure。
+- 至少 require：`cabinet4Single`、`containCenter`、COVER anchor parity、orientation parity matrix、master seam replay、caller forged preview art、wrong path/digest、master relation tamper、missing masterId。
+- negative matrix 不得只把任意 truthy string 當 PASS；expected `BLOCKED` / expected error code 必須 exact。
+- canonical runner 的 top-level `ok` 與 validator 都要獨立 fail-closed；刪掉任何一個 required evidence row，acceptance 必須失敗且不得 publish成功 canonical bundle。
+
+### Required tests
+
+1. 從一份原本 PASS 的 result 依序刪除每個 required scenario → validator FAIL。
+2. scenario `{}` / wrong type → FAIL。
+3. negative value從 `BLOCKED` 改 `passed` / `True` / missing → FAIL。
+4. orientation 只剩 90、缺 180/270/mirror → FAIL。
 
 ---
 
@@ -116,17 +154,17 @@
 1. source + tests commit/push 新 **CODE_EVIDENCE_SHA**。
 2. full `pytest -q` PASS。
 3. exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS。
-4. 在 exact CODE SHA clean tree 跑 Artwork canonical runner，產生新的 `acceptanceGenerationId`，`evidenceCodeCommit=<exact CODE SHA>`、`workingTreeClean=true`。
-5. runner 必須新增上述 caller-authority、CONTAIN/COVER/anchor/rotation production parity、master seam/integrity negative/positive evidence；不能只靠 synthetic `preview_ready_from_job()`。
-6. 更新 `docs/GROK_PROGRESS_REPORT.md`、`docs/CURRENT_IMPLEMENTATION_AUDIT.md`、`docs/REAL_E2E_ACCEPTANCE.md`、`docs/ARTWORK_PLACEMENT_ACCEPTANCE.md/.json`。`CABINET_REAL_ACCEPTANCE.md` 沒有 truth change 就不要硬改。
-7. 若本機沒有 REAL artwork OptiX render，維持 `realArtworkPreviewReady=false`；若有，必須含 actual artifact SHA/size/job/GPU/device + worker-verified artwork raw digest + exact applied identity。
-8. `physicalPrintValidated` 仍只能由真實實體印刷/量測證據變 true；本輪軟體 parity不能冒充 physical validation。
+4. 在 exact CODE SHA clean tree 跑 Artwork canonical runner，產生新的 `acceptanceGenerationId`；`evidenceCodeCommit=<exact CODE SHA>`、`workingTreeClean=true`。
+5. canonical runner 必須真的包含非正方形 UV quarter-turn、pixel landmark parity、180/270/mirror、masterId coordinated tamper、required-scenario deletion fail-closed evidence。
+6. 更新 `docs/GROK_PROGRESS_REPORT.md`、`docs/CURRENT_IMPLEMENTATION_AUDIT.md`、`docs/REAL_E2E_ACCEPTANCE.md`、`docs/ARTWORK_PLACEMENT_ACCEPTANCE.md/.json`。`CABINET_REAL_ACCEPTANCE.md` 無 truth change 不要硬改。
+7. 若沒有 REAL artwork OptiX render，`realArtworkPreviewReady=false`；不要借用舊 Blender media把新 artwork path升 REAL。
+8. `physicalPrintValidated=false`，除非有實體印刷/尺寸量測證據。
 9. docs/head Actions Ubuntu + Windows SUCCESS。
-10. Issue #1 留短回報：CODE SHA、pytest count、CODE run、canonical generation、docs SHA/run、REAL/MOCK/PARTIAL/BLOCKED。
-11. **STOP。Phase 841+ 仍不得開始，等 ChatGPT Re-Gate。**
+10. Issue #1 短回報：CODE SHA、pytest count、CODE run、canonical generation、docs SHA/run、REAL/MOCK/PARTIAL/BLOCKED。
+11. **STOP。Phase 841+ 仍不得開始，等待 ChatGPT Re-Gate。**
 
 ## Definition of Done
 
-Phase 781–840 只有在以下情況才可放行：
+Phase 781–840 只有在以下條件同時成立才可放行：
 
-> caller projection 無法替換 canonical artwork/engineering/render bytes；worker 能驗實際載入 artwork bytes identity；SINGLE_SURFACE 的 CONTAIN/COVER/anchor/rotation/mirror 在 production output 與 Blender placement 使用同一 canonical transform且不 stretch；MASTER_SPLIT relation 可以 deterministic replay並自驗 seam/order/crop/integrity；Mock/physical/live truth boundary維持正確。
+> 非正方形 uvRect 的 90/180/270/mirror 不會改變 canonical source bounds；Blender finalSampling 與 production pixels 用獨立 landmark oracle 證明同 source region / orientation；masterId 被 independent relation integrity 綁定；canonical acceptance 對所有 required scenario/negative evidence fail-closed；Mock/physical/live truth boundary維持正確。
