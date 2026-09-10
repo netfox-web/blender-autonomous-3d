@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import sys
@@ -105,6 +106,7 @@ def _passing(plat):
                     "qcPlanHash": f"qph{i}",
                     "engineeringHash": f"e{i}",
                     "releaseHash": rh,
+                    "releaseId": rel,
                     "workOrderId": wo,
                 }
             )
@@ -130,8 +132,26 @@ def _passing(plat):
                 "source": "FIXTURE",
                 "truthLabel": "FIXTURE",
                 "state": "IN_PROGRESS",
+                "qcPlanHash": f"qph{i}",
+                "reservationIds": [f"r{i}"],
+                "lotIds": [f"lot{i}"],
+                "consumedQuantity": 5.0,
+                "allocationPolicy": "FIXTURE_AUTO_SEED",
+                "consumeKind": "BATCH_ALLOCATION_PROJECTION",
                 "liveMachineControl": False,
-                "cost": {"completeness": "PARTIAL", "truthLabel": "FIXTURE", "quantityLineage": {"ok": False}},
+                "cost": {
+                    "completeness": "PARTIAL",
+                    "truthLabel": "FIXTURE",
+                    "quantityLineage": {
+                        "ok": False,
+                        "sources": {
+                            "materialQty": "MATERIAL_LOT",
+                            "laborMinutes": "LABOR_RECORD",
+                            "hardwareQty": "BOM",
+                            "packagingQty": "MISSING",
+                        },
+                    },
+                },
             }
         )
         cartons.append(
@@ -147,6 +167,8 @@ def _passing(plat):
                 "damageDefect": "OK",
                 "hardwareObserved": 4,
                 "partObserved": 6,
+                "source": "FIXTURE",
+                "truthLabel": "FIXTURE",
             }
         )
         materials.append(
@@ -158,6 +180,30 @@ def _passing(plat):
                 "consumedQuantity": 5.0,
                 "reservationIds": [f"r{i}"],
                 "lotIds": [f"lot{i}"],
+                "allocationPolicy": "FIXTURE_AUTO_SEED",
+                "consumeKind": "BATCH_ALLOCATION_PROJECTION",
+                "reservations": [
+                    {
+                        "reservationId": f"r{i}",
+                        "lotId": f"lot{i}",
+                        "quantity": 5,
+                        "tenantId": "pa",
+                        "workOrderId": wo,
+                        "state": "CONSUMED",
+                        "kind": "lot",
+                    }
+                ],
+                "consumed": [
+                    {
+                        "reservationId": f"r{i}",
+                        "lotId": f"lot{i}",
+                        "quantity": 5,
+                        "tenantId": "pa",
+                        "workOrderId": wo,
+                        "state": "CONSUMED",
+                        "kind": "lot",
+                    }
+                ],
                 "unitAllocations": alloc,
             }
         )
@@ -168,7 +214,15 @@ def _passing(plat):
                 "batchId": bid,
                 "completeness": "PARTIAL",
                 "truthLabel": "FIXTURE",
-                "quantityLineage": {"ok": False},
+                "quantityLineage": {
+                    "ok": False,
+                    "sources": {
+                        "materialQty": "MATERIAL_LOT",
+                        "laborMinutes": "LABOR_RECORD",
+                        "hardwareQty": "BOM",
+                        "packagingQty": "MISSING",
+                    },
+                },
             }
         )
         board_rows.append(
@@ -178,6 +232,7 @@ def _passing(plat):
                 "engineeringHash": f"e{i}",
                 "decision": "WAITING_HUMAN_EVIDENCE",
                 "state": "IN_PROGRESS",
+                "blockers": ["cost_partial", "fixture_evidence"],
             }
         )
     decisions = [
@@ -189,19 +244,31 @@ def _passing(plat):
             "decision": "WAITING_HUMAN_EVIDENCE",
             "engineeringHash": b["engineeringHash"],
             "state": "IN_PROGRESS",
-            "blockers": ["fixture_evidence"],
+            "blockers": ["cost_partial", "fixture_evidence"],
+        }
+        for b in batches
+    ]
+    work_orders = [
+        {
+            "workOrderId": b["workOrderId"],
+            "tenantId": "pa",
+            "batchId": b["batchId"],
+            "releaseId": b["releaseId"],
+            "releaseHash": b["releaseHash"],
+            "qcPlanHash": b["qcPlanHash"],
         }
         for b in batches
     ]
     authority = {
-        "batches": [dict(b) for b in batches],
-        "units": [dict(u) for u in units],
-        "cartons": [dict(c) for c in cartons],
-        "labor": labor,
-        "qc": qc,
-        "materials": materials,
-        "costs": costs,
-        "decisions": decisions,
+        "batches": copy.deepcopy(batches),
+        "units": copy.deepcopy(units),
+        "cartons": copy.deepcopy(cartons),
+        "labor": copy.deepcopy(labor),
+        "qc": copy.deepcopy(qc),
+        "materials": copy.deepcopy(materials),
+        "costs": copy.deepcopy(costs),
+        "decisions": copy.deepcopy(decisions),
+        "workOrders": copy.deepcopy(work_orders),
     }
     return {
         "ok": True,
@@ -456,5 +523,257 @@ def test_pilot_batch_runner_cost_wrong_lineage(tmp_path):
     def mutate(body):
         body["batchAuthority"]["costs"][0]["tenantId"] = "pb"
         body["batchAuthority"]["costs"][0]["batchId"] = "other"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_qc_wrong_nonempty_plan_hash(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["qc"][0]["qcPlanHash"] = "bogus-plan"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_qc_blank_id(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["qc"][0]["qcId"] = ""
+        body["batchAuthority"]["units"][0]["qcId"] = ""
+        body["batchAuthority"]["units"][0]["qcFinalId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_qc_id_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["units"][0]["qcId"] = "other-qc"
+        body["batchAuthority"]["units"][0]["qcFinalId"] = "other-qc"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_qc_blank_workorder(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["qc"][0]["workOrderId"] = ""
+        body["batchAuthority"]["qc"][0]["releaseHash"] = ""
+        body["batchAuthority"]["qc"][0]["releaseId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_ghost_decision(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["decisions"].append(
+            {
+                "decisionId": "ghost",
+                "kind": "DERIVED_READINESS",
+                "tenantId": "pa",
+                "batchId": "ghost-batch",
+                "decision": "WAITING_HUMAN_EVIDENCE",
+                "engineeringHash": "e0",
+                "state": "IN_PROGRESS",
+                "blockers": ["fixture_evidence", "cost_partial"],
+            }
+        )
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_decision_kind_blank(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["decisions"][0]["kind"] = None
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_coordinated_state_not_readiness(tmp_path):
+    def mutate(body):
+        body["board"]["rows"][0]["state"] = "HOLD"
+        body["batchAuthority"]["decisions"][0]["state"] = "HOLD"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_coordinated_blockers(tmp_path):
+    def mutate(body):
+        body["board"]["rows"][0]["blockers"] = ["other"]
+        body["batchAuthority"]["decisions"][0]["blockers"] = ["other"]
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_carton_measured_mismatch(tmp_path):
+    def mutate(body):
+        body["cartons"][0]["measured"]["lengthMm"] = 401
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_carton_damage_fail(tmp_path):
+    def mutate(body):
+        body["cartons"][0]["damageDefect"] = "DAMAGED"
+        body["batchAuthority"]["cartons"][0]["damageDefect"] = "DAMAGED"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_carton_source_mismatch(tmp_path):
+    def mutate(body):
+        body["cartons"][0]["source"] = "MANUAL"
+        body["batchAuthority"]["cartons"][0]["source"] = "MANUAL"
+        body["cartons"][0]["truthLabel"] = "MANUAL_EVIDENCE"
+        body["batchAuthority"]["cartons"][0]["truthLabel"] = "MANUAL_EVIDENCE"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_bogus_reservation(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["materials"][0]["reservationIds"] = ["ghost-res"]
+        body["batches"][0]["reservationIds"] = ["ghost-res"]
+        body["batchAuthority"]["batches"][0]["reservationIds"] = ["ghost-res"]
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_unit_allocation_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["materials"][0]["unitAllocations"][0]["quantity"] = 4.0
+        body["batchAuthority"]["materials"][0]["unitAllocations"][1]["quantity"] = 0.0
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_consumed_qty_zero(tmp_path):
+    def mutate(body):
+        body["units"][0]["consumedQuantity"] = 0
+        body["units"][0]["allocatedQuantity"] = 0
+        body["batchAuthority"]["units"][0]["consumedQuantity"] = 0
+        body["batchAuthority"]["units"][0]["allocatedQuantity"] = 0
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_labor_blank_idempotency(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["labor"][0]["idempotencyKey"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_labor_id_mismatch(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["units"][0]["laborId"] = "other-lb"
+        body["units"][0]["laborId"] = "other-lb"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_ghost_labor(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["labor"].append(
+            {
+                "laborId": "ghost-lb",
+                "tenantId": "pa",
+                "batchId": "b0",
+                "unitExecutionId": "ghost-unit",
+                "minutes": 12,
+                "idempotencyKey": "pa::batch-labor::ghost-unit::e0::12.0::assembly",
+                "reason": "assembly",
+                "engineeringHash": "e0",
+            }
+        )
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_cost_blank_id(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["costs"][0]["costId"] = ""
+        body["batches"][0]["costId"] = ""
+        body["batchAuthority"]["batches"][0]["costId"] = ""
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_cost_id_mismatch(tmp_path):
+    def mutate(body):
+        body["batches"][0]["costId"] = "other-cost"
+        body["batchAuthority"]["batches"][0]["costId"] = "other-cost"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_ghost_cost(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["costs"].append(
+            {
+                "costId": "ghost-cost",
+                "tenantId": "pa",
+                "batchId": "ghost-batch",
+                "completeness": "PARTIAL",
+                "truthLabel": "FIXTURE",
+                "quantityLineage": {"ok": False, "sources": {"materialQty": "MATERIAL_LOT", "laborMinutes": "LABOR_RECORD", "hardwareQty": "BOM", "packagingQty": "MISSING"}},
+            }
+        )
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_lineage_source_tamper(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["costs"][0]["quantityLineage"]["sources"]["packagingQty"] = "PACKAGING_CHECKLIST"
+        body["batches"][0]["cost"]["quantityLineage"]["sources"]["packagingQty"] = "PACKAGING_CHECKLIST"
+        body["batchAuthority"]["costs"][0]["quantityLineage"]["ok"] = True
+        body["batches"][0]["cost"]["quantityLineage"]["ok"] = True
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_qc_coordinated_plan_hash(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["qc"][0]["qcPlanHash"] = "bogus-plan"
+        body["batchAuthority"]["batches"][0]["qcPlanHash"] = "bogus-plan"
+        body["batches"][0]["qcPlanHash"] = "bogus-plan"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_ghost_material(tmp_path):
+    def mutate(body):
+        ghost = copy.deepcopy(body["batchAuthority"]["materials"][0])
+        ghost["batchId"] = "ghost-batch"
+        ghost["workOrderId"] = "ghost-wo"
+        body["batchAuthority"]["materials"].append(ghost)
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_reservation_cross_tenant(tmp_path):
+    def mutate(body):
+        body["batchAuthority"]["materials"][0]["reservations"][0]["tenantId"] = "pb"
+        body["batchAuthority"]["materials"][0]["consumed"][0]["tenantId"] = "pb"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_top_reservation_mismatch(tmp_path):
+    def mutate(body):
+        body["batches"][0]["reservationIds"] = ["other-r"]
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_unit_wrong_carton_coverage(tmp_path):
+    def mutate(body):
+        body["units"][0]["cartonId"] = "ct1"
+        body["batchAuthority"]["units"][0]["cartonId"] = "ct1"
+
+    _assert_fail(tmp_path, mutate)
+
+
+def test_pilot_batch_runner_board_blank_tenant(tmp_path):
+    def mutate(body):
+        body["board"]["rows"][0]["tenantId"] = ""
+        body["batchAuthority"]["decisions"][0]["tenantId"] = ""
 
     _assert_fail(tmp_path, mutate)
