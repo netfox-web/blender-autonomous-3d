@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 721–780 Re-Gate Round 6 CODE_EVIDENCE_SHA `12ef546`; prior CODE `d0f5bbd` / docs `d70d43f` / instruction `c839fb3`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c839fb3`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten. Round 6 is evidence-only (exact CODE SHA CI).
+Audit of `main` (Phase 721–780 Re-Gate Round 7 CODE_EVIDENCE_SHA `12ef546`; docs `9a58803` / instruction `33ab111`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `33ab111`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten. Round 7 is evidence-only (canonical already runner-bound to `12ef546`).
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
