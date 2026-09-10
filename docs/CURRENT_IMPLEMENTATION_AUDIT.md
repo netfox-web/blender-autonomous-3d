@@ -1,10 +1,25 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 721–780 Re-Gate Round 7 CODE_EVIDENCE_SHA `12ef546`; docs `9a58803` / instruction `33ab111`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `33ab111`. Historical Phase 1–720 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec/MaterialLot/WorkOrder were not rewritten. Round 7 is evidence-only (canonical already runner-bound to `12ef546`).
+Audit of `main` (Phase 781–840 Artwork Placement CODE_EVIDENCE_SHA `48869d4`; prior Phase 721–780 CODE `12ef546` / instruction `a461dcb`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a461dcb`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 781–840 Artwork Placement / Surface Decoration Engine V1
+
+| Item | Status | Evidence |
+|---|---|---|
+| PrintableSurface | REAL_LOGIC | derived from CabinetSpec/acrylic/packaging/retail components; surfaceHash |
+| Artwork asset | REAL_LOGIC | DAM sha256/size/mime/pixels; tamper fail-closed |
+| ArtworkPlacement | REAL_LOGIC | mm SOT; CONTAIN/COVER; STRETCH blocked; placementHash |
+| mm↔UV | REAL_LOGIC | round-trip 0.001 mm |
+| Keep-out / DPI | CONFIG / PARTIAL | handle/hinge CONFIG; DPI policy CONFIG 150/72; printPreflight PARTIAL |
+| 4-door master | REAL_LOGIC | 2400×1800 / 4×600 engineering; crop continuity |
+| Production artwork | REAL_LOGIC / GENERATED | PNG+manifest byte hash; not physical print |
+| Blender preview | MOCK | mock_blender usedMock=true; realArtworkPreviewReady=false |
+| physicalPrintValidated | false | no print/proof evidence |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `e9e36a84-…`; CODE `48869d4` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 

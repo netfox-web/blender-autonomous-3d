@@ -1,0 +1,248 @@
+{
+  "ok": true,
+  "label": "FIXTURE/REAL_LOGIC",
+  "acceptanceGenerationId": "e9e36a84-9a9a-48e3-a558-e59dd9c88067",
+  "evidenceCodeCommit": "48869d49a12c594d4ab40097afd0bd51adaf72e0",
+  "workingTreeClean": true,
+  "evidenceCommitMatchesHead": true,
+  "generatedAt": "2026-09-10T15:26:24.373099+00:00",
+  "physicalPrintValidated": false,
+  "realArtworkPreviewReady": false,
+  "surfaceDecorationLogicReady": true,
+  "productionArtworkFileReady": true,
+  "globalProductionReady": false,
+  "fullAutonomousFactoryReady": false,
+  "liveFactoryExecutionReady": false,
+  "liveMachineControl": false,
+  "demandLabel": "MOCK",
+  "printPreflight": "PARTIAL",
+  "artworkContentAwarePlacementReady": false,
+  "rows": [
+    {
+      "check": "4-door master 2400mm",
+      "status": "REAL_LOGIC",
+      "evidence": "2400.0"
+    },
+    {
+      "check": "surfaceDecorationLogicReady",
+      "status": "REAL_LOGIC",
+      "evidence": true
+    },
+    {
+      "check": "productionArtworkFileReady",
+      "status": "REAL_LOGIC",
+      "evidence": true
+    },
+    {
+      "check": "realArtworkPreviewReady",
+      "status": "MOCK",
+      "evidence": {
+        "engineeringHash": "700e14733a94679df04e2a929c5bfd8cb07e8b69870c700e644727f6d4b54cf2",
+        "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8",
+        "artworkHash": "004d66ec12d1ef56389a44ead3944ea2c8bd0f35c8b5f8e91e56159aa0655bfa",
+        "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
+        "usedMock": true,
+        "realBlender": false,
+        "realArtworkPreviewReady": false,
+        "physicalPrintValidated": false,
+        "label": "MOCK",
+        "productionArtworkFileReady": true
+      }
+    },
+    {
+      "check": "physicalPrintValidated",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "keep-out BLOCK",
+      "status": "REAL_LOGIC",
+      "evidence": "BLOCKED_PLACEMENT"
+    },
+    {
+      "check": "stale engineering",
+      "status": "REAL_LOGIC",
+      "evidence": "STALE"
+    },
+    {
+      "check": "prior REAL blender",
+      "status": "REAL",
+      "evidence": "{\"commitSha\": \"7a87ea5cedc5242178d7e072de1b9b89c4c60d14\", \"ok\": true}"
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    }
+  ],
+  "scenarios": {
+    "cabinet2": {
+      "surfaceIds": [
+        "21468159-51c1-4eed-b3cd-63dbce0513ef",
+        "1c8921cb-d500-492e-87b3-5db01137dec2"
+      ],
+      "placementHash": "f319a40fbb413bcc8be720dab064a3c6475c911a23b7fe274a378f389aa23118"
+    },
+    "cabinet4": {
+      "masterHash": "86d596e84b3998c1679f6cdef0733641b24e7b2112d5484156dd726354481555",
+      "widthMm": 2400.0,
+      "panelCrops": [
+        {
+          "xMm": 0.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        },
+        {
+          "xMm": 600.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        },
+        {
+          "xMm": 1200.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        },
+        {
+          "xMm": 1800.0,
+          "yMm": 0.0,
+          "widthMm": 600.0,
+          "heightMm": 1800.0
+        }
+      ],
+      "placementHashes": [
+        "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
+        "7b3cbc87f4ad8d5868d891ac4a740fcf227ebe7f77160cf2ca324cf6429f8f05",
+        "d6ecc9365e90658a53217ef108f51b3345d979bc966b28183656529fe49f5d20",
+        "974c06a42bc7391b58e38bbef9fd67835cdd41dc5083ff5715515409182a6cfe"
+      ],
+      "production": [
+        {
+          "sha256": "0656d647ca4a9378ce265315f48acfd600b2bbb31a612ba81f9ac54b9983a9e2",
+          "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
+          "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8"
+        },
+        {
+          "sha256": "a1fccff63468720591e04ca182a8fdb0633732f6fd33583e7c4c666eda932112",
+          "placementHash": "7b3cbc87f4ad8d5868d891ac4a740fcf227ebe7f77160cf2ca324cf6429f8f05",
+          "surfaceHash": "d22241bc26da25bff257a476e6bcb9a17bc86bc8c4c429630265f6de8917feb3"
+        },
+        {
+          "sha256": "e23b6f614263ce0f6d69d560b01c97248fbb0993d62abff3f16838a8b9afb97c",
+          "placementHash": "d6ecc9365e90658a53217ef108f51b3345d979bc966b28183656529fe49f5d20",
+          "surfaceHash": "28da6a2482653c55350f24e58e820c724d85f43238e612f10826956e57873e2b"
+        },
+        {
+          "sha256": "d03ac56409721228ca80346c21a7932e0bc4371832f09effced18711439a5f15",
+          "placementHash": "974c06a42bc7391b58e38bbef9fd67835cdd41dc5083ff5715515409182a6cfe",
+          "surfaceHash": "0e68053cf0072775175fa30c56797868e943d83e5d1439a5e766f74b8221c6ca"
+        }
+      ]
+    },
+    "desk": {
+      "surfaceIds": [
+        "88bf8852-686a-4524-87f6-729ca156730c",
+        "6ac80ea3-4ec9-4b0a-9631-97ba29b48ad6"
+      ]
+    },
+    "retail": {
+      "surfaceIds": [
+        "7ce8b7e2-8d15-454b-9ac3-ab8d1357909f",
+        "9e06ead8-d06d-4774-899d-3587d2623448"
+      ]
+    },
+    "acrylic": {
+      "surfaceIds": [
+        "8d22277c-6838-4d09-b5f2-20a0b878b2e2"
+      ]
+    },
+    "packaging": {
+      "surfaceIds": [
+        "25cfd1eb-3764-4ba6-9fb6-408d8359343e"
+      ]
+    }
+  },
+  "lineage": {
+    "engineeringHash": "700e14733a94679df04e2a929c5bfd8cb07e8b69870c700e644727f6d4b54cf2",
+    "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8",
+    "artworkHash": "004d66ec12d1ef56389a44ead3944ea2c8bd0f35c8b5f8e91e56159aa0655bfa",
+    "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4"
+  },
+  "negatives": {
+    "keepout": "BLOCKED_PLACEMENT",
+    "stale": "STALE",
+    "cross_tenant": "BLOCKED",
+    "cross_product": "BLOCKED",
+    "tamper": "BLOCKED",
+    "stretch": "BLOCKED",
+    "nan": "BLOCKED"
+  },
+  "preview": {
+    "engineeringHash": "700e14733a94679df04e2a929c5bfd8cb07e8b69870c700e644727f6d4b54cf2",
+    "surfaceHash": "1fa4df52f64019ff5c1838c8f342fd9c0e9bf63d8c38aee6461166c7d986b7b8",
+    "artworkHash": "004d66ec12d1ef56389a44ead3944ea2c8bd0f35c8b5f8e91e56159aa0655bfa",
+    "placementHash": "82f132e5c208dea6c965d1451451ab41320a3c398641c1af064b51c4076711d4",
+    "usedMock": true,
+    "realBlender": false,
+    "realArtworkPreviewReady": false,
+    "physicalPrintValidated": false,
+    "label": "MOCK",
+    "productionArtworkFileReady": true
+  },
+  "priorRealBlender": {
+    "ok": true,
+    "failures": [],
+    "cases": 4,
+    "commitSha": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14",
+    "generation": "0b76b09e-02a8-45a6-b4fd-bf34849dd76c",
+    "media": [
+      {
+        "candidateId": "a48568be-24f8-4389-91b9-c47f8c8d9bb8",
+        "engineeringHash": "7d0d1718dcc238810e2d9c44ad47c62fc3e78c237d249376be94917d66e8ada8",
+        "jobId": "c2d96d5c-f569-449c-bd39-9faac4d70ad0",
+        "artifactSha256": "e5a853452c57a5bfb9a9ba1319dca96bf515c11f8b57e2f07ec9d2de185e6d3a",
+        "artifactSize": 52574,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "5b8d48af-066e-4738-811d-0518833ce071",
+        "engineeringHash": "15f5753a0a73d5309fc80b0ba294a1c24a88f1184434ab626bbd9881872eb898",
+        "jobId": "5608af7c-230a-4253-ad20-4a64b815bf1e",
+        "artifactSha256": "da9512ac365d9f3b3b13254673ecaf94ffbbc8369a733ba42b6daaa028dce3cc",
+        "artifactSize": 54141,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "9e838170-2fba-45da-91f1-63ee967a9ea4",
+        "engineeringHash": "628ea10d62dd6bb9441db0e47804024dbbad0cd700752d0471af93f011ee434d",
+        "jobId": "cda2642f-c0fd-4d6a-9dca-8f7626a4deda",
+        "artifactSha256": "c4c5690cb495184dc4abb629dd292c706ed913081cf3703ef69a71bb4897ae49",
+        "artifactSize": 53325,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      },
+      {
+        "candidateId": "c8d8edb8-e96e-443c-99bf-8a0c5e496f15",
+        "engineeringHash": "898263bd086737e667e43c7d0f96d71d906bfc5a5f640777c062a0aeb712be04",
+        "jobId": "22c0d21e-e7b4-45fa-a6fd-77ac0937423b",
+        "artifactSha256": "40069c7abd5073037104cd229997c4415fb7c08683b5589463ba51047cc2d02e",
+        "artifactSize": 54424,
+        "blenderVersion": "5.2.1 LTS",
+        "gpu": "NVIDIA T1000",
+        "device": "OPTIX",
+        "evidenceCodeCommit": "7a87ea5cedc5242178d7e072de1b9b89c4c60d14"
+      }
+    ]
+  },
+  "acceptanceFailures": []
+}
