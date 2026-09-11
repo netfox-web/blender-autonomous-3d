@@ -7,6 +7,7 @@ placementHash. FIXTURE/REAL_LOGIC — not physical print, not Production Ready.
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import math
 import struct
@@ -561,6 +562,12 @@ _ORIENTATION_CASES = (
     ("mirror", 0.0, True),
     ("mirror90", 90.0, True),
 )
+_ORIENTATION_SLOT_ANCHOR = {
+    ("CONTAIN", "CENTER"): "CENTER",
+    ("COVER", "LEFT"): "BOTTOM_LEFT",
+    ("COVER", "CENTER"): "CENTER",
+    ("COVER", "RIGHT"): "BOTTOM_RIGHT",
+}
 
 
 def quarter_turn_local_corners(*, rotation_deg: float = 0.0, mirrored: bool = False) -> list[tuple[float, float]]:
@@ -838,6 +845,15 @@ def _rgb_at_buf(rgb: bytes, width: int, height: int, x: int, y: int) -> tuple[in
 
 def _rgb_close(a: tuple[int, int, int], b: tuple[int, int, int], *, tol: int = 48) -> bool:
     return all(abs(int(a[i]) - int(b[i])) <= tol for i in range(3))
+
+
+def _valid_rgb(value: Any) -> bool:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return False
+    try:
+        return all(0 <= int(value[i]) <= 255 for i in range(3))
+    except (TypeError, ValueError):
+        return False
 
 
 def sample_uv_source(u: float, v: float, uv_rect: dict[str, Any], rgb: bytes, sw: int, sh: int) -> tuple[int, int, int]:
@@ -2159,6 +2175,139 @@ def _shader_identity(row: dict[str, Any]) -> bool:
     )
 
 
+def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    rotp = scenarios.get("orientationParity") if isinstance(scenarios.get("orientationParity"), dict) else {}
+    if not rotp:
+        return ["missing_orientationParity"]
+
+    def _check_orient_row(prefix: str, row: Any, *, fit: str, slot_anchor: str, rotation_deg: float, mirrored: bool) -> None:
+        if not isinstance(row, dict) or not row:
+            failures.append(prefix)
+            return
+        if not row.get("boundsOk") or not isinstance(row.get("expected"), dict) or not isinstance(row.get("observed"), dict):
+            failures.append(f"{prefix}_oracle")
+        expected = row.get("expected") if isinstance(row.get("expected"), dict) else {}
+        observed = row.get("observed") if isinstance(row.get("observed"), dict) else {}
+        for corner in ("BL", "BR", "TR", "TL"):
+            exp = expected.get(corner)
+            obs = observed.get(corner)
+            if not _valid_rgb(exp) or not _valid_rgb(obs):
+                failures.append(f"{prefix}_rgb")
+                continue
+            if not _rgb_close((int(exp[0]), int(exp[1]), int(exp[2])), (int(obs[0]), int(obs[1]), int(obs[2]))):
+                failures.append(f"{prefix}_pixel")
+        recomputed = oracle_quality(expected)
+        if row.get("oracleDiscriminating") is not True or recomputed.get("oracleDiscriminating") is not True:
+            failures.append(f"{prefix}_oracle_quality")
+        if int(row.get("uniqueSampleCount") or 0) != int(recomputed.get("uniqueSampleCount") or 0):
+            failures.append(f"{prefix}_unique")
+        if int(recomputed.get("uniqueSampleCount") or 0) < 3:
+            failures.append(f"{prefix}_unique")
+        if str(row.get("signature") or "") != str(recomputed.get("signature") or ""):
+            failures.append(f"{prefix}_signature")
+        if not recomputed.get("signature"):
+            failures.append(f"{prefix}_signature")
+        if str(row.get("fit") or "") != fit:
+            failures.append(f"{prefix}_fit")
+        if str(row.get("anchor") or "") != slot_anchor:
+            failures.append(f"{prefix}_anchor")
+        try:
+            rot = float(row.get("rotationDeg")) % 360.0
+        except (TypeError, ValueError):
+            rot = -1.0
+        if rot != float(rotation_deg) % 360.0:
+            failures.append(f"{prefix}_rotation")
+        if bool(row.get("mirrored")) != bool(mirrored):
+            failures.append(f"{prefix}_mirror")
+        if not row.get("transformHash") or not row.get("finalUvHash"):
+            failures.append(f"{prefix}_uv")
+
+    contain_m = rotp.get("CONTAIN") if isinstance(rotp.get("CONTAIN"), dict) else {}
+    center = contain_m.get("CENTER") if isinstance(contain_m.get("CENTER"), dict) else None
+    if not center:
+        failures.append("orientation_CONTAIN_CENTER")
+    else:
+        slot_anchor = _ORIENTATION_SLOT_ANCHOR[("CONTAIN", "CENTER")]
+        for key, deg, mir in _ORIENTATION_CASES:
+            _check_orient_row(
+                f"orientation_CONTAIN_CENTER_{key}",
+                center.get(key),
+                fit="CONTAIN",
+                slot_anchor=slot_anchor,
+                rotation_deg=deg,
+                mirrored=mir,
+            )
+        contain_sigs = [str((center.get(k) or {}).get("signature") or "") for k, _d, _m in _ORIENTATION_CASES]
+        if len(set(s for s in contain_sigs if s)) < 4:
+            failures.append("orientation_CONTAIN_CENTER_not_discriminating")
+    cover_m = rotp.get("COVER") if isinstance(rotp.get("COVER"), dict) else {}
+    for anchor in ("LEFT", "CENTER", "RIGHT"):
+        block = cover_m.get(anchor) if isinstance(cover_m.get(anchor), dict) else None
+        if not block:
+            failures.append(f"orientation_COVER_{anchor}")
+            continue
+        slot_anchor = _ORIENTATION_SLOT_ANCHOR[("COVER", anchor)]
+        sigs: list[str] = []
+        for key, deg, mir in _ORIENTATION_CASES:
+            _check_orient_row(
+                f"orientation_COVER_{anchor}_{key}",
+                block.get(key),
+                fit="COVER",
+                slot_anchor=slot_anchor,
+                rotation_deg=deg,
+                mirrored=mir,
+            )
+            row = block.get(key) if isinstance(block.get(key), dict) else {}
+            sigs.append(str(row.get("signature") or ""))
+        if len(set(s for s in sigs if s)) < 4:
+            failures.append(f"orientation_COVER_{anchor}_not_discriminating")
+    return failures
+
+
+def probe_serialized_orientation_tampers(result: dict[str, Any]) -> bool:
+    scenarios = result.get("scenarios") if isinstance(result.get("scenarios"), dict) else {}
+    op = scenarios.get("orientationParity") if isinstance(scenarios.get("orientationParity"), dict) else {}
+    cover = op.get("COVER") if isinstance(op.get("COVER"), dict) else {}
+    center = cover.get("CENTER") if isinstance(cover.get("CENTER"), dict) else {}
+    left = cover.get("LEFT") if isinstance(cover.get("LEFT"), dict) else {}
+    right = cover.get("RIGHT") if isinstance(cover.get("RIGHT"), dict) else {}
+    c0 = center.get("0") if isinstance(center.get("0"), dict) else None
+    c90 = center.get("90") if isinstance(center.get("90"), dict) else None
+    cm = center.get("mirror") if isinstance(center.get("mirror"), dict) else None
+    l0 = left.get("0") if isinstance(left.get("0"), dict) else None
+    l90 = left.get("90") if isinstance(left.get("90"), dict) else None
+    r0 = right.get("0") if isinstance(right.get("0"), dict) else None
+    rm = right.get("mirror") if isinstance(right.get("mirror"), dict) else None
+    if not all((c0, c90, cm, l0, l90, r0, rm)):
+        return False
+
+    def _fails(mutate) -> bool:
+        rec = copy.deepcopy(result)
+        mutate(rec)
+        scen = rec.get("scenarios") if isinstance(rec.get("scenarios"), dict) else {}
+        return bool(orientation_matrix_failures(scen))
+
+    checks = [
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "observed": c90["observed"], "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "observed": cm["observed"], "status": "PASS"})),
+        _fails(
+            lambda rec: (
+                rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", dict(c90)),
+                rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("90", dict(c0)),
+            )
+        ),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": l90["observed"], "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "observed": rm["observed"], "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "signature": "forged", "uniqueSampleCount": 99, "oracleDiscriminating": True, "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": 90.0, "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": True, "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "fit": "CONTAIN", "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "anchor": "CENTER", "status": "PASS"})),
+    ]
+    return all(checks)
+
+
 def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     if result.get("physicalPrintValidated") is True:
@@ -2271,48 +2420,9 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("cover_anchor")
     rotp = _need("orientationParity")
     if rotp is not None:
-        def _check_orient_row(prefix: str, row: Any) -> None:
-            if not isinstance(row, dict) or not row:
-                failures.append(prefix)
-                return
-            if row.get("status") != "PASS":
-                failures.append(prefix)
-            if not row.get("boundsOk") or not row.get("expected") or not row.get("observed"):
-                failures.append(f"{prefix}_oracle")
-            if not row.get("uvRect") or not row.get("finalUvHash"):
-                failures.append(f"{prefix}_uv")
-            if row.get("oracleDiscriminating") is not True:
-                failures.append(f"{prefix}_oracle_quality")
-            if int(row.get("uniqueSampleCount") or 0) < 3:
-                failures.append(f"{prefix}_unique")
-            if not row.get("signature"):
-                failures.append(f"{prefix}_signature")
-
-        contain_m = rotp.get("CONTAIN") if isinstance(rotp.get("CONTAIN"), dict) else {}
-        center = contain_m.get("CENTER") if isinstance(contain_m.get("CENTER"), dict) else None
-        if not center:
-            failures.append("orientation_CONTAIN_CENTER")
-        else:
-            for key, _deg, _mir in _ORIENTATION_CASES:
-                _check_orient_row(f"orientation_CONTAIN_CENTER_{key}", center.get(key))
-        cover_m = rotp.get("COVER") if isinstance(rotp.get("COVER"), dict) else {}
-        for anchor in ("LEFT", "CENTER", "RIGHT"):
-            block = cover_m.get(anchor) if isinstance(cover_m.get(anchor), dict) else None
-            if not block:
-                failures.append(f"orientation_COVER_{anchor}")
-                continue
-            sigs: list[str] = []
-            for key, _deg, _mir in _ORIENTATION_CASES:
-                _check_orient_row(f"orientation_COVER_{anchor}_{key}", block.get(key))
-                row = block.get(key) if isinstance(block.get(key), dict) else {}
-                sigs.append(str(row.get("signature") or ""))
-            if len(set(s for s in sigs if s)) < 4:
-                failures.append(f"orientation_COVER_{anchor}_not_discriminating")
-        contain_sigs = []
-        if isinstance(center, dict):
-            contain_sigs = [str((center.get(k) or {}).get("signature") or "") for k, _d, _m in _ORIENTATION_CASES]
-            if len(set(s for s in contain_sigs if s)) < 4:
-                failures.append("orientation_CONTAIN_CENTER_not_discriminating")
+        failures.extend(orientation_matrix_failures(scenarios))
+    if result.get("serializedOrientationTamperBlocked") is not True:
+        failures.append("serialized_orientation_tamper")
     seam = _need("masterSeam")
     if seam is not None:
         if abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True:
@@ -2718,6 +2828,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
     mock = bool(getattr(plat, "mock_blender", True))
     result = {
         "ok": False,
+        "serializedOrientationTamperBlocked": False,
         "label": "FIXTURE/REAL_LOGIC",
         "surfaceDecorationLogicReady": False,
         "productionArtworkFileReady": False,
@@ -2816,6 +2927,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         result["realArtworkPreviewReady"] = False
     result["surfaceDecorationLogicReady"] = bool(logic_ok)
     result["productionArtworkFileReady"] = bool(logic_ok and all(p.get("productionArtworkFileReady") for p in productions))
+    result["serializedOrientationTamperBlocked"] = probe_serialized_orientation_tampers(result)
     result["ok"] = not validate_artwork_acceptance_result(result)
     return result
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from pathlib import Path
 
@@ -1262,3 +1263,45 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     deg_fails = validate_artwork_acceptance_result(deg)
     assert "orientation_COVER_CENTER_0_oracle_quality" in deg_fails
     assert "orientation_COVER_CENTER_not_discriminating" in deg_fails
+    op_live = result["scenarios"]["orientationParity"]["COVER"]
+    c0 = op_live["CENTER"]["0"]
+    c90 = op_live["CENTER"]["90"]
+    cm = op_live["CENTER"]["mirror"]
+    l0 = op_live["LEFT"]["0"]
+    l90 = op_live["LEFT"]["90"]
+    r0 = op_live["RIGHT"]["0"]
+    rm = op_live["RIGHT"]["mirror"]
+    wrong_obs = copy.deepcopy(result)
+    wrong_obs["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "observed": c90["observed"], "status": "PASS"}
+    assert any("pixel" in f or f.endswith("_pixel") for f in validate_artwork_acceptance_result(wrong_obs))
+    wrong_mir = copy.deepcopy(result)
+    wrong_mir["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "observed": cm["observed"], "status": "PASS"}
+    assert any("pixel" in f for f in validate_artwork_acceptance_result(wrong_mir))
+    swapped = copy.deepcopy(result)
+    swapped["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = dict(c90)
+    swapped["scenarios"]["orientationParity"]["COVER"]["CENTER"]["90"] = dict(c0)
+    swap_fails = validate_artwork_acceptance_result(swapped)
+    assert any(f.endswith("_rotation") for f in swap_fails)
+    left_wrong = copy.deepcopy(result)
+    left_wrong["scenarios"]["orientationParity"]["COVER"]["LEFT"]["0"] = {**l0, "observed": l90["observed"], "status": "PASS"}
+    assert any("pixel" in f for f in validate_artwork_acceptance_result(left_wrong))
+    right_wrong = copy.deepcopy(result)
+    right_wrong["scenarios"]["orientationParity"]["COVER"]["RIGHT"]["0"] = {**r0, "observed": rm["observed"], "status": "PASS"}
+    assert any("pixel" in f for f in validate_artwork_acceptance_result(right_wrong))
+    fake_meta = copy.deepcopy(result)
+    fake_meta["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "signature": "forged", "uniqueSampleCount": 99, "oracleDiscriminating": True, "status": "PASS"}
+    fake_fails = validate_artwork_acceptance_result(fake_meta)
+    assert any(f.endswith("_signature") or f.endswith("_unique") for f in fake_fails)
+    bad_rot = copy.deepcopy(result)
+    bad_rot["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "rotationDeg": 90.0, "status": "PASS"}
+    assert any(f.endswith("_rotation") for f in validate_artwork_acceptance_result(bad_rot))
+    bad_fit = copy.deepcopy(result)
+    bad_fit["scenarios"]["orientationParity"]["COVER"]["LEFT"]["0"] = {**l0, "fit": "CONTAIN", "status": "PASS"}
+    assert any(f.endswith("_fit") for f in validate_artwork_acceptance_result(bad_fit))
+    bad_anchor = copy.deepcopy(result)
+    bad_anchor["scenarios"]["orientationParity"]["COVER"]["RIGHT"]["0"] = {**r0, "anchor": "CENTER", "status": "PASS"}
+    assert any(f.endswith("_anchor") for f in validate_artwork_acceptance_result(bad_anchor))
+    missing_gate = copy.deepcopy(result)
+    missing_gate["serializedOrientationTamperBlocked"] = False
+    assert "serialized_orientation_tamper" in validate_artwork_acceptance_result(missing_gate)
+    assert result.get("serializedOrientationTamperBlocked") is True
