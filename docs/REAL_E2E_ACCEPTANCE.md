@@ -15,7 +15,11 @@ Scoped readiness (not a global Production Ready flag):
 - `pilotBatchExecutionReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/PILOT_BATCH_EXECUTION_ACCEPTANCE.md` (CODE `12ef546`, generation `4c1fa7ed-…`)
 - `surfaceDecorationLogicReady`: **REAL_LOGIC** — see `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md` (CODE `3268f65`, generation `0d3f01cb-336b-4d28-8659-783a5f59f419`; exact canonical expected; fixture geometry + strict finite mm schema; independent tamper flags; Mock preview; `physicalPrintValidated=false`)
 - `productionArtworkFileReady`: **REAL_LOGIC / GENERATED** (file package + hash, not physical print)
-- `realArtworkPreviewReady`: **false / MOCK** this round (`FOX3D_MOCK_BLENDER=1` / Platform mock)
+- `realArtworkPreviewReady`: **true / REAL** — Blender 5.2.1 LTS + NVIDIA T1000 OptiX Product Truth still (`docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`, CODE `4a88680`, generation `9a5a1df4-e74c-4951-8c37-a9f41b950bcf`); not physical print
+- `productTruthRenderPackReady`: **true** (AOV pack REAL, 64×64)
+- `generativeRenderGatewayLogicReady`: **true** — see `docs/GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.md` (live H3/LTX **BLOCKED**)
+- `liveH3MaxProviderReady` / `liveLtx25ProviderReady`: **false / BLOCKED**
+- `liveVisionJudgeReady`: **false / MOCK**
 - `physicalPrintValidated`: **false**
 - `commercialLaunchGovernanceReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/COMMERCIAL_LAUNCH_READINESS_ACCEPTANCE.md` (`HUMAN_BATCH_GO` not issued on fixture; live flags false)
 - `physicalPrototypeEvidenceReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/PHYSICAL_PROTOTYPE_EVIDENCE_ACCEPTANCE.md` (software gates only; not physical REAL)

@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Re-Gate Round 12 CODE_EVIDENCE_SHA `3268f65`; prior `4977bed` / instruction `a2b6f3b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a2b6f3b`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 841–900 CODE_EVIDENCE_SHA `4a88680`; prior `3268f65` / instruction `191a150`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `191a150`. Historical Phase 1–840 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -18,11 +18,23 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | 4-door master | REAL_LOGIC | 2400×1800 / 4×600; exact quarters `0/.25/.5/.75`; MASTER_SPLIT only |
 | SINGLE_SURFACE | REAL_LOGIC | CONTAIN full-canvas letterbox; COVER anchor crop; rotation/mirror vs finalUvHash; not sibling quarter |
 | Production artwork | REAL_LOGIC / GENERATED | full-panel PNG + canvas/placed/transformHash; not physical print |
-| Blender preview | MOCK | live-only path; worker artworkSha256 of loaded bytes; realArtworkPreviewReady=false |
+| Blender preview | REAL | 5.2.1 LTS T1000 OptiX Product Truth still + AOV pack; `realArtworkPreviewReady=true`; not physical print |
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
 | Production authority | REAL_LOGIC | local UV bounds; landmark oracle; derived masterId in relationHash; required scenarios fail-closed |
 | physicalPrintValidated | false | no print/proof evidence |
 | 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `0d3f01cb-…`; CODE `3268f65`; exact canonical expected; fixture geometry + strict finite mm schema; independent tamper flags including `finiteCanonicalGeometryTamperBlocked` |
+
+## Phase 841–900 Product Truth Render Pack + Generative Render Gateway V1
+
+| Item | Status | Evidence |
+|---|---|---|
+| CameraRecipe / SceneRecipe | REAL_LOGIC | hashed SOT; silent field drift changes hash |
+| ProductTruthRenderPack | REAL | generation `9a5a1df4-…`; CODE `4a88680`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 64×64; DAM lineage; T1000 OptiX |
+| Artwork mask uniqueness | PARTIAL | REAL occupancy valid; currently aliases object-index product mask |
+| Generative gateway | REAL_LOGIC | provider-neutral IMAGE/VIDEO routing; quality UNVERIFIED |
+| live H3 MAX / LTX 2.5 | BLOCKED | fixture adapter cannot set live*ProviderReady |
+| Product consistency QA | REAL_LOGIC + MOCK Vision | APPROVED_FOR_ASSET_REVIEW ≠ production asset |
+| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; gateway MOCK/BLOCKED live providers |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 

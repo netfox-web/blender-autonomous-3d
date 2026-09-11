@@ -1,0 +1,351 @@
+{
+  "ok": true,
+  "label": "REAL_LOGIC",
+  "acceptanceGenerationId": "9a5a1df4-e74c-4951-8c37-a9f41b950bcf",
+  "evidenceCodeCommit": "4a88680c4e08fc0b2a077a0309489aaa6b34deb1",
+  "workingTreeClean": true,
+  "generatedAt": "2026-09-11T13:31:09.471055+00:00",
+  "realArtworkPreviewReady": true,
+  "productTruthRenderPackReady": true,
+  "productTruthAovPackReady": true,
+  "generativeRenderGatewayLogicReady": true,
+  "liveH3MaxProviderReady": false,
+  "liveLtx25ProviderReady": false,
+  "productConsistencyQaLogicReady": true,
+  "liveVisionJudgeReady": false,
+  "physicalPrintValidated": false,
+  "liveFactoryExecutionReady": false,
+  "globalProductionReady": false,
+  "fullAutonomousFactoryReady": false,
+  "usedMock": false,
+  "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+  "pack": {
+    "tenantId": "pt-a",
+    "productId": "90c1bab8-e31a-46ba-9407-2c1c60d83652",
+    "candidateId": null,
+    "version": 1,
+    "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+    "artworkId": "ec3825d4-e5f1-411b-b554-05ea5dad7c07",
+    "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+    "artworkSha256": "d20e4d8dcc65cf21b4938cf0a3cb3081406bda428975b57bff62d0146b705947",
+    "placementId": "6f282336-b57c-471f-8b30-07c2345a82b3",
+    "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+    "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+    "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+    "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c",
+    "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+    "sceneRecipe": {
+      "sceneId": "WHITE_STUDIO",
+      "backgroundPreset": "WHITE_CYC",
+      "environmentPreset": "STUDIO",
+      "lightingPreset": "THREE_POINT",
+      "studioRigId": "KEY_FILL_RIM_V1",
+      "floorPolicy": "SHADOW_CATCHER",
+      "shadowCatcher": true,
+      "renderEngine": "CYCLES",
+      "samples": 32,
+      "colorManagement": "Filmic",
+      "recipeVersion": 1,
+      "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508"
+    },
+    "cameraRecipe": {
+      "cameraId": "HERO_FRONT",
+      "target": [
+        0.0,
+        0.0,
+        0.9
+      ],
+      "lookAt": [
+        0.0,
+        0.0,
+        0.9
+      ],
+      "location": [
+        1.6,
+        -2.4,
+        1.2
+      ],
+      "rotation": null,
+      "focalLengthMm": 85.0,
+      "sensorWidthMm": 36.0,
+      "resolution": {
+        "width": 64,
+        "height": 64
+      },
+      "aspectRatio": "64:64",
+      "framing": "SAFE_MARGIN_0.08",
+      "safeMargin": 0.08,
+      "recipeVersion": 1,
+      "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+    },
+    "aovs": {
+      "beauty": {
+        "artifactId": "05f71025-f5f0-440a-a5c2-fb98f465f5fb",
+        "damRef": "d3e5ffe1-a766-4c2e-bbaa-3cbc84238637",
+        "role": "beauty",
+        "semanticRole": "beauty",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\9a5a1df4-e74c-4951-8c37-a9f41b950bcf\\live\\dam\\pt-a\\render\\6d800901-b12f-45e2-a6f0-bb7c933546ee_beauty.png",
+        "format": "PNG",
+        "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+        "sha256": "e35b48a1dfb1ac4bf15155016edb7f1752d9e68056920b9e6513a31dd83f57a6",
+        "size": 5492,
+        "width": 64,
+        "height": 64,
+        "occupancy": 0.511962890625,
+        "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+        "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+        "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+        "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+        "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+        "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+      },
+      "depth": {
+        "artifactId": "9eb762b2-0bbe-4ccd-9ed1-48ad242084a8",
+        "damRef": "997ce009-9e74-4b11-8b36-44dbb8fc7572",
+        "role": "depth",
+        "semanticRole": "depth",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\9a5a1df4-e74c-4951-8c37-a9f41b950bcf\\live\\dam\\pt-a\\render\\31105b31-042a-450b-93c6-36e49275e3bc_depth.png",
+        "format": "PNG",
+        "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+        "sha256": "4500e78987aad22cc19d46e3466b178ff600f08c439ad9eba3cbd363fe938f95",
+        "size": 2901,
+        "width": 64,
+        "height": 64,
+        "occupancy": 0.474365234375,
+        "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+        "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+        "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+        "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+        "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+        "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+      },
+      "normal": {
+        "artifactId": "5a47ee27-e09b-478f-8147-21fd490e6e99",
+        "damRef": "bb5f9cf6-bfa0-4b70-91a7-d494247bc2b3",
+        "role": "normal",
+        "semanticRole": "normal",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\9a5a1df4-e74c-4951-8c37-a9f41b950bcf\\live\\dam\\pt-a\\render\\26568fd6-c771-4602-8b94-914e0d73ac64_normal.png",
+        "format": "PNG",
+        "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+        "sha256": "b3035575676eea2080d92fa22c145437508a1a8a9e8c976b5f5cb4d0bf74e6c1",
+        "size": 3414,
+        "width": 64,
+        "height": 64,
+        "occupancy": 0.4052734375,
+        "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+        "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+        "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+        "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+        "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+        "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+      },
+      "product_mask": {
+        "artifactId": "f4061d39-51a5-4e45-bb49-535c806c4e06",
+        "damRef": "a161b576-6112-4c37-93b6-aca5d5c11eed",
+        "role": "product_mask",
+        "semanticRole": "product_mask",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\9a5a1df4-e74c-4951-8c37-a9f41b950bcf\\live\\dam\\pt-a\\render\\781578a5-3a5c-4656-9a87-e84fee24890b_product_mask.png",
+        "format": "PNG",
+        "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+        "sha256": "2fe4119ae51d552828971a51641e6ee2b92dfe544a232acbc54761f26b3de83e",
+        "size": 2321,
+        "width": 64,
+        "height": 64,
+        "occupancy": 0.474365234375,
+        "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+        "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+        "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+        "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+        "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+        "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+      },
+      "artwork_mask": {
+        "artifactId": "74279b06-4196-47ea-87c6-6cfa8205e6df",
+        "damRef": "10fe969e-12f8-4ddb-957e-1f0e64a12a9e",
+        "role": "artwork_mask",
+        "semanticRole": "artwork_mask",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\9a5a1df4-e74c-4951-8c37-a9f41b950bcf\\live\\dam\\pt-a\\render\\3b6a5170-f508-4d68-9296-48b6a0e894bb_artwork_mask.png",
+        "format": "PNG",
+        "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+        "sha256": "2fe4119ae51d552828971a51641e6ee2b92dfe544a232acbc54761f26b3de83e",
+        "size": 2321,
+        "width": 64,
+        "height": 64,
+        "occupancy": 0.474365234375,
+        "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+        "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+        "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+        "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+        "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+        "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+      },
+      "alpha": {
+        "artifactId": "a8e9767f-f259-46eb-aa1a-2767684834d5",
+        "damRef": "a37f3d25-9a71-4a57-8fe5-c21579919296",
+        "role": "alpha",
+        "semanticRole": "alpha",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\9a5a1df4-e74c-4951-8c37-a9f41b950bcf\\live\\dam\\pt-a\\render\\459fb491-f444-44b3-b529-9aebb2c4ad02_alpha.png",
+        "format": "PNG",
+        "renderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+        "sha256": "e0f1b708baacbdbaa7255f416cfc64ed44fa4117e88764ee2a389e966b6d9462",
+        "size": 2321,
+        "width": 64,
+        "height": 64,
+        "occupancy": 0.474365234375,
+        "engineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+        "artworkHash": "8b2dea01cf71736eddeae5dda3ba90a6dcd396a8c211f202eb87de3854b6eccd",
+        "placementHash": "eff65000ab2b77a9d14db863b156f04ca0b8dc1a7c4f589f2e661eb3d0183c96",
+        "finalUvHash": "871d25eceaeac826a9db0d7046a624e1110ffd6a7b09c6f52fcd75c6905d737f",
+        "sceneRecipeHash": "dfbe8f0f2ed1efbf3ec03715ef055fa1d597f715e4532719cf460dc7e2119508",
+        "cameraRecipeHash": "e1236afde6c60a28a4762285111fde8e5e7889b0cba0d37b57cfa95c2f05523c"
+      }
+    },
+    "objectManifest": {
+      "components": [
+        {
+          "componentId": "door_1",
+          "objectName": "DOOR_1",
+          "face": "FRONT"
+        }
+      ]
+    },
+    "blenderJobId": "0441929a-0dde-49f8-996d-2bcf7201b0cc",
+    "blenderVersion": "5.2.1 LTS",
+    "worker": "fox3d-worker-local",
+    "gpu": "NVIDIA T1000",
+    "evidenceCodeCommit": "4a88680c4e08fc0b2a077a0309489aaa6b34deb1",
+    "generatedAt": "2026-09-11T13:31:09.426659+00:00",
+    "usedMock": false,
+    "realBlender": true,
+    "realOptix": true,
+    "truthLabel": "REAL",
+    "realArtworkPreviewReady": true,
+    "productTruthRenderPackReady": true,
+    "productTruthAovPackReady": true,
+    "physicalPrintValidated": false,
+    "liveFactoryExecutionReady": false,
+    "globalProductionReady": false,
+    "fullAutonomousFactoryReady": false,
+    "acceptanceFailures": [],
+    "ok": true
+  },
+  "generative": {
+    "provider": "H3_MAX",
+    "providerModel": "H3_MAX_FIXTURE",
+    "providerRequestId": "62d136a0-e68d-4e5c-b70b-8649f01b3928",
+    "outputArtifacts": [],
+    "inputRenderPackId": "86ccca17-9e98-4b15-91dc-74089ad87620",
+    "inputLineageHash": "6f61b6dcd9d1c51390d2606eeec9071dcacf0ca8b2aab2f11e55c539781ea06e",
+    "usedMock": true,
+    "status": "MOCK",
+    "latency": null,
+    "cost": null,
+    "costLabel": "CONFIG_ESTIMATE",
+    "liveProviderEvidence": null,
+    "liveH3MaxProviderReady": false,
+    "liveLtx25ProviderReady": false,
+    "generativeRenderGatewayLogicReady": true,
+    "mutatedProductTruth": false,
+    "productTruthEngineeringHash": "c7f61c9920975811ffab5509c4170f01e1906478883041656ec1a4ba48ffe605",
+    "truthLabel": "FIXTURE/MOCK",
+    "generatedAt": "2026-09-11T13:31:09.471055+00:00",
+    "routing": {
+      "mode": "IMAGE",
+      "requiredControls": [
+        "depth",
+        "normal",
+        "product_mask"
+      ],
+      "providerPreference": [
+        "H3_MAX"
+      ],
+      "selectedProvider": "H3_MAX",
+      "reason": "IMAGE prefers H3_MAX for controls=depth,normal,product_mask; live provider availability BLOCKED; quality UNVERIFIED",
+      "productLocked": true,
+      "qualityClaim": "UNVERIFIED",
+      "costLabel": "CONFIG_ESTIMATE",
+      "liveProviderAvailable": false,
+      "truthLabel": "REAL_LOGIC"
+    },
+    "acceptanceFailures": [],
+    "ok": true
+  },
+  "qa": {
+    "decision": "APPROVED_FOR_ASSET_REVIEW",
+    "categories": {
+      "STRUCTURE": "REAL_LOGIC",
+      "ARTWORK/LOGO": "REAL_LOGIC",
+      "COLOR": "MOCK",
+      "SILHOUETTE / PRODUCT MASK": "REAL_LOGIC",
+      "CAMERA / FRAMING": "REAL_LOGIC",
+      "GENERATED BACKGROUND": "REAL_LOGIC"
+    },
+    "liveVisionJudgeReady": false,
+    "visionLabel": "MOCK",
+    "humanReviewRequired": true,
+    "productionAsset": false
+  },
+  "rows": [
+    {
+      "check": "realArtworkPreviewReady",
+      "status": "REAL",
+      "evidence": true
+    },
+    {
+      "check": "productTruthRenderPackReady",
+      "status": "REAL",
+      "evidence": true
+    },
+    {
+      "check": "productTruthAovPackReady",
+      "status": "REAL_LOGIC",
+      "evidence": true
+    },
+    {
+      "check": "generativeRenderGatewayLogicReady",
+      "status": "REAL_LOGIC",
+      "evidence": true
+    },
+    {
+      "check": "liveH3MaxProviderReady",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "liveLtx25ProviderReady",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "productConsistencyQaLogicReady",
+      "status": "REAL_LOGIC",
+      "evidence": "APPROVED_FOR_ASSET_REVIEW"
+    },
+    {
+      "check": "liveVisionJudgeReady",
+      "status": "MOCK",
+      "evidence": false
+    },
+    {
+      "check": "physicalPrintValidated",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "renderPackId",
+      "status": "REAL_LOGIC",
+      "evidence": "86ccca17-9e98-4b15-91dc-74089ad87620"
+    },
+    {
+      "check": "usedMock",
+      "status": "REAL",
+      "evidence": false
+    }
+  ],
+  "acceptanceFailures": []
+}

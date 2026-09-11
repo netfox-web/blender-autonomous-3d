@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "label": "FIXTURE/MOCK",
+  "acceptanceGenerationId": "9a5a1df4-e74c-4951-8c37-a9f41b950bcf",
+  "evidenceCodeCommit": "4a88680c4e08fc0b2a077a0309489aaa6b34deb1",
+  "generativeRenderGatewayLogicReady": true,
+  "liveH3MaxProviderReady": false,
+  "liveLtx25ProviderReady": false,
+  "routing": {
+    "mode": "IMAGE",
+    "requiredControls": [
+      "depth",
+      "normal",
+      "product_mask"
+    ],
+    "providerPreference": [
+      "H3_MAX"
+    ],
+    "selectedProvider": "H3_MAX",
+    "reason": "IMAGE prefers H3_MAX for controls=depth,normal,product_mask; live provider availability BLOCKED; quality UNVERIFIED",
+    "productLocked": true,
+    "qualityClaim": "UNVERIFIED",
+    "costLabel": "CONFIG_ESTIMATE",
+    "liveProviderAvailable": false,
+    "truthLabel": "REAL_LOGIC"
+  },
+  "usedMock": true,
+  "physicalPrintValidated": false,
+  "globalProductionReady": false
+}
