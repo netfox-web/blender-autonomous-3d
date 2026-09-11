@@ -2,23 +2,24 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-11  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `39990d5` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 8)  
-Issue #1: `IC_kwDOUSTRdc8AAAABT399Tw`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `157532c` (**CHANGES REQUIRED** — Phase 781–840 Re-Gate Round 9)  
+Issue #1: Round 8 report + Round 9 instruction `157532c`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 781–840 Re-Gate Round 8 correction-only**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
+Executed **Phase 781–840 Re-Gate Round 8 + Round 9 correction-only**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 841+.
 
-| Blocker | Fix |
+| Round | Fix |
 |---|---|
-| Serialized orientation fail-open | Validator recompares expected vs observed pixels; recomputes oracle_quality; exact-binds matrix slot to fit/anchor/rotationDeg/mirrored. `status` is not authority. Canonical runner probes wrong-observed / row-swap / fake metadata / slot mismatch; `serializedOrientationTamperBlocked=true` required. |
+| 8 | Validator recompares expected vs observed; recomputes oracle_quality; exact slot binding; `serializedOrientationTamperBlocked`. |
+| 9 | Strict serialized types: `mirrored` exact bool; `rotationDeg` finite int/float (not bool/string); RGB exact 3-int 0..255 triplets. |
 
-**CODE_EVIDENCE_SHA:** `818dac8a45b62a2e6dd5d5ad2909888e2e04b0a0`  
+**CODE_EVIDENCE_SHA:** `e3eddd389b8f5845efdb4655c193acbf42ae375a`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34559982387` on exact `818dac8` Ubuntu + Windows SUCCESS.
+GitHub Actions CODE: **GREEN** `34563786351` on exact `e3eddd3` Ubuntu + Windows SUCCESS.
 
-Acceptance generation `de519caa-3d1c-4375-9bdf-29a24d6c3c79`; runner-bound `evidenceCodeCommit=818dac8…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
+Acceptance generation `fcfca28e-0e40-4b94-8b0b-7a04841015b8`; runner-bound `evidenceCodeCommit=e3eddd3…`; `workingTreeClean=true`. `realArtworkPreviewReady=false` (MOCK). `physicalPrintValidated=false`. Prior REAL Blender remains scoped `7a87ea5` only.
 
 ## Tests
 
@@ -49,8 +50,8 @@ CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
 - Vision/Video/Demand MOCK
 - Fixture batch ≠ physical batch
 - Do not start Phase 841+ until ChatGPT Re-Gate says GO
-- Artwork Placement V1 is in Re-Gate Round 8 correction; not Production Ready; no REAL artwork OptiX this round
+- Artwork Placement V1 is in Re-Gate Round 9 correction; not Production Ready; no REAL artwork OptiX this round
 
 ## Next round
 
-ChatGPT Re-Gate Phase 781–840 after Round 8. Stop here. Do not start Phase 841+.
+ChatGPT Re-Gate Phase 781–840 after Round 9. Stop here. Do not start Phase 841+.
