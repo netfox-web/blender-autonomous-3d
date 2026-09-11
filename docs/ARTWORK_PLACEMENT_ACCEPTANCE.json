@@ -1,11 +1,11 @@
 {
   "ok": true,
   "label": "FIXTURE/REAL_LOGIC",
-  "acceptanceGenerationId": "62bed682-1076-4e06-9e1e-d1a971d46793",
-  "evidenceCodeCommit": "1661da5b31842e5eb0c3a0ff9c695b4722c00c68",
+  "acceptanceGenerationId": "d4c52436-2a79-41b7-9b2c-bbcfc2cb234d",
+  "evidenceCodeCommit": "e9a777f9b9e8c4c98ee6007d79dd2582b18ce1c9",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
-  "generatedAt": "2026-09-11T00:02:03.260926+00:00",
+  "generatedAt": "2026-09-11T01:53:50.076911+00:00",
   "physicalPrintValidated": false,
   "realArtworkPreviewReady": false,
   "surfaceDecorationLogicReady": true,
@@ -37,26 +37,26 @@
       "check": "realArtworkPreviewReady",
       "status": "MOCK",
       "evidence": {
-        "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-        "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-        "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-        "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
+        "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+        "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+        "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+        "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
         "usedMock": true,
         "realBlender": false,
         "realArtworkPreviewReady": false,
         "physicalPrintValidated": false,
         "label": "MOCK",
         "requestedIdentity": {
-          "placementId": "c380c793-ed10-4d0d-bdc9-3cbcc8e14ae8",
+          "placementId": "8136e00c-0f28-4966-861f-06019008a2a0",
           "objectName": "DOOR_1",
           "componentId": "door_1",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-          "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
-          "finalUvHash": "870b801d340b4ac6d5e745ec3df32fff2e4f1f3a2d4ae8cd961895f6a4f6941b",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+          "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
+          "finalUvHash": "3c7368109be9d98cc9b7c619f7455f59bab987475d60f3a2f131f7f99a16d5e9",
           "finalSampling": [
             [
               0.0,
@@ -92,14 +92,14 @@
             "u1": 0.25,
             "v1": 1.0
           },
-          "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\62bed682-1076-4e06-9e1e-d1a971d46793\\live\\dam\\aw-a\\artwork\\79324372-4ad5-45b1-918c-67efef114888_grid.png",
+          "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\d4c52436-2a79-41b7-9b2c-bbcfc2cb234d\\live\\dam\\aw-a\\artwork\\047a8271-b026-44de-bc84-5ac98844b0c2_grid.png",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "artworkId": "79324372-4ad5-45b1-918c-67efef114888",
+          "artworkId": "047a8271-b026-44de-bc84-5ac98844b0c2",
           "hashes": {
-            "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-            "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-            "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-            "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2"
+            "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+            "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+            "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+            "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef"
           }
         }
       }
@@ -132,7 +132,7 @@
     {
       "check": "CONTAIN letterbox canvas",
       "status": "REAL_LOGIC",
-      "evidence": "{\"anchor\": \"CENTER\", \"fit\": \"CONTAIN\", \"placedMm\": {\"xMm\": 0.0, \"yMm\": 675.0, \"widthMm\": 600.0, \"heightMm\": 450.0}, \"outputPhysicalMm\": {\"widthMm\": 600.0, \"heightMm\": 1800.0}, \"pixelWidth\": 1200, \"pixelHeight\": 3600, \"transformHash\": \"6dfde31cfb8cc38038fc823d187148096f93205f6642a17bd375c88562ac53db\", \"finalUvHash\": \"ea7560db11bc2e2f6415838e358dda56b9e8b66baac7f71ba625d1a80d755eb2\"}"
+      "evidence": "{\"anchor\": \"CENTER\", \"fit\": \"CONTAIN\", \"placedMm\": {\"xMm\": 0.0, \"yMm\": 675.0, \"widthMm\": 600.0, \"heightMm\": 450.0}, \"outputPhysicalMm\": {\"widthMm\": 600.0, \"heightMm\": 1800.0}, \"pixelWidth\": 1200, \"pixelHeight\": 3600, \"transformHash\": \"fcb252d1118b80206ce6911b13409f858c90ce423bf3c95c6f3f765045a05cb0\", \"finalUvHash\": \"c638ea28bfe175e2053416590eccab662797900cb3e635e9d93cc0d85c2bc85a\"}"
     },
     {
       "check": "COVER anchor source crop",
@@ -142,7 +142,7 @@
     {
       "check": "orientation landmark parity",
       "status": "REAL_LOGIC",
-      "evidence": "{\"CONTAIN\": {\"CENTER\": {\"0\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [30, 80, 220], \"BR\": [230, 200, 20], \"TR\": [30, 180, 40], \"TL\": [220, 30, 30]}, \"observed\": {\"BL\": [30, 80, 220], \"BR\": [230, 200, 20], \"TR\": [30, 180, 40], \"TL\": [220, 30, 30]}, \"finalUvHash\": \"efaa738a379e78f9d6bb1d20a076685f5e2f6ed421bf8d3f756a28ad32b60b83\", \"transformHash\": \"b7acaadb5ee3ad2b65c0cbcabfd6bb301c3102a06024910111f8f671e87cf88e\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [230, 200, 20], \"BR\": [30, 180, 40], \"TR\": [220, 30, 30], \"TL\": [30, 80, 220]}, \"observed\": {\"BL\": [230, 200, 20], \"BR\": [30, 180, 40], \"TR\": [220, 30, 30], \"TL\": [30, 80, 220]}, \"finalUvHash\": \"9c5329c124fdbbb30860553bdfb63a2dafe17f0a381fb32bd7c702cd83e0a5b3\", \"transformHash\": \"eb6338e36175cb50d3b6d4ae308e5342aba16ec8a595b1072952834a6f86d397\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [30, 180, 40], \"BR\": [220, 30, 30], \"TR\": [30, 80, 220], \"TL\": [230, 200, 20]}, \"observed\": {\"BL\": [30, 180, 40], \"BR\": [220, 30, 30], \"TR\": [30, 80, 220], \"TL\": [230, 200, 20]}, \"finalUvHash\": \"d0daf5b1f16a33bc75d6f5d7487944fba3744b7a7836e5b5f22c041507858701\", \"transformHash\": \"299fdeb0588c8a7ce45d5bec1ba18e8684d4c9f2915951f76cb0698f01eb9e93\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [220, 30, 30], \"BR\": [30, 80, 220], \"TR\": [230, 200, 20], \"TL\": [30, 180, 40]}, \"observed\": {\"BL\": [220, 30, 30], \"BR\": [30, 80, 220], \"TR\": [230, 200, 20], \"TL\": [30, 180, 40]}, \"finalUvHash\": \"800022bf9f222f39cb6ac9b37511031d9e41220d9f0b73589b00ace1c801a618\", \"transformHash\": \"84afda0c9bb63b2e621ff1a16c68149991d359a9f4f894a0964247cd21ac7f71\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [230, 200, 20], \"BR\": [30, 80, 220], \"TR\": [220, 30, 30], \"TL\": [30, 180, 40]}, \"observed\": {\"BL\": [230, 200, 20], \"BR\": [30, 80, 220], \"TR\": [220, 30, 30], \"TL\": [30, 180, 40]}, \"finalUvHash\": \"8e8860dc56026d4983a02f2c91ba8ccae3b1f74b9896df6ae7c2c1540e223358\", \"transformHash\": \"8f3cd815d0a8455d1a884962e1b1136d1e9478b2cbdabe4451da0f224b69a5e9\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [30, 80, 220], \"BR\": [220, 30, 30], \"TR\": [30, 180, 40], \"TL\": [230, 200, 20]}, \"observed\": {\"BL\": [30, 80, 220], \"BR\": [220, 30, 30], \"TR\": [30, 180, 40], \"TL\": [230, 200, 20]}, \"finalUvHash\": \"7837fdf41fe97d6be28f1d1072432241dcf578e56dfbb3c3a49df84dd052b7e8\", \"transformHash\": \"f78768096b7522e7245d8e220176a821023b9587b412ad7a79797f919d22c8a2\", \"status\": \"PASS\"}}}, \"COVER\": {\"LEFT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [30, 80, 220], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [220, 30, 30]}, \"observed\": {\"BL\": [30, 80, 220], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [220, 30, 30]}, \"finalUvHash\": \"0d96317174b4695e96693a412e69a47755cedeb18d61d209833b3071b052d118\", \"transformHash\": \"67aee1822401a4a03ff776fcabc8ef80381edd9020d61f5efa89e74a8315846d\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [220, 30, 30], \"TL\": [30, 80, 220]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [220, 30, 30], \"TL\": [30, 80, 220]}, \"finalUvHash\": \"576edf63f37bb401d6e960151a682845b881e421d47be83ca8fb37f5e3373e44\", \"transformHash\": \"8d5f0fd7a8760f2bc187e8132e909795e48a154e3c0f1ce0c7fbbd6f41ac2f06\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [220, 30, 30], \"TR\": [30, 80, 220], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [220, 30, 30], \"TR\": [30, 80, 220], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"2da6c8762b1104040648c1f111999e0631e7cc3c699cf9eeba2d3d390cf8e47b\", \"transformHash\": \"c59be62401a700e5a8d81365d124dd4733c029ccc1785f26297f97e010a2f4e8\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [220, 30, 30], \"BR\": [30, 80, 220], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [220, 30, 30], \"BR\": [30, 80, 220], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"6a492b6722a66b4ad85cc991cc83154cdf6c73b40f796080d6f7ca21b4ba3ad2\", \"transformHash\": \"c6eba3b62dcebcc328c285f24233f7d04443bbc89cc386dc9804079a3d7b3409\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [30, 80, 220], \"TR\": [220, 30, 30], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [30, 80, 220], \"TR\": [220, 30, 30], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"832eedc8c102481c2ce54b6d735e739e9d91ad398e5a062c46c2edfd4ccf6a4b\", \"transformHash\": \"4abf40dec44731c9a9185e63dc2a8b8761733cdcf6e5154902a41f9922bc0118\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [30, 80, 220], \"BR\": [220, 30, 30], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [30, 80, 220], \"BR\": [220, 30, 30], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"2b08420b94790820b315dd9e2c6a4724f80964fbaccc7dd05f6c23dc7182d598\", \"transformHash\": \"4621c377d1432f52ee199fbaac2e9a2b6868846df4a3be64c0162dd399172f4e\", \"status\": \"PASS\"}}, \"CENTER\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"094f2a7fa4803ff3d68d62ddd48cfa976dd8737786078ba1fbe889d6192cb34e\", \"transformHash\": \"70931cbf63addabd2f8ef4b5f2329c73021e2065c940147ba72e2d10336a0347\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"8e103281bc22769d796a601a9b29120ee077c75fbb1f9616eb662834cea0a1e0\", \"transformHash\": \"63113826e6efd6b22d24c8cb57926ab4849565f837f8078fcc0c9e99915b6070\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"25c531c10eca1d1e48c0a43ef614e8f7621647bab1cadf936f193212a1c4ab84\", \"transformHash\": \"d8a31ed51bf8bd70d8d91612186d9c012d9caf5044feaeb5c20f1c444eba44b8\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"c56cb4afae3f38907a90c936bd8a8fbe7554e0113ea8f64fbf8b9a8c39968c7c\", \"transformHash\": \"f7eecb760871f2497b4c17d14dfa31d8abcb2bcef706aaae47ac97f4e5312704\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"beef243f977ce9dd90649653ac0ff9987d0c1418518bf60f74b79c327666b9fe\", \"transformHash\": \"0e2e4ce0526cfc769f7241f4322c2838b1c01a58d9cba4af14307c8a541159bf\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"58ae76292fec260c501ccd015670c82d79f3eb41613b6aecf1ef86762804cf13\", \"transformHash\": \"6304b76b6bb63f4854af357130e82985d1a6e02833fdeb37f25c7d4ab80f8f60\", \"status\": \"PASS\"}}, \"RIGHT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [230, 200, 20], \"TR\": [30, 180, 40], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [230, 200, 20], \"TR\": [30, 180, 40], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"ec99fd01a9147a8b50978ab4d6cc75433a39fa1cec77837727cbf156a02be451\", \"transformHash\": \"5a6be9026fe0e449cd48576d0e497ec96a72c8c9e71ae94a44a588055b556c75\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [230, 200, 20], \"BR\": [30, 180, 40], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"observed\": {\"BL\": [230, 200, 20], \"BR\": [30, 180, 40], \"TR\": [80, 80, 80], \"TL\": [80, 80, 80]}, \"finalUvHash\": \"4350f61af15563320391df48c0fb20322096d60caee0d466b8a15d3c58528766\", \"transformHash\": \"7f060967ff4ad890a3180313c75380b57028628128d08cc5ad307e24da9b8a46\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [30, 180, 40], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [230, 200, 20]}, \"observed\": {\"BL\": [30, 180, 40], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [230, 200, 20]}, \"finalUvHash\": \"a5fe5867d473aabff52fce81ec2bad3be94b7bd4fcfcb16b734b9f7dccde1772\", \"transformHash\": \"b2d743696d0d8817f545280267dcfd72e5919ef65f046b3ed9beb228ba4a37e9\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [230, 200, 20], \"TL\": [30, 180, 40]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [230, 200, 20], \"TL\": [30, 180, 40]}, \"finalUvHash\": \"da130a96ae0004ef693a8213dfd66ca3ddc8dccc7b6a23a11db8db0d2fc8f017\", \"transformHash\": \"10a41775a4d7bff80b8d828f5fc68ddca7b1b513dc422630846d6b961216c814\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [230, 200, 20], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [30, 180, 40]}, \"observed\": {\"BL\": [230, 200, 20], \"BR\": [80, 80, 80], \"TR\": [80, 80, 80], \"TL\": [30, 180, 40]}, \"finalUvHash\": \"2cdc2bf628511e24b7224d4b55807e9057984f398d0ba24ffe85f04ed25ac45d\", \"transformHash\": \"73cf0952046c0935541a691debd6e61df46b8142e582c8f3cfcb83a90f663ac3\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [30, 180, 40], \"TL\": [230, 200, 20]}, \"observed\": {\"BL\": [80, 80, 80], \"BR\": [80, 80, 80], \"TR\": [30, 180, 40], \"TL\": [230, 200, 20]}, \"finalUvHash\": \"fdfabe4d755cb17f471db1cc03d53a071bc2eccbd2006c6f17a258743ed67d22\", \"transformHash\": \"081cf152287dad1be9f9f978de150b8e5b3f4920b7c559877a4727512b0d2c29\", \"status\": \"PASS\"}}}}"
+      "evidence": "{\"CONTAIN\": {\"CENTER\": {\"0\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [0, 0, 20]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [0, 0, 20]}, \"finalUvHash\": \"d744c1bc3ecc8d9c038a110aad4f69ef3e7153214dfaa17ac8d5009db9895754\", \"transformHash\": \"7f4058278942950c6e2051c1d4a1cdce75a70c59174f177083c50c77b9bcc759\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|255,255,210|255,0,191|0,0,20\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"finalUvHash\": \"7a58dcbd4b63fe0f3000b8c5ef2827e8693fbac5bba7781f61d6a52f4055ec50\", \"transformHash\": \"e29b7cb7e59dd2ed62483b39977b13166a7a57bcc174a515a6d1ba7b8a39f42a\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|255,0,191|0,0,20|0,255,39\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 0, 191], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [255, 0, 191], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"b7f7d87df5c20163e0311048ddefa4d705639bdff93f4bf5749e6f26c1a1cfbf\", \"transformHash\": \"164836543a060bee40ac627536d0e53ce8de2b1eda822fb4e8cafbca2b204cff\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,0,191|0,0,20|0,255,39|255,255,210\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"9506ee9aa57525b4141bf387b22158020fe1cdcbed83026feee5e6b4c40ef2d3\", \"transformHash\": \"aef4bfdbfa154d431680fc80ebd4b1b5b5d0c21e8dd42832c8b0465354791ef9\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,0,20|0,255,39|255,255,210|255,0,191\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"dfde3953f6658fbb1d6ceca4c8b06602d7443b1750de7fbce30b5e1c9673119f\", \"transformHash\": \"f10d6a1b8f4d749e8f7e2cb1973230d97e42287756841c2974a795a476d5a12a\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|0,255,39|0,0,20|255,0,191\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"7645ed1335f75404e623f5d74081d78865a3b8d1e8a5ba398a843eefb13ea673\", \"transformHash\": \"1a95901e5ec038878425a77aabe9c3c9a114120e43b1b8b4fa00c11f17c61bf9\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|0,0,20|255,0,191|255,255,210\", \"status\": \"PASS\"}}}, \"COVER\": {\"LEFT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [60, 255, 182], \"TR\": [60, 0, 163], \"TL\": [0, 0, 20]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [54, 255, 169], \"TR\": [54, 0, 150], \"TL\": [0, 0, 20]}, \"finalUvHash\": \"0a4a1d1e41258ebc4d42e3644ba718dddef92ed9fbbe51a28486775b7d20ddb2\", \"transformHash\": \"a5beaf3269696e93a875603d4af209b608867e7e00bf30d6c7dd25e273b89b66\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|60,255,182|60,0,163|0,0,20\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 255, 182], \"BR\": [60, 0, 163], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"observed\": {\"BL\": [54, 255, 169], \"BR\": [54, 0, 150], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"finalUvHash\": \"3e3d011775427086b933f767de42c1738cfb8ecb8115d9217286e10d3d3a2a41\", \"transformHash\": \"3a4cce2a922a32e536139f3fb20063da6a1fecb842a11cb7a5c312218a881872\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,255,182|60,0,163|0,0,20|0,255,39\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 0, 163], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [60, 255, 182]}, \"observed\": {\"BL\": [54, 0, 150], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [54, 255, 169]}, \"finalUvHash\": \"9f22063c6c28ee211d7ab2122bbc060ac7f328e981f63d502446997c2fd2fe65\", \"transformHash\": \"5829eed2af56687fdcc537de5f2431e903e861c069aba70d5db86aa3347ed22c\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,0,163|0,0,20|0,255,39|60,255,182\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [60, 255, 182], \"TL\": [60, 0, 163]}, \"observed\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [54, 255, 169], \"TL\": [54, 0, 150]}, \"finalUvHash\": \"5707ee3fbdbf9c1533b0e7334940305bfed247ca3b65f856f7676e0569da71e3\", \"transformHash\": \"641ef493098a98926ae6ffd7f72b16c9d04e8e5c8549dddb3d47b1df055dc1c1\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,0,20|0,255,39|60,255,182|60,0,163\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 255, 182], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [60, 0, 163]}, \"observed\": {\"BL\": [54, 255, 169], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [54, 0, 150]}, \"finalUvHash\": \"d4ec553014472130b60bf9bd017b9851aa0fc9898e5094fadc9459a24971db0b\", \"transformHash\": \"1e037105eb3521f002fbdf3e3dd3da79209a7aa73976b1c311af8e7ce999cce6\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,255,182|0,255,39|0,0,20|60,0,163\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [60, 0, 163], \"TL\": [60, 255, 182]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [54, 0, 150], \"TL\": [54, 255, 169]}, \"finalUvHash\": \"b605d3fa0a300b5b135d4a1184fe3fdb98f9de259489efff0fcbffe1ce74beff\", \"transformHash\": \"ba13e7730bc3c76f78e35b6324f2beaedb32359d941b889711743e1b2eedd066\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|0,0,20|60,0,163|60,255,182\", \"status\": \"PASS\"}}, \"CENTER\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 255, 66], \"BR\": [157, 255, 196], \"TR\": [157, 0, 177], \"TL\": [103, 0, 47]}, \"observed\": {\"BL\": [103, 255, 66], \"BR\": [157, 255, 196], \"TR\": [157, 0, 177], \"TL\": [103, 0, 47]}, \"finalUvHash\": \"b3c228980d42bddc39a53db82454ba90b0b7ad30d4299924a430386e42e453c4\", \"transformHash\": \"30352a50c49c032e9f6a8120a278e3608eaed15ce4707232c4113af6f4159c3a\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,255,66|157,255,196|157,0,177|103,0,47\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 255, 196], \"BR\": [157, 0, 177], \"TR\": [103, 0, 47], \"TL\": [103, 255, 66]}, \"observed\": {\"BL\": [157, 255, 196], \"BR\": [157, 0, 177], \"TR\": [103, 0, 47], \"TL\": [103, 255, 66]}, \"finalUvHash\": \"0233ed1bd58fc68c695e21bdbd71c6d1f949239d09e226ec93c40b64acd32169\", \"transformHash\": \"6070fb7a97f09799076c0d9f11d4e1c2aa3a0cea80a943389899d2be3a719429\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,255,196|157,0,177|103,0,47|103,255,66\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 0, 177], \"BR\": [103, 0, 47], \"TR\": [103, 255, 66], \"TL\": [157, 255, 196]}, \"observed\": {\"BL\": [157, 0, 177], \"BR\": [103, 0, 47], \"TR\": [103, 255, 66], \"TL\": [157, 255, 196]}, \"finalUvHash\": \"20f29c5a826d4da13ca1994175cbebfa1f6ce7587a14ebbc22f28b7467826c7a\", \"transformHash\": \"74fc5ed00b14f98282b5917e8f02e60f29c067bbc808e33dbee1390396db6c11\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,0,177|103,0,47|103,255,66|157,255,196\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 0, 47], \"BR\": [103, 255, 66], \"TR\": [157, 255, 196], \"TL\": [157, 0, 177]}, \"observed\": {\"BL\": [103, 0, 47], \"BR\": [103, 255, 66], \"TR\": [157, 255, 196], \"TL\": [157, 0, 177]}, \"finalUvHash\": \"76b1ab4e7ef055cd064f7c23ae1bb5de7ddeed30b5f15825ba33dc80e76da4e8\", \"transformHash\": \"eade09f8b274558382f8c263377051c4ce9fbbdb5c7386fa489a4d1b8e9fc598\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,0,47|103,255,66|157,255,196|157,0,177\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 255, 196], \"BR\": [103, 255, 66], \"TR\": [103, 0, 47], \"TL\": [157, 0, 177]}, \"observed\": {\"BL\": [157, 255, 196], \"BR\": [103, 255, 66], \"TR\": [103, 0, 47], \"TL\": [157, 0, 177]}, \"finalUvHash\": \"5bf058aeaaa26f2bc4415207b5f436bbea739786952c0d9201c8b5b3dcc6c079\", \"transformHash\": \"75596b9cbb9ca9ef22a82e3e088e6adcfe37dc71a97d9ee928b4001279fb97cf\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,255,196|103,255,66|103,0,47|157,0,177\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 255, 66], \"BR\": [103, 0, 47], \"TR\": [157, 0, 177], \"TL\": [157, 255, 196]}, \"observed\": {\"BL\": [103, 255, 66], \"BR\": [103, 0, 47], \"TR\": [157, 0, 177], \"TL\": [157, 255, 196]}, \"finalUvHash\": \"2fbb912a9fd77ce96ee388df1c8b71f4208c534a11f3edb5f98f8c7df586b1a7\", \"transformHash\": \"75153ce86ff45dd55a5752ac567f7e162c00b0ecb913ebefbd72826d2004bd0b\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,255,66|103,0,47|157,0,177|157,255,196\", \"status\": \"PASS\"}}, \"RIGHT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 255, 67], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [195, 0, 48]}, \"observed\": {\"BL\": [201, 255, 80], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [201, 0, 61]}, \"finalUvHash\": \"b62df61069a81af5ac59a906b8cef7e3223383c98eb1f9df66d4e94f53a6f365\", \"transformHash\": \"727f600909c299d6bcf4856709203c0bde646c38ef100e67b5076333c4325227\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,255,67|255,255,210|255,0,191|195,0,48\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [195, 0, 48], \"TL\": [195, 255, 67]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [201, 0, 61], \"TL\": [201, 255, 80]}, \"finalUvHash\": \"30082a2f29fb96ec2ea409c5ea0d531ddeeb6a70e70ab7cad1f2a59c3a0d4318\", \"transformHash\": \"b89d502b98b2682e7d1fa0ba348b9d85c286648f448a668744461c78f26f3ee2\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|255,0,191|195,0,48|195,255,67\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 0, 191], \"BR\": [195, 0, 48], \"TR\": [195, 255, 67], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [255, 0, 191], \"BR\": [201, 0, 61], \"TR\": [201, 255, 80], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"a444ae2e57ab68af02d63cf7569f90200505bad039f52bf7167a47905b78992d\", \"transformHash\": \"b421235cdf2a7b7918d1c132c5cff8b99c74f37a923a4dd0ebdda15387d8894f\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,0,191|195,0,48|195,255,67|255,255,210\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 0, 48], \"BR\": [195, 255, 67], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [201, 0, 61], \"BR\": [201, 255, 80], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"ecfff3116f079b0e94a1f69e90f37f7a6eb92ee212a22c52557d94705aaff6a0\", \"transformHash\": \"dc386990e66bcd863650181609effef7300e0add025d6f59329bc41d1f9434e5\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,0,48|195,255,67|255,255,210|255,0,191\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [195, 255, 67], \"TR\": [195, 0, 48], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [201, 255, 80], \"TR\": [201, 0, 61], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"da4e6a30000e5fffc413790f84f385a80df4050dcaed16d612fe3034ad073957\", \"transformHash\": \"f1dcf25dd569eaeabb20f82d7a735b9f789c063a8452553156a278ecff40dc2a\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|195,255,67|195,0,48|255,0,191\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 255, 67], \"BR\": [195, 0, 48], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [201, 255, 80], \"BR\": [201, 0, 61], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"25f6051aa083e0c8b0eda3d7b23a3ccff7efbe627e2b71d775ec53ebcdf00d77\", \"transformHash\": \"6f0a7018c90433cf6cb5ba88e70f27345ff561a3ab5bbc72ba9ad479ca37ebfb\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,255,67|195,0,48|255,0,191|255,255,210\", \"status\": \"PASS\"}}}}"
     },
     {
       "check": "master seam replay",
@@ -163,8 +163,8 @@
   "scenarios": {
     "cabinet2": {
       "surfaceIds": [
-        "ebb5bf14-6e79-4665-b333-2c10b9dacc77",
-        "77cd1257-718b-4265-98a1-aff6c8c3e74f"
+        "b4ad16da-76a7-4283-a7f8-f88f2638a5db",
+        "46d22e1d-e433-4ebd-95a0-baa33a50bcf7"
       ],
       "componentIds": [
         "door_1",
@@ -184,17 +184,17 @@
           "heightMm": 1800.0
         }
       ],
-      "placementHash": "12d52b9297896adc09377efe5bd54d0eb1eb8b1f9c9b310da8e81543351e8f29",
+      "placementHash": "b19a56bfbc13f8f3ef05e6cafc9fe1f9d1e93884c54ea3cd2cd3752373ce1c87",
       "placementHashes": [
-        "12d52b9297896adc09377efe5bd54d0eb1eb8b1f9c9b310da8e81543351e8f29",
-        "21294be564509c2d981b0e297b174126cdc49571bb161028fe98ebfa22257819"
+        "b19a56bfbc13f8f3ef05e6cafc9fe1f9d1e93884c54ea3cd2cd3752373ce1c87",
+        "91ba5ce94a5adebe6de3f71ac78b8b65d64c01ed8d55cfad6ec3fb689cd01f2a"
       ]
     },
     "cabinet3": {
       "surfaceIds": [
-        "b00b63ef-3643-4637-8a80-f45a87fbb457",
-        "8ae70a32-a8ed-4162-af19-32267e235fce",
-        "f360fac3-1a9e-4586-832b-3de4894fe010"
+        "9ac212e0-ceaf-49e4-8a48-02dab970fcb2",
+        "1e8e10c7-691f-483a-8a70-dd48a6a28086",
+        "418d40cf-dc48-422c-a5e7-612b46a5ac25"
       ],
       "componentIds": [
         "door_1",
@@ -222,20 +222,20 @@
         }
       ],
       "placementHashes": [
-        "4f1fe1904fe5d88441c628363e3d309cbe078e9e053aa7a3763371d7f89b6895",
-        "093486207f659abcd2703319eabc4ea1bb1bcbcb5d8d4d88467326dcbf3d8e79",
-        "d7dfe53f33b8fa944a32fbdd24b895c90549ba5201b4312804296c3ea1303a14"
+        "c0b2a5fd93678dfaa6ed1c329685a55dfd3f84dd57941f1434707af843f59da1",
+        "fa9c0fb1fa246a750f08c292c9d13fe133071d5586db49c6b3a10eef6e66057c",
+        "551d8b1f916c4efee779c61382c9467dda9e9e763596cf1f5dd2213fb27822f5"
       ]
     },
     "cabinet4": {
-      "masterHash": "f9ef92940c7f115b21e465d3fb78bc7d5ec5b4abac1944ffa08064eecd600be7",
+      "masterHash": "843cf07801238ddb70495fcd981ee40265dfe96703262dc602eb72b0827c932d",
       "widthMm": 2400.0,
       "seamSource": "ENGINEERING",
       "surfaceIds": [
-        "cc62da43-5f30-45ae-90fe-d313e7543847",
-        "6059f995-b6cc-463e-aa29-1c43b18105bc",
-        "30c326ff-5181-4786-9a76-01277af2f833",
-        "1fcde1c5-ce1b-48cc-9250-eddecbf9cdab"
+        "58b044ad-485e-48df-bdf1-a7c3f0727ec0",
+        "f52cb0db-096d-4447-9eb4-fd1107c0922f",
+        "c59301a3-cc90-4028-8654-9b9a0ea6b69c",
+        "9386b460-4372-41a1-9a68-e3dfb870f31f"
       ],
       "componentIds": [
         "door_1",
@@ -270,42 +270,42 @@
         }
       ],
       "placementHashes": [
-        "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
-        "0f457c4385e0cf6f8c9bc8c99a87714353890fc74a37159f8dc882d21de37f54",
-        "a1a33accfc1d842920346a6d8d8ef17026ac3d6ed771d997571559884d8924f3",
-        "51f0f40103fccd6156ce3665d2af740e5dbbbfdc6095f1f2ae58977d8c731941"
+        "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
+        "75ca86bc2d146840cd1ed4f6d74520316f9aa14bb564ea36d426d52298406b88",
+        "bf19d30eee4c95c60e17c9980c8b4007388b5e9e8d57aa6769a2f5179d39b1a7",
+        "c41e33e7e09e1ee31420dfd6de0fe8f7f1956f17a41a80dff3787c88e1cce1f3"
       ],
       "production": [
         {
           "sha256": "0656d647ca4a9378ce265315f48acfd600b2bbb31a612ba81f9ac54b9983a9e2",
-          "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
-          "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
+          "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "productionArtworkFileReady": true
         },
         {
           "sha256": "a1fccff63468720591e04ca182a8fdb0633732f6fd33583e7c4c666eda932112",
-          "placementHash": "0f457c4385e0cf6f8c9bc8c99a87714353890fc74a37159f8dc882d21de37f54",
-          "surfaceHash": "77d5b30cbf0c5de48c17efaeeb7bdbe16a483e112bb70de92b0332d3491aba7b",
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "placementHash": "75ca86bc2d146840cd1ed4f6d74520316f9aa14bb564ea36d426d52298406b88",
+          "surfaceHash": "5616496bf268caca08932c95edfe8a25ee2814504cdb6dd513a378993bf7ffb8",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "productionArtworkFileReady": true
         },
         {
           "sha256": "e23b6f614263ce0f6d69d560b01c97248fbb0993d62abff3f16838a8b9afb97c",
-          "placementHash": "a1a33accfc1d842920346a6d8d8ef17026ac3d6ed771d997571559884d8924f3",
-          "surfaceHash": "2f480585ad5b8e728939976745c59f904bb1ebca3ac229493ca6fe9423cbe383",
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "placementHash": "bf19d30eee4c95c60e17c9980c8b4007388b5e9e8d57aa6769a2f5179d39b1a7",
+          "surfaceHash": "179bc066f831dd30d73d7d36d2ef00104a5e3b6b0abc30a8dff6d0ad9ea3444a",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "productionArtworkFileReady": true
         },
         {
           "sha256": "d03ac56409721228ca80346c21a7932e0bc4371832f09effced18711439a5f15",
-          "placementHash": "51f0f40103fccd6156ce3665d2af740e5dbbbfdc6095f1f2ae58977d8c731941",
-          "surfaceHash": "bb6eec42c975a0cf73414b97504e5d2531134d2d5ca8d93828961654dc86f5e5",
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "placementHash": "c41e33e7e09e1ee31420dfd6de0fe8f7f1956f17a41a80dff3787c88e1cce1f3",
+          "surfaceHash": "69ade8234da6fb2748d8d0cc9e05ee465bd46f73220f2ead6b302c2b922d004c",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "productionArtworkFileReady": true
         }
       ],
@@ -445,7 +445,7 @@
         {
           "objectName": "DOOR_1",
           "componentId": "door_1",
-          "placementId": "c380c793-ed10-4d0d-bdc9-3cbcc8e14ae8",
+          "placementId": "8136e00c-0f28-4966-861f-06019008a2a0",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -518,17 +518,17 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
-          "finalUvHash": "870b801d340b4ac6d5e745ec3df32fff2e4f1f3a2d4ae8cd961895f6a4f6941b"
+          "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
+          "finalUvHash": "3c7368109be9d98cc9b7c619f7455f59bab987475d60f3a2f131f7f99a16d5e9"
         },
         {
           "objectName": "DOOR_2",
           "componentId": "door_2",
-          "placementId": "7f06011a-a4fe-425a-8933-ec655ec27170",
+          "placementId": "05017de1-cb63-43d3-911f-b9f909b01019",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -601,17 +601,17 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "surfaceHash": "77d5b30cbf0c5de48c17efaeeb7bdbe16a483e112bb70de92b0332d3491aba7b",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "surfaceHash": "5616496bf268caca08932c95edfe8a25ee2814504cdb6dd513a378993bf7ffb8",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "0f457c4385e0cf6f8c9bc8c99a87714353890fc74a37159f8dc882d21de37f54",
-          "finalUvHash": "7945697128305b4f285a7baa1a0faf41836acb763429347fbb2a92e6b2db2ea1"
+          "placementHash": "75ca86bc2d146840cd1ed4f6d74520316f9aa14bb564ea36d426d52298406b88",
+          "finalUvHash": "f9aa42193c8e203b390fa329e99dae204c61b1d78189b739f5440f98b4400efd"
         },
         {
           "objectName": "DOOR_3",
           "componentId": "door_3",
-          "placementId": "63411000-5700-4916-bfb9-a119e3830b52",
+          "placementId": "3fa302fc-962d-4821-94b4-4e1c598e1920",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -684,17 +684,17 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "surfaceHash": "2f480585ad5b8e728939976745c59f904bb1ebca3ac229493ca6fe9423cbe383",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "surfaceHash": "179bc066f831dd30d73d7d36d2ef00104a5e3b6b0abc30a8dff6d0ad9ea3444a",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "a1a33accfc1d842920346a6d8d8ef17026ac3d6ed771d997571559884d8924f3",
-          "finalUvHash": "874ef8258c3c1b3695baab250cc8fee85451264680fe24b17eb4a9eee8ad049b"
+          "placementHash": "bf19d30eee4c95c60e17c9980c8b4007388b5e9e8d57aa6769a2f5179d39b1a7",
+          "finalUvHash": "d09fd36ed6b2a7fd2982938048f9b1f77b6cfe7c25490d597a67058c8e1e87c6"
         },
         {
           "objectName": "DOOR_4",
           "componentId": "door_4",
-          "placementId": "687e29bb-d552-4602-b3ab-c5d51310fb0d",
+          "placementId": "f04340a9-079b-465b-8c2c-36cb532884cf",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -767,19 +767,19 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-          "surfaceHash": "bb6eec42c975a0cf73414b97504e5d2531134d2d5ca8d93828961654dc86f5e5",
-          "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
+          "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+          "surfaceHash": "69ade8234da6fb2748d8d0cc9e05ee465bd46f73220f2ead6b302c2b922d004c",
+          "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "51f0f40103fccd6156ce3665d2af740e5dbbbfdc6095f1f2ae58977d8c731941",
-          "finalUvHash": "4c876298a4903e34c75decd44b3f65b8b870242a5c65808a2c83f8d4c3185e28"
+          "placementHash": "c41e33e7e09e1ee31420dfd6de0fe8f7f1956f17a41a80dff3787c88e1cce1f3",
+          "finalUvHash": "111b2f4506ed275fc81899d57a9da9b4e1362bf204e4a015228db1081eab04df"
         }
       ]
     },
     "cabinet4Single": {
       "relation": "SINGLE_SURFACE",
       "componentId": "door_2",
-      "surfaceId": "6059f995-b6cc-463e-aa29-1c43b18105bc",
+      "surfaceId": "f52cb0db-096d-4447-9eb4-fd1107c0922f",
       "masterHash": null,
       "cropPx": {
         "x": 0,
@@ -787,7 +787,7 @@
         "w": 480,
         "h": 360
       },
-      "placementHash": "d7b1307b7e626fd4e76b32fcb5014e75a9ff588ac8a0a359f21934cbe2b0608e",
+      "placementHash": "68d0bc1afc6f1360b75e592df80124bd08862e0fca9ce504132d52bfbb1a6d4e",
       "outputPhysicalMm": {
         "widthMm": 600.0,
         "heightMm": 1800.0
@@ -812,8 +812,8 @@
       },
       "pixelWidth": 1200,
       "pixelHeight": 3600,
-      "transformHash": "6dfde31cfb8cc38038fc823d187148096f93205f6642a17bd375c88562ac53db",
-      "finalUvHash": "ea7560db11bc2e2f6415838e358dda56b9e8b66baac7f71ba625d1a80d755eb2"
+      "transformHash": "fcb252d1118b80206ce6911b13409f858c90ce423bf3c95c6f3f765045a05cb0",
+      "finalUvHash": "c638ea28bfe175e2053416590eccab662797900cb3e635e9d93cc0d85c2bc85a"
     },
     "coverAnchor": {
       "leftSourceXPx": 0,
@@ -836,50 +836,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ]
             },
             "observed": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ]
             },
-            "finalUvHash": "efaa738a379e78f9d6bb1d20a076685f5e2f6ed421bf8d3f756a28ad32b60b83",
-            "transformHash": "b7acaadb5ee3ad2b65c0cbcabfd6bb301c3102a06024910111f8f671e87cf88e",
+            "finalUvHash": "d744c1bc3ecc8d9c038a110aad4f69ef3e7153214dfaa17ac8d5009db9895754",
+            "transformHash": "7f4058278942950c6e2051c1d4a1cdce75a70c59174f177083c50c77b9bcc759",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "0,255,39|255,255,210|255,0,191|0,0,20",
             "status": "PASS"
           },
           "90": {
@@ -896,50 +899,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ]
             },
             "observed": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ]
             },
-            "finalUvHash": "9c5329c124fdbbb30860553bdfb63a2dafe17f0a381fb32bd7c702cd83e0a5b3",
-            "transformHash": "eb6338e36175cb50d3b6d4ae308e5342aba16ec8a595b1072952834a6f86d397",
+            "finalUvHash": "7a58dcbd4b63fe0f3000b8c5ef2827e8693fbac5bba7781f61d6a52f4055ec50",
+            "transformHash": "e29b7cb7e59dd2ed62483b39977b13166a7a57bcc174a515a6d1ba7b8a39f42a",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "255,255,210|255,0,191|0,0,20|0,255,39",
             "status": "PASS"
           },
           "180": {
@@ -956,50 +962,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
             "observed": {
               "BL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
-            "finalUvHash": "d0daf5b1f16a33bc75d6f5d7487944fba3744b7a7836e5b5f22c041507858701",
-            "transformHash": "299fdeb0588c8a7ce45d5bec1ba18e8684d4c9f2915951f76cb0698f01eb9e93",
+            "finalUvHash": "b7f7d87df5c20163e0311048ddefa4d705639bdff93f4bf5749e6f26c1a1cfbf",
+            "transformHash": "164836543a060bee40ac627536d0e53ce8de2b1eda822fb4e8cafbca2b204cff",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "255,0,191|0,0,20|0,255,39|255,255,210",
             "status": "PASS"
           },
           "270": {
@@ -1016,50 +1025,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                220,
-                30,
-                30
-              ],
-              "BR": [
-                30,
-                80,
-                220
-              ],
-              "TR": [
-                230,
-                200,
+                0,
+                0,
                 20
               ],
+              "BR": [
+                0,
+                255,
+                39
+              ],
+              "TR": [
+                255,
+                255,
+                210
+              ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
             "observed": {
               "BL": [
-                220,
-                30,
-                30
-              ],
-              "BR": [
-                30,
-                80,
-                220
-              ],
-              "TR": [
-                230,
-                200,
+                0,
+                0,
                 20
               ],
+              "BR": [
+                0,
+                255,
+                39
+              ],
+              "TR": [
+                255,
+                255,
+                210
+              ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
-            "finalUvHash": "800022bf9f222f39cb6ac9b37511031d9e41220d9f0b73589b00ace1c801a618",
-            "transformHash": "84afda0c9bb63b2e621ff1a16c68149991d359a9f4f894a0964247cd21ac7f71",
+            "finalUvHash": "9506ee9aa57525b4141bf387b22158020fe1cdcbed83026feee5e6b4c40ef2d3",
+            "transformHash": "aef4bfdbfa154d431680fc80ebd4b1b5b5d0c21e8dd42832c8b0465354791ef9",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "0,0,20|0,255,39|255,255,210|255,0,191",
             "status": "PASS"
           },
           "mirror": {
@@ -1076,50 +1088,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
             "observed": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
-            "finalUvHash": "8e8860dc56026d4983a02f2c91ba8ccae3b1f74b9896df6ae7c2c1540e223358",
-            "transformHash": "8f3cd815d0a8455d1a884962e1b1136d1e9478b2cbdabe4451da0f224b69a5e9",
+            "finalUvHash": "dfde3953f6658fbb1d6ceca4c8b06602d7443b1750de7fbce30b5e1c9673119f",
+            "transformHash": "f10d6a1b8f4d749e8f7e2cb1973230d97e42287756841c2974a795a476d5a12a",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "255,255,210|0,255,39|0,0,20|255,0,191",
             "status": "PASS"
           },
           "mirror90": {
@@ -1136,50 +1151,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
             "observed": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
-            "finalUvHash": "7837fdf41fe97d6be28f1d1072432241dcf578e56dfbb3c3a49df84dd052b7e8",
-            "transformHash": "f78768096b7522e7245d8e220176a821023b9587b412ad7a79797f919d22c8a2",
+            "finalUvHash": "7645ed1335f75404e623f5d74081d78865a3b8d1e8a5ba398a843eefb13ea673",
+            "transformHash": "1a95901e5ec038878425a77aabe9c3c9a114120e43b1b8b4fa00c11f17c61bf9",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "0,255,39|0,0,20|255,0,191|255,255,210",
             "status": "PASS"
           }
         }
@@ -1200,50 +1218,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                80,
-                80,
-                80
+                60,
+                255,
+                182
               ],
               "TR": [
-                80,
-                80,
-                80
+                60,
+                0,
+                163
               ],
               "TL": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ]
             },
             "observed": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                80,
-                80,
-                80
+                54,
+                255,
+                169
               ],
               "TR": [
-                80,
-                80,
-                80
+                54,
+                0,
+                150
               ],
               "TL": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ]
             },
-            "finalUvHash": "0d96317174b4695e96693a412e69a47755cedeb18d61d209833b3071b052d118",
-            "transformHash": "67aee1822401a4a03ff776fcabc8ef80381edd9020d61f5efa89e74a8315846d",
+            "finalUvHash": "0a4a1d1e41258ebc4d42e3644ba718dddef92ed9fbbe51a28486775b7d20ddb2",
+            "transformHash": "a5beaf3269696e93a875603d4af209b608867e7e00bf30d6c7dd25e273b89b66",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "0,255,39|60,255,182|60,0,163|0,0,20",
             "status": "PASS"
           },
           "90": {
@@ -1260,50 +1281,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                60,
+                255,
+                182
               ],
               "BR": [
-                80,
-                80,
-                80
+                60,
+                0,
+                163
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                54,
+                255,
+                169
               ],
               "BR": [
-                80,
-                80,
-                80
+                54,
+                0,
+                150
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ]
             },
-            "finalUvHash": "576edf63f37bb401d6e960151a682845b881e421d47be83ca8fb37f5e3373e44",
-            "transformHash": "8d5f0fd7a8760f2bc187e8132e909795e48a154e3c0f1ce0c7fbbd6f41ac2f06",
+            "finalUvHash": "3e3d011775427086b933f767de42c1738cfb8ecb8115d9217286e10d3d3a2a41",
+            "transformHash": "3a4cce2a922a32e536139f3fb20063da6a1fecb842a11cb7a5c312218a881872",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "60,255,182|60,0,163|0,0,20|0,255,39",
             "status": "PASS"
           },
           "180": {
@@ -1320,50 +1344,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                60,
+                0,
+                163
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TL": [
-                80,
-                80,
-                80
+                60,
+                255,
+                182
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                54,
+                0,
+                150
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TL": [
-                80,
-                80,
-                80
+                54,
+                255,
+                169
               ]
             },
-            "finalUvHash": "2da6c8762b1104040648c1f111999e0631e7cc3c699cf9eeba2d3d390cf8e47b",
-            "transformHash": "c59be62401a700e5a8d81365d124dd4733c029ccc1785f26297f97e010a2f4e8",
+            "finalUvHash": "9f22063c6c28ee211d7ab2122bbc060ac7f328e981f63d502446997c2fd2fe65",
+            "transformHash": "5829eed2af56687fdcc537de5f2431e903e861c069aba70d5db86aa3347ed22c",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "60,0,163|0,0,20|0,255,39|60,255,182",
             "status": "PASS"
           },
           "270": {
@@ -1380,50 +1407,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "BR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TR": [
-                80,
-                80,
-                80
+                60,
+                255,
+                182
               ],
               "TL": [
-                80,
-                80,
-                80
+                60,
+                0,
+                163
               ]
             },
             "observed": {
               "BL": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "BR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TR": [
-                80,
-                80,
-                80
+                54,
+                255,
+                169
               ],
               "TL": [
-                80,
-                80,
-                80
+                54,
+                0,
+                150
               ]
             },
-            "finalUvHash": "6a492b6722a66b4ad85cc991cc83154cdf6c73b40f796080d6f7ca21b4ba3ad2",
-            "transformHash": "c6eba3b62dcebcc328c285f24233f7d04443bbc89cc386dc9804079a3d7b3409",
+            "finalUvHash": "5707ee3fbdbf9c1533b0e7334940305bfed247ca3b65f856f7676e0569da71e3",
+            "transformHash": "641ef493098a98926ae6ffd7f72b16c9d04e8e5c8549dddb3d47b1df055dc1c1",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "0,0,20|0,255,39|60,255,182|60,0,163",
             "status": "PASS"
           },
           "mirror": {
@@ -1440,50 +1470,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                60,
+                255,
+                182
               ],
               "BR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                80,
-                80,
-                80
+                60,
+                0,
+                163
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                54,
+                255,
+                169
               ],
               "BR": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "TR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TL": [
-                80,
-                80,
-                80
+                54,
+                0,
+                150
               ]
             },
-            "finalUvHash": "832eedc8c102481c2ce54b6d735e739e9d91ad398e5a062c46c2edfd4ccf6a4b",
-            "transformHash": "4abf40dec44731c9a9185e63dc2a8b8761733cdcf6e5154902a41f9922bc0118",
+            "finalUvHash": "d4ec553014472130b60bf9bd017b9851aa0fc9898e5094fadc9459a24971db0b",
+            "transformHash": "1e037105eb3521f002fbdf3e3dd3da79209a7aa73976b1c311af8e7ce999cce6",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "60,255,182|0,255,39|0,0,20|60,0,163",
             "status": "PASS"
           },
           "mirror90": {
@@ -1500,50 +1533,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                80,
-                80,
-                80
+                60,
+                0,
+                163
               ],
               "TL": [
-                80,
-                80,
-                80
+                60,
+                255,
+                182
               ]
             },
             "observed": {
               "BL": [
-                30,
-                80,
-                220
+                0,
+                255,
+                39
               ],
               "BR": [
-                220,
-                30,
-                30
+                0,
+                0,
+                20
               ],
               "TR": [
-                80,
-                80,
-                80
+                54,
+                0,
+                150
               ],
               "TL": [
-                80,
-                80,
-                80
+                54,
+                255,
+                169
               ]
             },
-            "finalUvHash": "2b08420b94790820b315dd9e2c6a4724f80964fbaccc7dd05f6c23dc7182d598",
-            "transformHash": "4621c377d1432f52ee199fbaac2e9a2b6868846df4a3be64c0162dd399172f4e",
+            "finalUvHash": "b605d3fa0a300b5b135d4a1184fe3fdb98f9de259489efff0fcbffe1ce74beff",
+            "transformHash": "ba13e7730bc3c76f78e35b6324f2beaedb32359d941b889711743e1b2eedd066",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "0,255,39|0,0,20|60,0,163|60,255,182",
             "status": "PASS"
           }
         },
@@ -1562,50 +1598,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "BR": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "TR": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "TL": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "BR": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "TR": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "TL": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ]
             },
-            "finalUvHash": "094f2a7fa4803ff3d68d62ddd48cfa976dd8737786078ba1fbe889d6192cb34e",
-            "transformHash": "70931cbf63addabd2f8ef4b5f2329c73021e2065c940147ba72e2d10336a0347",
+            "finalUvHash": "b3c228980d42bddc39a53db82454ba90b0b7ad30d4299924a430386e42e453c4",
+            "transformHash": "30352a50c49c032e9f6a8120a278e3608eaed15ce4707232c4113af6f4159c3a",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "103,255,66|157,255,196|157,0,177|103,0,47",
             "status": "PASS"
           },
           "90": {
@@ -1622,50 +1661,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "BR": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "TR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TL": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "BR": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "TR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TL": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ]
             },
-            "finalUvHash": "8e103281bc22769d796a601a9b29120ee077c75fbb1f9616eb662834cea0a1e0",
-            "transformHash": "63113826e6efd6b22d24c8cb57926ab4849565f837f8078fcc0c9e99915b6070",
+            "finalUvHash": "0233ed1bd58fc68c695e21bdbd71c6d1f949239d09e226ec93c40b64acd32169",
+            "transformHash": "6070fb7a97f09799076c0d9f11d4e1c2aa3a0cea80a943389899d2be3a719429",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "157,255,196|157,0,177|103,0,47|103,255,66",
             "status": "PASS"
           },
           "180": {
@@ -1682,50 +1724,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TR": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TR": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ]
             },
-            "finalUvHash": "25c531c10eca1d1e48c0a43ef614e8f7621647bab1cadf936f193212a1c4ab84",
-            "transformHash": "d8a31ed51bf8bd70d8d91612186d9c012d9caf5044feaeb5c20f1c444eba44b8",
+            "finalUvHash": "20f29c5a826d4da13ca1994175cbebfa1f6ce7587a14ebbc22f28b7467826c7a",
+            "transformHash": "74fc5ed00b14f98282b5917e8f02e60f29c067bbc808e33dbee1390396db6c11",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "157,0,177|103,0,47|103,255,66|157,255,196",
             "status": "PASS"
           },
           "270": {
@@ -1742,50 +1787,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "TR": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "TR": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ]
             },
-            "finalUvHash": "c56cb4afae3f38907a90c936bd8a8fbe7554e0113ea8f64fbf8b9a8c39968c7c",
-            "transformHash": "f7eecb760871f2497b4c17d14dfa31d8abcb2bcef706aaae47ac97f4e5312704",
+            "finalUvHash": "76b1ab4e7ef055cd064f7c23ae1bb5de7ddeed30b5f15825ba33dc80e76da4e8",
+            "transformHash": "eade09f8b274558382f8c263377051c4ce9fbbdb5c7386fa489a4d1b8e9fc598",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "103,0,47|103,255,66|157,255,196|157,0,177",
             "status": "PASS"
           },
           "mirror": {
@@ -1802,50 +1850,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "TR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "TR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ]
             },
-            "finalUvHash": "beef243f977ce9dd90649653ac0ff9987d0c1418518bf60f74b79c327666b9fe",
-            "transformHash": "0e2e4ce0526cfc769f7241f4322c2838b1c01a58d9cba4af14307c8a541159bf",
+            "finalUvHash": "5bf058aeaaa26f2bc4415207b5f436bbea739786952c0d9201c8b5b3dcc6c079",
+            "transformHash": "75596b9cbb9ca9ef22a82e3e088e6adcfe37dc71a97d9ee928b4001279fb97cf",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "157,255,196|103,255,66|103,0,47|157,0,177",
             "status": "PASS"
           },
           "mirror90": {
@@ -1862,50 +1913,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TR": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                103,
+                255,
+                66
               ],
               "BR": [
-                80,
-                80,
-                80
+                103,
+                0,
+                47
               ],
               "TR": [
-                80,
-                80,
-                80
+                157,
+                0,
+                177
               ],
               "TL": [
-                80,
-                80,
-                80
+                157,
+                255,
+                196
               ]
             },
-            "finalUvHash": "58ae76292fec260c501ccd015670c82d79f3eb41613b6aecf1ef86762804cf13",
-            "transformHash": "6304b76b6bb63f4854af357130e82985d1a6e02833fdeb37f25c7d4ab80f8f60",
+            "finalUvHash": "2fbb912a9fd77ce96ee388df1c8b71f4208c534a11f3edb5f98f8c7df586b1a7",
+            "transformHash": "75153ce86ff45dd55a5752ac567f7e162c00b0ecb913ebefbd72826d2004bd0b",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "103,255,66|103,0,47|157,0,177|157,255,196",
             "status": "PASS"
           }
         },
@@ -1924,50 +1978,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                195,
+                255,
+                67
               ],
               "BR": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                80,
-                80,
-                80
+                195,
+                0,
+                48
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
+                201,
+                255,
                 80
               ],
               "BR": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                80,
-                80,
-                80
+                201,
+                0,
+                61
               ]
             },
-            "finalUvHash": "ec99fd01a9147a8b50978ab4d6cc75433a39fa1cec77837727cbf156a02be451",
-            "transformHash": "5a6be9026fe0e449cd48576d0e497ec96a72c8c9e71ae94a44a588055b556c75",
+            "finalUvHash": "b62df61069a81af5ac59a906b8cef7e3223383c98eb1f9df66d4e94f53a6f365",
+            "transformHash": "727f600909c299d6bcf4856709203c0bde646c38ef100e67b5076333c4325227",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "195,255,67|255,255,210|255,0,191|195,0,48",
             "status": "PASS"
           },
           "90": {
@@ -1984,50 +2041,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TR": [
-                80,
-                80,
-                80
+                195,
+                0,
+                48
               ],
               "TL": [
-                80,
-                80,
-                80
+                195,
+                255,
+                67
               ]
             },
             "observed": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TR": [
-                80,
-                80,
-                80
+                201,
+                0,
+                61
               ],
               "TL": [
-                80,
-                80,
+                201,
+                255,
                 80
               ]
             },
-            "finalUvHash": "4350f61af15563320391df48c0fb20322096d60caee0d466b8a15d3c58528766",
-            "transformHash": "7f060967ff4ad890a3180313c75380b57028628128d08cc5ad307e24da9b8a46",
+            "finalUvHash": "30082a2f29fb96ec2ea409c5ea0d531ddeeb6a70e70ab7cad1f2a59c3a0d4318",
+            "transformHash": "b89d502b98b2682e7d1fa0ba348b9d85c286648f448a668744461c78f26f3ee2",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "255,255,210|255,0,191|195,0,48|195,255,67",
             "status": "PASS"
           },
           "180": {
@@ -2044,50 +2104,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "BR": [
-                80,
-                80,
-                80
+                195,
+                0,
+                48
               ],
               "TR": [
-                80,
-                80,
-                80
+                195,
+                255,
+                67
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
             "observed": {
               "BL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "BR": [
-                80,
-                80,
-                80
+                201,
+                0,
+                61
               ],
               "TR": [
-                80,
-                80,
+                201,
+                255,
                 80
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
-            "finalUvHash": "a5fe5867d473aabff52fce81ec2bad3be94b7bd4fcfcb16b734b9f7dccde1772",
-            "transformHash": "b2d743696d0d8817f545280267dcfd72e5919ef65f046b3ed9beb228ba4a37e9",
+            "finalUvHash": "a444ae2e57ab68af02d63cf7569f90200505bad039f52bf7167a47905b78992d",
+            "transformHash": "b421235cdf2a7b7918d1c132c5cff8b99c74f37a923a4dd0ebdda15387d8894f",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "255,0,191|195,0,48|195,255,67|255,255,210",
             "status": "PASS"
           },
           "270": {
@@ -2104,50 +2167,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                195,
+                0,
+                48
               ],
               "BR": [
-                80,
-                80,
-                80
+                195,
+                255,
+                67
               ],
               "TR": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
-                80
+                201,
+                0,
+                61
               ],
               "BR": [
-                80,
-                80,
+                201,
+                255,
                 80
               ],
               "TR": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
-            "finalUvHash": "da130a96ae0004ef693a8213dfd66ca3ddc8dccc7b6a23a11db8db0d2fc8f017",
-            "transformHash": "10a41775a4d7bff80b8d828f5fc68ddca7b1b513dc422630846d6b961216c814",
+            "finalUvHash": "ecfff3116f079b0e94a1f69e90f37f7a6eb92ee212a22c52557d94705aaff6a0",
+            "transformHash": "dc386990e66bcd863650181609effef7300e0add025d6f59329bc41d1f9434e5",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "195,0,48|195,255,67|255,255,210|255,0,191",
             "status": "PASS"
           },
           "mirror": {
@@ -2164,50 +2230,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                80,
-                80,
-                80
+                195,
+                255,
+                67
               ],
               "TR": [
-                80,
-                80,
-                80
+                195,
+                0,
+                48
               ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
             "observed": {
               "BL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ],
               "BR": [
-                80,
-                80,
+                201,
+                255,
                 80
               ],
               "TR": [
-                80,
-                80,
-                80
+                201,
+                0,
+                61
               ],
               "TL": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ]
             },
-            "finalUvHash": "2cdc2bf628511e24b7224d4b55807e9057984f398d0ba24ffe85f04ed25ac45d",
-            "transformHash": "73cf0952046c0935541a691debd6e61df46b8142e582c8f3cfcb83a90f663ac3",
+            "finalUvHash": "da4e6a30000e5fffc413790f84f385a80df4050dcaed16d612fe3034ad073957",
+            "transformHash": "f1dcf25dd569eaeabb20f82d7a735b9f789c063a8452553156a278ecff40dc2a",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "255,255,210|195,255,67|195,0,48|255,0,191",
             "status": "PASS"
           },
           "mirror90": {
@@ -2224,50 +2293,53 @@
             "boundsOk": true,
             "expected": {
               "BL": [
-                80,
-                80,
-                80
+                195,
+                255,
+                67
               ],
               "BR": [
-                80,
-                80,
-                80
+                195,
+                0,
+                48
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
             "observed": {
               "BL": [
-                80,
-                80,
+                201,
+                255,
                 80
               ],
               "BR": [
-                80,
-                80,
-                80
+                201,
+                0,
+                61
               ],
               "TR": [
-                30,
-                180,
-                40
+                255,
+                0,
+                191
               ],
               "TL": [
-                230,
-                200,
-                20
+                255,
+                255,
+                210
               ]
             },
-            "finalUvHash": "fdfabe4d755cb17f471db1cc03d53a071bc2eccbd2006c6f17a258743ed67d22",
-            "transformHash": "081cf152287dad1be9f9f978de150b8e5b3f4920b7c559877a4727512b0d2c29",
+            "finalUvHash": "25f6051aa083e0c8b0eda3d7b23a3ccff7efbe627e2b71d775ec53ebcdf00d77",
+            "transformHash": "6f0a7018c90433cf6cb5ba88e70f27345ff561a3ab5bbc72ba9ad479ca37ebfb",
+            "oracleDiscriminating": true,
+            "uniqueSampleCount": 4,
+            "signature": "195,255,67|195,0,48|255,0,191|255,255,210",
             "status": "PASS"
           }
         }
@@ -2280,32 +2352,32 @@
     },
     "desk": {
       "surfaceIds": [
-        "282ad1fd-5494-44fb-8fcf-879ac581c0bf",
-        "f37c8b98-1252-4391-8ca5-9e9175e1ef62"
+        "84a10730-86fb-48d1-b611-de36a26536d3",
+        "d1f47fd1-1a17-4dab-9d31-41bde259d89b"
       ]
     },
     "retail": {
       "surfaceIds": [
-        "0513a8b1-d581-4109-9daf-ed9b7db80fce",
-        "0985c885-551b-47b1-9b2d-1b9913b3ec94"
+        "97fe4dd0-ef90-4cfa-bc71-60f12fe0d8e8",
+        "999178e8-c188-448b-ad25-d8537747ae87"
       ]
     },
     "acrylic": {
       "surfaceIds": [
-        "d6596292-a444-4324-b1f2-689e9a449289"
+        "01854da8-2f42-4bb2-b1ab-3ec94aebe5ad"
       ]
     },
     "packaging": {
       "surfaceIds": [
-        "f2a435fe-daf5-4910-8599-1a0ddb43e62d"
+        "4ab2b3af-6974-492d-ab1e-b4706772d392"
       ]
     }
   },
   "lineage": {
-    "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-    "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-    "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-    "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2"
+    "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+    "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+    "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+    "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef"
   },
   "negatives": {
     "keepout": "BLOCKED_PLACEMENT",
@@ -2325,26 +2397,26 @@
     "master_id_coordinated": "BLOCKED"
   },
   "preview": {
-    "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-    "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-    "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-    "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
+    "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+    "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+    "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+    "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
     "usedMock": true,
     "realBlender": false,
     "realArtworkPreviewReady": false,
     "physicalPrintValidated": false,
     "label": "MOCK",
     "requestedIdentity": {
-      "placementId": "c380c793-ed10-4d0d-bdc9-3cbcc8e14ae8",
+      "placementId": "8136e00c-0f28-4966-861f-06019008a2a0",
       "objectName": "DOOR_1",
       "componentId": "door_1",
       "face": "FRONT",
       "relation": "MASTER_SPLIT",
-      "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-      "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-      "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-      "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2",
-      "finalUvHash": "870b801d340b4ac6d5e745ec3df32fff2e4f1f3a2d4ae8cd961895f6a4f6941b",
+      "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+      "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+      "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+      "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef",
+      "finalUvHash": "3c7368109be9d98cc9b7c619f7455f59bab987475d60f3a2f131f7f99a16d5e9",
       "finalSampling": [
         [
           0.0,
@@ -2380,14 +2452,14 @@
         "u1": 0.25,
         "v1": 1.0
       },
-      "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\62bed682-1076-4e06-9e1e-d1a971d46793\\live\\dam\\aw-a\\artwork\\79324372-4ad5-45b1-918c-67efef114888_grid.png",
+      "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\d4c52436-2a79-41b7-9b2c-bbcfc2cb234d\\live\\dam\\aw-a\\artwork\\047a8271-b026-44de-bc84-5ac98844b0c2_grid.png",
       "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-      "artworkId": "79324372-4ad5-45b1-918c-67efef114888",
+      "artworkId": "047a8271-b026-44de-bc84-5ac98844b0c2",
       "hashes": {
-        "engineeringHash": "73dbe2d3b0c003d5822d5912f78f374b49e60a20d03003667426001155dedd7f",
-        "surfaceHash": "875c785fa5bde046eeee074c7f3b404cb2144cde3eb038e7f1fb13da07fa9e97",
-        "artworkHash": "71ad7646a7015ccb732cac050a878b48bf5fb5e6bc97e7154c210586a4f31f9e",
-        "placementHash": "f1c035dd58e8bc70b222797cb34d288731f0b1585be553857eeacaaee6bc1bd2"
+        "engineeringHash": "ba4cfd2f527f4a66becb2547ea86850690f93862427b93cfcee9fd73a082b38b",
+        "surfaceHash": "d93f4e4fe5285d1113db8b20a075da1b458cd4c2827dfe89fd3d9a73a4b40499",
+        "artworkHash": "51cf8e9a05a340a3922f44bc4c38f74eb6d20eea740d276e72fef277080e3a47",
+        "placementHash": "0bb827938fa7f5399a49cd687bc9eda995758462d59ec2e98d18a02e946facef"
       }
     }
   },
