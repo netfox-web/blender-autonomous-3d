@@ -14,6 +14,7 @@ from fox3d.artwork import (
     FIT_COVER,
     FIT_STRETCH,
     canonical_final_sampling,
+    canonical_orientation_expected,
     checkerboard_rgb,
     decode_png_rgb,
     derived_master_id,
@@ -1323,3 +1324,72 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     float_ch = copy.deepcopy(result)
     float_ch["scenarios"]["orientationParity"]["COVER"]["LEFT"]["0"] = {**l0, "expected": {**l0.get("expected", {}), "BL": [1.0, 2, 3]}, "status": "PASS"}
     assert any(f.endswith("_rgb") for f in validate_artwork_acceptance_result(float_ch))
+    assert result.get("strictTypeTamperBlocked") is True
+    assert result.get("coordinatedOracleTamperBlocked") is True
+    for val in (0, "false", None):
+        row = copy.deepcopy(result)
+        row["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "mirrored": val, "status": "PASS"}
+        assert any(f.endswith("_mirror") for f in validate_artwork_acceptance_result(row)), val
+    for val in (1, "true", "false"):
+        row = copy.deepcopy(result)
+        row["scenarios"]["orientationParity"]["COVER"]["CENTER"]["mirror"] = {**cm, "mirrored": val, "status": "PASS"}
+        assert any(f.endswith("_mirror") for f in validate_artwork_acceptance_result(row)), val
+    for val in ("0", "90", True, False, float("nan"), float("inf"), float("-inf")):
+        row = copy.deepcopy(result)
+        row["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "rotationDeg": val, "status": "PASS"}
+        assert any(f.endswith("_rotation") for f in validate_artwork_acceptance_result(row)), val
+
+    def _rgb_case(target: str, corner_val):
+        row = copy.deepcopy(result)
+        base = dict(l0)
+        corners = dict(base.get(target) or {})
+        corners["BL"] = corner_val
+        base[target] = corners
+        base["status"] = "PASS"
+        row["scenarios"]["orientationParity"]["COVER"]["LEFT"]["0"] = base
+        return validate_artwork_acceptance_result(row)
+
+    for target in ("expected", "observed"):
+        for val in ([1, 2, 3, 4], [1.0, 2, 3], ["1", 2, 3], [True, 2, 3], [-1, 2, 3], [1, 2, 256]):
+            assert any(f.endswith("_rgb") for f in _rgb_case(target, val)), (target, val)
+    missing_type = copy.deepcopy(result)
+    missing_type["strictTypeTamperBlocked"] = False
+    assert "strict_type_tamper" in validate_artwork_acceptance_result(missing_type)
+    missing_coord_flag = copy.deepcopy(result)
+    missing_coord_flag["coordinatedOracleTamperBlocked"] = False
+    assert "coordinated_oracle_tamper" in validate_artwork_acceptance_result(missing_coord_flag)
+    surf = result["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]
+    canon0 = canonical_orientation_expected(
+        fit="COVER",
+        slot_anchor="CENTER",
+        rotation_deg=0.0,
+        mirrored=False,
+        surface_width_mm=float(surf["widthMm"]),
+        surface_height_mm=float(surf["heightMm"]),
+    )
+    for corner in ("BL", "BR", "TR", "TL"):
+        assert list(c0["expected"][corner]) == list(canon0[corner])
+    fake = {"BL": [11, 22, 33], "BR": [44, 55, 66], "TR": [77, 88, 99], "TL": [12, 34, 56]}
+    fake_q = oracle_quality(fake)
+    coord = copy.deepcopy(result)
+    coord["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {
+        **c0,
+        "expected": fake,
+        "observed": dict(fake),
+        "signature": fake_q["signature"],
+        "uniqueSampleCount": fake_q["uniqueSampleCount"],
+        "oracleDiscriminating": fake_q["oracleDiscriminating"],
+        "status": "PASS",
+    }
+    coord_fails = validate_artwork_acceptance_result(coord)
+    assert any("canonical_expected" in f or "canonical_pixel" in f for f in coord_fails)
+    assert not any(f.endswith("_rgb") for f in coord_fails)
+    copied_row = copy.deepcopy(result)
+    kept = dict(c90)
+    kept["rotationDeg"] = c0.get("rotationDeg")
+    kept["anchor"] = c0.get("anchor")
+    kept["fit"] = c0.get("fit")
+    kept["mirrored"] = c0.get("mirrored")
+    copied_row["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = kept
+    copy_fails = validate_artwork_acceptance_result(copied_row)
+    assert any("canonical_expected" in f or "canonical_pixel" in f for f in copy_fails)
