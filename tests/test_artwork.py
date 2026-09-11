@@ -1305,3 +1305,21 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     missing_gate["serializedOrientationTamperBlocked"] = False
     assert "serialized_orientation_tamper" in validate_artwork_acceptance_result(missing_gate)
     assert result.get("serializedOrientationTamperBlocked") is True
+    str_mirror = copy.deepcopy(result)
+    str_mirror["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "mirrored": "false", "status": "PASS"}
+    assert any(f.endswith("_mirror") for f in validate_artwork_acceptance_result(str_mirror))
+    int_mirror = copy.deepcopy(result)
+    int_mirror["scenarios"]["orientationParity"]["COVER"]["CENTER"]["mirror"] = {**cm, "mirrored": 1, "status": "PASS"}
+    assert any(f.endswith("_mirror") for f in validate_artwork_acceptance_result(int_mirror))
+    str_rot = copy.deepcopy(result)
+    str_rot["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {**c0, "rotationDeg": "0", "status": "PASS"}
+    assert any(f.endswith("_rotation") for f in validate_artwork_acceptance_result(str_rot))
+    bool_rot = copy.deepcopy(result)
+    bool_rot["scenarios"]["orientationParity"]["COVER"]["CENTER"]["90"] = {**c90, "rotationDeg": True, "status": "PASS"}
+    assert any(f.endswith("_rotation") for f in validate_artwork_acceptance_result(bool_rot))
+    extra_ch = copy.deepcopy(result)
+    extra_ch["scenarios"]["orientationParity"]["COVER"]["LEFT"]["0"] = {**l0, "expected": {**l0.get("expected", {}), "BL": [1, 2, 3, 4]}, "status": "PASS"}
+    assert any(f.endswith("_rgb") for f in validate_artwork_acceptance_result(extra_ch))
+    float_ch = copy.deepcopy(result)
+    float_ch["scenarios"]["orientationParity"]["COVER"]["LEFT"]["0"] = {**l0, "expected": {**l0.get("expected", {}), "BL": [1.0, 2, 3]}, "status": "PASS"}
+    assert any(f.endswith("_rgb") for f in validate_artwork_acceptance_result(float_ch))

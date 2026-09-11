@@ -825,9 +825,9 @@ def oracle_quality(expected: dict[str, Any]) -> dict[str, Any]:
     vals: list[tuple[int, int, int]] = []
     for key in ("BL", "BR", "TR", "TL"):
         raw = expected.get(key)
-        if not isinstance(raw, (list, tuple)) or len(raw) < 3:
+        if not _valid_rgb(raw):
             continue
-        vals.append((int(raw[0]), int(raw[1]), int(raw[2])))
+        vals.append((raw[0], raw[1], raw[2]))
     unique = len(set(vals))
     return {
         "oracleDiscriminating": unique >= 3,
@@ -848,12 +848,14 @@ def _rgb_close(a: tuple[int, int, int], b: tuple[int, int, int], *, tol: int = 4
 
 
 def _valid_rgb(value: Any) -> bool:
-    if not isinstance(value, (list, tuple)) or len(value) < 3:
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
         return False
-    try:
-        return all(0 <= int(value[i]) <= 255 for i in range(3))
-    except (TypeError, ValueError):
-        return False
+    for ch in value:
+        if type(ch) is bool or type(ch) is not int:
+            return False
+        if ch < 0 or ch > 255:
+            return False
+    return True
 
 
 def sample_uv_source(u: float, v: float, uv_rect: dict[str, Any], rgb: bytes, sw: int, sh: int) -> tuple[int, int, int]:
@@ -2195,7 +2197,7 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
             if not _valid_rgb(exp) or not _valid_rgb(obs):
                 failures.append(f"{prefix}_rgb")
                 continue
-            if not _rgb_close((int(exp[0]), int(exp[1]), int(exp[2])), (int(obs[0]), int(obs[1]), int(obs[2]))):
+            if not _rgb_close((exp[0], exp[1], exp[2]), (obs[0], obs[1], obs[2])):
                 failures.append(f"{prefix}_pixel")
         recomputed = oracle_quality(expected)
         if row.get("oracleDiscriminating") is not True or recomputed.get("oracleDiscriminating") is not True:
@@ -2212,13 +2214,13 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
             failures.append(f"{prefix}_fit")
         if str(row.get("anchor") or "") != slot_anchor:
             failures.append(f"{prefix}_anchor")
-        try:
-            rot = float(row.get("rotationDeg")) % 360.0
-        except (TypeError, ValueError):
-            rot = -1.0
-        if rot != float(rotation_deg) % 360.0:
+        rot_raw = row.get("rotationDeg")
+        if type(rot_raw) is bool or not isinstance(rot_raw, (int, float)) or not math.isfinite(float(rot_raw)):
             failures.append(f"{prefix}_rotation")
-        if bool(row.get("mirrored")) != bool(mirrored):
+        elif float(rot_raw) % 360.0 != float(rotation_deg) % 360.0:
+            failures.append(f"{prefix}_rotation")
+        mir_raw = row.get("mirrored")
+        if type(mir_raw) is not bool or mir_raw is not bool(mirrored):
             failures.append(f"{prefix}_mirror")
         if not row.get("transformHash") or not row.get("finalUvHash"):
             failures.append(f"{prefix}_uv")
@@ -2304,6 +2306,11 @@ def probe_serialized_orientation_tampers(result: dict[str, Any]) -> bool:
         _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": True, "status": "PASS"})),
         _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "fit": "CONTAIN", "status": "PASS"})),
         _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "anchor": "CENTER", "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": "false", "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": 1, "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": "0", "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("90", {**c90, "rotationDeg": True, "status": "PASS"})),
+        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [1, 2, 3, 4]}, "status": "PASS"})),
     ]
     return all(checks)
 
