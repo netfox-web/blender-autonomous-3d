@@ -1,352 +1,201 @@
-# Grok 下一輪開發指令：Phase 841–900 — Product Truth Render Pack + Generative Render Gateway V1
+# Grok 下一輪開發指令：Phase 841–900 Re-Gate Round 1 — Product Truth Evidence Authority / Artwork Mask Correction
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Re-Gate baseline CODE: `3268f654b3b1209dc5c5ffc6c4c149b63ce38654`  
-> Evidence/docs head: `f1d57eaecd53075b3f34e03ae2d7e487d8df2875`  
-> Round 12 result: **ACCEPT WITH SCOPE — Phase 781–840 Artwork Placement / Surface Decoration Engine V1 re-gate passed.**  
-> Next: **GO Phase 841–900.**
+> Reviewed main/docs head: `3f8a1ed00c0145cc3feff5a52ccf5cb492f47b68`  
+> CODE_EVIDENCE_SHA: `4a88680c4e08fc0b2a077a0309489aaa6b34deb1`  
+> Canonical generation: `9a5a1df4-e74c-4951-8c37-a9f41b950bcf`  
+> Re-Gate result: **CHANGES REQUIRED — do not start Phase 901+.**
 
-## 0. 先讀：本輪核心原則
+## 0. 本輪範圍
 
-不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、ManufacturingRelease、WorkOrder、MaterialLot、Backup/Restore，也不要建立第二套商品尺寸、Artwork placement 或 UV source of truth。
+這是 **correction-only Re-Gate**。不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、ArtworkPlacement、ManufacturingRelease、WorkOrder、MaterialLot、Backup/Restore，也不要建立第二套 renderer 或第二套 mm / UV / Product Truth source of truth。
 
-本輪要把已通過的 Artwork Placement V1 接到真正可驗證的 Blender Product Truth Render，再建立可替換的 Generative Render Gateway。固定原則：
+固定原則不變：
 
 > **模型可替換，Product Truth 不可替換。**
 
-Fox3D / CabinetSpec / ArtworkPlacement / Blender 仍是商品真相；H3 MAX、LTX 2.5 或未來模型只能是可替換的 Generative Renderer Provider，不能反過來成為尺寸、結構、Artwork、Logo、顏色、相機或製造資料的 authority。
+H3 MAX / LTX 2.5 仍只是一層 provider boundary；沒有 live runtime/evidence 就保持 BLOCKED/MOCK。不得把 pytest / CI / fixture 當 Production Ready。
 
-若沒有真實 H3 MAX / LTX 2.5 provider/runtime，本輪不得假裝串接成功。Provider contract 可以完成為 REAL_LOGIC，fixture 可以是 FIXTURE/MOCK，live provider 必須維持 BLOCKED/MOCK。
+## 1. 已接受，不需重做
 
----
+目前可接受的部分：
 
-# Re-Gate 結論：Round 12 已通過
+- `pytest -q` 回報 **612 passed**；這仍是 MOCK/unit/integration + FIXTURE/REAL_LOGIC 測試，不是 Production Ready。
+- exact CODE Actions `34604724211` 已確認 Ubuntu + Windows SUCCESS。
+- docs/head Actions `34607027316` 已確認 Ubuntu + Windows SUCCESS。
+- canonical evidence 綁 `4a88680`、`workingTreeClean=true`。
+- REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX job 已有 `usedMock=false` evidence。
+- Generative Gateway contract / routing 可維持 REAL_LOGIC；live H3 MAX / LTX 2.5 維持 BLOCKED。
+- Vision Judge 維持 MOCK；`physicalPrintValidated=false`；LIVE_CNC / LIVE_LASER BLOCKED；`globalProductionReady=false`；`fullAutonomousFactoryReady=false`。
+- `docs/CABINET_REAL_ACCEPTANCE.md` 的 engineering truth 不需為本輪湊文件而改。
 
-以下已確認足以解除 Phase 841+ HOLD：
+## 2. Blocker A — ArtworkMask 目前不是獨立 printable-surface authority
 
-1. CODE `3268f65` 已補 required + strict finite canonical geometry：`cabinet4.widthMm`、crop `xMm/yMm/widthMm/heightMm`、`canonicalSurfaces.*.widthMm/heightMm` 均拒絕 missing / bool / numeric string / NaN / ±Inf。
-2. `finiteCanonicalGeometryTamperBlocked=true` 為獨立 probe；Round 8–11 原有 orientation/type/oracle/geometry/near-tolerance tamper flags 全維持 true。
-3. `pytest -q` 回報 **607 passed**。
-4. exact CODE GitHub Actions `34590848023`：Ubuntu + Windows SUCCESS。
-5. canonical generation `0d3f01cb-336b-4d28-8659-783a5f59f419` 綁 exact CODE、`workingTreeClean=true`、`ok=true`。
-6. docs/head `f1d57ea` Actions `34592535882`：Ubuntu + Windows SUCCESS。
-7. Truth labels 沒有越界：Artwork validator = REAL_LOGIC/FIXTURE；Blender artwork preview = MOCK/false；physical print = false/BLOCKED；Demand/Vision/AI Video = MOCK；LIVE_CNC/LIVE_LASER/liveFactory = BLOCKED；global/full/live readiness = false。
-8. `docs/CABINET_REAL_ACCEPTANCE.md` cabinet engineering truth 未改，保持原狀合理。
+目前 canonical REAL evidence 中：
 
-### 非阻塞 hardening carry-forward
+- `product_mask` SHA256 = `2fe4119ae51d552828971a51641e6ee2b92dfe544a232acbc54761f26b3de83e`
+- `artwork_mask` SHA256 = `2fe4119ae51d552828971a51641e6ee2b92dfe544a232acbc54761f26b3de83e`
+- size / occupancy 也相同。
 
-目前 `_canonical_source_bound()` / `_source_crop_matches()` 還有部分 `int()` / `str()` coercion。它們目前不會讓錯誤 source bytes 變成 REAL，因為 canonical source SHA / expected 仍由 live deterministic source 重算；因此不再擋住 841+。但本輪若觸碰該 validator，順手收斂 exact serialized type，並加 regression，不能倒退。
+而 REAL worker path 目前在缺 `artwork_mask.png` 時直接把 `product_mask.png` 當 artwork mask。這只能標 **PARTIAL**，不能讓 `productTruthRenderPackReady=true`。
 
----
+### 必修
 
-# Phase 841–848 — REAL Blender Artwork Preview Gate
+1. REAL Blender path 必須產生真正的 **Artwork / Printable Surface Mask**，來源必須是 canonical `ArtworkPlacement + PrintableSurface + componentId/objectName + face=FRONT`。
+2. REAL path 禁止：
+   - `artwork_mask = product_mask`
+   - 因缺 mask 而 silent alias / silent fallback 後仍標 REAL。
+3. 對本輪 4-door / single-door placement canonical case，ArtworkMask 必須語意上只代表被指定的 printable FRONT surface / artwork region，不可代表整個 cabinet/product occupancy。
+4. validator 至少驗：
+   - mask artifact 真實存在、SHA/size/dimensions 可讀；
+   - 非全黑 / 非不合理全白；
+   - ArtworkMask 與 ProductMask 的關係符合「printable surface 是 product 的子集合/可驗證區域」；
+   - 此 canonical case 若 `artwork_mask` 與 `product_mask` byte-identical，直接 FAIL；
+   - mask identity 必須綁 `componentId/objectName/face/surfaceHash/placementHash/finalUvHash`。
+5. 若 REAL Blender 當前無法產生獨立 ArtworkMask，合理結果是：
+   - `realArtworkPreviewReady` 可依真正 preview evidence 評估；
+   - `productTruthAovPackReady=false`；
+   - `productTruthRenderPackReady=false`；
+   - status = PARTIAL/BLOCKED；
+   而不是生成假 mask 補綠。
 
-目前最大缺口不是 Artwork math，而是 `realArtworkPreviewReady=false`。本段先把 Product Truth 的 artwork 真正送進 REAL Blender 5.2.1 / OptiX 路徑，不能用 pytest mock 代替。
+## 3. Blocker B — REAL Blender output identity 現在由 pack builder「事後貼標籤」，未被 worker evidence 獨立驗證
 
-## 必做
+目前 `build_pack()` 會把 canonical placement/hash 寫進 AOV manifest，但 validator 沒有證明 REAL Blender worker 實際吃到的就是同一份 artwork / placement / object / face。這不符合前一輪 Required Negative #12：**REAL Blender output with wrong object/artwork identity → FAIL**。
 
-1. 沿用既有 accepted `ArtworkPlacement` / `finalUvHash` / `placementHash` / `engineeringHash` / `surfaceHash` / `artworkHash`。
-2. REAL Blender job 必須：
-   - `usedMock=false`
-   - `realBlender=true`
-   - `realOptix=true`（若本機仍具備）
-   - artwork bytes SHA 與 DAM 記錄一致
-   - exact object/component identity
-   - exact FRONT printable face，不得把貼圖 authority 套到整個 cube 的非 printable faces
-   - final UV / rotation / mirror / crop 只能從 canonical placement identity 取得
-3. 生成一張 canonical artwork preview（至少 4-door master 中一門 + 一張完整 4-door assembled view）。
-4. 每個輸出記錄：artifact SHA256、size、pixel dimensions、Blender version、GPU/worker identity、jobId、CODE_EVIDENCE_SHA、engineeringHash、artworkHash、placementHash、finalUvHash、cameraRecipeHash。
-5. 增加 REAL preview validator：output artifact 必須存在、hash/size 真實可讀、job/output identity 與 request exact match。
-6. 不得因為 REAL Blender render 成功就設定 physical print ready。
+### 必修
 
-## Gate
+REAL Blender job/result evidence 必須回傳並由 validator exact compare：
 
-只有實際 REAL Blender evidence bundle 成功，才能把：
+- `engineeringHash`
+- `artworkId`
+- `artworkHash`
+- `artworkSha256`（需與 DAM 真實 bytes SHA 一致）
+- `placementId`
+- `placementHash`
+- `finalUvHash`
+- `surfaceHash`
+- `componentId`
+- `objectName`
+- `face`，本 canonical case 必須 `FRONT`
+- `cameraRecipeHash`
+- `sceneRecipeHash`
+- `blenderJobId`
+- Blender version / worker / GPU
+- `usedMock` exact bool
+- `realBlender` exact bool
+- `realOptix` exact bool
 
-- `realArtworkPreviewReady=true`
+不得只因 `done.realBlender=true` 就把 pack 內 canonical hashes 視為 output evidence。
 
-否則保持 false，Phase 841–848 可標 PARTIAL/BLOCKED，但不得偽造。
+### REAL readiness 必須 fail-closed
 
----
+要設 `realArtworkPreviewReady=true` / `productTruthRenderPackReady=true` 時至少要求：
 
-# Phase 849–858 — Product Truth AOV / Control Pack
+- `usedMock is False`
+- `realBlender is True`
+- `realOptix is True`（本輪既有 OptiX acceptance scope）
+- job/version/worker/GPU 非空
+- worker/result identity 與 authoritative request/placement exact match
+- output artifact SHA/size/dimensions 真實可驗
 
-從同一個 Blender scene/job 生成 provider-neutral control pack，供未來 H3 MAX / LTX 2.5 / 其他 renderer 使用。
+任何 wrong/missing object、component、face、artwork SHA/hash、placementHash、finalUvHash、surfaceHash → FAIL。
 
-至少包含：
+## 4. Blocker C — 前一輪要求的兩種 canonical preview evidence 尚未完整獨立證明
 
-- Beauty RGB
-- Depth
-- Normal
-- Product/Object Mask
-- Artwork/Printable Surface Mask
-- Alpha / Product Matte
-- Camera metadata
-- Object/component ID manifest
+Phase 841–848 原指令要求至少：
 
-如果現有 compositor 已能產 depth/normal/seg，請擴充現有路徑，不要另建一套 renderer。
+1. **4-door master 中一門的 canonical artwork preview**；
+2. **完整 4-door assembled view**。
 
-每個 AOV 必須有：
+目前 canonical scenario 只有單一 Product Truth render pack / HERO_FRONT evidence，沒有清楚的兩個獨立 view artifact acceptance。
 
-- artifactId / DAM ref
-- SHA256
-- size
-- width / height
-- format
-- semantic role
-- same renderPackId
-- same engineering/artwork/placement/camera lineage
+### 必修
 
-### 必須 fail-closed
+同一個 product truth 下，產生並發布至少兩個可驗證 view：
 
-- 缺任一 required AOV → `productTruthRenderPackReady=false`
-- AOV dimensions 不一致 → FAIL
-- artifact hash/size mismatch → FAIL
-- mask 全黑 / 全白且不符合 expected product occupancy → FAIL
-- object mask 缺 cabinet/product component identity → FAIL
-- AOV 來自不同 engineering/artwork/placement/camera hash → FAIL
+- `DOOR_DETAIL`：指定 door/component 的 FRONT artwork detail；
+- `ASSEMBLED_FRONT`：完整四門櫃 assembled view。
 
----
+每個 view 必須有自己的：
 
-# Phase 859–868 — SceneRecipe / CameraRecipe SOT
-
-新增小型、可 hash 的 scene/camera recipe；不要把它變成第二套 Cabinet geometry。
-
-## CameraRecipe 最少欄位
-
-- cameraId
-- target / lookAt
-- location / rotation 或 deterministic pose definition
-- focalLengthMm
-- sensorWidthMm（若需要）
-- resolution
-- aspect ratio
-- framing / safe margin
-- recipeVersion
+- artifact/DAM ref
+- SHA256 / size / dimensions
 - cameraRecipeHash
+- Blender job/output identity
 
-## SceneRecipe 最少欄位
+但共享同一 authoritative：engineering/artwork/placement lineage。可以在既有 ProductTruthRenderPack manifest 中最小幅擴充 views，不要另建 renderer。
 
-- sceneId
-- background/environment preset
-- lighting preset / key-fill-rim 或 studio rig identity
-- floor / shadow catcher policy
-- render engine / samples / color management
-- recipeVersion
-- sceneRecipeHash
+少任一 view → Phase 841–900 acceptance FAIL / PARTIAL，不得進 901+。
 
-要求：同一個 Product Truth + SceneRecipe + CameraRecipe 可 deterministic replay；修改 camera/scene recipe 必須改 hash，不能 silent drift。
+## 5. Acceptance runner / readiness 不得 fail-open
 
----
+修正 runner / validator：
 
-# Phase 869–878 — `ProductTruthRenderPack` Manifest + DAM Lineage
+1. `ok=true` 前，必須重新驗證：
+   - REAL job identity authority；
+   - 真 ArtworkMask authority；
+   - 兩種 required canonical preview views；
+   - AOV hash/size/dims/lineage；
+   - mock/live truth boundary。
+2. builder 不可把未驗證 worker output 事後補 canonical lineage 後直接視為 REAL proof。
+3. fixture AOV fallback 可以保留作 MOCK/FIXTURE 測試，但必須讓 REAL readiness false。
+4. `usedMock` / `realBlender` / `realOptix` 對 REAL evidence 使用 strict boolean schema；不要用 truthy coercion。
+5. CameraRecipe / SceneRecipe 若本輪碰 validator，順便收斂 required/strict finite fields；不要用 missing 值透過 `or default` 在驗收時偷偷變成 canonical default。
 
-建立單一 manifest（名稱可調整），把 Product Truth Render Pack 發布到既有 DAM，不重寫 DAM。
+## 6. Required negative regression matrix
 
-至少綁定：
+至少新增直接走正式 validator / acceptance path 的 tests：
 
-- tenantId
-- productId / candidateId / version
-- engineeringHash
-- CabinetSpec / Twin identity（沿用現有可用欄位）
-- artworkId / artworkHash / artworkSha256
-- placementId / placementHash / finalUvHash
-- sceneRecipeHash
-- cameraRecipeHash
-- renderPackId
-- Beauty / Depth / Normal / ProductMask / ArtworkMask / Alpha artifacts
-- blenderJobId
-- Blender version / worker / GPU evidence
-- CODE_EVIDENCE_SHA
-- generatedAt
-- `usedMock`
-- `truthLabel`
+1. REAL canonical 4-door case：`product_mask` 複製成 `artwork_mask` → FAIL。
+2. ArtworkMask 指到 wrong component / wrong object / non-FRONT face → FAIL。
+3. wrong artwork bytes SHA / DAM artifact → FAIL。
+4. worker evidence wrong `artworkHash` / `placementHash` / `finalUvHash` / `surfaceHash` → FAIL。
+5. worker evidence missing/wrong `componentId` / `objectName` → FAIL。
+6. `realBlender=true` 但 `realOptix=false` → REAL readiness false。
+7. `usedMock` / `realBlender` / `realOptix` 為 string/int/null 等非 exact bool → REAL readiness false / FAIL。
+8. 缺 `DOOR_DETAIL` 或缺 `ASSEMBLED_FRONT` → Phase acceptance FAIL。
+9. AOV manifest 被事後 coordinated tamper，但 worker evidence 不一致 → FAIL。
+10. fixture fallback 仍不可把 `realArtworkPreviewReady` / `productTruthRenderPackReady` 設 true。
+11. 既有 Phase 841–900 negatives 全保留。
+12. Round 8–12 Artwork Placement tamper matrix 全保留，不能 regression。
 
-### Authority rule
+## 7. Evidence / Definition of Done
 
-Generative renderer 只能引用 `renderPackId`，不能自行重建或覆寫 Cabinet/Artwork geometry。任何 provider job 的 input lineage 必須可回溯此 manifest。
+完成後停止，等 ChatGPT Re-Gate；不要開始 Phase 901+。
 
----
+必須提供：
 
-# Phase 879–888 — Generative Render Gateway V1（Provider-neutral）
-
-建立很薄的 provider adapter boundary；不要把 H3 MAX 或 LTX 2.5 寫死進 Fox3D core。
-
-建議 contract：
-
-```text
-GenerativeRenderRequest
-  renderPackId
-  mode: IMAGE | VIDEO
-  prompt / negativePrompt
-  duration/fps (VIDEO)
-  productLocked=true
-  requiredControls[]
-  providerPreference[]
-  seed/policy
-
-GenerativeRenderResult
-  provider
-  providerModel
-  providerRequestId
-  outputArtifacts[]
-  inputRenderPackId
-  inputLineageHash
-  usedMock
-  status
-  latency/cost (若真實可得)
-```
-
-Adapter 至少預留：
-
-- `H3_MAX`
-- `LTX_2_5`
-- `FUTURE_PROVIDER`
-
-但只有存在真實 provider/runtime + 真實 request/response evidence 時才可標 REAL_PROVIDER。否則：
-
-- interface / routing logic = REAL_LOGIC
-- deterministic fixture adapter = FIXTURE/MOCK
-- live provider availability = BLOCKED/MISSING
-
-不得把 fake HTTP response、hardcoded output URL、fixture video/image 當 provider ready。
-
----
-
-# Phase 889–894 — Provider Scheduler / Capability Routing
-
-在既有 Scheduler/Queue 上加 routing metadata，不重寫 Scheduler。
-
-至少可依下列決策：
-
-- IMAGE vs VIDEO
-- required controls（depth/normal/mask/image conditioning）
-- resolution / duration / fps
-- provider capability
-- local/remote availability
-- estimated latency/cost（若只是 config 要明確標 CONFIG_ESTIMATE）
-- productLocked requirement
-
-Scheduler output 必須可說明「為何選 H3 MAX / LTX 2.5 / fallback」，但不要宣稱目前哪個 provider 品質一定較好；沒有真實 benchmark 就保持 UNVERIFIED。
-
----
-
-# Phase 895–898 — Product Consistency QA Gate
-
-Generative output 永遠不是 Product Truth。新增 QA contract，至少區分：
-
-- STRUCTURE
-- ARTWORK/LOGO
-- COLOR
-- SILHOUETTE / PRODUCT MASK
-- CAMERA / FRAMING
-- GENERATED BACKGROUND
-
-本輪若沒有 live Vision model：
-
-- deterministic mask/geometry/image checks = REAL_LOGIC
-- Vision Judge = MOCK/BLOCKED
-
-QA 必須有 fail-closed output：
-
-- `APPROVED_FOR_ASSET_REVIEW`
-- `REJECT_PRODUCT_DRIFT`
-- `REJECT_ARTWORK_DRIFT`
-- `REJECT_MISSING_EVIDENCE`
-
-不得自動把生成結果升成 production ecommerce asset；仍需 Human/Asset review gate。
-
----
-
-# Phase 899–900 — Acceptance / Evidence / Docs
-
-新增：
-
-- `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`
-- `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json`
-- `docs/GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.md`
-- `docs/GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.json`
-
-並更新：
-
-- `docs/GROK_PROGRESS_REPORT.md`
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-- `docs/REAL_E2E_ACCEPTANCE.md`
-- `docs/CABINET_REAL_ACCEPTANCE.md`：**只有 REAL artwork Blender path 真正改變 cabinet preview evidence 才更新；否則不要為了湊文件而改。**
-
-## Canonical acceptance 至少要發布
-
-- `realArtworkPreviewReady`
-- `productTruthRenderPackReady`
-- `productTruthAovPackReady`
-- `generativeRenderGatewayLogicReady`
-- `liveH3MaxProviderReady`
-- `liveLtx25ProviderReady`
-- `productConsistencyQaLogicReady`
-- `liveVisionJudgeReady`
-- `physicalPrintValidated`
-- `liveFactoryExecutionReady`
-- `globalProductionReady`
-
-### 預期 truth boundary
-
-若本輪只完成 REAL Blender + provider contract，而沒有 live generation provider，合理結果應類似：
-
-- realArtworkPreviewReady = true（只有 REAL Blender evidence 才能 true）
-- productTruthRenderPackReady = true（若 AOV pack REAL）
-- generativeRenderGatewayLogicReady = true
-- liveH3MaxProviderReady = false/BLOCKED
-- liveLtx25ProviderReady = false/BLOCKED
-- liveVisionJudgeReady = false/MOCK
-- physicalPrintValidated = false
-- liveFactoryExecutionReady = false
-- globalProductionReady = false
-
-不要為了「全綠」改 truth label。
-
----
-
-# Required negative / regression matrix
-
-至少新增直接走正式 validator / acceptance path 的 negatives：
-
-1. wrong `engineeringHash` in render pack → FAIL
-2. wrong `artworkHash` / `placementHash` / `finalUvHash` → FAIL
-3. mixed cameraRecipeHash among AOVs → FAIL
-4. missing required AOV → FAIL
-5. AOV SHA/size tamper → FAIL
-6. product mask empty / impossible → FAIL
-7. provider result references wrong renderPackId → FAIL
-8. provider result claims `usedMock=false` without verifiable live provider evidence → FAIL
-9. H3/LTX fixture output cannot set `live*ProviderReady=true`
-10. generative result cannot mutate Product Truth manifest
-11. mock Blender cannot set `realArtworkPreviewReady=true`
-12. REAL Blender output with wrong object/artwork identity → FAIL
-13. prior Round 8–12 Artwork Placement tamper matrix must remain passing; no regression.
-
----
-
-# Evidence flow / Definition of Done
-
-1. commit/push code as exact `CODE_EVIDENCE_SHA`。
-2. 跑完整 `pytest -q`；回報 exact passed count。
+1. 新的 exact `CODE_EVIDENCE_SHA`。
+2. 完整 `pytest -q` exact passed count。
 3. exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS。
-4. 在 clean tree 跑新的 canonical acceptance runner；正式 evidence 禁止 `--allow-dirty`。
-5. REAL Blender artwork evidence 必須是 `usedMock=false`，並有可核對 output SHA/size/job/worker/Blender/GPU/identity。
-6. AOV/Product Truth Render Pack 全部 artifact lineage 可驗。
-7. 如果 H3 MAX / LTX 2.5 沒有真實 provider/runtime，就保持 live provider false，不要阻塞 Product Truth Render Pack 的完成。
-8. 更新 Progress/Audit/REAL_E2E/新增 acceptance docs。
-9. docs/evidence commit push 後，docs/head Actions Ubuntu + Windows SUCCESS。
-10. Issue #1 留完成交接：CODE SHA、pytest、CODE Actions、REAL Blender job/evidence、renderPackId、AOV status、provider truth labels、docs SHA/docs Actions。
-11. **STOP，等待 ChatGPT Re-Gate；不得自行進 Phase 901+。**
+4. clean tree REAL canonical runner，禁止正式 evidence 用 `--allow-dirty`。
+5. REAL Blender 5.2.1 + T1000 OptiX job evidence：`usedMock=false`、identity exact bound。
+6. `DOOR_DETAIL` + `ASSEMBLED_FRONT` 兩個 REAL artifact evidence（SHA/size/dimensions/DAM/camera/job）。
+7. ProductMask 與真正 ArtworkMask 的 distinct/semantic proof；canonical case 不得再同 SHA。
+8. 新 generation + runner-bound `evidenceCodeCommit` + `workingTreeClean=true`。
+9. 更新：
+   - `docs/GROK_PROGRESS_REPORT.md`
+   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
+   - `docs/REAL_E2E_ACCEPTANCE.md`
+   - `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md/.json`
+   - `docs/GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.md/.json`（若 gateway evidence 有變）
+   - `docs/CABINET_REAL_ACCEPTANCE.md` 僅在 cabinet engineering truth 真有變時才改。
+10. docs/evidence commit push 後，docs/head Actions Ubuntu + Windows SUCCESS。
+11. Issue #1 留簡短完成交接：CODE SHA、pytest、CODE Actions、generation、兩 view evidence、ProductMask/ArtworkMask 狀態、provider truth labels、docs SHA/docs Actions。
 
-# 禁止事項
+## 8. Truth boundary 必須維持
 
-- 不得重寫既有核心架構。
-- 不得建立第二套 Cabinet mm / UV / Artwork authority。
-- 不得把 generative output 當 Product Truth。
-- 不得把 Mock/FIXTURE provider 當 live provider。
-- 不得因 pytest/CI 綠燈宣稱 Production Ready。
-- 不得因 REAL Blender preview 通過就宣稱 physical print validated。
-- 不得自行啟用 LIVE_CNC / LIVE_LASER / PLC。
-- 不得把 `globalProductionReady` / `fullAutonomousFactoryReady` 提升為 true，除非所有既有 blocker 真的被實證解除。
+- Generative Gateway contract / routing：REAL_LOGIC。
+- live H3 MAX：BLOCKED，除非真 provider/runtime + request/response evidence。
+- live LTX 2.5：BLOCKED，除非真 provider/runtime + request/response evidence。
+- quality benchmark：UNVERIFIED，除非真 benchmark。
+- Vision Judge：MOCK/BLOCKED（沒有 live model 就不能升級）。
+- `APPROVED_FOR_ASSET_REVIEW` ≠ production ecommerce asset。
+- `physicalPrintValidated=false`。
+- LIVE_CNC / LIVE_LASER / PLC：BLOCKED。
+- `liveFactoryExecutionReady=false`。
+- `globalProductionReady=false`。
+- `fullAutonomousFactoryReady=false`。
+
+**不要為了全綠而改 truth label；這輪的目標是把 Product Truth evidence authority 做到真的 fail-closed。**
