@@ -1014,6 +1014,88 @@ def _render_assembly_anim(job: dict, created: dict, *, frames: int, width: int, 
     return paths, mp4
 
 
+def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height: int) -> str | None:
+    """White emission of the canonical FRONT printable face only. Not a product occupancy alias."""
+    import bpy
+    import bmesh
+
+    work = Path(job.get("workDir") or ".")
+    out = work / "artwork_mask.png"
+    scene = bpy.context.scene
+    saved = []
+    proxies = []
+    try:
+        for obj in list(bpy.data.objects):
+            if getattr(obj, "type", None) == "MESH":
+                saved.append((obj, bool(obj.hide_render)))
+                obj.hide_render = True
+        for rec in applied or []:
+            if not isinstance(rec, dict):
+                continue
+            src = bpy.data.objects.get(str(rec.get("objectName") or ""))
+            if src is None or getattr(src, "data", None) is None:
+                continue
+            face_idx = rec.get("frontFaceIndex")
+            dup = src.copy()
+            dup.data = src.data.copy()
+            dup.name = f"ArtworkMask.{src.name}"
+            bpy.context.collection.objects.link(dup)
+            bpy.ops.object.select_all(action="DESELECT")
+            dup.select_set(True)
+            bpy.context.view_layer.objects.active = dup
+            bpy.ops.object.mode_set(mode="EDIT")
+            bm = bmesh.from_edit_mesh(dup.data)
+            keep = None if face_idx is None else int(face_idx)
+            for face in list(bm.faces):
+                if keep is not None and face.index != keep:
+                    bm.faces.remove(face)
+            bmesh.update_edit_mesh(dup.data)
+            bpy.ops.object.mode_set(mode="OBJECT")
+            em = bpy.data.materials.new(f"ArtworkMaskEmit.{src.name}")
+            em.use_nodes = True
+            nt = em.node_tree
+            nt.nodes.clear()
+            emit = nt.nodes.new("ShaderNodeEmission")
+            emit.inputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+            try:
+                emit.inputs[1].default_value = 20.0
+            except Exception:
+                pass
+            out_node = nt.nodes.new("ShaderNodeOutputMaterial")
+            nt.links.new(emit.outputs[0], out_node.inputs[0])
+            dup.data.materials.clear()
+            dup.data.materials.append(em)
+            dup.hide_render = False
+            proxies.append(dup)
+        if not proxies:
+            return None
+        scene.cycles.samples = 1
+        scene.render.resolution_x = width
+        scene.render.resolution_y = height
+        scene.render.image_settings.file_format = "PNG"
+        scene.render.filepath = str(out)
+        bpy.ops.render.render(write_still=True)
+    finally:
+        try:
+            if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
+                bpy.ops.object.mode_set(mode="OBJECT")
+        except Exception:
+            pass
+        for obj, hide in saved:
+            try:
+                obj.hide_render = hide
+            except Exception:
+                pass
+        for proxy in proxies:
+            try:
+                bpy.data.objects.remove(proxy, do_unlink=True)
+            except Exception:
+                pass
+    if out.exists() and out.stat().st_size >= 32:
+        return str(out)
+    return None
+
+
 def _render_named_still(job: dict, *, filename: str, location, look_at, lens: float, width: int, height: int, samples: int) -> str | None:
     import bpy
 
@@ -1245,6 +1327,11 @@ def build_and_render(job: dict) -> dict:
             produced.append("artwork_mask")
         if outputs.get("product_mask.png"):
             produced.append("product_mask")
+        if job.get("productTruthAovs") and applied_placements:
+            art_mask = _render_artwork_surface_mask(job, applied_placements, width=width, height=height)
+            if art_mask:
+                outputs["artwork_mask.png"] = art_mask
+                produced.append("artwork_surface_mask")
     views = job.get("productTruthViews") if isinstance(job.get("productTruthViews"), list) else []
     for view in views:
         if not isinstance(view, dict):
