@@ -800,22 +800,33 @@ def production_transform(
 
 
 def landmark_grid_rgb(width: int = 48, height: int = 32) -> bytes:
+    """Coordinate-coded raster: every pixel encodes (x,y) so CENTER crops stay asymmetric."""
     buf = bytearray(width * height * 3)
-    for i in range(0, len(buf), 3):
-        buf[i : i + 3] = (80, 80, 80)
-    marks = (
-        (0, 0, (220, 30, 30)),
-        (width - 8, 0, (30, 180, 40)),
-        (0, height - 8, (30, 80, 220)),
-        (width - 8, height - 8, (230, 200, 20)),
-        (width // 2 - 4, height // 2 - 4, (200, 40, 200)),
-    )
-    for x0, y0, color in marks:
-        for y in range(y0, min(height, y0 + 8)):
-            for x in range(x0, min(width, x0 + 8)):
-                i = (y * width + x) * 3
-                buf[i : i + 3] = color
+    xmax = max(1, width - 1)
+    ymax = max(1, height - 1)
+    for y in range(height):
+        for x in range(width):
+            r = int(round(x * 255 / xmax))
+            g = int(round(y * 255 / ymax))
+            b = (x * 13 + y * 29) % 220 + 20
+            i = (y * width + x) * 3
+            buf[i : i + 3] = (r, g, b)
     return bytes(buf)
+
+
+def oracle_quality(expected: dict[str, Any]) -> dict[str, Any]:
+    vals: list[tuple[int, int, int]] = []
+    for key in ("BL", "BR", "TR", "TL"):
+        raw = expected.get(key)
+        if not isinstance(raw, (list, tuple)) or len(raw) < 3:
+            continue
+        vals.append((int(raw[0]), int(raw[1]), int(raw[2])))
+    unique = len(set(vals))
+    return {
+        "oracleDiscriminating": unique >= 3,
+        "uniqueSampleCount": unique,
+        "signature": "|".join(f"{a[0]},{a[1]},{a[2]}" for a in vals),
+    }
 
 
 def _rgb_at_buf(rgb: bytes, width: int, height: int, x: int, y: int) -> tuple[int, int, int]:
@@ -959,9 +970,16 @@ def measure_orientation_parity(
     )
     observed = {k: list(v) for k, v in observed_t.items()}
     bounds_ok = uv_corners_in_rect(sampling, uv_rect)
+    quality = oracle_quality(expected)
     match = bounds_ok and all(_rgb_close(tuple(expected[k]), tuple(observed[k])) for k in labels)
     if not match:
         prod["productionArtworkFileReady"] = False
+    if not quality["oracleDiscriminating"]:
+        status = "BLOCKED_ORACLE"
+    elif match:
+        status = "PASS"
+    else:
+        status = "BLOCK"
     return {
         "fit": fit,
         "anchor": anchor,
@@ -973,7 +991,10 @@ def measure_orientation_parity(
         "observed": observed,
         "finalUvHash": ident.get("finalUvHash"),
         "transformHash": prod.get("transformHash"),
-        "status": "PASS" if match else "BLOCK",
+        "oracleDiscriminating": quality["oracleDiscriminating"],
+        "uniqueSampleCount": quality["uniqueSampleCount"],
+        "signature": quality["signature"],
+        "status": status,
     }
 
 
@@ -2260,6 +2281,12 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
                 failures.append(f"{prefix}_oracle")
             if not row.get("uvRect") or not row.get("finalUvHash"):
                 failures.append(f"{prefix}_uv")
+            if row.get("oracleDiscriminating") is not True:
+                failures.append(f"{prefix}_oracle_quality")
+            if int(row.get("uniqueSampleCount") or 0) < 3:
+                failures.append(f"{prefix}_unique")
+            if not row.get("signature"):
+                failures.append(f"{prefix}_signature")
 
         contain_m = rotp.get("CONTAIN") if isinstance(rotp.get("CONTAIN"), dict) else {}
         center = contain_m.get("CENTER") if isinstance(contain_m.get("CENTER"), dict) else None
@@ -2274,8 +2301,18 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
             if not block:
                 failures.append(f"orientation_COVER_{anchor}")
                 continue
+            sigs: list[str] = []
             for key, _deg, _mir in _ORIENTATION_CASES:
                 _check_orient_row(f"orientation_COVER_{anchor}_{key}", block.get(key))
+                row = block.get(key) if isinstance(block.get(key), dict) else {}
+                sigs.append(str(row.get("signature") or ""))
+            if len(set(s for s in sigs if s)) < 4:
+                failures.append(f"orientation_COVER_{anchor}_not_discriminating")
+        contain_sigs = []
+        if isinstance(center, dict):
+            contain_sigs = [str((center.get(k) or {}).get("signature") or "") for k, _d, _m in _ORIENTATION_CASES]
+            if len(set(s for s in contain_sigs if s)) < 4:
+                failures.append("orientation_CONTAIN_CENTER_not_discriminating")
     seam = _need("masterSeam")
     if seam is not None:
         if abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True:

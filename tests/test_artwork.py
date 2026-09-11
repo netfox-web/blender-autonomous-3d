@@ -23,6 +23,7 @@ from fox3d.artwork import (
     master_canvas,
     master_relation_hash,
     measure_orientation_parity,
+    oracle_quality,
     mm_to_uv,
     placement_payload,
     preview_ready_from_job,
@@ -1070,6 +1071,96 @@ def test_orientation_pixel_oracle_contain(tmp_path):
         )
         assert row["status"] == "PASS", key
         assert row["boundsOk"] is True
+        assert row["oracleDiscriminating"] is True
+        assert row["uniqueSampleCount"] >= 3
+
+
+def test_cover_center_oracle_discriminates_orientation(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    rgb = landmark_grid_rgb(48, 32)
+    p = tmp_path / "lm.png"
+    write_png(p, 48, 32, rgb)
+    art = plat.artwork.register_artwork(tenant_id="ta", data=p.read_bytes(), source="GENERATED")
+    rows = {}
+    for key, deg, mir in (("0", 0.0, False), ("90", 90.0, False), ("180", 180.0, False), ("270", 270.0, False), ("mirror", 0.0, True), ("mirror90", 90.0, True)):
+        rows[key] = measure_orientation_parity(
+            plat.artwork,
+            tenant_id="ta",
+            surface=doors[0],
+            artwork=art,
+            engineering_hash=cab.engineering_hash(),
+            product_id=cab.productId,
+            rotation_deg=deg,
+            mirrored=mir,
+            src_rgb=rgb,
+            src_w=48,
+            src_h=32,
+            fit=FIT_COVER,
+            anchor="CENTER",
+        )
+        assert rows[key]["status"] == "PASS", key
+        assert rows[key]["oracleDiscriminating"] is True
+        assert rows[key]["uniqueSampleCount"] >= 3
+        assert len(set(tuple(rows[key]["expected"][c]) for c in ("BL", "BR", "TR", "TL"))) >= 3
+    assert rows["0"]["signature"] != rows["90"]["signature"]
+    assert rows["0"]["signature"] != rows["180"]["signature"]
+    assert rows["0"]["signature"] != rows["mirror"]["signature"]
+    assert rows["90"]["signature"] != rows["mirror90"]["signature"]
+    for corner in ("BL", "BR", "TR", "TL"):
+        assert tuple(rows["0"]["expected"][corner]) != tuple(rows["90"]["observed"][corner]) or rows["0"]["signature"] != rows["90"]["signature"]
+    gray = {"BL": [80, 80, 80], "BR": [80, 80, 80], "TR": [80, 80, 80], "TL": [80, 80, 80]}
+    q = oracle_quality(gray)
+    assert q["oracleDiscriminating"] is False
+    assert q["uniqueSampleCount"] == 1
+
+
+def test_cover_wrong_transform_is_caught(tmp_path):
+    plat = _plat(tmp_path)
+    eng = CabinetEngine()
+    cab, _ = eng.create("STORAGE_CABINET", tenant_id="ta", width=800, height=1800, doorCount=2)
+    doors = [s for s in plat.artwork.register_surfaces(cab, tenant_id="ta") if "DOOR" in s["componentId"].upper()]
+    rgb = landmark_grid_rgb(48, 32)
+    p = tmp_path / "lm.png"
+    write_png(p, 48, 32, rgb)
+    art = plat.artwork.register_artwork(tenant_id="ta", data=p.read_bytes(), source="GENERATED")
+
+    def _one(anchor, deg, mir):
+        return measure_orientation_parity(
+            plat.artwork,
+            tenant_id="ta",
+            surface=doors[0],
+            artwork=art,
+            engineering_hash=cab.engineering_hash(),
+            product_id=cab.productId,
+            rotation_deg=deg,
+            mirrored=mir,
+            src_rgb=rgb,
+            src_w=48,
+            src_h=32,
+            fit=FIT_COVER,
+            anchor=anchor,
+        )
+
+    center0 = _one("CENTER", 0.0, False)
+    center90 = _one("CENTER", 90.0, False)
+    center_m = _one("CENTER", 0.0, True)
+    left0 = _one("BOTTOM_LEFT", 0.0, False)
+    left90 = _one("BOTTOM_LEFT", 90.0, False)
+    right0 = _one("BOTTOM_RIGHT", 0.0, False)
+    right_m = _one("BOTTOM_RIGHT", 0.0, True)
+    assert center0["signature"] != center90["signature"]
+    assert center0["signature"] != center_m["signature"]
+    assert left0["signature"] != left90["signature"]
+    assert right0["signature"] != right_m["signature"]
+    mismatch = dict(center0)
+    mismatch["observed"] = center90["observed"]
+    mismatch["status"] = "PASS"
+    fake = {"CONTAIN": {"CENTER": {"0": center0, "90": center0, "180": center0, "270": center0, "mirror": center0, "mirror90": center0}}, "COVER": {"LEFT": {"0": left0, "90": left0, "180": left0, "270": left0, "mirror": left0, "mirror90": left0}, "CENTER": {"0": mismatch, "90": mismatch, "180": mismatch, "270": mismatch, "mirror": mismatch, "mirror90": mismatch}, "RIGHT": {"0": right0, "90": right0, "180": right0, "270": right0, "mirror": right0, "mirror90": right0}}}
+    # validator on a full result is heavy; check quality helper + signature inequality above
+    assert oracle_quality(center0["expected"])["oracleDiscriminating"] is True
 
 
 def test_master_id_bound_in_relation_hash(tmp_path):
@@ -1147,3 +1238,27 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     assert "orientation_CONTAIN_CENTER_180" in fails
     assert "orientation_CONTAIN_CENTER_270" in fails
     assert "orientation_CONTAIN_CENTER_mirror" in fails
+    deg = dict(result)
+    deg["scenarios"] = dict(result["scenarios"])
+    op2 = dict(result["scenarios"]["orientationParity"])
+    cover = dict(op2.get("COVER") or {})
+    center_c = dict(cover.get("CENTER") or {})
+    gray_row = {
+        "status": "PASS",
+        "boundsOk": True,
+        "expected": {"BL": [80, 80, 80], "BR": [80, 80, 80], "TR": [80, 80, 80], "TL": [80, 80, 80]},
+        "observed": {"BL": [80, 80, 80], "BR": [80, 80, 80], "TR": [80, 80, 80], "TL": [80, 80, 80]},
+        "uvRect": {"u0": 0.4, "v0": 0.0, "u1": 0.6, "v1": 1.0},
+        "finalUvHash": "x",
+        "oracleDiscriminating": False,
+        "uniqueSampleCount": 1,
+        "signature": "80,80,80|80,80,80|80,80,80|80,80,80",
+    }
+    for key, _d, _m in (("0", 0, False), ("90", 90, False), ("180", 180, False), ("270", 270, False), ("mirror", 0, True), ("mirror90", 90, True)):
+        center_c[key] = dict(gray_row)
+    cover["CENTER"] = center_c
+    op2["COVER"] = cover
+    deg["scenarios"]["orientationParity"] = op2
+    deg_fails = validate_artwork_acceptance_result(deg)
+    assert "orientation_COVER_CENTER_0_oracle_quality" in deg_fails
+    assert "orientation_COVER_CENTER_not_discriminating" in deg_fails
