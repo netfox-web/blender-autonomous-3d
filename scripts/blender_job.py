@@ -1015,60 +1015,28 @@ def _render_assembly_anim(job: dict, created: dict, *, frames: int, width: int, 
 
 
 def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height: int) -> str | None:
-    """White emission of the canonical FRONT printable face only. Not a product occupancy alias."""
+    """Render only the placed printable object(s) on a black world. Not a whole-cabinet alias."""
     import bpy
-    import bmesh
 
     work = Path(job.get("workDir") or ".")
     out = work / "artwork_mask.png"
     scene = bpy.context.scene
+    names = {str(rec.get("objectName") or "") for rec in (applied or []) if isinstance(rec, dict) and rec.get("objectName")}
+    if not names:
+        return None
     saved = []
-    proxies = []
+    bg_saved = None
     try:
         for obj in list(bpy.data.objects):
             if getattr(obj, "type", None) == "MESH":
                 saved.append((obj, bool(obj.hide_render)))
-                obj.hide_render = True
-        for rec in applied or []:
-            if not isinstance(rec, dict):
-                continue
-            src = bpy.data.objects.get(str(rec.get("objectName") or ""))
-            if src is None or getattr(src, "data", None) is None:
-                continue
-            face_idx = rec.get("frontFaceIndex")
-            dup = src.copy()
-            dup.data = src.data.copy()
-            dup.name = f"ArtworkMask.{src.name}"
-            bpy.context.collection.objects.link(dup)
-            bpy.ops.object.select_all(action="DESELECT")
-            dup.select_set(True)
-            bpy.context.view_layer.objects.active = dup
-            bpy.ops.object.mode_set(mode="EDIT")
-            bm = bmesh.from_edit_mesh(dup.data)
-            keep = None if face_idx is None else int(face_idx)
-            for face in list(bm.faces):
-                if keep is not None and face.index != keep:
-                    bm.faces.remove(face)
-            bmesh.update_edit_mesh(dup.data)
-            bpy.ops.object.mode_set(mode="OBJECT")
-            em = bpy.data.materials.new(f"ArtworkMaskEmit.{src.name}")
-            em.use_nodes = True
-            nt = em.node_tree
-            nt.nodes.clear()
-            emit = nt.nodes.new("ShaderNodeEmission")
-            emit.inputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
-            try:
-                emit.inputs[1].default_value = 20.0
-            except Exception:
-                pass
-            out_node = nt.nodes.new("ShaderNodeOutputMaterial")
-            nt.links.new(emit.outputs[0], out_node.inputs[0])
-            dup.data.materials.clear()
-            dup.data.materials.append(em)
-            dup.hide_render = False
-            proxies.append(dup)
-        if not proxies:
-            return None
+                obj.hide_render = obj.name not in names and obj.name.upper() not in {n.upper() for n in names}
+        world = scene.world
+        if world is not None and getattr(world, "use_nodes", False) and world.node_tree:
+            bg = world.node_tree.nodes.get("Background")
+            if bg is not None:
+                bg_saved = list(bg.inputs[0].default_value)
+                bg.inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
         scene.cycles.samples = 1
         scene.render.resolution_x = width
         scene.render.resolution_y = height
@@ -1076,19 +1044,14 @@ def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height
         scene.render.filepath = str(out)
         bpy.ops.render.render(write_still=True)
     finally:
-        try:
-            if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
-                bpy.ops.object.mode_set(mode="OBJECT")
-        except Exception:
-            pass
         for obj, hide in saved:
             try:
                 obj.hide_render = hide
             except Exception:
                 pass
-        for proxy in proxies:
+        if bg_saved is not None:
             try:
-                bpy.data.objects.remove(proxy, do_unlink=True)
+                scene.world.node_tree.nodes.get("Background").inputs[0].default_value = bg_saved
             except Exception:
                 pass
     if out.exists() and out.stat().st_size >= 32:
