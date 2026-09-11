@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Re-Gate Round 11 CODE_EVIDENCE_SHA `4977bed`; prior `f002c55` / instruction `22ed521`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `22ed521`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 Re-Gate Round 12 CODE_EVIDENCE_SHA `3268f65`; prior `4977bed` / instruction `a2b6f3b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `a2b6f3b`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -22,7 +22,7 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
 | Production authority | REAL_LOGIC | local UV bounds; landmark oracle; derived masterId in relationHash; required scenarios fail-closed |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `edd1142d-…`; CODE `4977bed`; exact canonical expected; fixture geometry/panelIndex; independent tamper flags; near-tolerance + coordinated geometry tampers fail-closed |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `0d3f01cb-…`; CODE `3268f65`; exact canonical expected; fixture geometry + strict finite mm schema; independent tamper flags including `finiteCanonicalGeometryTamperBlocked` |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 

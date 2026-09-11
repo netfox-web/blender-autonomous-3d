@@ -1,11 +1,11 @@
 {
   "ok": true,
   "label": "FIXTURE/REAL_LOGIC",
-  "acceptanceGenerationId": "edd1142d-511d-4069-b794-1e6c35cf1002",
-  "evidenceCodeCommit": "4977bedcaa54bb16df20b4b58e4bd6137a079eba",
+  "acceptanceGenerationId": "0d3f01cb-336b-4d28-8659-783a5f59f419",
+  "evidenceCodeCommit": "3268f654b3b1209dc5c5ffc6c4c149b63ce38654",
   "workingTreeClean": true,
   "evidenceCommitMatchesHead": true,
-  "generatedAt": "2026-09-11T09:30:49.192393+00:00",
+  "generatedAt": "2026-09-11T10:47:47.163799+00:00",
   "physicalPrintValidated": false,
   "realArtworkPreviewReady": false,
   "surfaceDecorationLogicReady": true,
@@ -22,6 +22,7 @@
   "coordinatedOracleTamperBlocked": true,
   "canonicalGeometryTamperBlocked": true,
   "nearToleranceOracleTamperBlocked": true,
+  "finiteCanonicalGeometryTamperBlocked": true,
   "rows": [
     {
       "check": "4-door master 2400mm",
@@ -42,26 +43,26 @@
       "check": "realArtworkPreviewReady",
       "status": "MOCK",
       "evidence": {
-        "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-        "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-        "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-        "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
+        "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+        "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+        "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+        "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
         "usedMock": true,
         "realBlender": false,
         "realArtworkPreviewReady": false,
         "physicalPrintValidated": false,
         "label": "MOCK",
         "requestedIdentity": {
-          "placementId": "e06b05a3-c8a2-4a60-a105-e6e54217a971",
+          "placementId": "73d6a934-f18b-4782-96b1-a9881e1d9426",
           "objectName": "DOOR_1",
           "componentId": "door_1",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-          "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
-          "finalUvHash": "33498f546367a26ec0dd5b7575611b71d107b19dc25cfb7d5069608d7ce9c910",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+          "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
+          "finalUvHash": "0f25dde002bde5668d99779cd8cfe805c409b313d553d088f4b192e05639ca35",
           "finalSampling": [
             [
               0.0,
@@ -97,14 +98,14 @@
             "u1": 0.25,
             "v1": 1.0
           },
-          "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\edd1142d-511d-4069-b794-1e6c35cf1002\\live\\dam\\aw-a\\artwork\\885714e5-83e9-4faf-a05a-01e6925132b0_grid.png",
+          "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\0d3f01cb-336b-4d28-8659-783a5f59f419\\live\\dam\\aw-a\\artwork\\c3412a13-9dc9-4ca1-a49b-85a87427230d_grid.png",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "artworkId": "885714e5-83e9-4faf-a05a-01e6925132b0",
+          "artworkId": "c3412a13-9dc9-4ca1-a49b-85a87427230d",
           "hashes": {
-            "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-            "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-            "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-            "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca"
+            "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+            "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+            "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+            "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827"
           }
         }
       }
@@ -137,7 +138,7 @@
     {
       "check": "CONTAIN letterbox canvas",
       "status": "REAL_LOGIC",
-      "evidence": "{\"anchor\": \"CENTER\", \"fit\": \"CONTAIN\", \"placedMm\": {\"xMm\": 0.0, \"yMm\": 675.0, \"widthMm\": 600.0, \"heightMm\": 450.0}, \"outputPhysicalMm\": {\"widthMm\": 600.0, \"heightMm\": 1800.0}, \"pixelWidth\": 1200, \"pixelHeight\": 3600, \"transformHash\": \"4f03ba1b26cad29dcc64465c09e7a00364cddf42e72f4c4af31dda73b2d74f92\", \"finalUvHash\": \"6e4eda994c3168ec77ff99062bb1dc5746efce6a0a1a8d83449661be784e7c3c\"}"
+      "evidence": "{\"anchor\": \"CENTER\", \"fit\": \"CONTAIN\", \"placedMm\": {\"xMm\": 0.0, \"yMm\": 675.0, \"widthMm\": 600.0, \"heightMm\": 450.0}, \"outputPhysicalMm\": {\"widthMm\": 600.0, \"heightMm\": 1800.0}, \"pixelWidth\": 1200, \"pixelHeight\": 3600, \"transformHash\": \"77fd3c9e6d204af675712b1809cf6b010d781aa2136e4a519ab8450ea61e3c22\", \"finalUvHash\": \"854f0c28b271f449eb7db1cb3e508e50e60571aeba9a325750001cd554e06d8e\"}"
     },
     {
       "check": "COVER anchor source crop",
@@ -147,7 +148,7 @@
     {
       "check": "orientation landmark parity",
       "status": "REAL_LOGIC",
-      "evidence": "{\"canonicalSource\": {\"kind\": \"landmark_grid_rgb\", \"width\": 48, \"height\": 32, \"sha256\": \"0162c3f19daed3c7b26fa145673b02f09888bc0823192ed12cf9eb07f608fd89\"}, \"canonicalSurfaces\": {\"CONTAIN\": {\"widthMm\": 600.0, \"heightMm\": 1800.0, \"panelIndex\": 3}, \"COVER\": {\"widthMm\": 600.0, \"heightMm\": 1800.0, \"panelIndex\": 2}}, \"CONTAIN\": {\"CENTER\": {\"0\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [0, 0, 20]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [0, 0, 20]}, \"finalUvHash\": \"85646d40170890de0cde384cb532c1105f239ce0b7d7542a7138155dd4b98b7b\", \"transformHash\": \"4ff6f6943f79bab6e6666752950c04604499f752b3fee1ad528d6fbb568656f1\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|255,255,210|255,0,191|0,0,20\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"finalUvHash\": \"ecda0ac32f4e2a2d5534ff5682165077a9e115e7a69d5620d24301d0a6955659\", \"transformHash\": \"499db6c417f32f4a0b8ceaa758b08fc751e7a3e8ed34a6cf126cc7de64f4f3fd\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|255,0,191|0,0,20|0,255,39\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 0, 191], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [255, 0, 191], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"e47e15235aa248aa46daf04a403b5b38575179f798615f112e7091e7e4ae01cd\", \"transformHash\": \"475b91faaa198fa5eae797d25c8d0ca8ca07c510f6dc5547135ccc3d9cc8c226\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,0,191|0,0,20|0,255,39|255,255,210\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"61b50ba10562392bff3734cdaaa5681c8a9732b7c9fdd9c522213a66a97a1358\", \"transformHash\": \"27f9b77879ea96ce50c712b09361be57add139c1ddbc2b4049e499ff2bc3432f\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,0,20|0,255,39|255,255,210|255,0,191\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"ecd375f33f251a1a15024c52596a7ff14b28d30b89c1bb8f95ac1dc2413edd13\", \"transformHash\": \"9bca8f9a5cb00ff61620ca1241e69dd107b274fccebce9c628ca6477274b7661\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|0,255,39|0,0,20|255,0,191\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"ad7a1ae1b4703d4cabe7fd8e9b7af02fc3a69b0f4b191efedfef17d69612d462\", \"transformHash\": \"cbbb47c2a402c323fa71f33abe9ded85a67ec3d6e3dd6c25faa6e94bb1e4a3b6\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|0,0,20|255,0,191|255,255,210\", \"status\": \"PASS\"}}}, \"COVER\": {\"LEFT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [60, 255, 182], \"TR\": [60, 0, 163], \"TL\": [0, 0, 20]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [54, 255, 169], \"TR\": [54, 0, 150], \"TL\": [0, 0, 20]}, \"finalUvHash\": \"b445341bc93802671f0bf310f374f418be0a248db04036c05b4ea7609b0212cc\", \"transformHash\": \"0dbf9b9a7636d886e1e91a45da35c78a24f4020237c5a16a498ec87843407ec0\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|60,255,182|60,0,163|0,0,20\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 255, 182], \"BR\": [60, 0, 163], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"observed\": {\"BL\": [54, 255, 169], \"BR\": [54, 0, 150], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"finalUvHash\": \"47fe8a0a871594db74765fc7ebfcb18c5423ea24bdae3bd9a9463e7e6f100dac\", \"transformHash\": \"2bb5e983585583d88bea01b80e18082234fc597699d04d5e6c3c71c70144e608\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,255,182|60,0,163|0,0,20|0,255,39\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 0, 163], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [60, 255, 182]}, \"observed\": {\"BL\": [54, 0, 150], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [54, 255, 169]}, \"finalUvHash\": \"63299fdfa3ae16f31053e2d93a335ab4cd5a0be33f60a3e41468477bb765e63b\", \"transformHash\": \"d57b52c814dc8d419a1e7bf36081bc25a7bcb7c816760d89139ac39a2f15cd3d\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,0,163|0,0,20|0,255,39|60,255,182\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [60, 255, 182], \"TL\": [60, 0, 163]}, \"observed\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [54, 255, 169], \"TL\": [54, 0, 150]}, \"finalUvHash\": \"e9d9c98528b63c3cf29086170bb711b12ff855b7b7ac2fa5fbcbc4bf5a2512b5\", \"transformHash\": \"07c3bead9d21b8e997ccbb72f917c1854dfe28bffee8c392d7b680028c9eafc1\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,0,20|0,255,39|60,255,182|60,0,163\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 255, 182], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [60, 0, 163]}, \"observed\": {\"BL\": [54, 255, 169], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [54, 0, 150]}, \"finalUvHash\": \"2c08133f396e05cf0fbe5de999a4500af80cf1618c5775c57c074ed58ad4c8b8\", \"transformHash\": \"4a58d811dc6fe5a7c9b75e3942a4fd7568a41d34f6d8f6668a79e19bf8858713\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,255,182|0,255,39|0,0,20|60,0,163\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [60, 0, 163], \"TL\": [60, 255, 182]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [54, 0, 150], \"TL\": [54, 255, 169]}, \"finalUvHash\": \"db137cbb8f86bbad0eaa3ba69c51a2cdb2c8ae412b6091a7f8f394b862bcec3a\", \"transformHash\": \"556fdf5d1321f8200132e44b6ff98fca66499da55d0c64ecfcc6188f4e051c1c\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|0,0,20|60,0,163|60,255,182\", \"status\": \"PASS\"}}, \"CENTER\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 255, 66], \"BR\": [157, 255, 196], \"TR\": [157, 0, 177], \"TL\": [103, 0, 47]}, \"observed\": {\"BL\": [103, 255, 66], \"BR\": [157, 255, 196], \"TR\": [157, 0, 177], \"TL\": [103, 0, 47]}, \"finalUvHash\": \"dbde08b288a62c6bb1b9fb45a3192220a6c0c0216108155403aef0bc20e09f7a\", \"transformHash\": \"c1dd6629aa0185a8da0d17f78887ba5e7e978c482f5a0dab04debfdc1c8da070\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,255,66|157,255,196|157,0,177|103,0,47\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 255, 196], \"BR\": [157, 0, 177], \"TR\": [103, 0, 47], \"TL\": [103, 255, 66]}, \"observed\": {\"BL\": [157, 255, 196], \"BR\": [157, 0, 177], \"TR\": [103, 0, 47], \"TL\": [103, 255, 66]}, \"finalUvHash\": \"695068cee0cfbd21044dac624429597b6b89470b498764850f78809b58c5e00b\", \"transformHash\": \"9b5043b8c1c4d4c67be3c25e466c58b6bd0a0d1c9d27fc5a9816f431e07cc6dc\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,255,196|157,0,177|103,0,47|103,255,66\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 0, 177], \"BR\": [103, 0, 47], \"TR\": [103, 255, 66], \"TL\": [157, 255, 196]}, \"observed\": {\"BL\": [157, 0, 177], \"BR\": [103, 0, 47], \"TR\": [103, 255, 66], \"TL\": [157, 255, 196]}, \"finalUvHash\": \"f7ebd99f5e2be3290494141de187474a05238d6673004a1d56b4297553b75958\", \"transformHash\": \"8a8a1affa8e04198bfcd446daa11203615cb6e631db3a2f3eeff1e2cece3f4e7\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,0,177|103,0,47|103,255,66|157,255,196\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 0, 47], \"BR\": [103, 255, 66], \"TR\": [157, 255, 196], \"TL\": [157, 0, 177]}, \"observed\": {\"BL\": [103, 0, 47], \"BR\": [103, 255, 66], \"TR\": [157, 255, 196], \"TL\": [157, 0, 177]}, \"finalUvHash\": \"811c9f338141402d3511396e1e80a44e42e76028908dab698fbee7afcba8eede\", \"transformHash\": \"5c1a1822a1917b856fa3a20c27e5cdc501dc5e9c6f951673d7c9ab6aa96b9569\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,0,47|103,255,66|157,255,196|157,0,177\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 255, 196], \"BR\": [103, 255, 66], \"TR\": [103, 0, 47], \"TL\": [157, 0, 177]}, \"observed\": {\"BL\": [157, 255, 196], \"BR\": [103, 255, 66], \"TR\": [103, 0, 47], \"TL\": [157, 0, 177]}, \"finalUvHash\": \"9c92b9fa1b0fa61b90ae9337b72ee6cd0e2370c8624d241a85f106d37bebd647\", \"transformHash\": \"25ba5edfd3c47ebf3dcc5afee1bc2bddc820d02c8e9e1db2c505793a4e2c7122\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,255,196|103,255,66|103,0,47|157,0,177\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 255, 66], \"BR\": [103, 0, 47], \"TR\": [157, 0, 177], \"TL\": [157, 255, 196]}, \"observed\": {\"BL\": [103, 255, 66], \"BR\": [103, 0, 47], \"TR\": [157, 0, 177], \"TL\": [157, 255, 196]}, \"finalUvHash\": \"de28eed5209051832103b52c01ceefd49995fd79e39c3f5375d9e38fa1d5d280\", \"transformHash\": \"6974c6e7b7f9763f2978d1caa4b58e42f2f776f183fd3b7ec9e8a1cf22370a36\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,255,66|103,0,47|157,0,177|157,255,196\", \"status\": \"PASS\"}}, \"RIGHT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 255, 67], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [195, 0, 48]}, \"observed\": {\"BL\": [201, 255, 80], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [201, 0, 61]}, \"finalUvHash\": \"da2502b955f035537b794ded19c086a0c65f0de33abf995eb5bef1ae52ffc329\", \"transformHash\": \"defcf80e3ea272079973bfac40e12eabbe4cb52c4bc3b0b6b4e0d6ce406466f1\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,255,67|255,255,210|255,0,191|195,0,48\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [195, 0, 48], \"TL\": [195, 255, 67]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [201, 0, 61], \"TL\": [201, 255, 80]}, \"finalUvHash\": \"b98cee58096965da00e5f2e249c9f6a60c9a22456798106140916fa53d5eb38f\", \"transformHash\": \"2cffa78103569a728f3a9e5dbda73809faa70b5c54f84a04867b2a612491c4a7\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|255,0,191|195,0,48|195,255,67\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 0, 191], \"BR\": [195, 0, 48], \"TR\": [195, 255, 67], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [255, 0, 191], \"BR\": [201, 0, 61], \"TR\": [201, 255, 80], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"7c0d98bc527fe7f5852b5e6cc4f96ea34dbcfbb98ffe79e3cf11a3383b07607c\", \"transformHash\": \"b3a56eaa2e3681ba018d1661d202f4101a95024a7ac622168319aa1d07992972\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,0,191|195,0,48|195,255,67|255,255,210\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 0, 48], \"BR\": [195, 255, 67], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [201, 0, 61], \"BR\": [201, 255, 80], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"f20a43c9aa6d397f1814a9879f35eebbfef2ffbf3316c71d3abf7d1b5e7c8ecc\", \"transformHash\": \"64c78e3d79905ae1b31bb13ceaa41df291d5b577fe7d38c28029a921ff84be36\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,0,48|195,255,67|255,255,210|255,0,191\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [195, 255, 67], \"TR\": [195, 0, 48], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [201, 255, 80], \"TR\": [201, 0, 61], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"88ba5024f0e07e473e9bba3971ab75f0ee463876ca053864bcee5202dcf4db9e\", \"transformHash\": \"d9e8cd750f212f03cda8d67bdf15093669a247075ff619c044571fd8f855fe4c\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|195,255,67|195,0,48|255,0,191\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 255, 67], \"BR\": [195, 0, 48], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [201, 255, 80], \"BR\": [201, 0, 61], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"433f7dc62b951f782c9bc538edb5351f277f2a2cc14ebd8830eda8030e912962\", \"transformHash\": \"c5eba93e362bd6d0e5d0487cf69faf2b21ab64cadcde72fb0b6af74047eeaac8\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,255,67|195,0,48|255,0,191|255,255,210\", \"status\": \"PASS\"}}}}"
+      "evidence": "{\"canonicalSource\": {\"kind\": \"landmark_grid_rgb\", \"width\": 48, \"height\": 32, \"sha256\": \"0162c3f19daed3c7b26fa145673b02f09888bc0823192ed12cf9eb07f608fd89\"}, \"canonicalSurfaces\": {\"CONTAIN\": {\"widthMm\": 600.0, \"heightMm\": 1800.0, \"panelIndex\": 3}, \"COVER\": {\"widthMm\": 600.0, \"heightMm\": 1800.0, \"panelIndex\": 2}}, \"CONTAIN\": {\"CENTER\": {\"0\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [0, 0, 20]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [0, 0, 20]}, \"finalUvHash\": \"6430a216dd54ebcf19e1b29f83f8a1d691251a81697fb87d49011113b393169b\", \"transformHash\": \"7d1ab1c03ce13e206099c04be4ad724995ed9a4248b5d8685141a3596b01b331\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|255,255,210|255,0,191|0,0,20\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"finalUvHash\": \"137a26b9dd811177fef04a3257292da3ef8e2c990239d8eeb79f2f2746898918\", \"transformHash\": \"c8c5a492e6df2187e988fb8fa2aabb73cc974eecf7e1d9705c145f9e48515db1\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|255,0,191|0,0,20|0,255,39\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 0, 191], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [255, 0, 191], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"db3598825242785f0fca633c950cdb6313ccc71f1ed3a26260b558d643eb199f\", \"transformHash\": \"a5432b7b137ea168b6de3925f9587de67247e581aaf03dff56b75316e52e851d\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,0,191|0,0,20|0,255,39|255,255,210\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"d2c6f4f172851cf43f3476aa97ce2a22d61c2ae3e8f917e65fe109ebdea37856\", \"transformHash\": \"a5179acc73a07310712bb564972bcf25ee8891b731a1cfbee267df76594aa4cd\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,0,20|0,255,39|255,255,210|255,0,191\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"869fa14bc2c43746b23120d70ba4801534b746b38e955cf91b0da23999ba6174\", \"transformHash\": \"73d49682a415f3b3ebc426380347e78f466ac76cbc35937a9891e15d6af3d71e\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|0,255,39|0,0,20|255,0,191\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"CONTAIN\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.3888888888888889, \"u1\": 1.0, \"v1\": 0.6111111111111112}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"dde8c2de82bf361657a37221d55f4c464f2b42546c476b5ffff9995dace38776\", \"transformHash\": \"3d6f6ec0bdb0c1281dc497035544dca4a7e1d0a95140c67b9ba0e1292c963bd3\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|0,0,20|255,0,191|255,255,210\", \"status\": \"PASS\"}}}, \"COVER\": {\"LEFT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [60, 255, 182], \"TR\": [60, 0, 163], \"TL\": [0, 0, 20]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [54, 255, 169], \"TR\": [54, 0, 150], \"TL\": [0, 0, 20]}, \"finalUvHash\": \"a23752f49f742e27e92d205b7dad0545ce4e8f25ea60dc1c0e70c62549824098\", \"transformHash\": \"2d4450981d4f4cdc0cc5772b9259bd22b428295b01c3a34951d12386472ebe93\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|60,255,182|60,0,163|0,0,20\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 255, 182], \"BR\": [60, 0, 163], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"observed\": {\"BL\": [54, 255, 169], \"BR\": [54, 0, 150], \"TR\": [0, 0, 20], \"TL\": [0, 255, 39]}, \"finalUvHash\": \"979628dc85376bd4d08b70c22cc8aad5ed8716e60d61460cebf25bec01da17ca\", \"transformHash\": \"4db37cae26dbb2b7187df07911a96c27d79f4989a9b0052010ba8e454d893c5d\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,255,182|60,0,163|0,0,20|0,255,39\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 0, 163], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [60, 255, 182]}, \"observed\": {\"BL\": [54, 0, 150], \"BR\": [0, 0, 20], \"TR\": [0, 255, 39], \"TL\": [54, 255, 169]}, \"finalUvHash\": \"ae86b693713a203040ae968efac06033e12bd295499ddb51fc586ee7ff842b17\", \"transformHash\": \"313231bc0b7128083b09bce3d1c568b1b05a250b1b3a25859f155f362df28a96\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,0,163|0,0,20|0,255,39|60,255,182\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [60, 255, 182], \"TL\": [60, 0, 163]}, \"observed\": {\"BL\": [0, 0, 20], \"BR\": [0, 255, 39], \"TR\": [54, 255, 169], \"TL\": [54, 0, 150]}, \"finalUvHash\": \"7aef95ca555f67aad38adbc32c0ce2b894b09d7261dda9c16763606e21665435\", \"transformHash\": \"25a5ae064acfca6a6912f4816c0f3a861e5f53c747a99f7970f17301b2583120\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,0,20|0,255,39|60,255,182|60,0,163\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [60, 255, 182], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [60, 0, 163]}, \"observed\": {\"BL\": [54, 255, 169], \"BR\": [0, 255, 39], \"TR\": [0, 0, 20], \"TL\": [54, 0, 150]}, \"finalUvHash\": \"2a2a7056d2e8a9c986cbc5a264a60f6202862e96df014be45d6f88216afb6f97\", \"transformHash\": \"39919664ce232f5993f830c98c431f42ae84abf69a2938b548e17bbc9a61e8de\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"60,255,182|0,255,39|0,0,20|60,0,163\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_LEFT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.0, \"v0\": 0.0, \"u1\": 0.22916666666666666, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [60, 0, 163], \"TL\": [60, 255, 182]}, \"observed\": {\"BL\": [0, 255, 39], \"BR\": [0, 0, 20], \"TR\": [54, 0, 150], \"TL\": [54, 255, 169]}, \"finalUvHash\": \"6dce44c8eb8945789230d2a497f8bc292d2e62720de2a4134ac2c21777ba3e05\", \"transformHash\": \"19aac838e3eaf8fcb4aae0778f9eebf0e3eaac79acd2adec3c22c59f1b76980c\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"0,255,39|0,0,20|60,0,163|60,255,182\", \"status\": \"PASS\"}}, \"CENTER\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 255, 66], \"BR\": [157, 255, 196], \"TR\": [157, 0, 177], \"TL\": [103, 0, 47]}, \"observed\": {\"BL\": [103, 255, 66], \"BR\": [157, 255, 196], \"TR\": [157, 0, 177], \"TL\": [103, 0, 47]}, \"finalUvHash\": \"c3dbd2c49c2bc4f425360591ae9a1c3e045a528634125ff8c154cfc9b887f2a6\", \"transformHash\": \"58586cae0a617fd865f4a17fe91772756c0403848a6878957bfcb624af4a7811\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,255,66|157,255,196|157,0,177|103,0,47\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 255, 196], \"BR\": [157, 0, 177], \"TR\": [103, 0, 47], \"TL\": [103, 255, 66]}, \"observed\": {\"BL\": [157, 255, 196], \"BR\": [157, 0, 177], \"TR\": [103, 0, 47], \"TL\": [103, 255, 66]}, \"finalUvHash\": \"836fcfbf14397b13a4b4a2cfe80aa4cde826f846b2ef499c5d587418a99ec345\", \"transformHash\": \"6495f28a0c79d7811eb1622395ce65337c1907e0420b8772f2dd55dbea1af80a\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,255,196|157,0,177|103,0,47|103,255,66\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 0, 177], \"BR\": [103, 0, 47], \"TR\": [103, 255, 66], \"TL\": [157, 255, 196]}, \"observed\": {\"BL\": [157, 0, 177], \"BR\": [103, 0, 47], \"TR\": [103, 255, 66], \"TL\": [157, 255, 196]}, \"finalUvHash\": \"de37f21ceb0473ae0260f9177580d49157afed4345c8da812330461da294b915\", \"transformHash\": \"9387cf43730064e0a495bff914a9bd8baf07020e4d018f0b5e9f57f1803c1da1\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,0,177|103,0,47|103,255,66|157,255,196\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 0, 47], \"BR\": [103, 255, 66], \"TR\": [157, 255, 196], \"TL\": [157, 0, 177]}, \"observed\": {\"BL\": [103, 0, 47], \"BR\": [103, 255, 66], \"TR\": [157, 255, 196], \"TL\": [157, 0, 177]}, \"finalUvHash\": \"3ad48c50d6239b4e57d85565b4f18b5b11b6a8ea349af048f7720d1c8c557de2\", \"transformHash\": \"29eeece982bc9634c9ce31a8ed355f395c29be68794dc013e47b9523a017c04b\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,0,47|103,255,66|157,255,196|157,0,177\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [157, 255, 196], \"BR\": [103, 255, 66], \"TR\": [103, 0, 47], \"TL\": [157, 0, 177]}, \"observed\": {\"BL\": [157, 255, 196], \"BR\": [103, 255, 66], \"TR\": [103, 0, 47], \"TL\": [157, 0, 177]}, \"finalUvHash\": \"d9f77ee619095329124c56c56da999ea02312f901fee4917ccc69a67baab6387\", \"transformHash\": \"e502ac8fef1a212771d142875e726ccbf801c41452b9a160c6949f33de132b08\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"157,255,196|103,255,66|103,0,47|157,0,177\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"CENTER\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.3958333333333333, \"v0\": 0.0, \"u1\": 0.625, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [103, 255, 66], \"BR\": [103, 0, 47], \"TR\": [157, 0, 177], \"TL\": [157, 255, 196]}, \"observed\": {\"BL\": [103, 255, 66], \"BR\": [103, 0, 47], \"TR\": [157, 0, 177], \"TL\": [157, 255, 196]}, \"finalUvHash\": \"cbdd830466c3e097c7e2ce442a113e7f4df331108d2b5e1c75158bdd6e4f71e8\", \"transformHash\": \"86c381c2957a60fcc4044dafde3af4f34ec0f056a21751fb42a87162c3ce71d5\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"103,255,66|103,0,47|157,0,177|157,255,196\", \"status\": \"PASS\"}}, \"RIGHT\": {\"0\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 255, 67], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [195, 0, 48]}, \"observed\": {\"BL\": [201, 255, 80], \"BR\": [255, 255, 210], \"TR\": [255, 0, 191], \"TL\": [201, 0, 61]}, \"finalUvHash\": \"6c1515ec9b1281a41f81d1c88efa0769cbe0f9f53d057882a40cb2d84a18f276\", \"transformHash\": \"f03ff40defe300ac737d2c9ea71cb73c752d284c30a7bbfdad4cb3857c19cb2c\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,255,67|255,255,210|255,0,191|195,0,48\", \"status\": \"PASS\"}, \"90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [195, 0, 48], \"TL\": [195, 255, 67]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [255, 0, 191], \"TR\": [201, 0, 61], \"TL\": [201, 255, 80]}, \"finalUvHash\": \"394ee8f6e08bbcba953a052f9b143b21b651fca92909b9a042ee7c529c15c296\", \"transformHash\": \"bc12d6177777fafbd161434a88b32928a12789becdc7f0399efb957749bde235\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|255,0,191|195,0,48|195,255,67\", \"status\": \"PASS\"}, \"180\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 180.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 0, 191], \"BR\": [195, 0, 48], \"TR\": [195, 255, 67], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [255, 0, 191], \"BR\": [201, 0, 61], \"TR\": [201, 255, 80], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"16ec05a1f9434d371e2d5a8ca08da240fe16f9e00b6448f7231f244e9d961615\", \"transformHash\": \"a9bcf84694a1c50a5e75edbef310d5e9dc30f7d1358b33b16040d4d8b0df8826\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,0,191|195,0,48|195,255,67|255,255,210\", \"status\": \"PASS\"}, \"270\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 270.0, \"mirrored\": false, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 0, 48], \"BR\": [195, 255, 67], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [201, 0, 61], \"BR\": [201, 255, 80], \"TR\": [255, 255, 210], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"8b616a71a03379879242621b878c1e47e545acffba8ba48993abd522cd899a3c\", \"transformHash\": \"17ddc8a5577d26598b1f517d9f7b0b45afa6842f8f2371d5971ba04b47e30c03\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,0,48|195,255,67|255,255,210|255,0,191\", \"status\": \"PASS\"}, \"mirror\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 0.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [255, 255, 210], \"BR\": [195, 255, 67], \"TR\": [195, 0, 48], \"TL\": [255, 0, 191]}, \"observed\": {\"BL\": [255, 255, 210], \"BR\": [201, 255, 80], \"TR\": [201, 0, 61], \"TL\": [255, 0, 191]}, \"finalUvHash\": \"cdb60cbbac29a066db4cecf99ad00efe328e305587ad9865f9bcb0e86a3c7f67\", \"transformHash\": \"bfd1c85bb1177af84a5725bf49ed90f67f7d9129a049c70385c1190eca76a63c\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"255,255,210|195,255,67|195,0,48|255,0,191\", \"status\": \"PASS\"}, \"mirror90\": {\"fit\": \"COVER\", \"anchor\": \"BOTTOM_RIGHT\", \"rotationDeg\": 90.0, \"mirrored\": true, \"uvRect\": {\"u0\": 0.7708333333333334, \"v0\": 0.0, \"u1\": 1.0, \"v1\": 1.0}, \"boundsOk\": true, \"expected\": {\"BL\": [195, 255, 67], \"BR\": [195, 0, 48], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"observed\": {\"BL\": [201, 255, 80], \"BR\": [201, 0, 61], \"TR\": [255, 0, 191], \"TL\": [255, 255, 210]}, \"finalUvHash\": \"96b39b21b10ef55e07d906a8fa3ddf8211f2842889a4181218955763c4b242c9\", \"transformHash\": \"7a3b431692653745fea16b25502b719447e262206a13dfb89eea75b9ec90f51f\", \"oracleDiscriminating\": true, \"uniqueSampleCount\": 4, \"signature\": \"195,255,67|195,0,48|255,0,191|255,255,210\", \"status\": \"PASS\"}}}}"
     },
     {
       "check": "serialized orientation tamper BLOCK",
@@ -175,6 +176,11 @@
       "evidence": true
     },
     {
+      "check": "finite canonical geometry tamper BLOCK",
+      "status": "REAL_LOGIC",
+      "evidence": true
+    },
+    {
       "check": "master seam replay",
       "status": "REAL_LOGIC",
       "evidence": "{\"seamMm\": 25.0, \"seamSource\": \"CONFIG\", \"ready\": true}"
@@ -193,8 +199,8 @@
   "scenarios": {
     "cabinet2": {
       "surfaceIds": [
-        "ff51cf1d-f200-41a0-ad06-aa38ed6e8c7d",
-        "ef233974-88d5-429a-ac83-11248924ccaa"
+        "6e0023e1-dfc8-42bf-8534-fba0a9f69f14",
+        "cecdf932-c8d6-4d5f-b8bd-4bde2926eba8"
       ],
       "componentIds": [
         "door_1",
@@ -214,17 +220,17 @@
           "heightMm": 1800.0
         }
       ],
-      "placementHash": "ccec376c2daeea6da0beba9f0f7a3faa49677e32d8196bee8889d7ea2e3aaf9a",
+      "placementHash": "469d57196f15fce242595e21dfc9bab09faa775004c26f1878f1e17677f79bfa",
       "placementHashes": [
-        "ccec376c2daeea6da0beba9f0f7a3faa49677e32d8196bee8889d7ea2e3aaf9a",
-        "ae1fdc0c9355fde26be9214f2c8b54484570c37aa71f7d8ae65e8b3540be3f20"
+        "469d57196f15fce242595e21dfc9bab09faa775004c26f1878f1e17677f79bfa",
+        "52a8026c040e46ceea1caf481b3a5a3defe382797a97ca7b0beb8d524489db1f"
       ]
     },
     "cabinet3": {
       "surfaceIds": [
-        "5c802695-0eaf-42be-94c4-ffe273195903",
-        "9da78e1f-ee55-4278-857d-5cf8ea4d12fb",
-        "f96c9627-7474-4a13-9a9f-3484a9ed30d7"
+        "3ffb3562-4749-4449-aa6b-f49ae14ca841",
+        "79b2a3ec-6386-4f70-acaf-0d54af697114",
+        "abc8f64d-385e-41da-bcc2-ed458856ee67"
       ],
       "componentIds": [
         "door_1",
@@ -252,20 +258,20 @@
         }
       ],
       "placementHashes": [
-        "ae74cb7de4e760c4e23ac609c3a5388f789369427e5f791b9aedf61a1534f28b",
-        "c21ded6f8bdfd4d69b0216d6a88585af5d26c4b0715727c87dcc00f82b02f583",
-        "ea4f4f378cb88fe63f5962b57f0f22258cd66ec83428812906a4b2d9d4f9f688"
+        "cef263802c4005141fe0fda26b96c534342cd7794491b81ea7b6a91f917ba1a2",
+        "b62dfd41a3e8df75914fbc6f7f2b31c25383523a35f8bd04e661e9fbb60e4ec0",
+        "00bbc1866b01f540754178137d51d5c4fe57d2bdba60cb6c65e935628d2c6da1"
       ]
     },
     "cabinet4": {
-      "masterHash": "917d8f6ec1dd8ad31b4bb9cc2afe8da01aa42f42ee5462c4b8f454e2802de3e3",
+      "masterHash": "077c555092492c18ca244a33d5534919e8a9bb47fdeb8e0855b10698844820ce",
       "widthMm": 2400.0,
       "seamSource": "ENGINEERING",
       "surfaceIds": [
-        "8e4b8bd0-1f77-4923-99d1-4a59dac3bbd4",
-        "046cfb42-20a8-4053-b238-93ba7c9882b9",
-        "a1dd9d84-b4ba-49e5-8e79-aadfe6573688",
-        "00eb7abe-105a-4090-9bd5-a84d9efa30a1"
+        "4d0bc251-df65-4bb9-b744-ca6e9436dfa6",
+        "4313c328-4c60-41da-b2a8-b42828e25554",
+        "7cae77a0-2a2d-478e-b1e5-5ebb3ae2ca31",
+        "1d8ac74a-7f27-4fd5-96eb-67bda11ac21a"
       ],
       "componentIds": [
         "door_1",
@@ -300,42 +306,42 @@
         }
       ],
       "placementHashes": [
-        "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
-        "bc0c4e15d5b8ce6013ada0aa1962939164dc7ef835c0b5cff4f47dfdae53c0b6",
-        "a81e9dfcf545d453e23ef454ca6647c19ba5b756bfc2eea11fbac3827153a32f",
-        "d65af2788122f9c8349961208a7832294c2d64c640035961f310f5a340f2501e"
+        "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
+        "73df0fc20fe97ed3322bb3fb7b6137fb8818cd50edcf8d80e8ab4d8ac63a2b65",
+        "8b40faeaa9a5ec676c93cfea47d2f285b8046b799ba7a1915ee4a33e20c04849",
+        "a05a59ae8e1c6552115e728aa2c84690c0d33ce72aa711822ef6c6106b0da608"
       ],
       "production": [
         {
           "sha256": "0656d647ca4a9378ce265315f48acfd600b2bbb31a612ba81f9ac54b9983a9e2",
-          "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
-          "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
+          "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "productionArtworkFileReady": true
         },
         {
           "sha256": "a1fccff63468720591e04ca182a8fdb0633732f6fd33583e7c4c666eda932112",
-          "placementHash": "bc0c4e15d5b8ce6013ada0aa1962939164dc7ef835c0b5cff4f47dfdae53c0b6",
-          "surfaceHash": "c48b7e2e196732919952504e3641b789a69995ca127f26d6e18189c320ed045a",
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "placementHash": "73df0fc20fe97ed3322bb3fb7b6137fb8818cd50edcf8d80e8ab4d8ac63a2b65",
+          "surfaceHash": "ad9090eb9fef6e7263f5ddbc6393d5e86edd2e444e0499ee930acce14f661aa0",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "productionArtworkFileReady": true
         },
         {
           "sha256": "e23b6f614263ce0f6d69d560b01c97248fbb0993d62abff3f16838a8b9afb97c",
-          "placementHash": "a81e9dfcf545d453e23ef454ca6647c19ba5b756bfc2eea11fbac3827153a32f",
-          "surfaceHash": "059222d6e763c0e59b2c825968f5c829e16b86e00c9e21f75d5db2f179d4b309",
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "placementHash": "8b40faeaa9a5ec676c93cfea47d2f285b8046b799ba7a1915ee4a33e20c04849",
+          "surfaceHash": "291ca32e9f848bc0191e38f7a9e877bd1687e1e4677524fd510d71d86d0d7f46",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "productionArtworkFileReady": true
         },
         {
           "sha256": "d03ac56409721228ca80346c21a7932e0bc4371832f09effced18711439a5f15",
-          "placementHash": "d65af2788122f9c8349961208a7832294c2d64c640035961f310f5a340f2501e",
-          "surfaceHash": "ffacb99ff4b7f4677ae2bc9ffac42d4fd62baf5b4ff650c65643d15c23efef31",
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "placementHash": "a05a59ae8e1c6552115e728aa2c84690c0d33ce72aa711822ef6c6106b0da608",
+          "surfaceHash": "8be42c894da0619c3a4af602135af0d0ea35fc6efc2c29340d52e83fd5e15830",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "productionArtworkFileReady": true
         }
       ],
@@ -475,7 +481,7 @@
         {
           "objectName": "DOOR_1",
           "componentId": "door_1",
-          "placementId": "e06b05a3-c8a2-4a60-a105-e6e54217a971",
+          "placementId": "73d6a934-f18b-4782-96b1-a9881e1d9426",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -548,17 +554,17 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
-          "finalUvHash": "33498f546367a26ec0dd5b7575611b71d107b19dc25cfb7d5069608d7ce9c910"
+          "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
+          "finalUvHash": "0f25dde002bde5668d99779cd8cfe805c409b313d553d088f4b192e05639ca35"
         },
         {
           "objectName": "DOOR_2",
           "componentId": "door_2",
-          "placementId": "756515d4-83cf-4b71-bab3-be6a51abcb02",
+          "placementId": "67ff1600-f7eb-4492-beb7-c2e0cbb5d8ac",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -631,17 +637,17 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "surfaceHash": "c48b7e2e196732919952504e3641b789a69995ca127f26d6e18189c320ed045a",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "surfaceHash": "ad9090eb9fef6e7263f5ddbc6393d5e86edd2e444e0499ee930acce14f661aa0",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "bc0c4e15d5b8ce6013ada0aa1962939164dc7ef835c0b5cff4f47dfdae53c0b6",
-          "finalUvHash": "3330b40c9f55d77b9f0097f0b7600c8132f49d4814fc2caed836508ffa62daae"
+          "placementHash": "73df0fc20fe97ed3322bb3fb7b6137fb8818cd50edcf8d80e8ab4d8ac63a2b65",
+          "finalUvHash": "50ac3c89880f51d54977a5a9559b9e6c753616db3977b9331c925a9a64d4fd7d"
         },
         {
           "objectName": "DOOR_3",
           "componentId": "door_3",
-          "placementId": "20b23e63-0b3b-47d4-b12e-4c29d21d9988",
+          "placementId": "8abb1a94-d403-435b-a5e8-7d85104118f4",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -714,17 +720,17 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "surfaceHash": "059222d6e763c0e59b2c825968f5c829e16b86e00c9e21f75d5db2f179d4b309",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "surfaceHash": "291ca32e9f848bc0191e38f7a9e877bd1687e1e4677524fd510d71d86d0d7f46",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "a81e9dfcf545d453e23ef454ca6647c19ba5b756bfc2eea11fbac3827153a32f",
-          "finalUvHash": "a81c1c523256e83d95920931dc46433abc5e772c90fd0c0af335e788882c3fea"
+          "placementHash": "8b40faeaa9a5ec676c93cfea47d2f285b8046b799ba7a1915ee4a33e20c04849",
+          "finalUvHash": "d80f805bc70c810ca5f4290b787ba53f0e830e892755ec5fa0e81573599c402b"
         },
         {
           "objectName": "DOOR_4",
           "componentId": "door_4",
-          "placementId": "4cccd795-a247-4aa8-931e-930deae48312",
+          "placementId": "c3cf7f89-086c-45b2-bb2f-0052206296b4",
           "face": "FRONT",
           "relation": "MASTER_SPLIT",
           "applied": true,
@@ -797,19 +803,19 @@
             0.0
           ],
           "otherFacesUntouched": true,
-          "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-          "surfaceHash": "ffacb99ff4b7f4677ae2bc9ffac42d4fd62baf5b4ff650c65643d15c23efef31",
-          "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
+          "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+          "surfaceHash": "8be42c894da0619c3a4af602135af0d0ea35fc6efc2c29340d52e83fd5e15830",
+          "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
           "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-          "placementHash": "d65af2788122f9c8349961208a7832294c2d64c640035961f310f5a340f2501e",
-          "finalUvHash": "fae8a79e903abb2e6e388f43774517f15ba1fc6cdf9f3da8db5ffb795ac8124e"
+          "placementHash": "a05a59ae8e1c6552115e728aa2c84690c0d33ce72aa711822ef6c6106b0da608",
+          "finalUvHash": "3654fd205b43c3444a13d26e02c5fea3cf36362e89639be6aec98e6516911130"
         }
       ]
     },
     "cabinet4Single": {
       "relation": "SINGLE_SURFACE",
       "componentId": "door_2",
-      "surfaceId": "046cfb42-20a8-4053-b238-93ba7c9882b9",
+      "surfaceId": "4313c328-4c60-41da-b2a8-b42828e25554",
       "masterHash": null,
       "cropPx": {
         "x": 0,
@@ -817,7 +823,7 @@
         "w": 480,
         "h": 360
       },
-      "placementHash": "955c96df0355c5fb8e06272fa42737b00cda1a469d9626505aa9c1441dbf4b92",
+      "placementHash": "a209036d05073d046718fd5727bf9e556b5c7cf1a8debd7597d11e28b7b22d39",
       "outputPhysicalMm": {
         "widthMm": 600.0,
         "heightMm": 1800.0
@@ -842,8 +848,8 @@
       },
       "pixelWidth": 1200,
       "pixelHeight": 3600,
-      "transformHash": "4f03ba1b26cad29dcc64465c09e7a00364cddf42e72f4c4af31dda73b2d74f92",
-      "finalUvHash": "6e4eda994c3168ec77ff99062bb1dc5746efce6a0a1a8d83449661be784e7c3c"
+      "transformHash": "77fd3c9e6d204af675712b1809cf6b010d781aa2136e4a519ab8450ea61e3c22",
+      "finalUvHash": "854f0c28b271f449eb7db1cb3e508e50e60571aeba9a325750001cd554e06d8e"
     },
     "coverAnchor": {
       "leftSourceXPx": 0,
@@ -926,8 +932,8 @@
                 20
               ]
             },
-            "finalUvHash": "85646d40170890de0cde384cb532c1105f239ce0b7d7542a7138155dd4b98b7b",
-            "transformHash": "4ff6f6943f79bab6e6666752950c04604499f752b3fee1ad528d6fbb568656f1",
+            "finalUvHash": "6430a216dd54ebcf19e1b29f83f8a1d691251a81697fb87d49011113b393169b",
+            "transformHash": "7d1ab1c03ce13e206099c04be4ad724995ed9a4248b5d8685141a3596b01b331",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "0,255,39|255,255,210|255,0,191|0,0,20",
@@ -989,8 +995,8 @@
                 39
               ]
             },
-            "finalUvHash": "ecda0ac32f4e2a2d5534ff5682165077a9e115e7a69d5620d24301d0a6955659",
-            "transformHash": "499db6c417f32f4a0b8ceaa758b08fc751e7a3e8ed34a6cf126cc7de64f4f3fd",
+            "finalUvHash": "137a26b9dd811177fef04a3257292da3ef8e2c990239d8eeb79f2f2746898918",
+            "transformHash": "c8c5a492e6df2187e988fb8fa2aabb73cc974eecf7e1d9705c145f9e48515db1",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "255,255,210|255,0,191|0,0,20|0,255,39",
@@ -1052,8 +1058,8 @@
                 210
               ]
             },
-            "finalUvHash": "e47e15235aa248aa46daf04a403b5b38575179f798615f112e7091e7e4ae01cd",
-            "transformHash": "475b91faaa198fa5eae797d25c8d0ca8ca07c510f6dc5547135ccc3d9cc8c226",
+            "finalUvHash": "db3598825242785f0fca633c950cdb6313ccc71f1ed3a26260b558d643eb199f",
+            "transformHash": "a5432b7b137ea168b6de3925f9587de67247e581aaf03dff56b75316e52e851d",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "255,0,191|0,0,20|0,255,39|255,255,210",
@@ -1115,8 +1121,8 @@
                 191
               ]
             },
-            "finalUvHash": "61b50ba10562392bff3734cdaaa5681c8a9732b7c9fdd9c522213a66a97a1358",
-            "transformHash": "27f9b77879ea96ce50c712b09361be57add139c1ddbc2b4049e499ff2bc3432f",
+            "finalUvHash": "d2c6f4f172851cf43f3476aa97ce2a22d61c2ae3e8f917e65fe109ebdea37856",
+            "transformHash": "a5179acc73a07310712bb564972bcf25ee8891b731a1cfbee267df76594aa4cd",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "0,0,20|0,255,39|255,255,210|255,0,191",
@@ -1178,8 +1184,8 @@
                 191
               ]
             },
-            "finalUvHash": "ecd375f33f251a1a15024c52596a7ff14b28d30b89c1bb8f95ac1dc2413edd13",
-            "transformHash": "9bca8f9a5cb00ff61620ca1241e69dd107b274fccebce9c628ca6477274b7661",
+            "finalUvHash": "869fa14bc2c43746b23120d70ba4801534b746b38e955cf91b0da23999ba6174",
+            "transformHash": "73d49682a415f3b3ebc426380347e78f466ac76cbc35937a9891e15d6af3d71e",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "255,255,210|0,255,39|0,0,20|255,0,191",
@@ -1241,8 +1247,8 @@
                 210
               ]
             },
-            "finalUvHash": "ad7a1ae1b4703d4cabe7fd8e9b7af02fc3a69b0f4b191efedfef17d69612d462",
-            "transformHash": "cbbb47c2a402c323fa71f33abe9ded85a67ec3d6e3dd6c25faa6e94bb1e4a3b6",
+            "finalUvHash": "dde8c2de82bf361657a37221d55f4c464f2b42546c476b5ffff9995dace38776",
+            "transformHash": "3d6f6ec0bdb0c1281dc497035544dca4a7e1d0a95140c67b9ba0e1292c963bd3",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "0,255,39|0,0,20|255,0,191|255,255,210",
@@ -1308,8 +1314,8 @@
                 20
               ]
             },
-            "finalUvHash": "b445341bc93802671f0bf310f374f418be0a248db04036c05b4ea7609b0212cc",
-            "transformHash": "0dbf9b9a7636d886e1e91a45da35c78a24f4020237c5a16a498ec87843407ec0",
+            "finalUvHash": "a23752f49f742e27e92d205b7dad0545ce4e8f25ea60dc1c0e70c62549824098",
+            "transformHash": "2d4450981d4f4cdc0cc5772b9259bd22b428295b01c3a34951d12386472ebe93",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "0,255,39|60,255,182|60,0,163|0,0,20",
@@ -1371,8 +1377,8 @@
                 39
               ]
             },
-            "finalUvHash": "47fe8a0a871594db74765fc7ebfcb18c5423ea24bdae3bd9a9463e7e6f100dac",
-            "transformHash": "2bb5e983585583d88bea01b80e18082234fc597699d04d5e6c3c71c70144e608",
+            "finalUvHash": "979628dc85376bd4d08b70c22cc8aad5ed8716e60d61460cebf25bec01da17ca",
+            "transformHash": "4db37cae26dbb2b7187df07911a96c27d79f4989a9b0052010ba8e454d893c5d",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "60,255,182|60,0,163|0,0,20|0,255,39",
@@ -1434,8 +1440,8 @@
                 169
               ]
             },
-            "finalUvHash": "63299fdfa3ae16f31053e2d93a335ab4cd5a0be33f60a3e41468477bb765e63b",
-            "transformHash": "d57b52c814dc8d419a1e7bf36081bc25a7bcb7c816760d89139ac39a2f15cd3d",
+            "finalUvHash": "ae86b693713a203040ae968efac06033e12bd295499ddb51fc586ee7ff842b17",
+            "transformHash": "313231bc0b7128083b09bce3d1c568b1b05a250b1b3a25859f155f362df28a96",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "60,0,163|0,0,20|0,255,39|60,255,182",
@@ -1497,8 +1503,8 @@
                 150
               ]
             },
-            "finalUvHash": "e9d9c98528b63c3cf29086170bb711b12ff855b7b7ac2fa5fbcbc4bf5a2512b5",
-            "transformHash": "07c3bead9d21b8e997ccbb72f917c1854dfe28bffee8c392d7b680028c9eafc1",
+            "finalUvHash": "7aef95ca555f67aad38adbc32c0ce2b894b09d7261dda9c16763606e21665435",
+            "transformHash": "25a5ae064acfca6a6912f4816c0f3a861e5f53c747a99f7970f17301b2583120",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "0,0,20|0,255,39|60,255,182|60,0,163",
@@ -1560,8 +1566,8 @@
                 150
               ]
             },
-            "finalUvHash": "2c08133f396e05cf0fbe5de999a4500af80cf1618c5775c57c074ed58ad4c8b8",
-            "transformHash": "4a58d811dc6fe5a7c9b75e3942a4fd7568a41d34f6d8f6668a79e19bf8858713",
+            "finalUvHash": "2a2a7056d2e8a9c986cbc5a264a60f6202862e96df014be45d6f88216afb6f97",
+            "transformHash": "39919664ce232f5993f830c98c431f42ae84abf69a2938b548e17bbc9a61e8de",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "60,255,182|0,255,39|0,0,20|60,0,163",
@@ -1623,8 +1629,8 @@
                 169
               ]
             },
-            "finalUvHash": "db137cbb8f86bbad0eaa3ba69c51a2cdb2c8ae412b6091a7f8f394b862bcec3a",
-            "transformHash": "556fdf5d1321f8200132e44b6ff98fca66499da55d0c64ecfcc6188f4e051c1c",
+            "finalUvHash": "6dce44c8eb8945789230d2a497f8bc292d2e62720de2a4134ac2c21777ba3e05",
+            "transformHash": "19aac838e3eaf8fcb4aae0778f9eebf0e3eaac79acd2adec3c22c59f1b76980c",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "0,255,39|0,0,20|60,0,163|60,255,182",
@@ -1688,8 +1694,8 @@
                 47
               ]
             },
-            "finalUvHash": "dbde08b288a62c6bb1b9fb45a3192220a6c0c0216108155403aef0bc20e09f7a",
-            "transformHash": "c1dd6629aa0185a8da0d17f78887ba5e7e978c482f5a0dab04debfdc1c8da070",
+            "finalUvHash": "c3dbd2c49c2bc4f425360591ae9a1c3e045a528634125ff8c154cfc9b887f2a6",
+            "transformHash": "58586cae0a617fd865f4a17fe91772756c0403848a6878957bfcb624af4a7811",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "103,255,66|157,255,196|157,0,177|103,0,47",
@@ -1751,8 +1757,8 @@
                 66
               ]
             },
-            "finalUvHash": "695068cee0cfbd21044dac624429597b6b89470b498764850f78809b58c5e00b",
-            "transformHash": "9b5043b8c1c4d4c67be3c25e466c58b6bd0a0d1c9d27fc5a9816f431e07cc6dc",
+            "finalUvHash": "836fcfbf14397b13a4b4a2cfe80aa4cde826f846b2ef499c5d587418a99ec345",
+            "transformHash": "6495f28a0c79d7811eb1622395ce65337c1907e0420b8772f2dd55dbea1af80a",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "157,255,196|157,0,177|103,0,47|103,255,66",
@@ -1814,8 +1820,8 @@
                 196
               ]
             },
-            "finalUvHash": "f7ebd99f5e2be3290494141de187474a05238d6673004a1d56b4297553b75958",
-            "transformHash": "8a8a1affa8e04198bfcd446daa11203615cb6e631db3a2f3eeff1e2cece3f4e7",
+            "finalUvHash": "de37f21ceb0473ae0260f9177580d49157afed4345c8da812330461da294b915",
+            "transformHash": "9387cf43730064e0a495bff914a9bd8baf07020e4d018f0b5e9f57f1803c1da1",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "157,0,177|103,0,47|103,255,66|157,255,196",
@@ -1877,8 +1883,8 @@
                 177
               ]
             },
-            "finalUvHash": "811c9f338141402d3511396e1e80a44e42e76028908dab698fbee7afcba8eede",
-            "transformHash": "5c1a1822a1917b856fa3a20c27e5cdc501dc5e9c6f951673d7c9ab6aa96b9569",
+            "finalUvHash": "3ad48c50d6239b4e57d85565b4f18b5b11b6a8ea349af048f7720d1c8c557de2",
+            "transformHash": "29eeece982bc9634c9ce31a8ed355f395c29be68794dc013e47b9523a017c04b",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "103,0,47|103,255,66|157,255,196|157,0,177",
@@ -1940,8 +1946,8 @@
                 177
               ]
             },
-            "finalUvHash": "9c92b9fa1b0fa61b90ae9337b72ee6cd0e2370c8624d241a85f106d37bebd647",
-            "transformHash": "25ba5edfd3c47ebf3dcc5afee1bc2bddc820d02c8e9e1db2c505793a4e2c7122",
+            "finalUvHash": "d9f77ee619095329124c56c56da999ea02312f901fee4917ccc69a67baab6387",
+            "transformHash": "e502ac8fef1a212771d142875e726ccbf801c41452b9a160c6949f33de132b08",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "157,255,196|103,255,66|103,0,47|157,0,177",
@@ -2003,8 +2009,8 @@
                 196
               ]
             },
-            "finalUvHash": "de28eed5209051832103b52c01ceefd49995fd79e39c3f5375d9e38fa1d5d280",
-            "transformHash": "6974c6e7b7f9763f2978d1caa4b58e42f2f776f183fd3b7ec9e8a1cf22370a36",
+            "finalUvHash": "cbdd830466c3e097c7e2ce442a113e7f4df331108d2b5e1c75158bdd6e4f71e8",
+            "transformHash": "86c381c2957a60fcc4044dafde3af4f34ec0f056a21751fb42a87162c3ce71d5",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "103,255,66|103,0,47|157,0,177|157,255,196",
@@ -2068,8 +2074,8 @@
                 61
               ]
             },
-            "finalUvHash": "da2502b955f035537b794ded19c086a0c65f0de33abf995eb5bef1ae52ffc329",
-            "transformHash": "defcf80e3ea272079973bfac40e12eabbe4cb52c4bc3b0b6b4e0d6ce406466f1",
+            "finalUvHash": "6c1515ec9b1281a41f81d1c88efa0769cbe0f9f53d057882a40cb2d84a18f276",
+            "transformHash": "f03ff40defe300ac737d2c9ea71cb73c752d284c30a7bbfdad4cb3857c19cb2c",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "195,255,67|255,255,210|255,0,191|195,0,48",
@@ -2131,8 +2137,8 @@
                 80
               ]
             },
-            "finalUvHash": "b98cee58096965da00e5f2e249c9f6a60c9a22456798106140916fa53d5eb38f",
-            "transformHash": "2cffa78103569a728f3a9e5dbda73809faa70b5c54f84a04867b2a612491c4a7",
+            "finalUvHash": "394ee8f6e08bbcba953a052f9b143b21b651fca92909b9a042ee7c529c15c296",
+            "transformHash": "bc12d6177777fafbd161434a88b32928a12789becdc7f0399efb957749bde235",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "255,255,210|255,0,191|195,0,48|195,255,67",
@@ -2194,8 +2200,8 @@
                 210
               ]
             },
-            "finalUvHash": "7c0d98bc527fe7f5852b5e6cc4f96ea34dbcfbb98ffe79e3cf11a3383b07607c",
-            "transformHash": "b3a56eaa2e3681ba018d1661d202f4101a95024a7ac622168319aa1d07992972",
+            "finalUvHash": "16ec05a1f9434d371e2d5a8ca08da240fe16f9e00b6448f7231f244e9d961615",
+            "transformHash": "a9bcf84694a1c50a5e75edbef310d5e9dc30f7d1358b33b16040d4d8b0df8826",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "255,0,191|195,0,48|195,255,67|255,255,210",
@@ -2257,8 +2263,8 @@
                 191
               ]
             },
-            "finalUvHash": "f20a43c9aa6d397f1814a9879f35eebbfef2ffbf3316c71d3abf7d1b5e7c8ecc",
-            "transformHash": "64c78e3d79905ae1b31bb13ceaa41df291d5b577fe7d38c28029a921ff84be36",
+            "finalUvHash": "8b616a71a03379879242621b878c1e47e545acffba8ba48993abd522cd899a3c",
+            "transformHash": "17ddc8a5577d26598b1f517d9f7b0b45afa6842f8f2371d5971ba04b47e30c03",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "195,0,48|195,255,67|255,255,210|255,0,191",
@@ -2320,8 +2326,8 @@
                 191
               ]
             },
-            "finalUvHash": "88ba5024f0e07e473e9bba3971ab75f0ee463876ca053864bcee5202dcf4db9e",
-            "transformHash": "d9e8cd750f212f03cda8d67bdf15093669a247075ff619c044571fd8f855fe4c",
+            "finalUvHash": "cdb60cbbac29a066db4cecf99ad00efe328e305587ad9865f9bcb0e86a3c7f67",
+            "transformHash": "bfd1c85bb1177af84a5725bf49ed90f67f7d9129a049c70385c1190eca76a63c",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "255,255,210|195,255,67|195,0,48|255,0,191",
@@ -2383,8 +2389,8 @@
                 210
               ]
             },
-            "finalUvHash": "433f7dc62b951f782c9bc538edb5351f277f2a2cc14ebd8830eda8030e912962",
-            "transformHash": "c5eba93e362bd6d0e5d0487cf69faf2b21ab64cadcde72fb0b6af74047eeaac8",
+            "finalUvHash": "96b39b21b10ef55e07d906a8fa3ddf8211f2842889a4181218955763c4b242c9",
+            "transformHash": "7a3b431692653745fea16b25502b719447e262206a13dfb89eea75b9ec90f51f",
             "oracleDiscriminating": true,
             "uniqueSampleCount": 4,
             "signature": "195,255,67|195,0,48|255,0,191|255,255,210",
@@ -2400,32 +2406,32 @@
     },
     "desk": {
       "surfaceIds": [
-        "f32bc6ec-9bc3-4085-ac42-e2050c8dd776",
-        "6a0bd76c-4139-4009-8b9a-baaeb6b3ecdf"
+        "61d06ae0-8ea5-49de-a416-d8598798410f",
+        "599f7175-7662-47de-8cbc-4fde35e64505"
       ]
     },
     "retail": {
       "surfaceIds": [
-        "cdc46e86-4f41-4209-b041-2cd8c1915215",
-        "927abde2-c676-4ee1-b7df-e5e5bf401320"
+        "6806021c-c33b-473a-bc82-c123b0f8968f",
+        "12eb72b0-c1b0-48c6-bab1-07a344f1d443"
       ]
     },
     "acrylic": {
       "surfaceIds": [
-        "e73ddbb9-c48b-49e9-b341-16bf082a0ffb"
+        "6da8c205-948f-463e-a11a-50268e892882"
       ]
     },
     "packaging": {
       "surfaceIds": [
-        "d85c1143-12bd-45a0-9a41-7de9ccb03b87"
+        "098944a7-182f-456e-9942-c0d9cd27235d"
       ]
     }
   },
   "lineage": {
-    "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-    "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-    "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-    "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca"
+    "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+    "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+    "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+    "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827"
   },
   "negatives": {
     "keepout": "BLOCKED_PLACEMENT",
@@ -2445,26 +2451,26 @@
     "master_id_coordinated": "BLOCKED"
   },
   "preview": {
-    "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-    "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-    "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-    "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
+    "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+    "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+    "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+    "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
     "usedMock": true,
     "realBlender": false,
     "realArtworkPreviewReady": false,
     "physicalPrintValidated": false,
     "label": "MOCK",
     "requestedIdentity": {
-      "placementId": "e06b05a3-c8a2-4a60-a105-e6e54217a971",
+      "placementId": "73d6a934-f18b-4782-96b1-a9881e1d9426",
       "objectName": "DOOR_1",
       "componentId": "door_1",
       "face": "FRONT",
       "relation": "MASTER_SPLIT",
-      "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-      "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-      "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-      "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca",
-      "finalUvHash": "33498f546367a26ec0dd5b7575611b71d107b19dc25cfb7d5069608d7ce9c910",
+      "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+      "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+      "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+      "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827",
+      "finalUvHash": "0f25dde002bde5668d99779cd8cfe805c409b313d553d088f4b192e05639ca35",
       "finalSampling": [
         [
           0.0,
@@ -2500,14 +2506,14 @@
         "u1": 0.25,
         "v1": 1.0
       },
-      "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\edd1142d-511d-4069-b794-1e6c35cf1002\\live\\dam\\aw-a\\artwork\\885714e5-83e9-4faf-a05a-01e6925132b0_grid.png",
+      "imagePath": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\0d3f01cb-336b-4d28-8659-783a5f59f419\\live\\dam\\aw-a\\artwork\\c3412a13-9dc9-4ca1-a49b-85a87427230d_grid.png",
       "artworkSha256": "b2b74672943705affe17ec20d40f38a963c2faa330c568d7dc6c247a8d6f51d9",
-      "artworkId": "885714e5-83e9-4faf-a05a-01e6925132b0",
+      "artworkId": "c3412a13-9dc9-4ca1-a49b-85a87427230d",
       "hashes": {
-        "engineeringHash": "5cef0441ffd2a4e745f15eacfd513b96103b8ae34a7f5249ba7a81dad4fcbfdb",
-        "surfaceHash": "8c10ded556edb57f9c590f7a9fe2572146ad4c94d9fb2b77a92b421bd088e7ef",
-        "artworkHash": "f40bd752cd37c1476b998e2e7f9116ce1c0c54050aa3d15d88a4f574c2912d94",
-        "placementHash": "6358a58d929d5a2ed91f88f596439c5afb9599421391197217ccb8c64eba78ca"
+        "engineeringHash": "eb63f427ac2858d86f3295cc64df5413c8d3e07fd0d1203923b739c6660dc952",
+        "surfaceHash": "a78eb4a9b58b744f137a0577b84544eaacf5f16d59a83e40ca2f98a3b0ffdc0a",
+        "artworkHash": "210a493940d7493e1beac5ba6f120e14cb2964a608bb7b48291d14c0394eaaec",
+        "placementHash": "a193f975ea5e131f698d7e7d8fcdc465466810ab351fb0d02573f9b4a13fd827"
       }
     }
   },
