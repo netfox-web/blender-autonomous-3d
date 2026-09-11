@@ -1135,11 +1135,15 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     orient = dict(result)
     orient["scenarios"] = dict(result["scenarios"])
     op = dict(result["scenarios"]["orientationParity"])
-    op.pop("180", None)
-    op.pop("270", None)
-    op.pop("mirror", None)
+    contain = dict(op.get("CONTAIN") or {})
+    center = dict(contain.get("CENTER") or {})
+    center.pop("180", None)
+    center.pop("270", None)
+    center.pop("mirror", None)
+    contain["CENTER"] = center
+    op["CONTAIN"] = contain
     orient["scenarios"]["orientationParity"] = op
     fails = validate_artwork_acceptance_result(orient)
-    assert "orientation_180" in fails
-    assert "orientation_270" in fails
-    assert "orientation_mirror" in fails
+    assert "orientation_CONTAIN_CENTER_180" in fails
+    assert "orientation_CONTAIN_CENTER_270" in fails
+    assert "orientation_CONTAIN_CENTER_mirror" in fails

@@ -875,6 +875,23 @@ def sample_placed_corners(
     }
 
 
+def uv_from_source_crop(crop: dict[str, Any], pixel_w: int, pixel_h: int) -> dict[str, float]:
+    x = float(crop.get("sourceXPx") or 0)
+    y = float(crop.get("sourceYPx") or 0)
+    w = float(crop.get("sourceWPx") or pixel_w)
+    h = float(crop.get("sourceHPx") or pixel_h)
+    pw = float(pixel_w)
+    ph = float(pixel_h)
+    if pw <= 0 or ph <= 0:
+        raise ArtworkError("BLOCKED", "artwork pixels missing")
+    return {
+        "u0": x / pw,
+        "u1": (x + w) / pw,
+        "v0": 1.0 - (y + h) / ph,
+        "v1": 1.0 - y / ph,
+    }
+
+
 def measure_orientation_parity(
     factory: Any,
     *,
@@ -888,6 +905,8 @@ def measure_orientation_parity(
     src_rgb: bytes,
     src_w: int,
     src_h: int,
+    fit: str = FIT_CONTAIN,
+    anchor: str = "CENTER",
 ) -> dict[str, Any]:
     rec = factory.place(
         tenant_id=tenant_id,
@@ -895,8 +914,8 @@ def measure_orientation_parity(
         artwork_id=artwork["artworkId"],
         engineering_hash=engineering_hash,
         product_id=product_id,
-        fit=FIT_CONTAIN,
-        anchor="CENTER",
+        fit=fit,
+        anchor=anchor,
         rotation_deg=rotation_deg,
         mirrored=mirrored,
     )
@@ -914,14 +933,28 @@ def measure_orientation_parity(
     expected = {}
     for i, name in enumerate(labels):
         u, v = sampling[i]
-        expected[name] = list(sample_uv_source(u, v, uv_rect, src_rgb, src_w, src_h))
+        if fit == FIT_COVER:
+            expected[name] = list(
+                _rgb_at_buf(
+                    src_rgb,
+                    src_w,
+                    src_h,
+                    round(float(u) * (src_w - 1)),
+                    round((1.0 - float(v)) * (src_h - 1)),
+                )
+            )
+        else:
+            expected[name] = list(sample_uv_source(u, v, uv_rect, src_rgb, src_w, src_h))
     dest = Path(factory.platform.root) / "artwork-out" / f"{surface['surfaceId']}.png"
     _pw, _ph, prgb = decode_png_rgb(dest.read_bytes())
+    placed_mm = prod.get("placedArtworkMm") or rec
+    if fit == FIT_COVER:
+        placed_mm = {"xMm": 0.0, "yMm": 0.0, "widthMm": surface["widthMm"], "heightMm": surface["heightMm"]}
     observed_t = sample_placed_corners(
         prgb,
         _pw,
         _ph,
-        placed=prod.get("placedArtworkMm") or rec,
+        placed=placed_mm,
         surface=surface,
     )
     observed = {k: list(v) for k, v in observed_t.items()}
@@ -930,6 +963,8 @@ def measure_orientation_parity(
     if not match:
         prod["productionArtworkFileReady"] = False
     return {
+        "fit": fit,
+        "anchor": anchor,
         "rotationDeg": float(rotation_deg),
         "mirrored": bool(mirrored),
         "uvRect": uv_rect,
@@ -1317,12 +1352,16 @@ class ArtworkFactory:
             "protectedRegions": list(protected_regions or []),
             "dpi": dpi,
             "policy": policy,
-            "uv": {
-                "u0": mm_to_uv(placed["xMm"], placed["yMm"], surface)[0],
-                "v0": mm_to_uv(placed["xMm"], placed["yMm"], surface)[1],
-                "u1": mm_to_uv(placed["xMm"] + placed["widthMm"], placed["yMm"] + placed["heightMm"], surface)[0],
-                "v1": mm_to_uv(placed["xMm"] + placed["widthMm"], placed["yMm"] + placed["heightMm"], surface)[1],
-            },
+            "uv": (
+                uv_from_source_crop(crop, int(artwork["pixelWidth"]), int(artwork["pixelHeight"]))
+                if fit == FIT_COVER and artwork.get("pixelWidth") and artwork.get("pixelHeight")
+                else {
+                    "u0": mm_to_uv(placed["xMm"], placed["yMm"], surface)[0],
+                    "v0": mm_to_uv(placed["xMm"], placed["yMm"], surface)[1],
+                    "u1": mm_to_uv(placed["xMm"] + placed["widthMm"], placed["yMm"] + placed["heightMm"], surface)[0],
+                    "v1": mm_to_uv(placed["xMm"] + placed["widthMm"], placed["yMm"] + placed["heightMm"], surface)[1],
+                }
+            ),
             "componentId": surface.get("componentId"),
             "face": surface.get("face") or "FRONT",
             "relation": "SINGLE_SURFACE",
@@ -1507,6 +1546,11 @@ class ArtworkFactory:
                 "u1": (float(box["xMm"]) + float(box["widthMm"])) / mw,
                 "v1": (float(box["yMm"]) + float(box["heightMm"])) / mh,
             }
+        if rec.get("fit") == FIT_COVER:
+            art = self.require_artwork(rec["artworkId"], tenant_id=rec["tenantId"])
+            crop = rec.get("crop") if isinstance(rec.get("crop"), dict) else {}
+            if art.get("pixelWidth") and art.get("pixelHeight"):
+                return uv_from_source_crop(crop, int(art["pixelWidth"]), int(art["pixelHeight"]))
         u0, v0 = mm_to_uv(rec.get("xMm") or 0.0, rec.get("yMm") or 0.0, surface)
         u1, v1 = mm_to_uv(
             float(rec.get("xMm") or 0.0) + float(rec.get("widthMm") or surface["widthMm"]),
@@ -2206,17 +2250,32 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("cover_anchor")
     rotp = _need("orientationParity")
     if rotp is not None:
-        for key, _deg, _mir in _ORIENTATION_CASES:
-            row = rotp.get(key)
+        def _check_orient_row(prefix: str, row: Any) -> None:
             if not isinstance(row, dict) or not row:
-                failures.append(f"orientation_{key}")
-                continue
+                failures.append(prefix)
+                return
             if row.get("status") != "PASS":
-                failures.append(f"orientation_{key}")
+                failures.append(prefix)
             if not row.get("boundsOk") or not row.get("expected") or not row.get("observed"):
-                failures.append(f"orientation_{key}_oracle")
+                failures.append(f"{prefix}_oracle")
             if not row.get("uvRect") or not row.get("finalUvHash"):
-                failures.append(f"orientation_{key}_uv")
+                failures.append(f"{prefix}_uv")
+
+        contain_m = rotp.get("CONTAIN") if isinstance(rotp.get("CONTAIN"), dict) else {}
+        center = contain_m.get("CENTER") if isinstance(contain_m.get("CENTER"), dict) else None
+        if not center:
+            failures.append("orientation_CONTAIN_CENTER")
+        else:
+            for key, _deg, _mir in _ORIENTATION_CASES:
+                _check_orient_row(f"orientation_CONTAIN_CENTER_{key}", center.get(key))
+        cover_m = rotp.get("COVER") if isinstance(rotp.get("COVER"), dict) else {}
+        for anchor in ("LEFT", "CENTER", "RIGHT"):
+            block = cover_m.get(anchor) if isinstance(cover_m.get(anchor), dict) else None
+            if not block:
+                failures.append(f"orientation_COVER_{anchor}")
+                continue
+            for key, _deg, _mir in _ORIENTATION_CASES:
+                _check_orient_row(f"orientation_COVER_{anchor}_{key}", block.get(key))
     seam = _need("masterSeam")
     if seam is not None:
         if abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True:
@@ -2522,9 +2581,9 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
     lm_path = Path(plat.root) / "landmark-art.png"
     write_png(lm_path, 48, 32, lm_rgb)
     lm_art = factory.register_artwork(tenant_id=tenant_a, data=lm_path.read_bytes(), name="landmark.png", source="GENERATED")
-    orientation = {}
+    orientation: dict[str, Any] = {"CONTAIN": {"CENTER": {}}, "COVER": {"LEFT": {}, "CENTER": {}, "RIGHT": {}}}
     for key, deg, mir in _ORIENTATION_CASES:
-        orientation[key] = measure_orientation_parity(
+        orientation["CONTAIN"]["CENTER"][key] = measure_orientation_parity(
             factory,
             tenant_id=tenant_a,
             surface=doors4[3],
@@ -2536,7 +2595,27 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
             src_rgb=lm_rgb,
             src_w=48,
             src_h=32,
+            fit=FIT_CONTAIN,
+            anchor="CENTER",
         )
+    cover_anchors = (("LEFT", "BOTTOM_LEFT"), ("CENTER", "CENTER"), ("RIGHT", "BOTTOM_RIGHT"))
+    for label, anchor in cover_anchors:
+        for key, deg, mir in _ORIENTATION_CASES:
+            orientation["COVER"][label][key] = measure_orientation_parity(
+                factory,
+                tenant_id=tenant_a,
+                surface=doors4[2],
+                artwork=lm_art,
+                engineering_hash=cab4.engineering_hash(),
+                product_id=cab4.productId,
+                rotation_deg=deg,
+                mirrored=mir,
+                src_rgb=lm_rgb,
+                src_w=48,
+                src_h=32,
+                fit=FIT_COVER,
+                anchor=anchor,
+            )
     seam_master, _seam_crops, seam_places = factory.place_across_panels(
         tenant_id=tenant_a,
         artwork_id=art["artworkId"],
@@ -2589,7 +2668,12 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         and contain_prod.get("canvasPx", {}).get("w") == contain_prod.get("pixelWidth")
         and float((contain_prod.get("placedArtworkMm") or {}).get("heightMm") or 0) < float(doors4[0]["heightMm"])
         and int((cover_left.get("crop") or {}).get("sourceXPx") or 0) < int((cover_right.get("crop") or {}).get("sourceXPx") or 0)
-        and all(orientation.get(k, {}).get("status") == "PASS" for k, _d, _m in _ORIENTATION_CASES)
+        and all(orientation["CONTAIN"]["CENTER"].get(k, {}).get("status") == "PASS" for k, _d, _m in _ORIENTATION_CASES)
+        and all(
+            orientation["COVER"][lab].get(k, {}).get("status") == "PASS"
+            for lab in ("LEFT", "CENTER", "RIGHT")
+            for k, _d, _m in _ORIENTATION_CASES
+        )
         and abs(float(seam_master.get("seamMm") or 0) - 25.0) < MM_EPS
         and seam_prod.get("productionArtworkFileReady") is True
         and all(row.get("artworkSha256") for row in payload.get("artworkPlacements") or [])
