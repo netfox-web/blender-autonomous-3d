@@ -29,6 +29,22 @@ AOV_FILENAMES = {
 }
 OCCUPANCY_MIN = 0.02
 OCCUPANCY_MAX = 0.98
+REQUIRED_VIEWS = ("DOOR_DETAIL", "ASSEMBLED_FRONT")
+WORKER_IDENTITY_KEYS = (
+    "engineeringHash",
+    "artworkId",
+    "artworkHash",
+    "artworkSha256",
+    "placementId",
+    "placementHash",
+    "finalUvHash",
+    "surfaceHash",
+    "componentId",
+    "objectName",
+    "face",
+    "cameraRecipeHash",
+    "sceneRecipeHash",
+)
 
 
 def camera_recipe(
@@ -113,6 +129,30 @@ def _strict_hash(value: Any) -> str | None:
     if not isinstance(value, str) or not value:
         return None
     return value
+
+
+def _exact_bool(value: Any) -> bool | None:
+    if type(value) is bool:
+        return value
+    return None
+
+
+def _artwork_subset_of_product(art_rgb: bytes, prod_rgb: bytes, width: int, height: int) -> bool:
+    art_lit = prod_lit = overlap = 0
+    n = width * height
+    for i in range(n):
+        o = i * 3
+        art = art_rgb[o] > 12 or art_rgb[o + 1] > 12 or art_rgb[o + 2] > 12
+        prod = prod_rgb[o] > 12 or prod_rgb[o + 1] > 12 or prod_rgb[o + 2] > 12
+        if art:
+            art_lit += 1
+            if prod:
+                overlap += 1
+        if prod:
+            prod_lit += 1
+    if art_lit <= 0 or prod_lit <= 0 or art_lit >= prod_lit:
+        return False
+    return overlap / float(art_lit) >= 0.9
 
 
 def artifact_record(
@@ -219,6 +259,18 @@ def validate_product_truth_render_pack(pack: dict[str, Any]) -> list[str]:
                 failures.append(f"aov_occupancy_{role}")
         if role == "product_mask" and not pack.get("objectManifest"):
             failures.append("object_manifest_missing")
+        if role == "artwork_mask":
+            prod = aovs.get("product_mask") if isinstance(aovs.get("product_mask"), dict) else {}
+            if prod.get("sha256") and row.get("sha256") == prod.get("sha256"):
+                failures.append("artwork_mask_alias")
+            prod_path = Path(str(prod.get("path") or ""))
+            if prod_path.is_file():
+                try:
+                    pw, ph, prgb = decode_png_rgb(prod_path.read_bytes())
+                    if (pw, ph) == (lw, lh) and not _artwork_subset_of_product(rgb, prgb, lw, lh):
+                        failures.append("artwork_mask_not_subset")
+                except ArtworkError:
+                    failures.append("artwork_mask_subset_decode")
     manifest = pack.get("objectManifest") if isinstance(pack.get("objectManifest"), dict) else {}
     comps = manifest.get("components") if isinstance(manifest.get("components"), list) else []
     if not comps or any(not isinstance(c, dict) or not c.get("componentId") for c in comps):
@@ -247,6 +299,65 @@ def validate_product_truth_render_pack(pack: dict[str, Any]) -> list[str]:
         )
         if expect_s.get("sceneRecipeHash") != scene.get("sceneRecipeHash"):
             failures.append("scene_recipe_hash")
+    views = pack.get("views") if isinstance(pack.get("views"), dict) else {}
+    for name in REQUIRED_VIEWS:
+        row = views.get(name) if isinstance(views.get(name), dict) else None
+        if not row:
+            failures.append(f"missing_view_{name}")
+            continue
+        if not _strict_hash(row.get("sha256")) or not row.get("blenderJobId") or not _strict_hash(row.get("cameraRecipeHash")):
+            failures.append(f"view_meta_{name}")
+            continue
+        vpath = Path(str(row.get("path") or ""))
+        if not vpath.is_file() or not is_png(vpath):
+            failures.append(f"view_missing_file_{name}")
+            continue
+        live = vpath.read_bytes()
+        if sha256_bytes(live) != str(row.get("sha256")) or len(live) != int(row.get("size") or 0):
+            failures.append(f"view_hash_{name}")
+    worker = pack.get("workerEvidence") if isinstance(pack.get("workerEvidence"), dict) else {}
+    for key in WORKER_IDENTITY_KEYS:
+        if key not in worker:
+            failures.append(f"worker_missing_{key}")
+        elif key != "face" and not worker.get(key) and key not in {"artworkId"}:
+            failures.append(f"worker_missing_{key}")
+    if worker.get("face") != "FRONT":
+        failures.append("worker_face")
+    for key in (
+        "engineeringHash",
+        "artworkHash",
+        "artworkSha256",
+        "placementHash",
+        "finalUvHash",
+        "surfaceHash",
+        "componentId",
+        "objectName",
+    ):
+        if worker.get(key) and pack.get(key) and worker.get(key) != pack.get(key):
+            failures.append(f"worker_mismatch_{key}")
+    if worker.get("cameraRecipeHash") and pack.get("cameraRecipeHash") and worker.get("cameraRecipeHash") != pack.get("cameraRecipeHash"):
+        failures.append("worker_mismatch_cameraRecipeHash")
+    if worker.get("sceneRecipeHash") and pack.get("sceneRecipeHash") and worker.get("sceneRecipeHash") != pack.get("sceneRecipeHash"):
+        failures.append("worker_mismatch_sceneRecipeHash")
+    aov_beauty = aovs.get("beauty") if isinstance(aovs.get("beauty"), dict) else {}
+    if worker and aov_beauty.get("placementHash") and worker.get("placementHash") and aov_beauty.get("placementHash") != worker.get("placementHash"):
+        failures.append("aov_worker_inconsistent")
+    for flag in ("usedMock", "realBlender", "realOptix"):
+        if _exact_bool(pack.get(flag)) is None:
+            failures.append(f"bool_schema_{flag}")
+    if pack.get("realArtworkPreviewReady") is True or pack.get("productTruthRenderPackReady") is True:
+        if _exact_bool(pack.get("usedMock")) is not False:
+            failures.append("real_usedMock")
+        if _exact_bool(pack.get("realBlender")) is not True:
+            failures.append("real_realBlender")
+        if _exact_bool(pack.get("realOptix")) is not True:
+            failures.append("real_realOptix")
+        if not pack.get("blenderJobId") or not pack.get("blenderVersion") or not pack.get("worker") or not pack.get("gpu"):
+            failures.append("real_job_identity")
+        if "artwork_mask_alias" in failures:
+            failures.append("real_artwork_mask")
+        if any(f.startswith("missing_view_") for f in failures):
+            failures.append("real_views")
     if pack.get("usedMock") is not True:
         if pack.get("realBlender") is not True or pack.get("usedMock") is True:
             if pack.get("realArtworkPreviewReady") is True:
@@ -316,13 +427,14 @@ class ProductTruthFactory:
         evidence_code_commit: str | None = None,
     ) -> dict[str, Any]:
         render_pack_id = new_id()
+        worker = dict((job or {}).get("workerIdentity") or {})
         lineage = {
-            "engineeringHash": placement.get("engineeringHash") or engineering.get("engineeringHash"),
-            "artworkHash": placement.get("artworkHash"),
-            "placementHash": placement.get("placementHash"),
-            "finalUvHash": placement.get("finalUvHash"),
-            "sceneRecipeHash": scene.get("sceneRecipeHash"),
-            "cameraRecipeHash": camera.get("cameraRecipeHash"),
+            "engineeringHash": worker.get("engineeringHash") or placement.get("engineeringHash") or engineering.get("engineeringHash"),
+            "artworkHash": worker.get("artworkHash") or placement.get("artworkHash"),
+            "placementHash": worker.get("placementHash") or placement.get("placementHash"),
+            "finalUvHash": worker.get("finalUvHash") or placement.get("finalUvHash"),
+            "sceneRecipeHash": worker.get("sceneRecipeHash") or scene.get("sceneRecipeHash"),
+            "cameraRecipeHash": worker.get("cameraRecipeHash") or camera.get("cameraRecipeHash"),
             "renderPackId": render_pack_id,
         }
         aovs: dict[str, Any] = {}
@@ -348,6 +460,32 @@ class ProductTruthFactory:
                 lineage=lineage,
                 dam_ref=dam.asset_id,
             )
+        views: dict[str, Any] = {}
+        for name, filename in (("DOOR_DETAIL", "door_detail.png"), ("ASSEMBLED_FRONT", "assembled_front.png")):
+            raw_path = outputs.get(filename)
+            if not raw_path:
+                continue
+            path = Path(str(raw_path))
+            if not path.is_file():
+                continue
+            data = path.read_bytes()
+            dam = self.platform.dam.put(
+                tenant_id=tenant_id,
+                kind="product_truth_view",
+                name=filename,
+                data=data,
+                metadata={"view": name, "renderPackId": render_pack_id},
+            )
+            meta = _png_meta(path)
+            views[name] = {
+                "viewId": name,
+                "artifactId": dam.asset_id,
+                "damRef": dam.asset_id,
+                "path": str(path),
+                "blenderJobId": (job or {}).get("jobId") or worker.get("blenderJobId"),
+                "cameraRecipeHash": (outputs.get(f"{name}_cameraRecipeHash") or camera.get("cameraRecipeHash")),
+                **meta,
+            }
         components = []
         for name in object_names or []:
             components.append({"componentId": name, "objectName": name, "face": "FRONT"})
@@ -360,37 +498,44 @@ class ProductTruthFactory:
                         "face": placement.get("face") or "FRONT",
                     }
                 )
-        mock = bool(used_mock)
-        real_blender = bool(job and job.get("realBlender") and not mock)
+        used_m = used_mock if type(used_mock) is bool else used_mock
+        real_b = (job or {}).get("realBlender") if job and "realBlender" in job else False
+        real_o = (job or {}).get("realOptix") if job and "realOptix" in job else False
         pack = {
             "tenantId": tenant_id,
             "productId": placement.get("productId") or engineering.get("productId"),
             "candidateId": placement.get("candidateId") or engineering.get("candidateId"),
             "version": placement.get("version") or engineering.get("revision") or 1,
             "engineeringHash": lineage["engineeringHash"],
-            "artworkId": placement.get("artworkId"),
+            "artworkId": worker.get("artworkId") or placement.get("artworkId"),
             "artworkHash": lineage["artworkHash"],
-            "artworkSha256": placement.get("artworkSha256"),
-            "placementId": placement.get("placementId"),
+            "artworkSha256": worker.get("artworkSha256") or placement.get("artworkSha256"),
+            "placementId": worker.get("placementId") or placement.get("placementId"),
             "placementHash": lineage["placementHash"],
             "finalUvHash": lineage["finalUvHash"],
+            "surfaceHash": worker.get("surfaceHash") or placement.get("surfaceHash"),
+            "componentId": worker.get("componentId") or placement.get("componentId"),
+            "objectName": worker.get("objectName") or placement.get("objectName"),
+            "face": worker.get("face") or placement.get("face") or "FRONT",
             "sceneRecipeHash": lineage["sceneRecipeHash"],
             "cameraRecipeHash": lineage["cameraRecipeHash"],
             "renderPackId": render_pack_id,
             "sceneRecipe": scene,
             "cameraRecipe": camera,
             "aovs": aovs,
+            "views": views,
+            "workerEvidence": worker,
             "objectManifest": {"components": components},
-            "blenderJobId": (job or {}).get("jobId"),
+            "blenderJobId": (job or {}).get("jobId") or worker.get("blenderJobId"),
             "blenderVersion": (job or {}).get("blenderVersion"),
             "worker": (job or {}).get("worker"),
             "gpu": (job or {}).get("gpu") or (job or {}).get("device"),
             "evidenceCodeCommit": evidence_code_commit,
             "generatedAt": utcnow().isoformat(),
-            "usedMock": mock,
-            "realBlender": real_blender,
-            "realOptix": bool(job and job.get("realOptix") and not mock),
-            "truthLabel": "MOCK" if mock else ("REAL" if real_blender else "PARTIAL"),
+            "usedMock": used_m,
+            "realBlender": real_b,
+            "realOptix": real_o,
+            "truthLabel": "MOCK" if used_m is True else ("REAL" if real_b is True else "PARTIAL"),
             "realArtworkPreviewReady": False,
             "productTruthRenderPackReady": False,
             "productTruthAovPackReady": False,
@@ -399,11 +544,34 @@ class ProductTruthFactory:
             "globalProductionReady": False,
             "fullAutonomousFactoryReady": False,
         }
-        failures = validate_product_truth_render_pack({**pack, "realArtworkPreviewReady": False, "productTruthRenderPackReady": False})
-        structure_ok = not [f for f in failures if f not in {"mock_claimed_real_preview", "mock_claimed_real_pack", "preview_without_real_blender"}]
-        pack["productTruthAovPackReady"] = bool(structure_ok and len(aovs) == len(REQUIRED_AOV_ROLES))
-        pack["realArtworkPreviewReady"] = bool(real_blender and pack["productTruthAovPackReady"] and pack.get("blenderJobId") and aovs.get("beauty"))
-        pack["productTruthRenderPackReady"] = bool(pack["realArtworkPreviewReady"] and not mock)
+        trial = {**pack, "realArtworkPreviewReady": False, "productTruthRenderPackReady": False}
+        failures = validate_product_truth_render_pack(trial)
+        blocked_real = {
+            "mock_claimed_real_preview",
+            "mock_claimed_real_pack",
+            "preview_without_real_blender",
+            "real_usedMock",
+            "real_realBlender",
+            "real_realOptix",
+            "real_job_identity",
+            "real_artwork_mask",
+            "real_views",
+        }
+        structure_ok = not [f for f in failures if f not in blocked_real]
+        pack["productTruthAovPackReady"] = bool(structure_ok and len(aovs) == len(REQUIRED_AOV_ROLES) and len(views) == 2)
+        identity_ok = not any(f.startswith("worker_") or f == "artwork_mask_alias" or f == "aov_worker_inconsistent" for f in failures)
+        pack["realArtworkPreviewReady"] = bool(
+            _exact_bool(pack["usedMock"]) is False
+            and _exact_bool(pack["realBlender"]) is True
+            and _exact_bool(pack["realOptix"]) is True
+            and pack["productTruthAovPackReady"]
+            and identity_ok
+            and pack.get("blenderJobId")
+            and pack.get("blenderVersion")
+            and pack.get("worker")
+            and pack.get("gpu")
+        )
+        pack["productTruthRenderPackReady"] = bool(pack["realArtworkPreviewReady"])
         pack["acceptanceFailures"] = validate_product_truth_render_pack(pack)
         pack["ok"] = not pack["acceptanceFailures"]
         return pack
@@ -437,6 +605,20 @@ def render_product_truth(
         "finalUvHash": ident.get("finalUvHash") or placement.get("finalUvHash"),
         "artworkSha256": (payload.get("artworkPlacements") or [{}])[0].get("artworkSha256"),
     }
+    door_cam = camera_recipe(
+        camera_id="DOOR_DETAIL",
+        location=(0.35, -1.5, 0.95),
+        look_at=(0.3, 0.0, 0.9),
+        width=width,
+        height=height,
+    )
+    assembled_cam = camera_recipe(
+        camera_id="ASSEMBLED_FRONT",
+        location=(2.6, -4.0, 1.5),
+        look_at=(1.2, 0.0, 0.9),
+        width=width,
+        height=height,
+    )
     if mock:
         job_dir = Path(plat.root) / "work" / new_id()
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -446,8 +628,15 @@ def render_product_truth(
             dest = job_dir / filename
             write_occupancy_png(dest, width=width, height=height, kind=role, seed=seed)
             raw_outputs[filename] = str(dest)
+        write_occupancy_png(job_dir / "door_detail.png", width=width, height=height, kind="beauty", seed=seed + "d")
+        write_occupancy_png(job_dir / "assembled_front.png", width=width, height=height, kind="beauty", seed=seed + "a")
+        raw_outputs["door_detail.png"] = str(job_dir / "door_detail.png")
+        raw_outputs["assembled_front.png"] = str(job_dir / "assembled_front.png")
+        raw_outputs["DOOR_DETAIL_cameraRecipeHash"] = door_cam["cameraRecipeHash"]
+        raw_outputs["ASSEMBLED_FRONT_cameraRecipeHash"] = assembled_cam["cameraRecipeHash"]
+        job_id = new_id()
         done = {
-            "jobId": new_id(),
+            "jobId": job_id,
             "status": "succeeded",
             "usedMock": True,
             "realBlender": False,
@@ -455,6 +644,26 @@ def render_product_truth(
             "blenderVersion": "mock-4.2",
             "worker": "fox3d-worker-local",
             "device": "CPU",
+            "gpu": "CPU",
+            "workerIdentity": {
+                "engineeringHash": place_row.get("engineeringHash"),
+                "artworkId": place_row.get("artworkId"),
+                "artworkHash": place_row.get("artworkHash"),
+                "artworkSha256": place_row.get("artworkSha256"),
+                "placementId": place_row.get("placementId"),
+                "placementHash": place_row.get("placementHash"),
+                "finalUvHash": place_row.get("finalUvHash"),
+                "surfaceHash": place_row.get("surfaceHash"),
+                "componentId": place_row.get("componentId"),
+                "objectName": place_row.get("objectName"),
+                "face": place_row.get("face") or "FRONT",
+                "cameraRecipeHash": camera.get("cameraRecipeHash"),
+                "sceneRecipeHash": scene.get("sceneRecipeHash"),
+                "blenderJobId": job_id,
+                "usedMock": True,
+                "realBlender": False,
+                "realOptix": False,
+            },
         }
         objects = [place_row.get("objectName") or place_row.get("componentId") or "DOOR_1"]
         return plat.product_truth.build_pack(
@@ -478,6 +687,22 @@ def render_product_truth(
             "mode": "ARTWORK_PREVIEW",
             "productTruthAovs": True,
             "aovs": True,
+            "productTruthViews": [
+                {
+                    "id": "ASSEMBLED_FRONT",
+                    "filename": "assembled_front.png",
+                    "location": assembled_cam["location"],
+                    "lookAt": assembled_cam["lookAt"],
+                    "focalLengthMm": assembled_cam["focalLengthMm"],
+                },
+                {
+                    "id": "DOOR_DETAIL",
+                    "filename": "door_detail.png",
+                    "location": door_cam["location"],
+                    "lookAt": door_cam["lookAt"],
+                    "focalLengthMm": door_cam["focalLengthMm"],
+                },
+            ],
             "camera": {"location": camera["location"], "lookAt": camera["lookAt"], "focalLengthMm": camera["focalLengthMm"]},
             "lighting": {"preset": scene["lightingPreset"]},
             "render": {
@@ -511,7 +736,18 @@ def render_product_truth(
             return None
         return None
 
-    for key in ("beauty.png", "depth.png", "normal.png", "product_mask.png", "artwork_mask.png", "alpha.png", "seg.png", "mask.png"):
+    for key in (
+        "beauty.png",
+        "depth.png",
+        "normal.png",
+        "product_mask.png",
+        "artwork_mask.png",
+        "alpha.png",
+        "seg.png",
+        "mask.png",
+        "door_detail.png",
+        "assembled_front.png",
+    ):
         got = _resolve(outputs.get(key) or files.get(key) or (done.get("outputs") or {}).get(key))
         if got:
             raw_outputs[key] = got
@@ -519,9 +755,17 @@ def render_product_truth(
         raw_outputs["product_mask.png"] = raw_outputs["seg.png"]
     if "alpha.png" not in raw_outputs and raw_outputs.get("mask.png"):
         raw_outputs["alpha.png"] = raw_outputs["mask.png"]
-    used_mock = bool(done.get("usedMock"))
+    raw_outputs["DOOR_DETAIL_cameraRecipeHash"] = door_cam["cameraRecipeHash"]
+    raw_outputs["ASSEMBLED_FRONT_cameraRecipeHash"] = assembled_cam["cameraRecipeHash"]
+    used_mock = done.get("usedMock") is True
     objects = list(done.get("objects") or outputs.get("objects") or [])
-    complete = all(AOV_FILENAMES[role] in raw_outputs or role in raw_outputs for role in REQUIRED_AOV_ROLES)
+    complete = (
+        all(AOV_FILENAMES[role] in raw_outputs for role in REQUIRED_AOV_ROLES)
+        and "door_detail.png" in raw_outputs
+        and "assembled_front.png" in raw_outputs
+        and raw_outputs.get("artwork_mask.png")
+        and raw_outputs.get("artwork_mask.png") != raw_outputs.get("product_mask.png")
+    )
     if not complete or used_mock or done.get("realBlender") is not True:
         job_dir = Path(plat.root) / "work" / new_id()
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -531,9 +775,16 @@ def render_product_truth(
             dest = job_dir / filename
             write_occupancy_png(dest, width=width, height=height, kind=role, seed=seed)
             fixture_outputs[filename] = str(dest)
+        write_occupancy_png(job_dir / "door_detail.png", width=width, height=height, kind="beauty", seed=seed + "d")
+        write_occupancy_png(job_dir / "assembled_front.png", width=width, height=height, kind="beauty", seed=seed + "a")
+        fixture_outputs["door_detail.png"] = str(job_dir / "door_detail.png")
+        fixture_outputs["assembled_front.png"] = str(job_dir / "assembled_front.png")
+        fixture_outputs["DOOR_DETAIL_cameraRecipeHash"] = door_cam["cameraRecipeHash"]
+        fixture_outputs["ASSEMBLED_FRONT_cameraRecipeHash"] = assembled_cam["cameraRecipeHash"]
+        job_id = (done or {}).get("jobId") or new_id()
         done = {
             **(done if isinstance(done, dict) else {}),
-            "jobId": (done or {}).get("jobId") or new_id(),
+            "jobId": job_id,
             "status": "succeeded",
             "usedMock": True,
             "realBlender": False,
@@ -541,6 +792,26 @@ def render_product_truth(
             "blenderVersion": (done or {}).get("blenderVersion") or "mock-4.2",
             "worker": "fox3d-worker-local",
             "device": (done or {}).get("device") or "CPU",
+            "gpu": (done or {}).get("gpu") or "CPU",
+            "workerIdentity": {
+                "engineeringHash": place_row.get("engineeringHash"),
+                "artworkId": place_row.get("artworkId"),
+                "artworkHash": place_row.get("artworkHash"),
+                "artworkSha256": place_row.get("artworkSha256"),
+                "placementId": place_row.get("placementId"),
+                "placementHash": place_row.get("placementHash"),
+                "finalUvHash": place_row.get("finalUvHash"),
+                "surfaceHash": place_row.get("surfaceHash"),
+                "componentId": place_row.get("componentId"),
+                "objectName": place_row.get("objectName"),
+                "face": place_row.get("face") or "FRONT",
+                "cameraRecipeHash": camera.get("cameraRecipeHash"),
+                "sceneRecipeHash": scene.get("sceneRecipeHash"),
+                "blenderJobId": job_id,
+                "usedMock": True,
+                "realBlender": False,
+                "realOptix": False,
+            },
         }
         return plat.product_truth.build_pack(
             tenant_id=tenant_id,
@@ -586,13 +857,14 @@ def run_phase_841_scenario(plat: Any, *, tenant_id: str = "pt-a", evidence_code_
         engineering_hash=cab.engineering_hash(),
         product_id=cab.productId,
     )
+    mock_plat = bool(getattr(plat, "mock_blender", True))
     pack = render_product_truth(
         plat,
         tenant_id=tenant_id,
         placement=place,
         engineering=cab.model_dump(mode="json"),
-        width=64,
-        height=64,
+        width=64 if mock_plat else 128,
+        height=64 if mock_plat else 128,
         evidence_code_commit=evidence_code_commit,
     )
     gen = plat.generative.submit(

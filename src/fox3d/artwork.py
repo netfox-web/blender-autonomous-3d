@@ -2178,6 +2178,8 @@ class ArtworkFactory:
                     "componentId": rec.get("componentId") or surface.get("componentId"),
                     "placementId": rec.get("placementId"),
                     "relation": rec.get("relation") or "SINGLE_SURFACE",
+                    "artworkId": rec.get("artworkId"),
+                    "finalUvHash": rec.get("finalUvHash") or self.applied_identity(rec).get("finalUvHash"),
                 }
             )
             if eng is None:

@@ -403,6 +403,28 @@ class Platform:
         job["device"] = result.device
         job["artworkApplied"] = result.artwork_applied
         job["appliedPlacements"] = list(result.applied_placements or [])
+        job["workerIdentity"] = dict(result.worker_identity or {})
+        if not job["workerIdentity"] and job["appliedPlacements"]:
+            first = job["appliedPlacements"][0]
+            job["workerIdentity"] = {
+                "engineeringHash": first.get("engineeringHash"),
+                "artworkId": first.get("artworkId"),
+                "artworkHash": first.get("artworkHash"),
+                "artworkSha256": first.get("artworkSha256"),
+                "placementId": first.get("placementId"),
+                "placementHash": first.get("placementHash"),
+                "finalUvHash": first.get("finalUvHash"),
+                "surfaceHash": first.get("surfaceHash"),
+                "componentId": first.get("componentId"),
+                "objectName": first.get("objectName"),
+                "face": first.get("face"),
+                "cameraRecipeHash": job.get("cameraRecipeHash"),
+                "sceneRecipeHash": job.get("sceneRecipeHash"),
+                "blenderJobId": job.get("jobId"),
+                "usedMock": result.used_mock,
+                "realBlender": result.real_blender,
+                "realOptix": result.real_optix,
+            }
 
         if result.status == "blocked":
             try:

@@ -609,6 +609,7 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
         if bpy is not None and getattr(obj, "data", None) is not None:
             img = bpy.data.images.load(str(path))
             mat = bpy.data.materials.new(f"artwork.{name}")
+            mat.pass_index = 8
             mat.use_nodes = True
             nt = mat.node_tree
             principled = nt.nodes.get("Principled BSDF")
@@ -676,8 +677,9 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             "surfaceHash": item.get("surfaceHash"),
             "artworkHash": item.get("artworkHash"),
             "artworkSha256": digest,
+            "artworkId": item.get("artworkId"),
             "placementHash": item.get("placementHash"),
-            "finalUvHash": compute_final_uv_hash(item, mapping),
+            "finalUvHash": item.get("finalUvHash") or compute_final_uv_hash(item, mapping),
         }
         if isinstance(obj, dict):
             obj["canonicalArtwork"] = record
@@ -860,6 +862,7 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
     view.use_pass_z = True
     view.use_pass_normal = True
     view.use_pass_object_index = True
+    view.use_pass_material_index = True
     for i, obj in enumerate(bpy.data.objects):
         if obj.type == "MESH":
             obj.pass_index = i + 1
@@ -918,6 +921,27 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
                 src_out = src
         elif kind == "normal":
             src_out = _socket(rl, "Normal")
+        elif kind == "artwork":
+            src = _socket(rl, "IndexMA", "Material Index")
+            if src is None:
+                debug["errors"].append("no IndexMA socket")
+                return
+            mask = None
+            for ntype in ("CompositorNodeIDMask",):
+                try:
+                    mask = tree.nodes.new(ntype)
+                    break
+                except Exception:
+                    mask = None
+            if mask is not None:
+                try:
+                    mask.index = 8
+                except Exception:
+                    pass
+                tree.links.new(src, mask.inputs[0])
+                src_out = mask.outputs[0]
+            else:
+                src_out = src
         else:
             src_out = _socket(rl, "Object Index", "IndexOB", "IndexMA")
         if src_out is None:
@@ -944,8 +968,10 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
             debug["errors"].append(f"alpha: {exc}")
         if found.get("alpha.png") is None and found.get("product_mask.png"):
             found["alpha.png"] = found["product_mask.png"]
-        if found.get("product_mask.png") and "artwork_mask.png" not in found:
-            found["artwork_mask.png"] = found["product_mask.png"]
+        try:
+            _render_connected("artwork_mask.png", "artwork")
+        except Exception as exc:
+            debug["errors"].append(f"artwork: {exc}")
     _write_json(work / "aov_debug.json", debug)
     try:
         tree, blender5 = _compositor_tree(scene)
@@ -986,6 +1012,23 @@ def _render_assembly_anim(job: dict, created: dict, *, frames: int, width: int, 
             obj.location = originals[name]
     mp4 = _mux_png_sequence(frame_dir, work / "assembly.mp4")
     return paths, mp4
+
+
+def _render_named_still(job: dict, *, filename: str, location, look_at, lens: float, width: int, height: int, samples: int) -> str | None:
+    import bpy
+
+    _add_camera(tuple(location), tuple(look_at), float(lens))
+    scene = bpy.context.scene
+    scene.cycles.samples = samples
+    scene.render.resolution_x = width
+    scene.render.resolution_y = height
+    scene.render.image_settings.file_format = "PNG"
+    out = Path(job.get("workDir") or ".") / filename
+    scene.render.filepath = str(out)
+    bpy.ops.render.render(write_still=True)
+    if out.exists() and out.stat().st_size >= 32:
+        return str(out)
+    return None
 
 
 def _find_beauty_png(work: Path) -> Path | None:
@@ -1175,7 +1218,10 @@ def build_and_render(job: dict) -> dict:
         return result
 
     _write_progress(job, 0.5, "render")
-    want_aov = bool(job.get("aovs") or mode in {"SYNTHETIC_DATA"} or job.get("passes"))
+    cam = job.get("camera") if isinstance(job.get("camera"), dict) else {}
+    if cam.get("location") and (cam.get("lookAt") or cam.get("target")):
+        _add_camera(tuple(cam["location"]), tuple(cam.get("lookAt") or cam.get("target")), float(cam.get("focalLengthMm") or 85))
+    want_aov = bool(job.get("aovs") or mode in {"SYNTHETIC_DATA"} or job.get("passes") or job.get("productTruthAovs"))
     png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
     found = png_path if png_path.exists() and png_path.stat().st_size >= 32 else _find_beauty_png(Path(job.get("workDir") or ".").resolve())
     if found is None or not found.exists() or found.stat().st_size < 32:
@@ -1195,6 +1241,29 @@ def build_and_render(job: dict) -> dict:
             produced.append("normal")
         if outputs.get("seg.png"):
             produced.append("segmentation")
+        if outputs.get("artwork_mask.png"):
+            produced.append("artwork_mask")
+        if outputs.get("product_mask.png"):
+            produced.append("product_mask")
+    views = job.get("productTruthViews") if isinstance(job.get("productTruthViews"), list) else []
+    for view in views:
+        if not isinstance(view, dict):
+            continue
+        name = str(view.get("filename") or "")
+        if not name:
+            continue
+        rendered = _render_named_still(
+            job,
+            filename=name,
+            location=view.get("location") or cam.get("location") or (1.6, -2.4, 1.2),
+            look_at=view.get("lookAt") or cam.get("lookAt") or (0.0, 0.0, 0.9),
+            lens=float(view.get("focalLengthMm") or 85),
+            width=width,
+            height=height,
+            samples=samples,
+        )
+        if rendered:
+            outputs[name] = rendered
     if job.get("assemblyAnimation") or mode == "ASSEMBLY_ANIM":
         frames_n = int((job.get("animation") or {}).get("frames") or 8)
         asm_paths, asm_mp4 = _render_assembly_anim(job, created, frames=frames_n, width=width, height=height, samples=samples)
@@ -1244,6 +1313,26 @@ def build_and_render(job: dict) -> dict:
             }
         result["artworkApplied"] = True
         result["appliedPlacements"] = applied_placements
+        first = applied_placements[0]
+        result["workerIdentity"] = {
+            "engineeringHash": first.get("engineeringHash"),
+            "artworkId": first.get("artworkId"),
+            "artworkHash": first.get("artworkHash"),
+            "artworkSha256": first.get("artworkSha256"),
+            "placementId": first.get("placementId"),
+            "placementHash": first.get("placementHash"),
+            "finalUvHash": first.get("finalUvHash"),
+            "surfaceHash": first.get("surfaceHash"),
+            "componentId": first.get("componentId"),
+            "objectName": first.get("objectName"),
+            "face": first.get("face"),
+            "cameraRecipeHash": job.get("cameraRecipeHash"),
+            "sceneRecipeHash": job.get("sceneRecipeHash"),
+            "blenderJobId": job.get("jobId"),
+            "usedMock": False,
+            "realBlender": True,
+            "realOptix": used_device == "OPTIX",
+        }
     _write_progress(job, 1.0, "done")
     return result
 

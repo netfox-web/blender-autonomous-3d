@@ -304,6 +304,7 @@ class RuntimeResult:
     real_render_output: bool = False
     artwork_applied: bool | None = None
     applied_placements: list[dict[str, Any]] = field(default_factory=list)
+    worker_identity: dict[str, Any] = field(default_factory=dict)
 
 
 class BlenderRuntime:
@@ -486,6 +487,7 @@ class BlenderRuntime:
                         error=None if real_png or outputs.get("frames") else "no real PNG",
                         artwork_applied=payload.get("artworkApplied"),
                         applied_placements=list(payload.get("appliedPlacements") or []),
+                        worker_identity=dict(payload.get("workerIdentity") or {}),
                     )
                 (clock_sleep or time.sleep)(0.2)
         finally:
@@ -550,6 +552,10 @@ class BlenderRuntime:
             ):
                 write_occupancy_png(job_dir / name, width=width, height=height, kind=role, seed=seed + name)
                 outputs[name] = str(job_dir / name)
+            write_occupancy_png(job_dir / "assembled_front.png", width=width, height=height, kind="beauty", seed=seed + "assembled")
+            write_occupancy_png(job_dir / "door_detail.png", width=width, height=height, kind="beauty", seed=seed + "detail")
+            outputs["assembled_front.png"] = str(job_dir / "assembled_front.png")
+            outputs["door_detail.png"] = str(job_dir / "door_detail.png")
         elif job.get("aovs") or job.get("passes") or job.get("mode") in {"SYNTHETIC_DATA", "SPACE_PREVIEW"}:
             for name in ("depth.png", "normal.png", "seg.png", "mask.png"):
                 write_solid_png(job_dir / name, seed + name, max(8, width // 4), max(8, height // 4))

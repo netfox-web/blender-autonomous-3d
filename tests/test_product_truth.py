@@ -103,6 +103,57 @@ def test_render_pack_negatives(tmp_path):
     assert "mock_claimed_real_preview" in validate_product_truth_render_pack(mock_real)
 
 
+def test_regate_mask_identity_and_views(tmp_path):
+    plat, cab, place, pack = _fixture(tmp_path)
+    assert pack["aovs"]["artwork_mask"]["sha256"] != pack["aovs"]["product_mask"]["sha256"]
+    assert "DOOR_DETAIL" in pack["views"]
+    assert "ASSEMBLED_FRONT" in pack["views"]
+    from fox3d.ids import sha256_bytes
+
+    alias = copy.deepcopy(pack)
+    src = Path(pack["aovs"]["product_mask"]["path"]).read_bytes()
+    dest = tmp_path / "alias_artwork_mask.png"
+    dest.write_bytes(src)
+    alias["aovs"]["artwork_mask"]["path"] = str(dest)
+    alias["aovs"]["artwork_mask"]["sha256"] = sha256_bytes(src)
+    alias["aovs"]["artwork_mask"]["size"] = len(src)
+    assert "artwork_mask_alias" in validate_product_truth_render_pack(alias)
+    wrong_face = copy.deepcopy(pack)
+    wrong_face["workerEvidence"]["face"] = "BACK"
+    assert "worker_face" in validate_product_truth_render_pack(wrong_face)
+    wrong_obj = copy.deepcopy(pack)
+    wrong_obj["workerEvidence"]["objectName"] = "OTHER_DOOR"
+    assert any("objectName" in f for f in validate_product_truth_render_pack(wrong_obj))
+    wrong_sha = copy.deepcopy(pack)
+    wrong_sha["workerEvidence"]["artworkSha256"] = "0" * 64
+    assert any("artworkSha256" in f or "worker_mismatch" in f for f in validate_product_truth_render_pack(wrong_sha))
+    for key in ("artworkHash", "placementHash", "finalUvHash", "surfaceHash"):
+        row = copy.deepcopy(pack)
+        row["workerEvidence"][key] = "forged-identity"
+        assert any(key in f for f in validate_product_truth_render_pack(row)), key
+    missing_comp = copy.deepcopy(pack)
+    missing_comp["workerEvidence"]["componentId"] = "door_other"
+    assert any("componentId" in f for f in validate_product_truth_render_pack(missing_comp))
+    no_optix = copy.deepcopy(pack)
+    no_optix["usedMock"] = False
+    no_optix["realBlender"] = True
+    no_optix["realOptix"] = False
+    no_optix["realArtworkPreviewReady"] = True
+    no_optix["productTruthRenderPackReady"] = True
+    optix_fails = validate_product_truth_render_pack(no_optix)
+    assert "real_realOptix" in optix_fails
+    for val in ("true", 1, None):
+        bad = copy.deepcopy(pack)
+        bad["usedMock"] = val
+        assert any("bool_schema_usedMock" in f or "real_usedMock" in f for f in validate_product_truth_render_pack(bad)), val
+    missing_view = copy.deepcopy(pack)
+    missing_view["views"].pop("DOOR_DETAIL")
+    assert "missing_view_DOOR_DETAIL" in validate_product_truth_render_pack(missing_view)
+    coord = copy.deepcopy(pack)
+    coord["aovs"]["beauty"]["placementHash"] = "coordinated"
+    assert "aov_worker_inconsistent" in validate_product_truth_render_pack(coord)
+
+
 def test_generative_gateway_fixture_not_live(tmp_path):
     plat, cab, place, pack = _fixture(tmp_path)
     routing = route_generative_request({"mode": "IMAGE", "requiredControls": ["depth", "normal"]})
