@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 781–840 Re-Gate Round 5 CODE_EVIDENCE_SHA `b2d9875`; prior `ce2c46c` / instruction `c585df4`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `c585df4`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 781–840 Re-Gate Round 6 CODE_EVIDENCE_SHA `1661da5`; prior `b2d9875` / instruction `945c583`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `945c583`. Historical Phase 1–780 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -22,7 +22,7 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Blender door mesh | REAL_LOGIC | engineering component face mm; no hidden -0.002 m |
 | Production authority | REAL_LOGIC | local UV bounds; landmark oracle; derived masterId in relationHash; required scenarios fail-closed |
 | physicalPrintValidated | false | no print/proof evidence |
-| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `84c3442b-…`; CODE `b2d9875` |
+| 837–840 acceptance | FIXTURE + REAL_LOGIC | generation `62bed682-…`; CODE `1661da5`; CONTAIN+COVER landmark matrix |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
