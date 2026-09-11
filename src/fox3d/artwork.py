@@ -572,6 +572,16 @@ CANONICAL_LANDMARK_KIND = "landmark_grid_rgb"
 CANONICAL_LANDMARK_W = 48
 CANONICAL_LANDMARK_H = 32
 _ORIENTATION_SURFACE_PANEL = {"CONTAIN": 3, "COVER": 2}
+CANONICAL_CABINET4_WIDTH_MM = 2400.0
+CANONICAL_CABINET4_HEIGHT_MM = 1800.0
+CANONICAL_CABINET4_DOOR_COUNT = 4
+_TAMPER_FLAG_FAILURES = {
+    "serializedOrientationTamperBlocked": "serialized_orientation_tamper",
+    "strictTypeTamperBlocked": "strict_type_tamper",
+    "coordinatedOracleTamperBlocked": "coordinated_oracle_tamper",
+    "canonicalGeometryTamperBlocked": "canonical_geometry_tamper",
+    "nearToleranceOracleTamperBlocked": "near_tolerance_oracle_tamper",
+}
 
 
 def quarter_turn_local_corners(*, rotation_deg: float = 0.0, mirrored: bool = False) -> list[tuple[float, float]]:
@@ -910,30 +920,76 @@ def canonical_orientation_expected(
     return expected
 
 
+def canonical_cabinet4_panel_mm(panel_index: int) -> tuple[float, float, float, float]:
+    """Deterministic 2400×1800 / 4-door fixture crop. Serialized payload is not geometry authority."""
+    if type(panel_index) is not int or panel_index < 0 or panel_index >= CANONICAL_CABINET4_DOOR_COUNT:
+        raise ArtworkError("BLOCKED", "canonical panelIndex")
+    width = CANONICAL_CABINET4_WIDTH_MM / float(CANONICAL_CABINET4_DOOR_COUNT)
+    height = CANONICAL_CABINET4_HEIGHT_MM
+    return (float(panel_index) * width, 0.0, width, height)
+
+
+def _canonical_fixture_crops_bound(scenarios: dict[str, Any]) -> bool:
+    cab4 = scenarios.get("cabinet4") if isinstance(scenarios.get("cabinet4"), dict) else {}
+    crops = cab4.get("panelCrops")
+    if not isinstance(crops, list) or len(crops) != CANONICAL_CABINET4_DOOR_COUNT:
+        return False
+    raw_w = cab4.get("widthMm")
+    if raw_w is not None:
+        try:
+            if type(raw_w) is bool or abs(float(raw_w) - CANONICAL_CABINET4_WIDTH_MM) > MM_EPS:
+                return False
+        except (TypeError, ValueError):
+            return False
+    for i, crop in enumerate(crops):
+        if not isinstance(crop, dict):
+            return False
+        try:
+            x_mm, y_mm, width_mm, height_mm = canonical_cabinet4_panel_mm(i)
+            if abs(float(crop.get("xMm") or 0) - x_mm) > MM_EPS:
+                return False
+            if abs(float(crop.get("yMm") or 0) - y_mm) > MM_EPS:
+                return False
+            if abs(float(crop.get("widthMm") or 0) - width_mm) > MM_EPS:
+                return False
+            if abs(float(crop.get("heightMm") or 0) - height_mm) > MM_EPS:
+                return False
+        except (ArtworkError, TypeError, ValueError):
+            return False
+    return True
+
+
 def _canonical_surface_mm(scenarios: dict[str, Any], rotp: dict[str, Any], fit_name: str) -> tuple[float, float] | None:
+    want_idx = _ORIENTATION_SURFACE_PANEL.get(fit_name)
+    if type(want_idx) is not int:
+        return None
+    try:
+        _x, _y, fixture_w, fixture_h = canonical_cabinet4_panel_mm(want_idx)
+    except ArtworkError:
+        return None
+    if not _canonical_fixture_crops_bound(scenarios):
+        return None
     surfaces = rotp.get("canonicalSurfaces") if isinstance(rotp.get("canonicalSurfaces"), dict) else {}
     block = surfaces.get(fit_name) if isinstance(surfaces.get(fit_name), dict) else None
     if not isinstance(block, dict):
         return None
+    idx = block.get("panelIndex") if "panelIndex" in block else None
+    if type(idx) is not int or idx != want_idx:
+        return None
+    raw_w = block.get("widthMm")
+    raw_h = block.get("heightMm")
+    if raw_w is None or raw_h is None or type(raw_w) is bool or type(raw_h) is bool:
+        return None
     try:
-        width = float(block.get("widthMm") or 0)
-        height = float(block.get("heightMm") or 0)
+        width = float(raw_w)
+        height = float(raw_h)
     except (TypeError, ValueError):
         return None
-    if width <= 0 or height <= 0 or not math.isfinite(width) or not math.isfinite(height):
+    if not math.isfinite(width) or not math.isfinite(height):
         return None
-    idx = block.get("panelIndex", _ORIENTATION_SURFACE_PANEL.get(fit_name))
-    cab4 = scenarios.get("cabinet4") if isinstance(scenarios.get("cabinet4"), dict) else {}
-    crops = cab4.get("panelCrops") if isinstance(cab4.get("panelCrops"), list) else None
-    if isinstance(idx, int) and isinstance(crops, list) and 0 <= idx < len(crops) and isinstance(crops[idx], dict):
-        try:
-            if abs(width - float(crops[idx].get("widthMm") or 0)) > MM_EPS:
-                return None
-            if abs(height - float(crops[idx].get("heightMm") or 0)) > MM_EPS:
-                return None
-        except (TypeError, ValueError):
-            return None
-    return width, height
+    if abs(width - fixture_w) > MM_EPS or abs(height - fixture_h) > MM_EPS:
+        return None
+    return fixture_w, fixture_h
 
 
 def _canonical_source_bound(rotp: dict[str, Any]) -> bool:
@@ -976,6 +1032,10 @@ def _rgb_at_buf(rgb: bytes, width: int, height: int, x: int, y: int) -> tuple[in
 
 def _rgb_close(a: tuple[int, int, int], b: tuple[int, int, int], *, tol: int = 48) -> bool:
     return all(abs(int(a[i]) - int(b[i])) <= tol for i in range(3))
+
+
+def _rgb_exact(a: tuple[int, int, int], b: tuple[int, int, int]) -> bool:
+    return (int(a[0]), int(a[1]), int(a[2])) == (int(b[0]), int(b[1]), int(b[2]))
 
 
 def _valid_rgb(value: Any) -> bool:
@@ -2389,13 +2449,17 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
                     if not _valid_rgb(want):
                         failures.append(f"{prefix}_canonical_source")
                         continue
-                    if not _valid_rgb(exp) or not _rgb_close((exp[0], exp[1], exp[2]), (want[0], want[1], want[2])):
+                    if not _valid_rgb(exp) or not _rgb_exact((exp[0], exp[1], exp[2]), (want[0], want[1], want[2])):
                         failures.append(f"{prefix}_canonical_expected")
                     if _valid_rgb(obs) and not _rgb_close((obs[0], obs[1], obs[2]), (want[0], want[1], want[2])):
                         failures.append(f"{prefix}_canonical_pixel")
 
     contain_mm = _canonical_surface_mm(scenarios, rotp, "CONTAIN")
     cover_mm = _canonical_surface_mm(scenarios, rotp, "COVER")
+    if contain_mm is None:
+        failures.append("orientation_CONTAIN_canonical_geometry")
+    if cover_mm is None:
+        failures.append("orientation_COVER_canonical_geometry")
     contain_m = rotp.get("CONTAIN") if isinstance(rotp.get("CONTAIN"), dict) else {}
     center = contain_m.get("CENTER") if isinstance(contain_m.get("CENTER"), dict) else None
     if not center:
@@ -2440,67 +2504,169 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
     return failures
 
 
-def probe_serialized_orientation_tampers(result: dict[str, Any]) -> bool:
+def _cover_oracle_rows(result: dict[str, Any]) -> dict[str, Any] | None:
     scenarios = result.get("scenarios") if isinstance(result.get("scenarios"), dict) else {}
     op = scenarios.get("orientationParity") if isinstance(scenarios.get("orientationParity"), dict) else {}
     cover = op.get("COVER") if isinstance(op.get("COVER"), dict) else {}
     center = cover.get("CENTER") if isinstance(cover.get("CENTER"), dict) else {}
     left = cover.get("LEFT") if isinstance(cover.get("LEFT"), dict) else {}
     right = cover.get("RIGHT") if isinstance(cover.get("RIGHT"), dict) else {}
-    c0 = center.get("0") if isinstance(center.get("0"), dict) else None
-    c90 = center.get("90") if isinstance(center.get("90"), dict) else None
-    cm = center.get("mirror") if isinstance(center.get("mirror"), dict) else None
-    l0 = left.get("0") if isinstance(left.get("0"), dict) else None
-    l90 = left.get("90") if isinstance(left.get("90"), dict) else None
-    r0 = right.get("0") if isinstance(right.get("0"), dict) else None
-    rm = right.get("mirror") if isinstance(right.get("mirror"), dict) else None
-    if not all((c0, c90, cm, l0, l90, r0, rm)):
+    rows = {
+        "c0": center.get("0") if isinstance(center.get("0"), dict) else None,
+        "c90": center.get("90") if isinstance(center.get("90"), dict) else None,
+        "cm": center.get("mirror") if isinstance(center.get("mirror"), dict) else None,
+        "l0": left.get("0") if isinstance(left.get("0"), dict) else None,
+        "l90": left.get("90") if isinstance(left.get("90"), dict) else None,
+        "r0": right.get("0") if isinstance(right.get("0"), dict) else None,
+        "rm": right.get("mirror") if isinstance(right.get("mirror"), dict) else None,
+    }
+    if not all(rows.values()):
+        return None
+    return rows
+
+
+def _acceptance_failures_after(result: dict[str, Any], mutate) -> list[str]:
+    rec = {"scenarios": copy.deepcopy(result.get("scenarios"))}
+    mutate(rec)
+    scen = rec.get("scenarios") if isinstance(rec.get("scenarios"), dict) else {}
+    return orientation_matrix_failures(scen)
+
+
+def _probe_mutators_blocked(
+    result: dict[str, Any],
+    mutators: list,
+    *,
+    require: str | None = None,
+    forbid_suffix: str | None = None,
+) -> bool:
+    if not mutators:
         return False
+    for mutate in mutators:
+        fails = _acceptance_failures_after(result, mutate)
+        if not fails:
+            return False
+        if require is not None and not any(require in f for f in fails):
+            return False
+        if forbid_suffix is not None and any(f.endswith(forbid_suffix) for f in fails):
+            return False
+    return True
 
-    def _fails(mutate) -> bool:
-        rec = copy.deepcopy(result)
-        mutate(rec)
-        scen = rec.get("scenarios") if isinstance(rec.get("scenarios"), dict) else {}
-        return bool(orientation_matrix_failures(scen))
 
-    checks = [
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "observed": c90["observed"], "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "observed": cm["observed"], "status": "PASS"})),
-        _fails(
-            lambda rec: (
-                rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", dict(c90)),
-                rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("90", dict(c0)),
-            )
+def _near_tol_channel(ch: int, delta: int) -> int:
+    c = int(ch)
+    if 0 <= c + delta <= 255:
+        return c + delta
+    if 0 <= c - delta <= 255:
+        return c - delta
+    return max(0, min(255, c))
+
+
+def _shift_rgb_triplet(rgb: Any, delta: int) -> list[int]:
+    return [_near_tol_channel(ch, delta) for ch in rgb]
+
+
+def _apply_near_tolerance_oracle(rec: dict[str, Any], *, delta: int) -> None:
+    row = rec["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"]
+    expected = {k: _shift_rgb_triplet(row["expected"][k], delta) for k in ("BL", "BR", "TR", "TL")}
+    observed = {k: _shift_rgb_triplet(row["observed"][k], delta) for k in ("BL", "BR", "TR", "TL")}
+    quality = oracle_quality(expected)
+    rec["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {
+        **row,
+        "expected": expected,
+        "observed": observed,
+        "signature": quality["signature"],
+        "uniqueSampleCount": quality["uniqueSampleCount"],
+        "oracleDiscriminating": quality["oracleDiscriminating"],
+        "status": "PASS",
+    }
+
+
+def _apply_coordinated_geometry(rec: dict[str, Any]) -> None:
+    op = rec["scenarios"]["orientationParity"]
+    op["canonicalSurfaces"]["COVER"] = {"widthMm": 500.0, "heightMm": 1700.0, "panelIndex": 0}
+    crops = list(rec["scenarios"]["cabinet4"]["panelCrops"])
+    crops[0] = {"xMm": 0.0, "yMm": 0.0, "widthMm": 500.0, "heightMm": 1700.0}
+    rec["scenarios"]["cabinet4"]["panelCrops"] = crops
+    rec["scenarios"]["cabinet4"]["widthMm"] = 2000.0
+    row = op["COVER"]["CENTER"]["0"]
+    expected = canonical_orientation_expected(
+        fit="COVER",
+        slot_anchor="CENTER",
+        rotation_deg=0.0,
+        mirrored=False,
+        surface_width_mm=500.0,
+        surface_height_mm=1700.0,
+    )
+    quality = oracle_quality(expected)
+    rec["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {
+        **row,
+        "expected": expected,
+        "observed": {k: list(v) for k, v in expected.items()},
+        "signature": quality["signature"],
+        "uniqueSampleCount": quality["uniqueSampleCount"],
+        "oracleDiscriminating": quality["oracleDiscriminating"],
+        "status": "PASS",
+    }
+
+
+def probe_serialized_orientation_tampers(result: dict[str, Any]) -> bool:
+    rows = _cover_oracle_rows(result)
+    if rows is None:
+        return False
+    c0, c90, cm, l0, l90, r0, rm = rows["c0"], rows["c90"], rows["cm"], rows["l0"], rows["l90"], rows["r0"], rows["rm"]
+    mutators = [
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "observed": c90["observed"], "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "observed": cm["observed"], "status": "PASS"}),
+        lambda rec: (
+            rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", dict(c90)),
+            rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("90", dict(c0)),
         ),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": l90["observed"], "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "observed": rm["observed"], "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "signature": "forged", "uniqueSampleCount": 99, "oracleDiscriminating": True, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": 90.0, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": True, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "fit": "CONTAIN", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "anchor": "CENTER", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": "false", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": 1, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": "0", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("90", {**c90, "rotationDeg": True, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [1, 2, 3, 4]}, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": 0, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": None, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": "true", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": "false", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": "90", "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": False, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": float("nan"), "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": float("inf"), "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": float("-inf"), "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": ["1", 2, 3]}, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [True, 2, 3]}, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [-1, 2, 3]}, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": {**l0.get("observed", {}), "BL": [1, 2, 3, 4]}, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": {**l0.get("observed", {}), "BL": [1.0, 2, 3]}, "status": "PASS"})),
-        _fails(lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": {**l0.get("observed", {}), "BL": [1, 2, 256]}, "status": "PASS"})),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": l90["observed"], "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "observed": rm["observed"], "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "signature": "forged", "uniqueSampleCount": 99, "oracleDiscriminating": True, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": 90.0, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": True, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "fit": "CONTAIN", "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["RIGHT"].__setitem__("0", {**r0, "anchor": "CENTER", "status": "PASS"}),
     ]
+    return _probe_mutators_blocked(result, mutators)
 
+
+def probe_strict_type_tampers(result: dict[str, Any]) -> bool:
+    rows = _cover_oracle_rows(result)
+    if rows is None:
+        return False
+    c0, c90, cm, l0 = rows["c0"], rows["c90"], rows["cm"], rows["l0"]
+    mutators = [
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": "false", "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": 1, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": "0", "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("90", {**c90, "rotationDeg": True, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [1, 2, 3, 4]}, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": 0, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "mirrored": None, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": "true", "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("mirror", {**cm, "mirrored": "false", "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": "90", "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": False, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": float("nan"), "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": float("inf"), "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["CENTER"].__setitem__("0", {**c0, "rotationDeg": float("-inf"), "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": ["1", 2, 3]}, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [True, 2, 3]}, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "expected": {**l0.get("expected", {}), "BL": [-1, 2, 3]}, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": {**l0.get("observed", {}), "BL": [1, 2, 3, 4]}, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": {**l0.get("observed", {}), "BL": [1.0, 2, 3]}, "status": "PASS"}),
+        lambda rec: rec["scenarios"]["orientationParity"]["COVER"]["LEFT"].__setitem__("0", {**l0, "observed": {**l0.get("observed", {}), "BL": [1, 2, 256]}, "status": "PASS"}),
+    ]
+    return _probe_mutators_blocked(result, mutators)
+
+
+def probe_coordinated_oracle_tampers(result: dict[str, Any]) -> bool:
+    rows = _cover_oracle_rows(result)
+    if rows is None:
+        return False
+    c0, c90 = rows["c0"], rows["c90"]
     fake_oracle = {"BL": [11, 22, 33], "BR": [44, 55, 66], "TR": [77, 88, 99], "TL": [12, 34, 56]}
     fake_quality = oracle_quality(fake_oracle)
 
@@ -2523,9 +2689,39 @@ def probe_serialized_orientation_tampers(result: dict[str, Any]) -> bool:
         copied["mirrored"] = c0.get("mirrored")
         rec["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = copied
 
-    checks.append(_fails(_coord_expected_observed))
-    checks.append(_fails(_row_copy_keep_slot))
-    return all(checks)
+    return _probe_mutators_blocked(result, [_coord_expected_observed, _row_copy_keep_slot], require="canonical_expected", forbid_suffix="_rgb")
+
+
+def probe_canonical_geometry_tampers(result: dict[str, Any]) -> bool:
+    rows = _cover_oracle_rows(result)
+    if rows is None:
+        return False
+    mutators = [
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("panelIndex", "2"),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("panelIndex", True),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("panelIndex", -1),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("panelIndex", 999),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].pop("panelIndex", None),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__(
+            "widthMm", float(rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["widthMm"]) + 10.0
+        ),
+        _apply_coordinated_geometry,
+    ]
+    return _probe_mutators_blocked(result, mutators, require="canonical_geometry", forbid_suffix="_rgb")
+
+
+def probe_near_tolerance_oracle_tampers(result: dict[str, Any]) -> bool:
+    rows = _cover_oracle_rows(result)
+    if rows is None:
+        return False
+
+    def _plus_one(rec: dict[str, Any]) -> None:
+        _apply_near_tolerance_oracle(rec, delta=1)
+
+    def _plus_eight(rec: dict[str, Any]) -> None:
+        _apply_near_tolerance_oracle(rec, delta=8)
+
+    return _probe_mutators_blocked(result, [_plus_one, _plus_eight], require="canonical_expected", forbid_suffix="_rgb")
 
 
 def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
@@ -2641,12 +2837,9 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
     rotp = _need("orientationParity")
     if rotp is not None:
         failures.extend(orientation_matrix_failures(scenarios))
-    if result.get("serializedOrientationTamperBlocked") is not True:
-        failures.append("serialized_orientation_tamper")
-    if result.get("strictTypeTamperBlocked") is not True:
-        failures.append("strict_type_tamper")
-    if result.get("coordinatedOracleTamperBlocked") is not True:
-        failures.append("coordinated_oracle_tamper")
+    for flag, token in _TAMPER_FLAG_FAILURES.items():
+        if result.get(flag) is not True:
+            failures.append(token)
     seam = _need("masterSeam")
     if seam is not None:
         if abs(float(seam.get("seamMm") or 0) - 25.0) > MM_EPS or seam.get("ready") is not True:
@@ -3077,6 +3270,8 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         "serializedOrientationTamperBlocked": False,
         "strictTypeTamperBlocked": False,
         "coordinatedOracleTamperBlocked": False,
+        "canonicalGeometryTamperBlocked": False,
+        "nearToleranceOracleTamperBlocked": False,
         "label": "FIXTURE/REAL_LOGIC",
         "surfaceDecorationLogicReady": False,
         "productionArtworkFileReady": False,
@@ -3175,10 +3370,11 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         result["realArtworkPreviewReady"] = False
     result["surfaceDecorationLogicReady"] = bool(logic_ok)
     result["productionArtworkFileReady"] = bool(logic_ok and all(p.get("productionArtworkFileReady") for p in productions))
-    tamper_blocked = probe_serialized_orientation_tampers(result)
-    result["serializedOrientationTamperBlocked"] = tamper_blocked
-    result["strictTypeTamperBlocked"] = tamper_blocked
-    result["coordinatedOracleTamperBlocked"] = tamper_blocked
+    result["serializedOrientationTamperBlocked"] = probe_serialized_orientation_tampers(result)
+    result["strictTypeTamperBlocked"] = probe_strict_type_tampers(result)
+    result["coordinatedOracleTamperBlocked"] = probe_coordinated_oracle_tampers(result)
+    result["canonicalGeometryTamperBlocked"] = probe_canonical_geometry_tampers(result)
+    result["nearToleranceOracleTamperBlocked"] = probe_near_tolerance_oracle_tampers(result)
     result["ok"] = not validate_artwork_acceptance_result(result)
     return result
 

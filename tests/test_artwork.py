@@ -29,6 +29,11 @@ from fox3d.artwork import (
     mm_to_uv,
     placement_payload,
     preview_ready_from_job,
+    probe_canonical_geometry_tampers,
+    probe_coordinated_oracle_tampers,
+    probe_near_tolerance_oracle_tampers,
+    probe_serialized_orientation_tampers,
+    probe_strict_type_tampers,
     quarter_turn_local_corners,
     roundtrip_ok,
     run_artwork_scenario,
@@ -1393,3 +1398,105 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     copied_row["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = kept
     copy_fails = validate_artwork_acceptance_result(copied_row)
     assert any("canonical_expected" in f or "canonical_pixel" in f for f in copy_fails)
+
+    def _shift_ch(ch, delta):
+        c = int(ch)
+        if 0 <= c + delta <= 255:
+            return c + delta
+        if 0 <= c - delta <= 255:
+            return c - delta
+        return c
+
+    for delta in (1, 8):
+        near = copy.deepcopy(result)
+        expected = {k: [_shift_ch(ch, delta) for ch in c0["expected"][k]] for k in ("BL", "BR", "TR", "TL")}
+        observed = {k: [_shift_ch(ch, delta) for ch in c0["observed"][k]] for k in ("BL", "BR", "TR", "TL")}
+        quality = oracle_quality(expected)
+        near["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {
+            **c0,
+            "expected": expected,
+            "observed": observed,
+            "signature": quality["signature"],
+            "uniqueSampleCount": quality["uniqueSampleCount"],
+            "oracleDiscriminating": quality["oracleDiscriminating"],
+            "status": "PASS",
+        }
+        near_fails = validate_artwork_acceptance_result(near)
+        assert any("canonical_expected" in f for f in near_fails), delta
+        assert not any(f.endswith("_rgb") for f in near_fails), delta
+
+    for val in ("2", True, -1, 999):
+        geo = copy.deepcopy(result)
+        geo["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["panelIndex"] = val
+        geo_fails = validate_artwork_acceptance_result(geo)
+        assert any("canonical_geometry" in f or "canonical_source" in f for f in geo_fails), val
+        assert not any(f.endswith("_rgb") for f in geo_fails), val
+    missing_idx = copy.deepcopy(result)
+    missing_idx["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].pop("panelIndex", None)
+    missing_idx_fails = validate_artwork_acceptance_result(missing_idx)
+    assert any("canonical_geometry" in f or "canonical_source" in f for f in missing_idx_fails)
+    width_only = copy.deepcopy(result)
+    width_only["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["widthMm"] = float(surf["widthMm"]) + 10.0
+    width_fails = validate_artwork_acceptance_result(width_only)
+    assert any("canonical_geometry" in f or "canonical_source" in f for f in width_fails)
+    height_only = copy.deepcopy(result)
+    height_only["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["heightMm"] = float(surf["heightMm"]) + 10.0
+    height_fails = validate_artwork_acceptance_result(height_only)
+    assert any("canonical_geometry" in f or "canonical_source" in f for f in height_fails)
+    coord_geo = copy.deepcopy(result)
+    coord_geo["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"] = {
+        "widthMm": 500.0,
+        "heightMm": 1700.0,
+        "panelIndex": 0,
+    }
+    crops = list(coord_geo["scenarios"]["cabinet4"]["panelCrops"])
+    crops[0] = {"xMm": 0.0, "yMm": 0.0, "widthMm": 500.0, "heightMm": 1700.0}
+    coord_geo["scenarios"]["cabinet4"]["panelCrops"] = crops
+    coord_geo["scenarios"]["cabinet4"]["widthMm"] = 2000.0
+    attacker_exp = canonical_orientation_expected(
+        fit="COVER",
+        slot_anchor="CENTER",
+        rotation_deg=0.0,
+        mirrored=False,
+        surface_width_mm=500.0,
+        surface_height_mm=1700.0,
+    )
+    attacker_q = oracle_quality(attacker_exp)
+    coord_geo["scenarios"]["orientationParity"]["COVER"]["CENTER"]["0"] = {
+        **c0,
+        "expected": attacker_exp,
+        "observed": {k: list(v) for k, v in attacker_exp.items()},
+        "signature": attacker_q["signature"],
+        "uniqueSampleCount": attacker_q["uniqueSampleCount"],
+        "oracleDiscriminating": attacker_q["oracleDiscriminating"],
+        "status": "PASS",
+    }
+    coord_geo_fails = validate_artwork_acceptance_result(coord_geo)
+    assert any("canonical_geometry" in f or "canonical_source" in f for f in coord_geo_fails)
+    assert not any(f.endswith("_rgb") for f in coord_geo_fails)
+
+    probes = (
+        probe_serialized_orientation_tampers,
+        probe_strict_type_tampers,
+        probe_coordinated_oracle_tampers,
+        probe_canonical_geometry_tampers,
+        probe_near_tolerance_oracle_tampers,
+    )
+    assert len({id(fn) for fn in probes}) == 5
+    assert probe_serialized_orientation_tampers(result) is True
+    assert probe_strict_type_tampers(result) is True
+    assert probe_coordinated_oracle_tampers(result) is True
+    assert probe_canonical_geometry_tampers(result) is True
+    assert probe_near_tolerance_oracle_tampers(result) is True
+    assert result.get("canonicalGeometryTamperBlocked") is True
+    assert result.get("nearToleranceOracleTamperBlocked") is True
+    missing_geo_flag = copy.deepcopy(result)
+    missing_geo_flag["canonicalGeometryTamperBlocked"] = False
+    geo_flag_fails = validate_artwork_acceptance_result(missing_geo_flag)
+    assert "canonical_geometry_tamper" in geo_flag_fails
+    assert "serialized_orientation_tamper" not in geo_flag_fails
+    missing_near_flag = copy.deepcopy(result)
+    missing_near_flag["nearToleranceOracleTamperBlocked"] = False
+    near_flag_fails = validate_artwork_acceptance_result(missing_near_flag)
+    assert "near_tolerance_oracle_tamper" in near_flag_fails
+    assert "strict_type_tamper" not in near_flag_fails
