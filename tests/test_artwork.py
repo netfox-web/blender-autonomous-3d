@@ -31,6 +31,7 @@ from fox3d.artwork import (
     preview_ready_from_job,
     probe_canonical_geometry_tampers,
     probe_coordinated_oracle_tampers,
+    probe_finite_canonical_geometry_tampers,
     probe_near_tolerance_oracle_tampers,
     probe_serialized_orientation_tampers,
     probe_strict_type_tampers,
@@ -1500,3 +1501,54 @@ def test_validator_required_scenarios_fail_closed(tmp_path):
     near_flag_fails = validate_artwork_acceptance_result(missing_near_flag)
     assert "near_tolerance_oracle_tamper" in near_flag_fails
     assert "strict_type_tamper" not in near_flag_fails
+
+    def _geo_schema_fails(mutate):
+        row = copy.deepcopy(result)
+        mutate(row)
+        fails = validate_artwork_acceptance_result(row)
+        assert any("canonical_geometry" in f or "canonical_source" in f for f in fails)
+        assert not any(f.endswith("_rgb") for f in fails)
+        return fails
+
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"].pop("widthMm", None))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].pop("xMm", None))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].pop("yMm", None))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].pop("widthMm", None))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].pop("heightMm", None))
+    for val in (float("nan"), float("inf"), float("-inf")):
+        _geo_schema_fails(lambda row, v=val: row["scenarios"]["cabinet4"].__setitem__("widthMm", v))
+        _geo_schema_fails(lambda row, v=val: row["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("xMm", v))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("xMm", "0"))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("widthMm", "600"))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("heightMm", "1800"))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("xMm", True))
+    _geo_schema_fails(lambda row: row["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("yMm", False))
+    _geo_schema_fails(lambda row: row["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("widthMm", "600"))
+    _geo_schema_fails(lambda row: row["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("heightMm", "1800"))
+    _geo_schema_fails(lambda row: row["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("widthMm", True))
+
+    def _coord_schema(row):
+        row["scenarios"]["cabinet4"].pop("widthMm", None)
+        row["scenarios"]["cabinet4"]["panelCrops"][0].pop("xMm", None)
+        row["scenarios"]["cabinet4"]["panelCrops"][0]["widthMm"] = "600"
+        row["scenarios"]["cabinet4"]["panelCrops"][0]["heightMm"] = "1800"
+        row["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["widthMm"] = "600"
+        row["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["heightMm"] = "1800"
+
+    _geo_schema_fails(_coord_schema)
+    assert probe_finite_canonical_geometry_tampers(result) is True
+    assert result.get("finiteCanonicalGeometryTamperBlocked") is True
+    missing_finite_flag = copy.deepcopy(result)
+    missing_finite_flag["finiteCanonicalGeometryTamperBlocked"] = False
+    finite_flag_fails = validate_artwork_acceptance_result(missing_finite_flag)
+    assert "finite_canonical_geometry_tamper" in finite_flag_fails
+    assert "canonical_geometry_tamper" not in finite_flag_fails
+    probes = (
+        probe_serialized_orientation_tampers,
+        probe_strict_type_tampers,
+        probe_coordinated_oracle_tampers,
+        probe_canonical_geometry_tampers,
+        probe_near_tolerance_oracle_tampers,
+        probe_finite_canonical_geometry_tampers,
+    )
+    assert len({id(fn) for fn in probes}) == 6

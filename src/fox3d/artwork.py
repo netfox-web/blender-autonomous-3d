@@ -581,6 +581,7 @@ _TAMPER_FLAG_FAILURES = {
     "coordinatedOracleTamperBlocked": "coordinated_oracle_tamper",
     "canonicalGeometryTamperBlocked": "canonical_geometry_tamper",
     "nearToleranceOracleTamperBlocked": "near_tolerance_oracle_tamper",
+    "finiteCanonicalGeometryTamperBlocked": "finite_canonical_geometry_tamper",
 }
 
 
@@ -929,32 +930,46 @@ def canonical_cabinet4_panel_mm(panel_index: int) -> tuple[float, float, float, 
     return (float(panel_index) * width, 0.0, width, height)
 
 
+def _strict_finite_mm(mapping: Any, key: str) -> float | None:
+    if not isinstance(mapping, dict) or key not in mapping:
+        return None
+    value = mapping[key]
+    if type(value) is bool or not isinstance(value, (int, float)):
+        return None
+    finite = float(value)
+    if not math.isfinite(finite):
+        return None
+    return finite
+
+
 def _canonical_fixture_crops_bound(scenarios: dict[str, Any]) -> bool:
     cab4 = scenarios.get("cabinet4") if isinstance(scenarios.get("cabinet4"), dict) else {}
     crops = cab4.get("panelCrops")
     if not isinstance(crops, list) or len(crops) != CANONICAL_CABINET4_DOOR_COUNT:
         return False
-    raw_w = cab4.get("widthMm")
-    if raw_w is not None:
-        try:
-            if type(raw_w) is bool or abs(float(raw_w) - CANONICAL_CABINET4_WIDTH_MM) > MM_EPS:
-                return False
-        except (TypeError, ValueError):
-            return False
+    cab_w = _strict_finite_mm(cab4, "widthMm")
+    if cab_w is None or abs(cab_w - CANONICAL_CABINET4_WIDTH_MM) > MM_EPS:
+        return False
     for i, crop in enumerate(crops):
         if not isinstance(crop, dict):
             return False
         try:
             x_mm, y_mm, width_mm, height_mm = canonical_cabinet4_panel_mm(i)
-            if abs(float(crop.get("xMm") or 0) - x_mm) > MM_EPS:
-                return False
-            if abs(float(crop.get("yMm") or 0) - y_mm) > MM_EPS:
-                return False
-            if abs(float(crop.get("widthMm") or 0) - width_mm) > MM_EPS:
-                return False
-            if abs(float(crop.get("heightMm") or 0) - height_mm) > MM_EPS:
-                return False
-        except (ArtworkError, TypeError, ValueError):
+        except ArtworkError:
+            return False
+        got_x = _strict_finite_mm(crop, "xMm")
+        got_y = _strict_finite_mm(crop, "yMm")
+        got_w = _strict_finite_mm(crop, "widthMm")
+        got_h = _strict_finite_mm(crop, "heightMm")
+        if got_x is None or got_y is None or got_w is None or got_h is None:
+            return False
+        if abs(got_x - x_mm) > MM_EPS:
+            return False
+        if abs(got_y - y_mm) > MM_EPS:
+            return False
+        if abs(got_w - width_mm) > MM_EPS:
+            return False
+        if abs(got_h - height_mm) > MM_EPS:
             return False
     return True
 
@@ -976,16 +991,9 @@ def _canonical_surface_mm(scenarios: dict[str, Any], rotp: dict[str, Any], fit_n
     idx = block.get("panelIndex") if "panelIndex" in block else None
     if type(idx) is not int or idx != want_idx:
         return None
-    raw_w = block.get("widthMm")
-    raw_h = block.get("heightMm")
-    if raw_w is None or raw_h is None or type(raw_w) is bool or type(raw_h) is bool:
-        return None
-    try:
-        width = float(raw_w)
-        height = float(raw_h)
-    except (TypeError, ValueError):
-        return None
-    if not math.isfinite(width) or not math.isfinite(height):
+    width = _strict_finite_mm(block, "widthMm")
+    height = _strict_finite_mm(block, "heightMm")
+    if width is None or height is None:
         return None
     if abs(width - fixture_w) > MM_EPS or abs(height - fixture_h) > MM_EPS:
         return None
@@ -2710,6 +2718,44 @@ def probe_canonical_geometry_tampers(result: dict[str, Any]) -> bool:
     return _probe_mutators_blocked(result, mutators, require="canonical_geometry", forbid_suffix="_rgb")
 
 
+def _apply_coordinated_schema_geometry(rec: dict[str, Any]) -> None:
+    rec["scenarios"]["cabinet4"].pop("widthMm", None)
+    rec["scenarios"]["cabinet4"]["panelCrops"][0].pop("xMm", None)
+    rec["scenarios"]["cabinet4"]["panelCrops"][0]["widthMm"] = "600"
+    rec["scenarios"]["cabinet4"]["panelCrops"][0]["heightMm"] = "1800"
+    rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["widthMm"] = "600"
+    rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"]["heightMm"] = "1800"
+
+
+def probe_finite_canonical_geometry_tampers(result: dict[str, Any]) -> bool:
+    rows = _cover_oracle_rows(result)
+    if rows is None:
+        return False
+    mutators = [
+        lambda rec: rec["scenarios"]["cabinet4"].pop("widthMm", None),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].pop("xMm", None),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].pop("yMm", None),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].pop("widthMm", None),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].pop("heightMm", None),
+        lambda rec: rec["scenarios"]["cabinet4"].__setitem__("widthMm", float("nan")),
+        lambda rec: rec["scenarios"]["cabinet4"].__setitem__("widthMm", float("inf")),
+        lambda rec: rec["scenarios"]["cabinet4"].__setitem__("widthMm", float("-inf")),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("xMm", float("nan")),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("widthMm", float("inf")),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("heightMm", float("-inf")),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("xMm", "0"),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("widthMm", "600"),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("heightMm", "1800"),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("xMm", True),
+        lambda rec: rec["scenarios"]["cabinet4"]["panelCrops"][0].__setitem__("yMm", False),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("widthMm", "600"),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("heightMm", "1800"),
+        lambda rec: rec["scenarios"]["orientationParity"]["canonicalSurfaces"]["COVER"].__setitem__("widthMm", True),
+        _apply_coordinated_schema_geometry,
+    ]
+    return _probe_mutators_blocked(result, mutators, require="canonical_geometry", forbid_suffix="_rgb")
+
+
 def probe_near_tolerance_oracle_tampers(result: dict[str, Any]) -> bool:
     rows = _cover_oracle_rows(result)
     if rows is None:
@@ -3272,6 +3318,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
         "coordinatedOracleTamperBlocked": False,
         "canonicalGeometryTamperBlocked": False,
         "nearToleranceOracleTamperBlocked": False,
+        "finiteCanonicalGeometryTamperBlocked": False,
         "label": "FIXTURE/REAL_LOGIC",
         "surfaceDecorationLogicReady": False,
         "productionArtworkFileReady": False,
@@ -3375,6 +3422,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
     result["coordinatedOracleTamperBlocked"] = probe_coordinated_oracle_tampers(result)
     result["canonicalGeometryTamperBlocked"] = probe_canonical_geometry_tampers(result)
     result["nearToleranceOracleTamperBlocked"] = probe_near_tolerance_oracle_tampers(result)
+    result["finiteCanonicalGeometryTamperBlocked"] = probe_finite_canonical_geometry_tampers(result)
     result["ok"] = not validate_artwork_acceptance_result(result)
     return result
 
