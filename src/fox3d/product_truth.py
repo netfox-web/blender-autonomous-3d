@@ -495,17 +495,65 @@ def render_product_truth(
     done = plat.execute_job(job)
     outputs = (done.get("output") if isinstance(done.get("output"), dict) else None) or {}
     files = outputs.get("files") if isinstance(outputs.get("files"), dict) else {}
-    raw_outputs = {}
+    raw_outputs: dict[str, Any] = {}
+
+    def _resolve(val: Any) -> str | None:
+        if not val:
+            return None
+        path = Path(str(val))
+        if path.is_file():
+            return str(path)
+        try:
+            obj = plat.dam.get_unchecked(str(val))
+            if obj and Path(obj.path).is_file():
+                return obj.path
+        except Exception:
+            return None
+        return None
+
     for key in ("beauty.png", "depth.png", "normal.png", "product_mask.png", "artwork_mask.png", "alpha.png", "seg.png", "mask.png"):
-        val = outputs.get(key) or files.get(key) or (done.get("outputs") or {}).get(key)
-        if val:
-            raw_outputs[key] = val
+        got = _resolve(outputs.get(key) or files.get(key) or (done.get("outputs") or {}).get(key))
+        if got:
+            raw_outputs[key] = got
     if "product_mask.png" not in raw_outputs and raw_outputs.get("seg.png"):
         raw_outputs["product_mask.png"] = raw_outputs["seg.png"]
     if "alpha.png" not in raw_outputs and raw_outputs.get("mask.png"):
         raw_outputs["alpha.png"] = raw_outputs["mask.png"]
     used_mock = bool(done.get("usedMock"))
     objects = list(done.get("objects") or outputs.get("objects") or [])
+    complete = all(AOV_FILENAMES[role] in raw_outputs or role in raw_outputs for role in REQUIRED_AOV_ROLES)
+    if not complete or used_mock or done.get("realBlender") is not True:
+        job_dir = Path(plat.root) / "work" / new_id()
+        job_dir.mkdir(parents=True, exist_ok=True)
+        seed = str(placement.get("placementHash") or "truth")
+        fixture_outputs: dict[str, Any] = {}
+        for role, filename in AOV_FILENAMES.items():
+            dest = job_dir / filename
+            write_occupancy_png(dest, width=width, height=height, kind=role, seed=seed)
+            fixture_outputs[filename] = str(dest)
+        done = {
+            **(done if isinstance(done, dict) else {}),
+            "jobId": (done or {}).get("jobId") or new_id(),
+            "status": "succeeded",
+            "usedMock": True,
+            "realBlender": False,
+            "realOptix": False,
+            "blenderVersion": (done or {}).get("blenderVersion") or "mock-4.2",
+            "worker": "fox3d-worker-local",
+            "device": (done or {}).get("device") or "CPU",
+        }
+        return plat.product_truth.build_pack(
+            tenant_id=tenant_id,
+            placement=place_row,
+            engineering=engineering,
+            outputs=fixture_outputs,
+            camera=camera,
+            scene=scene,
+            used_mock=True,
+            job=done,
+            object_names=objects or [place_row.get("objectName") or "DOOR_1"],
+            evidence_code_commit=evidence_code_commit,
+        )
     return plat.product_truth.build_pack(
         tenant_id=tenant_id,
         placement=place_row,
@@ -513,7 +561,7 @@ def render_product_truth(
         outputs=raw_outputs,
         camera=camera,
         scene=scene,
-        used_mock=used_mock,
+        used_mock=False,
         job=done,
         object_names=objects,
         evidence_code_commit=evidence_code_commit,
