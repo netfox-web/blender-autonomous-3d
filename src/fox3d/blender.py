@@ -538,7 +538,19 @@ class BlenderRuntime:
             "beauty.webp": str(job_dir / "beauty.webp"),
             "beauty.exr": str(job_dir / "beauty.exr"),
         }
-        if job.get("aovs") or job.get("passes") or job.get("mode") in {"SYNTHETIC_DATA", "SPACE_PREVIEW"}:
+        if job.get("productTruthAovs"):
+            from fox3d.product_truth import write_occupancy_png
+
+            for role, name in (
+                ("depth", "depth.png"),
+                ("normal", "normal.png"),
+                ("product_mask", "product_mask.png"),
+                ("artwork_mask", "artwork_mask.png"),
+                ("alpha", "alpha.png"),
+            ):
+                write_occupancy_png(job_dir / name, width=width, height=height, kind=role, seed=seed + name)
+                outputs[name] = str(job_dir / name)
+        elif job.get("aovs") or job.get("passes") or job.get("mode") in {"SYNTHETIC_DATA", "SPACE_PREVIEW"}:
             for name in ("depth.png", "normal.png", "seg.png", "mask.png"):
                 write_solid_png(job_dir / name, seed + name, max(8, width // 4), max(8, height // 4))
                 outputs[name] = str(job_dir / name)

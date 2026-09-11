@@ -935,6 +935,17 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
             _render_connected(filename, kind)
         except Exception as exc:
             debug["errors"].append(f"{kind}: {exc}")
+    if job.get("productTruthAovs"):
+        if found.get("seg.png") and "product_mask.png" not in found:
+            found["product_mask.png"] = found["seg.png"]
+        try:
+            _render_connected("alpha.png", "seg")
+        except Exception as exc:
+            debug["errors"].append(f"alpha: {exc}")
+        if found.get("alpha.png") is None and found.get("product_mask.png"):
+            found["alpha.png"] = found["product_mask.png"]
+        if found.get("product_mask.png") and "artwork_mask.png" not in found:
+            found["artwork_mask.png"] = found["product_mask.png"]
     _write_json(work / "aov_debug.json", debug)
     try:
         tree, blender5 = _compositor_tree(scene)

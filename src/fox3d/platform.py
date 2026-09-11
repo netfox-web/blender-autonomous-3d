@@ -111,8 +111,12 @@ class Platform:
         self.prototype = PrototypeFactory(self)
         self.pilot_batch = PilotBatchFactory(self)
         from fox3d.artwork import ArtworkFactory
+        from fox3d.generative_gateway import GenerativeRenderGateway
+        from fox3d.product_truth import ProductTruthFactory
 
         self.artwork = ArtworkFactory(self)
+        self.product_truth = ProductTruthFactory(self)
+        self.generative = GenerativeRenderGateway(self)
         self.pilot = PilotOps(self)
         self.retail_fixtures = self.physical.retail
         self.providers = ProviderRegistry(self.root / "providers")
