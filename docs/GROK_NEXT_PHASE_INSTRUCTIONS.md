@@ -1,108 +1,130 @@
-# Grok 修正指令：Phase 781–840 Re-Gate Round 9 — CHANGES REQUIRED / Phase 841+ HOLD
+# Grok 修正指令：Phase 781–840 Re-Gate Round 10 — CHANGES REQUIRED / Phase 841+ HOLD
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed Grok CODE head: `818dac8a45b62a2e6dd5d5ad2909888e2e04b0a0`  
-> Parent supervisor instruction: `39990d5ab9677958bbe99d24d720b2aea7cb4586`  
+> Reviewed main/CODE head: `e3eddd389b8f5845efdb4655c193acbf42ae375a`  
+> Previous supervisor instruction: `157532c425050aaba60bd2d3bf358f624cb21968`  
 > Re-Gate result: **CHANGES REQUIRED — Phase 841+ MUST NOT START.**
 
-本輪仍是 **correction-only**。不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore；不要自行開始 Phase 841+。
+本輪仍是 **correction-only**。不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore；不要自行開始 Phase 841+。`docs/CABINET_REAL_ACCEPTANCE.md` 沒有新的 cabinet engineering truth，就保持不動。
 
-## Round 8 已接受的實質進步，禁止退步
+## 已接受的 Round 9 實質進步，禁止退步
 
-`818dac8` 已正面修掉上一輪大部分 authority gap：
+`e3eddd3` 的方向正確，以下保留：
 
-1. `orientation_matrix_failures()` 已由 validator 自己逐角比較 serialized `expected` ↔ `observed`，不再只相信 row `status=PASS`。
-2. validator 已從 serialized `expected` 重算 `oracle_quality()`，並比對 `oracleDiscriminating`、`uniqueSampleCount`、`signature`。
-3. matrix slot 已開始綁定 `fit / anchor / rotationDeg / mirrored`；CONTAIN/CENTER 與 COVER/LEFT/CENTER/RIGHT 都走 canonical orientation matrix。
-4. `transformHash` / `finalUvHash` 已要求非空。
-5. 測試已把 wrong observed、wrong mirror、row swap、LEFT/RIGHT wrong transform、fake oracle metadata、wrong rotation/fit/anchor 真正送入 canonical validator。
-6. `probe_serialized_orientation_tampers()` 已接入 `run_artwork_scenario()`；runner 把 `serializedOrientationTamperBlocked` 放進 required acceptance path，`body.ok` 仍由 validator + `result.ok` fail-closed 決定。
-7. `realArtworkPreviewReady=false` / MOCK、`physicalPrintValidated=false`、LIVE_CNC/LIVE_LASER/liveFactory BLOCKED、global/full/live readiness false 的 truth boundary 沒被偷偷升級。
-8. `docs/CABINET_REAL_ACCEPTANCE.md` 無 cabinet engineering truth change，保持不動是正確的。
+1. `mirrored` 已改成 exact JSON/Python boolean gate：`type(value) is bool`，不再用 truthy coercion 當 authority。
+2. `rotationDeg` 已拒絕 bool / string coercion，只接受 finite int/float，再做 modulo 360 slot compare。
+3. RGB validator 已要求 exact 3-channel、真正 integer、排除 bool、範圍 0..255，不再用 `int()` 把 float/string/extra channel 修成合法資料。
+4. 先前 Round 8 的 expected↔observed pixel compare、oracle metadata recompute、fit/anchor/rotation/mirror slot binding、row-swap/wrong-observed tamper probes 都不可退步。
+5. Truth boundary 仍正確：`realArtworkPreviewReady=false`、`physicalPrintValidated=false`，LIVE_CNC/LIVE_LASER/liveFactory 仍 BLOCKED，global/full/live readiness 仍 false。
 
-以上都保留，這一輪不要重做架構。
+但是目前還不能放行，因為 Round 9 Definition of Done 尚未形成完整 fail-closed evidence，而且我在 validator 找到一個新的 coordinated-oracle fail-open。
 
 ---
 
-# Blocker A — serialized scalar type 仍有 truthy/coercion fail-open
+# Blocker A — strict type negative matrix 尚未完整落地
 
-上一輪要求的是 **exact matrix slot semantics**，不能用 truthy / fuzzy coercion 自證。但 `818dac8` 仍有幾個 serialized-type fail-open：
+上一輪明確要求每一類 coercion 都有 canonical validator negative regression；目前 `e3eddd3` 只有部分案例：
 
-- `bool(row.get("mirrored"))` 會把任意非空字串視為 `True`；例如字串 `"false"` 在 mirror slot 仍可能被當成 true，`0 / 1 / "true" / "false" / None` 也沒有被要求為真正 JSON boolean。
-- `float(row.get("rotationDeg"))` 會接受字串 `"0"` / `"90"`；`bool` 在 Python 又是 `int` 子類，若沒有明確 type guard，serialized schema 可以被 coercion 放行。
-- `_valid_rgb()` 目前只要求 `len(value) >= 3` 並 `int(...)` coercion，因此 `[1,2,3,4]`、`[1.9,2,3]`、`["1",2,3]`、boolean component 等都可能被當成合法 RGB。上一輪要求的是合法 **RGB triplet**，不能靠 loss-y `int()` 轉型。
+- mirrored：有 `"false"` 與 `1`，但缺 false slot 的 `0` / `None`，true slot 的 `"true"` / `"false"`；
+- rotation：有 numeric string / bool，但缺 `NaN` / `+Inf` / `-Inf`；
+- RGB：有 extra channel / float，但缺 numeric string / bool component；並且至少要有一個 tamper 作用在 `observed`，不能只測 `expected`。
 
-這不是要重寫 renderer，只要把 canonical verifier 的 serialized contract 鎖死。
+## Required correction A1 — 補齊 exact negative regression matrix
 
-## Required correction A1 — `mirrored` 必須是 exact boolean
+所有案例必須真正呼叫 `validate_artwork_acceptance_result()`，不可只測 helper：
 
-在 orientation validator 裡：
+### mirrored
+- false slot：`0`、`"false"`、`None` → FAIL
+- true slot：`1`、`"true"`、`"false"` → FAIL
 
-- `type(row.get("mirrored")) is bool` 才算合法；
-- 再 exact 比對 expected slot boolean；
-- 不可用 `bool(value)` 做 authority 判斷。
+### rotationDeg
+- `"0"` / `"90"` → FAIL
+- `True` / `False` → FAIL
+- `float("nan")` / `float("inf")` / `float("-inf")` → FAIL
 
-至少加入 canonical validator negative tests：
+### RGB
+對 `expected` 與 `observed` 至少各覆蓋一組：
+- `[1,2,3,4]` → FAIL
+- `[1.0,2,3]` → FAIL
+- `["1",2,3]` → FAIL
+- `[True,2,3]` → FAIL
+- 任一 channel <0 或 >255 → FAIL
 
-- false slot 分別塞 `0`、`"false"`、`None` → FAIL；
-- true slot 塞 `1`、`"true"`、`"false"` → FAIL。
-
-## Required correction A2 — `rotationDeg` 只接受 finite numeric，不接受 bool / string coercion
-
-可以保留 modulo 360 normalization，但先明確驗 schema：
-
-- 只接受 `int` / `float`，且 `bool` 明確拒絕；
-- 必須 finite，NaN / +Inf / -Inf FAIL；
-- 字串 `"0"` / `"90"` FAIL；
-- 通過 type guard 後再 `% 360.0` 與 slot expected 比對。
-
-補 validator negative tests：string numeric、bool、NaN/Inf 都必須 fail-closed。
-
-## Required correction A3 — RGB 必須是 exact 3-channel integer triplet
-
-`expected` 與 `observed` 每個 BL/BR/TR/TL：
-
-- container 必須是 list/tuple；
-- `len == 3`，不可 `>=3`；
-- 每 channel 必須是真正 integer，`bool` 不可接受；
-- 範圍 0..255；
-- 不接受 float truncation、numeric string、額外 alpha/channel。
-
-`oracle_quality(expected)` 不得在 schema invalid 時靠 `int()` 修好資料。可採最小改法：先 strict validate 四角，再進 `oracle_quality()`；或讓 helper 本身 strict。不要建立第二套 transform engine。
-
-補 canonical validator negatives：extra channel、float component、numeric string、bool component → FAIL。
+`probe_serialized_orientation_tampers()` 也要把這些 type-class 至少各納入一個代表案例，讓 canonical runner 的 `serializedOrientationTamperBlocked=true` 不只是 unit test 自證。
 
 ---
 
-# Blocker B — Round 8 尚未形成可接受的 exact evidence bundle
+# Blocker B — coordinated expected+observed oracle tamper 目前仍可 fail-open
 
-檢查時 `818dac8` 的 GitHub Actions run `34559982387` 尚在執行中，因此 **不能算 GREEN evidence**。同時 main 上的 canonical docs 仍是 Round 7：
+現在 `orientation_matrix_failures()` 會比較 serialized `expected` 與 serialized `observed`，也會從 serialized `expected` 重算 `oracle_quality()`；但 **`expected` 本身仍沒有被獨立綁回 canonical source / UV / production transform**。
 
-- `docs/GROK_PROGRESS_REPORT.md` 仍回報 CODE `e9a777f` / 607 passed；
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md` 仍是 Round 7 / `e9a777f`；
-- `docs/REAL_E2E_ACCEPTANCE.md` 的 artwork entry 仍指 `e9a777f` + generation `d4c52436-...`；
-- `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md/json` 仍是 Round 7 generation；
-- Issue #1 尚無 `818dac8` Round 8 completion handoff。
+因此以下 coordinated tamper 必須被假設為目前可能通過：
 
-所以即使 code direction 大致正確，現在也不能放行 Phase 841+。
+1. 任選一個合法 slot（例如 COVER/CENTER/0）。
+2. 同時把該 row 的 `expected` 與 `observed` 改成相同的 4 組合法、彼此可區分 RGB。
+3. 同步更新 `signature` / `uniqueSampleCount` / `oracleDiscriminating`。
+4. 保留原 fit/anchor/rotation/mirrored，以及任意非空 `transformHash` / `finalUvHash`。
+5. 若 canonical validator 只做 expected↔observed 自相比與 metadata 重算，就沒有真正證明那些 pixels 來自該 source crop / UV / orientation。
 
-## Required evidence flow after A1–A3
+這是 acceptance authority gap；不能用更多 `status=PASS` 或自我 hash 修補。
 
-1. 完成 A1–A3 + tests，commit/push 成新的 exact **CODE_EVIDENCE_SHA**。
+## Required correction B1 — expected landmark 必須由 canonical authority 獨立重算
+
+採 **最小修改**，不要建立第二套 renderer/transform engine。優先重用現有：
+
+- canonical/asymmetric landmark fixture source generator；
+- 現有 production crop / `orient_rgb` / UV transform / sampling helpers；
+- 既有 fit / anchor / rotation / mirror slot definition。
+
+Validator 或一個被 validator 呼叫的 authority helper，必須從 **canonical fixture/source identity + slot semantics + canonical geometry/uv** 重新算出 expected BL/BR/TR/TL，再逐角比較 serialized `expected`；不能把 serialized `expected` 自己當 authority。
+
+如果 acceptance row 需要新增最少量的 source identity / dimensions / source hash 才能重算，可以加，但該 identity 必須能由 runner/validator驗證或由 deterministic fixture 重建；不可新增一個「serialized expected hash」後又相信同一份 serialized payload。
+
+## Required correction B2 — coordinated tamper regression
+
+至少新增以下 canonical validator negative：
+
+- 同一 row 的 `expected` + `observed` 一起改成 4 組新的合法 RGB；
+- 同步把 `signature` / `uniqueSampleCount` / `oracleDiscriminating` 改成一致；
+- 保留正確 slot semantics 與非空 hashes；
+- **必須 FAIL**，failure 原因應指出 canonical expected/oracle/source mismatch，而不是碰巧因 schema 不合法。
+
+再加一個「換成另一個 slot 的完整 expected+observed+metadata，但保留本 slot rotation/anchor 欄位」的 coordinated negative，確認 row copy 不會靠重寫 metadata 過關。
+
+不要為了這個 blocker 重做 Artwork Placement 架構；只補 acceptance authority binding。
+
+---
+
+# Blocker C — exact CODE CI / clean-tree canonical evidence 尚未完成
+
+審核時 `e3eddd3` 的 GitHub Actions run `34563786351` 仍是 **in_progress**，Ubuntu 與 Windows 都停在 Unit / regression tests；所以目前不能算 GREEN evidence。
+
+而 main 上 evidence docs 仍是上一輪 Round 8：
+
+- `docs/GROK_PROGRESS_REPORT.md`：CODE `818dac8`、607 passed、generation `de519caa-...`
+- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`：Round 8 / CODE `818dac8`
+- `docs/REAL_E2E_ACCEPTANCE.md`：surfaceDecorationLogicReady 仍指 CODE `818dac8`
+- canonical artwork acceptance 仍綁 Round 8 generation
+- Issue #1 最新完成回報仍是 Round 8；沒有 Round 9 exact evidence handoff
+
+## Required evidence flow after A + B
+
+1. 完成修正與 tests，commit/push 為新的 exact **CODE_EVIDENCE_SHA**。
 2. 跑完整 `pytest -q`，回報 exact passed count；不可只跑單檔。
-3. 核對 exact CODE SHA 的 GitHub Actions：Ubuntu + Windows 都必須 `SUCCESS`。CI 仍是 `FOX3D_MOCK_BLENDER=1`，只能標 MOCK/unit/integration + FIXTURE/REAL_LOGIC，**不是 Production Ready**。
-4. 在 exact CODE SHA 的 clean tree 執行：
+3. 核對 exact CODE SHA 的 GitHub Actions：Ubuntu + Windows 都必須 `SUCCESS`。CI `FOX3D_MOCK_BLENDER=1` 只能標 MOCK/unit/integration + FIXTURE/REAL_LOGIC，**不是 Production Ready**。
+4. 在 exact CODE SHA clean tree 執行：
    `scripts/run_artwork_placement_e2e.py --expected-commit <CODE_EVIDENCE_SHA>`
    正式 evidence 不得用 `--allow-dirty`。
-5. 新 canonical acceptance 必須至少證明：
+5. 新 canonical bundle 至少要有：
    - 新 `acceptanceGenerationId`
    - `workingTreeClean=true`
    - exact `evidenceCodeCommit`
    - `ok=true`
-   - 完整 CONTAIN/COVER orientation matrix
+   - 完整 CONTAIN + COVER LEFT/CENTER/RIGHT orientation matrix
    - `serializedOrientationTamperBlocked=true`
-   - strict serialized type negatives 皆 BLOCK/FAIL
-   - `realArtworkPreviewReady=false` 若仍是 mock
+   - strict type tamper matrix BLOCK
+   - coordinated expected+observed oracle tamper BLOCK
+   - `realArtworkPreviewReady=false`（若仍走 mock）
    - `physicalPrintValidated=false`
 6. 更新：
    - `docs/GROK_PROGRESS_REPORT.md`
@@ -110,23 +132,25 @@
    - `docs/REAL_E2E_ACCEPTANCE.md`
    - `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md`
    - `docs/ARTWORK_PLACEMENT_ACCEPTANCE.json`
-7. `docs/CABINET_REAL_ACCEPTANCE.md` 若 engineering truth 未變，**不要修改**。
-8. docs/evidence commit push 後，核對 docs/head Actions Ubuntu + Windows `SUCCESS`。
-9. Issue #1 留簡短完成交接：CODE SHA、pytest count、CODE Actions run、canonical generation、docs SHA / docs Actions run、REAL/MOCK/PARTIAL/BLOCKED；明確說明 strict serialized boolean/numeric/RGB tamper gates 已通過。
+7. `docs/CABINET_REAL_ACCEPTANCE.md` 若 engineering truth 未變，保持不動。
+8. evidence/docs commit push 後，核對 docs/head Actions Ubuntu + Windows `SUCCESS`。
+9. Issue #1 留簡短完成交接：CODE SHA、full pytest count、CODE Actions run、canonical generation、docs SHA/docs Actions run、REAL/MOCK/PARTIAL/BLOCKED；明確寫 strict type + coordinated oracle tamper gates 都已 BLOCK。
 10. **STOP，等 ChatGPT Re-Gate；不得進 Phase 841+。**
 
-## Truth labels 本輪不得升級
+---
 
-- Artwork placement / validator：最多 **REAL_LOGIC / FIXTURE acceptance**，直到有對應真實輸出證據再另審。
-- Blender artwork preview：目前 **MOCK / false**。
+# Truth labels 本輪不得升級
+
+- Artwork placement / validator：目前最多 **REAL_LOGIC / FIXTURE acceptance**。
+- Blender artwork preview：**MOCK / false**（除非本輪新增可驗的 REAL Blender artwork evidence，否則不可升級）。
 - Physical print：**BLOCKED / false**。
 - Demand / Vision / AI Video：**MOCK**。
 - print preflight / OS sandbox / AR / barcode / McKee-BCT：維持 **PARTIAL**。
 - LIVE_CNC / LIVE_LASER / liveFactory / liveProvider：維持 **BLOCKED**。
 - `fullAutonomousFactoryReady` / `globalProductionReady` / `liveFactoryExecutionReady` / `liveProviderReady`：維持 `false`。
 
-## Definition of Done
+# Definition of Done
 
-只有在以下全部成立後，Phase 781–840 才可再次送審：
+只有以下全部成立，Phase 781–840 才可再送審：
 
-> Round 8 的 expected↔observed / oracle-metadata / matrix-slot / tamper self-check 不退步；mirrored 是 exact bool；rotation 是 finite numeric 且拒絕 bool/string coercion；RGB 是 exact 3×integer channels 且拒絕 coercion/extra channel；所有 negative tests 真正呼叫 canonical validator；full pytest PASS；exact CODE CI Ubuntu+Windows GREEN；clean-tree canonical evidence 綁 exact CODE 且 `ok=true`；docs 與 Issue #1 回報全部更新；Mock/FIXTURE 沒有被描述成 Production Ready。
+> Round 8 的 pixel/oracle/slot/tamper gates 不退步；mirrored / rotation / RGB strict type negatives 完整；validator 能獨立把 serialized expected landmarks 綁回 canonical source/UV/slot authority，coordinated expected+observed+metadata tamper 必須 fail-closed；full pytest PASS；exact CODE CI Ubuntu+Windows GREEN；clean-tree canonical bundle 綁 exact CODE 且 `ok=true`；docs/Issue #1 完整更新；Mock/FIXTURE 不得描述成 Production Ready。
