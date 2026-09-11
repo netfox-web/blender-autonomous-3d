@@ -1,121 +1,184 @@
-# Grok 修正指令：Phase 781–840 Re-Gate Round 11 — CHANGES REQUIRED / Phase 841+ HOLD
+# Grok 修正指令：Phase 781–840 Re-Gate Round 12 — CHANGES REQUIRED / Phase 841+ HOLD
 
 > Repo: `netfox-web/blender-autonomous-3d`  
-> Reviewed main head: `321820f074c88b6b1686a4b97f7857464ba001f7`  
-> Reviewed CODE evidence: `f002c55a4645edb27b8cc3ba8cb7fbeb93f98253`  
-> Previous supervisor instruction: `f961e950fdbe799abd59971e1fe11d26210c3eef`  
+> Reviewed main/docs head: `25ebadf14de72e8a64b61a30385c2f10908e1326`  
+> Reviewed CODE evidence: `4977bedcaa54bb16df20b4b58e4bd6137a079eba`  
+> Previous supervisor instruction: `22ed5212b4a0e864ae994011527bf01f67381bdc`  
 > Re-Gate result: **CHANGES REQUIRED — Phase 841+ MUST NOT START.**
 
-本輪仍是 **correction-only**。不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore；不要自行開始 Phase 841+。`docs/CABINET_REAL_ACCEPTANCE.md` 沒有新的 cabinet engineering truth 就保持不動。
+本輪仍是 **correction-only**。不要重寫 Scheduler、Queue、DAM、Recipe、TwinStore、CabinetSpec、WorkOrder、MaterialLot、Journal、ManufacturingRelease、PilotBatch、Backup/Restore；不要自行開始 Phase 841+。`docs/CABINET_REAL_ACCEPTANCE.md` 若 cabinet engineering truth 沒變，保持不動。
 
-## 已確認通過的 Round 10 內容
+## Round 11 已確認通過
 
-1. CODE `f002c55` 已新增 canonical landmark source、canonical expected 重算、strict serialized type guards 與 coordinated oracle negative probes。
-2. full `pytest -q` 回報 **607 passed**。
-3. exact CODE Actions run `34569201347` 已完成，Ubuntu + Windows **SUCCESS**。
-4. canonical generation `ff5ec0b8-26bc-4ce8-9036-c76538a6b90d`：`workingTreeClean=true`、`evidenceCodeCommit=f002c55...`、`ok=true`。
-5. docs/head `321820f` Actions run `34570727491` 已完成，Ubuntu + Windows **SUCCESS**。
-6. Truth labels 正確：Artwork validator 仍是 **REAL_LOGIC / FIXTURE**；Blender artwork preview **MOCK / false**；physical print **BLOCKED / false**；Demand/Vision/AI Video **MOCK**；LIVE_CNC/LIVE_LASER/liveFactory **BLOCKED**；global/full/live readiness 維持 `false`。
-7. `docs/CABINET_REAL_ACCEPTANCE.md` 未被不必要修改。
+1. CODE `4977bed` 已完成 serialized expected ↔ deterministic canonical expected **exact 3-int equality**，不再使用 ±48 tolerance。
+2. near-tolerance coordinated RGB tamper 已有直接走 `validate_artwork_acceptance_result()` 的 negative，`+1/+8` 均 fail closed 在 canonical authority，而不是 RGB type。
+3. canonical surface / panelIndex 已綁 deterministic 2400×1800 / 4-door fixture；payload 只作 evidence。
+4. coordinated geometry tamper 已 fail closed；panelIndex `"2"` / `True` / `-1` / `999` / missing、surface width/height tamper 皆有 full-validator negative。
+5. tamper flags 已拆成獨立 probes：`serializedOrientationTamperBlocked`、`strictTypeTamperBlocked`、`coordinatedOracleTamperBlocked`、`canonicalGeometryTamperBlocked`、`nearToleranceOracleTamperBlocked`。
+6. full `pytest -q` 回報 **607 passed**。
+7. exact CODE Actions `34584414875`：Ubuntu + Windows **SUCCESS**。
+8. canonical generation `edd1142d-511d-4069-b794-1e6c35cf1002`：runner-bound `evidenceCodeCommit=4977bed...`、`workingTreeClean=true`。
+9. docs/head `25ebadf` Actions `34586213912`：Ubuntu + Windows **SUCCESS**。
+10. Truth labels 正確維持：Artwork validator **REAL_LOGIC / FIXTURE**；Blender artwork preview **MOCK / false**；physical print **BLOCKED / false**；Demand/Vision/AI Video **MOCK**；LIVE_CNC/LIVE_LASER/liveFactory **BLOCKED**；global/full/live readiness 維持 `false`。
 
-以上證明 Round 10 有實質進展，但仍有兩個 fail-open authority 問題，故本輪不能 GO Phase 841+。
-
----
-
-# Blocker A — canonical expected 使用 ±48 容差，近距離 coordinated tamper 仍可通過
-
-目前 `orientation_matrix_failures()` 對 serialized `expected` 與 deterministic `canonical_orientation_expected()` 的比較使用 `_rgb_close(..., tol=48)`。
-
-這不符合「serialized expected 不是 authority」的目標：canonical expected 與 serialized expected 都是 deterministic integer RGB，不存在真實渲染取樣誤差；因此攻擊者可以把 `expected` + `observed` 同步小幅改動（例如每 channel +1 / +8 / +16，仍在 0..255），同步重算 `signature / uniqueSampleCount / oracleDiscriminating`，在 ±48 容差內仍可能被接受。
-
-## Required correction A1 — canonical expected 必須 exact
-
-- `serialized expected` ↔ `canonical_orientation_expected()`：**exact 3-int equality**，不得使用 tolerance。
-- `serialized observed` ↔ canonical/expected：若真有 raster/sampling 差異，可以保留明確、最小、可解釋的 tolerance，但不能讓 serialized expected 本身有容差。
-- 不要用新增 hash 取代 exact compare；payload 自帶 hash 不是 authority。
-
-## Required correction A2 — 新增 near-tolerance coordinated tamper
-
-至少新增一個真正呼叫 `validate_artwork_acceptance_result()` 的 negative：
-
-1. 取一個 COVER/CENTER row。
-2. 對四角 `expected` 與 `observed` 同步改成合法 RGB，例如每個 channel 在不溢位前提下 `+1` 或 `+8`。
-3. 同步重算 `signature / uniqueSampleCount / oracleDiscriminating`，保留 fit/anchor/rotation/mirror 合法。
-4. 必須 FAIL，failure 必須落在 `canonical_expected`（或等價 canonical authority mismatch），不能因 RGB type 非法才失敗。
-
-此 negative 必須同時進 unit test 與 canonical runner evidence。
+以上代表 Round 11 的原定 blockers 已實質修正。但 Re-Gate 再檢查 canonical fixture geometry parser 時，仍發現一個新的 fail-open schema authority gap，因此 Phase 841+ 暫不放行。
 
 ---
 
-# Blocker B — `_canonical_surface_mm()` 仍信任 serialized `canonicalSurfaces`，panelIndex 非法時會跳過 geometry binding
+# Blocker A — `_canonical_fixture_crops_bound()` 對 missing / NaN / coercion 仍非 fail-closed
 
-目前流程：
-
-- `widthMm / heightMm` 直接讀 `orientationParity.canonicalSurfaces[fit]`；
-- `panelIndex` 也讀 serialized payload；
-- 只有 `panelIndex` 是合法 `int` 且落在 `cabinet4.panelCrops` 範圍時，才比較 surface width/height；
-- 若 `panelIndex` 被改成字串、out-of-range 或其他非法值，函式仍會回傳 serialized width/height，而不是 fail closed。
-
-因此攻擊者可改 `panelIndex + widthMm + heightMm`，再依新的 attacker-controlled geometry 重算全部 expected/observed/metadata，canonical expected 仍可能被帶著走。
-
-## Required correction B1 — canonical surface authority 必須 fail closed
-
-採最小修改，不建立第二套 geometry engine：
-
-- CONTAIN 與 COVER 的 canonical panel index 必須由 code/fixture definition 決定，不由 payload 決定。
-- serialized `panelIndex` 若保留，只能作 evidence，必須 **exact int + exact expected index**；字串 `"2"`、bool、None、負數、out-of-range 全 FAIL。
-- `cabinet4.panelCrops` 缺失、型別錯、index row 缺失時，直接 FAIL，不得 fallback 回 serialized width/height。
-- canonical surface width/height 必須從獨立 fixture geometry authority 取得或重算，再 exact/epsilon 對 payload 做驗證；不要把 payload 本身當 geometry authority。
-- 若用 `cabinet4.panelCrops` 當中介，必須再把 crop geometry 綁回 deterministic cabinet4 fixture（2400×1800、4 doors / canonical fixture spec），避免 coordinated tamper `panelCrops + canonicalSurfaces` 一起自洽後通過。
-
-## Required correction B2 — geometry authority negative matrix
-
-至少新增：
-
-- `panelIndex="2"` → FAIL
-- `panelIndex=True` → FAIL
-- `panelIndex=-1` → FAIL
-- `panelIndex=999` → FAIL
-- 缺 `panelIndex` → FAIL（若 schema 要求存在）
-- 改 `canonicalSurfaces.COVER.widthMm/heightMm`，其餘不改 → FAIL
-- **coordinated geometry tamper**：改 `panelIndex + widthMm/heightMm + expected + observed + signature/unique/discriminating` 成另一組完全自洽資料 → 必須 FAIL 在 geometry/canonical authority，而不是靠其他偶然錯誤。
-
-這些都要直接走 `validate_artwork_acceptance_result()`。
-
----
-
-# Blocker C — 三個 tamper evidence flags 目前共用同一個 boolean，不足以證明三種 gate 各自成立
-
-目前 `run_artwork_scenario()` 是：
+目前 `_canonical_fixture_crops_bound()` 類似：
 
 ```python
-tamper_blocked = probe_serialized_orientation_tampers(result)
-result["serializedOrientationTamperBlocked"] = tamper_blocked
-result["strictTypeTamperBlocked"] = tamper_blocked
-result["coordinatedOracleTamperBlocked"] = tamper_blocked
+abs(float(crop.get("xMm") or 0) - x_mm) > MM_EPS
+abs(float(crop.get("yMm") or 0) - y_mm) > MM_EPS
+abs(float(crop.get("widthMm") or 0) - width_mm) > MM_EPS
+abs(float(crop.get("heightMm") or 0) - height_mm) > MM_EPS
 ```
 
-這會讓三個不同 claims 只由一個 aggregate boolean 代表，evidence 粒度不足。
+以及 `cabinet4.widthMm` 只有「若存在才驗證」。
 
-## Required correction C1 — 分離 gate
+這會造成幾個 canonical geometry evidence fail-open：
 
-最小修改即可，至少拆成獨立可驗證結果：
+- `xMm` / `yMm` 缺欄位時可被 `or 0` 默認成 0；對本來 canonical 值就是 0 的欄位，缺失資料可能被接受。
+- `float("NaN")` 或 `float("nan")` 會得到 NaN；Python 中 `abs(NaN - expected) > MM_EPS` 為 False，因此 NaN 可能繞過 mismatch 判定。
+- numeric string 例如 `"600"`、`"1800"` 可被 `float()` coercion 後接受，serialized schema 不再是 strict typed evidence。
+- `cabinet4.widthMm` 若缺失，目前不會直接 FAIL。
+- `canonicalSurfaces.*.widthMm/heightMm` 雖有 finite guard，但仍允許 numeric string 經 `float()` coercion；Round 12 請一併收斂 strict schema。
 
-- `serializedOrientationTamperBlocked`
-- `strictTypeTamperBlocked`
-- `coordinatedOracleTamperBlocked`
-- 建議新增 `canonicalGeometryTamperBlocked`
-- 建議新增 `nearToleranceOracleTamperBlocked`
+這不代表現有 deterministic fixture 計算錯，而是 **serialized canonical geometry evidence 的 schema 還能被缺欄位、NaN 或型別 coercion 放行**。
 
-每個 flag 必須由其對應 probe 自己計算；最後 `ok` 再要求全部 true。可以共用 helper，但不能只是把同一 aggregate boolean 複製到多個欄位。
+## Required correction A1 — 新增 strict finite millimetre parser（最小修改）
+
+請在 artwork acceptance/validator 內新增小型 helper，不要建立第二套 Cabinet geometry engine，也不要改寫 CabinetSpec。
+
+對 canonical geometry evidence 的 mm 欄位統一要求：
+
+- key 必須存在；不得用 `or 0`、不得 missing fallback。
+- type 必須是 exact `int` / `float`；**bool 禁止、string 禁止**。
+- 必須 `math.isfinite(float(value))`。
+- 再以 `MM_EPS` 對 deterministic expected geometry 比較。
+
+例如概念：
+
+```python
+def _strict_finite_mm(mapping, key):
+    if key not in mapping:
+        return None
+    v = mapping[key]
+    if type(v) is bool or not isinstance(v, (int, float)):
+        return None
+    fv = float(v)
+    if not math.isfinite(fv):
+        return None
+    return fv
+```
+
+名稱可自行調整，但語意必須 fail closed。
+
+## Required correction A2 — `_canonical_fixture_crops_bound()` 全面 strict
+
+至少必須：
+
+1. `cabinet4.widthMm` **必須存在**，strict finite numeric，且與 `2400.0` 在 `MM_EPS` 內一致。
+2. `panelCrops` 必須是 list 且 **exact length 4**。
+3. 每一個 crop 必須是 dict，並明確包含：
+   - `xMm`
+   - `yMm`
+   - `widthMm`
+   - `heightMm`
+4. 四欄都必須 strict finite numeric：不接受 bool / string / NaN / ±Inf / missing。
+5. 每個 crop 必須與 `canonical_cabinet4_panel_mm(i)` deterministic 結果一致。
+6. 不得把 payload 本身當 geometry authority；deterministic fixture remains authority。
+
+## Required correction A3 — `canonicalSurfaces` width/height 同步 strict type
+
+目前 `_canonical_surface_mm()` 對 `widthMm/heightMm` 會 `float(raw)`；請收斂成：
+
+- key required
+- exact int/float
+- bool/string 拒絕
+- finite required
+- compare deterministic fixture dimensions
+- `panelIndex` 維持 exact `int` + exact expected index
+
+不要因為數字字串可轉 float 就接受。
 
 ---
 
-# Evidence flow — Round 11 修正後全部重產
+# Blocker B — 新增 canonical fixture geometry strict negative matrix
+
+所有下列 negative 都必須 **直接呼叫 `validate_artwork_acceptance_result()`**，不能只測 helper：
+
+## B1. Missing field
+
+至少包含：
+
+- `cabinet4.widthMm` missing → FAIL
+- crop 0 `xMm` missing → FAIL（特別重要：canonical x 本來為 0，不能被 default 0 放行）
+- 任一 crop `yMm` missing → FAIL（canonical y 本來為 0）
+- `widthMm` missing → FAIL
+- `heightMm` missing → FAIL
+
+## B2. Non-finite
+
+對 canonical fixture geometry 至少測：
+
+- `float("nan")`
+- `float("inf")`
+- `float("-inf")`
+
+需涵蓋 `cabinet4.widthMm` 與至少一個 crop field。
+
+## B3. Coercible wrong types
+
+至少測：
+
+- numeric string `"0"`
+- numeric string `"600"`
+- numeric string `"1800"`
+- `True` / `False`
+
+需涵蓋 crop geometry 與 `canonicalSurfaces.COVER.widthMm/heightMm`。
+
+## B4. Coordinated authority tamper
+
+建立一個資料看起來完全自洽的 coordinated tamper：
+
+- geometry evidence 使用非法 schema 值（例如 string / NaN / missing-zero field）
+- expected / observed / signature / uniqueSampleCount / oracleDiscriminating 仍保持可自洽或重新計算
+- validator 必須 FAIL 在 `canonical_geometry` / canonical authority 類 failure
+- 不得只是因 `_rgb` type 錯而 FAIL
+
+目的：證明即使攻擊者協調修改 oracle metadata，也不能用 schema coercion 繞過 geometry authority。
+
+---
+
+# Blocker C — Canonical geometry schema evidence 要能獨立證明
+
+目前 `canonicalGeometryTamperBlocked=true` 已證明 Round 11 的 index/dimension coordinated tamper；Round 12 要再證明 strict finite schema 本身。
+
+請採下列其中一種，但推薦第一種：
+
+### 推薦：新增獨立 flag
+
+- `finiteCanonicalGeometryTamperBlocked`
+
+由專屬 probe 計算，涵蓋 missing / NaN / ±Inf / string / bool matrix。
+
+runner / acceptance JSON/MD / progress report 都要發布此 flag，`ok` 必須要求它為 true。
+
+### 若不新增 flag
+
+可以擴充 `canonicalGeometryTamperBlocked`，但 canonical evidence 必須額外發布 per-case matrix/results，能清楚證明每一類 strict schema negative 都真的被執行，不能只剩一個 aggregate boolean。
+
+---
+
+# Evidence flow — Round 12 修正後全部重產
 
 1. commit/push 新 code，作為新的 exact `CODE_EVIDENCE_SHA`。
-2. 跑完整 `pytest -q`，回報 exact passed count；不可只跑單檔。
-3. exact CODE SHA 的 GitHub Actions Ubuntu + Windows 都必須 `SUCCESS`。CI 仍是 MOCK/unit/integration + FIXTURE/REAL_LOGIC evidence，**不是 Production Ready**。
+2. 跑完整 `pytest -q`，回報 exact passed count；不可只跑 `test_artwork.py`。
+3. exact CODE SHA 的 GitHub Actions Ubuntu + Windows 都必須 `SUCCESS`。
 4. clean tree 執行：
    `scripts/run_artwork_placement_e2e.py --expected-commit <CODE_EVIDENCE_SHA>`
    正式 evidence 禁止 `--allow-dirty`。
@@ -124,11 +187,9 @@ result["coordinatedOracleTamperBlocked"] = tamper_blocked
    - `workingTreeClean=true`
    - exact `evidenceCodeCommit`
    - `ok=true`
-   - serialized expected ↔ canonical expected exact compare gate
-   - near-tolerance coordinated oracle tamper BLOCK
-   - canonical geometry/panelIndex coordinated tamper BLOCK
-   - strict type matrix BLOCK
-   - cross-slot copy tamper BLOCK
+   - Round 8–11 原有 tamper flags 全維持 true
+   - strict finite canonical geometry schema gate true
+   - missing/NaN/Inf/string/bool geometry negative evidence
    - `realArtworkPreviewReady=false`（若仍 mock）
    - `physicalPrintValidated=false`
 6. 更新：
@@ -140,7 +201,7 @@ result["coordinatedOracleTamperBlocked"] = tamper_blocked
 7. `docs/GROK_PROGRESS_REPORT.md` Source 旨令必須指向本次 supervisor instruction commit。
 8. `docs/CABINET_REAL_ACCEPTANCE.md` 若 cabinet engineering truth 未變，保持不動。
 9. evidence/docs commit push 後，核對 docs/head Actions Ubuntu + Windows `SUCCESS`。
-10. Issue #1 留完成交接：CODE SHA、full pytest count、CODE Actions run、canonical generation、docs SHA/docs Actions run、各 tamper gate 狀態、REAL/MOCK/PARTIAL/BLOCKED。
+10. Issue #1 留完成交接：CODE SHA、full pytest count、CODE Actions run、canonical generation、docs SHA/docs Actions run、strict geometry matrix/flag、REAL/MOCK/PARTIAL/BLOCKED。
 11. **STOP，等待 ChatGPT Re-Gate；不得進 Phase 841+。**
 
 # Truth labels 不得升級
@@ -157,4 +218,4 @@ result["coordinatedOracleTamperBlocked"] = tamper_blocked
 
 只有以下全部成立才可再送 Re-Gate：
 
-> serialized expected 對 deterministic canonical expected 為 exact equality；near-tolerance coordinated tamper fail-closed；canonical surface/panelIndex 不再由 serialized payload 自我授權；coordinated geometry tamper fail-closed；各 tamper evidence flags 獨立計算；Round 8–10 已通過的 pixel/oracle/slot/type guards 不退步；full pytest PASS；exact CODE CI Ubuntu+Windows GREEN；clean-tree canonical bundle 綁 exact CODE 且 `ok=true`；docs/Issue #1 全部更新；Mock/FIXTURE 不得描述成 Production Ready。
+> Round 11 已通過的 exact canonical expected、orientation/type/oracle/geometry/near-tolerance gates 不退步；canonical fixture 的 `cabinet4.widthMm` 與每個 crop `xMm/yMm/widthMm/heightMm` 全部 required + strict finite numeric，禁止 missing fallback / bool / string / NaN / ±Inf；`canonicalSurfaces` geometry 同樣 strict typed；full-validator negative matrix 全 PASS；strict geometry evidence 可獨立證明；full pytest PASS；exact CODE CI Ubuntu+Windows GREEN；clean-tree canonical bundle 綁 exact CODE 且 `ok=true`；docs/Issue #1 全部更新；Mock/FIXTURE 不得描述成 Production Ready。
