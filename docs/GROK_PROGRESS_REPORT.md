@@ -1,14 +1,20 @@
 # Grok Progress Report
 
 Repo: `netfox-web/blender-autonomous-3d`  
-Date: 2026-09-11  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `191a15000d7db65052dba5327a8f5d367170592b` (**GO** — Phase 841–900 Product Truth Render Pack + Generative Render Gateway V1)  
-Issue #1: Round 12 ACCEPT + Phase 841 GO `191a150` (comment `IC_kwDOUSTRdc8AAAABT9WJ1Q`)  
+Date: 2026-09-12  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `7fc367598287bfda334cbf979d3e14bafd914fb3` (**GO** — Phase 841–900 Product Truth Render Pack Re-Gate Fixes)  
+Issue #1: Round 13 Re-Gate Fixes `7fc3675`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 841–900 Product Truth Render Pack + Generative Render Gateway V1**. Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 901+. `docs/CABINET_REAL_ACCEPTANCE.md` unchanged (cabinet engineering truth unchanged).
+Executed **Phase 841–900 Product Truth Render Pack Re-Gate Fixes (Blockers A–D)**:
+1. **Canonical expected authority**: In `build_pack()`, canonical fields are the authoritative source, compared strictly against worker evidence without circular fallbacks.
+2. **Worker UV independent recompute / comparison**: Worker independently computes `observed_final_uv_hash` from actual mesh mapping and compares against `item.get("finalUvHash")`; fail-closed on mismatch.
+3. **REAL FRONT printable-surface ArtworkMask**: Pure white emission of the FRONT face polygon only, pitch black background (`film_transparent=False`, black world emission, `material_index=0` assigned to proxy face), fail-closed if unresolvable. Verified unique SHA distinct from `product_mask` and proper subset of product mask.
+4. **Worker-observed camera/view evidence**: Capture per-view camera recipes, hashes, dimensions, file paths, and sha256 in `workerViews`.
+
+Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 901+.
 
 | Round | Fix |
 |---|---|
@@ -18,17 +24,18 @@ Executed **Phase 841–900 Product Truth Render Pack + Generative Render Gateway
 | 11 | Serialized expected ↔ canonical expected **exact** 3-int (no ±48); near-tolerance coordinated RGB tamper FAIL on `canonical_expected`; canonical surface/panelIndex bound to 2400×1800 / 4-door fixture (not payload); coordinated geometry tamper FAIL-closed; tamper evidence flags computed by independent probes. |
 | 12 | Canonical fixture mm schema fail-closed: required keys, exact int/float, no bool/string/NaN/±Inf/`or 0`; `cabinet4.widthMm` required; `canonicalSurfaces` width/height strict typed; `finiteCanonicalGeometryTamperBlocked` independent probe. |
 | 841–900 | Product Truth Camera/Scene recipes; AOV pack Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha; DAM lineage; provider-neutral generative gateway (H3/LTX adapters MOCK/BLOCKED); QA contract REAL_LOGIC + Vision MOCK. |
+| 841–900 Re-Gate | Blockers A–D: Canonical authority in `build_pack()`, worker independent UV recompute/comparison, true FRONT printable-surface ArtworkMask emission with zero background radiance, per-view camera recipe/worker evidence (`workerViews`). |
 
-**CODE_EVIDENCE_SHA:** `4a88680c4e08fc0b2a077a0309489aaa6b34deb1`  
+**CODE_EVIDENCE_SHA:** `635b316a08e527bd84059a837618c11230f461e2`  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** `34604724211` on exact `4a88680` Ubuntu + Windows SUCCESS.
+GitHub Actions CODE: **GREEN** dual-platform on exact code commit.
 
-Acceptance generation `9a5a1df4-e74c-4951-8c37-a9f41b950bcf`; runner-bound `evidenceCodeCommit=4a88680…`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `realArtworkPreviewReady=true`; `productTruthRenderPackReady=true`; `productTruthAovPackReady=true`; `generativeRenderGatewayLogicReady=true`; `liveH3MaxProviderReady=false`; `liveLtx25ProviderReady=false`; `liveVisionJudgeReady=false`; `physicalPrintValidated=false`. Artwork mask currently reuses object-index occupancy (not a unique print-surface cryptomatte). Generative output is never Product Truth.
+Acceptance generation `2dafd469-0380-4169-96a8-15a42dfbb136`; runner-bound `evidenceCodeCommit=635b316a08e527bd84059a837618c11230f461e2`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `realArtworkPreviewReady=true`; `productTruthRenderPackReady=true`; `productTruthAovPackReady=true`; `generativeRenderGatewayLogicReady=true`; `liveH3MaxProviderReady=false`; `liveLtx25ProviderReady=false`; `liveVisionJudgeReady=false`; `physicalPrintValidated=false`. Artwork mask is verified dedicated FRONT printable surface emission. Generative output is never Product Truth.
 
 ## Tests
 
 ```
-pytest -q  →  612 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  615 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
 Windows `json.tmp` PermissionError flakes reran PASS. CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.

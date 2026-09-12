@@ -29,8 +29,8 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Item | Status | Evidence |
 |---|---|---|
 | CameraRecipe / SceneRecipe | REAL_LOGIC | hashed SOT; silent field drift changes hash |
-| ProductTruthRenderPack | REAL | generation `9a5a1df4-…`; CODE `4a88680`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 64×64; DAM lineage; T1000 OptiX |
-| Artwork mask uniqueness | PARTIAL | REAL occupancy valid; currently aliases object-index product mask |
+| ProductTruthRenderPack | REAL | generation `2dafd469-…`; CODE `635b316`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
+| Artwork mask uniqueness | REAL | Dedicated front face printable-surface emission mask with pure black background and true FRONT face emission; fail-closed on mismatch, verified distinct SHA and non-alias subset of product mask |
 | Generative gateway | REAL_LOGIC | provider-neutral IMAGE/VIDEO routing; quality UNVERIFIED |
 | live H3 MAX / LTX 2.5 | BLOCKED | fixture adapter cannot set live*ProviderReady |
 | Product consistency QA | REAL_LOGIC + MOCK Vision | APPROVED_FOR_ASSET_REVIEW ≠ production asset |

@@ -1,8 +1,8 @@
 {
   "lastSeenInstructionSha": "7fc367598287bfda334cbf979d3e14bafd914fb3",
-  "lastProcessedInstructionSha": null,
-  "activeInstructionSha": "7fc367598287bfda334cbf979d3e14bafd914fb3",
-  "lastResultCommitSha": null,
-  "status": "IMPLEMENTING",
+  "lastProcessedInstructionSha": "7fc367598287bfda334cbf979d3e14bafd914fb3",
+  "activeInstructionSha": null,
+  "lastResultCommitSha": "635b316a08e527bd84059a837618c11230f461e2",
+  "status": "WAIT_NEXT_RE_GATE",
   "retryCount": 0
 }
