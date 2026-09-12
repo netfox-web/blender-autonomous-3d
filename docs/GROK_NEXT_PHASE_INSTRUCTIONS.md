@@ -1,150 +1,266 @@
-# Development Agent 下一輪開發指令：Phase 841–900 Re-Gate Round 6 — Frozen Recipe Semantic Authority / Evidence Lineage Final Closure
+# Development Agent 下一輪開發指令：Phase 901–960 — Product Content Factory V1 / Deterministic Commerce Asset Pack
 
 > Repo: `netfox-web/blender-autonomous-3d`  
 > Legacy filename kept for watcher compatibility: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`  
-> Reviewed CODE: `e63fe7aa4554ac372c256fe43ea127113a8ed91d`  
-> Reviewed docs/head: `c3dfb6215560fb76f40d20fbdc2f06723f949d04`  
-> Acceptance generation: `c28a6bc6-4ced-436d-ac95-9aa3562f81bb`  
-> CODE Actions: `34707952458` — Ubuntu `103591328351` SUCCESS + Windows `103591328425` SUCCESS  
-> docs/head Actions: `34709093768` — still IN_PROGRESS at Re-Gate time; do not count as completed evidence until both jobs are SUCCESS  
-> Reported full pytest: **619 passed**  
-> Re-Gate result: **CHANGES REQUIRED — Phase 901+ HOLD.**
+> Reviewed CODE: `cb045af68de6f64f8ba8196ae88382e2210b9dc0`  
+> Reviewed docs/head: `f5eddc194ef80b243323a20b87b48f8c43fa3593`  
+> Acceptance generation: `78ef13b7-180f-43a3-94f9-15a9b3ad9f1f`  
+> CODE Actions: `34712862358` — Ubuntu `103604685753` SUCCESS + Windows `103604685849` SUCCESS  
+> docs/head Actions: `34713775560` — Ubuntu `103607125020` SUCCESS + Windows `103607125136` SUCCESS  
+> Full pytest: **621 passed**  
+> Re-Gate result: **ACCEPT WITH SCOPE — Phase 841–900 CLOSED; Phase 901–960 GO.**
 
-## 0. Scope / fixed rules
+## 0. Scope / fixed truth boundaries
 
-Correction-only. Do **not** rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / ArtworkPlacement / ManufacturingRelease / WorkOrder / MaterialLot / Backup/Restore. Do not create another mm/UV/Product Truth source of truth.
+Build on the accepted Product Truth / Artwork / DAM / Queue / Recipe / TwinStore / CabinetSpec architecture. **Do not rewrite those systems.** Do not create a second millimetre, UV, geometry, camera, scene, product identity, or Product Truth source of truth.
 
-Keep all current truth boundaries honest:
+Phase 841–900 is accepted only in its scoped meaning:
 
-- Product Truth Blender execution: scoped **REAL / REAL_LOGIC**.
-- ProductMask / FRONT PrintableSurface ArtworkMask: scoped REAL artifacts.
+- Product Truth Blender execution / AOV pack / worker provenance: **REAL / REAL_LOGIC**.
+- ProductMask and FRONT PrintableSurface ArtworkMask: **REAL artifacts**, distinct and independently bound.
+- Camera/Scene/View frozen authority + fail-closed re-hash: **REAL_LOGIC**.
 - Generative Gateway contract: **REAL_LOGIC**.
-- live H3 MAX / LTX 2.5: **BLOCKED**.
+- live H3 MAX / LTX 2.5: **BLOCKED** until a real provider is connected and evidenced.
 - Vision Judge: **MOCK / BLOCKED**.
 - physical print: **BLOCKED / false**.
-- LIVE_CNC / LIVE_LASER / liveFactory execution: **BLOCKED**.
+- LIVE_CNC / LIVE_LASER / PLC / live factory execution: **BLOCKED**.
 - `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`.
 
-Mock/FIXTURE is not Production Ready. Do not enter Phase 901+ until a later ChatGPT Re-Gate explicitly says GO.
+Mock/FIXTURE/heuristic evidence is never Production Ready. Generative output is never allowed to become Product Truth.
 
-## 1. Accepted from Round 5 — do not regress
+## 1. Goal
 
-The following are accepted within scope and should not be rewritten:
+Turn one accepted Product Truth / Digital Twin into a deterministic, reusable **commerce content pack** for e-commerce and storefront use while preserving exact product identity and evidence lineage.
 
-1. Exact CODE SHA `e63fe7aa4554ac372c256fe43ea127113a8ed91d` has GitHub Actions run `34707952458`, Ubuntu + Windows SUCCESS.
-2. The official runner now rejects a missing/partial required frozen authority instead of borrowing tenant/placement/engineering/camera/scene/view authority from the final pack, worker evidence, or serialized `expectedIdentity`.
-3. The 23-case official-runner adversarial matrix is present and executes through `run_product_truth_render_e2e.main()`, asserting rejected cases do not publish a successful Product Truth acceptance artifact.
-4. DAM view evidence now binds exact view role, source path, source job, row/worker path, live bytes, SHA/size, dimensions, `blenderJobId`, and top-level/nested worker-view agreement.
-5. Fresh clean-tree REAL acceptance generation `c28a6bc6-4ced-436d-ac95-9aa3562f81bb` is bound to CODE `e63fe7aa...`, Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`.
-6. ProductMask and FRONT PrintableSurface ArtworkMask remain separate artifacts with different SHA/occupancy; do not alias them.
-7. REAL/MOCK/PARTIAL/BLOCKED labeling remains honest: live H3/LTX blocked, Vision mock/blocked, physical print false, live machine control blocked, global/full/live readiness false.
-8. `docs/CABINET_REAL_ACCEPTANCE.md` did not need rewriting and should remain unchanged unless cabinet truth genuinely changes.
+The phase should produce a canonical asset manifest for one SKU/version that can contain deterministic Blender product images, dimension assets, product-state views, and provider-neutral lifestyle/generative requests without changing Engineering/Product Truth authority.
 
-## 2. Blocker A — frozen Camera/Scene/View authority only proves a hash exists, not that the frozen recipe is semantically valid
+Preferred implementation: extend existing `product_truth.py`, `media.py`, `studio.py`, `scene.py`, `commerce.py`, `generative_gateway.py`, DAM and publish helpers where natural. A small focused `content_factory.py` is acceptable if it avoids duplicating existing authorities.
 
-Round 5 removed the pack fallback, but the pre-worker frozen recipe objects are still not fully self-authenticating.
+## 2. Canonical Content Pack model / lineage
 
-Current strict path effectively does this for camera/scene/view recipes:
+Create a canonical content-pack record/manifest (name may be `ProductContentPack`, `CommerceAssetPack`, etc.) whose authority is **derived** from accepted upstream Product Truth.
 
-- verify the object is a dict;
-- verify `cameraRecipeHash` / `sceneRecipeHash` exists;
-- copy that hash into canonical expected identity.
+Required identity/provenance fields at minimum:
 
-`derive_canonical_expected_identity(..., strict=True)` likewise currently accepts the supplied camera/scene/view hash without independently rebuilding the hash from the frozen object's semantic fields.
+- `tenantId`
+- `skuId` / product identity and product version
+- canonical `engineeringHash`
+- artwork identity when applicable: placement/relation/final UV hashes
+- source Product Truth `renderPackId` / acceptance generation
+- source Product Truth artifact hashes needed to prove the product body/artwork identity
+- source Camera/Scene/View recipe hashes where relevant
+- content-pack recipe/preset hash
+- each output asset DAM ref, role, path, SHA-256, size, MIME, pixel dimensions
+- Blender job / worker provenance for REAL Blender outputs
+- truth label for each asset: REAL / REAL_LOGIC / FIXTURE / MOCK / BLOCKED
 
-That leaves a coordinated evidence hole: a frozen request can have semantic fields changed while retaining the old hash, yet still be treated as valid frozen authority. The final pack's own recipe re-hash does not close this gap because the frozen pre-worker request itself must be internally valid before it is allowed to become authority.
+Fail closed on cross-tenant, wrong SKU/version, stale engineering hash, wrong source generation, duplicate/missing required roles, foreign DAM refs, or conflicting lineage.
 
-### Required correction
+The content pack must not copy dimensions or geometry from pixels. It must use the same Engineering/Product Truth SOT already accepted.
 
-Use the existing CameraRecipe / SceneRecipe helpers and schema. Do not create a new recipe authority.
+## 3. Deterministic Blender commerce views
 
-For the official publication/Re-Gate path:
+Implement a fixed required view set for one canonical cabinet SKU. At least these roles must exist:
 
-1. Validate the frozen main CameraRecipe semantically and recompute its canonical hash from its actual frozen fields.
-2. Validate the frozen SceneRecipe semantically and recompute its canonical hash from its actual frozen fields.
-3. Validate both frozen required view recipes (`DOOR_DETAIL`, `ASSEMBLED_FRONT`) semantically and recompute each canonical CameraRecipe hash from its actual frozen fields.
-4. The stored frozen hash must exactly equal the recomputed hash. Any mismatch must reject publication before using the final pack as evidence.
-5. Required semantic fields must be strict typed. Do not silently default a missing/malformed frozen field to a normal default merely to reproduce a hash. Reuse existing strict numeric helpers where appropriate: bool-as-number, string numbers, NaN, +Inf, -Inf must not pass as valid recipe values.
-6. Validate semantic view identity: the frozen `DOOR_DETAIL` recipe must identify DOOR_DETAIL, and frozen `ASSEMBLED_FRONT` must identify ASSEMBLED_FRONT. Cross-swaps must fail.
-7. If frozen `engineering` and a top-level frozen `engineeringHash` are both present, they must agree after canonical recomputation/validation. Do not select one while ignoring a contradictory duplicate.
-8. Do not use final `pack.cameraRecipe`, `pack.sceneRecipe`, `pack.views`, worker evidence, or serialized `expectedIdentity` to repair invalid frozen recipe semantics.
+1. `WHITE_BACKGROUND_HERO` — clean catalog hero.
+2. `HERO_45` — deterministic 3/4 hero.
+3. `FRONT_CLOSED` — front closed state.
+4. `FRONT_OPEN` — real articulated open state driven from engineering components / product state, not a fake 2D composite.
+5. `DETAIL_ARTWORK` or `DETAIL_DOOR` — detail bound to Product Truth artwork/front surface when applicable.
+6. `DIMENSION_FRONT` — front dimension image/overlay derived from Engineering mm.
 
-### Required official-runner negative tests
+Optional but recommended if existing infrastructure makes it cheap: `DIMENSION_3Q`, `EXPLODED`, `ASSEMBLY_STEP`, transparent/alpha catalog asset.
 
-All tests below must execute through the real publication runner and assert FAIL/BLOCK plus **no successful `PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` publication**:
+For every required REAL Blender output capture and verify:
 
-1. frozen main camera: change `focalLengthMm` but keep stale `cameraRecipeHash`;
-2. frozen main camera: change location/lookAt/sensor/resolution/safeMargin while keeping stale hash;
-3. frozen main camera: change only `cameraRecipeHash` while fields remain unchanged;
-4. frozen scene: change samples/engine/lighting/scene identity while keeping stale `sceneRecipeHash`;
-5. frozen scene: change only `sceneRecipeHash` while fields remain unchanged;
-6. frozen `DOOR_DETAIL`: change semantic camera field but retain stale hash;
-7. frozen `DOOR_DETAIL`: hash-only tamper;
-8. frozen `ASSEMBLED_FRONT`: change semantic camera field but retain stale hash;
-9. frozen `ASSEMBLED_FRONT`: hash-only tamper;
-10. swap frozen DOOR_DETAIL and ASSEMBLED_FRONT recipe objects/hashes;
-11. malformed/missing required numeric recipe fields, including bool/string/NaN/Inf where applicable;
-12. frozen engineering body/hash contradiction if both copies are present.
+- exact view role / recipe hash
+- resolution / aspect ratio / safe margin
+- source Engineering/Product Truth hashes
+- `blenderJobId`
+- worker identity/device evidence
+- DAM stored bytes + SHA + size + dimensions
+- `usedMock=false` in REAL acceptance
 
-Keep the existing Round 5 23-case matrix; add these semantic-authority cases rather than replacing it.
+Required views are an exact set for acceptance: missing, duplicated, or swapped roles must fail.
 
-## 3. Blocker B — exact instruction lineage in docs is wrong
+## 4. Content View Recipe / preset contract
 
-`docs/GROK_PROGRESS_REPORT.md` currently reports this full Source instruction SHA:
+Add a deterministic content view/preset contract that binds:
 
-`2b1b174092b3bc3983226782390885141154f243`
+- view role
+- CameraRecipe hash
+- SceneRecipe hash
+- product state (`CLOSED`, `OPEN`, `EXPLODED` where applicable)
+- studio/background preset
+- output width/height/aspect ratio
+- safe margin / framing policy
+- artwork visibility requirement if applicable
 
-That SHA is not the actual Round 5 instruction commit. The real instruction commit is:
+Use stable hashing and strict schema. Missing fields, bool-as-number, string numbers, NaN/Inf, stale hashes, cross-view swaps, or unrecognized product states fail closed.
 
-`2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee`
+Support common presentation presets such as 1:1, 4:5 and 16:9 by recipe/config, but do not duplicate product geometry or invent alternate camera truth.
 
-This is an evidence-lineage defect. Prefix `2b1b174` happens to look right, but exact evidence must never contain a fabricated/near SHA.
+## 5. Dimension asset authority
 
-### Required correction
+`DIMENSION_FRONT` (and any optional dimension views) must obtain dimension labels from `CabinetSpec` / Engineering JSON only.
 
-1. Correct the exact Source instruction SHA in `docs/GROK_PROGRESS_REPORT.md`.
-2. Search the Round 5 evidence/docs for the wrong full SHA and correct any other occurrence that claims exact lineage.
-3. Do not modify historical SHA values that are actually correct.
-4. Add a small regression/test or deterministic evidence-generation check if practical so an instruction SHA written into a report comes from the real git/input value rather than hand transcription.
+Requirements:
 
-## 4. Evidence completion / CI gate
+- width / height / depth values must be exact upstream Engineering values.
+- rendered/overlay label payload must be independently checked against Engineering before publication.
+- no computer-vision/pixel inference may become dimension authority.
+- stale or tampered dimension text/metadata must reject the content pack.
+- add negative tests for swapped width/height, changed units/value, stale engineeringHash, and coordinated asset+metadata tampering.
 
-Round 5 docs/head run `34709093768` was still IN_PROGRESS when this Re-Gate checked it. It is not a failure, but an in-progress run is not completed acceptance evidence.
+## 6. Lifestyle / generative handoff, without fake readiness
 
-For Round 6 use the same strict two-phase process:
+Add structured lifestyle scene briefs/presets for at least:
 
-1. Run full `pytest -q`; report exact count and preserve labels (MOCK/FIXTURE tests are not Production Ready).
-2. Commit **CODE + tests only** first; push the exact CODE SHA.
-3. Wait for exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS; record run ID and both job IDs/results.
-4. On a clean working tree at that exact CODE SHA, run fresh REAL Blender 5.2.1 + NVIDIA T1000 OptiX Product Truth acceptance with `usedMock=false`.
-5. Verify ProductMask and FRONT PrintableSurface ArtworkMask remain distinct; verify DOOR_DETAIL and ASSEMBLED_FRONT both have valid, independently bound worker/DAM evidence.
-6. Verify the official-runner old 23-case matrix and the new frozen-recipe semantic matrix all fail closed as intended.
-7. Update only necessary docs/evidence in a separate docs commit:
-   - `docs/GROK_PROGRESS_REPORT.md`
-   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-   - `docs/REAL_E2E_ACCEPTANCE.md`
-   - `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md/.json`
-   - Generative acceptance only if its evidence actually changes.
-8. Leave `docs/CABINET_REAL_ACCEPTANCE.md` unchanged unless cabinet truth changes.
-9. Push docs commit and wait for exact docs/head Ubuntu + Windows SUCCESS; record run/job IDs.
-10. Update Issue #1 with instruction SHA, CODE SHA, docs SHA, pytest count, CODE CI, docs CI, fresh acceptance generation, and exact REAL/MOCK/PARTIAL/BLOCKED boundary summary.
-11. STOP for ChatGPT Re-Gate. **Do not start Phase 901+.**
+- `CHILD_ROOM`
+- `STUDENT_RENTAL`
+- `ENTRYWAY`
+- `SMALL_APARTMENT`
 
-## 5. Definition of Done for Round 6
+Each brief must bind the accepted Product Truth identity, ProductMask/ArtworkMask refs where applicable, allowed context/background changes, framing intent, and forbidden product edits.
 
-All must be true:
+Route through the existing provider-neutral `generative_gateway.py` contract. Do **not** fake live H3 MAX / LTX 2.5 execution.
 
-- frozen main CameraRecipe semantic fields are strict-validated and their hash is independently recomputed;
-- frozen SceneRecipe semantic fields are strict-validated and their hash is independently recomputed;
-- frozen DOOR_DETAIL / ASSEMBLED_FRONT recipes are strict-validated, exact view identity bound, and hashes independently recomputed;
-- stale-hash semantic drift and hash-only tampering in frozen authority fail through the official runner;
-- frozen engineering body/hash contradictions fail if both are present;
-- no invalid frozen authority case can bootstrap from final pack / worker / serialized expected copies;
-- all prior Round 5 zero-fallback, 23-case, camera-worker, DAM source/job/path and ArtworkMask protections stay green;
-- wrong full Round 5 instruction SHA is corrected to `2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee` wherever it is claimed as exact lineage;
+If no live provider is configured:
+
+- provider request/contract may be REAL_LOGIC;
+- generated-provider output remains BLOCKED/MOCK as appropriate;
+- `liveH3MaxProviderReady=false`, `liveLtx25ProviderReady=false`;
+- no generated lifestyle asset may be labeled approved Product Truth or Production Ready.
+
+Generative output must retain source Product Truth / engineering / artwork hashes and be treated as a derivative asset only.
+
+## 7. Commerce QA gate
+
+Add a deterministic QA gate before a content asset can enter the final commerce manifest.
+
+At minimum verify what can be proven without a live vision model:
+
+- source Product Truth identity and engineering hash match
+- expected ProductMask / ArtworkMask lineage where applicable
+- required view role and recipe hash match
+- asset dimensions/aspect ratio/safe-frame constraints
+- product-state evidence for OPEN vs CLOSED (bind explicit articulated state / component transforms; do not rely only on a screenshot)
+- DAM bytes/SHA/path/job/source lineage
+
+Vision Judge remains MOCK/BLOCKED. Therefore deterministic QA may produce scoped `APPROVED_FOR_ASSET_REVIEW`, but must not imply `commercialAssetProductionReady=true` or global Production Ready.
+
+On unknown/failed QA use `REVIEW_REQUIRED` / `BLOCKED`, never silent PASS.
+
+## 8. DAM roles and exact manifest binding
+
+Use the existing DAM; do not build a second asset store.
+
+Add/standardize content roles as needed, for example:
+
+- `COMMERCE_HERO`
+- `COMMERCE_HERO_45`
+- `COMMERCE_FRONT_CLOSED`
+- `COMMERCE_FRONT_OPEN`
+- `COMMERCE_DETAIL_ARTWORK`
+- `COMMERCE_DIMENSION`
+- `COMMERCE_LIFESTYLE_BRIEF`
+
+Manifest verification must fail closed for:
+
+- foreign tenant/SKU/version
+- wrong view role
+- wrong DAM object/path
+- wrong source `blenderJobId`
+- wrong bytes/SHA/size/dimensions
+- duplicated required role
+- cross-view asset swap
+- source Product Truth generation mismatch
+- stale content-view recipe hash
+
+## 9. Runner / acceptance
+
+Add a canonical runner, preferably `scripts/run_product_content_e2e.py`, that exercises the official publication path and publishes acceptance only after all required deterministic gates pass.
+
+Create:
+
+- `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.md`
+- `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.json`
+
+Update only the necessary existing evidence docs:
+
+- `docs/GROK_PROGRESS_REPORT.md`
+- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
+- `docs/REAL_E2E_ACCEPTANCE.md`
+
+Leave `docs/CABINET_REAL_ACCEPTANCE.md` unchanged unless cabinet truth itself genuinely changes.
+
+Required readiness fields must stay scoped, for example:
+
+- `productContentFactoryLogicReady`
+- `realCommerceRenderPackReady`
+- `liveGenerativeCommerceReady`
+- `commercialAssetProductionReady`
+
+`realCommerceRenderPackReady=true` requires fresh REAL Blender evidence. `liveGenerativeCommerceReady` stays false without a real provider. `commercialAssetProductionReady` must remain false unless its stronger real-world gates are actually evidenced.
+
+## 10. Required adversarial / regression tests
+
+Add tests that execute through the official content runner/publication path, not only isolated helpers. At minimum prove fail-closed behavior for:
+
+1. wrong tenant;
+2. wrong SKU/product version;
+3. stale/wrong `engineeringHash`;
+4. wrong Product Truth generation/renderPack identity;
+5. required view missing;
+6. required view duplicated;
+7. HERO and OPEN DAM refs swapped;
+8. wrong view recipe hash;
+9. wrong Blender job ID/source path;
+10. bytes/SHA/size mismatch;
+11. dimension width/height/depth or units tampered;
+12. dimension metadata + rendered label metadata coordinated tamper;
+13. `FRONT_OPEN` manifest points to a CLOSED articulated-state record;
+14. ProductMask/ArtworkMask lineage cross-swap;
+15. derivative generative asset attempts to claim Product Truth authority;
+16. blocked/mock provider attempts to set live/commercial readiness true;
+17. malformed strict recipe values (bool/string/NaN/Inf);
+18. cross-tenant/cross-SKU DAM asset substitution with otherwise valid bytes.
+
+Do not weaken any Phase 841–900 authority/tamper tests.
+
+## 11. Evidence / CI process
+
+Follow `AGENTS.md` two-phase execution exactly:
+
+1. Implement CODE + tests only.
+2. Run full `pytest -q`; report exact count and keep MOCK/FIXTURE labels honest.
+3. Commit/push exact CODE SHA.
+4. Wait for GitHub Actions Ubuntu + Windows **SUCCESS on that exact CODE SHA**; record run ID and job IDs.
+5. On a clean tree at exact CODE SHA, run fresh REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX content acceptance for one canonical cabinet SKU with `usedMock=false`.
+6. Required deterministic commerce views must have real DAM bytes, per-asset SHA/size/dimensions/job/device evidence.
+7. Generative/lifestyle provider results remain BLOCKED/MOCK unless an actual live provider was used; do not fabricate them to make acceptance green.
+8. Commit docs/evidence separately; push.
+9. Wait for exact docs/head Ubuntu + Windows SUCCESS; record run/job IDs.
+10. Update Issue #1 with instruction SHA, CODE SHA, docs SHA, pytest count, CODE/docs CI, fresh acceptance generation, and REAL/MOCK/PARTIAL/BLOCKED summary.
+11. STOP for ChatGPT Re-Gate. **Do not start Phase 961+.**
+
+## 12. Definition of Done — Phase 901–960
+
+All must be true before asking for Re-Gate:
+
+- Phase 841–900 Product Truth protections remain green and unchanged in authority semantics;
+- canonical content-pack lineage derives from accepted Product Truth/Engineering, with no duplicate geometry/mm/UV SOT;
+- required deterministic commerce view set is complete and exact;
+- OPEN/CLOSED state is bound to explicit product-state evidence;
+- dimension assets are provably driven from Engineering mm and tampering fails closed;
+- DAM manifest exact-set/source/job/SHA/path/tenant/SKU binding is enforced;
+- lifestyle briefs are structured and Product Truth-bound;
+- H3/LTX stay BLOCKED unless actually live; Vision stays MOCK/BLOCKED unless actually live;
+- derivative generative assets cannot become Product Truth;
+- official-runner adversarial matrix passes;
 - full pytest passes;
-- exact CODE SHA dual-platform CI succeeds;
-- fresh clean-tree REAL T1000 OptiX evidence succeeds on exact CODE SHA;
-- docs/head exact SHA dual-platform CI succeeds;
-- H3/LTX remain BLOCKED, Vision remains MOCK/BLOCKED, physical print remains false, LIVE_CNC/LASER remain BLOCKED, global/full/live readiness remain false;
-- Phase 901+ remains HOLD until ChatGPT explicitly releases it.
+- exact CODE SHA Ubuntu + Windows CI succeeds;
+- fresh clean-tree REAL T1000 OptiX commerce render acceptance succeeds with `usedMock=false`;
+- docs/head exact SHA Ubuntu + Windows CI succeeds;
+- `physicalPrintValidated=false`, LIVE_CNC/LASER/PLC remain BLOCKED, global/full/live factory readiness remain false unless new independent REAL evidence exists;
+- Phase 961+ remains HOLD until ChatGPT explicitly releases it.
