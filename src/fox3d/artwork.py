@@ -2150,15 +2150,17 @@ class ArtworkFactory:
             )
             uv = self._derive_uv(rec, surface)
             art = self.require_artwork(rec["artworkId"], tenant_id=tenant_id)
-            canonical_path = str(art.get("path") or "")
+            canonical_path = str(Path(art.get("path") or "").resolve())
             digest = str(art.get("sha256") or "")
             if not digest:
                 raise ArtworkError("BLOCKED", "artwork sha256 missing")
             if artwork_path:
-                override = Path(str(artwork_path))
+                override = Path(str(artwork_path)).resolve()
                 if not override.is_file() or sha256_bytes(override.read_bytes()) != digest:
                     raise ArtworkError("BLOCKED", "artwork path digest mismatch")
-            path = canonical_path
+                path = str(override)
+            else:
+                path = canonical_path
             live_eng = self.engineering.get((tenant_id, rec.get("productId"), rec.get("engineeringHash")))
             if eng and eng.get("engineeringHash") not in {None, "", rec.get("engineeringHash")}:
                 raise ArtworkError("BLOCKED", "forged engineeringHash")

@@ -144,6 +144,11 @@ class Platform:
         seed_system_recipes(self.recipes)
         self._register_builtin_script()
         self.worker_id = "fox3d-worker-local"
+        if not mock_blender:
+            try:
+                self.register_detected_workers()
+            except Exception:
+                pass
 
     def _register_builtin_script(self) -> None:
         script = Path(__file__).resolve().parents[2] / "scripts" / "blender_job.py"
@@ -404,6 +409,7 @@ class Platform:
         job["artworkApplied"] = result.artwork_applied
         job["appliedPlacements"] = list(result.applied_placements or [])
         job["workerIdentity"] = dict(result.worker_identity or {})
+        job["workerViews"] = dict(result.worker_views or {})
         if not job["workerIdentity"] and job["appliedPlacements"]:
             first = job["appliedPlacements"][0]
             job["workerIdentity"] = {
@@ -481,6 +487,8 @@ class Platform:
             "realRenderOutput": result.real_render_output,
             "artworkApplied": result.artwork_applied,
             "appliedPlacements": list(result.applied_placements or []),
+            "workerIdentity": dict(result.worker_identity or {}),
+            "workerViews": dict(result.worker_views or {}),
         }
         self.cache.put(cache_key, output)
         self.lineage.record(
@@ -524,6 +532,15 @@ class Platform:
         done["appliedPlacements"] = list(result.applied_placements or [])
         done["outputHash"] = stored.get("beautyHash") or done.get("outputHash")
         done["outputSize"] = stored.get("beautySize") or done.get("outputSize")
+        done["workerIdentity"] = dict(result.worker_identity or {})
+        done["workerViews"] = dict(result.worker_views or {})
+        done["realBlender"] = result.real_blender
+        done["realOptix"] = result.real_optix
+        done["realCycles"] = result.real_cycles
+        done["realRenderOutput"] = result.real_render_output
+        done["usedMock"] = result.used_mock
+        done["blenderVersion"] = result.blender_version
+        done["outputs"] = dict(result.outputs or {})
         return done
 
     def _fail_or_retry(self, job: dict[str, Any], error: str) -> dict[str, Any]:

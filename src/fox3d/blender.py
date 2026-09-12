@@ -305,6 +305,7 @@ class RuntimeResult:
     artwork_applied: bool | None = None
     applied_placements: list[dict[str, Any]] = field(default_factory=list)
     worker_identity: dict[str, Any] = field(default_factory=dict)
+    worker_views: dict[str, Any] = field(default_factory=dict)
 
 
 class BlenderRuntime:
@@ -368,12 +369,12 @@ class BlenderRuntime:
         clock_monotonic: Callable[[], float] | None,
         clock_sleep: Callable[[float], None] | None,
     ) -> RuntimeResult:
-        job_dir = self.work_dir / str(job["jobId"])
+        job_dir = (self.work_dir / str(job["jobId"])).resolve()
         job_dir.mkdir(parents=True, exist_ok=True)
-        job_path = job_dir / "job.json"
-        progress_path = job_dir / "progress.json"
-        cancel_path = job_dir / "cancel.flag"
-        result_path = job_dir / "result.json"
+        job_path = (job_dir / "job.json").resolve()
+        progress_path = (job_dir / "progress.json").resolve()
+        cancel_path = (job_dir / "cancel.flag").resolve()
+        result_path = (job_dir / "result.json").resolve()
         job_payload = {
             **job,
             "workDir": str(job_dir),
@@ -488,6 +489,7 @@ class BlenderRuntime:
                         artwork_applied=payload.get("artworkApplied"),
                         applied_placements=list(payload.get("appliedPlacements") or []),
                         worker_identity=dict(payload.get("workerIdentity") or {}),
+                        worker_views=dict(payload.get("workerViews") or {}),
                     )
                 (clock_sleep or time.sleep)(0.2)
         finally:

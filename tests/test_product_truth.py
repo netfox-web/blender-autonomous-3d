@@ -6,6 +6,8 @@ import copy
 import json
 from pathlib import Path
 
+import pytest
+
 from fox3d.generative_gateway import qa_product_consistency, route_generative_request, validate_generative_result
 from fox3d.parametric import CabinetEngine
 from fox3d.platform import Platform
@@ -253,3 +255,137 @@ def test_product_truth_runner_publishes(tmp_path):
     assert body["liveH3MaxProviderReady"] is False
     assert body["liveLtx25ProviderReady"] is False
     assert (docs / "GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.json").exists()
+
+
+def test_independent_canonical_expected_authority_negatives(tmp_path):
+    plat, cab, place, pack = _fixture(tmp_path)
+    expected_auth = copy.deepcopy(pack["expectedIdentity"])
+    assert expected_auth["engineeringHash"] == cab.engineering_hash()
+    assert expected_auth["placementHash"] == place["placementHash"]
+    assert expected_auth["finalUvHash"] == pack["finalUvHash"]
+
+    # 1. Coordinated tamper: both workerEvidence and pack serialized fields are forged
+    forged = copy.deepcopy(pack)
+    forged["engineeringHash"] = "forged_eng_hash"
+    forged["workerEvidence"]["engineeringHash"] = "forged_eng_hash"
+    fails = validate_product_truth_render_pack(forged, expected_identity=expected_auth)
+    assert any("engineeringHash" in f for f in fails)
+
+    # Coordinated tamper on placementHash
+    forged_place = copy.deepcopy(pack)
+    forged_place["placementHash"] = "forged_placement_hash"
+    forged_place["workerEvidence"]["placementHash"] = "forged_placement_hash"
+    fails_p = validate_product_truth_render_pack(forged_place, expected_identity=expected_auth)
+    assert any("placementHash" in f for f in fails_p)
+
+    # Coordinated tamper on finalUvHash
+    forged_uv = copy.deepcopy(pack)
+    forged_uv["finalUvHash"] = "forged_uv_hash"
+    forged_uv["workerEvidence"]["finalUvHash"] = "forged_uv_hash"
+    fails_u = validate_product_truth_render_pack(forged_uv, expected_identity=expected_auth)
+    assert any("finalUvHash" in f for f in fails_u)
+
+    # 2. Wrong worker engineeringHash alone
+    bad_eng = copy.deepcopy(pack)
+    bad_eng["workerEvidence"]["engineeringHash"] = "wrong_eng_sha"
+    assert any("engineeringHash" in f for f in validate_product_truth_render_pack(bad_eng))
+
+    # 3. Wrong artwork DAM bytes/SHA
+    bad_art = copy.deepcopy(pack)
+    bad_art["workerEvidence"]["artworkSha256"] = "0" * 64
+    assert any("artworkSha256" in f for f in validate_product_truth_render_pack(bad_art))
+
+    # 4. Wrong placementHash / surfaceHash / componentId / objectName / face
+    for key in ("placementHash", "surfaceHash", "componentId", "objectName"):
+        bad_k = copy.deepcopy(pack)
+        bad_k["workerEvidence"][key] = "wrong_val"
+        assert any(key in f for f in validate_product_truth_render_pack(bad_k)), key
+    bad_face = copy.deepcopy(pack)
+    bad_face["workerEvidence"]["face"] = "BACK"
+    assert "worker_face" in validate_product_truth_render_pack(bad_face)
+
+
+def test_worker_uv_hash_recompute_and_tamper_fails(tmp_path):
+    import importlib.util
+    from fox3d.artwork import ArtworkError
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
+    spec = importlib.util.spec_from_file_location("bj_apply_tamper", path)
+    bj = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bj)
+
+    art = tmp_path / "art_black.png"
+    write_png(art, 8, 8, bytes([0, 0, 0]) * (8 * 8))
+    from fox3d.ids import sha256_bytes
+
+    art_sha = sha256_bytes(art.read_bytes())
+    uv = {"u0": 0.0, "v0": 0.0, "u1": 1.0, "v1": 1.0}
+    item = {
+        "objectName": "DOOR_1",
+        "imagePath": str(art),
+        "uvRect": uv,
+        "engineeringHash": "e" * 64,
+        "surfaceHash": "s" * 64,
+        "artworkHash": "a" * 64,
+        "placementHash": "p" * 64,
+        "artworkSha256": art_sha,
+        "face": "FRONT",
+        "componentId": "DOOR_1",
+        "placementId": "pl-1",
+        "finalUvHash": "tampered_expected_hash",  # tampered!
+    }
+    mesh = {
+        "polygons": [
+            {"index": 0, "normal": (0.0, -1.0, 0.0), "loop_start": 0, "loop_total": 4},
+            {"index": 1, "normal": (0.0, 1.0, 0.0), "loop_start": 4, "loop_total": 4},
+        ],
+        "uv_loops": [],
+        "materials": [],
+    }
+    # Must fail closed with ArtworkApplyError when request finalUvHash is tampered
+    with pytest.raises(bj.ArtworkApplyError, match="finalUvHash mismatch"):
+        bj.apply_canonical_artwork({"DOOR_1": mesh}, {"artworkPlacements": [item]})
+
+    # With correct or omitted finalUvHash, observed hash is returned
+    item_valid = dict(item)
+    item_valid.pop("finalUvHash")
+    applied = bj.apply_canonical_artwork({"DOOR_1": mesh}, {"artworkPlacements": [item_valid]})
+    assert applied[0]["finalUvHash"] != "tampered_expected_hash"
+    assert len(applied[0]["finalUvHash"]) == 64
+
+
+def test_worker_observed_camera_view_evidence_negatives(tmp_path):
+    plat, cab, place, pack = _fixture(tmp_path)
+    assert "DOOR_DETAIL" in pack["views"]
+    assert "ASSEMBLED_FRONT" in pack["views"]
+
+    # 1. Worker renders DOOR_DETAIL using ASSEMBLED_FRONT camera -> FAIL
+    wrong_cam = copy.deepcopy(pack)
+    assembled_hash = pack["views"]["ASSEMBLED_FRONT"]["workerView"]["cameraRecipeHash"]
+    wrong_cam["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = assembled_hash
+    fails1 = validate_product_truth_render_pack(wrong_cam)
+    assert "view_camera_mismatch_DOOR_DETAIL" in fails1
+
+    # 2. Post-hoc serialized camera hash changed together with pack metadata -> FAIL against independent requested recipe
+    tamper_recipe = copy.deepcopy(pack)
+    tamper_recipe["views"]["DOOR_DETAIL"]["cameraRecipeHash"] = "forged_cam_recipe_hash"
+    tamper_recipe["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = "forged_cam_recipe_hash"
+    fails2 = validate_product_truth_render_pack(tamper_recipe)
+    assert "view_camera_recipe_hash_DOOR_DETAIL" in fails2
+
+    # 3. Missing worker view record for required views -> FAIL
+    no_w_door = copy.deepcopy(pack)
+    no_w_door["views"]["DOOR_DETAIL"].pop("workerView", None)
+    no_w_door["workerViews"].pop("DOOR_DETAIL", None)
+    assert "missing_worker_view_DOOR_DETAIL" in validate_product_truth_render_pack(no_w_door)
+
+    no_w_front = copy.deepcopy(pack)
+    no_w_front["views"]["ASSEMBLED_FRONT"].pop("workerView", None)
+    no_w_front["workerViews"].pop("ASSEMBLED_FRONT", None)
+    assert "missing_worker_view_ASSEMBLED_FRONT" in validate_product_truth_render_pack(no_w_front)
+
+    # 4. Worker observed artifact SHA differs from pack view / live file SHA -> FAIL
+    bad_sha = copy.deepcopy(pack)
+    bad_sha["views"]["DOOR_DETAIL"]["workerView"]["sha256"] = "0" * 64
+    assert "view_worker_hash_DOOR_DETAIL" in validate_product_truth_render_pack(bad_sha)
+

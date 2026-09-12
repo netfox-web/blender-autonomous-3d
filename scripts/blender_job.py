@@ -53,6 +53,34 @@ def compute_final_uv_hash(item: dict, mapping: dict) -> str:
     return _stable_hash(payload)
 
 
+def compute_camera_recipe_hash(
+    *,
+    camera_id: str,
+    location,
+    look_at,
+    focal_length_mm: float,
+    sensor_width_mm: float = 36.0,
+    width: int = 512,
+    height: int = 512,
+    safe_margin: float = 0.08,
+) -> str:
+    payload = {
+        "cameraId": str(camera_id),
+        "target": [float(x) for x in look_at],
+        "lookAt": [float(x) for x in look_at],
+        "location": [float(x) for x in location],
+        "rotation": None,
+        "focalLengthMm": float(focal_length_mm),
+        "sensorWidthMm": float(sensor_width_mm),
+        "resolution": {"width": int(width), "height": int(height)},
+        "aspectRatio": f"{int(width)}:{int(height)}",
+        "framing": f"SAFE_MARGIN_{safe_margin}",
+        "safeMargin": float(safe_margin),
+        "recipeVersion": 1,
+    }
+    return _stable_hash(payload)
+
+
 def _load_job(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -588,7 +616,17 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             if val is None or val == "":
                 raise ArtworkApplyError(f"missing {key}")
         name = str(item["objectName"])
-        path = Path(str(item["imagePath"]))
+        path = Path(str(item["imagePath"])).resolve()
+        if not path.is_file():
+            candidates = [
+                Path(str(item["imagePath"])),
+                Path(job.get("workDir") or ".") / str(item["imagePath"]),
+                Path(job.get("workDir") or ".").resolve().parents[1] / str(item["imagePath"]),
+            ]
+            for c in candidates:
+                if c.is_file():
+                    path = c.resolve()
+                    break
         if not path.exists() or not path.is_file():
             raise ArtworkApplyError("missing artwork image")
         raw = path.read_bytes()
@@ -665,6 +703,12 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
                         loops[int(p.get("loop_start") or 0) + i] = corners[i % 4]
             obj["uv_loops"] = loops
             mapping["frontFaceIndex"] = hit["index"]
+        observed_final_uv_hash = compute_final_uv_hash(item, mapping)
+        expected_final_uv_hash = item.get("finalUvHash")
+        if expected_final_uv_hash and expected_final_uv_hash != observed_final_uv_hash:
+            raise ArtworkApplyError(
+                f"finalUvHash mismatch: expected {expected_final_uv_hash} but observed mapping produced {observed_final_uv_hash}"
+            )
         record = {
             "objectName": name,
             "componentId": item.get("componentId"),
@@ -679,7 +723,7 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             "artworkSha256": digest,
             "artworkId": item.get("artworkId"),
             "placementHash": item.get("placementHash"),
-            "finalUvHash": item.get("finalUvHash") or compute_final_uv_hash(item, mapping),
+            "finalUvHash": observed_final_uv_hash,
         }
         if isinstance(obj, dict):
             obj["canonicalArtwork"] = record
@@ -870,7 +914,9 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.image_settings.file_format = "PNG"
-    work = Path(job.get("workDir") or ".")
+    saved_film = bool(scene.render.film_transparent)
+    scene.render.film_transparent = True
+    work = Path(job.get("workDir") or ".").resolve()
     found: dict[str, str] = {}
     debug = {"outputs": [], "errors": [], "blender5": False}
 
@@ -942,6 +988,44 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
                 src_out = mask.outputs[0]
             else:
                 src_out = src
+        elif kind in {"seg", "product_mask"}:
+            src = _socket(rl, "Object Index", "IndexOB")
+            if src is not None:
+                mapper = None
+                for ntype in ("CompositorNodeMath", "ShaderNodeMath"):
+                    try:
+                        mapper = tree.nodes.new(ntype)
+                        break
+                    except Exception:
+                        mapper = None
+                if mapper is not None:
+                    mapper.operation = "GREATER_THAN"
+                    mapper.inputs[1].default_value = 0.5
+                    tree.links.new(src, mapper.inputs[0])
+                    src_out = mapper.outputs[0]
+                else:
+                    src_out = src
+            else:
+                src_out = _socket(rl, "Alpha")
+        elif kind == "alpha":
+            src_out = _socket(rl, "Alpha")
+            if src_out is None:
+                src = _socket(rl, "Object Index", "IndexOB")
+                if src is not None:
+                    mapper = None
+                    for ntype in ("CompositorNodeMath", "ShaderNodeMath"):
+                        try:
+                            mapper = tree.nodes.new(ntype)
+                            break
+                        except Exception:
+                            mapper = None
+                    if mapper is not None:
+                        mapper.operation = "GREATER_THAN"
+                        mapper.inputs[1].default_value = 0.5
+                        tree.links.new(src, mapper.inputs[0])
+                        src_out = mapper.outputs[0]
+                    else:
+                        src_out = src
         else:
             src_out = _socket(rl, "Object Index", "IndexOB", "IndexMA")
         if src_out is None:
@@ -960,18 +1044,18 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
         except Exception as exc:
             debug["errors"].append(f"{kind}: {exc}")
     if job.get("productTruthAovs"):
+        try:
+            _render_connected("product_mask.png", "product_mask")
+        except Exception as exc:
+            debug["errors"].append(f"product_mask: {exc}")
         if found.get("seg.png") and "product_mask.png" not in found:
             found["product_mask.png"] = found["seg.png"]
         try:
-            _render_connected("alpha.png", "seg")
+            _render_connected("alpha.png", "alpha")
         except Exception as exc:
             debug["errors"].append(f"alpha: {exc}")
         if found.get("alpha.png") is None and found.get("product_mask.png"):
             found["alpha.png"] = found["product_mask.png"]
-        try:
-            _render_connected("artwork_mask.png", "artwork")
-        except Exception as exc:
-            debug["errors"].append(f"artwork: {exc}")
     _write_json(work / "aov_debug.json", debug)
     try:
         tree, blender5 = _compositor_tree(scene)
@@ -981,6 +1065,7 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
         tree.links.new(rl.outputs["Image"], out_node.inputs[0])
     except Exception:
         pass
+    scene.render.film_transparent = saved_film
     return found
 
 
@@ -1015,28 +1100,110 @@ def _render_assembly_anim(job: dict, created: dict, *, frames: int, width: int, 
 
 
 def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height: int) -> str | None:
-    """Render only the placed printable object(s) on a black world. Not a whole-cabinet alias."""
-    import bpy
+    """White emission of the canonical FRONT printable face only.
 
-    work = Path(job.get("workDir") or ".")
+    No original material/texture/lighting. Black world. Fails closed if FRONT face cannot be resolved.
+    """
+    import bpy
+    import bmesh
+
+    work = Path(job.get("workDir") or ".").resolve()
     out = work / "artwork_mask.png"
     scene = bpy.context.scene
-    names = {str(rec.get("objectName") or "") for rec in (applied or []) if isinstance(rec, dict) and rec.get("objectName")}
-    if not names:
-        return None
-    saved = []
-    bg_saved = None
+    saved_hide = []
+    proxies = []
+    saved_film = bool(scene.render.film_transparent)
+    scene.render.film_transparent = False
+    try:
+        world = scene.world
+        if world is None:
+            world = bpy.data.worlds.new("ArtworkMaskWorld")
+            scene.world = world
+        world.use_nodes = True
+        bg = world.node_tree.nodes.get("Background")
+        if bg is None:
+            bg = world.node_tree.nodes.new("ShaderNodeBackground")
+            out_w = world.node_tree.nodes.new("ShaderNodeOutputWorld")
+            world.node_tree.links.new(bg.outputs[0], out_w.inputs[0])
+        saved_bg = list(bg.inputs[0].default_value)
+        bg.inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
+    except Exception:
+        saved_bg = None
     try:
         for obj in list(bpy.data.objects):
             if getattr(obj, "type", None) == "MESH":
-                saved.append((obj, bool(obj.hide_render)))
-                obj.hide_render = obj.name not in names and obj.name.upper() not in {n.upper() for n in names}
-        world = scene.world
-        if world is not None and getattr(world, "use_nodes", False) and world.node_tree:
-            bg = world.node_tree.nodes.get("Background")
-            if bg is not None:
-                bg_saved = list(bg.inputs[0].default_value)
-                bg.inputs[0].default_value = (0.0, 0.0, 0.0, 1.0)
+                saved_hide.append((obj, bool(obj.hide_render)))
+                obj.hide_render = True
+
+        for rec in applied or []:
+            if not isinstance(rec, dict):
+                continue
+            name = str(rec.get("objectName") or "")
+            src = bpy.data.objects.get(name)
+            if src is None or getattr(src, "data", None) is None:
+                raise ArtworkApplyError(f"cannot resolve object {name} for FRONT printable surface mask")
+            face_idx = rec.get("frontFaceIndex")
+            if face_idx is None:
+                raise ArtworkApplyError(f"unresolvable FRONT printable face on {name}")
+
+            dup = src.copy()
+            dup.data = src.data.copy()
+            dup.name = f"ArtworkMask.{src.name}"
+            if getattr(src, "users_collection", None):
+                src.users_collection[0].objects.link(dup)
+            else:
+                scene.collection.objects.link(dup)
+            bm = bmesh.new()
+            bm.from_mesh(dup.data)
+            bm.faces.ensure_lookup_table()
+            keep = int(face_idx)
+            found_front = False
+            for face in list(bm.faces):
+                if face.index == keep:
+                    found_front = True
+                else:
+                    bm.faces.remove(face)
+            if not found_front:
+                bm.free()
+                raise ArtworkApplyError(f"FRONT printable face index {keep} not found on {name}")
+            bm.to_mesh(dup.data)
+            bm.free()
+            dup.data.update()
+
+            em = bpy.data.materials.new(f"ArtworkMaskEmit.{src.name}")
+            em.use_nodes = True
+            nt = em.node_tree
+            nt.nodes.clear()
+            emit = nt.nodes.new("ShaderNodeEmission")
+            emit.inputs[0].default_value = (1.0, 1.0, 1.0, 1.0)
+            try:
+                emit.inputs[1].default_value = 5.0
+            except Exception:
+                pass
+            out_node = nt.nodes.new("ShaderNodeOutputMaterial")
+            nt.links.new(emit.outputs[0], out_node.inputs[0])
+            dup.data.materials.clear()
+            dup.data.materials.append(em)
+            for p in dup.data.polygons:
+                p.material_index = 0
+            dup.data.update()
+            dup.hide_render = False
+            proxies.append(dup)
+
+        if not proxies:
+            raise ArtworkApplyError("no printable surfaces available for ArtworkMask")
+
+
+        cam = job.get("camera") if isinstance(job.get("camera"), dict) else {}
+        if cam.get("location") and (cam.get("lookAt") or cam.get("target")):
+            _add_camera(tuple(cam["location"]), tuple(cam.get("lookAt") or cam.get("target")), float(cam.get("focalLengthMm") or 85))
+
+        tree, blender5 = _compositor_tree(scene)
+        tree.nodes.clear()
+        rl = tree.nodes.new("CompositorNodeRLayers")
+        out_comp = _ensure_comp_output(tree, blender5)
+        tree.links.new(rl.outputs["Image"], out_comp.inputs[0])
+
         scene.cycles.samples = 1
         scene.render.resolution_x = width
         scene.render.resolution_y = height
@@ -1044,16 +1211,22 @@ def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height
         scene.render.filepath = str(out)
         bpy.ops.render.render(write_still=True)
     finally:
-        for obj, hide in saved:
+        for obj, hide in saved_hide:
             try:
                 obj.hide_render = hide
             except Exception:
                 pass
-        if bg_saved is not None:
+        for proxy in proxies:
             try:
-                scene.world.node_tree.nodes.get("Background").inputs[0].default_value = bg_saved
+                bpy.data.objects.remove(proxy, do_unlink=True)
             except Exception:
                 pass
+        if saved_bg is not None and scene.world and scene.world.node_tree:
+            try:
+                scene.world.node_tree.nodes.get("Background").inputs[0].default_value = saved_bg
+            except Exception:
+                pass
+        scene.render.film_transparent = saved_film
     if out.exists() and out.stat().st_size >= 32:
         return str(out)
     return None
@@ -1068,7 +1241,7 @@ def _render_named_still(job: dict, *, filename: str, location, look_at, lens: fl
     scene.render.resolution_x = width
     scene.render.resolution_y = height
     scene.render.image_settings.file_format = "PNG"
-    out = Path(job.get("workDir") or ".") / filename
+    out = Path(job.get("workDir") or ".").resolve() / filename
     scene.render.filepath = str(out)
     bpy.ops.render.render(write_still=True)
     if out.exists() and out.stat().st_size >= 32:
@@ -1180,6 +1353,7 @@ def _render_turntable(job: dict, *, frames: int, width: int, height: int, sample
 def build_and_render(job: dict) -> dict:
     import bpy
 
+    job["workDir"] = str(Path(job.get("workDir") or ".").resolve())
     if _cancelled(job):
         return {"status": "cancelled", "realBlender": True}
     _write_progress(job, 0.05, "clear")
@@ -1296,24 +1470,63 @@ def build_and_render(job: dict) -> dict:
                 outputs["artwork_mask.png"] = art_mask
                 produced.append("artwork_surface_mask")
     views = job.get("productTruthViews") if isinstance(job.get("productTruthViews"), list) else []
+    worker_views = {}
     for view in views:
         if not isinstance(view, dict):
             continue
         name = str(view.get("filename") or "")
+        view_id = str(view.get("id") or view.get("viewId") or name)
         if not name:
             continue
+        loc = list(view.get("location") or cam.get("location") or [1.6, -2.4, 1.2])
+        look_at = list(view.get("lookAt") or cam.get("lookAt") or [0.0, 0.0, 0.9])
+        lens = float(view.get("focalLengthMm") or 85.0)
+        sensor_w = float(view.get("sensorWidthMm") or 36.0)
+        safe_m = float(view.get("safeMargin") or 0.08)
+        actual_cam_hash = compute_camera_recipe_hash(
+            camera_id=view_id,
+            location=loc,
+            look_at=look_at,
+            focal_length_mm=lens,
+            sensor_width_mm=sensor_w,
+            width=width,
+            height=height,
+            safe_margin=safe_m,
+        )
         rendered = _render_named_still(
             job,
             filename=name,
-            location=view.get("location") or cam.get("location") or (1.6, -2.4, 1.2),
-            look_at=view.get("lookAt") or cam.get("lookAt") or (0.0, 0.0, 0.9),
-            lens=float(view.get("focalLengthMm") or 85),
+            location=loc,
+            look_at=look_at,
+            lens=lens,
             width=width,
             height=height,
             samples=samples,
         )
         if rendered:
             outputs[name] = rendered
+            r_path = Path(rendered)
+            r_bytes = r_path.read_bytes() if r_path.exists() else b""
+            worker_views[view_id] = {
+                "viewId": view_id,
+                "filename": name,
+                "cameraRecipeHash": actual_cam_hash,
+                "location": loc,
+                "lookAt": look_at,
+                "target": look_at,
+                "focalLengthMm": lens,
+                "sensorWidthMm": sensor_w,
+                "safeMargin": safe_m,
+                "width": width,
+                "height": height,
+                "path": str(rendered),
+                "sha256": hashlib.sha256(r_bytes).hexdigest() if r_bytes else None,
+                "size": len(r_bytes),
+                "blenderJobId": job.get("jobId"),
+                "usedMock": False,
+                "realBlender": True,
+                "realOptix": used_device == "OPTIX",
+            }
     if job.get("assemblyAnimation") or mode == "ASSEMBLY_ANIM":
         frames_n = int((job.get("animation") or {}).get("frames") or 8)
         asm_paths, asm_mp4 = _render_assembly_anim(job, created, frames=frames_n, width=width, height=height, samples=samples)
@@ -1345,6 +1558,7 @@ def build_and_render(job: dict) -> dict:
         "outputs": outputs,
         "objects": sorted(created.keys()),
         "producedPasses": produced,
+        "workerViews": worker_views,
     }
     if job.get("artworkPlacements"):
         want_n = len(job.get("artworkPlacements") or [])
@@ -1363,6 +1577,7 @@ def build_and_render(job: dict) -> dict:
             }
         result["artworkApplied"] = True
         result["appliedPlacements"] = applied_placements
+        result["workerViews"] = worker_views
         first = applied_placements[0]
         result["workerIdentity"] = {
             "engineeringHash": first.get("engineeringHash"),
