@@ -94,37 +94,40 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     pack = result.get("pack") or {}
     gen = result.get("generative") or {}
 
-    # Independently re-derive canonical authority and revalidate before publishing
-    tenant_id = pack.get("tenantId") or "pt-a"
-    place_id = pack.get("placementId")
+    # Independently re-derive canonical authority from frozen context and revalidate before publishing
+    frozen_authority = hooks.get("frozen_authority") or result.get("frozenAuthorityContext")
+    if not frozen_authority or not isinstance(frozen_authority, dict):
+        missing.append("missing_frozen_authority")
+        frozen_authority = {}
+
+    f_tenant_id = frozen_authority.get("tenant_id") or pack.get("tenantId") or "pt-a"
+    f_placement = frozen_authority.get("placement") or {}
+    place_id = f_placement.get("placementId") or pack.get("placementId")
     canonical_place = plat.artwork.placements.get(place_id) if (place_id and hasattr(plat, "artwork") and hasattr(plat.artwork, "placements")) else None
     if not canonical_place:
         missing.append("missing_canonical_placement")
 
     canonical_expected = derive_canonical_expected_identity(
         plat,
-        tenant_id=tenant_id,
-        placement=canonical_place or {
-            "placementId": place_id,
-            "placementHash": pack.get("placementHash"),
-            "surfaceHash": pack.get("surfaceHash"),
-            "artworkHash": pack.get("artworkHash"),
-            "artworkSha256": pack.get("artworkSha256"),
-            "finalUvHash": pack.get("finalUvHash"),
-            "componentId": pack.get("componentId"),
-            "objectName": pack.get("objectName"),
-            "face": pack.get("face") or "FRONT",
-        },
-        engineering={"engineeringHash": pack.get("engineeringHash")},
-        camera=pack.get("cameraRecipe"),
-        scene=pack.get("sceneRecipe"),
-        view_recipes={name: (pack.get("views") or {}).get(name, {}).get("cameraRecipe") for name in REQUIRED_VIEWS},
+        tenant_id=f_tenant_id,
+        placement=canonical_place or f_placement,
+        engineering=frozen_authority.get("engineering") or ({"engineeringHash": frozen_authority.get("engineeringHash")} if frozen_authority.get("engineeringHash") else None),
+        camera=frozen_authority.get("camera"),
+        scene=frozen_authority.get("scene"),
+        view_recipes=frozen_authority.get("view_recipes"),
+        strict=True,
     ) if hasattr(plat, "artwork") else None
 
     if not canonical_expected:
         missing.append("missing_canonical_authority")
+    elif canonical_expected.get("canonicalAuthorityValid") is False:
+        missing.append(f"canonical_authority_{canonical_expected.get('canonicalFailure', 'invalid')}")
 
-    independent_failures = validate_product_truth_render_pack(pack, expected_identity=canonical_expected)
+    independent_failures = validate_product_truth_render_pack(
+        pack,
+        expected_identity=canonical_expected,
+        plat=plat,
+    )
     for f in independent_failures:
         if f not in missing:
             missing.append(f)

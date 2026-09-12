@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator, Protocol
@@ -39,7 +40,14 @@ def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    tmp.replace(path)
+    for attempt in range(6):
+        try:
+            tmp.replace(path)
+            return
+        except PermissionError:
+            if attempt == 5:
+                raise
+            time.sleep(0.02 * (2 ** attempt))
 
 
 def read_json(path: Path) -> Any:

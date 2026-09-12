@@ -168,23 +168,111 @@ def derive_canonical_expected_identity(
     plat: Any,
     *,
     tenant_id: str,
-    placement: dict[str, Any],
+    placement: dict[str, Any] | str,
     engineering: dict[str, Any] | None = None,
     camera: dict[str, Any] | None = None,
     scene: dict[str, Any] | None = None,
     view_recipes: dict[str, Any] | None = None,
+    strict: bool = False,
 ) -> dict[str, Any]:
     factory = getattr(plat, "artwork", None)
+
+    if strict:
+        if not factory or not hasattr(factory, "placements"):
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_artwork_factory"}
+        p_id = placement.get("placementId") if isinstance(placement, dict) else str(placement or "")
+        if not p_id or p_id not in factory.placements:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_placement"}
+        canonical_place = factory.placements[p_id]
+        s_id = canonical_place.get("surfaceId")
+        if not s_id or not hasattr(factory, "surfaces") or s_id not in factory.surfaces:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_surface"}
+        try:
+            ident = factory.applied_identity(canonical_place)
+        except Exception:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_identity_derivation_failed"}
+
+        art_id = canonical_place.get("artworkId")
+        if not art_id or not hasattr(factory, "artworks") or art_id not in factory.artworks:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_artwork"}
+        art_rec = factory.artworks[art_id]
+        art_path = Path(str(art_rec.get("path") or ""))
+        if not art_path.is_file():
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_artwork_file"}
+        file_bytes = art_path.read_bytes()
+        file_sha = sha256_bytes(file_bytes)
+        if art_rec.get("sha256") and art_rec.get("sha256") != file_sha:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_artwork_tampered"}
+        art_sha = file_sha
+        art_hash = art_rec.get("artworkHash")
+        if not art_hash:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_artwork_hash"}
+
+        if not engineering:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_engineering"}
+        eng_hash = None
+        if isinstance(engineering, dict):
+            eng_hash = engineering.get("engineeringHash")
+            if not eng_hash and "kind" in engineering:
+                try:
+                    from fox3d.parametric import CabinetSpec
+                    eng_hash = CabinetSpec.model_validate(engineering).engineering_hash()
+                except Exception:
+                    pass
+        elif engineering is not None:
+            eng_hash = getattr(engineering, "engineering_hash", lambda: None)()
+        if not eng_hash:
+            eng_hash = canonical_place.get("engineeringHash") or ident.get("engineeringHash")
+        if not eng_hash:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_engineering_hash"}
+        if canonical_place.get("engineeringHash") and eng_hash != canonical_place.get("engineeringHash"):
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_engineering_mismatch"}
+
+        if not camera or not isinstance(camera, dict) or not camera.get("cameraRecipeHash"):
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_camera_recipe"}
+        cam_hash = camera.get("cameraRecipeHash")
+
+        if not scene or not isinstance(scene, dict) or not scene.get("sceneRecipeHash"):
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_scene_recipe"}
+        scene_hash = scene.get("sceneRecipeHash")
+
+        if not view_recipes or not isinstance(view_recipes, dict):
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_view_recipes"}
+        view_hashes: dict[str, str] = {}
+        for req_view in REQUIRED_VIEWS:
+            vrec = view_recipes.get(req_view)
+            if not isinstance(vrec, dict) or not vrec.get("cameraRecipeHash"):
+                return {"canonicalAuthorityValid": False, "canonicalFailure": f"missing_canonical_view_recipe_{req_view}"}
+            view_hashes[req_view] = str(vrec["cameraRecipeHash"])
+
+        return {
+            "canonicalAuthorityValid": True,
+            "engineeringHash": eng_hash,
+            "artworkId": art_id,
+            "artworkHash": art_hash,
+            "artworkSha256": art_sha,
+            "placementId": p_id,
+            "placementHash": canonical_place.get("placementHash") or ident.get("placementHash"),
+            "finalUvHash": canonical_place.get("finalUvHash") or ident.get("finalUvHash"),
+            "surfaceHash": canonical_place.get("surfaceHash") or ident.get("surfaceHash"),
+            "componentId": canonical_place.get("componentId") or ident.get("componentId"),
+            "objectName": canonical_place.get("objectName") or ident.get("objectName"),
+            "face": canonical_place.get("face") or ident.get("face") or "FRONT",
+            "sceneRecipeHash": scene_hash,
+            "cameraRecipeHash": cam_hash,
+            "viewRecipes": view_hashes,
+        }
+
     ident = {}
     if factory and hasattr(factory, "applied_identity"):
         try:
-            ident = factory.applied_identity(placement)
+            ident = factory.applied_identity(placement if isinstance(placement, dict) else {"placementId": str(placement)})
         except Exception:
             ident = {}
 
-    p_id = placement.get("placementId")
+    p_id = placement.get("placementId") if isinstance(placement, dict) else str(placement or "")
     canonical_place = factory.placements.get(p_id) if (factory and hasattr(factory, "placements") and p_id) else None
-    source_placement = canonical_place or placement
+    source_placement = canonical_place or (placement if isinstance(placement, dict) else {"placementId": p_id})
 
     art_id = source_placement.get("artworkId")
     art_sha = None
@@ -204,11 +292,23 @@ def derive_canonical_expected_identity(
     if not art_hash:
         art_hash = ident.get("artworkHash") or source_placement.get("artworkHash")
 
-    eng_hash = (engineering or {}).get("engineeringHash") or ident.get("engineeringHash") or source_placement.get("engineeringHash")
+    eng_hash = None
+    if isinstance(engineering, dict):
+        eng_hash = engineering.get("engineeringHash")
+        if not eng_hash and "kind" in engineering:
+            try:
+                from fox3d.parametric import CabinetSpec
+                eng_hash = CabinetSpec.model_validate(engineering).engineering_hash()
+            except Exception:
+                pass
+    elif engineering is not None:
+        eng_hash = getattr(engineering, "engineering_hash", lambda: None)()
+    if not eng_hash:
+        eng_hash = ident.get("engineeringHash") or source_placement.get("engineeringHash")
     cam_hash = (camera or {}).get("cameraRecipeHash")
     scene_hash = (scene or {}).get("sceneRecipeHash")
 
-    view_hashes: dict[str, str] = {}
+    view_hashes = {}
     for vname, vrec in (view_recipes or {}).items():
         if isinstance(vrec, dict) and vrec.get("cameraRecipeHash"):
             view_hashes[vname] = str(vrec["cameraRecipeHash"])
@@ -279,12 +379,20 @@ def artifact_record(
     return rec
 
 
-def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: dict[str, Any] | None = None) -> list[str]:
+def validate_product_truth_render_pack(
+    pack: dict[str, Any],
+    expected_identity: dict[str, Any] | None = None,
+    *,
+    plat: Any = None,
+) -> list[str]:
     failures: list[str] = []
     if not isinstance(pack, dict):
         return ["pack_missing"]
     authoritative_expected = dict(expected_identity or {})
     serialized_expected = pack.get("expectedIdentity") if isinstance(pack.get("expectedIdentity"), dict) else {}
+
+    if authoritative_expected and authoritative_expected.get("canonicalAuthorityValid") is False:
+        failures.append(f"canonical_authority_{authoritative_expected.get('canonicalFailure', 'invalid')}")
 
     if pack.get("physicalPrintValidated") is True:
         failures.append("physical_print")
@@ -396,6 +504,10 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
         )
         if expect_s.get("sceneRecipeHash") != scene.get("sceneRecipeHash"):
             failures.append("scene_recipe_hash")
+    REQUIRED_VIEW_FILENAMES = {
+        "DOOR_DETAIL": "door_detail.png",
+        "ASSEMBLED_FRONT": "assembled_front.png",
+    }
     views = pack.get("views") if isinstance(pack.get("views"), dict) else {}
     worker_views_dict = pack.get("workerViews") if isinstance(pack.get("workerViews"), dict) else {}
     for name in REQUIRED_VIEWS:
@@ -411,24 +523,96 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
             failures.append(f"view_missing_file_{name}")
             continue
         live = vpath.read_bytes()
-        if sha256_bytes(live) != str(row.get("sha256")) or len(live) != int(row.get("size") or 0):
+        live_sha = sha256_bytes(live)
+        live_size = len(live)
+        if live_sha != str(row.get("sha256")):
             failures.append(f"view_hash_{name}")
             continue
-        worker_view = row.get("workerView") or worker_views_dict.get(name)
+        if live_size != int(row.get("size") or 0):
+            failures.append(f"view_size_{name}")
+            continue
+
+        top_worker_view = worker_views_dict.get(name) if isinstance(worker_views_dict, dict) else None
+        nested_worker_view = row.get("workerView") if isinstance(row.get("workerView"), dict) else None
+        if top_worker_view and nested_worker_view and top_worker_view != nested_worker_view:
+            failures.append(f"view_worker_view_conflict_{name}")
+        worker_view = nested_worker_view or top_worker_view
         if not isinstance(worker_view, dict) or not worker_view:
             failures.append(f"missing_worker_view_{name}")
             continue
 
+        expected_fn = REQUIRED_VIEW_FILENAMES.get(name)
+        if row.get("viewId") != name:
+            failures.append(f"view_id_mismatch_{name}")
         if worker_view.get("viewId") != name:
             failures.append(f"view_worker_id_mismatch_{name}")
+        if Path(str(row.get("path") or "")).name != expected_fn:
+            failures.append(f"view_filename_mismatch_{name}")
+        if worker_view.get("filename") and worker_view.get("filename") != expected_fn:
+            failures.append(f"view_worker_filename_mismatch_{name}")
+        if worker_view.get("path") and Path(str(worker_view.get("path"))).name != expected_fn:
+            failures.append(f"view_worker_path_filename_mismatch_{name}")
+
+        if worker_view.get("sha256") and str(worker_view.get("sha256")) != live_sha:
+            failures.append(f"view_worker_hash_{name}")
+        if worker_view.get("size") and int(worker_view.get("size")) != live_size:
+            failures.append(f"view_worker_size_{name}")
+
+        norm_row = str(Path(str(row.get("path") or "")).resolve())
+        if worker_view.get("path"):
+            norm_worker = str(Path(str(worker_view.get("path") or "")).resolve())
+            if norm_row != norm_worker:
+                failures.append(f"view_path_mismatch_{name}")
+
+        meta = _png_meta(vpath)
+        if (row.get("width"), row.get("height")) != (meta["width"], meta["height"]):
+            failures.append(f"view_dimension_mismatch_{name}")
+        vw = worker_view.get("width")
+        vh = worker_view.get("height")
+        if _is_strict_int(vw) and int(vw) != meta["width"]:
+            failures.append(f"view_worker_dimension_mismatch_{name}")
+        if _is_strict_int(vh) and int(vh) != meta["height"]:
+            failures.append(f"view_worker_dimension_mismatch_{name}")
+
+        expected_job_id = pack.get("blenderJobId") or (pack.get("job") or {}).get("jobId")
+        if not row.get("blenderJobId"):
+            failures.append(f"view_missing_jobId_{name}")
+        elif expected_job_id and row.get("blenderJobId") != expected_job_id:
+            failures.append(f"view_job_id_mismatch_{name}")
+        if not worker_view.get("blenderJobId"):
+            failures.append(f"view_worker_missing_jobId_{name}")
+        elif expected_job_id and worker_view.get("blenderJobId") != expected_job_id:
+            failures.append(f"view_worker_job_id_mismatch_{name}")
+        if row.get("blenderJobId") and worker_view.get("blenderJobId") and row.get("blenderJobId") != worker_view.get("blenderJobId"):
+            failures.append(f"view_job_id_conflict_{name}")
+
+        dam_ref = row.get("damRef") or row.get("artifactId")
+        if not dam_ref:
+            failures.append(f"view_missing_dam_ref_{name}")
+        if row.get("damRef") and row.get("artifactId") and row.get("damRef") != row.get("artifactId"):
+            failures.append(f"view_dam_ref_mismatch_{name}")
+        if plat and hasattr(plat, "dam"):
+            dam_obj = getattr(plat.dam, "_index", {}).get(dam_ref)
+            if not dam_obj:
+                failures.append(f"view_dam_asset_missing_{name}")
+            else:
+                if dam_obj.tenant_id != pack.get("tenantId"):
+                    failures.append(f"view_dam_tenant_mismatch_{name}")
+                if dam_obj.sha256 != live_sha:
+                    failures.append(f"view_dam_sha_mismatch_{name}")
+                if (dam_obj.metadata or {}).get("view") != name:
+                    failures.append(f"view_dam_role_mismatch_{name}")
+                if (dam_obj.metadata or {}).get("renderPackId") and dam_obj.metadata.get("renderPackId") != pack.get("renderPackId"):
+                    failures.append(f"view_dam_pack_mismatch_{name}")
+                dam_path = Path(dam_obj.path)
+                if not dam_path.is_file() or sha256_bytes(dam_path.read_bytes()) != live_sha:
+                    failures.append(f"view_dam_file_corrupt_{name}")
 
         loc = worker_view.get("location")
         look = worker_view.get("lookAt") if worker_view.get("lookAt") is not None else worker_view.get("target")
         focal = worker_view.get("focalLengthMm")
         sensor = worker_view.get("sensorWidthMm")
         margin = worker_view.get("safeMargin")
-        vw = worker_view.get("width")
-        vh = worker_view.get("height")
         vsz = worker_view.get("size")
         v_sha = worker_view.get("sha256")
 
@@ -479,13 +663,6 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
                 failures.append(f"view_camera_mismatch_{name}")
             if worker_view.get("cameraRecipeHash") != row.get("cameraRecipeHash"):
                 failures.append(f"view_camera_mismatch_{name}")
-
-        if worker_view.get("sha256") and worker_view.get("sha256") != str(row.get("sha256")):
-            failures.append(f"view_worker_hash_{name}")
-        if worker_view.get("size") and int(worker_view.get("size")) != int(row.get("size") or 0):
-            failures.append(f"view_worker_size_{name}")
-        if _is_strict_int(vw) and _is_strict_int(vh) and (row.get("width"), row.get("height")) != (int(vw), int(vh)):
-            failures.append(f"view_worker_dimension_mismatch_{name}")
 
         if row.get("cameraRecipe") and isinstance(row["cameraRecipe"], dict):
             req_c = row["cameraRecipe"]
@@ -828,7 +1005,7 @@ class ProductTruthFactory:
             "fullAutonomousFactoryReady": False,
         }
         trial = {**pack, "realArtworkPreviewReady": False, "productTruthRenderPackReady": False}
-        failures = validate_product_truth_render_pack(trial, expected_identity=authoritative_expected)
+        failures = validate_product_truth_render_pack(trial, expected_identity=authoritative_expected, plat=self.platform)
         blocked_real = {
             "mock_claimed_real_preview",
             "mock_claimed_real_pack",
@@ -870,7 +1047,7 @@ class ProductTruthFactory:
             and pack.get("gpu")
         )
         pack["productTruthRenderPackReady"] = bool(pack["realArtworkPreviewReady"])
-        pack["acceptanceFailures"] = validate_product_truth_render_pack(pack, expected_identity=authoritative_expected)
+        pack["acceptanceFailures"] = validate_product_truth_render_pack(pack, expected_identity=authoritative_expected, plat=self.platform)
         pack["ok"] = not pack["acceptanceFailures"]
         return pack
 
@@ -1261,14 +1438,57 @@ def run_phase_841_scenario(plat: Any, *, tenant_id: str = "pt-a", evidence_code_
         product_id=cab.productId,
     )
     mock_plat = bool(getattr(plat, "mock_blender", True))
+    width = 64 if mock_plat else 128
+    height = 64 if mock_plat else 128
+    camera = camera_recipe(width=width, height=height)
+    scene = scene_recipe(samples=8 if mock_plat else 32)
+    view_recipes = {
+        "DOOR_DETAIL": camera_recipe(
+            camera_id="DOOR_DETAIL",
+            location=(0.35, -1.5, 0.95),
+            look_at=(0.3, 0.0, 0.9),
+            width=width,
+            height=height,
+        ),
+        "ASSEMBLED_FRONT": camera_recipe(
+            camera_id="ASSEMBLED_FRONT",
+            location=(2.6, -4.0, 1.5),
+            look_at=(1.2, 0.0, 0.9),
+            width=width,
+            height=height,
+        ),
+    }
+    frozen_authority = {
+        "tenant_id": tenant_id,
+        "placement": place,
+        "placementId": place["placementId"],
+        "surfaceId": target_door["surfaceId"],
+        "artworkId": art["artworkId"],
+        "engineering": cab.model_dump(mode="json"),
+        "engineeringHash": cab.engineering_hash(),
+        "camera": camera,
+        "scene": scene,
+        "view_recipes": view_recipes,
+    }
+    canonical_expected = derive_canonical_expected_identity(
+        plat,
+        tenant_id=tenant_id,
+        placement=place,
+        engineering=cab.model_dump(mode="json"),
+        camera=camera,
+        scene=scene,
+        view_recipes=view_recipes,
+        strict=True,
+    )
     pack = render_product_truth(
         plat,
         tenant_id=tenant_id,
         placement=place,
         engineering=cab.model_dump(mode="json"),
-        width=64 if mock_plat else 128,
-        height=64 if mock_plat else 128,
+        width=width,
+        height=height,
         evidence_code_commit=evidence_code_commit,
+        expected_identity=canonical_expected,
     )
     gen = plat.generative.submit(
         {"mode": "IMAGE", "renderPackId": pack.get("renderPackId"), "productLocked": True, "requiredControls": ["depth", "normal", "product_mask"]},
@@ -1289,6 +1509,7 @@ def run_phase_841_scenario(plat: Any, *, tenant_id: str = "pt-a", evidence_code_
         "ok": bool(pack.get("ok") and gen.get("ok")),
         "pack": pack,
         "canonicalExpectedIdentity": pack.get("expectedIdentity"),
+        "frozenAuthorityContext": frozen_authority,
         "generative": gen,
         "qa": qa,
         "realArtworkPreviewReady": bool(pack.get("realArtworkPreviewReady")) and not mock,
