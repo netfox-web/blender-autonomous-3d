@@ -29,12 +29,14 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Item | Status | Evidence |
 |---|---|---|
 | CameraRecipe / SceneRecipe | REAL_LOGIC | hashed SOT; silent field drift changes hash |
-| ProductTruthRenderPack | REAL | generation `2dafd469-…`; CODE `635b316`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
+| ProductTruthRenderPack | REAL | generation `cf9e5828-…`; CODE `ab20c1e`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
 | Artwork mask uniqueness | REAL | Dedicated front face printable-surface emission mask with pure black background and true FRONT face emission; fail-closed on mismatch, verified distinct SHA and non-alias subset of product mask |
+| External canonical authority | REAL_LOGIC | `derive_canonical_expected_identity()` re-derives ground truth directly from platform repositories independent of payload |
+| Worker view camera rehash | REAL_LOGIC | `observed_cam_hash` recomputed from actual worker camera fields and verified against canonical recipe |
 | Generative gateway | REAL_LOGIC | provider-neutral IMAGE/VIDEO routing; quality UNVERIFIED |
 | live H3 MAX / LTX 2.5 | BLOCKED | fixture adapter cannot set live*ProviderReady |
 | Product consistency QA | REAL_LOGIC + MOCK Vision | APPROVED_FOR_ASSET_REVIEW ≠ production asset |
-| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; gateway MOCK/BLOCKED live providers |
+| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; generation `cf9e5828-…`; CODE `ab20c1e`; gateway MOCK/BLOCKED live providers |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 
