@@ -915,10 +915,13 @@ class ProductTruthFactory:
         views: dict[str, Any] = {}
         worker_views = dict((job or {}).get("workerViews") or {})
         for name, filename in (("DOOR_DETAIL", "door_detail.png"), ("ASSEMBLED_FRONT", "assembled_front.png")):
-            raw_path = outputs.get(filename)
+            worker_view = worker_views.get(name) or {}
+            raw_path = outputs.get(filename) or worker_view.get("path")
             if not raw_path:
                 continue
             path = Path(str(raw_path))
+            if not path.is_file() and worker_view.get("path") and Path(str(worker_view["path"])).is_file():
+                path = Path(str(worker_view["path"]))
             if not path.is_file():
                 continue
             data = path.read_bytes()
@@ -930,14 +933,14 @@ class ProductTruthFactory:
                 metadata={"view": name, "renderPackId": render_pack_id},
             )
             meta = _png_meta(path)
-            worker_view = worker_views.get(name) or {}
             req_cam = (view_recipes or {}).get(name) or {}
             canonical_view_cam_hash = req_cam.get("cameraRecipeHash") or (outputs.get(f"{name}_cameraRecipeHash") if not worker_view else None) or worker_view.get("cameraRecipeHash")
+            final_path = str(Path(worker_view.get("path") or path).resolve()) if (worker_view.get("path") and Path(str(worker_view["path"])).is_file()) else str(path.resolve())
             views[name] = {
                 "viewId": name,
                 "artifactId": dam.asset_id,
                 "damRef": dam.asset_id,
-                "path": str(path),
+                "path": final_path,
                 "blenderJobId": worker_view.get("blenderJobId") or (job or {}).get("jobId") or worker.get("blenderJobId"),
                 "cameraRecipeHash": canonical_view_cam_hash,
                 "cameraRecipe": req_cam,
@@ -1279,7 +1282,7 @@ def render_product_truth(
         "door_detail.png",
         "assembled_front.png",
     ):
-        got = _resolve(outputs.get(key) or files.get(key) or (done.get("outputs") or {}).get(key))
+        got = _resolve((done.get("outputs") or {}).get(key) or outputs.get(key) or files.get(key))
         if got:
             raw_outputs[key] = got
     if "product_mask.png" not in raw_outputs and raw_outputs.get("seg.png"):
