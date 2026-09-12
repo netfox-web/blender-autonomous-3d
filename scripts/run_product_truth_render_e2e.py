@@ -94,27 +94,62 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     pack = result.get("pack") or {}
     gen = result.get("generative") or {}
 
-    # Independently re-derive canonical authority from frozen context and revalidate before publishing
+    # 1. Strictly validate frozen pre-worker authority object with ZERO fallback to pack/worker/expectedIdentity
     frozen_authority = hooks.get("frozen_authority") or result.get("frozenAuthorityContext")
     if not frozen_authority or not isinstance(frozen_authority, dict):
-        missing.append("missing_frozen_authority")
-        frozen_authority = {}
+        return _refuse(docs, ["missing_frozen_authority"])
 
-    f_tenant_id = frozen_authority.get("tenant_id") or pack.get("tenantId") or "pt-a"
-    f_placement = frozen_authority.get("placement") or {}
-    place_id = f_placement.get("placementId") or pack.get("placementId")
-    canonical_place = plat.artwork.placements.get(place_id) if (place_id and hasattr(plat, "artwork") and hasattr(plat.artwork, "placements")) else None
+    frozen_failures: list[str] = []
+    f_tenant_id = frozen_authority.get("tenant_id")
+    if not f_tenant_id or not isinstance(f_tenant_id, str):
+        frozen_failures.append("missing_frozen_tenant_id")
+
+    f_placement = frozen_authority.get("placement") if isinstance(frozen_authority.get("placement"), dict) else {}
+    place_id = frozen_authority.get("placementId") or f_placement.get("placementId")
+    if not place_id or not isinstance(place_id, str):
+        frozen_failures.append("missing_frozen_placement_id")
+
+    f_eng = frozen_authority.get("engineering") or ({"engineeringHash": frozen_authority.get("engineeringHash")} if frozen_authority.get("engineeringHash") else None)
+    if not f_eng:
+        frozen_failures.append("missing_frozen_engineering")
+
+    f_cam = frozen_authority.get("camera")
+    if not f_cam or not isinstance(f_cam, dict) or not f_cam.get("cameraRecipeHash"):
+        frozen_failures.append("missing_frozen_camera")
+
+    f_scene = frozen_authority.get("scene")
+    if not f_scene or not isinstance(f_scene, dict) or not f_scene.get("sceneRecipeHash"):
+        frozen_failures.append("missing_frozen_scene")
+
+    f_view_recipes = frozen_authority.get("view_recipes")
+    if not f_view_recipes or not isinstance(f_view_recipes, dict):
+        frozen_failures.append("missing_frozen_view_recipes")
+    else:
+        door_rec = f_view_recipes.get("DOOR_DETAIL")
+        if not door_rec or not isinstance(door_rec, dict) or not door_rec.get("cameraRecipeHash"):
+            frozen_failures.append("missing_frozen_door_detail_recipe")
+        front_rec = f_view_recipes.get("ASSEMBLED_FRONT")
+        if not front_rec or not isinstance(front_rec, dict) or not front_rec.get("cameraRecipeHash"):
+            frozen_failures.append("missing_frozen_assembled_front_recipe")
+
+    # If any required frozen authority item is missing/invalid, refuse publication immediately without reading pack
+    if frozen_failures:
+        return _refuse(docs, frozen_failures)
+
+    # 2. Re-resolve canonical placement strictly from store using frozen placement identity
+    canonical_place = plat.artwork.placements.get(place_id) if (hasattr(plat, "artwork") and hasattr(plat.artwork, "placements")) else None
     if not canonical_place:
         missing.append("missing_canonical_placement")
 
+    # 3. Derive canonical expected identity from frozen context + canonical store
     canonical_expected = derive_canonical_expected_identity(
         plat,
-        tenant_id=f_tenant_id,
-        placement=canonical_place or f_placement,
-        engineering=frozen_authority.get("engineering") or ({"engineeringHash": frozen_authority.get("engineeringHash")} if frozen_authority.get("engineeringHash") else None),
-        camera=frozen_authority.get("camera"),
-        scene=frozen_authority.get("scene"),
-        view_recipes=frozen_authority.get("view_recipes"),
+        tenant_id=str(f_tenant_id),
+        placement=canonical_place or {"placementId": str(place_id)},
+        engineering=f_eng,
+        camera=f_cam,
+        scene=f_scene,
+        view_recipes=f_view_recipes,
         strict=True,
     ) if hasattr(plat, "artwork") else None
 
@@ -123,6 +158,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     elif canonical_expected.get("canonicalAuthorityValid") is False:
         missing.append(f"canonical_authority_{canonical_expected.get('canonicalFailure', 'invalid')}")
 
+    # 4. Independent pack validation against canonical ground truth
     independent_failures = validate_product_truth_render_pack(
         pack,
         expected_identity=canonical_expected,

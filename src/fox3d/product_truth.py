@@ -517,6 +517,8 @@ def validate_product_truth_render_pack(
             continue
         if not _strict_hash(row.get("sha256")) or not row.get("blenderJobId") or not _strict_hash(row.get("cameraRecipeHash")):
             failures.append(f"view_meta_{name}")
+            if not row.get("blenderJobId"):
+                failures.append(f"view_missing_jobId_{name}")
             continue
         vpath = Path(str(row.get("path") or ""))
         if not vpath.is_file() or not is_png(vpath):
@@ -534,6 +536,13 @@ def validate_product_truth_render_pack(
 
         top_worker_view = worker_views_dict.get(name) if isinstance(worker_views_dict, dict) else None
         nested_worker_view = row.get("workerView") if isinstance(row.get("workerView"), dict) else None
+        if not top_worker_view and not nested_worker_view:
+            failures.append(f"missing_worker_view_{name}")
+            continue
+        if not top_worker_view:
+            failures.append(f"view_missing_top_worker_view_{name}")
+        if not nested_worker_view:
+            failures.append(f"view_missing_nested_worker_view_{name}")
         if top_worker_view and nested_worker_view and top_worker_view != nested_worker_view:
             failures.append(f"view_worker_view_conflict_{name}")
         worker_view = nested_worker_view or top_worker_view
@@ -575,6 +584,8 @@ def validate_product_truth_render_pack(
             failures.append(f"view_worker_dimension_mismatch_{name}")
 
         expected_job_id = pack.get("blenderJobId") or (pack.get("job") or {}).get("jobId")
+        if not expected_job_id:
+            failures.append("pack_missing_blenderJobId")
         if not row.get("blenderJobId"):
             failures.append(f"view_missing_jobId_{name}")
         elif expected_job_id and row.get("blenderJobId") != expected_job_id:
@@ -596,17 +607,43 @@ def validate_product_truth_render_pack(
             if not dam_obj:
                 failures.append(f"view_dam_asset_missing_{name}")
             else:
+                dam_meta = dam_obj.metadata if isinstance(dam_obj.metadata, dict) else {}
                 if dam_obj.tenant_id != pack.get("tenantId"):
                     failures.append(f"view_dam_tenant_mismatch_{name}")
                 if dam_obj.sha256 != live_sha:
                     failures.append(f"view_dam_sha_mismatch_{name}")
-                if (dam_obj.metadata or {}).get("view") != name:
+                if dam_meta.get("view") != name:
                     failures.append(f"view_dam_role_mismatch_{name}")
-                if (dam_obj.metadata or {}).get("renderPackId") and dam_obj.metadata.get("renderPackId") != pack.get("renderPackId"):
+                if dam_meta.get("renderPackId") and dam_meta.get("renderPackId") != pack.get("renderPackId"):
                     failures.append(f"view_dam_pack_mismatch_{name}")
                 dam_path = Path(dam_obj.path)
                 if not dam_path.is_file() or sha256_bytes(dam_path.read_bytes()) != live_sha:
                     failures.append(f"view_dam_file_corrupt_{name}")
+                elif dam_path.stat().st_size != live_size:
+                    failures.append(f"view_dam_size_mismatch_{name}")
+
+                source_path = dam_meta.get("sourcePath")
+                if not source_path:
+                    failures.append(f"view_dam_missing_source_path_{name}")
+                else:
+                    norm_source = str(Path(str(source_path)).resolve())
+                    if norm_source != norm_row:
+                        failures.append(f"view_dam_source_path_mismatch_{name}")
+                    if worker_view.get("path"):
+                        norm_worker_p = str(Path(str(worker_view["path"])).resolve())
+                        if norm_source != norm_worker_p:
+                            failures.append(f"view_dam_source_path_worker_mismatch_{name}")
+
+                source_job = dam_meta.get("sourceJobId")
+                if not source_job:
+                    failures.append(f"view_dam_missing_job_id_{name}")
+                else:
+                    if row.get("blenderJobId") and str(source_job) != str(row.get("blenderJobId")):
+                        failures.append(f"view_dam_job_id_mismatch_{name}")
+                    if expected_job_id and str(source_job) != str(expected_job_id):
+                        failures.append(f"view_dam_job_id_mismatch_{name}")
+                    if worker_view.get("blenderJobId") and str(source_job) != str(worker_view.get("blenderJobId")):
+                        failures.append(f"view_dam_worker_job_id_mismatch_{name}")
 
         loc = worker_view.get("location")
         look = worker_view.get("lookAt") if worker_view.get("lookAt") is not None else worker_view.get("target")
@@ -705,6 +742,8 @@ def validate_product_truth_render_pack(
             failures.append(f"worker_missing_{key}")
     if worker.get("face") != "FRONT":
         failures.append("worker_face")
+    if pack.get("face") != "FRONT":
+        failures.append("pack_face")
 
     for key in (
         "engineeringHash",
@@ -715,6 +754,7 @@ def validate_product_truth_render_pack(
         "surfaceHash",
         "componentId",
         "objectName",
+        "face",
     ):
         if worker.get(key) and pack.get(key) and worker.get(key) != pack.get(key):
             failures.append(f"worker_mismatch_{key}")
@@ -925,23 +965,29 @@ class ProductTruthFactory:
             if not path.is_file():
                 continue
             data = path.read_bytes()
+            final_path = str(Path(worker_view.get("path") or path).resolve()) if (worker_view.get("path") and Path(str(worker_view["path"])).is_file()) else str(path.resolve())
+            view_job_id = worker_view.get("blenderJobId") or (job or {}).get("jobId") or worker.get("blenderJobId")
             dam = self.platform.dam.put(
                 tenant_id=tenant_id,
                 kind="product_truth_view",
                 name=filename,
                 data=data,
-                metadata={"view": name, "renderPackId": render_pack_id},
+                metadata={
+                    "view": name,
+                    "renderPackId": render_pack_id,
+                    "sourcePath": final_path,
+                    "sourceJobId": str(view_job_id) if view_job_id else "",
+                },
             )
             meta = _png_meta(path)
             req_cam = (view_recipes or {}).get(name) or {}
             canonical_view_cam_hash = req_cam.get("cameraRecipeHash") or (outputs.get(f"{name}_cameraRecipeHash") if not worker_view else None) or worker_view.get("cameraRecipeHash")
-            final_path = str(Path(worker_view.get("path") or path).resolve()) if (worker_view.get("path") and Path(str(worker_view["path"])).is_file()) else str(path.resolve())
             views[name] = {
                 "viewId": name,
                 "artifactId": dam.asset_id,
                 "damRef": dam.asset_id,
                 "path": final_path,
-                "blenderJobId": worker_view.get("blenderJobId") or (job or {}).get("jobId") or worker.get("blenderJobId"),
+                "blenderJobId": view_job_id,
                 "cameraRecipeHash": canonical_view_cam_hash,
                 "cameraRecipe": req_cam,
                 "workerView": worker_view,

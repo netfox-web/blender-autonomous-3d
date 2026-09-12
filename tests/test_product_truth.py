@@ -508,144 +508,236 @@ def test_runner_coordinated_tamper_fails_closed(tmp_path):
     def inspect(root, allow_dirty=False):
         return prepare_evidence_lineage(head_sha=sha, porcelain="", allow_dirty=allow_dirty)
 
-    # 1. Coordinated tamper on engineeringHash across pack + worker + expectedIdentity
-    def tamper_eng_scenario(plat, **kwargs):
+    def execute_negative(name, scenario_fn):
+        docs = tmp_path / f"docs_{name}"
+        docs.mkdir(parents=True, exist_ok=True)
+        acc = tmp_path / f"acc_{name}"
+        rc = mod.main(
+            ["--docs-root", str(docs), "--expected-commit", sha],
+            hooks={
+                "inspect": inspect,
+                "platform": lambda root: Platform(root=root, mock_blender=True),
+                "scenario": scenario_fn,
+                "acceptance_root": acc,
+            },
+        )
+        assert rc == 1, f"Case {name} failed to exit with code 1, got {rc}"
+        assert not (docs / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists(), (
+            f"Case {name} published acceptance artifact on failure"
+        )
+
+    # 1. engineeringHash
+    def case_1(plat, **kw):
         res = run_phase_841_scenario(plat, evidence_code_commit=sha)
-        pack = res["pack"]
-        pack["engineeringHash"] = "9" * 64
-        pack["workerEvidence"]["engineeringHash"] = "9" * 64
-        pack["expectedIdentity"]["engineeringHash"] = "9" * 64
+        res["pack"]["engineeringHash"] = "9" * 64
+        res["pack"]["workerEvidence"]["engineeringHash"] = "9" * 64
+        res["pack"]["expectedIdentity"]["engineeringHash"] = "9" * 64
         return res
+    execute_negative("1_engineering_hash", case_1)
 
-    docs = tmp_path / "docs_eng"
-    docs.mkdir()
-    rc = mod.main(
-        ["--docs-root", str(docs), "--expected-commit", sha],
-        hooks={
-            "inspect": inspect,
-            "platform": lambda root: Platform(root=root, mock_blender=True),
-            "scenario": tamper_eng_scenario,
-            "acceptance_root": tmp_path / "acc_eng",
-        },
-    )
-    assert rc == 1
-    assert not (docs / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
-
-    # 2. Coordinated tamper on cameraRecipe across pack + worker + expectedIdentity
-    def tamper_cam_scenario(plat, **kwargs):
+    # 2. placementHash
+    def case_2(plat, **kw):
         res = run_phase_841_scenario(plat, evidence_code_commit=sha)
-        pack = res["pack"]
-        tampered_c = camera_recipe(camera_id="TAMPERED_CAM", focal_length_mm=24.0)
-        t_hash = tampered_c["cameraRecipeHash"]
-        pack["cameraRecipe"] = tampered_c
-        pack["cameraRecipeHash"] = t_hash
-        pack["workerEvidence"]["cameraRecipeHash"] = t_hash
-        pack["expectedIdentity"]["cameraRecipeHash"] = t_hash
+        res["pack"]["placementHash"] = "8" * 64
+        res["pack"]["workerEvidence"]["placementHash"] = "8" * 64
+        res["pack"]["expectedIdentity"]["placementHash"] = "8" * 64
         return res
+    execute_negative("2_placement_hash", case_2)
 
-    docs_cam = tmp_path / "docs_cam"
-    docs_cam.mkdir()
-    rc = mod.main(
-        ["--docs-root", str(docs_cam), "--expected-commit", sha],
-        hooks={
-            "inspect": inspect,
-            "platform": lambda root: Platform(root=root, mock_blender=True),
-            "scenario": tamper_cam_scenario,
-            "acceptance_root": tmp_path / "acc_cam",
-        },
-    )
-    assert rc == 1
-    assert not (docs_cam / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
-
-    # 3. Coordinated tamper on DOOR_DETAIL view camera recipe
-    def tamper_view_cam_scenario(plat, **kwargs):
+    # 3. surfaceHash
+    def case_3(plat, **kw):
         res = run_phase_841_scenario(plat, evidence_code_commit=sha)
-        pack = res["pack"]
-        tampered_view_cam = camera_recipe(camera_id="DOOR_DETAIL", focal_length_mm=20.0, width=64, height=64)
-        v_hash = tampered_view_cam["cameraRecipeHash"]
-        pack["views"]["DOOR_DETAIL"]["cameraRecipe"] = tampered_view_cam
-        pack["views"]["DOOR_DETAIL"]["cameraRecipeHash"] = v_hash
-        pack["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = v_hash
-        pack["views"]["DOOR_DETAIL"]["workerView"]["focalLengthMm"] = 20.0
-        pack["expectedIdentity"]["viewRecipes"]["DOOR_DETAIL"] = v_hash
+        res["pack"]["surfaceHash"] = "7" * 64
+        res["pack"]["workerEvidence"]["surfaceHash"] = "7" * 64
+        res["pack"]["expectedIdentity"]["surfaceHash"] = "7" * 64
         return res
+    execute_negative("3_surface_hash", case_3)
 
-    docs_view = tmp_path / "docs_view"
-    docs_view.mkdir()
-    rc = mod.main(
-        ["--docs-root", str(docs_view), "--expected-commit", sha],
-        hooks={
-            "inspect": inspect,
-            "platform": lambda root: Platform(root=root, mock_blender=True),
-            "scenario": tamper_view_cam_scenario,
-            "acceptance_root": tmp_path / "acc_view",
-        },
-    )
-    assert rc == 1
-    assert not (docs_view / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
-
-    # 4. Deleting canonical surface from plat.artwork.surfaces
-    def delete_surface_scenario(plat, **kwargs):
+    # 4. finalUvHash
+    def case_4(plat, **kw):
         res = run_phase_841_scenario(plat, evidence_code_commit=sha)
-        s_id = res["frozenAuthorityContext"]["surfaceId"]
-        plat.artwork.surfaces.pop(s_id, None)
+        res["pack"]["finalUvHash"] = "6" * 64
+        res["pack"]["workerEvidence"]["finalUvHash"] = "6" * 64
+        res["pack"]["expectedIdentity"]["finalUvHash"] = "6" * 64
         return res
+    execute_negative("4_final_uv_hash", case_4)
 
-    docs_surf = tmp_path / "docs_surf"
-    docs_surf.mkdir()
-    rc = mod.main(
-        ["--docs-root", str(docs_surf), "--expected-commit", sha],
-        hooks={
-            "inspect": inspect,
-            "platform": lambda root: Platform(root=root, mock_blender=True),
-            "scenario": delete_surface_scenario,
-            "acceptance_root": tmp_path / "acc_surf",
-        },
-    )
-    assert rc == 1
-    assert not (docs_surf / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
+    # 5. componentId
+    def case_5(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["pack"]["componentId"] = "TAMPERED_COMP"
+        res["pack"]["workerEvidence"]["componentId"] = "TAMPERED_COMP"
+        res["pack"]["expectedIdentity"]["componentId"] = "TAMPERED_COMP"
+        return res
+    execute_negative("5_component_id", case_5)
 
-    # 5. Missing or tampered canonical artwork file
-    def corrupt_artwork_scenario(plat, **kwargs):
+    # 6. objectName
+    def case_6(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["pack"]["objectName"] = "TAMPERED_OBJ"
+        res["pack"]["workerEvidence"]["objectName"] = "TAMPERED_OBJ"
+        res["pack"]["expectedIdentity"]["objectName"] = "TAMPERED_OBJ"
+        return res
+    execute_negative("6_object_name", case_6)
+
+    # 7. face
+    def case_7(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["pack"]["face"] = "BACK"
+        res["pack"]["workerEvidence"]["face"] = "BACK"
+        res["pack"]["expectedIdentity"]["face"] = "BACK"
+        return res
+    execute_negative("7_face", case_7)
+
+    # 8. artwork artworkHash
+    def case_8(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["pack"]["artworkHash"] = "5" * 64
+        res["pack"]["workerEvidence"]["artworkHash"] = "5" * 64
+        res["pack"]["expectedIdentity"]["artworkHash"] = "5" * 64
+        return res
+    execute_negative("8_artwork_hash", case_8)
+
+    # 9. artwork SHA / authoritative artwork bytes
+    def case_9(plat, **kw):
         res = run_phase_841_scenario(plat, evidence_code_commit=sha)
         art_id = res["frozenAuthorityContext"]["artworkId"]
         art_rec = plat.artwork.artworks[art_id]
         Path(art_rec["path"]).write_bytes(b"tampered_corrupt_artwork_bytes")
+        res["pack"]["artworkSha256"] = "4" * 64
+        res["pack"]["workerEvidence"]["artworkSha256"] = "4" * 64
+        res["pack"]["expectedIdentity"]["artworkSha256"] = "4" * 64
         return res
+    execute_negative("9_artwork_sha", case_9)
 
-    docs_art = tmp_path / "docs_art"
-    docs_art.mkdir()
-    rc = mod.main(
-        ["--docs-root", str(docs_art), "--expected-commit", sha],
-        hooks={
-            "inspect": inspect,
-            "platform": lambda root: Platform(root=root, mock_blender=True),
-            "scenario": corrupt_artwork_scenario,
-            "acceptance_root": tmp_path / "acc_art",
-        },
-    )
-    assert rc == 1
-    assert not (docs_art / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
-
-    # 6. Missing frozen_authority
-    def missing_frozen_auth_scenario(plat, **kwargs):
+    # 10. main cameraRecipe / cameraRecipeHash
+    def case_10(plat, **kw):
         res = run_phase_841_scenario(plat, evidence_code_commit=sha)
-        res.pop("frozenAuthorityContext", None)
+        tampered_c = camera_recipe(camera_id="TAMPERED_CAM", focal_length_mm=24.0)
+        t_hash = tampered_c["cameraRecipeHash"]
+        res["pack"]["cameraRecipe"] = tampered_c
+        res["pack"]["cameraRecipeHash"] = t_hash
+        res["pack"]["workerEvidence"]["cameraRecipeHash"] = t_hash
+        res["pack"]["expectedIdentity"]["cameraRecipeHash"] = t_hash
         return res
+    execute_negative("10_camera_recipe", case_10)
 
-    docs_no_fa = tmp_path / "docs_no_fa"
-    docs_no_fa.mkdir()
-    rc = mod.main(
-        ["--docs-root", str(docs_no_fa), "--expected-commit", sha],
-        hooks={
-            "inspect": inspect,
-            "platform": lambda root: Platform(root=root, mock_blender=True),
-            "scenario": missing_frozen_auth_scenario,
-            "acceptance_root": tmp_path / "acc_no_fa",
-        },
-    )
-    assert rc == 1
-    assert not (docs_no_fa / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
+    # 11. sceneRecipe / sceneRecipeHash
+    def case_11(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        tampered_s = scene_recipe(samples=99)
+        s_hash = tampered_s["sceneRecipeHash"]
+        res["pack"]["sceneRecipe"] = tampered_s
+        res["pack"]["sceneRecipeHash"] = s_hash
+        res["pack"]["workerEvidence"]["sceneRecipeHash"] = s_hash
+        res["pack"]["expectedIdentity"]["sceneRecipeHash"] = s_hash
+        return res
+    execute_negative("11_scene_recipe", case_11)
+
+    # 12. DOOR_DETAIL requested camera recipe/hash
+    def case_12(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        tampered_view_cam = camera_recipe(camera_id="DOOR_DETAIL", focal_length_mm=20.0, width=64, height=64)
+        v_hash = tampered_view_cam["cameraRecipeHash"]
+        res["pack"]["views"]["DOOR_DETAIL"]["cameraRecipe"] = tampered_view_cam
+        res["pack"]["views"]["DOOR_DETAIL"]["cameraRecipeHash"] = v_hash
+        res["pack"]["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = v_hash
+        res["pack"]["views"]["DOOR_DETAIL"]["workerView"]["focalLengthMm"] = 20.0
+        res["pack"]["workerViews"]["DOOR_DETAIL"]["cameraRecipeHash"] = v_hash
+        res["pack"]["workerViews"]["DOOR_DETAIL"]["focalLengthMm"] = 20.0
+        res["pack"]["expectedIdentity"]["viewRecipes"]["DOOR_DETAIL"] = v_hash
+        return res
+    execute_negative("12_door_detail_recipe", case_12)
+
+    # 13. ASSEMBLED_FRONT requested camera recipe/hash
+    def case_13(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        tampered_front_cam = camera_recipe(camera_id="ASSEMBLED_FRONT", focal_length_mm=20.0, width=64, height=64)
+        v_hash = tampered_front_cam["cameraRecipeHash"]
+        res["pack"]["views"]["ASSEMBLED_FRONT"]["cameraRecipe"] = tampered_front_cam
+        res["pack"]["views"]["ASSEMBLED_FRONT"]["cameraRecipeHash"] = v_hash
+        res["pack"]["views"]["ASSEMBLED_FRONT"]["workerView"]["cameraRecipeHash"] = v_hash
+        res["pack"]["views"]["ASSEMBLED_FRONT"]["workerView"]["focalLengthMm"] = 20.0
+        res["pack"]["workerViews"]["ASSEMBLED_FRONT"]["cameraRecipeHash"] = v_hash
+        res["pack"]["workerViews"]["ASSEMBLED_FRONT"]["focalLengthMm"] = 20.0
+        res["pack"]["expectedIdentity"]["viewRecipes"]["ASSEMBLED_FRONT"] = v_hash
+        return res
+    execute_negative("13_assembled_front_recipe", case_13)
+
+    # 14. delete canonical placement record
+    def case_14(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        p_id = res["frozenAuthorityContext"]["placementId"]
+        plat.artwork.placements.pop(p_id, None)
+        return res
+    execute_negative("14_delete_placement", case_14)
+
+    # 15. delete canonical PrintableSurface / required surface record
+    def case_15(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        s_id = res["frozenAuthorityContext"]["surfaceId"]
+        plat.artwork.surfaces.pop(s_id, None)
+        return res
+    execute_negative("15_delete_surface", case_15)
+
+    # 16. delete canonical artwork/DAM authority record or replace its bytes
+    def case_16(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        art_id = res["frozenAuthorityContext"]["artworkId"]
+        plat.artwork.artworks.pop(art_id, None)
+        return res
+    execute_negative("16_delete_artwork", case_16)
+
+    # 17. remove only frozen engineering authority
+    def case_17(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"].pop("engineering", None)
+        res["frozenAuthorityContext"].pop("engineeringHash", None)
+        return res
+    execute_negative("17_remove_frozen_engineering", case_17)
+
+    # 18. remove only frozen placement identity
+    def case_18(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"].pop("placementId", None)
+        res["frozenAuthorityContext"].pop("placement", None)
+        return res
+    execute_negative("18_remove_frozen_placement", case_18)
+
+    # 19. remove only frozen main camera authority
+    def case_19(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"].pop("camera", None)
+        return res
+    execute_negative("19_remove_frozen_camera", case_19)
+
+    # 20. remove only frozen scene authority
+    def case_20(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"].pop("scene", None)
+        return res
+    execute_negative("20_remove_frozen_scene", case_20)
+
+    # 21. remove only frozen DOOR_DETAIL request recipe
+    def case_21(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["view_recipes"].pop("DOOR_DETAIL", None)
+        return res
+    execute_negative("21_remove_frozen_door_detail", case_21)
+
+    # 22. remove only frozen ASSEMBLED_FRONT request recipe
+    def case_22(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["view_recipes"].pop("ASSEMBLED_FRONT", None)
+        return res
+    execute_negative("22_remove_frozen_assembled_front", case_22)
+
+    # 23. leave final pack/worker/serialized copies mutually consistent while frozen authority is absent for one required field -> still FAIL
+    def case_23(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"].pop("tenant_id", None)
+        return res
+    execute_negative("23_frozen_missing_tenant_consistent_pack", case_23)
 
 
 def test_worker_view_provenance_and_dam_negatives(tmp_path):
@@ -736,6 +828,86 @@ def test_worker_view_provenance_and_dam_negatives(tmp_path):
     fails_packid = validate_product_truth_render_pack(pack, plat=plat)
     assert "view_dam_pack_mismatch_DOOR_DETAIL" in fails_packid
     dam_obj.metadata = orig_meta
+
+    # 11. damRef changed to another valid asset
+    other_dam = plat.dam.put(
+        tenant_id=cab.tenantId,
+        kind="product_truth_view",
+        name="other_view.png",
+        data=b"other_png_bytes",
+        metadata={
+            "view": "OTHER",
+            "renderPackId": pack["renderPackId"],
+            "sourcePath": str(tmp_path / "other.png"),
+            "sourceJobId": pack["blenderJobId"],
+        },
+    )
+    bad_dref = copy.deepcopy(pack)
+    bad_dref["views"]["DOOR_DETAIL"]["damRef"] = other_dam.asset_id
+    bad_dref["views"]["DOOR_DETAIL"]["artifactId"] = other_dam.asset_id
+    fails_dref = validate_product_truth_render_pack(bad_dref, plat=plat)
+    assert any(f in fails_dref for f in ("view_dam_role_mismatch_DOOR_DETAIL", "view_dam_sha_mismatch_DOOR_DETAIL"))
+
+    # 12. DAM asset/source-lineage changed to another valid path while SHA/size remain copied/equal
+    orig_sp = dam_obj.metadata.get("sourcePath")
+    dam_obj.metadata["sourcePath"] = str(tmp_path / "tampered_source" / "door_detail.png")
+    fails_sp = validate_product_truth_render_pack(pack, plat=plat)
+    assert "view_dam_source_path_mismatch_DOOR_DETAIL" in fails_sp
+    dam_obj.metadata["sourcePath"] = orig_sp
+
+    # 13. Swap DOOR_DETAIL and ASSEMBLED_FRONT artifact identities
+    swapped_dam = copy.deepcopy(pack)
+    d_dam = pack["views"]["DOOR_DETAIL"]["damRef"]
+    f_dam = pack["views"]["ASSEMBLED_FRONT"]["damRef"]
+    swapped_dam["views"]["DOOR_DETAIL"]["damRef"] = f_dam
+    swapped_dam["views"]["DOOR_DETAIL"]["artifactId"] = f_dam
+    swapped_dam["views"]["ASSEMBLED_FRONT"]["damRef"] = d_dam
+    swapped_dam["views"]["ASSEMBLED_FRONT"]["artifactId"] = d_dam
+    fails_swap = validate_product_truth_render_pack(swapped_dam, plat=plat)
+    assert "view_dam_role_mismatch_DOOR_DETAIL" in fails_swap
+    assert "view_dam_role_mismatch_ASSEMBLED_FRONT" in fails_swap
+
+    # 14. Same SHA/size with wrong source job
+    orig_sj = dam_obj.metadata.get("sourceJobId")
+    dam_obj.metadata["sourceJobId"] = "wrong_job_id"
+    fails_sj = validate_product_truth_render_pack(pack, plat=plat)
+    assert "view_dam_job_id_mismatch_DOOR_DETAIL" in fails_sj
+    dam_obj.metadata["sourceJobId"] = orig_sj
+
+    # 15. Copied bytes with wrong dimensions in worker view
+    bad_dim_w = copy.deepcopy(pack)
+    bad_dim_w["views"]["DOOR_DETAIL"]["workerView"]["width"] = 999
+    bad_dim_w["workerViews"]["DOOR_DETAIL"]["width"] = 999
+    fails_wdim = validate_product_truth_render_pack(bad_dim_w, plat=plat)
+    assert "view_worker_dimension_mismatch_DOOR_DETAIL" in fails_wdim
+
+    # 16. Nested worker view and top-level worker view agreement required
+    no_top = copy.deepcopy(pack)
+    no_top["workerViews"].pop("DOOR_DETAIL", None)
+    fails_notop = validate_product_truth_render_pack(no_top, plat=plat)
+    assert "view_missing_top_worker_view_DOOR_DETAIL" in fails_notop
+
+    no_nested = copy.deepcopy(pack)
+    no_nested["views"]["DOOR_DETAIL"].pop("workerView", None)
+    fails_nonested = validate_product_truth_render_pack(no_nested, plat=plat)
+    assert "view_missing_nested_worker_view_DOOR_DETAIL" in fails_nonested
+
+    # 17. Missing / wrong / swapped blenderJobId
+    no_pjob = copy.deepcopy(pack)
+    no_pjob.pop("blenderJobId", None)
+    fails_npjob = validate_product_truth_render_pack(no_pjob, plat=plat)
+    assert "pack_missing_blenderJobId" in fails_npjob
+
+    no_rjob = copy.deepcopy(pack)
+    no_rjob["views"]["DOOR_DETAIL"].pop("blenderJobId", None)
+    fails_nrjob = validate_product_truth_render_pack(no_rjob, plat=plat)
+    assert "view_missing_jobId_DOOR_DETAIL" in fails_nrjob
+
+    no_wjob = copy.deepcopy(pack)
+    no_wjob["views"]["DOOR_DETAIL"]["workerView"].pop("blenderJobId", None)
+    no_wjob["workerViews"]["DOOR_DETAIL"].pop("blenderJobId", None)
+    fails_nwjob = validate_product_truth_render_pack(no_wjob, plat=plat)
+    assert "view_worker_missing_jobId_DOOR_DETAIL" in fails_nwjob
 
 
 
