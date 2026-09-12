@@ -910,4 +910,186 @@ def test_worker_view_provenance_and_dam_negatives(tmp_path):
     assert "view_worker_missing_jobId_DOOR_DETAIL" in fails_nwjob
 
 
+def test_runner_frozen_recipe_semantic_authority_fails_closed(tmp_path):
+    import importlib.util
+    import sys
+    from fox3d.evidence import prepare_evidence_lineage
+    from fox3d.product_truth import run_phase_841_scenario
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_product_truth_render_e2e.py"
+    spec = importlib.util.spec_from_file_location("run_pt_semantic_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["run_pt_semantic_test"] = mod
+    spec.loader.exec_module(mod)
+    sha = "d" * 40
+
+    def inspect(root, allow_dirty=False):
+        return prepare_evidence_lineage(head_sha=sha, porcelain="", allow_dirty=allow_dirty)
+
+    def execute_negative(name, scenario_fn):
+        docs = tmp_path / f"docs_{name}"
+        docs.mkdir(parents=True, exist_ok=True)
+        acc = tmp_path / f"acc_{name}"
+        rc = mod.main(
+            ["--docs-root", str(docs), "--expected-commit", sha],
+            hooks={
+                "inspect": inspect,
+                "platform": lambda root: Platform(root=root, mock_blender=True),
+                "scenario": scenario_fn,
+                "acceptance_root": acc,
+            },
+        )
+        assert rc == 1, f"Case {name} failed to exit with code 1, got {rc}"
+        assert not (docs / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists(), (
+            f"Case {name} published acceptance artifact on failure"
+        )
+
+    # 1. frozen main camera: change focalLengthMm but keep stale cameraRecipeHash
+    def case_1(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["focalLengthMm"] = 50.0
+        return res
+    execute_negative("sem_1_main_camera_focal_stale_hash", case_1)
+
+    # 2. frozen main camera: change location/lookAt/sensor/resolution/safeMargin while keeping stale hash
+    def case_2_loc(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["location"] = [9.0, -9.0, 9.0]
+        return res
+    execute_negative("sem_2_main_camera_location_stale_hash", case_2_loc)
+
+    def case_2_res(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["resolution"] = {"width": 1024, "height": 1024}
+        return res
+    execute_negative("sem_2_main_camera_resolution_stale_hash", case_2_res)
+
+    def case_2_margin(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["safeMargin"] = 0.25
+        return res
+    execute_negative("sem_2_main_camera_margin_stale_hash", case_2_margin)
+
+    # 3. frozen main camera: change only cameraRecipeHash while fields remain unchanged
+    def case_3(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["cameraRecipeHash"] = "tampered_hash_00000000000000000000000000000000000000000000000000000000"
+        return res
+    execute_negative("sem_3_main_camera_hash_only_tamper", case_3)
+
+    # 4. frozen scene: change samples/engine/lighting/scene identity while keeping stale sceneRecipeHash
+    def case_4_samples(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["scene"]["samples"] = 99
+        return res
+    execute_negative("sem_4_scene_samples_stale_hash", case_4_samples)
+
+    def case_4_lighting(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["scene"]["lightingPreset"] = "STUDIO_WARM"
+        return res
+    execute_negative("sem_4_scene_lighting_stale_hash", case_4_lighting)
+
+    # 5. frozen scene: change only sceneRecipeHash while fields remain unchanged
+    def case_5(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["scene"]["sceneRecipeHash"] = "tampered_scene_hash_00000000000000000000000000000000000000000000000000000000"
+        return res
+    execute_negative("sem_5_scene_hash_only_tamper", case_5)
+
+    # 6. frozen DOOR_DETAIL: change semantic camera field but retain stale hash
+    def case_6(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["view_recipes"]["DOOR_DETAIL"]["focalLengthMm"] = 35.0
+        return res
+    execute_negative("sem_6_door_detail_focal_stale_hash", case_6)
+
+    # 7. frozen DOOR_DETAIL: hash-only tamper
+    def case_7(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["view_recipes"]["DOOR_DETAIL"]["cameraRecipeHash"] = "tampered_door_hash_00000000000000000000000000000000000000000000000000"
+        return res
+    execute_negative("sem_7_door_detail_hash_only_tamper", case_7)
+
+    # 8. frozen ASSEMBLED_FRONT: change semantic camera field but retain stale hash
+    def case_8(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["view_recipes"]["ASSEMBLED_FRONT"]["focalLengthMm"] = 35.0
+        return res
+    execute_negative("sem_8_assembled_front_focal_stale_hash", case_8)
+
+    # 9. frozen ASSEMBLED_FRONT: hash-only tamper
+    def case_9(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["view_recipes"]["ASSEMBLED_FRONT"]["cameraRecipeHash"] = "tampered_assembled_hash_000000000000000000000000000000000000000000000"
+        return res
+    execute_negative("sem_9_assembled_front_hash_only_tamper", case_9)
+
+    # 10. swap frozen DOOR_DETAIL and ASSEMBLED_FRONT recipe objects/hashes
+    def case_10_swap_objects(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        d_rec = copy.deepcopy(res["frozenAuthorityContext"]["view_recipes"]["DOOR_DETAIL"])
+        f_rec = copy.deepcopy(res["frozenAuthorityContext"]["view_recipes"]["ASSEMBLED_FRONT"])
+        res["frozenAuthorityContext"]["view_recipes"]["DOOR_DETAIL"] = f_rec
+        res["frozenAuthorityContext"]["view_recipes"]["ASSEMBLED_FRONT"] = d_rec
+        return res
+    execute_negative("sem_10_swap_view_recipe_objects", case_10_swap_objects)
+
+    def case_10_swap_hashes(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        d_hash = res["frozenAuthorityContext"]["view_recipes"]["DOOR_DETAIL"]["cameraRecipeHash"]
+        f_hash = res["frozenAuthorityContext"]["view_recipes"]["ASSEMBLED_FRONT"]["cameraRecipeHash"]
+        res["frozenAuthorityContext"]["view_recipes"]["DOOR_DETAIL"]["cameraRecipeHash"] = f_hash
+        res["frozenAuthorityContext"]["view_recipes"]["ASSEMBLED_FRONT"]["cameraRecipeHash"] = d_hash
+        return res
+    execute_negative("sem_10_swap_view_recipe_hashes", case_10_swap_hashes)
+
+    # 11. malformed/missing required numeric recipe fields (bool/string/NaN/Inf)
+    def case_11_bool(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["focalLengthMm"] = True
+        return res
+    execute_negative("sem_11_camera_focal_bool", case_11_bool)
+
+    def case_11_str(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["focalLengthMm"] = "85.0"
+        return res
+    execute_negative("sem_11_camera_focal_str", case_11_str)
+
+    def case_11_nan(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["focalLengthMm"] = float("nan")
+        return res
+    execute_negative("sem_11_camera_focal_nan", case_11_nan)
+
+    def case_11_inf(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["camera"]["focalLengthMm"] = float("inf")
+        return res
+    execute_negative("sem_11_camera_focal_inf", case_11_inf)
+
+    # 12. frozen engineering body/hash contradiction if both copies are present
+    def case_12_hash_tamper(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["engineeringHash"] = "contradictory_eng_hash_00000000000000000000000000000000000000000000"
+        return res
+    execute_negative("sem_12_engineering_hash_contradiction", case_12_hash_tamper)
+
+    def case_12_body_tamper(plat, **kw):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        res["frozenAuthorityContext"]["engineering"]["width"] = 1400.0
+        return res
+    execute_negative("sem_12_engineering_body_contradiction", case_12_body_tamper)
+
+
+def test_instruction_commit_lineage_and_format():
+    from fox3d.product_truth import inspect_instruction_sha
+    sha = inspect_instruction_sha("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md")
+    assert len(sha) == 40, f"Expected 40-char commit SHA, got {sha!r}"
+    assert all(c in "0123456789abcdef" for c in sha), f"Invalid hex characters in {sha}"
+    assert sha != "2b1b174092b3bc3983226782390885141154f243", "Instruction SHA must not match known typo"
+
+
+
 

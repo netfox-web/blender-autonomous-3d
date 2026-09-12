@@ -21,6 +21,7 @@ from fox3d.product_truth import (  # noqa: E402
     REQUIRED_VIEWS,
     derive_canonical_expected_identity,
     run_phase_841_scenario,
+    validate_frozen_authority_semantics,
     validate_product_truth_render_pack,
 )
 
@@ -114,23 +115,10 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         frozen_failures.append("missing_frozen_engineering")
 
     f_cam = frozen_authority.get("camera")
-    if not f_cam or not isinstance(f_cam, dict) or not f_cam.get("cameraRecipeHash"):
-        frozen_failures.append("missing_frozen_camera")
-
     f_scene = frozen_authority.get("scene")
-    if not f_scene or not isinstance(f_scene, dict) or not f_scene.get("sceneRecipeHash"):
-        frozen_failures.append("missing_frozen_scene")
-
     f_view_recipes = frozen_authority.get("view_recipes")
-    if not f_view_recipes or not isinstance(f_view_recipes, dict):
-        frozen_failures.append("missing_frozen_view_recipes")
-    else:
-        door_rec = f_view_recipes.get("DOOR_DETAIL")
-        if not door_rec or not isinstance(door_rec, dict) or not door_rec.get("cameraRecipeHash"):
-            frozen_failures.append("missing_frozen_door_detail_recipe")
-        front_rec = f_view_recipes.get("ASSEMBLED_FRONT")
-        if not front_rec or not isinstance(front_rec, dict) or not front_rec.get("cameraRecipeHash"):
-            frozen_failures.append("missing_frozen_assembled_front_recipe")
+    sem_failures = validate_frozen_authority_semantics(frozen_authority)
+    frozen_failures.extend(sem_failures)
 
     # If any required frozen authority item is missing/invalid, refuse publication immediately without reading pack
     if frozen_failures:

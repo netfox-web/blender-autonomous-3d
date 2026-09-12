@@ -164,6 +164,211 @@ def _is_strict_vec3(val: Any) -> bool:
     return all(_is_strict_float(x) for x in val)
 
 
+def validate_strict_camera_recipe(
+    cam: Any,
+    expected_camera_id: str | None = None,
+) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(cam, dict):
+        return ["not_dict"]
+
+    cid = cam.get("cameraId")
+    if not isinstance(cid, str) or not cid:
+        failures.append("missing_camera_id")
+    elif expected_camera_id is not None and cid != expected_camera_id:
+        failures.append(f"view_identity_mismatch_{expected_camera_id}")
+
+    loc = cam.get("location")
+    if not _is_strict_vec3(loc):
+        failures.append("invalid_location")
+
+    if "lookAt" not in cam and "target" not in cam:
+        failures.append("missing_look_at")
+    if "lookAt" in cam and not _is_strict_vec3(cam["lookAt"]):
+        failures.append("invalid_look_at")
+    if "target" in cam and not _is_strict_vec3(cam["target"]):
+        failures.append("invalid_target")
+    if "lookAt" in cam and "target" in cam and cam["lookAt"] != cam["target"]:
+        failures.append("look_at_target_mismatch")
+
+    look = cam.get("lookAt") if "lookAt" in cam else cam.get("target")
+
+    focal = cam.get("focalLengthMm")
+    if not _is_strict_float(focal) or float(focal) <= 0:
+        failures.append("invalid_focal_length")
+
+    sensor = cam.get("sensorWidthMm")
+    if not _is_strict_float(sensor) or float(sensor) <= 0:
+        failures.append("invalid_sensor_width")
+
+    res = cam.get("resolution")
+    if not isinstance(res, dict):
+        failures.append("invalid_resolution")
+        w, h = None, None
+    else:
+        w = res.get("width")
+        h = res.get("height")
+        if not _is_strict_int(w) or int(w) <= 0:
+            failures.append("invalid_resolution_width")
+        if not _is_strict_int(h) or int(h) <= 0:
+            failures.append("invalid_resolution_height")
+
+    safe = cam.get("safeMargin")
+    if not _is_strict_float(safe) or float(safe) < 0:
+        failures.append("invalid_safe_margin")
+
+    stored_hash = cam.get("cameraRecipeHash")
+    if not isinstance(stored_hash, str) or not stored_hash:
+        failures.append("missing_hash")
+
+    if failures:
+        return failures
+
+    recomputed = camera_recipe(
+        camera_id=str(cid),
+        location=tuple(float(x) for x in loc),
+        look_at=tuple(float(x) for x in look),
+        focal_length_mm=float(focal),
+        sensor_width_mm=float(sensor),
+        width=int(w),
+        height=int(h),
+        safe_margin=float(safe),
+    )
+    if recomputed.get("cameraRecipeHash") != stored_hash:
+        failures.append("hash_mismatch")
+
+    self_hash = stable_hash({k: v for k, v in cam.items() if k != "cameraRecipeHash"})
+    if self_hash != stored_hash:
+        failures.append("semantic_mismatch")
+
+    return failures
+
+
+def validate_strict_scene_recipe(scene: Any) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(scene, dict):
+        return ["not_dict"]
+
+    sid = scene.get("sceneId")
+    if not isinstance(sid, str) or not sid:
+        failures.append("missing_scene_id")
+
+    lighting = scene.get("lightingPreset")
+    if not isinstance(lighting, str) or not lighting:
+        failures.append("invalid_lighting")
+
+    engine = scene.get("renderEngine")
+    if not isinstance(engine, str) or not engine:
+        failures.append("invalid_render_engine")
+
+    samples = scene.get("samples")
+    if not _is_strict_int(samples) or int(samples) <= 0:
+        failures.append("invalid_samples")
+
+    stored_hash = scene.get("sceneRecipeHash")
+    if not isinstance(stored_hash, str) or not stored_hash:
+        failures.append("missing_hash")
+
+    if failures:
+        return failures
+
+    recomputed = scene_recipe(
+        scene_id=str(sid),
+        lighting=str(lighting),
+        samples=int(samples),
+        engine=str(engine),
+    )
+    if recomputed.get("sceneRecipeHash") != stored_hash:
+        failures.append("hash_mismatch")
+
+    self_hash = stable_hash({k: v for k, v in scene.items() if k != "sceneRecipeHash"})
+    if self_hash != stored_hash:
+        failures.append("semantic_mismatch")
+
+    return failures
+
+
+def validate_frozen_authority_semantics(frozen: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(frozen, dict):
+        return ["missing_frozen_authority"]
+
+    # 1. Main camera
+    f_cam = frozen.get("camera")
+    if not f_cam or not isinstance(f_cam, dict):
+        failures.append("missing_frozen_camera")
+    else:
+        cam_fails = validate_strict_camera_recipe(f_cam)
+        for cf in cam_fails:
+            failures.append(f"frozen_camera_{cf}")
+
+    # 2. Scene
+    f_scene = frozen.get("scene")
+    if not f_scene or not isinstance(f_scene, dict):
+        failures.append("missing_frozen_scene")
+    else:
+        scene_fails = validate_strict_scene_recipe(f_scene)
+        for sf in scene_fails:
+            failures.append(f"frozen_scene_{sf}")
+
+    # 3. View recipes
+    f_views = frozen.get("view_recipes")
+    if not f_views or not isinstance(f_views, dict):
+        failures.append("missing_frozen_view_recipes")
+    else:
+        for vname in REQUIRED_VIEWS:
+            vrec = f_views.get(vname)
+            if not vrec or not isinstance(vrec, dict):
+                failures.append(f"missing_frozen_{vname.lower()}_recipe")
+            else:
+                v_fails = validate_strict_camera_recipe(vrec, expected_camera_id=vname)
+                for vf in v_fails:
+                    failures.append(f"frozen_{vname.lower()}_{vf}")
+
+    # 4. Engineering vs EngineeringHash consistency
+    f_eng = frozen.get("engineering")
+    f_eng_hash = frozen.get("engineeringHash")
+    if f_eng is not None:
+        recomputed_eng_hash = None
+        try:
+            from fox3d.parametric import CabinetSpec
+            if isinstance(f_eng, dict):
+                spec = CabinetSpec.model_validate(f_eng)
+                recomputed_eng_hash = spec.engineering_hash()
+                if f_eng.get("engineeringHash") and f_eng["engineeringHash"] != recomputed_eng_hash:
+                    failures.append("frozen_engineering_hash_contradiction")
+            elif hasattr(f_eng, "engineering_hash"):
+                recomputed_eng_hash = f_eng.engineering_hash()
+            else:
+                failures.append("frozen_engineering_invalid")
+        except Exception:
+            failures.append("frozen_engineering_invalid")
+
+        if recomputed_eng_hash and f_eng_hash:
+            if recomputed_eng_hash != f_eng_hash:
+                failures.append("frozen_engineering_hash_contradiction")
+
+    return failures
+
+
+def inspect_instruction_sha(relative_path: str = "docs/GROK_NEXT_PHASE_INSTRUCTIONS.md") -> str:
+    """Deterministically read the latest commit SHA that modified the instruction file."""
+    import subprocess
+    try:
+        res = subprocess.run(
+            ["git", "log", "-n", "1", "--format=%H", "--", relative_path],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        sha = res.stdout.strip()
+        if len(sha) == 40 and all(c in "0123456789abcdef" for c in sha.lower()):
+            return sha.lower()
+    except Exception:
+        pass
+    return ""
+
+
 def derive_canonical_expected_identity(
     plat: Any,
     *,
@@ -211,16 +416,22 @@ def derive_canonical_expected_identity(
         if not engineering:
             return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_engineering"}
         eng_hash = None
+        recomputed_eng_hash = None
         if isinstance(engineering, dict):
             eng_hash = engineering.get("engineeringHash")
-            if not eng_hash and "kind" in engineering:
+            if "kind" in engineering:
                 try:
                     from fox3d.parametric import CabinetSpec
-                    eng_hash = CabinetSpec.model_validate(engineering).engineering_hash()
+                    recomputed_eng_hash = CabinetSpec.model_validate(engineering).engineering_hash()
                 except Exception:
-                    pass
+                    return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_engineering_invalid"}
         elif engineering is not None:
             eng_hash = getattr(engineering, "engineering_hash", lambda: None)()
+            recomputed_eng_hash = eng_hash
+
+        if recomputed_eng_hash and eng_hash and recomputed_eng_hash != eng_hash:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_engineering_hash_contradiction"}
+        eng_hash = recomputed_eng_hash or eng_hash
         if not eng_hash:
             eng_hash = canonical_place.get("engineeringHash") or ident.get("engineeringHash")
         if not eng_hash:
@@ -228,12 +439,18 @@ def derive_canonical_expected_identity(
         if canonical_place.get("engineeringHash") and eng_hash != canonical_place.get("engineeringHash"):
             return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_engineering_mismatch"}
 
-        if not camera or not isinstance(camera, dict) or not camera.get("cameraRecipeHash"):
+        if not camera or not isinstance(camera, dict):
             return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_camera_recipe"}
+        cam_fails = validate_strict_camera_recipe(camera)
+        if cam_fails:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": f"invalid_canonical_camera_{cam_fails[0]}"}
         cam_hash = camera.get("cameraRecipeHash")
 
-        if not scene or not isinstance(scene, dict) or not scene.get("sceneRecipeHash"):
+        if not scene or not isinstance(scene, dict):
             return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_scene_recipe"}
+        scene_fails = validate_strict_scene_recipe(scene)
+        if scene_fails:
+            return {"canonicalAuthorityValid": False, "canonicalFailure": f"invalid_canonical_scene_{scene_fails[0]}"}
         scene_hash = scene.get("sceneRecipeHash")
 
         if not view_recipes or not isinstance(view_recipes, dict):
@@ -241,8 +458,11 @@ def derive_canonical_expected_identity(
         view_hashes: dict[str, str] = {}
         for req_view in REQUIRED_VIEWS:
             vrec = view_recipes.get(req_view)
-            if not isinstance(vrec, dict) or not vrec.get("cameraRecipeHash"):
+            if not isinstance(vrec, dict):
                 return {"canonicalAuthorityValid": False, "canonicalFailure": f"missing_canonical_view_recipe_{req_view}"}
+            v_fails = validate_strict_camera_recipe(vrec, expected_camera_id=req_view)
+            if v_fails:
+                return {"canonicalAuthorityValid": False, "canonicalFailure": f"invalid_canonical_view_{req_view}_{v_fails[0]}"}
             view_hashes[req_view] = str(vrec["cameraRecipeHash"])
 
         return {
@@ -483,26 +703,20 @@ def validate_product_truth_render_pack(
     cam = pack.get("cameraRecipe") if isinstance(pack.get("cameraRecipe"), dict) else {}
     scene = pack.get("sceneRecipe") if isinstance(pack.get("sceneRecipe"), dict) else {}
     if cam:
-        expect = camera_recipe(
-            camera_id=str(cam.get("cameraId") or "HERO_FRONT"),
-            location=tuple(cam.get("location") or (1.6, -2.4, 1.2)),
-            look_at=tuple(cam.get("lookAt") or cam.get("target") or (0.0, 0.0, 0.9)),
-            focal_length_mm=float(cam.get("focalLengthMm") or 85.0),
-            sensor_width_mm=float(cam.get("sensorWidthMm") or 36.0),
-            width=int((cam.get("resolution") or {}).get("width") or 512),
-            height=int((cam.get("resolution") or {}).get("height") or 512),
-            safe_margin=float(cam.get("safeMargin") or 0.08),
-        )
-        if expect.get("cameraRecipeHash") != cam.get("cameraRecipeHash"):
+        cam_fails = validate_strict_camera_recipe(cam)
+        if cam_fails:
+            failures.append("camera_recipe_hash")
+            for cf in cam_fails:
+                failures.append(f"camera_recipe_{cf}")
+        elif authoritative_expected.get("cameraRecipeHash") and cam.get("cameraRecipeHash") != authoritative_expected.get("cameraRecipeHash"):
             failures.append("camera_recipe_hash")
     if scene:
-        expect_s = scene_recipe(
-            scene_id=str(scene.get("sceneId") or "WHITE_STUDIO"),
-            lighting=str(scene.get("lightingPreset") or "THREE_POINT"),
-            samples=int(scene.get("samples") or 32),
-            engine=str(scene.get("renderEngine") or "CYCLES"),
-        )
-        if expect_s.get("sceneRecipeHash") != scene.get("sceneRecipeHash"):
+        scene_fails = validate_strict_scene_recipe(scene)
+        if scene_fails:
+            failures.append("scene_recipe_hash")
+            for sf in scene_fails:
+                failures.append(f"scene_recipe_{sf}")
+        elif authoritative_expected.get("sceneRecipeHash") and scene.get("sceneRecipeHash") != authoritative_expected.get("sceneRecipeHash"):
             failures.append("scene_recipe_hash")
     REQUIRED_VIEW_FILENAMES = {
         "DOOR_DETAIL": "door_detail.png",
@@ -703,19 +917,12 @@ def validate_product_truth_render_pack(
 
         if row.get("cameraRecipe") and isinstance(row["cameraRecipe"], dict):
             req_c = row["cameraRecipe"]
-            recomputed = camera_recipe(
-                camera_id=str(req_c.get("cameraId") or name),
-                location=tuple(req_c.get("location") or (1.6, -2.4, 1.2)),
-                look_at=tuple(req_c.get("lookAt") or req_c.get("target") or (0.0, 0.0, 0.9)),
-                focal_length_mm=float(req_c.get("focalLengthMm") or 85.0),
-                sensor_width_mm=float(req_c.get("sensorWidthMm") or 36.0),
-                width=int((req_c.get("resolution") or {}).get("width") or row.get("width") or 512),
-                height=int((req_c.get("resolution") or {}).get("height") or row.get("height") or 512),
-                safe_margin=float(req_c.get("safeMargin") or 0.08),
-            )
-            if recomputed.get("cameraRecipeHash") != row.get("cameraRecipeHash"):
+            view_cam_fails = validate_strict_camera_recipe(req_c, expected_camera_id=name)
+            if view_cam_fails:
                 failures.append(f"view_camera_recipe_hash_{name}")
-            if camera_valid and observed_cam_hash != recomputed.get("cameraRecipeHash"):
+                for vcf in view_cam_fails:
+                    failures.append(f"view_camera_recipe_{name}_{vcf}")
+            if camera_valid and observed_cam_hash != row.get("cameraRecipeHash"):
                 failures.append(f"view_camera_recipe_mismatch_{name}")
 
         if authoritative_expected.get("viewRecipes") and isinstance(authoritative_expected["viewRecipes"], dict):
