@@ -1,6 +1,6 @@
 # PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE
 
-generatedAt: 2026-09-12T17:42:08.418264+00:00
+generatedAt: 2026-09-12T19:16:32.039153+00:00
 pytest mock PASS is **not** production ready. Physical print is not validated.
 Generative output is never Product Truth. Live H3 MAX / LTX 2.5 stay BLOCKED without runtime.
 
@@ -16,7 +16,7 @@ Generative output is never Product Truth. Live H3 MAX / LTX 2.5 stay BLOCKED wit
 | liveVisionJudgeReady | MOCK | `False` |
 | physicalPrintValidated | BLOCKED | `False` |
 | LIVE_CNC | BLOCKED | `liveMachineControl=false` |
-| renderPackId | REAL_LOGIC | `117f1f07-8bc9-4e80-983d-edfc75f5e374` |
+| renderPackId | REAL_LOGIC | `784df4d3-0242-4315-ae97-c55e717f9a62` |
 | usedMock | REAL | `False` |
 
 `fullAutonomousFactoryReady=false`. `globalProductionReady=false`. `physicalPrintValidated=false`.

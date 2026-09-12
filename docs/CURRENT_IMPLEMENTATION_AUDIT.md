@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 841–900 CODE_EVIDENCE_SHA `e63fe7a`; prior `475997e` / `4a88680` / `ab20c1e` / instruction `2b1b174`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `2b1b174`. Historical Phase 1–840 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 841–900 CODE_EVIDENCE_SHA `cb045af`; prior `e63fe7a` / `475997e` / `4a88680` / instruction `8ce5813`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8ce5813`. Historical Phase 1–840 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -28,15 +28,15 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 
 | Item | Status | Evidence |
 |---|---|---|
-| CameraRecipe / SceneRecipe | REAL_LOGIC | hashed SOT; silent field drift changes hash |
-| ProductTruthRenderPack | REAL | generation `c28a6bc6-…`; CODE `e63fe7a`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
+| CameraRecipe / SceneRecipe | REAL_LOGIC | hashed SOT; strict numeric types; independent semantic re-hashing |
+| ProductTruthRenderPack | REAL | generation `78ef13b7-…`; CODE `cb045af`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
 | Artwork mask uniqueness | REAL | Dedicated front face printable-surface emission mask with pure black background and true FRONT face emission; fail-closed on mismatch, verified distinct SHA and non-alias subset of product mask |
-| Non-circular canonical authority (Blocker A) | REAL_LOGIC | Zero-fallback pre-worker frozen authority validation (`missing_frozen_*` blockers refuse publication immediately without reading pack); canonical placement re-resolved strictly from store using frozen `placementId`; `derive_canonical_expected_identity(..., strict=True)` derives ground truth; coordinated tampers fail closed |
+| Frozen recipe semantic authority (Blocker A) | REAL_LOGIC | Frozen pre-worker authority validated semantically with strict types (no bool/str/NaN/Inf); canonical CameraRecipe & SceneRecipe hashes independently recomputed and asserted exact-match; view identity bound (`DOOR_DETAIL`, `ASSEMBLED_FRONT`; cross-swaps fail closed); frozen engineering body vs `engineeringHash` contradiction checked; 12 official-runner semantic adversarial cases fail closed |
 | Worker view provenance & DAM source lineage (Blockers B & C) | REAL_LOGIC | Full 23-case official-runner adversarial matrix tested through `run_product_truth_render_e2e.main()`; DAM metadata `sourcePath` and `sourceJobId` lineage binding at put; DAM stored path/size/bytes and source lineage validated against row/worker/blenderJobId; cross-view swapping, wrong jobs, altered lineage fail closed |
 | Generative gateway | REAL_LOGIC | provider-neutral IMAGE/VIDEO routing; quality UNVERIFIED |
 | live H3 MAX / LTX 2.5 | BLOCKED | fixture adapter cannot set live*ProviderReady |
 | Product consistency QA | REAL_LOGIC + MOCK Vision | APPROVED_FOR_ASSET_REVIEW ≠ production asset |
-| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; generation `c28a6bc6-…`; CODE `e63fe7a`; gateway MOCK/BLOCKED live providers |
+| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; generation `78ef13b7-…`; CODE `cb045af`; gateway MOCK/BLOCKED live providers |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 

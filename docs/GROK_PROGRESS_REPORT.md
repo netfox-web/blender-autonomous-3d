@@ -1,54 +1,46 @@
 # Grok Progress Report
 
 Repo: `netfox-web/blender-autonomous-3d`  
-Date: 2026-09-12  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `2b1b174092b3bc3983226782390885141154f243` (Phase 841–900 Re-Gate Round 5 — Strict Publication Closure / Provenance Adversarial Matrix)  
-Issue #1: Round 16 Re-Gate Round 5 `2b1b174`  
+Date: 2026-09-13  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8ce5813dd17e8a85eedf61499a6d373488a59941` (Phase 841–900 Re-Gate Round 6 — Frozen Recipe Semantic Authority / Evidence Lineage Final Closure)  
+Issue #1: Round 17 Re-Gate Round 6 `8ce5813`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 841–900 Product Truth Render Pack Re-Gate Round 5 (Strict Publication Closure / Provenance Adversarial Matrix)**:
-1. **Blocker A: Strict publication runner zero-fallback frozen authority validation**:
-   - `scripts/run_product_truth_render_e2e.py` validates the pre-worker frozen authority object (`frozenAuthorityContext`) upfront with zero fallback to final pack, worker evidence, or serialized expected identity.
-   - Requires tenant identity (`tenant_id`), canonical placement identity (`placementId`), canonical engineering request/lineage (`engineering` / `engineeringHash`), main camera recipe (`camera`), scene recipe (`scene`), and view recipes (`DOOR_DETAIL` & `ASSEMBLED_FRONT`).
-   - If any required frozen authority item is missing/invalid, appends a specific blocker (`missing_frozen_*`) and refuses publication immediately without reading `pack.tenantId`, `pack.placementId`, `pack.engineeringHash`, `pack.cameraRecipe`, `pack.sceneRecipe`, `pack.views`, worker evidence, or serialized `expectedIdentity`.
-   - Canonical placement is re-resolved strictly from store using frozen `placementId`: `plat.artwork.placements.get(place_id)`.
-2. **Blocker B: Full 23-case official-runner adversarial matrix**:
-   - Complete 23-case negative test matrix implemented in `tests/test_product_truth.py::test_runner_coordinated_tamper_fails_closed` through `run_product_truth_render_e2e.main()`:
-     1. `engineeringHash`
-     2. `placementHash`
-     3. `surfaceHash`
-     4. `finalUvHash`
-     5. `componentId`
-     6. `objectName`
-     7. `face`
-     8. artwork `artworkHash`
-     9. artwork SHA / authoritative artwork bytes
-     10. main `cameraRecipe` / `cameraRecipeHash`
-     11. `sceneRecipe` / `sceneRecipeHash`
-     12. `DOOR_DETAIL` requested camera recipe/hash
-     13. `ASSEMBLED_FRONT` requested camera recipe/hash
-     14. delete canonical placement record
-     15. delete canonical PrintableSurface / required surface record
-     16. delete canonical artwork/DAM authority record or replace its bytes
-     17. remove only frozen engineering authority
-     18. remove only frozen placement identity
-     19. remove only frozen main camera authority
-     20. remove only frozen scene authority
-     21. remove only frozen `DOOR_DETAIL` request recipe
-     22. remove only frozen `ASSEMBLED_FRONT` request recipe
-     23. leave final pack/worker/serialized copies mutually consistent while frozen authority is absent for one required field -> still FAIL.
-   - All 23 cases exit with code 1 and publish NO `PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` file.
-3. **Blocker C: DAM provenance source/path lineage closure**:
-   - At `dam.put()` for views in `ProductTruthFactory.build_pack()`, binds `sourcePath` (normalized resolved source view path) and `sourceJobId` (blenderJobId) into metadata.
-   - In `validate_product_truth_render_pack()`:
-     - Validates DAM stored path, size, live file bytes, and source lineage (`sourcePath`, `sourceJobId`) against view row, worker evidence, and `blenderJobId`.
-     - Validates that top-level `pack.workerViews[name]` and nested `row.workerView` both exist and agree.
-     - Tests fail-closed for: `damRef` changed to another valid asset, DAM `sourcePath` changed to another valid path with identical SHA/size, swap `DOOR_DETAIL` and `ASSEMBLED_FRONT` artifact identities, wrong source job, copied bytes with wrong dimensions, missing top/nested worker views, and wrong/swapped/missing `blenderJobId`.
+Executed **Phase 841–900 Product Truth Render Pack Re-Gate Round 6 (Frozen Recipe Semantic Authority / Evidence Lineage Final Closure)**:
+1. **Blocker A: Frozen recipe semantic authority & strict rehash validation**:
+   - Implemented strict semantic recipe validators in `src/fox3d/product_truth.py`: `validate_strict_camera_recipe` and `validate_strict_scene_recipe`.
+   - Strict numeric typing enforced: numbers must be finite float/int; bool-as-number (`True`/`False`), string numbers (`"85.0"`), `NaN`, `+Inf`, and `-Inf` fail closed.
+   - Frozen main `CameraRecipe`: validated semantically, canonical hash independently recomputed via `camera_recipe(...)`, and exact equality with stored `cameraRecipeHash` asserted.
+   - Frozen `SceneRecipe`: validated semantically, canonical hash independently recomputed via `scene_recipe(...)`, and exact equality with stored `sceneRecipeHash` asserted.
+   - Frozen view recipes (`DOOR_DETAIL`, `ASSEMBLED_FRONT`): validated semantically, exact view identity bound (`cameraId == "DOOR_DETAIL"` and `cameraId == "ASSEMBLED_FRONT"`; cross-swaps fail closed), canonical hashes independently recomputed, and exact equality with stored `cameraRecipeHash` asserted.
+   - Frozen engineering consistency: if both `engineering` body and `engineeringHash` are present in frozen authority, recomputes canonical `CabinetSpec.model_validate(engineering).engineering_hash()` and asserts exact agreement; any contradiction fails closed immediately.
+   - Zero-fallback enforced: if any frozen semantic validation item fails, publication is refused immediately before reading pack or worker evidence.
+   - Integrated into both `scripts/run_product_truth_render_e2e.py` (via `validate_frozen_authority_semantics`) and `derive_canonical_expected_identity(..., strict=True)`.
+2. **Official-runner adversarial negative tests**:
+   - Retained all existing 23 Round 5 adversarial cases in `test_runner_coordinated_tamper_fails_closed`.
+   - Added 12 new official-runner adversarial cases in `tests/test_product_truth.py::test_runner_frozen_recipe_semantic_authority_fails_closed` executing through `run_product_truth_render_e2e.main()`, asserting exit code 1 and NO `PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` publication:
+     1. frozen main camera: change `focalLengthMm` but keep stale `cameraRecipeHash`
+     2. frozen main camera: change location/lookAt/sensor/resolution/safeMargin while keeping stale hash
+     3. frozen main camera: change only `cameraRecipeHash` while fields remain unchanged
+     4. frozen scene: change samples/engine/lighting/scene identity while keeping stale `sceneRecipeHash`
+     5. frozen scene: change only `sceneRecipeHash` while fields remain unchanged
+     6. frozen `DOOR_DETAIL`: change semantic camera field but retain stale hash
+     7. frozen `DOOR_DETAIL`: hash-only tamper
+     8. frozen `ASSEMBLED_FRONT`: change semantic camera field but retain stale hash
+     9. frozen `ASSEMBLED_FRONT`: hash-only tamper
+     10. swap frozen `DOOR_DETAIL` and `ASSEMBLED_FRONT` recipe objects / swap hashes
+     11. malformed numeric recipe fields (bool, string, NaN, Inf)
+     12. frozen engineering body vs `engineeringHash` contradiction (hash tamper / body tamper)
+3. **Blocker B: Exact instruction lineage correction & deterministic inspection**:
+   - Corrected historical Round 5 instruction commit SHA from typo `2b1b174092b3bc3983226782390885141154f243` to exact `2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee`.
+   - Bound Round 6 Source instruction SHA to exact `8ce5813dd17e8a85eedf61499a6d373488a59941`.
+   - Added deterministic helper `inspect_instruction_sha()` reading directly from `git log` and regression test `test_instruction_commit_lineage_and_format()`.
 4. **Strict two-phase push & verification**:
-   - Phase 1 CODE commit `e63fe7a` pushed and verified green on GitHub Actions CI Run ID `34707952458` (Ubuntu + Windows).
-   - Clean-tree acceptance executed with REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX generating `c28a6bc6-4ced-436d-ac95-9aa3562f81bb` with 0 failures (`failures: []`, `ok: true`).
+   - Phase 1 CODE commit `cb045af68de6f64f8ba8196ae88382e2210b9dc0` pushed and verified green on GitHub Actions CI Run ID `34712862358` (Ubuntu `103604685753` SUCCESS, Windows `103604685849` SUCCESS).
+   - Round 5 docs/head Run ID `34709093768` completed with dual-platform SUCCESS (Ubuntu `103594435113` SUCCESS, Windows `103594434891` SUCCESS).
+   - Clean-tree acceptance executed on exact CODE commit with REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX generating `78ef13b7-180f-43a3-94f9-15a9b3ad9f1f` with 0 failures (`failures: []`, `ok: true`).
 
 Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 901+.
 
@@ -63,19 +55,21 @@ Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did 
 | 841–900 Re-Gate R2 | Blockers A–D: Canonical authority in `build_pack()`, worker independent UV recompute/comparison, true FRONT printable-surface ArtworkMask emission with zero background radiance, per-view camera recipe/worker evidence (`workerViews`). |
 | 841–900 Re-Gate R3 | External canonical authority (`derive_canonical_expected_identity`), worker view camera rehash (`observed_cam_hash`), strict numeric schema (rejection of bool/str/NaN/Inf), runner independent re-validation, exact CODE CI two-phase verification. |
 | 841–900 Re-Gate R4 | Non-circular frozen runner authority (Blocker A); real worker view artifact provenance binding & DAM verification (Blocker B); stale audit header corrected; two-phase CI & clean-tree REAL OptiX acceptance. |
-| 841–900 Re-Gate R5 | Zero-fallback frozen authority runner validation (Blocker A); full 23-case official-runner adversarial matrix (Blocker B); DAM source/path lineage and job binding closure (Blocker C); clean-tree REAL OptiX acceptance. |
+| 841–900 Re-Gate R5 | Zero-fallback frozen authority runner validation (Blocker A); full 23-case official-runner adversarial matrix (Blocker B); DAM source/path lineage and job binding closure (Blocker C); clean-tree REAL OptiX acceptance. Historical instruction SHA corrected: `2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee`. |
+| 841–900 Re-Gate R6 | Frozen recipe semantic authority & strict rehash validation (Blocker A); 12-case official-runner semantic adversarial matrix; exact instruction lineage correction & deterministic git-log inspection (Blocker B); clean-tree REAL OptiX acceptance. |
 
-**CODE_EVIDENCE_SHA:** `e63fe7aa4554ac372c256fe43ea127113a8ed91d`  
-**CODE_CI_RUN_ID:** `34707952458` (Ubuntu `103591328351` SUCCESS, Windows `103591328425` SUCCESS)  
+**CODE_EVIDENCE_SHA:** `cb045af68de6f64f8ba8196ae88382e2210b9dc0`  
+**CODE_CI_RUN_ID:** `34712862358` (Ubuntu `103604685753` SUCCESS, Windows `103604685849` SUCCESS)  
+**PRIOR_DOCS_CI_RUN_ID:** `34709093768` (Ubuntu `103594435113` SUCCESS, Windows `103594434891` SUCCESS)  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** dual-platform on exact code commit `e63fe7aa4554ac372c256fe43ea127113a8ed91d`.
+GitHub Actions CODE: **GREEN** dual-platform on exact code commit `cb045af68de6f64f8ba8196ae88382e2210b9dc0`.
 
-Acceptance generation `c28a6bc6-4ced-436d-ac95-9aa3562f81bb`; runner-bound `evidenceCodeCommit=e63fe7aa4554ac372c256fe43ea127113a8ed91d`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `realArtworkPreviewReady=true`; `productTruthRenderPackReady=true`; `productTruthAovPackReady=true`; `generativeRenderGatewayLogicReady=true`; `liveH3MaxProviderReady=false`; `liveLtx25ProviderReady=false`; `liveVisionJudgeReady=false`; `physicalPrintValidated=false`. Artwork mask is verified dedicated FRONT printable surface emission. Generative output is never Product Truth.
+Acceptance generation `78ef13b7-180f-43a3-94f9-15a9b3ad9f1f`; runner-bound `evidenceCodeCommit=cb045af68de6f64f8ba8196ae88382e2210b9dc0`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `realArtworkPreviewReady=true`; `productTruthRenderPackReady=true`; `productTruthAovPackReady=true`; `generativeRenderGatewayLogicReady=true`; `liveH3MaxProviderReady=false`; `liveLtx25ProviderReady=false`; `liveVisionJudgeReady=false`; `physicalPrintValidated=false`. Artwork mask is verified dedicated FRONT printable surface emission. Generative output is never Product Truth.
 
 ## Tests
 
 ```
-pytest -q  →  619 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  621 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
 CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
@@ -111,5 +105,4 @@ CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.
 
 ## Next round
 
-ChatGPT Re-Gate Phase 841–900 Round 5. Stop here. Do not start Phase 901+.
-
+ChatGPT Re-Gate Phase 841–900 Round 6. Stop here. Do not start Phase 901+.
