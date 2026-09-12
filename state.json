@@ -1,9 +1,8 @@
 {
-  "lastSeenInstructionSha": "3ecd2fe313ea8126ee705868b1e5e65a6b23d03f",
-  "lastProcessedInstructionSha": "3ecd2fe313ea8126ee705868b1e5e65a6b23d03f",
+  "lastSeenInstructionSha": "367fd2dd49d10e5bc35fcbf388ec4c5409eafe29",
+  "lastProcessedInstructionSha": "367fd2dd49d10e5bc35fcbf388ec4c5409eafe29",
   "activeInstructionSha": null,
-  "lastResultCommitSha": "ab20c1e3754a3767640c2ce7dc646cfd85a3ae71",
+  "lastResultCommitSha": "475997ee1921498cd6147a1f88f3a265276c933c",
   "status": "WAIT_NEXT_RE_GATE",
   "retryCount": 0
 }
-

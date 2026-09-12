@@ -1,6 +1,6 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 841–900 CODE_EVIDENCE_SHA `4a88680`; prior `3268f65` / instruction `191a150`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `191a150`. Historical Phase 1–840 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 841–900 CODE_EVIDENCE_SHA `475997e`; prior `4a88680` / `ab20c1e` / instruction `367fd2d`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `367fd2d`. Historical Phase 1–840 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
@@ -29,14 +29,14 @@ This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Founda
 | Item | Status | Evidence |
 |---|---|---|
 | CameraRecipe / SceneRecipe | REAL_LOGIC | hashed SOT; silent field drift changes hash |
-| ProductTruthRenderPack | REAL | generation `cf9e5828-…`; CODE `ab20c1e`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
+| ProductTruthRenderPack | REAL | generation `bb58ba9d-…`; CODE `475997e`; Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha 128×128; DAM lineage; T1000 OptiX |
 | Artwork mask uniqueness | REAL | Dedicated front face printable-surface emission mask with pure black background and true FRONT face emission; fail-closed on mismatch, verified distinct SHA and non-alias subset of product mask |
-| External canonical authority | REAL_LOGIC | `derive_canonical_expected_identity()` re-derives ground truth directly from platform repositories independent of payload |
-| Worker view camera rehash | REAL_LOGIC | `observed_cam_hash` recomputed from actual worker camera fields and verified against canonical recipe |
+| Non-circular canonical authority (Blocker A) | REAL_LOGIC | `derive_canonical_expected_identity(..., strict=True)` derives ground truth directly from pre-worker frozen request context (`frozenAuthorityContext`), not pack; verifies canonical placement, surface, artwork byte sha, and engineering; coordinated tampers fail closed |
+| Worker view provenance binding (Blocker B) | REAL_LOGIC | Worker view artifact provenance verified: filename/role matching (`door_detail.png` / `assembled_front.png`), workerViews conflict detection, PNG dimension/size/sha256 validation, `blenderJobId` cross-checks across workerView/row/pack, DAM asset binding (tenant, sha, view role, renderPackId, file bytes), normalized path binding between worker view and row, and booleans `usedMock=false`, `realBlender=true`, `realOptix=true` |
 | Generative gateway | REAL_LOGIC | provider-neutral IMAGE/VIDEO routing; quality UNVERIFIED |
 | live H3 MAX / LTX 2.5 | BLOCKED | fixture adapter cannot set live*ProviderReady |
 | Product consistency QA | REAL_LOGIC + MOCK Vision | APPROVED_FOR_ASSET_REVIEW ≠ production asset |
-| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; generation `cf9e5828-…`; CODE `ab20c1e`; gateway MOCK/BLOCKED live providers |
+| 899–900 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`; generation `bb58ba9d-…`; CODE `475997e`; gateway MOCK/BLOCKED live providers |
 
 ## Phase 721–780 Manual Pilot Batch Execution & Commercial Launch Readiness V1
 

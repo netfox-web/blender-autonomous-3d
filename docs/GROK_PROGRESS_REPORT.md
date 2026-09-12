@@ -2,25 +2,30 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-12  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `3ecd2fe313ea8126ee705868b1e5e65a6b23d03f` (**GO** — Phase 841–900 Re-Gate Round 3 External Canonical Authority / Worker-View Verification / Exact CODE CI)  
-Issue #1: Round 14 Re-Gate Round 3 `3ecd2fe`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `367fd2dd49d10e5bc35fcbf388ec4c5409eafe29` (**GO** — Phase 841–900 Re-Gate Round 4 Non-Circular Authority & Real Worker-View Provenance Binding)  
+Issue #1: Round 15 Re-Gate Round 4 `367fd2d`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 841–900 Product Truth Render Pack Re-Gate Round 3 (External Canonical Authority & Verification)**:
-1. **Independent external canonical authority**:
-   - `derive_canonical_expected_identity()` re-derives canonical ground truth directly from platform repositories (`plat.artwork`, `plat.dam`, requested recipes), completely independent of caller payload.
-   - Re-derives authoritative `engineeringHash`, `artworkId`, `artworkHash`, `artworkSha256`, `placementId`, `placementHash`, `finalUvHash`, `surfaceHash`, `componentId`, `objectName`, `face`, `sceneRecipeHash`, `cameraRecipeHash`, and per-view camera recipes.
-2. **Re-computed worker view camera hash & verification**:
-   - `validate_product_truth_render_pack()` recomputes `observed_cam_hash` from actual `workerView` fields (`location`, `lookAt`/`target`, `focalLengthMm`, `sensorWidthMm`, `safeMargin`, `width`, `height`).
-   - Cross-verifies exact match across `workerView.cameraRecipeHash`, `row.cameraRecipeHash`, and independent canonical view recipes.
-3. **Strict schema & negative matrix**:
-   - Strict numeric validation (`_is_strict_float`, `_is_strict_int`, `_is_strict_vec3`) rejecting `bool`, strings, `NaN`, and `±Inf`.
-   - Comprehensive negative tamper probes for coordinated forgery across `pack` + `workerEvidence` + `pack.expectedIdentity`, missing canonical authority, mutated worker view camera fields, invalid types, swapped views, and mock claim in REAL worker views.
-4. **Runner independent validation & two-phase CI**:
-   - `scripts/run_product_truth_render_e2e.py` re-derives external canonical authority and validates pack independently before publishing.
-   - Exact CODE commit pushed and verified on GitHub Actions CI before executing clean-tree REAL Blender 5.2.1 LTS + OptiX acceptance.
+Executed **Phase 841–900 Product Truth Render Pack Re-Gate Round 4 (Non-Circular Authority & Real Worker-View Provenance Binding)**:
+1. **Blocker A: Non-circular canonical runner authority**:
+   - `scripts/run_product_truth_render_e2e.py` derives its authoritative expected identity strictly from pre-worker frozen request context (`frozenAuthorityContext`), not derived from `pack["engineeringHash"]`, `pack["cameraRecipe"]`, `pack["sceneRecipe"]`, or `pack["views"]`.
+   - `derive_canonical_expected_identity(..., strict=True)` verifies canonical placement, canonical surface, canonical artwork file byte sha256 against `art.sha256`, canonical engineering, camera recipe, scene recipe, and view recipes (`DOOR_DETAIL` & `ASSEMBLED_FRONT`).
+   - Coordinated tampers across pack + workerEvidence + expectedIdentity (engineeringHash, cameraRecipe, sceneRecipe, DOOR_DETAIL / ASSEMBLED_FRONT view recipes, surfaceHash, deleted placement/surface/artwork, corrupt artwork bytes on disk, or missing frozenAuthorityContext) fail closed in the runner and refuse to publish.
+2. **Blocker B: REAL worker-view artifact provenance binding**:
+   - Conflict detection between top-level `pack.workerViews[name]` and view row `row.workerView`.
+   - Strict `viewId` and role/filename matching (`DOOR_DETAIL` ↔ `door_detail.png`, `ASSEMBLED_FRONT` ↔ `assembled_front.png`).
+   - Dimensions (`width`, `height`), SHA256, byte size, live file bytes, and PNG metadata checks against actual rendered files.
+   - `blenderJobId` exact cross-verification across `workerView.blenderJobId`, `row.blenderJobId`, and pack job lineage.
+   - DAM asset index cross-validation against `plat.dam._index` (tenant_id, sha256, view role metadata, renderPackId, live file bytes).
+   - Normalized path binding ensuring worker view and view row resolve to the identical artifact file.
+   - Exact boolean enforcement of `usedMock=false`, `realBlender=true`, `realOptix=true` on REAL worker views.
+3. **Stale audit header corrected**:
+   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md` header and table updated to reference supervisor commit `367fd2d` and green code commit `475997e`.
+4. **Strict two-phase push & verification**:
+   - Phase 1 CODE commit `475997e` pushed and verified green on GitHub Actions CI Run ID `34697114368` (Ubuntu + Windows).
+   - Clean-tree acceptance executed with REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX generating `bb58ba9d-158c-4076-99a2-3306867b216c` with 0 failures (`failures: []`, `ok: true`).
 
 Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 901+.
 
@@ -34,18 +39,19 @@ Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did 
 | 841–900 | Product Truth Camera/Scene recipes; AOV pack Beauty/Depth/Normal/ProductMask/ArtworkMask/Alpha; DAM lineage; provider-neutral generative gateway (H3/LTX adapters MOCK/BLOCKED); QA contract REAL_LOGIC + Vision MOCK. |
 | 841–900 Re-Gate R2 | Blockers A–D: Canonical authority in `build_pack()`, worker independent UV recompute/comparison, true FRONT printable-surface ArtworkMask emission with zero background radiance, per-view camera recipe/worker evidence (`workerViews`). |
 | 841–900 Re-Gate R3 | External canonical authority (`derive_canonical_expected_identity`), worker view camera rehash (`observed_cam_hash`), strict numeric schema (rejection of bool/str/NaN/Inf), runner independent re-validation, exact CODE CI two-phase verification. |
+| 841–900 Re-Gate R4 | Non-circular frozen runner authority (Blocker A); real worker view artifact provenance binding & DAM verification (Blocker B); stale audit header corrected; two-phase CI & clean-tree REAL OptiX acceptance. |
 
-**CODE_EVIDENCE_SHA:** `ab20c1e3754a3767640c2ce7dc646cfd85a3ae71`  
-**CODE_CI_RUN_ID:** `34685704758` (Ubuntu `103532210310` SUCCESS, Windows `103532210457` SUCCESS)  
+**CODE_EVIDENCE_SHA:** `475997ee1921498cd6147a1f88f3a265276c933c`  
+**CODE_CI_RUN_ID:** `34697114368` (Windows `103562384262` SUCCESS, Ubuntu `103562384391` SUCCESS)  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** dual-platform on exact code commit `ab20c1e3754a3767640c2ce7dc646cfd85a3ae71`.
+GitHub Actions CODE: **GREEN** dual-platform on exact code commit `475997ee1921498cd6147a1f88f3a265276c933c`.
 
-Acceptance generation `cf9e5828-d65d-4858-bc2b-09926c5b5ca2`; runner-bound `evidenceCodeCommit=ab20c1e3754a3767640c2ce7dc646cfd85a3ae71`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `realArtworkPreviewReady=true`; `productTruthRenderPackReady=true`; `productTruthAovPackReady=true`; `generativeRenderGatewayLogicReady=true`; `liveH3MaxProviderReady=false`; `liveLtx25ProviderReady=false`; `liveVisionJudgeReady=false`; `physicalPrintValidated=false`. Artwork mask is verified dedicated FRONT printable surface emission. Generative output is never Product Truth.
+Acceptance generation `bb58ba9d-158c-4076-99a2-3306867b216c`; runner-bound `evidenceCodeCommit=475997ee1921498cd6147a1f88f3a265276c933c`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `realArtworkPreviewReady=true`; `productTruthRenderPackReady=true`; `productTruthAovPackReady=true`; `generativeRenderGatewayLogicReady=true`; `liveH3MaxProviderReady=false`; `liveLtx25ProviderReady=false`; `liveVisionJudgeReady=false`; `physicalPrintValidated=false`. Artwork mask is verified dedicated FRONT printable surface emission. Generative output is never Product Truth.
 
 ## Tests
 
 ```
-pytest -q  →  618 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
+pytest -q  →  619 passed   (MOCK/unit/integration + FIXTURE/REAL_LOGIC — not Production Ready)
 ```
 
 CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready.

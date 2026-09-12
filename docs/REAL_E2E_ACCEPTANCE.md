@@ -15,7 +15,7 @@ Scoped readiness (not a global Production Ready flag):
 - `pilotBatchExecutionReady`: **FIXTURE / REAL_LOGIC** (scoped, not Production Ready) — see `docs/PILOT_BATCH_EXECUTION_ACCEPTANCE.md` (CODE `12ef546`, generation `4c1fa7ed-…`)
 - `surfaceDecorationLogicReady`: **REAL_LOGIC** — see `docs/ARTWORK_PLACEMENT_ACCEPTANCE.md` (CODE `3268f65`, generation `0d3f01cb-336b-4d28-8659-783a5f59f419`; exact canonical expected; fixture geometry + strict finite mm schema; independent tamper flags; Mock preview; `physicalPrintValidated=false`)
 - `productionArtworkFileReady`: **REAL_LOGIC / GENERATED** (file package + hash, not physical print)
-- `realArtworkPreviewReady`: **true / REAL** — Blender 5.2.1 LTS + NVIDIA T1000 OptiX Product Truth still (`docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`, CODE `ab20c1e`, generation `cf9e5828-d65d-4858-bc2b-09926c5b5ca2`); not physical print
+- `realArtworkPreviewReady`: **true / REAL** — Blender 5.2.1 LTS + NVIDIA T1000 OptiX Product Truth still (`docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`, CODE `475997e`, generation `bb58ba9d-158c-4076-99a2-3306867b216c`); not physical print
 - `productTruthRenderPackReady`: **true** (AOV pack REAL, 128×128)
 - `generativeRenderGatewayLogicReady`: **true** — see `docs/GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.md` (live H3/LTX **BLOCKED**)
 - `liveH3MaxProviderReady` / `liveLtx25ProviderReady`: **false / BLOCKED**
