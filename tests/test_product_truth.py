@@ -257,6 +257,45 @@ def test_product_truth_runner_publishes(tmp_path):
     assert (docs / "GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.json").exists()
 
 
+def test_product_truth_runner_refuses_on_missing_canonical_authority(tmp_path):
+    import importlib.util
+    import sys
+
+    from fox3d.evidence import prepare_evidence_lineage
+    from fox3d.product_truth import run_phase_841_scenario
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_product_truth_render_e2e.py"
+    spec = importlib.util.spec_from_file_location("run_product_truth_render_e2e_neg", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["run_product_truth_render_e2e_neg"] = mod
+    spec.loader.exec_module(mod)
+    sha = "b" * 40
+    docs = tmp_path / "docs"
+    docs.mkdir()
+
+    def inspect(root, allow_dirty=False):
+        return prepare_evidence_lineage(head_sha=sha, porcelain="", allow_dirty=allow_dirty)
+
+    def forged_scenario(plat, **kwargs):
+        res = run_phase_841_scenario(plat, evidence_code_commit=sha)
+        # Delete canonical placement record from platform store
+        p_id = res["pack"]["placementId"]
+        plat.artwork.placements.pop(p_id, None)
+        return res
+
+    rc = mod.main(
+        ["--docs-root", str(docs), "--expected-commit", sha],
+        hooks={
+            "inspect": inspect,
+            "platform": lambda root: Platform(root=root, mock_blender=True),
+            "scenario": forged_scenario,
+            "acceptance_root": tmp_path / "acc",
+        },
+    )
+    assert rc == 1
+    assert not (docs / "PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json").exists()
+
+
 def test_independent_canonical_expected_authority_negatives(tmp_path):
     plat, cab, place, pack = _fixture(tmp_path)
     expected_auth = copy.deepcopy(pack["expectedIdentity"])
@@ -264,26 +303,25 @@ def test_independent_canonical_expected_authority_negatives(tmp_path):
     assert expected_auth["placementHash"] == place["placementHash"]
     assert expected_auth["finalUvHash"] == pack["finalUvHash"]
 
-    # 1. Coordinated tamper: both workerEvidence and pack serialized fields are forged
-    forged = copy.deepcopy(pack)
-    forged["engineeringHash"] = "forged_eng_hash"
-    forged["workerEvidence"]["engineeringHash"] = "forged_eng_hash"
-    fails = validate_product_truth_render_pack(forged, expected_identity=expected_auth)
-    assert any("engineeringHash" in f for f in fails)
-
-    # Coordinated tamper on placementHash
-    forged_place = copy.deepcopy(pack)
-    forged_place["placementHash"] = "forged_placement_hash"
-    forged_place["workerEvidence"]["placementHash"] = "forged_placement_hash"
-    fails_p = validate_product_truth_render_pack(forged_place, expected_identity=expected_auth)
-    assert any("placementHash" in f for f in fails_p)
-
-    # Coordinated tamper on finalUvHash
-    forged_uv = copy.deepcopy(pack)
-    forged_uv["finalUvHash"] = "forged_uv_hash"
-    forged_uv["workerEvidence"]["finalUvHash"] = "forged_uv_hash"
-    fails_u = validate_product_truth_render_pack(forged_uv, expected_identity=expected_auth)
-    assert any("finalUvHash" in f for f in fails_u)
+    # 1. Coordinated tamper across pack + workerEvidence + pack.expectedIdentity
+    for key, forge_val in (
+        ("engineeringHash", "0" * 64),
+        ("placementHash", "1" * 64),
+        ("finalUvHash", "2" * 64),
+        ("surfaceHash", "3" * 64),
+        ("artworkHash", "4" * 64),
+        ("artworkSha256", "5" * 64),
+        ("componentId", "forged_door_comp"),
+        ("objectName", "FORGED_DOOR_OBJ"),
+        ("face", "BACK"),
+    ):
+        forged = copy.deepcopy(pack)
+        forged[key] = forge_val
+        forged["workerEvidence"][key] = forge_val
+        if "expectedIdentity" in forged and isinstance(forged["expectedIdentity"], dict):
+            forged["expectedIdentity"][key] = forge_val
+        fails = validate_product_truth_render_pack(forged, expected_identity=expected_auth)
+        assert any(key in f or "worker_mismatch" in f or "worker_face" in f for f in fails), f"Failed to catch coordinated forge of {key}"
 
     # 2. Wrong worker engineeringHash alone
     bad_eng = copy.deepcopy(pack)
@@ -359,21 +397,69 @@ def test_worker_observed_camera_view_evidence_negatives(tmp_path):
     assert "DOOR_DETAIL" in pack["views"]
     assert "ASSEMBLED_FRONT" in pack["views"]
 
-    # 1. Worker renders DOOR_DETAIL using ASSEMBLED_FRONT camera -> FAIL
-    wrong_cam = copy.deepcopy(pack)
-    assembled_hash = pack["views"]["ASSEMBLED_FRONT"]["workerView"]["cameraRecipeHash"]
-    wrong_cam["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = assembled_hash
-    fails1 = validate_product_truth_render_pack(wrong_cam)
-    assert "view_camera_mismatch_DOOR_DETAIL" in fails1
+    # 1. Mutate workerView location alone while keeping hash unchanged -> FAIL
+    mut_loc = copy.deepcopy(pack)
+    mut_loc["views"]["DOOR_DETAIL"]["workerView"]["location"] = [9.9, -9.9, 9.9]
+    fails_loc = validate_product_truth_render_pack(mut_loc)
+    assert "view_worker_camera_hash_mismatch_DOOR_DETAIL" in fails_loc or "view_camera_mismatch_DOOR_DETAIL" in fails_loc
 
-    # 2. Post-hoc serialized camera hash changed together with pack metadata -> FAIL against independent requested recipe
+    # 2. Mutate workerView lookAt / target alone -> FAIL
+    mut_target = copy.deepcopy(pack)
+    mut_target["views"]["DOOR_DETAIL"]["workerView"]["lookAt"] = [5.0, 5.0, 5.0]
+    mut_target["views"]["DOOR_DETAIL"]["workerView"]["target"] = [5.0, 5.0, 5.0]
+    fails_target = validate_product_truth_render_pack(mut_target)
+    assert "view_worker_camera_hash_mismatch_DOOR_DETAIL" in fails_target or "view_camera_mismatch_DOOR_DETAIL" in fails_target
+
+    # 3. Mutate focalLengthMm alone -> FAIL
+    mut_focal = copy.deepcopy(pack)
+    mut_focal["views"]["DOOR_DETAIL"]["workerView"]["focalLengthMm"] = 35.0
+    fails_focal = validate_product_truth_render_pack(mut_focal)
+    assert "view_worker_camera_hash_mismatch_DOOR_DETAIL" in fails_focal or "view_camera_mismatch_DOOR_DETAIL" in fails_focal
+
+    # 4. Mutate sensorWidthMm / safeMargin / width / height alone -> FAIL
+    for key, val in (
+        ("sensorWidthMm", 24.0),
+        ("safeMargin", 0.25),
+        ("width", 1024),
+        ("height", 1024),
+    ):
+        mut_param = copy.deepcopy(pack)
+        mut_param["views"]["DOOR_DETAIL"]["workerView"][key] = val
+        fails_param = validate_product_truth_render_pack(mut_param)
+        assert any("DOOR_DETAIL" in f for f in fails_param), f"Failed to catch workerView mutation of {key}"
+
+    # 5. Coordinated mutate workerView fields + worker hash + serialized view hash + serialized cameraRecipe -> FAIL against independent request-side recipe
+    expected_auth = copy.deepcopy(pack["expectedIdentity"])
     tamper_recipe = copy.deepcopy(pack)
-    tamper_recipe["views"]["DOOR_DETAIL"]["cameraRecipeHash"] = "forged_cam_recipe_hash"
-    tamper_recipe["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = "forged_cam_recipe_hash"
-    fails2 = validate_product_truth_render_pack(tamper_recipe)
-    assert "view_camera_recipe_hash_DOOR_DETAIL" in fails2
+    recomputed_tamper = camera_recipe(camera_id="DOOR_DETAIL", focal_length_mm=24.0, width=64, height=64)
+    tamper_hash = recomputed_tamper["cameraRecipeHash"]
+    tamper_recipe["views"]["DOOR_DETAIL"]["cameraRecipe"] = recomputed_tamper
+    tamper_recipe["views"]["DOOR_DETAIL"]["cameraRecipeHash"] = tamper_hash
+    tamper_recipe["views"]["DOOR_DETAIL"]["workerView"]["focalLengthMm"] = 24.0
+    tamper_recipe["views"]["DOOR_DETAIL"]["workerView"]["cameraRecipeHash"] = tamper_hash
+    fails_coord = validate_product_truth_render_pack(tamper_recipe, expected_identity=expected_auth)
+    assert "view_canonical_camera_mismatch_DOOR_DETAIL" in fails_coord or "worker_view_canonical_camera_mismatch_DOOR_DETAIL" in fails_coord
 
-    # 3. Missing worker view record for required views -> FAIL
+    # 6. Wrong viewId / swapped DOOR_DETAIL and ASSEMBLED_FRONT -> FAIL
+    swapped = copy.deepcopy(pack)
+    swapped["views"]["DOOR_DETAIL"]["workerView"]["viewId"] = "ASSEMBLED_FRONT"
+    fails_swap = validate_product_truth_render_pack(swapped)
+    assert "view_worker_id_mismatch_DOOR_DETAIL" in fails_swap
+
+    # 7. Invalid non-numeric types: bool, string, NaN, Inf in workerView camera fields -> FAIL
+    for bad_loc in ([True, 1.0, 2.0], ["1.0", "2.0", "3.0"], [float("nan"), 1.0, 2.0], [float("inf"), 1.0, 2.0]):
+        bad_type_loc = copy.deepcopy(pack)
+        bad_type_loc["views"]["DOOR_DETAIL"]["workerView"]["location"] = bad_loc
+        fails_type = validate_product_truth_render_pack(bad_type_loc)
+        assert "view_worker_location_invalid_DOOR_DETAIL" in fails_type
+
+    for bad_focal in (True, "85.0", float("nan"), float("inf"), -10.0, 0):
+        bad_type_focal = copy.deepcopy(pack)
+        bad_type_focal["views"]["DOOR_DETAIL"]["workerView"]["focalLengthMm"] = bad_focal
+        fails_type = validate_product_truth_render_pack(bad_type_focal)
+        assert "view_worker_focalLength_invalid_DOOR_DETAIL" in fails_type
+
+    # 8. Missing worker view record for required views -> FAIL
     no_w_door = copy.deepcopy(pack)
     no_w_door["views"]["DOOR_DETAIL"].pop("workerView", None)
     no_w_door["workerViews"].pop("DOOR_DETAIL", None)
@@ -384,8 +470,24 @@ def test_worker_observed_camera_view_evidence_negatives(tmp_path):
     no_w_front["workerViews"].pop("ASSEMBLED_FRONT", None)
     assert "missing_worker_view_ASSEMBLED_FRONT" in validate_product_truth_render_pack(no_w_front)
 
-    # 4. Worker observed artifact SHA differs from pack view / live file SHA -> FAIL
+    # 9. Worker observed artifact SHA / size differs from pack view / live file -> FAIL
     bad_sha = copy.deepcopy(pack)
     bad_sha["views"]["DOOR_DETAIL"]["workerView"]["sha256"] = "0" * 64
     assert "view_worker_hash_DOOR_DETAIL" in validate_product_truth_render_pack(bad_sha)
+
+    bad_sz = copy.deepcopy(pack)
+    bad_sz["views"]["DOOR_DETAIL"]["workerView"]["size"] = 999999
+    assert "view_worker_size_DOOR_DETAIL" in validate_product_truth_render_pack(bad_sz)
+
+    # 10. REAL worker view with usedMock=True, realBlender=False, or realOptix=False -> FAIL
+    real_pack = copy.deepcopy(pack)
+    real_pack["usedMock"] = False
+    real_pack["realBlender"] = True
+    real_pack["realOptix"] = True
+    real_pack["realArtworkPreviewReady"] = True
+    real_pack["productTruthRenderPackReady"] = True
+    real_pack["views"]["DOOR_DETAIL"]["workerView"]["usedMock"] = True
+    fails_mock_real = validate_product_truth_render_pack(real_pack)
+    assert "real_worker_view_usedMock_DOOR_DETAIL" in fails_mock_real
+
 

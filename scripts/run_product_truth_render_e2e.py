@@ -17,7 +17,12 @@ from fox3d.blender import probe_host  # noqa: E402
 from fox3d.evidence import DirtyTreeError, inspect_repo_lineage  # noqa: E402
 from fox3d.ids import new_id  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
-from fox3d.product_truth import run_phase_841_scenario  # noqa: E402
+from fox3d.product_truth import (  # noqa: E402
+    REQUIRED_VIEWS,
+    derive_canonical_expected_identity,
+    run_phase_841_scenario,
+    validate_product_truth_render_pack,
+)
 
 
 def _md(title: str, rows: list[dict], generated: str) -> str:
@@ -88,6 +93,41 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         missing.append("fixture_live_provider")
     pack = result.get("pack") or {}
     gen = result.get("generative") or {}
+
+    # Independently re-derive canonical authority and revalidate before publishing
+    tenant_id = pack.get("tenantId") or "pt-a"
+    place_id = pack.get("placementId")
+    canonical_place = plat.artwork.placements.get(place_id) if (place_id and hasattr(plat, "artwork") and hasattr(plat.artwork, "placements")) else None
+    if not canonical_place:
+        missing.append("missing_canonical_placement")
+
+    canonical_expected = derive_canonical_expected_identity(
+        plat,
+        tenant_id=tenant_id,
+        placement=canonical_place or {
+            "placementId": place_id,
+            "placementHash": pack.get("placementHash"),
+            "surfaceHash": pack.get("surfaceHash"),
+            "artworkHash": pack.get("artworkHash"),
+            "artworkSha256": pack.get("artworkSha256"),
+            "finalUvHash": pack.get("finalUvHash"),
+            "componentId": pack.get("componentId"),
+            "objectName": pack.get("objectName"),
+            "face": pack.get("face") or "FRONT",
+        },
+        engineering={"engineeringHash": pack.get("engineeringHash")},
+        camera=pack.get("cameraRecipe"),
+        scene=pack.get("sceneRecipe"),
+        view_recipes={name: (pack.get("views") or {}).get(name, {}).get("cameraRecipe") for name in REQUIRED_VIEWS},
+    ) if hasattr(plat, "artwork") else None
+
+    if not canonical_expected:
+        missing.append("missing_canonical_authority")
+
+    independent_failures = validate_product_truth_render_pack(pack, expected_identity=canonical_expected)
+    for f in independent_failures:
+        if f not in missing:
+            missing.append(f)
     rows = [
         {"check": "realArtworkPreviewReady", "status": "MOCK" if mock else ("REAL" if result.get("realArtworkPreviewReady") else "BLOCKED_ENVIRONMENT"), "evidence": result.get("realArtworkPreviewReady")},
         {"check": "productTruthRenderPackReady", "status": "REAL" if result.get("productTruthRenderPackReady") else ("FIXTURE" if result.get("productTruthAovPackReady") else "MISSING"), "evidence": result.get("productTruthRenderPackReady")},

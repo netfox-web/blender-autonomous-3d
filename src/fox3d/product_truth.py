@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -137,6 +138,99 @@ def _exact_bool(value: Any) -> bool | None:
     return None
 
 
+def _is_strict_float(val: Any) -> bool:
+    if type(val) is bool:
+        return False
+    if not isinstance(val, (int, float)):
+        return False
+    try:
+        f = float(val)
+        return math.isfinite(f)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _is_strict_int(val: Any) -> bool:
+    if type(val) is bool:
+        return False
+    if not isinstance(val, int):
+        return False
+    return True
+
+
+def _is_strict_vec3(val: Any) -> bool:
+    if not isinstance(val, (list, tuple)) or len(val) != 3:
+        return False
+    return all(_is_strict_float(x) for x in val)
+
+
+def derive_canonical_expected_identity(
+    plat: Any,
+    *,
+    tenant_id: str,
+    placement: dict[str, Any],
+    engineering: dict[str, Any] | None = None,
+    camera: dict[str, Any] | None = None,
+    scene: dict[str, Any] | None = None,
+    view_recipes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    factory = getattr(plat, "artwork", None)
+    ident = {}
+    if factory and hasattr(factory, "applied_identity"):
+        try:
+            ident = factory.applied_identity(placement)
+        except Exception:
+            ident = {}
+
+    p_id = placement.get("placementId")
+    canonical_place = factory.placements.get(p_id) if (factory and hasattr(factory, "placements") and p_id) else None
+    source_placement = canonical_place or placement
+
+    art_id = source_placement.get("artworkId")
+    art_sha = None
+    art_hash = None
+    if art_id and factory and hasattr(factory, "require_artwork"):
+        try:
+            art_rec = factory.require_artwork(art_id, tenant_id=tenant_id)
+            art_sha = art_rec.get("sha256")
+            art_hash = art_rec.get("artworkHash")
+        except Exception:
+            art_rec = factory.artworks.get(art_id) if hasattr(factory, "artworks") else None
+            if art_rec:
+                art_sha = art_rec.get("sha256")
+                art_hash = art_rec.get("artworkHash")
+    if not art_sha:
+        art_sha = source_placement.get("artworkSha256")
+    if not art_hash:
+        art_hash = ident.get("artworkHash") or source_placement.get("artworkHash")
+
+    eng_hash = (engineering or {}).get("engineeringHash") or ident.get("engineeringHash") or source_placement.get("engineeringHash")
+    cam_hash = (camera or {}).get("cameraRecipeHash")
+    scene_hash = (scene or {}).get("sceneRecipeHash")
+
+    view_hashes: dict[str, str] = {}
+    for vname, vrec in (view_recipes or {}).items():
+        if isinstance(vrec, dict) and vrec.get("cameraRecipeHash"):
+            view_hashes[vname] = str(vrec["cameraRecipeHash"])
+
+    return {
+        "engineeringHash": eng_hash,
+        "artworkId": art_id,
+        "artworkHash": art_hash,
+        "artworkSha256": art_sha,
+        "placementId": source_placement.get("placementId"),
+        "placementHash": ident.get("placementHash") or source_placement.get("placementHash"),
+        "finalUvHash": ident.get("finalUvHash") or source_placement.get("finalUvHash"),
+        "surfaceHash": ident.get("surfaceHash") or source_placement.get("surfaceHash"),
+        "componentId": ident.get("componentId") or source_placement.get("componentId"),
+        "objectName": ident.get("objectName") or source_placement.get("objectName"),
+        "face": ident.get("face") or source_placement.get("face") or "FRONT",
+        "sceneRecipeHash": scene_hash,
+        "cameraRecipeHash": cam_hash,
+        "viewRecipes": view_hashes,
+    }
+
+
 def _artwork_subset_of_product(art_rgb: bytes, prod_rgb: bytes, width: int, height: int) -> bool:
     art_lit = prod_lit = overlap = 0
     n = width * height
@@ -189,7 +283,9 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
     failures: list[str] = []
     if not isinstance(pack, dict):
         return ["pack_missing"]
-    authoritative_expected = dict(expected_identity or pack.get("expectedIdentity") or {})
+    authoritative_expected = dict(expected_identity or {})
+    serialized_expected = pack.get("expectedIdentity") if isinstance(pack.get("expectedIdentity"), dict) else {}
+
     if pack.get("physicalPrintValidated") is True:
         failures.append("physical_print")
     for flag in ("globalProductionReady", "fullAutonomousFactoryReady", "liveFactoryExecutionReady"):
@@ -301,6 +397,7 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
         if expect_s.get("sceneRecipeHash") != scene.get("sceneRecipeHash"):
             failures.append("scene_recipe_hash")
     views = pack.get("views") if isinstance(pack.get("views"), dict) else {}
+    worker_views_dict = pack.get("workerViews") if isinstance(pack.get("workerViews"), dict) else {}
     for name in REQUIRED_VIEWS:
         row = views.get(name) if isinstance(views.get(name), dict) else None
         if not row:
@@ -317,16 +414,79 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
         if sha256_bytes(live) != str(row.get("sha256")) or len(live) != int(row.get("size") or 0):
             failures.append(f"view_hash_{name}")
             continue
-        worker_view = row.get("workerView") or (pack.get("workerViews") or {}).get(name)
+        worker_view = row.get("workerView") or worker_views_dict.get(name)
         if not isinstance(worker_view, dict) or not worker_view:
             failures.append(f"missing_worker_view_{name}")
             continue
-        if worker_view.get("cameraRecipeHash") != row.get("cameraRecipeHash"):
-            failures.append(f"view_camera_mismatch_{name}")
+
+        if worker_view.get("viewId") != name:
+            failures.append(f"view_worker_id_mismatch_{name}")
+
+        loc = worker_view.get("location")
+        look = worker_view.get("lookAt") if worker_view.get("lookAt") is not None else worker_view.get("target")
+        focal = worker_view.get("focalLengthMm")
+        sensor = worker_view.get("sensorWidthMm")
+        margin = worker_view.get("safeMargin")
+        vw = worker_view.get("width")
+        vh = worker_view.get("height")
+        vsz = worker_view.get("size")
+        v_sha = worker_view.get("sha256")
+
+        camera_valid = True
+        if not _is_strict_vec3(loc):
+            failures.append(f"view_worker_location_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_vec3(look):
+            failures.append(f"view_worker_lookAt_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_float(focal) or float(focal) <= 0:
+            failures.append(f"view_worker_focalLength_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_float(sensor) or float(sensor) <= 0:
+            failures.append(f"view_worker_sensorWidth_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_float(margin) or float(margin) < 0:
+            failures.append(f"view_worker_safeMargin_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_int(vw) or int(vw) <= 0:
+            failures.append(f"view_worker_width_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_int(vh) or int(vh) <= 0:
+            failures.append(f"view_worker_height_invalid_{name}")
+            camera_valid = False
+        if not _is_strict_int(vsz) or int(vsz) <= 0:
+            failures.append(f"view_worker_size_invalid_{name}")
+            camera_valid = False
+        if not _strict_hash(v_sha):
+            failures.append(f"view_worker_sha_invalid_{name}")
+            camera_valid = False
+
+        if camera_valid:
+            observed_camera = camera_recipe(
+                camera_id=str(worker_view.get("viewId") or name),
+                location=tuple(float(x) for x in loc),
+                look_at=tuple(float(x) for x in look),
+                focal_length_mm=float(focal),
+                sensor_width_mm=float(sensor),
+                width=int(vw),
+                height=int(vh),
+                safe_margin=float(margin),
+            )
+            observed_cam_hash = observed_camera["cameraRecipeHash"]
+            if worker_view.get("cameraRecipeHash") != observed_cam_hash:
+                failures.append(f"view_worker_camera_hash_mismatch_{name}")
+            if row.get("cameraRecipeHash") != observed_cam_hash:
+                failures.append(f"view_camera_mismatch_{name}")
+            if worker_view.get("cameraRecipeHash") != row.get("cameraRecipeHash"):
+                failures.append(f"view_camera_mismatch_{name}")
+
         if worker_view.get("sha256") and worker_view.get("sha256") != str(row.get("sha256")):
             failures.append(f"view_worker_hash_{name}")
         if worker_view.get("size") and int(worker_view.get("size")) != int(row.get("size") or 0):
             failures.append(f"view_worker_size_{name}")
+        if _is_strict_int(vw) and _is_strict_int(vh) and (row.get("width"), row.get("height")) != (int(vw), int(vh)):
+            failures.append(f"view_worker_dimension_mismatch_{name}")
+
         if row.get("cameraRecipe") and isinstance(row["cameraRecipe"], dict):
             req_c = row["cameraRecipe"]
             recomputed = camera_recipe(
@@ -341,6 +501,25 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
             )
             if recomputed.get("cameraRecipeHash") != row.get("cameraRecipeHash"):
                 failures.append(f"view_camera_recipe_hash_{name}")
+            if camera_valid and observed_cam_hash != recomputed.get("cameraRecipeHash"):
+                failures.append(f"view_camera_recipe_mismatch_{name}")
+
+        if authoritative_expected.get("viewRecipes") and isinstance(authoritative_expected["viewRecipes"], dict):
+            exp_view_hash = authoritative_expected["viewRecipes"].get(name)
+            if exp_view_hash:
+                if row.get("cameraRecipeHash") != exp_view_hash:
+                    failures.append(f"view_canonical_camera_mismatch_{name}")
+                if camera_valid and observed_cam_hash != exp_view_hash:
+                    failures.append(f"worker_view_canonical_camera_mismatch_{name}")
+
+        if pack.get("realArtworkPreviewReady") is True or pack.get("productTruthRenderPackReady") is True or pack.get("usedMock") is False:
+            if _exact_bool(worker_view.get("usedMock")) is not False:
+                failures.append(f"real_worker_view_usedMock_{name}")
+            if _exact_bool(worker_view.get("realBlender")) is not True:
+                failures.append(f"real_worker_view_realBlender_{name}")
+            if _exact_bool(worker_view.get("realOptix")) is not True:
+                failures.append(f"real_worker_view_realOptix_{name}")
+
     worker = pack.get("workerEvidence") if isinstance(pack.get("workerEvidence"), dict) else {}
     for key in WORKER_IDENTITY_KEYS:
         if key not in worker:
@@ -349,6 +528,7 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
             failures.append(f"worker_missing_{key}")
     if worker.get("face") != "FRONT":
         failures.append("worker_face")
+
     for key in (
         "engineeringHash",
         "artworkHash",
@@ -361,11 +541,19 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
     ):
         if worker.get(key) and pack.get(key) and worker.get(key) != pack.get(key):
             failures.append(f"worker_mismatch_{key}")
-        if authoritative_expected and authoritative_expected.get(key):
+        if authoritative_expected and authoritative_expected.get(key) is not None:
             if worker.get(key) and worker.get(key) != authoritative_expected.get(key):
                 failures.append(f"worker_mismatch_{key}")
             if pack.get(key) and pack.get(key) != authoritative_expected.get(key):
                 failures.append(f"pack_mismatch_{key}")
+            if serialized_expected.get(key) and serialized_expected.get(key) != authoritative_expected.get(key):
+                failures.append(f"serialized_expected_mismatch_{key}")
+        elif serialized_expected and serialized_expected.get(key) is not None:
+            if worker.get(key) and worker.get(key) != serialized_expected.get(key):
+                failures.append(f"worker_mismatch_{key}")
+            if pack.get(key) and pack.get(key) != serialized_expected.get(key):
+                failures.append(f"pack_mismatch_{key}")
+
     if worker.get("cameraRecipeHash") and pack.get("cameraRecipeHash") and worker.get("cameraRecipeHash") != pack.get("cameraRecipeHash"):
         failures.append("worker_mismatch_cameraRecipeHash")
     if authoritative_expected and authoritative_expected.get("cameraRecipeHash"):
@@ -373,6 +561,14 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
             failures.append("worker_mismatch_cameraRecipeHash")
         if pack.get("cameraRecipeHash") and pack.get("cameraRecipeHash") != authoritative_expected.get("cameraRecipeHash"):
             failures.append("pack_mismatch_cameraRecipeHash")
+        if serialized_expected.get("cameraRecipeHash") and serialized_expected.get("cameraRecipeHash") != authoritative_expected.get("cameraRecipeHash"):
+            failures.append("serialized_expected_mismatch_cameraRecipeHash")
+    elif serialized_expected and serialized_expected.get("cameraRecipeHash"):
+        if worker.get("cameraRecipeHash") and worker.get("cameraRecipeHash") != serialized_expected.get("cameraRecipeHash"):
+            failures.append("worker_mismatch_cameraRecipeHash")
+        if pack.get("cameraRecipeHash") and pack.get("cameraRecipeHash") != serialized_expected.get("cameraRecipeHash"):
+            failures.append("pack_mismatch_cameraRecipeHash")
+
     if worker.get("sceneRecipeHash") and pack.get("sceneRecipeHash") and worker.get("sceneRecipeHash") != pack.get("sceneRecipeHash"):
         failures.append("worker_mismatch_sceneRecipeHash")
     if authoritative_expected and authoritative_expected.get("sceneRecipeHash"):
@@ -380,6 +576,14 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
             failures.append("worker_mismatch_sceneRecipeHash")
         if pack.get("sceneRecipeHash") and pack.get("sceneRecipeHash") != authoritative_expected.get("sceneRecipeHash"):
             failures.append("pack_mismatch_sceneRecipeHash")
+        if serialized_expected.get("sceneRecipeHash") and serialized_expected.get("sceneRecipeHash") != authoritative_expected.get("sceneRecipeHash"):
+            failures.append("serialized_expected_mismatch_sceneRecipeHash")
+    elif serialized_expected and serialized_expected.get("sceneRecipeHash"):
+        if worker.get("sceneRecipeHash") and worker.get("sceneRecipeHash") != serialized_expected.get("sceneRecipeHash"):
+            failures.append("worker_mismatch_sceneRecipeHash")
+        if pack.get("sceneRecipeHash") and pack.get("sceneRecipeHash") != serialized_expected.get("sceneRecipeHash"):
+            failures.append("pack_mismatch_sceneRecipeHash")
+
     aov_beauty = aovs.get("beauty") if isinstance(aovs.get("beauty"), dict) else {}
     if worker and aov_beauty.get("placementHash") and worker.get("placementHash") and aov_beauty.get("placementHash") != worker.get("placementHash"):
         failures.append("aov_worker_inconsistent")
@@ -397,7 +601,7 @@ def validate_product_truth_render_pack(pack: dict[str, Any], expected_identity: 
             failures.append("real_job_identity")
         if "artwork_mask_alias" in failures:
             failures.append("real_artwork_mask")
-        if any(f.startswith("missing_view_") for f in failures):
+        if any(f.startswith("missing_view_") or f.startswith("view_worker_") or f.startswith("real_worker_view_") for f in failures):
             failures.append("real_views")
     if pack.get("usedMock") is not True:
         if pack.get("realBlender") is not True or pack.get("usedMock") is True:
@@ -472,35 +676,32 @@ class ProductTruthFactory:
         render_pack_id = new_id()
         worker = dict((job or {}).get("workerIdentity") or {})
 
-        canonical_eng_hash = (expected_identity or {}).get("engineeringHash") or engineering.get("engineeringHash") or placement.get("engineeringHash")
-        canonical_art_hash = (expected_identity or {}).get("artworkHash") or placement.get("artworkHash")
-        canonical_art_id = (expected_identity or {}).get("artworkId") or placement.get("artworkId")
-        canonical_art_sha = (expected_identity or {}).get("artworkSha256") or placement.get("artworkSha256")
-        canonical_placement_id = (expected_identity or {}).get("placementId") or placement.get("placementId")
-        canonical_placement_hash = (expected_identity or {}).get("placementHash") or placement.get("placementHash")
-        canonical_final_uv_hash = (expected_identity or {}).get("finalUvHash") or placement.get("finalUvHash")
-        canonical_surface_hash = (expected_identity or {}).get("surfaceHash") or placement.get("surfaceHash")
-        canonical_component_id = (expected_identity or {}).get("componentId") or placement.get("componentId")
-        canonical_object_name = (expected_identity or {}).get("objectName") or placement.get("objectName")
-        canonical_face = (expected_identity or {}).get("face") or placement.get("face") or "FRONT"
-        canonical_scene_hash = (expected_identity or {}).get("sceneRecipeHash") or scene.get("sceneRecipeHash")
-        canonical_camera_hash = (expected_identity or {}).get("cameraRecipeHash") or camera.get("cameraRecipeHash")
+        if expected_identity:
+            authoritative_expected = dict(expected_identity)
+        else:
+            authoritative_expected = derive_canonical_expected_identity(
+                self.platform,
+                tenant_id=tenant_id,
+                placement=placement,
+                engineering=engineering,
+                camera=camera,
+                scene=scene,
+                view_recipes=view_recipes,
+            )
 
-        authoritative_expected = {
-            "engineeringHash": canonical_eng_hash,
-            "artworkId": canonical_art_id,
-            "artworkHash": canonical_art_hash,
-            "artworkSha256": canonical_art_sha,
-            "placementId": canonical_placement_id,
-            "placementHash": canonical_placement_hash,
-            "finalUvHash": canonical_final_uv_hash,
-            "surfaceHash": canonical_surface_hash,
-            "componentId": canonical_component_id,
-            "objectName": canonical_object_name,
-            "face": canonical_face,
-            "sceneRecipeHash": canonical_scene_hash,
-            "cameraRecipeHash": canonical_camera_hash,
-        }
+        canonical_eng_hash = authoritative_expected.get("engineeringHash") or engineering.get("engineeringHash") or placement.get("engineeringHash")
+        canonical_art_hash = authoritative_expected.get("artworkHash") or placement.get("artworkHash")
+        canonical_art_id = authoritative_expected.get("artworkId") or placement.get("artworkId")
+        canonical_art_sha = authoritative_expected.get("artworkSha256") or placement.get("artworkSha256")
+        canonical_placement_id = authoritative_expected.get("placementId") or placement.get("placementId")
+        canonical_placement_hash = authoritative_expected.get("placementHash") or placement.get("placementHash")
+        canonical_final_uv_hash = authoritative_expected.get("finalUvHash") or placement.get("finalUvHash")
+        canonical_surface_hash = authoritative_expected.get("surfaceHash") or placement.get("surfaceHash")
+        canonical_component_id = authoritative_expected.get("componentId") or placement.get("componentId")
+        canonical_object_name = authoritative_expected.get("objectName") or placement.get("objectName")
+        canonical_face = authoritative_expected.get("face") or placement.get("face") or "FRONT"
+        canonical_scene_hash = authoritative_expected.get("sceneRecipeHash") or scene.get("sceneRecipeHash")
+        canonical_camera_hash = authoritative_expected.get("cameraRecipeHash") or camera.get("cameraRecipeHash")
 
         lineage = {
             "engineeringHash": canonical_eng_hash,
@@ -627,7 +828,7 @@ class ProductTruthFactory:
             "fullAutonomousFactoryReady": False,
         }
         trial = {**pack, "realArtworkPreviewReady": False, "productTruthRenderPackReady": False}
-        failures = validate_product_truth_render_pack(trial)
+        failures = validate_product_truth_render_pack(trial, expected_identity=authoritative_expected)
         blocked_real = {
             "mock_claimed_real_preview",
             "mock_claimed_real_pack",
@@ -638,10 +839,25 @@ class ProductTruthFactory:
             "real_job_identity",
             "real_artwork_mask",
             "real_views",
+            "real_worker_view_usedMock_DOOR_DETAIL",
+            "real_worker_view_usedMock_ASSEMBLED_FRONT",
+            "real_worker_view_realBlender_DOOR_DETAIL",
+            "real_worker_view_realBlender_ASSEMBLED_FRONT",
+            "real_worker_view_realOptix_DOOR_DETAIL",
+            "real_worker_view_realOptix_ASSEMBLED_FRONT",
         }
         structure_ok = not [f for f in failures if f not in blocked_real]
         pack["productTruthAovPackReady"] = bool(structure_ok and len(aovs) == len(REQUIRED_AOV_ROLES) and len(views) == 2)
-        identity_ok = not any(f.startswith("worker_") or f == "artwork_mask_alias" or f == "aov_worker_inconsistent" for f in failures)
+        identity_ok = not any(
+            f.startswith("worker_")
+            or f.startswith("pack_mismatch_")
+            or f.startswith("serialized_expected_mismatch_")
+            or f.startswith("view_worker_")
+            or f.startswith("view_camera_")
+            or f == "artwork_mask_alias"
+            or f == "aov_worker_inconsistent"
+            for f in failures
+        )
         pack["realArtworkPreviewReady"] = bool(
             _exact_bool(pack["usedMock"]) is False
             and _exact_bool(pack["realBlender"]) is True
@@ -654,7 +870,7 @@ class ProductTruthFactory:
             and pack.get("gpu")
         )
         pack["productTruthRenderPackReady"] = bool(pack["realArtworkPreviewReady"])
-        pack["acceptanceFailures"] = validate_product_truth_render_pack(pack)
+        pack["acceptanceFailures"] = validate_product_truth_render_pack(pack, expected_identity=authoritative_expected)
         pack["ok"] = not pack["acceptanceFailures"]
         return pack
 
@@ -668,6 +884,7 @@ def render_product_truth(
     width: int = 64,
     height: int = 64,
     evidence_code_commit: str | None = None,
+    expected_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     camera = camera_recipe(width=width, height=height)
     mock = bool(getattr(plat, "mock_blender", True))
@@ -700,6 +917,16 @@ def render_product_truth(
         look_at=(1.2, 0.0, 0.9),
         width=width,
         height=height,
+    )
+    view_recipes = {"DOOR_DETAIL": door_cam, "ASSEMBLED_FRONT": assembled_cam}
+    canonical_expected = expected_identity or derive_canonical_expected_identity(
+        plat,
+        tenant_id=tenant_id,
+        placement=place_row,
+        engineering=engineering,
+        camera=camera,
+        scene=scene,
+        view_recipes=view_recipes,
     )
     if mock:
         job_dir = Path(plat.root) / "work" / new_id()
@@ -802,7 +1029,8 @@ def render_product_truth(
             job=done,
             object_names=[n for n in objects if n],
             evidence_code_commit=evidence_code_commit,
-            view_recipes={"DOOR_DETAIL": door_cam, "ASSEMBLED_FRONT": assembled_cam},
+            view_recipes=view_recipes,
+            expected_identity=canonical_expected,
         )
     if hasattr(plat, "register_detected_workers"):
         plat.register_detected_workers()
@@ -890,7 +1118,6 @@ def render_product_truth(
         and raw_outputs.get("artwork_mask.png")
         and raw_outputs.get("artwork_mask.png") != raw_outputs.get("product_mask.png")
     )
-    view_recipes = {"DOOR_DETAIL": door_cam, "ASSEMBLED_FRONT": assembled_cam}
     if not complete or used_mock or done.get("realBlender") is not True:
         job_dir = Path(plat.root) / "work" / new_id()
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -993,6 +1220,7 @@ def render_product_truth(
             object_names=objects or [place_row.get("objectName") or "DOOR_1"],
             evidence_code_commit=evidence_code_commit,
             view_recipes=view_recipes,
+            expected_identity=canonical_expected,
         )
     # REAL mode: wire observed workerViews from done
     if "workerViews" not in done and isinstance(done.get("output"), dict) and "workerViews" in done["output"]:
@@ -1009,6 +1237,7 @@ def render_product_truth(
         object_names=objects,
         evidence_code_commit=evidence_code_commit,
         view_recipes=view_recipes,
+        expected_identity=canonical_expected,
     )
 
 
@@ -1059,6 +1288,7 @@ def run_phase_841_scenario(plat: Any, *, tenant_id: str = "pt-a", evidence_code_
     return {
         "ok": bool(pack.get("ok") and gen.get("ok")),
         "pack": pack,
+        "canonicalExpectedIdentity": pack.get("expectedIdentity"),
         "generative": gen,
         "qa": qa,
         "realArtworkPreviewReady": bool(pack.get("realArtworkPreviewReady")) and not mock,
@@ -1082,3 +1312,4 @@ def run_phase_841_scenario(plat: Any, *, tenant_id: str = "pt-a", evidence_code_
         "renderPackId": pack.get("renderPackId"),
         "acceptanceFailures": list(pack.get("acceptanceFailures") or []) + list(gen.get("acceptanceFailures") or []),
     }
+
