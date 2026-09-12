@@ -1,12 +1,12 @@
-# Development Agent 下一輪開發指令：Phase 841–900 Re-Gate Round 5 — Strict Publication Closure / Provenance Adversarial Matrix
+# Development Agent 下一輪開發指令：Phase 841–900 Re-Gate Round 6 — Frozen Recipe Semantic Authority / Evidence Lineage Final Closure
 
 > Repo: `netfox-web/blender-autonomous-3d`  
 > Legacy filename kept for watcher compatibility: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`  
-> Reviewed CODE: `475997ee1921498cd6147a1f88f3a265276c933c`  
-> Reviewed docs/head: `7efa3272df45a29bd6f76cb0fc5c1f6b806c6efc`  
-> Acceptance generation: `bb58ba9d-158c-4076-99a2-3306867b216c`  
-> CODE Actions: `34697114368` — Ubuntu + Windows SUCCESS  
-> docs/head Actions: `34698174978` — Ubuntu + Windows SUCCESS  
+> Reviewed CODE: `e63fe7aa4554ac372c256fe43ea127113a8ed91d`  
+> Reviewed docs/head: `c3dfb6215560fb76f40d20fbdc2f06723f949d04`  
+> Acceptance generation: `c28a6bc6-4ced-436d-ac95-9aa3562f81bb`  
+> CODE Actions: `34707952458` — Ubuntu `103591328351` SUCCESS + Windows `103591328425` SUCCESS  
+> docs/head Actions: `34709093768` — still IN_PROGRESS at Re-Gate time; do not count as completed evidence until both jobs are SUCCESS  
 > Reported full pytest: **619 passed**  
 > Re-Gate result: **CHANGES REQUIRED — Phase 901+ HOLD.**
 
@@ -25,154 +25,126 @@ Keep all current truth boundaries honest:
 - LIVE_CNC / LIVE_LASER / liveFactory execution: **BLOCKED**.
 - `globalProductionReady=false`, `fullAutonomousFactoryReady=false`, `liveFactoryExecutionReady=false`.
 
-Mock/FIXTURE is not Production Ready. Do not enter Phase 901+ until the next ChatGPT Re-Gate explicitly says GO.
+Mock/FIXTURE is not Production Ready. Do not enter Phase 901+ until a later ChatGPT Re-Gate explicitly says GO.
 
-## 1. Accepted from Round 4 — do not regress
+## 1. Accepted from Round 5 — do not regress
 
-The following are accepted and should not be rewritten:
+The following are accepted within scope and should not be rewritten:
 
-1. Exact CODE SHA `475997e...` has real GitHub Actions evidence: run `34697114368`, Ubuntu + Windows SUCCESS.
-2. docs/head `7efa327...` has run `34698174978`, Ubuntu + Windows SUCCESS.
-3. Fresh clean-tree REAL acceptance generation `bb58ba9d-158c-4076-99a2-3306867b216c` is bound to CODE `475997e...`, Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`.
-4. ProductMask and FRONT PrintableSurface ArtworkMask remain distinct/non-alias.
-5. Worker camera semantic re-hash and strict numeric schema remain accepted.
-6. Nested `row.workerView` vs top-level `pack.workerViews[name]` conflict detection is directionally correct.
-7. Basic `viewId`, filename/role, width/height, SHA/size, job-id, DAM tenant/SHA/role/renderPackId checks are present.
-8. `CURRENT_IMPLEMENTATION_AUDIT.md` header is current.
-9. REAL/MOCK/PARTIAL/BLOCKED labels are honest; live providers, physical print, Vision and live machine control remain blocked as required.
-10. Persistent autonomous-agent rules in `AGENTS.md` / `GEMINI.md` may remain; do not broaden them to bypass Human Approval or live-machine safety boundaries.
+1. Exact CODE SHA `e63fe7aa4554ac372c256fe43ea127113a8ed91d` has GitHub Actions run `34707952458`, Ubuntu + Windows SUCCESS.
+2. The official runner now rejects a missing/partial required frozen authority instead of borrowing tenant/placement/engineering/camera/scene/view authority from the final pack, worker evidence, or serialized `expectedIdentity`.
+3. The 23-case official-runner adversarial matrix is present and executes through `run_product_truth_render_e2e.main()`, asserting rejected cases do not publish a successful Product Truth acceptance artifact.
+4. DAM view evidence now binds exact view role, source path, source job, row/worker path, live bytes, SHA/size, dimensions, `blenderJobId`, and top-level/nested worker-view agreement.
+5. Fresh clean-tree REAL acceptance generation `c28a6bc6-4ced-436d-ac95-9aa3562f81bb` is bound to CODE `e63fe7aa...`, Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`.
+6. ProductMask and FRONT PrintableSurface ArtworkMask remain separate artifacts with different SHA/occupancy; do not alias them.
+7. REAL/MOCK/PARTIAL/BLOCKED labeling remains honest: live H3/LTX blocked, Vision mock/blocked, physical print false, live machine control blocked, global/full/live readiness false.
+8. `docs/CABINET_REAL_ACCEPTANCE.md` did not need rewriting and should remain unchanged unless cabinet truth genuinely changes.
 
-## 2. Blocker A — strict publication runner still has pack fallback when frozen authority is partial
+## 2. Blocker A — frozen Camera/Scene/View authority only proves a hash exists, not that the frozen recipe is semantically valid
 
-The official runner now uses `frozenAuthorityContext`, but strict publication still contains fallback paths such as:
+Round 5 removed the pack fallback, but the pre-worker frozen recipe objects are still not fully self-authenticating.
 
-```text
-f_tenant_id = frozen_authority.tenant_id OR pack.tenantId OR "pt-a"
-place_id = frozen_authority.placement.placementId OR pack.placementId
-canonical_place = store[place_id]
-```
+Current strict path effectively does this for camera/scene/view recipes:
 
-Round 4 required **no final-pack / worker fallback in strict publication mode**. A completely missing frozen context is rejected, but a partially missing frozen context can still borrow required identity from the final pack.
+- verify the object is a dict;
+- verify `cameraRecipeHash` / `sceneRecipeHash` exists;
+- copy that hash into canonical expected identity.
 
-### Required correction
+`derive_canonical_expected_identity(..., strict=True)` likewise currently accepts the supplied camera/scene/view hash without independently rebuilding the hash from the frozen object's semantic fields.
 
-For the official REAL publication/re-gate path only:
-
-1. Validate the frozen pre-worker authority object **before** using the final pack for anything authoritative.
-2. Required frozen fields must include, through existing sources/structures only:
-   - tenant identity;
-   - canonical placement identity / placementId;
-   - canonical engineering request/lineage;
-   - main CameraRecipe request;
-   - SceneRecipe request;
-   - required view request recipes for `DOOR_DETAIL` and `ASSEMBLED_FRONT`.
-3. If any required frozen authority item is missing/invalid, append a specific blocker and refuse publication. Do **not** read `pack.tenantId`, `pack.placementId`, `pack.engineeringHash`, `pack.cameraRecipe`, `pack.sceneRecipe`, `pack.views[*]`, worker evidence or serialized `expectedIdentity` to fill that gap.
-4. Canonical placement/surface/artwork must then be re-resolved from the existing ArtworkPlacement / PrintableSurface / artwork-DAM stores using the frozen request identity.
-5. `pack.expectedIdentity` remains an evidence copy only; it must never bootstrap authority.
-6. Do not add a second persistent authority database. Reuse the already-created pre-worker context and existing stores.
-
-## 3. Blocker B — required official-runner adversarial matrix is incomplete
-
-The current official-runner negative test covers only a subset: engineeringHash, main camera, DOOR_DETAIL camera, deleted surface, corrupted artwork bytes, and completely missing frozen context. Round 4 required the complete matrix through the **official runner/publication path**, not helper-only validation.
-
-### Required full-run tests
-
-For each case below, mutate coordinated copies in `pack` + `workerEvidence` + serialized `expectedIdentity` where applicable, execute the official runner, and prove:
-
-- runner exit/result is FAIL/BLOCK;
-- **no** `PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` is published with `ok=true` (prefer no file at all on rejected publication).
-
-Required cases:
-
-1. `engineeringHash`
-2. `placementHash`
-3. `surfaceHash`
-4. `finalUvHash`
-5. `componentId`
-6. `objectName`
-7. `face`
-8. artwork `artworkHash`
-9. artwork SHA / authoritative artwork bytes
-10. main `cameraRecipe` / `cameraRecipeHash`
-11. `sceneRecipe` / `sceneRecipeHash`
-12. `DOOR_DETAIL` requested camera recipe/hash
-13. `ASSEMBLED_FRONT` requested camera recipe/hash
-14. delete canonical placement record
-15. delete canonical PrintableSurface / required surface record
-16. delete canonical artwork/DAM authority record or replace its bytes
-17. remove only frozen engineering authority
-18. remove only frozen placement identity
-19. remove only frozen main camera authority
-20. remove only frozen scene authority
-21. remove only frozen `DOOR_DETAIL` request recipe
-22. remove only frozen `ASSEMBLED_FRONT` request recipe
-23. leave final pack/worker/serialized copies mutually consistent while frozen authority is absent for one required field → still FAIL.
-
-Keep existing helper-level negatives too; the key is that the above must hit the actual publication runner.
-
-## 4. Blocker C — DAM provenance needs source/path lineage closure
-
-Current worker-view validation checks row ↔ worker normalized path, DAM tenant/SHA/role/renderPackId and live DAM bytes. This is useful, but it still does not prove the DAM asset corresponds to the exact source view lineage when DAM stores/copied the same bytes at a different path. A wrong valid asset with copied bytes/metadata can be too hard to distinguish if only SHA and role are checked.
+That leaves a coordinated evidence hole: a frozen request can have semantic fields changed while retaining the old hash, yet still be treated as valid frozen authority. The final pack's own recipe re-hash does not close this gap because the frozen pre-worker request itself must be internally valid before it is allowed to become authority.
 
 ### Required correction
 
-Use the existing DAM API / metadata model; do not create a second DAM authority.
+Use the existing CameraRecipe / SceneRecipe helpers and schema. Do not create a new recipe authority.
 
-For each required view:
+For the official publication/Re-Gate path:
 
-1. Bind `row.artifactId` / `row.damRef` to the exact DAM asset created for that view.
-2. Preserve and validate an existing-source lineage field or source-path identity when the DAM API copies bytes into storage. If an existing DAM field already carries origin/source path, use it; otherwise add minimal metadata at `dam.put()` for this artifact only, such as normalized source view path / source job identity, without creating a new system of record.
-3. Validate the stored DAM path/bytes **and** source lineage against row/worker evidence and `blenderJobId`.
-4. A same-byte valid DAM asset from the wrong view/job/source must fail even if SHA/size match.
-5. Keep `DOOR_DETAIL` ↔ `door_detail.png` and `ASSEMBLED_FRONT` ↔ `assembled_front.png` role mapping exact.
+1. Validate the frozen main CameraRecipe semantically and recompute its canonical hash from its actual frozen fields.
+2. Validate the frozen SceneRecipe semantically and recompute its canonical hash from its actual frozen fields.
+3. Validate both frozen required view recipes (`DOOR_DETAIL`, `ASSEMBLED_FRONT`) semantically and recompute each canonical CameraRecipe hash from its actual frozen fields.
+4. The stored frozen hash must exactly equal the recomputed hash. Any mismatch must reject publication before using the final pack as evidence.
+5. Required semantic fields must be strict typed. Do not silently default a missing/malformed frozen field to a normal default merely to reproduce a hash. Reuse existing strict numeric helpers where appropriate: bool-as-number, string numbers, NaN, +Inf, -Inf must not pass as valid recipe values.
+6. Validate semantic view identity: the frozen `DOOR_DETAIL` recipe must identify DOOR_DETAIL, and frozen `ASSEMBLED_FRONT` must identify ASSEMBLED_FRONT. Cross-swaps must fail.
+7. If frozen `engineering` and a top-level frozen `engineeringHash` are both present, they must agree after canonical recomputation/validation. Do not select one while ignoring a contradictory duplicate.
+8. Do not use final `pack.cameraRecipe`, `pack.sceneRecipe`, `pack.views`, worker evidence, or serialized `expectedIdentity` to repair invalid frozen recipe semantics.
 
-### Required provenance negatives
+### Required official-runner negative tests
 
-Add fail-closed tests for:
+All tests below must execute through the real publication runner and assert FAIL/BLOCK plus **no successful `PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` publication**:
 
-- `damRef` changed to another valid asset;
-- DAM asset/source-lineage changed to another valid path while SHA/size remain copied/equal;
-- swap `DOOR_DETAIL` and `ASSEMBLED_FRONT` artifact identities;
-- same SHA/size with wrong `viewId` / role / source job;
-- copied bytes with wrong dimensions/role/view mapping;
-- nested worker view and top-level worker view remain required to agree;
-- wrong/swapped/missing `blenderJobId` remains FAIL.
+1. frozen main camera: change `focalLengthMm` but keep stale `cameraRecipeHash`;
+2. frozen main camera: change location/lookAt/sensor/resolution/safeMargin while keeping stale hash;
+3. frozen main camera: change only `cameraRecipeHash` while fields remain unchanged;
+4. frozen scene: change samples/engine/lighting/scene identity while keeping stale `sceneRecipeHash`;
+5. frozen scene: change only `sceneRecipeHash` while fields remain unchanged;
+6. frozen `DOOR_DETAIL`: change semantic camera field but retain stale hash;
+7. frozen `DOOR_DETAIL`: hash-only tamper;
+8. frozen `ASSEMBLED_FRONT`: change semantic camera field but retain stale hash;
+9. frozen `ASSEMBLED_FRONT`: hash-only tamper;
+10. swap frozen DOOR_DETAIL and ASSEMBLED_FRONT recipe objects/hashes;
+11. malformed/missing required numeric recipe fields, including bool/string/NaN/Inf where applicable;
+12. frozen engineering body/hash contradiction if both copies are present.
 
-Do not require naïve `DAM storage path == Blender output path` if DAM legitimately copies artifacts; bind via explicit source lineage instead.
+Keep the existing Round 5 23-case matrix; add these semantic-authority cases rather than replacing it.
 
-## 5. Documentation / evidence sequence
+## 3. Blocker B — exact instruction lineage in docs is wrong
 
-After corrections:
+`docs/GROK_PROGRESS_REPORT.md` currently reports this full Source instruction SHA:
 
-1. Run full `pytest -q`; report exact count.
-2. Commit **CODE + tests only**, push exact CODE SHA by itself.
-3. Wait for exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS; record run ID and both job results.
-4. On a clean working tree at that exact CODE SHA, run fresh REAL Blender 5.2.1 + NVIDIA T1000 OptiX acceptance with `usedMock=false`.
-5. Verify ProductMask vs FRONT PrintableSurface ArtworkMask remain distinct; both required REAL views remain separately valid.
-6. Update only necessary docs/evidence in a separate docs commit:
+`2b1b174092b3bc3983226782390885141154f243`
+
+That SHA is not the actual Round 5 instruction commit. The real instruction commit is:
+
+`2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee`
+
+This is an evidence-lineage defect. Prefix `2b1b174` happens to look right, but exact evidence must never contain a fabricated/near SHA.
+
+### Required correction
+
+1. Correct the exact Source instruction SHA in `docs/GROK_PROGRESS_REPORT.md`.
+2. Search the Round 5 evidence/docs for the wrong full SHA and correct any other occurrence that claims exact lineage.
+3. Do not modify historical SHA values that are actually correct.
+4. Add a small regression/test or deterministic evidence-generation check if practical so an instruction SHA written into a report comes from the real git/input value rather than hand transcription.
+
+## 4. Evidence completion / CI gate
+
+Round 5 docs/head run `34709093768` was still IN_PROGRESS when this Re-Gate checked it. It is not a failure, but an in-progress run is not completed acceptance evidence.
+
+For Round 6 use the same strict two-phase process:
+
+1. Run full `pytest -q`; report exact count and preserve labels (MOCK/FIXTURE tests are not Production Ready).
+2. Commit **CODE + tests only** first; push the exact CODE SHA.
+3. Wait for exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS; record run ID and both job IDs/results.
+4. On a clean working tree at that exact CODE SHA, run fresh REAL Blender 5.2.1 + NVIDIA T1000 OptiX Product Truth acceptance with `usedMock=false`.
+5. Verify ProductMask and FRONT PrintableSurface ArtworkMask remain distinct; verify DOOR_DETAIL and ASSEMBLED_FRONT both have valid, independently bound worker/DAM evidence.
+6. Verify the official-runner old 23-case matrix and the new frozen-recipe semantic matrix all fail closed as intended.
+7. Update only necessary docs/evidence in a separate docs commit:
    - `docs/GROK_PROGRESS_REPORT.md`
    - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
    - `docs/REAL_E2E_ACCEPTANCE.md`
    - `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md/.json`
    - Generative acceptance only if its evidence actually changes.
-7. Leave `docs/CABINET_REAL_ACCEPTANCE.md` unchanged unless cabinet truth genuinely changes.
-8. Push docs commit and verify docs/head Ubuntu + Windows SUCCESS.
-9. Update Issue #1 with instruction SHA, CODE SHA, docs SHA, pytest count, both CI run IDs, acceptance generation ID, and exact REAL/MOCK/BLOCKED boundary summary.
-10. STOP for ChatGPT Re-Gate. **Do not start Phase 901+.**
+8. Leave `docs/CABINET_REAL_ACCEPTANCE.md` unchanged unless cabinet truth changes.
+9. Push docs commit and wait for exact docs/head Ubuntu + Windows SUCCESS; record run/job IDs.
+10. Update Issue #1 with instruction SHA, CODE SHA, docs SHA, pytest count, CODE CI, docs CI, fresh acceptance generation, and exact REAL/MOCK/PARTIAL/BLOCKED boundary summary.
+11. STOP for ChatGPT Re-Gate. **Do not start Phase 901+.**
 
-## 6. Definition of Done for Round 5
+## 5. Definition of Done for Round 6
 
 All must be true:
 
-- strict publication path has zero final-pack/worker fallback for missing required frozen authority;
-- all 23 official-runner adversarial cases above fail closed;
-- no rejected runner case publishes a false `ok=true` acceptance artifact;
-- DAM artifact binding proves correct view/job/source lineage, not only equal bytes;
-- wrong-valid-DAM, path/source swap and cross-view swap regressions fail;
-- existing camera semantic validation and Round 4 accepted behavior stay green;
+- frozen main CameraRecipe semantic fields are strict-validated and their hash is independently recomputed;
+- frozen SceneRecipe semantic fields are strict-validated and their hash is independently recomputed;
+- frozen DOOR_DETAIL / ASSEMBLED_FRONT recipes are strict-validated, exact view identity bound, and hashes independently recomputed;
+- stale-hash semantic drift and hash-only tampering in frozen authority fail through the official runner;
+- frozen engineering body/hash contradictions fail if both are present;
+- no invalid frozen authority case can bootstrap from final pack / worker / serialized expected copies;
+- all prior Round 5 zero-fallback, 23-case, camera-worker, DAM source/job/path and ArtworkMask protections stay green;
+- wrong full Round 5 instruction SHA is corrected to `2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee` wherever it is claimed as exact lineage;
 - full pytest passes;
 - exact CODE SHA dual-platform CI succeeds;
 - fresh clean-tree REAL T1000 OptiX evidence succeeds on exact CODE SHA;
-- docs/head dual-platform CI succeeds;
+- docs/head exact SHA dual-platform CI succeeds;
 - H3/LTX remain BLOCKED, Vision remains MOCK/BLOCKED, physical print remains false, LIVE_CNC/LASER remain BLOCKED, global/full/live readiness remain false;
 - Phase 901+ remains HOLD until ChatGPT explicitly releases it.
