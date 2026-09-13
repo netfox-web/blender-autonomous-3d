@@ -1,162 +1,158 @@
-# Development Agent 修正指令：Phase 901–960 Re-Gate Round 2 — CHANGES REQUIRED
+# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 1 — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Legacy watcher filename: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`
-> Reviewed CODE: `4406119cbf5bc62dcb43d0dd1ec6fc041353dd28`
-> Reviewed docs/head: `aac040c292d07289ec358171af11d12c65b7fb33`
-> Product Content acceptance generation: `57f72869-a017-415f-bf66-7df55824d486`
-> CODE Actions: `34740940584` — SUCCESS on exact CODE SHA
-> docs/head Actions: `34741953464` — still IN_PROGRESS at Re-Gate time; do not count it as completed evidence
-> Full pytest reported: **628 passed**
-> Re-Gate result: **CHANGES REQUIRED — Phase 961+ HOLD.**
+> Reviewed Supervisor CODE: `872da2030ce7d67557b613e24aac0cc8266fcd28`
+> Reviewed docs/head: `2a7e8624b7883c3bf687666bc416d3107cd9271f`
+> CODE Actions: `34755874821` — Ubuntu `103720037645` SUCCESS / Windows `103720037559` SUCCESS
+> DOCS Actions: `34756868704` — Ubuntu `103722630350` SUCCESS / Windows `103722630394` SUCCESS
+> Reported regression: **717 passed**; Supervisor-specific: **19 passed**
+> Re-Gate result: **CHANGES REQUIRED**
+> `WEBHOOK_REAL_E2E=false`; `EVENT_DRIVEN_READY=false` remains correct.
+> **Phase 961+ remains HOLD.**
 
 ## 0. Accepted work — preserve it
 
-Do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth / Artwork authorities. This is correction-only.
+Do not rewrite existing Fox3D Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth architecture.
 
 Accepted within scope:
 
-- REAL commerce render artifacts now fail closed on missing worker record/path, missing file, zero bytes, malformed PNG, and wrong dimensions.
-- `FRONT_OPEN` / `FRONT_CLOSED` now publish observed `workerViews` articulation evidence and compare observed transforms/angle/state against independently derived Engineering expectations.
-- required DAM identity/source metadata is materially stricter than Round 1.
-- `DIMENSION_FRONT` now rasterizes deterministic visible W/H/D numeric labels with repository-controlled `FONT_5X7`, and QA independently recomputes `dimensionLabelLayerHash`.
-- Ground/AOV isolation regression was corrected in CODE `4406119`; keep baseline `_add_box` half-scale authority intact.
-- Fresh clean-tree REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX evidence exists with `usedMock=false`.
-- Truth boundaries remain correct: live H3 MAX/LTX 2.5 BLOCKED, Vision MOCK/BLOCKED, physical print false, LIVE CNC/LASER/PLC BLOCKED, and all commercial/global/full/live readiness flags false.
+- Event-driven Supervisor control-plane skeleton exists under `services/supervisor/`.
+- HMAC SHA-256 signature verification, delivery-id storage, repo/issue contract parsing, CI verification, durable review state/lock, policy layer, watchdog, and Antigravity watcher are implemented and covered by local tests.
+- Exact Supervisor CODE `872da20` passed GitHub Actions on Ubuntu + Windows.
+- Exact docs/head `2a7e862` also passed Ubuntu + Windows.
+- Documentation correctly keeps `eventDrivenSupervisorReady=false` and `webhookRealE2e=false`; do not upgrade these flags from unit/integration tests.
+- Existing Product Content / Product Truth REAL/MOCK/PARTIAL/BLOCKED truth boundaries remain unchanged.
 
-Do not continue unrelated UI/control-plane refactors in this correction round.
+The prior **Phase 901–960 Re-Gate Round 2 Product Content blockers remain open**. Do not claim they were fixed by this Supervisor side-track. Preserve the prior instruction lineage at blob `39024d643b931a5a60933dde9c1b8cba0ab3b327`; Phase 961+ stays HOLD until those product blockers are separately re-gated.
 
-## 1. Blocker A — Product Truth acceptance-generation lineage is currently synthetic/fail-open
+## 1. Blocker A — public Issue comment currently has no trusted-sender authorization
 
-The current runner can mint a fallback acceptance id:
-
-```python
-f"pt_acc_{upstream_pack.get('renderPackId')}"
-```
-
-when the current Product Truth render pack does not match a real `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` generation. The current Product Content acceptance demonstrates this problem: it binds `sourceRenderPackId=c2d620ab-...` to `sourceAcceptanceGenerationId=pt_acc_c2d620ab-...`, while the actual committed Product Truth acceptance file still identifies generation `78ef13b7-...` / renderPack `784df4d3-...` / CODE `cb045af`.
-
-This is not an externally established acceptance generation. It is a self-created label derived from the renderPackId, so the current lineage can be internally consistent while not pointing to a real accepted Product Truth bundle.
+GitHub webhook HMAC proves the event came from GitHub, but it does **not** prove the commenter is authorized to command the Supervisor. The repository is public, and the current route accepts any Issue #1 comment containing a syntactically valid `READY_FOR_RE_GATE` contract.
 
 ### Required correction
 
-1. Remove every fallback that fabricates a Product Truth acceptance generation from `renderPackId` or another current payload field.
-2. Product Content must consume a **real Product Truth acceptance authority** produced/published before Product Content publication.
-3. If the newly generated Product Truth render pack does not have a matching acceptance authority, fail closed or first execute/publish the existing Product Truth acceptance step; do not manufacture an id in Product Content.
-4. The consumed Product Truth acceptance authority must bind at minimum:
-   - acceptanceGenerationId
-   - exact Product Truth renderPackId
-   - exact Product Truth evidenceCodeCommit
-   - tenantId
-   - product/SKU id + version
-   - engineeringHash
-   - placementHash + finalUvHash
-   - ProductMask / ArtworkMask DAM refs + SHA
-   - `usedMock=false` for REAL path
-   - clean-tree evidence where the existing acceptance process requires it
-5. Product Content `sourceAcceptanceGenerationId` must exact-match that externally published authority.
-6. QA must independently load/receive that authority; do not mutate `upstream_pack` to make expected and observed values match before validation.
+1. Before parsing/processing READY, verify `payload.repository.full_name` exactly equals the configured repo.
+2. Require `issue_comment.action == created` for the trigger path.
+3. Authorize the commenter using an explicit allowlist and/or GitHub `author_association` / collaborator permission check. Default-deny unknown public commenters.
+4. Recommended minimum accepted associations: OWNER / MEMBER / COLLABORATOR, with an optional explicit `SUPERVISOR_ALLOWED_SENDERS` allowlist.
+5. Log authorization decision without leaking tokens/secrets.
+6. Add negative tests: outsider comment, wrong repo payload with valid HMAC, edited/deleted comment event, spoofed contract from unauthorized sender.
 
-### Required negative cases
+## 2. Blocker B — delivery dedupe is recorded before processing, so a crash can permanently lose a valid event
 
-- missing Product Truth acceptance generation;
-- synthetic `pt_acc_<renderPackId>` value;
-- stale generation belonging to another renderPackId;
-- right renderPackId but wrong Product Truth CODE SHA;
-- generation copied from another tenant/SKU/version;
-- generation with wrong engineeringHash / placementHash / finalUvHash / mask refs.
-
-## 2. Blocker B — observed Camera/Scene authority is not validated; current REAL acceptance already shows a passing mismatch
-
-The current Product Content acceptance is `ok=true`, but `WHITE_BACKGROUND_HERO` contains a concrete contradiction:
-
-- canonical commerce recipe `cameraRecipeHash = 3c95d2afedf4...`
-- observed `workerEvidence.cameraRecipeHash = 4b8d92f7601...`
-- observed `workerEvidence.sceneRecipeHash = null`
-
-QA currently validates role/job/device/articulation, but does not require observed worker camera/scene hashes to exact-match the canonical commerce recipe. Therefore a worker may render the wrong camera/scene while the manifest recipe remains correct and acceptance can still pass.
+`main.py` currently calls `record_delivery()` before JSON parsing and before `engine.handle_ready_contract()` completes. If the process crashes or GitHub/API work fails after that point, a GitHub retry with the same `X-GitHub-Delivery` is returned as `IGNORED_DUPLICATE_DELIVERY`; the READY event can be lost.
 
 ### Required correction
 
-1. Include canonical `cameraRecipeHash` and `sceneRecipeHash` explicitly in each commerce Blender view payload.
-2. In the Blender worker, publish the **observed/applied** camera and scene semantic hashes after applying the view, not a blind copy of expected payload fields.
-3. For every REAL rendered commerce role, QA must require:
-   - worker `cameraRecipeHash` present and exact-match canonical recipe hash;
-   - worker `sceneRecipeHash` present and exact-match canonical recipe hash;
-   - role/view id and job id exact;
-   - observed camera semantic fields (location/lookAt/focal/sensor/safe margin/resolution) consistent with the canonical recipe or independently rehashed to the same hash.
-4. Missing/null camera or scene hash = FAIL.
-5. Wrong camera with a correct manifest recipe = FAIL.
-6. Cross-view worker camera/scene evidence = FAIL.
-7. Preserve Phase 841–900 Camera/Scene semantic-authority rules; reuse them instead of creating a second hashing scheme.
+Implement a durable delivery lifecycle, not a single seen/not-seen bit:
 
-### DIMENSION_FRONT derivation
+- RECEIVED
+- PROCESSING
+- COMPLETED
+- FAILED_RETRYABLE
+- FAILED_TERMINAL
 
-`DIMENSION_FRONT` is derived from `FRONT_CLOSED`; do not imply that it is an independently Blender-rendered worker view.
+Rules:
 
-Publish explicit derivation lineage such as:
+1. Same delivery in COMPLETED/FAILED_TERMINAL -> dedupe safely.
+2. Same delivery in FAILED_RETRYABLE or stale PROCESSING -> resume/retry safely.
+3. Do not mark COMPLETED until the intended terminal outcome is durably recorded.
+4. Crash before GitHub write must allow retry.
+5. Crash after instruction push but before Issue comment must resume from persisted write state and post only the missing comment, without creating a second instruction commit.
+6. Add subprocess/process-crash tests that prove these exact windows, not only in-process mock exceptions.
 
-- `derivedFromViewRole=FRONT_CLOSED`
-- source DAM ref / SHA
-- source Blender job id
-- source worker-evidence hash or equivalent stable lineage
+## 3. Blocker C — GitHub write path can silently report success when `git push` failed
 
-QA must exact-match this derivation lineage and separately validate the deterministic dimension overlay authority.
-
-### Required negative cases
-
-- observed camera hash differs but manifest recipe remains canonical;
-- missing observed scene hash;
-- cross-swapped camera evidence between HERO_45 and FRONT_OPEN;
-- wrong location/focal/safeMargin with forged/copied hash;
-- DIMENSION_FRONT points to another view/DAM/job;
-- correct dimension pixels but stale/foreign FRONT_CLOSED derivation source.
-
-## 3. Blocker C — remaining asset/mask integrity checks are still conditional instead of required
-
-Round 1 improved DAM metadata checks, but several authority fields still use truthy-condition validation. Missing evidence can therefore skip comparison.
+`GitHubClient.commit_instruction_file()` currently catches push failure and still returns the local commit SHA. The engine can then post `SUPERVISOR_REVIEW_COMPLETE` even though the instruction commit never reached GitHub main.
 
 ### Required correction
 
-1. `productMaskRef` and `artworkMaskRef` must each require non-empty `damRef` and `sha256`; exact-match upstream Product Truth. Missing fields = FAIL.
-2. Every required commerce view must require non-empty:
-   - `sha256`
-   - positive `size`
-   - width / height
-   - `format=PNG`
-   - DAM ref
-   - source path
-   - job/derivation lineage
-3. DAM bytes/path SHA and size checks must be unconditional after the field is required. Do not use `if v_data.get("sha256") ...` or `if v_data.get("size") ...` as a way to skip missing authority.
-4. For REAL rendered views, DAM `blenderVersion`, `device`, and `usedMock=false` must exact-match observed worker evidence, not merely be present.
-5. For derived DIMENSION_FRONT, provenance must exact-match the validated FRONT_CLOSED source plus deterministic overlay lineage.
-6. Add fail-closed tests for missing mask refs/SHA, missing view SHA/size, altered version/device, foreign DAM with identical bytes, and missing derivation lineage.
+1. **Never swallow push failure in live mode.** Push failure is retryable failure; do not post success comment.
+2. Before write: fetch `origin/main`, prove local branch/base is the expected remote head, and ensure no unrelated staged changes are included.
+3. Only allow the instruction paths intended by policy (`docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` and neutral alias if required).
+4. After push: verify remote `main` contains the exact new commit and verify the remote instruction file content/blob corresponds to the intended payload.
+5. Persist the successful instruction commit SHA before attempting the Issue comment so crash recovery can resume without duplicate commit.
+6. Issue `SUPERVISOR_REVIEW_COMPLETE` only after remote push verification succeeds.
+7. Add tests for rejected push, non-fast-forward, dirty/pre-staged unrelated file, remote verification mismatch, push-success/comment-failure recovery, and duplicate retry.
 
-## 4. Evidence process for Round 2
+## 4. Blocker D — current live reviewer is not a real Re-Gate authority
 
-1. Make only the corrections above; preserve accepted architecture and behavior.
-2. Run full `pytest -q`; report exact count. Mock/FIXTURE tests are not Production Ready.
-3. Commit/push exact CODE SHA.
-4. Wait for Ubuntu + Windows SUCCESS on that exact CODE SHA; record run/job IDs.
-5. On a clean tree at that CODE SHA, produce a fresh REAL Product Truth acceptance authority first, with Blender 5.2.1 LTS + NVIDIA T1000 OptiX and `usedMock=false`.
-6. Then run Product Content acceptance consuming that exact Product Truth acceptance authority. No fabricated acceptance-generation fallback is allowed.
-7. Acceptance must prove exact observed camera/scene, articulation, DAM/source lineage, mask lineage, DIMENSION_FRONT derivation, and deterministic visible dimension labels.
-8. Commit docs/evidence separately and wait for Ubuntu + Windows SUCCESS on the exact docs SHA.
-9. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`, `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.{md,json}`, and Product Truth acceptance docs only when supported by fresh evidence. Leave `docs/CABINET_REAL_ACCEPTANCE.md` unchanged unless cabinet truth actually changes.
-10. Add an Issue #1 handoff with CODE SHA, docs SHA, pytest count, both CI runs, Product Truth acceptance generation, Product Content acceptance generation, and REAL/MOCK/PARTIAL/BLOCKED summary.
-11. STOP for ChatGPT Re-Gate. **Phase 961+ remains HOLD.**
+`create_app()` always instantiates `RuleBasedSupervisorAdapter()`. That adapter can ACCEPT based mainly on:
 
-## 5. Truth boundaries remain fixed
+- `test_count >= 10`,
+- progress report non-empty,
+- contract `real_blender` / `used_mock` flags.
 
-Until independent new REAL evidence exists:
+It does **not** materially review repository diffs, the requested audit/acceptance files, or semantic evidence. `ReviewContext.diffs` is currently empty. Therefore an arbitrary bad code change can still receive `ACCEPT_WITH_SCOPE` if the READY contract and test count look plausible.
 
-- live H3 MAX / LTX 2.5 = BLOCKED;
+### Required correction
+
+1. Treat `RuleBasedSupervisorAdapter` and `MockSupervisorAdapter` as TEST/DEVELOPMENT ONLY.
+2. Live event-driven mode must fail closed unless a real configured `SupervisorProviderAdapter` is available.
+3. Build the review context from independently fetched GitHub evidence at the claimed SHAs, including at minimum:
+   - commits since instruction SHA;
+   - actual per-file diff/patch or equivalent changed-file content;
+   - `docs/GROK_PROGRESS_REPORT.md` / `AGENT_PROGRESS_REPORT.md`;
+   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`;
+   - `docs/REAL_E2E_ACCEPTANCE.md`;
+   - `docs/CABINET_REAL_ACCEPTANCE.md` where applicable;
+   - current instruction text;
+   - exact CODE/DOCS CI summaries.
+4. Do not trust the READY contract's REAL/MOCK flags as review conclusions; independently reconcile them against acceptance/audit evidence.
+5. Structured reviewer output must remain schema-validated and pass the policy layer before writes.
+6. If provider unavailable, malformed output, timeout, or contradictory evidence -> CHANGES_REQUIRED/BLOCKED or retryable failure; never auto-ACCEPT.
+7. Add adversarial tests where contract says green/REAL but the diff or acceptance evidence contradicts it; ACCEPT must be impossible.
+
+## 5. Blocker E — live configuration must fail closed
+
+Current configuration has a development default webhook secret (`dev-webhook-secret-not-for-prod`). This is acceptable only for local tests, not a live webhook endpoint.
+
+### Required correction
+
+1. Add explicit execution mode, e.g. `SUPERVISOR_MODE=test|live`.
+2. In `live` mode require:
+   - non-default strong `GITHUB_WEBHOOK_SECRET`;
+   - GitHub token / installation auth with minimum required permissions;
+   - configured authorized senders;
+   - real reviewer provider configuration;
+   - writable state/audit storage.
+3. Refuse startup if any live prerequisite is missing/default.
+4. Never print secret/token values.
+5. Protect `/supervisor/status` and `/supervisor/reviews*` in live mode with admin auth or bind them to a trusted/private interface; do not expose internal review/audit details publicly by default.
+
+## 6. REAL webhook E2E acceptance required before readiness
+
+After Blocks A–E are fixed:
+
+1. Run full `pytest -q`; record exact count.
+2. Commit exact CODE SHA and wait for Ubuntu + Windows SUCCESS on that SHA.
+3. Configure a **real GitHub webhook** for this repo with the live secret and the Supervisor endpoint.
+4. Perform one controlled REAL chain using a harmless test/correction instruction:
+   - authorized agent posts `READY_FOR_RE_GATE` on Issue #1;
+   - GitHub sends a real delivery ID;
+   - endpoint verifies HMAC and sender/repo authority;
+   - Supervisor independently verifies CODE/DOCS/CI/evidence;
+   - reviewer returns a structured decision;
+   - Supervisor pushes exactly one instruction commit to GitHub;
+   - remote commit is verified;
+   - Issue #1 gets exactly one `SUPERVISOR_REVIEW_COMPLETE`;
+   - Antigravity watcher detects the new instruction and claims it exactly once.
+5. Capture delivery ID, reviewed CODE SHA, CI run/job IDs, resulting instruction commit SHA, Issue comment id, watcher claimed instruction/blob SHA, and timestamps.
+6. Run at least one retry/replay proof showing duplicate delivery / duplicate READY cannot create another instruction commit.
+7. Update `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md` and runbook with REAL evidence.
+8. Only after that chain passes may `webhookRealE2e=true` and `eventDrivenSupervisorReady=true` be proposed for Re-Gate. Do not self-promote readiness before review.
+
+## 7. Existing Fox3D product truth boundaries remain fixed
+
+Do not use Supervisor work to loosen any existing product/manufacturing boundary:
+
+- live H3 MAX / LTX 2.5 = BLOCKED unless separately proven REAL;
 - Vision Judge = MOCK/BLOCKED;
 - physical print = false/BLOCKED;
-- LIVE_CNC / LIVE_LASER / PLC = BLOCKED;
+- LIVE_CNC / LIVE_LASER / PLC / machine control = BLOCKED;
 - `commercialAssetProductionReady=false`;
 - `globalProductionReady=false`;
 - `fullAutonomousFactoryReady=false`;
 - `liveFactoryExecutionReady=false`.
 
-Do not label Mock, fixture, metadata-only evidence, self-minted lineage ids, copied expected hashes, or recomputed expected state as observed Production/REAL execution evidence.
+After Supervisor correction and REAL webhook E2E evidence are complete, stop for Re-Gate. Do not start Phase 961+ and do not erase the still-open Phase 901–960 Product Content correction lineage.
