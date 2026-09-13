@@ -1,158 +1,218 @@
-# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 1 — CHANGES REQUIRED
+# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 2 — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Reviewed Supervisor CODE: `872da2030ce7d67557b613e24aac0cc8266fcd28`
-> Reviewed docs/head: `2a7e8624b7883c3bf687666bc416d3107cd9271f`
-> CODE Actions: `34755874821` — Ubuntu `103720037645` SUCCESS / Windows `103720037559` SUCCESS
-> DOCS Actions: `34756868704` — Ubuntu `103722630350` SUCCESS / Windows `103722630394` SUCCESS
-> Reported regression: **717 passed**; Supervisor-specific: **19 passed**
+> Reviewed Supervisor CODE: `5c7568d4d9746dc2b1e49504ef3ab88915da6f6c`
+> Reviewed docs/head: `bbbca2877c74cf7915e5b48b1e8b36700ebf0ded`
+> CODE Actions: `34760915984` — Ubuntu `103733478803` SUCCESS / Windows `103733478898` SUCCESS
+> DOCS Actions: `34761701358` — Ubuntu `103735563841` SUCCESS / Windows `103735563972` SUCCESS
+> Reported regression: **727 passed**; Supervisor-specific: **29 passed**
 > Re-Gate result: **CHANGES REQUIRED**
-> `WEBHOOK_REAL_E2E=false`; `EVENT_DRIVEN_READY=false` remains correct.
+> `WEBHOOK_REAL_E2E=false`; `EVENT_DRIVEN_READY=false` 必須維持。
 > **Phase 961+ remains HOLD.**
 
-## 0. Accepted work — preserve it
+## 0. 本輪已接受的修正 — 保留，不要重寫
 
-Do not rewrite existing Fox3D Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth architecture.
+本輪相較 `872da20` 有實質進展，以下可接受並應保留：
 
-Accepted within scope:
+- 已加入 Issue sender authorization、`action == created` 過濾與 wrong-repo 基本檢查。
+- delivery lifecycle 已由單一 seen bit 擴充為 `RECEIVED / PROCESSING / COMPLETED / FAILED_RETRYABLE / FAILED_TERMINAL`。
+- 已加入 `staged_commit_sha`，可處理一部分「instruction push 完成後、Issue comment 前」的恢復情境。
+- live mode 的 push failure 已不再直接吞掉並宣告成功。
+- 已加入 diff 取得與 `SemanticEvidenceSupervisorAdapter`，不再完全只看 READY contract。
+- live mode 已有 webhook secret / GitHub token / sender / provider 基本 fail-closed，以及 Supervisor observability admin auth。
+- Exact CODE `5c7568d` 與 docs `bbbca28` 的 GitHub Actions 均為 Ubuntu + Windows SUCCESS。
+- 727 full regression / 29 Supervisor tests 為有效軟體測試證據，但仍不是 REAL webhook Production evidence。
+- 文件正確保留 `webhookRealE2e=false`、`eventDrivenSupervisorReady=false`，也保留 LIVE_CNC / LIVE_LASER / PLC / physical print / live providers 等既有 BLOCKED 邊界。
 
-- Event-driven Supervisor control-plane skeleton exists under `services/supervisor/`.
-- HMAC SHA-256 signature verification, delivery-id storage, repo/issue contract parsing, CI verification, durable review state/lock, policy layer, watchdog, and Antigravity watcher are implemented and covered by local tests.
-- Exact Supervisor CODE `872da20` passed GitHub Actions on Ubuntu + Windows.
-- Exact docs/head `2a7e862` also passed Ubuntu + Windows.
-- Documentation correctly keeps `eventDrivenSupervisorReady=false` and `webhookRealE2e=false`; do not upgrade these flags from unit/integration tests.
-- Existing Product Content / Product Truth REAL/MOCK/PARTIAL/BLOCKED truth boundaries remain unchanged.
+不要重寫既有 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth 架構。以下只做 Supervisor correction-only。
 
-The prior **Phase 901–960 Re-Gate Round 2 Product Content blockers remain open**. Do not claim they were fixed by this Supervisor side-track. Preserve the prior instruction lineage at blob `39024d643b931a5a60933dde9c1b8cba0ab3b327`; Phase 961+ stays HOLD until those product blockers are separately re-gated.
+---
 
-## 1. Blocker A — public Issue comment currently has no trusted-sender authorization
+## 1. Blocker A — webhook envelope 仍需真正 fail-closed
 
-GitHub webhook HMAC proves the event came from GitHub, but it does **not** prove the commenter is authorized to command the Supervisor. The repository is public, and the current route accepts any Issue #1 comment containing a syntactically valid `READY_FOR_RE_GATE` contract.
+目前 `main.py` 的 repo 判斷是：只有 `payload.repository.full_name` 非空時才比較；如果 `repository` 或 `full_name` 缺失，事件會繼續往下處理。這不符合「exact repo match」要求。
 
-### Required correction
-
-1. Before parsing/processing READY, verify `payload.repository.full_name` exactly equals the configured repo.
-2. Require `issue_comment.action == created` for the trigger path.
-3. Authorize the commenter using an explicit allowlist and/or GitHub `author_association` / collaborator permission check. Default-deny unknown public commenters.
-4. Recommended minimum accepted associations: OWNER / MEMBER / COLLABORATOR, with an optional explicit `SUPERVISOR_ALLOWED_SENDERS` allowlist.
-5. Log authorization decision without leaking tokens/secrets.
-6. Add negative tests: outsider comment, wrong repo payload with valid HMAC, edited/deleted comment event, spoofed contract from unauthorized sender.
-
-## 2. Blocker B — delivery dedupe is recorded before processing, so a crash can permanently lose a valid event
-
-`main.py` currently calls `record_delivery()` before JSON parsing and before `engine.handle_ready_contract()` completes. If the process crashes or GitHub/API work fails after that point, a GitHub retry with the same `X-GitHub-Delivery` is returned as `IGNORED_DUPLICATE_DELIVERY`; the READY event can be lost.
+另外 live mode 目前允許空的 `X-GitHub-Delivery`，這會直接失去 delivery dedupe / replay lifecycle 保護。
 
 ### Required correction
 
-Implement a durable delivery lifecycle, not a single seen/not-seen bit:
+1. `issue_comment` READY trigger 必須要求：
+   - `payload.repository.full_name` **存在且 exact match** `netfox-web/blender-autonomous-3d`；缺失直接 terminal reject。
+   - `X-GitHub-Delivery` 在 `SUPERVISOR_MODE=live` 必須存在且非空；缺失 fail closed。
+   - `X-GitHub-Event == issue_comment` 且 `action == created`。
+   - Issue number exact match `1`。
+2. sender authorization 保留現有 allowlist / signed `author_association` default-deny；不可因 body 內容繞過。
+3. 補 negative tests：missing repository、missing `full_name`、missing delivery id in live、missing/incorrect event header、wrong issue、outsider。
 
-- RECEIVED
-- PROCESSING
-- COMPLETED
-- FAILED_RETRYABLE
-- FAILED_TERMINAL
+---
 
-Rules:
+## 2. Blocker B — crash recovery 仍有兩個未封閉 window
 
-1. Same delivery in COMPLETED/FAILED_TERMINAL -> dedupe safely.
-2. Same delivery in FAILED_RETRYABLE or stale PROCESSING -> resume/retry safely.
-3. Do not mark COMPLETED until the intended terminal outcome is durably recorded.
-4. Crash before GitHub write must allow retry.
-5. Crash after instruction push but before Issue comment must resume from persisted write state and post only the missing comment, without creating a second instruction commit.
-6. Add subprocess/process-crash tests that prove these exact windows, not only in-process mock exceptions.
+目前 `staged_commit_sha` 只在 `commit_instruction_file()` 成功 return 後才寫進 SQLite，因此仍有：
 
-## 3. Blocker C — GitHub write path can silently report success when `git push` failed
+### Window B1 — remote push 已成功，但 process 在 return / `set_review_staged_commit()` 前 crash
 
-`GitHubClient.commit_instruction_file()` currently catches push failure and still returns the local commit SHA. The engine can then post `SUPERVISOR_REVIEW_COMPLETE` even though the instruction commit never reached GitHub main.
+GitHub 已有 instruction commit，但 DB 尚未記錄。Retry 可能再次 commit，或遇到 `nothing to commit` / lineage 漂移。
 
-### Required correction
+### Window B2 — Issue comment 已成功，但 process 在 `complete_review()` 前 crash
 
-1. **Never swallow push failure in live mode.** Push failure is retryable failure; do not post success comment.
-2. Before write: fetch `origin/main`, prove local branch/base is the expected remote head, and ensure no unrelated staged changes are included.
-3. Only allow the instruction paths intended by policy (`docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` and neutral alias if required).
-4. After push: verify remote `main` contains the exact new commit and verify the remote instruction file content/blob corresponds to the intended payload.
-5. Persist the successful instruction commit SHA before attempting the Issue comment so crash recovery can resume without duplicate commit.
-6. Issue `SUPERVISOR_REVIEW_COMPLETE` only after remote push verification succeeds.
-7. Add tests for rejected push, non-fast-forward, dirty/pre-staged unrelated file, remote verification mismatch, push-success/comment-failure recovery, and duplicate retry.
-
-## 4. Blocker D — current live reviewer is not a real Re-Gate authority
-
-`create_app()` always instantiates `RuleBasedSupervisorAdapter()`. That adapter can ACCEPT based mainly on:
-
-- `test_count >= 10`,
-- progress report non-empty,
-- contract `real_blender` / `used_mock` flags.
-
-It does **not** materially review repository diffs, the requested audit/acceptance files, or semantic evidence. `ReviewContext.diffs` is currently empty. Therefore an arbitrary bad code change can still receive `ACCEPT_WITH_SCOPE` if the READY contract and test count look plausible.
+Retry 會重用 staged commit，但仍可能再次 `add_issue_comment()`，造成 duplicate `SUPERVISOR_REVIEW_COMPLETE`。
 
 ### Required correction
 
-1. Treat `RuleBasedSupervisorAdapter` and `MockSupervisorAdapter` as TEST/DEVELOPMENT ONLY.
-2. Live event-driven mode must fail closed unless a real configured `SupervisorProviderAdapter` is available.
-3. Build the review context from independently fetched GitHub evidence at the claimed SHAs, including at minimum:
-   - commits since instruction SHA;
-   - actual per-file diff/patch or equivalent changed-file content;
-   - `docs/GROK_PROGRESS_REPORT.md` / `AGENT_PROGRESS_REPORT.md`;
-   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`;
-   - `docs/REAL_E2E_ACCEPTANCE.md`;
-   - `docs/CABINET_REAL_ACCEPTANCE.md` where applicable;
-   - current instruction text;
-   - exact CODE/DOCS CI summaries.
-4. Do not trust the READY contract's REAL/MOCK flags as review conclusions; independently reconcile them against acceptance/audit evidence.
-5. Structured reviewer output must remain schema-validated and pass the policy layer before writes.
-6. If provider unavailable, malformed output, timeout, or contradictory evidence -> CHANGES_REQUIRED/BLOCKED or retryable failure; never auto-ACCEPT.
-7. Add adversarial tests where contract says green/REAL but the diff or acceptance evidence contradicts it; ACCEPT must be impossible.
+建立 durable GitHub-write state，至少：
 
-## 5. Blocker E — live configuration must fail closed
+- `instruction_commit_sha`
+- `instruction_remote_verified_at`
+- `issue_comment_id`
+- `issue_comment_posted_at`
+- `review_write_stage`：`NONE / INSTRUCTION_PUSHED / COMMENT_POSTED / COMPLETED`
 
-Current configuration has a development default webhook secret (`dev-webhook-secret-not-for-prod`). This is acceptable only for local tests, not a live webhook endpoint.
+規則：
+
+1. Retry 前先 reconcile remote：若遠端已存在本 review 的 deterministic instruction commit / marker，直接 adopt，不得再 commit。
+2. Issue comment 必須帶 deterministic review marker，例如 `REVIEW_ID=<review_id>` 或 `(CODE_SHA,EVIDENCE_GENERATION_ID)`，retry 時先查 Issue #1 是否已有該 marker；已有則 adopt comment id，不得重貼。
+3. `complete_review()` 只能在 instruction remote verified + comment persisted/adopted 後執行。
+4. 若 push 失敗而本機已產生 commit，retry 必須先回復到 verified remote base；不能讓 local orphan commit 導致 `nothing to commit` 永久卡死。
+5. 補真正 subprocess/crash tests：
+   - crash after remote push before staged DB write；
+   - crash after comment POST before DB write；
+   - retry 後 instruction commit count = 1；
+   - retry 後 Issue review comment count = 1。
+
+---
+
+## 3. Blocker C — Git write preflight / remote verification 尚未達要求
+
+目前 live write 有 fetch、dirty tree、push return code、remote HEAD SHA 驗證，但仍缺：
+
+- fetch 後沒有證明 local `HEAD` / current branch exact 等於 `origin/main`；
+- 沒有明確禁止在 detached HEAD / 非 main branch 上寫入；
+- push 後只驗 `origin/main == new_sha`，沒有驗遠端 instruction file 的 blob/content；
+- push failure 後 local commit recovery 未封閉。
 
 ### Required correction
 
-1. Add explicit execution mode, e.g. `SUPERVISOR_MODE=test|live`.
-2. In `live` mode require:
-   - non-default strong `GITHUB_WEBHOOK_SECRET`;
-   - GitHub token / installation auth with minimum required permissions;
-   - configured authorized senders;
-   - real reviewer provider configuration;
-   - writable state/audit storage.
-3. Refuse startup if any live prerequisite is missing/default.
-4. Never print secret/token values.
-5. Protect `/supervisor/status` and `/supervisor/reviews*` in live mode with admin auth or bind them to a trusted/private interface; do not expose internal review/audit details publicly by default.
+1. live write 前：
+   - `git fetch origin main`；
+   - current branch 必須是 configured `main`；
+   - local `HEAD == origin/main`；否則 fail/reconcile，不可直接寫；
+   - working tree + index 都必須 clean，且不能帶 unrelated staged files。
+2. Commit 只允許 instruction path（與 neutral alias 若同時更新）。
+3. Push 使用明確 refspec 或等價安全方式，禁止不確定 current branch 的 `git push origin main`。
+4. Push 後：
+   - remote main exact contains/equals resulting commit；
+   - 重新從 GitHub API/remote blob 讀取 `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`（以及 alias 若更新），驗 SHA/content exact match intended payload。
+5. push failure / non-fast-forward / remote mismatch 必須標 `FAILED_RETRYABLE`，並留下可安全 retry 的乾淨 local state。
+6. 新增 tests：local HEAD behind/ahead、detached HEAD、non-main branch、non-fast-forward、remote file mismatch、push success DB crash、comment success DB crash。
 
-## 6. REAL webhook E2E acceptance required before readiness
+---
 
-After Blocks A–E are fixed:
+## 4. Blocker D — `SemanticEvidenceSupervisorAdapter` 仍不是可獨立 ACCEPT 的真 Re-Gate authority
 
-1. Run full `pytest -q`; record exact count.
-2. Commit exact CODE SHA and wait for Ubuntu + Windows SUCCESS on that SHA.
-3. Configure a **real GitHub webhook** for this repo with the live secret and the Supervisor endpoint.
-4. Perform one controlled REAL chain using a harmless test/correction instruction:
-   - authorized agent posts `READY_FOR_RE_GATE` on Issue #1;
-   - GitHub sends a real delivery ID;
-   - endpoint verifies HMAC and sender/repo authority;
-   - Supervisor independently verifies CODE/DOCS/CI/evidence;
-   - reviewer returns a structured decision;
-   - Supervisor pushes exactly one instruction commit to GitHub;
-   - remote commit is verified;
-   - Issue #1 gets exactly one `SUPERVISOR_REVIEW_COMPLETE`;
-   - Antigravity watcher detects the new instruction and claims it exactly once.
-5. Capture delivery ID, reviewed CODE SHA, CI run/job IDs, resulting instruction commit SHA, Issue comment id, watcher claimed instruction/blob SHA, and timestamps.
-6. Run at least one retry/replay proof showing duplicate delivery / duplicate READY cannot create another instruction commit.
-7. Update `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md` and runbook with REAL evidence.
-8. Only after that chain passes may `webhookRealE2e=true` and `eventDrivenSupervisorReady=true` be proposed for Re-Gate. Do not self-promote readiness before review.
+目前新增 adapter 仍只是 deterministic 字串/regex heuristic。它不是 `openai / anthropic / gemini / external provider` 的實際 provider adapter；而且 `create_app()` 在 live mode 不論 `SUPERVISOR_AI_PROVIDER` 寫什麼，最後都直接建立 `SemanticEvidenceSupervisorAdapter()`。
 
-## 7. Existing Fox3D product truth boundaries remain fixed
+因此目前設定 `SUPERVISOR_AI_PROVIDER=openai` / `anthropic` / `gemini` 並不會真的呼叫該 provider，卻可通過 live config validation，這屬於 readiness 誤導。
 
-Do not use Supervisor work to loosen any existing product/manufacturing boundary:
+另外 review evidence 目前仍有 lineage 問題：
 
-- live H3 MAX / LTX 2.5 = BLOCKED unless separately proven REAL;
-- Vision Judge = MOCK/BLOCKED;
-- physical print = false/BLOCKED;
-- LIVE_CNC / LIVE_LASER / PLC / machine control = BLOCKED;
-- `commercialAssetProductionReady=false`;
-- `globalProductionReady=false`;
-- `fullAutonomousFactoryReady=false`;
-- `liveFactoryExecutionReady=false`.
+- progress / audit / acceptance / instruction 是從 configured branch `main` 讀，不是從 contract 的 exact `DOCS_SHA` / `INSTRUCTION_SHA` 讀；main 在 review 期間若前進，可能審到錯版本。
+- `CABINET_REAL_ACCEPTANCE.md` 沒進 ReviewContext。
+- current progress report 仍是 Phase 901–960 Product Content R1 舊內容；現有 heuristic 只檢查「非空」，無法偵測 stale report。
+- 只驗 CODE CI；沒有獨立驗 DOCS SHA 對應的 CI。
+- diff 取得失敗回傳空字串時，adapter 仍可能 ACCEPT。
+- REAL/MOCK 判斷以關鍵字掃描整份文件，容易 false positive / false negative，不能作最終 acceptance authority。
 
-After Supervisor correction and REAL webhook E2E evidence are complete, stop for Re-Gate. Do not start Phase 961+ and do not erase the still-open Phase 901–960 Product Content correction lineage.
+### Required correction
+
+1. 把 `SemanticEvidenceSupervisorAdapter` 降為 **deterministic preflight / safety filter**。在 live mode 它可以拒絕或要求修正，但**不得單獨產生 ACCEPT_WITH_SCOPE**。
+2. 建立真正 provider-neutral live adapter factory：
+   - `SUPERVISOR_AI_PROVIDER=<supported provider>` 必須映射到實際 adapter implementation；
+   - provider 不存在、key 缺失、timeout、invalid schema -> fail closed；
+   - 若要保留 `semantic_evidence`，其 live 能力只能是 preflight，除非另有真正 review provider 接手 final decision。
+3. 所有 evidence 必須 pin 到 exact SHA：
+   - progress/audit/REAL_E2E/CABINET acceptance 讀 `contract.docs_sha`；
+   - instruction 讀 `contract.instruction_sha`；
+   - diff = `instruction_sha...docs_sha`；
+   - commits 同一 lineage；
+   - missing/empty diff（在本應有 code changes時）或 fetch failure -> 不得 ACCEPT。
+4. ReviewContext 至少加入：
+   - `GROK_PROGRESS_REPORT.md` / `AGENT_PROGRESS_REPORT.md`
+   - `CURRENT_IMPLEMENTATION_AUDIT.md`
+   - `REAL_E2E_ACCEPTANCE.md`
+   - `CABINET_REAL_ACCEPTANCE.md`
+   - `EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`
+   - exact instruction text
+   - exact CODE CI + DOCS CI summaries
+   - changed files + diff / bounded file contents
+5. progress report 必須驗 lineage markers，不可只判斷 non-empty：至少核對 instruction SHA、CODE SHA、DOCS/evidence generation id、test count、CI run id。
+6. structured output 仍須 schema validation + policy guardrail；provider 不可直接 shell / GitHub write。
+7. adversarial tests：
+   - provider name 宣告 openai 但實際 adapter 未初始化 -> startup fail；
+   - stale progress report -> CHANGES_REQUIRED；
+   - main 前進但 docs_sha 固定 -> reviewer 只能看到 pinned docs；
+   - empty diff/fetch failure -> no ACCEPT；
+   - contract says REAL but pinned acceptance contradicts -> no ACCEPT；
+   - unrelated `mock` 字樣不能誤判整個 REAL evidence。
+
+---
+
+## 5. Blocker E — live config 必須驗「真的可用」，不是只有字串非空
+
+### Required correction
+
+1. `SUPERVISOR_AI_PROVIDER` 使用 strict allowlist；未知字串必須 startup fail。
+2. 需要 API credential 的 provider 必須要求對應 key，不能 `provider=openai` + empty key 還能啟動。
+3. admin endpoint 採 admin key 時，live mode 建議直接要求 non-empty `SUPERVISOR_ADMIN_KEY`；若選 private-bind 模式則需明確 config，不能隱含公開 `0.0.0.0`。
+4. storage writable 不只 `mkdir` parent；startup 要實際 open/write/flush 或 SQLite transaction smoke test，audit log 也要可寫。
+5. GitHub token 權限不足 / repo 不可讀寫應在 live startup 或 preflight 明確 fail closed。
+6. secret/token/API key 不得進 log / review output / Issue comment。
+
+---
+
+## 6. REAL webhook E2E 仍是 mandatory gate
+
+完成上述 correction 後才做 REAL E2E；在此之前不得把 727/29 tests 當 event-driven ready。
+
+REAL acceptance 必須完整證明：
+
+1. 真 GitHub Issue #1 authorized `READY_FOR_RE_GATE` comment。
+2. 真 GitHub delivery ID + HMAC verify。
+3. exact repo / sender / issue / action / delivery id fail-closed。
+4. exact CODE_SHA / DOCS_SHA / INSTRUCTION_SHA lineage。
+5. CODE Ubuntu+Windows CI success + DOCS Ubuntu+Windows CI success。
+6. deterministic preflight + real configured review provider final structured decision。
+7. exactly one remote instruction commit。
+8. remote instruction blob/content exact verify。
+9. exactly one `SUPERVISOR_REVIEW_COMPLETE` Issue comment。
+10. watcher claim exactly once。
+11. replay same delivery / duplicate READY -> no second commit/comment。
+12. 至少一次真實 crash-window recovery proof（push-after-crash 或 comment-after-crash）。
+
+Acceptance doc 必須記錄 delivery id、review id、provider、reviewed CODE/DOCS/INSTRUCTION SHA、CI run/job IDs、instruction commit SHA、Issue comment id、watcher claim SHA、timestamps。
+
+只有這條真實鏈全部完成後，才可提議：
+
+- `webhookRealE2e=true`
+- `eventDrivenSupervisorReady=true`
+
+仍需下一次 Re-Gate 才能接受，不得 self-promote。
+
+---
+
+## 7. Product / manufacturing truth boundaries 不變
+
+Supervisor side-track 不得解除既有產品與製造 blocker：
+
+- Phase 901–960 Product Content Round 2 blockers 仍是 open lineage；
+- **Phase 961+ HOLD**；
+- live H3 MAX / LTX 2.5 = BLOCKED；
+- Vision Judge = MOCK/BLOCKED；
+- physical print = false/BLOCKED；
+- LIVE_CNC / LIVE_LASER / PLC / machine control = BLOCKED；
+- `commercialAssetProductionReady=false`；
+- `globalProductionReady=false`；
+- `fullAutonomousFactoryReady=false`；
+- `liveFactoryExecutionReady=false`。
+
+完成 correction + exact dual-platform CI + REAL webhook E2E 後，停止並回報 Re-Gate。不要開始 Phase 961+。
