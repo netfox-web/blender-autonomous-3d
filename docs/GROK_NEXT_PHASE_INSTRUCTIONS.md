@@ -1,211 +1,231 @@
-# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 4 — CHANGES REQUIRED
+# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 5 — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Reviewed instruction: `5a6f5581cb4474c21b72b5db61cecd4ee952e90d`
-> Reviewed CODE: `9bed18436f5d2775685415c13913a85ab5e91740`
-> Reviewed docs/head: `14d6c22aa450af67940b399d426b2babc3ea52a3`
-> CODE Actions: `34770001180` — Ubuntu `103757730292` SUCCESS / Windows `103757730112` SUCCESS
-> DOCS Actions: `34771130885` — Ubuntu `103760809566` SUCCESS / Windows `103760809660` SUCCESS
-> Reported regression: **742 passed**; Supervisor-specific: **44 passed**
-> Re-Gate result: **CHANGES REQUIRED (Round 4)**
+> Reviewed instruction: `88488a2278d86e79e1270e09652c6dc81b81e6b6`
+> Reviewed CODE: `b0941c7fa06b75b14e272a44018977120c656c3f`
+> Reviewed DOCS/head: `cd9c4a77e2a33e9de1676f91adb235b6653cecba`
+> CODE Actions: `34775155653` — Ubuntu `103771815496` SUCCESS / Windows `103771815666` SUCCESS
+> DOCS Actions: `34776279326` — Ubuntu `103774874883` SUCCESS / Windows `103774874967` SUCCESS
+> Reported regression: **747 passed**; Supervisor-specific: **49 passed**
+> Evidence generation: `ae5f2d82-1a5c-4fe0-9af2-2b1c7a690f6d`
+> Re-Gate result: **CHANGES REQUIRED (Round 5)**
 > `webhookRealE2e=false`; `eventDrivenSupervisorReady=false`; `liveProviderReady=false` 必須維持。
 > **Phase 961+ remains HOLD.**
 
 ## 0. 本輪已接受的實質進展 — 保留，不要重寫
 
-本輪相較前次有明確進展，以下視為已接受的 REAL_LOGIC / TESTED software evidence：
+本輪相較 `9bed184 / 14d6c22` 有明確進展，以下視為已接受的 **REAL_LOGIC / TESTED** software evidence：
 
-- `OpenAI` / `Anthropic` / `Gemini` adapter 已不再只 `return preflight`，已有 provider-neutral HTTP dispatch、response parsing、schema validation 與 fail-closed 路徑。
-- `CODE_CI_RUN_ID` / `DOCS_CI_RUN_ID` 已拆開，engine 會各自驗 exact SHA、completed/success、Ubuntu + Windows。
-- `GROK_PROGRESS_REPORT.md` / `CURRENT_IMPLEMENTATION_AUDIT.md` 已更新到本輪 exact instruction / CODE lineage。
-- provider response 目前已有 CODE SHA + evidence generation 的 independent check，並有 mock promotion prevention。
-- exact CODE `9bed184...` 的 Actions `34770001180` 與 exact DOCS `14d6c22...` 的 Actions `34771130885` 都是 Ubuntu + Windows SUCCESS。
-- 742 full regression / 44 Supervisor tests 可接受為軟體測試證據。
-- readiness truth boundary 正確：`webhookRealE2e=false`、`eventDrivenSupervisorReady=false`、`liveProviderReady=false`；MockTransport / unit test 不得視為 live provider / Production Ready。
+- `ProviderReviewResponseSchema` / `SupervisorReviewOutput` 已加入並回綁四個 identity：CODE / DOCS / INSTRUCTION / evidence generation。
+- `SupervisorEngine` 已 independently verify 四個 identity，mismatch 會 downgrade 成 `CHANGES_REQUIRED`。
+- final provider prompt 已加入 instruction text、changed-file manifest、CODE/DOCS CI summary、diff/progress/audit/acceptance sections。
+- bounded section 已加入 `original_chars / supplied_chars / truncated / sha256_prefix / ref` metadata。
+- `engine.py` 的 logger 已正式初始化，mismatch / mock-promotion path 不再因未定義 logger 崩潰。
+- `SUPERVISOR_AI_MODEL` 已進入 config / request dispatch / audit trail。
+- `BLOCKED` decision 已加入 Issue comment Window B2 adoption，避免一般 retry 重複留言。
+- exact CODE `b0941c7...` 與 exact DOCS `cd9c4a7...` 的 GitHub Actions 都是 Ubuntu + Windows SUCCESS。
+- `747 passed` / `49 Supervisor tests` 可接受為軟體回歸證據。
+- readiness truth boundary 正確：`webhookRealE2e=false`、`eventDrivenSupervisorReady=false`、`liveProviderReady=false`；MockTransport / unit / CI 不得視為 live provider 或 Production Ready。
 
-不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth / 既有 Supervisor control-plane 架構。本輪只修下面的 fail-closed lineage、provider context、crash/idempotency 與 live E2E gate。
-
----
-
-## 1. Blocker A — final provider output 尚未回綁 DOCS_SHA / INSTRUCTION_SHA
-
-前一輪要求 final provider 回綁 reviewed CODE / DOCS / INSTRUCTION / evidence identity；目前 schema 仍只有：
-
-- `reviewedCodeSha`
-- `reviewedEvidenceGenerationId`
-
-缺少 reviewed DOCS 與 INSTRUCTION identity，因此 provider 可能實際審到錯的 docs/instruction，但只要 CODE/evidence id 正確仍可能通過。
-
-### Required correction
-
-1. 擴充 `ProviderReviewResponseSchema`：
-   - `reviewedCodeSha`
-   - `reviewedDocsSha`
-   - `reviewedInstructionSha`
-   - `reviewedEvidenceGenerationId`
-2. `SupervisorReviewOutput` 同樣保留上述四個 reviewed identity。
-3. provider prompt schema 必須要求四個欄位全部回傳 exact full SHA / generation id。
-4. `SupervisorEngine` 必須 independently verify：
-   - provider `reviewedCodeSha == contract.code_sha`
-   - provider `reviewedDocsSha == contract.docs_sha`
-   - provider `reviewedInstructionSha == contract.instruction_sha`
-   - provider `reviewedEvidenceGenerationId == contract.evidence_generation_id`
-5. 任一 mismatch / missing / malformed → `CHANGES_REQUIRED`，不得 ACCEPT。
-6. 不得只靠 provider 自述；engine verification 為最終 safety gate。
-
-### Required tests
-
-- wrong reviewed CODE SHA → no ACCEPT
-- wrong reviewed DOCS SHA → no ACCEPT
-- wrong reviewed INSTRUCTION SHA → no ACCEPT
-- wrong evidence generation id → no ACCEPT
-- missing reviewed identity → schema reject
-- provider all identities exact → 才能進下一 policy gate
+不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth / 既有 Supervisor control-plane 架構。本輪只修下列 fail-closed completeness、config、recovery identity 與 contract parsing，再進真正 live E2E gate。
 
 ---
 
-## 2. Blocker B — final provider prompt 目前沒有 exact instruction text，且 bounded evidence 無 completeness signal
+## 1. Blocker A — bounded evidence 目前只有「標示 truncated」，沒有真正 completeness handling
 
-`ReviewContext` 已讀取 `instruction_text` @ exact `INSTRUCTION_SHA`，但目前 provider `_build_prompt()` 沒有把它放進 prompt。
+前一輪明確要求：**material diff omitted/truncated without completeness handling → no ACCEPT**，而目前 `_format_bounded_section()` 只加入 `truncated=true|false` metadata；`ExternalProviderSupervisorAdapter` / `SupervisorEngine` 並沒有在 critical evidence 被截斷時阻止 `ACCEPT_WITH_SCOPE`。
 
-另外目前 diff / progress / audit / acceptance 採固定字元截斷；bounded context 可以接受，但不能「靜默截斷後仍讓 provider 以為已看完全部 evidence」。
+這代表 provider 可能只看到 diff / instruction / audit / acceptance 的前段，卻仍回 ACCEPT。
+
+另外目前 `changed_files` 僅從 `diff --git` 抽出 path，manifest 沒有 status（A/M/D/R），仍未完全符合上一輪要求的 `path + status`。
 
 ### Required correction
 
-1. provider context 必須加入：
+1. 建立 machine-readable evidence completeness 結構，不要只把 metadata 塞進 prompt 字串。至少記：
+   - `path`
+   - `ref_sha`
+   - `original_chars` 或 bytes
+   - `supplied_chars`
+   - `truncated`
+   - `sha256`
+   - `critical=true|false`
+2. critical sections 至少包含：
    - exact instruction text @ `INSTRUCTION_SHA`
-   - contract full identities
-   - CODE/DOCS CI summaries + job identifiers
-   - changed-file manifest
-   - bounded diff
-   - progress / audit / acceptance docs
-2. exact instruction text不得完全缺席。
-3. 對所有 bounded / truncated sections加入明確 metadata，例如：
-   - source path
-   - ref SHA
-   - original byte/char length
-   - supplied length
-   - `truncated=true|false`
-   - sha256 / digest（可對原文）
-4. 若關鍵 instruction / changed-file evidence 被截到不足以審查，不得無條件 ACCEPT；可採 chunking、per-file bounded review、deterministic manifest gate，或 fail closed。
-5. changed-file manifest 至少列出 path + status；不得讓 critical changed file 完全消失在 provider context。
-6. provider 不得獲得 unrestricted shell、GitHub token、secret 或直接 write capability。
+   - complete changed-file manifest
+   - material code diff
+   - current progress report
+   - current implementation audit
+   - Event-Driven Supervisor acceptance
+3. 若 critical section `truncated=true`：
+   - 必須 chunk / per-file review 到完整覆蓋；或
+   - deterministic gate 直接 `CHANGES_REQUIRED`。
+   **不得只提示 provider「已截斷」後仍允許 ACCEPT。**
+4. instruction text 若超過單一 prompt budget，必須完整 chunk / digest-verified review；不得 silently slice 前 8000 chars 後視為 exact instruction reviewed。
+5. changed-file manifest 改為由 `git diff --name-status` 或 GitHub compare metadata產生，至少提供 `status + path`；rename 要有 old/new path。
+6. provider 最終 ACCEPT 前，engine 必須 independently assert：所有 critical changed files 都出現在 manifest，且所有 required review chunks 已 covered。
+7. completeness state 要寫進 audit trail，方便之後 REAL E2E 驗證。
 
 ### Required tests
 
-- exact instruction text確實出現在 provider request
-- instruction ref mismatch → reject
-- material diff omitted/truncated without completeness handling → no ACCEPT
-- changed-file manifest 包含本輪所有 changed paths
-- prompt/log 不含 API key / GitHub token / webhook secret
+- material diff > bound → `truncated=true` 且未 chunk complete → **no ACCEPT**
+- long instruction > bound → 未完整 coverage → **no ACCEPT**
+- chunked full coverage + digest exact → 可進 provider decision gate
+- changed manifest 包含 A/M/D/R status + path
+- 任一 changed critical file 從 manifest 消失 → **no ACCEPT**
+- digest mismatch / chunk missing / duplicate overlap造成 coverage 不完整 → **no ACCEPT**
 
 ---
 
-## 3. Blocker C — Engine independent mismatch path 目前可能因 undefined `logger` 崩潰
+## 2. Blocker B — pinned critical evidence fetch 仍可被 `_safe_get_file()` 靜默吞掉
 
-`services/supervisor/engine.py` 在 provider CODE mismatch / evidence mismatch / mock promotion branch 呼叫 `logger.warning(...)`，但 module 目前沒有建立 `logger`。
+目前 `_safe_get_file()` catch-all 後回空字串；而 deterministic preflight 沒有把 `instruction_text` 存在性當 mandatory gate。
 
-這表示真正遇到惡意或錯誤 provider response 時，原本應 fail closed 的 path 可能變成 runtime exception，而不是穩定 `CHANGES_REQUIRED`。
+因此 exact `INSTRUCTION_SHA` 的 instruction fetch 若因 ref/path/API 問題失敗，系統仍可能繼續叫 provider；這不符合「exact instruction must be reviewed」的 fail-closed 原則。
 
 ### Required correction
 
-1. 正式建立 module logger，例如：
-   - `import logging`
-   - `logger = logging.getLogger("supervisor.engine")`
-   或改成不依賴未定義 logger 的安全實作。
-2. fail-closed 路徑不得因 logging 自己崩潰。
-3. engine-level tests 必須真的走到 mismatch branch，不可只測 adapter-level mismatch。
+1. 區分 required / optional evidence fetch。
+2. 在 live review 中，下列 pinned source fetch 失敗或空內容時必須 **在 provider call 前** fail closed：
+   - `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` 或 approved neutral alias @ `INSTRUCTION_SHA`
+   - current progress report @ `DOCS_SHA`
+   - `CURRENT_IMPLEMENTATION_AUDIT.md` @ `DOCS_SHA`
+   - `EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md` @ `DOCS_SHA`
+3. 若 contract `REAL_BLENDER=true`，`REAL_E2E_ACCEPTANCE.md` 也必須可讀且與 current evidence lineage 可 reconciliation。
+4. 不要讓 HTTP 404 / auth failure / timeout 與「檔案內容真的為空」全部變成 indistinguishable empty string；保留 typed fetch error / audit reason。
+5. provider request 中要能看出 source fetch status，但不得洩漏 token / secret。
 
 ### Required tests
 
-- adapter 回 wrong CODE identity → engine 回 `CHANGES_REQUIRED`，不得 NameError
-- wrong DOCS / INSTRUCTION / evidence identity 同樣 fail closed
-- provider 嘗試 MOCK→REAL promotion → engine穩定 downgrade，不得 exception
+- instruction @ pinned SHA 404 → provider **not called**, no ACCEPT
+- instruction empty → no ACCEPT
+- audit missing → no ACCEPT
+- event supervisor acceptance missing → no ACCEPT
+- provider credentials正常但 pinned evidence fetch timeout → no ACCEPT
+- optional CABINET file（若未被本輪 claim 使用）缺失不得誤標 Production Ready；若 claim 使用則 mandatory
 
 ---
 
-## 4. Blocker D — Provider model/config 必須可部署、可追溯；MockTransport 仍不是 live provider evidence
+## 3. Blocker C — Window B1 remote commit adoption 目前只靠 `supervisor:` + CODE short SHA，未綁 evidence identity/content
 
-目前 HTTP adapter logic 可接受，但 live readiness 仍未驗證，且 provider/model 應由部署設定管理，而不是把單一 model id 永久寫死為唯一選項。
+目前 crash recovery 掃描 remote commits 時，只要 commit message 同時含 `supervisor:` 與 `CODE_SHA[:7]` 就可 adopt。
 
-### Required correction
-
-1. 新增可配置 model，例如 `SUPERVISOR_AI_MODEL`，由 provider + model 組合決定實際 request。
-2. live mode 必須驗證 provider/model config 非空且合法；unknown provider/model fail closed。
-3. acceptance/audit 記錄實際：
-   - provider
-   - model
-   - request/review id（若 provider 提供）
-   - timestamp
-   - 不得記 API key/token
-4. unit test / `httpx.MockTransport` 僅標 `REAL_LOGIC / TESTED_ADAPTER`，不得設 `liveProviderReady=true`。
-5. 若本環境尚無 live provider credential，誠實保持 BLOCKED，先完成其餘修正再做 live E2E。
-
----
-
-## 5. Blocker E — `BLOCKED` decision 的 Issue comment crash window 也要 idempotent
-
-目前 ACCEPT / CHANGES_REQUIRED 有 remote instruction/comment reconciliation，但 `BLOCKED` path 仍直接 post comment；若 comment 已成功、process 在 state record 前 crash，retry 可能重複留言。
+同一 CODE SHA 可能有不同 `EVIDENCE_GENERATION_ID`、DOCS SHA、decision 或重新提交；因此可能誤 adopt 另一輪 instruction commit。這會破壞 exactly-once / lineage authority。
 
 ### Required correction
 
-1. `BLOCKED` comment 也使用 deterministic review marker。
-2. retry 前先查 state + Issue existing marker。
-3. 已存在同一 `CODE_SHA + EVIDENCE_GENERATION_ID` 的 BLOCKED comment 時只 adopt，不重複 post。
-4. state record 與 recovery 行為需與 ACCEPT/CHANGES_REQUIRED 一致。
+1. Supervisor instruction commit 必須帶 deterministic machine-readable identity，至少：
+   - full `CODE_SHA`
+   - full `DOCS_SHA`
+   - prior `INSTRUCTION_SHA`
+   - `EVIDENCE_GENERATION_ID`
+   - decision
+   - review id
+2. 可用 commit trailers + instruction file hidden marker / frontmatter；不要只靠 7-char SHA。
+3. crash recovery adopt remote commit 時必須 exact match：
+   - full CODE SHA
+   - evidence generation id
+   - reviewed DOCS SHA
+   - reviewed prior instruction SHA
+   - expected decision
+4. adopt 前重新讀 remote `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` blob，確認 content marker / digest 與 staged intended output exact match。
+5. 找到 multiple matching candidates → fail closed，不可任選第一個。
+6. same CODE + different evidence id 的兩次 review 必須各自 exactly-once，不可 cross-adopt。
 
 ### Required tests
 
-- BLOCKED comment 成功後、state persist 前 crash → retry exactly one comment
-- duplicate webhook / duplicate READY → no second BLOCKED comment
+- same CODE / evidence A 已有 supervisor commit，evidence B retry → 不得 adopt A
+- same CODE / same evidence / wrong DOCS → 不得 adopt
+- 只有 short SHA 相同 / forged commit message → 不得 adopt
+- exact identity + exact remote blob → adopt once
+- two exact candidates → BLOCK / CHANGES_REQUIRED，不得猜
+- push success、state persist 前 crash → retry exactly one valid instruction commit
 
 ---
 
-## 6. Blocker F — REAL GitHub Webhook E2E 仍是 mandatory final acceptance gate
+## 4. Blocker D — live provider/model config 與 machine contract parser 仍需 fail-closed
 
-完成 Blocker A–E、CODE + DOCS exact dual-platform CI 全綠後，才執行真實事件鏈：
+### 4.1 `SUPERVISOR_AI_MODEL`
 
-1. authorized owner 在真 Issue #1 發 `READY_FOR_RE_GATE`。
-2. GitHub 真 delivery 到 public webhook endpoint。
+Round 4 要求 live mode provider/model config 非空且合法；目前 `validate_live_config()` 沒有要求 `ai_model` 非空，external adapter 會在空值時套 default model。
+
+這不代表 adapter logic 錯，但 acceptance 不可宣稱「live model config 已嚴格驗證」。
+
+Required：
+
+- `mode=live` + external provider (`openai` / `anthropic` / `gemini`) 時，`SUPERVISOR_AI_MODEL` 必須明確非空。
+- unsupported/blank provider-model combination fail closed。
+- actual provider + actual model + provider request/review id（若回傳）寫 audit；不得記 API key。
+- test mode 才可保留 convenience default（若你要保留）。
+
+### 4.2 READY contract truth booleans
+
+目前 `parse_from_text()` 對 `REAL_BLENDER` / `USED_MOCK` 採「不是 true/1/yes 就變 false」。例如 typo / malformed value 可能被靜默當 false，不是 fail-closed。
+
+Required：
+
+- machine contract 建議只接受 literal `true` / `false`（若保留 1/0/yes/no 必須明確 allowlist）。
+- 任何其他值 → parse reject / HTTP 400，不得 silently coerce false。
+- `INSTRUCTION_SHA / CODE_SHA / DOCS_SHA` 驗證為 40-char hex full SHA。
+- `CODE_CI_RUN_ID / DOCS_CI_RUN_ID` 在 live contract 必須是 positive numeric id。
+- `TEST_COUNT >= 0` 並設定合理 gate；malformed integer reject。
+
+### Required tests
+
+- `USED_MOCK=tru` / `REAL_BLENDER=maybe` → reject
+- short / non-hex SHA → reject
+- blank live model → startup reject
+- explicit configured model → exact request payload + audit trail
+- malformed CI run id → reject before GitHub API call
+
+---
+
+## 5. Blocker E — 真 provider + 真 GitHub Webhook E2E 仍未完成，readiness 必須保持 false
+
+目前 software control-plane 可視為 **REAL_LOGIC / TESTED**，但以下仍是 **BLOCKED / false**：
+
+- `liveProviderReady=false`
+- `webhookRealE2e=false`
+- `eventDrivenSupervisorReady=false`
+
+完成 Blocker A–D、CODE + DOCS exact dual-platform CI 全綠後，才執行 REAL event chain：
+
+1. authorized owner/collaborator 在真 Issue #1 發 `READY_FOR_RE_GATE`。
+2. GitHub 真 webhook delivery 到實際 public endpoint。
 3. HMAC `X-Hub-Signature-256` verified。
-4. `X-GitHub-Delivery`、repo、sender、association、issue、action 全部 exact gate。
-5. CODE / DOCS / INSTRUCTION / evidence lineage exact。
-6. CODE CI + DOCS CI 各自 exact SHA + Ubuntu/Windows SUCCESS。
-7. deterministic safety preflight。
-8. **真的 configured provider network call**，不是 MockTransport。
-9. provider structured response四個 reviewed identity exact。
-10. engine independent verify + policy gate。
-11. exactly one instruction commit。
-12. remote blob exact verify。
-13. exactly one `SUPERVISOR_REVIEW_COMPLETE` comment。
-14. watcher claim新 instruction exactly once。
-15. replay same delivery + duplicate READY → 不得新增第二 commit/comment/claim。
-16. 至少一個受控 crash-recovery proof；若 production endpoint 不適合 fault injection，可在 staging repo/issue 做並明確標 STAGING。
+4. delivery id / repo / action / issue / sender / association exact gate。
+5. CODE / DOCS / INSTRUCTION / evidence generation exact lineage。
+6. CODE CI + DOCS CI exact SHA，Ubuntu + Windows SUCCESS。
+7. required pinned evidence完整 fetch + completeness gate。
+8. deterministic preflight。
+9. **真 configured provider network call**（非 MockTransport）。
+10. provider 回四個 reviewed identity exact；engine independently verify。
+11. exactly one instruction commit，remote blob exact verify。
+12. exactly one `SUPERVISOR_REVIEW_COMPLETE` Issue comment。
+13. watcher claim 新 instruction exactly once。
+14. replay same delivery + duplicate READY → no second commit/comment/claim。
+15. 至少一個 controlled crash-recovery proof；production 不適合 fault injection 可用 staging repo/issue，但要明確標 `STAGING`。
 
 Acceptance evidence 至少記錄：
 
 - GitHub delivery ID
 - review ID
-- provider + model
-- reviewed CODE / DOCS / INSTRUCTION SHA
-- evidence generation ID
+- provider + model + provider request id（若有）
+- reviewed CODE / DOCS / prior INSTRUCTION SHA
+- evidence generation id
 - CODE/DOCS CI run + job IDs
+- completeness manifest/digests
 - resulting instruction commit SHA
 - Issue comment ID
 - watcher claimed instruction SHA
 - timestamps / retry count
 
-只有完整真實鏈完成，且下一次 external Re-Gate 接受後，才可以改：
+若本機尚無 live credential / public webhook endpoint，**不要偽造**；保持三個 readiness flag false，回報 `BLOCKED_WAITING_LIVE_E2E`，STOP 等外部環境就緒。
 
-- `webhookRealE2e=true`
-- `eventDrivenSupervisorReady=true`
-- `liveProviderReady=true`（僅在真 provider call evidence 成立時）
-
-Supervisor 不得 self-promote readiness。
+Supervisor 不得 self-promote readiness；完整真實鏈完成後仍需下一次 external Re-Gate 接受，才可改 readiness flags。
 
 ---
 
-## 7. Product / manufacturing truth boundaries 維持不變
+## 6. Product / manufacturing truth boundaries 維持不變
 
 本輪 Supervisor side-track 不得解除：
 
@@ -220,38 +240,40 @@ Supervisor 不得 self-promote readiness。
 - `fullAutonomousFactoryReady=false`
 - `liveFactoryExecutionReady=false`
 
-既有 `REAL_E2E_ACCEPTANCE.md` / `CABINET_REAL_ACCEPTANCE.md` 的 REAL Blender / engineering evidence 可保留；除非修改到其執行路徑，否則不要為本輪 Supervisor 修正重跑無關產品架構。
+既有 REAL Blender / Product Truth evidence可保留；只有修改到對應 execution path 才重跑相關 REAL evidence。CI `FOX3D_MOCK_BLENDER=1` 仍不是 Production Ready。
 
 ---
 
-## 8. 本輪交付與停止條件
+## 7. 本輪交付與停止條件
 
 完成後必須：
 
-1. `pytest -v tests/test_supervisor.py` + full `pytest -q` 全綠。
-2. CODE commit/push → 等 exact CODE Ubuntu + Windows CI SUCCESS。
-3. 更新 current `GROK_PROGRESS_REPORT.md` / `CURRENT_IMPLEMENTATION_AUDIT.md` / `EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`。
-4. DOCS commit/push → 等 exact DOCS Ubuntu + Windows CI SUCCESS。
-5. Issue #1 發新的 machine-readable：
+1. 新增上述 adversarial / fail-closed tests。
+2. `pytest -v tests/test_supervisor.py` + full `pytest -q` 全綠。
+3. CODE commit/push → 等 exact CODE Ubuntu + Windows CI SUCCESS。
+4. 更新 current `GROK_PROGRESS_REPORT.md` / `CURRENT_IMPLEMENTATION_AUDIT.md` / `EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`，truth labels 必須與實況一致。
+5. DOCS commit/push → 等 exact DOCS Ubuntu + Windows CI SUCCESS。
+6. Issue #1 發新的 machine-readable READY，至少：
 
 ```text
 READY_FOR_RE_GATE
 REPO=netfox-web/blender-autonomous-3d
 ISSUE=1
-INSTRUCTION_SHA=<this Round 4 instruction commit>
+INSTRUCTION_SHA=<this Round 5 instruction commit>
 CODE_SHA=<exact code commit>
 DOCS_SHA=<exact docs commit>
 CODE_CI_RUN_ID=<run whose head_sha == CODE_SHA>
 DOCS_CI_RUN_ID=<run whose head_sha == DOCS_SHA>
 TEST_COUNT=<exact count>
 EVIDENCE_GENERATION_ID=<exact generation>
-REAL_BLENDER=<true|false according to evidence>
-USED_MOCK=<true|false according to evidence>
+REAL_BLENDER=<true|false>
+USED_MOCK=<true|false>
 ```
 
-6. 同時回報：
-   - provider live network call 是否完成
+7. 同時回報：
+   - completeness gate 是否有任何 truncated critical evidence
+   - live provider network call 是否完成
    - GitHub real webhook E2E 是否完成
-   - 若未完成，相關 readiness flags必須保持 false
-7. 完成後 **STOP / WAIT FOR NEXT EXTERNAL RE-GATE**。
-8. 不要自行進 Phase 961+，不要把 mock/unit/integration/staging 冒充 Production Ready。
+   - Window B1 cross-evidence recovery tests 結果
+8. 完成後 **STOP / WAIT FOR NEXT EXTERNAL RE-GATE**。
+9. 不要自行進 Phase 961+；不要把 Mock / fixture / unit / CI / staging 冒充 Production Ready。
