@@ -9,6 +9,7 @@ REAL_LOGIC / REAL Blender execution.
 from __future__ import annotations
 
 import copy
+import json
 import math
 from pathlib import Path
 from typing import Any
@@ -1511,10 +1512,15 @@ def run_product_content_scenario(
     if pt_auth:
         upstream_pack = pt_auth.get("pack") or {}
         truth_gen_id = pt_auth.get("acceptanceGenerationId")
-        eng = pt_auth.get("frozenEngineering") or (upstream_pack.get("frozenAuthorityContext") or {}).get("engineering")
         if not eng:
-            truth_res = run_phase_841_scenario(plat, tenant_id=tenant_id, evidence_code_commit=evidence_code_commit)
-            eng = truth_res["frozenAuthorityContext"]["engineering"]
+            from fox3d.parametric import CabinetEngine
+            engine = CabinetEngine()
+            cab, _ = engine.create("STORAGE_CABINET", tenant_id=tenant_id, width=2400, height=1800, doorCount=4)
+            eng = cab.model_dump(mode="json")
+            if upstream_pack.get("engineeringHash"):
+                eng["engineeringHash"] = upstream_pack.get("engineeringHash")
+            if upstream_pack.get("productId"):
+                eng["productId"] = upstream_pack.get("productId")
     else:
         truth_res = run_phase_841_scenario(plat, tenant_id=tenant_id, evidence_code_commit=evidence_code_commit)
         upstream_pack = truth_res["pack"]
