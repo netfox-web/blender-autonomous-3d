@@ -83,7 +83,7 @@ class ReadyForReGateContract(BaseModel):
         if is_live:
             if not str(self.code_ci_run_id).isdigit() or int(self.code_ci_run_id) <= 0:
                 raise ValueError(f"Invalid CODE_CI_RUN_ID '{self.code_ci_run_id}': must be positive numeric integer.")
-            if self.docs_ci_run_id and (not str(self.docs_ci_run_id).isdigit() or int(self.docs_ci_run_id) <= 0):
+            if not str(self.docs_ci_run_id).isdigit() or int(self.docs_ci_run_id) <= 0:
                 raise ValueError(f"Invalid DOCS_CI_RUN_ID '{self.docs_ci_run_id}': must be positive numeric integer.")
         if self.test_count < 0:
             raise ValueError(f"Invalid TEST_COUNT '{self.test_count}': must be non-negative.")
@@ -136,10 +136,14 @@ class ReadyForReGateContract(BaseModel):
         code_ci_run_id = data.get("CODE_CI_RUN_ID", "")
         docs_ci_run_id = data.get("DOCS_CI_RUN_ID", "")
         legacy_ci = data.get("CI_RUN_ID", "")
-        if not code_ci_run_id and legacy_ci:
-            code_ci_run_id = legacy_ci
-        if not code_ci_run_id and not legacy_ci:
-            return None
+        if strict:
+            if not code_ci_run_id or not docs_ci_run_id:
+                return None
+        else:
+            if not code_ci_run_id and legacy_ci:
+                code_ci_run_id = legacy_ci
+            if not code_ci_run_id and not legacy_ci:
+                return None
 
         try:
             contract = cls(
@@ -209,15 +213,22 @@ class ProviderReviewResponseSchema(BaseModel):
 
 class ReviewContext(BaseModel):
     contract: ReadyForReGateContract
+    review_id: str = ""
     commits: List[Dict[str, Any]] = Field(default_factory=list)
     diffs: str = ""
+    code_diff: str = ""
+    docs_diff: str = ""
     changed_files: List[str] = Field(default_factory=list)
     changed_file_items: List[ChangedFileItem] = Field(default_factory=list)
+    authoritative_changed_files: List[ChangedFileItem] = Field(default_factory=list)
+    authoritative_code_files: List[ChangedFileItem] = Field(default_factory=list)
+    authoritative_docs_files: List[ChangedFileItem] = Field(default_factory=list)
     completeness: List[EvidenceSectionCompleteness] = Field(default_factory=list)
     fetch_statuses: Dict[str, str] = Field(default_factory=dict)
     progress_report_text: str = ""
     audit_text: str = ""
     acceptance_text: str = ""
+    product_truth_acceptance_text: str = ""
     cabinet_acceptance_text: str = ""
     event_driven_acceptance_text: str = ""
     ci_summary: Dict[str, Any] = Field(default_factory=dict)

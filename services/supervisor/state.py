@@ -106,6 +106,7 @@ class StateManager:
                 ("issue_comment_id", "TEXT"),
                 ("issue_comment_posted_at", "TEXT"),
                 ("review_write_stage", "TEXT DEFAULT 'NONE'"),
+                ("intended_instruction_sha256", "TEXT"),
             ]:
                 try:
                     conn.execute(f"ALTER TABLE reviews ADD COLUMN {col} {col_type}")
@@ -394,6 +395,32 @@ class StateManager:
             )
             row = cur.fetchone()
             return row["staged_commit_sha"] if row and row["staged_commit_sha"] else None
+
+    def set_intended_instruction(self, review_id: str, sha256_digest: str) -> None:
+        """Durable persistence of intended instruction digest before write."""
+        with self._local_lock, self._get_conn() as conn:
+            conn.execute(
+                "UPDATE reviews SET intended_instruction_sha256 = ? WHERE review_id = ?",
+                (sha256_digest, review_id),
+            )
+            conn.commit()
+
+    def get_intended_instruction_sha256(self, review_id: str) -> Optional[str]:
+        with self._local_lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT intended_instruction_sha256 FROM reviews WHERE review_id = ?", (review_id,))
+            row = cur.fetchone()
+            return row["intended_instruction_sha256"] if row and row["intended_instruction_sha256"] else None
+
+    def get_intended_instruction_sha256_by_contract(self, code_sha: str, evidence_generation_id: str) -> Optional[str]:
+        with self._local_lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT intended_instruction_sha256 FROM reviews WHERE code_sha = ? AND evidence_generation_id = ?",
+                (code_sha, evidence_generation_id),
+            )
+            row = cur.fetchone()
+            return row["intended_instruction_sha256"] if row and row["intended_instruction_sha256"] else None
 
     def record_instruction_pushed(self, review_id: str, commit_sha: str, verified_at: Optional[str] = None) -> None:
         now_iso = verified_at or datetime.now(timezone.utc).isoformat()

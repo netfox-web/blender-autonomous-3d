@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
@@ -101,6 +102,86 @@ class SupervisorEngine:
                 return "", "AUTH_FAILURE"
             return "", f"FETCH_ERROR: {e}"
 
+    def _verify_instruction_candidate(
+        self,
+        candidate_sha: str,
+        commit_msg: str,
+        contract: ReadyForReGateContract,
+        decision: ReviewDecision,
+        review_id: str,
+        intended_digest: Optional[str],
+    ) -> bool:
+        """
+        Unconditionally verifies all 6 trailers, remote blob reading, 6 blob identity markers,
+        and content SHA256 digest match against intended output.
+        Fails closed on any discrepancy or read exception.
+        """
+        if not candidate_sha:
+            return False
+
+        # 1. Unconditionally require all 6 trailers exact match
+        trailers: Dict[str, str] = {}
+        for line in commit_msg.splitlines():
+            line = line.strip()
+            if ":" in line:
+                k, v = line.split(":", 1)
+                trailers[k.strip().lower()] = v.strip()
+
+        required_trailers = {
+            "reviewed-code-sha": contract.code_sha,
+            "reviewed-docs-sha": contract.docs_sha,
+            "reviewed-instruction-sha": contract.instruction_sha,
+            "reviewed-evidence-id": contract.evidence_generation_id,
+            "supervisor-decision": decision.value,
+            "supervisor-review-id": review_id,
+        }
+        for k, expected_v in required_trailers.items():
+            if k not in trailers:
+                logger.info("Candidate %s rejected: missing trailer '%s'.", candidate_sha, k)
+                return False
+            if trailers[k] != expected_v:
+                logger.info(
+                    "Candidate %s rejected: trailer '%s' mismatch ('%s' != '%s').",
+                    candidate_sha, k, trailers[k], expected_v,
+                )
+                return False
+
+        # 2. Remote blob must be cleanly readable; no exceptions allowed
+        try:
+            blob = self.github_client.get_file_content("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", ref=candidate_sha)
+            if not blob or not blob.strip():
+                logger.info("Candidate %s rejected: remote blob is empty.", candidate_sha)
+                return False
+        except Exception as e:
+            logger.info("Candidate %s rejected: blob fetch exception: %s.", candidate_sha, e)
+            return False
+
+        # 3. Remote blob identity marker must contain all 6 fields
+        required_blob_markers = [
+            f"CODE_SHA={contract.code_sha}",
+            f"DOCS_SHA={contract.docs_sha}",
+            f"INSTRUCTION_SHA={contract.instruction_sha}",
+            f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}",
+            f"DECISION={decision.value}",
+            f"REVIEW_ID={review_id}",
+        ]
+        for marker in required_blob_markers:
+            if marker not in blob:
+                logger.info("Candidate %s rejected: remote blob missing marker '%s'.", candidate_sha, marker)
+                return False
+
+        # 4. Content digest check: remote blob SHA256 must match intended_digest
+        if intended_digest:
+            blob_digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()
+            if blob_digest != intended_digest:
+                logger.info(
+                    "Candidate %s rejected: blob digest %s != intended %s.",
+                    candidate_sha, blob_digest, intended_digest,
+                )
+                return False
+
+        return True
+
     def handle_ready_contract(
         self,
         contract: ReadyForReGateContract,
@@ -131,8 +212,13 @@ class SupervisorEngine:
                 "reason": "Loop protection: same code SHA and instruction SHA already processed.",
             }
 
-        # 5. Acquire durable lock
-        review_id = f"rev_{uuid.uuid4().hex[:12]}"
+        # 5. Review ID determination and durable lock
+        existing_rev = self.state_mgr.get_review_by_contract(contract.code_sha, contract.evidence_generation_id)
+        if existing_rev and existing_rev.get("review_id"):
+            review_id = existing_rev["review_id"]
+        else:
+            review_id = f"rev_{uuid.uuid4().hex[:12]}"
+
         acquired, current_lock_holder_code = self.state_mgr.acquire_review_lock(
             review_id=review_id,
             code_sha=contract.code_sha,
@@ -238,11 +324,13 @@ class SupervisorEngine:
 
         # 5. Real blender acceptance (mandatory if real_blender and not used_mock)
         real_acc_path = "docs/REAL_E2E_ACCEPTANCE.md"
-        acceptance_text, status = self._fetch_evidence_file(real_acc_path, ref=contract.docs_sha)
-        if status != "OK":
-            real_acc_path = "docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md"
-            acceptance_text, status = self._fetch_evidence_file(real_acc_path, ref=contract.docs_sha)
-        fetch_statuses[real_acc_path] = status
+        acceptance_text, real_status = self._fetch_evidence_file(real_acc_path, ref=contract.docs_sha)
+        fetch_statuses[real_acc_path] = real_status
+
+        # 5b. Auxiliary Product Truth acceptance
+        pt_path = "docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md"
+        product_truth_text, pt_status = self._fetch_evidence_file(pt_path, ref=contract.docs_sha)
+        fetch_statuses[pt_path] = pt_status
 
         # 6. Optional cabinet acceptance
         cabinet_acceptance_text, status = self._fetch_evidence_file("docs/CABINET_REAL_ACCEPTANCE.md", ref=contract.docs_sha)
@@ -258,13 +346,20 @@ class SupervisorEngine:
             required_failures.append(f"Implementation audit failed: {fetch_statuses.get('docs/CURRENT_IMPLEMENTATION_AUDIT.md')}")
         if fetch_statuses.get("docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md") != "OK":
             required_failures.append(f"Supervisor acceptance report failed: {fetch_statuses.get('docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md')}")
-        if contract.real_blender and not contract.used_mock and fetch_statuses.get(real_acc_path) != "OK":
-            required_failures.append(f"Real Blender acceptance report failed: {fetch_statuses.get(real_acc_path)}")
+        if contract.real_blender and not contract.used_mock and fetch_statuses.get("docs/REAL_E2E_ACCEPTANCE.md") != "OK":
+            required_failures.append(f"Real Blender mandatory acceptance report (docs/REAL_E2E_ACCEPTANCE.md) failed: {fetch_statuses.get('docs/REAL_E2E_ACCEPTANCE.md')}")
 
         commits = self.github_client.get_commits_since(contract.instruction_sha, contract.docs_sha)
-        diffs = self.github_client.get_diff_between(contract.instruction_sha, contract.docs_sha)
+        code_diff = self.github_client.get_diff_between(contract.instruction_sha, contract.code_sha)
+        docs_diff = self.github_client.get_diff_between(contract.code_sha, contract.docs_sha)
+        diffs = (code_diff + ("\n" + docs_diff if docs_diff else "")).strip()
 
-        # Extract changed files from diffs
+        # Independent authoritative changed files
+        authoritative_all_files = self.github_client.get_changed_files_between(contract.instruction_sha, contract.docs_sha)
+        authoritative_code_files = self.github_client.get_changed_files_between(contract.instruction_sha, contract.code_sha)
+        authoritative_docs_files = self.github_client.get_changed_files_between(contract.code_sha, contract.docs_sha)
+
+        # Extract changed files from supplied diffs for manifest
         changed_file_items = parse_diff_changed_files(diffs)
         changed_files = [item.format_entry() for item in changed_file_items]
 
@@ -286,14 +381,21 @@ class SupervisorEngine:
             # Step E: Build context and invoke AI review adapter
             context = ReviewContext(
                 contract=contract,
+                review_id=review_id,
                 commits=commits,
                 diffs=diffs,
+                code_diff=code_diff,
+                docs_diff=docs_diff,
                 changed_files=changed_files,
                 changed_file_items=changed_file_items,
+                authoritative_changed_files=authoritative_all_files,
+                authoritative_code_files=authoritative_code_files,
+                authoritative_docs_files=authoritative_docs_files,
                 fetch_statuses=fetch_statuses,
                 progress_report_text=progress_report,
                 audit_text=audit_text,
                 acceptance_text=acceptance_text,
+                product_truth_acceptance_text=product_truth_text,
                 cabinet_acceptance_text=cabinet_acceptance_text,
                 event_driven_acceptance_text=event_driven_acceptance_text,
                 ci_summary=code_ci_summary,
@@ -349,14 +451,53 @@ class SupervisorEngine:
             raw_output.decision = ReviewDecision.CHANGES_REQUIRED
             raw_output.blockers.append("Provider invalidly promoted mock execution to Production Ready REAL.")
 
-        # Independent check: critical changed files manifest completeness
-        actual_diff_paths = {item.path for item in changed_file_items}
-        manifest_paths = {item.path for item in context.changed_file_items} if (context and context.changed_file_items) else actual_diff_paths
-        omitted_changed_files = actual_diff_paths - manifest_paths
-        if omitted_changed_files and raw_output.decision == ReviewDecision.ACCEPT_WITH_SCOPE:
-            logger.warning("Critical changed files omitted from manifest: %s. Failing closed.", omitted_changed_files)
+        # Independent check: compare manifest items against independent authoritative changed files
+        manifest_paths = {item.path: item for item in (context.changed_file_items if context else changed_file_items)}
+        auth_paths = {item.path: item for item in authoritative_all_files} if authoritative_all_files is not None else manifest_paths
+
+        manifest_blockers: List[str] = []
+        if authoritative_all_files is not None:
+            # 1. Authoritative compare has files that manifest omitted
+            omitted = set(auth_paths.keys()) - set(manifest_paths.keys())
+            if omitted:
+                manifest_blockers.append(f"Authoritative changed files omitted from manifest: {sorted(omitted)}.")
+
+            # 2. Manifest has non-existent / phantom files
+            phantom = set(manifest_paths.keys()) - set(auth_paths.keys())
+            if phantom:
+                manifest_blockers.append(f"Manifest contains phantom files not present in authoritative changes: {sorted(phantom)}.")
+
+            # 3. Status spoofing or rename old/new path spoofing
+            for p in set(auth_paths.keys()) & set(manifest_paths.keys()):
+                a_item = auth_paths[p]
+                m_item = manifest_paths[p]
+                a_stat = "R" if a_item.status.startswith("R") else a_item.status
+                m_stat = "R" if m_item.status.startswith("R") else m_item.status
+                if a_stat != m_stat:
+                    manifest_blockers.append(
+                        f"Changed file status spoof for {p}: manifest has '{m_item.status}', authoritative is '{a_item.status}'."
+                    )
+                if (a_stat == "R" or m_stat == "R") and a_item.old_path != m_item.old_path:
+                    manifest_blockers.append(
+                        f"Rename path mismatch for {p}: manifest has old_path '{m_item.old_path}', authoritative has '{a_item.old_path}'."
+                    )
+
+        # 4. Check for diff range contamination: DOCS commit files mixed into CODE diff
+        if authoritative_docs_files is not None and code_diff:
+            code_diff_items = parse_diff_changed_files(code_diff)
+            code_diff_paths = {item.path for item in code_diff_items}
+            auth_code_path_set = {item.path for item in authoritative_code_files}
+            auth_docs_only_paths = {item.path for item in authoritative_docs_files} - auth_code_path_set
+            contaminated = code_diff_paths & auth_docs_only_paths
+            if contaminated:
+                manifest_blockers.append(
+                    f"CODE diff range contaminated with DOCS-only commit files: {sorted(contaminated)}. Metadata range must strictly match supplied bytes."
+                )
+
+        if manifest_blockers:
+            logger.warning("Manifest / diff authority checks failed: %s. Failing closed.", manifest_blockers)
             raw_output.decision = ReviewDecision.CHANGES_REQUIRED
-            raw_output.blockers.append(f"Changed files manifest omitted critical changed files: {sorted(omitted_changed_files)}.")
+            raw_output.blockers.extend(manifest_blockers)
 
         # Independent check: critical evidence section completeness
         if context and any(c.critical and c.truncated and not c.is_complete for c in context.completeness) and raw_output.decision == ReviewDecision.ACCEPT_WITH_SCOPE:
@@ -378,41 +519,80 @@ class SupervisorEngine:
         if output.decision in (ReviewDecision.ACCEPT_WITH_SCOPE, ReviewDecision.CHANGES_REQUIRED):
             self.policy_engine.validate_action("update_next_instruction")
 
+            commit_trailers = (
+                f"\n\nReviewed-Code-Sha: {contract.code_sha}\n"
+                f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+                f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+                f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
+                f"Supervisor-Decision: {output.decision.value}\n"
+                f"Supervisor-Review-Id: {review_id}"
+            )
+            commit_msg = (
+                f"supervisor: accept {contract.code_sha[:7]} and start next-phase{commit_trailers}"
+                if output.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+                else f"supervisor: correction-only re-gate for {contract.code_sha[:7]}{commit_trailers}"
+            )
+            content_marker = (
+                f"\n\n<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+                f"CODE_SHA={contract.code_sha}\n"
+                f"DOCS_SHA={contract.docs_sha}\n"
+                f"INSTRUCTION_SHA={contract.instruction_sha}\n"
+                f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
+                f"DECISION={output.decision.value}\n"
+                f"REVIEW_ID={review_id}\n"
+                f"-->\n"
+            )
+            full_content = output.next_instruction_markdown + content_marker
+            intended_digest = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
+
+            # Durably persist intended digest before write
+            self.state_mgr.set_intended_instruction(review_id, intended_digest)
+
             # Window B1 check: staged commit in DB or matching remote commit
             staged_sha = self.state_mgr.get_staged_commit(contract.code_sha, contract.evidence_generation_id)
+            staged_adopted = False
             if staged_sha:
-                new_instruction_sha = staged_sha
-            else:
+                staged_msg = ""
+                try:
+                    remote_commits = self.github_client.get_commits_since(
+                        contract.instruction_sha, f"origin/{self.config.allowed_branch}"
+                    )
+                    for c in remote_commits:
+                        if c.get("sha") == staged_sha:
+                            staged_msg = c.get("message") or (c.get("commit", {}).get("message") if isinstance(c.get("commit"), dict) else "") or ""
+                            break
+                except Exception:
+                    pass
+                if staged_msg and self._verify_instruction_candidate(
+                    candidate_sha=staged_sha,
+                    commit_msg=staged_msg,
+                    contract=contract,
+                    decision=output.decision,
+                    review_id=review_id,
+                    intended_digest=intended_digest,
+                ):
+                    new_instruction_sha = staged_sha
+                    staged_adopted = True
+                else:
+                    logger.warning("DB staged_sha %s failed exact verification; refusing to adopt.", staged_sha)
+
+            if not staged_adopted:
                 remote_commits = self.github_client.get_commits_since(
                     contract.instruction_sha, f"origin/{self.config.allowed_branch}"
                 )
                 matching_candidates: List[str] = []
                 for c in remote_commits:
                     msg = c.get("message") or (c.get("commit", {}).get("message") if isinstance(c.get("commit"), dict) else "") or ""
-                    msg_lower = msg.lower()
-
-                    has_code = f"Reviewed-Code-Sha: {contract.code_sha}".lower() in msg_lower or f"Reviewed: {contract.code_sha}".lower() in msg_lower or f"code {contract.code_sha[:7]}".lower() in msg_lower
-                    has_ev = f"Reviewed-Evidence-Id: {contract.evidence_generation_id}".lower() in msg_lower or f"Evidence-ID: {contract.evidence_generation_id}".lower() in msg_lower or f"evidence_id={contract.evidence_generation_id}".lower() in msg_lower
-
-                    if has_code and has_ev:
-                        # Check full trailers if present in commit message
-                        if "reviewed-docs-sha:" in msg_lower and f"Reviewed-Docs-Sha: {contract.docs_sha}".lower() not in msg_lower:
-                            continue
-                        if "reviewed-instruction-sha:" in msg_lower and f"Reviewed-Instruction-Sha: {contract.instruction_sha}".lower() not in msg_lower:
-                            continue
-                        if "supervisor-decision:" in msg_lower and f"Supervisor-Decision: {output.decision.value}".lower() not in msg_lower:
-                            continue
-
-                        # Also verify remote blob content marker if file content exists
-                        try:
-                            blob = self.github_client.get_file_content("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", ref=c.get("sha"))
-                            if blob and f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}" in blob:
-                                if f"CODE_SHA={contract.code_sha}" not in blob:
-                                    continue
-                        except Exception:
-                            pass
-
-                        matching_candidates.append(c.get("sha"))
+                    c_sha = c.get("sha", "")
+                    if self._verify_instruction_candidate(
+                        candidate_sha=c_sha,
+                        commit_msg=msg,
+                        contract=contract,
+                        decision=output.decision,
+                        review_id=review_id,
+                        intended_digest=intended_digest,
+                    ):
+                        matching_candidates.append(c_sha)
 
                 if len(matching_candidates) > 1:
                     logger.error("Multiple matching instruction commit candidates found: %s. Failing closed.", matching_candidates)
@@ -421,32 +601,10 @@ class SupervisorEngine:
                     new_instruction_sha = matching_candidates[0]
                     self.state_mgr.record_instruction_pushed(review_id, new_instruction_sha)
                 else:
-                    commit_trailers = (
-                        f"\n\nReviewed-Code-Sha: {contract.code_sha}\n"
-                        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
-                        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
-                        f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
-                        f"Supervisor-Decision: {output.decision.value}\n"
-                        f"Supervisor-Review-Id: {review_id}"
-                    )
-                    commit_msg = (
-                        f"supervisor: accept {contract.code_sha[:7]} and start next-phase{commit_trailers}"
-                        if output.decision == ReviewDecision.ACCEPT_WITH_SCOPE
-                        else f"supervisor: correction-only re-gate for {contract.code_sha[:7]}{commit_trailers}"
-                    )
-                    content_marker = (
-                        f"\n\n<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
-                        f"CODE_SHA={contract.code_sha}\n"
-                        f"DOCS_SHA={contract.docs_sha}\n"
-                        f"INSTRUCTION_SHA={contract.instruction_sha}\n"
-                        f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
-                        f"DECISION={output.decision.value}\n"
-                        f"REVIEW_ID={review_id}\n"
-                        f"-->\n"
-                    )
+                    # 0 candidates found: commit cleanly once
                     new_instruction_sha = self.github_client.commit_instruction_file(
                         file_path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
-                        content=output.next_instruction_markdown + content_marker,
+                        content=full_content,
                         commit_message=commit_msg,
                         branch=self.config.allowed_branch,
                     )

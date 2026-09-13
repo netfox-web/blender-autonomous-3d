@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 
 from services.supervisor.config import SupervisorConfig
+from services.supervisor.models import ChangedFileItem
 
 
 class GitHubVerificationError(Exception):
@@ -50,6 +51,11 @@ class GitHubClientInterface(ABC):
     @abstractmethod
     def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
         """Fetch diff between base_sha and head_sha."""
+        pass
+
+    @abstractmethod
+    def get_changed_files_between(self, base_sha: str, head_sha: str = "main") -> List[ChangedFileItem]:
+        """Fetch independent authoritative list of changed files with status (A/M/D/R)."""
         pass
 
     @abstractmethod
@@ -235,6 +241,61 @@ class GitHubClient(GitHubClientInterface):
         except Exception:
             pass
         return ""
+
+    def get_changed_files_between(self, base_sha: str, head_sha: str = "main") -> List[ChangedFileItem]:
+        try:
+            res = subprocess.run(
+                ["git", "diff", "--name-status", f"{base_sha}..{head_sha}"],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if res.returncode == 0:
+                items: List[ChangedFileItem] = []
+                for line in res.stdout.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split("\t")
+                    status_raw = parts[0].strip()
+                    if status_raw.startswith("R") and len(parts) >= 3:
+                        items.append(ChangedFileItem(status="R", path=parts[2].strip(), old_path=parts[1].strip()))
+                    elif len(parts) >= 2:
+                        items.append(ChangedFileItem(status=status_raw[0], path=parts[1].strip()))
+                return items
+        except Exception:
+            pass
+
+        # Fallback to GitHub API compare
+        try:
+            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{head_sha}"
+            headers = dict(self.headers)
+            resp = httpx.get(url, headers=headers, timeout=15.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                items: List[ChangedFileItem] = []
+                for f in data.get("files", []):
+                    gh_status = f.get("status", "modified")
+                    filename = f.get("filename", "")
+                    if gh_status == "added":
+                        status = "A"
+                        old_path = None
+                    elif gh_status == "removed":
+                        status = "D"
+                        old_path = None
+                    elif gh_status == "renamed":
+                        status = "R"
+                        old_path = f.get("previous_filename")
+                    else:
+                        status = "M"
+                        old_path = None
+                    items.append(ChangedFileItem(status=status, path=filename, old_path=old_path))
+                return items
+        except Exception:
+            pass
+        return []
 
     def commit_instruction_file(
         self,

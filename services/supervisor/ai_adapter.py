@@ -7,7 +7,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 
@@ -182,7 +182,7 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
         # 0. Verification of Evidence Fetch Statuses
         if context.fetch_statuses:
             for fpath, fstatus in context.fetch_statuses.items():
-                if fstatus != "OK" and "CABINET" not in fpath:
+                if fstatus != "OK" and "CABINET" not in fpath and "PRODUCT_TRUTH" not in fpath:
                     blockers.append(f"Required evidence fetch failed for {fpath}: {fstatus}")
                     rejected_claims.append(f"Evidence fetch: {fpath}")
 
@@ -229,15 +229,19 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
 
         # 5. Semantic reconciliation of REAL blender claims against evidence
         if contract.real_blender and not contract.used_mock:
-            combined_evidence = f"{acceptance_text}\n{audit_text}".lower()
-            if not combined_evidence.strip():
+            if context.fetch_statuses and context.fetch_statuses.get("docs/REAL_E2E_ACCEPTANCE.md") != "OK":
+                blockers.append(f"Mandatory Real Blender acceptance evidence (docs/REAL_E2E_ACCEPTANCE.md) failed or missing: {context.fetch_statuses.get('docs/REAL_E2E_ACCEPTANCE.md')}")
+                rejected_claims.append("Real Blender OptiX execution evidence")
+            elif not acceptance_text.strip():
                 blockers.append("Contract claimed real_blender=true but acceptance and audit evidence files are missing.")
                 rejected_claims.append("Real Blender OptiX execution evidence")
-            elif ("real_blender: false" in combined_evidence or "real_blender=false" in combined_evidence or "used_mock: true" in combined_evidence):
-                blockers.append("Contradiction: Contract claimed real_blender=true but acceptance evidence explicitly indicates mock execution.")
-                rejected_claims.append("Real Blender OptiX execution evidence")
             else:
-                accepted_claims.append("Real Blender execution evidence reconciled with acceptance audit")
+                combined_evidence = f"{acceptance_text}\n{audit_text}".lower()
+                if ("real_blender: false" in combined_evidence or "real_blender=false" in combined_evidence or "used_mock: true" in combined_evidence):
+                    blockers.append("Contradiction: Contract claimed real_blender=true but acceptance evidence explicitly indicates mock execution.")
+                    rejected_claims.append("Real Blender OptiX execution evidence")
+                elif not blockers:
+                    accepted_claims.append("Real Blender execution evidence reconciled with acceptance audit")
 
         # 6. Semantic check on diffs for spoofing or unauthorized changes
         diffs_lower = diffs.lower()
@@ -436,7 +440,7 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
 
         # Step 3: Dispatch HTTP request to provider endpoint
         try:
-            raw_text = self._call_provider_endpoint(prompt)
+            raw_text, provider_request_id = self._call_provider_endpoint(prompt)
         except Exception as e:
             logger.warning("Provider %s HTTP request failed: %s. Failing closed.", self.provider_name, e)
             return SupervisorReviewOutput(
@@ -448,6 +452,18 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 blockers=[f"Provider {self.provider_name} request failed: {type(e).__name__} - {str(e)}"],
                 next_instruction_markdown="# Phase Re-Gate: Changes Required\nProvider request failed.",
                 issue_comment_markdown="## SUPERVISOR_REVIEW_COMPLETE\nDECISION=CHANGES_REQUIRED\nProvider request failed.",
+                audit_trail={
+                    "provider": self.provider_name,
+                    "model": self.model,
+                    "provider_request_id": None,
+                    "review_id": getattr(context, "review_id", None) or "unavailable",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "reviewed_code_sha": context.contract.code_sha,
+                    "reviewed_docs_sha": context.contract.docs_sha,
+                    "reviewed_instruction_sha": context.contract.instruction_sha,
+                    "reviewed_evidence_generation_id": context.contract.evidence_generation_id,
+                    "completeness": [c.model_dump() for c in context.completeness],
+                },
             )
 
         # Step 4: Extract JSON and validate against schema
@@ -465,6 +481,18 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 blockers=[f"Provider response schema validation failed: {str(e)}"],
                 next_instruction_markdown="# Phase Re-Gate: Changes Required\nMalformed provider response.",
                 issue_comment_markdown="## SUPERVISOR_REVIEW_COMPLETE\nDECISION=CHANGES_REQUIRED\nMalformed provider response.",
+                audit_trail={
+                    "provider": self.provider_name,
+                    "model": self.model,
+                    "provider_request_id": provider_request_id,
+                    "review_id": getattr(context, "review_id", None) or "unavailable",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "reviewed_code_sha": context.contract.code_sha,
+                    "reviewed_docs_sha": context.contract.docs_sha,
+                    "reviewed_instruction_sha": context.contract.instruction_sha,
+                    "reviewed_evidence_generation_id": context.contract.evidence_generation_id,
+                    "completeness": [c.model_dump() for c in context.completeness],
+                },
             )
 
         # Step 5: Verify SHA and generation match contract across all 4 identities
@@ -522,6 +550,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             audit_trail={
                 "provider": self.provider_name,
                 "model": self.model,
+                "provider_request_id": provider_request_id,
+                "review_id": getattr(context, "review_id", None) or "unavailable",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "reviewed_code_sha": context.contract.code_sha,
                 "reviewed_docs_sha": context.contract.docs_sha,
@@ -571,11 +601,20 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             f"=== CODE CI SUMMARY ===\n{json.dumps(context.code_ci_summary or context.ci_summary)}\n",
             f"=== DOCS CI SUMMARY ===\n{json.dumps(context.docs_ci_summary)}\n",
             self._format_bounded_section(
-                "DIFFS",
-                context.diffs,
+                "CODE DIFF",
+                context.code_diff or context.diffs,
                 8000,
                 ref_sha=f"{contract.instruction_sha}..{contract.code_sha}",
                 path="git diff",
+                context=context,
+                critical=True,
+            ),
+            self._format_bounded_section(
+                "DOCS DIFF",
+                context.docs_diff,
+                8000,
+                ref_sha=f"{contract.code_sha}..{contract.docs_sha}",
+                path="git diff DOCS",
                 context=context,
                 critical=True,
             ),
@@ -598,13 +637,22 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 critical=True,
             ),
             self._format_bounded_section(
-                "ACCEPTANCE TEXT",
+                "REAL BLENDER ACCEPTANCE TEXT",
                 context.acceptance_text,
                 4000,
                 ref_sha=contract.docs_sha,
                 path="docs/REAL_E2E_ACCEPTANCE.md",
                 context=context,
                 critical=contract.real_blender and not contract.used_mock,
+            ),
+            self._format_bounded_section(
+                "PRODUCT TRUTH ACCEPTANCE (AUXILIARY)",
+                context.product_truth_acceptance_text,
+                4000,
+                ref_sha=contract.docs_sha,
+                path="docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md",
+                context=context,
+                critical=False,
             ),
             self._format_bounded_section(
                 "CABINET ACCEPTANCE",
@@ -628,7 +676,7 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
         return "\n".join(sections)
 
 
-    def _call_provider_endpoint(self, prompt: str) -> str:
+    def _call_provider_endpoint(self, prompt: str) -> Tuple[str, Optional[str]]:
         with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
             if self.provider_name == "openai":
                 url = "https://api.openai.com/v1/chat/completions"
@@ -647,7 +695,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 resp = client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                return data["choices"][0]["message"]["content"]
+                req_id = data.get("id")
+                return data["choices"][0]["message"]["content"], req_id
 
             elif self.provider_name == "anthropic":
                 url = "https://api.anthropic.com/v1/messages"
@@ -664,7 +713,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 resp = client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                return data["content"][0]["text"]
+                req_id = data.get("id")
+                return data["content"][0]["text"], req_id
 
             elif self.provider_name == "gemini":
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
@@ -675,7 +725,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 resp = client.post(url, headers=headers, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
+                req_id = data.get("responseId") or data.get("id")
+                return data["candidates"][0]["content"]["parts"][0]["text"], req_id
 
             else:
                 raise ConfigValidationError(f"Unsupported provider {self.provider_name}")

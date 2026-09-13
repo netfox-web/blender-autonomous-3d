@@ -124,14 +124,25 @@ class MockGitHubClient(GitHubClientInterface):
     def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
         return getattr(self, "diff_text", "")
 
+    def get_changed_files_between(self, base_sha: str, head_sha: str = "main") -> List[ChangedFileItem]:
+        if hasattr(self, "mock_changed_files"):
+            return self.mock_changed_files
+        diff = self.get_diff_between(base_sha, head_sha)
+        if diff:
+            return parse_diff_changed_files(diff)
+        return []
+
     def commit_instruction_file(self, file_path: str, content: str, commit_message: str, branch: str = "main") -> str:
         new_sha = f"instr_{len(self.committed_instructions) + 1:04d}"
-        self.committed_instructions.append({
+        entry = {
             "file_path": file_path,
             "content": content,
             "commit_message": commit_message,
+            "message": commit_message,
             "sha": new_sha,
-        })
+        }
+        self.committed_instructions.append(entry)
+        self.commits_log.append(entry)
         self.files[file_path] = content
         return new_sha
 
@@ -927,16 +938,50 @@ def test_31_live_mode_requires_delivery_id(tmp_path: Path):
 def test_32_crash_recovery_window_b1_commit_adoption(env_setup):
     engine = env_setup["engine"]
     gh: MockGitHubClient = env_setup["github_client"]
+    state_mgr = env_setup["state_mgr"]
 
-    c_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", evidence_id="gen_win_b1")
+    c_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_win_b1")
     contract = ReadyForReGateContract.parse_from_text(c_text)
+    review_id = "rev_exact_b1"
+    state_mgr.start_review(review_id, contract.code_sha, contract.evidence_generation_id)
+
+    commit_trailers = (
+        f"\n\nReviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: {review_id}"
+    )
+    commit_msg = f"supervisor: accept {contract.code_sha[:7]} and start next-phase{commit_trailers}"
+    content_marker = (
+        f"\n\n<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+        f"CODE_SHA={contract.code_sha}\n"
+        f"DOCS_SHA={contract.docs_sha}\n"
+        f"INSTRUCTION_SHA={contract.instruction_sha}\n"
+        f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
+        f"DECISION=ACCEPT_WITH_SCOPE\n"
+        f"REVIEW_ID={review_id}\n"
+        f"-->\n"
+    )
+    next_md = (
+        f"# Phase Re-Gate: Accepted With Scope\n\n"
+        f"CODE `{contract.code_sha[:7]}` and DOCS `{contract.docs_sha[:7]}` accepted.\n\n"
+        f"## Next Phase Scope\n"
+        f"- Continue autonomous pipeline execution.\n"
+        f"- Maintain dual-platform CI pass (Ubuntu + Windows).\n"
+        f"- Retain truth boundaries: no live CNC/laser/PLC.\n"
+    )
+    full_content = next_md + content_marker
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = full_content
 
     # Simulate that remote origin already contains a commit matching (code_sha, evidence_generation_id)
     gh.commits_log = [{
         "sha": "remote_instr_existing_sha_999",
         "commit": {
-            "message": f"supervisor: accept c0de111 and start next-phase\n\nReviewed: c0de111\nEvidence-ID: gen_win_b1"
-        }
+            "message": commit_msg
+        },
+        "message": commit_msg,
     }]
 
     res = engine.handle_ready_contract(contract)
@@ -2000,19 +2045,33 @@ def test_54_window_b1_multiple_matching_candidates_fails_closed(env_setup):
         f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
         f"Supervisor-Review-Id: {review_id}"
     )
-    gh.commits_log = [
-        {"sha": "candidate_1", "commit": {"message": commit_msg}},
-        {"sha": "candidate_2", "commit": {"message": commit_msg}},
-    ]
-    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = (
-        f"<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+    next_md = (
+        f"# Phase Re-Gate: Accepted With Scope\n\n"
+        f"CODE `{contract.code_sha[:7]}` and DOCS `{contract.docs_sha[:7]}` accepted.\n\n"
+        f"## Next Phase Scope\n"
+        f"- Continue autonomous pipeline execution.\n"
+        f"- Maintain dual-platform CI pass (Ubuntu + Windows).\n"
+        f"- Retain truth boundaries: no live CNC/laser/PLC.\n"
+    )
+    content_marker = (
+        f"\n\n<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
         f"CODE_SHA={contract.code_sha}\n"
         f"DOCS_SHA={contract.docs_sha}\n"
         f"INSTRUCTION_SHA={contract.instruction_sha}\n"
         f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
         f"DECISION=ACCEPT_WITH_SCOPE\n"
-        f"REVIEW_ID={review_id}\n-->"
+        f"REVIEW_ID={review_id}\n"
+        f"-->\n"
     )
+    full_content = next_md + content_marker
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = full_content
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E OK\nOptiX Cycles verified"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+
+    gh.commits_log = [
+        {"sha": "candidate_1", "message": commit_msg, "commit": {"message": commit_msg}},
+        {"sha": "candidate_2", "message": commit_msg, "commit": {"message": commit_msg}},
+    ]
 
     with pytest.raises(GitHubVerificationError, match="Multiple matching remote instruction commits found"):
         engine._execute_review(review_id, contract)
@@ -2116,6 +2175,550 @@ def test_56_live_mode_model_config_validation(tmp_path: Path):
             audit_log_path=audit_path,
         )
         validate_live_config(cfg_ok)
+
+
+# 57. Blocker A: Exact 6-field trailer enforcement for Window B1 adoption
+def test_57_window_b1_exact_6_trailer_enforcement(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_trailers",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    review_id = "rev_trailers_test"
+    valid_trailers = {
+        "reviewed-code-sha": contract.code_sha,
+        "reviewed-docs-sha": contract.docs_sha,
+        "reviewed-instruction-sha": contract.instruction_sha,
+        "reviewed-evidence-id": contract.evidence_generation_id,
+        "supervisor-decision": "ACCEPT_WITH_SCOPE",
+        "supervisor-review-id": review_id,
+    }
+
+    # 1. Short CODE SHA only + evidence ID -> reject
+    short_msg = f"supervisor: accept c0de111\n\nReviewed: {contract.code_sha[:7]}\nEvidence-ID: {contract.evidence_generation_id}"
+    assert not engine._verify_instruction_candidate(
+        candidate_sha="cand_short",
+        commit_msg=short_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=None,
+    )
+
+    # 2. Missing any trailer of the 6 -> reject
+    for missing_key in valid_trailers.keys():
+        subset = {k: v for k, v in valid_trailers.items() if k != missing_key}
+        partial_msg = "supervisor: commit\n\n" + "\n".join(f"{k.title()}: {v}" for k, v in subset.items())
+        assert not engine._verify_instruction_candidate(
+            candidate_sha=f"cand_missing_{missing_key}",
+            commit_msg=partial_msg,
+            contract=contract,
+            decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+            review_id=review_id,
+            intended_digest=None,
+        )
+
+    # 3. Forged commit message with full trailers but incomplete blob markers -> reject
+    full_msg = "supervisor: accept\n\n" + "\n".join(f"{k}: {v}" for k, v in valid_trailers.items())
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = f"<!-- INCOMPLETE: CODE_SHA={contract.code_sha} -->"
+    assert not engine._verify_instruction_candidate(
+        candidate_sha="cand_forged",
+        commit_msg=full_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=None,
+    )
+
+
+# 58. Blocker A: Remote blob fetch exception, empty blob, and SHA256 content digest authority
+def test_58_window_b1_blob_fetch_error_and_digest_authority(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_digest",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    review_id = "rev_digest_test"
+    trailers_str = (
+        f"\n\nReviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: {review_id}"
+    )
+    commit_msg = f"supervisor: accept {contract.code_sha[:7]}{trailers_str}"
+
+    blob_marker = (
+        f"\n\n<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+        f"CODE_SHA={contract.code_sha}\n"
+        f"DOCS_SHA={contract.docs_sha}\n"
+        f"INSTRUCTION_SHA={contract.instruction_sha}\n"
+        f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
+        f"DECISION={output.decision.value if False else 'ACCEPT_WITH_SCOPE'}\n"
+        f"REVIEW_ID={review_id}\n"
+        f"-->\n"
+    )
+    matching_content = f"# Phase Instructions\nValid content{blob_marker}"
+    intended_digest = hashlib.sha256(matching_content.encode("utf-8")).hexdigest()
+
+    # 1. Blob fetch throws exception -> fails closed (rejects candidate)
+    original_get_content = gh.get_file_content
+    def raise_on_blob(path, ref="main"):
+        if path == "docs/GROK_NEXT_PHASE_INSTRUCTIONS.md":
+            raise RuntimeError("Network timeout fetching blob")
+        return original_get_content(path, ref=ref)
+    gh.get_file_content = raise_on_blob
+
+    assert not engine._verify_instruction_candidate(
+        candidate_sha="cand_err",
+        commit_msg=commit_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=intended_digest,
+    )
+    gh.get_file_content = original_get_content
+
+    # 2. Blob is empty -> reject
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = "   \n"
+    assert not engine._verify_instruction_candidate(
+        candidate_sha="cand_empty",
+        commit_msg=commit_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=intended_digest,
+    )
+
+    # 3. Digest mismatch: blob contains markers but different content digest -> reject
+    tampered_content = f"# Tampered Instructions\nMalicious code{blob_marker}"
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = tampered_content
+    assert not engine._verify_instruction_candidate(
+        candidate_sha="cand_tampered",
+        commit_msg=commit_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=intended_digest,
+    )
+
+    # 4. Exact 6-field trailers + 6 blob markers + exact intended digest -> accept exactly once
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = matching_content
+    assert engine._verify_instruction_candidate(
+        candidate_sha="cand_valid",
+        commit_msg=commit_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=intended_digest,
+    )
+
+
+# 59. Blocker A: DB staged_sha verification and cross-adoption isolation
+def test_59_window_b1_staged_sha_verification_and_isolation(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+    state_mgr: StateManager = env_setup["state_mgr"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_staged_iso",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    review_id = "rev_staged_iso"
+    state_mgr.start_review(review_id, contract.code_sha, contract.evidence_generation_id)
+
+    # 1. DB staged_sha pointing to non-existent / invalid remote commit -> must NOT adopt
+    state_mgr.set_review_staged_commit(review_id, "corrupt_staged_sha_12345")
+    # commits_log doesn't contain corrupt_staged_sha_12345
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E OK\nOptiX Cycles verified"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+
+    res = engine.handle_ready_contract(contract)
+    assert res["status"] == "COMPLETED"
+    # Corrupt staged sha was rejected and a fresh valid instruction commit was created
+    assert res["new_instruction_sha"] != "corrupt_staged_sha_12345"
+    assert len(gh.committed_instructions) == 1
+
+    # 2. Cross-adoption isolation: Same CODE SHA, but candidate has different evidence ID or review ID -> reject
+    other_evidence_id = "gen_different_002"
+    commit_msg = (
+        f"supervisor: accept {contract.code_sha[:7]}\n\n"
+        f"Reviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: {other_evidence_id}\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: rev_other"
+    )
+    assert not engine._verify_instruction_candidate(
+        candidate_sha="cand_cross",
+        commit_msg=commit_msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id=review_id,
+        intended_digest=None,
+    )
+
+
+# 60. Blocker B: Real Blender mandatory acceptance evidence vs Product Truth fallback rejection
+def test_60_real_blender_mandatory_acceptance_evidence(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_real_b",
+            real_blender=True,
+            used_mock=False,
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+    # Product truth acceptance exists, but REAL_E2E_ACCEPTANCE.md is missing (404)
+    gh.files["docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md"] = "# Product Truth Pack OK"
+    gh.files.pop("docs/REAL_E2E_ACCEPTANCE.md", None)
+
+    # 1. REAL_E2E 404, Product Truth exists -> provider NOT called, fails closed to CHANGES_REQUIRED
+    res = engine.handle_ready_contract(contract)
+    assert res["status"] == "COMPLETED"
+    assert res["decision"] == "CHANGES_REQUIRED"
+
+    rec = env_setup["state_mgr"].get_review_by_contract(contract.code_sha, contract.evidence_generation_id)
+    assert rec is not None
+    assert rec["decision"] == "CHANGES_REQUIRED"
+    out_obj = json.loads(rec["output_json"])
+    assert any("Real Blender mandatory acceptance report" in b for b in out_obj["blockers"])
+
+    # 2. REAL_E2E is empty -> CHANGES_REQUIRED
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "   \n"
+    res2 = engine.handle_ready_contract(
+        ReadyForReGateContract.parse_from_text(
+            valid_contract_text(
+                code_sha="c0de111",
+                docs_sha="d0c5111",
+                instruction_sha="instr_000",
+                evidence_id="gen_real_empty",
+                real_blender=True,
+                used_mock=False,
+                code_ci_run_id="run_ok",
+                docs_ci_run_id="run_docs_ok",
+            )
+        )
+    )
+    assert res2["decision"] == "CHANGES_REQUIRED"
+    rec2 = env_setup["state_mgr"].get_review_by_contract("c0de111", "gen_real_empty")
+    assert any("Real Blender mandatory acceptance report" in b for b in json.loads(rec2["output_json"])["blockers"])
+
+    # 3. REAL_E2E exact pinned OK -> can proceed to review
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E Acceptance\nOptiX Cycles execution verified."
+    res3 = engine.handle_ready_contract(
+        ReadyForReGateContract.parse_from_text(
+            valid_contract_text(
+                code_sha="c0de111",
+                docs_sha="d0c5111",
+                instruction_sha="instr_000",
+                evidence_id="gen_real_ok",
+                real_blender=True,
+                used_mock=False,
+                code_ci_run_id="run_ok",
+                docs_ci_run_id="run_docs_ok",
+            )
+        )
+    )
+    assert res3["decision"] == "ACCEPT_WITH_SCOPE"
+
+
+# 61. Blocker C: Authoritative changed-files manifest comparison (omission, phantom, status spoof, rename)
+def test_61_authoritative_changed_files_manifest_validation(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_manifest_c",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E OK\nOptiX Cycles verified"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+
+    # Base diff text: modified services/supervisor/engine.py
+    gh.diff_text = "diff --git a/services/supervisor/engine.py b/services/supervisor/engine.py\n--- a/services/supervisor/engine.py\n+++ b/services/supervisor/engine.py\n@@ -1 +1 @@\n+line\n"
+
+    # 1. Authoritative compare has file that manifest omitted -> no ACCEPT
+    gh.mock_changed_files = [
+        ChangedFileItem(status="M", path="services/supervisor/engine.py"),
+        ChangedFileItem(status="A", path="services/supervisor/audit.py"),
+    ]
+    res_omitted = engine.handle_ready_contract(contract)
+    assert res_omitted["decision"] == "CHANGES_REQUIRED"
+    rec_omitted = env_setup["state_mgr"].get_review_by_contract(contract.code_sha, contract.evidence_generation_id)
+    assert any("omitted from manifest" in b for b in json.loads(rec_omitted["output_json"])["blockers"])
+
+    # 2. Manifest has phantom file not present in authoritative changes -> no ACCEPT
+    contract_phantom = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_manifest_phantom",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.mock_changed_files = []  # Authoritative has none, but diff has engine.py
+    res_phantom = engine.handle_ready_contract(contract_phantom)
+    assert res_phantom["decision"] == "CHANGES_REQUIRED"
+    rec_phantom = env_setup["state_mgr"].get_review_by_contract(contract_phantom.code_sha, contract_phantom.evidence_generation_id)
+    assert any("phantom files" in b for b in json.loads(rec_phantom["output_json"])["blockers"])
+
+    # 3. Status spoofing: manifest says M, authoritative says D -> no ACCEPT
+    contract_status = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_manifest_status",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.mock_changed_files = [
+        ChangedFileItem(status="D", path="services/supervisor/engine.py"),
+    ]
+    res_status = engine.handle_ready_contract(contract_status)
+    assert res_status["decision"] == "CHANGES_REQUIRED"
+    rec_status = env_setup["state_mgr"].get_review_by_contract(contract_status.code_sha, contract_status.evidence_generation_id)
+    assert any("status spoof" in b for b in json.loads(rec_status["output_json"])["blockers"])
+
+    # 4. Rename path spoof: old_path mismatch -> no ACCEPT
+    contract_rename = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_manifest_rename",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.diff_text = "diff --git a/old.py b/new.py\nrename from old.py\nrename to new.py\n"
+    gh.mock_changed_files = [
+        ChangedFileItem(status="R", path="new.py", old_path="actual_old.py"),
+    ]
+    res_rename = engine.handle_ready_contract(contract_rename)
+    assert res_rename["decision"] == "CHANGES_REQUIRED"
+    rec_rename = env_setup["state_mgr"].get_review_by_contract(contract_rename.code_sha, contract_rename.evidence_generation_id)
+    assert any("Rename path mismatch" in b for b in json.loads(rec_rename["output_json"])["blockers"])
+
+    # Clean up mock_changed_files
+    delattr(gh, "mock_changed_files")
+
+
+# 62. Blocker C: Distinct CODE and DOCS diff ranges and contamination prevention
+def test_62_distinct_diff_ranges_and_contamination_prevention(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_diff_ranges",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E OK\nOptiX Cycles verified"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+
+    # Simulate: CODE diff has code file + contaminated docs file from docs commit
+    def get_diff_mock(base_sha, head_sha="main"):
+        if head_sha == contract.code_sha:
+            return "diff --git a/code.py b/code.py\n+code\ndiff --git a/docs/EXTRA.md b/docs/EXTRA.md\n+doc\n"
+        return "diff --git a/docs/EXTRA.md b/docs/EXTRA.md\n+doc\n"
+    gh.get_diff_between = get_diff_mock
+
+    def get_changed_mock(base_sha, head_sha="main"):
+        if head_sha == contract.code_sha:
+            return [ChangedFileItem(status="M", path="code.py")]
+        elif base_sha == contract.code_sha and head_sha == contract.docs_sha:
+            return [ChangedFileItem(status="A", path="docs/EXTRA.md")]
+        return [ChangedFileItem(status="M", path="code.py"), ChangedFileItem(status="A", path="docs/EXTRA.md")]
+    gh.get_changed_files_between = get_changed_mock
+
+    # When CODE diff range is contaminated with DOCS-only files -> fails closed
+    res = engine.handle_ready_contract(contract)
+    assert res["decision"] == "CHANGES_REQUIRED"
+    rec = env_setup["state_mgr"].get_review_by_contract(contract.code_sha, contract.evidence_generation_id)
+    assert any("CODE diff range contaminated with DOCS-only commit files" in b for b in json.loads(rec["output_json"])["blockers"])
+
+
+# 63. Blocker D: Strict DOCS_CI_RUN_ID validation at contract parse boundary
+def test_63_strict_docs_ci_run_id_parser_boundary():
+    valid_40_code = "1111111111222222222233333333334444444444"
+    valid_40_docs = "5555555555666666666677777777778888888888"
+    valid_40_instr = "9999999999000000000011111111112222222222"
+
+    text = valid_contract_text(
+        code_sha=valid_40_code,
+        docs_sha=valid_40_docs,
+        instruction_sha=valid_40_instr,
+        code_ci_run_id="34775155653",
+    )
+    # text has no DOCS_CI_RUN_ID
+
+    # 1. In strict mode, missing DOCS_CI_RUN_ID returns None
+    assert ReadyForReGateContract.parse_from_text(text, strict=True) is None
+
+    # 2. Legacy CI_RUN_ID cannot substitute for DOCS_CI_RUN_ID in strict mode
+    legacy_text = text + "CI_RUN_ID=34775155653\n"
+    assert ReadyForReGateContract.parse_from_text(legacy_text, strict=True) is None
+
+    # 3. Non-numeric or invalid DOCS_CI_RUN_ID -> returns None in strict mode
+    bad_docs_ci = text + "DOCS_CI_RUN_ID=invalid_alpha\n"
+    assert ReadyForReGateContract.parse_from_text(bad_docs_ci, strict=True) is None
+
+    zero_docs_ci = text + "DOCS_CI_RUN_ID=0\n"
+    assert ReadyForReGateContract.parse_from_text(zero_docs_ci, strict=True) is None
+
+    # 4. Valid positive numeric DOCS_CI_RUN_ID -> parses successfully
+    good_text = text + "DOCS_CI_RUN_ID=34776279326\n"
+    c_good = ReadyForReGateContract.parse_from_text(good_text, strict=True)
+    assert c_good is not None
+    assert c_good.docs_ci_run_id == "34776279326"
+
+
+# 64. Blocker D: Provider request ID and review audit trail capture
+def test_64_provider_request_id_and_review_audit_trail():
+    # 1. OpenAI response with id
+    def openai_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": ["OK"],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": [], "MOCK": ["All"], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={
+            "id": "chatcmpl-test-openai-998877",
+            "choices": [{"message": {"content": content}}],
+        })
+
+    cfg_openai = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-openai", ai_model="gpt-4o")
+    adapter_openai = create_supervisor_adapter(cfg_openai, transport=httpx.MockTransport(openai_handler))
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    )
+    context = ReviewContext(
+        contract=contract,
+        review_id="rev_audit_test_001",
+        diffs="diff",
+        instruction_text="instr",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        event_driven_acceptance_text="# Acceptance",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+
+    out_openai = adapter_openai.review_repository(context)
+    assert out_openai.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert out_openai.audit_trail["provider_request_id"] == "chatcmpl-test-openai-998877"
+    assert out_openai.audit_trail["review_id"] == "rev_audit_test_001"
+    assert out_openai.audit_trail["reviewed_code_sha"] == contract.code_sha
+    assert out_openai.audit_trail["reviewed_docs_sha"] == contract.docs_sha
+    assert out_openai.audit_trail["reviewed_instruction_sha"] == contract.instruction_sha
+    assert out_openai.audit_trail["reviewed_evidence_generation_id"] == contract.evidence_generation_id
+
+    # 2. Anthropic response with id
+    def anthropic_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": ["OK"],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": [], "MOCK": ["All"], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={
+            "id": "msg_anthropic_test_554433",
+            "content": [{"type": "text", "text": content}],
+        })
+
+    cfg_anthropic = SupervisorConfig(ai_provider="anthropic", ai_api_key="sk-test-anthropic", ai_model="claude-3-5-sonnet-20241022")
+    adapter_anthropic = create_supervisor_adapter(cfg_anthropic, transport=httpx.MockTransport(anthropic_handler))
+    out_anthropic = adapter_anthropic.review_repository(context)
+    assert out_anthropic.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert out_anthropic.audit_trail["provider_request_id"] == "msg_anthropic_test_554433"
+
+    # 3. Provider response without id -> audit explicitly null/unavailable
+    def no_id_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": ["OK"],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": [], "MOCK": ["All"], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": content}}],
+        })
+
+    adapter_no_id = create_supervisor_adapter(cfg_openai, transport=httpx.MockTransport(no_id_handler))
+    out_no_id = adapter_no_id.review_repository(context)
+    assert out_no_id.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert out_no_id.audit_trail["provider_request_id"] is None
 
 
 
