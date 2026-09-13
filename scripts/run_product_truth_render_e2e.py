@@ -190,6 +190,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "fullAutonomousFactoryReady": False,
         "usedMock": mock,
         "renderPackId": result.get("renderPackId"),
+        "frozenEngineering": frozen_authority.get("engineering"),
         "pack": pack,
         "generative": gen,
         "qa": result.get("qa"),

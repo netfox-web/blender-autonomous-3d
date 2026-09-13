@@ -94,7 +94,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     # 1. Independent QA validation against canonical ground truth
     eng = hooks.get("engineering") or result.get("frozenEngineering") or {}
     upstream_pack = hooks.get("product_truth_pack") or result.get("productTruthPack") or {}
-    independent_qa = qa_commerce_pack(pack, eng, upstream_pack, plat)
+    pt_authority = hooks.get("product_truth_authority") or result.get("productTruthAuthority")
+    independent_qa = qa_commerce_pack(pack, eng, upstream_pack, plat, product_truth_authority=pt_authority)
     for f in independent_qa.get("failures") or []:
         if f not in missing:
             missing.append(f)
@@ -128,6 +129,9 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         {"check": "physicalPrintValidated", "status": "BLOCKED", "evidence": False},
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "contentPackId", "status": "REAL_LOGIC", "evidence": pack.get("contentPackId")},
+        {"check": "sourceRenderPackId", "status": "REAL_LOGIC", "evidence": pack.get("sourceRenderPackId")},
+        {"check": "sourceAcceptanceGenerationId", "status": "REAL_LOGIC", "evidence": pack.get("sourceAcceptanceGenerationId")},
+        {"check": "dimensionLabelAuthority", "status": "REAL_LOGIC", "evidence": (views.get("DIMENSION_FRONT") or {}).get("dimensionMetadata", {}).get("dimensionLabelLayerHash")},
         {"check": "usedMock", "status": "MOCK" if mock else "REAL", "evidence": mock},
     ]
 
@@ -149,6 +153,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "usedMock": mock,
         "contentPackId": pack.get("contentPackId"),
         "sourceRenderPackId": pack.get("sourceRenderPackId"),
+        "sourceAcceptanceGenerationId": pack.get("sourceAcceptanceGenerationId"),
         "contentPack": pack,
         "qa": pack.get("qa"),
         "rows": rows,

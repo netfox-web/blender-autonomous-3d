@@ -81,6 +81,29 @@ def compute_camera_recipe_hash(
     return _stable_hash(payload)
 
 
+def compute_scene_recipe_hash(
+    *,
+    scene_id: str = "WHITE_CYC",
+    lighting: str = "THREE_POINT",
+    samples: int = 32,
+    engine: str = "CYCLES",
+) -> str:
+    payload = {
+        "sceneId": str(scene_id),
+        "backgroundPreset": "WHITE_CYC",
+        "environmentPreset": "STUDIO",
+        "lightingPreset": str(lighting),
+        "studioRigId": "KEY_FILL_RIM_V1",
+        "floorPolicy": "SHADOW_CATCHER",
+        "shadowCatcher": True,
+        "renderEngine": str(engine),
+        "samples": int(samples),
+        "colorManagement": "Filmic",
+        "recipeVersion": 1,
+    }
+    return _stable_hash(payload)
+
+
 def _load_job(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -749,7 +772,12 @@ def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0,
         height = float(engineering.get("height") or 1800) / 1000.0
         depth = float(engineering.get("depth") or 400) / 1000.0
         _add_plane("Ground", 4.0, (0, 0, 0))
-        _add_camera((origin[0] + width * 1.6, origin[1] - depth * 3.2, origin[2] + height * 0.7), (origin[0], origin[1], origin[2] + height * 0.45), 50)
+        max_dim = max(width, height, depth)
+        cam_dist = max(max_dim * 2.3, 1.8)
+        cam_x = origin[0] + width * 1.5
+        cam_y = origin[1] - cam_dist
+        cam_z = origin[2] + height * 0.7
+        _add_camera((cam_x, cam_y, cam_z), (origin[0], origin[1], origin[2] + height * 0.45), 50)
         _three_point(height)
     return created
 
@@ -828,6 +856,9 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         elif role == "h_partition":
             size = [width - 2 * thick, depth - 0.02, thick]
             loc = [0, 0, height * 0.5]
+        elif role == "stile":
+            size = [width_p, thick, length]
+            loc = [0, -depth / 2 + thick / 2, height / 2]
         else:
             size = [max(length, 0.01), max(width_p, 0.01), max(thick, 0.004)]
         if explode and role not in {"door"}:
@@ -836,9 +867,10 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         obj = _add_box(name_prefix + name, size, loc, material)
         created[name_prefix + name] = obj
         if role == "door":
-            handle = _add_box(name_prefix + name + ".HANDLE", (0.012, 0.02, 0.12), (loc[0], loc[1] - 0.02, loc[2]), "metal")
+            handle_x = loc[0] + (door_w * 0.35) if counts["door"] % 2 == 1 else loc[0] - (door_w * 0.35)
+            handle = _add_box(name_prefix + name + ".HANDLE", (0.012, 0.02, 0.12), (handle_x, loc[1] - 0.02, loc[2]), "metal")
             created[name_prefix + name + ".HANDLE"] = handle
-            hinge = _add_box(name_prefix + name + ".HINGE", (0.02, 0.02, 0.04), (loc[0] - size[0] / 2, loc[1], loc[2]), "metal")
+            hinge = _add_box(name_prefix + name + ".HINGE", (0.02, 0.02, 0.04), (loc[0] - size[0] / 2 + 0.01, loc[1] + thick / 2 + 0.01, loc[2]), "metal")
             created[name_prefix + name + ".HINGE"] = hinge
     return created
 
@@ -907,9 +939,15 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
     view.use_pass_normal = True
     view.use_pass_object_index = True
     view.use_pass_material_index = True
+    saved_hide = {}
     for i, obj in enumerate(bpy.data.objects):
         if obj.type == "MESH":
-            obj.pass_index = i + 1
+            if obj.name in {"Ground", "Plane", "Floor"}:
+                saved_hide[obj.name] = obj.hide_render
+                obj.hide_render = True
+                obj.pass_index = 0
+            else:
+                obj.pass_index = i + 1
     scene.cycles.samples = 1
     scene.render.resolution_x = width
     scene.render.resolution_y = height
@@ -1065,6 +1103,9 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
         tree.links.new(rl.outputs["Image"], out_node.inputs[0])
     except Exception:
         pass
+    for name, hidden in saved_hide.items():
+        if name in bpy.data.objects:
+            bpy.data.objects[name].hide_render = hidden
     scene.render.film_transparent = saved_film
     return found
 
@@ -1545,8 +1586,9 @@ def build_and_render(job: dict) -> dict:
         lens = float(view.get("focalLengthMm") or 85.0)
         sensor_w = float(view.get("sensorWidthMm") or 36.0)
         safe_m = float(view.get("safeMargin") or 0.08)
+        cam_id = str(view.get("cameraId") or view_id)
         actual_cam_hash = compute_camera_recipe_hash(
-            camera_id=view_id,
+            camera_id=cam_id,
             location=loc,
             look_at=look_at,
             focal_length_mm=lens,
@@ -1554,6 +1596,15 @@ def build_and_render(job: dict) -> dict:
             width=width,
             height=height,
             safe_margin=safe_m,
+        )
+        scene_id = str(view.get("sceneId") or view.get("studioPreset") or "WHITE_CYC")
+        lighting = str(view.get("lightingPreset") or "THREE_POINT")
+        v_samples = int(view.get("samples") or samples)
+        actual_scene_hash = compute_scene_recipe_hash(
+            scene_id=scene_id,
+            lighting=lighting,
+            samples=v_samples,
+            engine="CYCLES",
         )
         prod_state = str(view.get("productState") or "CLOSED").upper()
         angle = float(view.get("articulationAngleDeg") or (75.0 if prod_state == "OPEN" else 0.0))
@@ -1581,8 +1632,11 @@ def build_and_render(job: dict) -> dict:
             r_bytes = r_path.read_bytes() if r_path.exists() else b""
             worker_views[view_id] = {
                 "viewId": view_id,
+                "role": view_id,
                 "filename": name,
+                "cameraId": cam_id,
                 "cameraRecipeHash": actual_cam_hash,
+                "sceneRecipeHash": actual_scene_hash,
                 "location": loc,
                 "lookAt": look_at,
                 "target": look_at,
@@ -1595,10 +1649,13 @@ def build_and_render(job: dict) -> dict:
                 "sha256": hashlib.sha256(r_bytes).hexdigest() if r_bytes else None,
                 "size": len(r_bytes),
                 "blenderJobId": job.get("jobId"),
+                "blenderVersion": _blender_version(),
+                "device": used_device,
                 "usedMock": False,
                 "realBlender": True,
                 "realOptix": used_device == "OPTIX",
                 "productState": prod_state,
+                "articulationAngleDeg": angle,
                 "articulatedState": {
                     "productState": prod_state,
                     "articulationAngleDeg": angle,
