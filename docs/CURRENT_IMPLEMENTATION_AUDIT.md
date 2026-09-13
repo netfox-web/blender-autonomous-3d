@@ -1,10 +1,22 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 841–900 CODE_EVIDENCE_SHA `cb045af`; prior `e63fe7a` / `475997e` / `4a88680` / instruction `8ce5813`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `8ce5813`. Historical Phase 1–840 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Phase 901–960 CODE_EVIDENCE_SHA `2fcac7e`; prior `cb045af` / `8ce5813` / instruction `0fcf31b`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `0fcf31b`. Historical Phase 1–900 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+
+## Phase 901–960 Product Content Factory V1 / Deterministic Commerce Asset Pack
+
+| Item | Status | Evidence |
+|---|---|---|
+| ProductContentPack model & lineage | REAL_LOGIC | Derived from CabinetSpec, ProductTruthRenderPack, ArtworkPlacement; SOT integrity; fail closed on cross-tenant/SKU/version/engineeringHash/lineage |
+| 6 Deterministic Commerce Views | REAL | WHITE_BACKGROUND_HERO, HERO_45, FRONT_CLOSED, FRONT_OPEN, DETAIL_ARTWORK, DIMENSION_FRONT; Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false` |
+| Door Articulation Transforms | REAL_LOGIC / REAL | Physical 3D door hinges rotated to 75.0° around pivot in Blender scene when OPEN, restored to neutral; explicit `articulatedState` transforms recorded in worker view evidence |
+| Dimension Asset Authority | REAL_LOGIC | Front dimension image overlay labels derived exclusively from `CabinetSpec` mm; independent QA gate validates pixel overlay metadata against engineering mm; no CV inference; tampering fails closed |
+| Structured Lifestyle Briefs | REAL_LOGIC / DERIVATIVE | CHILD_ROOM, STUDENT_RENTAL, ENTRYWAY, SMALL_APARTMENT; bound to Product Truth identity and masks; provider contract `generative_gateway.py`; live H3/LTX **BLOCKED**; `liveH3MaxProviderReady=false`, `liveLtx25ProviderReady=false`; generative output prohibited from claiming Product Truth |
+| Commerce QA Gate & Adversarial Matrix | REAL_LOGIC | Full 18-case official-runner adversarial matrix tested in `tests/test_content_factory.py`; verifies identity, recipe hashes, DAM file bytes/SHA/size/job lineage, articulated transforms, and dimension authority |
+| 959–960 acceptance | REAL_LOGIC + REAL stills | `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.md`; generation `14eac4b8-0217-40e8-968d-fc7ca7a6de4e`; CODE `2fcac7e`; `usedMock=false`; `productContentFactoryLogicReady=true`; `realCommerceRenderPackReady=true`; `liveGenerativeCommerceReady=false`; `commercialAssetProductionReady=false` |
 
 ## Phase 781–840 Artwork Placement / Surface Decoration Engine V1
 

@@ -1,0 +1,913 @@
+{
+  "ok": true,
+  "label": "REAL_LOGIC",
+  "acceptanceGenerationId": "14eac4b8-0217-40e8-968d-fc7ca7a6de4e",
+  "evidenceCodeCommit": "2fcac7eacf79e868f0392d41e8d9f8dd70979ffd",
+  "workingTreeClean": true,
+  "generatedAt": "2026-09-13T03:09:15.848606+00:00",
+  "productContentFactoryLogicReady": true,
+  "realCommerceRenderPackReady": true,
+  "liveGenerativeCommerceReady": false,
+  "commercialAssetProductionReady": false,
+  "physicalPrintValidated": false,
+  "liveFactoryExecutionReady": false,
+  "globalProductionReady": false,
+  "fullAutonomousFactoryReady": false,
+  "usedMock": false,
+  "contentPackId": "ccp_8b8e8801-4e59-4e22-be9d-b6b15f568f1a",
+  "sourceRenderPackId": "1d7ba9ba-923b-4057-8164-4947a8b33e7a",
+  "contentPack": {
+    "contentPackId": "ccp_8b8e8801-4e59-4e22-be9d-b6b15f568f1a",
+    "tenantId": "pt-a",
+    "skuId": "44e6b222-0801-479c-8df2-eb9c8a3a85a7",
+    "productVersion": 1,
+    "engineeringHash": "777f61d2b52eb120ad60bcc8709746c5ba6281e3038535e680990102626f76d3",
+    "artworkId": "1b96aa72-3add-44ba-8c7a-deca7177fd58",
+    "placementId": "9319c600-e6db-422f-ae92-d03657978c3c",
+    "placementHash": "4d002935ad18fe2833aab2ab35d0514c0b00de6c01e1c9a06397264e0fe3c0e7",
+    "finalUvHash": "d6c8f96b810e8a7f4b872364f8b4836fe9ec620be5a5b02056e06cd3eb6556db",
+    "sourceRenderPackId": "1d7ba9ba-923b-4057-8164-4947a8b33e7a",
+    "productMaskRef": {
+      "damRef": "f6ebd6dd-714b-4728-9620-75743406c8ac",
+      "sha256": "369f3d98858349402dd63de09fda5b03deff18c539072a340b2b74bf5739aed8"
+    },
+    "artworkMaskRef": {
+      "damRef": "92ec2419-4e84-4821-bfe2-d1f119aff026",
+      "sha256": "58574045929c2444ebac9ec81543115852b06eee86c05ed9c3e9dd4303d035d2"
+    },
+    "width": 128,
+    "height": 128,
+    "samples": 32,
+    "views": {
+      "WHITE_BACKGROUND_HERO": {
+        "viewRole": "WHITE_BACKGROUND_HERO",
+        "commerceRole": "COMMERCE_HERO",
+        "damRef": "2a3fcca1-10f1-49f9-8eee-4b0d1051dd7f",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\14eac4b8-0217-40e8-968d-fc7ca7a6de4e\\live\\work\\240f1c85-41c8-49ca-a6b7-40e3e2696189\\white_background_hero.png",
+        "blenderJobId": "240f1c85-41c8-49ca-a6b7-40e3e2696189",
+        "recipe": {
+          "viewRole": "WHITE_BACKGROUND_HERO",
+          "cameraId": "WHITE_BG_HERO",
+          "cameraRecipeHash": "3c95d2afedf4b9ce2ddb84b842168ea29f7d2ec10e24374e58bd78bf816aea48",
+          "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf",
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "studioPreset": "WHITE_CYC",
+          "lightingPreset": "THREE_POINT",
+          "width": 128,
+          "height": 128,
+          "aspectRatio": "128:128",
+          "safeMargin": 0.08,
+          "artworkVisible": false,
+          "camera": {
+            "cameraId": "WHITE_BG_HERO",
+            "target": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "lookAt": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "location": [
+              1.6,
+              -2.4,
+              1.2
+            ],
+            "rotation": null,
+            "focalLengthMm": 85.0,
+            "sensorWidthMm": 36.0,
+            "resolution": {
+              "width": 128,
+              "height": 128
+            },
+            "aspectRatio": "128:128",
+            "framing": "SAFE_MARGIN_0.08",
+            "safeMargin": 0.08,
+            "recipeVersion": 1,
+            "cameraRecipeHash": "3c95d2afedf4b9ce2ddb84b842168ea29f7d2ec10e24374e58bd78bf816aea48"
+          },
+          "scene": {
+            "sceneId": "WHITE_CYC",
+            "backgroundPreset": "WHITE_CYC",
+            "environmentPreset": "STUDIO",
+            "lightingPreset": "THREE_POINT",
+            "studioRigId": "KEY_FILL_RIM_V1",
+            "floorPolicy": "SHADOW_CATCHER",
+            "shadowCatcher": true,
+            "renderEngine": "CYCLES",
+            "samples": 32,
+            "colorManagement": "Filmic",
+            "recipeVersion": 1,
+            "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf"
+          },
+          "recipeVersion": 1,
+          "contentViewRecipeHash": "13d2135f16b5cbdcbf166ad80fb60f443163c37fc82d59528c46a733be6c71b3"
+        },
+        "articulatedState": {
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "articulationAxis": "Z",
+          "articulatedComponents": [],
+          "transforms": [],
+          "doorCount": 4
+        },
+        "sha256": "559957149a4d28dd8b2e96cf7ccad7e728a2f209840398b1be114c84eba25c12",
+        "size": 19718,
+        "width": 128,
+        "height": 128,
+        "format": "PNG",
+        "truthLabel": "REAL",
+        "usedMock": false
+      },
+      "HERO_45": {
+        "viewRole": "HERO_45",
+        "commerceRole": "COMMERCE_HERO_45",
+        "damRef": "90b8a1e6-a0d0-44ed-80a7-2a41eb0656cf",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\14eac4b8-0217-40e8-968d-fc7ca7a6de4e\\live\\work\\240f1c85-41c8-49ca-a6b7-40e3e2696189\\hero_45.png",
+        "blenderJobId": "240f1c85-41c8-49ca-a6b7-40e3e2696189",
+        "recipe": {
+          "viewRole": "HERO_45",
+          "cameraId": "HERO_45",
+          "cameraRecipeHash": "2f37ca210b8f2b9d26bbd046f59f8fad50070a7bd3ed49ab3de031b2d6d53ddc",
+          "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf",
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "studioPreset": "WHITE_CYC",
+          "lightingPreset": "THREE_POINT",
+          "width": 128,
+          "height": 128,
+          "aspectRatio": "128:128",
+          "safeMargin": 0.08,
+          "artworkVisible": false,
+          "camera": {
+            "cameraId": "HERO_45",
+            "target": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "lookAt": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "location": [
+              2.2,
+              -2.2,
+              1.1
+            ],
+            "rotation": null,
+            "focalLengthMm": 85.0,
+            "sensorWidthMm": 36.0,
+            "resolution": {
+              "width": 128,
+              "height": 128
+            },
+            "aspectRatio": "128:128",
+            "framing": "SAFE_MARGIN_0.08",
+            "safeMargin": 0.08,
+            "recipeVersion": 1,
+            "cameraRecipeHash": "2f37ca210b8f2b9d26bbd046f59f8fad50070a7bd3ed49ab3de031b2d6d53ddc"
+          },
+          "scene": {
+            "sceneId": "WHITE_CYC",
+            "backgroundPreset": "WHITE_CYC",
+            "environmentPreset": "STUDIO",
+            "lightingPreset": "THREE_POINT",
+            "studioRigId": "KEY_FILL_RIM_V1",
+            "floorPolicy": "SHADOW_CATCHER",
+            "shadowCatcher": true,
+            "renderEngine": "CYCLES",
+            "samples": 32,
+            "colorManagement": "Filmic",
+            "recipeVersion": 1,
+            "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf"
+          },
+          "recipeVersion": 1,
+          "contentViewRecipeHash": "db4f01305c008c1425d89f9e79afd634031bf348f08a559f1e67a483fca48334"
+        },
+        "articulatedState": {
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "articulationAxis": "Z",
+          "articulatedComponents": [],
+          "transforms": [],
+          "doorCount": 4
+        },
+        "sha256": "2a07de31ffa64cefcf4a110b86cae29eb12ea125eec3ec0d8806fd948633d289",
+        "size": 20072,
+        "width": 128,
+        "height": 128,
+        "format": "PNG",
+        "truthLabel": "REAL",
+        "usedMock": false
+      },
+      "FRONT_CLOSED": {
+        "viewRole": "FRONT_CLOSED",
+        "commerceRole": "COMMERCE_FRONT_CLOSED",
+        "damRef": "30694b47-c464-4d73-9b0c-0f922fed8893",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\14eac4b8-0217-40e8-968d-fc7ca7a6de4e\\live\\work\\240f1c85-41c8-49ca-a6b7-40e3e2696189\\front_closed.png",
+        "blenderJobId": "240f1c85-41c8-49ca-a6b7-40e3e2696189",
+        "recipe": {
+          "viewRole": "FRONT_CLOSED",
+          "cameraId": "FRONT_CLOSED",
+          "cameraRecipeHash": "08da51203556308d09efa45858d6e71a935e01835fec463f2e304efa96864146",
+          "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf",
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "studioPreset": "WHITE_CYC",
+          "lightingPreset": "THREE_POINT",
+          "width": 128,
+          "height": 128,
+          "aspectRatio": "128:128",
+          "safeMargin": 0.08,
+          "artworkVisible": false,
+          "camera": {
+            "cameraId": "FRONT_CLOSED",
+            "target": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "lookAt": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "location": [
+              0.0,
+              -3.2,
+              0.9
+            ],
+            "rotation": null,
+            "focalLengthMm": 85.0,
+            "sensorWidthMm": 36.0,
+            "resolution": {
+              "width": 128,
+              "height": 128
+            },
+            "aspectRatio": "128:128",
+            "framing": "SAFE_MARGIN_0.08",
+            "safeMargin": 0.08,
+            "recipeVersion": 1,
+            "cameraRecipeHash": "08da51203556308d09efa45858d6e71a935e01835fec463f2e304efa96864146"
+          },
+          "scene": {
+            "sceneId": "WHITE_CYC",
+            "backgroundPreset": "WHITE_CYC",
+            "environmentPreset": "STUDIO",
+            "lightingPreset": "THREE_POINT",
+            "studioRigId": "KEY_FILL_RIM_V1",
+            "floorPolicy": "SHADOW_CATCHER",
+            "shadowCatcher": true,
+            "renderEngine": "CYCLES",
+            "samples": 32,
+            "colorManagement": "Filmic",
+            "recipeVersion": 1,
+            "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf"
+          },
+          "recipeVersion": 1,
+          "contentViewRecipeHash": "ba66807724f60f69ce61fa042149b6e589397709bcff94f85acc4cc040caef36"
+        },
+        "articulatedState": {
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "articulationAxis": "Z",
+          "articulatedComponents": [],
+          "transforms": [],
+          "doorCount": 4
+        },
+        "sha256": "d508da3d6ed72a46c4a287e046aa02a1377235a24d93005bb43e557262cf91ad",
+        "size": 19449,
+        "width": 128,
+        "height": 128,
+        "format": "PNG",
+        "truthLabel": "REAL",
+        "usedMock": false
+      },
+      "FRONT_OPEN": {
+        "viewRole": "FRONT_OPEN",
+        "commerceRole": "COMMERCE_FRONT_OPEN",
+        "damRef": "82ede32b-cb69-4ec6-814b-2dcc7cb5bd53",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\14eac4b8-0217-40e8-968d-fc7ca7a6de4e\\live\\work\\240f1c85-41c8-49ca-a6b7-40e3e2696189\\front_open.png",
+        "blenderJobId": "240f1c85-41c8-49ca-a6b7-40e3e2696189",
+        "recipe": {
+          "viewRole": "FRONT_OPEN",
+          "cameraId": "FRONT_OPEN",
+          "cameraRecipeHash": "4d3b1e9921d6c5fee1471ba47dcb378a63ba274d25bd422792aa1cb7a9a4757a",
+          "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf",
+          "productState": "OPEN",
+          "articulationAngleDeg": 75.0,
+          "studioPreset": "WHITE_CYC",
+          "lightingPreset": "THREE_POINT",
+          "width": 128,
+          "height": 128,
+          "aspectRatio": "128:128",
+          "safeMargin": 0.08,
+          "artworkVisible": true,
+          "camera": {
+            "cameraId": "FRONT_OPEN",
+            "target": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "lookAt": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "location": [
+              0.4,
+              -3.0,
+              0.95
+            ],
+            "rotation": null,
+            "focalLengthMm": 85.0,
+            "sensorWidthMm": 36.0,
+            "resolution": {
+              "width": 128,
+              "height": 128
+            },
+            "aspectRatio": "128:128",
+            "framing": "SAFE_MARGIN_0.08",
+            "safeMargin": 0.08,
+            "recipeVersion": 1,
+            "cameraRecipeHash": "4d3b1e9921d6c5fee1471ba47dcb378a63ba274d25bd422792aa1cb7a9a4757a"
+          },
+          "scene": {
+            "sceneId": "WHITE_CYC",
+            "backgroundPreset": "WHITE_CYC",
+            "environmentPreset": "STUDIO",
+            "lightingPreset": "THREE_POINT",
+            "studioRigId": "KEY_FILL_RIM_V1",
+            "floorPolicy": "SHADOW_CATCHER",
+            "shadowCatcher": true,
+            "renderEngine": "CYCLES",
+            "samples": 32,
+            "colorManagement": "Filmic",
+            "recipeVersion": 1,
+            "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf"
+          },
+          "recipeVersion": 1,
+          "contentViewRecipeHash": "bc26d1325e48f6e6d23a806f5772b093805e70a756934016b551fd2c528ad0d0"
+        },
+        "articulatedState": {
+          "productState": "OPEN",
+          "articulationAngleDeg": 75.0,
+          "articulationAxis": "Z",
+          "articulatedComponents": [
+            "DOOR_1",
+            "DOOR_2",
+            "DOOR_3",
+            "DOOR_4"
+          ],
+          "transforms": [
+            {
+              "componentId": "DOOR_1",
+              "role": "door",
+              "productState": "OPEN",
+              "articulationAngleDeg": 75.0,
+              "rotationEuler": [
+                0.0,
+                0.0,
+                -1.308997
+              ],
+              "hingePivot": [
+                -1.2,
+                -0.209,
+                0.9
+              ]
+            },
+            {
+              "componentId": "DOOR_2",
+              "role": "door",
+              "productState": "OPEN",
+              "articulationAngleDeg": 75.0,
+              "rotationEuler": [
+                0.0,
+                0.0,
+                -1.308997
+              ],
+              "hingePivot": [
+                -0.6,
+                -0.209,
+                0.9
+              ]
+            },
+            {
+              "componentId": "DOOR_3",
+              "role": "door",
+              "productState": "OPEN",
+              "articulationAngleDeg": 75.0,
+              "rotationEuler": [
+                0.0,
+                0.0,
+                -1.308997
+              ],
+              "hingePivot": [
+                0.0,
+                -0.209,
+                0.9
+              ]
+            },
+            {
+              "componentId": "DOOR_4",
+              "role": "door",
+              "productState": "OPEN",
+              "articulationAngleDeg": 75.0,
+              "rotationEuler": [
+                0.0,
+                0.0,
+                -1.308997
+              ],
+              "hingePivot": [
+                0.6,
+                -0.209,
+                0.9
+              ]
+            }
+          ],
+          "doorCount": 4
+        },
+        "sha256": "8eb0e6bce1b800bbd9074641c08186d8bc4a3e22eb2674ae77eff005084e1bb4",
+        "size": 20243,
+        "width": 128,
+        "height": 128,
+        "format": "PNG",
+        "truthLabel": "REAL",
+        "usedMock": false
+      },
+      "DETAIL_ARTWORK": {
+        "viewRole": "DETAIL_ARTWORK",
+        "commerceRole": "COMMERCE_DETAIL_ARTWORK",
+        "damRef": "fe09f2b5-699a-45bc-b863-a81261340555",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\14eac4b8-0217-40e8-968d-fc7ca7a6de4e\\live\\work\\240f1c85-41c8-49ca-a6b7-40e3e2696189\\detail_artwork.png",
+        "blenderJobId": "240f1c85-41c8-49ca-a6b7-40e3e2696189",
+        "recipe": {
+          "viewRole": "DETAIL_ARTWORK",
+          "cameraId": "DETAIL_ARTWORK",
+          "cameraRecipeHash": "95c3ad87c9b49e01bc0076780a016cdca9af11385e05f2a1b1cccbc9b606427c",
+          "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf",
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "studioPreset": "WHITE_CYC",
+          "lightingPreset": "THREE_POINT",
+          "width": 128,
+          "height": 128,
+          "aspectRatio": "128:128",
+          "safeMargin": 0.06,
+          "artworkVisible": true,
+          "camera": {
+            "cameraId": "DETAIL_ARTWORK",
+            "target": [
+              0.3,
+              0.0,
+              0.9
+            ],
+            "lookAt": [
+              0.3,
+              0.0,
+              0.9
+            ],
+            "location": [
+              0.35,
+              -1.5,
+              0.95
+            ],
+            "rotation": null,
+            "focalLengthMm": 85.0,
+            "sensorWidthMm": 36.0,
+            "resolution": {
+              "width": 128,
+              "height": 128
+            },
+            "aspectRatio": "128:128",
+            "framing": "SAFE_MARGIN_0.06",
+            "safeMargin": 0.06,
+            "recipeVersion": 1,
+            "cameraRecipeHash": "95c3ad87c9b49e01bc0076780a016cdca9af11385e05f2a1b1cccbc9b606427c"
+          },
+          "scene": {
+            "sceneId": "WHITE_CYC",
+            "backgroundPreset": "WHITE_CYC",
+            "environmentPreset": "STUDIO",
+            "lightingPreset": "THREE_POINT",
+            "studioRigId": "KEY_FILL_RIM_V1",
+            "floorPolicy": "SHADOW_CATCHER",
+            "shadowCatcher": true,
+            "renderEngine": "CYCLES",
+            "samples": 32,
+            "colorManagement": "Filmic",
+            "recipeVersion": 1,
+            "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf"
+          },
+          "recipeVersion": 1,
+          "contentViewRecipeHash": "2b7e59c114d8a8b87d753c7a66e96c3facb2e207450a5a20a2ea1682a09da3b9"
+        },
+        "articulatedState": {
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "articulationAxis": "Z",
+          "articulatedComponents": [],
+          "transforms": [],
+          "doorCount": 4
+        },
+        "sha256": "7fa0eda7ffc403685628a98fab9f620d4fbd930f2d372413be06de1c750d2ae9",
+        "size": 19409,
+        "width": 128,
+        "height": 128,
+        "format": "PNG",
+        "truthLabel": "REAL",
+        "usedMock": false
+      },
+      "DIMENSION_FRONT": {
+        "viewRole": "DIMENSION_FRONT",
+        "commerceRole": "COMMERCE_DIMENSION",
+        "damRef": "ee19d36e-ef34-4f01-b827-f5ba1681a397",
+        "path": "E:\\projects\\\u958b\u767c Blender Autonomous 3D\\.fox3d-data\\acceptance\\14eac4b8-0217-40e8-968d-fc7ca7a6de4e\\live\\work\\ccp_8b8e8801-4e59-4e22-be9d-b6b15f568f1a\\dimension_front.png",
+        "blenderJobId": "240f1c85-41c8-49ca-a6b7-40e3e2696189",
+        "recipe": {
+          "viewRole": "DIMENSION_FRONT",
+          "cameraId": "DIMENSION_FRONT",
+          "cameraRecipeHash": "f2f50ddfa5b0ee6cbf5fc36e17bc24c80d749aadd4d4cba0e2ecf110081794c8",
+          "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf",
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "studioPreset": "WHITE_CYC",
+          "lightingPreset": "THREE_POINT",
+          "width": 128,
+          "height": 128,
+          "aspectRatio": "128:128",
+          "safeMargin": 0.08,
+          "artworkVisible": false,
+          "camera": {
+            "cameraId": "DIMENSION_FRONT",
+            "target": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "lookAt": [
+              0.0,
+              0.0,
+              0.9
+            ],
+            "location": [
+              0.0,
+              -3.2,
+              0.9
+            ],
+            "rotation": null,
+            "focalLengthMm": 85.0,
+            "sensorWidthMm": 36.0,
+            "resolution": {
+              "width": 128,
+              "height": 128
+            },
+            "aspectRatio": "128:128",
+            "framing": "SAFE_MARGIN_0.08",
+            "safeMargin": 0.08,
+            "recipeVersion": 1,
+            "cameraRecipeHash": "f2f50ddfa5b0ee6cbf5fc36e17bc24c80d749aadd4d4cba0e2ecf110081794c8"
+          },
+          "scene": {
+            "sceneId": "WHITE_CYC",
+            "backgroundPreset": "WHITE_CYC",
+            "environmentPreset": "STUDIO",
+            "lightingPreset": "THREE_POINT",
+            "studioRigId": "KEY_FILL_RIM_V1",
+            "floorPolicy": "SHADOW_CATCHER",
+            "shadowCatcher": true,
+            "renderEngine": "CYCLES",
+            "samples": 32,
+            "colorManagement": "Filmic",
+            "recipeVersion": 1,
+            "sceneRecipeHash": "b60f66a3927f28afb6faca73404c7892db02ee5c25aae687feb65b190a048adf"
+          },
+          "recipeVersion": 1,
+          "contentViewRecipeHash": "9256015f8e0b9a2aaf3274150605c2c2a34c6c4ada065f20186c960e32da76c5"
+        },
+        "articulatedState": {
+          "productState": "CLOSED",
+          "articulationAngleDeg": 0.0,
+          "articulationAxis": "Z",
+          "articulatedComponents": [],
+          "transforms": [],
+          "doorCount": 4
+        },
+        "dimensionMetadata": {
+          "viewRole": "DIMENSION_FRONT",
+          "commerceRole": "COMMERCE_DIMENSION",
+          "widthMm": 2400.0,
+          "heightMm": 1800.0,
+          "depthMm": 400.0,
+          "unit": "mm",
+          "sourceEngineeringHash": "777f61d2b52eb120ad60bcc8709746c5ba6281e3038535e680990102626f76d3",
+          "renderedLabels": {
+            "width": "2400 mm",
+            "height": "1800 mm",
+            "depth": "400 mm"
+          },
+          "engineeringSpec": {
+            "width": 2400.0,
+            "height": 1800.0,
+            "depth": 400.0,
+            "doorCount": 4
+          }
+        },
+        "sha256": "d19cca7797131b90a64df91c0381b1c31b9dba6a56c04abfe4be9d0f8b68c7a3",
+        "size": 15808,
+        "width": 128,
+        "height": 128,
+        "format": "PNG",
+        "truthLabel": "REAL_LOGIC",
+        "usedMock": false
+      }
+    },
+    "lifestyleBriefs": {
+      "CHILD_ROOM": {
+        "brief": {
+          "tenantId": "pt-a",
+          "skuId": "44e6b222-0801-479c-8df2-eb9c8a3a85a7",
+          "productVersion": 1,
+          "engineeringHash": "94462ee9894a1de39b0a9189e73efabc8cf2311227d5130614363bd7908abc10",
+          "sourceRenderPackId": "1d7ba9ba-923b-4057-8164-4947a8b33e7a",
+          "placementHash": "4d002935ad18fe2833aab2ab35d0514c0b00de6c01e1c9a06397264e0fe3c0e7",
+          "finalUvHash": "d6c8f96b810e8a7f4b872364f8b4836fe9ec620be5a5b02056e06cd3eb6556db",
+          "productMaskDamRef": "f6ebd6dd-714b-4728-9620-75743406c8ac",
+          "artworkMaskDamRef": "92ec2419-4e84-4821-bfe2-d1f119aff026",
+          "forbiddenProductEdits": [
+            "DO_NOT_ALTER_CABINET_DIMENSIONS",
+            "DO_NOT_ALTER_PANEL_GEOMETRY",
+            "DO_NOT_ALTER_DOOR_COUNT",
+            "DO_NOT_ALTER_DOOR_HANDLES",
+            "DO_NOT_ALTER_FRONT_DOOR_ARTWORK"
+          ],
+          "preset": "CHILD_ROOM",
+          "environmentContext": "Scandinavian child bedroom with light birch flooring and soft pastel toy storage",
+          "allowedContextChanges": [
+            "flooring",
+            "wall_paint",
+            "lighting_mood",
+            "decor_toys",
+            "rugs"
+          ],
+          "framingIntent": "Eye-level 3/4 perspective showing cabinet integrated into child room environment",
+          "lightingMood": "WARM_DAYLIGHT"
+        },
+        "routing": {
+          "mode": "IMAGE",
+          "requiredControls": [
+            "depth",
+            "normal",
+            "product_mask"
+          ],
+          "providerPreference": [
+            "H3_MAX"
+          ],
+          "selectedProvider": "H3_MAX",
+          "reason": "IMAGE prefers H3_MAX for controls=depth,normal,product_mask; live provider availability BLOCKED; quality UNVERIFIED",
+          "productLocked": true,
+          "qualityClaim": "UNVERIFIED",
+          "costLabel": "CONFIG_ESTIMATE",
+          "liveProviderAvailable": false,
+          "truthLabel": "REAL_LOGIC"
+        },
+        "status": "BLOCKED",
+        "derivativeOnly": true,
+        "isProductTruth": false,
+        "truthLabel": "DERIVATIVE/BLOCKED",
+        "liveH3MaxProviderReady": false,
+        "liveLtx25ProviderReady": false
+      },
+      "STUDENT_RENTAL": {
+        "brief": {
+          "tenantId": "pt-a",
+          "skuId": "44e6b222-0801-479c-8df2-eb9c8a3a85a7",
+          "productVersion": 1,
+          "engineeringHash": "94462ee9894a1de39b0a9189e73efabc8cf2311227d5130614363bd7908abc10",
+          "sourceRenderPackId": "1d7ba9ba-923b-4057-8164-4947a8b33e7a",
+          "placementHash": "4d002935ad18fe2833aab2ab35d0514c0b00de6c01e1c9a06397264e0fe3c0e7",
+          "finalUvHash": "d6c8f96b810e8a7f4b872364f8b4836fe9ec620be5a5b02056e06cd3eb6556db",
+          "productMaskDamRef": "f6ebd6dd-714b-4728-9620-75743406c8ac",
+          "artworkMaskDamRef": "92ec2419-4e84-4821-bfe2-d1f119aff026",
+          "forbiddenProductEdits": [
+            "DO_NOT_ALTER_CABINET_DIMENSIONS",
+            "DO_NOT_ALTER_PANEL_GEOMETRY",
+            "DO_NOT_ALTER_DOOR_COUNT",
+            "DO_NOT_ALTER_DOOR_HANDLES",
+            "DO_NOT_ALTER_FRONT_DOOR_ARTWORK"
+          ],
+          "preset": "STUDENT_RENTAL",
+          "environmentContext": "Compact modern rental studio room with neutral laminate flooring and adjacent study desk",
+          "allowedContextChanges": [
+            "desk_lamp",
+            "books",
+            "laminate_floor",
+            "neutral_walls"
+          ],
+          "framingIntent": "Front 3/4 view emphasizing functional storage in modern compact apartment",
+          "lightingMood": "BRIGHT_NEUTRAL"
+        },
+        "routing": {
+          "mode": "IMAGE",
+          "requiredControls": [
+            "depth",
+            "normal",
+            "product_mask"
+          ],
+          "providerPreference": [
+            "H3_MAX"
+          ],
+          "selectedProvider": "H3_MAX",
+          "reason": "IMAGE prefers H3_MAX for controls=depth,normal,product_mask; live provider availability BLOCKED; quality UNVERIFIED",
+          "productLocked": true,
+          "qualityClaim": "UNVERIFIED",
+          "costLabel": "CONFIG_ESTIMATE",
+          "liveProviderAvailable": false,
+          "truthLabel": "REAL_LOGIC"
+        },
+        "status": "BLOCKED",
+        "derivativeOnly": true,
+        "isProductTruth": false,
+        "truthLabel": "DERIVATIVE/BLOCKED",
+        "liveH3MaxProviderReady": false,
+        "liveLtx25ProviderReady": false
+      },
+      "ENTRYWAY": {
+        "brief": {
+          "tenantId": "pt-a",
+          "skuId": "44e6b222-0801-479c-8df2-eb9c8a3a85a7",
+          "productVersion": 1,
+          "engineeringHash": "94462ee9894a1de39b0a9189e73efabc8cf2311227d5130614363bd7908abc10",
+          "sourceRenderPackId": "1d7ba9ba-923b-4057-8164-4947a8b33e7a",
+          "placementHash": "4d002935ad18fe2833aab2ab35d0514c0b00de6c01e1c9a06397264e0fe3c0e7",
+          "finalUvHash": "d6c8f96b810e8a7f4b872364f8b4836fe9ec620be5a5b02056e06cd3eb6556db",
+          "productMaskDamRef": "f6ebd6dd-714b-4728-9620-75743406c8ac",
+          "artworkMaskDamRef": "92ec2419-4e84-4821-bfe2-d1f119aff026",
+          "forbiddenProductEdits": [
+            "DO_NOT_ALTER_CABINET_DIMENSIONS",
+            "DO_NOT_ALTER_PANEL_GEOMETRY",
+            "DO_NOT_ALTER_DOOR_COUNT",
+            "DO_NOT_ALTER_DOOR_HANDLES",
+            "DO_NOT_ALTER_FRONT_DOOR_ARTWORK"
+          ],
+          "preset": "ENTRYWAY",
+          "environmentContext": "Bright foyer / entryway with tiled floor, coat hooks, and welcoming natural ambient light",
+          "allowedContextChanges": [
+            "tiled_floor",
+            "side_wall_hooks",
+            "umbrella_stand",
+            "ambient_entry_light"
+          ],
+          "framingIntent": "Entry perspective showcasing entryway storage utility",
+          "lightingMood": "WELCOMING_WARM"
+        },
+        "routing": {
+          "mode": "IMAGE",
+          "requiredControls": [
+            "depth",
+            "normal",
+            "product_mask"
+          ],
+          "providerPreference": [
+            "H3_MAX"
+          ],
+          "selectedProvider": "H3_MAX",
+          "reason": "IMAGE prefers H3_MAX for controls=depth,normal,product_mask; live provider availability BLOCKED; quality UNVERIFIED",
+          "productLocked": true,
+          "qualityClaim": "UNVERIFIED",
+          "costLabel": "CONFIG_ESTIMATE",
+          "liveProviderAvailable": false,
+          "truthLabel": "REAL_LOGIC"
+        },
+        "status": "BLOCKED",
+        "derivativeOnly": true,
+        "isProductTruth": false,
+        "truthLabel": "DERIVATIVE/BLOCKED",
+        "liveH3MaxProviderReady": false,
+        "liveLtx25ProviderReady": false
+      },
+      "SMALL_APARTMENT": {
+        "brief": {
+          "tenantId": "pt-a",
+          "skuId": "44e6b222-0801-479c-8df2-eb9c8a3a85a7",
+          "productVersion": 1,
+          "engineeringHash": "94462ee9894a1de39b0a9189e73efabc8cf2311227d5130614363bd7908abc10",
+          "sourceRenderPackId": "1d7ba9ba-923b-4057-8164-4947a8b33e7a",
+          "placementHash": "4d002935ad18fe2833aab2ab35d0514c0b00de6c01e1c9a06397264e0fe3c0e7",
+          "finalUvHash": "d6c8f96b810e8a7f4b872364f8b4836fe9ec620be5a5b02056e06cd3eb6556db",
+          "productMaskDamRef": "f6ebd6dd-714b-4728-9620-75743406c8ac",
+          "artworkMaskDamRef": "92ec2419-4e84-4821-bfe2-d1f119aff026",
+          "forbiddenProductEdits": [
+            "DO_NOT_ALTER_CABINET_DIMENSIONS",
+            "DO_NOT_ALTER_PANEL_GEOMETRY",
+            "DO_NOT_ALTER_DOOR_COUNT",
+            "DO_NOT_ALTER_DOOR_HANDLES",
+            "DO_NOT_ALTER_FRONT_DOOR_ARTWORK"
+          ],
+          "preset": "SMALL_APARTMENT",
+          "environmentContext": "Modern micro-apartment living area with oak herringbone floor and indoor plant",
+          "allowedContextChanges": [
+            "herringbone_floor",
+            "minimalist_wall_art",
+            "indoor_plant",
+            "architectural_lighting"
+          ],
+          "framingIntent": "High-angle 3/4 view showing clean profile and space optimization",
+          "lightingMood": "ARCHITECTURAL_COOL"
+        },
+        "routing": {
+          "mode": "IMAGE",
+          "requiredControls": [
+            "depth",
+            "normal",
+            "product_mask"
+          ],
+          "providerPreference": [
+            "H3_MAX"
+          ],
+          "selectedProvider": "H3_MAX",
+          "reason": "IMAGE prefers H3_MAX for controls=depth,normal,product_mask; live provider availability BLOCKED; quality UNVERIFIED",
+          "productLocked": true,
+          "qualityClaim": "UNVERIFIED",
+          "costLabel": "CONFIG_ESTIMATE",
+          "liveProviderAvailable": false,
+          "truthLabel": "REAL_LOGIC"
+        },
+        "status": "BLOCKED",
+        "derivativeOnly": true,
+        "isProductTruth": false,
+        "truthLabel": "DERIVATIVE/BLOCKED",
+        "liveH3MaxProviderReady": false,
+        "liveLtx25ProviderReady": false
+      }
+    },
+    "evidenceCodeCommit": "2fcac7eacf79e868f0392d41e8d9f8dd70979ffd",
+    "generatedAt": "2026-09-13T03:09:15.847594+00:00",
+    "usedMock": false,
+    "realBlender": true,
+    "realOptix": true,
+    "qa": {
+      "ok": true,
+      "decision": "APPROVED_FOR_ASSET_REVIEW",
+      "failures": [],
+      "commercialAssetProductionReady": false,
+      "globalProductionReady": false
+    }
+  },
+  "qa": {
+    "ok": true,
+    "decision": "APPROVED_FOR_ASSET_REVIEW",
+    "failures": [],
+    "commercialAssetProductionReady": false,
+    "globalProductionReady": false
+  },
+  "rows": [
+    {
+      "check": "productContentFactoryLogicReady",
+      "status": "REAL_LOGIC",
+      "evidence": true
+    },
+    {
+      "check": "realCommerceRenderPackReady",
+      "status": "REAL",
+      "evidence": true
+    },
+    {
+      "check": "liveGenerativeCommerceReady",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "commercialAssetProductionReady",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "physicalPrintValidated",
+      "status": "BLOCKED",
+      "evidence": false
+    },
+    {
+      "check": "LIVE_CNC",
+      "status": "BLOCKED",
+      "evidence": "liveMachineControl=false"
+    },
+    {
+      "check": "contentPackId",
+      "status": "REAL_LOGIC",
+      "evidence": "ccp_8b8e8801-4e59-4e22-be9d-b6b15f568f1a"
+    },
+    {
+      "check": "usedMock",
+      "status": "REAL",
+      "evidence": false
+    }
+  ],
+  "acceptanceFailures": []
+}
