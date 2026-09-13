@@ -18,7 +18,7 @@ Scoped readiness (not a global Production Ready flag):
 - `realArtworkPreviewReady`: **true / REAL** — Blender 5.2.1 LTS + NVIDIA T1000 OptiX Product Truth still (`docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md`, CODE `cb045af`, generation `78ef13b7-180f-43a3-94f9-15a9b3ad9f1f`); not physical print
 - `productTruthRenderPackReady`: **true** (AOV pack REAL, 128×128)
 - `generativeRenderGatewayLogicReady`: **true** — see `docs/GENERATIVE_RENDER_GATEWAY_ACCEPTANCE.md` (live H3/LTX **BLOCKED**)
-- `productContentFactoryLogicReady`: **true** — see `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.md` (CODE `2fcac7e`, generation `14eac4b8-0217-40e8-968d-fc7ca7a6de4e`, 6/6 views, Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`)
+- `productContentFactoryLogicReady`: **true** — see `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.md` (CODE `4406119`, generation `57f72869-a017-415f-bf66-7df55824d486`, 6/6 views, Blender 5.2.1 LTS + NVIDIA T1000 OptiX, `usedMock=false`)
 - `realCommerceRenderPackReady`: **true** (6 deterministic commerce views rendered on T1000 OptiX)
 - `liveGenerativeCommerceReady`: **false / BLOCKED**
 - `commercialAssetProductionReady`: **false / BLOCKED**

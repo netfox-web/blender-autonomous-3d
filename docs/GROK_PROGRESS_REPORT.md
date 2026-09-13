@@ -2,42 +2,29 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-13  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `0fcf31b` (Phase 901–960 — Product Content Factory V1 / Deterministic Commerce Asset Pack)  
-Issue #1: Phase 901–960 Content Factory V1 `0fcf31b`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `59ad337` (Phase 901–960 Re-Gate Round 1 — worker evidence and dimension authority corrections)  
+Issue #1: Phase 901–960 Re-Gate Round 1 `59ad337`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Phase 901–960 Product Content Factory V1 / Deterministic Commerce Asset Pack**:
-1. **Canonical Product Content Factory V1 & Lineage Authority**:
-   - Implemented `src/fox3d/content_factory.py` with canonical `ProductContentPack` model.
-   - Preserved exact product identity and single source of truth: strictly derived from upstream `CabinetSpec` engineering mm, `ProductTruthRenderPack` / `acceptanceGenerationId`, artwork placement/final UV hashes, and DAM asset references.
-   - Zero duplicated geometry/mm SOT: fail closed on cross-tenant, wrong SKU/version, stale engineering hash, wrong source generation, or conflicting lineage.
-2. **6 Required Deterministic Commerce Views**:
-   - Implemented `canonical_commerce_recipes`:
-     1. `WHITE_BACKGROUND_HERO` (clean catalog hero, studio white cyc, closed state)
-     2. `HERO_45` (3/4 hero, three-point lighting, closed state)
-     3. `FRONT_CLOSED` (front closed state, 0° articulation)
-     4. `FRONT_OPEN` (articulated open state with physical 3D door hinges rotated to 75.0°)
-     5. `DETAIL_ARTWORK` (front surface detail bound to Product Truth artwork mask)
-     6. `DIMENSION_FRONT` (front dimension image/overlay bound to Engineering mm)
-   - Extended `scripts/blender_job.py` with `_set_door_articulation` to apply physical 3D door rotations and hinge pivot transforms when `productState == "OPEN"`, restoring to neutral after rendering, and recording explicit `articulatedState` in worker view evidence.
-3. **Dimension Asset Authority Derived Strictly from Engineering mm**:
-   - Implemented `generate_dimension_overlay` and `validate_dimension_asset_authority`.
-   - Dimension labels (width, height, depth) derived exclusively from `CabinetSpec` / Engineering JSON mm.
-   - Independent QA check before publication verifying pixel overlay metadata matches engineering mm exactly; CV/pixel inference forbidden.
-4. **Structured Lifestyle Scene Briefs (H3/LTX Contract REAL_LOGIC, Live BLOCKED)**:
-   - Implemented `canonical_lifestyle_briefs` for `CHILD_ROOM`, `STUDENT_RENTAL`, `ENTRYWAY`, and `SMALL_APARTMENT`.
-   - Bound to Product Truth identity and masks; routed through `generative_gateway.py`.
-   - Output explicitly marked `DERIVATIVE/BLOCKED`; `liveH3MaxProviderReady=false`, `liveLtx25ProviderReady=false`; generative output prohibited from claiming Product Truth authority.
-5. **Deterministic Commerce QA Gate & 18-Case Adversarial Matrix**:
-   - Implemented `qa_commerce_pack` verifying source identity, recipe hashes, DAM file bytes/size/SHA/job lineage, articulated transforms for OPEN vs CLOSED, and dimension authority.
-   - Added full 18-case runner adversarial matrix in `tests/test_content_factory.py::test_runner_content_factory_adversarial_matrix` covering wrong tenant, SKU/version, stale engineering hash, source generation mismatch, missing/duplicated views, swapped HERO/OPEN DAM refs, stale recipe hash, wrong job ID, byte/size mismatch, dimension tampering, coordinated dimension metadata tampering, CLOSED state pointing to OPEN, mask cross-swapping, generative claiming product truth, blocked provider claiming readiness, malformed recipe numbers (bool/str/NaN/Inf), and cross-tenant DAM substitution.
-6. **Strict Two-Phase Execution & Clean-Tree REAL Blender Acceptance**:
-   - Phase 1 CODE commit `2fcac7eacf79e868f0392d41e8d9f8dd70979ffd` pushed and verified green on GitHub Actions CI Run ID `34733898962` (Ubuntu `103661698405` SUCCESS in 19m39s, Windows `103661698333` SUCCESS in 20m54s).
-   - Local test suite: 628 passed (PASS 100%).
+Executed **Phase 901–960 Re-Gate Round 1 — Worker Evidence and Dimension Authority Corrections**:
+1. **Blocker A: Bind Real Manifest State to Observed Worker Evidence**:
+   - `scripts/blender_job.py` records exact `workerViews[view_id]` with `blenderVersion`, `device`, `role`, `sceneRecipeHash`, `productState`, `articulationAngleDeg`, and observed component transforms / hinge pivots (`articulatedState`).
+   - `content_factory.py` binds observed `workerViews` directly into `ProductContentPack.views[view_id]["workerEvidence"]`.
+   - `qa_commerce_pack` independently derives canonical expected state from `CabinetSpec` and recipe, then compares **observed worker evidence ↔ canonical expected**. Missing worker record, CLOSED state claiming OPEN, angle deviation, altered component IDs, wrong job ID, or view cross-swapping fails closed.
+2. **Blocker B: Real DAM Artifact Provenance Binding**:
+   - `qa_commerce_pack` verifies real worker artifact provenance in DAM metadata (`blenderVersion`, `device`, `sourceAcceptanceGenerationId`). Synthetic dimensions or empty byte payloads fail closed.
+   - All 6 commerce views (including composite `DIMENSION_FRONT`) bind verified worker evidence and DAM metadata.
+3. **Blocker C: Engineering Dimension Authority & Deterministic Rasterization**:
+   - Pure-Python bitmap font `FONT_5X7` in `content_factory.py` rasterizes engineering dimension strings (`W`, `H`, `D`) onto the `DIMENSION_FRONT` composite layer.
+   - Computes deterministic `dimensionLabelLayerHash` from the font raster, validated in `qa_commerce_pack`. Tampered dimension strings, altered labels, or CV inference fail closed.
+4. **Blender AOV Ground Pass Isolation**:
+   - `Ground` plane is hidden during `_render_aov_pngs` so `product_mask` and `alpha` occupancies do not saturate to 1.0 against frozen Product Truth camera thresholds.
+5. **Phase 1 CODE CI & Clean-Tree REAL Acceptance**:
+   - Phase 1 CODE commit `4406119cbf5bc62dcb43d0dd1ec6fc041353dd28` pushed and verified green on GitHub Actions CI Run ID `34740940584` (Ubuntu `103680422504` SUCCESS in 15m53s, Windows `103680422620` SUCCESS in 21m8s).
    - Clean-tree real acceptance executed with `scripts/run_product_content_e2e.py` on exact CODE commit using REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX (`usedMock=false`, `failures: []`, `ok: true`).
-   - Generated canonical acceptance artifacts: `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.md` and `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.json` (generation `14eac4b8-0217-40e8-968d-fc7ca7a6de4e`).
+   - Generated canonical acceptance artifacts: `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.md` and `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.json` (generation `57f72869-a017-415f-bf66-7df55824d486`).
 
 Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did not start Phase 961+.
 
@@ -54,15 +41,16 @@ Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec. Did 
 | 841–900 Re-Gate R4 | Non-circular frozen runner authority (Blocker A); real worker view artifact provenance binding & DAM verification (Blocker B); stale audit header corrected; two-phase CI & clean-tree REAL OptiX acceptance. |
 | 841–900 Re-Gate R5 | Zero-fallback frozen authority runner validation (Blocker A); full 23-case official-runner adversarial matrix (Blocker B); DAM source/path lineage and job binding closure (Blocker C); clean-tree REAL OptiX acceptance. Historical instruction SHA corrected: `2b1b174d0ebeb1e8ced6ff73faba5d2fc18fd7ee`. |
 | 841–900 Re-Gate R6 | Frozen recipe semantic authority & strict rehash validation (Blocker A); 12-case official-runner semantic adversarial matrix; exact instruction lineage correction & deterministic git-log inspection (Blocker B); clean-tree REAL OptiX acceptance. |
-| 901–960 | Product Content Factory V1 & Deterministic Commerce Asset Pack (`content_factory.py`); 6 required commerce views; physical door articulation transforms (0° vs 75°); dimension overlay authority from engineering mm; 4 lifestyle briefs; deterministic commerce QA gate & 18-case adversarial matrix; clean-tree REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX acceptance (`usedMock=false`). |
+| 901–960 | Product Content Factory V1 & Deterministic Commerce Asset Pack (`content_factory.py`); 6 required commerce views; physical door articulation transforms (0° vs 75°); dimension overlay authority from engineering mm; 4 lifestyle briefs; deterministic commerce QA gate & 18-case adversarial matrix. |
+| 901–960 Re-Gate R1 | Blockers A–C: Bind real manifest state to observed worker evidence (Blocker A); fail-closed real DAM artifact provenance (Blocker B); pure-Python font dimension label authority & deterministic rasterization (Blocker C); Ground isolation in AOV passes; clean-tree REAL OptiX acceptance (`usedMock=false`, generation `57f72869-a017-415f-bf66-7df55824d486`). |
 
-**CODE_EVIDENCE_SHA:** `2fcac7eacf79e868f0392d41e8d9f8dd70979ffd`  
-**CODE_CI_RUN_ID:** `34733898962` (Ubuntu `103661698405` SUCCESS, Windows `103661698333` SUCCESS)  
-**PRIOR_DOCS_CI_RUN_ID:** `34715084300` (Ubuntu `103610996847` SUCCESS, Windows `103610996614` SUCCESS)  
+**CODE_EVIDENCE_SHA:** `4406119cbf5bc62dcb43d0dd1ec6fc041353dd28`  
+**CODE_CI_RUN_ID:** `34740940584` (Ubuntu `103680422504` SUCCESS, Windows `103680422620` SUCCESS)  
+**PRIOR_DOCS_CI_RUN_ID:** `34734842881` (Ubuntu `103664052328` SUCCESS, Windows `103664052367` SUCCESS)  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** dual-platform on exact code commit `2fcac7eacf79e868f0392d41e8d9f8dd70979ffd`.
+GitHub Actions CODE: **GREEN** dual-platform on exact code commit `4406119cbf5bc62dcb43d0dd1ec6fc041353dd28`.
 
-Acceptance generation `14eac4b8-0217-40e8-968d-fc7ca7a6de4e`; runner-bound `evidenceCodeCommit=2fcac7eacf79e868f0392d41e8d9f8dd70979ffd`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `productContentFactoryLogicReady=true`; `realCommerceRenderPackReady=true`; `liveGenerativeCommerceReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
+Acceptance generation `57f72869-a017-415f-bf66-7df55824d486`; runner-bound `evidenceCodeCommit=4406119cbf5bc62dcb43d0dd1ec6fc041353dd28`; `workingTreeClean=true`. REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX; `usedMock=false`; `productContentFactoryLogicReady=true`; `realCommerceRenderPackReady=true`; `liveGenerativeCommerceReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
 
 ## Tests
 
