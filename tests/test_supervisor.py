@@ -2947,3 +2947,253 @@ def test_68_issue_comments_failure_fails_closed(env_setup):
     assert len(gh.posted_comments) == 0
 
     delattr(gh, "comments_error")
+
+
+# 69. Round 8 Blocker A: Real GitHubClient compare API ref normalization and candidate adoption
+def test_69_real_github_client_compare_api_ref_normalization(tmp_path: Path):
+    cfg = SupervisorConfig(
+        repo_name="netfox-web/blender-autonomous-3d",
+        repo_root=tmp_path,
+        allowed_issue_number=1,
+    )
+    client = GitHubClient(cfg)
+
+    called_urls = []
+    full_body = (
+        "supervisor: accept c0de111 and start next-phase\n\n"
+        "Commit body with pipes | and\nmultiple lines of context.\n\n"
+        "Reviewed-Code-Sha: c0de111\n"
+        "Reviewed-Docs-Sha: d0c5111\n"
+        "Reviewed-Instruction-Sha: instr_000\n"
+        "Reviewed-Evidence-Id: gen_cand_88\n"
+        "Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        "Supervisor-Review-Id: rev_cand_88\n"
+    )
+    compare_payload = {
+        "commits": [
+            {
+                "sha": "cand_sha_88",
+                "commit": {
+                    "author": {"name": "Supervisor Bot"},
+                    "message": full_body,
+                }
+            }
+        ]
+    }
+
+    def transport_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        called_urls.append(url_str)
+        if "/compare/instr_000...main" in url_str:
+            return httpx.Response(200, request=request, json=compare_payload)
+        elif "/compare/instr_000...origin/main" in url_str:
+            # Emulate real GitHub compare API behavior: returns 404 for origin/main ref
+            return httpx.Response(404, request=request, json={"message": "Not Found"})
+        return httpx.Response(200, request=request, json={"commits": []})
+
+    transport = httpx.MockTransport(transport_handler)
+
+    # Force local git log to fail so fallback is triggered
+    orig_run = subprocess.run
+    def mock_run(cmd, *args, **kwargs):
+        if cmd[0] == "git" and cmd[1] == "log":
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="git log failed")
+        return orig_run(cmd, *args, **kwargs)
+
+    import unittest.mock as mock
+    with mock.patch("subprocess.run", side_effect=mock_run):
+        with mock.patch("httpx.get", side_effect=lambda url, **kw: transport.handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
+            commits = client.get_commits_since("instr_000", "origin/main")
+            assert len(commits) == 1
+            assert commits[0]["sha"] == "cand_sha_88"
+            assert "Reviewed-Code-Sha: c0de111" in commits[0]["message"]
+            assert "pipes | and" in commits[0]["message"]
+            # Assert called url normalized to '...main'
+            assert any("/compare/instr_000...main" in u for u in called_urls)
+            assert not any("/compare/instr_000...origin/main" in u for u in called_urls)
+
+
+# 70. Round 8 Blocker A: Real GitHubClient compare API 404 error vs genuine 0 commits
+def test_70_real_github_client_compare_api_errors_and_zero_commits(tmp_path: Path):
+    cfg = SupervisorConfig(
+        repo_name="netfox-web/blender-autonomous-3d",
+        repo_root=tmp_path,
+        allowed_issue_number=1,
+    )
+    client = GitHubClient(cfg)
+
+    orig_run = subprocess.run
+    def mock_run(cmd, *args, **kwargs):
+        if cmd[0] == "git" and cmd[1] == "log":
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="git log failed")
+        return orig_run(cmd, *args, **kwargs)
+
+    # Case 1: compare API returns 404 -> raises GitHubVerificationError (fails closed)
+    def transport_404(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, request=request, json={"message": "Not Found"})
+
+    import unittest.mock as mock
+    with mock.patch("subprocess.run", side_effect=mock_run):
+        with mock.patch("httpx.get", side_effect=lambda url, **kw: httpx.MockTransport(transport_404).handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
+            with pytest.raises(GitHubVerificationError) as excinfo:
+                client.get_commits_since("base_sha_missing", "origin/main")
+            assert "failed with HTTP 404" in str(excinfo.value)
+
+    # Case 2: compare API returns 200 with 0 commits -> returns [] (genuine 0 commits)
+    def transport_empty(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, request=request, json={"commits": []})
+
+    with mock.patch("subprocess.run", side_effect=mock_run):
+        with mock.patch("httpx.get", side_effect=lambda url, **kw: httpx.MockTransport(transport_empty).handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
+            commits = client.get_commits_since("base_sha_ok", "origin/main")
+            assert commits == []
+
+
+# 71. Round 8 Blocker B: Staged SHA with remote compare API fallback success path
+def test_71_staged_sha_remote_compare_fallback_adopted(tmp_path: Path):
+    cfg = SupervisorConfig(
+        repo_name="netfox-web/blender-autonomous-3d",
+        repo_root=tmp_path,
+        allowed_issue_number=1,
+    )
+    state_mgr = StateManager(tmp_path / "state.db")
+    policy_engine = PolicyEngine(tmp_path / "audit.jsonl")
+
+    review_id = "rev_staged_fallback_01"
+    evidence_id = "gen_staged_fallback"
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id=evidence_id)
+    )
+
+    staged_sha = "staged_candidate_sha_77"
+    state_mgr.start_review(review_id, contract.code_sha, contract.evidence_generation_id)
+    state_mgr.set_review_staged_commit(review_id, staged_sha)
+
+    full_content = (
+        "# Phase 901 Instructions\n\n"
+        f"<!-- SUPERVISOR_COMMIT_IDENTITY:\nCODE_SHA={contract.code_sha}\nDOCS_SHA={contract.docs_sha}\n"
+        f"INSTRUCTION_SHA={contract.instruction_sha}\nEVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
+        f"DECISION=ACCEPT_WITH_SCOPE\nREVIEW_ID={review_id}\n-->\n"
+    )
+    digest = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
+    state_mgr.set_intended_instruction(review_id, digest)
+
+    commit_body = (
+        f"supervisor: accept {contract.code_sha[:7]} and start next-phase\n\n"
+        f"Reviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: {review_id}\n"
+    )
+
+    client = GitHubClient(cfg)
+    engine = SupervisorEngine(
+        config=cfg,
+        github_client=client,
+        state_mgr=state_mgr,
+        ai_adapter=MockSupervisorAdapter(),
+        policy_engine=policy_engine,
+    )
+
+    def transport_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "/compare/" in url_str:
+            return httpx.Response(200, request=request, json={
+                "commits": [{"sha": staged_sha, "commit": {"author": {"name": "Bot"}, "message": commit_body}}]
+            })
+        elif "/contents/docs/GROK_NEXT_PHASE_INSTRUCTIONS.md" in url_str:
+            import base64
+            encoded = base64.b64encode(full_content.encode("utf-8")).decode("utf-8")
+            return httpx.Response(200, request=request, json={"content": encoded, "sha": "blob_sha"})
+        elif "/issues/1/comments" in url_str:
+            return httpx.Response(200, request=request, json=[])
+        return httpx.Response(200, request=request, json={})
+
+    orig_run = subprocess.run
+    def mock_run(cmd, *args, **kwargs):
+        if cmd[0] == "git" and cmd[1] == "log":
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="git log failed")
+        elif cmd[0] == "gh":
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="gh failed")
+        return orig_run(cmd, *args, **kwargs)
+
+    import unittest.mock as mock
+    with mock.patch("subprocess.run", side_effect=mock_run):
+        with mock.patch("httpx.get", side_effect=lambda url, **kw: httpx.MockTransport(transport_handler).handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
+            remote_commits = client.get_commits_since(contract.instruction_sha, "origin/main")
+            assert len(remote_commits) == 1
+            assert remote_commits[0]["sha"] == staged_sha
+            verified = engine._verify_instruction_candidate(
+                candidate_sha=staged_sha,
+                commit_msg=remote_commits[0]["message"],
+                contract=contract,
+                decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+                review_id=review_id,
+                intended_digest=digest,
+            )
+            assert verified is True
+
+
+# 72. Round 8 Blocker B: Window B2 REST fallback exactly-once across ACCEPT, CHANGES_REQUIRED, and BLOCKED
+def test_72_window_b2_rest_fallback_exactly_once_decisions(tmp_path: Path):
+    cfg = SupervisorConfig(
+        repo_name="netfox-web/blender-autonomous-3d",
+        repo_root=tmp_path,
+        allowed_issue_number=1,
+    )
+    client = GitHubClient(cfg)
+
+    decisions = [
+        (ReviewDecision.ACCEPT_WITH_SCOPE, "rev_b2_accept", "gen_b2_accept"),
+        (ReviewDecision.CHANGES_REQUIRED, "rev_b2_changes", "gen_b2_changes"),
+        (ReviewDecision.BLOCKED, "rev_b2_blocked", "gen_b2_blocked"),
+    ]
+
+    import unittest.mock as mock
+
+    for decision, review_id, evidence_id in decisions:
+        marker = f"<!-- REVIEW_MARKER: CODE_SHA=c0de111 EVIDENCE_ID={evidence_id} REVIEW_ID={review_id} -->"
+        page3_comments = [
+            {"id": "c_301", "body": "Comment 301"},
+            {"id": "c_302", "body": f"## SUPERVISOR_REVIEW_COMPLETE\n\n{marker}\nDECISION={decision.value}"},
+        ]
+        posted_calls = []
+
+        def transport_handler(request: httpx.Request) -> httpx.Response:
+            url_str = str(request.url)
+            if request.method == "POST":
+                posted_calls.append(url_str)
+                return httpx.Response(201, request=request, json={"id": "new_c"})
+            if "page=2" in url_str:
+                return httpx.Response(200, request=request, json=[{"id": f"c_{i}", "body": f"Page 2 comment {i}"} for i in range(101, 110)])
+            elif "page=3" in url_str:
+                return httpx.Response(200, request=request, json=page3_comments, headers={
+                    "link": f'<{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=2>; rel="prev", <{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=3>; rel="last"'
+                })
+            else:
+                return httpx.Response(200, request=request, json=[{"id": "c_1", "body": "First page"}], headers={
+                    "link": f'<{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=2>; rel="next", <{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=3>; rel="last"'
+                })
+
+        orig_run = subprocess.run
+        def mock_run(cmd, *args, **kwargs):
+            if cmd[0] == "gh":
+                return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="gh unavailable")
+            return orig_run(cmd, *args, **kwargs)
+
+        contract = ReadyForReGateContract.parse_from_text(
+            valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id=evidence_id)
+        )
+
+        with mock.patch("subprocess.run", side_effect=mock_run):
+            with mock.patch("httpx.get", side_effect=lambda url, **kw: httpx.MockTransport(transport_handler).handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
+                # Verify client.get_latest_issue_comments retrieves the comments via REST fallback with pagination
+                comments = client.get_latest_issue_comments(contract.issue, count=10)
+                assert len(comments) > 0
+                # Verify deterministic marker is found in comments
+                matching = [c for c in comments if f"CODE_SHA={contract.code_sha}" in c.get("body", "") and f"EVIDENCE_ID={contract.evidence_generation_id}" in c.get("body", "")]
+                assert len(matching) == 1
+                assert matching[0]["id"] == "c_302"
+

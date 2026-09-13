@@ -36,6 +36,13 @@ def _parse_link_header(link_header: str) -> Dict[str, str]:
     return links
 
 
+def _normalize_ref_for_api(ref: str) -> str:
+    """Normalize git ref for remote GitHub API (e.g. strip origin/ prefix for branch names)."""
+    if ref and str(ref).startswith("origin/"):
+        return str(ref)[len("origin/"):]
+    return str(ref)
+
+
 class GitHubVerificationError(Exception):
     """Raised when GitHub state validation fails (e.g. CI failed, commit unreachable)."""
     pass
@@ -256,7 +263,8 @@ class GitHubClient(GitHubClientInterface):
 
         # Fallback to GitHub API compare
         try:
-            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{head_sha}"
+            api_head = _normalize_ref_for_api(head_sha)
+            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{api_head}"
             resp = httpx.get(url, headers=self.headers, timeout=15.0)
             if resp.status_code == 200:
                 data = resp.json()
@@ -281,12 +289,14 @@ class GitHubClient(GitHubClientInterface):
                     "GitHub compare API failed with status %s: %s",
                     resp.status_code, resp.text[:200],
                 )
+                raise GitHubVerificationError(
+                    f"GitHub compare API for {base_sha}...{api_head} failed with HTTP {resp.status_code}: {resp.text[:200]}"
+                )
+        except GitHubVerificationError:
+            raise
         except Exception as e:
             logger.warning("GitHub compare API fallback failed: %s", e)
-
-        raise GitHubVerificationError(
-            f"Failed to enumerate commits between {base_sha} and {head_sha}: local git and remote API both failed."
-        )
+            raise GitHubVerificationError(f"GitHub compare API fallback failed for {base_sha}...{head_sha}: {e}")
 
     def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
         try:
@@ -305,7 +315,8 @@ class GitHubClient(GitHubClientInterface):
 
         # Fallback to GitHub API compare
         try:
-            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{head_sha}"
+            api_head = _normalize_ref_for_api(head_sha)
+            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{api_head}"
             headers = dict(self.headers)
             headers["Accept"] = "application/vnd.github.v3.diff"
             resp = httpx.get(url, headers=headers, timeout=15.0)
@@ -343,7 +354,8 @@ class GitHubClient(GitHubClientInterface):
 
         # Fallback to GitHub API compare
         try:
-            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{head_sha}"
+            api_head = _normalize_ref_for_api(head_sha)
+            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{api_head}"
             headers = dict(self.headers)
             resp = httpx.get(url, headers=headers, timeout=15.0)
             if resp.status_code == 200:
