@@ -13,9 +13,8 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 
 from services.supervisor.ai_adapter import (
-    RuleBasedSupervisorAdapter,
-    SemanticEvidenceSupervisorAdapter,
     SupervisorProviderAdapter,
+    create_supervisor_adapter,
 )
 from services.supervisor.config import SupervisorConfig, load_config
 from services.supervisor.engine import SupervisorEngine
@@ -40,11 +39,7 @@ def create_app(config: Optional[SupervisorConfig] = None) -> FastAPI:
     cfg = config or load_config()
     state_mgr = StateManager(cfg.state_db_path)
     github_client = GitHubClient(cfg)
-
-    if cfg.ai_provider == "semantic_evidence" or cfg.mode.lower() == "live":
-        ai_adapter: SupervisorProviderAdapter = SemanticEvidenceSupervisorAdapter()
-    else:
-        ai_adapter = RuleBasedSupervisorAdapter()
+    ai_adapter: SupervisorProviderAdapter = create_supervisor_adapter(cfg)
 
     policy_engine = PolicyEngine(cfg.audit_log_path)
     engine = SupervisorEngine(
@@ -109,7 +104,15 @@ def create_app(config: Optional[SupervisorConfig] = None) -> FastAPI:
                 detail="Invalid or missing X-Hub-Signature-256.",
             )
 
-        delivery_id = x_github_delivery or ""
+        delivery_id = (x_github_delivery or "").strip()
+
+        # In live mode, X-GitHub-Delivery is strictly required
+        if cfg.mode.lower() == "live" and not delivery_id:
+            logger.warning("Rejected webhook in live mode: missing X-GitHub-Delivery header.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="X-GitHub-Delivery header is required in live mode.",
+            )
 
         # 2. Durable Delivery Lifecycle Evaluation
         if delivery_id:
@@ -134,14 +137,37 @@ def create_app(config: Optional[SupervisorConfig] = None) -> FastAPI:
                 state_mgr.set_delivery_status(delivery_id, "FAILED_TERMINAL", error="Invalid JSON payload")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON payload.")
 
-        event_name = (x_github_event or "").lower()
+        event_name = (x_github_event or "").strip().lower()
+        if not event_name:
+            if delivery_id:
+                state_mgr.set_delivery_status(delivery_id, "FAILED_TERMINAL", error="Missing X-GitHub-Event header")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing X-GitHub-Event header.")
+
         logger.info("Received authenticated GitHub event '%s' (delivery: %s)", event_name, delivery_id)
 
         try:
-            # Check repository match
-            repo_data = payload.get("repository") or {}
-            repo_full_name = repo_data.get("full_name") or ""
-            if repo_full_name and repo_full_name.lower() != cfg.repo_name.lower():
+            # Check repository match (Blocker A fail-closed)
+            repo_data = payload.get("repository")
+            if not isinstance(repo_data, dict):
+                logger.warning("Rejected webhook: missing or non-object 'repository' in payload.")
+                if delivery_id:
+                    state_mgr.set_delivery_status(delivery_id, "FAILED_TERMINAL", error="Missing repository envelope")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Missing or invalid repository envelope.",
+                )
+
+            repo_full_name = repo_data.get("full_name")
+            if not repo_full_name or not isinstance(repo_full_name, str) or not repo_full_name.strip():
+                logger.warning("Rejected webhook: missing or null 'repository.full_name'.")
+                if delivery_id:
+                    state_mgr.set_delivery_status(delivery_id, "FAILED_TERMINAL", error="Missing repository.full_name")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Missing or null repository.full_name.",
+                )
+
+            if repo_full_name.strip().lower() != cfg.repo_name.lower():
                 logger.warning("Rejected webhook for wrong repo '%s' (expected '%s').", repo_full_name, cfg.repo_name)
                 if delivery_id:
                     state_mgr.set_delivery_status(delivery_id, "FAILED_TERMINAL", error=f"Wrong repo: {repo_full_name}")

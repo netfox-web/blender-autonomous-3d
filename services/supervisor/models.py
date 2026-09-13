@@ -102,7 +102,10 @@ class ReviewContext(BaseModel):
     progress_report_text: str = ""
     audit_text: str = ""
     acceptance_text: str = ""
+    cabinet_acceptance_text: str = ""
+    event_driven_acceptance_text: str = ""
     ci_summary: Dict[str, Any] = Field(default_factory=dict)
+    docs_ci_summary: Dict[str, Any] = Field(default_factory=dict)
     instruction_text: str = ""
     raw_issue_comment: str = ""
 
@@ -145,5 +148,10 @@ class ReviewRecord(BaseModel):
     decision: Optional[ReviewDecision] = None
     created_at: str
     completed_at: Optional[str] = None
+    instruction_commit_sha: Optional[str] = None
+    instruction_remote_verified_at: Optional[str] = None
+    issue_comment_id: Optional[str] = None
+    issue_comment_posted_at: Optional[str] = None
+    review_write_stage: str = "NONE"
     output: Optional[SupervisorReviewOutput] = None
     error: Optional[str] = None

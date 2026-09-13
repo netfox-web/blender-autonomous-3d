@@ -29,36 +29,59 @@ class SupervisorConfig:
     repo_root: Path = Path(__file__).resolve().parents[2]
 
 
-class ConfigValidationError(Exception):
+class ConfigValidationError(ValueError):
     """Raised when configuration validation fails (especially in live mode)."""
     pass
 
 
+VALID_AI_PROVIDERS = {"mock", "rule_based", "semantic_evidence", "openai", "anthropic", "gemini"}
+
+
 def validate_live_config(config: SupervisorConfig) -> None:
     """Ensure live mode fails closed if any security or execution prerequisite is missing."""
+    if config.ai_provider not in VALID_AI_PROVIDERS:
+        raise ConfigValidationError(
+            f"Unknown AI provider '{config.ai_provider}'. Supported providers: {sorted(VALID_AI_PROVIDERS)}."
+        )
+
     if config.mode.lower() != "live":
         return
 
     if not config.webhook_secret or config.webhook_secret == "dev-webhook-secret-not-for-prod":
         raise ConfigValidationError("Live mode requires a strong, non-default GITHUB_WEBHOOK_SECRET.")
 
-    if not config.github_token:
-        raise ConfigValidationError("Live mode requires a non-empty GITHUB_TOKEN with repository scope.")
+    if not config.github_token or len(config.github_token) < 10:
+        raise ConfigValidationError("Live mode requires a valid non-empty GITHUB_TOKEN with repository scope.")
 
     if not config.allowed_senders:
         raise ConfigValidationError("Live mode requires at least one authorized sender in allowed_senders.")
 
     if config.ai_provider in ("mock", "rule_based"):
         raise ConfigValidationError(
-            f"Live mode requires a real AI provider (not '{config.ai_provider}'). Configure 'semantic_evidence', 'openai', 'anthropic', 'gemini', or a verified external provider."
+            f"Live mode requires a real AI provider (not '{config.ai_provider}'). Configure 'semantic_evidence', 'openai', 'anthropic', or 'gemini'."
         )
 
-    # Ensure storage paths are writable
+    if config.ai_provider in ("openai", "anthropic", "gemini") and not config.ai_api_key:
+        raise ConfigValidationError(
+            f"Live mode provider '{config.ai_provider}' requires non-empty ai_api_key / SUPERVISOR_AI_API_KEY."
+        )
+
+    if not config.admin_key or len(config.admin_key) < 16:
+        raise ConfigValidationError("Live mode requires non-empty SUPERVISOR_ADMIN_KEY (minimum 16 characters).")
+
+    # Ensure storage paths are genuinely writable via canary file test
     try:
         config.state_db_path.parent.mkdir(parents=True, exist_ok=True)
+        canary_db = config.state_db_path.parent / ".canary_db_test"
+        canary_db.write_text("ok", encoding="utf-8")
+        canary_db.unlink(missing_ok=True)
+
         config.audit_log_path.parent.mkdir(parents=True, exist_ok=True)
+        canary_audit = config.audit_log_path.parent / ".canary_audit_test"
+        canary_audit.write_text("ok", encoding="utf-8")
+        canary_audit.unlink(missing_ok=True)
     except Exception as e:
-        raise ConfigValidationError(f"Live storage path validation failed: {e}")
+        raise ConfigValidationError(f"Live storage writable check failed: {e}")
 
 
 def load_config() -> SupervisorConfig:

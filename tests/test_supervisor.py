@@ -14,6 +14,7 @@ from services.supervisor.ai_adapter import (
     MockSupervisorAdapter,
     RuleBasedSupervisorAdapter,
     SemanticEvidenceSupervisorAdapter,
+    create_supervisor_adapter,
 )
 from services.supervisor.config import ConfigValidationError, SupervisorConfig, validate_live_config
 from services.supervisor.engine import SupervisorEngine
@@ -222,6 +223,7 @@ def test_2_duplicate_delivery_deduplication(env_setup):
     client = env_setup["client"]
     cfg = env_setup["config"]
     body = json.dumps({
+        "repository": {"full_name": "netfox-web/blender-autonomous-3d"},
         "action": "created",
         "sender": {"login": "netfox-web"},
         "issue": {"number": 1},
@@ -376,6 +378,7 @@ def test_13_supervisor_own_commit_no_loop(env_setup):
     client = env_setup["client"]
     cfg = env_setup["config"]
     payload = {
+        "repository": {"full_name": "netfox-web/blender-autonomous-3d"},
         "ref": "refs/heads/main",
         "head_commit": {
             "message": "supervisor: accept 4406119 and start next-phase",
@@ -398,6 +401,7 @@ def test_14_supervisor_own_issue_comment_no_loop(env_setup):
     client = env_setup["client"]
     cfg = env_setup["config"]
     payload = {
+        "repository": {"full_name": "netfox-web/blender-autonomous-3d"},
         "action": "created",
         "issue": {"number": 1},
         "comment": {
@@ -682,10 +686,14 @@ def test_25_live_mode_git_push_failure_never_swallowed(tmp_path: Path, monkeypat
             return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="error: failed to push some refs")
         if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "status":
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+        if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "diff-index":
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
         if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "fetch":
             return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
         if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "rev-parse":
-            return subprocess.CompletedProcess(cmd, returncode=0, stdout="new_commit_sha")
+            if "--abbrev-ref" in cmd:
+                return subprocess.CompletedProcess(cmd, returncode=0, stdout="main\n")
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="head_sha_123\n")
         return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
 
     monkeypatch.setattr(subprocess, "run", mock_run)
@@ -751,7 +759,7 @@ def test_27_semantic_evidence_adversarial_rejection():
     context3 = ReviewContext(
         contract=contract3,
         diffs="clean diff",
-        progress_report_text="# Progress Report\nTests: 628",
+        progress_report_text=f"# Progress Report\nCODE: {contract3.code_sha}\nINSTRUCTION: {contract3.instruction_sha}\nTests: 628",
         audit_text="# Audit\nBlender Cycles OptiX verified on GPU",
         acceptance_text="# Acceptance\nReal renders produced with non-zero size",
         ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
@@ -832,3 +840,229 @@ def test_29_admin_auth_endpoints_in_live_mode(tmp_path: Path):
     # Authorized with X-Supervisor-Admin-Key succeeds with 200
     r_key = client.get("/supervisor/reviews", headers={"X-Supervisor-Admin-Key": "secret-admin-pass-123"})
     assert r_key.status_code == 200
+
+
+# 30. Blocker A: Webhook envelope fail-closed on missing/null repository
+def test_30_webhook_envelope_fail_closed(env_setup):
+    client = env_setup["client"]
+    cfg = env_setup["config"]
+
+    # Missing repository field completely -> 400
+    p1 = {"action": "created", "sender": {"login": "netfox-web"}, "issue": {"number": 1}}
+    b1 = json.dumps(p1).encode("utf-8")
+    r1 = client.post("/webhooks/github", content=b1, headers={"X-Hub-Signature-256": make_sig(b1, cfg.webhook_secret), "X-GitHub-Event": "issue_comment"})
+    assert r1.status_code == 400
+    assert "repository envelope" in r1.json()["detail"]
+
+    # repository field is None or not a dict -> 400
+    p2 = {"repository": None, "action": "created"}
+    b2 = json.dumps(p2).encode("utf-8")
+    r2 = client.post("/webhooks/github", content=b2, headers={"X-Hub-Signature-256": make_sig(b2, cfg.webhook_secret), "X-GitHub-Event": "issue_comment"})
+    assert r2.status_code == 400
+
+    # repository.full_name is missing or empty -> 400
+    p3 = {"repository": {"full_name": ""}, "action": "created"}
+    b3 = json.dumps(p3).encode("utf-8")
+    r3 = client.post("/webhooks/github", content=b3, headers={"X-Hub-Signature-256": make_sig(b3, cfg.webhook_secret), "X-GitHub-Event": "issue_comment"})
+    assert r3.status_code == 400
+    assert "repository.full_name" in r3.json()["detail"]
+
+    # repository.full_name is wrong repo -> IGNORED_WRONG_REPOSITORY
+    p4 = {"repository": {"full_name": "other-owner/other-repo"}, "action": "created"}
+    b4 = json.dumps(p4).encode("utf-8")
+    r4 = client.post("/webhooks/github", content=b4, headers={"X-Hub-Signature-256": make_sig(b4, cfg.webhook_secret), "X-GitHub-Event": "issue_comment"})
+    assert r4.status_code == 200
+    assert r4.json()["status"] == "IGNORED_WRONG_REPOSITORY"
+
+
+# 31. Blocker A: In live mode, X-GitHub-Delivery is strictly required
+def test_31_live_mode_requires_delivery_id(tmp_path: Path):
+    cfg = SupervisorConfig(
+        mode="live",
+        admin_key="secret-admin-pass-123",
+        state_db_path=tmp_path / "supervisor.db",
+        audit_log_path=tmp_path / "audit.log",
+        repo_root=tmp_path,
+        webhook_secret="strong-secret-123456",
+        github_token="fake-token",
+        allowed_senders=("netfox-web",),
+        ai_provider="semantic_evidence",
+    )
+    app = create_app(cfg)
+    client = TestClient(app)
+
+    p = {"repository": {"full_name": cfg.repo_name}, "action": "created"}
+    b = json.dumps(p).encode("utf-8")
+    sig = make_sig(b, cfg.webhook_secret)
+
+    # Missing X-GitHub-Delivery header in live mode -> 400
+    r_no_deliv = client.post("/webhooks/github", content=b, headers={"X-Hub-Signature-256": sig, "X-GitHub-Event": "issue_comment"})
+    assert r_no_deliv.status_code == 400
+    assert "X-GitHub-Delivery header is required in live mode" in r_no_deliv.json()["detail"]
+
+
+# 32. Blocker B: Window B1 remote commit adoption on crash recovery
+def test_32_crash_recovery_window_b1_commit_adoption(env_setup):
+    engine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    c_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", evidence_id="gen_win_b1")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+
+    # Simulate that remote origin already contains a commit matching (code_sha, evidence_generation_id)
+    gh.commits_log = [{
+        "sha": "remote_instr_existing_sha_999",
+        "commit": {
+            "message": f"supervisor: accept c0de111 and start next-phase\n\nReviewed: c0de111\nEvidence-ID: gen_win_b1"
+        }
+    }]
+
+    res = engine.handle_ready_contract(contract)
+    assert res["status"] == "COMPLETED"
+    # Ensure that it adopted the remote commit rather than committing a new one
+    assert len(gh.committed_instructions) == 0
+    assert res["new_instruction_sha"] == "remote_instr_existing_sha_999"
+
+
+# 33. Blocker B: Window B2 issue comment adoption on crash recovery
+def test_33_crash_recovery_window_b2_comment_adoption(env_setup):
+    engine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    c_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", evidence_id="gen_win_b2")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+
+    # Simulate issue comment already exists on Issue #1 with deterministic marker
+    marker = "<!-- REVIEW_MARKER: CODE_SHA=c0de111 EVIDENCE_ID=gen_win_b2 -->"
+    gh.posted_comments = [{
+        "id": "comment_already_posted_555",
+        "issue_number": 1,
+        "body": f"## SUPERVISOR_REVIEW_COMPLETE\nDECISION=ACCEPT_WITH_SCOPE\n{marker}",
+    }]
+
+    res = engine.handle_ready_contract(contract)
+    assert res["status"] == "COMPLETED"
+    # Ensure that no new comment was posted
+    assert len(gh.posted_comments) == 1
+    # Check that the review record has adopted the existing comment ID
+    state_mgr: StateManager = env_setup["state_mgr"]
+    rev = state_mgr.get_review_by_contract("c0de111", "gen_win_b2")
+    assert rev is not None
+    assert rev["issue_comment_id"] == "comment_already_posted_555"
+
+
+# 34. Blocker C: Git preflight rejects detached HEAD, mismatch, and dirty tree
+def test_34_git_preflight_rejections(tmp_path: Path, monkeypatch):
+    import subprocess
+    cfg = SupervisorConfig(
+        mode="live",
+        repo_root=tmp_path,
+        webhook_secret="strong-live-secret-12345",
+        github_token="fake-token",
+        allowed_senders=("netfox-web",),
+        ai_provider="semantic_evidence",
+    )
+    client = GitHubClient(cfg)
+
+    # Scenario 1: Dirty working tree
+    def mock_dirty_tree(cmd, *args, **kwargs):
+        if "status" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout=" M dirty_file.py\n")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+    monkeypatch.setattr(subprocess, "run", mock_dirty_tree)
+    with pytest.raises(GitHubVerificationError, match="Refusing to commit instruction on a dirty working tree"):
+        client.commit_instruction_file("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", "content", "msg")
+
+    # Scenario 2: Staged uncommitted changes (diff-index != 0)
+    def mock_dirty_index(cmd, *args, **kwargs):
+        if "status" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+        if "diff-index" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+    monkeypatch.setattr(subprocess, "run", mock_dirty_index)
+    with pytest.raises(GitHubVerificationError, match="staged or unstaged changes exist"):
+        client.commit_instruction_file("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", "content", "msg")
+
+    # Scenario 3: Detached HEAD
+    def mock_detached_head(cmd, *args, **kwargs):
+        if "status" in cmd or "diff-index" in cmd or "fetch" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+        if "rev-parse" in cmd and "--abbrev-ref" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="HEAD\n")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+    monkeypatch.setattr(subprocess, "run", mock_detached_head)
+    with pytest.raises(GitHubVerificationError, match="detached HEAD forbidden"):
+        client.commit_instruction_file("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", "content", "msg")
+
+    # Scenario 4: Local HEAD mismatch with origin/main
+    def mock_mismatch_head(cmd, *args, **kwargs):
+        if "status" in cmd or "diff-index" in cmd or "fetch" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+        if "rev-parse" in cmd and "--abbrev-ref" in cmd:
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="main\n")
+        if "rev-parse" in cmd and cmd[-1] == "HEAD":
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="sha_local_aaa\n")
+        if "rev-parse" in cmd and cmd[-1] == "origin/main":
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="sha_remote_bbb\n")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+    monkeypatch.setattr(subprocess, "run", mock_mismatch_head)
+    with pytest.raises(GitHubVerificationError, match="does not match origin/main"):
+        client.commit_instruction_file("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", "content", "msg")
+
+
+# 35. Blocker D: Provider factory, stale progress report, and live preflight rules
+def test_35_provider_factory_and_stale_lineage(tmp_path: Path):
+    # Provider factory requires API key for openai/anthropic/gemini
+    cfg_openai_nokey = SupervisorConfig(ai_provider="openai", ai_api_key="")
+    with pytest.raises(ConfigValidationError, match="OPENAI_API_KEY is required"):
+        create_supervisor_adapter(cfg_openai_nokey)
+
+    # Provider factory succeeds with key
+    cfg_openai_withkey = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test12345")
+    adapter_openai = create_supervisor_adapter(cfg_openai_withkey)
+    assert adapter_openai is not None
+
+    # Stale progress report (missing code_sha or instruction_sha) fails closed
+    adapter = SemanticEvidenceSupervisorAdapter()
+    c_text = valid_contract_text(code_sha="c0de999", instruction_sha="instr_888", evidence_id="gen_stale")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context_stale = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text="# Progress Report\nCODE: wrong_code_111\nINSTRUCTION: wrong_instr_222\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res = adapter.review_repository(context_stale)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("Progress report lineage mismatch" in b for b in res.blockers)
+
+    # Empty diff fails closed
+    context_nodiff = ReviewContext(
+        contract=contract,
+        diffs="",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res_nodiff = adapter.review_repository(context_nodiff)
+    assert res_nodiff.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("diff is empty" in b for b in res_nodiff.blockers)
+
+    # In live mode, SemanticEvidenceSupervisorAdapter cannot unilaterally issue ACCEPT_WITH_SCOPE
+    adapter_live = SemanticEvidenceSupervisorAdapter(is_live=True)
+    context_valid = ReviewContext(
+        contract=contract,
+        diffs="valid diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res_live = adapter_live.review_repository(context_valid)
+    assert res_live.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("cannot unilaterally issue ACCEPT_WITH_SCOPE" in b for b in res_live.blockers)
+

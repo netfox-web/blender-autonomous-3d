@@ -268,6 +268,13 @@ class GitHubClient(GitHubClientInterface):
             if status_res.returncode == 0 and status_res.stdout.strip():
                 raise GitHubVerificationError("Refusing to commit instruction on a dirty working tree.")
 
+            diff_index_res = subprocess.run(
+                ["git", "diff-index", "--quiet", "HEAD", "--"],
+                cwd=str(self.config.repo_root),
+            )
+            if diff_index_res.returncode != 0:
+                raise GitHubVerificationError("Refusing to commit instruction: staged or unstaged changes exist.")
+
             fetch_res = subprocess.run(
                 ["git", "fetch", "origin", branch],
                 cwd=str(self.config.repo_root),
@@ -279,6 +286,31 @@ class GitHubClient(GitHubClientInterface):
             if fetch_res.returncode != 0:
                 raise GitHubVerificationError(
                     f"Failed to fetch remote branch prior to instruction commit: {fetch_res.stderr.strip()}"
+                )
+
+            # Verify current branch is configured branch (disallow detached HEAD)
+            branch_res = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            curr_branch = branch_res.stdout.strip()
+            if curr_branch != branch or curr_branch == "HEAD":
+                raise GitHubVerificationError(
+                    f"Refusing to commit instruction on branch '{curr_branch}' (expected '{branch}', detached HEAD forbidden)."
+                )
+
+            # Verify local HEAD matches origin/branch
+            local_head_res = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(self.config.repo_root), capture_output=True, text=True)
+            origin_head_res = subprocess.run(["git", "rev-parse", f"origin/{branch}"], cwd=str(self.config.repo_root), capture_output=True, text=True)
+            local_head = local_head_res.stdout.strip()
+            origin_head = origin_head_res.stdout.strip()
+            if local_head != origin_head:
+                raise GitHubVerificationError(
+                    f"Local HEAD ({local_head}) does not match origin/{branch} ({origin_head}). Refusing write."
                 )
 
         full_path = self.config.repo_root / file_path
@@ -308,9 +340,9 @@ class GitHubClient(GitHubClientInterface):
         )
         new_sha = res.stdout.strip()
 
-        # Push to remote branch
+        # Push to remote branch using explicit refspec
         push_res = subprocess.run(
-            ["git", "push", "origin", branch],
+            ["git", "push", "origin", f"HEAD:refs/heads/{branch}"],
             cwd=str(self.config.repo_root),
             capture_output=True,
             text=True,
@@ -319,14 +351,25 @@ class GitHubClient(GitHubClientInterface):
         )
         if push_res.returncode != 0:
             if is_live:
-                # Rule 1: Never swallow push failure in live mode!
+                # Rollback local commit to maintain clean working tree on failure
+                subprocess.run(
+                    ["git", "reset", "--hard", f"origin/{branch}"],
+                    cwd=str(self.config.repo_root),
+                    capture_output=True,
+                )
                 raise GitHubVerificationError(
                     f"git push failed in live mode (exit code {push_res.returncode}): {push_res.stderr.strip()}"
                 )
             # In non-live/test mode, allow local commit if origin not reachable
 
         if is_live:
-            # Rule 4: Verify remote main contains the exact new commit
+            # Re-fetch origin to verify remote HEAD and blob content
+            subprocess.run(
+                ["git", "fetch", "origin", branch],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+            )
             verify_res = subprocess.run(
                 ["git", "rev-parse", f"origin/{branch}"],
                 cwd=str(self.config.repo_root),
@@ -337,6 +380,20 @@ class GitHubClient(GitHubClientInterface):
             if remote_head != new_sha:
                 raise GitHubVerificationError(
                     f"Remote verification failed: origin/{branch} ({remote_head}) does not match new commit ({new_sha})."
+                )
+
+            # Verify remote blob content matches intended payload
+            remote_content_res = subprocess.run(
+                ["git", "show", f"origin/{branch}:{file_path}"],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if remote_content_res.returncode != 0 or remote_content_res.stdout.strip() != content.strip():
+                raise GitHubVerificationError(
+                    f"Remote content verification failed for '{file_path}' at origin/{branch}."
                 )
 
         return new_sha

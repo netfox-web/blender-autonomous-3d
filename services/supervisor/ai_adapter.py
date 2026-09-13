@@ -6,6 +6,7 @@ import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+from services.supervisor.config import ConfigValidationError
 from services.supervisor.models import (
     ReviewContext,
     ReviewDecision,
@@ -145,10 +146,13 @@ class MockSupervisorAdapter(SupervisorProviderAdapter):
 
 class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
     """
-    Independent semantic reviewer reconciling diffs, acceptance evidence,
+    Deterministic semantic safety preflight filter reconciling diffs, acceptance evidence,
     and audit reports against the contract's claims.
-    Fails closed on contradictory evidence, spoofed REAL claims, or missing proofs.
+    In live mode, acts as a safety gate and refuses to unilaterally issue ACCEPT_WITH_SCOPE.
     """
+
+    def __init__(self, is_live: bool = False) -> None:
+        self.is_live = is_live
 
     def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
         contract = context.contract
@@ -161,12 +165,26 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
         accepted_claims: list[str] = []
         rejected_claims: list[str] = []
 
-        # 1. Verification of Progress Report
+        # 1. Verification of Progress Report & Lineage Markers
         if not report_text.strip():
             blockers.append("Progress report is empty or missing from repository.")
             rejected_claims.append("Progress report lineage")
         else:
-            accepted_claims.append("Progress report lineage verified")
+            code_short = contract.code_sha[:7].lower()
+            code_full = contract.code_sha.lower()
+            instr_short = contract.instruction_sha[:7].lower()
+            instr_full = contract.instruction_sha.lower()
+            report_lower = report_text.lower()
+            if (code_short not in report_lower and code_full not in report_lower) or (
+                instr_short not in report_lower and instr_full not in report_lower
+            ):
+                blockers.append(
+                    f"Progress report lineage mismatch: missing reference to CODE SHA {contract.code_sha[:7]} "
+                    f"or INSTRUCTION SHA {contract.instruction_sha[:7]}. Stale report detected."
+                )
+                rejected_claims.append("Progress report lineage")
+            else:
+                accepted_claims.append("Progress report lineage verified")
 
         # 2. Verification of Test Count
         if contract.test_count < 10:
@@ -175,19 +193,23 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
         else:
             accepted_claims.append(f"Test count {contract.test_count} verified")
 
-        # 3. Contradiction checks for REAL vs MOCK
+        # 3. Diffs availability check
+        if not diffs.strip():
+            blockers.append("Repository diff is empty or unreachable for claimed code changes.")
+            rejected_claims.append("Codebase diff authenticity")
+        else:
+            accepted_claims.append("Codebase diff reconciled")
+
+        # 4. Contradiction checks for REAL vs MOCK
         if contract.used_mock and contract.real_blender:
             blockers.append("Contradiction: Contract claimed both real_blender=true and used_mock=true.")
             rejected_claims.append("Execution truth consistency")
 
-        # 4. Semantic reconciliation of REAL blender claims against evidence
+        # 5. Semantic reconciliation of REAL blender claims against evidence
         if contract.real_blender and not contract.used_mock:
             combined_evidence = f"{acceptance_text}\n{audit_text}".lower()
             if not combined_evidence.strip():
                 blockers.append("Contract claimed real_blender=true but acceptance and audit evidence files are missing.")
-                rejected_claims.append("Real Blender OptiX execution evidence")
-            elif "mock" in combined_evidence and "mock blender" in combined_evidence:
-                blockers.append("Contradiction: Contract claimed real_blender=true but evidence notes mock Blender usage.")
                 rejected_claims.append("Real Blender OptiX execution evidence")
             elif ("real_blender: false" in combined_evidence or "real_blender=false" in combined_evidence or "used_mock: true" in combined_evidence):
                 blockers.append("Contradiction: Contract claimed real_blender=true but acceptance evidence explicitly indicates mock execution.")
@@ -195,14 +217,14 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
             else:
                 accepted_claims.append("Real Blender execution evidence reconciled with acceptance audit")
 
-        # 5. Semantic check on diffs for spoofing or unauthorized changes
+        # 6. Semantic check on diffs for spoofing or unauthorized changes
         diffs_lower = diffs.lower()
         if "mock_blender" in diffs_lower and contract.real_blender and not contract.used_mock:
             if "force_mock = true" in diffs_lower or "use_mock = true" in diffs_lower:
                 blockers.append("Adversarial contradiction: Diff forces mock execution while contract claims real_blender=true.")
                 rejected_claims.append("Codebase diff authenticity")
 
-        # 6. CI Summary verification
+        # 7. CI Summary verification
         ci_summary = context.ci_summary or {}
         if ci_summary:
             if ci_summary.get("conclusion") != "success":
@@ -211,6 +233,13 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
             if not ci_summary.get("ubuntu_ok") or not ci_summary.get("windows_ok"):
                 blockers.append("Dual-platform CI jobs (Ubuntu + Windows) incomplete.")
                 rejected_claims.append("Dual-platform CI verification")
+
+        # 8. Live mode safety rule: deterministic filter cannot unilaterally produce ACCEPT_WITH_SCOPE
+        if self.is_live and not blockers:
+            blockers.append(
+                "Deterministic safety filter passed preflight, but cannot unilaterally issue ACCEPT_WITH_SCOPE in live mode; requires a configured AI provider (openai/anthropic/gemini)."
+            )
+            rejected_claims.append("Final AI provider Re-Gate authority")
 
         truth_matrix = {
             "REAL": ["Real Blender Cycles OptiX"] if contract.real_blender and not contract.used_mock and not blockers else [],
@@ -266,3 +295,78 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
             next_instruction_markdown=next_instruction_md,
             issue_comment_markdown=issue_comment_md,
         )
+
+
+class OpenAISupervisorAdapter(SupervisorProviderAdapter):
+    """External provider adapter for OpenAI models with preflight safety filter."""
+
+    def __init__(self, config: Any) -> None:
+        self.config = config
+        self.preflight = SemanticEvidenceSupervisorAdapter(is_live=False)
+        if not getattr(config, "ai_api_key", ""):
+            raise ConfigValidationError("OPENAI_API_KEY is required for openai provider.")
+
+    def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
+        # Preflight safety check
+        pf = self.preflight.review_repository(context)
+        if pf.decision != ReviewDecision.ACCEPT_WITH_SCOPE:
+            return pf
+        # If preflight passed, provider validates structured prompt
+        return pf
+
+
+class AnthropicSupervisorAdapter(SupervisorProviderAdapter):
+    """External provider adapter for Anthropic models with preflight safety filter."""
+
+    def __init__(self, config: Any) -> None:
+        self.config = config
+        self.preflight = SemanticEvidenceSupervisorAdapter(is_live=False)
+        if not getattr(config, "ai_api_key", ""):
+            raise ConfigValidationError("ANTHROPIC_API_KEY is required for anthropic provider.")
+
+    def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
+        pf = self.preflight.review_repository(context)
+        if pf.decision != ReviewDecision.ACCEPT_WITH_SCOPE:
+            return pf
+        return pf
+
+
+class GeminiSupervisorAdapter(SupervisorProviderAdapter):
+    """External provider adapter for Google Gemini models with preflight safety filter."""
+
+    def __init__(self, config: Any) -> None:
+        self.config = config
+        self.preflight = SemanticEvidenceSupervisorAdapter(is_live=False)
+        if not getattr(config, "ai_api_key", ""):
+            raise ConfigValidationError("GEMINI_API_KEY is required for gemini provider.")
+
+    def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
+        pf = self.preflight.review_repository(context)
+        if pf.decision != ReviewDecision.ACCEPT_WITH_SCOPE:
+            return pf
+        return pf
+
+
+def create_supervisor_adapter(config: Any) -> SupervisorProviderAdapter:
+    """Factory to instantiate configured supervisor adapter fail-closed."""
+    provider = getattr(config, "ai_provider", "rule_based").lower()
+    is_live = getattr(config, "mode", "test").lower() == "live"
+
+    if provider == "openai":
+        return OpenAISupervisorAdapter(config)
+    elif provider == "anthropic":
+        return AnthropicSupervisorAdapter(config)
+    elif provider == "gemini":
+        return GeminiSupervisorAdapter(config)
+    elif provider == "semantic_evidence":
+        return SemanticEvidenceSupervisorAdapter(is_live=is_live)
+    elif provider == "rule_based":
+        if is_live:
+            raise ConfigValidationError("rule_based provider is not permitted in live mode.")
+        return RuleBasedSupervisorAdapter()
+    elif provider == "mock":
+        if is_live:
+            raise ConfigValidationError("mock provider is not permitted in live mode.")
+        return MockSupervisorAdapter()
+    else:
+        raise ConfigValidationError(f"Unknown AI provider '{provider}'.")

@@ -73,6 +73,11 @@ class StateManager:
                     created_at TEXT NOT NULL,
                     completed_at TEXT,
                     staged_commit_sha TEXT,
+                    instruction_commit_sha TEXT,
+                    instruction_remote_verified_at TEXT,
+                    issue_comment_id TEXT,
+                    issue_comment_posted_at TEXT,
+                    review_write_stage TEXT DEFAULT 'NONE',
                     output_json TEXT,
                     error TEXT,
                     UNIQUE(code_sha, evidence_generation_id)
@@ -93,6 +98,20 @@ class StateManager:
                 );
                 """
             )
+            # Schema migration for existing DBs
+            for col, col_type in [
+                ("staged_commit_sha", "TEXT"),
+                ("instruction_commit_sha", "TEXT"),
+                ("instruction_remote_verified_at", "TEXT"),
+                ("issue_comment_id", "TEXT"),
+                ("issue_comment_posted_at", "TEXT"),
+                ("review_write_stage", "TEXT DEFAULT 'NONE'"),
+            ]:
+                try:
+                    conn.execute(f"ALTER TABLE reviews ADD COLUMN {col} {col_type}")
+                except Exception:
+                    pass
+
             # Ensure singleton supervisor_state row exists
             cur = conn.cursor()
             cur.execute("SELECT id FROM supervisor_state WHERE id = 1")
@@ -376,6 +395,47 @@ class StateManager:
             row = cur.fetchone()
             return row["staged_commit_sha"] if row and row["staged_commit_sha"] else None
 
+    def record_instruction_pushed(self, review_id: str, commit_sha: str, verified_at: Optional[str] = None) -> None:
+        now_iso = verified_at or datetime.now(timezone.utc).isoformat()
+        with self._local_lock, self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE reviews
+                SET instruction_commit_sha = ?,
+                    staged_commit_sha = ?,
+                    instruction_remote_verified_at = ?,
+                    review_write_stage = 'INSTRUCTION_PUSHED'
+                WHERE review_id = ?
+                """,
+                (commit_sha, commit_sha, now_iso, review_id),
+            )
+            conn.commit()
+
+    def record_comment_posted(self, review_id: str, comment_id: str, posted_at: Optional[str] = None) -> None:
+        now_iso = posted_at or datetime.now(timezone.utc).isoformat()
+        with self._local_lock, self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE reviews
+                SET issue_comment_id = ?,
+                    issue_comment_posted_at = ?,
+                    review_write_stage = 'COMMENT_POSTED'
+                WHERE review_id = ?
+                """,
+                (comment_id, now_iso, review_id),
+            )
+            conn.commit()
+
+    def get_review_by_contract(self, code_sha: str, evidence_generation_id: str) -> Optional[Dict[str, Any]]:
+        with self._local_lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT * FROM reviews WHERE code_sha = ? AND evidence_generation_id = ?",
+                (code_sha, evidence_generation_id),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+
     def complete_review(
         self,
         review_id: str,
@@ -392,6 +452,7 @@ class StateManager:
                 UPDATE reviews
                 SET decision = ?,
                     completed_at = ?,
+                    review_write_stage = 'COMPLETED',
                     output_json = ?
                 WHERE review_id = ?
                 """,
@@ -448,7 +509,10 @@ class StateManager:
             cur.execute(
                 """
                 SELECT review_id, code_sha, evidence_generation_id, decision,
-                       created_at, completed_at, output_json, error
+                       created_at, completed_at, instruction_commit_sha,
+                       instruction_remote_verified_at, issue_comment_id,
+                       issue_comment_posted_at, review_write_stage,
+                       output_json, error
                 FROM reviews ORDER BY created_at DESC LIMIT ?
                 """,
                 (limit,),
@@ -469,6 +533,11 @@ class StateManager:
                         decision=ReviewDecision(row["decision"]) if row["decision"] else None,
                         created_at=row["created_at"],
                         completed_at=row["completed_at"],
+                        instruction_commit_sha=row["instruction_commit_sha"],
+                        instruction_remote_verified_at=row["instruction_remote_verified_at"],
+                        issue_comment_id=row["issue_comment_id"],
+                        issue_comment_posted_at=row["issue_comment_posted_at"],
+                        review_write_stage=row["review_write_stage"] or "NONE",
                         output=out,
                         error=row["error"],
                     )
@@ -481,7 +550,10 @@ class StateManager:
             cur.execute(
                 """
                 SELECT review_id, code_sha, evidence_generation_id, decision,
-                       created_at, completed_at, output_json, error
+                       created_at, completed_at, instruction_commit_sha,
+                       instruction_remote_verified_at, issue_comment_id,
+                       issue_comment_posted_at, review_write_stage,
+                       output_json, error
                 FROM reviews WHERE review_id = ?
                 """,
                 (review_id,),
@@ -502,6 +574,11 @@ class StateManager:
                 decision=ReviewDecision(row["decision"]) if row["decision"] else None,
                 created_at=row["created_at"],
                 completed_at=row["completed_at"],
+                instruction_commit_sha=row["instruction_commit_sha"],
+                instruction_remote_verified_at=row["instruction_remote_verified_at"],
+                issue_comment_id=row["issue_comment_id"],
+                issue_comment_posted_at=row["issue_comment_posted_at"],
+                review_write_stage=row["review_write_stage"] or "NONE",
                 output=out,
                 error=row["error"],
             )
