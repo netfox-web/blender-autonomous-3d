@@ -799,9 +799,15 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         length = float(part.get("length") or 0) / 1000.0
         width_p = float(part.get("width") or 0) / 1000.0
         thick = float(part.get("thickness") or 18) / 1000.0
-        loc = [0.0, 0.0, height / 2]
-        size = [thick, width_p, length]
-        if role == "left":
+        door_w = width_p
+        if part.get("location") and part.get("size"):
+            loc = [float(x) for x in part["location"]]
+            size = [float(x) * 2.0 for x in part["size"]]
+            if role in counts:
+                counts[role] += 1
+            if role == "door":
+                door_w = float(part["size"][0])
+        elif role == "left":
             size = [thick, depth, height]
             loc = [-width / 2 + thick / 2, 0, height / 2]
         elif role == "right":
@@ -1679,6 +1685,22 @@ def build_and_render(job: dict) -> dict:
             outputs["mask.png"] = mask
             produced.append("mask")
         produced.extend([k for k in keys if keys[k]])
+    if job.get("exportBlend"):
+        blend_path = Path(job.get("workDir") or ".") / "model.blend"
+        try:
+            bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+            if blend_path.exists():
+                outputs["model.blend"] = str(blend_path)
+        except Exception:
+            pass
+    if job.get("exportGlb"):
+        glb_path = Path(job.get("workDir") or ".") / "model.glb"
+        try:
+            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB")
+            if glb_path.exists():
+                outputs["model.glb"] = str(glb_path)
+        except Exception:
+            pass
     result = {
         "status": "succeeded",
         "engine": "CYCLES",
