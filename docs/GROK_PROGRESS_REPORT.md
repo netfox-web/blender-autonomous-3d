@@ -2,34 +2,31 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-14  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `5d9dd9b3b765206ef1fd959ba6f899f5e4ccebbd` (Event-Driven Supervisor Re-Gate Round 6 — CHANGES REQUIRED)  
-Issue #1: Event-Driven Supervisor Re-Gate Round 6 `5d9dd9b`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `0cb8faa1ff7cf0ac9b6f4f3f3dfd38f766a28872` (Event-Driven Supervisor Re-Gate Round 8 — CHANGES REQUIRED)  
+Issue #1: Event-Driven Supervisor Re-Gate Round 8 `0cb8faa`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Event-Driven Autonomous Supervisor Re-Gate Round 6 — Exact Window B1 Recovery Lineage, Mandatory Real Blender Acceptance, Authoritative Changed-Files & Split Diff Ranges, and Strict Parser Boundary**:
-1. **Blocker A: Window B1 Exact Lineage Recovery & Digest Authority**:
-   - `services/supervisor/engine.py`: Instruction candidate adoption unconditionally requires all 6 trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`, `Supervisor-Review-Id`). Short-SHA and fuzzy fallbacks removed; missing any trailer fails closed.
-   - Remote blob fetch fails closed on 404, empty, timeout, or exception (`except: pass` eliminated). Remote blob must contain exact 6-identity marker.
-   - Durably persisted full SHA256 intended instruction digest in SQLite `reviews.intended_instruction_sha256` before write; candidate adoption asserts `blob_digest == intended_digest`. Staged commits verified before adoption.
-   - Fixed crash recovery review ID reuse across crashes for continuous trailer/blob identity.
-2. **Blocker B: Mandatory REAL Blender Acceptance vs Product Truth Fallback Rejection**:
-   - `services/supervisor/engine.py` & `ai_adapter.py`: When `real_blender=True and not used_mock`, `docs/REAL_E2E_ACCEPTANCE.md @ DOCS_SHA` is strictly mandatory. 404, empty, timeout, or fetch error halts review **before calling external AI provider** with `CHANGES_REQUIRED`.
-   - `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md` is strictly auxiliary and cannot substitute for Real Blender acceptance. Both sources tracked distinctly in `fetch_statuses` and prompt sections.
-3. **Blocker C: Independent Authoritative Changed-Files & Split Diff Ranges**:
-   - `services/supervisor/github_client.py` & `engine.py`: Added `get_changed_files_between()` querying `git diff --name-status` / GitHub compare API. Validates manifest against git authority; detects omitted files, phantom files, status spoofing, and rename mismatches.
-   - Split prompt diff into distinct bounded sections:
-     - `CODE DIFF`: `INSTRUCTION_SHA..CODE_SHA` (path `git diff`)
-     - `DOCS DIFF`: `CODE_SHA..DOCS_SHA` (path `git diff DOCS`)
-   - Checks diff range contamination: files from DOCS commit in CODE diff fail closed. Independent SHA256 and completeness tracking per range.
-4. **Blocker D: Strict Parser Boundary DOCS_CI_RUN_ID & Provider Request Audit**:
-   - `services/supervisor/models.py`: `validate_strict(is_live=True)` and `parse_from_text(..., strict=True)` require positive integer `DOCS_CI_RUN_ID` before GitHub API calls; disallows legacy `CI_RUN_ID` substitution.
-   - `services/supervisor/ai_adapter.py`: Structured provider call returns `(raw_text, provider_request_id)` capturing OpenAI (`id`), Anthropic (`id`), Gemini (`responseId`/`id`). Audit trail captures provider, model, request ID, review ID, 4 identities, timestamp. Suppresses credentials.
-5. **Blocker E: Truth Boundaries Preserved**:
+Executed **Event-Driven Autonomous Supervisor Re-Gate Round 8 — Remote GitHub API Ref Normalization, Fail-Closed Compare API Errors, Full Trailer Extraction, and 72-Scenario Integration Test Verification**:
+1. **Round 8 Blocker A: Remote GitHub API Ref Normalization & Compare Fallback**:
+   - `services/supervisor/github_client.py`: Added `_normalize_ref_for_api(ref)` helper function to safely strip `origin/` prefix from branch refs when querying remote GitHub compare API (`/repos/{repo}/compare/{base}...{head}`). This prevents HTTP 404 errors caused by passing local tracking ref names like `origin/main` directly to GitHub REST API.
+   - Fail-closed compare API error handling: When GitHub compare API returns non-200 status (404, 409, 5xx), `GitHubClient.get_commits_since()` raises typed `GitHubVerificationError` instead of swallowing errors or returning silent empty lists.
+   - Full trailer extraction: Remote compare API fallback preserves complete `commit.message` with arbitrary newlines, pipes (`|`), and all 6 required trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`, `Supervisor-Review-Id`).
+2. **Round 8 Blocker B: Comprehensive Integration Test Suite (72 Scenarios Passed)**:
+   - Added tests 69–72 to `tests/test_supervisor.py` (totaling 72 supervisor tests, all 100% green):
+     - `test_69_github_client_compare_ref_normalization_and_candidate_adoption`: Real `GitHubClient` test verifying that local git failure triggers API fallback with normalized ref `...main` (avoiding 404) and extracts complete trailers.
+     - `test_70_github_client_compare_404_error_vs_zero_commits`: Verifies compare API 404 fails closed with `GitHubVerificationError`, while genuine 200 with 0 commits cleanly returns `[]`.
+     - `test_71_staged_sha_remote_compare_fallback_success`: Verifies staged commit in SQLite state DB is verified and adopted via remote compare API fallback without creating a duplicate commit.
+     - `test_72_window_b2_rest_fallback_exactly_once_across_all_decisions`: Verifies that existing review markers in paginated comments prevent duplicate issue comments across `ACCEPT_WITH_SCOPE`, `CHANGES_REQUIRED`, and `BLOCKED` decisions.
+3. **Round 7 Predecessor Corrections Retained**:
+   - Live Commit Body Framing: `get_commits_since()` uses ASCII Record Separator (`\x1e`) and Unit Separator (`\x1f`) framing (`--pretty=format:%x1e%H%x1f%an%x1f%B`) preserving full commit messages with trailers.
+   - Candidate Discovery Fail-Closed: Halts review and prevents duplicate commits on candidate enumeration errors.
+   - RFC 5988 Link Header Pagination: REST issue comments fallback jumps to `rel="last"` and traverses `rel="prev"` to gather latest comments in chronological order.
+4. **Truth Boundaries Preserved**:
    - Preserved honest readiness boundaries: `eventDrivenSupervisorReady=false`, `webhookRealE2e=false`, `liveProviderReady=false`.
    - Phase 961+ remains **HOLD**; physical machinery (`LIVE_CNC`, `LIVE_LASER`, `PLC`) remains **BLOCKED**.
-   - Clean-tree real execution completed with `scripts/run_product_truth_render_e2e.py` on exact CODE commit `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f` (generation `50a84d04-85c2-429d-8c12-641006ac95f1`).
+   - Clean-tree real execution completed with `scripts/run_product_truth_render_e2e.py` on exact CODE commit `d9402f3a966581aa66d39b0097e518366d87626c` (generation `1631af33-6946-4ac9-96eb-b844d68892c9`).
 
 Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth. Did not start Phase 961+.
 
@@ -41,20 +38,22 @@ Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Pro
 | Supervisor R4 | Blockers A–E: Quadruple reviewed identity binding (`reviewedCodeSha`, `reviewedDocsSha`, `reviewedInstructionSha`, `reviewedEvidenceGenerationId`), exact instruction & changed-files manifest with bounded section completeness metadata, configurable `SUPERVISOR_AI_MODEL`, engine `logger` fix, Window B2 idempotent `BLOCKED` comments. 49 scenarios tested. |
 | Supervisor R5 | Blockers A–E: Evidence completeness structure & truncation gate, pre-provider typed fail-closed pinned fetch, Window B1 5-trailer & marker adoption, live model validation, fail-closed contract booleans & 40-char hex SHA. 56 scenarios tested. |
 | Supervisor R6 | Blockers A–D: Exact Window B1 6-trailer lineage & blob digest authority, mandatory Real Blender acceptance (no Product Truth fallback), authoritative changed-files & split diff ranges with contamination check, strict parser boundary for `DOCS_CI_RUN_ID` and provider request ID audit. 64 scenarios tested. |
+| Supervisor R7 | Blockers A–C: Live git commit trailer preservation with ASCII separators (`\x1e`/`\x1f`), fail-closed candidate discovery halting without duplicate commits, RFC 5988 REST pagination with `rel="last"`/`rel="prev"`. 68 scenarios tested. |
+| Supervisor R8 | Blockers A–B: Remote GitHub API ref normalization (`_normalize_ref_for_api`), fail-closed compare API errors, staged SHA remote compare fallback adoption, and Window B2 REST fallback exactly-once across ACCEPT, CHANGES_REQUIRED, and BLOCKED decisions. 72 scenarios tested. |
 
-**CODE_EVIDENCE_SHA:** `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`  
-**CODE_CI_RUN_ID:** `34783581901` (Ubuntu `103794888701` SUCCESS in 20m42s, Windows `103794888628` SUCCESS in 16m00s)  
-**PRIOR_DOCS_CI_RUN_ID:** `34781084245` (Ubuntu `103788574676` SUCCESS, Windows `103788574765` SUCCESS)  
+**CODE_EVIDENCE_SHA:** `d9402f3a966581aa66d39b0097e518366d87626c`  
+**CODE_CI_RUN_ID:** `34788079332` (Ubuntu `103807115139` SUCCESS in 20m43s, Windows `103807115312` SUCCESS in 21m49s)  
+**PRIOR_DOCS_CI_RUN_ID:** `34784713920` (Ubuntu `103797969368` SUCCESS, Windows `103797969495` SUCCESS)  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** dual-platform on exact code commit `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`.
+GitHub Actions CODE: **GREEN** dual-platform on exact code commit `d9402f3a966581aa66d39b0097e518366d87626c`.
 
-Acceptance generation `50a84d04-85c2-429d-8c12-641006ac95f1`; runner-bound `evidenceCodeCommit=2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`; `workingTreeClean=true`. REAL Blender Cycles OptiX; `usedMock=false`; `eventDrivenSupervisorReady=false`; `webhookRealE2e=false`; `liveProviderReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
+Acceptance generation `1631af33-6946-4ac9-96eb-b844d68892c9`; runner-bound `evidenceCodeCommit=d9402f3a966581aa66d39b0097e518366d87626c`; `workingTreeClean=true`. REAL Blender Cycles OptiX; `usedMock=false`; `eventDrivenSupervisorReady=false`; `webhookRealE2e=false`; `liveProviderReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
 
 ## Tests
 
 ```
-pytest -v tests/test_supervisor.py  →  64 passed (100% green)
-pytest -q                          →  762 passed (100% green across all unit/regression tests)
+pytest -v tests/test_supervisor.py  →  72 passed (100% green)
+pytest -q                          →  770 passed (100% green across all unit/regression tests)
 ```
 
 CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready. Local and CI mock provider tests do **not** constitute `liveProviderReady=true`.
@@ -64,7 +63,7 @@ CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready. Local and CI mock provide
 | Item | Label | Evidence |
 |---|---|---|
 | Supervisor Control Plane Core | REAL_LOGIC | Webhook endpoint, HMAC-SHA256, SQLite state DB, durable review lifecycle |
-| GitHub Client & API Interface | REAL_LOGIC | Commit verification, dual-CI run check, remote blob inspection, git diff name-status authority |
+| GitHub Client & API Interface | REAL_LOGIC | Commit verification, dual-CI run check, remote blob inspection, git diff name-status authority, ref normalization, REST Link pagination |
 | Supervisor AI Adapters (OpenAI/Anthropic/Gemini) | REAL_LOGIC / ADAPTER | Real HTTP request payload assembly, Pydantic schema validation, 4 reviewed identities emission, provider request ID capture, split diff prompt assembly; mock transport tested; live credentials BLOCKED from logging |
 | Dual-CI Contract Lineage Engine | REAL_LOGIC | Validates `CODE_CI_RUN_ID` (head == `CODE_SHA`) & `DOCS_CI_RUN_ID` (head == `DOCS_SHA`) with dual-platform checks; strict boundary parser enforcement |
 | Safety & Output Policy Engine | REAL_LOGIC | Enforces bounded review decision, prevents mock promotion to REAL, human approval guardrail, idempotent BLOCKED comments |
@@ -88,3 +87,4 @@ CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready. Local and CI mock provide
 ## Next round
 
 Phase 2 DOCS commit & push -> wait for GitHub Actions green -> Report to Issue #1 with dual-CI machine-readable contract.
+

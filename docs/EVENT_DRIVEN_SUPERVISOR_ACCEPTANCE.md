@@ -2,14 +2,14 @@
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
 **Date**: 2026-09-14  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 6 Blocker Corrections  
-**Phase 1 CODE Commit**: `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`  
-**CODE Actions Run ID**: `34783581901` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
-- `unit (ubuntu-latest)`: `103794888701` (20m 42s)  
-- `unit (windows-latest)`: `103794888628` (16m 00s)  
-**Test Suite**: `tests/test_supervisor.py` (64 passed, 100% green)  
-**Full Regression Suite**: 762 passed (100% green)  
-**Clean-Tree E2E Evidence Run**: `generation: 50a84d04-85c2-429d-8c12-641006ac95f1`  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 8 Blocker Corrections  
+**Phase 1 CODE Commit**: `d9402f3a966581aa66d39b0097e518366d87626c`  
+**CODE Actions Run ID**: `34788079332` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
+- `unit (ubuntu-latest)`: `103807115139` (20m 43s)  
+- `unit (windows-latest)`: `103807115312` (21m 49s)  
+**Test Suite**: `tests/test_supervisor.py` (72 passed, 100% green)  
+**Full Regression Suite**: 770 passed (100% green)  
+**Clean-Tree E2E Evidence Run**: `generation: 1631af33-6946-4ac9-96eb-b844d68892c9`  
 
 ---
 
@@ -26,37 +26,23 @@
 
 ---
 
-## 2. Re-Gate Round 6 Blockers Resolution Summary
+## 2. Re-Gate Round 8 Blockers Resolution Summary
 
-### Blocker A — Window B1 Exact Lineage Recovery & Digest Authority
-- **Unconditional 6-Trailer Enforcement**: `_verify_instruction_candidate()` unconditionally requires exact match on all 6 trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`, `Supervisor-Review-Id`). All short-SHA fallbacks and optional trailer checks have been removed; missing any trailer fails closed.
-- **Fail-Closed Remote Blob Read**: Remote `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` blob retrieval fails closed on any exception, 404, or empty content (`except: pass` eliminated).
-- **Exact Remote Blob Identity Marker**: Candidate remote blob must contain the complete 6-identity marker (`CODE_SHA`, `DOCS_SHA`, `INSTRUCTION_SHA`, `EVIDENCE_GENERATION_ID`, `DECISION`, `REVIEW_ID`).
-- **Durable Pre-Write Content Digest Authority**: The full SHA256 digest of intended instruction content is durably persisted in SQLite `reviews.intended_instruction_sha256` before write; candidate adoption strictly asserts `blob_digest == intended_digest`.
-- **Durable Staged Commit Verification**: Commits stored in SQLite `staged_commit_sha` are re-verified through `_verify_instruction_candidate()` before adoption.
-- **Review ID Continuity in Recovery**: `SupervisorEngine` reuses the existing `review_id` across crashes for the same contract `(code_sha, evidence_generation_id)` to maintain unbroken trailer and blob marker identity.
+### Round 8 Blocker A — Remote GitHub API Ref Normalization & Compare Fallback Correctness
+- **Prefix Normalization (`_normalize_ref_for_api`)**: Added helper function to safely strip `origin/` prefix from branch refs when querying the GitHub REST API compare endpoint (`/repos/{repo}/compare/{base}...{head}`). This prevents HTTP 404 errors caused by passing remote tracking ref names like `origin/main` directly to GitHub API endpoints.
+- **Fail-Closed HTTP Error Handling**: When compare API returns non-200 status (404, 409, 5xx), `GitHubClient.get_commits_since()` raises typed `GitHubVerificationError` instead of swallowing errors or returning silent empty lists.
+- **Full Trailer Extraction**: Parses `commit.message` from API compare response, preserving arbitrary newlines, pipes (`|`), and all 6 required trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`, `Supervisor-Review-Id`).
 
-### Blocker B — REAL Blender Mandatory Acceptance Evidence vs Product Truth Fallback Rejection
-- **Mandatory REAL_E2E Acceptance**: When `real_blender=true and not used_mock`, `docs/REAL_E2E_ACCEPTANCE.md @ DOCS_SHA` is strictly mandatory. If missing (404), empty, timed out, or fetching fails, the engine immediately halts with `CHANGES_REQUIRED` before calling the AI provider.
-- **No Acceptance Fallback**: `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md` is strictly auxiliary and cannot substitute for the mandatory Real Blender acceptance report.
-- **Distinct Evidence Tracking**: Fetch statuses for both `docs/REAL_E2E_ACCEPTANCE.md` and `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.md` are recorded distinctly in `fetch_statuses` and provider prompt sections.
+### Round 8 Blocker B — Comprehensive Integration Test Coverage (72 Scenarios)
+- **Compare API Normalization Test (`test_69`)**: Real `GitHubClient` test verifying that local git failure triggers API fallback with normalized ref `...main` (avoiding 404) and extracts complete trailers.
+- **Compare API Error & Zero Commits Test (`test_70`)**: Verifies compare API 404 fails closed with `GitHubVerificationError`, while genuine 200 with 0 commits cleanly returns `[]`.
+- **Staged SHA Remote Compare Fallback Test (`test_71`)**: Verifies staged commit in SQLite state DB is verified and adopted via remote compare API fallback without creating a duplicate commit.
+- **Window B2 REST Fallback Exactly-Once Across All Decisions (`test_72`)**: Verifies that existing review markers in paginated comments prevent duplicate issue comments across `ACCEPT_WITH_SCOPE`, `CHANGES_REQUIRED`, and `BLOCKED` decisions.
 
-### Blocker C — Independent Authoritative Changed-Files & Split Diff Ranges
-- **Independent Git Authority**: `GitHubClientInterface.get_changed_files_between()` queries `git diff --name-status` (with GitHub compare API fallback) to provide independent authoritative changed files. Manifest paths and diff items are validated against this external authority rather than self-comparison.
-- **Manifest Tamper & Spoof Detection**: Compares manifest items against authoritative changes; fails closed on omitted files, phantom files, status spoofing (`M` vs `A`/`D`/`R`), or rename old/new path mismatches.
-- **Split Diff Ranges with Exact Provenance**: Prompt splits diff evidence into two distinct bounded sections:
-  - **`CODE DIFF`**: ref range `INSTRUCTION_SHA..CODE_SHA`, tracked under `path="git diff"`
-  - **`DOCS DIFF`**: ref range `CODE_SHA..DOCS_SHA`, tracked under `path="git diff DOCS"`
-- **Diff Contamination Prevention**: Prevents files from the DOCS commit from appearing in the CODE diff; fails closed if contaminated. Each section maintains independent SHA256 digest and completeness tracking.
-
-### Blocker D — Strict DOCS_CI_RUN_ID Parser Boundary & Provider Request ID Audit
-- **Parser Boundary Validation**: `ReadyForReGateContract.validate_strict(is_live=True)` and `parse_from_text(..., strict=True)` unconditionally require `DOCS_CI_RUN_ID` to be present and a positive integer before any GitHub API calls. Legacy `CI_RUN_ID` is disallowed from substituting for `DOCS_CI_RUN_ID` in strict mode.
-- **Structured Provider Request ID Capture**: `_call_provider_endpoint` returns a structured tuple `(raw_text, provider_request_id)` capturing the provider's request/message ID:
-  - OpenAI: `data.get("id")`
-  - Anthropic: `data.get("id")`
-  - Gemini: `data.get("responseId")` or `data.get("id")`
-  - Returns `None` explicitly if not returned by provider (never forged).
-- **Comprehensive Audit Trail**: Records `provider`, `model`, `provider_request_id`, `review_id`, `reviewed_code_sha`, `reviewed_docs_sha`, `reviewed_instruction_sha`, `reviewed_evidence_generation_id`, and `timestamp`. Strictly suppresses API keys and Authorization headers.
+### Round 7 Predecessor Corrections Retained
+- **ASCII Separator Framing (`\x1e`, `\x1f`)**: Local git log uses `--pretty=format:%x1e%H%x1f%an%x1f%B` preserving full raw commit bodies with trailers.
+- **Window B1 Fail-Closed Candidate Discovery**: Distinguishes between successful enumeration with 0 candidates and discovery failures, halting immediately on discovery errors.
+- **RFC 5988 Link Header Pagination**: REST issue comments fallback jumps to `rel="last"` and traverses `rel="prev"` to gather the latest comments in chronological order.
 
 ---
 
@@ -128,6 +114,14 @@
 | 62 | **Round 6 Blocker C: Distinct CODE and DOCS diff ranges & contamination check** | Split diff ranges (`INSTRUCTION_SHA..CODE_SHA` vs `CODE_SHA..DOCS_SHA`); files from DOCS commit in CODE diff fail closed. | ✅ PASS |
 | 63 | **Round 6 Blocker D: Strict DOCS_CI_RUN_ID validation at parse boundary** | Live strict contract enforces positive integer `DOCS_CI_RUN_ID` before GitHub API; disallows legacy `CI_RUN_ID` substitution. | ✅ PASS |
 | 64 | **Round 6 Blocker D: Provider request ID capture & structured audit** | Extracts provider request ID from OpenAI/Anthropic/Gemini responses into structured audit trail; explicit `None` when absent. | ✅ PASS |
+| 65 | **Round 7 Blocker A: Real GitHubClient commit body framing & 6-trailer preservation** | Preserves commit bodies with newlines, pipes, and all 6 trailers via record/unit separators, enabling exact candidate verification in real git repo. | ✅ PASS |
+| 66 | **Round 7 Blocker B: Candidate discovery failure fails closed without duplicate commit** | Remote commit discovery failure during Window B1 recovery raises `GitHubVerificationError` and refuses to create duplicate instruction commit. | ✅ PASS |
+| 67 | **Round 7 Blocker C: Window B2 REST fallback pagination fetches latest comments** | REST fallback pagination with `rel="last"` and `rel="prev"` correctly traverses deep issue threads and recovers deterministic review markers. | ✅ PASS |
+| 68 | **Round 7 Blocker C: Issue comments fetch failure fails closed** | REST API failure in `get_latest_issue_comments` raises `GitHubVerificationError` and halts review without posting duplicate comments. | ✅ PASS |
+| 69 | **Round 8 Blocker A: Real GitHubClient compare API ref normalization and candidate adoption** | Strips `origin/` prefix from branch refs in compare API fallback (calling `/compare/...main`), avoiding 404 and preserving all 6 trailers. | ✅ PASS |
+| 70 | **Round 8 Blocker A: Real GitHubClient compare API 404 error vs genuine 0 commits** | Compare API 404 raises `GitHubVerificationError` (fails closed); genuine 200 with 0 commits cleanly returns `[]`. | ✅ PASS |
+| 71 | **Round 8 Blocker B: Staged SHA with remote compare API fallback success path** | Staged commit in state DB is verified and adopted via remote compare API fallback without creating a duplicate commit. | ✅ PASS |
+| 72 | **Round 8 Blocker B: Window B2 REST fallback exactly-once across ACCEPT, CHANGES_REQUIRED, and BLOCKED** | Verifies deterministic review markers in paginated comments prevent duplicate issue comments across all three review decisions. | ✅ PASS |
 
 ---
 
@@ -135,19 +129,19 @@
 
 ```
 pytest -v tests/test_supervisor.py
-======================== 64 passed, 1 warning in 4.31s ========================
+======================== 72 passed, 1 warning in 4.97s ========================
 
 pytest -q
-======================== 762 passed ===========================================
+======================== 770 passed ===========================================
 ```
-- Supervisor control-plane test cases: 64 (100% pass)
-- Total repository regression suite: 762 (100% pass, 0 failures)
-- Dual-platform CI verification on exact CODE commit `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`:
-  - Run ID: `34783581901`
-  - `unit (ubuntu-latest)`: `103794888701` SUCCESS (20m 42s)
-  - `unit (windows-latest)`: `103794888628` SUCCESS (16m 00s)
+- Supervisor control-plane test cases: 72 (100% pass)
+- Total repository regression suite: 770 (100% pass, 0 failures)
+- Dual-platform CI verification on exact CODE commit `d9402f3a966581aa66d39b0097e518366d87626c`:
+  - Run ID: `34788079332`
+  - `unit (ubuntu-latest)`: `103807115139` SUCCESS (20m 43s)
+  - `unit (windows-latest)`: `103807115312` SUCCESS (21m 49s)
 - Clean-tree real environment verification:
   - `scripts/run_product_truth_render_e2e.py`
-  - `generation`: `50a84d04-85c2-429d-8c12-641006ac95f1`
-  - `evidenceCodeCommit`: `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`
+  - `generation`: `1631af33-6946-4ac9-96eb-b844d68892c9`
+  - `evidenceCodeCommit`: `d9402f3a966581aa66d39b0097e518366d87626c`
   - `workingTreeClean`: `true`
