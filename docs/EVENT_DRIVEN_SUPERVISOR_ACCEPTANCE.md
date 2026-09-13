@@ -2,14 +2,14 @@
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
 **Date**: 2026-09-14  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 2 Blocker Corrections  
-**Phase 1 CODE Commit**: `d77cfe758a36c6dfe886ff18d9c67f6a7664afe9`  
-**CODE Actions Run ID**: `34766663210` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
-- `unit (ubuntu-latest)`: `103748731208` (20m 39s)  
-- `unit (windows-latest)`: `103748731348` (21m 16s)  
-**Test Suite**: `tests/test_supervisor.py` (35 passed, 100% green)  
-**Full Regression Suite**: 733 passed (100% green)  
-**Clean-Tree E2E Evidence Run**: `generation: d16c4cd2-f463-4d01-b055-ac3e18df2546`  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 3 Blocker Corrections  
+**Phase 1 CODE Commit**: `9bed18436f5d2775685415c13913a85ab5e91740`  
+**CODE Actions Run ID**: `34770001180` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
+- `unit (ubuntu-latest)`: `103757730292` (20m 40s)  
+- `unit (windows-latest)`: `103757730112` (15m 53s)  
+**Test Suite**: `tests/test_supervisor.py` (44 passed, 100% green)  
+**Full Regression Suite**: 742 passed (100% green)  
+**Clean-Tree E2E Evidence Run**: `generation: 4057c3ff-c615-4de5-9059-6dc38d5e3761`  
 
 ---
 
@@ -19,53 +19,49 @@
 > In strict accordance with Specification Section 18:
 > - **`eventDrivenSupervisorReady=false`**
 > - **`webhookRealE2e=false`**
+> - **`liveProviderReady=false`**
 > - Production readiness is **HELD** until verified by a live end-to-end GitHub Webhook delivery triggering live Re-Gate execution. Mock and local integration tests do not constitute production readiness.
 > - Prior Phase 901–960 Product Content Round 2 blockers remain open; Phase 961+ remains **HOLD**.
 > - Truth boundaries remain: `liveFactoryExecutionReady=false`, `fullAutonomousFactoryReady=false`, `commercialAssetProductionReady=false`, `physicalPrintValidated=false`, `liveMachineControl=false`.
 
 ---
 
-## 2. Re-Gate Round 2 Blockers Resolution Summary
+## 2. Re-Gate Round 3 Blockers Resolution Summary
 
-### Blocker A — Webhook Envelope Fail-Closed
-- **Exact Repository Match**: Webhook payload must contain a valid dictionary object `payload.repository` with non-empty string `full_name`. Missing, null, or empty repository fields immediately raise HTTP 400 Bad Request. Mismatched repo names return `IGNORED_WRONG_REPOSITORY`.
-- **Mandatory Delivery ID**: In `mode=live`, missing or empty `X-GitHub-Delivery` header raises HTTP 400 Bad Request fail-closed.
-- **Action Verification**: Only `action == "created"` triggers review; other actions return `IGNORED_UNSUPPORTED_ACTION`.
-- **Negative Tests**: Verified in `test_30` (missing repo, null repo, empty full_name, wrong repo) and `test_31` (missing delivery in live mode).
+### Blocker A — Real Provider HTTP Execution & Structured Schema Validation
+- **Real Provider HTTP Dispatch**: `ExternalProviderSupervisorAdapter` dispatches real HTTP requests to external provider endpoints (OpenAI `https://api.openai.com/v1/chat/completions`, Anthropic `https://api.anthropic.com/v1/messages`, Gemini `https://generativelanguage.googleapis.com/.../generateContent`). Supports optional `transport: httpx.BaseTransport` for deterministic in-memory hermetic testing.
+- **Pydantic Schema Validation**: Provider output is strictly extracted and validated against `ProviderReviewResponseSchema` and `TruthMatrixSchema` (fields: `decision`, `reviewedCodeSha`, `reviewedEvidenceGenerationId`, `acceptedClaims`, `rejectedClaims`, `truthMatrix`, `blockers`, `nextInstructionMarkdown`, `issueCommentMarkdown`).
+- **Fail-Closed Gate**: Network timeouts, HTTP 5xx errors, malformed JSON, schema mismatches, or contract SHA mismatches immediately fail closed with `CHANGES_REQUIRED`.
+- **Deterministic Preflight Priority**: `SemanticEvidenceSupervisorAdapter` executes as safety preflight. Any preflight failure fails closed immediately without dispatching requests to live providers. Live provider executes only after preflight passes.
+- **Tests**: Verified in `test_36` (OpenAI real HTTP request with mock transport), `test_37` (Anthropic real HTTP request), `test_38` (Gemini real HTTP request), `test_39` (malformed JSON rejected fail-closed), `test_40` (HTTP 500 fails closed), `test_41` (preflight rejection skips provider call).
 
-### Blocker B — Closed Crash Recovery Windows (B1 & B2)
-- **Window B1 Remote Reconciliation**: If remote push succeeded but process crashed before staging SHA into DB, the supervisor reconciles remote commits matching `(code_sha, evidence_generation_id)` on `origin/{branch}` and adopts the remote commit without creating duplicate commits.
-- **Window B2 Comment Reconciliation**: If comment succeeded but process crashed before completing review, deterministic marker `<!-- REVIEW_MARKER: CODE_SHA={code_sha} EVIDENCE_ID={evidence_generation_id} -->` embedded in Issue #1 comments is reconciled, adopting the comment ID without duplicate posting.
-- **Git Push Failure Rollback**: If push fails, `git reset --hard origin/{branch}` rolls back the local commit, ensuring no orphan commit remains on local tree.
-- **Durable Write Stage Tracking**: Reviews table persists `instruction_commit_sha`, `instruction_remote_verified_at`, `issue_comment_id`, `issue_comment_posted_at`, and `review_write_stage`.
-- **Crash Recovery Tests**: Verified in `test_32` (Window B1 remote commit adoption) and `test_33` (Window B2 issue comment adoption).
+### Blocker B — Pinned Progress Report & Audit Exact Lineage
+- **Lineage Verification**: `SemanticEvidenceSupervisorAdapter` preflight strictly asserts that `docs/GROK_PROGRESS_REPORT.md` text contains both current `contract.code_sha` and `contract.instruction_sha`.
+- **Stale Detection**: Progress reports referencing older instructions (e.g. `59ad337`, `8b0b788`) or older code SHAs fail closed with `CHANGES_REQUIRED`.
+- **Exact Lineage Recorded**: `docs/GROK_PROGRESS_REPORT.md` and `docs/CURRENT_IMPLEMENTATION_AUDIT.md` updated to reflect exact Round 3 lineage (`INSTRUCTION_SHA=5a6f5581cb4474c21b72b5db61cecd4ee952e90d`, `CODE_SHA=9bed18436f5d2775685415c13913a85ab5e91740`, `CODE_CI_RUN_ID=34770001180`, `TEST_COUNT=742`).
+- **Tests**: Verified in `test_44` (stale progress report rejected; current exact progress report accepted).
 
-### Blocker C — Git Write Preflight & Remote Blob Verification
-- **Branch Preflight**: Verifies current branch strictly matches configured branch (`main`); detached HEAD (`HEAD`) is rejected fail-closed.
-- **Divergence Preflight**: Verifies local `HEAD` matches `origin/{branch}` before any write; ahead or behind diverges fail closed.
-- **Working Tree & Index Clean**: Verifies working tree is clean via `git status --porcelain` and index is clean via `git diff-index --quiet HEAD --`.
-- **Explicit Refspec**: Instruction pushes use explicit refspec `git push origin HEAD:refs/heads/{branch}`.
-- **Post-Push Blob Verification**: Validates remote blob content `git show origin/{branch}:file_path` matches committed instruction text.
-- **Preflight Tests**: Verified in `test_34` (dirty working tree, dirty index, detached HEAD, diverged branch).
+### Blocker C — Machine-Readable Dual-CI Contract Lineage & Engine Verification
+- **Dual-CI Contract Fields**: `ReadyForReGateContract` upgraded to explicitly require `CODE_CI_RUN_ID` and `DOCS_CI_RUN_ID`.
+- **Independent CI Validation**: `SupervisorEngine._execute_review()` independently validates:
+  - `CODE_CI_RUN_ID`: head SHA == `contract.code_sha`, completed, conclusion success, Ubuntu + Windows success.
+  - `DOCS_CI_RUN_ID`: head SHA == `contract.docs_sha`, completed, conclusion success, Ubuntu + Windows success. In `mode=live`, missing `DOCS_CI_RUN_ID` fails closed.
+- **Cross-Swap Rejection**: Passing docs CI run into `CODE_CI_RUN_ID` or code CI run into `DOCS_CI_RUN_ID` is strictly rejected.
+- **Tests**: Verified in `test_43` (docs CI passed into code CI rejected, code CI passed into docs CI rejected, missing docs CI in live mode rejected, Windows failure rejected).
 
-### Blocker D — Provider Adapter & Exact SHA Evidence Lineage
-- **Provider Factory**: `create_supervisor_adapter(config)` instantiates configured provider (`openai`, `anthropic`, `gemini`, `semantic_evidence`, `rule_based`, `mock`).
-- **Semantic Evidence Safety Gate**: `SemanticEvidenceSupervisorAdapter` operates as deterministic safety preflight; in live mode, it refuses to unilaterally issue `ACCEPT_WITH_SCOPE`.
-- **Progress Report Lineage Verification**: Verifies progress report text explicitly contains references to both `contract.code_sha` and `contract.instruction_sha`. Stale progress reports fail closed with `CHANGES_REQUIRED`.
-- **Empty Diff Fail-Closed**: Empty repository diff fails closed with `CHANGES_REQUIRED`.
-- **Evidence Pinning**: Pin all evidence files strictly to `contract.docs_sha` and `contract.instruction_sha`.
-- **Tests**: Verified in `test_27` and `test_35`.
+### Blocker D — Structured Review Context & Mock Promotion Prevention
+- **Structured Review Context**: ReviewContext bundles exact pinned documentation text from `DOCS_SHA` (`GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md`, `CABINET_REAL_ACCEPTANCE.md`, `EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`), git diffs, instruction text @ `INSTRUCTION_SHA`, and both `code_ci_summary` and `docs_ci_summary`.
+- **Independent Supervisor Verification**: Engine independently verifies that provider output `reviewed_code_sha` equals `contract.code_sha` and `reviewed_evidence_generation_id` equals `contract.evidence_generation_id`.
+- **Mock Promotion Prevention**: If contract indicates `used_mock=True`, any attempt by provider to claim `REAL` in `truthMatrix` is intercepted and downgraded to `CHANGES_REQUIRED` with blocker recorded.
+- **Tests**: Verified in `test_42` (provider mock promotion to REAL downgraded to CHANGES_REQUIRED).
 
-### Blocker E — Live Configuration Strict Validation
-- **Provider Allowlist**: Supported providers strictly limited to `mock`, `rule_based`, `semantic_evidence`, `openai`, `anthropic`, `gemini`.
-- **API Credentials**: Missing API keys for OpenAI / Anthropic / Gemini raise `ConfigValidationError`.
-- **Admin Authentication**: `SUPERVISOR_ADMIN_KEY` requires minimum 16 characters in live mode.
-- **Storage Canary**: Validates writable permissions on database and audit directory paths via canary file creation and removal.
-- **Tests**: Verified in `test_28`, `test_29`, and `test_35`.
+### Blocker E — Real GitHub Webhook E2E Gate Preparation
+- **Readiness Boundary Maintained**: `eventDrivenSupervisorReady=false`, `webhookRealE2e=false`, `liveProviderReady=false`.
+- **Clean-Tree E2E Verified**: Clean-tree execution with `scripts/run_product_truth_render_e2e.py` produces clean generation `4057c3ff-c615-4de5-9059-6dc38d5e3761` with `workingTreeClean=true`.
 
 ---
 
-## 3. Comprehensive Verification Matrix (35 Scenarios)
+## 3. Comprehensive Verification Matrix (44 Scenarios)
 
 | # | Test Scenario | Verified Behavior | Verdict |
 |---|---|---|---|
@@ -104,6 +100,15 @@
 | 33 | **Blocker B: Window B2 comment marker adoption** | Adopts existing Issue #1 comment with deterministic marker without duplicate comment. | ✅ PASS |
 | 34 | **Blocker C: Git preflight rejections** | Rejects dirty tree, staged changes, detached HEAD, and diverged local HEAD. | ✅ PASS |
 | 35 | **Blocker D/E: Provider factory & stale lineage rejection** | Factory enforces API keys; stale progress report and empty diff fail closed. | ✅ PASS |
+| 36 | **Blocker A: OpenAI provider real HTTP request** | Real HTTP POST dispatched to OpenAI endpoint, response parsed to schema. | ✅ PASS |
+| 37 | **Blocker A: Anthropic provider real HTTP request** | Real HTTP POST dispatched to Anthropic messages endpoint, parsed to schema. | ✅ PASS |
+| 38 | **Blocker A: Gemini provider real HTTP request** | Real HTTP POST dispatched to Gemini generateContent endpoint, parsed to schema. | ✅ PASS |
+| 39 | **Blocker A: Malformed provider JSON fails closed** | Invalid JSON response from provider fails closed with `CHANGES_REQUIRED`. | ✅ PASS |
+| 40 | **Blocker A: Provider HTTP 500 error fails closed** | Upstream 5xx error fails closed with `CHANGES_REQUIRED`. | ✅ PASS |
+| 41 | **Blocker A: Preflight rejection skips provider** | Safety preflight failure fails closed without calling provider. | ✅ PASS |
+| 42 | **Blocker D: Mock promotion to REAL downgraded** | Provider claiming REAL when contract used mock is downgraded to `CHANGES_REQUIRED`. | ✅ PASS |
+| 43 | **Blocker C: Dual-CI contract validation** | Verifies `CODE_CI_RUN_ID` and `DOCS_CI_RUN_ID` matching head SHAs and dual-platform success. | ✅ PASS |
+| 44 | **Blocker B: Pinned stale vs exact progress report** | Stale lineage in progress report rejected; exact current lineage accepted. | ✅ PASS |
 
 ---
 
@@ -111,12 +116,14 @@
 
 ```
 pytest -v tests/test_supervisor.py
-======================== 35 passed, 1 warning in 2.82s ========================
+======================== 44 passed, 1 warning in 2.97s ========================
 
 pytest -q
-======================== 733 passed in 74.5s ==================================
+======================== 742 passed ===========================================
 ```
-- Supervisor control-plane test cases: 35 (100% pass)
-- Total repository regression suite: 733 (100% pass, 0 failures)
-- Dual-platform CI Actions Run `34766663210`: Ubuntu (20m 39s) + Windows (21m 16s) SUCCESS.
-- Execution environment: Windows 11, Python 3.12.10, pytest 8.4.1.
+- Supervisor control-plane test cases: 44 (100% pass)
+- Total repository regression suite: 742 (100% pass, 0 failures)
+- Dual-platform CI verification on exact CODE commit `9bed18436f5d2775685415c13913a85ab5e91740`:
+  - Run ID: `34770001180`
+  - `unit (ubuntu-latest)`: `103757730292` SUCCESS (20m 40s)
+  - `unit (windows-latest)`: `103757730112` SUCCESS (15m 53s)

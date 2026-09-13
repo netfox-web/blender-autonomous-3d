@@ -1,10 +1,27 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Phase 901–960 Re-Gate R1 CODE_EVIDENCE_SHA `4406119`; prior `2fcac7e` / `cb045af` / instruction `59ad337`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `59ad337`. Historical Phase 1–900 notes below remain. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 3 CODE_EVIDENCE_SHA `9bed18436f5d2775685415c13913a85ab5e91740`; prior `d77cfe7` / `4406119` / instruction `5a6f5581cb4474c21b72b5db61cecd4ee952e90d`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `5a6f5581cb4474c21b72b5db61cecd4ee952e90d`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
-This machine (2026-09-10): Blender 5.2.1 LTS at `C:\Program Files\Blender Foundation\Blender 5.2\blender.exe`, NVIDIA T1000 4GB driver 596.86, Cycles OptiX devices present. No RTX 5090.
+This machine (2026-09-14): Python 3.12.10, Blender 4.2 LTS / 5.2.1 LTS, NVIDIA T1000 OptiX devices present.
+
+## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 3)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Supervisor Webhook Ingestion & Envelope Validation | REAL_LOGIC | `services/supervisor/main.py`: `POST /webhooks/github`; HMAC-SHA256 verification (`verify_github_signature`); mandatory `payload.repository.full_name` exact match; mandatory live `X-GitHub-Delivery`; action created check; collaborator auth verification; 400/401/403 fail-closed |
+| State Management & Lifecycle Idempotency | REAL_LOGIC | `services/supervisor/state.py`: SQLite WAL mode; durable review lifecycle; delivery ID deduplication; contract `(code_sha, evidence_generation_id)` deduplication |
+| Dual-CI Lineage Verification (Blocker C) | REAL_LOGIC | `services/supervisor/engine.py` & `models.py`: Validates `CODE_CI_RUN_ID` (head == `CODE_SHA`, Ubuntu+Windows success) and `DOCS_CI_RUN_ID` (head == `DOCS_SHA`, Ubuntu+Windows success); mismatched run IDs or incomplete jobs fail closed |
+| External Provider HTTP Dispatch & Schema Validation (Blocker A) | REAL_LOGIC / ADAPTER | `services/supervisor/ai_adapter.py`: `ExternalProviderSupervisorAdapter` dispatches real HTTP requests to OpenAI, Anthropic, or Gemini; strictly parses JSON into `ProviderReviewResponseSchema` and `TruthMatrixSchema`; fail-closed on 5xx/timeout/malformed JSON/SHA mismatch; mock transport tested hermetically |
+| Pinned Evidence Review Context & Authority (Blocker D) | REAL_LOGIC | `services/supervisor/engine.py`: ReviewContext pins all evidence files to `DOCS_SHA` and `INSTRUCTION_SHA`; passes dual-CI summaries; independently verifies provider outputs; downgrades invalid mock promotions |
+| Durable Crash Recovery Windows B1 & B2 | REAL_LOGIC | Reconciles remote instruction commits on `origin/{branch}` matching `(code_sha, evidence_generation_id)`; reconciles deterministic issue comment markers; rolls back unpushed commits on push failure |
+| Git Write Preflight & Remote Blob Verification | REAL_LOGIC | Preflight checks branch matches `main`, non-detached HEAD, clean working tree, clean index, local HEAD equals `origin/main`; pushes via explicit refspec; verifies remote blob content post-push |
+| Antigravity Watcher Execution Loop | REAL_LOGIC | `scripts/antigravity_watcher.py`: Polls remote instructions and Issue #1 comments; claims instruction SHAs; formats dual-CI machine-readable contracts |
+| Event-Driven Supervisor Production Readiness | BLOCKED / false | `eventDrivenSupervisorReady=false`; live GitHub webhook E2E not yet conducted |
+| Webhook Real E2E Gate | BLOCKED / false | `webhookRealE2e=false`; live production delivery pending |
+| Live AI Provider Production Ready | BLOCKED / false | `liveProviderReady=false`; external live provider calls not yet executed in production |
+| 44-Scenario Supervisor Test Suite | REAL_LOGIC | `tests/test_supervisor.py`: 44 comprehensive tests covering webhook, signature, idempotency, CI verification, provider dispatch, crash windows, preflight, policy guardrails |
 
 ## Phase 901–960 Product Content Factory V1 / Deterministic Commerce Asset Pack (Re-Gate Round 1)
 
