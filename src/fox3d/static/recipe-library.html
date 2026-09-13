@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>商品 Recipe 庫｜收納王妃</title><link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css"><script src="/admin/recipes/assets/recipe-library.js" defer></script></head>
+<body>
+<header class="topbar"><a class="brand" href="/admin/recipes"><span class="brand-mark">SQ</span><span>收納王妃 <small>PRODUCT STUDIO</small></span></a><a class="back" href="/admin">返回管理台 ↗</a></header>
+<main class="workspace">
+  <div class="page-heading"><div><p class="eyebrow">商品資料 · 結構配方 · 來源管理</p><h1>商品 Recipe 庫</h1><p class="subtitle">整理商品的每一個細節，讓下一次建模有據可循。</p></div><div class="heading-actions"><button id="import-button" class="secondary">匯入草稿</button><button id="export-all" class="secondary">匯出全部</button><button id="new-button" class="primary">＋ 新增商品</button></div></div>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <section class="stats" aria-label="商品庫概況"><div><span>商品總數</span><strong id="total-stat">—</strong></div><div><span>已儲存草稿</span><strong id="draft-stat">—</strong></div><div><span>待補資料項目</span><strong id="missing-stat">—</strong></div></section>
+  <div class="workbench">
+    <aside class="catalog"><div class="catalog-heading"><h2>商品目錄</h2><button id="reload" class="text-button">重新載入</button></div><label class="sr-only" for="search">搜尋商品</label><input id="search" type="search" placeholder="搜尋名稱或商品編號"><label class="sr-only" for="family-filter">篩選結構</label><select id="family-filter"><option value="">所有結構配方</option></select><div id="product-list" aria-label="商品列表"><p class="muted loading">正在讀取商品…</p></div></aside>
+    <section class="detail" id="detail" aria-label="商品詳情"><div class="empty"><h2>準備你的商品資料</h2><p>選擇左側商品，查看規格與來源。</p></div></section>
+  </div>
+  <footer>目前為商品參考與草稿管理。資料補齊後，仍需完成幾何、機構與實際渲染驗證。</footer>
+</main>
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+<dialog id="new-dialog"><form id="new-form"><div class="dialog-heading"><div><p class="eyebrow">NEW PRODUCT</p><h2>新增商品</h2></div><button type="button" id="close-new" class="icon-button" aria-label="關閉新增商品">×</button></div><p class="muted">先建立基本資料，其餘規格可以稍後補齊。</p>
+<div class="form-grid"><label>商品編號 <span class="required">*</span><input name="sku" required maxlength="120" placeholder="例如 SQ-001"></label><label>商品名稱 <span class="required">*</span><input name="name" required maxlength="240" placeholder="例如 木質收納櫃"></label></div>
+<label>結構配方<select name="family" id="new-family" required></select></label><label>商品來源網址<input name="pageUrl" type="url" placeholder="https://…"></label>
+<div class="form-grid three"><label>寬度（mm）<input name="widthMm" type="number" min="0.01" step="any"></label><label>深度（mm）<input name="depthMm" type="number" min="0.01" step="any"></label><label>高度（mm）<input name="heightMm" type="number" min="0.01" step="any"></label></div>
+<label>尺寸依據<input name="evidence" placeholder="例如供應商尺寸圖、量測日期"></label><p id="new-error" class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" id="cancel-new" class="secondary">取消</button><button type="submit" class="primary">建立商品草稿</button></div></form></dialog>
+</body></html>

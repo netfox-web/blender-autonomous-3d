@@ -120,6 +120,7 @@ def render_admin(platform: Any) -> str:
   <header>
     <strong>Autonomous 3D / Product R&amp;D Control Plane</strong>
     <span class="note"> — 系統操作台，不含 Blender UI</span>
+    <a href="/admin/recipes" style="float:right;color:#b6e3c8;font-weight:600">商品 Recipe 庫 →</a>
   </header>
   {banner}
   <section>
