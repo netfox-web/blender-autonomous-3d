@@ -1537,12 +1537,28 @@ def run_product_content_scenario(
             "usedMock": mock_bool,
             "workingTreeClean": True,
             "label": "FIXTURE/MOCK" if mock_bool else "REAL_LOGIC",
-            "pack": upstream_pack,
         }
+
+    pt_auth_clean = {
+        "acceptanceGenerationId": pt_auth.get("acceptanceGenerationId"),
+        "renderPackId": pt_auth.get("renderPackId") or (pt_auth.get("pack") or {}).get("renderPackId"),
+        "evidenceCodeCommit": pt_auth.get("evidenceCodeCommit"),
+        "tenantId": pt_auth.get("tenantId") or (pt_auth.get("pack") or {}).get("tenantId"),
+        "productId": pt_auth.get("productId") or (pt_auth.get("pack") or {}).get("productId"),
+        "version": pt_auth.get("version") or (pt_auth.get("pack") or {}).get("version"),
+        "engineeringHash": pt_auth.get("engineeringHash") or (pt_auth.get("pack") or {}).get("engineeringHash"),
+        "placementHash": pt_auth.get("placementHash") or (pt_auth.get("pack") or {}).get("placementHash"),
+        "finalUvHash": pt_auth.get("finalUvHash") or (pt_auth.get("pack") or {}).get("finalUvHash"),
+        "productMaskSha256": pt_auth.get("productMaskSha256") or (((pt_auth.get("pack") or {}).get("aovs") or {}).get("product_mask") or {}).get("sha256"),
+        "artworkMaskSha256": pt_auth.get("artworkMaskSha256") or (((pt_auth.get("pack") or {}).get("aovs") or {}).get("artwork_mask") or {}).get("sha256"),
+        "usedMock": bool(pt_auth.get("usedMock")),
+        "workingTreeClean": bool(pt_auth.get("workingTreeClean")),
+        "label": pt_auth.get("label"),
+    }
 
     upstream_pack["sourceAcceptanceGenerationId"] = truth_gen_id
     upstream_pack["acceptanceGenerationId"] = truth_gen_id
-    upstream_pack["sourceAcceptanceAuthority"] = pt_auth
+    upstream_pack["sourceAcceptanceAuthority"] = pt_auth_clean
 
     mock = bool(getattr(plat, "mock_blender", True) or upstream_pack.get("usedMock"))
     width = 64 if mock else 128
@@ -1558,7 +1574,7 @@ def run_product_content_scenario(
         samples=samples,
         evidence_code_commit=evidence_code_commit,
     )
-    content_pack["sourceAcceptanceAuthority"] = pt_auth
+    content_pack["sourceAcceptanceAuthority"] = pt_auth_clean
 
     qa = content_pack.get("qa") or {}
     ok = bool(qa.get("ok"))
@@ -1567,7 +1583,7 @@ def run_product_content_scenario(
         "ok": ok,
         "contentPack": content_pack,
         "productTruthPack": upstream_pack,
-        "productTruthAuthority": pt_auth,
+        "productTruthAuthority": pt_auth_clean,
         "frozenEngineering": eng,
         "usedMock": mock,
         "productContentFactoryLogicReady": True,
