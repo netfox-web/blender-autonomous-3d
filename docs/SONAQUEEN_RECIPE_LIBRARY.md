@@ -14,7 +14,13 @@
 
 母配方描述：`STAGGERED_OPEN_CUBBY`、`STACKED_HINGED_CABINET`、`ROW_SLIDING_CABINET`。它們描述共用結構要求；目前尚不是可執行的 Blender 建模器。
 
-## 使用方式
+## 後台操作 UI
+
+已新增可操作的商品 Recipe 後台。執行 `python scripts/run_recipe_admin.py` 後，開啟 [商品 Recipe 庫](http://127.0.0.1:8790/admin/recipes)，即可搜尋商品、補規格與依據、儲存草稿、驗證缺漏、上傳圖片、新增商品及匯入／匯出 JSON。
+
+草稿和上傳圖片另存本機持久資料目錄；不改寫原始供應商參考快照。詳細啟動、操作與備份方式見 [後台操作手冊](SONAQUEEN_RECIPE_ADMIN.md)，新 UI 的驗收紀錄見 [後台驗收](SONAQUEEN_RECIPE_ADMIN_ACCEPTANCE.md)。
+
+## CLI 與程式使用方式
 
 在儲存庫根目錄執行：
 
@@ -39,7 +45,7 @@ recipes = import_library(
 )
 ```
 
-`RecipeRegistry` 本身為記憶體 registry；JSON 匯出提供檔案形式的可重用參考資料，未新增另一套正式配方資料庫。完全相同的匯入不新增版本；資料改變產生新的參考版本。既有核准或正式版本不會被覆寫。
+`RecipeRegistry` 本身為記憶體 registry；上述 CLI JSON 匯出提供檔案形式的可重用參考資料。後台使用獨立 SQLite 保存編輯草稿，不會把草稿寫成正式配方。完全相同的匯入不新增版本；資料改變產生新的參考版本。既有核准或正式版本不會被覆寫。
 
 ## 來源與驗證
 
@@ -47,7 +53,7 @@ recipes = import_library(
 
 每次載入檢查 schema、SKU 唯一性、來源引用、檔案路徑、實際位元組雜湊、頁面 SKU／名稱、圖檔是否被該頁引用，以及各種母配方的門片／格位數量約束。來源 integrity 驗證不等於供應商規格已經實物量測或工程核定。
 
-新增商品時，依 `SeedLibrary`／`ProductSeed` 格式加入來源與 facts。未確認數值保持缺漏，不填通用尺寸。當官網更新，需保存新來源並重新核對圖上的標籤後修訂資料；本版不會自動把網站變動當成已核定的 Engineering。
+透過後台可以新增尚未完成來源核對的商品草稿；若要新增到版本控制的供應商初始目錄，則依 `SeedLibrary`／`ProductSeed` 格式加入來源與 facts。未確認數值保持缺漏，不填通用尺寸。當官網更新，需保存新來源並重新核對圖上的標籤後修訂資料；本版不會自動把網站變動當成已核定的 Engineering。
 
 線上驗收須在乾淨工作目錄及指定 CODE commit 上執行：
 

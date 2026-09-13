@@ -1,0 +1,67 @@
+{
+  "ok": true,
+  "generationId": "c8159dbf-1f86-40f5-8fd5-86370ad1efcf",
+  "generatedAt": "2026-09-13T08:24:08.300042+00:00",
+  "evidenceCodeCommit": "ae449b840acc9b6f236ab36cc3948bcaeac84c74",
+  "workingTreeClean": true,
+  "executionMode": "LIVE_LOCAL_HTTP",
+  "checks": [
+    "page_and_three_products_and_seven_source_images",
+    "create_edit_conflict_and_missing_data_validation",
+    "upload_retrieve_and_workspace_isolation",
+    "export_import_and_duplicate_protection",
+    "server_restart_retains_draft_and_image"
+  ],
+  "supplierCatalogUnchanged": true,
+  "browserAutomation": false,
+  "realBlenderAcceptance": false,
+  "engineeringReady": false,
+  "productionReady": false,
+  "codeCI": {
+    "runId": 34746683486,
+    "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34746683486",
+    "headSha": "ae449b840acc9b6f236ab36cc3948bcaeac84c74",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "unit (ubuntu-latest)",
+        "jobId": 103695777832,
+        "conclusion": "success"
+      },
+      {
+        "name": "unit (windows-latest)",
+        "jobId": 103695777854,
+        "conclusion": "success"
+      }
+    ]
+  },
+  "localTests": {
+    "passed": 693,
+    "exitCode": 0,
+    "focusedTests": 23
+  },
+  "browserChecks": {
+    "method": "Manual browser automation via Codex in-app browser",
+    "qaBaseUrl": "http://127.0.0.1:8791",
+    "postCICheckedAt": "2026-09-13T08:25:15.190596+00:00",
+    "beforeCIChecks": [
+      "search product by SKU",
+      "edit integer and millimeter fields",
+      "save and reload persistent draft",
+      "validation and missing-data display",
+      "create product with incomplete data",
+      "upload JPEG and display reference image",
+      "download JSON and verify saved file contents",
+      "import new SKU from JSON",
+      "390px viewport: no horizontal overflow or broken images",
+      "updated admin links to recipe library"
+    ],
+    "postCIChecks": [
+      "save LI-D40 notes as revision 2",
+      "reload and verify exact notes persisted",
+      "validate: four missing fields, no unreferenced fields, no topology issues"
+    ],
+    "testDataSeparatedFromUserWorkspace": true,
+    "productionLibraryInitiallyContainsThreeSeeds": true
+  }
+}
