@@ -1,27 +1,31 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 3 CODE_EVIDENCE_SHA `9bed18436f5d2775685415c13913a85ab5e91740`; prior `d77cfe7` / `4406119` / instruction `5a6f5581cb4474c21b72b5db61cecd4ee952e90d`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `5a6f5581cb4474c21b72b5db61cecd4ee952e90d`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 4 CODE_EVIDENCE_SHA `b0941c7fa06b75b14e272a44018977120c656c3f`; prior `9bed184` / `d77cfe7` / `4406119` / instruction `88488a2278d86e79e1270e09652c6dc81b81e6b6`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `88488a2278d86e79e1270e09652c6dc81b81e6b6`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-14): Python 3.12.10, Blender 4.2 LTS / 5.2.1 LTS, NVIDIA T1000 OptiX devices present.
 
-## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 3)
+## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 4)
 
 | Item | Status | Evidence |
 |---|---|---|
 | Supervisor Webhook Ingestion & Envelope Validation | REAL_LOGIC | `services/supervisor/main.py`: `POST /webhooks/github`; HMAC-SHA256 verification (`verify_github_signature`); mandatory `payload.repository.full_name` exact match; mandatory live `X-GitHub-Delivery`; action created check; collaborator auth verification; 400/401/403 fail-closed |
 | State Management & Lifecycle Idempotency | REAL_LOGIC | `services/supervisor/state.py`: SQLite WAL mode; durable review lifecycle; delivery ID deduplication; contract `(code_sha, evidence_generation_id)` deduplication |
-| Dual-CI Lineage Verification (Blocker C) | REAL_LOGIC | `services/supervisor/engine.py` & `models.py`: Validates `CODE_CI_RUN_ID` (head == `CODE_SHA`, Ubuntu+Windows success) and `DOCS_CI_RUN_ID` (head == `DOCS_SHA`, Ubuntu+Windows success); mismatched run IDs or incomplete jobs fail closed |
-| External Provider HTTP Dispatch & Schema Validation (Blocker A) | REAL_LOGIC / ADAPTER | `services/supervisor/ai_adapter.py`: `ExternalProviderSupervisorAdapter` dispatches real HTTP requests to OpenAI, Anthropic, or Gemini; strictly parses JSON into `ProviderReviewResponseSchema` and `TruthMatrixSchema`; fail-closed on 5xx/timeout/malformed JSON/SHA mismatch; mock transport tested hermetically |
-| Pinned Evidence Review Context & Authority (Blocker D) | REAL_LOGIC | `services/supervisor/engine.py`: ReviewContext pins all evidence files to `DOCS_SHA` and `INSTRUCTION_SHA`; passes dual-CI summaries; independently verifies provider outputs; downgrades invalid mock promotions |
+| Dual-CI Lineage Verification (Round 3 Blocker C) | REAL_LOGIC | `services/supervisor/engine.py` & `models.py`: Validates `CODE_CI_RUN_ID` (head == `CODE_SHA`, Ubuntu+Windows success) and `DOCS_CI_RUN_ID` (head == `DOCS_SHA`, Ubuntu+Windows success); mismatched run IDs or incomplete jobs fail closed |
+| Quadruple Reviewed Identity Binding & Engine Verification (Round 4 Blocker A) | REAL_LOGIC | `services/supervisor/models.py` & `engine.py`: Schema & Engine enforce re-binding of all 4 reviewed identities: `reviewedCodeSha`, `reviewedDocsSha`, `reviewedInstructionSha`, `reviewedEvidenceGenerationId`. Mismatches fail closed. |
+| Bounded Prompt Completeness Metadata & Exact Instruction (Round 4 Blocker B) | REAL_LOGIC | `services/supervisor/ai_adapter.py`: Injects exact `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` text from instruction SHA, changed-files manifest, and explicit completeness metadata header `[METADATA: path=... original_chars=... supplied_chars=... truncated=true|false sha256_prefix=...]`. |
+| Engine Logger & Failure Downgrade Reliability (Round 4 Blocker C) | REAL_LOGIC | `services/supervisor/engine.py`: Module logger properly initialized; logs warning and downgrades to `CHANGES_REQUIRED` without crashing on SHA mismatch or mock promotion attempt. |
+| Configurable SUPERVISOR_AI_MODEL (Round 4 Blocker D) | REAL_LOGIC | `services/supervisor/config.py` & `ai_adapter.py`: Configurable model dispatch for OpenAI, Anthropic, and Gemini; validated in live config; recorded in review context & audit logs. |
+| BLOCKED Decision Idempotent Issue Comments (Round 4 Blocker E) | REAL_LOGIC | `services/supervisor/engine.py`: Unified Window B2 check verifies whether an issue comment with deterministic marker was already posted before calling GitHub API on `BLOCKED` decisions. |
+| External Provider HTTP Dispatch & Schema Validation | REAL_LOGIC / ADAPTER | `services/supervisor/ai_adapter.py`: `ExternalProviderSupervisorAdapter` dispatches real HTTP requests to OpenAI, Anthropic, or Gemini; strictly parses JSON into `ProviderReviewResponseSchema` and `TruthMatrixSchema`; fail-closed on 5xx/timeout/malformed JSON/SHA mismatch; mock transport tested hermetically |
 | Durable Crash Recovery Windows B1 & B2 | REAL_LOGIC | Reconciles remote instruction commits on `origin/{branch}` matching `(code_sha, evidence_generation_id)`; reconciles deterministic issue comment markers; rolls back unpushed commits on push failure |
 | Git Write Preflight & Remote Blob Verification | REAL_LOGIC | Preflight checks branch matches `main`, non-detached HEAD, clean working tree, clean index, local HEAD equals `origin/main`; pushes via explicit refspec; verifies remote blob content post-push |
 | Antigravity Watcher Execution Loop | REAL_LOGIC | `scripts/antigravity_watcher.py`: Polls remote instructions and Issue #1 comments; claims instruction SHAs; formats dual-CI machine-readable contracts |
 | Event-Driven Supervisor Production Readiness | BLOCKED / false | `eventDrivenSupervisorReady=false`; live GitHub webhook E2E not yet conducted |
 | Webhook Real E2E Gate | BLOCKED / false | `webhookRealE2e=false`; live production delivery pending |
 | Live AI Provider Production Ready | BLOCKED / false | `liveProviderReady=false`; external live provider calls not yet executed in production |
-| 44-Scenario Supervisor Test Suite | REAL_LOGIC | `tests/test_supervisor.py`: 44 comprehensive tests covering webhook, signature, idempotency, CI verification, provider dispatch, crash windows, preflight, policy guardrails |
+| 49-Scenario Supervisor Test Suite | REAL_LOGIC | `tests/test_supervisor.py`: 49 comprehensive tests covering webhook, signature, idempotency, CI verification, provider dispatch, 4 reviewed identities, prompt metadata, crash windows, preflight, policy guardrails |
 
 ## Phase 901–960 Product Content Factory V1 / Deterministic Commerce Asset Pack (Re-Gate Round 1)
 

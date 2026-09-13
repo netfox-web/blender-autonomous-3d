@@ -2,14 +2,14 @@
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
 **Date**: 2026-09-14  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 3 Blocker Corrections  
-**Phase 1 CODE Commit**: `9bed18436f5d2775685415c13913a85ab5e91740`  
-**CODE Actions Run ID**: `34770001180` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
-- `unit (ubuntu-latest)`: `103757730292` (20m 40s)  
-- `unit (windows-latest)`: `103757730112` (15m 53s)  
-**Test Suite**: `tests/test_supervisor.py` (44 passed, 100% green)  
-**Full Regression Suite**: 742 passed (100% green)  
-**Clean-Tree E2E Evidence Run**: `generation: 4057c3ff-c615-4de5-9059-6dc38d5e3761`  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 4 Blocker Corrections  
+**Phase 1 CODE Commit**: `b0941c7fa06b75b14e272a44018977120c656c3f`  
+**CODE Actions Run ID**: `34775155653` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
+- `unit (ubuntu-latest)`: `103771815496` (15m 37s)  
+- `unit (windows-latest)`: `103771815666` (20m 4s)  
+**Test Suite**: `tests/test_supervisor.py` (49 passed, 100% green)  
+**Full Regression Suite**: 747 passed (100% green)  
+**Clean-Tree E2E Evidence Run**: `generation: ae5f2d82-1a5c-4fe0-9af2-2b1c7a690f6d`  
 
 ---
 
@@ -26,42 +26,42 @@
 
 ---
 
-## 2. Re-Gate Round 3 Blockers Resolution Summary
+## 2. Re-Gate Round 4 Blockers Resolution Summary
 
-### Blocker A — Real Provider HTTP Execution & Structured Schema Validation
-- **Real Provider HTTP Dispatch**: `ExternalProviderSupervisorAdapter` dispatches real HTTP requests to external provider endpoints (OpenAI `https://api.openai.com/v1/chat/completions`, Anthropic `https://api.anthropic.com/v1/messages`, Gemini `https://generativelanguage.googleapis.com/.../generateContent`). Supports optional `transport: httpx.BaseTransport` for deterministic in-memory hermetic testing.
-- **Pydantic Schema Validation**: Provider output is strictly extracted and validated against `ProviderReviewResponseSchema` and `TruthMatrixSchema` (fields: `decision`, `reviewedCodeSha`, `reviewedEvidenceGenerationId`, `acceptedClaims`, `rejectedClaims`, `truthMatrix`, `blockers`, `nextInstructionMarkdown`, `issueCommentMarkdown`).
-- **Fail-Closed Gate**: Network timeouts, HTTP 5xx errors, malformed JSON, schema mismatches, or contract SHA mismatches immediately fail closed with `CHANGES_REQUIRED`.
-- **Deterministic Preflight Priority**: `SemanticEvidenceSupervisorAdapter` executes as safety preflight. Any preflight failure fails closed immediately without dispatching requests to live providers. Live provider executes only after preflight passes.
-- **Tests**: Verified in `test_36` (OpenAI real HTTP request with mock transport), `test_37` (Anthropic real HTTP request), `test_38` (Gemini real HTTP request), `test_39` (malformed JSON rejected fail-closed), `test_40` (HTTP 500 fails closed), `test_41` (preflight rejection skips provider call).
+### Blocker A — Quadruple Reviewed Identity Binding & Independent Engine Verification
+- **Provider Output Re-Binding**: `ProviderReviewResponseSchema` and `SupervisorReviewOutput` re-bind all 4 reviewed identities:
+  - `reviewedCodeSha`
+  - `reviewedDocsSha`
+  - `reviewedInstructionSha`
+  - `reviewedEvidenceGenerationId`
+- **SupervisorEngine Verification**: `SupervisorEngine` independently verifies all 4 identities against the incoming `ReadyForReGateContract`. If any identity is missing or does not exactly match the contract, the review fails closed with `CHANGES_REQUIRED`.
+- **Tests**: Verified in `test_45` (mismatched `reviewedDocsSha` or `reviewedInstructionSha` fails closed).
 
-### Blocker B — Pinned Progress Report & Audit Exact Lineage
-- **Lineage Verification**: `SemanticEvidenceSupervisorAdapter` preflight strictly asserts that `docs/GROK_PROGRESS_REPORT.md` text contains both current `contract.code_sha` and `contract.instruction_sha`.
-- **Stale Detection**: Progress reports referencing older instructions (e.g. `59ad337`, `8b0b788`) or older code SHAs fail closed with `CHANGES_REQUIRED`.
-- **Exact Lineage Recorded**: `docs/GROK_PROGRESS_REPORT.md` and `docs/CURRENT_IMPLEMENTATION_AUDIT.md` updated to reflect exact Round 3 lineage (`INSTRUCTION_SHA=5a6f5581cb4474c21b72b5db61cecd4ee952e90d`, `CODE_SHA=9bed18436f5d2775685415c13913a85ab5e91740`, `CODE_CI_RUN_ID=34770001180`, `TEST_COUNT=742`).
-- **Tests**: Verified in `test_44` (stale progress report rejected; current exact progress report accepted).
+### Blocker B — Exact Instruction Text, Changed-Files Manifest & Bounded Section Completeness Metadata
+- **Exact Instruction Text**: `ReviewContext` supplies exact text of `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` at `contract.instruction_sha`.
+- **Changed-Files Manifest**: diffs are parsed and a manifest of modified file paths is passed in `ReviewContext.changed_files` and prompt.
+- **Bounded Section Completeness Metadata**: `_format_bounded_section` wraps bounded documentation/evidence files with explicit metadata:
+  `[METADATA: path=... ref_sha=... original_chars=... supplied_chars=... truncated=true|false sha256_prefix=...]`.
+- **Tests**: Verified in `test_46` (prompt contains exact instruction text, changed files, and completeness metadata headers).
 
-### Blocker C — Machine-Readable Dual-CI Contract Lineage & Engine Verification
-- **Dual-CI Contract Fields**: `ReadyForReGateContract` upgraded to explicitly require `CODE_CI_RUN_ID` and `DOCS_CI_RUN_ID`.
-- **Independent CI Validation**: `SupervisorEngine._execute_review()` independently validates:
-  - `CODE_CI_RUN_ID`: head SHA == `contract.code_sha`, completed, conclusion success, Ubuntu + Windows success.
-  - `DOCS_CI_RUN_ID`: head SHA == `contract.docs_sha`, completed, conclusion success, Ubuntu + Windows success. In `mode=live`, missing `DOCS_CI_RUN_ID` fails closed.
-- **Cross-Swap Rejection**: Passing docs CI run into `CODE_CI_RUN_ID` or code CI run into `DOCS_CI_RUN_ID` is strictly rejected.
-- **Tests**: Verified in `test_43` (docs CI passed into code CI rejected, code CI passed into docs CI rejected, missing docs CI in live mode rejected, Windows failure rejected).
+### Blocker C — SupervisorEngine Logger Initialization
+- **Engine Logger**: Added `import logging` and `logger = logging.getLogger("supervisor.engine")` to `services/supervisor/engine.py`.
+- Eliminates `NameError: name 'logger' is not defined` on fail-closed paths (such as SHA mismatch or mock-to-REAL promotion attempt).
+- **Tests**: Verified in `test_47` (mismatch logger warning executes cleanly without raising NameError).
 
-### Blocker D — Structured Review Context & Mock Promotion Prevention
-- **Structured Review Context**: ReviewContext bundles exact pinned documentation text from `DOCS_SHA` (`GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md`, `CABINET_REAL_ACCEPTANCE.md`, `EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`), git diffs, instruction text @ `INSTRUCTION_SHA`, and both `code_ci_summary` and `docs_ci_summary`.
-- **Independent Supervisor Verification**: Engine independently verifies that provider output `reviewed_code_sha` equals `contract.code_sha` and `reviewed_evidence_generation_id` equals `contract.evidence_generation_id`.
-- **Mock Promotion Prevention**: If contract indicates `used_mock=True`, any attempt by provider to claim `REAL` in `truthMatrix` is intercepted and downgraded to `CHANGES_REQUIRED` with blocker recorded.
-- **Tests**: Verified in `test_42` (provider mock promotion to REAL downgraded to CHANGES_REQUIRED).
+### Blocker D — Configurable SUPERVISOR_AI_MODEL
+- **Configuration & Audit**: Added `ai_model` to `SupervisorConfig` (loaded from `SUPERVISOR_AI_MODEL`), validated in `validate_live_config`.
+- Dispatched dynamically to OpenAI (`gpt-4o`), Anthropic (`claude-3-5-sonnet`), or Gemini (`gemini-1.5-pro`).
+- **Tests**: Verified in `test_49` (custom AI model dispatched in HTTP request payload and recorded in audit trail).
 
-### Blocker E — Real GitHub Webhook E2E Gate Preparation
-- **Readiness Boundary Maintained**: `eventDrivenSupervisorReady=false`, `webhookRealE2e=false`, `liveProviderReady=false`.
-- **Clean-Tree E2E Verified**: Clean-tree execution with `scripts/run_product_truth_render_e2e.py` produces clean generation `4057c3ff-c615-4de5-9059-6dc38d5e3761` with `workingTreeClean=true`.
+### Blocker E — Idempotent BLOCKED Decision Issue Comments (Window B2)
+- **Unified Comment Adoption**: Window B2 deterministic comment check extended to `ReviewDecision.BLOCKED`.
+- Before calling `github_client.add_issue_comment()`, the engine checks whether a comment containing `<!-- REVIEW_MARKER: CODE_SHA=... EVIDENCE_ID=... -->` already exists on the issue or in durable DB state. If found, it adopts the existing comment without duplicate posting.
+- **Tests**: Verified in `test_48` (Window B2 comment adoption and deterministic marker check on BLOCKED decisions).
 
 ---
 
-## 3. Comprehensive Verification Matrix (44 Scenarios)
+## 3. Comprehensive Verification Matrix (49 Scenarios)
 
 | # | Test Scenario | Verified Behavior | Verdict |
 |---|---|---|---|
@@ -109,6 +109,11 @@
 | 42 | **Blocker D: Mock promotion to REAL downgraded** | Provider claiming REAL when contract used mock is downgraded to `CHANGES_REQUIRED`. | ✅ PASS |
 | 43 | **Blocker C: Dual-CI contract validation** | Verifies `CODE_CI_RUN_ID` and `DOCS_CI_RUN_ID` matching head SHAs and dual-platform success. | ✅ PASS |
 | 44 | **Blocker B: Pinned stale vs exact progress report** | Stale lineage in progress report rejected; exact current lineage accepted. | ✅ PASS |
+| 45 | **Round 4 Blocker A: Quadruple reviewed identity verification** | Missing or mismatched `reviewedDocsSha` or `reviewedInstructionSha` fails closed. | ✅ PASS |
+| 46 | **Round 4 Blocker B: Exact instruction, diff manifest & prompt metadata** | Prompt bundles exact instruction text, changed files list, and section metadata. | ✅ PASS |
+| 47 | **Round 4 Blocker C: SupervisorEngine logger initialization** | Warnings logged without `NameError` on fail-closed paths. | ✅ PASS |
+| 48 | **Round 4 Blocker E: Idempotent BLOCKED issue comments** | Window B2 marker adoption check prevents duplicate comments for BLOCKED decisions. | ✅ PASS |
+| 49 | **Round 4 Blocker D: Configurable SUPERVISOR_AI_MODEL** | Model passed in config dispatched correctly in API request payloads and audit log. | ✅ PASS |
 
 ---
 
@@ -116,14 +121,14 @@
 
 ```
 pytest -v tests/test_supervisor.py
-======================== 44 passed, 1 warning in 2.97s ========================
+======================== 49 passed, 1 warning in 3.23s ========================
 
 pytest -q
-======================== 742 passed ===========================================
+======================== 747 passed ===========================================
 ```
-- Supervisor control-plane test cases: 44 (100% pass)
-- Total repository regression suite: 742 (100% pass, 0 failures)
-- Dual-platform CI verification on exact CODE commit `9bed18436f5d2775685415c13913a85ab5e91740`:
-  - Run ID: `34770001180`
-  - `unit (ubuntu-latest)`: `103757730292` SUCCESS (20m 40s)
-  - `unit (windows-latest)`: `103757730112` SUCCESS (15m 53s)
+- Supervisor control-plane test cases: 49 (100% pass)
+- Total repository regression suite: 747 (100% pass, 0 failures)
+- Dual-platform CI verification on exact CODE commit `b0941c7fa06b75b14e272a44018977120c656c3f`:
+  - Run ID: `34775155653`
+  - `unit (ubuntu-latest)`: `103771815496` SUCCESS (15m 37s)
+  - `unit (windows-latest)`: `103771815666` SUCCESS (20m 4s)
