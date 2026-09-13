@@ -506,3 +506,111 @@ def test_runner_content_factory_adversarial_matrix(tmp_path: Path):
         p.write_bytes(b"NOT_A_VALID_PNG_CONTENT")
     execute_negative("36_malformed_non_png_bytes", case_36)
 
+    # Blocker A: Product Truth acceptance authority validation
+    # 37. missing Product Truth acceptance generation
+    def case_37(r):
+        r["productTruthAuthority"].pop("acceptanceGenerationId", None)
+        r["contentPack"]["sourceAcceptanceGenerationId"] = ""
+    execute_negative("37_missing_pt_acceptance_generation", case_37)
+
+    # 38. synthetic pt_acc_<renderPackId> value forbidden
+    def case_38(r):
+        r["contentPack"]["sourceAcceptanceGenerationId"] = f"pt_acc_{r['contentPack']['sourceRenderPackId']}"
+    execute_negative("38_synthetic_pt_acc_forbidden", case_38)
+
+    # 39. stale generation belonging to another renderPackId
+    def case_39(r):
+        r["productTruthAuthority"]["renderPackId"] = "foreign_rp_9999"
+    execute_negative("39_stale_generation_wrong_render_pack", case_39)
+
+    # 40. right renderPackId but wrong Product Truth CODE SHA
+    def case_40(r):
+        r["productTruthAuthority"]["evidenceCodeCommit"] = "0000000000000000000000000000000000000000"
+    execute_negative("40_wrong_pt_code_sha", case_40)
+
+    # 41. generation copied from another tenant/SKU/version
+    def case_41(r):
+        r["productTruthAuthority"]["tenantId"] = "foreign_tenant_xyz"
+    execute_negative("41_generation_foreign_tenant", case_41)
+
+    # 42. generation with wrong engineeringHash / placementHash / finalUvHash / mask refs
+    def case_42(r):
+        r["productTruthAuthority"]["engineeringHash"] = "tampered_eng_hash_0000"
+    execute_negative("42_generation_wrong_eng_hash", case_42)
+
+    # 43. mock claimed real in acceptance authority
+    def case_43(r):
+        r["contentPack"]["usedMock"] = False
+        r["productTruthAuthority"]["usedMock"] = True
+    execute_negative("43_mock_claimed_real_in_pt_auth", case_43)
+
+    # Blocker B: Observed Camera / Scene semantic authority
+    # 44. observed camera hash differs but manifest recipe remains canonical
+    def case_44(r):
+        r["contentPack"]["views"]["WHITE_BACKGROUND_HERO"]["workerEvidence"]["cameraRecipeHash"] = "tampered_cam_hash_0000"
+    execute_negative("44_worker_camera_hash_mismatch", case_44)
+
+    # 45. missing observed scene hash
+    def case_45(r):
+        r["contentPack"]["views"]["WHITE_BACKGROUND_HERO"]["workerEvidence"].pop("sceneRecipeHash", None)
+    execute_negative("45_missing_worker_scene_hash", case_45)
+
+    # 46. cross-swapped camera evidence between HERO_45 and FRONT_OPEN
+    def case_46(r):
+        hero_ev = copy.deepcopy(r["contentPack"]["views"]["HERO_45"]["workerEvidence"])
+        r["contentPack"]["views"]["FRONT_OPEN"]["workerEvidence"] = hero_ev
+    execute_negative("46_cross_swapped_camera_evidence", case_46)
+
+    # 47. wrong location/focal with forged/copied hash
+    def case_47(r):
+        v = r["contentPack"]["views"]["HERO_45"]["workerEvidence"]
+        v["location"] = [99.0, 99.0, 99.0]
+    execute_negative("47_wrong_location_rehash_mismatch", case_47)
+
+    # 48. DIMENSION_FRONT points to another view/DAM/job
+    def case_48(r):
+        d_lin = r["contentPack"]["views"]["DIMENSION_FRONT"]["derivationLineage"]
+        d_lin["derivedFromViewRole"] = "HERO_45"
+    execute_negative("48_dim_front_wrong_derived_role", case_48)
+
+    # 49. correct dimension pixels but stale/foreign FRONT_CLOSED derivation source
+    def case_49(r):
+        d_lin = r["contentPack"]["views"]["DIMENSION_FRONT"]["derivationLineage"]
+        d_lin["sourceSha256"] = "foreign_source_sha_0000"
+    execute_negative("49_dim_front_foreign_source_sha", case_49)
+
+    # Blocker C: Asset & Mask integrity checks unconditional
+    # 50. missing productMaskRef SHA
+    def case_50(r):
+        r["contentPack"]["productMaskRef"].pop("sha256", None)
+    execute_negative("50_missing_product_mask_sha", case_50)
+
+    # 51. missing artworkMaskRef SHA
+    def case_51(r):
+        r["contentPack"]["artworkMaskRef"].pop("sha256", None)
+    execute_negative("51_missing_artwork_mask_sha", case_51)
+
+    # 52. missing view SHA
+    def case_52(r):
+        r["contentPack"]["views"]["WHITE_BACKGROUND_HERO"]["sha256"] = ""
+    execute_negative("52_missing_view_sha", case_52)
+
+    # 53. non-positive view size
+    def case_53(r):
+        r["contentPack"]["views"]["WHITE_BACKGROUND_HERO"]["size"] = 0
+    execute_negative("53_zero_view_size", case_53)
+
+    # 54. altered version/device in DAM metadata vs observed worker evidence
+    def case_54(r):
+        v = r["contentPack"]["views"]["FRONT_CLOSED"]
+        v["usedMock"] = False
+        dam_ref = v["damRef"]
+        plat.dam.get(dam_ref, tenant_id="pt-a").metadata["device"] = "CUDA_ALTERED"
+    execute_negative("54_dam_device_worker_mismatch", case_54)
+
+    # 55. missing derivation lineage in DIMENSION_FRONT
+    def case_55(r):
+        r["contentPack"]["views"]["DIMENSION_FRONT"].pop("derivationLineage", None)
+    execute_negative("55_missing_dim_front_derivation_lineage", case_55)
+
+

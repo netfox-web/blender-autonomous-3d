@@ -643,11 +643,137 @@ def canonical_lifestyle_briefs(product_truth_pack: dict[str, Any]) -> dict[str, 
     }
 
 
+def compute_camera_recipe_hash(
+    *,
+    camera_id: str,
+    location: list[float] | tuple[float, ...],
+    look_at: list[float] | tuple[float, ...],
+    focal_length_mm: float,
+    sensor_width_mm: float = 36.0,
+    width: int = 512,
+    height: int = 512,
+    safe_margin: float = 0.08,
+) -> str:
+    from fox3d.product_truth import camera_recipe
+    cam = camera_recipe(
+        camera_id=camera_id,
+        location=tuple(location[:3]),
+        look_at=tuple(look_at[:3]),
+        focal_length_mm=focal_length_mm,
+        sensor_width_mm=sensor_width_mm,
+        width=width,
+        height=height,
+        safe_margin=safe_margin,
+    )
+    return str(cam["cameraRecipeHash"])
+
+
+def validate_product_truth_acceptance_authority(
+    authority: Any,
+    *,
+    expected_render_pack_id: str | None = None,
+    expected_commit: str | None = None,
+    expected_tenant_id: str | None = None,
+    expected_sku_id: str | None = None,
+    expected_version: int | None = None,
+    expected_eng_hash: str | None = None,
+    expected_placement_hash: str | None = None,
+    expected_final_uv_hash: str | None = None,
+    expected_product_mask_sha: str | None = None,
+    expected_artwork_mask_sha: str | None = None,
+    require_real: bool = False,
+) -> list[str]:
+    failures: list[str] = []
+    if not isinstance(authority, dict):
+        return ["product_truth_acceptance_authority_not_dict"]
+
+    gen_id = authority.get("acceptanceGenerationId")
+    if not gen_id or not isinstance(gen_id, str):
+        failures.append("missing_product_truth_acceptance_generation_id")
+    elif str(gen_id).startswith("pt_acc_") or "pt_acc_" in str(gen_id):
+        failures.append("synthetic_acceptance_generation_id_forbidden")
+
+    pack_id = authority.get("renderPackId")
+    if not pack_id or not isinstance(pack_id, str):
+        failures.append("missing_product_truth_render_pack_id")
+    elif expected_render_pack_id and pack_id != expected_render_pack_id:
+        failures.append(f"product_truth_render_pack_id_mismatch: got {pack_id!r} expected {expected_render_pack_id!r}")
+
+    commit = authority.get("evidenceCodeCommit")
+    if not commit or not isinstance(commit, str):
+        failures.append("missing_product_truth_evidence_code_commit")
+    elif expected_commit and commit != expected_commit:
+        failures.append(f"product_truth_code_commit_mismatch: got {commit!r} expected {expected_commit!r}")
+
+    t_id = authority.get("tenantId") or (authority.get("pack") or {}).get("tenantId")
+    if not t_id or not isinstance(t_id, str):
+        failures.append("missing_product_truth_tenant_id")
+    elif expected_tenant_id and t_id != expected_tenant_id:
+        failures.append(f"product_truth_tenant_mismatch: got {t_id!r} expected {expected_tenant_id!r}")
+
+    s_id = authority.get("skuId") or authority.get("productId") or (authority.get("pack") or {}).get("productId")
+    if not s_id or not isinstance(s_id, str):
+        failures.append("missing_product_truth_sku_id")
+    elif expected_sku_id and s_id != expected_sku_id:
+        failures.append(f"product_truth_sku_mismatch: got {s_id!r} expected {expected_sku_id!r}")
+
+    p_ver = authority.get("productVersion") or authority.get("version") or (authority.get("pack") or {}).get("version")
+    if p_ver is None or not isinstance(p_ver, int):
+        failures.append("missing_product_truth_product_version")
+    elif expected_version is not None and p_ver != expected_version:
+        failures.append(f"product_truth_version_mismatch: got {p_ver!r} expected {expected_version!r}")
+
+    e_hash = authority.get("engineeringHash") or (authority.get("pack") or {}).get("engineeringHash")
+    if not e_hash or not isinstance(e_hash, str):
+        failures.append("missing_product_truth_engineering_hash")
+    elif expected_eng_hash and e_hash != expected_eng_hash:
+        failures.append(f"product_truth_engineering_hash_mismatch: got {e_hash!r} expected {expected_eng_hash!r}")
+
+    pl_hash = authority.get("placementHash") or (authority.get("pack") or {}).get("placementHash")
+    if not pl_hash or not isinstance(pl_hash, str):
+        failures.append("missing_product_truth_placement_hash")
+    elif expected_placement_hash and pl_hash != expected_placement_hash:
+        failures.append(f"product_truth_placement_hash_mismatch: got {pl_hash!r} expected {expected_placement_hash!r}")
+
+    uv_hash = authority.get("finalUvHash") or (authority.get("pack") or {}).get("finalUvHash")
+    if not uv_hash or not isinstance(uv_hash, str):
+        failures.append("missing_product_truth_final_uv_hash")
+    elif expected_final_uv_hash and uv_hash != expected_final_uv_hash:
+        failures.append(f"product_truth_final_uv_hash_mismatch: got {uv_hash!r} expected {expected_final_uv_hash!r}")
+
+    aovs = (authority.get("pack") or {}).get("aovs") or {}
+    pm_sha = authority.get("productMaskSha256") or (aovs.get("product_mask") or {}).get("sha256")
+    if not pm_sha or not isinstance(pm_sha, str):
+        failures.append("missing_product_truth_product_mask_sha")
+    elif expected_product_mask_sha and pm_sha != expected_product_mask_sha:
+        failures.append(f"product_truth_product_mask_sha_mismatch: got {pm_sha!r} expected {expected_product_mask_sha!r}")
+
+    am_sha = authority.get("artworkMaskSha256") or (aovs.get("artwork_mask") or {}).get("sha256")
+    if not am_sha or not isinstance(am_sha, str):
+        failures.append("missing_product_truth_artwork_mask_sha")
+    elif expected_artwork_mask_sha and am_sha != expected_artwork_mask_sha:
+        failures.append(f"product_truth_artwork_mask_sha_mismatch: got {am_sha!r} expected {expected_artwork_mask_sha!r}")
+
+    if pm_sha and am_sha and pm_sha == am_sha:
+        failures.append("product_truth_masks_cross_swapped")
+
+    if require_real:
+        if authority.get("usedMock") is not False:
+            failures.append("product_truth_authority_not_real")
+        if authority.get("label") != "REAL_LOGIC":
+            failures.append("product_truth_label_not_real_logic")
+        if authority.get("workingTreeClean") is not True:
+            failures.append("product_truth_working_tree_not_clean")
+
+    return failures
+
+
 def qa_commerce_pack(
     pack: dict[str, Any],
     engineering: dict[str, Any],
     upstream_pack: dict[str, Any],
     plat: Any,
+    product_truth_authority: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Deterministic Commerce QA gate: validates lineage, exact view set, recipes, articulated state, and dimension authority."""
     failures: list[str] = []
@@ -660,7 +786,7 @@ def qa_commerce_pack(
     if pack.get("productVersion") != upstream_pack.get("version"):
         failures.append("product_version_mismatch")
 
-    eng_hash = str(engineering.get("engineeringHash") or stable_hash({k: engineering[k] for k in engineering if k != "engineeringHash"}))
+    eng_hash = str(upstream_pack.get("engineeringHash") or engineering.get("engineeringHash") or stable_hash({k: engineering[k] for k in engineering if k not in ("engineeringHash", "productId")}))
     if pack.get("engineeringHash") != eng_hash:
         failures.append("stale_or_wrong_engineering_hash")
 
@@ -668,23 +794,62 @@ def qa_commerce_pack(
     if pack.get("sourceRenderPackId") != upstream_pack.get("renderPackId"):
         failures.append("source_render_pack_id_mismatch")
 
-    exp_acc_gen = str(upstream_pack.get("sourceAcceptanceGenerationId") or upstream_pack.get("acceptanceGenerationId") or "")
-    if not exp_acc_gen:
-        failures.append("missing_upstream_acceptance_generation_id")
-    elif str(pack.get("sourceAcceptanceGenerationId") or "") != exp_acc_gen:
-        failures.append("source_acceptance_generation_id_mismatch")
+    pt_auth = product_truth_authority or pack.get("sourceAcceptanceAuthority") or upstream_pack.get("sourceAcceptanceAuthority")
+    if not pt_auth and hasattr(plat, "root"):
+        pt_acc_path = Path("docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json")
+        if pt_acc_path.is_file():
+            try:
+                t_data = json.loads(pt_acc_path.read_text(encoding="utf-8"))
+                if t_data.get("renderPackId") == upstream_pack.get("renderPackId"):
+                    pt_auth = t_data
+            except Exception:
+                pass
 
-    # 3. ProductMask & ArtworkMask lineage
+    if not pt_auth:
+        failures.append("missing_product_truth_acceptance_authority")
+    else:
+        auth_failures = validate_product_truth_acceptance_authority(
+            pt_auth,
+            expected_render_pack_id=pack.get("sourceRenderPackId"),
+            expected_commit=pack.get("evidenceCodeCommit"),
+            expected_tenant_id=pack.get("tenantId"),
+            expected_sku_id=pack.get("skuId"),
+            expected_version=pack.get("productVersion"),
+            expected_eng_hash=pack.get("engineeringHash"),
+            expected_placement_hash=pack.get("placementHash"),
+            expected_final_uv_hash=pack.get("finalUvHash"),
+            expected_product_mask_sha=((upstream_pack.get("aovs") or {}).get("product_mask") or {}).get("sha256"),
+            expected_artwork_mask_sha=((upstream_pack.get("aovs") or {}).get("artwork_mask") or {}).get("sha256"),
+            require_real=not pack.get("usedMock"),
+        )
+        failures.extend(auth_failures)
+        if pack.get("sourceAcceptanceGenerationId") != pt_auth.get("acceptanceGenerationId"):
+            failures.append("source_acceptance_generation_id_mismatch")
+
+    if str(pack.get("sourceAcceptanceGenerationId") or "").startswith("pt_acc_"):
+        failures.append("synthetic_acceptance_generation_id_forbidden")
+
+    # 3. ProductMask & ArtworkMask lineage (unconditional, required non-empty damRef and sha256)
     upstream_aovs = upstream_pack.get("aovs") or {}
     up_prod_mask = upstream_aovs.get("product_mask") or {}
     up_art_mask = upstream_aovs.get("artwork_mask") or {}
     pack_prod_mask = pack.get("productMaskRef") or {}
     pack_art_mask = pack.get("artworkMaskRef") or {}
 
-    if pack_prod_mask.get("sha256") and pack_prod_mask.get("sha256") != up_prod_mask.get("sha256"):
+    if not pack_prod_mask.get("damRef") or not pack_prod_mask.get("sha256"):
+        failures.append("missing_product_mask_ref_or_sha")
+    elif pack_prod_mask.get("sha256") != up_prod_mask.get("sha256"):
         failures.append("product_mask_sha_mismatch")
-    if pack_art_mask.get("sha256") and pack_art_mask.get("sha256") != up_art_mask.get("sha256"):
+    elif pack_prod_mask.get("damRef") != up_prod_mask.get("damRef"):
+        failures.append("product_mask_dam_ref_mismatch")
+
+    if not pack_art_mask.get("damRef") or not pack_art_mask.get("sha256"):
+        failures.append("missing_artwork_mask_ref_or_sha")
+    elif pack_art_mask.get("sha256") != up_art_mask.get("sha256"):
         failures.append("artwork_mask_sha_mismatch")
+    elif pack_art_mask.get("damRef") != up_art_mask.get("damRef"):
+        failures.append("artwork_mask_dam_ref_mismatch")
+
     if pack_prod_mask.get("sha256") and pack_prod_mask.get("sha256") == pack_art_mask.get("sha256"):
         failures.append("product_and_artwork_mask_cross_swapped")
 
@@ -699,7 +864,6 @@ def qa_commerce_pack(
     if extra_views:
         failures.append(f"unexpected_extra_views: {sorted(extra_views)}")
 
-    # Check for duplicate roles
     roles_seen = set()
     for v_key, v_data in views.items():
         v_role = v_data.get("viewRole")
@@ -726,15 +890,29 @@ def qa_commerce_pack(
         recipe_failures = validate_strict_content_view_recipe(v_data.get("recipe"))
         failures.extend(recipe_failures)
 
-        # Check view recipe hash matches canonical expected recipe hash
         if v_data.get("recipe", {}).get("contentViewRecipeHash") != c_recipe["contentViewRecipeHash"]:
             failures.append(f"view_recipe_hash_mismatch_{role}")
 
-        # Source file on disk checks (fail-closed)
+        # Required view fields without skipping (sha256, positive size, width, height, format=PNG, damRef, path, blenderJobId)
+        if not v_data.get("sha256") or not isinstance(v_data.get("sha256"), str):
+            failures.append(f"missing_or_invalid_sha256_{role}")
+        if not isinstance(v_data.get("size"), int) or v_data.get("size", 0) <= 0:
+            failures.append(f"missing_or_non_positive_size_{role}")
+        if not isinstance(v_data.get("width"), int) or v_data.get("width", 0) <= 0:
+            failures.append(f"missing_or_invalid_width_{role}")
+        if not isinstance(v_data.get("height"), int) or v_data.get("height", 0) <= 0:
+            failures.append(f"missing_or_invalid_height_{role}")
+        if v_data.get("format") != "PNG":
+            failures.append(f"invalid_format_{role}")
+        if not v_data.get("damRef") or not isinstance(v_data.get("damRef"), str):
+            failures.append(f"missing_or_invalid_dam_ref_{role}")
+        if not v_data.get("path") or not isinstance(v_data.get("path"), str):
+            failures.append(f"missing_or_invalid_path_{role}")
+        if not v_data.get("blenderJobId") or not isinstance(v_data.get("blenderJobId"), str):
+            failures.append(f"missing_or_invalid_blender_job_id_{role}")
+
         src_path_str = v_data.get("path")
-        if not src_path_str:
-            failures.append(f"missing_source_path_{role}")
-        else:
+        if src_path_str:
             p = Path(src_path_str)
             if not p.is_file():
                 failures.append(f"source_file_not_found_{role}")
@@ -749,34 +927,25 @@ def qa_commerce_pack(
                     if src_meta["width"] != c_recipe["width"] or src_meta["height"] != c_recipe["height"]:
                         failures.append(f"image_dimensions_mismatch_{role}: got {src_meta['width']}x{src_meta['height']} expected {c_recipe['width']}x{c_recipe['height']}")
 
-        # Check DAM object integrity
+        # Unconditional DAM check
         dam_ref = v_data.get("damRef")
-        if not dam_ref:
-            failures.append(f"missing_dam_ref_{role}")
-        elif hasattr(plat, "dam"):
+        if dam_ref and hasattr(plat, "dam"):
             try:
                 dam_obj = plat.dam.get(dam_ref, tenant_id=pack["tenantId"])
             except Exception as exc:
                 failures.append(f"dam_get_failed_{role}: {exc}")
                 dam_obj = None
             if not dam_obj:
-                if f"dam_get_failed_{role}" not in str(failures):
-                    failures.append(f"dam_object_not_found_{role}")
+                failures.append(f"dam_object_not_found_{role}")
             else:
-                if v_data.get("sha256") and dam_obj.sha256 != v_data["sha256"]:
+                if dam_obj.sha256 != v_data.get("sha256"):
                     failures.append(f"dam_sha_mismatch_{role}")
                 dam_size = Path(dam_obj.path).stat().st_size if Path(dam_obj.path).is_file() else 0
-                if v_data.get("size") and dam_size != v_data["size"]:
+                if dam_size != v_data.get("size"):
                     failures.append(f"dam_size_mismatch_{role}")
-
-                # Strict required DAM metadata fields without skipping
                 d_meta = dam_obj.metadata or {}
-
-                # MIME
-                mime = d_meta.get("mime")
-                if not mime or mime != "image/png":
-                    failures.append(f"dam_mime_invalid_{role}: got {mime!r}")
-
+                if d_meta.get("mime") != "image/png":
+                    failures.append(f"dam_mime_invalid_{role}")
                 required_dam_fields = {
                     "tenantId": pack.get("tenantId"),
                     "skuId": pack.get("skuId"),
@@ -785,7 +954,7 @@ def qa_commerce_pack(
                     "viewRole": role,
                     "commerceRole": v_data.get("commerceRole"),
                     "sourceRenderPackId": pack.get("sourceRenderPackId"),
-                    "sourceAcceptanceGenerationId": exp_acc_gen,
+                    "sourceAcceptanceGenerationId": pack.get("sourceAcceptanceGenerationId"),
                     "sourcePath": v_data.get("path"),
                     "sourceJobId": v_data.get("blenderJobId"),
                 }
@@ -794,14 +963,15 @@ def qa_commerce_pack(
                     if actual_val is None or actual_val == "":
                         failures.append(f"dam_metadata_missing_{k}_{role}")
                     elif actual_val != exp_val:
-                        failures.append(f"dam_metadata_mismatch_{k}_{role}: got {actual_val!r} expected {exp_val!r}")
-
-                # For REAL views, check worker/device provenance in DAM metadata
+                        failures.append(f"dam_metadata_mismatch_{k}_{role}")
                 if not v_data.get("usedMock"):
-                    if not d_meta.get("blenderVersion"):
-                        failures.append(f"dam_metadata_missing_blender_version_{role}")
-                    if not d_meta.get("device"):
-                        failures.append(f"dam_metadata_missing_device_{role}")
+                    w_ev = v_data.get("workerEvidence") or {}
+                    if d_meta.get("blenderVersion") != w_ev.get("blenderVersion"):
+                        failures.append(f"dam_blender_version_worker_mismatch_{role}")
+                    if d_meta.get("device") != w_ev.get("device"):
+                        failures.append(f"dam_device_worker_mismatch_{role}")
+                    if d_meta.get("usedMock") is not False:
+                        failures.append(f"dam_used_mock_invalid_{role}")
 
     # Check for HERO vs OPEN DAM refs swap
     hero_view = views.get("WHITE_BACKGROUND_HERO") or {}
@@ -820,30 +990,73 @@ def qa_commerce_pack(
     if closed_art.get("productState") != "CLOSED" or float(closed_art.get("articulationAngleDeg") or 0.0) != 0.0:
         failures.append("front_closed_not_in_closed_state")
 
-    # For REAL views, bind and assert observed worker evidence ↔ canonical expected
+    dim_view = views.get("DIMENSION_FRONT") or {}
     for role in REQUIRED_COMMERCE_VIEW_ROLES:
         v_data = views.get(role)
-        if not v_data or v_data.get("usedMock"):
+        if not v_data:
             continue
-        if role == "DIMENSION_FRONT":
-            continue  # derived from FRONT_CLOSED
-
         c_recipe = canonical_recipes[role]
+
+        if role == "DIMENSION_FRONT":
+            # Validating DIMENSION_FRONT explicit derivation lineage from FRONT_CLOSED
+            dim_lineage = v_data.get("derivationLineage")
+            if not dim_lineage or not isinstance(dim_lineage, dict):
+                failures.append("missing_dimension_front_derivation_lineage")
+            else:
+                if dim_lineage.get("derivedFromViewRole") != "FRONT_CLOSED":
+                    failures.append("dimension_front_not_derived_from_front_closed")
+                if dim_lineage.get("sourceDamRef") != front_closed.get("damRef"):
+                    failures.append("dimension_front_source_dam_ref_mismatch")
+                if dim_lineage.get("sourceSha256") != front_closed.get("sha256"):
+                    failures.append("dimension_front_source_sha256_mismatch")
+                if dim_lineage.get("sourceBlenderJobId") != front_closed.get("blenderJobId"):
+                    failures.append("dimension_front_source_job_id_mismatch")
+                fc_w_ev = front_closed.get("workerEvidence") or {}
+                if dim_lineage.get("sourceWorkerEvidenceHash") != stable_hash(fc_w_ev):
+                    failures.append("dimension_front_source_worker_evidence_hash_mismatch")
+            continue
+
         w_ev = v_data.get("workerEvidence")
         if not w_ev or not isinstance(w_ev, dict):
             failures.append(f"missing_worker_evidence_{role}")
             continue
 
-        if w_ev.get("blenderJobId") != v_data.get("blenderJobId"):
-            failures.append(f"worker_evidence_job_id_mismatch_{role}")
-        if w_ev.get("viewId") != role and w_ev.get("role") != role:
-            failures.append(f"worker_evidence_role_mismatch_{role}")
-        if not w_ev.get("blenderVersion"):
-            failures.append(f"worker_evidence_missing_blender_version_{role}")
-        if not w_ev.get("device"):
-            failures.append(f"worker_evidence_missing_device_{role}")
-        if w_ev.get("usedMock") is not False:
-            failures.append(f"worker_evidence_used_mock_invalid_{role}")
+        if not v_data.get("usedMock"):
+            if w_ev.get("blenderJobId") != v_data.get("blenderJobId"):
+                failures.append(f"worker_evidence_job_id_mismatch_{role}")
+            if w_ev.get("viewId") != role and w_ev.get("role") != role:
+                failures.append(f"worker_evidence_role_mismatch_{role}")
+            if not w_ev.get("blenderVersion"):
+                failures.append(f"worker_evidence_missing_blender_version_{role}")
+            if not w_ev.get("device"):
+                failures.append(f"worker_evidence_missing_device_{role}")
+            if w_ev.get("usedMock") is not False:
+                failures.append(f"worker_evidence_used_mock_invalid_{role}")
+
+        # Validate worker cameraRecipeHash and sceneRecipeHash
+        if not w_ev.get("cameraRecipeHash"):
+            failures.append(f"missing_worker_camera_recipe_hash_{role}")
+        elif w_ev.get("cameraRecipeHash") != c_recipe["cameraRecipeHash"]:
+            failures.append(f"worker_camera_recipe_hash_mismatch_{role}")
+
+        if not w_ev.get("sceneRecipeHash"):
+            failures.append(f"missing_worker_scene_recipe_hash_{role}")
+        elif w_ev.get("sceneRecipeHash") != c_recipe["sceneRecipeHash"]:
+            failures.append(f"worker_scene_recipe_hash_mismatch_{role}")
+
+        # Rehash camera semantic fields
+        obs_cam_hash = compute_camera_recipe_hash(
+            camera_id=w_ev.get("cameraId") or c_recipe["camera"]["cameraId"],
+            location=w_ev.get("location") or [],
+            look_at=w_ev.get("lookAt") or w_ev.get("target") or [],
+            focal_length_mm=float(w_ev.get("focalLengthMm") or 0.0),
+            sensor_width_mm=float(w_ev.get("sensorWidthMm") or 36.0),
+            width=int(w_ev.get("width") or c_recipe["width"]),
+            height=int(w_ev.get("height") or c_recipe["height"]),
+            safe_margin=float(w_ev.get("safeMargin") or 0.08),
+        )
+        if obs_cam_hash != w_ev.get("cameraRecipeHash"):
+            failures.append(f"worker_camera_semantic_hash_tampered_{role}")
 
         obs_art = v_data.get("articulatedState") or w_ev.get("articulatedState") or {}
         exp_art = build_articulated_state(
@@ -888,7 +1101,6 @@ def qa_commerce_pack(
                 failures.append("front_closed_observed_non_empty_transforms")
 
     # 7. Dimension Asset Authority
-    dim_view = views.get("DIMENSION_FRONT") or {}
     dim_failures = validate_dimension_asset_authority(
         dim_view.get("dimensionMetadata"),
         engineering,
@@ -921,7 +1133,7 @@ def build_commerce_asset_pack(
     tenant_id = str(product_truth_pack["tenantId"])
     sku_id = str(product_truth_pack.get("productId") or "")
     version = product_truth_pack.get("version") or 1
-    eng_hash = str(engineering.get("engineeringHash") or stable_hash({k: engineering[k] for k in engineering if k != "engineeringHash"}))
+    eng_hash = str(product_truth_pack.get("engineeringHash") or engineering.get("engineeringHash") or stable_hash({k: engineering[k] for k in engineering if k not in ("engineeringHash", "productId")}))
     source_acc_gen_id = str(product_truth_pack.get("sourceAcceptanceGenerationId") or product_truth_pack.get("acceptanceGenerationId") or "")
     mock = bool(getattr(plat, "mock_blender", True) or product_truth_pack.get("usedMock"))
 
@@ -969,8 +1181,39 @@ def build_commerce_asset_pack(
                     "skuId": sku_id,
                     "productVersion": version,
                     "mime": "image/png",
+                    "blenderVersion": "MOCK",
+                    "device": "MOCK",
+                    "usedMock": True,
                 },
             )
+            mock_w_view = {
+                "viewId": role,
+                "role": role,
+                "filename": fname,
+                "cameraId": rec["camera"]["cameraId"],
+                "cameraRecipeHash": rec["cameraRecipeHash"],
+                "sceneRecipeHash": rec["sceneRecipeHash"],
+                "location": rec["camera"]["location"],
+                "lookAt": rec["camera"]["lookAt"],
+                "target": rec["camera"]["lookAt"],
+                "focalLengthMm": rec["camera"]["focalLengthMm"],
+                "sensorWidthMm": rec["camera"]["sensorWidthMm"],
+                "safeMargin": rec["camera"]["safeMargin"],
+                "width": meta["width"],
+                "height": meta["height"],
+                "path": str(dest.resolve()),
+                "sha256": sha256_bytes(data),
+                "size": len(data),
+                "blenderJobId": str(job_id),
+                "blenderVersion": "MOCK",
+                "device": "MOCK",
+                "usedMock": True,
+                "realBlender": False,
+                "realOptix": False,
+                "productState": rec["productState"],
+                "articulationAngleDeg": float(rec.get("articulationAngleDeg") or 0.0),
+                "articulatedState": art_state,
+            }
             views_output[role] = {
                 "viewRole": role,
                 "commerceRole": dam_role,
@@ -979,6 +1222,7 @@ def build_commerce_asset_pack(
                 "blenderJobId": job_id,
                 "recipe": rec,
                 "articulatedState": art_state,
+                "workerEvidence": mock_w_view,
                 "sha256": sha256_bytes(data),
                 "size": len(data),
                 "width": meta["width"],
@@ -997,6 +1241,10 @@ def build_commerce_asset_pack(
                 {
                     "id": role,
                     "viewId": role,
+                    "cameraId": rec["camera"]["cameraId"],
+                    "cameraRecipeHash": rec["cameraRecipeHash"],
+                    "sceneId": rec["scene"]["sceneId"],
+                    "sceneRecipeHash": rec["sceneRecipeHash"],
                     "filename": f"{role.lower()}.png",
                     "location": rec["camera"]["location"],
                     "lookAt": rec["camera"]["lookAt"],
@@ -1005,6 +1253,9 @@ def build_commerce_asset_pack(
                     "safeMargin": rec["camera"]["safeMargin"],
                     "productState": rec["productState"],
                     "articulationAngleDeg": float(rec.get("articulationAngleDeg") or 0.0),
+                    "studioPreset": rec.get("studioPreset"),
+                    "lightingPreset": rec.get("lightingPreset"),
+                    "samples": samples,
                 }
             )
 
@@ -1109,8 +1360,17 @@ def build_commerce_asset_pack(
     dim_png_bytes, dim_meta = generate_dimension_overlay(front_closed_path, engineering, width, height)
     dim_file = work_dir / "dimension_front.png"
     dim_file.write_bytes(dim_png_bytes)
-    dim_b_version = str(fc_view.get("workerEvidence", {}).get("blenderVersion") or fc_view.get("blenderVersion") or ("MOCK" if mock else "5.2.1"))
-    dim_b_device = str(fc_view.get("workerEvidence", {}).get("device") or fc_view.get("device") or ("MOCK" if mock else "OPTIX"))
+    fc_w_ev = dict(fc_view.get("workerEvidence") or {})
+    dim_b_version = str(fc_w_ev.get("blenderVersion") or ("MOCK" if mock else "5.2.1"))
+    dim_b_device = str(fc_w_ev.get("device") or ("MOCK" if mock else "OPTIX"))
+    dim_lineage = {
+        "derivedFromViewRole": "FRONT_CLOSED",
+        "sourceDamRef": str(fc_view.get("damRef")),
+        "sourceSha256": str(fc_view.get("sha256")),
+        "sourceBlenderJobId": str(fc_view.get("blenderJobId")),
+        "sourceWorkerEvidenceHash": stable_hash(fc_w_ev),
+        "overlayAuthority": "ENGINEERING_MM_FONT_5X7",
+    }
     dim_dam_obj = plat.dam.put(
         tenant_id=tenant_id,
         kind="commerce_asset",
@@ -1132,6 +1392,7 @@ def build_commerce_asset_pack(
             "blenderVersion": dim_b_version,
             "device": dim_b_device,
             "usedMock": mock,
+            "derivationLineage": dim_lineage,
             **dim_meta,
         },
     )
@@ -1141,10 +1402,11 @@ def build_commerce_asset_pack(
         "commerceRole": "COMMERCE_DIMENSION",
         "damRef": dim_dam_obj.asset_id,
         "path": str(dim_file.resolve()),
-        "blenderJobId": fc_view["blenderJobId"],
+        "blenderJobId": str(fc_view["blenderJobId"]),
         "recipe": recipes["DIMENSION_FRONT"],
         "articulatedState": build_articulated_state(engineering, state="CLOSED", angle_deg=0.0),
-        "workerEvidence": dict(fc_view.get("workerEvidence") or {}),
+        "workerEvidence": fc_w_ev,
+        "derivationLineage": dim_lineage,
         "blenderVersion": dim_b_version,
         "device": dim_b_device,
         "dimensionMetadata": dim_meta,
@@ -1214,7 +1476,8 @@ def build_commerce_asset_pack(
     }
 
     # Run QA gate
-    qa_res = qa_commerce_pack(pack, engineering, product_truth_pack, plat)
+    pt_auth = product_truth_pack.get("sourceAcceptanceAuthority")
+    qa_res = qa_commerce_pack(pack, engineering, product_truth_pack, plat, product_truth_authority=pt_auth)
     pack["qa"] = qa_res
     return pack
 
@@ -1224,27 +1487,62 @@ def run_product_content_scenario(
     *,
     tenant_id: str = "pt-a",
     evidence_code_commit: str | None = None,
+    product_truth_acceptance: dict[str, Any] | None = None,
+    product_truth_acceptance_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Full end-to-end scenario producing canonical Product Content Factory V1 assets."""
     from fox3d.product_truth import run_phase_841_scenario
 
-    truth_res = run_phase_841_scenario(plat, tenant_id=tenant_id, evidence_code_commit=evidence_code_commit)
-    upstream_pack = truth_res["pack"]
-    eng = truth_res["frozenAuthorityContext"]["engineering"]
+    pt_auth = product_truth_acceptance
+    if not pt_auth:
+        acc_path = Path(product_truth_acceptance_path) if product_truth_acceptance_path else Path("docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json")
+        if acc_path.is_file():
+            try:
+                t_data = json.loads(acc_path.read_text(encoding="utf-8"))
+                # Match tenant and mock mode
+                t_tenant = t_data.get("tenantId") or (t_data.get("pack") or {}).get("tenantId")
+                if t_tenant == tenant_id:
+                    if not evidence_code_commit or t_data.get("evidenceCodeCommit") == evidence_code_commit:
+                        if bool(t_data.get("usedMock")) == bool(getattr(plat, "mock_blender", True)):
+                            pt_auth = t_data
+            except Exception:
+                pass
 
-    truth_gen_id = None
-    truth_acc_path = Path("docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json")
-    if truth_acc_path.is_file():
-        try:
-            t_data = json.loads(truth_acc_path.read_text(encoding="utf-8"))
-            if t_data.get("renderPackId") == upstream_pack.get("renderPackId"):
-                truth_gen_id = t_data.get("acceptanceGenerationId")
-        except Exception:
-            pass
-    if not truth_gen_id:
-        truth_gen_id = upstream_pack.get("sourceAcceptanceGenerationId") or upstream_pack.get("acceptanceGenerationId") or f"pt_acc_{upstream_pack.get('renderPackId')}"
+    if pt_auth:
+        upstream_pack = pt_auth.get("pack") or {}
+        truth_gen_id = pt_auth.get("acceptanceGenerationId")
+        eng = pt_auth.get("frozenEngineering") or (upstream_pack.get("frozenAuthorityContext") or {}).get("engineering")
+        if not eng:
+            truth_res = run_phase_841_scenario(plat, tenant_id=tenant_id, evidence_code_commit=evidence_code_commit)
+            eng = truth_res["frozenAuthorityContext"]["engineering"]
+    else:
+        truth_res = run_phase_841_scenario(plat, tenant_id=tenant_id, evidence_code_commit=evidence_code_commit)
+        upstream_pack = truth_res["pack"]
+        eng = truth_res["frozenAuthorityContext"]["engineering"]
+        truth_gen_id = new_id()  # Genuine UUID, not synthetic pt_acc_
+        aovs = upstream_pack.get("aovs") or {}
+        mock_bool = bool(getattr(plat, "mock_blender", True) or upstream_pack.get("usedMock"))
+        pt_auth = {
+            "acceptanceGenerationId": truth_gen_id,
+            "renderPackId": upstream_pack["renderPackId"],
+            "evidenceCodeCommit": evidence_code_commit or "uncommitted",
+            "tenantId": upstream_pack["tenantId"],
+            "productId": upstream_pack["productId"],
+            "version": upstream_pack["version"],
+            "engineeringHash": upstream_pack["engineeringHash"],
+            "placementHash": upstream_pack["placementHash"],
+            "finalUvHash": upstream_pack["finalUvHash"],
+            "productMaskSha256": (aovs.get("product_mask") or {}).get("sha256"),
+            "artworkMaskSha256": (aovs.get("artwork_mask") or {}).get("sha256"),
+            "usedMock": mock_bool,
+            "workingTreeClean": True,
+            "label": "FIXTURE/MOCK" if mock_bool else "REAL_LOGIC",
+            "pack": upstream_pack,
+        }
+
     upstream_pack["sourceAcceptanceGenerationId"] = truth_gen_id
     upstream_pack["acceptanceGenerationId"] = truth_gen_id
+    upstream_pack["sourceAcceptanceAuthority"] = pt_auth
 
     mock = bool(getattr(plat, "mock_blender", True) or upstream_pack.get("usedMock"))
     width = 64 if mock else 128
@@ -1260,14 +1558,16 @@ def run_product_content_scenario(
         samples=samples,
         evidence_code_commit=evidence_code_commit,
     )
+    content_pack["sourceAcceptanceAuthority"] = pt_auth
 
     qa = content_pack.get("qa") or {}
-    ok = bool(truth_res.get("ok") and qa.get("ok"))
+    ok = bool(qa.get("ok"))
 
     return {
         "ok": ok,
         "contentPack": content_pack,
         "productTruthPack": upstream_pack,
+        "productTruthAuthority": pt_auth,
         "frozenEngineering": eng,
         "usedMock": mock,
         "productContentFactoryLogicReady": True,

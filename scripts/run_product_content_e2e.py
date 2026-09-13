@@ -94,7 +94,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     # 1. Independent QA validation against canonical ground truth
     eng = hooks.get("engineering") or result.get("frozenEngineering") or {}
     upstream_pack = hooks.get("product_truth_pack") or result.get("productTruthPack") or {}
-    independent_qa = qa_commerce_pack(pack, eng, upstream_pack, plat)
+    pt_authority = hooks.get("product_truth_authority") or result.get("productTruthAuthority")
+    independent_qa = qa_commerce_pack(pack, eng, upstream_pack, plat, product_truth_authority=pt_authority)
     for f in independent_qa.get("failures") or []:
         if f not in missing:
             missing.append(f)

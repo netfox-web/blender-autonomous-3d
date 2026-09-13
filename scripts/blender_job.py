@@ -81,6 +81,29 @@ def compute_camera_recipe_hash(
     return _stable_hash(payload)
 
 
+def compute_scene_recipe_hash(
+    *,
+    scene_id: str = "WHITE_CYC",
+    lighting: str = "THREE_POINT",
+    samples: int = 32,
+    engine: str = "CYCLES",
+) -> str:
+    payload = {
+        "sceneId": str(scene_id),
+        "backgroundPreset": "WHITE_CYC",
+        "environmentPreset": "STUDIO",
+        "lightingPreset": str(lighting),
+        "studioRigId": "KEY_FILL_RIM_V1",
+        "floorPolicy": "SHADOW_CATCHER",
+        "shadowCatcher": True,
+        "renderEngine": str(engine),
+        "samples": int(samples),
+        "colorManagement": "Filmic",
+        "recipeVersion": 1,
+    }
+    return _stable_hash(payload)
+
+
 def _load_job(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -1563,8 +1586,9 @@ def build_and_render(job: dict) -> dict:
         lens = float(view.get("focalLengthMm") or 85.0)
         sensor_w = float(view.get("sensorWidthMm") or 36.0)
         safe_m = float(view.get("safeMargin") or 0.08)
+        cam_id = str(view.get("cameraId") or view_id)
         actual_cam_hash = compute_camera_recipe_hash(
-            camera_id=view_id,
+            camera_id=cam_id,
             location=loc,
             look_at=look_at,
             focal_length_mm=lens,
@@ -1572,6 +1596,15 @@ def build_and_render(job: dict) -> dict:
             width=width,
             height=height,
             safe_margin=safe_m,
+        )
+        scene_id = str(view.get("sceneId") or view.get("studioPreset") or "WHITE_CYC")
+        lighting = str(view.get("lightingPreset") or "THREE_POINT")
+        v_samples = int(view.get("samples") or samples)
+        actual_scene_hash = compute_scene_recipe_hash(
+            scene_id=scene_id,
+            lighting=lighting,
+            samples=v_samples,
+            engine="CYCLES",
         )
         prod_state = str(view.get("productState") or "CLOSED").upper()
         angle = float(view.get("articulationAngleDeg") or (75.0 if prod_state == "OPEN" else 0.0))
@@ -1601,8 +1634,9 @@ def build_and_render(job: dict) -> dict:
                 "viewId": view_id,
                 "role": view_id,
                 "filename": name,
+                "cameraId": cam_id,
                 "cameraRecipeHash": actual_cam_hash,
-                "sceneRecipeHash": job.get("sceneRecipeHash") or view.get("sceneRecipeHash"),
+                "sceneRecipeHash": actual_scene_hash,
                 "location": loc,
                 "lookAt": look_at,
                 "target": look_at,
