@@ -1,0 +1,2 @@
+# Supplier snapshots are evidence: preserve exact bytes on Ubuntu and Windows.
+data/recipe_library/sonaqueen/sources/* -text
