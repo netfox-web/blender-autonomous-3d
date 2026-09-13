@@ -1,0 +1,207 @@
+{
+  "scope": "User-requested supplier-reference seed library; no Phase 961+ release",
+  "localPytest": {
+    "passed": 670,
+    "warnings": 1,
+    "durationSeconds": 666.15,
+    "newFocusedTests": 42
+  },
+  "codeCI": {
+    "databaseId": 34739838555,
+    "headSha": "21615a0d2bcf0748814a0c74048e7828590d5be0",
+    "status": "completed",
+    "conclusion": "success",
+    "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34739838555",
+    "jobs": [
+      {
+        "databaseId": 103677560441,
+        "name": "unit (windows-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-13T05:15:16Z",
+        "completedAt": "2026-09-13T05:32:57Z"
+      },
+      {
+        "databaseId": 103677560672,
+        "name": "unit (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "startedAt": "2026-09-13T05:15:16Z",
+        "completedAt": "2026-09-13T05:34:53Z"
+      }
+    ]
+  },
+  "acceptance": {
+    "ok": true,
+    "generationId": "e1abdc35-c80e-4b29-b10c-53b0b1c40928",
+    "generatedAt": "2026-09-13T05:35:31.196919+00:00",
+    "evidenceCodeCommit": "21615a0d2bcf0748814a0c74048e7828590d5be0",
+    "workingTreeClean": true,
+    "executionMode": "LIVE_HTTP",
+    "scope": "SUPPLIER_REFERENCE_LIBRARY_ONLY",
+    "sourceChecks": [
+      {
+        "sku": "MY-012",
+        "sourceId": "page",
+        "url": "https://home.sonaqueen.com.tw/products/tzumii-11857622",
+        "sha256": "2301a35093b6ccaf90a52753f5a729d7eab27639d0f2a747885ce4418cfbe470",
+        "snapshotSha256": "4ebbfbd98bab215ae26fa1e8ca0edbfa41c401d22e284bd9f4971ecc22f8d24a",
+        "sizeBytes": 52893,
+        "mediaType": "text/html",
+        "comparison": "SKU_AND_NAME_ONLY_DYNAMIC_PAGE",
+        "checkedAt": "2026-09-13T05:35:21.464340+00:00"
+      },
+      {
+        "sku": "MY-012",
+        "sourceId": "dimensions",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/MY-012-detail-09.jpg",
+        "sha256": "9262bf1c862bafe7dab429b9ac300422b68914e49eafe59d535e8b6b31d9b709",
+        "snapshotSha256": "9262bf1c862bafe7dab429b9ac300422b68914e49eafe59d535e8b6b31d9b709",
+        "sizeBytes": 155423,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:22.567222+00:00"
+      },
+      {
+        "sku": "MY-012",
+        "sourceId": "image-1",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/MY-012-detail-10.jpg",
+        "sha256": "775bb0a4736ad0ee83086b287960c389f0f0f2065c86f016b1b6db07e28d7e4c",
+        "snapshotSha256": "775bb0a4736ad0ee83086b287960c389f0f0f2065c86f016b1b6db07e28d7e4c",
+        "sizeBytes": 71182,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:23.616544+00:00"
+      },
+      {
+        "sku": "LI-D40",
+        "sourceId": "page",
+        "url": "https://home.sonaqueen.com.tw/products/tzumii-10805080",
+        "sha256": "9f61758f04f61679f8d08937975f57ba56b7968938f9fef3d405b7a8531561cf",
+        "snapshotSha256": "9f61758f04f61679f8d08937975f57ba56b7968938f9fef3d405b7a8531561cf",
+        "sizeBytes": 50656,
+        "mediaType": "text/html",
+        "comparison": "SKU_AND_NAME_ONLY_DYNAMIC_PAGE",
+        "checkedAt": "2026-09-13T05:35:24.607169+00:00"
+      },
+      {
+        "sku": "LI-D40",
+        "sourceId": "dimensions",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-D40-detail-11.jpg",
+        "sha256": "a18a8b8e1cb205c5844a3d5142e1486a31eb93ae5d6fb14042c13106f559f1ae",
+        "snapshotSha256": "a18a8b8e1cb205c5844a3d5142e1486a31eb93ae5d6fb14042c13106f559f1ae",
+        "sizeBytes": 342234,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:25.937512+00:00"
+      },
+      {
+        "sku": "LI-D40",
+        "sourceId": "image-1",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-D40-03.jpg",
+        "sha256": "48fcb1bd67bb355dfea182255ad6143e58fba6737b4e43fe32eb500cd2caedff",
+        "snapshotSha256": "48fcb1bd67bb355dfea182255ad6143e58fba6737b4e43fe32eb500cd2caedff",
+        "sizeBytes": 227765,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:27.234341+00:00"
+      },
+      {
+        "sku": "LI-PU63D-免組裝",
+        "sourceId": "page",
+        "url": "https://home.sonaqueen.com.tw/products/tzumii-10290969",
+        "sha256": "392307a15894a951035cf430d91a16a54848e66e7e85b7744ad24c2498ce080d",
+        "snapshotSha256": "ccb03de252659eb267933fc37c7d27a2d0e5d3ffee120eee1c8c66bd63941cae",
+        "sizeBytes": 56266,
+        "mediaType": "text/html",
+        "comparison": "SKU_AND_NAME_ONLY_DYNAMIC_PAGE",
+        "checkedAt": "2026-09-13T05:35:27.869904+00:00"
+      },
+      {
+        "sku": "LI-PU63D-免組裝",
+        "sourceId": "dimensions",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-PU63D-%E5%85%8D%E7%B5%84%E8%A3%9D-detail-11.jpg",
+        "sha256": "bcbf12e22ccdb046c0cfee7f13563934a341c13384cac2728bf17577f2855332",
+        "snapshotSha256": "bcbf12e22ccdb046c0cfee7f13563934a341c13384cac2728bf17577f2855332",
+        "sizeBytes": 195399,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:29.004927+00:00"
+      },
+      {
+        "sku": "LI-PU63D-免組裝",
+        "sourceId": "image-1",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-PU63D-%E5%85%8D%E7%B5%84%E8%A3%9D-detail-13.jpg",
+        "sha256": "372f95d1ae25dddb7ddf1a1e77c184c78a5d762a649fe9c587cd1f7c12251e6f",
+        "snapshotSha256": "372f95d1ae25dddb7ddf1a1e77c184c78a5d762a649fe9c587cd1f7c12251e6f",
+        "sizeBytes": 47050,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:29.865122+00:00"
+      },
+      {
+        "sku": "LI-PU63D-免組裝",
+        "sourceId": "image-2",
+        "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-PU63D-%E5%85%8D%E7%B5%84%E8%A3%9D-03.jpg",
+        "sha256": "1cbdac5bde37dc7b75909e9abf1cc2b3bd4515d3f4aae38df5ba1ec63deadbf7",
+        "snapshotSha256": "1cbdac5bde37dc7b75909e9abf1cc2b3bd4515d3f4aae38df5ba1ec63deadbf7",
+        "sizeBytes": 291451,
+        "mediaType": "image/jpeg",
+        "comparison": "EXACT_SNAPSHOT_BYTES",
+        "checkedAt": "2026-09-13T05:35:31.183202+00:00"
+      }
+    ],
+    "libraryHash": "54949b3a8ee670dc8b1f5b8a79a7ba1aff9c25ba80aba5396103f67a2b69658e",
+    "productCount": 3,
+    "recipeIds": [
+      "supplier_f5350a827773570019d380072dafa95c0c18c577e809f69a9165c353d8d53c5f",
+      "supplier_3dba3ef3e68b92663a8377f2248cad8cb0bdc45f0315d3003e338ed66204da86",
+      "supplier_f0b6e835bee0e4db08c6d1aa957d5c8b552fc10da02a0c452173f1f36410946b"
+    ],
+    "realBlenderAcceptance": false,
+    "engineeringReady": false,
+    "commercialAssetProductionReady": false,
+    "globalProductionReady": false,
+    "products": [
+      {
+        "sku": "MY-012",
+        "blockers": [
+          "missing:panelThicknessMm",
+          "missing:backThicknessMm",
+          "missing:panelJoinery",
+          "missing:rowDividerCoordinates",
+          "geometry_adapter_not_validated",
+          "engineering_not_verified",
+          "real_render_not_verified"
+        ]
+      },
+      {
+        "sku": "LI-D40",
+        "blockers": [
+          "missing:panelThicknessMm",
+          "missing:backThicknessMm",
+          "missing:doorThicknessMm",
+          "missing:doorGapsMm",
+          "missing:hingeSpecification",
+          "geometry_adapter_not_validated",
+          "engineering_not_verified",
+          "real_render_not_verified"
+        ]
+      },
+      {
+        "sku": "LI-PU63D-免組裝",
+        "blockers": [
+          "missing:sidePanelThicknessMm",
+          "missing:backThicknessMm",
+          "missing:doorThicknessMm",
+          "missing:doorGapsMm",
+          "missing:trackSpecification",
+          "missing:slideTravelMm",
+          "geometry_adapter_not_validated",
+          "engineering_not_verified",
+          "real_render_not_verified"
+        ]
+      }
+    ]
+  }
+}
