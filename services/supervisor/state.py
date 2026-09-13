@@ -42,6 +42,16 @@ class StateManager:
                     received_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS delivery_lifecycle (
+                    delivery_id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    sender TEXT,
+                    received_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    error TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS supervisor_state (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     last_seen_event_id TEXT,
@@ -62,6 +72,7 @@ class StateManager:
                     decision TEXT,
                     created_at TEXT NOT NULL,
                     completed_at TEXT,
+                    staged_commit_sha TEXT,
                     output_json TEXT,
                     error TEXT,
                     UNIQUE(code_sha, evidence_generation_id)
@@ -97,26 +108,91 @@ class StateManager:
                 )
             conn.commit()
 
-    def has_seen_delivery(self, delivery_id: str) -> bool:
-        """Check if webhook delivery ID was already received."""
+    # --- Delivery Lifecycle Management ---
+
+    def evaluate_delivery(self, delivery_id: str) -> Tuple[bool, str]:
+        """
+        Check delivery lifecycle status.
+        Returns: (can_process: bool, reason: str)
+        """
         if not delivery_id:
-            return False
+            return True, "NO_DELIVERY_ID"
+
         with self._local_lock, self._get_conn() as conn:
             cur = conn.cursor()
-            cur.execute("SELECT 1 FROM seen_events WHERE delivery_id = ?", (delivery_id,))
-            return cur.fetchone() is not None
+            cur.execute("SELECT status, updated_at FROM delivery_lifecycle WHERE delivery_id = ?", (delivery_id,))
+            row = cur.fetchone()
+            if not row:
+                return True, "NEW"
 
-    def record_delivery(self, delivery_id: str, event_type: str) -> None:
-        """Record delivery ID for replay protection."""
+            status = row["status"]
+            if status in ("COMPLETED", "FAILED_TERMINAL"):
+                return False, "IGNORED_DUPLICATE_DELIVERY"
+
+            if status == "FAILED_RETRYABLE":
+                return True, "RETRYABLE_FAILURE"
+
+            if status in ("RECEIVED", "PROCESSING"):
+                # Check for stale processing (> 10 minutes)
+                try:
+                    updated_at = datetime.fromisoformat(row["updated_at"])
+                    age_seconds = (datetime.now(timezone.utc) - updated_at).total_seconds()
+                    if age_seconds > 600:
+                        return True, "STALE_PROCESSING_RESUMED"
+                except Exception:
+                    pass
+                return False, "PROCESSING_IN_FLIGHT"
+
+            return False, f"STATUS_{status}"
+
+    def record_delivery_received(self, delivery_id: str, event_type: str, sender: str = "") -> None:
         if not delivery_id:
             return
         now_iso = datetime.now(timezone.utc).isoformat()
         with self._local_lock, self._get_conn() as conn:
             conn.execute(
+                """
+                INSERT INTO delivery_lifecycle (
+                    delivery_id, status, event_type, sender, received_at, updated_at
+                ) VALUES (?, 'RECEIVED', ?, ?, ?, ?)
+                ON CONFLICT(delivery_id) DO UPDATE SET
+                    updated_at = excluded.updated_at
+                """,
+                (delivery_id, event_type, sender, now_iso, now_iso),
+            )
+            # Maintain backward compatibility seen_events
+            conn.execute(
                 "INSERT OR IGNORE INTO seen_events (delivery_id, event_type, received_at) VALUES (?, ?, ?)",
                 (delivery_id, event_type, now_iso),
             )
             conn.commit()
+
+    def set_delivery_status(self, delivery_id: str, status: str, error: str = "") -> None:
+        if not delivery_id:
+            return
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._local_lock, self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE delivery_lifecycle
+                SET status = ?,
+                    error = COALESCE(NULLIF(?, ''), error),
+                    updated_at = ?
+                WHERE delivery_id = ?
+                """,
+                (status, error, now_iso, delivery_id),
+            )
+            conn.commit()
+
+    def has_seen_delivery(self, delivery_id: str) -> bool:
+        """Legacy helper matching seen_events or completed delivery."""
+        can_proc, reason = self.evaluate_delivery(delivery_id)
+        return not can_proc and reason == "IGNORED_DUPLICATE_DELIVERY"
+
+    def record_delivery(self, delivery_id: str, event_type: str) -> None:
+        self.record_delivery_received(delivery_id, event_type)
+
+    # --- Idempotency & Reviews ---
 
     def is_already_reviewed(self, code_sha: str, evidence_generation_id: str) -> bool:
         """Idempotency check: code_sha + evidence_generation_id must only be reviewed once."""
@@ -273,6 +349,32 @@ class StateManager:
                 (review_id, SupervisorStatus.REVIEWING.value, now_iso),
             )
             conn.commit()
+
+    def set_review_staged_commit(self, review_id: str, staged_commit_sha: str) -> None:
+        """Record the committed instruction SHA so crash recovery will not commit twice."""
+        with self._local_lock, self._get_conn() as conn:
+            conn.execute(
+                "UPDATE reviews SET staged_commit_sha = ? WHERE review_id = ?",
+                (staged_commit_sha, review_id),
+            )
+            conn.commit()
+
+    def get_review_staged_commit(self, review_id: str) -> Optional[str]:
+        with self._local_lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT staged_commit_sha FROM reviews WHERE review_id = ?", (review_id,))
+            row = cur.fetchone()
+            return row["staged_commit_sha"] if row else None
+
+    def get_staged_commit(self, code_sha: str, evidence_generation_id: str) -> Optional[str]:
+        with self._local_lock, self._get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT staged_commit_sha FROM reviews WHERE code_sha = ? AND evidence_generation_id = ?",
+                (code_sha, evidence_generation_id),
+            )
+            row = cur.fetchone()
+            return row["staged_commit_sha"] if row and row["staged_commit_sha"] else None
 
     def complete_review(
         self,

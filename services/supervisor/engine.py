@@ -137,12 +137,13 @@ class SupervisorEngine:
         acceptance_text = self._safe_get_file("docs/REAL_E2E_ACCEPTANCE.md")
         instruction_text = self._safe_get_file("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md") or self._safe_get_file("docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md")
         commits = self.github_client.get_commits_since(contract.instruction_sha, contract.docs_sha)
+        diffs = self.github_client.get_diff_between(contract.instruction_sha, contract.docs_sha)
 
         # Step E: Build context and invoke AI review adapter
         context = ReviewContext(
             contract=contract,
             commits=commits,
-            diffs="",
+            diffs=diffs,
             progress_report_text=progress_report,
             audit_text=audit_text,
             acceptance_text=acceptance_text,
@@ -158,37 +159,30 @@ class SupervisorEngine:
         new_instruction_sha = contract.instruction_sha
 
         # Step G: Execute GitHub writes based on decision
-        if output.decision == ReviewDecision.ACCEPT_WITH_SCOPE:
+        if output.decision in (ReviewDecision.ACCEPT_WITH_SCOPE, ReviewDecision.CHANGES_REQUIRED):
             self.policy_engine.validate_action("update_next_instruction")
-            new_instruction_sha = self.github_client.commit_instruction_file(
-                file_path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
-                content=output.next_instruction_markdown,
-                commit_message=f"supervisor: accept {contract.code_sha[:7]} and start next-phase",
-                branch=self.config.allowed_branch,
-            )
+            staged_sha = self.state_mgr.get_staged_commit(contract.code_sha, contract.evidence_generation_id)
+            if staged_sha:
+                # Crash recovery: instruction already committed to remote, reuse staged SHA
+                new_instruction_sha = staged_sha
+            else:
+                commit_msg = (
+                    f"supervisor: accept {contract.code_sha[:7]} and start next-phase"
+                    if output.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+                    else f"supervisor: correction-only re-gate for {contract.code_sha[:7]}"
+                )
+                new_instruction_sha = self.github_client.commit_instruction_file(
+                    file_path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
+                    content=output.next_instruction_markdown,
+                    commit_message=commit_msg,
+                    branch=self.config.allowed_branch,
+                )
+                # Persist before attempting Issue comment
+                self.state_mgr.set_review_staged_commit(review_id, new_instruction_sha)
 
             comment_body = (
                 f"## SUPERVISOR_REVIEW_COMPLETE\n\n"
-                f"DECISION=ACCEPT_WITH_SCOPE\n"
-                f"REVIEWED_CODE_SHA={contract.code_sha}\n"
-                f"NEXT_INSTRUCTION_SHA={new_instruction_sha}\n"
-                f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n\n"
-                f"{output.issue_comment_markdown}"
-            )
-            self.github_client.add_issue_comment(contract.issue, comment_body)
-
-        elif output.decision == ReviewDecision.CHANGES_REQUIRED:
-            self.policy_engine.validate_action("update_next_instruction")
-            new_instruction_sha = self.github_client.commit_instruction_file(
-                file_path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
-                content=output.next_instruction_markdown,
-                commit_message=f"supervisor: correction-only re-gate for {contract.code_sha[:7]}",
-                branch=self.config.allowed_branch,
-            )
-
-            comment_body = (
-                f"## SUPERVISOR_REVIEW_COMPLETE\n\n"
-                f"DECISION=CHANGES_REQUIRED\n"
+                f"DECISION={output.decision.value}\n"
                 f"REVIEWED_CODE_SHA={contract.code_sha}\n"
                 f"NEXT_INSTRUCTION_SHA={new_instruction_sha}\n"
                 f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n\n"

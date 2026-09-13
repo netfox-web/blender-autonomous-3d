@@ -10,13 +10,18 @@ from typing import Any, Dict, List, Optional
 import pytest
 from fastapi.testclient import TestClient
 
-from services.supervisor.ai_adapter import MockSupervisorAdapter, RuleBasedSupervisorAdapter
-from services.supervisor.config import SupervisorConfig
+from services.supervisor.ai_adapter import (
+    MockSupervisorAdapter,
+    RuleBasedSupervisorAdapter,
+    SemanticEvidenceSupervisorAdapter,
+)
+from services.supervisor.config import ConfigValidationError, SupervisorConfig, validate_live_config
 from services.supervisor.engine import SupervisorEngine
-from services.supervisor.github_client import GitHubClientInterface, GitHubVerificationError
+from services.supervisor.github_client import GitHubClient, GitHubClientInterface, GitHubVerificationError
 from services.supervisor.main import create_app
 from services.supervisor.models import (
     ReadyForReGateContract,
+    ReviewContext,
     ReviewDecision,
     SupervisorReviewOutput,
     SupervisorStatus,
@@ -97,6 +102,9 @@ class MockGitHubClient(GitHubClientInterface):
 
     def get_commits_since(self, base_sha: str, head_sha: str = "main") -> List[Dict[str, Any]]:
         return self.commits_log
+
+    def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
+        return getattr(self, "diff_text", "")
 
     def commit_instruction_file(self, file_path: str, content: str, commit_message: str, branch: str = "main") -> str:
         new_sha = f"instr_{len(self.committed_instructions) + 1:04d}"
@@ -213,7 +221,12 @@ def test_1_invalid_webhook_signature_rejected(env_setup):
 def test_2_duplicate_delivery_deduplication(env_setup):
     client = env_setup["client"]
     cfg = env_setup["config"]
-    body = json.dumps({"action": "created", "issue": {"number": 1}, "comment": {"body": "hello"}}).encode("utf-8")
+    body = json.dumps({
+        "action": "created",
+        "sender": {"login": "netfox-web"},
+        "issue": {"number": 1},
+        "comment": {"body": "hello", "author_association": "OWNER"},
+    }).encode("utf-8")
     sig = make_sig(body, cfg.webhook_secret)
     headers = {
         "X-Hub-Signature-256": sig,
@@ -514,3 +527,308 @@ def test_19_antigravity_watcher_claims_and_no_duplicate(tmp_path: Path, monkeypa
     res2 = antigravity_watcher.check_for_claimable_instruction()
     assert res2["claimable"] is False
     assert "already executed" in res2["reason"]
+
+
+# 20. Blocker A: Outsider commenter rejected with 403 Forbidden
+def test_20_outsider_comment_rejected_403(env_setup):
+    client = env_setup["client"]
+    cfg = env_setup["config"]
+    body = json.dumps({
+        "action": "created",
+        "repository": {"full_name": cfg.repo_name},
+        "sender": {"login": "outsider-attacker"},
+        "issue": {"number": 1},
+        "comment": {"body": "READY_FOR_RE_GATE", "author_association": "NONE"},
+    }).encode("utf-8")
+    sig = make_sig(body, cfg.webhook_secret)
+    headers = {
+        "X-Hub-Signature-256": sig,
+        "X-GitHub-Event": "issue_comment",
+        "X-GitHub-Delivery": "deliv_outsider",
+    }
+    r = client.post("/webhooks/github", content=body, headers=headers)
+    assert r.status_code == 403
+    assert "not authorized" in r.json()["detail"]
+
+
+# 21. Blocker A: Wrong repo payload ignored with IGNORED_WRONG_REPOSITORY
+def test_21_wrong_repo_payload_ignored(env_setup):
+    client = env_setup["client"]
+    cfg = env_setup["config"]
+    body = json.dumps({
+        "action": "created",
+        "repository": {"full_name": "attacker/spoofed-repo"},
+        "sender": {"login": "netfox-web"},
+        "issue": {"number": 1},
+        "comment": {"body": "hello", "author_association": "OWNER"},
+    }).encode("utf-8")
+    sig = make_sig(body, cfg.webhook_secret)
+    headers = {
+        "X-Hub-Signature-256": sig,
+        "X-GitHub-Event": "issue_comment",
+        "X-GitHub-Delivery": "deliv_wrong_repo",
+    }
+    r = client.post("/webhooks/github", content=body, headers=headers)
+    assert r.status_code == 200
+    assert r.json()["status"] == "IGNORED_WRONG_REPOSITORY"
+
+
+# 22. Blocker A: Edited or deleted comment actions ignored
+def test_22_edited_or_deleted_comment_ignored(env_setup):
+    client = env_setup["client"]
+    cfg = env_setup["config"]
+    for action in ("edited", "deleted"):
+        body = json.dumps({
+            "action": action,
+            "repository": {"full_name": cfg.repo_name},
+            "sender": {"login": "netfox-web"},
+            "issue": {"number": 1},
+            "comment": {"body": "hello", "author_association": "OWNER"},
+        }).encode("utf-8")
+        sig = make_sig(body, cfg.webhook_secret)
+        headers = {
+            "X-Hub-Signature-256": sig,
+            "X-GitHub-Event": "issue_comment",
+            "X-GitHub-Delivery": f"deliv_{action}",
+        }
+        r = client.post("/webhooks/github", content=body, headers=headers)
+        assert r.status_code == 200
+        assert r.json()["status"] == "IGNORED_UNSUPPORTED_ACTION"
+
+
+# 23. Blocker B: Durable delivery lifecycle & retryable failure recovery
+def test_23_durable_delivery_lifecycle_and_retryable(env_setup):
+    state_mgr = env_setup["state_mgr"]
+    delivery_id = "deliv_lifecycle_test"
+
+    # Step 1: New delivery can process
+    can_proc, reason = state_mgr.evaluate_delivery(delivery_id)
+    assert can_proc is True
+    assert reason == "NEW"
+
+    # Step 2: Record received & processing
+    state_mgr.record_delivery_received(delivery_id, "issue_comment")
+    state_mgr.set_delivery_status(delivery_id, "PROCESSING")
+
+    # While processing in-flight, cannot process again
+    can_proc2, reason2 = state_mgr.evaluate_delivery(delivery_id)
+    assert can_proc2 is False
+    assert reason2 == "PROCESSING_IN_FLIGHT"
+
+    # Step 3: FAILED_RETRYABLE allows resume
+    state_mgr.set_delivery_status(delivery_id, "FAILED_RETRYABLE", error="Temporary network glitch")
+    can_proc3, reason3 = state_mgr.evaluate_delivery(delivery_id)
+    assert can_proc3 is True
+    assert reason3 == "RETRYABLE_FAILURE"
+
+    # Step 4: COMPLETED is deduplicated safely
+    state_mgr.set_delivery_status(delivery_id, "COMPLETED")
+    can_proc4, reason4 = state_mgr.evaluate_delivery(delivery_id)
+    assert can_proc4 is False
+    assert reason4 == "IGNORED_DUPLICATE_DELIVERY"
+
+
+# 24. Blocker B: Crash after instruction push but before comment resumes without duplicate commit
+def test_24_crash_after_push_resumes_without_duplicate_commit(env_setup):
+    engine = env_setup["engine"]
+    gh = env_setup["github_client"]
+
+    c_text = valid_contract_text(evidence_id="gen_crash_window_1")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+
+    # Intercept add_issue_comment to crash on the first attempt
+    original_add_comment = gh.add_issue_comment
+    attempt = 0
+
+    def flaky_add_comment(issue_number: int, comment_body: str) -> str:
+        nonlocal attempt
+        attempt += 1
+        if attempt == 1:
+            raise RuntimeError("Simulated crash right after git push before comment posted")
+        return original_add_comment(issue_number, comment_body)
+
+    gh.add_issue_comment = flaky_add_comment
+
+    # First run crashes during comment posting
+    with pytest.raises(RuntimeError, match="Simulated crash right after git push"):
+        engine.handle_ready_contract(contract)
+
+    assert len(gh.committed_instructions) == 1
+    committed_sha = gh.committed_instructions[0]["sha"]
+
+    # Now retry execution: engine must reuse the staged commit and post comment without creating a second commit!
+    res = engine.handle_ready_contract(contract)
+    assert res["status"] == "COMPLETED"
+    assert res["new_instruction_sha"] == committed_sha
+    assert len(gh.committed_instructions) == 1  # No duplicate commit!
+    assert len(gh.posted_comments) == 1
+
+
+# 25. Blocker C: Live mode push failure is never swallowed
+def test_25_live_mode_git_push_failure_never_swallowed(tmp_path: Path, monkeypatch):
+    import subprocess
+    cfg = SupervisorConfig(
+        mode="live",
+        repo_root=tmp_path,
+        webhook_secret="strong-live-secret-12345",
+        github_token="fake-token",
+        allowed_senders=("netfox-web",),
+        ai_provider="semantic_evidence",
+    )
+    client = GitHubClient(cfg)
+
+    def mock_run(cmd, *args, **kwargs):
+        if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "push":
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="error: failed to push some refs")
+        if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "status":
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+        if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "fetch":
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+        if len(cmd) >= 2 and cmd[0] == "git" and cmd[1] == "rev-parse":
+            return subprocess.CompletedProcess(cmd, returncode=0, stdout="new_commit_sha")
+        return subprocess.CompletedProcess(cmd, returncode=0, stdout="")
+
+    monkeypatch.setattr(subprocess, "run", mock_run)
+
+    with pytest.raises(GitHubVerificationError, match="git push failed in live mode"):
+        client.commit_instruction_file(
+            file_path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
+            content="# Test Content",
+            commit_message="test commit",
+            branch="main",
+        )
+
+
+# 26. Blocker C: Unauthorized instruction path rejected
+def test_26_unauthorized_instruction_path_rejected(tmp_path: Path):
+    cfg = SupervisorConfig(mode="live", repo_root=tmp_path)
+    client = GitHubClient(cfg)
+
+    with pytest.raises(GitHubVerificationError, match="not an authorized supervisor instruction"):
+        client.commit_instruction_file(
+            file_path="services/malicious.py",
+            content="# Exploit",
+            commit_message="exploit commit",
+            branch="main",
+        )
+
+
+# 27. Blocker D: SemanticEvidenceSupervisorAdapter adversarial contradiction checks
+def test_27_semantic_evidence_adversarial_rejection():
+    adapter = SemanticEvidenceSupervisorAdapter()
+
+    # Case A: Contract claims real_blender=true, but diff forces mock -> REJECTED
+    c_text1 = valid_contract_text(evidence_id="gen_adv_1")
+    contract1 = ReadyForReGateContract.parse_from_text(c_text1)
+    context1 = ReviewContext(
+        contract=contract1,
+        diffs="--- a/engine.py\n+++ b/engine.py\n+mock_blender = True\n+force_mock = True",
+        progress_report_text="# Progress Report\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+    )
+    res1 = adapter.review_repository(context1)
+    assert res1.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("Diff forces mock execution" in b for b in res1.blockers)
+
+    # Case B: Contract claims real_blender=true, but acceptance evidence explicitly indicates mock execution -> REJECTED
+    c_text2 = valid_contract_text(evidence_id="gen_adv_2")
+    contract2 = ReadyForReGateContract.parse_from_text(c_text2)
+    context2 = ReviewContext(
+        contract=contract2,
+        diffs="clean diff without mock",
+        progress_report_text="# Progress Report\nTests: 628",
+        audit_text="# Audit\nreal_blender: false",
+        acceptance_text="# Acceptance\nused_mock: true",
+    )
+    res2 = adapter.review_repository(context2)
+    assert res2.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("indicates mock execution" in b for b in res2.blockers)
+
+    # Case C: Genuine evidence -> ACCEPT_WITH_SCOPE
+    c_text3 = valid_contract_text(evidence_id="gen_adv_3")
+    contract3 = ReadyForReGateContract.parse_from_text(c_text3)
+    context3 = ReviewContext(
+        contract=contract3,
+        diffs="clean diff",
+        progress_report_text="# Progress Report\nTests: 628",
+        audit_text="# Audit\nBlender Cycles OptiX verified on GPU",
+        acceptance_text="# Acceptance\nReal renders produced with non-zero size",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res3 = adapter.review_repository(context3)
+    assert res3.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert len(res3.blockers) == 0
+
+
+# 28. Blocker E: Live configuration fails closed on missing/weak settings
+def test_28_live_config_fails_closed(tmp_path: Path):
+    # Missing token
+    with pytest.raises(ConfigValidationError, match="non-empty GITHUB_TOKEN"):
+        validate_live_config(SupervisorConfig(
+            mode="live",
+            webhook_secret="strong-secret-123456",
+            github_token="",
+            allowed_senders=("netfox-web",),
+            ai_provider="semantic_evidence",
+        ))
+
+    # Default/weak webhook secret
+    with pytest.raises(ConfigValidationError, match="strong, non-default GITHUB_WEBHOOK_SECRET"):
+        validate_live_config(SupervisorConfig(
+            mode="live",
+            webhook_secret="dev-webhook-secret-not-for-prod",
+            github_token="valid_token",
+            allowed_senders=("netfox-web",),
+            ai_provider="semantic_evidence",
+        ))
+
+    # Missing senders
+    with pytest.raises(ConfigValidationError, match="at least one authorized sender"):
+        validate_live_config(SupervisorConfig(
+            mode="live",
+            webhook_secret="strong-secret-123456",
+            github_token="valid_token",
+            allowed_senders=(),
+            ai_provider="semantic_evidence",
+        ))
+
+    # Rule-based or mock provider in live mode
+    with pytest.raises(ConfigValidationError, match="requires a real AI provider"):
+        validate_live_config(SupervisorConfig(
+            mode="live",
+            webhook_secret="strong-secret-123456",
+            github_token="valid_token",
+            allowed_senders=("netfox-web",),
+            ai_provider="rule_based",
+        ))
+
+
+# 29. Blocker E: Admin auth protects observability endpoints in live mode
+def test_29_admin_auth_endpoints_in_live_mode(tmp_path: Path):
+    cfg = SupervisorConfig(
+        mode="live",
+        admin_key="secret-admin-pass-123",
+        state_db_path=tmp_path / "supervisor.db",
+        audit_log_path=tmp_path / "audit.log",
+        repo_root=tmp_path,
+        webhook_secret="strong-secret-123456",
+        github_token="fake-token",
+        allowed_senders=("netfox-web",),
+        ai_provider="semantic_evidence",
+    )
+    app = create_app(cfg)
+    client = TestClient(app)
+
+    # Unauthorized access rejected with 401
+    r_unauth = client.get("/supervisor/status")
+    assert r_unauth.status_code == 401
+
+    # Authorized with Bearer token succeeds with 200
+    r_auth = client.get("/supervisor/status", headers={"Authorization": "Bearer secret-admin-pass-123"})
+    assert r_auth.status_code == 200
+    assert r_auth.json()["repo_name"] == cfg.repo_name
+
+    # Authorized with X-Supervisor-Admin-Key succeeds with 200
+    r_key = client.get("/supervisor/reviews", headers={"X-Supervisor-Admin-Key": "secret-admin-pass-123"})
+    assert r_key.status_code == 200

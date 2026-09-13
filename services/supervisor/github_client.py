@@ -48,6 +48,11 @@ class GitHubClientInterface(ABC):
         pass
 
     @abstractmethod
+    def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
+        """Fetch diff between base_sha and head_sha."""
+        pass
+
+    @abstractmethod
     def commit_instruction_file(
         self,
         file_path: str,
@@ -204,6 +209,33 @@ class GitHubClient(GitHubClientInterface):
             pass
         return []
 
+    def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
+        try:
+            res = subprocess.run(
+                ["git", "diff", f"{base_sha}..{head_sha}"],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if res.returncode == 0:
+                return res.stdout
+        except Exception:
+            pass
+
+        # Fallback to GitHub API compare
+        try:
+            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{head_sha}"
+            headers = dict(self.headers)
+            headers["Accept"] = "application/vnd.github.v3.diff"
+            resp = httpx.get(url, headers=headers, timeout=15.0)
+            if resp.status_code == 200:
+                return resp.text
+        except Exception:
+            pass
+        return ""
+
     def commit_instruction_file(
         self,
         file_path: str,
@@ -211,6 +243,44 @@ class GitHubClient(GitHubClientInterface):
         commit_message: str,
         branch: str = "main",
     ) -> str:
+        # Rule 3: Only allow intended instruction paths
+        allowed_paths = {
+            "docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
+            "docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md",
+        }
+        if file_path not in allowed_paths:
+            raise GitHubVerificationError(
+                f"Path '{file_path}' is not an authorized supervisor instruction file path."
+            )
+
+        is_live = getattr(self.config, "mode", "test").lower() == "live"
+
+        if is_live:
+            # Rule 2: Pre-flight check: ensure clean tree and base
+            status_res = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if status_res.returncode == 0 and status_res.stdout.strip():
+                raise GitHubVerificationError("Refusing to commit instruction on a dirty working tree.")
+
+            fetch_res = subprocess.run(
+                ["git", "fetch", "origin", branch],
+                cwd=str(self.config.repo_root),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+            if fetch_res.returncode != 0:
+                raise GitHubVerificationError(
+                    f"Failed to fetch remote branch prior to instruction commit: {fetch_res.stderr.strip()}"
+                )
+
         full_path = self.config.repo_root / file_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
         full_path.write_text(content, encoding="utf-8")
@@ -237,17 +307,38 @@ class GitHubClient(GitHubClientInterface):
             check=True,
         )
         new_sha = res.stdout.strip()
+
         # Push to remote branch
-        try:
-            subprocess.run(
-                ["git", "push", "origin", branch],
+        push_res = subprocess.run(
+            ["git", "push", "origin", branch],
+            cwd=str(self.config.repo_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if push_res.returncode != 0:
+            if is_live:
+                # Rule 1: Never swallow push failure in live mode!
+                raise GitHubVerificationError(
+                    f"git push failed in live mode (exit code {push_res.returncode}): {push_res.stderr.strip()}"
+                )
+            # In non-live/test mode, allow local commit if origin not reachable
+
+        if is_live:
+            # Rule 4: Verify remote main contains the exact new commit
+            verify_res = subprocess.run(
+                ["git", "rev-parse", f"origin/{branch}"],
                 cwd=str(self.config.repo_root),
                 capture_output=True,
-                check=True,
+                text=True,
             )
-        except Exception:
-            # If push fails in offline / local testing environment, return local new commit sha
-            pass
+            remote_head = verify_res.stdout.strip() if verify_res.returncode == 0 else ""
+            if remote_head != new_sha:
+                raise GitHubVerificationError(
+                    f"Remote verification failed: origin/{branch} ({remote_head}) does not match new commit ({new_sha})."
+                )
+
         return new_sha
 
     def add_issue_comment(self, issue_number: int, comment_body: str) -> str:
