@@ -62,10 +62,22 @@ def validate_live_config(config: SupervisorConfig) -> None:
             f"Live mode requires a real AI provider (not '{config.ai_provider}'). Configure 'semantic_evidence', 'openai', 'anthropic', or 'gemini'."
         )
 
-    if config.ai_provider in ("openai", "anthropic", "gemini") and not config.ai_api_key:
-        raise ConfigValidationError(
-            f"Live mode provider '{config.ai_provider}' requires non-empty ai_api_key / SUPERVISOR_AI_API_KEY."
-        )
+    if config.ai_provider in ("openai", "anthropic", "gemini"):
+        if not config.ai_api_key:
+            raise ConfigValidationError(
+                f"Live mode provider '{config.ai_provider}' requires non-empty ai_api_key / SUPERVISOR_AI_API_KEY."
+            )
+        if not config.ai_model or not config.ai_model.strip():
+            raise ConfigValidationError(
+                f"Live mode provider '{config.ai_provider}' requires non-empty ai_model / SUPERVISOR_AI_MODEL."
+            )
+        model_str = config.ai_model.strip().lower()
+        if config.ai_provider == "openai" and not any(model_str.startswith(p) for p in ("gpt-", "o1", "o3", "chatgpt")):
+            raise ConfigValidationError(f"Invalid model '{config.ai_model}' for provider 'openai' in live mode.")
+        elif config.ai_provider == "anthropic" and not model_str.startswith("claude-"):
+            raise ConfigValidationError(f"Invalid model '{config.ai_model}' for provider 'anthropic' in live mode.")
+        elif config.ai_provider == "gemini" and not model_str.startswith("gemini-"):
+            raise ConfigValidationError(f"Invalid model '{config.ai_model}' for provider 'gemini' in live mode.")
 
     if not config.admin_key or len(config.admin_key) < 16:
         raise ConfigValidationError("Live mode requires non-empty SUPERVISOR_ADMIN_KEY (minimum 16 characters).")

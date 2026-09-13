@@ -13,6 +13,8 @@ import httpx
 
 from services.supervisor.config import ConfigValidationError
 from services.supervisor.models import (
+    ChangedFileItem,
+    EvidenceSectionCompleteness,
     ProviderReviewResponseSchema,
     ReviewContext,
     ReviewDecision,
@@ -177,6 +179,13 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
         accepted_claims: list[str] = []
         rejected_claims: list[str] = []
 
+        # 0. Verification of Evidence Fetch Statuses
+        if context.fetch_statuses:
+            for fpath, fstatus in context.fetch_statuses.items():
+                if fstatus != "OK" and "CABINET" not in fpath:
+                    blockers.append(f"Required evidence fetch failed for {fpath}: {fstatus}")
+                    rejected_claims.append(f"Evidence fetch: {fpath}")
+
         # 1. Verification of Progress Report & Lineage Markers
         if not report_text.strip():
             blockers.append("Progress report is empty or missing from repository.")
@@ -213,6 +222,7 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
             accepted_claims.append("Codebase diff reconciled")
 
         # 4. Contradiction checks for REAL vs MOCK
+
         if contract.used_mock and contract.real_blender:
             blockers.append("Contradiction: Contract claimed both real_blender=true and used_mock=true.")
             rejected_claims.append("Execution truth consistency")
@@ -352,16 +362,44 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
         max_chars: int,
         ref_sha: str = "",
         path: str = "",
+        context: Optional[ReviewContext] = None,
+        critical: bool = True,
+        chunks_total: int = 1,
+        chunks_covered: int = 1,
     ) -> str:
         orig_len = len(content)
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16] if content else "none"
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest() if content else ""
+        digest_prefix = digest[:16] if digest else "none"
         is_truncated = orig_len > max_chars
         sliced = content[:max_chars]
         supplied_len = len(sliced)
+
+        computed_chunks_count = chunks_total
+        if is_truncated and chunks_total == 1 and max_chars > 0:
+            computed_chunks_count = (orig_len + max_chars - 1) // max_chars
+
+        if context is not None:
+            existing = [c for c in context.completeness if c.path == (path or title)]
+            if not existing:
+                context.completeness.append(
+                    EvidenceSectionCompleteness(
+                        path=path or title,
+                        ref_sha=ref_sha,
+                        original_chars=orig_len,
+                        supplied_chars=supplied_len,
+                        truncated=is_truncated,
+                        sha256=digest,
+                        critical=critical,
+                        chunks_count=computed_chunks_count,
+                        chunks_covered=chunks_covered if is_truncated else 1,
+                        chunk_digests=[digest_prefix] if digest else [],
+                    )
+                )
+
         meta = (
             f"[METADATA: path={path or title} ref={ref_sha or 'n/a'} "
             f"original_chars={orig_len} supplied_chars={supplied_len} "
-            f"truncated={'true' if is_truncated else 'false'} sha256_prefix={digest}]"
+            f"truncated={'true' if is_truncated else 'false'} sha256_prefix={digest_prefix}]"
         )
         return f"=== {title} ===\n{meta}\n{sliced}\n"
 
@@ -372,8 +410,29 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             logger.info("Preflight rejected review with %s; skipping external provider call.", pf.decision.value)
             return pf
 
-        # Step 2: Build structured review prompt
+        # Step 2: Build structured review prompt & register completeness
         prompt = self._build_prompt(context)
+
+        # Completeness Gate: Any critical section truncated without full coverage fails closed immediately
+        uncovered = [c for c in context.completeness if c.critical and c.truncated and not c.is_complete]
+        if uncovered:
+            uncovered_paths = [c.path for c in uncovered]
+            logger.warning("Critical evidence truncated without full completeness handling: %s. Failing closed.", uncovered_paths)
+            return SupervisorReviewOutput(
+                decision=ReviewDecision.CHANGES_REQUIRED,
+                reviewed_code_sha=context.contract.code_sha,
+                reviewed_docs_sha=context.contract.docs_sha,
+                reviewed_instruction_sha=context.contract.instruction_sha,
+                reviewed_evidence_generation_id=context.contract.evidence_generation_id,
+                blockers=[f"Critical evidence section '{c.path}' is truncated without full completeness coverage. ACCEPT not permitted." for c in uncovered],
+                next_instruction_markdown="# Phase Re-Gate: Changes Required\nCritical evidence section truncated without full coverage.",
+                issue_comment_markdown="## SUPERVISOR_REVIEW_COMPLETE\nDECISION=CHANGES_REQUIRED\nCritical evidence section truncated without full completeness coverage.",
+                audit_trail={
+                    "provider": self.provider_name,
+                    "model": self.model,
+                    "completeness": [c.model_dump() for c in context.completeness],
+                },
+            )
 
         # Step 3: Dispatch HTTP request to provider endpoint
         try:
@@ -468,13 +527,18 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 "reviewed_docs_sha": context.contract.docs_sha,
                 "reviewed_instruction_sha": context.contract.instruction_sha,
                 "reviewed_evidence_generation_id": context.contract.evidence_generation_id,
+                "completeness": [c.model_dump() for c in context.completeness],
             },
         )
 
     def _build_prompt(self, context: ReviewContext) -> str:
         contract = context.contract
-        manifest_files = context.changed_files or ["(extracted from repository diff)"]
-        manifest_text = "\n".join(f"- {f}" for f in manifest_files)
+        if context.changed_file_items:
+            manifest_text = "\n".join(f"- {item.format_entry()}" for item in context.changed_file_items)
+        elif context.changed_files:
+            manifest_text = "\n".join(f"- {f}" for f in context.changed_files)
+        else:
+            manifest_text = "- (extracted from repository diff)"
 
         sections = [
             "You are Fox3D Autonomous Supervisor reviewing a Phase Re-Gate submission.\n"
@@ -500,6 +564,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 8000,
                 ref_sha=contract.instruction_sha,
                 path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
+                context=context,
+                critical=True,
             ),
             f"=== CHANGED FILES MANIFEST ===\n{manifest_text}\n",
             f"=== CODE CI SUMMARY ===\n{json.dumps(context.code_ci_summary or context.ci_summary)}\n",
@@ -510,6 +576,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 8000,
                 ref_sha=f"{contract.instruction_sha}..{contract.code_sha}",
                 path="git diff",
+                context=context,
+                critical=True,
             ),
             self._format_bounded_section(
                 "PROGRESS REPORT",
@@ -517,6 +585,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 6000,
                 ref_sha=contract.docs_sha,
                 path="docs/GROK_PROGRESS_REPORT.md",
+                context=context,
+                critical=True,
             ),
             self._format_bounded_section(
                 "AUDIT TEXT",
@@ -524,6 +594,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 4000,
                 ref_sha=contract.docs_sha,
                 path="docs/CURRENT_IMPLEMENTATION_AUDIT.md",
+                context=context,
+                critical=True,
             ),
             self._format_bounded_section(
                 "ACCEPTANCE TEXT",
@@ -531,6 +603,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 4000,
                 ref_sha=contract.docs_sha,
                 path="docs/REAL_E2E_ACCEPTANCE.md",
+                context=context,
+                critical=contract.real_blender and not contract.used_mock,
             ),
             self._format_bounded_section(
                 "CABINET ACCEPTANCE",
@@ -538,6 +612,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 4000,
                 ref_sha=contract.docs_sha,
                 path="docs/CABINET_REAL_ACCEPTANCE.md",
+                context=context,
+                critical=False,
             ),
             self._format_bounded_section(
                 "EVENT DRIVEN SUPERVISOR ACCEPTANCE",
@@ -545,9 +621,12 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 4000,
                 ref_sha=contract.docs_sha,
                 path="docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md",
+                context=context,
+                critical=True,
             ),
         ]
         return "\n".join(sections)
+
 
     def _call_provider_endpoint(self, prompt: str) -> str:
         with httpx.Client(transport=self.transport, timeout=self.timeout) as client:

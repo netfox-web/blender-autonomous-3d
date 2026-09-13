@@ -17,13 +17,17 @@ from services.supervisor.ai_adapter import (
     OpenAISupervisorAdapter,
     RuleBasedSupervisorAdapter,
     SemanticEvidenceSupervisorAdapter,
+    SupervisorProviderAdapter,
     create_supervisor_adapter,
 )
 from services.supervisor.config import ConfigValidationError, SupervisorConfig, validate_live_config
-from services.supervisor.engine import SupervisorEngine
+from services.supervisor.engine import SupervisorEngine, parse_diff_changed_files
 from services.supervisor.github_client import GitHubClient, GitHubClientInterface, GitHubVerificationError
 from services.supervisor.main import create_app
 from services.supervisor.models import (
+    ChangedFileItem,
+    EvidenceSectionCompleteness,
+    HEX40_PATTERN,
     ReadyForReGateContract,
     ReviewContext,
     ReviewDecision,
@@ -81,6 +85,7 @@ class MockGitHubClient(GitHubClientInterface):
             "docs/GROK_NEXT_PHASE_INSTRUCTIONS.md": "# Phase 901 Instructions",
             "docs/CURRENT_IMPLEMENTATION_AUDIT.md": "# Audit OK",
             "docs/REAL_E2E_ACCEPTANCE.md": "# Real E2E OK",
+            "docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md": "# Event Driven Acceptance OK",
         }
         self.commits_log: List[Dict[str, Any]] = []
         self.committed_instructions: List[Dict[str, str]] = []
@@ -1726,5 +1731,391 @@ def test_49_configurable_ai_model():
     assert body["model"] == "gpt-4o-2024-11-20"
     assert res.audit_trail["model"] == "gpt-4o-2024-11-20"
     assert res.audit_trail["provider"] == "openai"
+
+
+# 50. Blocker A: Machine-readable evidence completeness structure and truncation gate
+def test_50_evidence_completeness_truncation_gate():
+    def handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-completeness")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(handler))
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    )
+    long_diff = "diff --git a/big.py b/big.py\n" + ("+line with code\n" * 600)
+    context = ReviewContext(
+        contract=contract,
+        diffs=long_diff,
+        instruction_text="Standard instruction",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        event_driven_acceptance_text="# Event Driven Acceptance",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("truncated without full completeness coverage" in b for b in res.blockers)
+    assert "completeness" in res.audit_trail
+    diff_comp = next(c for c in res.audit_trail["completeness"] if c["path"] == "git diff")
+    assert diff_comp["truncated"] is True
+    assert diff_comp["critical"] is True
+    assert diff_comp["original_chars"] > 8000
+    assert diff_comp["supplied_chars"] == 8000
+
+    context2 = ReviewContext(
+        contract=contract,
+        diffs="small diff within budget",
+        instruction_text="Standard instruction within budget",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        event_driven_acceptance_text="# Event Driven Acceptance",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res2 = adapter.review_repository(context2)
+    assert res2.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert all(not c["truncated"] for c in res2.audit_trail["completeness"])
+
+
+# 51. Blocker A: Changed-files manifest status parsing (A/M/D/R) and engine omission detection
+def test_51_changed_files_manifest_status_and_omission_detection():
+    sample_diff = """diff --git a/services/supervisor/new_file.py b/services/supervisor/new_file.py
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/services/supervisor/new_file.py
+@@ -0,0 +1,5 @@
++new code
+diff --git a/services/supervisor/engine.py b/services/supervisor/engine.py
+index 1111111..2222222 100644
+--- a/services/supervisor/engine.py
++++ b/services/supervisor/engine.py
+@@ -1,3 +1,4 @@
++modified line
+diff --git a/old_module.py b/old_module.py
+deleted file mode 100644
+--- a/old_module.py
++++ /dev/null
+@@ -1,5 +0,0 @@
+-deleted
+diff --git a/old_name.py b/new_name.py
+similarity index 100%
+rename from old_name.py
+rename to new_name.py
+"""
+    items = parse_diff_changed_files(sample_diff)
+    status_map = {item.path: item for item in items}
+    assert "services/supervisor/new_file.py" in status_map
+    assert status_map["services/supervisor/new_file.py"].status == "A"
+    assert status_map["services/supervisor/engine.py"].status == "M"
+    assert status_map["old_module.py"].status == "D"
+    assert status_map["new_name.py"].status.startswith("R")
+    assert status_map["new_name.py"].old_path == "old_name.py"
+    assert "R old_name.py -> new_name.py" in status_map["new_name.py"].format_entry()
+
+    actual_diff_paths = {item.path for item in items}
+    omitted = actual_diff_paths - {"services/supervisor/new_file.py", "services/supervisor/engine.py", "old_module.py"}
+    assert "new_name.py" in omitted
+
+
+# 52. Blocker B: Pinned evidence fetching fails closed before AI provider call
+def test_52_fail_closed_pinned_evidence_fetch(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    provider_called = []
+    class GuardedAdapter(SupervisorProviderAdapter):
+        def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
+            provider_called.append(True)
+            return SupervisorReviewOutput(
+                decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+                reviewed_code_sha=context.contract.code_sha,
+                reviewed_docs_sha=context.contract.docs_sha,
+                reviewed_instruction_sha=context.contract.instruction_sha,
+                reviewed_evidence_generation_id=context.contract.evidence_generation_id,
+                next_instruction_markdown="# Next Instructions",
+                issue_comment_markdown="## Review Passed",
+            )
+
+    engine.ai_adapter = GuardedAdapter()
+
+    # Case 1: Pinned instruction text is 404/missing
+    gh.files.pop("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", None)
+    c1 = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    )
+    res1 = engine.handle_ready_contract(c1)
+    assert res1["status"] == "COMPLETED"
+    assert res1["decision"] == "CHANGES_REQUIRED"
+    assert len(provider_called) == 0
+
+    # Case 2: Pinned progress report is empty
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = "# Pinned Instructions"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = "   \n  "
+    c2 = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_002")
+    )
+    res2 = engine.handle_ready_contract(c2)
+    assert res2["decision"] == "CHANGES_REQUIRED"
+    assert len(provider_called) == 0
+
+    # Case 3: Pinned implementation audit is missing
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = "# Valid Progress Report"
+    gh.files.pop("docs/CURRENT_IMPLEMENTATION_AUDIT.md", None)
+    c3 = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_003")
+    )
+    res3 = engine.handle_ready_contract(c3)
+    assert res3["decision"] == "CHANGES_REQUIRED"
+    assert len(provider_called) == 0
+
+    # Case 4: Supervisor acceptance report missing
+    gh.files["docs/CURRENT_IMPLEMENTATION_AUDIT.md"] = "# Audit OK"
+    gh.files.pop("docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md", None)
+    c4 = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_004")
+    )
+    res4 = engine.handle_ready_contract(c4)
+    assert res4["decision"] == "CHANGES_REQUIRED"
+    assert len(provider_called) == 0
+
+    # Case 5: All required present, optional cabinet missing -> succeeds and calls provider
+    gh.files["docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md"] = "# Supervisor Acceptance OK"
+    gh.files.pop("docs/CABINET_REAL_ACCEPTANCE.md", None)
+    c5 = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_005")
+    )
+    res5 = engine.handle_ready_contract(c5)
+    assert len(provider_called) == 1
+    assert res5["decision"] == "ACCEPT_WITH_SCOPE"
+
+
+# 53. Blocker C: Window B1 exact 5-trailer and content marker matching with evidence isolation
+def test_53_window_b1_multi_trailer_and_marker_isolation(env_setup):
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_target")
+    )
+    review_id = "rev_test_53"
+
+    commit_a_msg = (
+        f"supervisor: accept {contract.code_sha[:7]} and start next-phase\n\n"
+        f"Reviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: gen_other_evidence\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: {review_id}"
+    )
+    gh.commits_log = [{"sha": "commit_sha_a", "commit": {"message": commit_a_msg}}]
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = f"<!-- SUPERVISOR_COMMIT_IDENTITY:\nCODE_SHA={contract.code_sha}\nDOCS_SHA={contract.docs_sha}\nINSTRUCTION_SHA={contract.instruction_sha}\nEVIDENCE_GENERATION_ID=gen_other_evidence\nDECISION=ACCEPT_WITH_SCOPE\nREVIEW_ID={review_id}\n-->"
+
+    candidates = []
+    for c in gh.commits_log:
+        msg = c.get("commit", {}).get("message", "")
+        if f"Reviewed-Code-Sha: {contract.code_sha}" in msg and f"Reviewed-Evidence-Id: {contract.evidence_generation_id}" in msg:
+            candidates.append(c["sha"])
+    assert len(candidates) == 0
+
+    commit_b_msg = (
+        f"supervisor: accept {contract.code_sha[:7]} and start next-phase\n\n"
+        f"Reviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: {review_id}"
+    )
+    gh.commits_log = [{"sha": "commit_sha_b", "commit": {"message": commit_b_msg}}]
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = (
+        f"# Content\n\n<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+        f"CODE_SHA={contract.code_sha}\n"
+        f"DOCS_SHA={contract.docs_sha}\n"
+        f"INSTRUCTION_SHA={contract.instruction_sha}\n"
+        f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
+        f"DECISION=ACCEPT_WITH_SCOPE\n"
+        f"REVIEW_ID={review_id}\n-->\n"
+    )
+
+    matching_candidates = []
+    for c in gh.commits_log:
+        msg = c.get("commit", {}).get("message", "")
+        if (
+            f"Reviewed-Code-Sha: {contract.code_sha}" in msg
+            and f"Reviewed-Docs-Sha: {contract.docs_sha}" in msg
+            and f"Reviewed-Instruction-Sha: {contract.instruction_sha}" in msg
+            and f"Reviewed-Evidence-Id: {contract.evidence_generation_id}" in msg
+            and f"Supervisor-Decision: ACCEPT_WITH_SCOPE" in msg
+        ):
+            blob_content = gh.get_file_content("docs/GROK_NEXT_PHASE_INSTRUCTIONS.md", ref=c["sha"])
+            if (
+                f"CODE_SHA={contract.code_sha}" in blob_content
+                and f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}" in blob_content
+            ):
+                matching_candidates.append(c["sha"])
+    assert len(matching_candidates) == 1
+    assert matching_candidates[0] == "commit_sha_b"
+
+
+# 54. Blocker C: Multiple matching Window B1 candidates fails closed
+def test_54_window_b1_multiple_matching_candidates_fails_closed(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_dup",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    review_id = "rev_dup"
+    commit_msg = (
+        f"supervisor: accept {contract.code_sha[:7]} and start next-phase\n\n"
+        f"Reviewed-Code-Sha: {contract.code_sha}\n"
+        f"Reviewed-Docs-Sha: {contract.docs_sha}\n"
+        f"Reviewed-Instruction-Sha: {contract.instruction_sha}\n"
+        f"Reviewed-Evidence-Id: {contract.evidence_generation_id}\n"
+        f"Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        f"Supervisor-Review-Id: {review_id}"
+    )
+    gh.commits_log = [
+        {"sha": "candidate_1", "commit": {"message": commit_msg}},
+        {"sha": "candidate_2", "commit": {"message": commit_msg}},
+    ]
+    gh.files["docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"] = (
+        f"<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+        f"CODE_SHA={contract.code_sha}\n"
+        f"DOCS_SHA={contract.docs_sha}\n"
+        f"INSTRUCTION_SHA={contract.instruction_sha}\n"
+        f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
+        f"DECISION=ACCEPT_WITH_SCOPE\n"
+        f"REVIEW_ID={review_id}\n-->"
+    )
+
+    with pytest.raises(GitHubVerificationError, match="Multiple matching remote instruction commits found"):
+        engine._execute_review(review_id, contract)
+
+
+# 55. Blocker D: Strict boolean parsing and 40-character hex SHA validation
+def test_55_contract_strict_boolean_and_hex_sha_validation():
+    base_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+
+    text_bad_mock = base_text.replace("USED_MOCK=false", "USED_MOCK=tru")
+    assert ReadyForReGateContract.parse_from_text(text_bad_mock) is None
+
+    text_bad_blender = base_text.replace("REAL_BLENDER=true", "REAL_BLENDER=maybe")
+    assert ReadyForReGateContract.parse_from_text(text_bad_blender) is None
+
+    text_bad_test = base_text.replace("TEST_COUNT=628", "TEST_COUNT=-1")
+    assert ReadyForReGateContract.parse_from_text(text_bad_test) is None
+
+    text_non_int = base_text.replace("TEST_COUNT=628", "TEST_COUNT=six_hundred")
+    assert ReadyForReGateContract.parse_from_text(text_non_int) is None
+
+    c_short = ReadyForReGateContract.parse_from_text(base_text)
+    assert c_short is not None
+    with pytest.raises(ValueError, match="must be 40-character hex"):
+        c_short.validate_strict(strict_sha=True)
+
+    c_non_hex = ReadyForReGateContract.parse_from_text(
+        base_text.replace("CODE_SHA=c0de111", "CODE_SHA=zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz")
+    )
+    assert c_non_hex is not None
+    with pytest.raises(ValueError, match="must be 40-character hex"):
+        c_non_hex.validate_strict(strict_sha=True)
+
+    valid_40_code = "1111111111222222222233333333334444444444"
+    valid_40_docs = "5555555555666666666677777777778888888888"
+    valid_40_instr = "9999999999000000000011111111112222222222"
+    text_40 = valid_contract_text(
+        code_sha=valid_40_code,
+        docs_sha=valid_40_docs,
+        instruction_sha=valid_40_instr,
+        code_ci_run_id="34775155653",
+        docs_ci_run_id="34776279326",
+    )
+    c_valid = ReadyForReGateContract.parse_from_text(text_40)
+    assert c_valid is not None
+    c_valid.validate_strict(is_live=True, strict_sha=True)
+
+    c_valid.code_ci_run_id = "not_digits"
+    with pytest.raises(ValueError, match="positive numeric integer"):
+        c_valid.validate_strict(is_live=True, strict_sha=True)
+
+
+# 56. Blocker D: Live mode SUPERVISOR_AI_MODEL configuration validation
+def test_56_live_mode_model_config_validation(tmp_path: Path):
+    db_path = tmp_path / "supervisor.db"
+    audit_path = tmp_path / "audit.log"
+
+    cfg_blank = SupervisorConfig(
+        mode="live",
+        webhook_secret="strong-live-webhook-secret-12345",
+        github_token="ghp_mock_live_token_12345",
+        ai_provider="openai",
+        ai_api_key="sk-test-live",
+        ai_model="   ",
+        repo_root=tmp_path,
+        state_db_path=db_path,
+        audit_log_path=audit_path,
+    )
+    with pytest.raises(ConfigValidationError, match="requires non-empty ai_model / SUPERVISOR_AI_MODEL"):
+        validate_live_config(cfg_blank)
+
+    cfg_mismatch = SupervisorConfig(
+        mode="live",
+        webhook_secret="strong-live-webhook-secret-12345",
+        github_token="ghp_mock_live_token_12345",
+        ai_provider="openai",
+        ai_api_key="sk-test-live",
+        ai_model="claude-3-5-sonnet-20241022",
+        repo_root=tmp_path,
+        state_db_path=db_path,
+        audit_log_path=audit_path,
+    )
+    with pytest.raises(ConfigValidationError, match="Invalid model.*for provider 'openai'"):
+        validate_live_config(cfg_mismatch)
+
+    for provider, model in [
+        ("openai", "gpt-4o"),
+        ("anthropic", "claude-3-5-sonnet-20241022"),
+        ("gemini", "gemini-1.5-pro"),
+    ]:
+        cfg_ok = SupervisorConfig(
+            mode="live",
+            webhook_secret="strong-live-webhook-secret-12345",
+            github_token="ghp_mock_live_token_12345",
+            admin_key="admin-key-16-characters-min",
+            ai_provider=provider,
+            ai_api_key="sk-valid",
+            ai_model=model,
+            repo_root=tmp_path,
+            state_db_path=db_path,
+            audit_log_path=audit_path,
+        )
+        validate_live_config(cfg_ok)
+
 
 
