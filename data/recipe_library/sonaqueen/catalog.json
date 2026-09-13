@@ -1,0 +1,420 @@
+{
+  "schemaVersion": 1,
+  "libraryId": "sonaqueen-home",
+  "products": [
+    {
+      "sku": "MY-012",
+      "name": "日系禪風十二格書櫃",
+      "pageUrl": "https://home.sonaqueen.com.tw/products/tzumii-11857622",
+      "family": "STAGGERED_OPEN_CUBBY",
+      "sources": [
+        {
+          "sourceId": "page",
+          "url": "https://home.sonaqueen.com.tw/products/tzumii-11857622",
+          "path": "sources/MY-012.html",
+          "sha256": "4ebbfbd98bab215ae26fa1e8ca0edbfa41c401d22e284bd9f4971ecc22f8d24a",
+          "mediaType": "text/html",
+          "capturedAt": "2026-09-13T05:07:50.207980+00:00"
+        },
+        {
+          "sourceId": "dimensions",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/MY-012-detail-09.jpg",
+          "path": "sources/MY-012-detail-09.jpg",
+          "sha256": "9262bf1c862bafe7dab429b9ac300422b68914e49eafe59d535e8b6b31d9b709",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:46.728451+00:00"
+        },
+        {
+          "sourceId": "image-1",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/MY-012-detail-10.jpg",
+          "path": "sources/MY-012-detail-10.jpg",
+          "sha256": "775bb0a4736ad0ee83086b287960c389f0f0f2065c86f016b1b6db07e28d7e4c",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:23.954141+00:00"
+        }
+      ],
+      "facts": {
+        "widthMm": {
+          "value": 602,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label W 60.2 cm; converted by cm × 10, not measured from pixels."
+        },
+        "depthMm": {
+          "value": 300,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label D 30 cm; converted by cm × 10, not measured from pixels."
+        },
+        "heightMm": {
+          "value": 1802,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label H 180.2 cm; converted by cm × 10, not measured from pixels."
+        },
+        "material": {
+          "value": "高密度塑合板、五金",
+          "unit": "text",
+          "sourceIds": [
+            "page"
+          ],
+          "method": "PAGE_TEXT",
+          "observation": "主要材料：高密度塑合板、五金"
+        },
+        "doorCount": {
+          "value": 0,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "Visible product structure: 0 door leaves; excludes other products in lifestyle photos."
+        },
+        "compartmentCount": {
+          "value": 12,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "12 compartments in this product."
+        },
+        "rowCount": {
+          "value": 6,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "6 vertically stacked rows visible on the dimension diagram."
+        },
+        "labelledOpeningHeightMm": {
+          "value": 272,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Diagram labels two openings 27.2 cm; not assumed to specify all rows."
+        },
+        "labelledNarrowOpeningWidthMm": {
+          "value": 181.5,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Diagram label 18.15 cm."
+        },
+        "labelledWideOpeningWidthMm": {
+          "value": 373.5,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Diagram label 37.35 cm."
+        }
+      },
+      "notes": [
+        "交錯隔板；不能以整片貫穿的等寬直隔板替代。",
+        "板厚、接合與各行座標仍待供應商圖面確認。",
+        "尺寸為供應商約值，非實物量測或已核定 Engineering。"
+      ]
+    },
+    {
+      "sku": "LI-D40",
+      "name": "瓦格四門收納櫃",
+      "pageUrl": "https://home.sonaqueen.com.tw/products/tzumii-10805080",
+      "family": "STACKED_HINGED_CABINET",
+      "sources": [
+        {
+          "sourceId": "page",
+          "url": "https://home.sonaqueen.com.tw/products/tzumii-10805080",
+          "path": "sources/LI-D40.html",
+          "sha256": "9f61758f04f61679f8d08937975f57ba56b7968938f9fef3d405b7a8531561cf",
+          "mediaType": "text/html",
+          "capturedAt": "2026-09-13T05:07:51.090492+00:00"
+        },
+        {
+          "sourceId": "dimensions",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-D40-detail-11.jpg",
+          "path": "sources/LI-D40-detail-11.jpg",
+          "sha256": "a18a8b8e1cb205c5844a3d5142e1486a31eb93ae5d6fb14042c13106f559f1ae",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:48.168920+00:00"
+        },
+        {
+          "sourceId": "image-1",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-D40-03.jpg",
+          "path": "sources/LI-D40-03.jpg",
+          "sha256": "48fcb1bd67bb355dfea182255ad6143e58fba6737b4e43fe32eb500cd2caedff",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:25.093897+00:00"
+        }
+      ],
+      "facts": {
+        "widthMm": {
+          "value": 415,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label W 41.5 cm; converted by cm × 10, not measured from pixels."
+        },
+        "depthMm": {
+          "value": 300,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label D 30 cm; converted by cm × 10, not measured from pixels."
+        },
+        "heightMm": {
+          "value": 1196,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label H 119.6 cm; converted by cm × 10, not measured from pixels."
+        },
+        "material": {
+          "value": "高密度塑合板、五金",
+          "unit": "text",
+          "sourceIds": [
+            "page"
+          ],
+          "method": "PAGE_TEXT",
+          "observation": "主要材料：高密度塑合板、五金"
+        },
+        "doorCount": {
+          "value": 4,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "Visible product structure: 4 door leaves; excludes other products in lifestyle photos."
+        },
+        "compartmentCount": {
+          "value": 4,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "4 compartments in this product."
+        },
+        "rowCount": {
+          "value": 4,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "4 vertically stacked rows visible on the dimension diagram."
+        },
+        "handles": {
+          "value": false,
+          "unit": "boolean",
+          "sourceIds": [
+            "page"
+          ],
+          "method": "PAGE_TEXT",
+          "observation": "門板採無把手設計"
+        },
+        "labelledInnerWidthMm": {
+          "value": 391,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Inner-dimension label 39.1 cm."
+        },
+        "labelledInnerHeightMm": {
+          "value": 283,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Inner-dimension label 28.3 cm."
+        },
+        "labelledInnerDepthMm": {
+          "value": 271,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Inner-dimension label 27.1 cm."
+        }
+      },
+      "notes": [
+        "四片門為上下排列；現有 doorCount=4 的並排門生成方式不相容。",
+        "不得由外寬減內寬直接宣稱板厚已核定。",
+        "尺寸為供應商約值，非實物量測或已核定 Engineering。"
+      ]
+    },
+    {
+      "sku": "LI-PU63D-免組裝",
+      "name": "夏爾六格滑門收納櫃",
+      "pageUrl": "https://home.sonaqueen.com.tw/products/tzumii-10290969",
+      "family": "ROW_SLIDING_CABINET",
+      "sources": [
+        {
+          "sourceId": "page",
+          "url": "https://home.sonaqueen.com.tw/products/tzumii-10290969",
+          "path": "sources/LI-PU63D-免組裝.html",
+          "sha256": "ccb03de252659eb267933fc37c7d27a2d0e5d3ffee120eee1c8c66bd63941cae",
+          "mediaType": "text/html",
+          "capturedAt": "2026-09-13T05:07:51.743236+00:00"
+        },
+        {
+          "sourceId": "dimensions",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-PU63D-%E5%85%8D%E7%B5%84%E8%A3%9D-detail-11.jpg",
+          "path": "sources/LI-PU63D-免組裝-detail-11.jpg",
+          "sha256": "bcbf12e22ccdb046c0cfee7f13563934a341c13384cac2728bf17577f2855332",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:50.783483+00:00"
+        },
+        {
+          "sourceId": "image-1",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-PU63D-%E5%85%8D%E7%B5%84%E8%A3%9D-detail-13.jpg",
+          "path": "sources/LI-PU63D-免組裝-detail-13.jpg",
+          "sha256": "372f95d1ae25dddb7ddf1a1e77c184c78a5d762a649fe9c587cd1f7c12251e6f",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:52.712222+00:00"
+        },
+        {
+          "sourceId": "image-2",
+          "url": "https://home.sonaqueen.com.tw/uploads/sonaqueen-home/LI-PU63D-%E5%85%8D%E7%B5%84%E8%A3%9D-03.jpg",
+          "path": "sources/LI-PU63D-免組裝-03.jpg",
+          "sha256": "1cbdac5bde37dc7b75909e9abf1cc2b3bd4515d3f4aae38df5ba1ec63deadbf7",
+          "mediaType": "image/jpeg",
+          "capturedAt": "2026-09-13T05:05:27.769900+00:00"
+        }
+      ],
+      "facts": {
+        "widthMm": {
+          "value": 785,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label W 78.5 cm; converted by cm × 10, not measured from pixels."
+        },
+        "depthMm": {
+          "value": 300,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label D 30 cm; converted by cm × 10, not measured from pixels."
+        },
+        "heightMm": {
+          "value": 785,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Supplier label H 78.5 cm; converted by cm × 10, not measured from pixels."
+        },
+        "material": {
+          "value": "高密度塑合板、五金",
+          "unit": "text",
+          "sourceIds": [
+            "page"
+          ],
+          "method": "PAGE_TEXT",
+          "observation": "主要材料：高密度塑合板、五金"
+        },
+        "doorCount": {
+          "value": 3,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "Visible product structure: 3 door leaves; excludes other products in lifestyle photos."
+        },
+        "compartmentCount": {
+          "value": 6,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "6 compartments in this product."
+        },
+        "rowCount": {
+          "value": 3,
+          "unit": "count",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "VISUAL_OBSERVATION",
+          "observation": "3 vertically stacked rows visible on the dimension diagram."
+        },
+        "fixedPanelThicknessMm": {
+          "value": 25,
+          "unit": "mm",
+          "sourceIds": [
+            "page"
+          ],
+          "method": "PAGE_TEXT",
+          "observation": "固定板厚度2.5cm；僅適用原文固定板，不能套用到門板或側板。"
+        },
+        "labelledInnerWidthMm": {
+          "value": 369,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Inner-dimension label 36.9 cm."
+        },
+        "labelledInnerHeightMm": {
+          "value": 235,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Inner-dimension label 23.5 cm."
+        },
+        "labelledInnerDepthMm": {
+          "value": 250,
+          "unit": "mm",
+          "sourceIds": [
+            "dimensions"
+          ],
+          "method": "LABEL_TRANSCRIPTION",
+          "observation": "Inner-dimension label 25 cm."
+        }
+      },
+      "notes": [
+        "每行一片滑門，共三片；六格不等於六片門。",
+        "滑軌截面、門板尺寸及行程仍待確認，不得套用鉸鏈旋轉。",
+        "免組裝為服務規格，保留完整 SKU；多櫃情境照片不等於單件商品結構。",
+        "尺寸為供應商約值，非實物量測或已核定 Engineering。"
+      ]
+    }
+  ]
+}

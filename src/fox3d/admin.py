@@ -167,6 +167,7 @@ def render_admin(platform: Any) -> str:
       <span class="note" style="margin-left: 6px;">— 系統操作台，不含 Blender UI</span>
     </div>
     <div>
+      <a href="/admin/recipes" style="color:#b6e3c8;font-weight:600;margin-right:20px">商品 Recipe 庫 →</a>
       <span class="note">伺服器: http://127.0.0.1:8788/admin</span>
     </div>
   </header>

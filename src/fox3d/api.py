@@ -12,6 +12,7 @@ from fox3d.admin import render_admin
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
+from fox3d.recipe_admin_api import recipe_router
 
 _PLATFORM: Platform | None = None
 
@@ -598,6 +599,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def admin() -> str:
         return render_admin(get_platform())
 
+    app.include_router(recipe_router(lambda: platform if platform is not None else get_platform()))
     return app
 
 
