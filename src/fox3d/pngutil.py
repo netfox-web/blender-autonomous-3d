@@ -72,9 +72,15 @@ def write_glb_stub(path: Path, name: str = "Product") -> None:
     path.write_bytes(header + json_header + json_chunk)
 
 
-def is_png(path: Path) -> bool:
-    return path.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+def is_png(target: Path | str | bytes) -> bool:
+    if isinstance(target, (bytes, bytearray)):
+        return len(target) >= 8 and target[:8] == b"\x89PNG\r\n\x1a\n"
+    p = Path(target)
+    return p.is_file() and p.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
 
 
-def is_glb(path: Path) -> bool:
-    return path.read_bytes()[:4] == b"glTF"
+def is_glb(target: Path | str | bytes) -> bool:
+    if isinstance(target, (bytes, bytearray)):
+        return len(target) >= 4 and target[:4] == b"glTF"
+    p = Path(target)
+    return p.is_file() and p.read_bytes()[:4] == b"glTF"

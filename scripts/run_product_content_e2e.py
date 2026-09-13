@@ -128,6 +128,9 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         {"check": "physicalPrintValidated", "status": "BLOCKED", "evidence": False},
         {"check": "LIVE_CNC", "status": "BLOCKED", "evidence": "liveMachineControl=false"},
         {"check": "contentPackId", "status": "REAL_LOGIC", "evidence": pack.get("contentPackId")},
+        {"check": "sourceRenderPackId", "status": "REAL_LOGIC", "evidence": pack.get("sourceRenderPackId")},
+        {"check": "sourceAcceptanceGenerationId", "status": "REAL_LOGIC", "evidence": pack.get("sourceAcceptanceGenerationId")},
+        {"check": "dimensionLabelAuthority", "status": "REAL_LOGIC", "evidence": (views.get("DIMENSION_FRONT") or {}).get("dimensionMetadata", {}).get("dimensionLabelLayerHash")},
         {"check": "usedMock", "status": "MOCK" if mock else "REAL", "evidence": mock},
     ]
 
@@ -149,6 +152,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "usedMock": mock,
         "contentPackId": pack.get("contentPackId"),
         "sourceRenderPackId": pack.get("sourceRenderPackId"),
+        "sourceAcceptanceGenerationId": pack.get("sourceAcceptanceGenerationId"),
         "contentPack": pack,
         "qa": pack.get("qa"),
         "rows": rows,

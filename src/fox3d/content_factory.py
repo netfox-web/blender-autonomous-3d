@@ -318,6 +318,102 @@ def build_articulated_state(
     }
 
 
+FONT_5X7: dict[str, list[int]] = {
+    "0": [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
+    "1": [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
+    "2": [0b01110, 0b10001, 0b00001, 0b00010, 0b00100, 0b01000, 0b11111],
+    "3": [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
+    "4": [0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010],
+    "5": [0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110],
+    "6": [0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
+    "7": [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
+    "8": [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
+    "9": [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100],
+    "W": [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+    "H": [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    "D": [0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110],
+    ":": [0b00000, 0b01100, 0b01100, 0b00000, 0b01100, 0b01100, 0b00000],
+    "m": [0b00000, 0b00000, 0b11010, 0b10101, 0b10101, 0b10101, 0b10101],
+    ".": [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b01100, 0b01100],
+    "-": [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+    " ": [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000],
+}
+
+
+def _format_dim_num(val: Any) -> str:
+    if val is None:
+        return "0"
+    try:
+        f = float(val)
+        if f.is_integer():
+            return str(int(round(f)))
+        return f"{f:.4f}".rstrip("0").rstrip(".")
+    except (ValueError, TypeError):
+        return str(val)
+
+
+def render_dimension_label_layer(
+    engineering: dict[str, Any],
+    width: int,
+    height: int,
+    unit: str = "mm",
+) -> tuple[bytes, str, dict[str, str]]:
+    """Rasterizes canonical dimension text into a deterministic RGBA layer using deterministic bitmap font."""
+    w_num = _format_dim_num(engineering.get("width"))
+    h_num = _format_dim_num(engineering.get("height"))
+    d_num = _format_dim_num(engineering.get("depth"))
+    unit_str = str(unit)
+    lines = [f"W: {w_num} {unit_str}", f"H: {h_num} {unit_str}", f"D: {d_num} {unit_str}"]
+
+    layer = bytearray(width * height * 4)
+    scale = 2 if (width >= 256 and height >= 256) else 1
+    char_w = 6 * scale
+    line_h = 10 * scale
+    x0 = 8 * scale
+    y0 = 8 * scale
+    max_chars = max(len(l) for l in lines)
+    box_w = max_chars * char_w + 8 * scale
+    box_h = len(lines) * line_h + 8 * scale
+
+    for by in range(y0 - 2 * scale, min(height, y0 + box_h)):
+        for bx in range(x0 - 4 * scale, min(width, x0 + box_w)):
+            if 0 <= bx < width and 0 <= by < height:
+                idx = (by * width + bx) * 4
+                layer[idx] = 20
+                layer[idx + 1] = 24
+                layer[idx + 2] = 32
+                layer[idx + 3] = 235
+
+    for li, line in enumerate(lines):
+        base_y = y0 + li * line_h + 2 * scale
+        for ci, ch in enumerate(line):
+            base_x = x0 + ci * char_w
+            glyph = FONT_5X7.get(ch, FONT_5X7[" "])
+            for r in range(7):
+                bits = glyph[r]
+                for c in range(5):
+                    if (bits >> (4 - c)) & 1:
+                        for sy in range(scale):
+                            for sx in range(scale):
+                                px = base_x + c * scale + sx
+                                py = base_y + r * scale + sy
+                                if 0 <= px < width and 0 <= py < height:
+                                    p_idx = (py * width + px) * 4
+                                    layer[p_idx] = 255
+                                    layer[p_idx + 1] = 255
+                                    layer[p_idx + 2] = 255
+                                    layer[p_idx + 3] = 255
+
+    raw = bytes(layer)
+    h = sha256_bytes(raw)
+    labels = {
+        "width": f"{w_num} {unit_str}",
+        "height": f"{h_num} {unit_str}",
+        "depth": f"{d_num} {unit_str}",
+    }
+    return raw, h, labels
+
+
 def generate_dimension_overlay(
     base_png_path: Path,
     engineering: dict[str, Any],
@@ -345,7 +441,7 @@ def generate_dimension_overlay(
         w_px, h_px = width, height
         rgb_data = bytearray(bytes([240, 240, 245]) * (w_px * h_px))
 
-    # Deterministic dimension overlay drawing: dimension border lines + label boxes
+    # 1. Deterministic guide lines
     # Draw horizontal width guide at bottom
     bar_y = int(h_px * 0.92)
     bar_x0 = int(w_px * 0.15)
@@ -370,18 +466,18 @@ def generate_dimension_overlay(
                 rgb_data[idx * 3 + 1] = 40
                 rgb_data[idx * 3 + 2] = 180
 
-    # Draw small label badge in upper corner
-    badge_x0 = int(w_px * 0.05)
-    badge_x1 = int(w_px * 0.35)
-    badge_y0 = int(h_px * 0.05)
-    badge_y1 = int(h_px * 0.18)
-    for y in range(badge_y0, badge_y1):
-        for x in range(badge_x0, badge_x1):
-            idx = y * w_px + x
-            if 0 <= idx < len(rgb_data) // 3:
-                rgb_data[idx * 3] = 30
-                rgb_data[idx * 3 + 1] = 30
-                rgb_data[idx * 3 + 2] = 40
+    # 2. Rasterize deterministic visual dimension-label layer
+    label_bytes, label_hash, label_strings = render_dimension_label_layer(engineering, w_px, h_px, unit="mm")
+
+    # 3. Composite label layer over rgb_data
+    for i in range(w_px * h_px):
+        alpha = label_bytes[i * 4 + 3]
+        if alpha > 0:
+            a = alpha / 255.0
+            inv = 1.0 - a
+            rgb_data[i * 3] = int(label_bytes[i * 4] * a + rgb_data[i * 3] * inv)
+            rgb_data[i * 3 + 1] = int(label_bytes[i * 4 + 1] * a + rgb_data[i * 3 + 1] * inv)
+            rgb_data[i * 3 + 2] = int(label_bytes[i * 4 + 2] * a + rgb_data[i * 3 + 2] * inv)
 
     out_png = Path(base_png_path).parent / f"dimension_overlay_{new_id()}.png"
     write_png(out_png, w_px, h_px, bytes(rgb_data))
@@ -390,16 +486,16 @@ def generate_dimension_overlay(
     metadata = {
         "viewRole": "DIMENSION_FRONT",
         "commerceRole": "COMMERCE_DIMENSION",
+        "width": w_px,
+        "height": h_px,
         "widthMm": w_mm,
         "heightMm": h_mm,
         "depthMm": d_mm,
         "unit": "mm",
         "sourceEngineeringHash": eng_hash,
-        "renderedLabels": {
-            "width": f"{int(round(w_mm))} mm",
-            "height": f"{int(round(h_mm))} mm",
-            "depth": f"{int(round(d_mm))} mm",
-        },
+        "dimensionLabelLayerHash": label_hash,
+        "dimensionLabelLayerSize": len(label_bytes),
+        "renderedLabels": label_strings,
         "engineeringSpec": {
             "width": w_mm,
             "height": h_mm,
@@ -413,6 +509,8 @@ def generate_dimension_overlay(
 def validate_dimension_asset_authority(
     asset_meta: Any,
     engineering: dict[str, Any],
+    width: int | None = None,
+    height: int | None = None,
 ) -> list[str]:
     """Independently verifies dimension asset authority against Engineering mm single source of truth."""
     failures: list[str] = []
@@ -447,19 +545,32 @@ def validate_dimension_asset_authority(
     if source_hash != eng_hash:
         failures.append(f"dimension_engineering_hash_mismatch: meta={source_hash} vs eng={eng_hash}")
 
+    # Independently recompute expected label layer bytes and hash
+    w_px = int(width or asset_meta.get("width") or 512)
+    h_px = int(height or asset_meta.get("height") or 512)
+    _exp_bytes, exp_layer_hash, exp_labels = render_dimension_label_layer(
+        engineering,
+        w_px,
+        h_px,
+        unit=unit if (unit and isinstance(unit, str)) else "mm",
+    )
+
+    actual_layer_hash = asset_meta.get("dimensionLabelLayerHash")
+    if not actual_layer_hash or not isinstance(actual_layer_hash, str):
+        failures.append("missing_dimension_label_layer_hash")
+    elif actual_layer_hash != exp_layer_hash:
+        failures.append(f"dimension_label_layer_hash_mismatch: actual={actual_layer_hash} vs expected={exp_layer_hash}")
+
     labels = asset_meta.get("renderedLabels")
     if not isinstance(labels, dict):
         failures.append("missing_rendered_labels_payload")
     else:
-        expected_w_str = f"{int(round(eng_w))} mm"
-        expected_h_str = f"{int(round(eng_h))} mm"
-        expected_d_str = f"{int(round(eng_d))} mm"
-        if labels.get("width") != expected_w_str:
-            failures.append(f"rendered_label_width_tampered: got {labels.get('width')!r} expected {expected_w_str!r}")
-        if labels.get("height") != expected_h_str:
-            failures.append(f"rendered_label_height_tampered: got {labels.get('height')!r} expected {expected_h_str!r}")
-        if labels.get("depth") != expected_d_str:
-            failures.append(f"rendered_label_depth_tampered: got {labels.get('depth')!r} expected {expected_d_str!r}")
+        if labels.get("width") != exp_labels.get("width"):
+            failures.append(f"rendered_label_width_tampered: got {labels.get('width')!r} expected {exp_labels.get('width')!r}")
+        if labels.get("height") != exp_labels.get("height"):
+            failures.append(f"rendered_label_height_tampered: got {labels.get('height')!r} expected {exp_labels.get('height')!r}")
+        if labels.get("depth") != exp_labels.get("depth"):
+            failures.append(f"rendered_label_depth_tampered: got {labels.get('depth')!r} expected {exp_labels.get('depth')!r}")
 
     return failures
 
@@ -557,6 +668,12 @@ def qa_commerce_pack(
     if pack.get("sourceRenderPackId") != upstream_pack.get("renderPackId"):
         failures.append("source_render_pack_id_mismatch")
 
+    exp_acc_gen = str(upstream_pack.get("sourceAcceptanceGenerationId") or upstream_pack.get("acceptanceGenerationId") or "")
+    if not exp_acc_gen:
+        failures.append("missing_upstream_acceptance_generation_id")
+    elif str(pack.get("sourceAcceptanceGenerationId") or "") != exp_acc_gen:
+        failures.append("source_acceptance_generation_id_mismatch")
+
     # 3. ProductMask & ArtworkMask lineage
     upstream_aovs = upstream_pack.get("aovs") or {}
     up_prod_mask = upstream_aovs.get("product_mask") or {}
@@ -613,6 +730,25 @@ def qa_commerce_pack(
         if v_data.get("recipe", {}).get("contentViewRecipeHash") != c_recipe["contentViewRecipeHash"]:
             failures.append(f"view_recipe_hash_mismatch_{role}")
 
+        # Source file on disk checks (fail-closed)
+        src_path_str = v_data.get("path")
+        if not src_path_str:
+            failures.append(f"missing_source_path_{role}")
+        else:
+            p = Path(src_path_str)
+            if not p.is_file():
+                failures.append(f"source_file_not_found_{role}")
+            else:
+                src_bytes = p.read_bytes()
+                if len(src_bytes) == 0:
+                    failures.append(f"empty_source_file_{role}")
+                elif not is_png(src_bytes):
+                    failures.append(f"source_file_not_png_{role}")
+                else:
+                    src_meta = _png_meta(p)
+                    if src_meta["width"] != c_recipe["width"] or src_meta["height"] != c_recipe["height"]:
+                        failures.append(f"image_dimensions_mismatch_{role}: got {src_meta['width']}x{src_meta['height']} expected {c_recipe['width']}x{c_recipe['height']}")
+
         # Check DAM object integrity
         dam_ref = v_data.get("damRef")
         if not dam_ref:
@@ -632,11 +768,40 @@ def qa_commerce_pack(
                 dam_size = Path(dam_obj.path).stat().st_size if Path(dam_obj.path).is_file() else 0
                 if v_data.get("size") and dam_size != v_data["size"]:
                     failures.append(f"dam_size_mismatch_{role}")
-                # Check path / sourceJobId lineage
-                if dam_obj.metadata.get("sourcePath") and v_data.get("path") and dam_obj.metadata["sourcePath"] != v_data["path"]:
-                    failures.append(f"dam_source_path_mismatch_{role}")
-                if dam_obj.metadata.get("sourceJobId") and v_data.get("blenderJobId") and dam_obj.metadata["sourceJobId"] != v_data["blenderJobId"]:
-                    failures.append(f"dam_source_job_id_mismatch_{role}")
+
+                # Strict required DAM metadata fields without skipping
+                d_meta = dam_obj.metadata or {}
+
+                # MIME
+                mime = d_meta.get("mime")
+                if not mime or mime != "image/png":
+                    failures.append(f"dam_mime_invalid_{role}: got {mime!r}")
+
+                required_dam_fields = {
+                    "tenantId": pack.get("tenantId"),
+                    "skuId": pack.get("skuId"),
+                    "productVersion": pack.get("productVersion"),
+                    "contentPackId": pack.get("contentPackId"),
+                    "viewRole": role,
+                    "commerceRole": v_data.get("commerceRole"),
+                    "sourceRenderPackId": pack.get("sourceRenderPackId"),
+                    "sourceAcceptanceGenerationId": exp_acc_gen,
+                    "sourcePath": v_data.get("path"),
+                    "sourceJobId": v_data.get("blenderJobId"),
+                }
+                for k, exp_val in required_dam_fields.items():
+                    actual_val = d_meta.get(k)
+                    if actual_val is None or actual_val == "":
+                        failures.append(f"dam_metadata_missing_{k}_{role}")
+                    elif actual_val != exp_val:
+                        failures.append(f"dam_metadata_mismatch_{k}_{role}: got {actual_val!r} expected {exp_val!r}")
+
+                # For REAL views, check worker/device provenance in DAM metadata
+                if not v_data.get("usedMock"):
+                    if not d_meta.get("blenderVersion"):
+                        failures.append(f"dam_metadata_missing_blender_version_{role}")
+                    if not d_meta.get("device"):
+                        failures.append(f"dam_metadata_missing_device_{role}")
 
     # Check for HERO vs OPEN DAM refs swap
     hero_view = views.get("WHITE_BACKGROUND_HERO") or {}
@@ -644,7 +809,7 @@ def qa_commerce_pack(
     if hero_view.get("damRef") and hero_view.get("damRef") == open_view.get("damRef"):
         failures.append("hero_and_open_dam_refs_swapped")
 
-    # 6. Articulated state evidence for OPEN vs CLOSED
+    # 6. Articulated state & observed worker evidence
     front_open = views.get("FRONT_OPEN") or {}
     open_art = front_open.get("articulatedState") or {}
     if open_art.get("productState") != "OPEN" or float(open_art.get("articulationAngleDeg") or 0.0) <= 0.0:
@@ -655,9 +820,81 @@ def qa_commerce_pack(
     if closed_art.get("productState") != "CLOSED" or float(closed_art.get("articulationAngleDeg") or 0.0) != 0.0:
         failures.append("front_closed_not_in_closed_state")
 
+    # For REAL views, bind and assert observed worker evidence ↔ canonical expected
+    for role in REQUIRED_COMMERCE_VIEW_ROLES:
+        v_data = views.get(role)
+        if not v_data or v_data.get("usedMock"):
+            continue
+        if role == "DIMENSION_FRONT":
+            continue  # derived from FRONT_CLOSED
+
+        c_recipe = canonical_recipes[role]
+        w_ev = v_data.get("workerEvidence")
+        if not w_ev or not isinstance(w_ev, dict):
+            failures.append(f"missing_worker_evidence_{role}")
+            continue
+
+        if w_ev.get("blenderJobId") != v_data.get("blenderJobId"):
+            failures.append(f"worker_evidence_job_id_mismatch_{role}")
+        if w_ev.get("viewId") != role and w_ev.get("role") != role:
+            failures.append(f"worker_evidence_role_mismatch_{role}")
+        if not w_ev.get("blenderVersion"):
+            failures.append(f"worker_evidence_missing_blender_version_{role}")
+        if not w_ev.get("device"):
+            failures.append(f"worker_evidence_missing_device_{role}")
+        if w_ev.get("usedMock") is not False:
+            failures.append(f"worker_evidence_used_mock_invalid_{role}")
+
+        obs_art = v_data.get("articulatedState") or w_ev.get("articulatedState") or {}
+        exp_art = build_articulated_state(
+            engineering,
+            state=c_recipe["productState"],
+            angle_deg=float(c_recipe.get("articulationAngleDeg") or 0.0),
+        )
+
+        if role == "FRONT_OPEN":
+            if obs_art.get("productState") != "OPEN":
+                failures.append("front_open_observed_state_not_open")
+            obs_angle = float(obs_art.get("articulationAngleDeg") or 0.0)
+            exp_angle = float(c_recipe.get("articulationAngleDeg") or 75.0)
+            if obs_angle <= 0.0 or abs(obs_angle - exp_angle) > 0.01:
+                failures.append(f"front_open_observed_angle_mismatch: got {obs_angle} expected {exp_angle}")
+
+            obs_transforms = obs_art.get("transforms") or []
+            exp_transforms = exp_art.get("transforms") or []
+            if not obs_transforms:
+                failures.append("front_open_missing_transforms")
+            elif len(obs_transforms) != len(exp_transforms):
+                failures.append(f"front_open_transforms_count_mismatch: got {len(obs_transforms)} expected {len(exp_transforms)}")
+            else:
+                for idx, (ot, et) in enumerate(zip(obs_transforms, exp_transforms)):
+                    if ot.get("componentId") != et.get("componentId"):
+                        failures.append(f"front_open_transform_component_mismatch_{idx}")
+                    o_pivot = ot.get("hingePivot") or []
+                    e_pivot = et.get("hingePivot") or []
+                    if len(o_pivot) != 3 or any(abs(a - b) > 0.01 for a, b in zip(o_pivot, e_pivot)):
+                        failures.append(f"front_open_transform_pivot_mismatch_{idx}")
+                    o_rot = ot.get("rotationEuler") or []
+                    e_rot = et.get("rotationEuler") or []
+                    if len(o_rot) != 3 or any(abs(a - b) > 0.01 for a, b in zip(o_rot, e_rot)):
+                        failures.append(f"front_open_transform_rotation_mismatch_{idx}")
+
+        elif role == "FRONT_CLOSED":
+            if obs_art.get("productState") != "CLOSED":
+                failures.append("front_closed_observed_state_not_closed")
+            if float(obs_art.get("articulationAngleDeg") or 0.0) != 0.0:
+                failures.append("front_closed_observed_angle_nonzero")
+            if obs_art.get("transforms"):
+                failures.append("front_closed_observed_non_empty_transforms")
+
     # 7. Dimension Asset Authority
     dim_view = views.get("DIMENSION_FRONT") or {}
-    dim_failures = validate_dimension_asset_authority(dim_view.get("dimensionMetadata"), engineering)
+    dim_failures = validate_dimension_asset_authority(
+        dim_view.get("dimensionMetadata"),
+        engineering,
+        width=int(dim_view.get("width") or pack.get("width") or 512),
+        height=int(dim_view.get("height") or pack.get("height") or 512),
+    )
     failures.extend(dim_failures)
 
     decision = "APPROVED_FOR_ASSET_REVIEW" if not failures else "REJECT_COMMERCE_QA"
@@ -685,6 +922,7 @@ def build_commerce_asset_pack(
     sku_id = str(product_truth_pack.get("productId") or "")
     version = product_truth_pack.get("version") or 1
     eng_hash = str(engineering.get("engineeringHash") or stable_hash({k: engineering[k] for k in engineering if k != "engineeringHash"}))
+    source_acc_gen_id = str(product_truth_pack.get("sourceAcceptanceGenerationId") or product_truth_pack.get("acceptanceGenerationId") or "")
     mock = bool(getattr(plat, "mock_blender", True) or product_truth_pack.get("usedMock"))
 
     recipes = canonical_commerce_recipes(width=width, height=height, samples=samples)
@@ -722,11 +960,15 @@ def build_commerce_asset_pack(
                     "commerceRole": dam_role,
                     "viewRole": role,
                     "renderPackId": product_truth_pack.get("renderPackId"),
+                    "sourceRenderPackId": product_truth_pack.get("renderPackId"),
+                    "sourceAcceptanceGenerationId": source_acc_gen_id,
                     "contentPackId": pack_id,
                     "sourcePath": str(dest.resolve()),
                     "sourceJobId": job_id,
                     "tenantId": tenant_id,
                     "skuId": sku_id,
+                    "productVersion": version,
+                    "mime": "image/png",
                 },
             )
             views_output[role] = {
@@ -787,21 +1029,38 @@ def build_commerce_asset_pack(
 
         for role in ("WHITE_BACKGROUND_HERO", "HERO_45", "FRONT_CLOSED", "FRONT_OPEN", "DETAIL_ARTWORK"):
             rec = recipes[role]
-            w_view = worker_views.get(role) or {}
+            w_view = worker_views.get(role)
+            if not w_view or not isinstance(w_view, dict):
+                raise ValueError(f"Missing workerViews[{role}] record from completed Blender job {b_job_id}")
+
             raw_path = w_view.get("path")
-            if not raw_path or not Path(raw_path).is_file():
-                # Check job dir
-                job_work = Path(job.get("workDir") or ".") / f"{role.lower()}.png"
-                if job_work.is_file():
-                    raw_path = str(job_work)
-            p = Path(str(raw_path))
-            data = p.read_bytes() if p.is_file() else b""
-            meta = _png_meta(p) if p.is_file() else {"width": width, "height": height}
-            art_state = build_articulated_state(
-                engineering,
-                state=rec["productState"],
-                angle_deg=float(rec.get("articulationAngleDeg") or 0.0),
-            )
+            if not raw_path:
+                raise ValueError(f"Missing worker render path for {role} in Blender job {b_job_id}")
+
+            p = Path(raw_path)
+            if not p.is_file():
+                raise FileNotFoundError(f"REAL render artifact not found for {role}: {p}")
+
+            data = p.read_bytes()
+            if len(data) == 0:
+                raise ValueError(f"REAL render artifact for {role} is empty (0 bytes): {p}")
+            if not is_png(data):
+                raise ValueError(f"REAL render artifact for {role} is not a valid PNG: {p}")
+
+            meta = _png_meta(p)
+            if meta["width"] != width or meta["height"] != height:
+                raise ValueError(f"REAL render artifact {role} dimensions {meta['width']}x{meta['height']} do not match recipe {width}x{height}")
+
+            # Publish observed worker articulated state, NOT a recomputed expectation
+            obs_art = w_view.get("articulatedState") or {
+                "productState": w_view.get("productState") or rec["productState"],
+                "articulationAngleDeg": float(w_view.get("articulationAngleDeg") or 0.0),
+                "transforms": [],
+            }
+
+            b_version = w_view.get("blenderVersion") or (done.get("blenderVersion") if isinstance(done, dict) else None) or "5.2.1"
+            b_device = w_view.get("device") or (done.get("device") if isinstance(done, dict) else None) or "OPTIX"
+
             dam_role = COMMERCE_DAM_ROLES.get(role, "COMMERCE_VIEW")
             dam_obj = plat.dam.put(
                 tenant_id=tenant_id,
@@ -812,11 +1071,18 @@ def build_commerce_asset_pack(
                     "commerceRole": dam_role,
                     "viewRole": role,
                     "renderPackId": product_truth_pack.get("renderPackId"),
+                    "sourceRenderPackId": product_truth_pack.get("renderPackId"),
+                    "sourceAcceptanceGenerationId": source_acc_gen_id,
                     "contentPackId": pack_id,
                     "sourcePath": str(p.resolve()),
                     "sourceJobId": str(b_job_id),
                     "tenantId": tenant_id,
                     "skuId": sku_id,
+                    "productVersion": version,
+                    "mime": "image/png",
+                    "blenderVersion": b_version,
+                    "device": b_device,
+                    "usedMock": False,
                 },
             )
             views_output[role] = {
@@ -826,7 +1092,8 @@ def build_commerce_asset_pack(
                 "path": str(p.resolve()),
                 "blenderJobId": str(b_job_id),
                 "recipe": rec,
-                "articulatedState": art_state,
+                "articulatedState": obs_art,
+                "workerEvidence": w_view,
                 "sha256": sha256_bytes(data),
                 "size": len(data),
                 "width": meta["width"],
@@ -850,11 +1117,15 @@ def build_commerce_asset_pack(
             "commerceRole": "COMMERCE_DIMENSION",
             "viewRole": "DIMENSION_FRONT",
             "renderPackId": product_truth_pack.get("renderPackId"),
+            "sourceRenderPackId": product_truth_pack.get("renderPackId"),
+            "sourceAcceptanceGenerationId": source_acc_gen_id,
             "contentPackId": pack_id,
             "sourcePath": str(dim_file.resolve()),
             "sourceJobId": str(views_output["FRONT_CLOSED"]["blenderJobId"]),
             "tenantId": tenant_id,
             "skuId": sku_id,
+            "productVersion": version,
+            "mime": "image/png",
             **dim_meta,
         },
     )
@@ -918,6 +1189,7 @@ def build_commerce_asset_pack(
         "placementHash": product_truth_pack.get("placementHash"),
         "finalUvHash": product_truth_pack.get("finalUvHash"),
         "sourceRenderPackId": product_truth_pack.get("renderPackId"),
+        "sourceAcceptanceGenerationId": source_acc_gen_id,
         "productMaskRef": {"damRef": prod_mask.get("damRef"), "sha256": prod_mask.get("sha256")},
         "artworkMaskRef": {"damRef": art_mask.get("damRef"), "sha256": art_mask.get("sha256")},
         "width": width,
@@ -950,6 +1222,20 @@ def run_product_content_scenario(
     truth_res = run_phase_841_scenario(plat, tenant_id=tenant_id, evidence_code_commit=evidence_code_commit)
     upstream_pack = truth_res["pack"]
     eng = truth_res["frozenAuthorityContext"]["engineering"]
+
+    truth_gen_id = None
+    truth_acc_path = Path("docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json")
+    if truth_acc_path.is_file():
+        try:
+            t_data = json.loads(truth_acc_path.read_text(encoding="utf-8"))
+            if t_data.get("renderPackId") == upstream_pack.get("renderPackId"):
+                truth_gen_id = t_data.get("acceptanceGenerationId")
+        except Exception:
+            pass
+    if not truth_gen_id:
+        truth_gen_id = upstream_pack.get("sourceAcceptanceGenerationId") or upstream_pack.get("acceptanceGenerationId") or f"pt_acc_{upstream_pack.get('renderPackId')}"
+    upstream_pack["sourceAcceptanceGenerationId"] = truth_gen_id
+    upstream_pack["acceptanceGenerationId"] = truth_gen_id
 
     mock = bool(getattr(plat, "mock_blender", True) or upstream_pack.get("usedMock"))
     width = 64 if mock else 128

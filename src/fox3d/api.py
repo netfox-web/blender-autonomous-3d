@@ -137,7 +137,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         plat = get_platform()
         created = plat.create_parametric(payload)
         if payload.get("render"):
-            created["render"] = plat.render_parametric(created["spec"]["productId"], tenant_id=payload["tenantId"])
+            r_out = plat.render_parametric(created["spec"]["productId"], tenant_id=payload["tenantId"])
+            created["render"] = {"job": r_out.get("job"), "preview": (r_out.get("job") or {}).get("output")}
         return created
 
     @app.post("/api/parametric/products/{product_id}/resize")
@@ -145,7 +146,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         plat = get_platform()
         resized = plat.resize_parametric(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k in {"width", "height", "depth"}})
         if payload.get("render", True):
-            resized["render"] = plat.render_parametric(resized["spec"]["productId"], tenant_id=resized["spec"]["tenantId"])
+            r_out = plat.render_parametric(resized["spec"]["productId"], tenant_id=resized["spec"]["tenantId"])
+            resized["render"] = {"job": r_out.get("job"), "preview": (r_out.get("job") or {}).get("output")}
         return resized
 
     @app.post("/api/parametric/products/{product_id}/variants")

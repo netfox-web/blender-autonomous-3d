@@ -231,7 +231,7 @@ def _add_box(name: str, size, location, material: str | None = None):
     bpy.ops.mesh.primitive_cube_add(size=1, location=location)
     obj = bpy.context.active_object
     obj.name = name
-    obj.scale = (size[0] / 2.0, size[1] / 2.0, size[2] / 2.0)
+    obj.scale = (size[0], size[1], size[2])
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     if material:
         obj.data.materials.append(_bsdf(material, material + "." + name))
@@ -749,7 +749,12 @@ def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0,
         height = float(engineering.get("height") or 1800) / 1000.0
         depth = float(engineering.get("depth") or 400) / 1000.0
         _add_plane("Ground", 4.0, (0, 0, 0))
-        _add_camera((origin[0] + width * 1.6, origin[1] - depth * 3.2, origin[2] + height * 0.7), (origin[0], origin[1], origin[2] + height * 0.45), 50)
+        max_dim = max(width, height, depth)
+        cam_dist = max(max_dim * 2.3, 1.8)
+        cam_x = origin[0] + width * 1.5
+        cam_y = origin[1] - cam_dist
+        cam_z = origin[2] + height * 0.7
+        _add_camera((cam_x, cam_y, cam_z), (origin[0], origin[1], origin[2] + height * 0.45), 50)
         _three_point(height)
     return created
 
@@ -828,6 +833,9 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         elif role == "h_partition":
             size = [width - 2 * thick, depth - 0.02, thick]
             loc = [0, 0, height * 0.5]
+        elif role == "stile":
+            size = [width_p, thick, length]
+            loc = [0, -depth / 2 + thick / 2, height / 2]
         else:
             size = [max(length, 0.01), max(width_p, 0.01), max(thick, 0.004)]
         if explode and role not in {"door"}:
@@ -836,9 +844,10 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         obj = _add_box(name_prefix + name, size, loc, material)
         created[name_prefix + name] = obj
         if role == "door":
-            handle = _add_box(name_prefix + name + ".HANDLE", (0.012, 0.02, 0.12), (loc[0], loc[1] - 0.02, loc[2]), "metal")
+            handle_x = loc[0] + (door_w * 0.35) if counts["door"] % 2 == 1 else loc[0] - (door_w * 0.35)
+            handle = _add_box(name_prefix + name + ".HANDLE", (0.012, 0.02, 0.12), (handle_x, loc[1] - 0.02, loc[2]), "metal")
             created[name_prefix + name + ".HANDLE"] = handle
-            hinge = _add_box(name_prefix + name + ".HINGE", (0.02, 0.02, 0.04), (loc[0] - size[0] / 2, loc[1], loc[2]), "metal")
+            hinge = _add_box(name_prefix + name + ".HINGE", (0.02, 0.02, 0.04), (loc[0] - size[0] / 2 + 0.01, loc[1] + thick / 2 + 0.01, loc[2]), "metal")
             created[name_prefix + name + ".HINGE"] = hinge
     return created
 
@@ -1581,8 +1590,10 @@ def build_and_render(job: dict) -> dict:
             r_bytes = r_path.read_bytes() if r_path.exists() else b""
             worker_views[view_id] = {
                 "viewId": view_id,
+                "role": view_id,
                 "filename": name,
                 "cameraRecipeHash": actual_cam_hash,
+                "sceneRecipeHash": job.get("sceneRecipeHash") or view.get("sceneRecipeHash"),
                 "location": loc,
                 "lookAt": look_at,
                 "target": look_at,
@@ -1595,10 +1606,13 @@ def build_and_render(job: dict) -> dict:
                 "sha256": hashlib.sha256(r_bytes).hexdigest() if r_bytes else None,
                 "size": len(r_bytes),
                 "blenderJobId": job.get("jobId"),
+                "blenderVersion": _blender_version(),
+                "device": used_device,
                 "usedMock": False,
                 "realBlender": True,
                 "realOptix": used_device == "OPTIX",
                 "productState": prod_state,
+                "articulationAngleDeg": angle,
                 "articulatedState": {
                     "productState": prod_state,
                     "articulationAngleDeg": angle,

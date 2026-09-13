@@ -160,6 +160,16 @@ def test_dimension_asset_authority_and_tamper_fails_closed(tmp_path: Path):
     coord["renderedLabels"]["width"] = "3000 mm"
     assert any("dimension_width_mismatch" in f for f in validate_dimension_asset_authority(coord, eng_dict))
 
+    # 5. Missing dimension label layer hash
+    no_hash = copy.deepcopy(meta)
+    no_hash.pop("dimensionLabelLayerHash", None)
+    assert any("missing_dimension_label_layer_hash" in f for f in validate_dimension_asset_authority(no_hash, eng_dict))
+
+    # 6. Tampered dimension label layer hash (visible glyph altered)
+    bad_layer_hash = copy.deepcopy(meta)
+    bad_layer_hash["dimensionLabelLayerHash"] = "tampered_layer_hash_0000000000000000000000000000000000000000"
+    assert any("dimension_label_layer_hash_mismatch" in f for f in validate_dimension_asset_authority(bad_layer_hash, eng_dict))
+
 
 def test_lifestyle_briefs_are_product_truth_bound():
     pack = {
@@ -331,7 +341,168 @@ def test_runner_content_factory_adversarial_matrix(tmp_path: Path):
             kind="commerce_asset",
             name="hero.png",
             data=b"\x89PNG\r\n\x1a\n" + b"\x00" * 32,
-            metadata={"sourcePath": "foreign/path.png", "sourceJobId": "foreign_job"},
+            metadata={
+                "sourcePath": "foreign/path.png",
+                "sourceJobId": "foreign_job",
+                "mime": "image/png",
+                "tenantId": "pt-b",
+                "skuId": "foreign_sku",
+            },
         )
         r["contentPack"]["views"]["WHITE_BACKGROUND_HERO"]["damRef"] = foreign_dam.asset_id
     execute_negative("18_cross_tenant_dam_substitution", case_18)
+
+    # 19. wrong Product Truth acceptance generation with otherwise-correct renderPackId
+    def case_19(r):
+        r["contentPack"]["sourceAcceptanceGenerationId"] = "foreign_gen_00000000000000000000"
+    execute_negative("19_wrong_acceptance_generation", case_19)
+
+    # 20. missing dimension label layer hash
+    def case_20(r):
+        r["contentPack"]["views"]["DIMENSION_FRONT"]["dimensionMetadata"].pop("dimensionLabelLayerHash", None)
+    execute_negative("20_missing_dimension_label_layer_hash", case_20)
+
+    # 21. visible width glyph layer altered while metadata remains correct
+    def case_21(r):
+        r["contentPack"]["views"]["DIMENSION_FRONT"]["dimensionMetadata"]["dimensionLabelLayerHash"] = "tampered_hash_0000000000000000000000000000000000000000"
+    execute_negative("21_visible_glyph_layer_altered", case_21)
+
+    # 22. dimension unit glyph changed (mm -> inches)
+    def case_22(r):
+        r["contentPack"]["views"]["DIMENSION_FRONT"]["dimensionMetadata"]["unit"] = "inches"
+    execute_negative("22_dimension_unit_tampered", case_22)
+
+    # 23. DAM sourcePath missing
+    def case_23(r):
+        dam_ref = r["contentPack"]["views"]["FRONT_CLOSED"]["damRef"]
+        plat.dam.get(dam_ref, tenant_id="pt-a").metadata.pop("sourcePath", None)
+    execute_negative("23_dam_missing_source_path", case_23)
+
+    # 24. DAM sourceJobId missing
+    def case_24(r):
+        dam_ref = r["contentPack"]["views"]["FRONT_CLOSED"]["damRef"]
+        plat.dam.get(dam_ref, tenant_id="pt-a").metadata.pop("sourceJobId", None)
+    execute_negative("24_dam_missing_source_job_id", case_24)
+
+    # 25. wrong/missing MIME
+    def case_25(r):
+        dam_ref = r["contentPack"]["views"]["FRONT_CLOSED"]["damRef"]
+        plat.dam.get(dam_ref, tenant_id="pt-a").metadata["mime"] = "image/jpeg"
+    execute_negative("25_dam_wrong_mime", case_25)
+
+    # 26. wrong/missing tenant/SKU/version/contentPack/view-role metadata
+    def case_26(r):
+        dam_ref = r["contentPack"]["views"]["FRONT_CLOSED"]["damRef"]
+        plat.dam.get(dam_ref, tenant_id="pt-a").metadata["skuId"] = "TAMPERED_SKU"
+    execute_negative("26_dam_metadata_sku_mismatch", case_26)
+
+    # 27. foreign DAM object with valid identical bytes but wrong provenance
+    def case_27(r):
+        dam_ref = r["contentPack"]["views"]["FRONT_CLOSED"]["damRef"]
+        plat.dam.get(dam_ref, tenant_id="pt-a").metadata["sourceAcceptanceGenerationId"] = "foreign_gen_mismatch"
+    execute_negative("27_dam_provenance_gen_mismatch", case_27)
+
+    # 28. worker reports CLOSED for FRONT_OPEN while manifest expected state is still OPEN
+    def case_28(r):
+        fo = r["contentPack"]["views"]["FRONT_OPEN"]
+        fo["usedMock"] = False
+        fo["workerEvidence"] = {
+            "viewId": "FRONT_OPEN",
+            "role": "FRONT_OPEN",
+            "blenderJobId": fo["blenderJobId"],
+            "blenderVersion": "5.2.1",
+            "device": "OPTIX",
+            "usedMock": False,
+            "productState": "CLOSED",
+            "articulationAngleDeg": 0.0,
+            "articulatedState": {"productState": "CLOSED", "articulationAngleDeg": 0.0, "transforms": []},
+        }
+        fo["articulatedState"] = fo["workerEvidence"]["articulatedState"]
+    execute_negative("28_worker_reports_closed_for_front_open", case_28)
+
+    # 29. wrong OPEN angle
+    def case_29(r):
+        fo = r["contentPack"]["views"]["FRONT_OPEN"]
+        fo["usedMock"] = False
+        fo["workerEvidence"] = {
+            "viewId": "FRONT_OPEN",
+            "role": "FRONT_OPEN",
+            "blenderJobId": fo["blenderJobId"],
+            "blenderVersion": "5.2.1",
+            "device": "OPTIX",
+            "usedMock": False,
+            "productState": "OPEN",
+            "articulationAngleDeg": 25.0,
+            "articulatedState": {"productState": "OPEN", "articulationAngleDeg": 25.0, "transforms": []},
+        }
+        fo["articulatedState"] = fo["workerEvidence"]["articulatedState"]
+    execute_negative("29_wrong_open_angle", case_29)
+
+    # 30. missing transform(s) / wrong component ID / wrong hinge pivot
+    def case_30(r):
+        fo = r["contentPack"]["views"]["FRONT_OPEN"]
+        fo["usedMock"] = False
+        fo["workerEvidence"] = {
+            "viewId": "FRONT_OPEN",
+            "role": "FRONT_OPEN",
+            "blenderJobId": fo["blenderJobId"],
+            "blenderVersion": "5.2.1",
+            "device": "OPTIX",
+            "usedMock": False,
+            "productState": "OPEN",
+            "articulationAngleDeg": 75.0,
+            "articulatedState": {"productState": "OPEN", "articulationAngleDeg": 75.0, "transforms": []},
+        }
+        fo["articulatedState"] = fo["workerEvidence"]["articulatedState"]
+    execute_negative("30_missing_transforms", case_30)
+
+    # 31. missing workerViews[FRONT_OPEN]
+    def case_31(r):
+        fo = r["contentPack"]["views"]["FRONT_OPEN"]
+        fo["usedMock"] = False
+        fo.pop("workerEvidence", None)
+    execute_negative("31_missing_worker_views", case_31)
+
+    # 32. worker view belongs to wrong blenderJobId or wrong role
+    def case_32(r):
+        fo = r["contentPack"]["views"]["FRONT_OPEN"]
+        fo["usedMock"] = False
+        fo["workerEvidence"] = {
+            "viewId": "FRONT_OPEN",
+            "role": "FRONT_OPEN",
+            "blenderJobId": "foreign_job_id_9999",
+            "blenderVersion": "5.2.1",
+            "device": "OPTIX",
+            "usedMock": False,
+        }
+    execute_negative("32_worker_view_wrong_job_id", case_32)
+
+    # 33. missing required REAL worker/device evidence
+    def case_33(r):
+        fo = r["contentPack"]["views"]["FRONT_OPEN"]
+        fo["usedMock"] = False
+        fo["workerEvidence"] = {
+            "viewId": "FRONT_OPEN",
+            "role": "FRONT_OPEN",
+            "blenderJobId": fo["blenderJobId"],
+            "usedMock": False,
+        }
+    execute_negative("33_missing_device_evidence", case_33)
+
+    # 34. worker source path missing
+    def case_34(r):
+        r["contentPack"]["views"]["FRONT_CLOSED"]["path"] = "nonexistent_dir/missing.png"
+    execute_negative("34_worker_source_path_missing", case_34)
+
+    # 35. empty/zero-byte asset
+    def case_35(r):
+        p = Path(r["contentPack"]["views"]["FRONT_CLOSED"]["path"])
+        p.write_bytes(b"")
+    execute_negative("35_empty_asset_bytes", case_35)
+
+    # 36. malformed/non-PNG bytes
+    def case_36(r):
+        p = Path(r["contentPack"]["views"]["FRONT_CLOSED"]["path"])
+        p.write_bytes(b"NOT_A_VALID_PNG_CONTENT")
+    execute_negative("36_malformed_non_png_bytes", case_36)
+
