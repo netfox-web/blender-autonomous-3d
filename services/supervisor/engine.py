@@ -124,11 +124,24 @@ class SupervisorEngine:
                 f"DOCS_SHA {contract.docs_sha} is not reachable from {self.config.allowed_branch}."
             )
 
-        # Step C: Verify CI run (status, head_sha, ubuntu, windows)
-        ci_summary = self.github_client.verify_ci_run(
-            run_id=contract.ci_run_id,
+        # Step C: Verify dual CI runs (status, head_sha, ubuntu, windows)
+        code_run_id = contract.code_ci_run_id or contract.ci_run_id
+        if not code_run_id:
+            raise GitHubVerificationError("Missing CODE_CI_RUN_ID in READY_FOR_RE_GATE contract.")
+        code_ci_summary = self.github_client.verify_ci_run(
+            run_id=code_run_id,
             expected_code_sha=contract.code_sha,
         )
+
+        docs_ci_summary: Dict[str, Any] = {}
+        if not contract.docs_ci_run_id:
+            if self.config.mode.lower() == "live":
+                raise GitHubVerificationError("Live mode requires explicit DOCS_CI_RUN_ID in READY_FOR_RE_GATE contract.")
+        else:
+            docs_ci_summary = self.github_client.verify_ci_run(
+                run_id=contract.docs_ci_run_id,
+                expected_code_sha=contract.docs_sha,
+            )
 
         # Step D: Read documentation and evidence files from exact pinned refs
         self.state_mgr.set_status(SupervisorStatus.REVIEWING, active_review_id=review_id)
@@ -157,10 +170,38 @@ class SupervisorEngine:
             acceptance_text=acceptance_text,
             cabinet_acceptance_text=cabinet_acceptance_text,
             event_driven_acceptance_text=event_driven_acceptance_text,
-            ci_summary=ci_summary,
+            ci_summary=code_ci_summary,
+            code_ci_summary=code_ci_summary,
+            docs_ci_summary=docs_ci_summary,
             instruction_text=instruction_text,
         )
         raw_output = self.ai_adapter.review_repository(context)
+
+        # Independent verification of provider output against contract
+        if raw_output.reviewed_code_sha != contract.code_sha:
+            logger.warning(
+                "Provider returned mismatched CODE SHA %s (expected %s). Failing closed.",
+                raw_output.reviewed_code_sha, contract.code_sha,
+            )
+            raw_output.decision = ReviewDecision.CHANGES_REQUIRED
+            raw_output.blockers.append(
+                f"Provider output reviewed_code_sha ({raw_output.reviewed_code_sha}) does not match contract ({contract.code_sha})."
+            )
+
+        if raw_output.reviewed_evidence_generation_id != contract.evidence_generation_id:
+            logger.warning(
+                "Provider returned mismatched evidence generation ID %s (expected %s). Failing closed.",
+                raw_output.reviewed_evidence_generation_id, contract.evidence_generation_id,
+            )
+            raw_output.decision = ReviewDecision.CHANGES_REQUIRED
+            raw_output.blockers.append(
+                f"Provider output reviewed_evidence_generation_id ({raw_output.reviewed_evidence_generation_id}) does not match contract ({contract.evidence_generation_id})."
+            )
+
+        if contract.used_mock and "Real Blender Cycles OptiX" in raw_output.truth_matrix.get("REAL", []):
+            logger.warning("Provider attempted to promote mock execution to REAL. Downgrading to CHANGES_REQUIRED.")
+            raw_output.decision = ReviewDecision.CHANGES_REQUIRED
+            raw_output.blockers.append("Provider invalidly promoted mock execution to Production Ready REAL.")
 
         # Step F: Enforce write policy and safety guardrails
         self.state_mgr.set_status(SupervisorStatus.WRITING_INSTRUCTIONS, active_review_id=review_id)

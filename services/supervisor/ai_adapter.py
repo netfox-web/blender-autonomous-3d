@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
+
+import httpx
 
 from services.supervisor.config import ConfigValidationError
 from services.supervisor.models import (
+    ProviderReviewResponseSchema,
     ReviewContext,
     ReviewDecision,
     SupervisorReviewOutput,
 )
+
+logger = logging.getLogger("supervisor.ai_adapter")
 
 
 class SupervisorProviderAdapter(ABC):
@@ -297,67 +303,227 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
         )
 
 
-class OpenAISupervisorAdapter(SupervisorProviderAdapter):
-    """External provider adapter for OpenAI models with preflight safety filter."""
+class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
+    """
+    Provider-neutral HTTP review client calling OpenAI, Anthropic, or Gemini endpoints
+    with structured schema prompting and strict fail-closed validation.
+    """
 
-    def __init__(self, config: Any) -> None:
+    def __init__(
+        self,
+        config: Any,
+        provider_name: str,
+        transport: Optional[httpx.BaseTransport] = None,
+        timeout: float = 30.0,
+    ) -> None:
         self.config = config
+        self.provider_name = provider_name.lower()
         self.preflight = SemanticEvidenceSupervisorAdapter(is_live=False)
-        if not getattr(config, "ai_api_key", ""):
-            raise ConfigValidationError("OPENAI_API_KEY is required for openai provider.")
+        self.api_key = getattr(config, "ai_api_key", "")
+        if not self.api_key:
+            env_var = f"{self.provider_name.upper()}_API_KEY"
+            raise ConfigValidationError(f"{env_var} is required for {self.provider_name} provider.")
+        self.transport = transport
+        self.timeout = timeout
 
     def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
-        # Preflight safety check
+        # Step 1: Deterministic safety preflight
         pf = self.preflight.review_repository(context)
         if pf.decision != ReviewDecision.ACCEPT_WITH_SCOPE:
+            logger.info("Preflight rejected review with %s; skipping external provider call.", pf.decision.value)
             return pf
-        # If preflight passed, provider validates structured prompt
-        return pf
+
+        # Step 2: Build structured review prompt
+        prompt = self._build_prompt(context)
+
+        # Step 3: Dispatch HTTP request to provider endpoint
+        try:
+            raw_text = self._call_provider_endpoint(prompt)
+        except Exception as e:
+            logger.warning("Provider %s HTTP request failed: %s. Failing closed.", self.provider_name, e)
+            return SupervisorReviewOutput(
+                decision=ReviewDecision.CHANGES_REQUIRED,
+                reviewed_code_sha=context.contract.code_sha,
+                reviewed_evidence_generation_id=context.contract.evidence_generation_id,
+                blockers=[f"Provider {self.provider_name} request failed: {type(e).__name__} - {str(e)}"],
+                next_instruction_markdown="# Phase Re-Gate: Changes Required\nProvider request failed.",
+                issue_comment_markdown="## SUPERVISOR_REVIEW_COMPLETE\nDECISION=CHANGES_REQUIRED\nProvider request failed.",
+            )
+
+        # Step 4: Extract JSON and validate against schema
+        try:
+            parsed = self._extract_json(raw_text)
+            validated = ProviderReviewResponseSchema.model_validate(parsed)
+        except Exception as e:
+            logger.warning("Provider %s output failed schema validation: %s. Failing closed.", self.provider_name, e)
+            return SupervisorReviewOutput(
+                decision=ReviewDecision.CHANGES_REQUIRED,
+                reviewed_code_sha=context.contract.code_sha,
+                reviewed_evidence_generation_id=context.contract.evidence_generation_id,
+                blockers=[f"Provider response schema validation failed: {str(e)}"],
+                next_instruction_markdown="# Phase Re-Gate: Changes Required\nMalformed provider response.",
+                issue_comment_markdown="## SUPERVISOR_REVIEW_COMPLETE\nDECISION=CHANGES_REQUIRED\nMalformed provider response.",
+            )
+
+        # Step 5: Verify SHA and generation match contract
+        blockers = list(validated.blockers)
+        decision = validated.decision
+        if validated.reviewedCodeSha != context.contract.code_sha:
+            blockers.append(
+                f"Provider returned mismatched reviewedCodeSha '{validated.reviewedCodeSha}' (expected '{context.contract.code_sha}')."
+            )
+            decision = ReviewDecision.CHANGES_REQUIRED
+
+        if validated.reviewedEvidenceGenerationId != context.contract.evidence_generation_id:
+            blockers.append(
+                f"Provider returned mismatched reviewedEvidenceGenerationId '{validated.reviewedEvidenceGenerationId}' (expected '{context.contract.evidence_generation_id}')."
+            )
+            decision = ReviewDecision.CHANGES_REQUIRED
+
+        truth_dict = {
+            "REAL": validated.truthMatrix.REAL,
+            "MOCK": validated.truthMatrix.MOCK,
+            "PARTIAL": validated.truthMatrix.PARTIAL,
+            "BLOCKED": validated.truthMatrix.BLOCKED,
+        }
+
+        # Downgrade if MOCK claimed as REAL
+        if context.contract.used_mock and "Real Blender Cycles OptiX" in truth_dict["REAL"]:
+            blockers.append("Provider invalidly promoted mock execution to Production Ready REAL.")
+            decision = ReviewDecision.CHANGES_REQUIRED
+
+        return SupervisorReviewOutput(
+            decision=decision,
+            reviewed_code_sha=context.contract.code_sha,
+            reviewed_evidence_generation_id=context.contract.evidence_generation_id,
+            accepted_claims=validated.acceptedClaims,
+            rejected_claims=validated.rejectedClaims,
+            truth_matrix=truth_dict,
+            blockers=blockers,
+            next_instruction_markdown=validated.nextInstructionMarkdown or "# Phase Re-Gate",
+            issue_comment_markdown=validated.issueCommentMarkdown or f"## SUPERVISOR_REVIEW_COMPLETE\nDECISION={decision.value}",
+        )
+
+    def _build_prompt(self, context: ReviewContext) -> str:
+        contract = context.contract
+        return (
+            "You are Fox3D Autonomous Supervisor reviewing a Phase Re-Gate submission.\n"
+            "Review the contract, diffs, and evidence files. Output ONLY valid JSON matching this schema:\n"
+            "{\n"
+            '  "decision": "ACCEPT_WITH_SCOPE" | "CHANGES_REQUIRED" | "BLOCKED",\n'
+            f'  "reviewedCodeSha": "{contract.code_sha}",\n'
+            f'  "reviewedEvidenceGenerationId": "{contract.evidence_generation_id}",\n'
+            '  "acceptedClaims": ["..."],\n'
+            '  "rejectedClaims": ["..."],\n'
+            '  "truthMatrix": {"REAL": [...], "MOCK": [...], "PARTIAL": [...], "BLOCKED": [...]},\n'
+            '  "blockers": ["..."],\n'
+            '  "nextInstructionMarkdown": "# Next Phase Instructions...",\n'
+            '  "issueCommentMarkdown": "## SUPERVISOR_REVIEW_COMPLETE..."\n'
+            "}\n\n"
+            f"=== CONTRACT ===\n{contract.to_contract_block()}\n"
+            f"=== CODE CI SUMMARY ===\n{json.dumps(context.code_ci_summary or context.ci_summary)}\n"
+            f"=== DOCS CI SUMMARY ===\n{json.dumps(context.docs_ci_summary)}\n"
+            f"=== DIFFS ===\n{context.diffs[:4000]}\n"
+            f"=== PROGRESS REPORT ===\n{context.progress_report_text[:4000]}\n"
+            f"=== AUDIT TEXT ===\n{context.audit_text[:2000]}\n"
+            f"=== ACCEPTANCE TEXT ===\n{context.acceptance_text[:2000]}\n"
+            f"=== CABINET ACCEPTANCE ===\n{context.cabinet_acceptance_text[:2000]}\n"
+            f"=== EVENT DRIVEN SUPERVISOR ACCEPTANCE ===\n{context.event_driven_acceptance_text[:2000]}\n"
+        )
+
+    def _call_provider_endpoint(self, prompt: str) -> str:
+        with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
+            if self.provider_name == "openai":
+                url = "https://api.openai.com/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "system", "content": "You are Fox3D Supervisor AI evaluator. Output JSON only."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "response_format": {"type": "json_object"},
+                }
+                resp = client.post(url, headers=headers, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"]
+
+            elif self.provider_name == "anthropic":
+                url = "https://api.anthropic.com/v1/messages"
+                headers = {
+                    "x-api-key": self.api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": prompt}],
+                }
+                resp = client.post(url, headers=headers, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["content"][0]["text"]
+
+            elif self.provider_name == "gemini":
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={self.api_key}"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                }
+                resp = client.post(url, headers=headers, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+
+            else:
+                raise ConfigValidationError(f"Unsupported provider {self.provider_name}")
+
+    def _extract_json(self, text: str) -> Dict[str, Any]:
+        text = text.strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+        return json.loads(text)
 
 
-class AnthropicSupervisorAdapter(SupervisorProviderAdapter):
-    """External provider adapter for Anthropic models with preflight safety filter."""
-
-    def __init__(self, config: Any) -> None:
-        self.config = config
-        self.preflight = SemanticEvidenceSupervisorAdapter(is_live=False)
-        if not getattr(config, "ai_api_key", ""):
-            raise ConfigValidationError("ANTHROPIC_API_KEY is required for anthropic provider.")
-
-    def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
-        pf = self.preflight.review_repository(context)
-        if pf.decision != ReviewDecision.ACCEPT_WITH_SCOPE:
-            return pf
-        return pf
+class OpenAISupervisorAdapter(ExternalProviderSupervisorAdapter):
+    def __init__(self, config: Any, transport: Optional[httpx.BaseTransport] = None) -> None:
+        super().__init__(config=config, provider_name="openai", transport=transport)
 
 
-class GeminiSupervisorAdapter(SupervisorProviderAdapter):
-    """External provider adapter for Google Gemini models with preflight safety filter."""
-
-    def __init__(self, config: Any) -> None:
-        self.config = config
-        self.preflight = SemanticEvidenceSupervisorAdapter(is_live=False)
-        if not getattr(config, "ai_api_key", ""):
-            raise ConfigValidationError("GEMINI_API_KEY is required for gemini provider.")
-
-    def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
-        pf = self.preflight.review_repository(context)
-        if pf.decision != ReviewDecision.ACCEPT_WITH_SCOPE:
-            return pf
-        return pf
+class AnthropicSupervisorAdapter(ExternalProviderSupervisorAdapter):
+    def __init__(self, config: Any, transport: Optional[httpx.BaseTransport] = None) -> None:
+        super().__init__(config=config, provider_name="anthropic", transport=transport)
 
 
-def create_supervisor_adapter(config: Any) -> SupervisorProviderAdapter:
+class GeminiSupervisorAdapter(ExternalProviderSupervisorAdapter):
+    def __init__(self, config: Any, transport: Optional[httpx.BaseTransport] = None) -> None:
+        super().__init__(config=config, provider_name="gemini", transport=transport)
+
+
+def create_supervisor_adapter(
+    config: Any,
+    transport: Optional[httpx.BaseTransport] = None,
+) -> SupervisorProviderAdapter:
     """Factory to instantiate configured supervisor adapter fail-closed."""
     provider = getattr(config, "ai_provider", "rule_based").lower()
     is_live = getattr(config, "mode", "test").lower() == "live"
 
     if provider == "openai":
-        return OpenAISupervisorAdapter(config)
+        return OpenAISupervisorAdapter(config, transport=transport)
     elif provider == "anthropic":
-        return AnthropicSupervisorAdapter(config)
+        return AnthropicSupervisorAdapter(config, transport=transport)
     elif provider == "gemini":
-        return GeminiSupervisorAdapter(config)
+        return GeminiSupervisorAdapter(config, transport=transport)
     elif provider == "semantic_evidence":
         return SemanticEvidenceSupervisorAdapter(is_live=is_live)
     elif provider == "rule_based":

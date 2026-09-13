@@ -49,28 +49,40 @@ def format_ready_contract(
     instruction_sha: str,
     code_sha: str,
     docs_sha: str,
-    ci_run_id: str,
-    test_count: int,
-    evidence_generation_id: str,
-    real_blender: bool,
-    used_mock: bool,
+    ci_run_id: str = "",
+    test_count: int = 0,
+    evidence_generation_id: str = "",
+    real_blender: bool = True,
+    used_mock: bool = False,
     repo: str = "netfox-web/blender-autonomous-3d",
     issue: int = 1,
+    code_ci_run_id: str = "",
+    docs_ci_run_id: str = "",
 ) -> str:
     """Format the official machine-readable contract block for Issue #1."""
-    return (
-        "READY_FOR_RE_GATE\n\n"
-        f"REPO={repo}\n"
-        f"ISSUE={issue}\n"
-        f"INSTRUCTION_SHA={instruction_sha}\n"
-        f"CODE_SHA={code_sha}\n"
-        f"DOCS_SHA={docs_sha}\n"
-        f"CI_RUN_ID={ci_run_id}\n"
-        f"TEST_COUNT={test_count}\n"
-        f"EVIDENCE_GENERATION_ID={evidence_generation_id}\n"
-        f"REAL_BLENDER={'true' if real_blender else 'false'}\n"
-        f"USED_MOCK={'true' if used_mock else 'false'}\n"
-    )
+    c_run = code_ci_run_id or ci_run_id
+    d_run = docs_ci_run_id
+    lines = [
+        "READY_FOR_RE_GATE\n",
+        f"REPO={repo}",
+        f"ISSUE={issue}",
+        f"INSTRUCTION_SHA={instruction_sha}",
+        f"CODE_SHA={code_sha}",
+        f"DOCS_SHA={docs_sha}",
+    ]
+    if c_run:
+        lines.append(f"CODE_CI_RUN_ID={c_run}")
+    if d_run:
+        lines.append(f"DOCS_CI_RUN_ID={d_run}")
+    if not c_run and ci_run_id:
+        lines.append(f"CI_RUN_ID={ci_run_id}")
+    lines.extend([
+        f"TEST_COUNT={test_count}",
+        f"EVIDENCE_GENERATION_ID={evidence_generation_id}",
+        f"REAL_BLENDER={'true' if real_blender else 'false'}",
+        f"USED_MOCK={'true' if used_mock else 'false'}",
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def check_for_claimable_instruction() -> Dict[str, Any]:

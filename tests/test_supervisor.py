@@ -7,11 +7,14 @@ import hmac
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from services.supervisor.ai_adapter import (
+    ExternalProviderSupervisorAdapter,
     MockSupervisorAdapter,
+    OpenAISupervisorAdapter,
     RuleBasedSupervisorAdapter,
     SemanticEvidenceSupervisorAdapter,
     create_supervisor_adapter,
@@ -41,6 +44,15 @@ class MockGitHubClient(GitHubClientInterface):
         self.ci_runs: Dict[str, Dict[str, Any]] = {
             "run_ok": {
                 "head_sha": "c0de111",
+                "status": "completed",
+                "conclusion": "success",
+                "jobs": [
+                    {"name": "unit (ubuntu-latest)", "conclusion": "success"},
+                    {"name": "unit (windows-latest)", "conclusion": "success"},
+                ],
+            },
+            "run_docs_ok": {
+                "head_sha": "d0c5111",
                 "status": "completed",
                 "conclusion": "success",
                 "jobs": [
@@ -192,7 +204,10 @@ def valid_contract_text(
     used_mock: bool = False,
     repo: str = "netfox-web/blender-autonomous-3d",
     issue: int = 1,
+    code_ci_run_id: Optional[str] = None,
+    docs_ci_run_id: str = "run_docs_ok",
 ) -> str:
+    actual_code_ci = ci_run_id if code_ci_run_id is None else code_ci_run_id
     return format_ready_contract(
         instruction_sha=instruction_sha,
         code_sha=code_sha,
@@ -204,6 +219,8 @@ def valid_contract_text(
         used_mock=used_mock,
         repo=repo,
         issue=issue,
+        code_ci_run_id=actual_code_ci,
+        docs_ci_run_id=docs_ci_run_id,
     )
 
 
@@ -1065,4 +1082,328 @@ def test_35_provider_factory_and_stale_lineage(tmp_path: Path):
     res_live = adapter_live.review_repository(context_valid)
     assert res_live.decision == ReviewDecision.CHANGES_REQUIRED
     assert any("cannot unilaterally issue ACCEPT_WITH_SCOPE" in b for b in res_live.blockers)
+
+
+# 36. Blocker A: OpenAI provider executes real HTTP request with mock transport and schema validation
+def test_36_openai_provider_real_http_request(tmp_path: Path):
+    requests_captured = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        requests_captured.append(request)
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": ["Real Blender OptiX execution evidence verified"],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "# Next Phase Instructions",
+            "issueCommentMarkdown": "## SUPERVISOR_REVIEW_COMPLETE\nDECISION=ACCEPT_WITH_SCOPE",
+        })
+        body = json.dumps({"choices": [{"message": {"content": content}}]})
+        return httpx.Response(200, content=body.encode("utf-8"))
+
+    transport = httpx.MockTransport(mock_handler)
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-real-key-12345")
+    adapter = create_supervisor_adapter(cfg, transport=transport)
+
+    c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert len(requests_captured) == 1
+    assert str(requests_captured[0].url) == "https://api.openai.com/v1/chat/completions"
+    assert "Bearer sk-real-key-12345" in requests_captured[0].headers["Authorization"]
+
+
+# 37. Blocker A: Anthropic and Gemini provider execution with mock transport
+def test_37_anthropic_and_gemini_provider_execution():
+    anthropic_reqs = []
+    def anthropic_handler(request: httpx.Request) -> httpx.Response:
+        anthropic_reqs.append(request)
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": ["Anthropic verified claims"],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "# Anthropic Next",
+            "issueCommentMarkdown": "## Anthropic Review Complete",
+        })
+        return httpx.Response(200, json={"content": [{"text": content}]})
+
+    cfg_anthropic = SupervisorConfig(ai_provider="anthropic", ai_api_key="sk-ant-test")
+    adapter_ant = create_supervisor_adapter(cfg_anthropic, transport=httpx.MockTransport(anthropic_handler))
+
+    c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res_ant = adapter_ant.review_repository(context)
+    assert res_ant.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert len(anthropic_reqs) == 1
+    assert "api.anthropic.com" in str(anthropic_reqs[0].url)
+    assert anthropic_reqs[0].headers["x-api-key"] == "sk-ant-test"
+
+    # Gemini
+    gemini_reqs = []
+    def gemini_handler(request: httpx.Request) -> httpx.Response:
+        gemini_reqs.append(request)
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": ["Gemini verified"],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "# Gemini Next",
+            "issueCommentMarkdown": "## Gemini Review Complete",
+        })
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": content}]}}]})
+
+    cfg_gemini = SupervisorConfig(ai_provider="gemini", ai_api_key="sk-gem-test")
+    adapter_gem = create_supervisor_adapter(cfg_gemini, transport=httpx.MockTransport(gemini_handler))
+    res_gem = adapter_gem.review_repository(context)
+    assert res_gem.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert len(gemini_reqs) == 1
+    assert "generativelanguage.googleapis.com" in str(gemini_reqs[0].url)
+
+
+# 38. Blocker A: Provider malformed JSON fails closed with CHANGES_REQUIRED
+def test_38_provider_malformed_json_fails_closed():
+    def bad_json_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"choices": [{"message": {"content": "Not JSON at all, error!"}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-bad")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(bad_json_handler))
+
+    c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("schema validation failed" in b for b in res.blockers)
+
+
+# 39. Blocker A: Provider mismatched reviewed SHA or evidence ID fails closed
+def test_39_provider_mismatched_sha_fails_closed():
+    def wrong_sha_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de999",  # Mismatched SHA!
+            "reviewedEvidenceGenerationId": "gen_wrong",  # Mismatched ID!
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": [], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-wrong")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(wrong_sha_handler))
+
+    c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("mismatched reviewedCodeSha" in b for b in res.blockers)
+
+
+# 40. Blocker A: Provider timeout or 500 fails closed without crashing
+def test_40_provider_500_or_timeout_fails_closed():
+    def error_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, content=b"Internal Server Error")
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-err")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(error_handler))
+
+    c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("Provider openai request failed" in b for b in res.blockers)
+
+
+# 41. Blocker A: Deterministic preflight rejection skips provider call
+def test_41_preflight_rejection_skips_provider():
+    called = []
+    def handler(request: httpx.Request) -> httpx.Response:
+        called.append(True)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-skip")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(handler))
+
+    # Contract claims both real_blender and used_mock -> Contradiction fails preflight!
+    c_text = valid_contract_text(code_sha="c0de111", real_blender=True, used_mock=True)
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    # Assert provider was never called!
+    assert len(called) == 0
+
+
+# 42. Blocker D: Provider cannot promote mock execution to REAL
+def test_42_provider_cannot_promote_mock_to_real():
+    def mock_promo_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            # Maliciously claiming REAL even though contract used_mock=True!
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-promo")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(mock_promo_handler))
+
+    c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001", real_blender=False, used_mock=True)
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nMock verified",
+        acceptance_text="# Acceptance\nMock rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("promoted mock execution" in b for b in res.blockers)
+
+
+# 43. Blocker C: Dual-CI contract validation rejects mismatched or incomplete CI runs
+def test_43_dual_ci_contract_validation(env_setup):
+    engine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    # Scenario 1: docs CI run passed into CODE_CI_RUN_ID -> reject
+    c1_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", code_ci_run_id="run_docs_ok", docs_ci_run_id="run_docs_ok")
+    contract1 = ReadyForReGateContract.parse_from_text(c1_text)
+    with pytest.raises(GitHubVerificationError, match="!=|head_sha|does not match"):
+        engine.handle_ready_contract(contract1)
+
+    # Scenario 2: code CI run passed into DOCS_CI_RUN_ID -> reject
+    c2_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", code_ci_run_id="run_ok", docs_ci_run_id="run_ok")
+    contract2 = ReadyForReGateContract.parse_from_text(c2_text)
+    with pytest.raises(GitHubVerificationError, match="!=|head_sha|does not match"):
+        engine.handle_ready_contract(contract2)
+
+    # Scenario 3: Live mode requires explicit DOCS_CI_RUN_ID
+    cfg_live = SupervisorConfig(mode="live", repo_root=env_setup["config"].repo_root)
+    engine_live = SupervisorEngine(
+        config=cfg_live,
+        state_mgr=env_setup["state_mgr"],
+        github_client=gh,
+        ai_adapter=env_setup["ai_adapter"],
+        policy_engine=env_setup["policy_engine"],
+    )
+    c3_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", code_ci_run_id="run_ok", docs_ci_run_id="")
+    contract3 = ReadyForReGateContract.parse_from_text(c3_text)
+    with pytest.raises(GitHubVerificationError, match="Live mode requires explicit DOCS_CI_RUN_ID"):
+        engine_live.handle_ready_contract(contract3)
+
+    # Scenario 4: Windows failure/missing in CI run -> reject
+    gh.ci_runs["run_code_no_win"] = {
+        "head_sha": "c0de111",
+        "status": "completed",
+        "conclusion": "failure",
+        "jobs": [
+            {"name": "unit (ubuntu-latest)", "conclusion": "success"},
+            {"name": "unit (windows-latest)", "conclusion": "failure"},
+        ],
+    }
+    c4_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", code_ci_run_id="run_code_no_win", docs_ci_run_id="run_docs_ok")
+    contract4 = ReadyForReGateContract.parse_from_text(c4_text)
+    with pytest.raises(GitHubVerificationError, match="conclusion is failure|failure|does not succeed"):
+        engine.handle_ready_contract(contract4)
+
+
+# 44. Blocker B: Pinned stale progress report vs current exact progress report
+def test_44_stale_vs_exact_progress_report():
+    adapter = SemanticEvidenceSupervisorAdapter()
+
+    # Case A: Stale report referencing old CODE 4406119 and instruction 59ad337
+    stale_text = "# Progress Report\nSource instruction: 59ad337\nCODE: 4406119\nTests passed: 628"
+    contract = ReadyForReGateContract.parse_from_text(valid_contract_text(code_sha="d77cfe7", instruction_sha="8b0b788"))
+    context_stale = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=stale_text,
+        audit_text="# Audit\nOptiX ok",
+        acceptance_text="# Acceptance\nRender ok",
+    )
+    res_stale = adapter.review_repository(context_stale)
+    assert res_stale.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("Progress report lineage mismatch" in b for b in res_stale.blockers)
+
+    # Case B: Current exact report referencing exact d77cfe7 and 8b0b788
+    exact_text = f"# Progress Report\nINSTRUCTION: {contract.instruction_sha}\nCODE: {contract.code_sha}\nTests: 733"
+    context_exact = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=exact_text,
+        audit_text="# Audit\nOptiX ok",
+        acceptance_text="# Acceptance\nRender ok",
+    )
+    res_exact = adapter.review_repository(context_exact)
+    assert res_exact.decision == ReviewDecision.ACCEPT_WITH_SCOPE
 

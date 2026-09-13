@@ -30,7 +30,9 @@ class ReadyForReGateContract(BaseModel):
     instruction_sha: str
     code_sha: str
     docs_sha: str
-    ci_run_id: str
+    ci_run_id: str = ""
+    code_ci_run_id: str = ""
+    docs_ci_run_id: str = ""
     test_count: int
     evidence_generation_id: str
     real_blender: bool
@@ -54,13 +56,20 @@ class ReadyForReGateContract(BaseModel):
             "INSTRUCTION_SHA",
             "CODE_SHA",
             "DOCS_SHA",
-            "CI_RUN_ID",
             "TEST_COUNT",
             "EVIDENCE_GENERATION_ID",
             "REAL_BLENDER",
             "USED_MOCK",
         ]
         if not all(k in data for k in required_keys):
+            return None
+
+        code_ci_run_id = data.get("CODE_CI_RUN_ID", "")
+        docs_ci_run_id = data.get("DOCS_CI_RUN_ID", "")
+        legacy_ci = data.get("CI_RUN_ID", "")
+        if not code_ci_run_id and legacy_ci:
+            code_ci_run_id = legacy_ci
+        if not code_ci_run_id and not legacy_ci:
             return None
 
         try:
@@ -70,7 +79,9 @@ class ReadyForReGateContract(BaseModel):
                 instruction_sha=data["INSTRUCTION_SHA"],
                 code_sha=data["CODE_SHA"],
                 docs_sha=data["DOCS_SHA"],
-                ci_run_id=data["CI_RUN_ID"],
+                ci_run_id=legacy_ci or code_ci_run_id,
+                code_ci_run_id=code_ci_run_id,
+                docs_ci_run_id=docs_ci_run_id,
                 test_count=int(data["TEST_COUNT"]),
                 evidence_generation_id=data["EVIDENCE_GENERATION_ID"],
                 real_blender=data["REAL_BLENDER"].lower() in ("true", "1", "yes"),
@@ -80,19 +91,46 @@ class ReadyForReGateContract(BaseModel):
             return None
 
     def to_contract_block(self) -> str:
-        return (
-            "READY_FOR_RE_GATE\n\n"
-            f"REPO={self.repo}\n"
-            f"ISSUE={self.issue}\n"
-            f"INSTRUCTION_SHA={self.instruction_sha}\n"
-            f"CODE_SHA={self.code_sha}\n"
-            f"DOCS_SHA={self.docs_sha}\n"
-            f"CI_RUN_ID={self.ci_run_id}\n"
-            f"TEST_COUNT={self.test_count}\n"
-            f"EVIDENCE_GENERATION_ID={self.evidence_generation_id}\n"
-            f"REAL_BLENDER={'true' if self.real_blender else 'false'}\n"
-            f"USED_MOCK={'true' if self.used_mock else 'false'}\n"
-        )
+        lines = [
+            "READY_FOR_RE_GATE\n",
+            f"REPO={self.repo}",
+            f"ISSUE={self.issue}",
+            f"INSTRUCTION_SHA={self.instruction_sha}",
+            f"CODE_SHA={self.code_sha}",
+            f"DOCS_SHA={self.docs_sha}",
+        ]
+        if self.code_ci_run_id:
+            lines.append(f"CODE_CI_RUN_ID={self.code_ci_run_id}")
+        if self.docs_ci_run_id:
+            lines.append(f"DOCS_CI_RUN_ID={self.docs_ci_run_id}")
+        if self.ci_run_id and not self.code_ci_run_id:
+            lines.append(f"CI_RUN_ID={self.ci_run_id}")
+        lines.extend([
+            f"TEST_COUNT={self.test_count}",
+            f"EVIDENCE_GENERATION_ID={self.evidence_generation_id}",
+            f"REAL_BLENDER={'true' if self.real_blender else 'false'}",
+            f"USED_MOCK={'true' if self.used_mock else 'false'}",
+        ])
+        return "\n".join(lines) + "\n"
+
+
+class TruthMatrixSchema(BaseModel):
+    REAL: List[str] = Field(default_factory=list)
+    MOCK: List[str] = Field(default_factory=list)
+    PARTIAL: List[str] = Field(default_factory=list)
+    BLOCKED: List[str] = Field(default_factory=list)
+
+
+class ProviderReviewResponseSchema(BaseModel):
+    decision: ReviewDecision
+    reviewedCodeSha: str
+    reviewedEvidenceGenerationId: str
+    acceptedClaims: List[str] = Field(default_factory=list)
+    rejectedClaims: List[str] = Field(default_factory=list)
+    truthMatrix: TruthMatrixSchema = Field(default_factory=TruthMatrixSchema)
+    blockers: List[str] = Field(default_factory=list)
+    nextInstructionMarkdown: str = ""
+    issueCommentMarkdown: str = ""
 
 
 class ReviewContext(BaseModel):
@@ -105,6 +143,7 @@ class ReviewContext(BaseModel):
     cabinet_acceptance_text: str = ""
     event_driven_acceptance_text: str = ""
     ci_summary: Dict[str, Any] = Field(default_factory=dict)
+    code_ci_summary: Dict[str, Any] = Field(default_factory=dict)
     docs_ci_summary: Dict[str, Any] = Field(default_factory=dict)
     instruction_text: str = ""
     raw_issue_comment: str = ""
