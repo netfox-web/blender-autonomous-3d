@@ -1232,6 +1232,68 @@ def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height
     return None
 
 
+def _set_door_articulation(created: dict, engineering: dict, angle_deg: float) -> list[dict]:
+    import math
+    transforms = []
+    angle_rad = -math.radians(angle_deg)
+    width = float(engineering.get("width") or 800) / 1000.0
+    height = float(engineering.get("height") or 1800) / 1000.0
+    depth = float(engineering.get("depth") or 400) / 1000.0
+    thick = float(engineering.get("thickness") or 18) / 1000.0
+    parts = engineering.get("components") or []
+    door_cursor = 0.0
+    counts = 0
+    for part in parts:
+        if str(part.get("role") or "") != "door":
+            continue
+        counts += 1
+        name = str(part.get("partName") or f"door_{counts}")
+        door_w = float(part.get("width") or 0) / 1000.0
+        door_h = float(part.get("length") or 0) / 1000.0 or height
+        x = -width / 2 + door_cursor + door_w / 2
+        door_cursor += door_w
+        hinge_x = x - door_w / 2
+        hinge_y = -depth / 2 - thick / 2
+        hinge_z = door_h / 2
+
+        obj = created.get(name) or created.get(name.upper()) or created.get(name.lower())
+        handle = created.get(f"{name}.HANDLE") or created.get(f"{name.upper()}.HANDLE") or created.get(f"{name.lower()}.HANDLE")
+
+        if angle_deg == 0.0:
+            if obj:
+                obj.location = (x, hinge_y, hinge_z)
+                obj.rotation_euler = (0, 0, 0)
+            if handle:
+                handle.location = (x, hinge_y - 0.02, hinge_z)
+                handle.rotation_euler = (0, 0, 0)
+        else:
+            dx = door_w / 2
+            dy = 0.0
+            new_x = hinge_x + dx * math.cos(angle_rad) - dy * math.sin(angle_rad)
+            new_y = hinge_y + dx * math.sin(angle_rad) + dy * math.cos(angle_rad)
+            if obj:
+                obj.location = (new_x, new_y, hinge_z)
+                obj.rotation_euler = (0, 0, angle_rad)
+            if handle:
+                h_dx = door_w / 2
+                h_dy = -0.02
+                new_hx = hinge_x + h_dx * math.cos(angle_rad) - h_dy * math.sin(angle_rad)
+                new_hy = hinge_y + h_dx * math.sin(angle_rad) + h_dy * math.cos(angle_rad)
+                handle.location = (new_hx, new_hy, hinge_z)
+                handle.rotation_euler = (0, 0, angle_rad)
+
+        transforms.append(
+            {
+                "componentId": name,
+                "productState": "OPEN" if angle_deg > 0 else "CLOSED",
+                "articulationAngleDeg": float(angle_deg),
+                "rotationEuler": [0.0, 0.0, round(angle_rad, 6)],
+                "hingePivot": [round(hinge_x, 4), round(hinge_y, 4), round(hinge_z, 4)],
+            }
+        )
+    return transforms
+
+
 def _render_named_still(job: dict, *, filename: str, location, look_at, lens: float, width: int, height: int, samples: int) -> str | None:
     import bpy
 
@@ -1493,6 +1555,12 @@ def build_and_render(job: dict) -> dict:
             height=height,
             safe_margin=safe_m,
         )
+        prod_state = str(view.get("productState") or "CLOSED").upper()
+        angle = float(view.get("articulationAngleDeg") or (75.0 if prod_state == "OPEN" else 0.0))
+        transforms = []
+        if job.get("engineering") and prod_state == "OPEN":
+            transforms = _set_door_articulation(created, job["engineering"], angle)
+
         rendered = _render_named_still(
             job,
             filename=name,
@@ -1503,6 +1571,10 @@ def build_and_render(job: dict) -> dict:
             height=height,
             samples=samples,
         )
+
+        if job.get("engineering") and prod_state == "OPEN":
+            _set_door_articulation(created, job["engineering"], 0.0)
+
         if rendered:
             outputs[name] = rendered
             r_path = Path(rendered)
@@ -1526,6 +1598,12 @@ def build_and_render(job: dict) -> dict:
                 "usedMock": False,
                 "realBlender": True,
                 "realOptix": used_device == "OPTIX",
+                "productState": prod_state,
+                "articulatedState": {
+                    "productState": prod_state,
+                    "articulationAngleDeg": angle,
+                    "transforms": transforms,
+                },
             }
     if job.get("assemblyAnimation") or mode == "ASSEMBLY_ANIM":
         frames_n = int((job.get("animation") or {}).get("frames") or 8)
