@@ -1104,10 +1104,13 @@ def build_commerce_asset_pack(
             }
 
     # 2. Generate DIMENSION_FRONT derived strictly from FRONT_CLOSED + Engineering mm
-    front_closed_path = Path(views_output["FRONT_CLOSED"]["path"])
+    fc_view = views_output["FRONT_CLOSED"]
+    front_closed_path = Path(fc_view["path"])
     dim_png_bytes, dim_meta = generate_dimension_overlay(front_closed_path, engineering, width, height)
     dim_file = work_dir / "dimension_front.png"
     dim_file.write_bytes(dim_png_bytes)
+    dim_b_version = str(fc_view.get("workerEvidence", {}).get("blenderVersion") or fc_view.get("blenderVersion") or ("MOCK" if mock else "5.2.1"))
+    dim_b_device = str(fc_view.get("workerEvidence", {}).get("device") or fc_view.get("device") or ("MOCK" if mock else "OPTIX"))
     dim_dam_obj = plat.dam.put(
         tenant_id=tenant_id,
         kind="commerce_asset",
@@ -1121,11 +1124,14 @@ def build_commerce_asset_pack(
             "sourceAcceptanceGenerationId": source_acc_gen_id,
             "contentPackId": pack_id,
             "sourcePath": str(dim_file.resolve()),
-            "sourceJobId": str(views_output["FRONT_CLOSED"]["blenderJobId"]),
+            "sourceJobId": str(fc_view["blenderJobId"]),
             "tenantId": tenant_id,
             "skuId": sku_id,
             "productVersion": version,
             "mime": "image/png",
+            "blenderVersion": dim_b_version,
+            "device": dim_b_device,
+            "usedMock": mock,
             **dim_meta,
         },
     )
@@ -1135,9 +1141,12 @@ def build_commerce_asset_pack(
         "commerceRole": "COMMERCE_DIMENSION",
         "damRef": dim_dam_obj.asset_id,
         "path": str(dim_file.resolve()),
-        "blenderJobId": views_output["FRONT_CLOSED"]["blenderJobId"],
+        "blenderJobId": fc_view["blenderJobId"],
         "recipe": recipes["DIMENSION_FRONT"],
         "articulatedState": build_articulated_state(engineering, state="CLOSED", angle_deg=0.0),
+        "workerEvidence": dict(fc_view.get("workerEvidence") or {}),
+        "blenderVersion": dim_b_version,
+        "device": dim_b_device,
         "dimensionMetadata": dim_meta,
         "sha256": sha256_bytes(dim_png_bytes),
         "size": len(dim_png_bytes),
