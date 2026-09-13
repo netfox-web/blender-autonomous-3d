@@ -2,13 +2,13 @@
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
 **Date**: 2026-09-13  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`)  
-**Phase 1 CODE Commit**: `872da2030ce7d67557b613e24aac0cc8266fcd28`  
-**CODE Actions Run ID**: `34755874821` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
-- `unit (ubuntu-latest)`: `103720037645` — SUCCESS in 15m22s  
-- `unit (windows-latest)`: `103720037559` — SUCCESS in 20m32s  
-**Test Suite**: `tests/test_supervisor.py` (19 passed, 100% green)  
-**Full Regression Suite**: 717 passed (100% green)  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 1 Blocker Corrections  
+**Phase 1 CODE Commit**: `5c7568d4d9746dc2b1e49504ef3ab88915da6f6c`  
+**CODE Actions Run ID**: `34760915984` — **Ubuntu + Windows DUAL-PLATFORM**  
+- `unit (ubuntu-latest)`: `103733478803`  
+- `unit (windows-latest)`: `103733478898`  
+**Test Suite**: `tests/test_supervisor.py` (29 passed, 100% green)  
+**Full Regression Suite**: 727 passed (100% green)  
 
 ---
 
@@ -19,11 +19,46 @@
 > - **`eventDrivenSupervisorReady=false`**
 > - **`webhookRealE2e=false`**
 > - Production readiness is **HELD** until verified by a live end-to-end GitHub Webhook delivery triggering live Re-Gate execution. Mock and local integration tests do not constitute production readiness.
-> - Truth boundaries remain: `liveFactoryExecutionReady=false`, `fullAutonomousFactoryReady=false`, `commercialAssetProductionReady=false`.
+> - Prior Phase 901–960 Product Content Round 2 blockers remain open; Phase 961+ remains **HOLD**.
+> - Truth boundaries remain: `liveFactoryExecutionReady=false`, `fullAutonomousFactoryReady=false`, `commercialAssetProductionReady=false`, `physicalPrintValidated=false`, `liveMachineControl=false`.
 
 ---
 
-## 2. Mandatory Verification Matrix (19 Scenarios)
+## 2. Re-Gate Round 1 Blockers Resolution Summary
+
+### Blocker A — Trusted-Sender Authorization & Boundary Validation
+- **Repo Match**: Webhook payload explicitly verifies `payload.repository.full_name == "netfox-web/blender-autonomous-3d"`. Mismatches return `IGNORED_WRONG_REPOSITORY`.
+- **Action Filter**: Webhook enforces `action == "created"`. Other comment events (`edited`, `deleted`) return `IGNORED_UNSUPPORTED_ACTION`.
+- **Sender Authorization**: `authorize_sender()` checks author association against `OWNER`, `MEMBER`, `COLLABORATOR` and explicit `SUPERVISOR_ALLOWED_SENDERS`. Unauthorized commenters fail closed with HTTP 403 Forbidden.
+- **Negative Tests**: Added tests 20, 21, and 22 covering outsider comment rejection, wrong repo payload rejection, and edited/deleted action filtering.
+
+### Blocker B — Durable Delivery Lifecycle & Crash Recovery
+- **5-State Lifecycle**: Replaced boolean seen-flag with durable `delivery_lifecycle` table supporting `RECEIVED`, `PROCESSING`, `COMPLETED`, `FAILED_RETRYABLE`, and `FAILED_TERMINAL`.
+- **Idempotency & Retry**: `COMPLETED` and `FAILED_TERMINAL` deduplicate safely; `FAILED_RETRYABLE` and stale `PROCESSING` (>10m) resume execution safely.
+- **Crash Window Protection**: `reviews.staged_commit_sha` records the instruction commit SHA immediately after push succeeds. If a crash occurs before the Issue #1 comment is posted, the retry reuses the staged commit without generating a duplicate instruction commit.
+- **Subprocess & Crash Tests**: Verified in tests 23 and 24.
+
+### Blocker C — Strict Fail-Closed GitHub Write Path
+- **Push Failure Not Swallowed**: In live mode, `GitHubClient.commit_instruction_file()` treats push failure as an immediate `GitHubVerificationError` and never falls back to returning an unpushed commit SHA.
+- **Pre-Flight Tree & Base Check**: Live mode verifies a clean working tree (`git status --porcelain`) and fetches `origin/main` before committing.
+- **Path Restrictions**: Only allows `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` and `docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md`.
+- **Remote Verification**: Verifies `origin/main` contains the exact new commit SHA before proceeding.
+- **Tests**: Verified in tests 25 and 26.
+
+### Blocker D — Real Semantic Reviewer (`SemanticEvidenceSupervisorAdapter`)
+- **Independent Evidence Audit**: Evaluates actual `git diff`, `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, and `docs/REAL_E2E_ACCEPTANCE.md`.
+- **Adversarial Resistance**: Contract claims of `real_blender=true` are reconciled against diffs and acceptance text. If diffs introduce mock fallbacks or acceptance files indicate mock execution, the reviewer rejects with `CHANGES_REQUIRED`.
+- **Fail-Closed Policy**: Structured reviewer output passes policy guardrails before any writes occur.
+- **Adversarial Test**: Verified in test 27.
+
+### Blocker E — Live Configuration Fail-Closed & Admin Authentication
+- **Fail-Closed Startup**: `SUPERVISOR_MODE=live` requires a strong non-default `GITHUB_WEBHOOK_SECRET`, `GITHUB_TOKEN`, configured authorized senders, and a real AI provider (`semantic_evidence`, `openai`, `anthropic`, `gemini`). Refuses startup if any prerequisite is default or missing.
+- **Endpoint Protection**: `/supervisor/status` and `/supervisor/reviews*` endpoints require admin authentication (`Authorization: Bearer <key>` or `X-Supervisor-Admin-Key`) in live mode.
+- **Tests**: Verified in tests 28 and 29.
+
+---
+
+## 3. Comprehensive Verification Matrix (29 Scenarios)
 
 | # | Test Scenario | Verified Behavior | Verdict |
 |---|---|---|---|
@@ -46,18 +81,28 @@
 | 17 | **Crash before GitHub write retries** | Failures prior to git commit leave the contract eligible for clean retry upon recovery. | ✅ PASS |
 | 18 | **Crash after GitHub write no duplicate** | If review completes and git commit was pushed, subsequent duplicate invocations are recognized and do not create duplicate commits. | ✅ PASS |
 | 19 | **Antigravity watcher auto-claim & no duplicate** | Watcher claims new instruction SHA upon detecting `SUPERVISOR_REVIEW_COMPLETE`, and enforces loop protection (never executes same SHA twice). | ✅ PASS |
+| 20 | **Blocker A: Outsider commenter rejected (403)** | Comment from public non-collaborator without allowlist permission returns HTTP 403 Forbidden. | ✅ PASS |
+| 21 | **Blocker A: Wrong repo payload ignored** | Webhook payload for wrong repository is ignored without executing contract. | ✅ PASS |
+| 22 | **Blocker A: Edited/deleted comment ignored** | Comment edits and deletions return `IGNORED_UNSUPPORTED_ACTION`. | ✅ PASS |
+| 23 | **Blocker B: Delivery lifecycle & retryable failure** | Delivery transitions through `RECEIVED` -> `PROCESSING` -> `COMPLETED`, with safe resume from `FAILED_RETRYABLE`. | ✅ PASS |
+| 24 | **Blocker B: Push-success/comment-failure recovery** | Re-executing after crash during comment posting reuses staged commit SHA and does not create duplicate commit. | ✅ PASS |
+| 25 | **Blocker C: Live mode push failure fail-closed** | In live mode, git push failure raises `GitHubVerificationError` and is never swallowed. | ✅ PASS |
+| 26 | **Blocker C: Unauthorized instruction path rejected** | Refuses commits targeting paths outside authorized instruction file paths. | ✅ PASS |
+| 27 | **Blocker D: Semantic evidence adversarial rejection** | Rejects contracts claiming REAL when diffs force mock or acceptance evidence indicates mock execution. | ✅ PASS |
+| 28 | **Blocker E: Live config fails closed** | Live mode refuses startup if webhook secret is default, token is missing, or provider is non-real. | ✅ PASS |
+| 29 | **Blocker E: Admin auth protects observability** | In live mode, requests to `/supervisor/status` and `/supervisor/reviews` without admin key return HTTP 401 Unauthorized. | ✅ PASS |
 
 ---
 
-## 3. Test Execution Summary
+## 4. Test Execution Summary
 
 ```
 pytest -v tests/test_supervisor.py
-======================== 19 passed, 1 warning in 2.28s ========================
+======================== 29 passed, 1 warning in 2.70s ========================
 
 pytest -q
-======================== 717 passed in 65.4s ==================================
+======================== 727 passed in 71.2s ==================================
 ```
-- Supervisor control-plane test cases: 19 (100% pass)
-- Total repository regression suite: 717 (100% pass, 0 failures)
+- Supervisor control-plane test cases: 29 (100% pass)
+- Total repository regression suite: 727 (100% pass, 0 failures)
 - Execution environment: Windows 11, Python 3.12.10, pytest 8.4.1.
