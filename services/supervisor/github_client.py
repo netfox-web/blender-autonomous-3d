@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,29 @@ import httpx
 
 from services.supervisor.config import SupervisorConfig
 from services.supervisor.models import ChangedFileItem
+
+logger = logging.getLogger("supervisor.github_client")
+
+
+def _parse_link_header(link_header: str) -> Dict[str, str]:
+    links: Dict[str, str] = {}
+    if not link_header:
+        return links
+    for part in link_header.split(","):
+        part = part.strip()
+        if ";" in part:
+            url_part, rel_part = part.split(";", 1)
+            url = url_part.strip("<> ")
+            rel = ""
+            for param in rel_part.split(";"):
+                param = param.strip()
+                if param.startswith('rel="') and param.endswith('"'):
+                    rel = param[5:-1]
+                elif param.startswith("rel="):
+                    rel = param[4:]
+            if rel and url:
+                links[rel] = url
+    return links
 
 
 class GitHubVerificationError(Exception):
@@ -195,25 +219,74 @@ class GitHubClient(GitHubClientInterface):
         return base64.b64decode(data.get("content", "")).decode("utf-8")
 
     def get_commits_since(self, base_sha: str, head_sha: str = "main") -> List[Dict[str, Any]]:
+        # Fast path: try local git log with Record Separator (\x1e) and Unit Separator (\x1f)
+        # %H = commit hash, %an = author name, %B = raw body (subject, body, trailers)
         try:
             res = subprocess.run(
-                ["git", "log", f"{base_sha}..{head_sha}", "--pretty=format:%H|%an|%s"],
+                ["git", "log", f"{base_sha}..{head_sha}", "--pretty=format:%x1e%H%x1f%an%x1f%B"],
                 cwd=str(self.config.repo_root),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
             )
-            if res.returncode == 0 and res.stdout.strip():
+            if res.returncode == 0:
                 commits = []
-                for line in res.stdout.splitlines():
-                    if "|" in line:
-                        parts = line.split("|", 2)
-                        commits.append({"sha": parts[0], "author": parts[1], "message": parts[2]})
+                for record in res.stdout.split("\x1e"):
+                    record = record.strip()
+                    if not record:
+                        continue
+                    parts = record.split("\x1f", 2)
+                    if len(parts) >= 3:
+                        commits.append({
+                            "sha": parts[0].strip(),
+                            "author": parts[1].strip(),
+                            "message": parts[2].strip(),
+                        })
+                    elif len(parts) == 1 and parts[0]:
+                        commits.append({"sha": parts[0].strip(), "author": "", "message": ""})
                 return commits
-        except Exception:
-            pass
-        return []
+            else:
+                logger.warning(
+                    "git log %s..%s exited with code %s: %s",
+                    base_sha, head_sha, res.returncode, res.stderr.strip(),
+                )
+        except Exception as e:
+            logger.warning("Local git log failed for %s..%s: %s", base_sha, head_sha, e)
+
+        # Fallback to GitHub API compare
+        try:
+            url = f"{self.base_url}/repos/{self.config.repo_name}/compare/{base_sha}...{head_sha}"
+            resp = httpx.get(url, headers=self.headers, timeout=15.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                api_commits = []
+                for c in data.get("commits", []):
+                    c_sha = c.get("sha", "")
+                    commit_obj = c.get("commit", {})
+                    author_name = (
+                        commit_obj.get("author", {}).get("name", "")
+                        if isinstance(commit_obj, dict)
+                        else ""
+                    )
+                    msg = (
+                        commit_obj.get("message", "")
+                        if isinstance(commit_obj, dict)
+                        else ""
+                    )
+                    api_commits.append({"sha": c_sha, "author": author_name, "message": msg})
+                return api_commits
+            else:
+                logger.warning(
+                    "GitHub compare API failed with status %s: %s",
+                    resp.status_code, resp.text[:200],
+                )
+        except Exception as e:
+            logger.warning("GitHub compare API fallback failed: %s", e)
+
+        raise GitHubVerificationError(
+            f"Failed to enumerate commits between {base_sha} and {head_sha}: local git and remote API both failed."
+        )
 
     def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
         try:
@@ -496,7 +569,28 @@ class GitHubClient(GitHubClientInterface):
         except Exception:
             pass
 
-        url = f"{self.base_url}/repos/{self.config.repo_name}/issues/{issue_number}/comments?per_page={count}"
-        resp = httpx.get(url, headers=self.headers, timeout=15.0)
-        resp.raise_for_status()
-        return resp.json()
+        # Robust REST fallback with pagination support to fetch the actual latest page of comments
+        try:
+            url = f"{self.base_url}/repos/{self.config.repo_name}/issues/{issue_number}/comments?per_page=100"
+            resp = httpx.get(url, headers=self.headers, timeout=15.0)
+            resp.raise_for_status()
+            link_header = resp.headers.get("link", "")
+            links = _parse_link_header(link_header)
+
+            if "last" in links:
+                last_url = links["last"]
+                last_resp = httpx.get(last_url, headers=self.headers, timeout=15.0)
+                last_resp.raise_for_status()
+                comments = last_resp.json()
+
+                if len(comments) < count and "prev" in _parse_link_header(last_resp.headers.get("link", "")):
+                    prev_url = _parse_link_header(last_resp.headers.get("link", ""))["prev"]
+                    prev_resp = httpx.get(prev_url, headers=self.headers, timeout=15.0)
+                    prev_resp.raise_for_status()
+                    comments = prev_resp.json() + comments
+            else:
+                comments = resp.json()
+
+            return comments[-count:]
+        except Exception as e:
+            raise GitHubVerificationError(f"Failed to fetch issue comments for issue #{issue_number}: {e}")

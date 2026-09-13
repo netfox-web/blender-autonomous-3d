@@ -7,6 +7,7 @@ import hmac
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import subprocess
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -119,6 +120,10 @@ class MockGitHubClient(GitHubClientInterface):
         return self.files.get(path, "")
 
     def get_commits_since(self, base_sha: str, head_sha: str = "main") -> List[Dict[str, Any]]:
+        if hasattr(self, "commits_since_error") and self.commits_since_error:
+            if getattr(self, "recovery_only_error", False) and not str(head_sha).startswith("origin/"):
+                return self.commits_log
+            raise GitHubVerificationError(self.commits_since_error)
         return self.commits_log
 
     def get_diff_between(self, base_sha: str, head_sha: str = "main") -> str:
@@ -156,6 +161,8 @@ class MockGitHubClient(GitHubClientInterface):
         return comment_id
 
     def get_latest_issue_comments(self, issue_number: int, count: int = 10) -> List[Dict[str, Any]]:
+        if hasattr(self, "comments_error") and self.comments_error:
+            raise GitHubVerificationError(self.comments_error)
         return self.posted_comments[-count:]
 
 
@@ -2721,4 +2728,222 @@ def test_64_provider_request_id_and_review_audit_trail():
     assert out_no_id.audit_trail["provider_request_id"] is None
 
 
+# 65. Blocker A: Real GitHubClient.get_commits_since() integration test with trailers & formatting
+def test_65_real_github_client_commits_since_trailers(tmp_path: Path):
+    repo_dir = tmp_path / "test_repo"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init"], cwd=str(repo_dir), check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test Agent"], cwd=str(repo_dir), check=True)
+    subprocess.run(["git", "config", "user.email", "agent@test.local"], cwd=str(repo_dir), check=True)
 
+    # Initial commit (base)
+    f1 = repo_dir / "README.md"
+    f1.write_text("# Initial", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=str(repo_dir), check=True)
+    subprocess.run(["git", "commit", "-m", "initial commit"], cwd=str(repo_dir), check=True, capture_output=True)
+    base_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True).stdout.strip()
+
+    # Create instruction file and commit with full 6 trailers, pipes, and newlines in body
+    instr_file = repo_dir / "docs" / "GROK_NEXT_PHASE_INSTRUCTIONS.md"
+    instr_file.parent.mkdir(parents=True)
+    full_content = (
+        "# Phase 901 Instructions\n\n"
+        "<!-- SUPERVISOR_COMMIT_IDENTITY:\n"
+        "CODE_SHA=c0de111\n"
+        "DOCS_SHA=d0c5111\n"
+        "INSTRUCTION_SHA=instr_000\n"
+        "EVIDENCE_GENERATION_ID=gen_001\n"
+        "DECISION=ACCEPT_WITH_SCOPE\n"
+        "REVIEW_ID=rev_real_client_001\n"
+        "-->\n"
+    )
+    instr_file.write_text(full_content, encoding="utf-8")
+    subprocess.run(["git", "add", "docs/GROK_NEXT_PHASE_INSTRUCTIONS.md"], cwd=str(repo_dir), check=True)
+
+    body_with_pipes = (
+        "supervisor: accept c0de111 and start next-phase\n\n"
+        "This commit message has pipes | and multiple\nlines of body context | table | data.\n\n"
+        "Reviewed-Code-Sha: c0de111\n"
+        "Reviewed-Docs-Sha: d0c5111\n"
+        "Reviewed-Instruction-Sha: instr_000\n"
+        "Reviewed-Evidence-Id: gen_001\n"
+        "Supervisor-Decision: ACCEPT_WITH_SCOPE\n"
+        "Supervisor-Review-Id: rev_real_client_001\n"
+    )
+    subprocess.run(["git", "commit", "-m", body_with_pipes], cwd=str(repo_dir), check=True, capture_output=True)
+    head_sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), capture_output=True, text=True).stdout.strip()
+
+    # Use real GitHubClient with repo_root pointed to temp repo
+    cfg = SupervisorConfig(repo_name="netfox-web/blender-autonomous-3d", repo_root=repo_dir)
+    client = GitHubClient(cfg)
+
+    commits = client.get_commits_since(base_sha, head_sha)
+    assert len(commits) == 1
+    commit_item = commits[0]
+    assert commit_item["sha"] == head_sha
+    msg = commit_item["message"]
+
+    # Verify full message contains pipes, newlines, and all 6 trailers
+    assert "pipes | and multiple" in msg
+    assert "Reviewed-Code-Sha: c0de111" in msg
+    assert "Reviewed-Docs-Sha: d0c5111" in msg
+    assert "Reviewed-Instruction-Sha: instr_000" in msg
+    assert "Reviewed-Evidence-Id: gen_001" in msg
+    assert "Supervisor-Decision: ACCEPT_WITH_SCOPE" in msg
+    assert "Supervisor-Review-Id: rev_real_client_001" in msg
+
+    # Verify engine._verify_instruction_candidate can verify it using this client
+    state_mgr = StateManager(tmp_path / "test_state.db")
+    policy_engine = PolicyEngine(tmp_path / "audit.jsonl")
+    engine = SupervisorEngine(
+        config=cfg,
+        github_client=client,
+        state_mgr=state_mgr,
+        ai_adapter=MockSupervisorAdapter(),
+        policy_engine=policy_engine,
+    )
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    )
+    intended_digest = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
+
+    assert engine._verify_instruction_candidate(
+        candidate_sha=head_sha,
+        commit_msg=msg,
+        contract=contract,
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        review_id="rev_real_client_001",
+        intended_digest=intended_digest,
+    )
+
+
+# 66. Blocker B: Candidate discovery failure fails closed and prevents duplicate instruction commit
+def test_66_candidate_discovery_failure_fails_closed(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+    state_mgr: StateManager = env_setup["state_mgr"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_disc_fail_01",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E OK\nOptiX Cycles verified"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+
+    # 1. Staged SHA exists in DB, but remote commit discovery fails (e.g. network/git error)
+    review_id = "rev_staged_disc_fail"
+    state_mgr.start_review(review_id, contract.code_sha, contract.evidence_generation_id)
+    state_mgr.set_review_staged_commit(review_id, "staged_candidate_sha_99")
+
+    gh.recovery_only_error = True
+    gh.commits_since_error = "Network timeout querying origin/main"
+    with pytest.raises(GitHubVerificationError) as excinfo:
+        engine._execute_review(review_id, contract)
+    assert "remote commit discovery failed" in str(excinfo.value).lower()
+    # Refuses to create a new instruction commit!
+    assert len(gh.committed_instructions) == 0
+
+    # 2. No staged commit, but remote candidate discovery fails
+    contract2 = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_disc_fail_02",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    with pytest.raises(GitHubVerificationError) as excinfo2:
+        engine._execute_review("rev_unstaged_disc_fail", contract2)
+    assert "remote commit discovery failed" in str(excinfo2.value).lower()
+    # Still 0 commits created!
+    assert len(gh.committed_instructions) == 0
+
+    if hasattr(gh, "commits_since_error"):
+        delattr(gh, "commits_since_error")
+    if hasattr(gh, "recovery_only_error"):
+        delattr(gh, "recovery_only_error")
+
+
+# 67. Blocker C: Window B2 REST fallback pagination fetches latest comments without duplicate
+def test_67_window_b2_rest_fallback_pagination(tmp_path: Path):
+    cfg = SupervisorConfig(
+        repo_name="netfox-web/blender-autonomous-3d",
+        repo_root=tmp_path,
+        allowed_issue_number=1,
+    )
+
+    marker = "<!-- REVIEW_MARKER: CODE_SHA=c0de111 EVIDENCE_ID=gen_b2_page REVIEW_ID=rev_b2_page -->"
+
+    page1_comments = [{"id": f"c_{i}", "body": f"Old comment {i}"} for i in range(1, 101)]
+    page3_comments = [
+        {"id": "c_201", "body": "Comment 201"},
+        {"id": "c_202", "body": f"## SUPERVISOR_REVIEW_COMPLETE\n\n{marker}\nDECISION=ACCEPT_WITH_SCOPE"},
+        {"id": "c_203", "body": "Comment 203"},
+    ]
+
+    client = GitHubClient(cfg)
+
+    def transport_handler(request: httpx.Request) -> httpx.Response:
+        url_str = str(request.url)
+        if "page=3" in url_str:
+            return httpx.Response(200, request=request, json=page3_comments, headers={
+                "link": f'<{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=2>; rel="prev", <{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=3>; rel="last"'
+            })
+        elif "page=2" in url_str:
+            return httpx.Response(200, request=request, json=[{"id": f"c_{i}", "body": f"Mid {i}"} for i in range(101, 201)])
+        else:
+            return httpx.Response(200, request=request, json=page1_comments, headers={
+                "link": f'<{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=2>; rel="next", <{client.base_url}/repos/{cfg.repo_name}/issues/1/comments?per_page=100&page=3>; rel="last"'
+            })
+
+    transport = httpx.MockTransport(transport_handler)
+
+    orig_run = subprocess.run
+    def mock_run(cmd, *args, **kwargs):
+        if cmd[0] == "gh":
+            return subprocess.CompletedProcess(cmd, returncode=1, stdout="", stderr="gh unavailable")
+        return orig_run(cmd, *args, **kwargs)
+
+    import unittest.mock as mock
+    with mock.patch("subprocess.run", side_effect=mock_run):
+        with mock.patch("httpx.get", side_effect=lambda url, **kw: transport.handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
+            comments = client.get_latest_issue_comments(1, count=10)
+            assert len(comments) == 10
+            assert comments[-2]["id"] == "c_202"
+            assert marker in comments[-2]["body"]
+
+
+# 68. Blocker C: Issue comments fetch failure fails closed without duplicate comment
+def test_68_issue_comments_failure_fails_closed(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(
+            code_sha="c0de111",
+            docs_sha="d0c5111",
+            instruction_sha="instr_000",
+            evidence_id="gen_comm_err",
+            code_ci_run_id="run_ok",
+            docs_ci_run_id="run_docs_ok",
+        )
+    )
+    gh.files["docs/REAL_E2E_ACCEPTANCE.md"] = "# Real E2E OK\nOptiX Cycles verified"
+    gh.files["docs/GROK_PROGRESS_REPORT.md"] = f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628"
+
+    gh.comments_error = "GitHub API comments rate limited or 500 error"
+
+    with pytest.raises(GitHubVerificationError) as excinfo:
+        engine._execute_review("rev_comment_fail", contract)
+    assert "rate limited or 500 error" in str(excinfo.value)
+    assert len(gh.posted_comments) == 0
+
+    delattr(gh, "comments_error")

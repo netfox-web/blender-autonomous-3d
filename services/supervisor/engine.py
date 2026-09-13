@@ -557,12 +557,15 @@ class SupervisorEngine:
                     remote_commits = self.github_client.get_commits_since(
                         contract.instruction_sha, f"origin/{self.config.allowed_branch}"
                     )
-                    for c in remote_commits:
-                        if c.get("sha") == staged_sha:
-                            staged_msg = c.get("message") or (c.get("commit", {}).get("message") if isinstance(c.get("commit"), dict) else "") or ""
-                            break
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Failed to enumerate remote commits while staged commit %s exists: %s", staged_sha, e)
+                    raise GitHubVerificationError(
+                        f"Staged commit {staged_sha} exists but remote commit discovery failed: {e}. Refusing to create duplicate instruction commit."
+                    )
+                for c in remote_commits:
+                    if c.get("sha") == staged_sha:
+                        staged_msg = c.get("message") or (c.get("commit", {}).get("message") if isinstance(c.get("commit"), dict) else "") or ""
+                        break
                 if staged_msg and self._verify_instruction_candidate(
                     candidate_sha=staged_sha,
                     commit_msg=staged_msg,
@@ -577,9 +580,15 @@ class SupervisorEngine:
                     logger.warning("DB staged_sha %s failed exact verification; refusing to adopt.", staged_sha)
 
             if not staged_adopted:
-                remote_commits = self.github_client.get_commits_since(
-                    contract.instruction_sha, f"origin/{self.config.allowed_branch}"
-                )
+                try:
+                    remote_commits = self.github_client.get_commits_since(
+                        contract.instruction_sha, f"origin/{self.config.allowed_branch}"
+                    )
+                except Exception as e:
+                    logger.error("Remote commit discovery failed during Window B1 recovery: %s", e)
+                    raise GitHubVerificationError(
+                        f"Remote commit discovery failed during Window B1 recovery: {e}. Refusing to create duplicate instruction commit."
+                    )
                 matching_candidates: List[str] = []
                 for c in remote_commits:
                     msg = c.get("message") or (c.get("commit", {}).get("message") if isinstance(c.get("commit"), dict) else "") or ""
