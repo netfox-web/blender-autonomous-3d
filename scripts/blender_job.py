@@ -231,7 +231,7 @@ def _add_box(name: str, size, location, material: str | None = None):
     bpy.ops.mesh.primitive_cube_add(size=1, location=location)
     obj = bpy.context.active_object
     obj.name = name
-    obj.scale = (size[0], size[1], size[2])
+    obj.scale = (size[0] / 2.0, size[1] / 2.0, size[2] / 2.0)
     bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
     if material:
         obj.data.materials.append(_bsdf(material, material + "." + name))
@@ -916,9 +916,15 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
     view.use_pass_normal = True
     view.use_pass_object_index = True
     view.use_pass_material_index = True
+    saved_hide = {}
     for i, obj in enumerate(bpy.data.objects):
         if obj.type == "MESH":
-            obj.pass_index = i + 1
+            if obj.name in {"Ground", "Plane", "Floor"}:
+                saved_hide[obj.name] = obj.hide_render
+                obj.hide_render = True
+                obj.pass_index = 0
+            else:
+                obj.pass_index = i + 1
     scene.cycles.samples = 1
     scene.render.resolution_x = width
     scene.render.resolution_y = height
@@ -1074,6 +1080,9 @@ def _render_aov_pngs(job: dict, *, width: int, height: int) -> dict:
         tree.links.new(rl.outputs["Image"], out_node.inputs[0])
     except Exception:
         pass
+    for name, hidden in saved_hide.items():
+        if name in bpy.data.objects:
+            bpy.data.objects[name].hide_render = hidden
     scene.render.film_transparent = saved_film
     return found
 
