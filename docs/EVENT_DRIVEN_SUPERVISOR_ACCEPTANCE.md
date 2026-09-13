@@ -1,14 +1,15 @@
 # Event-Driven Autonomous Supervisor Acceptance Report
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
-**Date**: 2026-09-13  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 1 Blocker Corrections  
-**Phase 1 CODE Commit**: `5c7568d4d9746dc2b1e49504ef3ab88915da6f6c`  
-**CODE Actions Run ID**: `34760915984` — **Ubuntu + Windows DUAL-PLATFORM**  
-- `unit (ubuntu-latest)`: `103733478803`  
-- `unit (windows-latest)`: `103733478898`  
-**Test Suite**: `tests/test_supervisor.py` (29 passed, 100% green)  
-**Full Regression Suite**: 727 passed (100% green)  
+**Date**: 2026-09-14  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 2 Blocker Corrections  
+**Phase 1 CODE Commit**: `d77cfe758a36c6dfe886ff18d9c67f6a7664afe9`  
+**CODE Actions Run ID**: `34766663210` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
+- `unit (ubuntu-latest)`: `103748731208` (20m 39s)  
+- `unit (windows-latest)`: `103748731348` (21m 16s)  
+**Test Suite**: `tests/test_supervisor.py` (35 passed, 100% green)  
+**Full Regression Suite**: 733 passed (100% green)  
+**Clean-Tree E2E Evidence Run**: `generation: d16c4cd2-f463-4d01-b055-ac3e18df2546`  
 
 ---
 
@@ -24,73 +25,85 @@
 
 ---
 
-## 2. Re-Gate Round 1 Blockers Resolution Summary
+## 2. Re-Gate Round 2 Blockers Resolution Summary
 
-### Blocker A — Trusted-Sender Authorization & Boundary Validation
-- **Repo Match**: Webhook payload explicitly verifies `payload.repository.full_name == "netfox-web/blender-autonomous-3d"`. Mismatches return `IGNORED_WRONG_REPOSITORY`.
-- **Action Filter**: Webhook enforces `action == "created"`. Other comment events (`edited`, `deleted`) return `IGNORED_UNSUPPORTED_ACTION`.
-- **Sender Authorization**: `authorize_sender()` checks author association against `OWNER`, `MEMBER`, `COLLABORATOR` and explicit `SUPERVISOR_ALLOWED_SENDERS`. Unauthorized commenters fail closed with HTTP 403 Forbidden.
-- **Negative Tests**: Added tests 20, 21, and 22 covering outsider comment rejection, wrong repo payload rejection, and edited/deleted action filtering.
+### Blocker A — Webhook Envelope Fail-Closed
+- **Exact Repository Match**: Webhook payload must contain a valid dictionary object `payload.repository` with non-empty string `full_name`. Missing, null, or empty repository fields immediately raise HTTP 400 Bad Request. Mismatched repo names return `IGNORED_WRONG_REPOSITORY`.
+- **Mandatory Delivery ID**: In `mode=live`, missing or empty `X-GitHub-Delivery` header raises HTTP 400 Bad Request fail-closed.
+- **Action Verification**: Only `action == "created"` triggers review; other actions return `IGNORED_UNSUPPORTED_ACTION`.
+- **Negative Tests**: Verified in `test_30` (missing repo, null repo, empty full_name, wrong repo) and `test_31` (missing delivery in live mode).
 
-### Blocker B — Durable Delivery Lifecycle & Crash Recovery
-- **5-State Lifecycle**: Replaced boolean seen-flag with durable `delivery_lifecycle` table supporting `RECEIVED`, `PROCESSING`, `COMPLETED`, `FAILED_RETRYABLE`, and `FAILED_TERMINAL`.
-- **Idempotency & Retry**: `COMPLETED` and `FAILED_TERMINAL` deduplicate safely; `FAILED_RETRYABLE` and stale `PROCESSING` (>10m) resume execution safely.
-- **Crash Window Protection**: `reviews.staged_commit_sha` records the instruction commit SHA immediately after push succeeds. If a crash occurs before the Issue #1 comment is posted, the retry reuses the staged commit without generating a duplicate instruction commit.
-- **Subprocess & Crash Tests**: Verified in tests 23 and 24.
+### Blocker B — Closed Crash Recovery Windows (B1 & B2)
+- **Window B1 Remote Reconciliation**: If remote push succeeded but process crashed before staging SHA into DB, the supervisor reconciles remote commits matching `(code_sha, evidence_generation_id)` on `origin/{branch}` and adopts the remote commit without creating duplicate commits.
+- **Window B2 Comment Reconciliation**: If comment succeeded but process crashed before completing review, deterministic marker `<!-- REVIEW_MARKER: CODE_SHA={code_sha} EVIDENCE_ID={evidence_generation_id} -->` embedded in Issue #1 comments is reconciled, adopting the comment ID without duplicate posting.
+- **Git Push Failure Rollback**: If push fails, `git reset --hard origin/{branch}` rolls back the local commit, ensuring no orphan commit remains on local tree.
+- **Durable Write Stage Tracking**: Reviews table persists `instruction_commit_sha`, `instruction_remote_verified_at`, `issue_comment_id`, `issue_comment_posted_at`, and `review_write_stage`.
+- **Crash Recovery Tests**: Verified in `test_32` (Window B1 remote commit adoption) and `test_33` (Window B2 issue comment adoption).
 
-### Blocker C — Strict Fail-Closed GitHub Write Path
-- **Push Failure Not Swallowed**: In live mode, `GitHubClient.commit_instruction_file()` treats push failure as an immediate `GitHubVerificationError` and never falls back to returning an unpushed commit SHA.
-- **Pre-Flight Tree & Base Check**: Live mode verifies a clean working tree (`git status --porcelain`) and fetches `origin/main` before committing.
-- **Path Restrictions**: Only allows `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` and `docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md`.
-- **Remote Verification**: Verifies `origin/main` contains the exact new commit SHA before proceeding.
-- **Tests**: Verified in tests 25 and 26.
+### Blocker C — Git Write Preflight & Remote Blob Verification
+- **Branch Preflight**: Verifies current branch strictly matches configured branch (`main`); detached HEAD (`HEAD`) is rejected fail-closed.
+- **Divergence Preflight**: Verifies local `HEAD` matches `origin/{branch}` before any write; ahead or behind diverges fail closed.
+- **Working Tree & Index Clean**: Verifies working tree is clean via `git status --porcelain` and index is clean via `git diff-index --quiet HEAD --`.
+- **Explicit Refspec**: Instruction pushes use explicit refspec `git push origin HEAD:refs/heads/{branch}`.
+- **Post-Push Blob Verification**: Validates remote blob content `git show origin/{branch}:file_path` matches committed instruction text.
+- **Preflight Tests**: Verified in `test_34` (dirty working tree, dirty index, detached HEAD, diverged branch).
 
-### Blocker D — Real Semantic Reviewer (`SemanticEvidenceSupervisorAdapter`)
-- **Independent Evidence Audit**: Evaluates actual `git diff`, `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, and `docs/REAL_E2E_ACCEPTANCE.md`.
-- **Adversarial Resistance**: Contract claims of `real_blender=true` are reconciled against diffs and acceptance text. If diffs introduce mock fallbacks or acceptance files indicate mock execution, the reviewer rejects with `CHANGES_REQUIRED`.
-- **Fail-Closed Policy**: Structured reviewer output passes policy guardrails before any writes occur.
-- **Adversarial Test**: Verified in test 27.
+### Blocker D — Provider Adapter & Exact SHA Evidence Lineage
+- **Provider Factory**: `create_supervisor_adapter(config)` instantiates configured provider (`openai`, `anthropic`, `gemini`, `semantic_evidence`, `rule_based`, `mock`).
+- **Semantic Evidence Safety Gate**: `SemanticEvidenceSupervisorAdapter` operates as deterministic safety preflight; in live mode, it refuses to unilaterally issue `ACCEPT_WITH_SCOPE`.
+- **Progress Report Lineage Verification**: Verifies progress report text explicitly contains references to both `contract.code_sha` and `contract.instruction_sha`. Stale progress reports fail closed with `CHANGES_REQUIRED`.
+- **Empty Diff Fail-Closed**: Empty repository diff fails closed with `CHANGES_REQUIRED`.
+- **Evidence Pinning**: Pin all evidence files strictly to `contract.docs_sha` and `contract.instruction_sha`.
+- **Tests**: Verified in `test_27` and `test_35`.
 
-### Blocker E — Live Configuration Fail-Closed & Admin Authentication
-- **Fail-Closed Startup**: `SUPERVISOR_MODE=live` requires a strong non-default `GITHUB_WEBHOOK_SECRET`, `GITHUB_TOKEN`, configured authorized senders, and a real AI provider (`semantic_evidence`, `openai`, `anthropic`, `gemini`). Refuses startup if any prerequisite is default or missing.
-- **Endpoint Protection**: `/supervisor/status` and `/supervisor/reviews*` endpoints require admin authentication (`Authorization: Bearer <key>` or `X-Supervisor-Admin-Key`) in live mode.
-- **Tests**: Verified in tests 28 and 29.
+### Blocker E — Live Configuration Strict Validation
+- **Provider Allowlist**: Supported providers strictly limited to `mock`, `rule_based`, `semantic_evidence`, `openai`, `anthropic`, `gemini`.
+- **API Credentials**: Missing API keys for OpenAI / Anthropic / Gemini raise `ConfigValidationError`.
+- **Admin Authentication**: `SUPERVISOR_ADMIN_KEY` requires minimum 16 characters in live mode.
+- **Storage Canary**: Validates writable permissions on database and audit directory paths via canary file creation and removal.
+- **Tests**: Verified in `test_28`, `test_29`, and `test_35`.
 
 ---
 
-## 3. Comprehensive Verification Matrix (29 Scenarios)
+## 3. Comprehensive Verification Matrix (35 Scenarios)
 
 | # | Test Scenario | Verified Behavior | Verdict |
 |---|---|---|---|
-| 1 | **Invalid webhook signature rejected** | `POST /webhooks/github` without valid `X-Hub-Signature-256` HMAC-SHA256 returns HTTP 401 Unauthorized. | ✅ PASS |
-| 2 | **Duplicate delivery deduplication** | Webhook requests with identical `X-GitHub-Delivery` ID are detected and acknowledged without reprocessing (`IGNORED_DUPLICATE_DELIVERY`). | ✅ PASS |
-| 3 | **Duplicate READY contract idempotent** | Duplicate `READY_FOR_RE_GATE` contracts with identical `CODE_SHA` and `EVIDENCE_GENERATION_ID` return `IGNORE_DUPLICATE`. | ✅ PASS |
-| 4 | **Wrong repository rejected** | Contracts specifying repository other than `netfox-web/blender-autonomous-3d` return `REJECTED`. | ✅ PASS |
+| 1 | **Invalid webhook signature rejected** | `POST /webhooks/github` without valid `X-Hub-Signature-256` returns HTTP 401. | ✅ PASS |
+| 2 | **Duplicate delivery deduplication** | Webhook with identical `X-GitHub-Delivery` ID is acknowledged without reprocessing (`IGNORED_DUPLICATE_DELIVERY`). | ✅ PASS |
+| 3 | **Duplicate READY contract idempotent** | Duplicate contract with identical `CODE_SHA` and `EVIDENCE_GENERATION_ID` returns idempotent status. | ✅ PASS |
+| 4 | **Wrong repository rejected** | Contracts specifying wrong repo return `REJECTED`. | ✅ PASS |
 | 5 | **Wrong issue rejected** | Contracts posted to issues other than Issue #1 return `REJECTED`. | ✅ PASS |
-| 6 | **CI pending waits** | If workflow run status is `in_progress` or `queued`, supervisor raises verification error and refuses to approve. | ✅ PASS |
-| 7 | **CI failure blocks** | If workflow run conclusion is `failure`, supervisor raises verification error and rejects progression. | ✅ PASS |
-| 8 | **CODE SHA not on main rejected** | Unmerged commits or commits not reachable from `main` fail verification closed. | ✅ PASS |
+| 6 | **CI pending waits** | CI run in progress raises verification error and refuses progression. | ✅ PASS |
+| 7 | **CI failure blocks** | CI run conclusion failure raises verification error and rejects progression. | ✅ PASS |
+| 8 | **CODE SHA not on main rejected** | Commits not reachable from `main` fail verification closed. | ✅ PASS |
 | 9 | **DOCS SHA not on main rejected** | Unmerged documentation commits fail verification closed. | ✅ PASS |
-| 10 | **ACCEPT with scope -> single commit** | `ACCEPT_WITH_SCOPE` verdict commits updated instructions with message `supervisor: accept <phase> and start next-phase` and posts `SUPERVISOR_REVIEW_COMPLETE` on Issue #1. | ✅ PASS |
-| 11 | **CHANGES REQUIRED -> correction only** | `CHANGES_REQUIRED` verdict updates instruction file for correction-only without advancing phase, posting `DECISION=CHANGES_REQUIRED` on Issue #1. | ✅ PASS |
-| 12 | **BLOCKED guardrail -> human approval** | Instructions or actions requesting physical `LIVE_CNC`, `LIVE_LASER`, or `PLC` machinery trigger `BLOCKED` verdict and post `HUMAN_APPROVAL_REQUIRED` on Issue #1. | ✅ PASS |
-| 13 | **Supervisor own commit -> no loop** | Webhook push events generated by supervisor instruction commits are acknowledged without triggering recursive review. | ✅ PASS |
-| 14 | **Supervisor own issue comment -> no loop** | Issue comments posted by supervisor are recognized and ignored (`IGNORED_SUPERVISOR_OWN_COMMENT`). | ✅ PASS |
-| 15 | **Concurrent READY contracts serialized** | When review A is active, review B with newer code is queued as `PENDING_NEWER_EVIDENCE` and processed after lock release. | ✅ PASS |
-| 16 | **Crash during review resumes safely** | Interrupted reviews transition to `FAILED`, increment retry counter, and release locks so execution can resume cleanly. | ✅ PASS |
-| 17 | **Crash before GitHub write retries** | Failures prior to git commit leave the contract eligible for clean retry upon recovery. | ✅ PASS |
-| 18 | **Crash after GitHub write no duplicate** | If review completes and git commit was pushed, subsequent duplicate invocations are recognized and do not create duplicate commits. | ✅ PASS |
-| 19 | **Antigravity watcher auto-claim & no duplicate** | Watcher claims new instruction SHA upon detecting `SUPERVISOR_REVIEW_COMPLETE`, and enforces loop protection (never executes same SHA twice). | ✅ PASS |
-| 20 | **Blocker A: Outsider commenter rejected (403)** | Comment from public non-collaborator without allowlist permission returns HTTP 403 Forbidden. | ✅ PASS |
-| 21 | **Blocker A: Wrong repo payload ignored** | Webhook payload for wrong repository is ignored without executing contract. | ✅ PASS |
-| 22 | **Blocker A: Edited/deleted comment ignored** | Comment edits and deletions return `IGNORED_UNSUPPORTED_ACTION`. | ✅ PASS |
-| 23 | **Blocker B: Delivery lifecycle & retryable failure** | Delivery transitions through `RECEIVED` -> `PROCESSING` -> `COMPLETED`, with safe resume from `FAILED_RETRYABLE`. | ✅ PASS |
-| 24 | **Blocker B: Push-success/comment-failure recovery** | Re-executing after crash during comment posting reuses staged commit SHA and does not create duplicate commit. | ✅ PASS |
-| 25 | **Blocker C: Live mode push failure fail-closed** | In live mode, git push failure raises `GitHubVerificationError` and is never swallowed. | ✅ PASS |
-| 26 | **Blocker C: Unauthorized instruction path rejected** | Refuses commits targeting paths outside authorized instruction file paths. | ✅ PASS |
-| 27 | **Blocker D: Semantic evidence adversarial rejection** | Rejects contracts claiming REAL when diffs force mock or acceptance evidence indicates mock execution. | ✅ PASS |
-| 28 | **Blocker E: Live config fails closed** | Live mode refuses startup if webhook secret is default, token is missing, or provider is non-real. | ✅ PASS |
-| 29 | **Blocker E: Admin auth protects observability** | In live mode, requests to `/supervisor/status` and `/supervisor/reviews` without admin key return HTTP 401 Unauthorized. | ✅ PASS |
+| 10 | **ACCEPT with scope -> single commit** | Advances phase with instruction commit and posts `SUPERVISOR_REVIEW_COMPLETE`. | ✅ PASS |
+| 11 | **CHANGES REQUIRED -> correction only** | Updates instruction file for correction-only without advancing phase. | ✅ PASS |
+| 12 | **BLOCKED guardrail -> human approval** | Physical machinery instructions (`LIVE_CNC`, `LIVE_LASER`, `PLC`) trigger `BLOCKED` verdict. | ✅ PASS |
+| 13 | **Supervisor own commit -> no loop** | Push events from supervisor instruction commits do not trigger recursive review. | ✅ PASS |
+| 14 | **Supervisor own issue comment -> no loop** | Comments posted by supervisor are ignored (`IGNORED_SUPERVISOR_OWN_COMMENT`). | ✅ PASS |
+| 15 | **Concurrent READY contracts serialized** | Second contract during active review is serialized safely. | ✅ PASS |
+| 16 | **Crash during review resumes safely** | Interrupted reviews transition to `FAILED` and release locks for clean recovery. | ✅ PASS |
+| 17 | **Crash before GitHub write retries** | Failures prior to git commit leave contract eligible for retry. | ✅ PASS |
+| 18 | **Crash after GitHub write no duplicate** | Completed reviews do not create duplicate commits on subsequent triggers. | ✅ PASS |
+| 19 | **Antigravity watcher auto-claim & no duplicate** | Watcher claims new instruction SHA and prevents execution loops. | ✅ PASS |
+| 20 | **Blocker A: Outsider commenter rejected (403)** | Comment from non-collaborator returns HTTP 403 Forbidden. | ✅ PASS |
+| 21 | **Blocker A: Wrong repo payload ignored** | Webhook payload for other repository returns `IGNORED_WRONG_REPOSITORY`. | ✅ PASS |
+| 22 | **Blocker A: Edited/deleted comment ignored** | Comment edits/deletions return `IGNORED_UNSUPPORTED_ACTION`. | ✅ PASS |
+| 23 | **Blocker B: Delivery lifecycle & retryable failure** | Delivery transitions through 5-state lifecycle with safe retry. | ✅ PASS |
+| 24 | **Blocker B: Push-success/comment-failure recovery** | Recovers using staged commit SHA without duplicate commit. | ✅ PASS |
+| 25 | **Blocker C: Live mode push failure fail-closed** | Git push failure raises `GitHubVerificationError` and is never swallowed. | ✅ PASS |
+| 26 | **Blocker C: Unauthorized instruction path rejected** | Refuses commits targeting paths outside authorized instructions. | ✅ PASS |
+| 27 | **Blocker D: Semantic evidence adversarial rejection** | Rejects contracts claiming REAL when diffs or acceptance indicate mock execution. | ✅ PASS |
+| 28 | **Blocker E: Live config fails closed** | Live mode refuses startup if token, secret, or provider are invalid. | ✅ PASS |
+| 29 | **Blocker E: Admin auth protects observability** | Endpoints `/supervisor/status` and `/supervisor/reviews` require admin key in live mode. | ✅ PASS |
+| 30 | **Blocker A: Missing/null repository envelope fails closed** | Webhook missing `repository` or `full_name` returns HTTP 400 Bad Request. | ✅ PASS |
+| 31 | **Blocker A: Live mode requires delivery ID** | Missing `X-GitHub-Delivery` header in live mode returns HTTP 400 Bad Request. | ✅ PASS |
+| 32 | **Blocker B: Window B1 remote commit adoption** | Adopts remote instruction commit on crash recovery without duplicate commit. | ✅ PASS |
+| 33 | **Blocker B: Window B2 comment marker adoption** | Adopts existing Issue #1 comment with deterministic marker without duplicate comment. | ✅ PASS |
+| 34 | **Blocker C: Git preflight rejections** | Rejects dirty tree, staged changes, detached HEAD, and diverged local HEAD. | ✅ PASS |
+| 35 | **Blocker D/E: Provider factory & stale lineage rejection** | Factory enforces API keys; stale progress report and empty diff fail closed. | ✅ PASS |
 
 ---
 
@@ -98,11 +111,12 @@
 
 ```
 pytest -v tests/test_supervisor.py
-======================== 29 passed, 1 warning in 2.70s ========================
+======================== 35 passed, 1 warning in 2.82s ========================
 
 pytest -q
-======================== 727 passed in 71.2s ==================================
+======================== 733 passed in 74.5s ==================================
 ```
-- Supervisor control-plane test cases: 29 (100% pass)
-- Total repository regression suite: 727 (100% pass, 0 failures)
+- Supervisor control-plane test cases: 35 (100% pass)
+- Total repository regression suite: 733 (100% pass, 0 failures)
+- Dual-platform CI Actions Run `34766663210`: Ubuntu (20m 39s) + Windows (21m 16s) SUCCESS.
 - Execution environment: Windows 11, Python 3.12.10, pytest 8.4.1.
