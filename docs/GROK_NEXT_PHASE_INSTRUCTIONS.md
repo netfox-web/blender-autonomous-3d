@@ -1,156 +1,130 @@
-# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 7 — CHANGES REQUIRED
+# Development Agent 修正指令：Event-Driven Supervisor Re-Gate Round 8 — CHANGES REQUIRED
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Reviewed instruction: `5d9dd9b3b765206ef1fd959ba6f899f5e4ccebbd`
-> Reviewed CODE: `2bc44acdd985b5d29ac3a1a3a40fa63d21fc244f`
-> Reviewed DOCS/head: `85bbf9b6a141f2727852726a850d622284da13c5`
-> CODE Actions: `34783581901` — Ubuntu + Windows SUCCESS
-> DOCS Actions at review time: `34784713920` — **IN_PROGRESS**，不可當 exact DOCS green evidence
-> Reported regression: **762 passed**; Supervisor-specific: **64 passed**
-> REAL Blender generation reported: `50a84d04-85c2-429d-8c12-641006ac95f1`
-> Re-Gate result: **CHANGES REQUIRED (Round 7)**
+> Reviewed prior instruction: `14ccc914f248881bfb810ba8485d46046b401580`
+> Reviewed CODE/head before this instruction commit: `d4445058a80c774fdd68d0041ff3e2bf5632a3b8`
+> CODE Actions run: `34786792942` — review time: Windows SUCCESS, Ubuntu still IN_PROGRESS
+> Re-Gate result: **CHANGES REQUIRED (Round 8)**
 > `webhookRealE2e=false`; `eventDrivenSupervisorReady=false`; `liveProviderReady=false` 必須維持。
 > **Phase 961+ remains HOLD.**
 
 ## 0. 本輪已接受的實質進展 — 保留，不要重寫
 
-Round 6 的大部分修正可保留為 **REAL_LOGIC / TESTED**：
+`d4445058...` 確實修正了 Round 7 的大部分 live-client 問題，可保留為 **REAL_LOGIC / TESTED-PARTIAL**：
 
-- provider schema 與 4 reviewed identities 綁定保留。
-- `docs/REAL_E2E_ACCEPTANCE.md` 已與 Product Truth auxiliary acceptance 分離；REAL Blender claim 不得 fallback。
-- CODE diff / DOCS diff 已拆成不同 range，changed-file manifest 已加入 independent authority 比對。
-- strict `DOCS_CI_RUN_ID` parser boundary 與 provider request ID audit 已加入。
-- intended instruction SHA256、6 trailers、6 identity markers、review-id continuity 的設計方向正確。
-- CODE `2bc44ac...` Actions `34783581901` 已確認 Ubuntu + Windows SUCCESS。
-- `762 passed` / `64 Supervisor tests` 可作軟體 regression 證據；CI 仍使用 `FOX3D_MOCK_BLENDER=1`，不得描述為 REAL Blender / Production Ready。
-- REAL Blender generation `50a84d04-...` 可保留為 scoped Product Truth render evidence；它不是 live Supervisor webhook/provider E2E。
-- readiness truth boundary 正確：`webhookRealE2e=false`、`eventDrivenSupervisorReady=false`、`liveProviderReady=false`。
+- `get_commits_since()` local git path 已改用 `%B`，完整保留 commit body / 6 trailers，不再只取 `%s` subject。
+- local discovery failure 不再 silent `[]`；local + remote 都失敗時會 raise `GitHubVerificationError`，engine 也不再把 discovery failure 當成 0 candidate。
+- Window B1 staged / unstaged recovery path 已加入 fail-closed exception handling。
+- Issue comments REST fallback 已處理 `Link rel="last"`，可抓最後頁並 fail closed；不再固定只讀第一頁。
+- 新增真實 temp-git `GitHubClient` trailer integration test，以及 comment pagination / failure tests。
+- 不得把上述測試描述成 live GitHub webhook / live provider Production Ready。
 
-不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth，也不要重做 Supervisor 架構。只修下列 live-client / crash-recovery correctness 問題。
+不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth，也不要重做 Supervisor 架構。只修以下剩餘 correctness / evidence blocker。
 
 ---
 
-## 1. Blocker A — 真實 `GitHubClient.get_commits_since()` 會丟掉 commit trailers，Window B1 recovery 在 live client 實際上無法成立
+## 1. Blocker A — GitHub API fallback 使用 `origin/main`，實際 GitHub compare endpoint 會 404
 
-目前 `services/supervisor/github_client.py` 的 local-git fast path 使用：
+目前 engine 的 recovery 呼叫：
 
-```text
-git log <base>..<head> --pretty=format:%H|%an|%s
+```python
+get_commits_since(contract.instruction_sha, f"origin/{self.config.allowed_branch}")
 ```
 
-`%s` 只回 commit **subject**，不包含 body / trailers。
+而 `GitHubClient.get_commits_since()` local git 失敗時直接組：
 
-但 `SupervisorEngine._verify_instruction_candidate()` 要求從 `commit_msg` 解析：
+```python
+/repos/{repo}/compare/{base_sha}...{head_sha}
+```
 
-- `Reviewed-Code-Sha`
-- `Reviewed-Docs-Sha`
-- `Reviewed-Instruction-Sha`
-- `Reviewed-Evidence-Id`
-- `Supervisor-Decision`
-- `Supervisor-Review-Id`
+因此 fallback URL 會變成：
 
-因此在真實 `GitHubClient` local path 下，remote/staged candidate 即使 commit 本身有完整 6 trailers，`get_commits_since()` 回給 engine 的 message 仍只有 subject，candidate 會被錯誤 reject。這代表目前文件宣稱的「Window B1 exact recovery」尚未在真實 client path 成立；mock `FakeGitHubClient` 直接給完整 message 的測試不能證明這一點。
+```text
+compare/<base>...origin/main
+```
+
+這不是 GitHub repository branch ref。外部 Re-Gate 已用 repo 的 compare API 驗證：`head=origin/main` 回 **404 Not Found**。
+
+所以 Round 7 要求的這條仍未成立：
+
+> local git unavailable，但 GitHub API discovery 成功且找到 exact candidate → adopt exactly once
 
 ### Required correction
 
-1. `get_commits_since()` 必須回傳 **完整 commit message body**，不能只取 `%s`。
-2. 建議使用不會被 commit message 中 `|` / newline 破壞的 framing，例如 NUL / record separator：
-   - `%H%x00%an%x00%B%x00...`
-   - 或逐 commit `git show -s --format=%B <sha>`。
-3. 回傳的 `message` 必須包含 trailers 原文，供 `_verify_instruction_candidate()` exact parse。
-4. 不得用 subject 補猜 trailers，也不得重新從 short SHA 推導。
-5. GitHub API fallback 若使用 commits endpoint，也必須取 `commit.message` 完整內容。
+1. `get_commits_since()` 必須區分 local git ref 與 GitHub API ref。
+2. local path 可以使用 `origin/main`；remote API fallback 必須 normalize 成 GitHub 可解析的 ref，例如 `main`，或明確傳入 `remote_head_ref`。
+3. 禁止用字串猜測造成任意 ref 改寫；至少只允許安全地把前綴 `origin/` 正規化成 branch name，其他 ref 保留 exact SHA/tag/branch。
+4. GitHub compare 404 / 409 / 5xx / timeout 仍必須 fail closed，不得回空列表。
+5. API fallback 回傳的 `commit.message` 必須完整保留 6 trailers。
 
-### Required tests
+### Required tests — 必須補，不可只測 Fake client
 
-新增 **real `GitHubClient` integration test**，不要只測 Fake client：
+新增真實 `GitHubClient` + mocked HTTP transport / subprocess failure integration cases：
 
-- temp git repo 建立一個 instruction commit，subject + 6 trailers 位於 body。
-- `get_commits_since()` 回傳的 message 必須包含完整 6 trailers。
-- engine 用真實 client path 可 adopt exact candidate exactly once。
-- 缺任一 trailer仍 fail closed。
-- commit message body 含 newline / `|` 不得破壞 parser/framing。
+- local `git log` 明確失敗，輸入 `head_sha="origin/main"`；驗證 remote API request 使用 `...main`，不能是 `...origin/main`。
+- API compare 回一個含完整 6 trailers 的 exact candidate → engine adopt exactly once，不新增第二個 instruction commit。
+- API compare 回 404 → `GitHubVerificationError`，no new commit。
+- API compare 200 且真的是 0 commits → 才允許走「0 verified candidates」後續。
+- API response commit body 含 newline / `|` / 6 trailers，仍可 exact verify。
+
+請把這條視為 live crash-recovery correctness blocker，不是測試美化。
 
 ---
 
-## 2. Blocker B — Recovery candidate enumeration 失敗目前會被當成「0 candidates」，可能反而新增第二個 instruction commit
+## 2. Blocker B — Round 7 的 required test matrix 尚未完整實作
 
-目前 `get_commits_since()` local `git log` 發生 exception / non-success /解析失敗時，最終可能直接 `return []`。Engine 的 Window B1 邏輯把：
+目前新測試主要覆蓋：
 
-```text
-0 matching candidates => create a new instruction commit
-```
+- local temp git trailer preservation
+- Fake client discovery failure
+- REST last-page comments
+- comments fetch failure
 
-視為正常情況。
+但上一輪明確要求的以下案例尚未看到真實 client integration coverage：
 
-但「真的沒有 candidate」與「candidate enumeration 自己壞掉」不能等價。若 crash 已經發生在 push 成功後、DB 尚未記錄之前，此時 enumeration transient failure 被轉成 `[]`，就可能建立第二個 instruction commit，正好違反 Window B1 的核心目的。
+- `local git unavailable + GitHub API discovery success + exact candidate adopt exactly once`
+- staged SHA + remote fallback success path
+- ACCEPT / CHANGES_REQUIRED / BLOCKED 三種 decision 的 Window B2 exactly-once 路徑，在 `gh` unavailable + REST fallback 下都要覆蓋
+- pagination marker 不只「能讀到」，還要證明 engine 因 marker 已存在而 **不再 POST**
 
 ### Required correction
 
-1. candidate discovery 必須區分：
-   - `SUCCESS_WITH_ZERO_COMMITS`
-   - `SUCCESS_WITH_COMMITS`
-   - `DISCOVERY_FAILURE`
-2. live mode 下，`git log` / remote discovery / parse error 不得 silent `[]`；必須 raise typed `GitHubVerificationError` 或等價 fail-closed result。
-3. Engine 只有在「成功完成 candidate enumeration，且 verified matching candidate 數量確實為 0」時才可 create new instruction commit。
-4. 若 staged SHA 存在，而 remote enumeration failure，必須停住 retry，不能建立新 commit。
-5. 若 local git discovery 失敗，可 fallback GitHub compare/commits API；但 API 也失敗時必須 fail closed。
-
-### Required tests
-
-- crash-after-push + DB 無 staged record + `git log` failure → **不得**建立第二個 commit。
-- staged SHA exists + enumeration timeout → no new commit。
-- local git unavailable但 GitHub API discovery成功且找到 exact candidate → adopt exactly once。
-- local + API 都失敗 → CHANGES_REQUIRED / retryable failure，不新增 instruction commit。
+補最小必要 integration tests，不要為了數量重寫測試框架。測試要走真正 `GitHubClient` 方法；可以 mock network/subprocess，但不能只餵 `MockGitHubClient` 已整理好的結果。
 
 ---
 
-## 3. Blocker C — Window B2 REST fallback 目前不保證拿到「最新」Issue comments
+## 3. Blocker C — 尚未形成可驗收的 Round 7 完整 handoff / exact evidence lineage
 
-`GitHubClient.get_latest_issue_comments()` 的 `gh` CLI path 會取 `.comments[-count:]`，但 CLI 失敗後 REST fallback 使用：
+目前 main 上：
 
-```text
-/issues/{issue_number}/comments?per_page={count}
-```
+- `docs/GROK_PROGRESS_REPORT.md` 仍停在 Round 6，`CODE_EVIDENCE_SHA=2bc44ac...` / `762 passed / 64 Supervisor tests`。
+- `docs/CURRENT_IMPLEMENTATION_AUDIT.md` 仍停在 Round 6 / 64 scenarios。
+- Issue #1 最新 READY 回報仍是舊 Round 6 lineage，沒有 `d4445058...` 的 machine-readable READY contract。
+- `d4445058...` 的 CODE Actions `34786792942` 在本次 Re-Gate 時尚未雙平台完成；Windows 已 SUCCESS，Ubuntu仍在 regression tests。
 
-GitHub Issue comments API 預設分頁從第一頁開始；當 Issue #1 已有大量留言時，這不等於 latest comments。若 `gh` 不存在/失敗，Window B2 recovery 可能看不到剛剛已 POST 的 deterministic marker，接著再 POST 一次，造成 duplicate comment。Issue #1 現在留言數已很多，這已是實際風險，不是理論問題。
+因此 `d4445058...` 現在只能列：
 
-### Required correction
+- code correction：**REAL_LOGIC / PARTIAL**
+- tests：**LOCAL/CI-IN-PROGRESS，尚不能作 exact dual-platform green evidence**
+- webhook real E2E：**BLOCKED / false**
+- live provider production invocation：**BLOCKED / false**
+- event-driven production readiness：**BLOCKED / false**
 
-1. REST fallback 必須真的取 latest `count` comments：
-   - 正確處理 pagination / `Link` last page；或
-   - 可靠取得總頁數後抓最後頁，再 slice newest `count`。
-2. 回傳順序要固定且明確（建議 oldest→newest 的 latest window，或 newest→oldest，但 engine/tests 必須一致）。
-3. Window B2 deterministic marker search 不可依賴 `gh` CLI 存在。
-4. API transient failure 必須 fail closed/retry，不可把「讀不到 comment」視為「comment 不存在」。
+### Required completion sequence
 
-### Required tests
-
-- 模擬 Issue 有 >100 comments，marker 在最後 5 筆；REST fallback 必須找到。
-- `gh` command unavailable + REST fallback → 不重複 POST。
-- REST pagination/API error → no duplicate comment；retryable failure。
-- ACCEPT / CHANGES_REQUIRED / BLOCKED 三條 B2 路徑都驗證 exactly-once。
-
----
-
-## 4. Blocker D — exact DOCS CI 尚未完成，本輪不能 ACCEPT
-
-本次 Re-Gate 時 `main` = `85bbf9b6a141f2727852726a850d622284da13c5`，其 Actions run `34784713920` 仍為 **IN_PROGRESS**，Ubuntu / Windows 都仍在 `Unit / regression tests`。
-
-所以就算上述 live-client recovery bugs 不存在，本輪也還沒有 exact DOCS SHA 雙平台 SUCCESS 證據。
-
-Round 7 修正完成後重新形成新的 exact lineage：
+修完 Blocker A+B 後：
 
 1. 新 CODE commit。
 2. `pytest -v tests/test_supervisor.py` + `pytest -q` 全綠。
-3. CODE SHA 的 Ubuntu + Windows Actions SUCCESS。
+3. 新 CODE SHA 的 Ubuntu + Windows Actions SUCCESS。
 4. 更新：
    - `docs/GROK_PROGRESS_REPORT.md`
    - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-   - `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`
-   - `docs/REAL_E2E_ACCEPTANCE.md`（若 truth/status 有變才改；不得為了數字硬改 REAL evidence）
+   - `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`（若存在）
+   - `docs/REAL_E2E_ACCEPTANCE.md` 只有 truth/status 真有變時才更新；不得為了讓文件變新而偽造 REAL evidence。
+   - `docs/CABINET_REAL_ACCEPTANCE.md` 若本輪 cabinet truth 沒變，保持原內容即可。
 5. 新 DOCS SHA 的 Ubuntu + Windows Actions SUCCESS。
-6. Issue #1 machine-readable READY contract 必須帶 exact：
+6. Issue #1 留 machine-readable `READY_FOR_RE_GATE`：
    - `INSTRUCTION_SHA`
    - `CODE_SHA`
    - `DOCS_SHA`
@@ -160,44 +134,42 @@ Round 7 修正完成後重新形成新的 exact lineage：
    - `EVIDENCE_GENERATION_ID`
    - `REAL_BLENDER`
    - `USED_MOCK`
-7. STOP 等 external Re-Gate；不得自行把 readiness flags改成 true。
+7. STOP，等 external Re-Gate。不得自行把 readiness flags 改成 true。
 
 ---
 
-## 5. REAL / MOCK / PARTIAL / BLOCKED 邊界
+## 4. REAL / MOCK / PARTIAL / BLOCKED 邊界
 
 本輪維持：
 
 - Supervisor core logic：**REAL_LOGIC / TESTED**
-- Round 6 exact identity/digest design：**PARTIAL**，因真實 `GitHubClient` recovery message path 目前會丟 trailers
-- Window B1 crash recovery：**PARTIAL / NOT LIVE-VERIFIED**
-- Window B2 comment exactly-once：**PARTIAL / NOT LIVE-VERIFIED**，REST fallback latest-page bug 尚未修
-- external provider adapters：**REAL_LOGIC / ADAPTER**；live configured provider production invocation 尚未證實
+- Round 7 local trailer preservation：**REAL_LOGIC / TESTED**
+- discovery fail-closed：**REAL_LOGIC / TESTED**
+- REST latest-page comments fetch：**REAL_LOGIC / TESTED**
+- remote GitHub compare fallback for `origin/main`：**BLOCKED / BUG CONFIRMED**
+- Window B1 full live recovery：**PARTIAL / NOT LIVE-VERIFIED**
+- Window B2 exactly-once：**PARTIAL / NOT LIVE-VERIFIED**
+- external provider adapters：**REAL_LOGIC / ADAPTER**；live configured provider production invocation尚未證實
 - GitHub Actions：**TESTED / MOCK_BLENDER CI**，不是 REAL Blender production evidence
-- Product Truth Blender generation `50a84d04-...`：可保留 **REAL Blender scoped evidence**
+- Product Truth existing Blender evidence：可保留原 scoped **REAL Blender evidence**；本輪沒有新的 Blender truth claim
 - Webhook real E2E：**BLOCKED / false**
-- Live provider production ready：**BLOCKED / false**
-- Event-driven Supervisor production ready：**BLOCKED / false**
-- Physical print：**BLOCKED / false**
-- LIVE_CNC / LIVE_LASER / PLC / machine control：**BLOCKED**
+- `liveProviderReady=false`
+- `eventDrivenSupervisorReady=false`
 - `commercialAssetProductionReady=false`
 - `globalProductionReady=false`
 - `fullAutonomousFactoryReady=false`
 - `liveFactoryExecutionReady=false`
+- LIVE_CNC / LIVE_LASER / PLC / machine control：**BLOCKED**
 - **Phase 961+ HOLD**
 
-Mock / fixture / local HTTP transport tests一律不得描述成 Production Ready。
+Mock / fixture / MockTransport / local HTTP test 一律不得描述成 Production Ready。
 
 ---
 
-## 6. 修完 Round 7 後才進真正 live E2E gate
+## 5. Round 8 完成後才可進真正 live E2E gate
 
-只有 A–D 全修並取得 new CODE + DOCS exact dual-platform green，才可進最後 live gate：
+只有上述 corrections + 新 CODE/DOCS exact dual-platform green 都完成，才可進最後 live gate：
 
 `authorized Issue READY -> real GitHub webhook delivery -> HMAC verified -> exact contract/CI/evidence -> real configured provider network call -> 4 identities exact -> exactly one instruction commit -> exactly one Issue comment -> watcher claim exactly once -> replay no duplicate`
 
-Acceptance evidence 必須保存：GitHub delivery ID、review ID、provider/model/request id、CODE/DOCS/prior INSTRUCTION、evidence id、CI run/job ids、instruction content digest、result instruction SHA、Issue comment ID、watcher claim、timestamps/retry count。
-
-若環境尚無真 webhook endpoint / credential / live provider credential，明確標 `BLOCKED_WAITING_LIVE_E2E`，三個 readiness flags保持 false；禁止用 MockTransport / local fixture 代替。
-
-完成修正後 push CODE -> 等 CODE CI -> 更新 DOCS -> 等 DOCS CI -> Issue #1 READY -> STOP。
+如果環境仍缺真 webhook endpoint / GitHub webhook secret / live provider credential，明確標 `BLOCKED_WAITING_LIVE_E2E`，三個 readiness flags保持 false；禁止用 MockTransport / fixture 代替。
