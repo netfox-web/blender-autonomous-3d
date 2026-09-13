@@ -2,31 +2,30 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-14  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `88488a2278d86e79e1270e09652c6dc81b81e6b6` (Event-Driven Supervisor Re-Gate Round 4 — CHANGES REQUIRED)  
-Issue #1: Event-Driven Supervisor Re-Gate Round 4 `88488a2`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `75957548e588a44a9e2f991f60dc79348e257733` (Event-Driven Supervisor Re-Gate Round 5 — CHANGES REQUIRED)  
+Issue #1: Event-Driven Supervisor Re-Gate Round 5 `7595754`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Event-Driven Autonomous Supervisor Re-Gate Round 4 — Quadruple Reviewed Identity Binding, Prompt Completeness Metadata, and Idempotent Crash Windows**:
-1. **Blocker A: Quadruple Reviewed Identity Binding & Engine Verification**:
-   - `services/supervisor/models.py`: Extended `ProviderReviewResponseSchema` and `SupervisorReviewOutput` to include all 4 reviewed identities: `reviewedCodeSha`, `reviewedDocsSha`, `reviewedInstructionSha`, and `reviewedEvidenceGenerationId`.
-   - `services/supervisor/ai_adapter.py`: Updated all provider adapters (OpenAI, Anthropic, Gemini, RuleBased, Mock, SemanticEvidence) to emit all 4 identities.
-   - `services/supervisor/engine.py`: `SupervisorEngine` independently verifies all 4 identities against the contract. Any missing or mismatched identity immediately fails closed (`CHANGES_REQUIRED`).
-2. **Blocker B: Exact Instruction Text, Changed-Files Manifest & Bounded Section Completeness Metadata**:
-   - `services/supervisor/ai_adapter.py`: `_build_prompt()` supplies exact instruction text (`docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `contract.instruction_sha`) and changed-files manifest.
-   - Bounded sections inject explicit completeness metadata header: `[METADATA: path=... ref_sha=... original_chars=... supplied_chars=... truncated=true|false sha256_prefix=...]`.
-3. **Blocker C: Fix undefined logger in engine.py**:
-   - `services/supervisor/engine.py`: Added `import logging` and `logger = logging.getLogger("supervisor.engine")`, eliminating runtime `NameError` exceptions on mismatch / mock promotion downgrade paths.
-4. **Blocker D: Configurable SUPERVISOR_AI_MODEL**:
-   - `services/supervisor/config.py`: Added `ai_model` field to `SupervisorConfig`, validated in `validate_live_config` and loaded from `SUPERVISOR_AI_MODEL` environment variable.
-   - `services/supervisor/ai_adapter.py`: Dynamically dispatches configured model across OpenAI, Anthropic, and Gemini adapters, defaulting cleanly when unspecified.
-5. **Blocker E: BLOCKED Decision Issue Comment Idempotency**:
-   - `services/supervisor/engine.py`: Unified Window B2 deterministic comment adoption check across `ACCEPT`, `CHANGES_REQUIRED`, and `BLOCKED` decisions. Queries recent comments on Issue #1 for deterministic marker before posting, preventing duplicate comments on retry/crash.
-6. **Blocker F: Truth Boundaries Preserved**:
+Executed **Event-Driven Autonomous Supervisor Re-Gate Round 5 — Evidence Completeness Structure, Fail-Closed Pinned Evidence Fetching, Strict Window B1 Adoption, and Fail-Closed Live Model & Contract Validation**:
+1. **Blocker A: Evidence Completeness Structure & Truncation Gate**:
+   - `services/supervisor/models.py`: Added `EvidenceSectionCompleteness` model recording `path`, `ref_sha`, `original_chars`, `supplied_chars`, `truncated`, `sha256`, `critical`, and chunk coverage. Added `ChangedFileItem` formatting change statuses (`A`, `M`, `D`, `R` with rename paths).
+   - `services/supervisor/ai_adapter.py`: In `_format_bounded_section()`, registered completeness records. Truncation of any critical section without full multi-chunk coverage immediately fails closed (`CHANGES_REQUIRED`).
+   - `services/supervisor/engine.py`: Engine independently asserts all diff changed files appear in manifest, and all required review chunks are covered. Completeness written to audit trail.
+2. **Blocker B: Pre-Provider Typed Fail-Closed Pinned Evidence Fetch**:
+   - `services/supervisor/engine.py`: `_fetch_evidence_file()` returns typed status (`OK`, `EMPTY_CONTENT`, `NOT_FOUND_404`, `TIMEOUT`, `AUTH_FAILURE`, `FETCH_ERROR`).
+   - If pinned instruction @ `INSTRUCTION_SHA`, progress report @ `DOCS_SHA`, audit @ `DOCS_SHA`, or supervisor acceptance @ `DOCS_SHA` is missing or empty, review fails closed **before calling AI provider**.
+3. **Blocker C: Strict Window B1 Remote Commit Adoption**:
+   - `services/supervisor/engine.py`: Instruction commits carry 5 commit trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`) and remote blob HTML content marker (`<!-- SUPERVISOR_COMMIT_IDENTITY: ... -->`).
+   - Remote commit recovery matches all 5 trailers and remote blob identity. Multiple matching candidates raise `GitHubVerificationError` rather than guessing. Differs evidence IDs are strictly isolated.
+4. **Blocker D: Configurable Model Live Strictness & Contract Parser**:
+   - `services/supervisor/config.py`: `validate_live_config()` strictly enforces non-empty `SUPERVISOR_AI_MODEL` compatible with provider prefix (`gpt-`, `o1`, `o3`, `claude-`, `gemini-`).
+   - `services/supervisor/models.py`: `ReadyForReGateContract.parse_from_text()` uses explicit allowlist for booleans (no silent coercion of malformed strings to false); non-negative test count; `validate_strict()` validates 40-character hex full SHA and positive numeric CI run IDs.
+5. **Blocker E: Truth Boundaries Preserved**:
    - Preserved honest readiness boundaries: `eventDrivenSupervisorReady=false`, `webhookRealE2e=false`, `liveProviderReady=false`.
-   - Phase 961+ remains **HOLD**.
-   - Clean-tree real execution completed with `scripts/run_product_truth_render_e2e.py` on exact CODE commit `b0941c7fa06b75b14e272a44018977120c656c3f` (generation `ae5f2d82-1a5c-4fe0-9af2-2b1c7a690f6d`).
+   - Phase 961+ remains **HOLD**; physical machinery (`LIVE_CNC`, `LIVE_LASER`, `PLC`) remains **BLOCKED**.
+   - Clean-tree real execution completed with `scripts/run_product_truth_render_e2e.py` on exact CODE commit `b0ad38a82aa7b9676f140221d42623b844083d48` (generation `4d715131-3eb3-4ed6-8dab-376eb92087ec`).
 
 Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth. Did not start Phase 961+.
 
@@ -36,20 +35,21 @@ Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Pro
 | Supervisor R2 | Blockers A–E: Webhook envelope fail-closed (`repository.full_name`, delivery ID, action), crash recovery windows B1/B2, git write preflight & remote blob verification, semantic evidence preflight, live configuration strict validation. 35 scenarios tested. |
 | Supervisor R3 | Blockers A–E: Real provider HTTP dispatch (`openai`, `anthropic`, `gemini`), Pydantic schema validation (`ProviderReviewResponseSchema`, `TruthMatrixSchema`), exact dual-CI contract lineage (`CODE_CI_RUN_ID` + `DOCS_CI_RUN_ID`), independent mock promotion prevention, pinned progress/audit lineage. 44 scenarios tested. |
 | Supervisor R4 | Blockers A–E: Quadruple reviewed identity binding (`reviewedCodeSha`, `reviewedDocsSha`, `reviewedInstructionSha`, `reviewedEvidenceGenerationId`), exact instruction & changed-files manifest with bounded section completeness metadata, configurable `SUPERVISOR_AI_MODEL`, engine `logger` fix, Window B2 idempotent `BLOCKED` comments. 49 scenarios tested. |
+| Supervisor R5 | Blockers A–E: Evidence completeness structure & truncation gate, pre-provider typed fail-closed pinned fetch, Window B1 5-trailer & marker adoption, live model validation, fail-closed contract booleans & 40-char hex SHA. 56 scenarios tested. |
 
-**CODE_EVIDENCE_SHA:** `b0941c7fa06b75b14e272a44018977120c656c3f`  
-**CODE_CI_RUN_ID:** `34775155653` (Ubuntu `103771815496` SUCCESS in 15m37s, Windows `103771815666` SUCCESS in 20m4s)  
-**PRIOR_DOCS_CI_RUN_ID:** `34771130885` (Ubuntu `103760809566` SUCCESS, Windows `103760809660` SUCCESS)  
+**CODE_EVIDENCE_SHA:** `b0ad38a82aa7b9676f140221d42623b844083d48`  
+**CODE_CI_RUN_ID:** `34779985884` (Ubuntu `103785109489` SUCCESS in 18m47s, Windows `103785109547` SUCCESS in 17m51s)  
+**PRIOR_DOCS_CI_RUN_ID:** `34776279326` (Ubuntu `103774874883` SUCCESS, Windows `103774874967` SUCCESS)  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
-GitHub Actions CODE: **GREEN** dual-platform on exact code commit `b0941c7fa06b75b14e272a44018977120c656c3f`.
+GitHub Actions CODE: **GREEN** dual-platform on exact code commit `b0ad38a82aa7b9676f140221d42623b844083d48`.
 
-Acceptance generation `ae5f2d82-1a5c-4fe0-9af2-2b1c7a690f6d`; runner-bound `evidenceCodeCommit=b0941c7fa06b75b14e272a44018977120c656c3f`; `workingTreeClean=true`. REAL Blender Cycles OptiX; `usedMock=false`; `eventDrivenSupervisorReady=false`; `webhookRealE2e=false`; `liveProviderReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
+Acceptance generation `4d715131-3eb3-4ed6-8dab-376eb92087ec`; runner-bound `evidenceCodeCommit=b0ad38a82aa7b9676f140221d42623b844083d48`; `workingTreeClean=true`. REAL Blender Cycles OptiX; `usedMock=false`; `eventDrivenSupervisorReady=false`; `webhookRealE2e=false`; `liveProviderReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
 
 ## Tests
 
 ```
-pytest -v tests/test_supervisor.py  →  49 passed (100% green)
-pytest -q                          →  747 passed (100% green across all unit/regression tests)
+pytest -v tests/test_supervisor.py  →  56 passed (100% green)
+pytest -q                          →  754 passed (100% green across all unit/regression tests)
 ```
 
 CI `FOX3D_MOCK_BLENDER=1` is **not** Production Ready. Local and CI mock provider tests do **not** constitute `liveProviderReady=true`.

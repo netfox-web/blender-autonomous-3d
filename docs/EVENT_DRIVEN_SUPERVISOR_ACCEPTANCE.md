@@ -2,14 +2,14 @@
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
 **Date**: 2026-09-14  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 4 Blocker Corrections  
-**Phase 1 CODE Commit**: `b0941c7fa06b75b14e272a44018977120c656c3f`  
-**CODE Actions Run ID**: `34775155653` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
-- `unit (ubuntu-latest)`: `103771815496` (15m 37s)  
-- `unit (windows-latest)`: `103771815666` (20m 4s)  
-**Test Suite**: `tests/test_supervisor.py` (49 passed, 100% green)  
-**Full Regression Suite**: 747 passed (100% green)  
-**Clean-Tree E2E Evidence Run**: `generation: ae5f2d82-1a5c-4fe0-9af2-2b1c7a690f6d`  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 5 Blocker Corrections  
+**Phase 1 CODE Commit**: `b0ad38a82aa7b9676f140221d42623b844083d48`  
+**CODE Actions Run ID**: `34779985884` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
+- `unit (ubuntu-latest)`: `103785109489` (18m 47s)  
+- `unit (windows-latest)`: `103785109547` (17m 51s)  
+**Test Suite**: `tests/test_supervisor.py` (56 passed, 100% green)  
+**Full Regression Suite**: 754 passed (100% green)  
+**Clean-Tree E2E Evidence Run**: `generation: 4d715131-3eb3-4ed6-8dab-376eb92087ec`  
 
 ---
 
@@ -26,42 +26,45 @@
 
 ---
 
-## 2. Re-Gate Round 4 Blockers Resolution Summary
+## 2. Re-Gate Round 5 Blockers Resolution Summary
 
-### Blocker A — Quadruple Reviewed Identity Binding & Independent Engine Verification
-- **Provider Output Re-Binding**: `ProviderReviewResponseSchema` and `SupervisorReviewOutput` re-bind all 4 reviewed identities:
-  - `reviewedCodeSha`
-  - `reviewedDocsSha`
-  - `reviewedInstructionSha`
-  - `reviewedEvidenceGenerationId`
-- **SupervisorEngine Verification**: `SupervisorEngine` independently verifies all 4 identities against the incoming `ReadyForReGateContract`. If any identity is missing or does not exactly match the contract, the review fails closed with `CHANGES_REQUIRED`.
-- **Tests**: Verified in `test_45` (mismatched `reviewedDocsSha` or `reviewedInstructionSha` fails closed).
+### Blocker A — Machine-Readable Evidence Completeness Structure & Truncation Gate
+- **Structured Completeness Model**: Added `EvidenceSectionCompleteness` Pydantic model tracking `path`, `ref_sha`, `original_chars`, `supplied_chars`, `truncated`, `sha256`, `critical`, `chunks_count`, `chunks_covered`, and `chunk_digests`.
+- **Changed Files Status (A/M/D/R)**: Added `ChangedFileItem` representing file changes with status (`A` added, `M` modified, `D` deleted, `R` renamed with `old_path -> path`). `parse_diff_changed_files()` parses git diff headers to extract status and file paths accurately.
+- **Fail-Closed Truncation Gate**: If any critical evidence section (instruction, manifest, material diff, progress report, audit, supervisor acceptance) is truncated (`truncated=True`) without complete chunk coverage (`not is_complete`), the deterministic gate halts immediately with `CHANGES_REQUIRED` and forbids `ACCEPT_WITH_SCOPE`.
+- **Engine Completeness Assertions**: Before accepting, `SupervisorEngine` independently asserts that all changed files from the diff appear in the manifest, and that all critical evidence chunks are fully covered.
+- **Audit Logging**: Completeness records are persisted directly into `audit_trail["completeness"]`.
+- **Tests**: Verified in `test_50` (critical diff truncation without full coverage fails closed) and `test_51` (status parsing and omission detection).
 
-### Blocker B — Exact Instruction Text, Changed-Files Manifest & Bounded Section Completeness Metadata
-- **Exact Instruction Text**: `ReviewContext` supplies exact text of `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` at `contract.instruction_sha`.
-- **Changed-Files Manifest**: diffs are parsed and a manifest of modified file paths is passed in `ReviewContext.changed_files` and prompt.
-- **Bounded Section Completeness Metadata**: `_format_bounded_section` wraps bounded documentation/evidence files with explicit metadata:
-  `[METADATA: path=... ref_sha=... original_chars=... supplied_chars=... truncated=true|false sha256_prefix=...]`.
-- **Tests**: Verified in `test_46` (prompt contains exact instruction text, changed files, and completeness metadata headers).
+### Blocker B — Fail-Closed Pinned Critical Evidence Fetching
+- **Pre-Provider Fetch Gate**: Added `_fetch_evidence_file()` in `SupervisorEngine` returning typed content and status (`OK`, `EMPTY_CONTENT`, `NOT_FOUND_404`, `TIMEOUT`, `AUTH_FAILURE`, `FETCH_ERROR`).
+- **Required Pinned Evidence Enforcement**: If any mandatory evidence file:
+  - `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `contract.instruction_sha`
+  - `docs/GROK_PROGRESS_REPORT.md` @ `contract.docs_sha`
+  - `docs/CURRENT_IMPLEMENTATION_AUDIT.md` @ `contract.docs_sha`
+  - `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md` @ `contract.docs_sha`
+  - `docs/REAL_E2E_ACCEPTANCE.md` (when `real_blender=True` and `used_mock=False`)
+  is missing, empty, timed out, or returns 404/auth failure, review halts **before calling any AI provider** with `CHANGES_REQUIRED`.
+- **Optional File Scoping**: Optional files (such as `docs/CABINET_REAL_ACCEPTANCE.md`) do not block unless explicitly claimed.
+- **Tests**: Verified in `test_52` (instruction 404, empty progress report, missing audit, missing supervisor acceptance fail closed before provider invocation).
 
-### Blocker C — SupervisorEngine Logger Initialization
-- **Engine Logger**: Added `import logging` and `logger = logging.getLogger("supervisor.engine")` to `services/supervisor/engine.py`.
-- Eliminates `NameError: name 'logger' is not defined` on fail-closed paths (such as SHA mismatch or mock-to-REAL promotion attempt).
-- **Tests**: Verified in `test_47` (mismatch logger warning executes cleanly without raising NameError).
+### Blocker C — Window B1 Strict Remote Commit Adoption & Evidence Isolation
+- **Commit Trailers & Blob Marker**: Instruction commits created by `SupervisorEngine` now carry 5 explicit commit trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`) and a remote blob HTML marker (`<!-- SUPERVISOR_COMMIT_IDENTITY: ... -->`).
+- **Crash Recovery Matching**: When recovering during Window B1, candidate remote commits must match all 5 trailers and the remote blob content marker must match `CODE_SHA` and `EVIDENCE_GENERATION_ID`.
+- **Multi-Candidate Fail-Closed**: If more than one remote instruction commit matches the exact lineage, the engine refuses to guess and raises `GitHubVerificationError`.
+- **Cross-Evidence Isolation**: Same CODE SHA with differing evidence IDs cannot cross-adopt each other's commits.
+- **Tests**: Verified in `test_53` (exact 5-trailer and blob marker matching with evidence isolation) and `test_54` (multiple matching candidates fail closed).
 
-### Blocker D — Configurable SUPERVISOR_AI_MODEL
-- **Configuration & Audit**: Added `ai_model` to `SupervisorConfig` (loaded from `SUPERVISOR_AI_MODEL`), validated in `validate_live_config`.
-- Dispatched dynamically to OpenAI (`gpt-4o`), Anthropic (`claude-3-5-sonnet`), or Gemini (`gemini-1.5-pro`).
-- **Tests**: Verified in `test_49` (custom AI model dispatched in HTTP request payload and recorded in audit trail).
-
-### Blocker E — Idempotent BLOCKED Decision Issue Comments (Window B2)
-- **Unified Comment Adoption**: Window B2 deterministic comment check extended to `ReviewDecision.BLOCKED`.
-- Before calling `github_client.add_issue_comment()`, the engine checks whether a comment containing `<!-- REVIEW_MARKER: CODE_SHA=... EVIDENCE_ID=... -->` already exists on the issue or in durable DB state. If found, it adopts the existing comment without duplicate posting.
-- **Tests**: Verified in `test_48` (Window B2 comment adoption and deterministic marker check on BLOCKED decisions).
+### Blocker D — Strict Live Provider/Model Config & Machine Contract Parsing
+- **Mandatory SUPERVISOR_AI_MODEL**: In live mode with `openai`, `anthropic`, or `gemini`, `ai_model` is strictly required to be non-empty and compatible with provider prefix (`gpt-`, `o1`, `o3`, `claude-`, `gemini-`). Unsupported or blank models fail validation immediately.
+- **Truth Booleans Allowlist**: `ReadyForReGateContract.parse_from_text()` validates booleans against an explicit allowlist (`true`, `false`, `1`, `0`, `yes`, `no`). Malformed booleans (e.g. `USED_MOCK=tru` or `REAL_BLENDER=maybe`) return `None` instead of silently coercing to `False`.
+- **Non-Negative Test Count**: Malformed or negative test counts reject parsing.
+- **Strict Full Hex SHA & CI IDs**: `contract.validate_strict()` enforces 40-character hex full SHA (`^[0-9a-fA-F]{40}$`) for CODE, DOCS, and INSTRUCTION, and positive numeric integer IDs for `CODE_CI_RUN_ID` and `DOCS_CI_RUN_ID`.
+- **Tests**: Verified in `test_55` (boolean allowlist, hex SHA validation, positive numeric CI run IDs) and `test_56` (live model configuration validation).
 
 ---
 
-## 3. Comprehensive Verification Matrix (49 Scenarios)
+## 3. Comprehensive Verification Matrix (56 Scenarios)
 
 | # | Test Scenario | Verified Behavior | Verdict |
 |---|---|---|---|
@@ -114,6 +117,13 @@
 | 47 | **Round 4 Blocker C: SupervisorEngine logger initialization** | Warnings logged without `NameError` on fail-closed paths. | ✅ PASS |
 | 48 | **Round 4 Blocker E: Idempotent BLOCKED issue comments** | Window B2 marker adoption check prevents duplicate comments for BLOCKED decisions. | ✅ PASS |
 | 49 | **Round 4 Blocker D: Configurable SUPERVISOR_AI_MODEL** | Model passed in config dispatched correctly in API request payloads and audit log. | ✅ PASS |
+| 50 | **Round 5 Blocker A: Truncation gate fails closed** | Critical evidence section truncated without full completeness coverage fails closed (`CHANGES_REQUIRED`). | ✅ PASS |
+| 51 | **Round 5 Blocker A: Changed-files status & omission detection** | Parses A/M/D/R statuses with rename old/new paths; omits from manifest trigger fail-closed. | ✅ PASS |
+| 52 | **Round 5 Blocker B: Fail-closed pinned evidence fetch** | Missing/empty/timeout/404 on required pinned evidence halts review before AI provider call. | ✅ PASS |
+| 53 | **Round 5 Blocker C: Window B1 5-trailer & marker isolation** | Adopts remote instruction commit only when all 5 trailers and blob marker match; isolates evidence IDs. | ✅ PASS |
+| 54 | **Round 5 Blocker C: Multi-candidate fail-closed** | Multiple matching remote commits raise `GitHubVerificationError` instead of guessing. | ✅ PASS |
+| 55 | **Round 5 Blocker D: Strict boolean parsing & 40-char SHA** | Typos in booleans (`USED_MOCK=tru`) return `None`; validates 40-char hex SHAs and positive numeric CI IDs. | ✅ PASS |
+| 56 | **Round 5 Blocker D: Live mode model config validation** | Blank model or incompatible provider/model combinations raise `ConfigValidationError`. | ✅ PASS |
 
 ---
 
@@ -121,14 +131,19 @@
 
 ```
 pytest -v tests/test_supervisor.py
-======================== 49 passed, 1 warning in 3.23s ========================
+======================== 56 passed, 1 warning in 3.55s ========================
 
 pytest -q
-======================== 747 passed ===========================================
+======================== 754 passed ===========================================
 ```
-- Supervisor control-plane test cases: 49 (100% pass)
-- Total repository regression suite: 747 (100% pass, 0 failures)
-- Dual-platform CI verification on exact CODE commit `b0941c7fa06b75b14e272a44018977120c656c3f`:
-  - Run ID: `34775155653`
-  - `unit (ubuntu-latest)`: `103771815496` SUCCESS (15m 37s)
-  - `unit (windows-latest)`: `103771815666` SUCCESS (20m 4s)
+- Supervisor control-plane test cases: 56 (100% pass)
+- Total repository regression suite: 754 (100% pass, 0 failures)
+- Dual-platform CI verification on exact CODE commit `b0ad38a82aa7b9676f140221d42623b844083d48`:
+  - Run ID: `34779985884`
+  - `unit (ubuntu-latest)`: `103785109489` SUCCESS (18m 47s)
+  - `unit (windows-latest)`: `103785109547` SUCCESS (17m 51s)
+- Clean-tree real environment verification:
+  - `scripts/run_product_truth_render_e2e.py`
+  - `generation`: `4d715131-3eb3-4ed6-8dab-376eb92087ec`
+  - `evidenceCodeCommit`: `b0ad38a82aa7b9676f140221d42623b844083d48`
+  - `workingTreeClean`: `true`

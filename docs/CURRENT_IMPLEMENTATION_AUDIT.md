@@ -1,12 +1,12 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 4 CODE_EVIDENCE_SHA `b0941c7fa06b75b14e272a44018977120c656c3f`; prior `9bed184` / `d77cfe7` / `4406119` / instruction `88488a2278d86e79e1270e09652c6dc81b81e6b6`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `88488a2278d86e79e1270e09652c6dc81b81e6b6`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 5 CODE_EVIDENCE_SHA `b0ad38a82aa7b9676f140221d42623b844083d48`; prior `b0941c7` / `9bed184` / `d77cfe7` / `4406119` / instruction `75957548e588a44a9e2f991f60dc79348e257733`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `75957548e588a44a9e2f991f60dc79348e257733`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-14): Python 3.12.10, Blender 4.2 LTS / 5.2.1 LTS, NVIDIA T1000 OptiX devices present.
 
-## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 4)
+## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 5)
 
 | Item | Status | Evidence |
 |---|---|---|
@@ -14,9 +14,12 @@ This machine (2026-09-14): Python 3.12.10, Blender 4.2 LTS / 5.2.1 LTS, NVIDIA T
 | State Management & Lifecycle Idempotency | REAL_LOGIC | `services/supervisor/state.py`: SQLite WAL mode; durable review lifecycle; delivery ID deduplication; contract `(code_sha, evidence_generation_id)` deduplication |
 | Dual-CI Lineage Verification (Round 3 Blocker C) | REAL_LOGIC | `services/supervisor/engine.py` & `models.py`: Validates `CODE_CI_RUN_ID` (head == `CODE_SHA`, Ubuntu+Windows success) and `DOCS_CI_RUN_ID` (head == `DOCS_SHA`, Ubuntu+Windows success); mismatched run IDs or incomplete jobs fail closed |
 | Quadruple Reviewed Identity Binding & Engine Verification (Round 4 Blocker A) | REAL_LOGIC | `services/supervisor/models.py` & `engine.py`: Schema & Engine enforce re-binding of all 4 reviewed identities: `reviewedCodeSha`, `reviewedDocsSha`, `reviewedInstructionSha`, `reviewedEvidenceGenerationId`. Mismatches fail closed. |
-| Bounded Prompt Completeness Metadata & Exact Instruction (Round 4 Blocker B) | REAL_LOGIC | `services/supervisor/ai_adapter.py`: Injects exact `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` text from instruction SHA, changed-files manifest, and explicit completeness metadata header `[METADATA: path=... original_chars=... supplied_chars=... truncated=true|false sha256_prefix=...]`. |
-| Engine Logger & Failure Downgrade Reliability (Round 4 Blocker C) | REAL_LOGIC | `services/supervisor/engine.py`: Module logger properly initialized; logs warning and downgrades to `CHANGES_REQUIRED` without crashing on SHA mismatch or mock promotion attempt. |
-| Configurable SUPERVISOR_AI_MODEL (Round 4 Blocker D) | REAL_LOGIC | `services/supervisor/config.py` & `ai_adapter.py`: Configurable model dispatch for OpenAI, Anthropic, and Gemini; validated in live config; recorded in review context & audit logs. |
+| Evidence Completeness Structure & Truncation Gate (Round 5 Blocker A) | REAL_LOGIC | `services/supervisor/models.py` & `ai_adapter.py`: `EvidenceSectionCompleteness` tracks `path`, `ref_sha`, `original_chars`, `supplied_chars`, `truncated`, `sha256`, `critical`, and chunk coverage. If any critical section is truncated without full coverage, deterministic gate halts with `CHANGES_REQUIRED`. Engine independently asserts all diff changed files appear in manifest. |
+| Changed-Files Manifest with Status (Round 5 Blocker A) | REAL_LOGIC | `services/supervisor/models.py` & `engine.py`: `ChangedFileItem` parses and formats status (`A`, `M`, `D`, `R` with rename paths). Diff omission detection fails closed. |
+| Pre-Provider Typed Fail-Closed Pinned Evidence Fetch (Round 5 Blocker B) | REAL_LOGIC | `services/supervisor/engine.py`: `_fetch_evidence_file()` returns typed status (`NOT_FOUND_404`, `EMPTY_CONTENT`, `TIMEOUT`, `AUTH_FAILURE`). Missing or empty pinned instruction text, progress report, audit, or supervisor acceptance halts review before calling external provider. |
+| Window B1 Strict 5-Trailer & Content Marker Adoption (Round 5 Blocker C) | REAL_LOGIC | `services/supervisor/engine.py`: Instruction commits carry 5 trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`) and remote blob HTML marker. Multi-candidate match raises `GitHubVerificationError`. Evidence IDs isolated. |
+| Configurable SUPERVISOR_AI_MODEL & Live Config Validation (Round 5 Blocker D) | REAL_LOGIC | `services/supervisor/config.py` & `ai_adapter.py`: In live mode, `SUPERVISOR_AI_MODEL` is mandatory, non-empty, and prefix-validated against provider (`gpt-`, `o1`, `o3`, `claude-`, `gemini-`). Incompatible combinations fail at startup. |
+| Machine Contract Fail-Closed Booleans & 40-Char Hex SHA (Round 5 Blocker D) | REAL_LOGIC | `services/supervisor/models.py`: `ReadyForReGateContract.parse_from_text()` allowlists literal booleans (no silent false coercion); non-negative test count; `validate_strict()` validates 40-char hex SHAs and positive numeric CI run IDs. |
 | BLOCKED Decision Idempotent Issue Comments (Round 4 Blocker E) | REAL_LOGIC | `services/supervisor/engine.py`: Unified Window B2 check verifies whether an issue comment with deterministic marker was already posted before calling GitHub API on `BLOCKED` decisions. |
 | External Provider HTTP Dispatch & Schema Validation | REAL_LOGIC / ADAPTER | `services/supervisor/ai_adapter.py`: `ExternalProviderSupervisorAdapter` dispatches real HTTP requests to OpenAI, Anthropic, or Gemini; strictly parses JSON into `ProviderReviewResponseSchema` and `TruthMatrixSchema`; fail-closed on 5xx/timeout/malformed JSON/SHA mismatch; mock transport tested hermetically |
 | Durable Crash Recovery Windows B1 & B2 | REAL_LOGIC | Reconciles remote instruction commits on `origin/{branch}` matching `(code_sha, evidence_generation_id)`; reconciles deterministic issue comment markers; rolls back unpushed commits on push failure |
@@ -25,7 +28,7 @@ This machine (2026-09-14): Python 3.12.10, Blender 4.2 LTS / 5.2.1 LTS, NVIDIA T
 | Event-Driven Supervisor Production Readiness | BLOCKED / false | `eventDrivenSupervisorReady=false`; live GitHub webhook E2E not yet conducted |
 | Webhook Real E2E Gate | BLOCKED / false | `webhookRealE2e=false`; live production delivery pending |
 | Live AI Provider Production Ready | BLOCKED / false | `liveProviderReady=false`; external live provider calls not yet executed in production |
-| 49-Scenario Supervisor Test Suite | REAL_LOGIC | `tests/test_supervisor.py`: 49 comprehensive tests covering webhook, signature, idempotency, CI verification, provider dispatch, 4 reviewed identities, prompt metadata, crash windows, preflight, policy guardrails |
+| 56-Scenario Supervisor Test Suite | REAL_LOGIC | `tests/test_supervisor.py`: 56 comprehensive tests covering webhook, signature, idempotency, CI verification, provider dispatch, 4 reviewed identities, prompt metadata, crash windows, preflight, policy guardrails, evidence completeness, fail-closed pinned fetch, Window B1 5-trailer matching, strict boolean parsing, and live model config validation |
 
 ## Phase 901–960 Product Content Factory V1 / Deterministic Commerce Asset Pack (Re-Gate Round 1)
 
