@@ -124,6 +124,8 @@ class TruthMatrixSchema(BaseModel):
 class ProviderReviewResponseSchema(BaseModel):
     decision: ReviewDecision
     reviewedCodeSha: str
+    reviewedDocsSha: str
+    reviewedInstructionSha: str
     reviewedEvidenceGenerationId: str
     acceptedClaims: List[str] = Field(default_factory=list)
     rejectedClaims: List[str] = Field(default_factory=list)
@@ -137,6 +139,7 @@ class ReviewContext(BaseModel):
     contract: ReadyForReGateContract
     commits: List[Dict[str, Any]] = Field(default_factory=list)
     diffs: str = ""
+    changed_files: List[str] = Field(default_factory=list)
     progress_report_text: str = ""
     audit_text: str = ""
     acceptance_text: str = ""
@@ -152,6 +155,8 @@ class ReviewContext(BaseModel):
 class SupervisorReviewOutput(BaseModel):
     decision: ReviewDecision
     reviewed_code_sha: str
+    reviewed_docs_sha: str = ""
+    reviewed_instruction_sha: str = ""
     reviewed_evidence_generation_id: str
     accepted_claims: List[str] = Field(default_factory=list)
     rejected_claims: List[str] = Field(default_factory=list)
@@ -166,6 +171,7 @@ class SupervisorReviewOutput(BaseModel):
     blockers: List[str] = Field(default_factory=list)
     next_instruction_markdown: str
     issue_comment_markdown: str
+    audit_trail: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SupervisorState(BaseModel):

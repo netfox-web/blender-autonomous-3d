@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -111,6 +113,8 @@ class RuleBasedSupervisorAdapter(SupervisorProviderAdapter):
         return SupervisorReviewOutput(
             decision=decision,
             reviewed_code_sha=contract.code_sha,
+            reviewed_docs_sha=contract.docs_sha,
+            reviewed_instruction_sha=contract.instruction_sha,
             reviewed_evidence_generation_id=contract.evidence_generation_id,
             accepted_claims=accepted_claims,
             rejected_claims=rejected_claims,
@@ -140,6 +144,8 @@ class MockSupervisorAdapter(SupervisorProviderAdapter):
         return SupervisorReviewOutput(
             decision=self.forced_decision,
             reviewed_code_sha=context.contract.code_sha,
+            reviewed_docs_sha=context.contract.docs_sha,
+            reviewed_instruction_sha=context.contract.instruction_sha,
             reviewed_evidence_generation_id=context.contract.evidence_generation_id,
             accepted_claims=["Mock claim verified"],
             rejected_claims=[],
@@ -293,6 +299,8 @@ class SemanticEvidenceSupervisorAdapter(SupervisorProviderAdapter):
         return SupervisorReviewOutput(
             decision=decision,
             reviewed_code_sha=contract.code_sha,
+            reviewed_docs_sha=contract.docs_sha,
+            reviewed_instruction_sha=contract.instruction_sha,
             reviewed_evidence_generation_id=contract.evidence_generation_id,
             accepted_claims=accepted_claims,
             rejected_claims=rejected_claims,
@@ -323,8 +331,39 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
         if not self.api_key:
             env_var = f"{self.provider_name.upper()}_API_KEY"
             raise ConfigValidationError(f"{env_var} is required for {self.provider_name} provider.")
+        self.model = getattr(config, "ai_model", "") or self._default_model(self.provider_name)
         self.transport = transport
         self.timeout = timeout
+
+    @staticmethod
+    def _default_model(provider_name: str) -> str:
+        if provider_name == "openai":
+            return "gpt-4o"
+        elif provider_name == "anthropic":
+            return "claude-3-5-sonnet-20241022"
+        elif provider_name == "gemini":
+            return "gemini-1.5-pro"
+        return "default-model"
+
+    @staticmethod
+    def _format_bounded_section(
+        title: str,
+        content: str,
+        max_chars: int,
+        ref_sha: str = "",
+        path: str = "",
+    ) -> str:
+        orig_len = len(content)
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16] if content else "none"
+        is_truncated = orig_len > max_chars
+        sliced = content[:max_chars]
+        supplied_len = len(sliced)
+        meta = (
+            f"[METADATA: path={path or title} ref={ref_sha or 'n/a'} "
+            f"original_chars={orig_len} supplied_chars={supplied_len} "
+            f"truncated={'true' if is_truncated else 'false'} sha256_prefix={digest}]"
+        )
+        return f"=== {title} ===\n{meta}\n{sliced}\n"
 
     def review_repository(self, context: ReviewContext) -> SupervisorReviewOutput:
         # Step 1: Deterministic safety preflight
@@ -344,6 +383,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             return SupervisorReviewOutput(
                 decision=ReviewDecision.CHANGES_REQUIRED,
                 reviewed_code_sha=context.contract.code_sha,
+                reviewed_docs_sha=context.contract.docs_sha,
+                reviewed_instruction_sha=context.contract.instruction_sha,
                 reviewed_evidence_generation_id=context.contract.evidence_generation_id,
                 blockers=[f"Provider {self.provider_name} request failed: {type(e).__name__} - {str(e)}"],
                 next_instruction_markdown="# Phase Re-Gate: Changes Required\nProvider request failed.",
@@ -359,18 +400,33 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             return SupervisorReviewOutput(
                 decision=ReviewDecision.CHANGES_REQUIRED,
                 reviewed_code_sha=context.contract.code_sha,
+                reviewed_docs_sha=context.contract.docs_sha,
+                reviewed_instruction_sha=context.contract.instruction_sha,
                 reviewed_evidence_generation_id=context.contract.evidence_generation_id,
                 blockers=[f"Provider response schema validation failed: {str(e)}"],
                 next_instruction_markdown="# Phase Re-Gate: Changes Required\nMalformed provider response.",
                 issue_comment_markdown="## SUPERVISOR_REVIEW_COMPLETE\nDECISION=CHANGES_REQUIRED\nMalformed provider response.",
             )
 
-        # Step 5: Verify SHA and generation match contract
+        # Step 5: Verify SHA and generation match contract across all 4 identities
         blockers = list(validated.blockers)
         decision = validated.decision
+
         if validated.reviewedCodeSha != context.contract.code_sha:
             blockers.append(
                 f"Provider returned mismatched reviewedCodeSha '{validated.reviewedCodeSha}' (expected '{context.contract.code_sha}')."
+            )
+            decision = ReviewDecision.CHANGES_REQUIRED
+
+        if validated.reviewedDocsSha != context.contract.docs_sha:
+            blockers.append(
+                f"Provider returned mismatched reviewedDocsSha '{validated.reviewedDocsSha}' (expected '{context.contract.docs_sha}')."
+            )
+            decision = ReviewDecision.CHANGES_REQUIRED
+
+        if validated.reviewedInstructionSha != context.contract.instruction_sha:
+            blockers.append(
+                f"Provider returned mismatched reviewedInstructionSha '{validated.reviewedInstructionSha}' (expected '{context.contract.instruction_sha}')."
             )
             decision = ReviewDecision.CHANGES_REQUIRED
 
@@ -395,6 +451,8 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
         return SupervisorReviewOutput(
             decision=decision,
             reviewed_code_sha=context.contract.code_sha,
+            reviewed_docs_sha=context.contract.docs_sha,
+            reviewed_instruction_sha=context.contract.instruction_sha,
             reviewed_evidence_generation_id=context.contract.evidence_generation_id,
             accepted_claims=validated.acceptedClaims,
             rejected_claims=validated.rejectedClaims,
@@ -402,16 +460,31 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             blockers=blockers,
             next_instruction_markdown=validated.nextInstructionMarkdown or "# Phase Re-Gate",
             issue_comment_markdown=validated.issueCommentMarkdown or f"## SUPERVISOR_REVIEW_COMPLETE\nDECISION={decision.value}",
+            audit_trail={
+                "provider": self.provider_name,
+                "model": self.model,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "reviewed_code_sha": context.contract.code_sha,
+                "reviewed_docs_sha": context.contract.docs_sha,
+                "reviewed_instruction_sha": context.contract.instruction_sha,
+                "reviewed_evidence_generation_id": context.contract.evidence_generation_id,
+            },
         )
 
     def _build_prompt(self, context: ReviewContext) -> str:
         contract = context.contract
-        return (
+        manifest_files = context.changed_files or ["(extracted from repository diff)"]
+        manifest_text = "\n".join(f"- {f}" for f in manifest_files)
+
+        sections = [
             "You are Fox3D Autonomous Supervisor reviewing a Phase Re-Gate submission.\n"
-            "Review the contract, diffs, and evidence files. Output ONLY valid JSON matching this schema:\n"
+            "Review the contract, exact instruction text, changed files manifest, diffs, CI runs, and evidence files.\n"
+            "Output ONLY valid JSON matching this schema:\n"
             "{\n"
             '  "decision": "ACCEPT_WITH_SCOPE" | "CHANGES_REQUIRED" | "BLOCKED",\n'
             f'  "reviewedCodeSha": "{contract.code_sha}",\n'
+            f'  "reviewedDocsSha": "{contract.docs_sha}",\n'
+            f'  "reviewedInstructionSha": "{contract.instruction_sha}",\n'
             f'  "reviewedEvidenceGenerationId": "{contract.evidence_generation_id}",\n'
             '  "acceptedClaims": ["..."],\n'
             '  "rejectedClaims": ["..."],\n'
@@ -419,17 +492,62 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
             '  "blockers": ["..."],\n'
             '  "nextInstructionMarkdown": "# Next Phase Instructions...",\n'
             '  "issueCommentMarkdown": "## SUPERVISOR_REVIEW_COMPLETE..."\n'
-            "}\n\n"
-            f"=== CONTRACT ===\n{contract.to_contract_block()}\n"
-            f"=== CODE CI SUMMARY ===\n{json.dumps(context.code_ci_summary or context.ci_summary)}\n"
-            f"=== DOCS CI SUMMARY ===\n{json.dumps(context.docs_ci_summary)}\n"
-            f"=== DIFFS ===\n{context.diffs[:4000]}\n"
-            f"=== PROGRESS REPORT ===\n{context.progress_report_text[:4000]}\n"
-            f"=== AUDIT TEXT ===\n{context.audit_text[:2000]}\n"
-            f"=== ACCEPTANCE TEXT ===\n{context.acceptance_text[:2000]}\n"
-            f"=== CABINET ACCEPTANCE ===\n{context.cabinet_acceptance_text[:2000]}\n"
-            f"=== EVENT DRIVEN SUPERVISOR ACCEPTANCE ===\n{context.event_driven_acceptance_text[:2000]}\n"
-        )
+            "}\n",
+            f"=== CONTRACT ===\n{contract.to_contract_block()}",
+            self._format_bounded_section(
+                "INSTRUCTION TEXT",
+                context.instruction_text,
+                8000,
+                ref_sha=contract.instruction_sha,
+                path="docs/GROK_NEXT_PHASE_INSTRUCTIONS.md",
+            ),
+            f"=== CHANGED FILES MANIFEST ===\n{manifest_text}\n",
+            f"=== CODE CI SUMMARY ===\n{json.dumps(context.code_ci_summary or context.ci_summary)}\n",
+            f"=== DOCS CI SUMMARY ===\n{json.dumps(context.docs_ci_summary)}\n",
+            self._format_bounded_section(
+                "DIFFS",
+                context.diffs,
+                8000,
+                ref_sha=f"{contract.instruction_sha}..{contract.code_sha}",
+                path="git diff",
+            ),
+            self._format_bounded_section(
+                "PROGRESS REPORT",
+                context.progress_report_text,
+                6000,
+                ref_sha=contract.docs_sha,
+                path="docs/GROK_PROGRESS_REPORT.md",
+            ),
+            self._format_bounded_section(
+                "AUDIT TEXT",
+                context.audit_text,
+                4000,
+                ref_sha=contract.docs_sha,
+                path="docs/CURRENT_IMPLEMENTATION_AUDIT.md",
+            ),
+            self._format_bounded_section(
+                "ACCEPTANCE TEXT",
+                context.acceptance_text,
+                4000,
+                ref_sha=contract.docs_sha,
+                path="docs/REAL_E2E_ACCEPTANCE.md",
+            ),
+            self._format_bounded_section(
+                "CABINET ACCEPTANCE",
+                context.cabinet_acceptance_text,
+                4000,
+                ref_sha=contract.docs_sha,
+                path="docs/CABINET_REAL_ACCEPTANCE.md",
+            ),
+            self._format_bounded_section(
+                "EVENT DRIVEN SUPERVISOR ACCEPTANCE",
+                context.event_driven_acceptance_text,
+                4000,
+                ref_sha=contract.docs_sha,
+                path="docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md",
+            ),
+        ]
+        return "\n".join(sections)
 
     def _call_provider_endpoint(self, prompt: str) -> str:
         with httpx.Client(transport=self.transport, timeout=self.timeout) as client:
@@ -440,7 +558,7 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                     "Content-Type": "application/json",
                 }
                 payload = {
-                    "model": "gpt-4o",
+                    "model": self.model,
                     "messages": [
                         {"role": "system", "content": "You are Fox3D Supervisor AI evaluator. Output JSON only."},
                         {"role": "user", "content": prompt},
@@ -460,7 +578,7 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                     "Content-Type": "application/json",
                 }
                 payload = {
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": self.model,
                     "max_tokens": 4096,
                     "messages": [{"role": "user", "content": prompt}],
                 }
@@ -470,7 +588,7 @@ class ExternalProviderSupervisorAdapter(SupervisorProviderAdapter):
                 return data["content"][0]["text"]
 
             elif self.provider_name == "gemini":
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={self.api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
                 headers = {"Content-Type": "application/json"}
                 payload = {
                     "contents": [{"parts": [{"text": prompt}]}],

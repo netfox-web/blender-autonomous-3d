@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger("supervisor.engine")
 
 from services.supervisor.ai_adapter import SupervisorProviderAdapter
 from services.supervisor.config import SupervisorConfig
@@ -160,11 +163,20 @@ class SupervisorEngine:
         commits = self.github_client.get_commits_since(contract.instruction_sha, contract.docs_sha)
         diffs = self.github_client.get_diff_between(contract.instruction_sha, contract.docs_sha)
 
+        # Extract changed files from diffs
+        changed_files = []
+        for line in diffs.splitlines():
+            if line.startswith("diff --git a/") and " b/" in line:
+                parts = line.split(" b/")
+                if len(parts) == 2:
+                    changed_files.append(parts[1].strip())
+
         # Step E: Build context and invoke AI review adapter
         context = ReviewContext(
             contract=contract,
             commits=commits,
             diffs=diffs,
+            changed_files=changed_files,
             progress_report_text=progress_report,
             audit_text=audit_text,
             acceptance_text=acceptance_text,
@@ -186,6 +198,26 @@ class SupervisorEngine:
             raw_output.decision = ReviewDecision.CHANGES_REQUIRED
             raw_output.blockers.append(
                 f"Provider output reviewed_code_sha ({raw_output.reviewed_code_sha}) does not match contract ({contract.code_sha})."
+            )
+
+        if raw_output.reviewed_docs_sha != contract.docs_sha:
+            logger.warning(
+                "Provider returned mismatched DOCS SHA %s (expected %s). Failing closed.",
+                raw_output.reviewed_docs_sha, contract.docs_sha,
+            )
+            raw_output.decision = ReviewDecision.CHANGES_REQUIRED
+            raw_output.blockers.append(
+                f"Provider output reviewed_docs_sha ({raw_output.reviewed_docs_sha}) does not match contract ({contract.docs_sha})."
+            )
+
+        if raw_output.reviewed_instruction_sha != contract.instruction_sha:
+            logger.warning(
+                "Provider returned mismatched INSTRUCTION SHA %s (expected %s). Failing closed.",
+                raw_output.reviewed_instruction_sha, contract.instruction_sha,
+            )
+            raw_output.decision = ReviewDecision.CHANGES_REQUIRED
+            raw_output.blockers.append(
+                f"Provider output reviewed_instruction_sha ({raw_output.reviewed_instruction_sha}) does not match contract ({contract.instruction_sha})."
             )
 
         if raw_output.reviewed_evidence_generation_id != contract.evidence_generation_id:
@@ -278,17 +310,32 @@ class SupervisorEngine:
                     self.state_mgr.record_comment_posted(review_id, comment_id)
 
         elif output.decision == ReviewDecision.BLOCKED:
-            comment_body = (
-                f"## SUPERVISOR_REVIEW_COMPLETE\n\n"
-                f"{marker}\n"
-                f"DECISION=BLOCKED\n"
-                f"REVIEWED_CODE_SHA={contract.code_sha}\n"
-                f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n\n"
-                f"HUMAN_APPROVAL_REQUIRED\n\n"
-                f"{output.issue_comment_markdown}"
-            )
-            comment_id = self.github_client.add_issue_comment(contract.issue, comment_body)
-            self.state_mgr.record_comment_posted(review_id, comment_id)
+            # Window B2 check for BLOCKED decision: idempotent comment adoption
+            rev_record = self.state_mgr.get_review_by_contract(contract.code_sha, contract.evidence_generation_id)
+            already_commented = rev_record and rev_record.get("issue_comment_id")
+            if not already_commented:
+                recent_comments = self.github_client.get_latest_issue_comments(contract.issue, count=20)
+                adopted_comment_id = None
+                for comm in recent_comments:
+                    body = comm.get("body", "")
+                    if f"CODE_SHA={contract.code_sha}" in body and f"EVIDENCE_ID={contract.evidence_generation_id}" in body:
+                        adopted_comment_id = str(comm.get("id", ""))
+                        break
+
+                if adopted_comment_id:
+                    self.state_mgr.record_comment_posted(review_id, adopted_comment_id)
+                else:
+                    comment_body = (
+                        f"## SUPERVISOR_REVIEW_COMPLETE\n\n"
+                        f"{marker}\n"
+                        f"DECISION=BLOCKED\n"
+                        f"REVIEWED_CODE_SHA={contract.code_sha}\n"
+                        f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n\n"
+                        f"HUMAN_APPROVAL_REQUIRED\n\n"
+                        f"{output.issue_comment_markdown}"
+                    )
+                    comment_id = self.github_client.add_issue_comment(contract.issue, comment_body)
+                    self.state_mgr.record_comment_posted(review_id, comment_id)
 
         # Step H: Complete review in state
         self.state_mgr.complete_review(

@@ -25,6 +25,7 @@ class SupervisorConfig:
     audit_log_path: Path = Path(".fox3d-data/supervisor_audit.log")
     ai_provider: str = "rule_based"
     ai_api_key: str = ""
+    ai_model: str = ""
     watchdog_interval_seconds: int = 3600
     repo_root: Path = Path(__file__).resolve().parents[2]
 
@@ -109,6 +110,7 @@ def load_config() -> SupervisorConfig:
         audit_log_path=(repo_root / audit_env).resolve(),
         ai_provider=os.getenv("SUPERVISOR_AI_PROVIDER", "rule_based"),
         ai_api_key=os.getenv("SUPERVISOR_AI_API_KEY", ""),
+        ai_model=os.getenv("SUPERVISOR_AI_MODEL", ""),
         watchdog_interval_seconds=int(os.getenv("SUPERVISOR_WATCHDOG_INTERVAL", "3600")),
         repo_root=repo_root,
     )

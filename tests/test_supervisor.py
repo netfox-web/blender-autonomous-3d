@@ -1093,6 +1093,8 @@ def test_36_openai_provider_real_http_request(tmp_path: Path):
         content = json.dumps({
             "decision": "ACCEPT_WITH_SCOPE",
             "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
             "reviewedEvidenceGenerationId": "gen_001",
             "acceptedClaims": ["Real Blender OptiX execution evidence verified"],
             "rejectedClaims": [],
@@ -1134,6 +1136,8 @@ def test_37_anthropic_and_gemini_provider_execution():
         content = json.dumps({
             "decision": "ACCEPT_WITH_SCOPE",
             "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
             "reviewedEvidenceGenerationId": "gen_001",
             "acceptedClaims": ["Anthropic verified claims"],
             "rejectedClaims": [],
@@ -1170,6 +1174,8 @@ def test_37_anthropic_and_gemini_provider_execution():
         content = json.dumps({
             "decision": "ACCEPT_WITH_SCOPE",
             "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
             "reviewedEvidenceGenerationId": "gen_001",
             "acceptedClaims": ["Gemini verified"],
             "rejectedClaims": [],
@@ -1217,6 +1223,8 @@ def test_39_provider_mismatched_sha_fails_closed():
         content = json.dumps({
             "decision": "ACCEPT_WITH_SCOPE",
             "reviewedCodeSha": "c0de999",  # Mismatched SHA!
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
             "reviewedEvidenceGenerationId": "gen_wrong",  # Mismatched ID!
             "acceptedClaims": [],
             "rejectedClaims": [],
@@ -1301,6 +1309,8 @@ def test_42_provider_cannot_promote_mock_to_real():
         content = json.dumps({
             "decision": "ACCEPT_WITH_SCOPE",
             "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
             "reviewedEvidenceGenerationId": "gen_001",
             "acceptedClaims": [],
             "rejectedClaims": [],
@@ -1406,4 +1416,315 @@ def test_44_stale_vs_exact_progress_report():
     )
     res_exact = adapter.review_repository(context_exact)
     assert res_exact.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+
+
+# 45. Blocker A: Provider mismatched reviewedDocsSha or reviewedInstructionSha fails closed
+def test_45_provider_mismatched_docs_or_instruction_sha_fails_closed():
+    # Sub-case 1: Wrong docs SHA
+    def wrong_docs_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "wrong_docs_sha",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": [], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-docs-sha")
+    adapter_docs = create_supervisor_adapter(cfg, transport=httpx.MockTransport(wrong_docs_handler))
+
+    c_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+    res_docs = adapter_docs.review_repository(context)
+    assert res_docs.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("mismatched reviewedDocsSha" in b for b in res_docs.blockers)
+
+    # Sub-case 2: Wrong instruction SHA
+    def wrong_instr_handler(request: httpx.Request) -> httpx.Response:
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "wrong_instr_sha",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": [], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    adapter_instr = create_supervisor_adapter(cfg, transport=httpx.MockTransport(wrong_instr_handler))
+    res_instr = adapter_instr.review_repository(context)
+    assert res_instr.decision == ReviewDecision.CHANGES_REQUIRED
+    assert any("mismatched reviewedInstructionSha" in b for b in res_instr.blockers)
+
+
+# 46. Blocker B: Provider prompt includes exact instruction text, changed files manifest, and bounded completeness metadata
+def test_46_provider_prompt_includes_exact_instruction_text_and_completeness_metadata():
+    captured_requests = []
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    cfg = SupervisorConfig(ai_provider="openai", ai_api_key="sk-test-prompt")
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(handler))
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    )
+    context = ReviewContext(
+        contract=contract,
+        diffs="diff --git a/services/supervisor/engine.py b/services/supervisor/engine.py\n+new line",
+        changed_files=["services/supervisor/engine.py"],
+        instruction_text="# Explicit instruction text from INSTRUCTION_SHA\nMust verify Blender OptiX.",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert len(captured_requests) == 1
+    req_body = captured_requests[0].read().decode("utf-8")
+    assert "Explicit instruction text from INSTRUCTION_SHA" in req_body
+    assert "=== CHANGED FILES MANIFEST ===" in req_body
+    assert "services/supervisor/engine.py" in req_body
+    assert "[METADATA: path=" in req_body
+    assert "sha256_prefix=" in req_body
+    assert "reviewedDocsSha" in req_body
+    assert "reviewedInstructionSha" in req_body
+
+
+# 47. Blocker C: Engine independent mismatch verification handles errors and logs without NameError
+def test_47_engine_independent_mismatch_verification_safe_logging(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    # 1. Adapter returns wrong CODE SHA -> Engine catches it independently
+    bad_code_adapter = MockSupervisorAdapter(
+        forced_decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+    )
+    engine.ai_adapter = bad_code_adapter
+
+    c_text = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_mismatch_1")
+    contract = ReadyForReGateContract.parse_from_text(c_text)
+
+    # Force adapter to return wrong CODE SHA
+    bad_code_adapter.review_repository = lambda ctx: SupervisorReviewOutput(
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        reviewed_code_sha="wrong_code_sha",
+        reviewed_docs_sha="d0c5111",
+        reviewed_instruction_sha="instr_000",
+        reviewed_evidence_generation_id="gen_mismatch_1",
+        next_instruction_markdown="# Next",
+        issue_comment_markdown="## Comment",
+    )
+    res = engine.handle_ready_contract(contract)
+    assert res["status"] == "COMPLETED"
+    assert res["decision"] == "CHANGES_REQUIRED"
+
+    # 2. Adapter returns wrong DOCS SHA -> Engine catches it independently
+    bad_docs_adapter = MockSupervisorAdapter()
+    bad_docs_adapter.review_repository = lambda ctx: SupervisorReviewOutput(
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        reviewed_code_sha="c0de111",
+        reviewed_docs_sha="wrong_docs_sha",
+        reviewed_instruction_sha="instr_000",
+        reviewed_evidence_generation_id="gen_mismatch_2",
+        next_instruction_markdown="# Next",
+        issue_comment_markdown="## Comment",
+    )
+    engine.ai_adapter = bad_docs_adapter
+    c_text2 = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_mismatch_2")
+    res2 = engine.handle_ready_contract(ReadyForReGateContract.parse_from_text(c_text2))
+    assert res2["decision"] == "CHANGES_REQUIRED"
+
+    # 3. Adapter returns wrong INSTRUCTION SHA -> Engine catches it independently
+    bad_instr_adapter = MockSupervisorAdapter()
+    bad_instr_adapter.review_repository = lambda ctx: SupervisorReviewOutput(
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        reviewed_code_sha="c0de111",
+        reviewed_docs_sha="d0c5111",
+        reviewed_instruction_sha="wrong_instr_sha",
+        reviewed_evidence_generation_id="gen_mismatch_3",
+        next_instruction_markdown="# Next",
+        issue_comment_markdown="## Comment",
+    )
+    engine.ai_adapter = bad_instr_adapter
+    c_text3 = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_mismatch_3")
+    res3 = engine.handle_ready_contract(ReadyForReGateContract.parse_from_text(c_text3))
+    assert res3["decision"] == "CHANGES_REQUIRED"
+
+    # 4. Adapter promotes mock to REAL -> Engine downgrades to CHANGES_REQUIRED
+    promo_adapter = MockSupervisorAdapter()
+    promo_adapter.review_repository = lambda ctx: SupervisorReviewOutput(
+        decision=ReviewDecision.ACCEPT_WITH_SCOPE,
+        reviewed_code_sha="c0de111",
+        reviewed_docs_sha="d0c5111",
+        reviewed_instruction_sha="instr_000",
+        reviewed_evidence_generation_id="gen_mismatch_4",
+        truth_matrix={"REAL": ["Real Blender Cycles OptiX"]},
+        next_instruction_markdown="# Next",
+        issue_comment_markdown="## Comment",
+    )
+    engine.ai_adapter = promo_adapter
+    c_text4 = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_mismatch_4", real_blender=False, used_mock=True)
+    res4 = engine.handle_ready_contract(ReadyForReGateContract.parse_from_text(c_text4))
+    assert res4["decision"] == "CHANGES_REQUIRED"
+
+
+# 48. Blocker E: BLOCKED decision Issue comment crash window is idempotent
+def test_48_blocked_decision_issue_comment_idempotency(env_setup):
+    engine: SupervisorEngine = env_setup["engine"]
+    gh: MockGitHubClient = env_setup["github_client"]
+
+    blocked_adapter = MockSupervisorAdapter(
+        forced_decision=ReviewDecision.BLOCKED,
+        forced_blockers=["Physical machinery LIVE_CNC requested."],
+        forced_comment_md="Physical machine control blocked.",
+    )
+    engine.ai_adapter = blocked_adapter
+
+    # Case A: GitHub issue already has a comment with deterministic marker (Window B2 adoption)
+    c_text1 = valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_blocked_1")
+    contract1 = ReadyForReGateContract.parse_from_text(c_text1)
+
+    marker1 = f"<!-- REVIEW_MARKER: CODE_SHA={contract1.code_sha} EVIDENCE_ID={contract1.evidence_generation_id} REVIEW_ID=rev_crash -->"
+    gh.posted_comments = [{
+        "id": "existing_blocked_comment_999",
+        "issue_number": 1,
+        "body": f"## SUPERVISOR_REVIEW_COMPLETE\nDECISION=BLOCKED\n{marker1}\nHUMAN_APPROVAL_REQUIRED",
+    }]
+
+    initial_comment_count = len(gh.posted_comments)
+    res1 = engine.handle_ready_contract(contract1)
+    assert res1["status"] == "COMPLETED"
+    assert res1["decision"] == "BLOCKED"
+    # Adopted existing comment without posting duplicate!
+    assert len(gh.posted_comments) == initial_comment_count
+    rev1 = engine.state_mgr.get_review_by_contract(contract1.code_sha, contract1.evidence_generation_id)
+    assert rev1 is not None
+    assert rev1["issue_comment_id"] == "existing_blocked_comment_999"
+
+    # Case B: Fresh contract posts comment with deterministic marker and records in DB
+    gh.ci_runs["run_code_222"] = {
+        "head_sha": "c0de222",
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+            {"name": "unit (ubuntu-latest)", "conclusion": "success"},
+            {"name": "unit (windows-latest)", "conclusion": "success"},
+        ],
+    }
+    gh.ci_runs["run_docs_222"] = {
+        "head_sha": "d0c5222",
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+            {"name": "unit (ubuntu-latest)", "conclusion": "success"},
+            {"name": "unit (windows-latest)", "conclusion": "success"},
+        ],
+    }
+    c_text2 = valid_contract_text(
+        code_sha="c0de222",
+        docs_sha="d0c5222",
+        code_ci_run_id="run_code_222",
+        docs_ci_run_id="run_docs_222",
+        instruction_sha="instr_000",
+        evidence_id="gen_blocked_2",
+    )
+    contract2 = ReadyForReGateContract.parse_from_text(c_text2)
+
+    res2 = engine.handle_ready_contract(contract2)
+    assert res2["status"] == "COMPLETED"
+    assert res2["decision"] == "BLOCKED"
+    assert len(gh.posted_comments) == initial_comment_count + 1
+    new_comment = gh.posted_comments[-1]
+    assert "HUMAN_APPROVAL_REQUIRED" in new_comment["body"]
+    assert f"CODE_SHA={contract2.code_sha}" in new_comment["body"]
+    assert f"EVIDENCE_ID={contract2.evidence_generation_id}" in new_comment["body"]
+    rev2 = engine.state_mgr.get_review_by_contract(contract2.code_sha, contract2.evidence_generation_id)
+    assert rev2 is not None
+    assert rev2["issue_comment_id"] == new_comment["id"]
+
+
+# 49. Blocker D: Configurable SUPERVISOR_AI_MODEL is respected by adapters and recorded in audit trail
+def test_49_configurable_ai_model():
+    reqs_captured = []
+    def handler(request: httpx.Request) -> httpx.Response:
+        reqs_captured.append(request)
+        content = json.dumps({
+            "decision": "ACCEPT_WITH_SCOPE",
+            "reviewedCodeSha": "c0de111",
+            "reviewedDocsSha": "d0c5111",
+            "reviewedInstructionSha": "instr_000",
+            "reviewedEvidenceGenerationId": "gen_001",
+            "acceptedClaims": [],
+            "rejectedClaims": [],
+            "truthMatrix": {"REAL": ["Real Blender Cycles OptiX"], "MOCK": [], "PARTIAL": [], "BLOCKED": []},
+            "blockers": [],
+            "nextInstructionMarkdown": "Next",
+            "issueCommentMarkdown": "Comment",
+        })
+        return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
+
+    cfg = SupervisorConfig(
+        ai_provider="openai",
+        ai_api_key="sk-test-model",
+        ai_model="gpt-4o-2024-11-20",
+    )
+    adapter = create_supervisor_adapter(cfg, transport=httpx.MockTransport(handler))
+
+    contract = ReadyForReGateContract.parse_from_text(
+        valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
+    )
+    context = ReviewContext(
+        contract=contract,
+        diffs="clean diff",
+        progress_report_text=f"# Progress Report\nCODE: {contract.code_sha}\nINSTRUCTION: {contract.instruction_sha}\nTests: 628",
+        audit_text="# Audit\nReal OptiX verified",
+        acceptance_text="# Acceptance\nCycles rendered",
+        ci_summary={"conclusion": "success", "ubuntu_ok": True, "windows_ok": True},
+    )
+
+    res = adapter.review_repository(context)
+    assert res.decision == ReviewDecision.ACCEPT_WITH_SCOPE
+    assert len(reqs_captured) == 1
+    body = json.loads(reqs_captured[0].read().decode("utf-8"))
+    assert body["model"] == "gpt-4o-2024-11-20"
+    assert res.audit_trail["model"] == "gpt-4o-2024-11-20"
+    assert res.audit_trail["provider"] == "openai"
+
 
