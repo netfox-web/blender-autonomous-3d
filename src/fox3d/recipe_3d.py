@@ -169,7 +169,10 @@ def verified_assets(folder, meta):
     for fmt,name in FILES.items():
         expected = (meta.get("files") or {}).get(fmt) or {}
         path = folder/name
-        result[fmt] = bool(expected.get("sha256") and path.is_file() and path.stat().st_size == expected.get("sizeBytes") and sha256_bytes(path.read_bytes()) == expected["sha256"])
+        try:
+            result[fmt] = bool(expected.get("sha256") and path.is_file() and path.stat().st_size == expected.get("sizeBytes") and sha256_bytes(path.read_bytes()) == expected["sha256"])
+        except OSError:
+            result[fmt] = False
     return result
 
 
@@ -181,6 +184,8 @@ def get_recipe_3d_status(root, tenant_id, sku, *, current_draft=None):
     assets = verified_assets(folder/"generations"/gid,meta) if valid_id else {k:False for k in FILES}
     generated = bool(all(assets.values()) and meta.get("renderInfo",{}).get("realBlender") and not meta.get("renderInfo",{}).get("usedMock"))
     state = read_json(folder/"state.json")
+    if meta and not generated and state.get("state", "idle") in {"idle", "succeeded"}:
+        state.update(state="failed", error="成果檔案驗證失敗，請重新生成。")
     stale = bool(current_draft and meta and meta.get("inputHash") != input_hash(current_draft))
     return {"sku":sku,"tenantId":tenant_id,"generated":generated,"assets":assets,"generationId":gid,
             "stale":stale,"state":state.get("state","idle"),"error":state.get("error"),

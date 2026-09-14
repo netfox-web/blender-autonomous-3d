@@ -151,13 +151,16 @@ def test_verified_download_unicode_and_corruption(client,tmp_path,drafts):
         files[fmt]={"sha256":sha256_bytes(data),"sizeBytes":len(data)}
     meta={"generationId":gid,"sku":sku,"tenantId":tid,"files":files,"inputHash":input_hash(drafts[sku]),"renderInfo":{"realBlender":True,"usedMock":False}}
     atomic_json(folder/"meta.json",meta);atomic_json(base/"meta.json",meta)
+    atomic_json(base/"state.json", {"state": "succeeded", "progress": 100})
     url="/api/recipe-library/products/"+sku+"/3d"
     response=client.get(url+"/download/blend",headers=HEADERS)
     assert response.status_code==200 and "filename*=utf-8''" in response.headers["content-disposition"]
     assert client.get(url+"/download/glb",headers={"X-Tenant-Id":"other"}).status_code==404
     assert client.get(url+"/download/png",headers=HEADERS,params={"generation":"../invalid"}).status_code==404
     (folder/"model.glb").write_bytes(b"modified")
-    assert not client.get(url+"/status",headers=HEADERS).json()["generated"]
+    damaged = client.get(url+"/status",headers=HEADERS).json()
+    assert not damaged["generated"] and damaged["state"] == "failed"
+    assert "檔案驗證失敗" in damaged["error"]
     assert client.get(url+"/download/blend",headers=HEADERS).status_code==404
 
 
