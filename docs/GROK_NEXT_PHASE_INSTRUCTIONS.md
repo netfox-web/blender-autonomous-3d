@@ -1,64 +1,61 @@
 # Development Agent 指令：Issue #6 Blender → Generative Video Ground Truth Pipeline V1
 
 > Supervisor Re-Gate checkpoint: 2026-09-15
-> Main before this checkpoint: `b8ccbcb8ad47c3ad1b9ce97b7687295f69509c7d`
-> Newly reviewed out-of-band PR: #11 `codex/product-master-artwork-scenes` (stacked on PR #10, unmerged)
-> PR #11 CODE: `e9384c63c6e61cb0fca2a4e0ba70c729d2a4f0da`
-> PR #11 DOCS/head: `389f2fea2299039ab6d157fd22b77e0120d54896`
-> CODE CI: `34860658072` — Ubuntu + Windows SUCCESS
-> DOCS CI: `34863650891` — Ubuntu + Windows SUCCESS
-> Clean REAL evidence: `baf90892-1b61-440b-9c4a-a3ff6b7929ee`, `workingTreeClean=true`, `developmentOnly=false`
-> Re-Gate result: **PR #11 ACCEPT WITH SCOPE / NO MERGE AUTHORIZATION**
-> PR #12 `codex/model-category-tree`: **DRAFT / NOT YET RE-GATE ELIGIBLE**; exact CODE CI / clean REAL / DOCS CI handoff is still pending.
+> Main before this checkpoint: `40e64f343287969712a1d6e6fe0b32b49b77aa96`
+> Newly reviewed out-of-band PR: #12 `codex/model-category-tree` (stacked on PR #11, unmerged)
+> PR #12 CODE: `052be7f057c24b982b6c6c716c1a9aef094999da`
+> PR #12 DOCS/head: `68f64d604bb750c0c48830c0d50516ef5157d296`
+> CODE CI: `34866913056` — Ubuntu + Windows SUCCESS, 924 tests/OS
+> DOCS CI: `34869377842` — Ubuntu + Windows SUCCESS, 924 tests/OS
+> Clean REAL evidence: `0c83109d-1e6c-4ec6-8d34-ec8c14c68851`, `workingTreeClean=true`, `developmentOnly=false`
+> Re-Gate result: **PR #12 ACCEPT WITH SCOPE / NO MERGE AUTHORIZATION**
 > Next authorized mainline lane: **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1 from current main**
 
-## 0. Re-Gate boundary for PR #11
+## 0. Re-Gate boundary for PR #12
 
-PR #11 is accepted only for its scoped local operator preview lane. It does not authorize merge and does not make referenced Recipe dimensions, artwork, RGB previews, print calibration, provider output, machine paths, or the whole system Production Ready.
-
-Accepted scoped truth:
+PR #12 is accepted only for the scoped product-model classification/navigation lane. It does **not** authorize merge, does not validate physical dimensions/structures, and does not make any model family, print workflow, provider, machine path, or the whole system Production Ready.
 
 ### REAL
-- actual loopback HTTP plus Blender 5.2.1 LTS OptiX runs for nine accepted generations;
-- `.blend` reopen plus observed mesh / UV / packed-image checks;
-- artifact bytes / SHA-256 evidence, downloads, restart preservation and stale-download rejection;
-- exact CODE and DOCS GitHub Actions are green on Ubuntu and Windows.
+- loopback HTTP path used by the clean acceptance runner;
+- Blender 5.2.1 LTS / OptiX base + composition generation with `usedMock=false`;
+- BLEND reopen checks;
+- preserved downloadable bytes/SHA/size across classification move + restart;
+- exact CODE and DOCS CI green on Ubuntu + Windows.
 
 ### REAL_LOGIC
-- existing Recipe snapshots can be reused as reference masters without mutating the source Recipe;
-- geometry identity, artwork identity and scene selection remain separate;
-- only explicitly classified `ARTWORK` sources can be assigned;
-- PDF page / TrimBox / rotation and source aspect gates are enforced; no silent stretch/crop-to-fill;
-- master edits and artwork revocation fail closed for old/current downloads;
-- scene changes do not rewrite product geometry authority.
+- product category tree is navigation/classification metadata, not geometry authority;
+- classification has independent revision/history and optimistic concurrency;
+- classification moves preserve master bytes/input hash/generation IDs;
+- category inference uses explicit model fields/Recipe family, never filenames/artwork as structural truth;
+- invalid parent/unknown/family-mismatch categories fail closed;
+- empty categories do not create placeholder models;
+- new leaf drafts inherit only family/subtype/layers and remain `PENDING` with dimensions/structure unset.
 
-### FIXTURE / REFERENCE / MOCK
-- synthetic test geometry/artwork remains FIXTURE;
-- the three Recipe-derived masters remain REFERENCE because dimensions/structure are not physical measurements;
-- CI Blender is MOCK (`FOX3D_MOCK_BLENDER=1`) and is regression evidence only.
+### FIXTURE / MOCK
+- clean REAL acceptance input dimensions/material are synthetic fixture truth;
+- CI Blender uses `FOX3D_MOCK_BLENDER=1` and is regression evidence only.
 
 ### PARTIAL
-- three local reference masters / nine scene stills only;
-- eight NAS drafts still await dimensions/structure;
-- zero physically validated masters;
-- RGB preview textures are not calibrated print/color proof;
-- scene hashes are deterministic configuration identity, not independently observed Product Truth scene authority.
+- local tree currently exposes three generated references and eight drafts;
+- category availability is not geometry/model completion;
+- existing Recipe-derived masters are references, not physically measured masters.
 
 ### BLOCKED / false
-- physical UV/RIP, white/clear ink, jig/origin/color approval and physical print;
-- curved/irregular print surfaces;
-- arbitrary AI interior/photo compositing;
+- physical dimensions/structure validation for the classified product families;
+- rotating cabinet mechanism and unsupported curved/irregular geometry;
+- veneer/material library, calibrated grain scale, per-part material assignment;
+- physical UV/RIP/white ink/clear ink/jig/origin/color approval/physical print;
 - live H3/LTX/Vision/provider calls;
-- hot-folder/machine dispatch, LIVE_CNC/LIVE_LASER/PLC;
-- video authority and unscoped/global Production Ready.
+- hot-folder/machine writes, LIVE_CNC/LIVE_LASER/PLC;
+- unscoped/global Production Ready.
 
-PR #7/#8/#9/#10/#11 remain unmerged. PR #12 is a draft stacked on #11 and is not accepted by this review. **Do not auto-merge any of #7–#12.**
+PR #7/#8/#9/#10/#11/#12 remain unmerged. **Do not auto-merge any of them.**
 
 ## 1. Branch / architecture discipline
 
-Issue #6 must start from **current `main` after this instruction commit**. Do not base it on PR #7/#8/#9/#10/#11/#12 and do not copy hidden dependencies from those branches.
+Issue #6 must start from **current `main` after this instruction commit**. Do not base it on PR #7–#12 and do not copy hidden dependencies from those branches.
 
-Reuse existing Product Truth / CabinetSpec / Artwork Placement / Product Truth Render Pack / DAM / Recipe / Scheduler / Queue interfaces already on main. Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, Product Truth or engineering authority.
+Reuse Product Truth / CabinetSpec / Artwork Placement / Product Truth Render Pack / DAM / Recipe / Scheduler / Queue interfaces already on main. Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, Product Truth or engineering authority.
 
 Generative models are replaceable renderers. Product Truth is not replaceable. Generative pixels must never become millimetre, geometry, articulation or manufacturing authority.
 
@@ -98,20 +95,20 @@ Build one reusable Blender execution path that emits per frame:
 - articulation state;
 - exact frame index and timestamp.
 
-Every frame/artifact must bind to tenant, SKU/product version, Engineering/Product Truth identity, artwork identities where applicable, Scene/Camera/Video recipe hashes, Blender job ID, artifact SHA-256, byte size and path/DAM lineage.
+Every frame/artifact must bind tenant, SKU/product version, Engineering/Product Truth identity, artwork identities where applicable, Scene/Camera/Video recipe hashes, Blender job ID, artifact SHA-256, byte size and path/DAM lineage.
 
 Do not alias ProductMask to ArtworkMask. ArtworkMask must come from the actual mapped printable-surface scene authority when artwork exists.
 
 ## 4. Required REAL gate — `HERO_ORBIT_8S`
 
-On a clean tree at the exact final CODE SHA:
+On a clean tree at exact final CODE SHA:
 - run REAL Blender with `usedMock=false`;
 - keep geometry and artwork identity fixed;
 - execute deterministic smooth orbit/dolly motion;
-- emit the exact required frame set and AOV/masks;
+- emit exact required frame set and AOV/masks;
 - verify actual bytes/SHA/size/order/timestamps/matrices;
 - record Blender version/device/backend/job ID;
-- validate persisted outputs and lineage fail-closed.
+- validate persisted outputs and lineage fail closed.
 
 Only after this passes may scoped `VIDEO_GROUND_TRUTH_READY=true` and `HERO_ORBIT_REAL=true` be declared.
 
@@ -119,7 +116,7 @@ Only after this passes may scoped `VIDEO_GROUND_TRUTH_READY=true` and `HERO_ORBI
 
 `DOOR_OPEN_REAL=true` is allowed only if existing Product Truth independently supplies exact door/component identity, hinge pivot + axis, allowed range, canonical closed/open transforms and worker-observed transforms at required keyframes.
 
-Negative tests must include wrong/swapped door, wrong pivot/axis/range/transform, wrong Blender job/SKU/product version and artwork bound to the wrong moving component.
+Negative tests must include wrong/swapped door, wrong pivot/axis/range/transform, wrong Blender job/SKU/product version and artwork bound to wrong moving component.
 
 If authority is incomplete, report:
 - `DOOR_OPEN_REAL=false`
@@ -130,7 +127,7 @@ Never invent hinge authority for a demonstration.
 
 ## 6. Canonical `VIDEO_GROUND_TRUTH_MANIFEST`
 
-Create a deterministic machine-readable manifest with:
+Create deterministic machine-readable manifest with:
 - instruction SHA, CODE SHA, evidence generation ID;
 - recipe/product/artwork/engineering identities;
 - every frame index/timestamp;
@@ -140,7 +137,7 @@ Create a deterministic machine-readable manifest with:
 - Blender worker/job lineage;
 - deterministic manifest SHA-256.
 
-The validator must independently re-derive expected identities from frozen pre-worker authority. Worker output or the final manifest cannot validate itself.
+Validator must independently re-derive expected identities from frozen pre-worker authority. Worker output or final manifest cannot validate itself.
 
 Fail closed on missing/duplicate/reordered frames, timestamp drift, non-finite matrices, artifact bytes/hash/size mismatch, mask swap/tamper, wrong Product/Artwork/Placement/finalUv/Camera/Scene/Video hash, cross-SKU/cross-video injection and wrong job/path/DAM lineage.
 
@@ -206,7 +203,7 @@ Do not rewrite `docs/REAL_E2E_ACCEPTANCE.md`, `docs/CABINET_REAL_ACCEPTANCE.md`,
 8. Commit evidence/docs separately as DOCS SHA.
 9. Exact DOCS SHA Actions: Ubuntu + Windows both SUCCESS.
 10. Post one `READY_FOR_RE_GATE` handoff to Issue #1.
-11. STOP. Do not enter the next major phase.
+11. STOP. Do not enter next major phase.
 
 `FOX3D_MOCK_BLENDER=1` CI is regression evidence only, never REAL Blender or Production Ready evidence.
 
