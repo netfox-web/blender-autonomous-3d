@@ -1,299 +1,245 @@
 # Development Agent 指令：Issue #6 Blender → Generative Video Ground Truth Pipeline V1
 
-> Repo: `netfox-web/blender-autonomous-3d`
-> Current main before this instruction: `e05295f7834327403ffb102bbc497124550b0258`
-> Reviewed PrintFox PR: #9
-> Reviewed CODE: `6ac129750624ed48530f5f5988a0b5f6606c8ce0`
-> Reviewed DOCS: `e0ea11fc33e5a336b2739ac7282688ff364bdaba`
-> CODE CI: `34833832340` — Ubuntu + Windows SUCCESS, 870 tests each
-> DOCS CI: `34835768990` — Ubuntu + Windows SUCCESS, 870 tests each
-> Clean formal evidence: `e7ee0d4c-8858-40ae-b8da-80bc3073a4e9`
-> Re-Gate result: **PR #9 ACCEPT WITH SCOPE**
-> Next authorized work: **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1**
+> Supervisor Re-Gate checkpoint: 2026-09-14
+> Main before this checkpoint: `bab3a1a2b4631e0c6f40c5c93e33441a72c74dd0`
+> Reviewed out-of-band PR: #10 `codex/nas-product-model-library` (still stacked on PR #9, unmerged)
+> Reviewed correction CODE: `3fd0a30008ae8b19cc4bf3d5ba636f30ef73610c`
+> Reviewed correction DOCS/head: `b479544853d635959820a3b23345485feed33867`
+> CODE CI: `34851148775` — Ubuntu + Windows SUCCESS, 904 tests/OS
+> DOCS CI: `34853958669` — Ubuntu + Windows SUCCESS, 904 tests/OS
+> Clean REAL evidence: `5a13d16e-c19d-4d90-846b-49ebbc618bc7`, `workingTreeClean=true`, `developmentOnly=false`
+> Re-Gate result: **PR #10 correction ACCEPT WITH SCOPE / NO MERGE AUTHORIZATION**
+> Next authorized lane: **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1 from current main**
 
-## 0. Re-Gate decision for PR #9
+## 0. Re-Gate boundary for the PR #10 correction
 
-PR #9 is accepted only for the scoped **PrintFox digital bridge**. Do not interpret this as production PrintFox/UV-print readiness and do not auto-merge PR #7/#8/#9.
+The latest PR #10 correction is accepted only for its scoped local model/material-library behavior. This does **not** authorize merge and does not turn synthetic inputs, local operator classification, mocked CI Blender, physical printing, or live machine/provider paths into Production Ready.
 
-Accepted evidence:
+Accepted scoped truth:
 
 ### REAL
-- actual committed PrintFox app HTTP path was exercised from committed PrintFox code `1c774d6691b931fa82b8ed7ee4ae5b4de4e83f2a` in isolated loopback services;
-- original design bytes were imported and SHA-256 lineage preserved;
-- enqueue/cancel/restart/reconciliation path was exercised and replay produced zero duplicate remote jobs;
-- REAL Blender 5.2.1 / OptiX preview was generated and the `.blend` reopen / packed texture / UV evidence passed;
-- exact CODE `6ac1297` and DOCS `e0ea11f` both have Ubuntu + Windows Actions SUCCESS, 870 tests each.
+- actual HTTP + Blender 5.2.1 LTS OptiX generation for the supported synthetic `OPEN_CABINET`, `HINGED_CABINET`, and `RECTANGLE` fixtures;
+- saved `.blend` reopen/component-bound checks and PNG/BLEND/GLB/geometry artifact byte/hash evidence;
+- clean exact-CODE acceptance after exact CODE dual-platform CI.
 
 ### REAL_LOGIC
-- fixed configured origin; UI cannot supply an arbitrary temporary remote URL;
-- in-memory expiring Token session, tenant/origin binding, HttpOnly + SameSite=Strict cookie, no Token in persisted JSON;
-- bounded single generation request (1–4 images, no continuous generation);
-- request journal written before POST; uncertain submission is not automatically re-POSTed;
-- own-task cancel checks exact remote job type/params before cancellation;
-- imported art retains provenance and remains subject to existing mm/proof/human release gates.
+- product templates and historical NAS materials are separate views;
+- browsing a NAS source does not implicitly create or mutate a product template/draft;
+- imported/legacy assets default deny until explicitly classified;
+- only operator-reviewed `ARTWORK` is selectable by model/print backend gates;
+- changing an asset away from `ARTWORK` invalidates subsequent model/print use and blocks affected old downloads;
+- classification revision/history survives restart and original bytes are preserved.
 
 ### FIXTURE / MOCK
-- artwork and Token in acceptance are synthetic fixtures;
-- no production AI worker/provider executed;
-- CI Blender uses `FOX3D_MOCK_BLENDER=1` and is regression evidence only;
-- transport failure/redirect cases use MockTransport.
+- formal render dimensions, SKU, artwork, and CI Blender are fixture/mock evidence;
+- CI `FOX3D_MOCK_BLENDER=1` is regression evidence only.
 
 ### PARTIAL
-- production PrintFox health/config discovery only;
-- actual cabinet manufacturing dimensions remain incomplete where not measured;
-- native Illustrator slot / jig / origin calibration remains incomplete.
+- local imported-material review is incomplete: 17 inspected, 15 references, 1 mixed sheet unclassified, 1 six-page artwork source reviewed;
+- full NAS inventory is not classified;
+- company snapshot remains 8 drafts, 0 generated company models, 0 physically validated masters;
+- operator classification is local judgment, not production tenant authentication or print authorization.
 
 ### BLOCKED / false
-- `productionPrintfoxAuthenticated=false`;
-- `realAiGenerationVerified=false`;
-- native Illustrator / NetFox imposition and live job submission;
-- physical UV print, RIP, white/clear ink, jig alignment and color approval;
-- hot-folder dispatch;
+- automatic artwork application to those new product models;
+- unsupported curved/special geometry;
+- calibrated UV/RIP, white/clear ink, jig/origin/color approval;
+- physical print and hot-folder/machine dispatch;
+- scene generation from this PR;
 - LIVE_CNC / LIVE_LASER / PLC / machine control;
-- `physicalPrintValidated=false`;
-- `globalProductionReady=false`.
+- global Production Ready.
 
-The earlier superseded CODE `0675360` and failed run `34833598699` are not green evidence.
+PR #7/#8/#9/#10 remain unmerged. **Do not auto-merge them. Stop the PR #10 lane unless a human explicitly reauthorizes it.**
 
-## 1. Branch and dependency discipline
+## 1. Branch and architecture discipline
 
-Issue #6 must start from **current `main`**, unless a human explicitly merges a prerequisite first.
+Issue #6 must branch from the **current `main` after this instruction commit**, not from PR #7/#8/#9/#10.
 
-PR #7, #8 and #9 are still review branches. Therefore:
+Rules:
+- no copy/paste dependency on unmerged branches;
+- no PrintFox/NAS-library dependency for Video Ground Truth;
+- use existing Product Truth / Cabinet / Render Pack / DAM / Recipe / Scheduler / Queue interfaces on main;
+- do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, Product Truth, or existing engineering authority;
+- generative models may be replaceable; Product Truth is not replaceable;
+- no rendered or generative pixels may become millimetre/engineering authority.
 
-- do not branch Issue #6 from PR #7/#8/#9;
-- do not copy/paste Golden Product, print-workspace or PrintFox code from unmerged branches;
-- do not make Video Ground Truth depend on PrintFox;
-- use existing `main` Product Truth / Cabinet / Render Pack / DAM / Recipe interfaces;
-- if a future Golden or PrintFox integration point is needed, define an optional narrow adapter only;
-- do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth.
+## 2. Implement deterministic `VideoRecipe`
 
-The PrintFox bridge is accepted separately and does **not** replace the previously authorized Issue #6 work.
-
-## 2. Provider-neutral `VideoRecipe`
-
-Implement deterministic `VideoRecipe` models for at least:
-
+Provide provider-neutral recipes at minimum:
 - `HERO_ORBIT_8S`
 - `DOOR_OPEN_8S`
 - `ARTWORK_DETAIL_6S`
 - `SMALL_ROOM_10S`
-- `ASSEMBLY_EXPLODE_10S` only when assembly authority exists; otherwise BLOCKED.
+- `ASSEMBLY_EXPLODE_10S` only where assembly authority exists; otherwise explicit BLOCKED.
 
-Every recipe must bind:
-
-- recipe ID/version;
-- duration, fps, resolution, exact frame count;
-- `CameraRecipeHash`, `SceneRecipeHash`, deterministic `VideoRecipeHash`;
-- focal length, sensor, clipping and look-at semantics;
-- camera path keyframes/interpolation;
+Every recipe must deterministically bind:
+- recipe ID/version, duration, fps, resolution, exact frame count;
+- `VideoRecipeHash`, `CameraRecipeHash`, `SceneRecipeHash`;
+- focal length/sensor/clipping/look-at semantics;
+- camera keyframes + interpolation;
 - product/object transform timeline;
 - articulation timeline;
-- scene/lighting reference;
-- tenant / SKU / product version;
-- engineering / Product Truth lineage;
-- ArtworkHash / PlacementHash / finalUvHash when artwork exists.
+- tenant/SKU/product version;
+- Engineering/Product Truth identity;
+- ArtworkHash/ArtworkVersion/PlacementHash/finalUvHash when artwork exists.
 
-No provider may redefine geometry, artwork identity or authoritative camera truth.
+Strict finite numeric schemas only. Reject bool/string/NaN/Inf coercion in authority fields.
 
-## 3. Frame-level Blender Ground Truth
+## 3. Frame-level REAL Blender Ground Truth
 
-Create a reusable Blender path that emits per frame, where applicable:
-
+Create one reusable Blender execution path that can emit per frame:
 - RGB / Beauty;
 - Depth;
 - Normal;
 - ProductMask;
 - ArtworkMask;
-- Alpha;
-- camera matrix / intrinsics;
+- Alpha where applicable;
+- camera intrinsics/extrinsics or matrix;
 - product/object matrix;
 - articulation state;
-- exact frame index + timestamp.
+- exact frame index and timestamp.
 
-Each frame must bind to:
-
-- tenant / SKU / product version;
-- engineeringHash / Product Truth identity;
-- ArtworkHash / ArtworkVersion;
-- PlacementHash / finalUvHash;
-- SceneRecipeHash / CameraRecipeHash / VideoRecipeHash;
+Each emitted artifact/frame must be bound to:
+- tenant/SKU/product version;
+- EngineeringHash/Product Truth identity;
+- ArtworkHash/PlacementHash/finalUvHash where applicable;
+- SceneRecipeHash/CameraRecipeHash/VideoRecipeHash;
 - Blender job ID;
-- artifact SHA-256 and byte size.
+- artifact SHA-256 + byte size + path/DAM lineage.
 
-Do not infer authoritative dimensions from rendered or generative pixels.
+No silent ProductMask→ArtworkMask alias. Printable-surface ArtworkMask must be independently derived from actual Blender scene/mapping authority when artwork exists.
 
-## 4. Required REAL acceptance: `HERO_ORBIT_8S`
+## 4. Required REAL gate: `HERO_ORBIT_8S`
 
-On the final CODE SHA and a clean working tree:
+On a clean working tree at the exact final CODE SHA:
+- run REAL Blender, `usedMock=false`;
+- keep product geometry/artwork identity fixed;
+- execute a deterministic smooth orbit/dolly;
+- emit the exact frame set and required AOV/masks;
+- verify actual bytes/SHA/size/order/timestamps/matrices;
+- record Blender version/device/backend/job ID;
+- reopen/validate outputs where the current architecture supports it;
+- fail closed on any lineage or artifact mismatch.
 
-- use REAL Blender, not Mock;
-- product geometry and artwork identity remain fixed;
-- camera performs deterministic smooth orbit/dolly;
-- emit and verify the exact frame set and all required AOV/mask artifacts;
-- record Blender version/device/GPU backend;
-- verify actual bytes, SHA-256, sizes, ordering, timestamps and matrices;
-- prove ProductMask / ArtworkMask / AOV outputs are not aliased placeholders.
+Only after this passes may scoped `VIDEO_GROUND_TRUTH_READY=true` and `HERO_ORBIT_REAL=true` be declared.
 
-This is the minimum gate for `VIDEO_GROUND_TRUTH_READY=true`.
+## 5. `DOOR_OPEN_8S` articulation authority must fail closed
 
-## 5. `DOOR_OPEN_8S` must fail closed on articulation authority
-
-Mark `DOOR_OPEN_8S` REAL only when Product Truth supplies authoritative:
-
+`DOOR_OPEN_REAL=true` is allowed only if existing Product Truth supplies authoritative:
 - exact door/component identity;
-- hinge pivot and axis;
+- hinge pivot + axis;
 - allowed articulation range;
-- closed/open transforms;
-- worker-observed transforms at required key frames.
+- canonical closed/open transforms;
+- worker-observed transforms at required keyframes.
 
-Negative checks must include wrong door, swapped door, wrong pivot/axis, wrong job/SKU and artwork bound to the wrong moving component.
+Required negative cases include wrong/swapped door, wrong pivot/axis, wrong transform, wrong Blender job/SKU/product version, and artwork bound to wrong moving component.
 
-If authority is incomplete:
+If authority is incomplete, declare:
+- `DOOR_OPEN_REAL=false`
+- `doorOpenGroundTruthReady=false`
+- `BLOCKED_ARTICULATION_AUTHORITY`
 
-- `DOOR_OPEN_REAL=false`;
-- `doorOpenGroundTruthReady=false`;
-- state = `BLOCKED_ARTICULATION_AUTHORITY`;
-- do not fabricate hinge authority for a demo.
+Do not fabricate hinge authority for a demo.
 
-## 6. Deterministic `VIDEO_GROUND_TRUTH_MANIFEST`
+## 6. Canonical `VIDEO_GROUND_TRUTH_MANIFEST`
 
-Create a machine-readable canonical manifest with:
-
-- exact CODE SHA and evidence generation ID;
+Create a machine-readable deterministic manifest containing:
+- instruction/CODE SHA + evidence generation ID;
+- recipe/product/artwork/engineering identities;
 - every frame index/timestamp;
-- every artifact ref/SHA/size;
+- every artifact ref/path/SHA/size;
 - camera/object matrices;
 - articulation state;
-- masks/AOV lineage;
-- Product/Artwork/Scene/Camera/Video recipe hashes;
+- worker Blender job lineage;
 - deterministic manifest SHA-256.
 
-Fail closed on:
+Validator must independently re-derive canonical expected identities from frozen pre-worker authority. Do not use final manifest/worker output as its own authority.
 
-- missing/duplicate/reordered frames;
-- bad timestamp sequence;
-- artifact byte/SHA/size mismatch;
-- camera/object matrix tamper or non-finite values;
-- mask swap/tamper;
-- cross-video or cross-SKU injection;
-- wrong engineering/artwork/placement/finalUv hashes;
-- wrong Blender job lineage.
+Fail closed on missing/duplicate/reordered frames, timestamp drift, non-finite matrices, artifact bytes/hash/size mismatch, mask swap/tamper, wrong Product/Artwork/Placement/finalUv/Camera/Scene/Video hash, cross-SKU/cross-video injection, wrong job/path/DAM lineage, or coordinated expected+observed tamper.
 
-## 7. Provider-neutral H3 / LTX contract only
+## 7. Provider-neutral H3/LTX gateway only
 
-Implement/extend adapters for:
-
+Implement/extend narrow adapters/contracts for:
 - `H3MaxAdapter`
 - `LTX25Adapter`
 - future providers.
 
-Provider request packages may consume RGB/keyframes, Depth, Normal, ProductMask, ArtworkMask, camera metadata, prompt/style brief and product-lock constraints.
+Request packages may consume RGB/keyframes, Depth, Normal, ProductMask, ArtworkMask, camera metadata, style brief, and product-lock constraints.
 
-Until a real configured provider network call is independently verified:
+Until a real provider network call/runtime is independently verified:
+- `liveH3MaxProviderReady=false`
+- `liveLtx25ProviderReady=false`
+- `liveProviderReady=false`
+- fixture/mock output stays MOCK/FIXTURE
+- generative output never becomes Product Truth.
 
-- `liveH3MaxProviderReady=false`;
-- `liveLtx25ProviderReady=false`;
-- `liveProviderReady=false` for this scope;
-- fixtures/mocks stay MOCK/FIXTURE;
-- generative output can never become Product Truth.
+Never commit credentials/tokens.
 
-Do not add secrets to repo, evidence or logs.
+## 8. Product Lock QA V1 + retry/DAM lineage
 
-## 8. Product Lock QA V1
-
-Implement deterministic QA before any live Vision dependency. At minimum check:
-
-- product silhouette/shape consistency proxy;
+Before any live Vision dependency, implement deterministic REAL_LOGIC checks for:
+- silhouette/shape consistency proxy;
 - panel/door topology identity;
-- mask IoU or deterministic mask-bound geometry checks;
+- ProductMask/ArtworkMask geometry/IoU or equivalent deterministic checks;
 - artwork region position/scale/rotation;
-- camera motion against recipe;
+- camera motion vs recipe;
 - temporal identity/flicker signals;
-- publication guard: REJECT cannot become final.
+- publication guard: rejected candidate cannot become final.
 
-Allowed bounded outcomes: `PASS`, `RETRY`, `REJECT`.
+Allowed outcomes: `PASS`, `RETRY`, `REJECT`.
 
-If live Vision is not configured, `visionQaReady=false`. Deterministic checks can be REAL_LOGIC, not REAL Vision.
+If Vision is not live, `visionQaReady=false`; do not relabel deterministic checks as REAL Vision.
 
-## 9. Retry and DAM lineage
+Persist the chain:
+`Ground Truth -> Provider Candidate -> QA -> PASS/RETRY/REJECT -> DAM`
 
-Implement:
+Persist candidate/provider/model/version/seed/config, ground-truth manifest hash, attempt/retry reason, QA evidence, artifact SHA/bytes, and final publish state. Retries must be idempotent; no silent accepted-lineage overwrite.
 
-`Ground Truth -> Provider Candidate -> QA -> PASS / RETRY / REJECT -> DAM`
+## 9. Required adversarial tests
 
-Persist candidate ID, provider/model/version, seed/config, ground-truth manifest hash, attempt, retry reason, QA evidence, artifact SHA/bytes and final publish state.
-
-Rules:
-
-- retries are idempotent;
-- rejected candidate cannot become Final Commerce Video without a new accepted QA record;
-- DAM distinguishes Blender Ground Truth / Provider Candidate / QA Accepted / QA Rejected / Final Commerce Video;
-- no silent overwrite of accepted lineage.
-
-## 10. Golden Product integration boundary
-
-Because PR #7 remains unmerged:
-
-- use a product already on `main` for canonical development/REAL acceptance;
-- optional Golden integration is allowed only through a narrow interface that does not import unmerged code;
-- after a future human merge, the same VideoRecipe pipeline must consume the Golden Product without reimplementation.
-
-Do not block Issue #6 on PR #7/#8/#9 merge.
-
-## 11. Required adversarial tests
-
-Cover at least:
-
-- wrong tenant/SKU/product version;
-- engineeringHash mismatch;
-- ArtworkHash / PlacementHash / finalUvHash mismatch;
-- SceneRecipeHash / CameraRecipeHash / VideoRecipeHash mismatch;
+At minimum test fail-closed behavior for:
+- wrong tenant/SKU/product version/EngineeringHash;
+- ArtworkHash/PlacementHash/finalUvHash mismatch;
+- Scene/Camera/Video recipe hash mismatch and semantic-body/hash contradiction;
 - frame reorder/missing/duplicate/cross-video mix;
-- camera/object transform tamper;
-- ProductMask / ArtworkMask swap or tamper;
-- artifact SHA/size mismatch;
-- wrong Blender job lineage;
-- non-finite matrices;
-- articulation authority absent;
-- wrong door/pivot/axis;
-- rejected candidate publish attempt;
+- camera/object matrix tamper/non-finite values;
+- ProductMask/ArtworkMask swap or alias;
+- artifact path/SHA/size mismatch and wrong DAM/job lineage;
+- absent/incorrect articulation authority;
+- rejected candidate publish;
 - Mock provider attempting `liveProviderReady=true`;
 - Mock Vision attempting `visionQaReady=true`.
 
-All authority mismatches fail closed.
-
-## 12. Acceptance docs
+## 10. Acceptance artifacts
 
 Create/update:
-
 - `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ARCHITECTURE.md`
 - `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ACCEPTANCE.md`
 - machine-readable acceptance JSON.
 
-Truth matrix must explicitly separate REAL / REAL_LOGIC / FIXTURE / MOCK / PARTIAL / BLOCKED.
+Truth matrix must explicitly separate `REAL`, `REAL_LOGIC`, `FIXTURE`, `MOCK`, `PARTIAL`, `BLOCKED`.
 
-Do not rewrite `docs/REAL_E2E_ACCEPTANCE.md`, `docs/CABINET_REAL_ACCEPTANCE.md`, or historic Grok reports merely for narrative consistency. Change them only if new evidence actually changes scoped truth.
+Do not rewrite `docs/REAL_E2E_ACCEPTANCE.md`, `docs/CABINET_REAL_ACCEPTANCE.md`, or historical reports merely for narrative consistency. Update them only if fresh evidence truly changes scoped truth.
 
-## 13. CODE / DOCS evidence sequence
+## 11. Ordered CODE / REAL / DOCS evidence sequence
 
-1. implement code/tests;
-2. run full local `pytest -q`;
-3. push final CODE SHA;
-4. exact CODE SHA Ubuntu + Windows Actions must SUCCESS;
-5. on a clean tree at exact CODE SHA, run REAL Blender Video Ground Truth acceptance;
-6. verify actual output bytes/hashes/matrices/manifests;
-7. commit evidence/docs separately as DOCS SHA;
-8. exact DOCS SHA Ubuntu + Windows Actions must SUCCESS;
-9. post one `READY_FOR_RE_GATE` handoff;
-10. STOP.
+1. Implement code + tests.
+2. Run full local `pytest -q`.
+3. Commit/push one final CODE SHA.
+4. Exact CODE SHA GitHub Actions Ubuntu + Windows must both SUCCESS.
+5. Checkout/verify clean tree on exact CODE SHA.
+6. Run REAL Blender Video Ground Truth acceptance.
+7. Verify actual bytes/hashes/matrices/manifests/job/DAM lineage.
+8. Commit evidence/docs separately as DOCS SHA.
+9. Exact DOCS SHA GitHub Actions Ubuntu + Windows must both SUCCESS.
+10. Post one `READY_FOR_RE_GATE` handoff to Issue #1.
+11. STOP. Do not enter the next major phase.
 
-`FOX3D_MOCK_BLENDER=1` CI is regression evidence only.
+`FOX3D_MOCK_BLENDER=1` CI remains MOCK regression evidence only.
 
-## 14. `READY_FOR_RE_GATE` contract
+## 12. `READY_FOR_RE_GATE` minimum contract
 
-Report at minimum:
-
+Report:
 - `INSTRUCTION_SHA`
 - `ISSUE=6`
 - `CODE_SHA`
@@ -315,30 +261,29 @@ Report at minimum:
 
 Then list REAL / REAL_LOGIC / FIXTURE / MOCK / PARTIAL / BLOCKED separately.
 
-## 15. Existing global blockers remain unchanged
+## 13. Existing global blockers remain unchanged
 
-Keep fail-closed unless independently verified:
-
-- Event-Driven Supervisor public HTTPS webhook ingress;
-- GitHub webhook secret;
-- live supervisor provider/model credentials/config;
+Keep false/BLOCKED unless independently verified with fresh evidence:
+- Event-Driven Supervisor public HTTPS webhook/live E2E;
+- GitHub webhook secret and live supervisor provider/model credentials;
 - supervisor admin key;
 - `webhookRealE2e=false`;
 - Supervisor `liveProviderReady=false`;
 - `eventDrivenSupervisorReady=false`;
-- LIVE_CNC / LIVE_LASER / PLC / physical machine control BLOCKED.
+- physical UV/RIP/machine/hot-folder execution;
+- LIVE_CNC / LIVE_LASER / PLC / physical machine control;
+- unscoped `globalProductionReady` / `fullAutonomousFactoryReady`.
 
-## 16. Forbidden
+## 14. Forbidden
 
 - no architecture rewrite;
-- no auto-merge of PR #7/#8/#9;
-- no Issue #6 dependency on unmerged PR #7/#8/#9;
+- no auto-merge of PR #7/#8/#9/#10;
+- no dependency on unmerged PR branches;
 - no Mock/FIXTURE → REAL promotion;
 - no generative output → Product Truth promotion;
 - no fabricated articulation authority;
 - no licensed artwork upload to GitHub;
-- no production PrintFox Token, AI worker or cloud generation claim unless separately evidenced;
-- no Illustrator execution / native NetFox live mutation in this video phase;
-- no print hot-folder / physical machine write;
-- no unscoped `productionReady=true`;
-- no next major phase after Issue #6; stop for Re-Gate.
+- no production PrintFox/AI-provider claim without separate live evidence;
+- no physical print/machine write;
+- no unscoped Production Ready claim;
+- stop after Issue #6 READY_FOR_RE_GATE.
