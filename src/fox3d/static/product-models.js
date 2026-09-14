@@ -95,7 +95,7 @@
     $('generate').disabled=active||dirty||!selected.readiness.previewReady||!$('accept').checked||busy;
     if(s.generated&&!s.stale&&!dirty){const url=fmt=>`${base}/${id}/files/${fmt}?`+new URLSearchParams({workspace:tenant,generation:s.generationId});
       if(viewId!==s.generationId){if(dispose)dispose();dispose=window.mountRecipeViewer($('viewer'),s.spec);viewId=s.generationId;
-        $('render-image').src=url('png');$('render-image').hidden=false;$('downloads').innerHTML=['png','blend','glb','geometry'].map(f=>`<a href="${esc(url(f))}" download>${{png:'下載棚拍預覽',blend:'下載 Blender 模型',glb:'下載 GLB 模型',geometry:'下載尺寸紀錄'}[f]}</a>`).join('');}}
+        $('render-image').src=url('png');$('render-image').hidden=false;$('downloads').innerHTML=['png','blend','glb','geometry'].map(f=>`<a href="${esc(url(f))}" download>${{png:'下載棚拍預覽',blend:'下載 Blender 模型',glb:'下載 GLB 模型',geometry:'下載尺寸紀錄'}[f]}</a>`).join('');await loadMasters();}}
     else{$('downloads').replaceChildren();$('render-image').hidden=true;}}
   $('search-form').onsubmit=run(()=>loadCatalog());$('more').onclick=run(()=>loadCatalog(true));
   $('file-search').onsubmit=run(()=>loadFiles());$('files-more').onclick=run(()=>loadFiles(true));
