@@ -9,7 +9,7 @@ from pydantic import Field
 from pypdf.errors import PdfReadError
 from PIL import Image
 
-from fox3d import nas_catalog as nas, product_models as models, recipe_3d as render
+from fox3d import nas_catalog as nas, product_models as models, recipe_3d as render, asset_usage
 from fox3d.recipe_preview_service import RecipePreviewService
 from fox3d.recipe_workbench import DraftConflict
 
@@ -24,6 +24,11 @@ class Generate(models.Strict):
 
 class Cancel(models.Strict):
     taskId: str
+
+class Usage(models.Strict):
+    role: str
+    note: str = Field(min_length=1,max_length=1500)
+    expectedRevision: int = Field(ge=0)
 
 def product_models_router(provider):
     r=APIRouter(); services={}; lock=RLock()
@@ -69,6 +74,12 @@ def product_models_router(provider):
     @r.post('/api/product-models/files/{sid}/import')
     def source_import(sid:str,x_tenant_id:str|None=Header(None)):
         return call(nas.import_file,root(),tid(x_tenant_id),sid)
+    @r.get('/api/product-models/assets')
+    def asset_list(x_tenant_id:str|None=Header(None)):
+        return {'roles':asset_usage.ROLES,'items':call(asset_usage.listing,root(),tid(x_tenant_id))}
+    @r.put('/api/product-models/assets/{aid}/usage')
+    def classify(aid:str,body:Usage,x_tenant_id:str|None=Header(None)):
+        return call(asset_usage.classify,root(),tid(x_tenant_id),aid,body.role,body.note,body.expectedRevision)
     @r.get('/api/product-models')
     def listing(x_tenant_id:str|None=Header(None)):
         return {'items':call(models.listing,root(),tid(x_tenant_id))}
@@ -87,6 +98,7 @@ def product_models_router(provider):
         if item['revision']!=body.expectedRevision or item['inputHash']!=body.inputHash:
             raise HTTPException(409,'版本已變更，請重新載入')
         if not body.assumptionsAccepted: raise HTTPException(422,'請確認結構簡化說明')
+        call(models.validate_artworks,root(),t,item['draft'])
         call(models.build_spec,item['draft'])
         p=provider()
         if p.mock_blender or not p.runtime.available(): raise HTTPException(503,'真實 Blender 不可用')

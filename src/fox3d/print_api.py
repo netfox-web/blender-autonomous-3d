@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pypdf.errors import PdfReadError
 from PIL import Image
 
-from fox3d import print_assets as assets, print_workspace as jobs, print_preview as preview
+from fox3d import print_assets as assets, print_workspace as jobs, print_preview as preview, asset_usage
 from fox3d.recipe_3d import read_json
 from fox3d.recipe_preview_service import RecipePreviewService
 
@@ -85,7 +85,7 @@ def print_router(provider):
     @r.get('/api/print-workspace/assets')
     def listing(x_tenant_id:str|None=Header(None)):
         t=tid(x_tenant_id);folder=assets.workspace(root(),t)/'assets'
-        return {'items':[read_json(f) for f in folder.glob('*/asset.json')]}
+        return {'items':call(asset_usage.listing,root(),t)}
 
     @r.get('/api/print-workspace/assets/{aid}/preview')
     def image(aid:str,workspace:str,page:int=0):
@@ -144,6 +144,9 @@ def print_router(provider):
         t=tid(workspace)
         if not re.fullmatch(r'[a-f0-9-]{36}',gid) or name not in preview.FILES:raise HTTPException(404)
         folder=preview.folder_for(root(),t,jid)/'generations'/gid
-        call(preview.validate,folder)
+        j=call(jobs.get_job,root(),t,jid)
+        call(jobs.plan,root(),t,j['draft'])
+        manifest=call(preview.validate,folder)
+        call(jobs.plan,root(),t,manifest['draft'])
         return FileResponse(folder/name,filename=None if name.endswith('.png') else name,headers={'Cache-Control':'no-store'})
     return r

@@ -9,7 +9,7 @@ from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from fox3d.ids import new_id, stable_hash
-from fox3d import nas_catalog as nas, print_assets
+from fox3d import nas_catalog as nas, print_assets, asset_usage
 from fox3d import recipe_3d as render
 from fox3d.recipe_workbench import DraftConflict, timestamp
 
@@ -65,9 +65,12 @@ def folder(root, tid, mid):
     return render.get_recipe_3d_dir(Path(root)/'nas-models', tid, mid)
 
 def status(root, tid, mid, *, current_draft=None):
+    if current_draft:
+        validate_artworks(root,tid,current_draft)
     return render.get_recipe_3d_status(Path(root)/'nas-models', tid, mid, current_draft=current_draft)
 
 def generate(platform, tid, mid, draft, **kwargs):
+    validate_artworks(platform.root,tid,draft)
     return render.generate_recipe_3d_product(platform,tid,mid,draft,**kwargs,
         spec_builder=build_spec,folder_builder=folder,status_builder=status)
 
@@ -142,12 +145,17 @@ def get(root,tid,mid):
 def listing(root,tid):
     return [get(root,tid,p.parent.name) for p in sorted(directory(root,tid).glob('*/master.json'))]
 
+
+def validate_artworks(root,tid,data):
+    for variant in data.get('variants',[]):
+        if variant.get('artworkAssetId'):
+            asset_usage.require_artwork(root,tid,variant['artworkAssetId'])
+
 def save(root,tid,data,revision,mid=None):
     m=Master.model_validate(data)
     if m.sourceGroupId and not any(g['id']==m.sourceGroupId for g in nas.checked_snapshot(root).get('groups',[])):
         raise ValueError('來源群組已失效，請重新選擇')
-    for variant in m.variants:
-        if variant.artworkAssetId: print_assets.asset(root,tid,variant.artworkAssetId)
+    validate_artworks(root,tid,m.model_dump())
     base=directory(root,tid); base.mkdir(parents=True,exist_ok=True)
     with FileLock(str(base/'write.lock'),timeout=10):
         previous=get(root,tid,mid) if mid else None

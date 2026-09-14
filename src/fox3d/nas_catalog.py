@@ -110,5 +110,7 @@ def import_file(root, tenant, sid):
         raise ValueError('此格式目前僅提供檔案位置；請使用 PDF 相容 AI、PDF 或圖片預覽')
     with path.open('rb') as stream: raw = stream.read(print_assets.MAX_BYTES+1)
     if len(raw)>print_assets.MAX_BYTES: raise ValueError('原稿上限為 150 MB')
-    return print_assets.import_asset(root,tenant,raw,item['name'],
+    from fox3d import asset_usage
+    meta=print_assets.import_asset(root,tenant,raw,item['name'],
         {'type':'NAS_PRODUCT_CATALOG', 'sourceId':sid, 'relativePath':item['path'], 'physicalDimensionsVerified':False})
+    return asset_usage.decorate(root,tenant,meta)

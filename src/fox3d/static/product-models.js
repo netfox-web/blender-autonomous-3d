@@ -3,6 +3,7 @@
   const $=id=>document.getElementById(id), base='/api/product-models', tenant='sonaqueen-home';
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const form=$('master-form');
+  let usageRoles={}, reviewAsset=null, usageLimit=20;
   let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, assets=[], dispose=null, viewId='', busy=false;
   const numeric=['widthMm','depthMm','heightMm','panelMm','backMm','doorMm','gapMm','rows'];
   const labels={idle:'尚未生成',queued:'排隊中',running:'Blender 生成中',succeeded:'生成完成',failed:'生成失敗',cancelled:'已取消'};
@@ -39,22 +40,39 @@
     $('sources-panel').hidden=false;$('source-folder').textContent=data.group.folder;$('file-note').textContent=`${data.total} 個檔案；檔名不作為尺寸依據。`;
     for(const f of data.items){const row=document.createElement('div');row.className='file';row.innerHTML=`<strong>${esc(f.name)}</strong><small>${esc(f.path)}</small>`;
       if(['.ai','.pdf','.jpg','.jpeg','.png','.tif','.tiff'].includes(f.extension)){
-        const b=document.createElement('button');b.className='secondary';b.type='button';b.textContent='匯入並預覽原稿';
+        const b=document.createElement('button');b.className='secondary';b.type='button';b.textContent='預覽並分類素材';
         b.onclick=run(async()=>{b.disabled=true;try{const a=await api(`/files/${f.id}/import`,{method:'POST'});await loadAssets();
           $('source-image').src=`/api/print-workspace/assets/${a.id}/preview?workspace=${encodeURIComponent(tenant)}`;$('source-preview').hidden=false;
-          notice('原稿已另存到圖稿庫；可在 SKU 圖稿欄選用。商品尺寸不會自動填入。');}finally{b.disabled=false;}});row.append(b);}
+          review(a.id);notice('素材已另存；請核對用途。待分類與參考圖不能選作套圖原稿，商品尺寸不會自動填入。');}finally{b.disabled=false;}});row.append(b);}
       $('source-files').append(row);}
     fileOffset+=data.items.length;$('files-more').hidden=fileOffset>=data.total;
   }
   async function loadMasters(){const data=await api();$('masters').replaceChildren();$('master-count').textContent=data.items.length;
     for(const item of data.items){const b=document.createElement('button');b.innerHTML=`${esc(item.draft.name)}<small>${item.readiness.previewReady?'可產生外形預覽':'待補建模資料'} · 第 ${item.revision} 版</small>`;
-      b.onclick=run(async()=>{if(!canLeave())return;selected=await api('/'+item.id);fill(selected.draft);group=null;$('sources-panel').hidden=true;
+      b.onclick=run(async()=>{if(!canLeave())return;selected=await api('/'+item.id);fill(selected.draft);group=null;$('sources-panel').hidden=true;$('source-preview').hidden=true;
         if(selected.draft.sourceGroupId){const info=await api(`/catalog/${selected.draft.sourceGroupId}/files`);group=info.group;await loadFiles();}
         await showStatus();});$('masters').append(b);}
   }
-  async function loadAssets(){const r=await fetch('/api/print-workspace/assets',{headers:{'X-Tenant-Id':tenant}});if(!r.ok)throw new Error('圖稿庫讀取失敗');assets=(await r.json()).items;
-    document.querySelectorAll('.variant-art').forEach(s=>{const value=s.value;s.innerHTML=assetOptions(value);});}
-  function assetOptions(current=''){return '<option value="">尚未選圖稿</option>'+assets.map(a=>`<option value="${esc(a.id)}" ${a.id===current?'selected':''}>${esc(a.name||a.originalName||a.id.slice(0,12))}</option>`).join('');}
+  async function loadAssets(){const data=await api('/assets');assets=data.items;usageRoles=data.roles;
+    const filter=$('usage-filter').value;$('usage-filter').innerHTML='<option value="">全部用途</option>'+options(usageRoles,filter);$('usage-role').innerHTML=options(usageRoles,reviewAsset?.usage.role||'UNCLASSIFIED');
+    document.querySelectorAll('.variant-art').forEach(s=>{const value=s.value;s.innerHTML=assetOptions(value);});renderUsageList();}
+  function assetOptions(current=''){const allowed=assets.filter(a=>a.usage.canUseForModel);return '<option value="">尚未選印刷圖稿</option>'+
+    (current&&!allowed.some(a=>a.id===current)?`<option value="${esc(current)}" selected disabled>原關聯素材未確認或已改用途，請重新選擇</option>`:'')+
+    allowed.map(a=>`<option value="${esc(a.id)}" ${a.id===current?'selected':''}>${esc(a.name)} · 已確認印刷用途</option>`).join('');}
+  function renderUsageList(){const q=$('usage-query').value.toLocaleLowerCase(),role=$('usage-filter').value;
+    const found=assets.filter(a=>(!role||a.usage.role===role)&&((a.name||'')+' '+(a.provenance?.relativePath||'')).toLocaleLowerCase().includes(q));
+    $('usage-count').textContent=`${found.length} 筆素材；${assets.filter(a=>a.usage.canUseForModel).length} 筆已確認印刷用途。用途由人員核對，不依副檔名自動判定。`;$('usage-list').replaceChildren();
+    for(const a of found.slice(0,usageLimit)){const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(a.name)} <span class="usage-badge">${esc(a.usage.label)}</span><small>${esc(a.provenance?.relativePath||a.provenance?.type)} · ${esc(a.id.slice(0,12))}</small>`;b.onclick=()=>review(a.id);$('usage-list').append(b);}
+    $('usage-more').hidden=found.length<=usageLimit;}
+  function review(id){const a=assets.find(x=>x.id===id);if(!a)return;reviewAsset=a;$('usage-form').hidden=false;$('usage-name').textContent=a.name;$('usage-source').textContent=a.provenance?.relativePath||a.provenance?.type||'';
+    $('usage-page').innerHTML=a.info.pages.map((_,i)=>`<option value="${i}">第 ${i+1} 頁／共 ${a.info.pages.length} 頁</option>`).join('');usagePage();$('usage-role').value=a.usage.role;$('usage-note').value=a.usage.note;$('artwork-check').checked=false;$('usage-status').textContent=`目前用途：${a.usage.label} · 第 ${a.usage.revision} 版`;toggleArtworkCheck();}
+  function usagePage(){if(reviewAsset)$('usage-image').src=`/api/print-workspace/assets/${reviewAsset.id}/preview?workspace=${encodeURIComponent(tenant)}&page=${$('usage-page').value}`;}
+  $('usage-page').onchange=usagePage;
+  function toggleArtworkCheck(){const artwork=$('usage-role').value==='ARTWORK';$('artwork-check-label').hidden=!artwork;$('artwork-check').required=artwork;}
+  $('usage-role').onchange=()=>{$('artwork-check').checked=false;toggleArtworkCheck();};
+  $('usage-filter').onchange=$('usage-query').oninput=()=>{usageLimit=20;renderUsageList();};$('usage-more').onclick=()=>{usageLimit+=20;renderUsageList();};
+  $('usage-form').onsubmit=run(async()=>{if(!reviewAsset)return;$('usage-save').disabled=true;$('usage-panel').inert=true;try{const a=await api('/assets/'+reviewAsset.id+'/usage',{method:'PUT',body:body({role:$('usage-role').value,note:$('usage-note').value,expectedRevision:reviewAsset.usage.revision})});await loadAssets();review(a.id);
+    if(selected?.draft.variants?.some(v=>v.artworkAssetId===a.id))staleForm();notice('素材用途已儲存：'+a.usage.label+'。分類不代表已完成精準印刷校正。');}finally{$('usage-save').disabled=false;$('usage-panel').inert=false;}});
   function addVariant(v={}){const row=document.createElement('div');row.className='row variant';row.innerHTML=`<div class="fields"><label>SKU<input class="variant-sku" required maxlength="120" value="${esc(v.sku)}"></label><label>圖稿<select class="variant-art">${assetOptions(v.artworkAssetId)}</select></label></div><label>圖案／版本備註<input class="variant-note" maxlength="1000" value="${esc(v.note)}"></label>`;removeButton(row);$('variants').append(row);}
   function addFace(f={}){const row=document.createElement('div');row.className='row face';row.innerHTML=`<div class="fields"><label>印刷面名稱<input data-key="name" required maxlength="100" value="${esc(f.name)}" placeholder="例如 第一片門板正面"></label><label>面寬（mm）<input data-key="widthMm" type="number" min="0.01" max="6000" step="any" required value="${esc(f.widthMm)}"></label><label>面高（mm）<input data-key="heightMm" type="number" min="0.01" max="6000" step="any" required value="${esc(f.heightMm)}"></label><label>出血（mm）<input data-key="bleedMm" type="number" min="0" max="20" step="any" required value="${esc(f.bleedMm??0)}"></label></div><label>印刷面尺寸依據<input data-key="evidence" required maxlength="1500" value="${esc(f.evidence)}"></label><label>原點／治具方向紀錄<input data-key="originNote" maxlength="1500" value="${esc(f.originNote)}"></label>`;removeButton(row);$('faces').append(row);}
   function removeButton(row){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='移除此筆';b.onclick=()=>{row.remove();staleForm();};row.append(b);}

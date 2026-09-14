@@ -64,6 +64,15 @@ def main():
             catalog=get('/catalog');assert catalog['fileCount']==7 and len(catalog['familyCounts'])==7
             files=get('/catalog/'+catalog['items'][0]['id']+'/files');a=post('/files/'+files['items'][0]['id']+'/import')
             assert not a['provenance']['physicalDimensionsVerified']
+            assert not a['usage']['canUseForModel'] and not a['usage']['canUseForPrint']
+            usage_url='/api/product-models/assets/'+a['id']+'/usage'
+            blocked={'name':'Blocked fixture','family':'mat','variants':[{'sku':'B','artworkAssetId':a['id']}]}
+            assert client.post('/api/product-models',json={'draft':blocked,'expectedRevision':0}).status_code==422
+            r=client.put(usage_url,json={'role':'REFERENCE','note':'Synthetic reference fixture','expectedRevision':0});r.raise_for_status()
+            assert client.post('/api/product-models',json={'draft':blocked,'expectedRevision':0}).status_code==422
+            r=client.put(usage_url,json={'role':'ARTWORK','note':'Synthetic solid-color artwork fixture for role-gate acceptance only','expectedRevision':1});r.raise_for_status()
+            assert r.json()['usage']['canUseForModel']
+            evidence['assetUsage']={'unclassifiedBlocked':True,'referenceBlocked':True,'explicitArtworkAccepted':True,'assetId':a['id']}
             pending=post('',{'draft':{'name':'FIXTURE 噴瓶，待補曲面','family':'spray_bottle'},'expectedRevision':0})
             assert not pending['readiness']['previewReady']
             for geometry in ['OPEN_CABINET','HINGED_CABINET','RECTANGLE']:
@@ -96,6 +105,12 @@ def main():
                 evidence['models'].append({'id':mid,'geometry':geometry,'generationId':state['generationId'],'renderInfo':state['renderInfo'],'reopenPassed':True,'staleDownloadBlocked':True})
             proc.terminate();proc.wait(timeout=30);proc=start()
             assert len(get()['items'])==4
+            assert get('/assets')['items'][0]['usage']['role']=='ARTWORK'
+            r=client.put(usage_url,json={'role':'REFERENCE','note':'Revocation fixture after restart','expectedRevision':2});r.raise_for_status()
+            for model in evidence['models']:
+                assert client.get(f'/api/product-models/{model["id"]}/files/glb',params={'workspace':'sonaqueen-home','generation':model['generationId']}).status_code==422
+            evidence['assetUsage'].update(restartPreserved=True,revokedDownloadsBlocked=True)
+            r=client.put(usage_url,json={'role':'ARTWORK','note':'Restore synthetic fixture for stale checks','expectedRevision':3});r.raise_for_status()
             for model in evidence['models']:assert get('/'+model['id']+'/preview')['stale']
             assert all(f.read_bytes()==original for f in source.rglob('*.png'))
             evidence.update(status='PASS',restartVerified=True,originalsUnchanged=True,stickerSizesNeverPromoted=True)
