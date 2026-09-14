@@ -13,6 +13,11 @@ from fox3d import nas_catalog as nas, product_models as models, recipe_3d as ren
 from fox3d.recipe_preview_service import RecipePreviewService
 from fox3d.recipe_workbench import DraftConflict
 from fox3d import model_compositions as compositions, print_preview
+from fox3d import model_categories as categories
+
+class Classification(models.Strict):
+    categoryId: str = Field(min_length=1, max_length=80)
+    expectedRevision: int = Field(ge=0)
 
 class Compose(models.Strict):
     expectedRevision: int = Field(ge=1)
@@ -114,13 +119,19 @@ def product_models_router(provider):
         return call(asset_usage.classify,root(),tid(x_tenant_id),aid,body.role,body.note,body.expectedRevision)
     @r.get('/api/product-models')
     def listing(x_tenant_id:str|None=Header(None)):
-        return {'items':call(models.listing,root(),tid(x_tenant_id))}
+        return call(categories.inventory,root(),tid(x_tenant_id))
     @r.post('/api/product-models',status_code=201)
     def create(body:Save,x_tenant_id:str|None=Header(None)):
         return call(models.save,root(),tid(x_tenant_id),body.draft.model_dump(),body.expectedRevision)
     @r.get('/api/product-models/{mid}')
     def detail(mid:str,x_tenant_id:str|None=Header(None)):
         return call(models.get,root(),tid(x_tenant_id),mid)
+    @r.get('/api/product-models/{mid}/classification')
+    def classification(mid:str,x_tenant_id:str|None=Header(None)):
+        return call(categories.get,root(),tid(x_tenant_id),mid)
+    @r.put('/api/product-models/{mid}/classification')
+    def classify_model(mid:str,body:Classification,x_tenant_id:str|None=Header(None)):
+        return call(categories.save,root(),tid(x_tenant_id),mid,body.categoryId,body.expectedRevision)
     @r.put('/api/product-models/{mid}')
     def save(mid:str,body:Save,x_tenant_id:str|None=Header(None)):
         return call(models.save,root(),tid(x_tenant_id),body.draft.model_dump(),body.expectedRevision,mid)
