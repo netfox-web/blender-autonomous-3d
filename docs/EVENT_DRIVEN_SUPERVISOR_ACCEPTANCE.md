@@ -2,31 +2,51 @@
 
 **Repo**: `netfox-web/blender-autonomous-3d`  
 **Date**: 2026-09-14  
-**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 8 Blocker Corrections  
+**Implementation**: Event-Driven Autonomous Supervisor Control Plane V1 (`services/supervisor/`) — Re-Gate Round 9 Live E2E Production Gate Audit  
 **Phase 1 CODE Commit**: `d9402f3a966581aa66d39b0097e518366d87626c`  
 **CODE Actions Run ID**: `34788079332` — **Ubuntu + Windows DUAL-PLATFORM SUCCESS**  
 - `unit (ubuntu-latest)`: `103807115139` (20m 43s)  
 - `unit (windows-latest)`: `103807115312` (21m 49s)  
 **Test Suite**: `tests/test_supervisor.py` (72 passed, 100% green)  
 **Full Regression Suite**: 770 passed (100% green)  
-**Clean-Tree E2E Evidence Run**: `generation: 1631af33-6946-4ac9-96eb-b844d68892c9`  
+**Clean-Tree E2E Evidence Run**: `generation: 66af98fb-5e5f-4d03-850a-d37726e59451`  
+**Current Live E2E Status**: `BLOCKED_WAITING_LIVE_E2E`  
 
 ---
 
 ## 1. Truth Boundaries & Readiness Declarations
 
 > [!IMPORTANT]
-> In strict accordance with Specification Section 18:
+> In strict accordance with Specification Section 18 and Re-Gate Round 9 Instructions (`2c7463b26f26361e3c94991f259a413da56a7057`):
 > - **`eventDrivenSupervisorReady=false`**
 > - **`webhookRealE2e=false`**
 > - **`liveProviderReady=false`**
-> - Production readiness is **HELD** until verified by a live end-to-end GitHub Webhook delivery triggering live Re-Gate execution. Mock and local integration tests do not constitute production readiness.
+> - Current Live E2E Status: **`BLOCKED_WAITING_LIVE_E2E`** (fail-closed due to unconfigured live external webhook endpoint, webhook secret, and provider API credentials). Mock transport, fixtures, and curl simulations are strictly forbidden from substituting for live production evidence.
 > - Prior Phase 901–960 Product Content Round 2 blockers remain open; Phase 961+ remains **HOLD**.
 > - Truth boundaries remain: `liveFactoryExecutionReady=false`, `fullAutonomousFactoryReady=false`, `commercialAssetProductionReady=false`, `physicalPrintValidated=false`, `liveMachineControl=false`.
 
 ---
 
-## 2. Re-Gate Round 8 Blockers Resolution Summary
+## 2. Re-Gate Round 9 Live Prerequisites Audit
+
+In compliance with Round 9 Section 2 ("Live prerequisite 必須 fail-closed，不得自行偽造"), the live environment was inspected:
+
+| Live Prerequisite | Status | Details |
+|---|---|---|
+| Public HTTPS Webhook Endpoint | ❌ MISSING | No public URL or reverse proxy / tunnel configured for external GitHub deliveries (`PUBLIC_HTTPS_ENDPOINT` / `SUPERVISOR_PUBLIC_URL` unset). |
+| `GITHUB_WEBHOOK_SECRET` | ❌ MISSING | Webhook signature HMAC secret is not configured in local environment. |
+| GitHub Credentials / CLI Auth | ✅ PRESENT | `gh` CLI logged in as `netfox-web` with `repo`, `workflow`, `read:org`, `gist` scopes. |
+| `SUPERVISOR_AI_PROVIDER` | ❌ MISSING | Environment variable unset; no active production provider declared. |
+| `SUPERVISOR_AI_MODEL` | ❌ MISSING | Environment variable unset. |
+| Live Provider API Credentials | ❌ MISSING | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `GEMINI_API_KEY` are unset. |
+| `SUPERVISOR_ADMIN_KEY` | ❌ MISSING | Admin endpoint authorization key unset. |
+| Repository & Branch Policy | ✅ CONFIGURED | Bound to `netfox-web/blender-autonomous-3d`, branch `main`, Issue #1. |
+
+**Audit Conclusion**: Because external live webhook ingress and live AI provider credentials are not provisioned in the execution environment, the system fails closed as **`BLOCKED_WAITING_LIVE_E2E`**. All three readiness flags (`webhookRealE2e`, `liveProviderReady`, `eventDrivenSupervisorReady`) strictly remain `false`.
+
+---
+
+## 3. Re-Gate Round 8 Blockers Resolution Summary (Retained)
 
 ### Round 8 Blocker A — Remote GitHub API Ref Normalization & Compare Fallback Correctness
 - **Prefix Normalization (`_normalize_ref_for_api`)**: Added helper function to safely strip `origin/` prefix from branch refs when querying the GitHub REST API compare endpoint (`/repos/{repo}/compare/{base}...{head}`). This prevents HTTP 404 errors caused by passing remote tracking ref names like `origin/main` directly to GitHub API endpoints.
@@ -46,7 +66,7 @@
 
 ---
 
-## 3. Comprehensive Verification Matrix (64 Scenarios)
+## 4. Comprehensive Verification Matrix (72 Scenarios)
 
 | # | Test Scenario | Verified Behavior | Verdict |
 |---|---|---|---|
@@ -125,7 +145,7 @@
 
 ---
 
-## 4. Test Execution Summary
+## 5. Test Execution Summary
 
 ```
 pytest -v tests/test_supervisor.py
@@ -142,6 +162,7 @@ pytest -q
   - `unit (windows-latest)`: `103807115312` SUCCESS (21m 49s)
 - Clean-tree real environment verification:
   - `scripts/run_product_truth_render_e2e.py`
-  - `generation`: `1631af33-6946-4ac9-96eb-b844d68892c9`
-  - `evidenceCodeCommit`: `d9402f3a966581aa66d39b0097e518366d87626c`
+  - `generation`: `66af98fb-5e5f-4d03-850a-d37726e59451`
+  - `evidenceCodeCommit`: `2c7463b26f26361e3c94991f259a413da56a7057`
   - `workingTreeClean`: `true`
+

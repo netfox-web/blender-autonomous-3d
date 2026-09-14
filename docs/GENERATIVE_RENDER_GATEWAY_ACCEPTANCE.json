@@ -1,8 +1,8 @@
 {
   "ok": true,
   "label": "FIXTURE/MOCK",
-  "acceptanceGenerationId": "1631af33-6946-4ac9-96eb-b844d68892c9",
-  "evidenceCodeCommit": "d9402f3a966581aa66d39b0097e518366d87626c",
+  "acceptanceGenerationId": "66af98fb-5e5f-4d03-850a-d37726e59451",
+  "evidenceCodeCommit": "2c7463b26f26361e3c94991f259a413da56a7057",
   "generativeRenderGatewayLogicReady": true,
   "liveH3MaxProviderReady": false,
   "liveLtx25ProviderReady": false,

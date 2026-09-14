@@ -1,15 +1,16 @@
 # CURRENT_IMPLEMENTATION_AUDIT
 
-Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 8 CODE_EVIDENCE_SHA `d9402f3a966581aa66d39b0097e518366d87626c`; prior `d444505` / `2bc44ac` / `b0ad38a` / `b0941c7` / `9bed184` / `d77cfe7` / `4406119` / instruction `0cb8faa1ff7cf0ac9b6f4f3f3dfd38f766a28872`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `0cb8faa1ff7cf0ac9b6f4f3f3dfd38f766a28872`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
+Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 9 LIVE E2E PRODUCTION GATE CODE_EVIDENCE_SHA `d9402f3a966581aa66d39b0097e518366d87626c`; prior `d444505` / `2bc44ac` / `b0ad38a` / `b0941c7` / `9bed184` / `d77cfe7` / `4406119` / instruction `2c7463b26f26361e3c94991f259a413da56a7057`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `2c7463b26f26361e3c94991f259a413da56a7057`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
 Labels follow the instruction: **REAL / PARTIAL / MOCK / STUB / MISSING / BLOCKED**.
 Seeing a class, route, or UI table is not enough — status is from the execution path.
 
 This machine (2026-09-14): Python 3.12.10, Blender 4.2 LTS / 5.2.1 LTS, NVIDIA T1000 OptiX devices present.
 
-## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 8)
+## Event-Driven Autonomous Supervisor Control Plane V1 (Re-Gate Round 9 — LIVE E2E GATE)
 
 | Item | Status | Evidence |
 |---|---|---|
+| Live E2E Production Gate Status | BLOCKED_WAITING_LIVE_E2E | Round 9 Section 2 audit: public HTTPS webhook endpoint, `GITHUB_WEBHOOK_SECRET`, `SUPERVISOR_AI_PROVIDER`, and live AI provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) are unset. Fails closed without mock or synthetic substitution. |
 | Supervisor Webhook Ingestion & Envelope Validation | REAL_LOGIC | `services/supervisor/main.py`: `POST /webhooks/github`; HMAC-SHA256 verification (`verify_github_signature`); mandatory `payload.repository.full_name` exact match; mandatory live `X-GitHub-Delivery`; action created check; collaborator auth verification; 400/401/403 fail-closed |
 | State Management & Lifecycle Idempotency | REAL_LOGIC | `services/supervisor/state.py`: SQLite WAL mode; durable review lifecycle; delivery ID deduplication; contract `(code_sha, evidence_generation_id)` deduplication |
 | Dual-CI Lineage Verification (Round 3 Blocker C) | REAL_LOGIC | `services/supervisor/engine.py` & `models.py`: Validates `CODE_CI_RUN_ID` (head == `CODE_SHA`, Ubuntu+Windows success) and `DOCS_CI_RUN_ID` (head == `DOCS_SHA`, Ubuntu+Windows success); mismatched run IDs or incomplete jobs fail closed |

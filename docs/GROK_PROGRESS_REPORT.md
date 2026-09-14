@@ -2,31 +2,33 @@
 
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-14  
-Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `0cb8faa1ff7cf0ac9b6f4f3f3dfd38f766a28872` (Event-Driven Supervisor Re-Gate Round 8 — CHANGES REQUIRED)  
-Issue #1: Event-Driven Supervisor Re-Gate Round 8 `0cb8faa`  
+Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `2c7463b26f26361e3c94991f259a413da56a7057` (Event-Driven Supervisor Re-Gate Round 9 — LIVE E2E PRODUCTION GATE)  
+Issue #1: Event-Driven Supervisor Re-Gate Round 9 `2c7463b`  
 This file is the ChatGPT handoff. Do not ask the user to copy-paste.
 
 ## This round
 
-Executed **Event-Driven Autonomous Supervisor Re-Gate Round 8 — Remote GitHub API Ref Normalization, Fail-Closed Compare API Errors, Full Trailer Extraction, and 72-Scenario Integration Test Verification**:
-1. **Round 8 Blocker A: Remote GitHub API Ref Normalization & Compare Fallback**:
-   - `services/supervisor/github_client.py`: Added `_normalize_ref_for_api(ref)` helper function to safely strip `origin/` prefix from branch refs when querying remote GitHub compare API (`/repos/{repo}/compare/{base}...{head}`). This prevents HTTP 404 errors caused by passing local tracking ref names like `origin/main` directly to GitHub REST API.
-   - Fail-closed compare API error handling: When GitHub compare API returns non-200 status (404, 409, 5xx), `GitHubClient.get_commits_since()` raises typed `GitHubVerificationError` instead of swallowing errors or returning silent empty lists.
-   - Full trailer extraction: Remote compare API fallback preserves complete `commit.message` with arbitrary newlines, pipes (`|`), and all 6 required trailers (`Reviewed-Code-Sha`, `Reviewed-Docs-Sha`, `Reviewed-Instruction-Sha`, `Reviewed-Evidence-Id`, `Supervisor-Decision`, `Supervisor-Review-Id`).
-2. **Round 8 Blocker B: Comprehensive Integration Test Suite (72 Scenarios Passed)**:
-   - Added tests 69–72 to `tests/test_supervisor.py` (totaling 72 supervisor tests, all 100% green):
-     - `test_69_github_client_compare_ref_normalization_and_candidate_adoption`: Real `GitHubClient` test verifying that local git failure triggers API fallback with normalized ref `...main` (avoiding 404) and extracts complete trailers.
-     - `test_70_github_client_compare_404_error_vs_zero_commits`: Verifies compare API 404 fails closed with `GitHubVerificationError`, while genuine 200 with 0 commits cleanly returns `[]`.
-     - `test_71_staged_sha_remote_compare_fallback_success`: Verifies staged commit in SQLite state DB is verified and adopted via remote compare API fallback without creating a duplicate commit.
-     - `test_72_window_b2_rest_fallback_exactly_once_across_all_decisions`: Verifies that existing review markers in paginated comments prevent duplicate issue comments across `ACCEPT_WITH_SCOPE`, `CHANGES_REQUIRED`, and `BLOCKED` decisions.
-3. **Round 7 Predecessor Corrections Retained**:
-   - Live Commit Body Framing: `get_commits_since()` uses ASCII Record Separator (`\x1e`) and Unit Separator (`\x1f`) framing (`--pretty=format:%x1e%H%x1f%an%x1f%B`) preserving full commit messages with trailers.
-   - Candidate Discovery Fail-Closed: Halts review and prevents duplicate commits on candidate enumeration errors.
-   - RFC 5988 Link Header Pagination: REST issue comments fallback jumps to `rel="last"` and traverses `rel="prev"` to gather latest comments in chronological order.
-4. **Truth Boundaries Preserved**:
-   - Preserved honest readiness boundaries: `eventDrivenSupervisorReady=false`, `webhookRealE2e=false`, `liveProviderReady=false`.
-   - Phase 961+ remains **HOLD**; physical machinery (`LIVE_CNC`, `LIVE_LASER`, `PLC`) remains **BLOCKED**.
-   - Clean-tree real execution completed with `scripts/run_product_truth_render_e2e.py` on exact CODE commit `d9402f3a966581aa66d39b0097e518366d87626c` (generation `1631af33-6946-4ac9-96eb-b844d68892c9`).
+Executed **Event-Driven Autonomous Supervisor Re-Gate Round 9 — Live E2E Production Gate Prerequisites Audit & Fail-Closed Status Declaration**:
+1. **Live Prerequisites Audit (Section 2 Fail-Closed)**:
+   - Evaluated actual execution environment against mandatory live prerequisites:
+     - Public HTTPS Webhook Endpoint: **MISSING** (`PUBLIC_HTTPS_ENDPOINT` / `SUPERVISOR_PUBLIC_URL` unset, no public tunnel configured).
+     - `GITHUB_WEBHOOK_SECRET`: **MISSING** (unset in environment).
+     - Live External Provider API Credentials: **MISSING** (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` unset).
+     - Provider & Model Declaration: **MISSING** (`SUPERVISOR_AI_PROVIDER`, `SUPERVISOR_AI_MODEL` unset).
+     - Admin Authorization Key: **MISSING** (`SUPERVISOR_ADMIN_KEY` unset).
+     - GitHub CLI Auth: **PRESENT** (`gh` CLI logged in as `netfox-web` with `repo`, `workflow`, `read:org`, `gist` scopes).
+     - Repo Policy: **CONFIGURED** (`netfox-web/blender-autonomous-3d`, `main`, Issue #1).
+2. **Deterministic Fail-Closed Status**:
+   - Per Section 2 & 7 instructions, missing live prerequisites fail closed as **`BLOCKED_WAITING_LIVE_E2E`**.
+   - Strictly prohibited from using MockTransport, fixture servers, or forged curl requests to substitute for live external GitHub deliveries or live provider network calls.
+   - All three production readiness flags strictly maintained as `false`:
+     - `webhookRealE2e=false`
+     - `liveProviderReady=false`
+     - `eventDrivenSupervisorReady=false`
+3. **Truth Boundaries Preserved**:
+   - Phase 961+ remains **HOLD**; physical machinery (`LIVE_CNC`, `LIVE_LASER`, `PLC`, `liveMachineControl`) strictly **BLOCKED**.
+   - Existing exact CODE lineage retained: `d9402f3a966581aa66d39b0097e518366d87626c` (CODE CI `34788079332` dual-platform green).
+   - Clean-tree real execution completed with `scripts/run_product_truth_render_e2e.py` on commit `2c7463b26f26361e3c94991f259a413da56a7057` (generation `66af98fb-5e5f-4d03-850a-d37726e59451`, `workingTreeClean=true`).
 
 Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth. Did not start Phase 961+.
 
@@ -40,14 +42,15 @@ Did not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Pro
 | Supervisor R6 | Blockers A–D: Exact Window B1 6-trailer lineage & blob digest authority, mandatory Real Blender acceptance (no Product Truth fallback), authoritative changed-files & split diff ranges with contamination check, strict parser boundary for `DOCS_CI_RUN_ID` and provider request ID audit. 64 scenarios tested. |
 | Supervisor R7 | Blockers A–C: Live git commit trailer preservation with ASCII separators (`\x1e`/`\x1f`), fail-closed candidate discovery halting without duplicate commits, RFC 5988 REST pagination with `rel="last"`/`rel="prev"`. 68 scenarios tested. |
 | Supervisor R8 | Blockers A–B: Remote GitHub API ref normalization (`_normalize_ref_for_api`), fail-closed compare API errors, staged SHA remote compare fallback adoption, and Window B2 REST fallback exactly-once across ACCEPT, CHANGES_REQUIRED, and BLOCKED decisions. 72 scenarios tested. |
+| Supervisor R9 | Live E2E Gate: Inspected live environment; confirmed missing public HTTPS webhook endpoint, webhook secret, and live provider API credentials. Fails closed as `BLOCKED_WAITING_LIVE_E2E` per Section 2 without mock substitution. 72 scenarios retained. |
 
 **CODE_EVIDENCE_SHA:** `d9402f3a966581aa66d39b0097e518366d87626c`  
 **CODE_CI_RUN_ID:** `34788079332` (Ubuntu `103807115139` SUCCESS in 20m43s, Windows `103807115312` SUCCESS in 21m49s)  
-**PRIOR_DOCS_CI_RUN_ID:** `34784713920` (Ubuntu `103797969368` SUCCESS, Windows `103797969495` SUCCESS)  
+**PRIOR_DOCS_CI_RUN_ID:** `34789286472` (Ubuntu `103810395122` SUCCESS in 19m55s, Windows `103810395324` SUCCESS in 14m43s)  
 **EVIDENCE_DOCS_SHA:** this docs commit (after push)  
 GitHub Actions CODE: **GREEN** dual-platform on exact code commit `d9402f3a966581aa66d39b0097e518366d87626c`.
 
-Acceptance generation `1631af33-6946-4ac9-96eb-b844d68892c9`; runner-bound `evidenceCodeCommit=d9402f3a966581aa66d39b0097e518366d87626c`; `workingTreeClean=true`. REAL Blender Cycles OptiX; `usedMock=false`; `eventDrivenSupervisorReady=false`; `webhookRealE2e=false`; `liveProviderReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
+Acceptance generation `66af98fb-5e5f-4d03-850a-d37726e59451`; runner-bound `evidenceCodeCommit=2c7463b26f26361e3c94991f259a413da56a7057`; `workingTreeClean=true`. REAL Blender Cycles OptiX; `usedMock=false`; `eventDrivenSupervisorReady=false`; `webhookRealE2e=false`; `liveProviderReady=false`; `commercialAssetProductionReady=false`; `physicalPrintValidated=false`. Generative output is never Product Truth.
 
 ## Tests
 

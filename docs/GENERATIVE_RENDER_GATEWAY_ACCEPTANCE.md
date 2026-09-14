@@ -1,6 +1,6 @@
 # GENERATIVE_RENDER_GATEWAY_ACCEPTANCE
 
-generatedAt: 2026-09-13T23:15:23.712512+00:00
+generatedAt: 2026-09-14T00:20:55.724180+00:00
 pytest mock PASS is **not** production ready. Physical print is not validated.
 Generative output is never Product Truth. Live H3 MAX / LTX 2.5 stay BLOCKED without runtime.
 
