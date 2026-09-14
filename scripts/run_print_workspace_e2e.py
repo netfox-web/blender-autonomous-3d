@@ -16,9 +16,10 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source',type=Path,required=True)
     parser.add_argument('--allow-dirty',action='store_true')
+    parser.add_argument('--artwork-review-note',required=True,help='Operator purpose review for the supplied source; no print calibration claim')
     args=parser.parse_args()
     import httpx
-    from fox3d import print_assets, print_workspace, print_preview
+    from fox3d import print_assets, print_workspace, print_preview, asset_usage
     from fox3d.blender import find_blender
     from fox3d.ids import sha256_bytes
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
@@ -26,6 +27,7 @@ def main():
     if not clean and not args.allow_dirty:raise SystemExit('Formal evidence requires clean CODE')
     eid=str(uuid.uuid4());folder=ROOT/'.fox3d-work'/'print-e2e'/eid[:8];folder.mkdir(parents=True)
     root=folder/'d';a=print_assets.import_asset(root,'print-e2e',args.source.read_bytes(),args.source.name)
+    asset_usage.classify(root,'print-e2e',a['id'],'ARTWORK',args.artwork_review_note,0)
     assert a['info']['type']=='PDF' and len(a['info']['pages'])>=3
     with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
     log=(folder/'server.log').open('w',encoding='utf-8')

@@ -1,3 +1,7 @@
+# Grok Progress Report — legacy compatibility
+
+Latest Codex user correction: see [Agent Progress Report](AGENT_PROGRESS_REPORT.md) and [asset/template acceptance](ASSET_USAGE_TEMPLATE_ACCEPTANCE.md). The report below is historical Supervisor work, not the current correction.
+
 # Grok Progress Report
 
 Repo: `netfox-web/blender-autonomous-3d`  

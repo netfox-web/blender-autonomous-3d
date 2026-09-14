@@ -11,7 +11,7 @@ from PIL import Image
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import RectangleObject, DecodedStreamObject, NameObject
 
-from fox3d import print_assets as assets, print_workspace as jobs, print_preview as preview
+from fox3d import print_assets as assets, print_workspace as jobs, print_preview as preview, asset_usage
 from fox3d.print_api import print_router
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.ids import sha256_bytes
@@ -32,6 +32,7 @@ def pdf_bytes(*, offset=0, rotation=0, crop=False):
 
 def setup_job(root, **kwargs):
     a=assets.import_asset(root,'test',pdf_bytes(**kwargs),'source.ai')
+    asset_usage.classify(root,'test',a['id'],'ARTWORK','Synthetic vector pattern fixture',0)
     d={'sku':'TEST-001','name':'測試門櫃','layout':'THREE_DOOR','rip':'Test RIP','machine':'Test only machine','substrate':'Test board',
        'panels':[{'label':str(i+1),'assetId':a['id'],'page':i,'rotation':90} for i in range(3)]}
     j=jobs.save_job(root,'test',d);return j,jobs.plan(root,'test',j['draft'])
@@ -172,6 +173,8 @@ def test_api_upload_job_proof_and_no_dispatch(tmp_path):
     a=c.post('/api/print-workspace/assets/upload',files={'file':('source.ai',pdf_bytes(),'application/pdf')}).json()
     assert c.get('/api/print-workspace/assets/'+a['id']+'/preview?workspace=test').headers['content-type']=='image/png'
     d={'sku':'API-TEST','name':'測試商品','layout':'FLAT','panels':[{'label':'門片','assetId':a['id'],'rotation':90}]}
+    assert c.post('/api/print-workspace/jobs',json={'draft':d}).status_code==422
+    asset_usage.classify(tmp_path,'test',a['id'],'ARTWORK','Synthetic API fixture, purpose reviewed',0)
     j=c.post('/api/print-workspace/jobs',json={'draft':d}).json();path='/api/print-workspace/jobs/'+j['id']
     j=c.get(path).json();version={'expectedRevision':1,'planHash':j['plan']['planHash']}
     assert c.post(path+'/preview',json=version).status_code==503

@@ -22,6 +22,7 @@ from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.print_assets import workspace, asset, thumbnail
+from fox3d.asset_usage import require_artwork
 
 LOCK=RLock()
 PT=72/25.4
@@ -172,7 +173,9 @@ def panel_page(raw,meta,panel,*,raster=False):
 def plan(root,tenant,draft):
     d=PrintDraft.model_validate(draft);cache={};panels=[]
     for i,p in enumerate(d.panels):
-        if p.assetId not in cache:cache[p.assetId]=asset(root,tenant,p.assetId)
+        if p.assetId not in cache:
+            require_artwork(root,tenant,p.assetId)
+            cache[p.assetId]=asset(root,tenant,p.assetId)
         meta,raw=cache[p.assetId]
         if not 0<=p.page<len(meta['info']['pages']):raise ValueError('原稿頁碼不存在')
         # Size metadata must describe the immutable original, not a rewritten sidecar.
@@ -296,6 +299,8 @@ def bundle_download(root,tenant,jid,bid):
     if not re.fullmatch(r'[a-f0-9-]{36}',bid):raise ValueError('無效下載編號')
     folder=folder_for(root,tenant,jid)/'bundles'/bid;m=validate_bundle(folder)
     if m['jobId']!=jid or m['bundleId']!=bid:raise ValueError('印刷工作身分不符')
+    for panel in m['plan']['draft']['panels']:
+        require_artwork(root,tenant,panel['assetId'])
     j=get_job(root,tenant,jid)
     if m['kind']!='PROOF':
         p=plan(root,tenant,j['draft'])
