@@ -1,0 +1,173 @@
+{
+  "recipe": {
+    "recipeId": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+    "widthMm": {
+      "value": 424.0,
+      "truth": "CONFIG",
+      "evidence": "https://github.com/netfox-web/blender-autonomous-3d/issues/4",
+      "evidenceSha256": null
+    },
+    "depthMm": {
+      "value": 295.0,
+      "truth": "CONFIG",
+      "evidence": "https://github.com/netfox-web/blender-autonomous-3d/issues/4",
+      "evidenceSha256": null
+    },
+    "heightMm": {
+      "value": 900.0,
+      "truth": "CONFIG",
+      "evidence": "https://github.com/netfox-web/blender-autonomous-3d/issues/4",
+      "evidenceSha256": null
+    },
+    "boardThicknessMm": {
+      "value": 15.0,
+      "truth": "ESTIMATED",
+      "evidence": "Preview assumption; no verified drawing",
+      "evidenceSha256": null
+    },
+    "backThicknessMm": {
+      "value": 3.0,
+      "truth": "ESTIMATED",
+      "evidence": "Preview assumption; no verified drawing",
+      "evidenceSha256": null
+    },
+    "doorThicknessMm": {
+      "value": 15.0,
+      "truth": "ESTIMATED",
+      "evidence": "Preview assumption; no verified drawing",
+      "evidenceSha256": null
+    },
+    "doorGapMm": {
+      "value": 2.0,
+      "truth": "CONFIG",
+      "evidence": "Preview clearance policy",
+      "evidenceSha256": null
+    },
+    "tiers": 3,
+    "doors": 3,
+    "safeMm": 5.0,
+    "bleedMm": 3.0,
+    "hardwareAuthority": "UNKNOWN",
+    "articulationAuthority": "UNKNOWN"
+  },
+  "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+  "historicalArtwork": [
+    {
+      "sku": "KU002101",
+      "version": "HISTORICAL_PENDING",
+      "ready": false,
+      "truth": "BLOCKED",
+      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
+      "slots": [
+        {
+          "componentId": "door_1",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_2",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_3",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        }
+      ]
+    },
+    {
+      "sku": "KT015101",
+      "version": "HISTORICAL_PENDING",
+      "ready": false,
+      "truth": "BLOCKED",
+      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
+      "slots": [
+        {
+          "componentId": "door_1",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_2",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_3",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        }
+      ]
+    },
+    {
+      "sku": "CN003701",
+      "version": "HISTORICAL_PENDING",
+      "ready": false,
+      "truth": "BLOCKED",
+      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
+      "slots": [
+        {
+          "componentId": "door_1",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_2",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_3",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        }
+      ]
+    },
+    {
+      "sku": "PN010201",
+      "version": "HISTORICAL_PENDING",
+      "ready": false,
+      "truth": "BLOCKED",
+      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
+      "slots": [
+        {
+          "componentId": "door_1",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_2",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        },
+        {
+          "componentId": "door_3",
+          "sourcePath": null,
+          "sha256": null,
+          "sourceEvidence": null
+        }
+      ]
+    }
+  ],
+  "fixtureVersions": [
+    "FIXTURE_MASTER_V1",
+    "FIXTURE_SINGLE_V1"
+  ],
+  "fixtureNotice": "Synthetic calibration images only; not historical artwork"
+}
