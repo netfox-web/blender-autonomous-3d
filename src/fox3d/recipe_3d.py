@@ -1,439 +1,259 @@
-"""Sonaqueen Recipe 3D Modeling & Preview Adapter.
-
-Transforms supplier recipe facts and workbench drafts into parametric 3D cabinet specifications,
-handles transparent preview assumptions, and drives headless Blender Cycles OptiX rendering
-as well as .blend and .glb asset exports.
-"""
-
+"""Versioned product-reference previews; never manufacturing authority."""
 from __future__ import annotations
 
 import json
+import math
+import re
 import shutil
+import struct
 from pathlib import Path
 from typing import Any
 
-from fox3d.ids import new_id, stable_hash
+from fox3d.ids import new_id, stable_hash, sha256_bytes
+from fox3d.infra import utcnow
+from fox3d.recipe_workbench import ProductDraft, FIELD_LABELS
+from fox3d.pngutil import is_png
+
+ADAPTER_VERSION = "recipe-preview-2"
+FILES = {"png": "beauty.png", "blend": "model.blend", "glb": "model.glb", "geometry": "geometry.json"}
+
+
+def input_hash(draft):
+    return stable_hash({"adapter": ADAPTER_VERSION, "draft": draft})
+
+
+def atomic_json(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + "." + new_id()[:8] + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def read_json(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
 
 
 def resolve_recipe_preview_assumptions(draft_data: dict[str, Any]) -> dict[str, Any]:
-    """Resolves missing engineering/manufacturing details with transparent preview assumptions."""
-    values = draft_data.get("values") or {}
-    family = str(draft_data.get("family") or "STAGGERED_OPEN_CUBBY")
-
-    def _val(k: str, default: Any) -> Any:
-        entry = values.get(k)
-        if isinstance(entry, dict) and entry.get("value") is not None:
-            return entry["value"]
-        if draft_data.get(k) is not None:
-            return draft_data[k]
+    draft = ProductDraft.model_validate(draft_data)
+    values = {k: v.value for k, v in draft.values.items() if v.value is not None and v.value != ""}
+    required = ["widthMm", "depthMm", "heightMm", "rowCount", "compartmentCount", "doorCount"]
+    missing = [FIELD_LABELS[k] for k in required if k not in values]
+    if missing:
+        raise ValueError("生成前請先填寫：" + "、".join(missing))
+    w, d, h = [float(values[k]) for k in required[:3]]
+    rows, cells, doors = [values[k] for k in required[3:]]
+    if not all(50 <= n <= 5000 for n in (w, d, h)) or not 1 <= rows <= 24:
+        raise ValueError("預覽支援 50–5000 mm 外尺寸及 1–24 行")
+    family = draft.family
+    if family == "STAGGERED_OPEN_CUBBY" and (cells != rows * 2 or doors != 0):
+        raise ValueError("交錯書櫃每行兩格，門片數須為 0")
+    if family == "STACKED_HINGED_CABINET" and not rows == cells == doors:
+        raise ValueError("上下門櫃每行一格、一片門，請核對行數、格位及門片數")
+    if family == "ROW_SLIDING_CABINET" and (cells != rows * 2 or doors != rows):
+        raise ValueError("滑門櫃每行兩格、一片滑門，請核對數量")
+    assumptions = []
+    def assume(key, default, label, note, unit="mm"):
+        if key in values:
+            return values[key]
+        assumptions.append({"field": key, "value": default, "unit": unit, "label": label,
+                            "note": note, "source": "PREVIEW_ASSUMPTION"})
         return default
-
-    # Core dimensions
-    width = float(_val("widthMm", 602.0))
-    depth = float(_val("depthMm", 300.0))
-    height = float(_val("heightMm", 1802.0))
-
-    assumptions: list[dict[str, Any]] = []
-
-    # Board thickness assumption
-    board_thick_raw = values.get("boardThicknessMm", {}).get("value") if isinstance(values.get("boardThicknessMm"), dict) else draft_data.get("boardThicknessMm")
-    if board_thick_raw is not None:
-        board_thick = float(board_thick_raw)
-    else:
-        board_thick = 15.0
-        assumptions.append({
-            "field": "boardThicknessMm",
-            "value": 15.0,
-            "unit": "mm",
-            "source": "PREVIEW_ASSUMPTION",
-            "label": "板材厚度",
-            "note": "預覽用假設：15 mm 塑合板，待工廠確認",
-        })
-
-    # Back panel assumption
-    back_panel_raw = values.get("backPanel", {}).get("value") if isinstance(values.get("backPanel"), dict) else draft_data.get("backPanel")
-    if back_panel_raw is not None:
-        back_panel = bool(back_panel_raw)
-    else:
-        back_panel = False
-        assumptions.append({
-            "field": "backPanel",
-            "value": False,
-            "unit": "boolean",
-            "source": "PREVIEW_ASSUMPTION",
-            "label": "背板結構",
-            "note": "預覽用假設：開放穿透式無背板（日系通風結構）",
-        })
-
-    # Rows and compartments
-    row_count = int(_val("rowCount", 6))
-    comp_count = int(_val("compartmentCount", 12))
-    door_count = int(_val("doorCount", 0))
-
-    # Opening widths
-    narrow_w = float(_val("labelledNarrowOpeningWidthMm", 181.5))
-    wide_w = float(_val("labelledWideOpeningWidthMm", 373.5))
-
+    tkey = "sidePanelThicknessMm" if family == "ROW_SLIDING_CABINET" else "panelThicknessMm"
+    t = float(assume(tkey, 15, "側板厚度", "預覽暫用 15 mm，待圖面確認"))
+    fixed = float(values.get("fixedPanelThicknessMm", t))
+    if "fixedPanelThicknessMm" not in values and family == "ROW_SLIDING_CABINET":
+        assumptions.append({"field": "fixedPanelThicknessMm", "value": fixed, "unit": "mm", "label": "固定板厚度", "note": "頂板、底板與橫板暫採側板厚度", "source": "PREVIEW_ASSUMPTION"})
+    back = float(assume("backThicknessMm", 0 if family == "STAGGERED_OPEN_CUBBY" else 3,
+                        "背板", "未提供背板圖面；開放櫃暫不建背板，門櫃暫用 3 mm"))
+    dt = float(assume("doorThicknessMm", t, "門板厚度", "預覽暫採側板厚度")) if doors else 0
+    gap = float(assume("doorGapsMm", 2, "門片間隙", "預覽暫留 2 mm")) if doors else 0
+    inner_w = w - 2*t
+    opening = (h - (rows+1)*fixed) / rows
+    if min(inner_w, opening, d-back-dt-gap) <= 10 or max(t, fixed, back, dt) > 100:
+        raise ValueError("板件厚度與外尺寸不相容，請確認厚度或行數")
+    dividers = []
     if family == "STAGGERED_OPEN_CUBBY":
-        assumptions.append({
-            "field": "staggerPattern",
-            "value": "alternating_left_right",
-            "unit": "text",
-            "source": "PREVIEW_ASSUMPTION",
-            "label": "垂直隔板排列",
-            "note": "預覽用假設：奇偶層交錯對稱排列（窄隔 181.5mm / 寬隔 373.5mm）",
-        })
-    elif family in {"STACKED_HINGED_CABINET", "ROW_SLIDING_CABINET"} or door_count > 0:
-        assumptions.append({
-            "field": "doorGapMm",
-            "value": 2.0,
-            "unit": "mm",
-            "source": "PREVIEW_ASSUMPTION",
-            "label": "門縫間隙",
-            "note": "預覽用假設：左右與中間門縫各預留 2 mm",
-        })
-
-    resolved = {
-        "widthMm": width,
-        "depthMm": depth,
-        "heightMm": height,
-        "boardThicknessMm": board_thick,
-        "backPanel": back_panel,
-        "rowCount": row_count,
-        "compartmentCount": comp_count,
-        "doorCount": door_count,
-        "labelledNarrowOpeningWidthMm": narrow_w,
-        "labelledWideOpeningWidthMm": wide_w,
-        "material": str(_val("material", "高密度塑合板、五金")),
-    }
-
-    return {
-        "resolved": resolved,
-        "assumptions": assumptions,
-    }
+        raw = values.get("rowDividerCoordinates", "")
+        if raw:
+            try:
+                dividers = [float(v) for v in re.split(r"[,，;；\s]+", raw.strip()) if v]
+            except ValueError as exc:
+                raise ValueError("隔板座標請填每行隔板中心距左內壁的 mm，以逗號分隔，由下往上") from exc
+            if len(dividers) != rows:
+                raise ValueError(f"請填 {rows} 個隔板中心座標，由下往上，以逗號分隔")
+        else:
+            narrow = float(values.get("labelledNarrowOpeningWidthMm", (inner_w-t)/3))
+            dividers = [narrow+t/2 if i%2 == 0 else inner_w-narrow-t/2 for i in range(rows)]
+            assumptions.append({"field": "rowDividerCoordinates", "value": ", ".join(f"{x:.1f}" for x in dividers), "unit": "mm", "label": "各行隔板中心", "note": "由下往上，距左內壁；依窄格標示或三分之一比例交錯鏡像，待逐行圖面確認", "source": "PREVIEW_ASSUMPTION"})
+        if any(not math.isfinite(x) or x-t/2 <= 0 or x+t/2 >= inner_w for x in dividers):
+            raise ValueError("隔板座標超出內寬，請確認每行中心位置")
+    elif family == "ROW_SLIDING_CABINET":
+        dividers = [inner_w/2] * rows
+        travel = float(assume("slideTravelMm", (inner_w-t)/2, "滑門行程", "僅供預覽；軌道與實際行程仍需圖面確認"))
+        if travel > inner_w:
+            raise ValueError("滑門行程不可超出櫃內寬")
+    assumptions.extend([
+        {"field": "rowHeights", "value": round(opening, 2), "unit": "mm", "label": "每行淨高", "note": "依外高與橫板厚度等分；局部圖示內徑保留為參考，未取代本次推導", "source": "PREVIEW_ASSUMPTION"},
+        {"field": "hardware", "value": "簡化外觀", "unit": "", "label": "接合與五金", "note": "未模擬接合、鉸鏈、滑軌、開門行程與承重；滑門固定在左側，板件表不可直接作為裁切單", "source": "PREVIEW_ASSUMPTION"},
+        {"field": "finish", "value": "淺木色", "unit": "", "label": "預覽材質", "note": "使用示意木色，未還原實際表面紋理", "source": "PREVIEW_ASSUMPTION"},
+    ])
+    return {"resolved": {"widthMm": w, "depthMm": d, "heightMm": h, "boardThicknessMm": t,
+                        "fixedPanelThicknessMm": fixed, "backThicknessMm": back, "backPanel": back > 0,
+                        "doorThicknessMm": dt, "doorGapsMm": gap, "rowCount": rows,
+                        "compartmentCount": cells, "doorCount": doors, "dividerCentersMm": dividers,
+                        "openingHeightMm": opening}, "assumptions": assumptions}
 
 
-def build_recipe_spec(
-    draft_data: dict[str, Any],
-    *,
-    tenant_id: str = "default",
-) -> dict[str, Any]:
-    """Constructs a deterministic 3D parametric specification from resolved recipe facts."""
-    sku = str(draft_data.get("sku") or "CUSTOM")
-    name = str(draft_data.get("name") or "收納櫃")
-    family = str(draft_data.get("family") or "STAGGERED_OPEN_CUBBY")
-
-    res_assumptions = resolve_recipe_preview_assumptions(draft_data)
-    resolved = res_assumptions["resolved"]
-    assumptions = res_assumptions["assumptions"]
-
-    width = float(resolved["widthMm"])
-    depth = float(resolved["depthMm"])
-    height = float(resolved["heightMm"])
-    t = float(resolved["boardThicknessMm"])
-    rows = max(1, int(resolved.get("rowCount") or 6))
-
-    components: list[dict[str, Any]] = []
-
-    # 1. Outer Carcass Panels
-    # Left side panel
-    components.append({
-        "componentId": "left_side",
-        "partName": "左側板",
-        "role": "left",
-        "length": height,
-        "width": depth,
-        "thickness": t,
-        "location": [-width / 2000.0 + t / 2000.0, 0.0, height / 2000.0],
-        "size": [t / 1000.0, depth / 1000.0, height / 1000.0],
-    })
-
-    # Right side panel
-    components.append({
-        "componentId": "right_side",
-        "partName": "右側板",
-        "role": "right",
-        "length": height,
-        "width": depth,
-        "thickness": t,
-        "location": [width / 2000.0 - t / 2000.0, 0.0, height / 2000.0],
-        "size": [t / 1000.0, depth / 1000.0, height / 1000.0],
-    })
-
-    # Top panel
-    components.append({
-        "componentId": "top_panel",
-        "partName": "頂板",
-        "role": "top",
-        "length": width,
-        "width": depth,
-        "thickness": t,
-        "location": [0.0, 0.0, (height - t / 2.0) / 1000.0],
-        "size": [width / 1000.0, depth / 1000.0, t / 1000.0],
-    })
-
-    # Bottom panel
-    inner_w = max(10.0, width - 2 * t)
-    components.append({
-        "componentId": "bottom_panel",
-        "partName": "底板",
-        "role": "bottom",
-        "length": inner_w,
-        "width": depth,
-        "thickness": t,
-        "location": [0.0, 0.0, (t / 2.0) / 1000.0],
-        "size": [inner_w / 1000.0, depth / 1000.0, t / 1000.0],
-    })
-
-    # Back panel (if enabled)
-    if resolved.get("backPanel"):
-        components.append({
-            "componentId": "back_panel",
-            "partName": "背板",
-            "role": "back",
-            "length": height - 2 * t,
-            "width": inner_w,
-            "thickness": 3.0,
-            "location": [0.0, (depth / 2.0 - 1.5) / 1000.0, height / 2000.0],
-            "size": [inner_w / 1000.0, 0.003, (height - 2 * t) / 1000.0],
-        })
-
-    # 2. Shelves & Dividers based on family
-    inner_h = max(10.0, height - 2 * t)
-    num_shelves = rows - 1
-    total_shelf_t = num_shelves * t
-    opening_h = max(10.0, (inner_h - total_shelf_t) / rows)
-
-    # Horizontal shelves
-    curr_z = t
-    for i in range(num_shelves):
-        curr_z += opening_h
-        shelf_center_z = curr_z + t / 2.0
-        components.append({
-            "componentId": f"shelf_{i+1}",
-            "partName": f"第 {i+1} 層固定橫板",
-            "role": "shelf",
-            "length": inner_w,
-            "width": depth,
-            "thickness": t,
-            "location": [0.0, 0.0, shelf_center_z / 1000.0],
-            "size": [inner_w / 1000.0, depth / 1000.0, t / 1000.0],
-        })
-        curr_z += t
-
-    # Vertical Dividers for Staggered Cubby (MY-012)
-    if family == "STAGGERED_OPEN_CUBBY":
-        narrow_w = float(resolved.get("labelledNarrowOpeningWidthMm") or 181.5)
-        wide_w = float(resolved.get("labelledWideOpeningWidthMm") or 373.5)
-
-        row_bottom_z = t
-        for row_idx in range(rows):
-            row_top_z = row_bottom_z + opening_h
-            divider_center_z = (row_bottom_z + row_top_z) / 2.0
-
-            if row_idx % 2 == 0:
-                # Even row: narrow left, wide right
-                div_x = -inner_w / 2.0 + narrow_w + t / 2.0
-            else:
-                # Odd row: wide left, narrow right
-                div_x = -inner_w / 2.0 + wide_w + t / 2.0
-
-            components.append({
-                "componentId": f"divider_row_{row_idx+1}",
-                "partName": f"第 {row_idx+1} 層直立交錯隔板",
-                "role": "divider",
-                "length": opening_h,
-                "width": depth,
-                "thickness": t,
-                "location": [div_x / 1000.0, 0.0, divider_center_z / 1000.0],
-                "size": [t / 1000.0, depth / 1000.0, opening_h / 1000.0],
-            })
-            row_bottom_z = row_top_z + t
-
-    # Doors for Cabinet Families
-    door_count = int(resolved.get("doorCount") or 0)
-    if door_count > 0:
-        door_w = (inner_w / door_count) - 2.0
-        door_h = inner_h - 4.0
-        for d_idx in range(door_count):
-            dx = -inner_w / 2.0 + (d_idx + 0.5) * (inner_w / door_count)
-            components.append({
-                "componentId": f"door_{d_idx+1}",
-                "partName": f"門片 {d_idx+1}",
-                "role": "door",
-                "length": door_h,
-                "width": door_w,
-                "thickness": t,
-                "location": [dx / 1000.0, -depth / 2000.0 - t / 2000.0, height / 2000.0],
-                "size": [door_w / 1000.0, t / 1000.0, door_h / 1000.0],
-            })
-
-    spec = {
-        "productId": f"recipe_{sku}",
-        "tenantId": tenant_id,
-        "sku": sku,
-        "name": name,
-        "kind": family,
-        "family": family,
-        "width": width,
-        "height": height,
-        "depth": depth,
-        "thickness": t,
-        "boardThickness": t,
-        "material": "white_wood",
-        "components": components,
-        "previewAssumptions": assumptions,
-        "shelfCount": num_shelves,
-        "doorCount": door_count,
-        "compartmentCount": rows * (2 if family == "STAGGERED_OPEN_CUBBY" else 1),
-    }
-    spec["engineeringHash"] = stable_hash({k: spec[k] for k in spec if k != "productId"})
+def build_recipe_spec(draft_data, *, tenant_id="default"):
+    plan = resolve_recipe_preview_assumptions(draft_data)
+    r = plan["resolved"]
+    w,d,h,t,f,b,dt,g,rows = [r[k] for k in ("widthMm","depthMm","heightMm","boardThicknessMm","fixedPanelThicknessMm","backThicknessMm","doorThicknessMm","doorGapsMm","rowCount")]
+    iw, oh = w-2*t, r["openingHeightMm"]
+    front = dt+g if r["doorCount"] else 0
+    inside_depth = d-b-front
+    inside_y = (front-b)/2
+    components = []
+    def part(pid, label, role, size, loc, row=None):
+        components.append({"componentId": pid, "partName": label, "role": role, "row": row,
+                           "size": [v/1000 for v in size], "location": [v/1000 for v in loc],
+                           "length": max(size), "width": sorted(size)[1], "thickness": min(size)})
+    part("left_side","左側板","left",[t,d,h],[-w/2+t/2,0,h/2])
+    part("right_side","右側板","right",[t,d,h],[w/2-t/2,0,h/2])
+    part("top_panel","頂板","top",[iw,d,f],[0,0,h-f/2])
+    part("bottom_panel","底板","bottom",[iw,d,f],[0,0,f/2])
+    if b:
+        part("back_panel","背板","back",[iw,b,h-2*f],[0,d/2-b/2,h/2])
+    for row in range(rows):
+        z = f + row*(oh+f) + oh/2
+        if row < rows-1:
+            part(f"shelf_{row+1}",f"橫板 {row+1}","shelf",[iw,inside_depth,f],[0,inside_y,z+oh/2+f/2])
+        if r["dividerCentersMm"]:
+            x = -iw/2+r["dividerCentersMm"][row]
+            part(f"divider_row_{row+1}",f"第 {row+1} 行隔板","divider",[t,inside_depth,oh],[x,inside_y,z],row+1)
+        if r["doorCount"]:
+            sliding = draft_data["family"] == "ROW_SLIDING_CABINET"
+            dw = (iw-t)/2-2*g if sliding else iw-2*g
+            dh = oh-2*g
+            if min(dw,dh) <= 5:
+                raise ValueError("門片間隙過大，已無可用門片尺寸")
+            x = -(iw+t)/4 if sliding else 0
+            part(f"door_{row+1}",f"第 {row+1} 行"+("滑門" if sliding else "門片"),"door",[dw,dt,dh],[x,-d/2+dt/2,z],row+1)
+    spec = {"productId": "recipe_"+draft_data["sku"], "tenantId": tenant_id, "sku": draft_data["sku"],
+            "name": draft_data["name"], "kind": draft_data["family"], "family": draft_data["family"],
+            "width": w, "depth": d, "height": h, "thickness": t, "material": "white_wood",
+            "components": components, "previewAssumptions": plan["assumptions"], "recipePreview": True,
+            "shelfCount": rows-1, "doorCount": r["doorCount"], "compartmentCount": r["compartmentCount"],
+            "adapterVersion": ADAPTER_VERSION, "engineeringReady": False, "productionReady": False}
+    spec["previewHash"] = stable_hash(spec)
     return spec
 
 
-def build_recipe_bom(spec: dict[str, Any]) -> dict[str, Any]:
-    """Builds a bill of materials (BOM) from parametric components."""
-    lines = []
-    for part in spec.get("components") or []:
-        lines.append({
-            "partId": part.get("componentId") or part.get("partName"),
-            "partName": part.get("partName"),
-            "role": part.get("role"),
-            "lengthMm": part.get("length"),
-            "widthMm": part.get("width"),
-            "thicknessMm": part.get("thickness"),
-            "quantity": 1,
-            "material": spec.get("material", "white_wood"),
-        })
-    return {
-        "sku": spec.get("sku"),
-        "engineeringHash": spec.get("engineeringHash"),
-        "totalParts": len(lines),
-        "lines": lines,
-    }
+def build_recipe_bom(spec):
+    return {"sku": spec["sku"], "previewHash": spec["previewHash"], "scope": "PREVIEW_PARTS_ONLY",
+            "totalParts": len(spec["components"]), "lines": [
+                {"partId": p["componentId"], "partName": p["partName"], "role": p["role"],
+                 "lengthMm": p["length"], "widthMm": p["width"], "thicknessMm": p["thickness"],
+                 "quantity": 1, "material": "示意木色"} for p in spec["components"]]}
 
 
-def get_recipe_3d_dir(root: Path, tenant_id: str, sku: str) -> Path:
-    """Returns the dedicated directory for storing generated 3D assets for a recipe."""
-    safe_sku = "".join(c if c.isalnum() or c in "-_" else "_" for c in sku)
-    return root / "tenants" / tenant_id / "recipe_3d" / safe_sku
+def get_recipe_3d_dir(root, tenant_id, sku):
+    # Hash the pair together to keep Windows paths short; no user text enters paths.
+    return Path(root)/"recipe-previews"/stable_hash({"tenant": tenant_id, "sku": sku})[:32]
 
 
-def get_recipe_3d_status(root: Path, tenant_id: str, sku: str) -> dict[str, Any]:
-    """Inspects stored 3D assets and returns status, assumptions, and BOM."""
-    d = get_recipe_3d_dir(root, tenant_id, sku)
-    meta_path = d / "meta.json"
-    meta: dict[str, Any] = {}
-    if meta_path.exists():
+def verified_assets(folder, meta):
+    result = {}
+    for fmt,name in FILES.items():
+        expected = (meta.get("files") or {}).get(fmt) or {}
+        path = folder/name
         try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except Exception:
-            meta = {}
-    png_path = d / "beauty.png"
-    blend_path = d / "model.blend"
-    glb_path = d / "model.glb"
-    has_png = png_path.exists() and png_path.stat().st_size > 0
-    has_blend = blend_path.exists() and blend_path.stat().st_size > 0
-    has_glb = glb_path.exists() and glb_path.stat().st_size > 0
-    generated = bool(has_png and meta.get("status") == "succeeded")
-    return {
-        "generated": generated,
-        "sku": sku,
-        "tenantId": tenant_id,
-        "assets": {
-            "png": has_png,
-            "blend": has_blend,
-            "glb": has_glb,
-        },
-        "assumptions": meta.get("assumptions") or [],
-        "bom": meta.get("bom") or {},
-        "spec": meta.get("spec") or {},
-        "renderInfo": meta.get("renderInfo") or {},
-        "updatedAt": meta.get("updatedAt"),
-    }
+            result[fmt] = bool(expected.get("sha256") and path.is_file() and path.stat().st_size == expected.get("sizeBytes") and sha256_bytes(path.read_bytes()) == expected["sha256"])
+        except OSError:
+            result[fmt] = False
+    return result
 
 
-def generate_recipe_3d_product(
-    platform: Any,
-    tenant_id: str,
-    sku: str,
-    draft_data: dict[str, Any],
-) -> dict[str, Any]:
-    """Generates Blender 3D Cycles rendering, .blend and .glb exports for a recipe product."""
-    from fox3d.infra import utcnow
+def get_recipe_3d_status(root, tenant_id, sku, *, current_draft=None):
+    folder = get_recipe_3d_dir(root,tenant_id,sku)
+    meta = read_json(folder/"meta.json")
+    gid = meta.get("generationId", "")
+    valid_id = bool(re.fullmatch(r"[a-f0-9-]{36}", gid))
+    assets = verified_assets(folder/"generations"/gid,meta) if valid_id else {k:False for k in FILES}
+    generated = bool(all(assets.values()) and meta.get("renderInfo",{}).get("realBlender") and not meta.get("renderInfo",{}).get("usedMock"))
+    state = read_json(folder/"state.json")
+    if meta and not generated and state.get("state", "idle") in {"idle", "succeeded"}:
+        state.update(state="failed", error="成果檔案驗證失敗，請重新生成。")
+    stale = bool(current_draft and meta and meta.get("inputHash") != input_hash(current_draft))
+    return {"sku":sku,"tenantId":tenant_id,"generated":generated,"assets":assets,"generationId":gid,
+            "stale":stale,"state":state.get("state","idle"),"error":state.get("error"),
+            "progress":state.get("progress",0),"taskId":state.get("taskId"),
+            "assumptions":meta.get("assumptions",[]),"bom":meta.get("bom",{}),"spec":meta.get("spec",{}),
+            "renderInfo":meta.get("renderInfo",{}),"updatedAt":meta.get("updatedAt"),
+            "sourceRevision":meta.get("sourceRevision"),"inputHash":meta.get("inputHash"),
+            "engineeringReady":False,"productionReady":False}
 
-    target_dir = get_recipe_3d_dir(platform.root, tenant_id, sku)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    spec = build_recipe_spec(draft_data, tenant_id=tenant_id)
-    bom = build_recipe_bom(spec)
 
-    is_mock = getattr(platform, "mock_blender", False)
-    if is_mock:
-        from fox3d.pngutil import write_glb_stub, write_solid_png
-        write_solid_png(target_dir / "beauty.png", stable_hash(sku), 800, 800)
-        (target_dir / "model.blend").write_bytes(b"BLENDER_MOCK_BLEND")
-        write_glb_stub(target_dir / "model.glb", sku)
-        render_info = {
-            "realBlender": False,
-            "realCycles": False,
-            "realOptix": False,
-            "device": "MOCK",
-            "samples": 32,
-            "renderTimeSec": 0.05,
-        }
-    else:
-        job = {
-            "jobId": f"recipe_3d_{new_id()}",
-            "tenantId": tenant_id,
-            "mode": "CABINET_PREVIEW",
-            "engineering": spec,
-            "render": {
-                "device": "OPTIX" if (platform.probe and platform.probe.optix) else "CPU",
-                "samples": 32,
-                "width": 800,
-                "height": 800,
-            },
-            "exportBlend": True,
-            "exportGlb": True,
-            "workDir": str(target_dir),
-        }
-        submitted = platform.submit_job(job)
-        executed = platform.execute_job(submitted)
-        if executed.get("status") not in {"succeeded", "completed"}:
-            err = executed.get("error") or "3D rendering failed"
-            raise RuntimeError(f"Blender 渲染失敗: {err}")
-        render_info = {
-            "realBlender": executed.get("realBlender", True),
-            "realCycles": executed.get("realCycles", True),
-            "realOptix": executed.get("realOptix", False),
-            "device": executed.get("device", "CPU"),
-            "samples": executed.get("samples", 32),
-            "renderTimeSec": executed.get("renderTimeSec", 0.0),
-        }
-        files = (executed.get("output") or {}).get("files") or {}
-        for key, target_filename in [("beauty.png", "beauty.png"), ("model.blend", "model.blend"), ("model.glb", "model.glb")]:
-            asset_id = files.get(key)
-            if asset_id and hasattr(platform, "dam"):
-                try:
-                    dam_obj = platform.dam.get(asset_id, tenant_id=tenant_id)
-                    if Path(dam_obj.path).exists():
-                        shutil.copy2(dam_obj.path, target_dir / target_filename)
-                except Exception:
-                    pass
-            out_path = (executed.get("outputs") or {}).get(key)
-            if not (target_dir / target_filename).exists() and out_path and Path(out_path).exists():
-                shutil.copy2(out_path, target_dir / target_filename)
+def validate_outputs(folder, spec):
+    png = (folder/"beauty.png").read_bytes()
+    if not is_png(png) or struct.unpack(">II",png[16:24]) != (800,800):
+        raise ValueError("渲染圖片格式或尺寸錯誤")
+    blend = (folder/"model.blend").read_bytes()
+    if len(blend)<100 or not blend.startswith(b"BLENDER"):
+        raise ValueError("Blender 模型檔案不完整")
+    glb = (folder/"model.glb").read_bytes()
+    if len(glb)<20 or struct.unpack("<4sII",glb[:12]) != (b"glTF",2,len(glb)):
+        raise ValueError("GLB 模型檔案不完整")
+    chunk_len, chunk_type = struct.unpack("<II",glb[12:20])
+    graph = json.loads(glb[20:20+chunk_len])
+    if chunk_type != 0x4e4f534a or not graph.get("meshes") or len(graph.get("meshes",[])) != len(spec["components"]):
+        raise ValueError("GLB 缺少商品板件")
+    actual = read_json(folder/"geometry.json")
+    parts = {p["componentId"]:p for p in actual.get("parts",[])}
+    if len(parts) != len(spec["components"]):
+        raise ValueError("Blender 實際板件數量不一致")
+    for p in spec["components"]:
+        observed = parts.get(p["componentId"],{})
+        for key in ("size","location"):
+            if len(observed.get(key,[]))!=3 or any(abs(a-b)>1e-5 for a,b in zip(observed[key],p[key])):
+                raise ValueError("Blender 實際板件尺寸或位置不一致："+p["partName"])
+    return {fmt:{"sha256":sha256_bytes((folder/name).read_bytes()),"sizeBytes":(folder/name).stat().st_size} for fmt,name in FILES.items()}
 
-    meta = {
-        "status": "succeeded",
-        "sku": sku,
-        "tenantId": tenant_id,
-        "spec": spec,
-        "bom": bom,
-        "assumptions": spec.get("previewAssumptions", []),
-        "renderInfo": render_info,
-        "updatedAt": str(utcnow()),
-    }
-    (target_dir / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    return get_recipe_3d_status(platform.root, tenant_id, sku)
 
+def generate_recipe_3d_product(platform, tenant_id, sku, draft_data, *, revision=0, generation_id=None, on_job=None, cancel_flag=None):
+    if getattr(platform,"mock_blender",True) or not platform.runtime.available():
+        raise RuntimeError("找不到可用的 Blender。請安裝 Blender 後重新啟動工作台")
+    gid = generation_id or new_id()
+    folder = get_recipe_3d_dir(platform.root,tenant_id,sku)
+    target = folder/"generations"/gid
+    target.mkdir(parents=True,exist_ok=False)
+    spec = build_recipe_spec(draft_data,tenant_id=tenant_id)
+    job = platform.submit_job({"tenantId":tenant_id,"jobType":"PARAMETRIC_3D","mode":"CABINET_PREVIEW",
+        "engineering":spec,"render":{"device":"OPTIX" if platform.probe and platform.probe.optix else "CPU","samples":32,"width":800,"height":800},
+        "exportBlend":True,"exportGlb":True,"recipePreview":True,"maxAttempts":1,"timeoutSeconds":600})
+    if on_job:
+        on_job(job)
+    executed = platform.execute_job(job,cancel_flag=cancel_flag)
+    if executed.get("status") not in {"succeeded","completed"} or not executed.get("realBlender") or executed.get("usedMock"):
+        if executed.get("status")=="cancelled":
+            raise RuntimeError("使用者已取消生成")
+        raise RuntimeError("Blender 未完成生成："+str(executed.get("error") or executed.get("status")))
+    files = (executed.get("output") or {}).get("files") or {}
+    for name in FILES.values():
+        asset_id = files.get(name)
+        if not asset_id:
+            raise ValueError("生成結果缺少 "+name)
+        asset = platform.dam.get(asset_id,tenant_id=tenant_id)
+        shutil.copy2(asset.path,target/name)
+    hashes = validate_outputs(target,spec)
+    output = executed.get("output") or {}
+    info = {k:output.get(k,executed.get(k)) for k in ("realBlender","realOptix","usedMock","device","samples","renderTimeSec","blenderVersion")}
+    meta = {"generationId":gid,"sku":sku,"tenantId":tenant_id,"sourceRevision":revision,
+            "inputHash":input_hash(draft_data),"spec":spec,"bom":build_recipe_bom(spec),"files":hashes,
+            "assumptions":spec["previewAssumptions"],"renderInfo":info,"updatedAt":str(utcnow()),
+            "engineeringReady":False,"productionReady":False}
+    atomic_json(target/"meta.json",meta)
+    atomic_json(folder/"meta.json",meta)
+    return get_recipe_3d_status(platform.root,tenant_id,sku,current_draft=draft_data)

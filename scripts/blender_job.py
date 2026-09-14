@@ -779,6 +779,20 @@ def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0,
         cam_z = origin[2] + height * 0.7
         _add_camera((cam_x, cam_y, cam_z), (origin[0], origin[1], origin[2] + height * 0.45), 50)
         _three_point(height)
+        if engineering.get("recipePreview"):
+            import bpy
+            world = bpy.data.worlds.new("RecipeStudioWorld")
+            world.use_nodes = True
+            background = world.node_tree.nodes.get("Background")
+            background.inputs["Color"].default_value = (0.78, 0.76, 0.71, 1)
+            background.inputs["Strength"].default_value = 0.4
+            bpy.context.scene.world = world
+            bpy.data.objects["Ground"].scale = (25, 25, 25)
+            for obj in created.values():
+                for material in obj.data.materials:
+                    shader = material.node_tree.nodes.get("Principled BSDF")
+                    shader.inputs["Base Color"].default_value = (0.55, 0.38, 0.20, 1)
+                    shader.inputs["Roughness"].default_value = 0.65
     return created
 
 
@@ -871,8 +885,10 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
             loc = [loc[0], loc[1] - 0.05, loc[2] + 0.02]
         loc = [loc[0] + origin[0], loc[1] + origin[1], loc[2] + origin[2]]
         obj = _add_box(name_prefix + name, size, loc, material)
+        if engineering.get("recipePreview"):
+            obj["recipeComponentId"] = part["componentId"]
         created[name_prefix + name] = obj
-        if role == "door":
+        if role == "door" and not engineering.get("recipePreview"):
             handle_x = loc[0] + (door_w * 0.35) if counts["door"] % 2 == 1 else loc[0] - (door_w * 0.35)
             handle = _add_box(name_prefix + name + ".HANDLE", (0.012, 0.02, 0.12), (handle_x, loc[1] - 0.02, loc[2]), "metal")
             created[name_prefix + name + ".HANDLE"] = handle
@@ -1688,7 +1704,10 @@ def build_and_render(job: dict) -> dict:
     if job.get("exportBlend"):
         blend_path = Path(job.get("workDir") or ".") / "model.blend"
         try:
-            bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+            if job.get("recipePreview"):
+                bpy.ops.wm.save_as_mainfile(filepath=str(blend_path), compress=False)
+            else:
+                bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
             if blend_path.exists():
                 outputs["model.blend"] = str(blend_path)
         except Exception:
@@ -1696,11 +1715,25 @@ def build_and_render(job: dict) -> dict:
     if job.get("exportGlb"):
         glb_path = Path(job.get("workDir") or ".") / "model.glb"
         try:
-            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB")
+            if job.get("recipePreview"):
+                bpy.ops.object.select_all(action="DESELECT")
+                for obj in created.values():
+                    if obj.type == "MESH" and obj.get("recipeComponentId"):
+                        obj.select_set(True)
+            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selection=bool(job.get("recipePreview")))
             if glb_path.exists():
                 outputs["model.glb"] = str(glb_path)
         except Exception:
             pass
+    if job.get("recipePreview"):
+        geometry_path = Path(job["workDir"]) / "geometry.json"
+        geometry = {"parts": [
+            {"componentId": obj["recipeComponentId"], "size": list(obj.dimensions),
+             "location": list(obj.matrix_world.translation)}
+            for obj in created.values() if obj.type == "MESH" and obj.get("recipeComponentId")
+        ], "realBlender": True, "blenderVersion": _blender_version()}
+        geometry_path.write_text(json.dumps(geometry, ensure_ascii=False), encoding="utf-8")
+        outputs["geometry.json"] = str(geometry_path)
     result = {
         "status": "succeeded",
         "engine": "CYCLES",

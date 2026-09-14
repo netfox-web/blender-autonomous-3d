@@ -4,7 +4,7 @@ const workspace = 'sonaqueen-home';
 const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlSku = sku => encodeURIComponent(sku);
-let items = [], families = {}, fields = {}, selected = null, dirty = false, activeTab = 'specs', busy = false;
+let items = [], families = {}, fields = {}, selected = null, dirty = false, activeTab = 'threed', busy = false;
 const core = ['widthMm','depthMm','heightMm','material','doorCount','rowCount','compartmentCount','handles'];
 
 function message(text, error = false) {
@@ -51,7 +51,7 @@ function renderList() {
   $('product-list').innerHTML = filtered.map(item => `<button type="button" class="product-card ${selected?.draft.sku === item.draft.sku ? 'active' : ''}" data-sku="${esc(item.draft.sku)}" aria-label="開啟 ${esc(item.draft.name)}" aria-pressed="${selected?.draft.sku === item.draft.sku}">${imageMarkup(item,'card-img')}<span class="card-copy"><span class="card-sku">${esc(item.draft.sku)}</span><span class="card-name">${esc(item.draft.name)}</span><span class="card-meta">${item.status === 'DRAFT' ? '草稿 · ' : ''}待補 ${item.validation.missingFields.length} 項</span></span></button>`).join('') || '<p class="muted loading">找不到符合條件的商品。<br>試試其他名稱或商品編號。</p>';
   $('product-list').querySelectorAll('[data-sku]').forEach(button => button.addEventListener('click', () => {
     if (selected?.draft.sku === button.dataset.sku || !allowLeave()) return;
-    selected = items.find(item => item.draft.sku === button.dataset.sku); dirty = false; activeTab = 'specs'; renderList(); renderDetail();
+    selected = items.find(item => item.draft.sku === button.dataset.sku); dirty = false; activeTab = 'threed'; renderList(); renderDetail();
   }));
 }
 async function load(preferredSku) {
@@ -86,7 +86,7 @@ function renderDetail() {
   <div class="tabs" role="tablist" aria-label="商品資訊"><button class="tab" id="specs-tab" role="tab" aria-controls="specs-panel">規格與缺漏</button><button class="tab" id="sources-tab" role="tab" aria-controls="sources-panel">圖片與來源</button><button class="tab" id="threed-tab" role="tab" aria-controls="threed-panel">3D 預覽與下載</button></div>
   <div id="specs-panel" role="tabpanel" aria-labelledby="specs-tab"><form id="edit-form"><div class="panel"><div id="validation-result">${validationMarkup(selected.validation)}</div><div class="section-title"><h3>基本資料</h3><span class="muted">尺寸單位：毫米</span></div><div class="form-grid"><label>商品名稱<input id="edit-name" value="${esc(d.name)}" required maxlength="240"></label><label>商品來源網址<input id="edit-url" type="url" value="${esc(d.pageUrl)}" placeholder="https://…"></label></div><div class="form-grid three extra-section">${['widthMm','depthMm','heightMm'].map(fieldMarkup).join('')}</div><div class="form-grid extra-section">${core.filter(k => !['widthMm','depthMm','heightMm'].includes(k)).map(fieldMarkup).join('')}</div><div class="gap-section"><div class="section-title"><h3>工程與機構資料</h3><span>依商品圖面逐項補齊</span></div><div class="form-grid">${pending.map(fieldMarkup).join('')}</div></div>${extras.length ? `<div class="extra-section"><div class="section-title"><h3>供應商補充規格</h3></div><div class="form-grid">${extras.map(fieldMarkup).join('')}</div></div>` : ''}<label class="notes-label">備註<textarea id="edit-notes" rows="4" maxlength="10000">${esc(d.notes)}</textarea></label></div><div class="form-actions"><span id="save-state" class="save-state">${selected.updatedAt ? '上次儲存 ' + esc(new Date(selected.updatedAt).toLocaleString('zh-TW')) : '原始供應商參考資料'}</span><button id="validate-button" type="button" class="secondary">驗證資料</button><button id="export-one" type="button" class="secondary">匯出此商品</button><button id="save-button" type="submit" class="primary">儲存草稿</button></div></form></div>
   <div id="sources-panel" class="panel" role="tabpanel" aria-labelledby="sources-tab" hidden><div class="upload-row"><div><h3>商品圖片與原始來源</h3><p class="muted">上傳圖片作為參考，保留供應商來源供核對。</p></div><button id="upload-button" class="secondary">上傳圖片</button><input id="upload-file" type="file" accept="image/png,image/jpeg" hidden></div><div class="source-grid">${sourceCards()}</div></div>
-  <div id="threed-panel" class="panel" role="tabpanel" aria-labelledby="threed-tab" hidden><div class="threed-header"><div><h3>3D 參數化模型與光影預覽</h3><p class="muted">讀取商品尺寸、格位與門片配置，依交錯書櫃／門櫃結構透過 Blender Cycles 生成真實 3D 並提供工程檔下載。</p></div><div class="threed-header-actions"><button id="generate-3d-btn" type="button" class="primary">⚡ 生成 3D 預覽</button></div></div><div id="assumptions-card" class="assumptions-box"></div><div id="threed-stage" class="threed-stage"></div><div id="bom-container" class="bom-section"></div></div>`;
+  <div id="threed-panel" class="panel" role="tabpanel" aria-labelledby="threed-tab" hidden><div class="threed-header"><div><h3>確認設定，生成你的商品 3D</h3><p class="muted">① 選商品　② 確認下方設定　③ 生成並下載。板件、材質與五金簡化僅供預覽，不能直接製造。</p></div><div class="threed-header-actions"><button id="generate-3d-btn" type="button" class="primary">⚡ 生成 3D 預覽</button></div></div><div id="assumptions-card" class="assumptions-box"></div><div id="threed-stage" class="threed-stage"></div><div id="bom-container" class="bom-section"></div></div>`;
   $('edit-form').addEventListener('input', markDirty);
   $('edit-form').addEventListener('change', markDirty);
   $('edit-form').addEventListener('submit', save);
@@ -102,6 +102,7 @@ function renderDetail() {
 }
 function tab(name) {
   activeTab = name;
+  if(name !== 'threed'){clearTimeout(previewPoll);++previewRequest;}
   for (const key of ['specs','sources','threed']) {
     const p = $(key + '-panel'), t = $(key + '-tab');
     if (p) p.hidden = key !== name;
@@ -112,174 +113,81 @@ function tab(name) {
   }
   if (name === 'threed') load3d();
 }
+let previewPlan = null, previewPoll = null, previewRequest = 0, disposeViewer = null;
 async function refreshBadge3D() {
-  if (!selected) return;
+  const sku = selected?.draft.sku;
+  if (!sku) return;
   try {
-    const status = await json(`/products/${urlSku(selected.draft.sku)}/3d/status`);
-    const badge = $('badge-3d');
-    if (badge) {
-      badge.className = 'badge ' + (status.generated ? 'green' : 'neutral');
-      badge.textContent = status.generated ? '已生成 3D 模型' : '尚未建立 3D 模型';
-    }
+    const status = await json(`/products/${urlSku(sku)}/3d/status`);
+    if (selected?.draft.sku === sku && $('badge-3d')) $('badge-3d').textContent = status.generated ? (status.stale ? '3D 待更新' : '3D 已生成') : '尚未生成 3D';
   } catch {}
 }
 async function load3d() {
-  if (!selected) return;
-  const sku = selected.draft.sku;
-  $('threed-stage').innerHTML = '<p class="muted loading">正在讀取 3D 狀態與模型資產…</p>';
+  clearTimeout(previewPoll);
+  const sku = selected?.draft.sku, token = ++previewRequest;
+  if (!sku) return;
+  previewPlan = null;
+  $('generate-3d-btn').disabled = true;
+  $('threed-stage').innerHTML = '<p>正在確認設定與生成狀態…</p>';
   try {
-    const status = await json(`/products/${urlSku(sku)}/3d/status`);
-    render3dStage(status);
-  } catch (err) {
-    $('threed-stage').innerHTML = `<p class="form-error">讀取 3D 狀態失敗：${esc(err.message)}</p>`;
+    const [plan, status] = await Promise.all([json(`/products/${urlSku(sku)}/3d/plan`),json(`/products/${urlSku(sku)}/3d/status`)]);
+    if (selected?.draft.sku !== sku || token !== previewRequest || activeTab !== 'threed') return;
+    previewPlan = plan;
+    render3dStage(status, plan);
+    poll3d(sku, token, status);
+  } catch(err) {
+    if (selected?.draft.sku === sku && token === previewRequest) $('threed-stage').innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
   }
 }
-function render3dStage(status) {
-  if (!selected) return;
-  const sku = selected.draft.sku;
-  const badge = $('badge-3d');
-  if (badge) {
-    badge.className = 'badge ' + (status.generated ? 'green' : 'neutral');
-    badge.textContent = status.generated ? '已生成 3D 模型' : '尚未建立 3D 模型';
-  }
-
-  const assumptions = status.assumptions || [];
-  const assumptionsHtml = `
-    <div class="assumptions-header">
-      <strong>⚠️ 預覽用工程假設與結構推導</strong>
-      <span class="assumptions-subtitle">板厚、門縫、無背板等未確認資料，明確標示為預覽用假設。</span>
-    </div>
-    <div class="assumptions-grid">
-      ${assumptions.map(a => `
-        <div class="assumption-item">
-          <div class="assumption-tag">${esc(a.source)}</div>
-          <div class="assumption-field"><strong>${esc(a.label)}</strong>：${esc(a.value)} ${esc(a.unit)}</div>
-          <div class="assumption-note">${esc(a.note)}</div>
-        </div>
-      `).join('') || '<p class="muted">無額外假設，所有幾何均已由規格推導。</p>'}
-    </div>
-  `;
-  $('assumptions-card').innerHTML = assumptionsHtml;
-
-  if (status.generated && status.assets.png) {
-    const timestamp = Date.now();
-    const renderUrl = `${API}/products/${urlSku(sku)}/3d/render?workspace=${encodeURIComponent(workspace)}&t=${timestamp}`;
-    const blendUrl = `${API}/products/${urlSku(sku)}/3d/download/blend?workspace=${encodeURIComponent(workspace)}`;
-    const glbUrl = `${API}/products/${urlSku(sku)}/3d/download/glb?workspace=${encodeURIComponent(workspace)}`;
-    const pngUrl = `${API}/products/${urlSku(sku)}/3d/download/png?workspace=${encodeURIComponent(workspace)}`;
-
-    $('threed-stage').innerHTML = `
-      <div class="preview-layout">
-        <div class="preview-viewport">
-          <a href="${renderUrl}" target="_blank" rel="noopener" title="點擊在新視窗開啟高畫質圖">
-            <img class="preview-img" src="${renderUrl}" alt="${esc(selected.draft.name)} 3D 渲染圖" loading="eager">
-          </a>
-        </div>
-        <div class="preview-meta-col">
-          <div class="download-card">
-            <h4>下載產出檔案</h4>
-            <p class="muted">可下載 Blender 原生工程檔、Web 3D glTF/GLB 模型以及 Cycles OptiX 高解析渲染圖。</p>
-            <div class="download-links">
-              <a class="download-btn ${status.assets.blend ? 'active' : 'disabled'}" href="${blendUrl}" download>
-                <span class="btn-icon">📦</span>
-                <span class="btn-text"><strong>下載 .blend 專案檔</strong><small>Blender 原生場景模型</small></span>
-              </a>
-              <a class="download-btn ${status.assets.glb ? 'active' : 'disabled'}" href="${glbUrl}" download>
-                <span class="btn-icon">🌐</span>
-                <span class="btn-text"><strong>下載 .glb 3D 模型</strong><small>Web / AR 3D 輕量格式</small></span>
-              </a>
-              <a class="download-btn ${status.assets.png ? 'active' : 'disabled'}" href="${pngUrl}" download>
-                <span class="btn-icon">🖼️</span>
-                <span class="btn-text"><strong>下載高解析渲染圖 (PNG)</strong><small>Cycles 物理光影成圖</small></span>
-              </a>
-            </div>
-            <div class="render-spec-info">
-              <div><span>渲染引擎：</span><strong>Cycles (${status.renderInfo?.device || 'OptiX'})</strong></div>
-              <div><span>光影取樣：</span><strong>${status.renderInfo?.samples || 32} spp</strong></div>
-              <div><span>渲染耗時：</span><strong>${status.renderInfo?.renderTimeSec || 0} 秒</strong></div>
-              <div><span>更新時間：</span><strong>${status.updatedAt ? new Date(status.updatedAt).toLocaleString('zh-TW') : '剛剛'}</strong></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-  } else {
-    $('threed-stage').innerHTML = `
-      <div class="empty-threed">
-        <div class="empty-icon">📐</div>
-        <h3>尚未生成此商品的 3D 模型與光影渲染</h3>
-        <p class="muted">點擊右上方「⚡ 生成 3D 預覽」，系統將讀取此商品的尺寸與格位配置，套用預覽假設並在背景啟動 Blender 進行幾何構建、Cycles 光影渲染與 .blend / .glb 匯出。</p>
-      </div>
-    `;
-  }
-
-  const bom = status.bom;
-  if (bom && bom.lines && bom.lines.length) {
-    $('bom-container').innerHTML = `
-      <div class="section-title">
-        <h3>結構板材與元件清單 (BOM)</h3>
-        <span class="muted">共 ${bom.totalParts} 件結構板件</span>
-      </div>
-      <div class="bom-table-wrap">
-        <table class="bom-table">
-          <thead>
-            <tr><th>元件編號</th><th>元件名稱</th><th>結構角色</th><th>長度 (mm)</th><th>寬度 (mm)</th><th>厚度 (mm)</th><th>數量</th><th>材質</th></tr>
-          </thead>
-          <tbody>
-            ${bom.lines.map(line => `
-              <tr>
-                <td><code>${esc(line.partId)}</code></td>
-                <td><strong>${esc(line.partName)}</strong></td>
-                <td><span class="role-tag">${esc(line.role)}</span></td>
-                <td>${esc(line.lengthMm)}</td>
-                <td>${esc(line.widthMm)}</td>
-                <td>${esc(line.thicknessMm)}</td>
-                <td>${esc(line.quantity)}</td>
-                <td>${esc(line.material)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
-  } else {
-    $('bom-container').innerHTML = '';
-  }
-
-  const genBtn = $('generate-3d-btn');
-  if (genBtn) {
-    genBtn.onclick = generate3d;
-    genBtn.textContent = status.generated ? '⚡ 重新生成 3D 預覽' : '⚡ 生成 3D 預覽';
-  }
+function poll3d(sku, token, status) {
+  if (!['queued','running'].includes(status.state)) return;
+  previewPoll = setTimeout(async()=>{
+    if(selected?.draft.sku!==sku || token!==previewRequest || activeTab!=='threed') return;
+    try {
+      const next = await json(`/products/${urlSku(sku)}/3d/status`);
+      if(selected?.draft.sku!==sku || token!==previewRequest || activeTab!=='threed') return;
+      if (next.state !== status.state || next.progress !== status.progress) render3dStage(next,previewPlan);
+      if(next.state==='succeeded' && status.state!=='succeeded') message('3D 生成完成，可以下載模型與圖片。');
+      if(next.state==='failed') message(next.error || '生成未完成，請重新生成。',true);
+      poll3d(sku,token,next);
+    } catch(err) {
+      if(selected?.draft.sku===sku && token===previewRequest) {
+        message('狀態連線中斷，正在重試。生成工作會繼續。',true);
+        poll3d(sku,token,status);
+      }
+    }
+  },2500);
+}
+function render3dStage(status, plan) {
+  disposeViewer?.(); disposeViewer=null;
+  const sku=selected.draft.sku, running=['queued','running'].includes(status.state);
+  const labels={idle:'尚未生成',queued:'排隊等待生成',running:'Blender 正在建立模型、渲染及驗證檔案',succeeded:'生成完成',failed:'生成未完成',cancelled:'已取消生成'};
+  $('badge-3d').textContent=status.generated?(status.stale?'3D 待更新':'3D 已生成'):labels[status.state]||'尚未生成';
+  $('assumptions-card').innerHTML=`<strong>生成前確認：以下為尚待圖面確認的預覽設定</strong><p>尺寸取自已儲存規格；若需調整，請至「規格與缺漏」修改並儲存。</p>${plan.error?`<p class="form-error">${esc(plan.error)}</p>`:''}${!plan.blenderAvailable?'<p class="form-error">此電腦尚無可用的 Blender，安裝後請重新啟動工作台。</p>':''}<div class="assumptions-grid">${(plan.assumptions||[]).map(a=>`<div class="assumption-item"><strong>${esc(a.label)}：${esc(a.value)} ${esc(a.unit)}</strong><p>${esc(a.note)}</p></div>`).join('')}</div>`;
+  const btn=$('generate-3d-btn');btn.disabled=running||!plan.ready||!plan.blenderAvailable;btn.textContent=running?'生成進行中…':'使用以上設定生成預覽';btn.onclick=generate3d;
+  const query=`?workspace=${encodeURIComponent(workspace)}&generation=${encodeURIComponent(status.generationId)}`;
+  const base=`${API}/products/${urlSku(sku)}/3d`;
+  $('threed-stage').innerHTML=`<div class="job-status" role="status"><strong>${esc(labels[status.state]||status.state)}</strong>${running?'<p>可以切換商品或關閉頁面；工作台服務需保持執行。</p><progress aria-label="生成進行中"></progress><button id="cancel-preview" class="secondary" type="button">取消這次生成</button>':''}${status.error?`<p class="form-error">${esc(status.error)}</p>`:''}</div>${status.stale?'<p class="stale-banner">規格已變更：下方渲染圖與下載檔是上一版，請重新生成以更新。</p>':''}<div class="studio-grid"><section><h4>互動結構預覽 · 目前設定</h4><div id="structure-view"></div></section><section><h4>Blender 光影成圖${status.stale?' · 上一版':''}</h4>${status.generated?`<a href="${base}/render${query}" target="_blank" rel="noopener"><img class="preview-img" src="${base}/render${query}" alt="${esc(selected.draft.name)} Blender 渲染圖"></a><p>來源版本 ${esc(status.sourceRevision)} · ${esc(status.renderInfo.device||'Cycles')} · 800 × 800</p><div class="download-links">${[['blend','Blender 專案'],['glb','3D 模型'],['png','渲染圖片']].map(([fmt,label])=>`<a class="download-btn active" href="${base}/download/${fmt}${query}" download>${label}（.${fmt}） ↓</a>`).join('')}</div>`:'<div class="empty-threed"><h3>準備好了就按「使用以上設定生成預覽」</h3><p>完成後可下載圖片、3D 模型與 Blender 專案。</p></div>'}</section></div>`;
+  if(plan.spec) disposeViewer=window.mountRecipeViewer($('structure-view'),plan.spec);
+  else $('structure-view').textContent='請先補齊上方提示的規格。';
+  if(running) $('cancel-preview').onclick=async()=>{
+    $('cancel-preview').disabled=true;
+    try {await json(`/products/${urlSku(sku)}/3d/cancel`,{method:'POST',body:JSON.stringify({taskId:status.taskId})});message('已送出取消要求，正在停止 Blender。');}
+    catch(err){message(err.message,true);}
+  };
+  const lines=status.bom?.lines||[];
+  $('bom-container').innerHTML=lines.length?`<h3>預覽板件表（非裁切單）${status.stale?' · 上一版':''}</h3><div class="bom-table-wrap"><table class="bom-table"><thead><tr><th>板件</th><th>長 mm</th><th>寬 mm</th><th>厚 mm</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.partName)}</td><td>${Number(l.lengthMm).toFixed(1)}</td><td>${Number(l.widthMm).toFixed(1)}</td><td>${Number(l.thicknessMm).toFixed(1)}</td></tr>`).join('')}</tbody></table></div>`:'';
 }
 async function generate3d() {
-  if (dirty) { message('請先儲存規格修改，再生成 3D 預覽。', true); return; }
-  const genBtn = $('generate-3d-btn');
-  if (genBtn) {
-    genBtn.disabled = true;
-    genBtn.textContent = '正在呼叫 Blender 渲染中…';
-  }
-  $('threed-stage').innerHTML = `
-    <div class="rendering-state">
-      <div class="spinner"></div>
-      <h3>正在建立 3D 幾何結構與 Cycles 光影渲染…</h3>
-      <p class="muted">依據尺寸與格位建立板件，匯出 .blend 與 .glb，並進行 GPU 光影烘焙，請稍候。</p>
-    </div>
-  `;
+  if(dirty){message('請先到「規格與缺漏」儲存修改，再生成。',true);return;}
+  const sku=selected?.draft.sku, plan=previewPlan;
+  if(!sku||!plan?.ready)return;
+  $('generate-3d-btn').disabled=true;
   try {
-    const sku = selected.draft.sku;
-    const res = await json(`/products/${urlSku(sku)}/3d/generate`, {method: 'POST'});
-    message('3D 預覽與模型生成完成！已可下載 .blend、.glb 與渲染圖片。');
-    render3dStage(res);
-  } catch (err) {
-    message(`3D 生成失敗：${err.message}`, true);
-    load3d();
-  } finally {
-    if (genBtn) {
-      genBtn.disabled = false;
-      genBtn.textContent = '⚡ 重新生成 3D 預覽';
-    }
-  }
+    await json(`/products/${urlSku(sku)}/3d/generate`,{method:'POST',body:JSON.stringify({expectedRevision:plan.revision,planHash:plan.planHash,assumptionsAccepted:true})});
+    message('已開始背景生成，完成後會顯示下載按鈕。');
+  } catch(err){message(err.message,true);}
+  if(selected?.draft.sku===sku && activeTab==='threed')load3d();
 }
 function sourceCards() {
   const sku = urlSku(selected.draft.sku);

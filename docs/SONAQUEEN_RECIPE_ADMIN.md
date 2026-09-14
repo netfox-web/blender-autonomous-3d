@@ -4,6 +4,8 @@
 
 ## 開啟後台
 
+本機已建立桌面「收納王妃 Recipe 3D 工作台」捷徑，雙擊即可啟動並開啟畫面。完整 3D 操作見 [工作台手冊](SONAQUEEN_RECIPE_STUDIO.md)。下方命令供維護與其他電腦安裝使用。
+
 在 `E:\projects\sonaqueen-recipe-library` 執行：
 
 ```powershell
@@ -15,7 +17,7 @@ python scripts/run_recipe_admin.py
 若另開測試環境，可指定不同連接埠和資料目錄：
 
 ```powershell
-python scripts/run_recipe_admin.py --port 8791 --data-root .fox3d-work/ui-qa
+python scripts/run_recipe_admin.py --port 8792 --data-root .fox3d-work/ui-qa
 ```
 
 ## 日常操作
@@ -40,7 +42,7 @@ python scripts/run_recipe_admin.py --port 8791 --data-root .fox3d-work/ui-qa
 
 UI 使用固定工作區 `sonaqueen-home`。API 的工作區欄位用於資料隔離，並非登入／權限系統；目前定位為本機操作工具。
 
-JSON 匯出包含最新草稿、原始來源描述、驗證結果和圖片中繼資料；**不包含圖片位元組或完整歷次版本**，不是完整備份。匯入時須重新上傳圖片；若要完整備份，先停止此服務，再複製整個 `recipe-workbench` 目錄。重新開服務時須使用原本的 `--data-root` 才會讀到原資料。
+JSON 匯出包含最新草稿、原始來源描述、驗證結果和圖片中繼資料；**不包含圖片位元組或完整歷次版本**，不是完整備份。匯入時須重新上傳圖片；若要完整備份，先停止此服務，再複製整個資料根目錄（包含 `recipe-workbench` 草稿／圖片與 `recipe-previews` 3D 成果）。重新開服務時須使用原本的 `--data-root` 才會讀到原資料。
 
 此後台 JSON 格式為 `fox3d.recipe-workbench.v1`，與舊 `inspect_recipe_library.py` 的 Registry 匯出格式用途不同，不能混用匯入。
 
@@ -48,7 +50,7 @@ JSON 匯出包含最新草稿、原始來源描述、驗證結果和圖片中繼
 
 原始供應商目錄與快照保持不變，使用者修改另存 SQLite 草稿。來源完整性檢查只證明原始快照未被變更；手動輸入、上傳圖片及文字依據仍是待確認的參考資料。
 
-即使欄位填齊，商品仍不會自動升級為工程核定、可渲染或可生產。三種結構仍需各自完成幾何、機構與 REAL Blender 驗證。新增 UI 不代表完成這三款商品的 3D 模型，也不解除 Phase 961+ HOLD。
+目前可經由「3D 預覽與下載」確認假設後生成三種結構的 Blender 預覽模型、PNG 及 GLB。即使欄位填齊或生成成功，參考記錄仍不會自動升級為工程核定或可生產；機構、接合、承重與精確還原仍待核定。此功能不解除 Phase 961+ HOLD。
 
 ## 驗收重跑
 

@@ -1,0 +1,174 @@
+{
+  "generationId": "e2089521-ff0e-465e-84de-4c335caed14c",
+  "evidenceCodeCommit": "d2db1155ef1690633230028a982dcfaa1391fc01",
+  "workingTreeClean": true,
+  "developmentOnly": false,
+  "mode": "LIVE_LOCAL_HTTP_BLENDER",
+  "usedMock": false,
+  "products": [
+    {
+      "sku": "LI-D40",
+      "generationId": "884c1c68-6438-4225-b3c1-2a420f167668",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 2.441,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "parts": 12,
+      "files": {
+        "png": {
+          "sha256": "44465087ead09fef530e38cfd7d79fda1d1308daafe24c307490765777b496d0",
+          "sizeBytes": 635752
+        },
+        "blend": {
+          "sha256": "411a4af9402891ee4872713fd3abb68acc3b5a2854c31d5b0b5c6814bed2f0ad",
+          "sizeBytes": 898296
+        },
+        "glb": {
+          "sha256": "587268d142073fce7d21b7bd3001c3acbad6464e6922d93c98e6ba95e724d460",
+          "sizeBytes": 21120
+        },
+        "geometry": {
+          "sha256": "133bdb5c8f082e8a2eabcc439f94aaf5e10a319485ea9f7647e5b6be37bcf9d8",
+          "sizeBytes": 1984
+        }
+      },
+      "sourceRevision": 0,
+      "blendReopenVerified": true
+    },
+    {
+      "sku": "LI-PU63D-免組裝",
+      "generationId": "694ed51e-af70-4fb2-a296-b04d82596d8d",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 3.067,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "parts": 13,
+      "files": {
+        "png": {
+          "sha256": "674be108d30194756ae35fce1137592d3730476089acaa8f68e32ce809ad134f",
+          "sizeBytes": 653446
+        },
+        "blend": {
+          "sha256": "7a286a14373e95450dd2ceac8291842e293def1e2e8e5bfe00c6b214ae78a093",
+          "sizeBytes": 927363
+        },
+        "glb": {
+          "sha256": "74b67795133737e0e378d638ee3e84dc872da8aa67e5499ec95378ec36a388bc",
+          "sizeBytes": 22960
+        },
+        "geometry": {
+          "sha256": "53227484f700f3249a7ae65e664a9f5ce887080269e04a84f9b40ba5c76b900c",
+          "sizeBytes": 2212
+        }
+      },
+      "sourceRevision": 0,
+      "blendReopenVerified": true
+    },
+    {
+      "sku": "MY-012",
+      "generationId": "7e6022c8-31c0-4112-abad-2f5d85c8d9dd",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 2.366,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "parts": 15,
+      "files": {
+        "png": {
+          "sha256": "100d963e915f3d0932cb3948907d0770612b0d2602b4bcfd8db062b1def3ceef",
+          "sizeBytes": 658218
+        },
+        "blend": {
+          "sha256": "aa2637c699091f6e4f1d036445057ca58acc9a2c3dc7287e2a6a0b5d816c2bbe",
+          "sizeBytes": 985477
+        },
+        "glb": {
+          "sha256": "47ee0f3be6d525dde8e6a78f8b2453861f5d2cc8dde5055c94004a42159382f1",
+          "sizeBytes": 26264
+        },
+        "geometry": {
+          "sha256": "38c7e45c55ab0a5465bfb4e99b116427f5145f24749182c39f9f846efd53b909",
+          "sizeBytes": 2420
+        }
+      },
+      "sourceRevision": 0,
+      "blendReopenVerified": true
+    }
+  ],
+  "status": "PASS",
+  "restartPersistenceVerified": true,
+  "engineeringReady": false,
+  "productionReady": false,
+  "scope": "USER_AUTHORIZED_RECIPE_PREVIEW_UI_ONLY",
+  "codeCi": {
+    "runId": 34796953280,
+    "headSha": "d2db1155ef1690633230028a982dcfaa1391fc01",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "databaseId": 103831790002,
+        "name": "unit (ubuntu-latest)",
+        "conclusion": "success",
+        "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34796953280/job/103831790002"
+      },
+      {
+        "databaseId": 103831790137,
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34796953280/job/103831790137"
+      }
+    ]
+  },
+  "testCount": 787,
+  "testCountsByJob": {
+    "unit (ubuntu-latest)": 787,
+    "unit (windows-latest)": 787
+  },
+  "uiVerification": {
+    "codeCommit": "ed231043677e176bd79a6ad5e96ce9b105bd4fc8",
+    "verification": "CUA_BROWSER_AND_LOCAL_HTTP",
+    "dragRotateVerified": true,
+    "hideDoorsVerified": true,
+    "staleVersionBannerVerified": true,
+    "backgroundCancelVerified": true,
+    "cancelPreservesPriorGeneration": true,
+    "userProducts": [
+      {
+        "sku": "LI-D40",
+        "draftRevision": 0,
+        "generated": true,
+        "generationId": "e5ddc179-1d53-46af-8737-a6b9a7f15b02",
+        "stale": false
+      },
+      {
+        "sku": "LI-PU63D-免組裝",
+        "draftRevision": 0,
+        "generated": true,
+        "generationId": "b2c56fc3-e9e4-4e6c-be8b-e6a43555add6",
+        "stale": false
+      },
+      {
+        "sku": "MY-012",
+        "draftRevision": 0,
+        "generated": true,
+        "generationId": "225bbeb3-fb56-46e4-9e75-2047525070e7",
+        "stale": false
+      }
+    ]
+  },
+  "supervisorLiveE2eClaimed": false
+}
