@@ -812,6 +812,24 @@ def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0,
                     shader = material.node_tree.nodes.get("Principled BSDF")
                     shader.inputs["Base Color"].default_value = (0.55, 0.38, 0.20, 1)
                     shader.inputs["Roughness"].default_value = 0.65
+            preset = engineering.get("nasScene")
+            if preset in {"STUDIO", "WARM_ROOM", "COOL_ROOM"}:
+                # Decorative environment never changes product meshes or export selection.
+                colors = {"STUDIO": (0.92, 0.92, 0.92, 1),
+                          "WARM_ROOM": (0.62, 0.46, 0.31, 1),
+                          "COOL_ROOM": (0.34, 0.48, 0.56, 1)}
+                ground = bpy.data.objects["Ground"]
+                mat = bpy.data.materials.new("CompositionEnvironment." + preset)
+                mat.use_nodes = True
+                shader = mat.node_tree.nodes.get("Principled BSDF")
+                shader.inputs["Base Color"].default_value = colors[preset]
+                shader.inputs["Roughness"].default_value = 0.85
+                ground.data.materials.clear(); ground.data.materials.append(mat)
+                if preset != "STUDIO":
+                    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, depth/2+max_dim*.4, max_dim*2))
+                    wall=bpy.context.object; wall.name="CompositionBackdrop"
+                    wall.dimensions=(max_dim*12, max_dim*.04, max_dim*4)
+                    wall.data.materials.append(mat)
     return created
 
 

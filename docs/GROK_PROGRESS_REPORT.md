@@ -1,6 +1,6 @@
 # Grok Progress Report — legacy compatibility
 
-Latest Codex user correction: see [Agent Progress Report](AGENT_PROGRESS_REPORT.md) and [asset/template acceptance](ASSET_USAGE_TEMPLATE_ACCEPTANCE.md). The report below is historical Supervisor work, not the current correction.
+Latest Codex user request: see [Agent Progress Report](AGENT_PROGRESS_REPORT.md) and [master/artwork/scene acceptance](PRODUCT_MASTER_COMPOSITIONS_ACCEPTANCE.md). The report below is historical Supervisor work, not the current user preview lane.
 
 # Grok Progress Report
 
