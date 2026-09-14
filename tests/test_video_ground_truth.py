@@ -242,3 +242,153 @@ def test_retry_detects_candidate_byte_tamper(bundle):
 def test_candidate_extra_artifact_not_ingested(bundle):
     b=bundle;c=candidate(b);c['frames'][0]['artifacts']['unrequested']=c['frames'][0]['artifacts']['beauty']
     assert qa_candidate(b['m'],c)['decision']=='REJECT'
+
+
+@pytest.mark.parametrize('change',[
+    'decision','model','provider','modelVersion','seed','config','identity','frame_reorder',
+    'frame_duplicate','frame_missing','matrix','artifact','qa_path','qa_sha','mask_bytes',
+    'missing_file','renamed_file','foreign_copy','duplicate_number','missing_field','corrupt_json',
+    'missing_index','index_tamper',
+])
+def test_round2_prior_corruption_blocks_new_attempt_and_publish(bundle,change):
+    from pathlib import Path
+    b=bundle;s=store(b);c=candidate(b);first=record(s,b,c)
+    parent=s.root/b['m']['identity']['tenantId']/b['m']['generationId'];path=parent/'attempt1.json'
+    changed=copy.deepcopy(first)
+    if change=='decision':changed['qa']['decision']='REJECT'
+    elif change in ('model','provider','modelVersion'):changed[change]='foreign'
+    elif change=='seed':changed['seed']=43
+    elif change=='config':changed['config']={'changed':True}
+    elif change=='identity':changed['candidate']['identity']['sku']='foreign'
+    elif change=='frame_reorder':changed['candidate']['frames'].reverse()
+    elif change=='frame_duplicate':changed['candidate']['frames'][1]=copy.deepcopy(changed['candidate']['frames'][0])
+    elif change=='frame_missing':changed['candidate']['frames'].pop()
+    elif change=='matrix':changed['candidate']['frames'][1]['cameraMatrix'][0][3]+=1
+    elif change=='artifact':changed['candidate']['frames'][1]['artifacts']['beauty']['sha256']='0'*64
+    elif change=='qa_path':changed['qaAsset']['path']=str(parent/'missing.json')
+    elif change=='qa_sha':changed['qaAsset']['sha256']='0'*64
+    elif change=='duplicate_number':changed['attemptNumber']=2
+    elif change=='missing_field':changed.pop('modelVersion')
+    elif change=='mask_bytes':Path(first['candidate']['frames'][1]['artifacts']['product_mask']['path']).write_bytes(b'changed')
+    elif change=='missing_file':path.unlink()
+    elif change=='renamed_file':path.rename(parent/'foreign.json')
+    elif change=='foreign_copy':write_json(parent/'foreign.json',first)
+    elif change=='corrupt_json':path.write_text('{bad json')
+    elif change=='missing_index':(parent/'.attempt-set.json').unlink()
+    elif change=='index_tamper':write_json(parent/'.attempt-set.json',{})
+    if changed!=first:write_json(path,changed)
+    count=len(b['plat'].dam._index);before={p.name:p.read_bytes() for p in parent.glob('*.json')}
+    with pytest.raises(ValueError):record(s,b,c,'new-key')
+    with pytest.raises(ValueError):s.publish(b['m'],'attempt1',final=False)
+    assert len(b['plat'].dam._index)==count
+    assert {p.name:p.read_bytes() for p in parent.glob('*.json')}==before
+
+
+def test_round2_deleted_last_rejected_attempt_blocks_retry(bundle):
+    b=bundle;s=store(b);c=candidate(b);c['identity']['sku']='foreign'
+    record(s,b,c);record(s,b,c,'attempt2')
+    parent=s.root/b['m']['identity']['tenantId']/b['m']['generationId']
+    (parent/'attempt2.json').unlink();count=len(b['plat'].dam._index)
+    with pytest.raises(ValueError,match='missing_duplicate'):record(s,b,c,'attempt3')
+    assert len(b['plat'].dam._index)==count
+
+
+@pytest.mark.parametrize('field',['tenant','jobId','frame','role'])
+def test_round2_valid_bytes_with_foreign_dam_lineage_blocked(bundle,field):
+    b=bundle;s=store(b);first=record(s,b,candidate(b));changed=copy.deepcopy(first)
+    rec=changed['candidate']['frames'][0]['artifacts']['beauty'];ref=rec['dam']
+    meta=copy.deepcopy(ref['metadata']);tenant=ref['tenant_id']
+    if field=='tenant':tenant='foreign'
+    else:meta[field]='foreign'
+    obj=b['plat'].dam.put(tenant_id=tenant,kind=ref['kind'],name='foreign.png',data=__import__('pathlib').Path(rec['path']).read_bytes(),metadata=meta)
+    rec.update(path=obj.path,dam=asdict(obj))
+    qa_ref=changed.pop('qaAsset')
+    qa=b['plat'].dam.put(tenant_id=qa_ref['tenant_id'],kind=qa_ref['kind'],name='resealed.json',data=json.dumps(changed).encode(),metadata=qa_ref['metadata'])
+    changed['qaAsset']=asdict(qa)
+    parent=s.root/b['m']['identity']['tenantId']/b['m']['generationId']
+    write_json(parent/'attempt1.json',changed);s._persist_attempt_set(b['m'],[],changed,parent)
+    count=len(b['plat'].dam._index)
+    with pytest.raises(ValueError,match='candidate_dam_lineage'):record(s,b,candidate(b),'next')
+    with pytest.raises(ValueError,match='candidate_dam_lineage'):s.publish(b['m'],'attempt1',final=False)
+    assert len(b['plat'].dam._index)==count
+
+
+def test_round2_restart_validates_durable_set_without_memory_index(bundle):
+    from fox3d.infra import DAM
+    b=bundle;s=store(b);first=record(s,b,candidate(b))
+    restarted=store(b);restarted.dam=DAM(b['plat'].dam.root)
+    assert restarted.publish(b['m'],'attempt1',final=False)['state']=='QA_ACCEPTED_PREVIEW'
+    assert record(restarted,b,candidate(b))==first
+    with pytest.raises(ValueError,match='accepted_lineage'):record(restarted,b,candidate(b),'new')
+
+
+def test_round2_cross_generation_preview_rejected(bundle):
+    b=bundle;s=store(b);record(s,b,candidate(b));other=copy.deepcopy(b['m']);other['generationId']='foreign'
+    with pytest.raises(ValueError,match='untrusted_ground_truth'):s.publish(other,'attempt1',final=False)
+
+
+@pytest.mark.parametrize('mode',['valid','overlap','empty','wrong_size','alias'])
+def test_round2_room_context_pixels_independently_excluded(bundle,mode):
+    from fox3d.video_ground_truth import check_frame_pixels
+    from fox3d.pngutil import write_png
+    from fox3d.artwork import decode_png_rgb
+    from pathlib import Path
+    b=bundle;frame=copy.deepcopy(b['m']['frames'][0]);recipe=make_recipe('SMALL_ROOM_10S',b['a']['engineering'],fps=1,width=32,height=32)
+    _,_,rgb=decode_png_rgb(Path(frame['artifacts']['product_mask']['path']).read_bytes())
+    data=bytes(0 if max(rgb[i:i+3])>127 else 255 for i in range(0,len(rgb),3) for _ in range(3))
+    if mode=='overlap':data=bytes([255])*len(data)
+    if mode=='empty':data=bytes(len(data))
+    path=b['tmp']/'context.png';width=16 if mode=='wrong_size' else 32
+    write_png(path,width,32,data[:width*32*3]);raw=path.read_bytes()
+    frame['sceneContextMask']={'path':str(path),'sha256':sha256_bytes(raw),'size':len(raw)}
+    if mode=='alias':frame['sceneContextMask']=frame['artifacts']['product_mask']
+    if mode=='valid':check_frame_pixels(frame,recipe)
+    else:
+        with pytest.raises(ValueError):check_frame_pixels(frame,recipe)
+
+
+def test_round2_detail_canonical_component_binding(bundle):
+    from fox3d.video_ground_truth import check_authority
+    b=bundle;a=freeze_authority(b['plat'],b['source'],sku='TEST-SKU',product_version=1,instruction_sha='a'*40,
+        code_sha='b'*40,generation_id='detail',kind='ARTWORK_DETAIL_6S',fps=1,width=32,height=32,allow_mock=True)
+    check_authority(a,a['authorityHash'])
+    a['identity']['objectName']='foreign';a['authorityHash']=stable_hash({k:v for k,v in a.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='detail_wrong_artwork_component'):check_authority(a,a['authorityHash'])
+
+
+@pytest.mark.parametrize('mode',['product_injection','context_pass_index','context_geometry','reopen_context'])
+def test_round2_room_context_observation_tamper_rejected(bundle,mode):
+    from fox3d.video_recipe import scene_context_objects
+    b=bundle;a=copy.deepcopy(b['a']);a['recipe']=make_recipe('SMALL_ROOM_10S',a['engineering'],fps=1,width=32,height=32)
+    obs=copy.deepcopy(b['receipt']['observation']);frames=[]
+    for i in range(10):
+        f=copy.deepcopy(obs['frames'][0]);plan=frame_plan(a['recipe'],i);plan.pop('location');f.update(plan)
+        f['sceneContextObjects']=scene_context_objects(a['recipe']);frames.append(f)
+    obs['frames']=frames
+    obs['reopened']=[{'index':i,'cameraMatrix':frames[i]['cameraMatrix'],'objects':copy.deepcopy(frames[i]['objects']),
+                      'sceneContextObjects':copy.deepcopy(frames[i]['sceneContextObjects'])} for i in (0,5,9)]
+    assert not validate_observation(a,obs,job_id='test-job')
+    if mode=='product_injection':frames[0]['objects']['VideoRoomFloor']=frames[0]['sceneContextObjects']['VideoRoomFloor']
+    elif mode=='context_pass_index':frames[0]['sceneContextObjects']['VideoRoomFloor']['passIndex']=1
+    elif mode=='context_geometry':frames[0]['sceneContextObjects']['VideoRoomFloor']['dimensions'][0]+=1
+    else:obs['reopened'][0]['sceneContextObjects']={}
+    assert validate_observation(a,obs,job_id='test-job')
+
+
+def test_round2_acceptance_tamper_matrix_with_mock_bundle(bundle):
+    from scripts.run_video_round2_e2e import durable_acceptance
+    b=bundle;result={'directory':str(b['directory']),'authoritySeal':b['a']['authorityHash'],'receiptSeal':b['rs']}
+    evidence=durable_acceptance(b['plat'],result,b['m'],b['tmp']/'evidence-candidates')
+    assert evidence['status']=='PASS' and len(evidence['cases'])==19 and evidence['noDamWritesOnCorruption']
+
+
+@pytest.mark.parametrize('change',['recipe','generation'])
+def test_round2_existing_platform_cache_separates_video_authority(bundle,change):
+    from fox3d.infra import job_cache_key
+    from fox3d.video_ground_truth import video_job_payload
+    b=bundle;a=copy.deepcopy(b['a']);first=video_job_payload(a)
+    assert job_cache_key(first,blender_version='real')==job_cache_key(video_job_payload(a),blender_version='real')
+    if change=='recipe':a['recipe']=make_recipe('ARTWORK_DETAIL_6S',a['engineering'],fps=1,width=32,height=32,artwork_object=a['identity']['objectName'])
+    else:a['generationId']='new-generation'
+    a['authorityHash']=stable_hash({k:v for k,v in a.items() if k!='authorityHash'})
+    assert job_cache_key(first,blender_version='real')!=job_cache_key(video_job_payload(a),blender_version='real')

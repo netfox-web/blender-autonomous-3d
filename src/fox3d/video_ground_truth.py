@@ -9,7 +9,7 @@ from pathlib import Path
 from fox3d.artwork import decode_png_rgb
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.product_truth import derive_canonical_expected_identity, validate_product_truth_render_pack, validate_frozen_authority_semantics
-from fox3d.video_recipe import ROLES, expected_objects, make_recipe, validate_recipe, frame_plan, close_numbers, articulation_gate, integer,finite
+from fox3d.video_recipe import ROLES, expected_objects, make_recipe, validate_recipe, frame_plan, close_numbers, articulation_gate, integer,finite, scene_context_objects
 
 
 def write_json(path, value):
@@ -111,6 +111,13 @@ def validate_observation(a, observation, *, job_id):
         if observation.get("usedMock") is False and any(not frame.get("artifacts",{}).get(role,{}).get("decoded") for role in ("depth","normal")):
             errors.append("missing_decoded_EXR")
         objects = frame.get("objects", {})
+        expected_context=scene_context_objects(r)
+        context=frame.get('sceneContextObjects',{})
+        if context.keys()!=expected_context.keys():errors.append('scene_context_objects')
+        for name,expected in expected_context.items():
+            actual=context.get(name,{})
+            if any(not close_numbers(actual.get(k),expected[k]) for k in ('matrix','dimensions')):errors.append('scene_context_geometry')
+            if any(type(actual.get(k)) is not type(expected[k]) or actual[k]!=expected[k] for k in ('vertices','polygons','passIndex','materialIndices')):errors.append('scene_context_mask_assignment')
         if objects.keys() != a["objects"].keys(): errors.append("object_topology")
         for name, expected in a["objects"].items():
             obj = objects.get(name, {})
@@ -125,6 +132,7 @@ def validate_observation(a, observation, *, job_id):
         for item in reopened:
             if not close_numbers(item.get("cameraMatrix"), frame_plan(r,item["index"])["cameraMatrix"]): errors.append("reopen_camera")
             if item.get("objects") != frames[item["index"]].get("objects"): errors.append("reopen_objects")
+            if item.get('sceneContextObjects',{})!=frames[item['index']].get('sceneContextObjects',{}):errors.append('reopen_scene_context')
     return sorted(set(errors))
 
 
@@ -157,6 +165,19 @@ def check_frame_pixels(frame, recipe):
     prod, artmask = masks["product_mask"], masks["artwork_mask"]
     if not any(prod) or not any(artmask) or prod == artmask: raise ValueError("mask_empty_or_alias")
     if any(v and not p for v,p in zip(artmask,prod)): raise ValueError("artwork_outside_product")
+    if recipe['scene']['room']:
+        context=frame['sceneContextMask']
+        if context['path'] in {v['path'] for v in frame['artifacts'].values()}:raise ValueError('context_mask_alias')
+        w,h,rgb=decode_png_rgb(artifact_bytes(context))
+        if (w,h)!=(recipe['width'],recipe['height']):raise ValueError('context_resolution')
+        mask=[max(rgb[j:j+3])>127 for j in range(0,len(rgb),3)]
+        if not any(mask) or any(c and (p or a) for c,p,a in zip(mask,prod,artmask)):
+            raise ValueError('room_pixels_enter_product_mask')
+    elif 'sceneContextMask' in frame:raise ValueError('unexpected_scene_context')
+
+
+def frame_artifacts(frame):
+    return {**frame['artifacts'],**({'context_mask':frame['sceneContextMask']} if 'sceneContextMask' in frame else {})}
 
 
 def validate_manifest(manifest, *, authority, authority_seal, receipt, receipt_seal, dam=None):
@@ -177,9 +198,10 @@ def validate_manifest(manifest, *, authority, authority_seal, receipt, receipt_s
         if errors: raise ValueError(",".join(errors))
         for frame in manifest["frames"]:
             check_frame_pixels(frame, authority["recipe"])
-            for role, rec in frame["artifacts"].items():
+            for role, rec in frame_artifacts(frame).items():
                 ref = rec["dam"]
-                if ref["tenant_id"] != authority["identity"]["tenantId"] or ref["kind"] != "video_ground_truth": raise ValueError("dam_tenant_kind")
+                kind='video_scene_context' if role=='context_mask' else 'video_ground_truth'
+                if ref["tenant_id"] != authority["identity"]["tenantId"] or ref["kind"] != kind: raise ValueError("dam_tenant_kind")
                 meta = ref["metadata"]
                 if meta != {"jobId": receipt["jobId"], "identity": authority["identity"], "frame": frame["index"], "role": role, "authorityHash": authority_seal}: raise ValueError("dam_lineage")
                 if ref["path"] != rec["path"] or ref["sha256"] != rec["sha256"]: raise ValueError("dam_path_hash")
@@ -191,15 +213,22 @@ def validate_manifest(manifest, *, authority, authority_seal, receipt, receipt_s
         return [str(exc)]
 
 
+def video_job_payload(authority):
+    a=authority;payload=copy.deepcopy(a['payload'])
+    payload.update(videoAuthority=a,render={'width':a['recipe']['width'],'height':a['recipe']['height'],
+                   'samples':4,'device':'OPTIX','videoRecipeHash':a['recipe']['videoRecipeHash'],
+                   'videoAuthorityHash':a['authorityHash']},timeoutSeconds=14400,
+                   recipeId=a['recipe']['recipeId'],idempotencyKey=a['generationId'],mode='VIDEO_GROUND_TRUTH',jobId=new_id())
+    return payload
+
+
 def execute_sequence(plat, authority, directory):
     a = copy.deepcopy(authority); seal = a["authorityHash"]; check_authority(a, seal)
     if plat.mock_blender: raise ValueError("BLOCKED_REAL_BLENDER_SEQUENCE")
     directory = Path(directory); directory.mkdir(parents=True,exist_ok=True)
     if (directory/"authority.json").exists(): raise ValueError("generation_already_exists")
     write_json(directory/"authority.json", a)
-    payload = copy.deepcopy(a["payload"])
-    payload.update(videoAuthority=a, render={"width":a["recipe"]["width"], "height":a["recipe"]["height"], "samples":4, "device":"OPTIX"}, timeoutSeconds=14400,
-                   idempotencyKey=a["generationId"], mode="VIDEO_GROUND_TRUTH", jobId=new_id())
+    payload = video_job_payload(a)
     job = plat.submit_job(payload); job_id = job["jobId"]
     write_json(directory/"submitted-job.json",job)
     old = plat.runtime.script_path
@@ -216,11 +245,13 @@ def execute_sequence(plat, authority, directory):
     worker_root = (plat.runtime.work_dir/job_id).resolve()
     for frame in frames:
         check_frame_pixels(frame,a["recipe"])
-        for role, rec in frame["artifacts"].items():
-            expected = worker_root/"frames"/f'{frame["index"]:04d}'/f'{role}.{ROLES[role]}'
+        for role, rec in frame_artifacts(frame).items():
+            ext='png' if role=='context_mask' else ROLES[role]
+            expected = worker_root/"frames"/f'{frame["index"]:04d}'/f'{role}.{ext}'
             if Path(rec["path"]).resolve() != expected: raise ValueError("worker_artifact_path")
             data = artifact_bytes(rec)
-            obj = plat.dam.put(tenant_id=a["identity"]["tenantId"],kind="video_ground_truth",name=f'{frame["index"]:04d}_{role}.{ROLES[role]}', data=data,
+            kind='video_scene_context' if role=='context_mask' else 'video_ground_truth'
+            obj = plat.dam.put(tenant_id=a["identity"]["tenantId"],kind=kind,name=f'{frame["index"]:04d}_{role}.{ext}', data=data,
                               metadata={"jobId":job_id,"identity":a["identity"],"frame":frame["index"],"role":role,"authorityHash":seal})
             rec.update(path=obj.path,dam=asdict(obj))
     supports = {}

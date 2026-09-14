@@ -87,6 +87,19 @@ def expected_objects(engineering):
     return module.add_cabinet_parts(copy.deepcopy(engineering))
 
 
+def scene_context_objects(recipe):
+    """Expected room context, derived only from SceneRecipe; never product parts."""
+    room=recipe['scene']['room']
+    if not room: return {}
+    def obj(dimensions,location,vertices,polygons):
+        matrix=identity_matrix()
+        for i in range(3):matrix[i][3]=location[i]
+        return {'matrix':matrix,'dimensions':dimensions,'vertices':vertices,'polygons':polygons,
+                'passIndex':2,'materialIndices':[0]}
+    return {'VideoRoomFloor':obj([room['width'],room['width'],0.],[0.,0.,-.01],4,1),
+            'VideoRoomBack':obj([room['width'],.02,room['height']],[0.,room['depth']/2,room['height']/2],8,6)}
+
+
 def make_recipe(kind, engineering, *, fps=12, width=128, height=128, artwork_object=None):
     if kind not in DURATIONS:
         raise ValueError("unknown_video_recipe")

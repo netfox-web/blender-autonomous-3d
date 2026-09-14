@@ -28,6 +28,13 @@ def observe_objects(created):
             for name, obj in created.items()}
 
 
+def observe_context(created):
+    values=observe_objects(created)
+    for name,obj in created.items():
+        values[name].update(passIndex=obj.pass_index,materialIndices=[m.pass_index for m in obj.data.materials])
+    return values
+
+
 def run(job):
     import bpy
     from mathutils import Vector
@@ -48,10 +55,14 @@ def run(job):
         if obj.type == "MESH":
             obj.pass_index = 1 if obj.name in created else 0
             obj.hide_render = obj.name not in created
-    room=recipe["scene"]["room"]
+    room=recipe["scene"]["room"];context={}
     if room:
         core._add_plane("VideoRoomFloor",room["width"],(0,0,-.01))
         core._add_box("VideoRoomBack",(room["width"]*2,.04,room["height"]*2),(0,room["depth"]/2,room["height"]/2),"white_wood")
+        context={name:bpy.data.objects[name] for name in ('VideoRoomFloor','VideoRoomBack')}
+        for obj in context.values():
+            obj.pass_index=2
+            for mat in obj.data.materials:mat.pass_index=0
     for obj in list(bpy.data.objects):
         if obj.type=="LIGHT":bpy.data.objects.remove(obj,do_unlink=True)
     for light in recipe["scene"]["lights"]:
@@ -85,20 +96,22 @@ def run(job):
         camera.keyframe_insert(data_path="rotation_euler", frame=index+1)
         bpy.context.view_layer.update()
         records = {}
-        for role, ext in ROLES.items():
+        roles={**ROLES,**({'context_mask':'png'} if room else {})}
+        for pass_index,(role, ext) in enumerate(roles.items()):
+            core._write_progress(job,(index+pass_index/len(roles))/recipe['frameCount'],f'video_frame_{index}_{role}')
             scene.view_settings.view_transform = "Standard" if role=="beauty" else "Raw"
             scene.view_settings.exposure = recipe["scene"]["exposure"] if role=="beauty" else 0.
             tree, v5 = core._compositor_tree(scene); tree.nodes.clear()
             layer = tree.nodes.new("CompositorNodeRLayers"); out = core._ensure_comp_output(tree, v5)
             names = {"beauty": ("Image",), "depth": ("Depth","Z"), "normal": ("Normal",),
                      "alpha": ("Alpha",), "product_mask": ("IndexOB","Object Index"),
-                     "artwork_mask": ("IndexMA","Material Index")}[role]
+                     "artwork_mask": ("IndexMA","Material Index"),"context_mask":("IndexOB","Object Index")}[role]
             source = next((layer.outputs.get(name) for name in names if layer.outputs.get(name) is not None), None)
             if source is None: raise ValueError("missing_AOV_socket:"+role)
             if role.endswith("mask"):
                 math_node = tree.nodes.new("ShaderNodeMath" if v5 else "CompositorNodeMath")
                 math_node.operation = "COMPARE"
-                math_node.inputs[1].default_value = 1 if role == "product_mask" else 8
+                math_node.inputs[1].default_value = {'product_mask':1,'artwork_mask':8,'context_mask':2}[role]
                 math_node.inputs[2].default_value = .1
                 tree.links.new(source, math_node.inputs[0]); source = math_node.outputs[0]
             tree.links.new(source, out.inputs[0])
@@ -118,12 +131,15 @@ def run(job):
                 bpy.data.images.remove(img)
             outputs[f"f{index:04d}_{role}.{ext}"] = str(dest)
         f = recipe["width"]*camera.data.lens/camera.data.sensor_width
+        context_mask=records.pop('context_mask',None)
         frames.append({"index": index, "timestamp": (scene.frame_current-1)/scene.render.fps,
                        "cameraMatrix": matrix(camera.matrix_world),
                        "intrinsics": [[f, 0., recipe["width"]/2], [0., f, recipe["height"]/2], [0., 0., 1.]],
                        "productMatrix": matrix(product_root.matrix_world),
                        "objects": observe_objects(created), "articulation": [], "artifacts": records,
                        "identity": a["identity"], "blenderJobId": job["jobId"]})
+        frames[-1]['sceneContextObjects']=observe_context(context)
+        if context_mask:frames[-1]['sceneContextMask']=context_mask
         core._write_progress(job, (index+1)/recipe["frameCount"], f"video_frame_{index}")
     scene.view_settings.view_transform = recipe["scene"]["colorManagement"]
     scene.view_settings.exposure = recipe["scene"]["exposure"]
@@ -135,6 +151,7 @@ def run(job):
         scene.frame_set(i+1); bpy.context.view_layer.update()
         reopened.append({"index": i, "cameraMatrix": matrix(scene.camera.matrix_world),
                          "objects": observe_objects({n:bpy.data.objects[n] for n in created})})
+        reopened[-1]['sceneContextObjects']=observe_context({n:bpy.data.objects[n] for n in context})
     observation = {"identity": a["identity"], "authorityHash": a["authorityHash"],
                    "blenderJobId": job["jobId"], "frames": frames, "appliedPlacements": applied,
                    "reopened": reopened, "blenderVersion": bpy.app.version_string,
