@@ -1,279 +1,143 @@
-# Development Agent 指令：Event-Driven Supervisor Re-Gate Round 9 — LIVE E2E PRODUCTION GATE
+# Development Agent 指令：Event-Driven Supervisor Re-Gate Round 10 — BLOCKED HOLD / LIVE E2E LINEAGE CORRECTION
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Reviewed instruction: `0cb8faa1ff7cf0ac9b6f4f3f3dfd38f766a28872`
-> Accepted CODE: `d9402f3a966581aa66d39b0097e518366d87626c`
-> Accepted DOCS: `aa12ca3504532830c494cf1edf750dd84a9bd664`
+> Reviewed instruction: `2c7463b26f26361e3c94991f259a413da56a7057`
+> Accepted implementation CODE: `d9402f3a966581aa66d39b0097e518366d87626c`
+> Round 9 DOCS/Handoff: `475ab6fe641da0caa79deefe951a4c42a2f04398`
 > CODE Actions: `34788079332` — Ubuntu + Windows SUCCESS
-> DOCS Actions: `34789286472` — Ubuntu + Windows SUCCESS
-> Tests: `72 passed` in `tests/test_supervisor.py`; `770 passed` full regression
-> Evidence generation: `1631af33-6946-4ac9-96eb-b844d68892c9`
-> Re-Gate result: **ACCEPT WITH SCOPE / GO LIVE E2E GATE**
+> Round 9 DOCS Actions: `34792513276` — Ubuntu + Windows SUCCESS
+> Tests retained: `72 passed` supervisor / `770 passed` full regression
+> Re-Gate result: **BLOCKED_WAITING_LIVE_E2E / CORRECTION-ONLY**
 > **Phase 961+ remains HOLD.**
 
-## 0. Round 8 驗收結論 — 已接受，禁止重寫
+## 0. 審核結論
 
-Round 8 corrections 已通過 scoped Re-Gate：
+Round 9 的 fail-closed 行為是正確的：目前缺少真正 live E2E 所需的 public HTTPS webhook ingress、`GITHUB_WEBHOOK_SECRET`、`SUPERVISOR_AI_PROVIDER` / `SUPERVISOR_AI_MODEL`、live provider credential 與 `SUPERVISOR_ADMIN_KEY`。因此以下三個 flag 必須繼續為 false：
 
-- `origin/main` → GitHub compare API ref normalization 已修正，remote fallback 不再用 `origin/main` 造成 404。
-- compare 404/409/5xx / transport failure 走 fail-closed，不再偽裝成 0 commits。
-- local git unavailable → GitHub API fallback → full commit body / 6 trailers extraction 已有真 `GitHubClient` integration coverage。
-- staged SHA + remote fallback candidate adoption exactly-once 已覆蓋。
-- REST comment pagination + existing marker → ACCEPT / CHANGES_REQUIRED / BLOCKED 三 decision 不重複 POST 已覆蓋。
-- exact CODE/DOCS 雙 CI 已綠；進度報告、Audit、Supervisor Acceptance 已更新。
-- Truth boundary 正確維持：`eventDrivenSupervisorReady=false`、`webhookRealE2e=false`、`liveProviderReady=false`。
+- `webhookRealE2e=false`
+- `liveProviderReady=false`
+- `eventDrivenSupervisorReady=false`
 
-以上列為 **REAL_LOGIC / TESTED**，不要重寫 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth，也不要再改 Round 1–8 已通過的邏輯，除非 LIVE E2E 暴露可重現 correctness bug。
+這不是程式失敗；不要重寫既有 Supervisor 架構，也不要用 MockTransport / fixture / curl synthetic webhook 取代真正 GitHub delivery。
 
-MockTransport、pytest、GitHub Actions、fixture webhook 都不能把 readiness flags 改成 true。
+Supervisor core / GitHub client / state / policy / crash recovery 維持 **REAL_LOGIC / TESTED**；Product Truth 既有 Blender evidence 維持 scoped REAL；LIVE_CNC / LIVE_LASER / PLC、physical print、full autonomous factory 仍為 BLOCKED。
 
 ---
 
-## 1. 本輪唯一主目標：跑通一次真正 GitHub Webhook → Live Provider → GitHub Write → Watcher Claim 的完整事件鏈
+## 1. 必修正：Round 9 evidence lineage 不可混用
 
-必須使用真實 GitHub delivery 與真實外部 AI provider network request，不接受模擬代替。
+Round 9 READY contract 目前宣告：
 
-目標鏈：
+- `code_sha=d9402f3a966581aa66d39b0097e518366d87626c`
+- `evidence_generation_id=66af98fb-5e5f-4d03-850a-d37726e59451`
 
-```text
-Authorized Issue #1 READY_FOR_RE_GATE comment
-  -> GitHub 真 webhook delivery
-  -> public/live supervisor endpoint
-  -> HMAC-SHA256 verified
-  -> repository / issue / action / commenter authorization verified
-  -> exact machine-readable contract parsed
-  -> CODE_SHA + DOCS_SHA reachable on main
-  -> exact CODE_CI_RUN_ID + DOCS_CI_RUN_ID dual-platform SUCCESS verified
-  -> pinned evidence / audit / acceptance fetched at exact SHAs
-  -> REAL/MOCK/PARTIAL/BLOCKED deterministic preflight
-  -> REAL configured AI provider network request
-  -> schema-valid response + provider request ID
-  -> 4 reviewed identities exact-match
-  -> exactly one `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` commit
-  -> remote blob exact verification
-  -> exactly one Issue #1 handoff comment
-  -> Antigravity watcher claims new instruction SHA exactly once
-  -> replay same delivery / same READY contract creates no duplicate commit, comment, or claim
-```
+但 Round 9 report 同時記錄該 generation 的 `evidenceCodeCommit=2c7463b26f26361e3c94991f259a413da56a7057`。這是 instruction/docs commit，不是 accepted implementation CODE `d9402f3...`，因此此 generation 不可再被當成 `d9402f3...` 的 exact CODE-bound REAL acceptance identity。
 
-只有完整鏈條全部有 live evidence 才可完成本輪。
+先前已接受且 exact 綁定 `d9402f3...` 的 clean-tree REAL evidence 為：
+
+- `evidence_generation_id=1631af33-6946-4ac9-96eb-b844d68892c9`
+- `evidenceCodeCommit=d9402f3a966581aa66d39b0097e518366d87626c`
+- `workingTreeClean=true`
+- `usedMock=false`
+
+### 修正規則
+
+1. 若 Supervisor READY contract 需要 CODE-bound Blender evidence，恢復使用上面已接受的 `1631af33-...`，並在 Progress / Audit / Supervisor Acceptance / Issue contract 中保持一致。
+2. `66af98fb-...` 若要保留，只能標成「post-instruction runtime/doc-side verification」，不得冒充 `d9402f3...` 的 exact CODE-bound evidence。
+3. 不要為了修 lineage 製造新的 implementation CODE commit。
+4. 不要重新跑 Product Truth 只為了產生新的 generation，除非真的有 code 變更或 external Re-Gate 明確要求。
 
 ---
 
-## 2. Live prerequisite 必須 fail-closed，不得自行偽造
+## 2. 現在不要繼續 churn repo
 
-Live run 前確認實際環境具備：
+在 live prerequisites 仍缺少、且沒有新 code / 新 live infrastructure / 新 provider credential 狀態變化時：
 
-- 可由 GitHub webhook 訪問的 HTTPS endpoint。
-- `GITHUB_WEBHOOK_SECRET` 已設定且與 repo webhook 相同。
-- GitHub credential / App token 具備目前已使用的 read/write 權限。
-- `SUPERVISOR_AI_PROVIDER` 明確為 `openai` / `anthropic` / `gemini` 之一。
-- `SUPERVISOR_AI_MODEL` 與 provider 相容且非空。
-- 對應 provider API credential 可做真實 network request。
-- Live admin/status auth key 正常。
-- `main`、Issue #1、allowed repo/branch policy 必須與目前設定一致。
+- 不要再新增 docs-only「BLOCKED_WAITING_LIVE_E2E」commit。
+- 不要再重貼相同 READY_FOR_RE_GATE Issue 留言。
+- 不要修改 `GROK_PROGRESS_REPORT.md`、`CURRENT_IMPLEMENTATION_AUDIT.md`、acceptance files 只為重述相同 blocker。
+- 保持安靜並 STOP；等待 live prerequisite 真正改變。
 
-### 若任一 prerequisite 缺失
-
-不要用 MockTransport、fixture server、手工 fabricated provider response、curl 偽裝 GitHub delivery 或手工改 DB 代替。
-
-請：
-
-1. 將狀態寫為 `BLOCKED_WAITING_LIVE_E2E`。
-2. 明列缺少的 prerequisite 類型，但禁止把 secret/token 值寫入 log/docs/Issue。
-3. 維持：
-   - `webhookRealE2e=false`
-   - `liveProviderReady=false`
-   - `eventDrivenSupervisorReady=false`
-4. 更新 handoff docs + Issue #1 後 STOP。
-
-這種情況不是程式失敗，是 live infrastructure / credential blocker；不得改用 mock 取得 PASS。
+這條是為避免每次 watcher/輪詢造成無意義 commit/comment loop。
 
 ---
 
-## 3. Live E2E 必須留下可獨立驗證的 evidence
+## 3. 只有 prerequisites 真正到位後才執行 LIVE E2E
 
-新增或更新 `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`，至少記錄以下非秘密證據：
+實際確認以下項目已存在後才開始：
 
-### A. GitHub webhook evidence
+- GitHub 可訪問的 public HTTPS supervisor endpoint
+- repo webhook 與 runtime 一致的 `GITHUB_WEBHOOK_SECRET`
+- 可用 GitHub write credential / App token
+- `SUPERVISOR_AI_PROVIDER` = `openai` / `anthropic` / `gemini`
+- 非空且 provider-compatible 的 `SUPERVISOR_AI_MODEL`
+- 對應 live provider API credential
+- `SUPERVISOR_ADMIN_KEY`
+- repo=`netfox-web/blender-autonomous-3d`, branch=`main`, Issue #1 policy 正確
 
-- GitHub delivery ID（`X-GitHub-Delivery`）
-- event/action
-- repository full name
-- Issue number
-- commenter login / authorization result
-- HMAC verification result `true`
-- received timestamp
-- contract fingerprint / review ID
-- 不得保存 raw secret / token / Authorization header
-
-### B. Exact contract / CI lineage
-
-- `INSTRUCTION_SHA`
-- `CODE_SHA`
-- `DOCS_SHA`
-- `CODE_CI_RUN_ID`
-- `DOCS_CI_RUN_ID`
-- `EVIDENCE_GENERATION_ID`
-- `REAL_BLENDER`
-- `USED_MOCK`
-- Ubuntu + Windows job IDs / conclusions
-
-所有 SHA/Run ID 必須從 live run 實際驗證，不可只複製 README 宣告。
-
-### C. Live provider evidence
-
-- provider name
-- configured model
-- provider request ID / response ID（若 provider 回傳）
-- HTTP/network request 確實發生的 audit marker
-- response schema validation PASS
-- provider 回傳的：
-  - `reviewedCodeSha`
-  - `reviewedDocsSha`
-  - `reviewedInstructionSha`
-  - `reviewedEvidenceGenerationId`
-- 四項必須 exact-match contract；任一 mismatch → fail closed。
-- 不得寫入 API key、完整 Authorization header 或 secret。
-
-### D. GitHub write exactly-once evidence
-
-記錄：
-
-- instruction commit SHA
-- commit 的 6 trailers
-- intended instruction SHA256 digest
-- pushed branch/ref
-- remote blob SHA/content digest verification PASS
-- Issue #1 handoff comment ID
-- deterministic comment marker / review ID
-
-### E. Watcher claim evidence
-
-記錄：
-
-- watcher 看見的 instruction SHA
-- claim timestamp
-- durable claim/state key
-- claim count = 1
-- watcher 不得因 Supervisor 自己的 commit/comment loop 再啟動同一 review。
+任何一項缺失：維持 `BLOCKED_WAITING_LIVE_E2E`，不修改 readiness flags，不用 mock 代替。
 
 ---
 
-## 4. 必做 replay / crash exactly-once 驗收
+## 4. LIVE E2E 完整成功條件
 
-Live success 一次還不夠。至少再驗證：
+必須由真 GitHub delivery 跑通：
 
-1. **Replay same GitHub delivery ID**
-   - supervisor 回 deduplicated/ignored status。
-   - 不新增 instruction commit。
-   - 不新增 Issue comment。
-   - watcher claim 不增加。
+`READY_FOR_RE_GATE comment -> GitHub webhook -> HMAC/auth -> exact contract -> exact CODE/DOCS dual CI -> pinned evidence -> live AI provider network call -> schema/4 identities exact match -> exactly one instruction commit -> remote blob verify -> exactly one Issue comment -> Antigravity watcher claim exactly once -> replay no duplicate`
 
-2. **Replay same READY contract with new delivery**
-   - contract identity dedupe 生效。
-   - 不新增第二組 GitHub write。
+必留非秘密 evidence：
 
-3. **Window B1/B2 live-state reconcile**
-   - 如果 live 環境允許安全注入 crash point，只能在 Supervisor 的 instruction/comment control-plane write 上測，不得碰 LIVE_CNC/LASER/PLC。
-   - restart 後 existing remote commit/comment 必須 adopt，不得 duplicate。
-   - 如果 production endpoint 不允許安全 crash injection，明確標 `LIVE_CRASH_INJECTION_NOT_EXECUTED`，保留既有 integration evidence，不得聲稱 live crash test 已完成。
+- GitHub delivery ID / event / action / repo / Issue / commenter / HMAC=true
+- instruction/code/docs SHA
+- CODE/DOCS CI run IDs + Ubuntu/Windows job IDs/conclusions
+- exact CODE-bound evidence generation ID
+- provider/model/request ID（若 provider 提供）
+- response schema PASS + 4 reviewed identities exact-match
+- instruction commit SHA + 6 trailers + intended SHA256 + remote blob verification
+- Issue comment ID + deterministic marker
+- watcher claim key/timestamp/count=1
+- replay same delivery / same contract 不新增 commit/comment/claim
+
+不得寫入 secret、token、API key 或 Authorization header。
 
 ---
 
-## 5. Readiness flag 升級規則
-
-三個 flag 必須分開判定，不可一起硬改：
+## 5. Readiness 升級規則
 
 ### `webhookRealE2e=true`
-只有當：
-- 真 GitHub webhook delivery 由 GitHub 發出；
-- HMAC 通過；
-- repo/issue/action/user authorization 通過；
-- contract 進入 engine；
-才可設 true。
+只有真 GitHub delivery + HMAC + repo/issue/action/user authorization + contract 已進 engine 才能升級。
 
 ### `liveProviderReady=true`
-只有當：
-- 上述真 webhook chain 內確實做出真 provider network request；
-- schema valid；
-- provider request ID/audit evidence 可驗證；
-- 4 reviewed identities exact-match；
-才可設 true。
+只有在上述真 webhook chain 內完成真 provider network request、schema valid、request/audit evidence 可驗證、4 identities exact-match 才能升級。
 
 ### `eventDrivenSupervisorReady=true`
-只有當完整鏈：
+只有完整鏈 + exactly-once + replay no duplicate 全 PASS 才能升級。
 
-`GitHub delivery -> verified contract -> dual CI/evidence -> live provider -> exactly one instruction commit -> exactly one Issue comment -> watcher claim -> replay no duplicate`
-
-全部 PASS 才可設 true。
-
-若任何一步只跑 fixture / MockTransport / local synthetic webhook，三個 flags 必須保持 false。
+其中任一步是 fixture / MockTransport / synthetic webhook，三個 flags 都必須保持 false。
 
 ---
 
-## 6. REAL / MOCK / PARTIAL / BLOCKED 邊界
+## 6. 若 LIVE E2E 暴露真正 bug
 
-本輪起始狀態：
+只做 correction-only：
 
-- Supervisor core / GitHub client / policy / state / crash recovery：**REAL_LOGIC / TESTED**
-- CODE/DOCS dual CI lineage：**REAL_LOGIC / TESTED**
-- external provider adapters：**REAL_LOGIC / ADAPTER**
-- Product Truth / existing Blender still evidence：保留既有 scoped **REAL**
-- GitHub webhook production chain：**BLOCKED / false**，等待本輪 live delivery
-- live provider production invocation：**BLOCKED / false**，等待本輪真 network call
-- event-driven supervisor production readiness：**BLOCKED / false**，等待完整鏈
-- CI `FOX3D_MOCK_BLENDER=1`：**MOCK test environment**，不是 Production Ready
-- Vision / Demand / AI Video：依既有文件維持 **MOCK**
-- LIVE_CNC / LIVE_LASER / PLC / machine control：**BLOCKED**
-- `commercialAssetProductionReady=false`
-- `physicalPrintValidated=false`
-- `liveFactoryExecutionReady=false`
-- `fullAutonomousFactoryReady=false`
-- `globalProductionReady=false`
-- **Phase 961+ HOLD**
-
-本輪不得因 Supervisor live E2E 成功而順便宣稱整個 Fox3D / factory Production Ready。
+1. 修最小範圍 bug；不要重寫架構。
+2. 新 CODE SHA。
+3. `pytest -v tests/test_supervisor.py` + `pytest -q` 全綠。
+4. exact CODE SHA Ubuntu + Windows Actions SUCCESS。
+5. 再跑完整 live E2E。
+6. 更新 docs 後 exact DOCS SHA Ubuntu + Windows Actions SUCCESS。
+7. Issue #1 留一次 machine-readable READY_FOR_RE_GATE，STOP 等 external Re-Gate。
 
 ---
 
-## 7. 完成後 handoff
+## 7. 禁止事項
 
-若完整 LIVE E2E PASS：
-
-1. 更新：
-   - `docs/GROK_PROGRESS_REPORT.md`
-   - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-   - `docs/EVENT_DRIVEN_SUPERVISOR_ACCEPTANCE.md`
-   - `docs/REAL_E2E_ACCEPTANCE.md`（只更新本輪真正改變的 scoped flags）
-   - `docs/CABINET_REAL_ACCEPTANCE.md` 若 cabinet truth 無變化則不要改。
-2. 程式碼若無 live bug，不要為了製造 CODE commit 任意改 code；可以用 exact existing CODE lineage + live runtime evidence。
-3. 若 live bug 需要修 code：新 CODE SHA -> full pytest -> exact Ubuntu+Windows CODE CI -> live E2E 再跑一次。
-4. docs commit 後等 exact Ubuntu+Windows DOCS CI SUCCESS。
-5. Issue #1 留 machine-readable `READY_FOR_RE_GATE`，增加：
-   - `LIVE_WEBHOOK_DELIVERY_ID`
-   - `LIVE_PROVIDER`
-   - `LIVE_PROVIDER_MODEL`
-   - `LIVE_PROVIDER_REQUEST_ID`（若 provider 有）
-   - `INSTRUCTION_COMMIT_SHA`
-   - `ISSUE_COMMENT_ID`
-   - `WATCHER_CLAIM_COUNT`
-   - `WEBHOOK_REAL_E2E`
-   - `LIVE_PROVIDER_READY`
-   - `EVENT_DRIVEN_SUPERVISOR_READY`
-   - 原本 CODE/DOCS/CI/EVIDENCE lineage
-6. STOP 等 external ChatGPT Re-Gate。不得自行開始 Phase 961+。
-
-若 BLOCKED_WAITING_LIVE_E2E：同樣更新 docs/Issue，列出缺少 prerequisite 類型，三個 readiness flags 維持 false，然後 STOP。
-
----
-
-## 8. 禁止事項
-
-- 不要重寫既有 Supervisor 架構。
-- 不要改 Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth。
-- 不要把 mock webhook、MockTransport、pytest、CI fixture 當 live E2E。
-- 不要在 docs / Issue / logs 洩漏 webhook secret、GitHub token、provider API key。
-- 不要自行建立/啟動 LIVE_CNC、LIVE_LASER、PLC 或其他 physical machine control。
-- 不要把 generative provider output 當 Product Truth。
+- 不要重寫 Supervisor / Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth。
+- 不要把 MockTransport、pytest、GitHub Actions fixture、curl synthetic webhook 當 live E2E。
+- 不要把 `66af98fb-...` 冒充 `d9402f3...` 的 exact CODE-bound evidence。
+- 不要為了產生新 SHA 任意改 code。
+- 不要在 prerequisites 無變化時重複 commit/comment。
+- 不要啟動 LIVE_CNC / LIVE_LASER / PLC / physical machine control。
+- 不要把 generative output 當 Product Truth。
 - 不要自行進 Phase 961+。
