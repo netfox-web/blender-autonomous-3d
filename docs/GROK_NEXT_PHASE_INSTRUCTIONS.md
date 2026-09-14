@@ -1,178 +1,340 @@
-# Development Agent 指令：PR #8 Artwork / UV Print Workspace 修正 Re-Gate
+# Development Agent 指令：Issue #6 Blender → Generative Video Ground Truth Pipeline V1
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Main baseline: `7f8126144c6d26996b0f91843a4023748e466b79`
-> New PR: #8 `codex/artwork-print-workspace` stacked on PR #7
-> Reviewed CODE: `ce4a94c349b81b78613e9cad6e484485341822a3`
-> CI run: `34824230284`
-> Re-Gate result: **CHANGES REQUIRED**
-> Queued after this correction: **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1**
+> Main baseline before this instruction: `9038e74328dbea3d94a2ad340c36c46ce100bb14`
+> Reviewed print CODE: `a8a9def4750135ab38e33499fe1c543ad601aacd`
+> Reviewed print DOCS: `f69adf912b183480f98c289211c4840323b70e8f`
+> CODE CI: `34825977605` — Ubuntu + Windows SUCCESS, 849 tests each
+> DOCS CI: `34828209094` — Ubuntu + Windows SUCCESS
+> Print evidence: `de87a0b9-1610-454c-be93-e2dab2f5ea71`
+> Re-Gate result: **PR #8 ACCEPT WITH SCOPE**
+> Next authorized work: **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1**
 
-## 0. Why this is CHANGES REQUIRED
+## 0. Re-Gate decision and scope boundary
 
-PR #8 contains substantive new work, but it is **not accepted yet** because exact dual-platform CI is not green.
+PR #8 correction has satisfied the prior gate:
 
-Observed on Actions run `34824230284` for CODE `ce4a94c349b81b78613e9cad6e484485341822a3`:
+- the FastAPI / Starlette cross-version route test was fixed at `a8a9def` by inspecting actual OpenAPI paths instead of assuming every `app.routes` entry has `.path`;
+- exact CODE CI `34825977605` is green on Ubuntu and Windows, 849 tests each;
+- clean real acceptance `de87a0b9-1610-454c-be93-e2dab2f5ea71` is bound to exact CODE `a8a9def`, `workingTreeClean=true`, `developmentOnly=false`;
+- THREE_DOOR and FLAT both have Blender 5.2.1 / OptiX evidence, downloaded artifact hashes, `.blend` reopen packed-texture/UV verification and restart persistence;
+- separate DOCS `f69adf9` has exact dual-platform CI `34828209094` green;
+- the docs correctly keep physical manufacturing and live print readiness false.
 
-- Windows job `103912519357`: **FAILURE**.
-- Failing test: `tests/test_print_workspace.py::test_api_upload_job_proof_and_no_dispatch`.
-- Failure:
-  - test iterates `app.routes` and assumes every route has `.path`;
-  - current FastAPI/Starlette exposes an `_IncludedRouter` entry without `.path`;
-  - exception: `AttributeError: '_IncludedRouter' object has no attribute 'path'`.
-- Ubuntu job for the same run was still in progress when reviewed. Regardless of its result, a Windows failure means the CODE SHA is not acceptable.
+Truth classification for the accepted print scope:
 
-Local focused/regression results and development smoke evidence are useful, but they do **not** override failed exact-SHA GitHub CI.
+### REAL
+- user-provided source PDF-compatible AI layout dimensions / page identity as source-file truth;
+- Blender 5.2.1 OptiX preview for THREE_DOOR and FLAT;
+- reopened `.blend` packed texture / UV evidence;
+- persisted artifact bytes + SHA-256 / download / restart verification.
 
-## 1. Required CI portability fix
+### REAL_LOGIC
+- read-only source import boundary;
+- version / proof / release invalidation;
+- source-size proof logic;
+- explicit human release checks;
+- no-dispatch / file-handoff-only policy.
 
-Fix the route-safety assertion without weakening the actual safety policy.
+### FIXTURE / MOCK
+- GitHub Actions use `FOX3D_MOCK_BLENDER=1`; CI proves regression only;
+- positive human-release automation uses synthetic data and is not an actual operator production sign-off.
 
-Preferred approach:
-- make the test inspect only route entries that expose a path, for example with `getattr(route, "path", "")`, or explicitly filter to the concrete HTTP route type;
-- continue asserting that **no actual exposed HTTP path** contains a production dispatch / hot-folder endpoint;
-- do not modify production routing merely to satisfy the test;
-- add/retain a regression that covers nested/included routers so this cannot regress across FastAPI/Starlette versions or OS runners.
-
-After the fix:
-1. run full `pytest -q` locally, not only the focused print tests;
-2. push a new CODE SHA to PR #8;
-3. require exact new CODE SHA Ubuntu + Windows Actions **SUCCESS**;
-4. do not reuse run `34824230284` as green evidence.
-
-## 2. Formal acceptance evidence still required
-
-PR #8 currently changes code/tests/UI but has no committed formal acceptance docs in its diff. After CODE CI is green, produce formal evidence on the exact accepted CODE SHA.
-
-Create/update at least:
-- `docs/PRINT_WORKSPACE_ACCEPTANCE.md`
-- a machine-readable print-workspace acceptance JSON
-- `docs/GROK_PROGRESS_REPORT.md` only if this is the active handoff round
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md` only for truth changes actually proven
-
-Keep global `docs/REAL_E2E_ACCEPTANCE.md` and `docs/CABINET_REAL_ACCEPTANCE.md` truth boundaries intact unless the new evidence genuinely changes them.
-
-## 3. Clean-tree REAL Blender / source-file acceptance
-
-After exact CODE CI is green, run the print-workspace E2E from a clean tree on the same CODE SHA and bind the evidence to that SHA.
-
-At minimum prove, for both `THREE_DOOR` and `FLAT` where supported:
-- source original is imported/read from a read-only source workflow and is not silently modified;
-- source PDF dimensions / page mapping are preserved into proof metadata;
-- source-size proof download is byte-backed and hash/size recorded;
-- release remains fail-closed without required human checks/operator/measurement/RIP-material configuration;
-- REAL Blender preview uses the actual local Blender runtime, records Blender version + render device, and is not `FOX3D_MOCK_BLENDER=1`;
-- `.blend` reopen verifies component geometry, packed source texture bytes and final UV sampling;
-- service restart can rediscover persisted job/preview state;
-- artifact SHA-256 and byte sizes are verified from stored bytes;
-- no network dispatch, hot-folder write, production job submission, or machine control occurs.
-
-Evidence must include:
-- exact `CODE_SHA`;
-- `workingTreeClean=true`;
-- evidence generation ID;
-- Blender version / device;
-- `usedMock=false` for the REAL Blender portion;
-- source asset hash(es);
-- proof bundle hash/size;
-- preview artifact hashes/sizes;
-- reopen/restart results.
-
-## 4. Truth classification for PR #8
-
-Until the above gate passes, classify the new work as follows:
-
-### PARTIAL / UNACCEPTED
-- Chinese artwork / UV print-file workspace UI;
-- source import/indexing flow;
-- source-size PDF proof workflow;
-- manual RIP release gate;
-- print preview orchestration;
-- actual-source development smoke.
-
-Reason: implementation exists, but exact dual-platform CODE CI is currently failing and formal acceptance docs are not yet committed.
-
-### REAL_LOGIC candidate, pending green Re-Gate
-- read-only source handling rules;
-- proof/revision invalidation logic;
-- explicit human release gate;
-- no-dispatch policy;
-- file-handoff-only NetFox Print boundary.
-
-These may be promoted only after full regression + exact SHA CI + formal evidence.
-
-### REAL evidence candidate, pending formal binding
-- local Blender 5.2.1 / OptiX preview/reopen smoke reported for THREE_DOOR and FLAT.
-
-Do not call this accepted REAL until the evidence is regenerated from a clean tree and bound to the final green CODE SHA.
+### PARTIAL
+- cabinet depth / thickness / gaps and other visualization geometry where no measured manufacturing authority exists;
+- inspected NetFox / Illustrator imposition workflows are discovery evidence only until the exact working runtime, template/slot dimensions and physical/color contract are verified.
 
 ### BLOCKED / false
-- NetFox Print network submission;
-- hot-folder dispatch;
-- production RIP execution;
-- actual machine/material setup;
-- physical UV print validation;
-- LIVE_CNC / LIVE_LASER / PLC / machine control.
-
-Keep:
+- `actualArtworkReleased=false`;
 - `physicalPrintValidated=false`;
+- native NetFox layout import / live API submission;
+- hot-folder dispatch;
+- production RIP execution, white/clear ink, jig/hole alignment and physical color approval;
 - `liveMachineControl=false`;
-- any network print dispatch readiness = false.
+- LIVE_CNC / LIVE_LASER / PLC.
 
-### MOCK / FIXTURE boundary
-- `FOX3D_MOCK_BLENDER=1` Actions runs are regression evidence only;
-- fixture/source test PDFs are not licensed historical production artwork;
-- no Mock / fixture path may be promoted to Production Ready.
+Do not auto-merge PR #7 or PR #8. Acceptance is scoped review approval, not merge authorization and not global Production Ready.
 
-## 5. Licensed / historical artwork boundary
+## 1. Branch / dependency discipline for Issue #6
 
-The reported local library index of 4,451 supported artwork files is **local discovery evidence only**.
+Start Issue #6 from **current `main`** unless a human explicitly merges prerequisite PRs first.
+
+PR #7 and PR #8 are still open/stacked. Therefore:
+
+- do not branch Issue #6 from PR #7 or PR #8;
+- do not copy/paste the unmerged Golden Product or print-workspace implementations into the video branch;
+- use existing `main` generic Product Truth / Cabinet / Render Pack / DAM / Recipe interfaces;
+- if a Golden-specific integration point is needed, define a narrow adapter/interface and keep it optional until the prerequisite is merged;
+- no architecture rewrite of Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth.
+
+The new Illustrator `bbkers v16 JSX` / CSV / AI-template discovery is **not** part of Issue #6. Keep it read-only/backlog; do not execute Illustrator, change NetFox production services or expand this phase into print integration.
+
+## 2. Provider-neutral `VideoRecipe`
+
+Implement a provider-neutral, deterministic `VideoRecipe` model. At minimum support:
+
+- `HERO_ORBIT_8S`
+- `DOOR_OPEN_8S`
+- `ARTWORK_DETAIL_6S`
+- `SMALL_ROOM_10S`
+- `ASSEMBLY_EXPLODE_10S` only when assembly authority exists; otherwise BLOCKED.
+
+Each recipe must bind:
+
+- `recipeId` / version;
+- duration, fps, resolution and exact frame count;
+- CameraRecipe hash / SceneRecipe hash;
+- focal length, sensor, clipping and look-at/target semantics;
+- camera path keyframes / interpolation;
+- object/product transform timeline;
+- articulation timeline;
+- lighting / scene reference;
+- SKU / tenant / product version;
+- engineeringHash / Product Truth lineage;
+- ArtworkHash / PlacementHash / finalUvHash when artwork exists;
+- deterministic `videoRecipeHash`.
+
+No generative provider may redefine product geometry, artwork identity or camera truth.
+
+## 3. Blender frame-level Ground Truth sequence
+
+Create a reusable Blender ground-truth render path that emits per frame, as applicable:
+
+- RGB / Beauty;
+- Depth;
+- Normal;
+- ProductMask;
+- ArtworkMask;
+- Alpha;
+- camera matrix / intrinsics;
+- object/product matrix;
+- articulation state;
+- frame index + timestamp.
+
+Every frame must bind back to:
+
+- SKU / tenant;
+- engineeringHash / ProductTruthHash or acceptance-generation identity;
+- ArtworkHash / ArtworkVersion;
+- PlacementHash / finalUvHash;
+- SceneRecipeHash / CameraRecipeHash / VideoRecipeHash;
+- Blender job ID;
+- artifact SHA-256 + byte size.
+
+Do not infer authoritative product dimensions from generated video pixels.
+
+## 4. Required REAL sequence: `HERO_ORBIT_8S`
+
+Produce at least one clean-tree REAL Blender sequence on the final CODE SHA:
+
+- product geometry is fixed;
+- camera performs deterministic smooth orbit/dolly;
+- product/artwork identity remains unchanged across frames;
+- no Mock Blender;
+- record Blender version, render device and GPU backend;
+- verify frame count, ordering, hashes and matrices from actual output bytes;
+- verify masks and AOVs are not aliased placeholders.
+
+This is the minimum REAL gate for `VIDEO_GROUND_TRUTH_READY=true`.
+
+## 5. `DOOR_OPEN_8S` articulation authority must fail closed
+
+`DOOR_OPEN_8S` may be marked REAL only if existing Product Truth provides authoritative door/component identity, hinge pivot/axis and allowed articulation, and the Blender worker emits observed transform evidence.
+
+Required checks:
+
+- expected door/component exact-set;
+- hinge pivot / axis identity;
+- closed/open transform semantics;
+- worker-observed transform per key frame;
+- cross-door swap / wrong hinge / wrong job / wrong SKU fail closed;
+- artwork remains bound to the correct moving door.
+
+If authority is incomplete:
+
+- `doorOpenGroundTruthReady=false`;
+- status `BLOCKED_ARTICULATION_AUTHORITY`;
+- do not synthesize fake hinge authority to make the demo look complete.
+
+## 6. Deterministic frame manifest
+
+Create a machine-readable `VIDEO_GROUND_TRUTH_MANIFEST.json` (or equivalent canonical model) containing every frame and every required lineage field.
+
+Manifest requirements:
+
+- canonical/deterministic serialization;
+- manifest SHA-256;
+- exact frame index set: no missing / duplicate frames;
+- monotonically correct timestamps;
+- artifact hashes/sizes verified from bytes;
+- camera/object matrices verified as finite numeric values;
+- linkage to exact `CODE_SHA` and evidence generation ID;
+- no cross-video or cross-SKU artifact reuse unless explicitly content-addressed and semantically identical.
+
+Add fail-closed negative tests for:
+
+- reordered frames;
+- missing frame;
+- duplicate frame;
+- wrong frame timestamp;
+- artifact byte/SHA mismatch;
+- camera matrix tamper;
+- object matrix tamper;
+- mask swap;
+- cross-SKU frame injection;
+- engineeringHash / ArtworkHash / PlacementHash mismatch.
+
+## 7. Provider-neutral H3 / LTX gateway contract only
+
+Implement or extend adapter contracts for:
+
+- `H3MaxAdapter`
+- `LTX25Adapter`
+- future provider adapters.
+
+The provider request package may consume:
+
+- RGB/keyframes;
+- Depth;
+- Normal;
+- ProductMask;
+- ArtworkMask;
+- camera metadata;
+- prompt / style brief;
+- product-lock constraints.
+
+Until a real configured provider network call is executed and independently verified:
+
+- `liveH3MaxProviderReady=false`;
+- `liveLtx25ProviderReady=false`;
+- `liveProviderReady=false` for this scope;
+- Mock / fixture adapters remain MOCK/FIXTURE;
+- generated output must never be promoted to Product Truth.
+
+Do not add secrets to repo or logs.
+
+## 8. Product Lock QA V1
+
+Build deterministic QA first; Vision AI may remain MOCK/BLOCKED.
+
+At minimum validate:
+
+- product silhouette consistency proxy;
+- panel / door count and topology identity;
+- expected mask IoU or mask-bound geometry checks where deterministic;
+- artwork region position / scale / rotation consistency;
+- camera motion consistency against recipe;
+- frame continuity / identity drift signals;
+- rejected candidate cannot be published as final.
+
+Return only bounded states such as:
+
+- `PASS`
+- `RETRY`
+- `REJECT`
+
+If live Vision Judge is not configured, keep `visionQaReady=false`; deterministic QA may be REAL_LOGIC but must not be labeled REAL Vision.
+
+## 9. Retry, candidate lineage and DAM
+
+Implement:
+
+`Ground Truth -> Provider Candidate -> QA -> PASS / RETRY / REJECT -> DAM`
+
+Persist:
+
+- candidate ID;
+- provider/model/version;
+- seed/config when supplied;
+- source ground-truth manifest hash;
+- attempt number;
+- retry reason;
+- QA decision / evidence;
+- artifact SHA-256 / bytes;
+- final publish status.
 
 Rules:
-- do not upload licensed originals to GitHub;
-- do not infer commercial/production authorization from file presence;
-- preserve source hashes and local source identity without embedding restricted files in repo evidence;
-- if a test fixture is used in CI, label it FIXTURE;
-- historical/customer/IP originals remain outside GitHub unless explicitly authorized.
 
-## 6. NetFox Print boundary
+- idempotent retry semantics;
+- a rejected candidate cannot become `Final Commerce Video` without a new accepted QA record;
+- DAM must distinguish Blender Ground Truth, Provider Candidate, QA Accepted, QA Rejected and Final Commerce Video;
+- no silent overwrite of accepted lineage.
 
-Current integration remains:
+## 10. Golden product integration boundary
 
-`FILE_HANDOFF_ONLY_NOT_SUBMITTED`
+Issue #4 / PR #7 is accepted with scope but not merged. For this phase:
 
-The reported remote inspection (`/data/apps/mw/web/uvprint`, PDF/ZIP job-file support, CSV+raster auto-layout, PHP proxy to localhost:5050 with no host listener) is discovery information only.
+- use a product already available through `main` Product Truth interfaces for canonical development and REAL acceptance;
+- add an optional integration test/adapter point for the 424×295×900 Golden three-door product only if it can be done without importing/copying unmerged code;
+- after a future human merge of PR #7, the same VideoRecipe pipeline should consume it without reimplementation.
 
-Do **not**:
-- change the remote NetFox Print host;
-- write to production job directories;
-- submit a live print job;
-- create a hot-folder dispatcher;
-- add credentials to repo/logs;
-- claim live integration because SSH/read-only inspection succeeded.
+Do not block the whole Video Ground Truth architecture on PR #7 merge.
 
-## 7. CODE / DOCS acceptance sequence
+## 11. Required tests / adversarial matrix
 
-Use the same split-evidence discipline as prior accepted rounds:
+At minimum cover:
 
-1. Fix the Windows/cross-version test portability issue.
-2. Full local regression.
-3. Push final CODE SHA.
-4. Exact CODE SHA Ubuntu + Windows CI SUCCESS.
-5. Clean-tree REAL print-workspace/Blender acceptance on that CODE SHA.
-6. Commit acceptance docs/evidence separately as DOCS SHA.
-7. Exact DOCS SHA Ubuntu + Windows CI SUCCESS.
-8. Post one `READY_FOR_RE_GATE` handoff.
-9. STOP and wait for external Re-Gate.
+- wrong tenant / SKU / product version;
+- wrong engineeringHash;
+- wrong ArtworkHash / PlacementHash / finalUvHash;
+- wrong SceneRecipeHash / CameraRecipeHash / VideoRecipeHash;
+- frame reorder / missing / duplicate;
+- cross-video frame mix;
+- camera/object transform tamper;
+- ProductMask / ArtworkMask swap or tamper;
+- artifact SHA / size mismatch;
+- wrong Blender job lineage;
+- invalid/non-finite matrices;
+- articulation authority absent;
+- wrong door/pivot/axis if articulation is enabled;
+- rejected candidate publish attempt;
+- Mock provider attempting `liveProviderReady=true`;
+- Mock Vision attempting `visionQaReady=true`.
 
-Do not auto-merge PR #7 or PR #8.
+All authority mismatches must fail closed.
 
-## 8. READY_FOR_RE_GATE contract
+## 12. Acceptance docs
 
-Post the full handoff in PR #8 or its issue thread and a short pointer in Issue #1:
+Create/update:
+
+- `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ARCHITECTURE.md`
+- `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ACCEPTANCE.md`
+- machine-readable acceptance JSON.
+
+Truth matrix must clearly distinguish:
+
+- REAL;
+- REAL_LOGIC;
+- FIXTURE;
+- MOCK;
+- PARTIAL;
+- BLOCKED.
+
+Do not rewrite `docs/REAL_E2E_ACCEPTANCE.md` or `docs/CABINET_REAL_ACCEPTANCE.md` merely for narrative consistency. Change them only if the new evidence actually changes their scoped truth.
+
+## 13. CODE / DOCS evidence sequence
+
+Use strict split evidence:
+
+1. implement code/tests;
+2. run full local `pytest -q`;
+3. push final CODE SHA;
+4. require exact CODE SHA Ubuntu + Windows Actions SUCCESS;
+5. from a clean tree on exact CODE SHA run REAL Blender Video Ground Truth acceptance;
+6. verify actual output bytes/hashes/matrices/manifests;
+7. commit acceptance docs/evidence separately as DOCS SHA;
+8. require exact DOCS SHA Ubuntu + Windows Actions SUCCESS;
+9. post one `READY_FOR_RE_GATE` handoff;
+10. STOP for external Re-Gate.
+
+`FOX3D_MOCK_BLENDER=1` CI remains regression evidence only and cannot replace the clean REAL Blender run.
+
+## 14. `READY_FOR_RE_GATE` contract
+
+Report at minimum:
 
 - `INSTRUCTION_SHA`
-- `PR_NUMBER=8`
+- `ISSUE=6`
 - `CODE_SHA`
 - `DOCS_SHA`
 - `CODE_CI_RUN_ID`
@@ -182,53 +344,43 @@ Post the full handoff in PR #8 or its issue thread and a short pointer in Issue 
 - `WORKING_TREE_CLEAN=true`
 - `REAL_BLENDER=true|false`
 - `USED_MOCK=true|false`
-- `PRINT_WORKSPACE_LOGIC_READY=true|false`
-- `REAL_PRINT_PREVIEW_READY=true|false`
-- `NETFOX_PRINT_LIVE_DISPATCH_READY=false`
-- `PHYSICAL_PRINT_VALIDATED=false`
-- `LIVE_MACHINE_CONTROL=false`
+- `VIDEO_GROUND_TRUTH_READY=true|false`
+- `HERO_ORBIT_REAL=true|false`
+- `DOOR_OPEN_REAL=true|false`
+- `VISION_QA_READY=true|false`
+- `LIVE_H3_PROVIDER_READY=true|false`
+- `LIVE_LTX_PROVIDER_READY=true|false`
+- `GLOBAL_PRODUCTION_READY=false`
 
-List REAL / REAL_LOGIC / FIXTURE / MOCK / PARTIAL / BLOCKED separately.
+Then list REAL / REAL_LOGIC / FIXTURE / MOCK / PARTIAL / BLOCKED separately.
 
-## 9. Issue #6 remains queued, not cancelled
+## 15. Existing global blockers remain unchanged
 
-The prior instruction for **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1** remains the next approved product-development direction, but **HOLD implementation until PR #8 returns for Re-Gate**.
+Event-Driven Supervisor LIVE external prerequisites remain blocked unless independently changed:
 
-After PR #8 is accepted, resume the already-approved Issue #6 scope:
-- provider-neutral `VideoRecipe`;
-- per-frame RGB/Depth/Normal/ProductMask/ArtworkMask;
-- camera/object matrices + deterministic frame manifest;
-- REAL `HERO_ORBIT_8S`;
-- `DOOR_OPEN_8S` fail-closed when articulation authority is absent;
-- H3/LTX adapter contracts without Mock→REAL promotion;
-- deterministic Product Lock QA;
-- retry / DAM lineage;
-- full dual-platform CI + clean REAL Blender evidence.
-
-Do not start Issue #6 in parallel with an unresolved PR #8 correction unless explicitly re-authorized.
-
-## 10. Existing global blockers remain unchanged
-
-Supervisor LIVE E2E remains externally blocked unless prerequisites actually change:
 - public HTTPS webhook ingress missing;
 - webhook secret missing;
-- live provider credential/model config missing;
+- live supervisor provider/model credentials/config missing;
 - admin key missing.
 
 Keep:
+
 - `webhookRealE2e=false`;
 - Supervisor `liveProviderReady=false`;
 - `eventDrivenSupervisorReady=false`.
 
-Also keep LIVE_CNC / LIVE_LASER / PLC BLOCKED.
+Also keep LIVE_CNC / LIVE_LASER / PLC / physical machine control BLOCKED.
 
-## 11. Forbidden
+## 16. Forbidden
 
 - no architecture rewrite;
-- no production routing change only to make a test pass;
-- no Mock → REAL promotion;
+- no auto-merge of PR #7 or PR #8;
+- no branch dependency on unmerged PR #7/#8 code;
+- no Mock/FIXTURE → REAL promotion;
+- no generative output → Product Truth promotion;
+- no fabricated articulation authority;
 - no licensed artwork upload to GitHub;
-- no live NetFox Print submission/hot-folder/machine write;
-- no automatic merge of PR #7 or #8;
-- no Issue #6 implementation before this correction Re-Gate is complete;
-- no unscoped `productionReady=true`.
+- no Illustrator execution / NetFox live mutation in this video phase;
+- no live print submission / hot-folder / machine write;
+- no unscoped `productionReady=true`;
+- no next major phase after Issue #6; stop for Re-Gate.
