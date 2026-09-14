@@ -50,14 +50,14 @@
     "hardwareAuthority": "UNKNOWN",
     "articulationAuthority": "UNKNOWN"
   },
-  "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+  "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
   "historicalArtwork": [
     {
       "sku": "KU002101",
       "version": "HISTORICAL_PENDING",
       "ready": false,
       "truth": "BLOCKED",
-      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
       "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
       "slots": [
         {
@@ -85,7 +85,7 @@
       "version": "HISTORICAL_PENDING",
       "ready": false,
       "truth": "BLOCKED",
-      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
       "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
       "slots": [
         {
@@ -113,7 +113,7 @@
       "version": "HISTORICAL_PENDING",
       "ready": false,
       "truth": "BLOCKED",
-      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
       "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
       "slots": [
         {
@@ -141,7 +141,7 @@
       "version": "HISTORICAL_PENDING",
       "ready": false,
       "truth": "BLOCKED",
-      "engineeringHash": "d51aace99446b24423876c92b2efda5468c0ad75a2ec4f13f3a150f59a9f13fe",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
       "reason": "原始 Artwork 尚未提供，未偽造歷史圖稿",
       "slots": [
         {

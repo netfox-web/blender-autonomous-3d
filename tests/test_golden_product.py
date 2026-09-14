@@ -62,6 +62,13 @@ def test_four_skus_share_engineering_not_artwork():
         assert all(row['sourcePath'] is None for row in original['slots'])
 
 
+def test_print_policy_does_not_change_engineering():
+    a=build_golden();b=build_golden(GoldenRecipe(safeMm=8.,bleedMm=4.))
+    assert a['engineeringHash']==b['engineeringHash']
+    assert a['spec']['components']==b['spec']['components']
+    assert a['surfaces'][0]['surfaceHash']!=b['surfaces'][0]['surfaceHash']
+
+
 @pytest.mark.parametrize('version',['FIXTURE_MASTER_V1','FIXTURE_SINGLE_V1'])
 def test_crops_no_stretch_and_pixels(tmp_path,version):
     p=package_plan(SKUS[0],version)
@@ -103,7 +110,7 @@ def test_package_tampers_fail_closed(tamper):
 
 def observed_fixture():
     g=build_golden();p=package_plan(SKUS[0],'FIXTURE_MASTER_V1')
-    o={'realBlender':True,'usedMock':False,'sku':SKUS[0],'engineeringHash':p['engineeringHash'],'packageHash':p['packageHash'],
+    o={'realBlender':True,'usedMock':False,'jobId':'unit-worker-job','sku':SKUS[0],'engineeringHash':p['engineeringHash'],'packageHash':p['packageHash'],
        'parts':[{'componentId':x['componentId'],'size':x['size'],'location':x['location']} for x in g['spec']['components']],
        'artwork':[{**x,'observedCorners':x['finalSampling'],'packedImageSha256':x['source']['fileSha256']} for x in p['placements']]}
     return g,p,o # synthetic contract fixture, not live evidence
@@ -171,7 +178,8 @@ def serialized_generation(tmp_path,monkeypatch):
         write_png(tmp_path/name,800,800,bytes([80,100,120])*800*800)
     for name in ['model.blend','model.glb']:(tmp_path/name).write_bytes(b'SYNTHETIC_CONTRACT_FIXTURE')
     files={f.name:{'sha256':sha256_bytes(f.read_bytes()),'sizeBytes':f.stat().st_size} for f in tmp_path.iterdir()}
-    m={'package':p,'spec':g['spec'],'production':production,'files':files,'truth':g['truth'],
+    m={'sku':SKUS[0],'version':'FIXTURE_MASTER_V1','engineeringHash':g['engineeringHash'],
+       'package':p,'spec':g['spec'],'production':production,'files':files,'truth':g['truth'],'jobId':'unit-worker-job',
        'manufacturing':g['manufacturing'],'artworkTruth':'FIXTURE','renderInfo':{'realBlender':True,'usedMock':False},
        'views':{'HERO_45':'beauty.png','FRONT_CLOSED':'front-closed.png','DOOR_DETAIL':'door-detail.png','FRONT_OPEN':'BLOCKED'}}
     atomic_json(tmp_path/'manifest.json',m)
@@ -198,3 +206,29 @@ def test_serialized_artifacts_fail_closed(serialized_generation,tamper):
         m['files'][destination.name]={'sha256':sha256_bytes(destination.read_bytes()),'sizeBytes':destination.stat().st_size}
     atomic_json(folder/'manifest.json',m)
     with pytest.raises((ValueError,OSError)):validate_generation(folder,SKUS[0],'FIXTURE_MASTER_V1')
+
+
+def test_render_cache_binds_sku_and_artwork(tmp_path):
+    from fox3d.infra import job_cache_key
+    jobs=[]
+    plat=SimpleNamespace(root=tmp_path,mock_blender=False,runtime=SimpleNamespace(available=lambda:True),probe=None)
+    def submit(job):
+        jobs.append(job);return {**job,'jobId':'test-job'}
+    plat.submit_job=submit
+    plat.execute_job=lambda *a,**k:{'status':'failed','error':'test-stop'}
+    for sku,version in [(SKUS[0],'FIXTURE_MASTER_V1'),(SKUS[1],'FIXTURE_MASTER_V1'),(SKUS[0],'FIXTURE_SINGLE_V1')]:
+        with pytest.raises(ValueError,match='test-stop'):
+            generate(plat,'t',sku,plan(sku,version)['draft'])
+    assert len({job_cache_key(j,blender_version='fixture') for j in jobs})==3
+
+
+def test_cancel_during_cache_return_never_publishes(tmp_path):
+    stop=threading.Event()
+    plat=SimpleNamespace(root=tmp_path,mock_blender=False,runtime=SimpleNamespace(available=lambda:True),probe=None)
+    plat.submit_job=lambda j:{**j,'jobId':'cached-request'}
+    def cached(*a,**k):
+        stop.set();return {'status':'completed','realBlender':True,'usedMock':False,'cacheHit':True}
+    plat.execute_job=cached
+    with pytest.raises(ValueError,match='取消'):
+        generate(plat,'t',SKUS[0],plan(SKUS[0],'FIXTURE_MASTER_V1')['draft'],cancel_flag=stop)
+    assert not (folder_for(tmp_path,'t',SKUS[0])/'meta.json').exists()

@@ -78,7 +78,8 @@ def build_golden(recipe: GoldenRecipe | None = None):
         part(f"shelf_{i+1}",f"內層板 {i+1}","shelf",[iw,d-b-dt-g,t],[0.,(dt+g-b)/2,t+oh+(oh+t)*i+t/2])
     for i in range(3):
         part(f"door_{i+1}",f"門片 {i+1}（由上到下）","door",[iw-2*g,dt,oh-2*g],[0.,-d/2+dt/2,t+(2-i)*(oh+t)+oh/2])
-    truth = r.model_dump(mode="json")
+    # Print policy belongs to surface/placement hashes, not EngineeringHash.
+    truth = r.model_dump(mode="json",exclude={"safeMm","bleedMm"})
     authority = {"recipe":truth,"componentsMm":parts,"units":"mm","doorOrder":"TOP_TO_BOTTOM"}
     engineering_hash = stable_hash(authority)
     surfaces=[]
