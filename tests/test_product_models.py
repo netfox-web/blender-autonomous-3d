@@ -108,6 +108,14 @@ def test_model_identity_changes_for_dimensions_but_not_claims_print_ready(tmp_pa
     d['printFaces']=[{'name':'front','widthMm':100.,'heightMm':200.,'evidence':'drawing'}]
     c=m.save(tmp_path,'t',d,2,a['id']);assert not c['readiness']['printReady']
 
+
+def test_inventory_and_complete_dimensions_do_not_create_finished_templates(tmp_path):
+    data,source,path,raw=configured(tmp_path);nas.scan(data)
+    assert m.listing(data,'t')==[]
+    item=m.save(data,'t',cabinet(),0)
+    assert item['readiness']['previewReady']
+    assert m.listing(data,'t')[0]['templateState']=='DRAFT'
+
 def test_foreign_artwork_and_duplicate_skus_rejected(tmp_path):
     d=cabinet();d['variants']=[{'sku':'A','artworkAssetId':'a'*64}]
     with pytest.raises((ValueError,KeyError,OSError)):m.save(tmp_path,'t',d,0)

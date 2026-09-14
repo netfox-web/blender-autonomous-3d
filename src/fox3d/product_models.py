@@ -143,7 +143,16 @@ def get(root,tid,mid):
     return {**data,'readiness':readiness(data['draft'])}
 
 def listing(root,tid):
-    return [get(root,tid,p.parent.name) for p in sorted(directory(root,tid).glob('*/master.json'))]
+    items=[]
+    for p in sorted(directory(root,tid).glob('*/master.json')):
+        item=get(root,tid,p.parent.name)
+        try:
+            preview=status(root,tid,item['id'],current_draft=item['draft'])
+            available=preview.get('generated') and not preview.get('stale')
+        except (ValueError,OSError,KeyError):
+            available=False
+        items.append({**item,'templateState':'PREVIEW_AVAILABLE' if available else 'DRAFT'})
+    return items
 
 
 def validate_artworks(root,tid,data):

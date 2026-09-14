@@ -3,7 +3,7 @@
   const $=id=>document.getElementById(id), base='/api/product-models', tenant='sonaqueen-home';
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const form=$('master-form');
-  let usageRoles={}, reviewAsset=null, usageLimit=20;
+  let usageRoles={}, reviewAsset=null, usageLimit=20, draftSourceGroupId='';
   let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, assets=[], dispose=null, viewId='', busy=false;
   const numeric=['widthMm','depthMm','heightMm','panelMm','backMm','doorMm','gapMm','rows'];
   const labels={idle:'尚未生成',queued:'排隊中',running:'Blender 生成中',succeeded:'生成完成',failed:'生成失敗',cancelled:'已取消'};
@@ -25,7 +25,7 @@
     const data=await api('/catalog?'+p);
     if(!append)$('groups').replaceChildren();
     for(const g of data.items){const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(g.name)}<small>${esc(data.families[g.family])} · ${g.fileCount} 個檔案 · ${esc(data.subtypes[g.subtype])}</small>`;
-      b.onclick=run(async()=>{if(!canLeave())return;group=g;newMaster(g);await loadFiles();});$('groups').append(b);}
+      b.onclick=run(async()=>{group=g;$('source-preview').hidden=true;await loadFiles();notice('已開啟素材資料夾；不會自動建立或修改模板。');});$('groups').append(b);}
     offset+=data.items.length;$('more').hidden=offset>=data.total;
     $('catalog-note').textContent=`${data.total} 個待確認資料夾群組。${data.scannedAt?'掃描時間 '+new Date(data.scannedAt).toLocaleString():'尚未掃描'}。`;
     $('file-count').textContent=data.fileCount.toLocaleString();$('scan').disabled=!data.configured;
@@ -47,11 +47,12 @@
       $('source-files').append(row);}
     fileOffset+=data.items.length;$('files-more').hidden=fileOffset>=data.total;
   }
-  async function loadMasters(){const data=await api();$('masters').replaceChildren();$('master-count').textContent=data.items.length;
-    for(const item of data.items){const b=document.createElement('button');b.innerHTML=`${esc(item.draft.name)}<small>${item.readiness.previewReady?'可產生外形預覽':'待補建模資料'} · 第 ${item.revision} 版</small>`;
+  async function loadMasters(){const data=await api();$('masters').replaceChildren();$('generated-masters').replaceChildren();const generated=data.items.filter(x=>x.templateState==='PREVIEW_AVAILABLE').length;$('generated-count').textContent=generated;$('master-count').textContent=data.items.length-generated;
+    if(!generated)$('generated-masters').textContent='尚無已生成模型。請先補齊草稿的尺寸與結構，再生成外形預覽。';
+    for(const item of data.items){const b=document.createElement('button');b.innerHTML=`${esc(item.draft.name)}<small>${item.templateState==='PREVIEW_AVAILABLE'?'已生成外形，待實物核對':item.readiness.previewReady?'草稿：待生成或重新核對':'草稿：待補尺寸／結構'} · 第 ${item.revision} 版</small>`;
       b.onclick=run(async()=>{if(!canLeave())return;selected=await api('/'+item.id);fill(selected.draft);group=null;$('sources-panel').hidden=true;$('source-preview').hidden=true;
         if(selected.draft.sourceGroupId){const info=await api(`/catalog/${selected.draft.sourceGroupId}/files`);group=info.group;await loadFiles();}
-        await showStatus();});$('masters').append(b);}
+        switchView('models');await showStatus();});$(item.templateState==='PREVIEW_AVAILABLE'?'generated-masters':'masters').append(b);}
   }
   async function loadAssets(){const data=await api('/assets');assets=data.items;usageRoles=data.roles;
     const filter=$('usage-filter').value;$('usage-filter').innerHTML='<option value="">全部用途</option>'+options(usageRoles,filter);$('usage-role').innerHTML=options(usageRoles,reviewAsset?.usage.role||'UNCLASSIFIED');
@@ -76,17 +77,17 @@
   function addVariant(v={}){const row=document.createElement('div');row.className='row variant';row.innerHTML=`<div class="fields"><label>SKU<input class="variant-sku" required maxlength="120" value="${esc(v.sku)}"></label><label>圖稿<select class="variant-art">${assetOptions(v.artworkAssetId)}</select></label></div><label>圖案／版本備註<input class="variant-note" maxlength="1000" value="${esc(v.note)}"></label>`;removeButton(row);$('variants').append(row);}
   function addFace(f={}){const row=document.createElement('div');row.className='row face';row.innerHTML=`<div class="fields"><label>印刷面名稱<input data-key="name" required maxlength="100" value="${esc(f.name)}" placeholder="例如 第一片門板正面"></label><label>面寬（mm）<input data-key="widthMm" type="number" min="0.01" max="6000" step="any" required value="${esc(f.widthMm)}"></label><label>面高（mm）<input data-key="heightMm" type="number" min="0.01" max="6000" step="any" required value="${esc(f.heightMm)}"></label><label>出血（mm）<input data-key="bleedMm" type="number" min="0" max="20" step="any" required value="${esc(f.bleedMm??0)}"></label></div><label>印刷面尺寸依據<input data-key="evidence" required maxlength="1500" value="${esc(f.evidence)}"></label><label>原點／治具方向紀錄<input data-key="originNote" maxlength="1500" value="${esc(f.originNote)}"></label>`;removeButton(row);$('faces').append(row);}
   function removeButton(row){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='移除此筆';b.onclick=()=>{row.remove();staleForm();};row.append(b);}
-  function fill(d={}){form.reset();for(const [key,value] of Object.entries(d)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}
+  function fill(d={}){draftSourceGroupId=d.sourceGroupId||'';form.reset();for(const [key,value] of Object.entries(d)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}
     $('variants').replaceChildren();(d.variants||[]).forEach(addVariant);$('faces').replaceChildren();(d.printFaces||[]).forEach(addFace);
     dirty=false;task=null;$('accept').checked=false;$('cancel').disabled=true;$('status').disabled=!selected;$('revision').textContent=selected?`第 ${selected.revision} 版`:'新模型資料';
     $('render-image').hidden=true;$('downloads').replaceChildren();$('render-state').textContent='';if(dispose){dispose();dispose=null;}$('viewer').replaceChildren();viewId='';readiness();toggleCabinet();}
   function newMaster(g=null){selected=null;$('file-query').value='';$('source-preview').hidden=true;$('sources-panel').hidden=!g;
-    fill({name:g?.name||'',family:g?.family||'coaster',subtype:g?.subtype||'other',geometry:'PENDING'});notice(g?'已選來源群組；請確認名稱、結構與實際尺寸，再儲存。':'請填模型資料；尺寸未知可以先留白儲存。');}
+    fill({name:g?.name||'',family:g?.family||'coaster',subtype:g?.subtype||'other',geometry:'PENDING',sourceGroupId:g?.id||''});notice(g?'已選來源群組；請確認名稱、結構與實際尺寸，再儲存。':'請填模型資料；尺寸未知可以先留白儲存。');}
   function toggleCabinet(){$('cabinet-fields').hidden=!form.elements.geometry.value.endsWith('CABINET');}
   function readiness(){const r=selected?.readiness;$('readiness').textContent=r?(r.previewReady?'資料足以生成簡化外形預覽；尚未完成實物／印刷校正。':r.missing):'先儲存商品資料；不確定的尺寸請留白。';
     $('assumptions').innerHTML=(r?.assumptions||[]).map(x=>`<li>${esc(x)}</li>`).join('');$('generate').disabled=dirty||!r?.previewReady||!$('accept').checked||busy;}
   function draft(){const d={};for(const k of ['name','family','subtype','geometry','dimensionEvidence','structureEvidence','notes'])d[k]=form.elements.namedItem(k).value;
-    for(const k of numeric){const v=form.elements.namedItem(k).value;d[k]=v===''?null:Number(v);}d.sourceGroupId=group?.id||selected?.draft.sourceGroupId||'';
+    for(const k of numeric){const v=form.elements.namedItem(k).value;d[k]=v===''?null:Number(v);}d.sourceGroupId=draftSourceGroupId;
     d.variants=Array.from(document.querySelectorAll('.variant')).map(r=>({sku:r.querySelector('.variant-sku').value,artworkAssetId:r.querySelector('.variant-art').value,note:r.querySelector('.variant-note').value}));
     d.printFaces=Array.from(document.querySelectorAll('.face')).map(r=>{const f={};r.querySelectorAll('[data-key]').forEach(e=>f[e.dataset.key]=e.type==='number'?Number(e.value):e.value);return f;});return d;}
   async function showStatus(){if(!selected)return;const id=selected.id;const s=await api('/'+id+'/preview');if(selected?.id!==id)return;task=['queued','running'].includes(s.state)?s.taskId:null;
@@ -99,7 +100,10 @@
   $('search-form').onsubmit=run(()=>loadCatalog());$('more').onclick=run(()=>loadCatalog(true));
   $('file-search').onsubmit=run(()=>loadFiles());$('files-more').onclick=run(()=>loadFiles(true));
   $('scan').onclick=run(async()=>{$('scan').disabled=true;notice('正在唯讀掃描已設定的 NAS 商品資料夾…');try{const s=await api('/catalog/refresh',{method:'POST'});await loadCatalog();notice(`掃描完成：${s.fileCount} 個檔案、${s.groupCount} 個待確認群組。`);}finally{$('scan').disabled=false;}});
-  $('new').onclick=()=>{if(canLeave()){group=null;newMaster();}};
+  $('new').onclick=()=>{if(canLeave()){newMaster();switchView('models');}};
+  function switchView(view){const models=view==='models';$('library-view').hidden=!models;$('material-view').hidden=models;$('show-models').setAttribute('aria-pressed',String(models));$('show-materials').setAttribute('aria-pressed',String(!models));}
+  $('show-models').onclick=()=>switchView('models');$('show-materials').onclick=()=>switchView('materials');
+  $('create-from-source').onclick=()=>{if(group&&canLeave()){newMaster(group);switchView('models');}};
   form.addEventListener('input',staleForm);form.elements.geometry.addEventListener('change',toggleCabinet);
   $('add-variant').onclick=()=>{addVariant();staleForm();};$('add-face').onclick=()=>{addFace();staleForm();};
   form.onsubmit=run(async()=>{if(busy)return;busy=true;form.inert=true;$('save').disabled=true;try{selected=await api(selected?'/'+selected.id:'',{method:selected?'PUT':'POST',body:body({draft:draft(),expectedRevision:selected?.revision||0})});fill(selected.draft);await loadMasters();await showStatus();notice('模型資料已儲存。'+(selected.readiness.missing||'可確認簡化說明後生成 3D。'));}finally{busy=false;form.inert=false;$('save').disabled=false;readiness();}});
@@ -109,5 +113,5 @@
   window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
   setInterval(()=>{if(task)showStatus().catch(err=>notice(err.message,true));},5000);
   run(async()=>{const data=await api('/catalog');$('family').insertAdjacentHTML('beforeend',options(data.families));$('subtype').insertAdjacentHTML('beforeend',options(data.subtypes));$('edit-family').innerHTML=options(data.families);$('edit-subtype').innerHTML=options(data.subtypes,'other');
-    await loadAssets();newMaster();await loadCatalog();await loadMasters();notice('先從左側找商品，或手動建立模型。尺寸依據與印刷面會分開保存。');})();
+    await loadAssets();newMaster();await loadCatalog();await loadMasters();if(window.location.hash==='#usage-panel')switchView('materials');notice('模板與素材已分開。先選模型草稿；需找歷史圖片時，切換「素材資料庫」。');})();
 })();
