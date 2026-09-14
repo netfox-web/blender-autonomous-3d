@@ -1,0 +1,71 @@
+{
+  "evidenceId": "e7ee0d4c-8858-40ae-b8da-80bc3073a4e9",
+  "codeCommit": "6ac129750624ed48530f5f5988a0b5f6606c8ce0",
+  "workingTreeClean": true,
+  "developmentOnly": false,
+  "printfoxCodeCommit": "1c774d6691b931fa82b8ed7ee4ae5b4de4e83f2a",
+  "printfoxSource": "COMMITTED_APP_ARCHIVE_NO_LOCAL_MODIFICATIONS",
+  "artworkTruth": "SYNTHETIC_FIXTURE",
+  "aiGenerationExecuted": false,
+  "productionAuthenticated": false,
+  "liveMachineControl": false,
+  "physicalPrintValidated": false,
+  "status": "PASS",
+  "originalSha256": "47a1535518bf1b3f2a09ff5ae7a5922eadf768b392418071a2f551c10e2470f4",
+  "proofZipSha256": "987c7313f2397b0a2bed8da01c86897856935a995210a3c298773a999015fd0b",
+  "proofZipBytes": 7042,
+  "designId": "des_6b0d698b7290",
+  "bridgeRequestId": "288b2636-1c79-4e79-a8f4-020f5cd1ab47",
+  "remoteJobId": "job_cf01bd1d8f30",
+  "printJobId": "6c8436d4-d72e-4a11-90f0-2d295c5d36ff",
+  "generationId": "bddbbb2c-f336-4283-9e38-2610072d4e7a",
+  "renderInfo": {
+    "realBlender": true,
+    "usedMock": false,
+    "device": "OPTIX",
+    "blenderVersion": "5.2.1 LTS",
+    "realOptix": true
+  },
+  "reopenVerified": true,
+  "restartVerified": true,
+  "sessionDiscardedOnRestart": true,
+  "duplicateRemoteJobs": 0,
+  "previewManifestSha256": "f6af29c2f01fb8da15dc4934c6b56b15d711410edc7ffb08c69b82e930cc4753",
+  "scope": "PRINTFOX_DIGITAL_BRIDGE",
+  "codeCiRunId": 34833832340,
+  "codeCiJobs": [
+    {
+      "name": "unit (ubuntu-latest)",
+      "jobId": 103943029833,
+      "conclusion": "success",
+      "testsPassed": 870
+    },
+    {
+      "name": "unit (windows-latest)",
+      "jobId": 103943030126,
+      "conclusion": "success",
+      "testsPassed": 870
+    }
+  ],
+  "localTestsPassed": 870,
+  "focusedBridgeTestsPassed": 21,
+  "javascriptSyntax": "PASS",
+  "uiValidation": "Development fixture browser: connect, thumbnail, import preserves unsaved form, selected original/mm/save, enqueue/cancel, REAL preview visible, disconnect preserves product.",
+  "readiness": {
+    "bridgeLogicReady": true,
+    "originalImportReady": true,
+    "realBlenderPreviewReady": true,
+    "productionPrintfoxAuthenticated": false,
+    "realAiGenerationVerified": false,
+    "nativeIllustratorImpositionVerified": false,
+    "physicalPrintValidated": false,
+    "liveMachineControl": false,
+    "globalProductionReady": false
+  },
+  "supersededCodeCi": {
+    "runId": 34833598699,
+    "codeSha": "06753605666471e0af52ffe86998fce9f2d3f046",
+    "result": "Ubuntu failed collection: undeclared filelock; superseded/canceled; NOT green evidence"
+  },
+  "docsCi": "Recorded in Issue #1 after separate DOCS commit dual CI"
+}
