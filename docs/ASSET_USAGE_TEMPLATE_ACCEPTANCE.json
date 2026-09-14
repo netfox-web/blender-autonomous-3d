@@ -1,0 +1,186 @@
+{
+  "evidenceId": "5a13d16e-c19d-4d90-846b-49ebbc618bc7",
+  "codeCommit": "3fd0a30008ae8b19cc4bf3d5ba636f30ef73610c",
+  "workingTreeClean": true,
+  "developmentOnly": false,
+  "inputTruth": "SYNTHETIC_FIXTURE_NOT_NAS_MEASUREMENT",
+  "physicalPrintValidated": false,
+  "liveMachineControl": false,
+  "models": [
+    {
+      "id": "c1e3c395-185b-4105-8c81-586756a25618",
+      "geometry": "OPEN_CABINET",
+      "generationId": "e04fbec2-beef-4498-91db-1eae642beee8",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 3.552,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "reopenPassed": true,
+      "staleDownloadBlocked": true,
+      "artifactHashes": {
+        "png": {
+          "sha256": "3baf695600737a8fd7c164fc11197b33201a2b9c2e4652a8b6f7216ce6c67bc5",
+          "sizeBytes": 648994
+        },
+        "blend": {
+          "sha256": "ba2087fe917141538d7fe16ace0b173fbfd19d90a97a17209d96050438c71900",
+          "sizeBytes": 753032
+        },
+        "glb": {
+          "sha256": "d9b91311cd5aa3bef2767232357096cf7d0f6c6c218750bed1aee14322175617",
+          "sizeBytes": 12324
+        },
+        "geometry": {
+          "sha256": "f7580a11a87dd1af061b0bcd232c34b533ce514f8cd4e443a1de5dc729bf4a74",
+          "sizeBytes": 1155
+        }
+      }
+    },
+    {
+      "id": "ff4a8da0-6105-460f-b00b-64692aae33eb",
+      "geometry": "HINGED_CABINET",
+      "generationId": "8642df21-bfa8-42da-ac8b-4423a8d8dd0d",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 2.806,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "reopenPassed": true,
+      "staleDownloadBlocked": true,
+      "artifactHashes": {
+        "png": {
+          "sha256": "c4e3f164264bc96f249541c6c31e9a7752cefc0fe4b5b6288728a9d69bce614f",
+          "sizeBytes": 637766
+        },
+        "blend": {
+          "sha256": "50ae982fd97211df3663112a66ee0ccae7ca2db592dd93f39c49c3b24d1a8fcd",
+          "sizeBytes": 840173
+        },
+        "glb": {
+          "sha256": "f4d65f88a3a56d943dfc855f2ab9e592cd6d96410151670fe675389d6d2ab0e3",
+          "sizeBytes": 17444
+        },
+        "geometry": {
+          "sha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+          "sizeBytes": 1637
+        }
+      }
+    },
+    {
+      "id": "2585377e-ef47-4e84-8949-57337bbb357d",
+      "geometry": "RECTANGLE",
+      "generationId": "b8f8b89f-75c8-4740-9449-c0990ad11f5e",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 2.451,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "reopenPassed": true,
+      "staleDownloadBlocked": true,
+      "artifactHashes": {
+        "png": {
+          "sha256": "c0dac0e699f7e82640e1af2852fbe85abda1cdda9c80aa150551588265ed153e",
+          "sizeBytes": 629999
+        },
+        "blend": {
+          "sha256": "bc5acddf98362ff308d3423de58f3becf97c1b01abfb332dba9072a4e6b9910e",
+          "sizeBytes": 578757
+        },
+        "glb": {
+          "sha256": "9f75c10b0a92d163f6b92368c854f63df9e982024c1601104ad9f2543f73fe36",
+          "sizeBytes": 2120
+        },
+        "geometry": {
+          "sha256": "8ca087b82dbb7fe83a5313dafcb84c2c5ffbc1760d18b4e9e381a5f42a652a74",
+          "sizeBytes": 208
+        }
+      }
+    }
+  ],
+  "assetUsage": {
+    "unclassifiedBlocked": true,
+    "referenceBlocked": true,
+    "explicitArtworkAccepted": true,
+    "assetId": "1e283c9366c2bdf212bc662ac688629a758adf1e5712321a3aaab7b57fd04b92",
+    "restartPreserved": true,
+    "revokedDownloadsBlocked": true
+  },
+  "status": "PASS",
+  "restartVerified": true,
+  "originalsUnchanged": true,
+  "stickerSizesNeverPromoted": true,
+  "codeCi": {
+    "runId": 34851148775,
+    "headSha": "3fd0a30008ae8b19cc4bf3d5ba636f30ef73610c",
+    "status": "SUCCESS",
+    "jobs": [
+      {
+        "name": "unit (ubuntu-latest)",
+        "testsPassed": 904,
+        "conclusion": "success"
+      },
+      {
+        "name": "unit (windows-latest)",
+        "testsPassed": 904,
+        "conclusion": "success"
+      }
+    ]
+  },
+  "scope": "USER_ASSET_PURPOSE_AND_CLEAN_TEMPLATE_LIBRARY",
+  "authorization": {
+    "type": "EXPLICIT_USER_REQUEST",
+    "instructionCommitSha": null,
+    "supervisorContextCommit": "bab3a1a2b4631e0c6f40c5c93e33441a72c74dd0",
+    "priorScopeReviewCommentId": 5664501379,
+    "mergeAuthorized": false
+  },
+  "localFocusedTests": 98,
+  "localCuration": {
+    "inspectedImportedFiles": 17,
+    "reference": 15,
+    "unclassifiedMixedSheet": 1,
+    "reviewedArtwork": 1,
+    "allNasClassified": false,
+    "generatedCompanyModels": 0,
+    "physicallyValidatedMasters": 0
+  },
+  "uiChecks": {
+    "defaultView": "PRODUCT_TEMPLATES",
+    "localGeneratedModels": 0,
+    "localDrafts": 8,
+    "referenceNotSelectable": true,
+    "explicitArtworkSelectable": true,
+    "nasBrowsingPreservedSelectedCabinetForm": true,
+    "sixPagePreview": true,
+    "observedConsoleErrors": [],
+    "twoExistingPrintJobsReadable": true,
+    "syntheticUiServer": "129f9558",
+    "localReviewedAssets": 17,
+    "explicitSourceToDraftButtonVerified": true,
+    "existingDraftsNotChanged": true,
+    "generatedModelMovesOutOfDraftsWithoutReload": true,
+    "generationCounterFixture": {
+      "before": [
+        0,
+        4
+      ],
+      "after": [
+        1,
+        3
+      ]
+    }
+  }
+}

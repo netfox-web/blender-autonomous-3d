@@ -10,7 +10,17 @@ Issue #1: Autonomous Development Handoff
 
 This document tracks autonomous development rounds and Re-Gate decisions.
 
-## Current Round
+## Latest user correction — clean template/material library (2026-09-14)
+
+Worker: Codex. Authorization: explicit user correction; no new instruction commit. Prior PR #10 review comment 5664501379 ACCEPT WITH SCOPE applies to its earlier CODE, not these changes.
+
+CODE `3fd0a30008ae8b19cc4bf3d5ba636f30ef73610c`; exact CODE Actions 34851148775 Ubuntu + Windows SUCCESS (**904 tests/OS**). Local focused **98 PASS**. Clean REAL evidence `5a13d16e-c19d-4d90-846b-49ebbc618bc7` PASS after CODE CI: actual loopback HTTP, real Blender 5.2.1 LTS OptiX, three synthetic supported shapes, BLEND reopen, purpose restrictions/revocation, stale files, restart and unchanged source bytes. Separate DOCS verification follows in Issue #1 after this commit.
+
+Product templates and NAS materials are separate views; incomplete records remain drafts. Only explicitly reviewed print ARTWORK can be selected or used by model/print APIs; ecommerce photos, dimensions, dielines, packaging and unknown imports are excluded. 17 local imports were inspected and classified without modifying NAS originals; full NAS classification and physical modeling are not complete. `generatedCompanyModels=0`, `physicallyValidatedMasters=0`, `physicalPrintValidated=false`, `globalProductionReady=false`. Local operator boundary only; no production authentication claim.
+
+See [acceptance](ASSET_USAGE_TEMPLATE_ACCEPTANCE.md), [evidence](ASSET_USAGE_TEMPLATE_ACCEPTANCE.json) and [operator guide](ASSET_USAGE_TEMPLATE_LIBRARY.md). No merge of PR #7/#8/#9/#10. Issue #6 stays separate from current main, with no unmerged-branch dependency. Supervisor LIVE prerequisite boundary unchanged; no credentials, provider calls, production service changes or machine dispatch.
+
+## Historical rounds
 
 Refer to `docs/GROK_PROGRESS_REPORT.md` for historical progress through Phase 901–960 Re-Gate Round 1.
 For the Event-Driven Autonomous Supervisor Control Plane implementation, refer to:
