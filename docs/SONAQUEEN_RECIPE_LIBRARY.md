@@ -12,9 +12,11 @@
 | LI-D40 | 瓦格四門收納櫃 | 415 × 300 × 1196 | 四行上下排列門片、無把手 |
 | LI-PU63D-免組裝 | 夏爾六格滑門收納櫃 | 785 × 300 × 785 | 三行、六格、三片滑門 |
 
-母配方描述：`STAGGERED_OPEN_CUBBY`、`STACKED_HINGED_CABINET`、`ROW_SLIDING_CABINET`。它們描述共用結構要求；目前尚不是可執行的 Blender 建模器。
+母配方描述：`STAGGERED_OPEN_CUBBY`、`STACKED_HINGED_CABINET`、`ROW_SLIDING_CABINET`。它們描述共用結構要求；目前已由 Recipe 預覽 adapter 接入可執行的 Blender 板件生成，需先確認畫面列出的預覽假設。
 
 ## 後台操作 UI
+
+2026-09-14 已完成中文 UI 的 3D 預覽與下載流程，詳見 [工作台操作與程式盤點](SONAQUEEN_RECIPE_STUDIO.md) 及 [真實 Blender 驗收](SONAQUEEN_RECIPE_STUDIO_ACCEPTANCE.md)。
 
 已新增可操作的商品 Recipe 後台。執行 `python scripts/run_recipe_admin.py` 後，開啟 [商品 Recipe 庫](http://127.0.0.1:8790/admin/recipes)，即可搜尋商品、補規格與依據、儲存草稿、驗證缺漏、上傳圖片、新增商品及匯入／匯出 JSON。
 
@@ -69,6 +71,6 @@ python scripts/run_recipe_library_e2e.py --expected-commit <CODE_SHA>
 - LI-D40：板厚、背板／門板厚度、門縫及鉸鏈規格；需支援逐行門片和個別鉸鏈轉軸。
 - LI-PU63D：側板／背板／門板厚度、門縫、滑軌截面與行程。官網的 25 mm 僅記為「固定板」厚度，不推廣為所有板件厚度。
 
-目前全部以 `PRODUCT_REFERENCE` / `EXPERIMENTAL` 入庫，能力標記只有 `CATALOG_REFERENCE`。`engineeringReady`、`renderReady`、`productionReady` 均為 false。尚未產生這三款的精確 3D 模型或商品渲染，不會把現有通用櫃體套用後標示為已還原商品。
+目前全部以 `PRODUCT_REFERENCE` / `EXPERIMENTAL` 入庫，能力標記只有 `CATALOG_REFERENCE`。`engineeringReady`、`renderReady`、`productionReady` 均為 false。現已產生三款商品的預覽模型與真實 Blender 渲染，未宣稱精確還原或工程核定；預覽成果不會改變參考記錄的 readiness 標記。
 
-下一步應由供應商圖面補齊資料，將每種結構接入現有 Engineering 權威，完成對應幾何與機構驗證，再執行三款商品各自的 REAL Blender 渲染／核對。既有 Product Truth 與商用出圖的 Re-Gate 修正仍依原流程處理。
+下一步應由供應商圖面補齊資料，將每種結構接入現有 Engineering 權威，完成對應幾何與機構驗證，再執行工程核定版本的 REAL Blender 渲染／核對；現有預覽版本的真實出圖驗收不取代該工程驗證。既有 Product Truth 與商用出圖的 Re-Gate 修正仍依原流程處理。

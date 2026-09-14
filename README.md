@@ -11,6 +11,10 @@ See [docs/INVENTORY.md](docs/INVENTORY.md). This package adds Capability / Adapt
 Worker / Recipe types. It does not rewrite the existing scheduler, queue, worker
 framework, DAM, or recipe registry.
 
+## 商品 Recipe 3D 工作台
+
+在此電腦雙擊桌面「收納王妃 Recipe 3D 工作台」，即可從中文畫面選商品、確認預覽設定、生成並下載 PNG / GLB / Blender 專案。入口為 [本機工作台](http://127.0.0.1:8790/admin/recipes)，詳見 [操作與程式盤點](docs/SONAQUEEN_RECIPE_STUDIO.md)。預覽模型不構成製造依據。
+
 ## Run
 
 ```powershell
@@ -38,8 +42,8 @@ Headless worker (when Blender is installed):
 blender -b --factory-startup -P scripts/blender_job.py -- job.json
 ```
 
-If Blender is missing, the in-process runtime uses a deterministic mock renderer
-so queue / retry / cancel / cache / QA tests still run.
+Mock rendering is explicitly enabled in tests. The production runtime and Recipe
+workbench refuse to claim real output when Blender is unavailable.
 
 ## Layout
 
