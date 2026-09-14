@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import re
+from pydantic import BaseModel, ConfigDict, Field
 from pathlib import Path
 from threading import RLock
 
@@ -11,12 +13,25 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from fox3d.catalog_recipes import FAMILIES
 from fox3d.recipe_workbench import DEFAULT_CATALOG, FIELD_LABELS, DraftConflict, RecipeWorkbench, SaveDraft, field_unit
 
+class GeneratePreview(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expectedRevision: int = Field(ge=0)
+    planHash: str
+    assumptionsAccepted: bool
+
+
+class CancelPreview(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    taskId: str
+
+
 STATIC = Path(__file__).with_name("static")
 
 
 def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
     router = APIRouter()
     stores = {}
+    services = {}
     lock = RLock()
 
     def store():
@@ -48,7 +63,7 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
 
     @router.get("/admin/recipes/assets/{name}")
     def assets(name: str):
-        if name not in {"recipe-library.css", "recipe-library.js"}:
+        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js"}:
             raise HTTPException(404)
         return FileResponse(STATIC / name, media_type="text/css" if name.endswith("css") else "application/javascript")
 
@@ -118,64 +133,92 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
             raise HTTPException(404, "找不到來源圖片")
         return FileResponse(catalog.parent / source.path, media_type="image/jpeg", headers={"X-Content-Type-Options": "nosniff"})
 
-    def _get_platform():
+    def service():
+        from fox3d.recipe_preview_service import RecipePreviewService
         obj = provider()
-        if hasattr(obj, "execute_job") and hasattr(obj, "dam"):
-            return obj
-        from fox3d.platform import Platform
-        return Platform(root=getattr(obj, "root", Path.cwd() / ".fox3d-data"), mock_blender=True)
+        with lock:
+            if obj.root not in services:
+                services[obj.root] = RecipePreviewService(obj)
+            return services[obj.root]
 
-    @router.post("/api/recipe-library/products/{sku}/3d/generate")
-    def generate_3d(sku: str, x_tenant_id: str | None = Header(default=None)):
+    def available():
+        obj = provider()
+        return bool(not getattr(obj, "mock_blender", True) and getattr(obj, "runtime", None) and obj.runtime.available())
+
+    @router.get("/api/recipe-library/health")
+    def health():
+        return {"service": "sonaqueen-recipe-studio", "blenderAvailable": available()}
+
+    @router.get("/api/recipe-library/products/{sku}/3d/plan")
+    def plan_3d(sku: str, x_tenant_id: str | None = Header(default=None)):
+        from fox3d.recipe_3d import build_recipe_spec, input_hash
         tid = tenant(x_tenant_id)
         item = call(store().get, tid, sku)
-        from fox3d.recipe_3d import generate_recipe_3d_product
-        plat = _get_platform()
+        result = {"revision": item["revision"], "planHash": input_hash(item["draft"]),
+                  "blenderAvailable": available(), "ready": False}
         try:
-            return generate_recipe_3d_product(plat, tid, sku, item["draft"])
-        except Exception as exc:
-            raise HTTPException(500, f"3D 生成失敗: {exc}") from exc
+            spec = build_recipe_spec(item["draft"], tenant_id=tid)
+            result.update(ready=True, spec=spec, assumptions=spec["previewAssumptions"])
+        except ValueError as exc:
+            result["error"] = str(exc)
+        return result
+
+    @router.post("/api/recipe-library/products/{sku}/3d/generate", status_code=202)
+    def generate_3d(sku: str, body: GeneratePreview, x_tenant_id: str | None = Header(default=None)):
+        from fox3d.recipe_3d import build_recipe_spec, input_hash
+        tid = tenant(x_tenant_id)
+        item = call(store().get, tid, sku)
+        if body.expectedRevision != item["revision"] or body.planHash != input_hash(item["draft"]):
+            raise HTTPException(409, "商品設定已變更，請重新整理並確認生成設定")
+        if not body.assumptionsAccepted:
+            raise HTTPException(422, "請先確認畫面上的預覽假設")
+        call(build_recipe_spec, item["draft"], tenant_id=tid)
+        if not available():
+            raise HTTPException(503, "找不到可用的 Blender，請安裝後重新啟動工作台")
+        try:
+            return service().submit(tid, sku, item)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @router.get("/api/recipe-library/products/{sku}/3d/status")
     def status_3d(sku: str, x_tenant_id: str | None = Header(default=None)):
         tid = tenant(x_tenant_id)
-        from fox3d.recipe_3d import get_recipe_3d_status
-        plat = _get_platform()
-        return get_recipe_3d_status(plat.root, tid, sku)
+        item = call(store().get, tid, sku)
+        return service().status(tid, sku, item["draft"])
+
+    @router.post("/api/recipe-library/products/{sku}/3d/cancel")
+    def cancel_3d(sku: str, body: CancelPreview, x_tenant_id: str | None = Header(default=None)):
+        tid = tenant(x_tenant_id)
+        call(store().get, tid, sku)
+        return call(service().cancel, tid, sku, body.taskId)
+
+    def asset(sku, tid, fmt, generation):
+        from fox3d.recipe_3d import get_recipe_3d_dir, read_json, verified_assets, FILES
+        call(store().get, tid, sku)
+        base = get_recipe_3d_dir(provider().root, tid, sku)
+        gid = generation or read_json(base / "meta.json").get("generationId", "")
+        if not re.fullmatch(r"[a-f0-9-]{36}", gid):
+            raise HTTPException(404, "尚無可下載的生成成果")
+        folder = base / "generations" / gid
+        meta = read_json(folder / "meta.json")
+        info = meta.get("renderInfo", {})
+        if (meta.get("sku") != sku or meta.get("tenantId") != tid or not info.get("realBlender")
+                or info.get("usedMock") or not all(verified_assets(folder, meta).values())):
+            raise HTTPException(404, "成果不存在或檔案驗證失敗，請重新生成")
+        return folder / FILES[fmt]
 
     @router.get("/api/recipe-library/products/{sku}/3d/render")
-    def render_image_3d(sku: str, x_tenant_id: str | None = Header(default=None), workspace: str | None = Query(default=None)):
-        tid = tenant(x_tenant_id or workspace)
-        from fox3d.recipe_3d import get_recipe_3d_dir
-        plat = _get_platform()
-        png_path = get_recipe_3d_dir(plat.root, tid, sku) / "beauty.png"
-        if not png_path.exists():
-            raise HTTPException(404, "尚未生成 3D 渲染圖")
-        return FileResponse(png_path, media_type="image/png", headers={"Cache-Control": "no-cache"})
+    def render_image_3d(sku: str, x_tenant_id: str | None = Header(default=None), workspace: str | None = Query(default=None), generation: str | None = None):
+        target = asset(sku, tenant(x_tenant_id or workspace), "png", generation)
+        return FileResponse(target, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @router.get("/api/recipe-library/products/{sku}/3d/download/{fmt}")
-    def download_3d_asset(sku: str, fmt: str, x_tenant_id: str | None = Header(default=None), workspace: str | None = Query(default=None)):
-        tid = tenant(x_tenant_id or workspace)
-        from fox3d.recipe_3d import get_recipe_3d_dir
-        plat = _get_platform()
-        d = get_recipe_3d_dir(plat.root, tid, sku)
-        if fmt == "blend":
-            target = d / "model.blend"
-            media = "application/x-blender"
-            filename = f"{sku}_model.blend"
-        elif fmt == "glb":
-            target = d / "model.glb"
-            media = "model/gltf-binary"
-            filename = f"{sku}_model.glb"
-        elif fmt == "png":
-            target = d / "beauty.png"
-            media = "image/png"
-            filename = f"{sku}_render.png"
-        else:
-            raise HTTPException(400, "不支援的下載格式 (支援: blend, glb, png)")
-        if not target.exists() or target.stat().st_size == 0:
-            raise HTTPException(404, f"檔案不存在或尚未生成 ({fmt})")
-        return FileResponse(target, media_type=media, filename=filename, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    def download_3d_asset(sku: str, fmt: str, x_tenant_id: str | None = Header(default=None), workspace: str | None = Query(default=None), generation: str | None = None):
+        media = {"blend": "application/x-blender", "glb": "model/gltf-binary", "png": "image/png"}
+        if fmt not in media:
+            raise HTTPException(400, "支援的下載格式：blend、glb、png")
+        target = asset(sku, tenant(x_tenant_id or workspace), fmt, generation)
+        return FileResponse(target, media_type=media[fmt], filename=f"{sku}_preview.{fmt}",
+                            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     return router
-

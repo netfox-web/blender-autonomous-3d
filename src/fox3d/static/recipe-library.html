@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>商品 Recipe 庫｜收納王妃</title><link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css"><script src="/admin/recipes/assets/recipe-library.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>商品 Recipe 庫｜收納王妃</title><link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css"><script src="/admin/recipes/assets/recipe-viewer.js" defer></script>
+<script src="/admin/recipes/assets/recipe-library.js" defer></script></head>
 <body>
 <header class="topbar"><a class="brand" href="/admin/recipes"><span class="brand-mark">SQ</span><span>收納王妃 <small>PRODUCT STUDIO</small></span></a><a class="back" href="/admin">返回管理台 ↗</a></header>
 <main class="workspace">
@@ -11,7 +12,7 @@
     <aside class="catalog"><div class="catalog-heading"><h2>商品目錄</h2><button id="reload" class="text-button">重新載入</button></div><label class="sr-only" for="search">搜尋商品</label><input id="search" type="search" placeholder="搜尋名稱或商品編號"><label class="sr-only" for="family-filter">篩選結構</label><select id="family-filter"><option value="">所有結構配方</option></select><div id="product-list" aria-label="商品列表"><p class="muted loading">正在讀取商品…</p></div></aside>
     <section class="detail" id="detail" aria-label="商品詳情"><div class="empty"><h2>準備你的商品資料</h2><p>選擇左側商品，查看規格與來源。</p></div></section>
   </div>
-  <footer>目前為商品參考與草稿管理。資料補齊後，仍需完成幾何、機構與實際渲染驗證。</footer>
+  <footer>支援商品資料管理、互動結構預覽與 Blender 3D 生成。預覽含簡化假設，製造前仍需工程與機構驗證。</footer>
 </main>
 <input type="file" id="import-file" accept="application/json,.json" hidden>
 <dialog id="new-dialog"><form id="new-form"><div class="dialog-heading"><div><p class="eyebrow">NEW PRODUCT</p><h2>新增商品</h2></div><button type="button" id="close-new" class="icon-button" aria-label="關閉新增商品">×</button></div><p class="muted">先建立基本資料，其餘規格可以稍後補齊。</p>
