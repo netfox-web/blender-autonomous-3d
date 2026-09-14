@@ -1,3 +1,9 @@
+# Issue #6 Video Ground Truth — ready for DOCS CI
+
+CODE `728e954af3312c8ad625e242918cbb029d0c1993` / Actions `34887469718` exact dual CI PASS (858 tests/OS). Clean REAL `e42c8575-56db-473a-bd28-d8353dc536cc`: 96 frames, 576 artifacts, Blender 5.2.1 LTS OPTIX, persisted reload/lineage PASS. See GENERATIVE_VIDEO_GROUND_TRUTH_ARCHITECTURE.md and GENERATIVE_VIDEO_GROUND_TRUTH_ACCEPTANCE.md / .json. Final DOCS exact CI and READY_FOR_RE_GATE are reported in Issues #6 and #1. Provider/Vision/door/physical/global readiness remain false. No auto-merge.
+
+---
+
 <!-- Neutral alias for docs/GROK_PROGRESS_REPORT.md -->
 <!-- Autonomous agents should record handoff progress in this AGENT_* entry -->
 # Agent Progress Report

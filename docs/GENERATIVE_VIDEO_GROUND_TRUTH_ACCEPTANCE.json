@@ -1,0 +1,60 @@
+{
+  "artifactCount": 576,
+  "authoritySeal": "d7fb6711b17b964488a66831c46b0a9f7d1208b503d39ba850f172addf989490",
+  "blenderJobId": "2ab14fea-ed07-47b2-b8dc-fe98bd20e3c4",
+  "blenderVersion": "5.2.1 LTS",
+  "candidateQaEvidence": "FIXTURE_COPY / REAL_LOGIC; PASS and REJECT, idempotency, publish gates verified",
+  "codeCommit": "728e954af3312c8ad625e242918cbb029d0c1993",
+  "developmentOnly": false,
+  "device": "OPTIX",
+  "directory": "E:\\projects\\sonaqueen-video-ground-truth\\.fox3d-work\\video-e2e\\e42c8575",
+  "doorBlocker": "BLOCKED_ARTICULATION_AUTHORITY",
+  "doorOpenReal": false,
+  "frameCount": 96,
+  "generationId": "e42c8575-56db-473a-bd28-d8353dc536cc",
+  "globalProductionReady": false,
+  "heroOrbitReal": true,
+  "instructionSha": "8d54bb9bf1786ef8c9bbf7122cbb770927be5cda",
+  "liveProviderReady": false,
+  "manifestHash": "20fb394c69ef92160cea3923644245ab79d0a7602b47bc9cfab1bcc079a692d2",
+  "persistedReopen": "PASS",
+  "providerPackages": [
+    "H3_MAX",
+    "LTX_2_5"
+  ],
+  "realBlender": true,
+  "receiptSeal": "347b37f58785949968a3f7e03a29e527e01d016ffa3ec73298c81f996473afff",
+  "sourceScope": "main Product Truth cabinet fixture; unmerged Golden Product PR is not imported",
+  "status": "PASS",
+  "usedMock": false,
+  "videoGroundTruthReady": true,
+  "visionQaReady": false,
+  "workingTreeClean": true,
+  "codeCiRunId": 34887469718,
+  "codeCiVerifiedJobs": [
+    {
+      "name": "unit (windows-latest)",
+      "conclusion": "success",
+      "testsPassed": 858,
+      "jobId": 104121562606
+    },
+    {
+      "name": "unit (ubuntu-latest)",
+      "conclusion": "success",
+      "testsPassed": 858,
+      "jobId": 104121562771
+    }
+  ],
+  "localTests": 858,
+  "newTests": 71,
+  "pr": 13,
+  "docsCiStatus": "REPORTED_IN_FINAL_ISSUE_HANDOFF",
+  "truthMatrix": {
+    "REAL": "HERO frames/controls and BLEND reopen",
+    "REAL_LOGIC": "authority/manifest/QA/retry/DAM",
+    "FIXTURE": "explicit synthetic cabinet and asymmetric artwork / candidate copies",
+    "MOCK": "CI Blender",
+    "PARTIAL": "detail/room recipes; low-resolution preview; local DAM descriptor persistence",
+    "BLOCKED": "articulation/assembly/live providers/Vision/physical print/machines/global readiness"
+  }
+}
