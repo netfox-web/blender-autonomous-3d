@@ -18,6 +18,11 @@ EXR_MAGIC = b"\x76\x2f\x31\x01"
 
 
 def write_png(path: Path, width: int, height: int, rgb: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(encode_png(width, height, rgb))
+
+
+def encode_png(width: int, height: int, rgb: bytes) -> bytes:
     if len(rgb) != width * height * 3:
         raise ValueError("rgb buffer size mismatch")
 
@@ -27,8 +32,7 @@ def write_png(path: Path, width: int, height: int, rgb: bytes) -> None:
 
     raw = b"".join(b"\x00" + rgb[y * width * 3 : (y + 1) * width * 3] for y in range(height))
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(
+    return (
         b"\x89PNG\r\n\x1a\n"
         + chunk(b"IHDR", ihdr)
         + chunk(b"IDAT", zlib.compress(raw, 9))
