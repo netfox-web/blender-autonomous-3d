@@ -10,6 +10,14 @@ Issue #1: Autonomous Development Handoff
 
 This document tracks autonomous development rounds and Re-Gate decisions.
 
+## Latest user request — product category tree (2026-09-15 Asia/Taipei)
+
+Worker Codex; explicit user authorization, instructionCommitSha=null. PR #12 stacked on #11, no merge. CODE `052be7f057c24b982b6c6c716c1a9aef094999da`, exact Actions 34866913056 Ubuntu + Windows SUCCESS (**924 tests/OS**); focused local **54 PASS**, eight new tests. Clean REAL `0c83109d-1e6c-4ec6-8d34-ec8c14c68851` PASS: real Blender base/scene outputs survive classification change/restart with unchanged master bytes, generation IDs and eight artifact hashes/bytes. DOCS dual CI follows in Issue #1.
+
+Website-style category navigation now covers the six requested groups, 2–5 layer open/hinged cabinet branches, model/SKU search and status filters. Independent category revisions preserve existing 3D/artwork. Three live reference models and eight drafts remain unchanged. Empty categories are not completed models. Veneer/material library and physical validation remain unimplemented; no provider/machine changes. See [operator guide](MODEL_CATEGORY_TREE.md), [acceptance](MODEL_CATEGORY_TREE_ACCEPTANCE.md), [evidence](MODEL_CATEGORY_TREE_ACCEPTANCE.json).
+
+Previous PR #11 user lane handoff: Issue #1 comment 5666900229, exact CODE/DOCS CI 916 tests/OS and clean REAL nine-render evidence. Supervisor comment 5667208483 accepted the prior PR #11 scope only; no merge authorization. Issue #6 is queued separately from current main 40e64f343287969712a1d6e6fe0b32b49b77aa96 without unmerged dependencies. Current category lane stops for Re-Gate after handoff; no auto-merge.
+
 ## Latest user request — reusable masters, artwork and scenes (2026-09-14)
 
 Worker: Codex. Explicit user authorization; instructionCommitSha=null. PR #11 stacked on #10, no merge authorization. CODE `e9384c63c6e61cb0fca2a4e0ba70c729d2a4f0da`; exact CODE Actions 34860658072 Ubuntu + Windows SUCCESS (**916 tests/OS**), focused local **89 PASS**. Clean REAL evidence `baf90892-1b61-440b-9c4a-a3ff6b7929ee` PASS: nine Blender/HTTP generations, reopened BLEND/observed UV and mesh checks, stable geometry/artwork across scenes, stale/restart/revocation and artifact hashes/bytes. Separate DOCS dual CI follows in Issue #1.
