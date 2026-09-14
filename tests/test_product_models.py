@@ -6,11 +6,22 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from PIL import Image
+from PIL.TiffImagePlugin import IFDRational
 
 from fox3d import nas_catalog as nas, product_models as m, recipe_3d as render
 from fox3d.product_models_api import product_models_router
 from fox3d.ids import sha256_bytes
 from fox3d.recipe_workbench import DraftConflict
+
+@pytest.mark.parametrize('fmt',['JPEG','TIFF'])
+def test_nas_exif_rational_dpi_import_roundtrip_preserves_original(tmp_path,fmt):
+    from fox3d import print_assets
+    exif=Image.Exif();exif[282]=IFDRational(300,1);exif[283]=IFDRational(300,1);exif[296]=2
+    buf=io.BytesIO();Image.new('RGB',(100,100),'red').save(buf,fmt,exif=exif);raw=buf.getvalue()
+    a=print_assets.import_asset(tmp_path,'t',raw,'resolution.'+fmt.lower())
+    meta,stored=print_assets.asset(tmp_path,'t',a['id'])
+    assert stored==raw and meta['info']['dpi']==[300.,300.]
+    assert meta['info']['sizeAuthority']=='REQUIRES_MM_CONFIRMATION'
 
 def cabinet():
     return {'name':'TEST cabinet','family':'cabinet','subtype':'open','geometry':'OPEN_CABINET',

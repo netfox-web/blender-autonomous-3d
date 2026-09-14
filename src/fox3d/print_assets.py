@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import math
 import os
 import re
 import warnings
@@ -113,9 +114,16 @@ def inspect_bytes(raw):
             if im.mode not in ('RGB','RGBA','CMYK','L'):
                 raise ValueError('請使用 RGB、CMYK 或灰階圖片')
             im.load()
+            dpi=im.info.get('dpi')
+            if dpi is not None:
+                # EXIF/TIFF resolution may contain Pillow IFDRational objects.
+                # Preserve existing JSON int/float identities for saved assets.
+                dpi=[v if type(v) in (int,float) else float(v) for v in dpi]
+                if not all(math.isfinite(v) for v in dpi):
+                    raise ValueError('圖片解析度資料無效')
             return {'type':'IMAGE','pages':[{'widthPx':im.width,'heightPx':im.height}],
                     'color':im.mode,'iccEmbedded':bool(im.info.get('icc_profile')),
-                    'dpi':im.info.get('dpi'),'sizeAuthority':'REQUIRES_MM_CONFIRMATION'}
+                    'dpi':dpi,'sizeAuthority':'REQUIRES_MM_CONFIRMATION'}
 
 
 def import_asset(root, tenant, raw, name, provenance=None):
