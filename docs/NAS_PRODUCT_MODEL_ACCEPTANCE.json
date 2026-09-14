@@ -1,0 +1,176 @@
+{
+  "evidenceId": "196a5e3a-311d-4846-8e95-793e22ce2c2c",
+  "codeCommit": "a4eb1d6b7b505e06a246ec5925bc35a66bbe3255",
+  "workingTreeClean": true,
+  "developmentOnly": false,
+  "inputTruth": "SYNTHETIC_FIXTURE_NOT_NAS_MEASUREMENT",
+  "physicalPrintValidated": false,
+  "liveMachineControl": false,
+  "models": [
+    {
+      "id": "a59b8c60-04b7-43e3-8151-af9923e2f7ff",
+      "geometry": "OPEN_CABINET",
+      "generationId": "89d8e8ac-3d46-4895-8414-47df52524aba",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 3.558,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "reopenPassed": true,
+      "staleDownloadBlocked": true,
+      "artifactHashes": {
+        "png": {
+          "sha256": "cc7f938e805998374e90fc5b12674dbd94f6f6a6b02a64d266ec4262a31b2644",
+          "sizeBytes": 648884
+        },
+        "blend": {
+          "sha256": "a63bb72f5ee80513b7f26ac039eb23aac56fec351c9166fc59c4cfd3e66a89f3",
+          "sizeBytes": 753032
+        },
+        "glb": {
+          "sha256": "d9b91311cd5aa3bef2767232357096cf7d0f6c6c218750bed1aee14322175617",
+          "sizeBytes": 12324
+        },
+        "geometry": {
+          "sha256": "f7580a11a87dd1af061b0bcd232c34b533ce514f8cd4e443a1de5dc729bf4a74",
+          "sizeBytes": 1155
+        }
+      },
+      "specHash": "8008baaf56a54cc5ab85297e266a96609a316c9602c5af10f57078294dec03b6",
+      "inputHash": "1be9eae8fe252a06d3977c73ff980bfad349a271d34397e4cf7d0bba93b6e0ad",
+      "componentCount": 7
+    },
+    {
+      "id": "98a645f5-8e33-444c-9236-d4e72000d44c",
+      "geometry": "HINGED_CABINET",
+      "generationId": "8f251867-b602-4983-b9bf-6ebd6f9d6cfa",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 3.41,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "reopenPassed": true,
+      "staleDownloadBlocked": true,
+      "artifactHashes": {
+        "png": {
+          "sha256": "3134d217f7ad999aa7812cf711d03ecab146d4a97adaea28b128d1246fa3b92c",
+          "sizeBytes": 637597
+        },
+        "blend": {
+          "sha256": "5777f1b72ed410f0f9c67085108a95293b31462cb6406e24aa5d3fee91df635f",
+          "sizeBytes": 840173
+        },
+        "glb": {
+          "sha256": "f4d65f88a3a56d943dfc855f2ab9e592cd6d96410151670fe675389d6d2ab0e3",
+          "sizeBytes": 17444
+        },
+        "geometry": {
+          "sha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+          "sizeBytes": 1637
+        }
+      },
+      "specHash": "a4735b69197a4e4806d6df2990fdf80930be262d0518baab8520b1153e3e2790",
+      "inputHash": "d11516ea164d96a30b8af702d1199b196286598814101c7c6dc081824fd76096",
+      "componentCount": 10
+    },
+    {
+      "id": "c198863c-0b25-49b0-8e8f-ad9760c50fc0",
+      "geometry": "RECTANGLE",
+      "generationId": "66fe31ae-d841-4f12-965a-3b0cd2163800",
+      "renderInfo": {
+        "realBlender": true,
+        "realOptix": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "samples": 32,
+        "renderTimeSec": 2.24,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "reopenPassed": true,
+      "staleDownloadBlocked": true,
+      "artifactHashes": {
+        "png": {
+          "sha256": "26961ab605aedfd042b5abec55ca1a6161c5a8d98a24eef168796858b4068bda",
+          "sizeBytes": 630036
+        },
+        "blend": {
+          "sha256": "80751da6516cf46fcda648b556e1844ccf7ac8295f212d61da588624331fbc75",
+          "sizeBytes": 578757
+        },
+        "glb": {
+          "sha256": "9f75c10b0a92d163f6b92368c854f63df9e982024c1601104ad9f2543f73fe36",
+          "sizeBytes": 2120
+        },
+        "geometry": {
+          "sha256": "8ca087b82dbb7fe83a5313dafcb84c2c5ffbc1760d18b4e9e381a5f42a652a74",
+          "sizeBytes": 208
+        }
+      },
+      "specHash": "c93b73805b7ea4e913772704836d12d70ef152d3155cc662bfcdede7d3edc5e0",
+      "inputHash": "183198b8b614c0c5516bc3130cc0394c520440b97f39fddf1e7915fc29eb8c31",
+      "componentCount": 1
+    }
+  ],
+  "status": "PASS",
+  "restartVerified": true,
+  "originalsUnchanged": true,
+  "stickerSizesNeverPromoted": true,
+  "scope": "NAS_PRODUCT_MODEL_LIBRARY_V1",
+  "codeCi": {
+    "runId": 34841773014,
+    "headSha": "a4eb1d6b7b505e06a246ec5925bc35a66bbe3255",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "name": "unit (ubuntu-latest)",
+        "conclusion": "success",
+        "testsPassed": 893
+      },
+      {
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "testsPassed": 893
+      }
+    ]
+  },
+  "testsPassedPerOs": 893,
+  "focusedTestsPassed": 66,
+  "newTests": 23,
+  "localNasInventory": {
+    "files": 21766,
+    "candidateGroups": 447,
+    "curatedReferenceMasters": 7,
+    "physicallyValidatedMasters": 0,
+    "generatedNasProductModels": 0,
+    "coverage": "Explicitly configured seven-family directories plus the configured wood cabinet directory; not all company NAS shares"
+  },
+  "browserVerification": {
+    "fixtureSaveAndGenerate": true,
+    "stickerDimensionsNotAutofilled": true,
+    "staleNoticeAndDownloadLinks": true,
+    "localNasImageImportPreview": true,
+    "javascriptConsoleErrorsObserved": 0,
+    "existingPrintJobsReadable": 2
+  },
+  "printFacesAreNotesOnly": true,
+  "artworkAutoAppliedToNewModels": false,
+  "curvedAndCustomGeometryReady": false,
+  "generatedSceneIntegrationReady": false,
+  "globalProductionReady": false,
+  "mergeAuthorized": false,
+  "supervisorInstructionQueued": {
+    "issue": 6,
+    "instructionSha": "bab3a1a2b4631e0c6f40c5c93e33441a72c74dd0",
+    "branchFrom": "current main",
+    "unmergedPrintDependencyAllowed": false
+  },
+  "docsCiReporting": "Exact DOCS SHA and dual-OS CI are recorded in the final Issue #1 handoff after the DOCS commit"
+}
