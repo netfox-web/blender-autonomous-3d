@@ -1,0 +1,309 @@
+{
+  "artworkDetailReal": true,
+  "codeCommit": "a5b368a3d907950c5165f4b1a0058853ace617fc",
+  "developmentOnly": false,
+  "doorOpenReal": false,
+  "durableAcceptance": {
+    "cases": [
+      "decision",
+      "model",
+      "modelVersion",
+      "provider",
+      "seed",
+      "config",
+      "identity",
+      "frame_reorder",
+      "frame_duplicate",
+      "frame_missing",
+      "matrix",
+      "qa_path",
+      "qa_sha",
+      "missing_field",
+      "corrupt_json",
+      "missing_file",
+      "renamed_file",
+      "mask_bytes",
+      "verified_PASS_blocks_next"
+    ],
+    "liveProviderReady": false,
+    "noDamWritesOnCorruption": true,
+    "restartWithoutMemoryIndex": "PASS",
+    "status": "PASS",
+    "truth": "REAL_LOGIC / FIXTURE_COPY",
+    "visionQaReady": false
+  },
+  "durableCandidateLineageReady": true,
+  "generationId": "d320a651-c2a4-403e-9322-a37630fcea6e",
+  "globalProductionReady": false,
+  "heroOrbitReal": true,
+  "instructionSha": "84a39b3ce5f4186fe0824fb66add1a9d1db720ef",
+  "liveProviderReady": false,
+  "productIdentity": {
+    "artworkHash": "633685451e4cde2b19a014f51d79491cae84cedc156c08b56ecf34bd3984311c",
+    "artworkId": "1a101939-4d73-4a9e-bd49-034c02501bcc",
+    "artworkSha256": "8a0dfca18f214eb77ed2d58b86f497dcfb1887ed634b866ccb9d905427ecf88e",
+    "artworkVersion": 1,
+    "componentId": "door_3",
+    "engineeringHash": "c41383f71a761e56a04757e370841399b9cdfd28385fd9afa86b6208e84de0be",
+    "finalUvHash": "19d576e6350cbf0898937a31c4275266f92dc67043d66dfd7ec1b97c1cb098b5",
+    "objectName": "DOOR_3",
+    "placementHash": "3a828a6ecd47d1188b06515036a7441cfe3f92ff4efc7f2fdd9a0e39a56ca3e1",
+    "placementId": "0c63f3e1-7a9a-4926-a642-ccf6910c1bfc",
+    "productId": "f899a8cc-5b16-43b6-9ede-c28a6acc6d39",
+    "productTruthGeneration": "9dbfa257-911d-47b3-bbd2-a757ac2194da",
+    "productTruthHash": "1abe08708c071f32e2412fc5f7130e9f688c8ec1e5c5031275c43e8a49896447",
+    "productVersion": 1,
+    "sku": "VIDEO-REFERENCE-CABINET",
+    "surfaceHash": "38ec90931314a19120dc4b4180c7ab5b49de291d4240d6629ae4f07602147f8e",
+    "tenantId": "video-reference"
+  },
+  "realBlender": true,
+  "sameProductAcrossRecipes": true,
+  "sequences": {
+    "ARTWORK_DETAIL_6S": {
+      "authoritySeal": "e81db9c07791dbcf75620d94a42c482f5075b15c2036d6a9471d2697de8ad86b",
+      "blenderJobId": "7b79658d-83ea-4817-857e-64b81559bce0",
+      "blenderVersion": "5.2.1 LTS",
+      "contextArtifacts": 0,
+      "device": "OPTIX",
+      "directory": "E:\\projects\\sonaqueen-video-ground-truth\\.fox3d-work\\video-round2-e2e\\d320a651\\ARTWORK_DETAIL_6S",
+      "frameArtifacts": 432,
+      "frameCount": 72,
+      "generationId": "d320a651-c2a4-403e-9322-a37630fcea6e-artwork_detail_6s",
+      "manifestHash": "7ebb971fb6bf5c2fdd85359646ba806c2fb7e5eb8bd6a85f4e9fc1acc0b5e241",
+      "persistedReopen": "PASS",
+      "receiptSeal": "72424211acd6b76d56857cd28cea5582eb8f9be275d816ebb2632d504ba821f0",
+      "sceneRecipeHash": "8924bcd2b9dcc3bf5c7c3740fe60767d295b193984408f164e199450ca407a58",
+      "usedMock": false,
+      "videoGroundTruthReady": true,
+      "duration": 6,
+      "fps": 12,
+      "width": 128,
+      "height": 128,
+      "cameraRecipeHash": "f9a61d537599915291907c2e059e5ac555dd2bbd4264e990fe93ae6efbf42a6d",
+      "videoRecipeHash": "1f05b596106e44e9fad063d58d259507ec6b4dffd98ed215c8f787eb1df770db",
+      "sampledFrameIndices": [
+        0,
+        36,
+        71
+      ]
+    },
+    "HERO_ORBIT_8S": {
+      "authoritySeal": "4fc0461dbf74baea189a3cdd5c4cb56e00cd7233182250e064444702cb9e1e96",
+      "blenderJobId": "c4dbbfc9-eeaa-4e17-bd78-c1f726c4aa75",
+      "blenderVersion": "5.2.1 LTS",
+      "contextArtifacts": 0,
+      "device": "OPTIX",
+      "directory": "E:\\projects\\sonaqueen-video-ground-truth\\.fox3d-work\\video-round2-e2e\\d320a651\\HERO_ORBIT_8S",
+      "frameArtifacts": 576,
+      "frameCount": 96,
+      "generationId": "d320a651-c2a4-403e-9322-a37630fcea6e-hero_orbit_8s",
+      "manifestHash": "5bfbfa6a504bd59579a666bffa97440b6fcc046bb54988229b956badcb8df8cd",
+      "persistedReopen": "PASS",
+      "receiptSeal": "4bd31ee8b9bb1eb62a3641573bb6b85d40a1eb5f6119533260dbfbf6d1639817",
+      "sceneRecipeHash": "8924bcd2b9dcc3bf5c7c3740fe60767d295b193984408f164e199450ca407a58",
+      "usedMock": false,
+      "videoGroundTruthReady": true,
+      "duration": 8,
+      "fps": 12,
+      "width": 128,
+      "height": 128,
+      "cameraRecipeHash": "a9be9fa426d099f6e28c6c7b2d92cd34847a8f9554ff000722b002aae86b7545",
+      "videoRecipeHash": "99727912b2af723d0218f7df2c674ade6d5027c4b96bea5a235b9ae1f1c27717",
+      "sampledFrameIndices": [
+        0,
+        48,
+        95
+      ]
+    },
+    "SMALL_ROOM_10S": {
+      "authoritySeal": "92eb37acc6b09b4ccf11b06084e2df1c9e3ffbefc9ad2f744755a9648e0ada0a",
+      "blenderJobId": "56b93f73-d105-4c78-ab56-a75f60e6d980",
+      "blenderVersion": "5.2.1 LTS",
+      "contextArtifacts": 120,
+      "device": "OPTIX",
+      "directory": "E:\\projects\\sonaqueen-video-ground-truth\\.fox3d-work\\video-round2-e2e\\d320a651\\SMALL_ROOM_10S",
+      "frameArtifacts": 720,
+      "frameCount": 120,
+      "generationId": "d320a651-c2a4-403e-9322-a37630fcea6e-small_room_10s",
+      "manifestHash": "27962f8029a232740a63a0a016599fd3791d9e8b34ead84429d370a51fa284ee",
+      "persistedReopen": "PASS",
+      "receiptSeal": "edee0efde7ac6935784934e06545816e3b1557f7058c2a09302d44a305b82112",
+      "sceneRecipeHash": "637f821b08e134a9b52d2dd570d785271faec0791b81ed58805b9f88c0ad1727",
+      "usedMock": false,
+      "videoGroundTruthReady": true,
+      "duration": 10,
+      "fps": 12,
+      "width": 128,
+      "height": 128,
+      "cameraRecipeHash": "7f4c63e54435b91a07c71720a9a2845f67817f59ccc4e7c6752814b3e0095153",
+      "videoRecipeHash": "7375d781371cd73ecfb4b417270201988b487776d1c26ae1efdf6acdfe24a183",
+      "sampledFrameIndices": [
+        0,
+        60,
+        119
+      ]
+    }
+  },
+  "smallRoomReal": true,
+  "sourceScope": "Synthetic explicit 800x295x900 four-door cabinet; generated asymmetric artwork; not physical truth.",
+  "status": "PASS",
+  "usedMock": false,
+  "videoGroundTruthReady": true,
+  "visionQaReady": false,
+  "workingTreeClean": true,
+  "visualInspection": "Inspected first/middle/last Beauty for all three sequences. Visible cabinet/artwork and distinct room context. 128x128 noisy control previews, not final commerce quality.",
+  "codeCiRunId": 34900852044,
+  "codeCiVerifiedJobs": [
+    {
+      "name": "unit (windows-latest)",
+      "conclusion": "success",
+      "testsPassed": 901,
+      "jobId": 104166191916
+    },
+    {
+      "name": "unit (ubuntu-latest)",
+      "conclusion": "success",
+      "testsPassed": 901,
+      "jobId": 104166192179
+    }
+  ],
+  "localTests": 901,
+  "newRound2Tests": 43,
+  "videoTests": 114,
+  "pr": 13,
+  "docsCiStatus": "REPORTED_IN_FINAL_ISSUE_HANDOFF",
+  "closureInstructionSha": "6f68f7e59f490495c35f22f4d4aaeb266fd37d96",
+  "instructionBindingNote": "instructionSha is embedded in frozen CODE; closureInstructionSha is the later external evidence-only directive.",
+  "supplementalTamperEvidence": {
+    "cases": [
+      {
+        "durationSeconds": 16.469,
+        "status": "PASS",
+        "trackedTest": "test_round2_prior_corruption_blocks_new_attempt_and_publish:foreign_copy"
+      },
+      {
+        "durationSeconds": 16.625,
+        "status": "PASS",
+        "trackedTest": "test_round2_prior_corruption_blocks_new_attempt_and_publish:duplicate_number"
+      },
+      {
+        "durationSeconds": 16.375,
+        "status": "PASS",
+        "trackedTest": "test_round2_prior_corruption_blocks_new_attempt_and_publish:index_tamper"
+      },
+      {
+        "durationSeconds": 16.641,
+        "status": "PASS",
+        "trackedTest": "test_round2_prior_corruption_blocks_new_attempt_and_publish:artifact"
+      },
+      {
+        "durationSeconds": 9.969,
+        "status": "PASS",
+        "trackedTest": "test_round2_deleted_last_rejected_attempt_blocks_retry"
+      },
+      {
+        "durationSeconds": 16.718,
+        "status": "PASS",
+        "trackedTest": "test_round2_valid_bytes_with_foreign_dam_lineage_blocked:tenant"
+      },
+      {
+        "durationSeconds": 16.719,
+        "status": "PASS",
+        "trackedTest": "test_round2_valid_bytes_with_foreign_dam_lineage_blocked:jobId"
+      },
+      {
+        "durationSeconds": 16.797,
+        "status": "PASS",
+        "trackedTest": "test_round2_valid_bytes_with_foreign_dam_lineage_blocked:frame"
+      },
+      {
+        "durationSeconds": 16.703,
+        "status": "PASS",
+        "trackedTest": "test_round2_valid_bytes_with_foreign_dam_lineage_blocked:role"
+      }
+    ],
+    "closureInstructionSha": "6f68f7e59f490495c35f22f4d4aaeb266fd37d96",
+    "codeCommit": "a5b368a3d907950c5165f4b1a0058853ace617fc",
+    "groundTruthGeneration": "d320a651-c2a4-403e-9322-a37630fcea6e-hero_orbit_8s",
+    "groundTruthUsedMock": false,
+    "instructionSha": "84a39b3ce5f4186fe0824fb66add1a9d1db720ef",
+    "liveProviderReady": false,
+    "sourceGitBytesSha256": "0c67a695f397c9d1e3f2f8547d908b898c7eb904773dce8793f06cc8d78f8601",
+    "sourceTrackedTestFile": "tests/test_video_ground_truth.py",
+    "status": "PASS",
+    "truth": "REAL_LOGIC on real ground-truth bytes; candidate pixels remain FIXTURE_COPY/MOCK provider output",
+    "visionQaReady": false,
+    "workingTreeClean": true
+  },
+  "excludedFormalRuns": [
+    {
+      "generationId": "d5d7140b-4b9a-420b-a75d-2c3be56ac3d3",
+      "code": "a5b368a3d907950c5165f4b1a0058853ace617fc",
+      "status": "FAILED_TIMEOUT",
+      "lastProgress": "video_frame_0_depth",
+      "completedBeautyFrames": 1,
+      "rootCause": "UNDETERMINED; existing 120-second no-progress watchdog stopped worker; excluded from PASS."
+    }
+  ],
+  "previousRoundAcceptance": {
+    "artifactCount": 576,
+    "authoritySeal": "d7fb6711b17b964488a66831c46b0a9f7d1208b503d39ba850f172addf989490",
+    "blenderJobId": "2ab14fea-ed07-47b2-b8dc-fe98bd20e3c4",
+    "blenderVersion": "5.2.1 LTS",
+    "candidateQaEvidence": "FIXTURE_COPY / REAL_LOGIC; PASS and REJECT, idempotency, publish gates verified",
+    "codeCommit": "728e954af3312c8ad625e242918cbb029d0c1993",
+    "developmentOnly": false,
+    "device": "OPTIX",
+    "directory": "E:\\projects\\sonaqueen-video-ground-truth\\.fox3d-work\\video-e2e\\e42c8575",
+    "doorBlocker": "BLOCKED_ARTICULATION_AUTHORITY",
+    "doorOpenReal": false,
+    "frameCount": 96,
+    "generationId": "e42c8575-56db-473a-bd28-d8353dc536cc",
+    "globalProductionReady": false,
+    "heroOrbitReal": true,
+    "instructionSha": "8d54bb9bf1786ef8c9bbf7122cbb770927be5cda",
+    "liveProviderReady": false,
+    "manifestHash": "20fb394c69ef92160cea3923644245ab79d0a7602b47bc9cfab1bcc079a692d2",
+    "persistedReopen": "PASS",
+    "providerPackages": [
+      "H3_MAX",
+      "LTX_2_5"
+    ],
+    "realBlender": true,
+    "receiptSeal": "347b37f58785949968a3f7e03a29e527e01d016ffa3ec73298c81f996473afff",
+    "sourceScope": "main Product Truth cabinet fixture; unmerged Golden Product PR is not imported",
+    "status": "PASS",
+    "usedMock": false,
+    "videoGroundTruthReady": true,
+    "visionQaReady": false,
+    "workingTreeClean": true,
+    "codeCiRunId": 34887469718,
+    "codeCiVerifiedJobs": [
+      {
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "testsPassed": 858,
+        "jobId": 104121562606
+      },
+      {
+        "name": "unit (ubuntu-latest)",
+        "conclusion": "success",
+        "testsPassed": 858,
+        "jobId": 104121562771
+      }
+    ],
+    "localTests": 858,
+    "newTests": 71,
+    "pr": 13,
+    "docsCiStatus": "REPORTED_IN_FINAL_ISSUE_HANDOFF",
+    "truthMatrix": {
+      "REAL": "HERO frames/controls and BLEND reopen",
+      "REAL_LOGIC": "authority/manifest/QA/retry/DAM",
+      "FIXTURE": "explicit synthetic cabinet and asymmetric artwork / candidate copies",
+      "MOCK": "CI Blender",
+      "PARTIAL": "detail/room recipes; low-resolution preview; local DAM descriptor persistence",
+      "BLOCKED": "articulation/assembly/live providers/Vision/physical print/machines/global readiness"
+    }
+  }
+}
