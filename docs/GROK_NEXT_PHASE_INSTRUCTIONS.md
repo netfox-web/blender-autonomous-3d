@@ -1,143 +1,322 @@
-# Development Agent 指令：Event-Driven Supervisor Re-Gate Round 10 — BLOCKED HOLD / LIVE E2E LINEAGE CORRECTION
+# Development Agent 指令：Issue #6 Blender → Generative Video Ground Truth Pipeline V1
 
 > Repo: `netfox-web/blender-autonomous-3d`
-> Reviewed instruction: `2c7463b26f26361e3c94991f259a413da56a7057`
-> Accepted implementation CODE: `d9402f3a966581aa66d39b0097e518366d87626c`
-> Round 9 DOCS/Handoff: `475ab6fe641da0caa79deefe951a4c42a2f04398`
-> CODE Actions: `34788079332` — Ubuntu + Windows SUCCESS
-> Round 9 DOCS Actions: `34792513276` — Ubuntu + Windows SUCCESS
-> Tests retained: `72 passed` supervisor / `770 passed` full regression
-> Re-Gate result: **BLOCKED_WAITING_LIVE_E2E / CORRECTION-ONLY**
-> **Phase 961+ remains HOLD.**
+> Re-Gate source: Issue #4 READY_FOR_RE_GATE / PR #7
+> Accepted scoped CODE: `c9f685854a964d567643cab55f06aceb0c7375d2`
+> Accepted scoped DOCS: `f65f264eb8083c08a55b9449acb1b3748eeb68e5`
+> CODE Actions: `34811888485` — Ubuntu + Windows SUCCESS
+> DOCS Actions: `34813670099` — Ubuntu + Windows SUCCESS
+> Full regression: `828` tests on each OS
+> Clean REAL Blender generation: `b1d53004-3a4c-4f6d-b192-1ebb85877a6d`
+> Re-Gate result: **ACCEPT WITH SCOPE**
+> Next work item: **Issue #6 — Blender → Generative Video Ground Truth Pipeline V1**
 
-## 0. 審核結論
+## 0. Re-Gate truth boundary
 
-Round 9 的 fail-closed 行為是正確的：目前缺少真正 live E2E 所需的 public HTTPS webhook ingress、`GITHUB_WEBHOOK_SECRET`、`SUPERVISOR_AI_PROVIDER` / `SUPERVISOR_AI_MODEL`、live provider credential 與 `SUPERVISOR_ADMIN_KEY`。因此以下三個 flag 必須繼續為 false：
+Issue #4 is accepted only as a **scoped preview / artwork-placement Golden Product**.
 
-- `webhookRealE2e=false`
-- `liveProviderReady=false`
-- `eventDrivenSupervisorReady=false`
+Accepted as REAL / REAL_LOGIC:
+- one shared 424×295×900 mm recipe identity with four SKU identities;
+- deterministic EngineeringHash shared by the four SKU fixture packages;
+- MASTER_SPLIT and SINGLE_SURFACE placement logic;
+- mm → crop → UV → packed image → production-trim lineage;
+- clean-tree Blender 5.2.1 / OptiX generation, PNG / GLB / `.blend`, blend reopen, HTTP download and service-restart verification;
+- exact Ubuntu + Windows CI on CODE and DOCS SHAs.
 
-這不是程式失敗；不要重寫既有 Supervisor 架構，也不要用 MockTransport / fixture / curl synthetic webhook 取代真正 GitHub delivery。
+Still **not** REAL production authority:
+- historical SKU artwork = BLOCKED / pending;
+- current calibration artwork = FIXTURE;
+- board/back/door thickness = ESTIMATED;
+- door gap / safe / bleed = CONFIG;
+- hardware / joinery / hole positions / articulation = UNKNOWN or BLOCKED;
+- `engineeringReady=false`, `manufacturingReady=false`, `productionReady=false`;
+- LIVE_CNC / LIVE_LASER / PLC remain BLOCKED.
 
-Supervisor core / GitHub client / state / policy / crash recovery 維持 **REAL_LOGIC / TESTED**；Product Truth 既有 Blender evidence 維持 scoped REAL；LIVE_CNC / LIVE_LASER / PLC、physical print、full autonomous factory 仍為 BLOCKED。
+Do not promote any of the above because Blender output looks correct.
 
----
+## 1. Branch / PR dependency rule
 
-## 1. 必修正：Round 9 evidence lineage 不可混用
+PR #7 may still be open when this instruction is read.
 
-Round 9 READY contract 目前宣告：
+- **Do not auto-merge PR #7.**
+- If `main` does not yet contain the Issue #4 Golden Product files, do **not** duplicate or copy those files into the Issue #6 branch.
+- Build Issue #6 against the generic Product Truth / render-pack interfaces already on `main`.
+- Use an existing REAL Product Truth fixture/product for the first end-to-end acceptance when needed.
+- After PR #7 is merged, add Golden Product integration by adapter/interface only; do not fork a second Golden Product implementation.
 
-- `code_sha=d9402f3a966581aa66d39b0097e518366d87626c`
-- `evidence_generation_id=66af98fb-5e5f-4d03-850a-d37726e59451`
+## 2. VideoRecipe V1
 
-但 Round 9 report 同時記錄該 generation 的 `evidenceCodeCommit=2c7463b26f26361e3c94991f259a413da56a7057`。這是 instruction/docs commit，不是 accepted implementation CODE `d9402f3...`，因此此 generation 不可再被當成 `d9402f3...` 的 exact CODE-bound REAL acceptance identity。
+Add a provider-neutral `VideoRecipe` model and deterministic hash.
 
-先前已接受且 exact 綁定 `d9402f3...` 的 clean-tree REAL evidence 為：
+V1 must support at least:
+- `HERO_ORBIT_8S`
+- `DOOR_OPEN_8S`
 
-- `evidence_generation_id=1631af33-6946-4ac9-96eb-b844d68892c9`
-- `evidenceCodeCommit=d9402f3a966581aa66d39b0097e518366d87626c`
-- `workingTreeClean=true`
-- `usedMock=false`
+Schema fields must include:
+- recipe id/version;
+- duration seconds;
+- fps;
+- width/height;
+- frame count;
+- camera path / keyframes;
+- lens / sensor / lookAt target;
+- product transform timeline;
+- articulation timeline;
+- scene / lighting recipe identity;
+- Product Truth / Engineering / Artwork lineage;
+- deterministic `videoRecipeHash`.
 
-### 修正規則
+Optional future recipes may be declared but must remain explicit PARTIAL/BLOCKED until implemented:
+- `ARTWORK_DETAIL_6S`
+- `SMALL_ROOM_10S`
+- `ASSEMBLY_EXPLODE_10S`
 
-1. 若 Supervisor READY contract 需要 CODE-bound Blender evidence，恢復使用上面已接受的 `1631af33-...`，並在 Progress / Audit / Supervisor Acceptance / Issue contract 中保持一致。
-2. `66af98fb-...` 若要保留，只能標成「post-instruction runtime/doc-side verification」，不得冒充 `d9402f3...` 的 exact CODE-bound evidence。
-3. 不要為了修 lineage 製造新的 implementation CODE commit。
-4. 不要重新跑 Product Truth 只為了產生新的 generation，除非真的有 code 變更或 external Re-Gate 明確要求。
+## 3. Ground Truth frame sequence
 
----
+For every accepted frame, publish deterministic artifacts / metadata for:
+- RGB / Beauty;
+- Depth;
+- Normal;
+- ProductMask;
+- ArtworkMask;
+- Alpha when applicable;
+- camera world matrix;
+- product/object transform matrix;
+- articulation state;
+- frame index;
+- timestamp.
 
-## 2. 現在不要繼續 churn repo
+Every frame must bind to:
+- tenant / SKU / product version;
+- EngineeringHash;
+- Product Truth identity / acceptance generation;
+- ArtworkHash / ArtworkVersion when present;
+- PlacementHash / finalUvHash when present;
+- SceneRecipeHash;
+- CameraRecipeHash;
+- VideoRecipeHash;
+- Blender job id;
+- artifact SHA-256 and byte size.
 
-在 live prerequisites 仍缺少、且沒有新 code / 新 live infrastructure / 新 provider credential 狀態變化時：
+No second hidden geometry or camera source of truth is allowed in Blender scripts.
 
-- 不要再新增 docs-only「BLOCKED_WAITING_LIVE_E2E」commit。
-- 不要再重貼相同 READY_FOR_RE_GATE Issue 留言。
-- 不要修改 `GROK_PROGRESS_REPORT.md`、`CURRENT_IMPLEMENTATION_AUDIT.md`、acceptance files 只為重述相同 blocker。
-- 保持安靜並 STOP；等待 live prerequisite 真正改變。
+## 4. VIDEO_GROUND_TRUTH_MANIFEST.json
 
-這條是為避免每次 watcher/輪詢造成無意義 commit/comment loop。
+Create a machine-readable manifest with one row/object per frame.
 
----
+Required integrity rules:
+- deterministic manifest hash;
+- exact frame set `0..N-1`;
+- no duplicate frame indices;
+- no missing frame;
+- strictly increasing timestamps;
+- artifact SHA / size verified from stored bytes;
+- camera/product matrices finite numeric only;
+- cross-SKU / cross-generation frame mixing fails closed;
+- frame reorder tamper fails closed.
 
-## 3. 只有 prerequisites 真正到位後才執行 LIVE E2E
+Do not reduce acceptance to one final MP4 SHA. The frame-level lineage is the authority.
 
-實際確認以下項目已存在後才開始：
+## 5. REAL Blender acceptance scope
 
-- GitHub 可訪問的 public HTTPS supervisor endpoint
-- repo webhook 與 runtime 一致的 `GITHUB_WEBHOOK_SECRET`
-- 可用 GitHub write credential / App token
-- `SUPERVISOR_AI_PROVIDER` = `openai` / `anthropic` / `gemini`
-- 非空且 provider-compatible 的 `SUPERVISOR_AI_MODEL`
-- 對應 live provider API credential
-- `SUPERVISOR_ADMIN_KEY`
-- repo=`netfox-web/blender-autonomous-3d`, branch=`main`, Issue #1 policy 正確
+### HERO_ORBIT_8S
+Must be REAL in this round if the local Blender runtime is available.
 
-任何一項缺失：維持 `BLOCKED_WAITING_LIVE_E2E`，不修改 readiness flags，不用 mock 代替。
+For acceptance, use a low-cost deterministic render profile suitable for CI-independent local evidence; schema must still support production profiles separately.
 
----
+Prove:
+- product geometry remains unchanged across frames;
+- camera follows the declared orbit/dolly path;
+- Artwork does not drift relative to printable surfaces;
+- ProductMask and ArtworkMask remain bound to the same product/artwork lineage;
+- output can be regenerated and independently verified from the manifest.
 
-## 4. LIVE E2E 完整成功條件
+### DOOR_OPEN_8S
+Do **not** fabricate articulation authority.
 
-必須由真 GitHub delivery 跑通：
+- For the 424×295×900 Golden Product, Issue #4 currently declares `articulationAuthority=UNKNOWN`; therefore its DOOR_OPEN must remain BLOCKED unless new verified articulation authority is introduced with evidence.
+- A REAL DOOR_OPEN acceptance may instead use an existing product whose hinge/articulation worker evidence is already scoped REAL and authoritative.
+- If no such product is used, keep `doorOpenGroundTruthReady=false` and continue; this does not block HERO_ORBIT V1 acceptance.
 
-`READY_FOR_RE_GATE comment -> GitHub webhook -> HMAC/auth -> exact contract -> exact CODE/DOCS dual CI -> pinned evidence -> live AI provider network call -> schema/4 identities exact match -> exactly one instruction commit -> remote blob verify -> exactly one Issue comment -> Antigravity watcher claim exactly once -> replay no duplicate`
+## 6. Provider-neutral generative gateway
 
-必留非秘密 evidence：
+Create or extend adapters without coupling core Product Truth to one model:
+- `H3MaxAdapter`
+- `LTX25Adapter`
+- future provider interface.
 
-- GitHub delivery ID / event / action / repo / Issue / commenter / HMAC=true
-- instruction/code/docs SHA
-- CODE/DOCS CI run IDs + Ubuntu/Windows job IDs/conclusions
-- exact CODE-bound evidence generation ID
-- provider/model/request ID（若 provider 提供）
-- response schema PASS + 4 reviewed identities exact-match
-- instruction commit SHA + 6 trailers + intended SHA256 + remote blob verification
-- Issue comment ID + deterministic marker
-- watcher claim key/timestamp/count=1
-- replay same delivery / same contract 不新增 commit/comment/claim
+Provider request package may contain:
+- RGB reference frames / keyframes;
+- Depth;
+- Normal;
+- ProductMask;
+- ArtworkMask;
+- camera metadata;
+- style/prompt brief;
+- product-lock constraints.
 
-不得寫入 secret、token、API key 或 Authorization header。
+Current rule:
+- no live credential/runtime → `liveProviderReady=false`;
+- fixture/mock transport is allowed for unit tests only;
+- mock H3/LTX must never be labeled REAL.
 
----
+## 7. Product Lock QA V1
 
-## 5. Readiness 升級規則
+Implement deterministic QA contracts first.
 
-### `webhookRealE2e=true`
-只有真 GitHub delivery + HMAC + repo/issue/action/user authorization + contract 已進 engine 才能升級。
+At minimum:
+- silhouette / ProductMask IoU;
+- artwork region / ArtworkMask IoU;
+- aspect-ratio / topology proxy;
+- declared door/panel count where authority exists;
+- camera-motion consistency from metadata;
+- frame identity / temporal continuity sanity checks;
+- artifact and lineage integrity.
 
-### `liveProviderReady=true`
-只有在上述真 webhook chain 內完成真 provider network request、schema valid、request/audit evidence 可驗證、4 identities exact-match 才能升級。
+Statuses:
+- `PASS`
+- `RETRY`
+- `REJECT`
 
-### `eventDrivenSupervisorReady=true`
-只有完整鏈 + exactly-once + replay no duplicate 全 PASS 才能升級。
+If there is no live Vision provider:
+- `visionQaReady=false`;
+- deterministic checks may be REAL_LOGIC;
+- heuristic / fixture Vision remains MOCK and cannot promote a candidate to production authority by itself.
 
-其中任一步是 fixture / MockTransport / synthetic webhook，三個 flags 都必須保持 false。
+## 8. Candidate / retry / DAM lifecycle
 
----
+Implement:
 
-## 6. 若 LIVE E2E 暴露真正 bug
+`Ground Truth -> Provider Candidate -> QA -> PASS / RETRY / REJECT -> DAM`
 
-只做 correction-only：
+Persist:
+- attempt number;
+- provider/model;
+- seed if available;
+- provider request id if available;
+- runtime/cost only when actually observed;
+- source Ground Truth manifest hash;
+- QA result and reason;
+- idempotency key.
 
-1. 修最小範圍 bug；不要重寫架構。
-2. 新 CODE SHA。
-3. `pytest -v tests/test_supervisor.py` + `pytest -q` 全綠。
-4. exact CODE SHA Ubuntu + Windows Actions SUCCESS。
-5. 再跑完整 live E2E。
-6. 更新 docs 後 exact DOCS SHA Ubuntu + Windows Actions SUCCESS。
-7. Issue #1 留一次 machine-readable READY_FOR_RE_GATE，STOP 等 external Re-Gate。
+DAM classes must distinguish:
+- Blender Ground Truth;
+- Provider Candidate;
+- QA Accepted;
+- QA Rejected;
+- Final Commerce Video.
 
----
+A rejected candidate must fail closed if any code attempts to publish it as Final Commerce Video.
 
-## 7. 禁止事項
+## 9. Negative regression matrix
 
-- 不要重寫 Supervisor / Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth。
-- 不要把 MockTransport、pytest、GitHub Actions fixture、curl synthetic webhook 當 live E2E。
-- 不要把 `66af98fb-...` 冒充 `d9402f3...` 的 exact CODE-bound evidence。
-- 不要為了產生新 SHA 任意改 code。
-- 不要在 prerequisites 無變化時重複 commit/comment。
-- 不要啟動 LIVE_CNC / LIVE_LASER / PLC / physical machine control。
-- 不要把 generative output 當 Product Truth。
-- 不要自行進 Phase 961+。
+Add explicit fail-closed tests for:
+- wrong SKU;
+- wrong EngineeringHash;
+- wrong ArtworkHash;
+- wrong PlacementHash / finalUvHash;
+- frame reorder;
+- missing frame;
+- duplicated frame;
+- cross-video / cross-SKU frame mix;
+- camera matrix tamper;
+- product transform tamper;
+- articulation tamper;
+- ProductMask tamper;
+- ArtworkMask tamper;
+- artifact SHA / byte-size mismatch;
+- manifest hash mismatch;
+- rejected candidate publish attempt;
+- mock provider attempting `liveProviderReady=true`;
+- mock Vision attempting `visionQaReady=true`.
+
+## 10. Evidence / docs
+
+Add:
+- `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ARCHITECTURE.md`
+- `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ACCEPTANCE.md`
+- machine-readable acceptance JSON.
+
+Truth Matrix must use explicit labels:
+- REAL
+- REAL_LOGIC
+- FIXTURE
+- MOCK
+- PARTIAL
+- BLOCKED
+
+Required readiness flags include at least:
+- `videoGroundTruthReady`
+- `heroOrbitGroundTruthReady`
+- `doorOpenGroundTruthReady`
+- `liveProviderReady`
+- `visionQaReady`
+- `generativeVideoProductionReady`
+
+No unscoped `productionReady=true`.
+
+## 11. Tests / CI / clean-tree evidence
+
+Do not run only new tests.
+
+Required sequence:
+1. full `pytest -q` locally;
+2. push CODE SHA;
+3. exact CODE SHA Ubuntu + Windows Actions SUCCESS;
+4. from a clean tree, run REAL Blender ground-truth acceptance when Blender is available;
+5. bind evidence to exact CODE SHA and `workingTreeClean=true`;
+6. commit docs/evidence separately as DOCS SHA;
+7. exact DOCS SHA Ubuntu + Windows Actions SUCCESS;
+8. publish one machine-readable READY_FOR_RE_GATE handoff;
+9. STOP for external Re-Gate.
+
+`FOX3D_MOCK_BLENDER=1` CI remains unit/regression evidence only, not REAL Blender evidence.
+
+## 12. READY_FOR_RE_GATE contract
+
+Report in Issue #6 and a short pointer in Issue #1:
+
+- `INSTRUCTION_SHA`
+- `CODE_SHA`
+- `DOCS_SHA`
+- `CODE_CI_RUN_ID`
+- `DOCS_CI_RUN_ID`
+- `TEST_COUNT`
+- `EVIDENCE_GENERATION_ID`
+- `REAL_BLENDER=true|false`
+- `USED_MOCK=true|false`
+- `VIDEO_GROUND_TRUTH_READY=true|false`
+- `HERO_ORBIT_GROUND_TRUTH_READY=true|false`
+- `DOOR_OPEN_GROUND_TRUTH_READY=true|false`
+- `LIVE_PROVIDER_READY=true|false`
+- `VISION_QA_READY=true|false`
+- `GENERATIVE_VIDEO_PRODUCTION_READY=true|false`
+
+List REAL / REAL_LOGIC / FIXTURE / MOCK / PARTIAL / BLOCKED separately.
+
+## 13. Supervisor LIVE E2E remains on hold
+
+The existing Event-Driven Supervisor production gate is still externally blocked:
+- public HTTPS webhook ingress missing;
+- webhook secret missing;
+- live provider credential/model config missing;
+- admin key missing.
+
+Until those prerequisites actually change:
+- keep `webhookRealE2e=false`;
+- keep `liveProviderReady=false` for Supervisor live chain;
+- keep `eventDrivenSupervisorReady=false`;
+- do not create repetitive docs-only BLOCKED commits/comments;
+- do not substitute curl synthetic webhook / MockTransport for real GitHub delivery.
+
+## 14. Forbidden
+
+- no architecture rewrite;
+- no duplicate Golden Product implementation while PR #7 is unmerged;
+- no fabricated historical artwork;
+- no fabricated articulation/hardware/manufacturing authority;
+- no Mock → REAL promotion;
+- no LIVE_CNC / LIVE_LASER / PLC;
+- no generative video as Product Truth;
+- no automatic merge of PR #7;
+- no next major phase after Issue #6 completion until Re-Gate.
