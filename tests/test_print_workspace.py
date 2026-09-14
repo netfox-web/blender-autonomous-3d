@@ -179,4 +179,4 @@ def test_api_upload_job_proof_and_no_dispatch(tmp_path):
     b=c.post(path+'/proof',json=version);assert b.status_code==200,b.text
     assert c.get(path+'/bundles/'+b.json()['bundleId']+'?workspace=test').status_code==200
     assert c.get(path,headers={'X-Tenant-Id':'other'}).status_code==422
-    assert all('dispatch' not in route.path and 'hotfolder' not in route.path for route in app.routes)
+    assert all('dispatch' not in path and 'hotfolder' not in path for path in c.get('/openapi.json').json()['paths'])
