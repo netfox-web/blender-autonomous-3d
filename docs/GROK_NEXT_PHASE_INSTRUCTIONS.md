@@ -1,295 +1,272 @@
-# Development Agent 指令：Issue #6 Round 3 — Authoritative DOOR_OPEN Video Ground Truth / Re-Gate
+# Development Agent 指令：Issue #6 Round 3A — Articulation Engineering Authority Source V1 / Fail-Closed Prerequisite
 
 > Supervisor checkpoint: 2026-09-15
-> Current main before this instruction: `6f68f7e59f490495c35f22f4d4aaeb266fd37d96`
+> Current main before this instruction: `34e2de913e420d48b472909d3360f0081f2b1e34`
 > Reviewed PR: #13 `codex/video-ground-truth` — OPEN / unmerged
 > Accepted Round 2 CODE: `a5b368a3d907950c5165f4b1a0058853ace617fc`
 > Accepted Round 2 DOCS: `3c57849f2a765451a3c03c564bbe6346e26ea9cd`
-> Exact CODE CI: `34900852044` — Ubuntu + Windows SUCCESS, 901 tests/OS
-> Exact DOCS CI: `34906622356` — Ubuntu + Windows SUCCESS, 901 tests/OS
-> Clean REAL generation: `d320a651-c2a4-403e-9322-a37630fcea6e`
-> Supervisor result: **ACCEPT WITH SCOPE**
-> Merge authorization: **NO**
+> Round 3 prerequisite audit result: **ACCEPTED BLOCKED / `BLOCKED_ARTICULATION_AUTHORITY`**
+> Merge authorization for PR #13: **NO**
+> Global Production Ready: **false**
 
-## 0. Accepted Round 2 baseline — do not re-implement it
+## 0. Supervisor decision
 
-Round 2 is accepted only within its documented scope.
+The Round 3 precondition audit is accepted because it failed closed exactly as required.
 
-### REAL
-- exact-CODE clean Blender 5.2.1 LTS / OptiX, `usedMock=false`;
-- `HERO_ORBIT_8S` 96 frames;
-- `ARTWORK_DETAIL_6S` 72 frames;
-- `SMALL_ROOM_10S` 120 frames;
-- 288 total frames, 1728 Product Truth control artifacts + 120 independent room-context masks;
-- actual bytes/SHA/size, camera/product matrices, masks, finite EXR checks, first/middle/last `.blend` reopen, DAM/job lineage and persisted reload.
+Independent review of current `main` confirms the existing Product Content / Blender articulation path is only a convenience/render implementation, not independent engineering authority:
 
-### REAL_LOGIC
-- durable attempt exact-set/index verification;
-- every prior journal verified before retry, idempotent replay or publication;
-- missing/renamed/duplicate/foreign/corrupt history fails closed;
-- candidate artifact bytes and DAM tenant/job/frame/role lineage are rebound;
-- prior PASS blocks later retry;
-- corruption blocks preview/final publication and creates no new DAM writes;
-- SMALL_ROOM context geometry/mask is isolated from Product Truth;
-- render cache is bound to video authority/recipe identity.
+- `src/fox3d/content_factory.py` contains `FRONT_OPEN` / `build_articulated_state()` convenience values including fallback/default `75.0`, dimension-derived hinge pivot, fixed Z axis, and validation fallback behavior.
+- `scripts/blender_job.py::_set_door_articulation()` independently repeats a dimension-derived hinge transform.
+- the Round 2 video source has `articulationAuthority=null`.
+- no durable current-main record presently supplies an authoritative revision/seal, declared pivot space, normalized axis/range, parent identity, and canonical closed/open transform semantics for the Round 2 product.
 
-### FIXTURE / MOCK
-- synthetic explicit 800×295×900 four-door cabinet;
-- generated asymmetric artwork;
-- CI Blender path is MOCK;
-- copied candidate pixels are `FIXTURE_COPY` and are not live H3/LTX output.
+Therefore:
 
-### PARTIAL
-- 128×128 is a control/evidence preview, not final commerce quality;
-- deterministic Product Lock QA is not semantic Vision;
-- local persistence is not an OS trust boundary;
-- total rewriting/deletion of all journals + index anchors + local DAM is outside the proven integrity boundary;
-- historical V1 journal sets without the durable index fail closed and have no automatic repair/migration.
+- `ARTICULATION_AUTHORITY_READY=false`
+- `DOOR_OPEN_REAL=false`
+- `DOOR_OPEN_GROUND_TRUTH_READY=false`
+- PR #13 Round 2 remains **ACCEPT WITH SCOPE**
+- do **not** infer authority from worker output, mesh geometry, Vision, a hard-coded/default `75.0`, or the existing dimension-derived hinge helper.
 
-### BLOCKED / false
-- `DOOR_OPEN_REAL=false`;
-- independent video articulation/assembly authority not yet proven;
-- `visionQaReady=false`;
-- `liveH3MaxProviderReady=false`;
-- `liveLtx25ProviderReady=false`;
-- `liveProviderReady=false`;
-- Final Commerce Video;
-- physical UV/RIP/print/hot-folder/machines;
-- LIVE_CNC / LIVE_LASER / PLC;
-- Supervisor LIVE prerequisites;
-- `globalProductionReady=false`;
-- `fullAutonomousFactoryReady=false`.
+This is not a defect in the fail-closed gate. It is a missing upstream engineering authority prerequisite.
 
-The excluded formal run `d5d7140b-4b9a-420b-a75d-2c3be56ac3d3` remains an excluded failed attempt with undetermined root cause. Do not rewrite history to make it PASS. The later clean PASS on unchanged CODE is accepted; investigate the watchdog only if the failure recurs.
+## 1. Next objective — Round 3A only
 
-## 1. Round 3 objective
+Create the **smallest additive engineering-authority source** needed so a later video round can exact-resolve door motion from current main without guessing.
 
-Continue **only on existing PR #13**. Do not open a stacked PR and do not auto-merge PR #7–#13.
+Do **not** continue DOOR_OPEN rendering in PR #13 yet.
 
-The next objective is:
+One new prerequisite branch/PR targeting `main` directly is allowed. It must be created from the exact current `main`, must **not** be stacked on PR #13 or PR #7–#12, and must not auto-merge.
 
-**Build a narrow authoritative bridge from an independently resolved current-main door articulation authority into the existing Issue #6 video pipeline, then produce a clean REAL `DOOR_OPEN_8S` ground-truth acceptance.**
+Suggested branch name:
 
-Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, Product Truth, Artwork Placement, Product Truth Render Pack, Product Content Factory, Blender geometry interpretation, or the accepted Round 2 video pipeline.
+`feat/articulation-authority-v1`
 
-Current main already contains Product Content Factory/front-open logic and worker-observed articulation evidence. Treat that only as a candidate independent authority source. Before enabling `DOOR_OPEN_8S`, resolve an exact durable authority from current main. If an exact authority cannot be resolved, STOP as `BLOCKED_ARTICULATION_AUTHORITY`; do not infer or fabricate it.
+Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, Product Truth, Artwork Placement, Product Truth Render Pack, Product Content Factory, or Blender geometry interpretation. This round is an additive authority contract + resolver + verifier only.
 
-Important: existing convenience/default behavior such as a fallback `75.0` angle must **not** become Video Ground Truth authority. No default angle, guessed hinge, mesh inference, Vision inference, or generated pixel may authorize motion.
+## 2. Engineering `ArticulationSpec` source of truth
 
-## 2. Required `ArticulationAuthority` contract
+Introduce a narrow durable articulation definition at the engineering/product-definition layer, before Blender/video execution.
 
-Add the smallest adapter/contract necessary. Reuse existing engineering/product identity structures where possible.
+For each authorized moving component, the source record must contain or exact-resolve:
 
-For every moving door, the frozen authority must include or resolve exactly:
-- `tenantId`;
-- `productId` / `sku`;
-- `productVersion`;
-- `engineeringHash`;
-- Product Truth generation/hash identity;
-- `componentId` and exact Blender/object identity;
-- component role proving it is an authorized door;
-- hinge pivot as finite 3-vector in a declared coordinate space;
-- normalized hinge axis as finite 3-vector;
-- authorized CLOSED angle;
-- authorized OPEN angle or explicit min/max range;
-- rotation convention/order and parent transform identity;
-- closed transform and expected open transform, or enough independent authority to derive both deterministically;
-- authority revision/source identity;
-- canonical authority hash/seal.
+- `tenantId`
+- `productId` / `sku`
+- `productVersion`
+- `engineeringHash`
+- `componentId`
+- component role proving `door` (or another explicitly allowed articulation role)
+- exact object/component identity expected downstream
+- `pivotSpace` (explicit coordinate-space enum)
+- finite `pivot=[x,y,z]`
+- finite normalized `axis=[x,y,z]`
+- `closedAngleDeg`
+- `openMinDeg`
+- `openMaxDeg`
+- canonical/authorized `openAngleDeg` when one canonical OPEN state is required
+- rotation convention/order
+- `parentComponentId` or explicit root-parent identity
+- canonical closed local transform
+- canonical open local transform, or enough authoritative fields to derive it deterministically
+- `authoritySource` identifying where this engineering authority came from
+- monotonic `authorityRevision`
+- canonical `authorityHash` / seal
 
-The verifier must independently recompute the authority hash and fail closed on:
-- missing/blank fields;
-- bool-as-number, NaN, Inf or non-finite coordinates;
+### Critical source rule
+
+For the current synthetic reference product, articulation values may be an explicitly authored **FIXTURE engineering authority**. They may **not** be silently generated by the old `75.0` convenience default or by observing Blender output.
+
+If explicit fixture authority is used, label it `FIXTURE_AUTHORITY + REAL_LOGIC`, not physical product truth.
+
+For future real products, the same contract must accept measured/CAD/approved engineering data without changing the downstream video interface.
+
+## 3. Hashing and identity binding
+
+The articulation authority must be part of the engineering/product identity chain, not a sidecar that can be swapped without changing identity.
+
+At minimum:
+
+1. canonicalize the articulation record deterministically;
+2. recompute `authorityHash` independently in the verifier;
+3. bind it to the exact product/version/engineering identity;
+4. make stale revision/hash fail closed;
+5. if engineering identity is designed to include articulation, changing articulation must change the relevant canonical engineering/product authority hash;
+6. if backward compatibility requires a separate `articulationAuthorityHash`, it must still be included in all downstream cache/video authority identities so stale video cache reuse is impossible.
+
+Do not weaken historical engineering hashes silently. If migration/backward compatibility is needed, keep legacy products explicitly `ARTICULATION_AUTHORITY_MISSING` until upgraded.
+
+## 4. Resolver and verifier
+
+Add the smallest resolver used by later consumers:
+
+`resolve_articulation_authority(product identity, engineering identity, component set)`
+
+It must exact-resolve one unique authority set or return a typed blocked result.
+
+Fail closed on at least:
+
+- no authority;
+- blank/missing IDs;
+- duplicate authority rows for one component/revision;
+- non-door role for a door request;
+- unknown component/object identity;
+- wrong tenant/product/version/engineeringHash;
+- cross-product or cross-tenant substitution;
+- stale authority revision/hash;
+- bool-as-number;
+- NaN/Inf/non-finite pivot or angle;
 - zero/non-normalizable axis;
-- pivot/axis/range outside declared schema;
+- invalid pivot-space enum;
+- invalid angle ordering (`openMin > openMax`, canonical open outside range, etc.);
+- unsupported rotation convention/order;
+- missing/wrong parent identity;
+- canonical open transform contradicting pivot/axis/angle math;
+- mutation after seal;
+- authority hash mismatch.
+
+The resolver must not call Blender, Vision, provider APIs, or render helpers to decide engineering authority.
+
+## 5. Explicitly quarantine legacy convenience articulation
+
+Do not remove or rewrite the existing Product Content/Blender helpers in this round unless a narrow compatibility guard is required.
+
+Instead add explicit guardrails so they cannot be mistaken for engineering authority:
+
+- existing `build_articulated_state()` output is `DERIVED_RENDER_STATE`, not authority;
+- existing worker-observed transforms are `OBSERVATION`, not authority;
+- `FRONT_OPEN` recipe default/fallback `75.0` is legacy/convenience behavior only;
+- no new authority record may be synthesized from those values;
+- video `DOOR_OPEN_8S` remains blocked until it receives the new exact-resolved authority.
+
+If a new typed status is useful, prefer:
+
+`BLOCKED_ARTICULATION_AUTHORITY_MISSING`
+
+or keep existing `BLOCKED_ARTICULATION_AUTHORITY` consistently. Do not introduce ambiguous readiness booleans.
+
+## 6. Fixture authority for Round 2 synthetic product
+
+To unblock the later scoped video acceptance without pretending physical truth, add one explicit fixture-authority record for the exact synthetic Round 2 product only if its identity can be preserved safely.
+
+Requirements:
+
+- authored explicitly in test/fixture engineering source;
+- all four doors have explicit unique component IDs;
+- pivot/axis/angle/range/parent/transform fields are present in the fixture data before execution;
+- no field is copied from worker-observed output at runtime;
+- no hidden fallback to 75°;
+- fixture record is visibly labeled `FIXTURE_AUTHORITY`;
+- changing one authority field changes the authority hash and invalidates downstream cache identity;
+- cross-SKU or cross-engineering reuse must fail closed.
+
+If adding a fixture authority would require inventing ambiguous component identities or rewriting the accepted Round 2 source model, do not force it. Report `BLOCKED_FIXTURE_AUTHORITY_IDENTITY` and stop.
+
+## 7. Tests
+
+Add focused tests without weakening the existing suite. Minimum cases:
+
+- explicit valid authority resolves uniquely;
+- missing authority blocks;
+- legacy 75° convenience path cannot auto-promote to authority;
+- worker-observed transform cannot auto-promote to authority;
+- pivot/axis/angle/revision/hash tamper;
 - duplicate component authority;
-- non-door component;
-- wrong tenant/product/version/engineering/Product Truth identity;
-- stale authority revision/hash;
-- mismatched parent/object identity;
-- supplied open transform contradicting canonical pivot/axis/angle;
-- cross-product or cross-tenant authority substitution.
+- cross-tenant/product/version/engineering substitution;
+- wrong parent/component role/object identity;
+- invalid finite/numeric cases;
+- canonical open transform mismatch;
+- authority mutation invalidates hash/cache identity;
+- legacy products remain safely blocked;
+- fixture authority is visibly classified FIXTURE and cannot become physical truth.
 
-No VideoRecipe may silently substitute a hard-coded `75.0` when authority is absent.
+Run full local `pytest -q` plus focused authority tests.
 
-## 3. `DOOR_OPEN_8S` deterministic ground-truth recipe
-
-Implement `DOOR_OPEN_8S` inside the existing video recipe/pipeline, not as a second pipeline.
-
-Control acceptance target:
-- duration: 8 seconds;
-- FPS: 12;
-- 96 frames;
-- 128×128 evidence/control resolution only;
-- same frozen synthetic reference product/artwork identity used by Round 2 unless an explicitly documented equivalent fixture is necessary;
-- no room-context dependency unless the recipe explicitly declares it.
-
-Motion requirements:
-- frame 0 must match canonical CLOSED state;
-- final authorized open segment must match the exact authority-defined OPEN state;
-- interpolation/easing may be deterministic, but every frame angle must remain within the authorized range;
-- per-frame expected angle/transform must be derived from frozen authority + recipe time, not from worker output;
-- worker-observed object matrix / hinge angle must be recorded and compared back to canonical expectation;
-- all non-authorized moving components must remain invariant;
-- cabinet body/Product Truth geometry may not drift because a door is animated;
-- artwork/placement/UV identity must stay frozen; if artwork is attached to an opening door, its transform must follow the authorized door object without becoming a new Product Truth source.
-
-For each frame keep the accepted control bundle:
-- Beauty;
-- Depth;
-- Normal;
-- ProductMask;
-- ArtworkMask;
-- Alpha;
-- camera matrix/intrinsics;
-- product matrix;
-- authorized door component matrix/angle;
-- authority hash, manifest, receipt and job lineage.
-
-First/middle/last `.blend` reopen must observe the actual door transform and verify it against authority. The final acceptance must verify actual artifact bytes/SHA/size and DAM metadata, not only manifest declarations.
-
-## 4. Fail-closed adversarial matrix
-
-Add focused tests without weakening existing 901 regressions. At minimum cover:
-- no articulation authority;
-- blank/missing component ID;
-- non-door component ID;
-- duplicate door authority;
-- wrong tenant/product/version/engineeringHash/Product Truth generation;
-- stale authority revision/hash;
-- zero/invalid axis;
-- pivot tamper;
-- axis tamper;
-- closed/open angle/range tamper;
-- hard-coded/default 75° attempting to bypass missing authority;
-- forged expected open transform;
-- worker-observed angle mismatch;
-- worker-observed matrix mismatch even if reported scalar angle matches;
-- unexpected movement of cabinet body or another door/component;
-- authority hash changed while cache key is reused;
-- cross-recipe cache reuse from HERO/DETAIL/ROOM;
-- manifest/receipt/authority seal tamper;
-- reopen observation mismatch;
-- retry/publication after authority or prior-attempt corruption.
-
-Invalid authority/evidence must produce no unauthorized new attempt, accepted preview, final publication, or new authoritative DAM output.
-
-Keep the accepted Round 2 durable candidate lineage tests unchanged unless a narrow compatibility fix is required.
-
-## 5. Tests and evidence gate
-
-### A. CODE gate
-
-After implementation:
-1. run full local `pytest -q`;
-2. run focused video/articulation tests;
-3. push one frozen final CODE SHA on existing PR #13;
-4. obtain exact CODE SHA Ubuntu + Windows GitHub Actions SUCCESS;
-5. CI Mock Blender remains regression evidence only.
-
-If any unrelated architecture rewrite appears in the diff, stop and remove it before Re-Gate.
-
-### B. Clean REAL Blender acceptance
-
-On the exact final CODE SHA from a clean working tree, run a dedicated Round 3 E2E using actual Blender 5.2.1 LTS / OptiX with `usedMock=false`.
-
-Required REAL acceptance:
-- `DOOR_OPEN_8S` 96 frames with frozen independent articulation authority;
-- one static/control recipe (`HERO_ORBIT_8S` is preferred) proving unchanged Product Truth identity and no cross-recipe/cache contamination;
-- actual first/middle/last visual inspection and `.blend` reopen;
-- actual matrices/angles/bytes/SHA/size/masks/EXR/DAM/job lineage;
-- clean working tree and exact CODE SHA;
-- explicit `doorOpenReal=true` only if all authority + worker-observation checks pass.
-
-Do not needlessly rerender ARTWORK_DETAIL/SMALL_ROOM if their implementation is untouched; preserve their accepted Round 2 evidence and run targeted regressions instead. If shared code changes could invalidate them, rerun the affected REAL sequences.
-
-If the current-main authority cannot provide exact pivot/axis/range/transform semantics, the correct result is `DOOR_OPEN_REAL=false` / `BLOCKED_ARTICULATION_AUTHORITY`. Do not manufacture an authority to make the test pass.
-
-## 6. Truth matrix for Round 3
-
-Until clean REAL acceptance succeeds:
-
-### REAL
-- Round 2 HERO/ARTWORK_DETAIL/SMALL_ROOM accepted evidence only.
+## 8. Evidence and truth matrix
 
 ### REAL_LOGIC
-- accepted Round 2 durable lineage/context isolation;
-- new articulation authority resolution/verification only after its independent binding tests pass.
 
-### FIXTURE / MOCK
-- synthetic reference cabinet/artwork;
-- CI Blender;
-- provider candidate copies.
+May include only:
+
+- deterministic `ArticulationSpec` schema;
+- authority hashing/sealing;
+- exact resolver/verifier;
+- identity binding;
+- fail-closed adversarial behavior;
+- downstream cache identity binding.
+
+### FIXTURE_AUTHORITY
+
+- explicit synthetic Round 2 door authority, if safely authored.
+
+### REAL
+
+Do not claim new REAL physical articulation in Round 3A. No Blender render is required to prove the upstream authority contract itself.
 
 ### PARTIAL
-- 128×128 control quality;
-- deterministic non-Vision QA;
-- `DOOR_OPEN_8S` while authority or REAL evidence is incomplete.
+
+- synthetic articulation values are not measured product hardware truth;
+- Product Content legacy 75°/dimension-derived OPEN path remains a render convenience until separately migrated to consume engineering authority.
 
 ### BLOCKED
-- assembly/exploded-video authority unless independently proven;
-- live H3/LTX/Vision/provider;
-- Final Commerce Video;
-- physical print/machines;
-- Supervisor LIVE/global/full-autonomous readiness.
 
-Only after exact authority + exact-CODE clean REAL evidence passes may `DOOR_OPEN_REAL=true` and `doorOpenGroundTruthReady=true` be reported for this scoped synthetic reference acceptance. That does **not** imply Final Commerce Video or global Production Ready.
+Remain blocked in this round:
 
-## 7. Required docs
+- `DOOR_OPEN_REAL`
+- `DOOR_OPEN_GROUND_TRUTH_READY`
+- assembly/exploded authoritative motion unless separately sourced
+- live H3/LTX/Vision/provider
+- Final Commerce Video
+- physical print/machines
+- Supervisor LIVE prerequisites
+- `globalProductionReady`
+- `fullAutonomousFactoryReady`
 
-After frozen CODE + REAL run:
-- create/update `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ROUND3_ACCEPTANCE.md`;
-- create/update `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ROUND3_ACCEPTANCE.json`;
-- update `docs/GROK_PROGRESS_REPORT.md`;
-- update `docs/CURRENT_IMPLEMENTATION_AUDIT.md`;
-- update `docs/REAL_E2E_ACCEPTANCE.md` only with scoped video readiness facts that actually changed.
+Mock/fixture tests are not Production Ready.
 
-Do not modify `docs/CABINET_REAL_ACCEPTANCE.md` unless cabinet engineering truth itself changes. This phase should bridge an existing authority, not redefine cabinet engineering.
+## 9. CODE / DOCS gate
 
-Commit evidence/docs separately as a DOCS SHA and require exact DOCS SHA Ubuntu + Windows CI SUCCESS.
+Use one clean prerequisite PR targeting `main` directly.
 
-## 8. Final handoff and STOP
+### CODE
 
-Only after CODE CI + clean REAL acceptance + DOCS CI are complete, post `READY_FOR_RE_GATE` to Issue #1 and Issue #6 with at least:
-- `INSTRUCTION_SHA`;
-- `ISSUE=6`;
-- `PR=13`;
-- `ROUND=3`;
-- `CODE_SHA`;
-- `DOCS_SHA`;
-- `CODE_CI_RUN_ID`;
-- `DOCS_CI_RUN_ID`;
-- test counts;
-- `EVIDENCE_GENERATION_ID`;
-- `WORKING_TREE_CLEAN=true`;
-- `REAL_BLENDER=true|false`;
-- `USED_MOCK=true|false`;
-- `ARTICULATION_AUTHORITY_READY=true|false`;
-- `DOOR_OPEN_REAL=true|false`;
-- `DOOR_OPEN_GROUND_TRUTH_READY=true|false`;
-- `HERO_ORBIT_REAL=true|false`;
-- `VISION_QA_READY=false`;
-- `LIVE_H3_PROVIDER_READY=false`;
-- `LIVE_LTX_PROVIDER_READY=false`;
-- `LIVE_PROVIDER_READY=false`;
-- `GLOBAL_PRODUCTION_READY=false`;
-- `MERGE_AUTHORIZED=false`.
+1. implement only the authority source/resolver/verifier scope;
+2. run focused tests + full `pytest -q`;
+3. freeze one final CODE SHA;
+4. require exact CODE SHA Ubuntu + Windows GitHub Actions SUCCESS;
+5. no Blender REAL run is mandatory for this authority-only round;
+6. CI Mock Blender remains regression evidence only.
 
-List REAL / REAL_LOGIC / FIXTURE / MOCK / PARTIAL / BLOCKED separately and then **STOP for external Re-Gate**.
+### DOCS
 
-## 9. Forbidden
+Update only relevant truth/evidence docs:
 
-- no auto-merge PR #7–#13;
-- no stacked PR;
-- no architecture rewrite;
-- no dependency on unmerged PR #7–#12;
-- no guessed/default hinge pivot, axis, angle or range;
-- no default `75.0` as authority;
-- no mesh/Vision/generative inference as engineering authority;
-- no Mock/FIXTURE/REFERENCE → REAL promotion;
-- no CI Mock Blender → REAL Blender promotion;
-- no provider candidate pixel → Product Truth promotion;
-- no live provider/Vision readiness claim without real network evidence;
-- no Final Commerce Video claim from control previews;
-- no physical print/machine write;
-- no unscoped Production Ready claim.
+- `docs/GROK_PROGRESS_REPORT.md`
+- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
+- add `docs/ARTICULATION_AUTHORITY_ACCEPTANCE.md`
+- add machine-readable `docs/ARTICULATION_AUTHORITY_ACCEPTANCE.json`
+- update `docs/REAL_E2E_ACCEPTANCE.md` only if a scoped readiness fact actually changes; do not claim REAL physical articulation.
+- do not modify `docs/CABINET_REAL_ACCEPTANCE.md` unless cabinet engineering truth itself genuinely changes.
+
+Commit docs/evidence separately and require exact DOCS SHA Ubuntu + Windows CI SUCCESS.
+
+## 10. Handoff / STOP
+
+When complete, post `READY_FOR_RE_GATE` to Issue #1 with at least:
+
+- `INSTRUCTION_SHA`
+- prerequisite PR number
+- `CODE_SHA`
+- `DOCS_SHA`
+- `CODE_CI_RUN_ID`
+- `DOCS_CI_RUN_ID`
+- test count
+- `ARTICULATION_AUTHORITY_LOGIC_READY`
+- `FIXTURE_AUTHORITY_READY`
+- `DOOR_OPEN_REAL=false`
+- `DOOR_OPEN_GROUND_TRUTH_READY=false`
+- `GLOBAL_PRODUCTION_READY=false`
+- REAL / REAL_LOGIC / FIXTURE / PARTIAL / BLOCKED matrix
+
+Then STOP for Supervisor Re-Gate.
+
+Do not resume PR #13 DOOR_OPEN work until this prerequisite authority source is accepted and present on `main`.
