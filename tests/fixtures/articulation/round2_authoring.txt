@@ -1,0 +1,17 @@
+FIXTURE_AUTHORITY: Round 2 synthetic four-door cabinet, revision 1.
+Explicitly authored for instruction 4fb4f14a36e505255479397b905d18de13e1da8a.
+Not measured, CAD-certified, physical hardware truth, collision clearance or print truth.
+Identity and closed geometry are the frozen engineering definition from accepted
+Round 2 generation d320a651-c2a4-403e-9322-a37630fcea6e / CODE a5b368a3d907950c5165f4b1a0058853ace617fc.
+No worker observations or convenience articulation outputs are source authority.
+Authored pivots (metres, static PRODUCT_ROOT parent):
+door_1 / DOOR_1: [-0.4, -0.1565, 0.45]
+door_2 / DOOR_2: [-0.2, -0.1565, 0.45]
+door_3 / DOOR_3: [0.0, -0.1565, 0.45]
+door_4 / DOOR_4: [0.2, -0.1565, 0.45]
+Each axis is [0,0,-1], closed 0 degrees, authorized range [0,90], canonical open 60.
+These are explicit synthetic design choices, not a fallback from default 75 degrees.
+Canonical open poses are pre-authored using cos(60)=0.5 and sin(60)=sqrt(3)/2.
+PRODUCT_ROOT is the identity product-local reference frame, not a fabricated Blender object.
+Future consumers must map this explicit root identity, preserve the closed geometry,
+and pass per-frame/reopen acceptance before claiming DOOR_OPEN readiness.
