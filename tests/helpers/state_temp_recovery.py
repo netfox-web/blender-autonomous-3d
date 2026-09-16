@@ -29,11 +29,15 @@ def setup(root,case):
     from fox3d.ids import new_id
     fixture(root);ctx=read(root/'context.json');base=c.folder_for(root/'d',ctx['tenant'],ctx['model']['id']);base.mkdir(parents=True)
     if case!='A':
-        mock_artifacts();bid=new_id();draft=ctx['drafts']['same']
-        state={'taskId':bid,'state':'running','progress':10,'inputHash':input_hash(draft),'batchVersion':1,'error':None}
-        atomic_json(base/'state.json',state)
-        b.generate(SimpleNamespace(root=root/'d'),ctx['tenant'],ctx['model']['id'],draft,revision=ctx['model']['revision'],generation_id=bid)
-        atomic_json(base/'state.json',{**state,'state':'succeeded','progress':100})
+        original_generate,original_validate=c.generate,c.print_preview.validate
+        try:
+            mock_artifacts();bid=new_id();draft=ctx['drafts']['same']
+            state={'taskId':bid,'state':'running','progress':10,'inputHash':input_hash(draft),'batchVersion':1,'error':None}
+            atomic_json(base/'state.json',state)
+            b.generate(SimpleNamespace(root=root/'d'),ctx['tenant'],ctx['model']['id'],draft,revision=ctx['model']['revision'],generation_id=bid)
+            atomic_json(base/'state.json',{**state,'state':'succeeded','progress':100})
+        finally:
+            c.generate,c.print_preview.validate=original_generate,original_validate
     return base
 
 

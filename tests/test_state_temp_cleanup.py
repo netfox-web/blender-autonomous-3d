@@ -20,6 +20,13 @@ spec=importlib.util.spec_from_file_location('state_temp_recovery',ROOT/'tests/he
 harness=importlib.util.module_from_spec(spec);spec.loader.exec_module(harness)
 
 
+def test_harness_fixture_does_not_replace_parent_verifier(tmp_path):
+    from fox3d import model_compositions as c
+    original_generate,original_validate=c.generate,c.print_preview.validate
+    harness.setup(tmp_path,'B')
+    assert c.generate is original_generate and c.print_preview.validate is original_validate
+
+
 @pytest.mark.parametrize('case',list('ABCDEF'))
 def test_real_killed_outer_writer_and_fresh_owner(tmp_path,case,record_property):
     if case=='F' and os.name!='nt' and os.geteuid()==0:
