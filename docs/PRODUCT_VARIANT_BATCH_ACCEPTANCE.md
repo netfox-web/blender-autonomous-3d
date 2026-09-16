@@ -1,157 +1,53 @@
-# Product variant batches — Round 6 cross-process ownership acceptance
+# Product variant batches — Round 7 scoped crash-debris acceptance
 
-Instruction `3b5f5c8d38a759f5355b4ba739329dc5f3d0bd5d` / Issue #1 comment 5698988923. Existing PR #15 stays based on unmerged PR #12 `codex/model-category-tree` at `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge, retarget, rebase or new PR.
+Instruction `3f70403b19596c723995e14aca29e94eaeb637a8` / Issue #1 comment 5700808414. Existing PR #15 remains DRAFT/OPEN on PR #12 `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge authorization, runtime deployment, scene feature or architecture rewrite.
 
-## Result
+## Current gate
 
-Every new batch selection retains a version-1 input authority snapshot and content hash. Its exact identity is included in the batch request hash, row selection hash, deterministic generation ID and published manifest. Mutable progress cannot grant physical readiness. Missing, changed, revoked or cross-tenant authority blocks current completion and download rather than being inferred from the render.
+- Exact CODE `eaa4d683937e09a7de2e4b30e7156772a98ca596`: [Actions 35124100743](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35124100743). Actual checkout SHA verified on both jobs: **Windows 1165 PASS; Ubuntu 1161 PASS + 4 existing Windows-only skips**. CI artifacts remain MOCK regression, not real Blender evidence.
+- Pre-commit focus **182 PASS**. New clean exact-CODE focus **35 PASS: six actual subprocess/OS cases + 29 unit/fault regressions**. Retained clean ownership focus 21 PASS; persistence focus 30 PASS including three REAL_OS_IO cases. No separate local full-suite rerun claimed.
+- Superseded CODE `6203a87ecc8aa86de628038a591c6f52e66921e2`, Actions 35123515020 **CANCELLED**, not PASS. A test-only fixture mock leaked into the parent verifier; the final CODE restores the original functions and adds an isolation regression before formal acceptance.
+- Clean exact-CODE REAL acceptance `61493611-302a-4503-a6a0-0a93e374e468`: Blender **5.2.1 LTS / OptiX**, `realOptix=true`, `usedMock=false`, two synthetic static variants. Artifact SHA/size, finite pixels, `.blend` reopen, restart/history/download and lineage PASS; retained **30 + 21 + 35** matrices PASS.
+- CODE CI precedes clean REAL acceptance; DOCS is committed only after this evidence exists. Exact DOCS CI identity/results are reported in the subsequent Issue #1 handoff because a commit cannot contain its own SHA.
 
-The snapshot records tenant/master/revision/input hash, geometry authority kind, source explanation/Recipe/print-face reference hashes, unmeasured dimension status, unverified surface status, exact artwork classification revisions/hash, classification metadata, and declaration provenance. Declaration provenance records creator, time and decision with `approvedBy=null`, `physicalApproval=false`. Source text hashes make a decision reproducible; they are not measurement evidence.
+## Baseline and narrow correction
 
-Authority kinds:
+Unchanged clean accepted CODE `70587508bb8afc2ebe876cebd4304c369be7ed76` reproduced six actual hard-kill cases. Exact orphan outer-state temps survived fresh ownership. Authoritative destination bytes (or absence) remained intact; orphan bytes were never adopted and no automatic replay occurred. Baseline F allowed an explicit submission while an orphan was locked because there was no cleanup gate; that is missing hygiene, not a publication-authority promotion. Original and refined raw captures are preserved locally; complete refined state bytes/hash, temp SHA/size, PIDs, inventories, outcomes and logs are embedded in JSON. [Baseline checkpoint](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5701064895).
 
-| Kind | Meaning in this implementation |
-| --- | --- |
-| SYNTHETIC_FIXTURE | Explicit fixture declaration; exercised by this REAL acceptance |
-| REFERENCE_RECIPE | Original Recipe reference snapshot; unmeasured, exercised in MOCK regression |
-| OPERATOR_DECLARED_UNMEASURED | Default for other operator-entered masters; no independent measurement |
-| MEASURED_OR_CAD_AUTHORITY | Reserved and rejected: no reviewed CAD/measurement evidence provider is integrated in this scope |
+`scavenge_state_temps()` requires a live held `PreviewOwnership` object, an open guard stream, exact `state.json` target and matching resolved workspace. It matches only direct children with **`state.json.[0-9a-f]{8}.tmp`**, using the actual atomic writer's eight-character UUID token contract. All candidates are checked for regular-file type, one link and absence of reparse attributes before deletion starts. Unknown/nested files are untouched. Type ambiguity, permission denial or unlink failure propagates before a fresh state write. A partial cleanup is not reported as success; a fresh retry can complete after external conditions are removed.
 
-There is no API or AI/worker shortcut to approve measured geometry, print surfaces or manufacturing. Existing model, artwork, category, serial scheduler, renderer, DAM and publication verifier are reused. Authority files use short tenant/master-scoped paths for Windows compatibility; exclusive-write snapshots and declaration records assume a trusted local filesystem.
+Call sites: `RecipePreviewService.status()` after acquiring ownership and before interrupted-state recovery; `submit()` after ownership and before the initial queued-state write. A live competitor cannot acquire the guard, performs no cleanup and cannot submit a second writer. Normal same-process active reads do not scavenge. No candidate contents, mtime, age, PID, lease, wildcard recursion or lock-file deletion is used. Cleanup emits an INFO log per basename; it adds no product/publication metadata and grants no availability/readiness or replay authority.
 
-## Current versus historical availability
+| Case | Baseline PID / outcome | Exact CODE killed → fresh PID / outcome | Baseline orphan evidence |
+|---|---|---|---|
+| A | 43156 / FAIL cleanup | 31320 → 24320 / PASS | `state.json.91e8d61f.tmp` SHA `13ac2e7874cb50be9d14877abf1981d9f9919bff5f460116729dd5798de33dd9` (220 bytes) |
+| B | 31488 / FAIL cleanup | 33500 → 29972 / PASS | `state.json.e5d30e55.tmp` SHA `cef04692e86336dc6124aefa1a7d91267ec44eeeaea8f86f47666026eb0a5391` (220 bytes) |
+| C | 22612 / FAIL cleanup | 31024 → 44772 / PASS | `state.json.bd8d6be0.tmp` SHA `2f805f24bfe0b32b5e02d23d157eecb9d987b153f6975e33857bf880b0c44da3` (220 bytes) |
+| D | 43556 / FAIL cleanup | 27344 → 7980 / PASS | `state.json.c01b7eb1.tmp` SHA `28a4f5f06274486f6f4bd9747fae3049d0a24787d0c7bf9114c86f1432d51428` (220 bytes) |
+| E | 44060 / FAIL cleanup | 44172 → 46880 / PASS | `state.json.602f279b.tmp` SHA `8fc82cc8baa8e0f17097932755c2a3ce6a1b08e753ceb7d1d91a7d311e834d97` (220 bytes) |
+| F | 45948 / FAIL cleanup | 44216 → 33488 / PASS | `state.json.581429af.tmp` SHA `6602b6bf890385f8808dd0f0f993d8a8f8d1d2486364ff6eb8bc6450a6e8c0eb` (220 bytes) |
 
-Current batch rows require the exact current master revision/hash and active declaration. Any revision change invalidates current batch completion, even if geometry bytes are unchanged. Downloadable visual assets expose `visualAssetReady=true` only after publication and authority verification; `physicalGeometryAuthorityReady`, `printSurfaceAuthorityReady`, `manufacturingReady` and `physicalPrintValidated` remain false.
+A preserves absent state and cleans before explicit resubmit. B preserves existing authoritative bytes exactly. C uses actual Windows destination delete-sharing conflict/probe 32 and bounded writer retry before external TerminateProcess; the destination lock is released before fresh cleanup. Ubuntu runs the corresponding real SIGKILL/temp-exists case without claiming Windows semantics. D keeps the owner alive while another process reads/submits: the competitor is read-only/busy, has zero cleanup/writes/render entry, and the live temp remains intact. E cleans multiple exact direct candidates while unknown names, nested temps, owner.lock and immutable request/row/terminal/publication/authority sentinels remain byte-identical. F denies deletion through an actual Windows handle (Ubuntu directory permission denial under non-root runner): submission surfaces failure with unchanged state/inventory, then succeeds after external release. All six use actual external process termination and fresh independent processes. Their publication artifacts/validators are **MOCK**; none is REAL_RENDER.
 
-Historical generation downloads retain their original snapshot, never the latest declaration. Under existing history rules, the current master input hash must still match; the original revision, declaration, snapshot, publication and artwork revision must remain valid. A later save with the same master hash can leave an original visual download valid while the original batch is no longer current. Revocation/downgrade blocks the affected historical authority too. A category-tree change only changes metadata and grants no physical truth.
+## Retained product and persistence behavior
 
-Older batches without the authority contract fail closed and must be resubmitted after review. Existing independent historical generations keep their previous visual-only verifier; they do not gain a V1 authority or physical readiness. The UI still allows independently valid history to load when current batch validation fails.
+Current exact CODE retains Round6 A–F ownership/fencing and two isolation cases, all PASS. A separate clean real-Blender double-submit trial has one render winner and a busy loser with zero writes/render entry. Round5 A/A_PROGRESS/B/C/D reran and passed; B/C use real Blender publications and the canonical verifier. Round5 generic `atomic_json` case D still leaves its orphan: it is outside the RecipePreviewService cleanup boundary. The existing 30 persistence tests, exclusive immutable records, bounded Windows replace retry and 30+21+35 authority/tamper/type matrices remain intact. Server retry warnings: 1; acceptance-process retry warnings: 0.
 
-## Round 6 — one local process owner and exact task fencing
+The existing batch feature binds artwork/scene selections to exact tenant/master/revision/input/authority identities and preserves independently verified history. Current batch completion requires the current revision/hash and active declaration; historical downloads retain their original snapshot and verifier. Progress, latest pointers, lock files and cleanup outcomes confer no publication truth. Synthetic, reference and operator-declared unmeasured inputs are supported only within their declared visual scope; measured/CAD authority remains unavailable. Prior accepted implementation details and original failures are preserved at [Round6 DOCS `7c01e0306db106cee146e70f04e8f7b6c8e452bd`](https://github.com/netfox-web/blender-autonomous-3d/blob/7c01e0306db106cee146e70f04e8f7b6c8e452bd/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) and its full JSON; current reruns and all original Round5/6 baselines are retained in this JSON.
 
-Unchanged clean accepted CODE `f5ac3a6773d99f30709a84dc9adb97231ca53ba9` admitted two independent service processes for the same tenant/master. Baseline A/B both entered the MOCK generation function and created separate batch requests; a fresh reader could falsely mark live work interrupted. C/D admitted a competitor while the old owner was still alive. E/F test-only delayed callbacks/finally overwrote the newer task state. All six baseline FAIL outcomes, both PIDs, barrier times, state bytes/hashes, request/generation/receipt/publication/latest inventories and fresh API results are preserved in the JSON and [baseline checkpoint](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5699174650). A refined baseline capture separates unrequested competing generation from automatic replay: **no automatic replay was observed**. The original capture remains local; failures were not converted to successes.
+## Truth and stop boundary
 
-The minimal correction keeps the existing executor/service and existing stores. `PreviewOwnership` holds an OS-backed guard on the existing tenant/master workspace: Windows nonblocking `msvcrt.locking`, Ubuntu nonblocking `flock`. It is acquired before the queued state commit and retained until the final state write/cleanup. An error/busy acquisition fails before a second writer or render is scheduled. Closing the handle, including process death, releases it. The persistent empty `owner.lock` is **not metadata or authority**; no PID/clock guess, file-existence inference, deletion or scavenging is used. There is no owner-metadata parser; malformed-metadata validation is not applicable. A regression confirms arbitrary guard-file bytes are never interpreted as ownership.
-
-| Invariant | Enforcement |
+| Evidence | Classification / limit |
 |---|---|
-| one active owner | Acquire per-workspace local OS guard before initial state commit; retain through queued/running/generation/final write. |
-| loser writes nothing | Busy/error returns before executor submission or state/request/progress/publication writes. |
-| exact state fencing | All post-creation outer writes require live acquisition plus matching taskId/inputHash/batchVersion. Old finally removes only its exact local task tuple. |
-| no false interruption | Status first attempts ownership before converting orphaned queued/running to failed; a live owner is only read. |
-| death recovery | OS releases handle lock on TerminateProcess/SIGKILL; fresh API marks interrupted using existing semantics and operator explicitly resubmits. |
-| facts unchanged | Immutable _once request/row/terminal receipts and publication verifier unchanged; lock/progress/latest never grant availability. |
-| scope independence | Guard uses existing tenant/master folder; different tenants/masters acquire concurrently. |
-| no metadata authority | owner.lock persists, stores no owner metadata, is never deleted/scavenged, and existence/mtime/content is not ownership. |
+| Publication/authority and scoped cleanup logic | REAL_LOGIC |
+| Live independent owner/competitor and isolation | REAL_PROCESS_CONCURRENCY |
+| Actual killed child and fresh recovery | REAL_PROCESS_RECOVERY |
+| Real local OS guard / Windows sharing handle / POSIX permission | REAL_OS_IO, platform-specific |
+| Separate clean Blender winner and two variants | REAL_RENDER; synthetic visual fixture only |
+| Unit/fault tests and CI/cleanup artifacts | MOCK regression; no physical/render claim |
+| Other atomic destinations/global cleanup/product-room workflow | UNCLAIMED / PARTIAL |
+| Physical geometry / printing / manufacturing / global readiness | BLOCKED / false |
 
-| Case | Baseline | New exact CODE |
-|---|---|---|
-| A identical drafts / common parent barrier | FAIL: two owners/render entries | PASS: one winner, one busy loser, one exact request/publication; active third-process read does not interrupt |
-| B different valid drafts / same master | FAIL: two accepted task identities | PASS: one winner; state/input/request/row/publication remain bound to its draft |
-| C kill owner before request commit | FAIL: competitor admitted while owner alive | PASS: competitor rejected before kill; OS release permits explicit fresh submit without deletion; no fabricated request |
-| D kill after request/progress commit | FAIL: live task replaced | PASS: live competitor rejected, fresh API recognizes interruption, explicit new submit succeeds, old facts unchanged |
-| E old callbacks/finally versus newer owner | FAIL: newer state overwritten | PASS: exact state bytes unchanged; stale callback/finally cannot write or remove newer task |
-| F cancellation versus new submit | FAIL: overlapping accepted tasks, stale overwrite | PASS: cancellation does not release ownership early; explicit new submit after terminal/release; stale writes blocked |
+`inputTruth=SYNTHETIC_STATIC_FIXTURE`; `physicalProductGeometryTruth=false`; `physicalPrintValidated=false`; `manufacturingReady=false`; `globalProductionReady=false`. No physical CAD truth or Production Ready cabinet claim. Scope is trusted local filesystems/cooperating services, not distributed storage, arbitrary ACL, disk/power-loss durability or hostile replacement.
 
-Each case uses independent child services sharing the same local root and a fresh process API read. C/D use actual Windows TerminateProcess (Ubuntu SIGKILL in CI). E/F force delayed old callbacks and stop-set `_run`/finally re-entry **only in the test harness** after the old task is terminal and a new process owns the workspace; this is deterministic fault timing, not a claim of naturally observing every scheduler interleaving. Six race cases and two workspace-isolation cases run on **both OSes**, classified REAL_PROCESS_CONCURRENCY; their CI generation/artifact validation is MOCK. Thirteen other new tests are unit/fault regressions. Full CI retains prior exclusive `_once`, cancellation with completed rows, Round5 process recovery and authority regressions.
-
-After exact CODE CI, a separate clean local **REAL Blender identical-submit trial** passed. Winner PID **46824**, task **8d56ac54-d5f8-4fb9-9830-9f1b26d6ea17**, generation **9bac5496-8585-5d14-90db-d690edcd7ac9** entered real rendering once. Loser PID **32620** received `PreviewBusy`, produced **zero state writes, zero request/publication and zero render entries**. Final fresh API verifies one available generation with Blender 5.2.1 LTS / OptiX / `usedMock=false`; full publication lineage is in JSON. Only the winning path is REAL_RENDER. The separate two-cabinet acceptance below verifies artifact sizes/SHA, finite pixels, reopen, restart/download and 30 + 21 + 35 matrices.
-
-Round5 A/A_PROGRESS/B/C/D also reran on clean current CODE and passed: exact committed facts survive fresh-process recovery, B/C use actual Blender publications and the full verifier, D retains its owned orphan without scavenging. **Hard-kill orphan cleanup remains PARTIAL / NOT SCAVENGED**. This gate covers local ownership only, not distributed/network filesystems, hostile admins, physical CAD/print truth, renderer concurrency capacity or global readiness.
-
-## Exact gates
-
-- CODE `70587508bb8afc2ebe876cebd4304c369be7ed76`: [Actions 35109488260](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35109488260); **Windows 1130 PASS; Ubuntu 1126 PASS + 4 Windows-only skips**. Actual checkout SHA verified for both jobs. CI is non-Blender regression. The retained 3 Windows handle-lock cases are REAL_OS_IO; 5 Windows / 4 Ubuntu actual subprocess cases are REAL_PROCESS_RECOVERY with MOCK artifacts and artifact validation. Windows Case D also uses a real handle. New ownership races/isolation are REAL_PROCESS_CONCURRENCY as classified above; remaining cases are MOCK/unit regression.
-- Local pre-commit focus **147 PASS**; clean exact-CODE ownership focus **21 PASS**: six independent-process race cases, two independent-process isolation tests, thirteen unit/fault regressions. Existing **1109 tests retained**; full suite ran in exact Windows/Ubuntu CI. No separate local full-suite rerun is claimed. Retained clean persistence focus **30 PASS**, including 3 REAL_OS_IO cases.
-- Clean exact-CODE REAL acceptance `d837bbaf-6bce-438e-aaae-f2fb2db65ec5`: two static synthetic cabinet artwork variants, Blender **5.2.1 LTS / OPTIX**, `realOptix=true`, `usedMock=false`.
-- Both renders pass SHA/size, finite nonuniform 800×800 image, `.blend` reopen, original queue/job/attempt/cache/DAM/publication lineage. Geometry hashes match and artwork pixels differ.
-- Actual server restart preserves and re-verifies exact authority identity. The 30 Round 2 corruption/restoration outcomes still pass on these new artifacts.
-- **21 authority outcomes** pass: current master content/hash contradiction, stored hash/reference/version tampering (including numeric/boolean type contradictions), missing snapshot/control, cross-tenant content, forged measured type/declaration, revocation, downgrade, and publication authority mismatch even with recomputed ordinary manifest/publication seals. Category metadata, historical identity, restart and restored visual download checks pass.
-- Interruption remains `SIMULATED_INTERRUPTION_REAL_ARTIFACTS`, not a killed-render claim.
-
-Full evidence: [JSON](PRODUCT_VARIANT_BATCH_ACCEPTANCE.json). Prior accepted [Round 2 report](https://github.com/netfox-web/blender-autonomous-3d/blob/7ca89384c1328710a60ddbff18c160c64e7680d1/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) is historical context only. Exact DOCS SHA and its dual-platform CI are reported in Issue #1 after success; no circular self-SHA claim.
-
-## Serialized identity correction
-
-Supervisor found that Python numeric equality could accept JSON `true` as integer `1` at neighboring persisted batch/publication boundaries. Before correction, 46 targeted tests on isolated exact CODE `d684686f076fb91c1d9a87ca996a9bd917f1a735` produced **27 FAIL / 19 PASS**, with actual `DID NOT RAISE ValueError` failures. This is MOCK regression reproduction, not REAL rendering. [Reproduction record](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5694802662).
-
-The existing request verifier now requires exact integer identityVersion, sourceRevision, draft batchVersion/masterRevision and selection masterRevision. Queue/service batchVersion is strict, including pending requests. Terminal receipt rows use canonical hashes rather than Python dict numeric equality. The canonical generation verifier and batch verifier require exact publication historyVersion/sourceRevision and matching draft masterRevision. Authority-bound results cannot remove historyVersion to enter legacy handling; independent pre-V1 history keeps its original visual-only path.
-
-The new exact-CODE REAL run passes **35 serialized-type outcomes** alongside the prior **30 durable-lineage** and **21 authority** outcomes. It tests bool/float/string substitutions in request version/revisions, service batchVersion, terminal row indices 0 and 1, publication historyVersion/sourceRevision/draft revision, plus missing authority publication historyVersion. Publication and meta seals are recomputed in manifest trials; invalid identity still blocks availability/download. Each of the 34 corruption trials restores exact bytes and verifies valid availability/download again; the final outcome records restored readiness. Physical and manufacturing flags remain false.
-
-The [previous Round 3 report](https://github.com/netfox-web/blender-autonomous-3d/blob/91111ed57039df2d537a717b8897d1be82b80625/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) is retained as historical evidence; it does not substitute for this correction run.
-
-The historical Round 3 attempt `02c928e7-06ec-4001-859a-844e21c6d82e` remains FAIL (Windows WinError 5); its later unchanged-CODE rerun passed but did not claim a fix. Round 4 now reproduces a real delete-sharing lock with the same error and validates the bounded behavior below. This does not certify arbitrary ACL, disk, network, crash or power-loss durability.
-
-## Retained Round 5 — actual abrupt process recovery
-
-This section records the accepted Round5 implementation and baseline. Current exact-CODE rerun evidence is listed above and in JSON; historical Round5 CODE/DOCS are linked there.
-
-The commit-point map was written before changing accepted CODE `65299811abd076645edbe1cd0777b12b63968c0b`:
-
-| Sequence | File / writer | Meaning |
-|---|---|---|
-| 0 | RecipePreviewService.submit/_run state.json queued/running | Mutable outer operational state; request hash/task binding checked, never proves publication |
-| 1 | model_batches.generate -> _once(request.json) | Immutable request identity: tenant, model, batch, revision, selections and authority snapshots |
-| 2 | atomic_json(batches/<batchId>.json) initial queued then running rows | Mutable operational progress/cache; cannot confer success/availability |
-| 3 | model_compositions.generate: artifact/manifest/meta validation, current authority check, published.json, latest.json; model_batches._published | Per-generation publication seal and canonical verifier establish exact artifact/selection/authority lineage; latest.json only a convenience pointer |
-| 4 | _once(<rowIndex>.json) after _published | Immutable row terminal fact bound to request identity and deterministic row generation; availability still requires re-verifying publication |
-| 5 | atomic_json(batches/<batchId>.json) after row receipt | Mutable progress update; crash can leave it behind the immutable receipt |
-| 6 | _once(terminal.json) after all rows | Immutable outer batch terminal fact; successful outer result requires this exact successful receipt |
-| 7 | RecipePreviewService._run finally state.json succeeded/failed/cancelled | Mutable service transition; cannot supersede terminal authority or fabricate success |
-
-The baseline ran unchanged in a clean detached checkout. A test-only wrapper observes a real committed write, signals the parent and blocks at the boundary; the parent externally **TerminateProcess** kills the actual child Python service process. A fresh Python process calls the existing API/service recovery. No injected exception substitutes for termination, and no production crash API was added. B/C create actual Blender publications and run the full existing verifier. No Blender renderer process was killed, and no power-loss/fsync durability is claimed.
-
-| Case | Baseline actual result | Clean new CODE result |
-|---|---|---|
-| A: request committed, initial progress missing | **FAIL recovery presentation**: HTTP 422; exact request preserved, no replay or false success | PASS: interrupted, 0 available rows, exact request preserved, no replay |
-| A_PROGRESS: initial progress, no row receipt | PASS: interrupted, 0 available rows | PASS |
-| B: first publication and receipt, mutable row still running | PASS: exact first output recovered, second unavailable | PASS: full publication check; tamper blocks availability, restoration restores it |
-| C: both receipts, no terminal commit | PASS: individual outputs recoverable, outer interrupted | PASS: never promotes outer success from row count |
-| D: Windows real sharing failure/retry then hard-kill | PASS non-corruption: old JSON A valid, owned orphan remains | PASS: actual old JSON A remained valid; later exact B write succeeds; orphan and other-writer sentinel preserved |
-
-The only production correction reconstructs an **in-memory progress view** when progress is absent and the exact-bound outer service is failed/cancelled. Request, row and terminal receipts retain exclusive `_once()` authority; successful row availability still requires exact generation/selection/authority/publication verification. Existing malformed progress is rejected; missing progress for running/succeeded outer state is rejected. No new store or automatic replay was added. Five unit regressions cover those boundaries. Baseline HTTP 422 failure evidence remains in the JSON and [baseline report](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5697152989).
-
-After CODE CI, all five actual Windows interruption/restart cases passed on clean exact CODE; B/C use full publication verification. A/A_PROGRESS have no completed publication, and D exercises atomic JSON only. Immutable request/row/generation bytes remain unchanged, repeated API reads are stable, and duplicate immutable writes raise FileExistsError. Valid completed rows are individually downloadable; unfinished rows are not. The existing separate clean REAL Blender run also passes 30 + 21 + 35 matrices.
-
-CI uses actual child processes on both OSes (A/A_PROGRESS/B/C everywhere, D only Windows), but **MOCK publication artifacts/artifact validator** for speed and lack of Blender; those CI tests are REAL_PROCESS_RECOVERY, never REAL_RENDER. The local full-publication evidence is recorded separately.
-
-Hard termination bypasses Python finally: one owned atomic-write orphan is observed in D and left intact. Loader paths ignore it; a fresh valid write works, and another writer's sentinel temp is preserved. **Hard-kill cleanup remains PARTIAL / NOT SCAVENGED**. Normal Round 4 success/caught-error cleanup still passes; zero-orphan crash cleanup, fsync, disk/power loss, network filesystem and hostile-admin durability are not claimed.
-
-The [accepted Round 4 report](https://github.com/netfox-web/blender-autonomous-3d/blob/c9deeeaeab3411c4fc66e03f7a6c54980ee07e52/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) remains historical and is not substituted for this CODE's evidence.
-
-## Retained Round 4 — Windows atomic persistence
-
-The clean pre-fix accepted CODE `6b118898ebd430592e293c04c5cabe4bc30f37d8` was exercised with a real Windows CreateFileW handle (READ/WRITE sharing allowed, DELETE sharing denied) held for 400 ms. atomic_json immediately raised actual **PermissionError / WinError 5** before release; destination remained exact, parse-valid JSON A; one orphan temp remained. A non-mutating DELETE-access probe returned actual sharing violation **32**. [Reproduction record](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5696334025). No injected error was used in this baseline reproduction.
-
-The existing helper still writes a same-directory temp and atomically replaces its target. It now owns the temp via exclusive creation and tries at most **8 replacements**, with **25/50/100/200/200/200/200 ms** backoff (**975 ms cumulative scheduled sleep**, excluding OS call/scheduling time). Only Windows error 32/33 or error 5 corroborated by a DELETE-access probe returning 32/33 qualifies. Bare permission/ACL denial, ENOSPC, invalid paths, serialization/encoding/write errors and unrelated I/O do not retry. Terminal errors propagate, the previous target remains unchanged when no replacement happened, and owned temp files are removed. A colliding pre-existing temp is never overwritten or deleted. `_once()` exclusive hard-link semantics remain unchanged.
-
-After exact CODE CI passed, the clean exact CODE persistence suite passed **30** tests. Three use actual Windows handles: two bounded transient holds (50/200 ms after first real failure) complete with exact JSON B and no orphan temp; one sustained hold exhausts eight attempts, raises the actual typed error, retains exact JSON A and cleans its temp. The 27 other focused cases use normal/unit or injected failures and are not REAL_OS_IO evidence. Exact timings/error lists and the pre-fix orphan observation are retained in the JSON report.
-
-The subsequent clean REAL Blender run passes all **30 + 21 + 35** prior matrices and completes atomic batch progress writes. Observed contention during that run: **1 server retry warning(s); 0 acceptance-process retry warning(s)**. Retry events are logged rather than hidden; a terminal persistence failure still fails the caller/acceptance. This controlled test establishes bounded Windows sharing-lock handling, not blanket Production Ready or power-loss safety.
-
-The [accepted Round 3 evidence](https://github.com/netfox-web/blender-autonomous-3d/blob/1e70faa99088e5a6f0189f5a19a6ffa8d903285c/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) remains historical; its render/CI evidence is not substituted for the new CODE run.
-
-## Truth matrix
-
-| Area | Evidence / readiness |
-| --- | --- |
-| Durable batch lineage | REAL_LOGIC |
-| Input authority enforcement | REAL_LOGIC |
-| Serialized identity exactness | REAL_LOGIC |
-| Blender execution | REAL_RENDER, usedMock=false |
-| Geometry inputs | SYNTHETIC / REFERENCE; not physical truth |
-| GitHub CI | Non-Blender MOCK/unit; real subprocesses use MOCK artifacts, Windows actual handles identified separately |
-| Cross-process local ownership | REAL_PROCESS_CONCURRENCY; six independent-process cases + two isolation cases; E/F stale timing is test-only injection |
-| Process kill / fresh-process recovery | REAL_PROCESS_RECOVERY; local full publication verifier, CI MOCK artifacts |
-| Hard-kill orphan cleanup | PARTIAL / NOT SCAVENGED; ignored as authority |
-| Windows delete-sharing lock integration | REAL_OS_IO; Ubuntu skips 3 retained Round 4 tests and Round 5 Case D |
-| Physical geometry authority | BLOCKED / false for fixture/reference inputs |
-| Physical print / manufacturing release | BLOCKED / false |
-| Live H3/LTX/Vision | Unchanged, BLOCKED or MOCK |
-| Live CNC/LASER/PLC | BLOCKED |
-| Global Production Ready | false |
-
-`inputTruth=SYNTHETIC_STATIC_FIXTURE`, `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, `MERGE_AUTHORIZED=false`.
-
-PR #16 stays FROZEN DRAFT; none of its room-scene code/evidence is used. PR #13/#14 remain unchanged and Issue #6 stays `BLOCKED_PR14_NOT_ON_MAIN`. No DOOR_OPEN claim, articulation copy/cherry-pick, legacy-angle promotion, live provider call or machine control. STOP after handoff for Supervisor Re-Gate. Do not start Round 7 automatically.
+PR #16 remains FROZEN DRAFT; PR #13/#14 unchanged; Issue #6 BLOCKED_PR14_NOT_ON_MAIN; `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC or user-runtime deployment. After exact DOCS Ubuntu/Windows CI PASS and one READY_FOR_RE_GATE handoff, STOP for Supervisor Re-Gate; do not start Round 8 automatically.
