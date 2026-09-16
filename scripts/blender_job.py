@@ -1788,7 +1788,8 @@ def build_and_render(job: dict) -> dict:
                 for obj in created.values():
                     if obj.type == "MESH" and obj.get("recipeComponentId"):
                         obj.select_set(True)
-            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selection=bool(job.get("recipePreview")))
+            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selection=bool(job.get("recipePreview")),
+                                      use_active_scene=room_scene is not None)
             if glb_path.exists():
                 outputs["model.glb"] = str(glb_path)
         except Exception:
