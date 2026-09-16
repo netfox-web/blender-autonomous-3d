@@ -7,8 +7,15 @@ import bpy
 
 folder=Path(sys.argv[sys.argv.index('--')+1])
 m=json.loads((folder/'manifest.json').read_text(encoding='utf-8'))
+startup_scene=bpy.context.scene
 objects={o['recipeComponentId']:o for o in bpy.data.objects if o.get('recipeComponentId')}
 assert set(objects)=={p['componentId'] for p in m['spec']['components']}
+# Inactive scenes have unevaluated world matrices immediately after file load.
+# Evaluate the canonical scene before measuring it; never substitute intended values.
+if m['spec'].get('sceneDefinition'):
+    canonical=next(s for s in bpy.data.scenes if all(o.name in s.objects for o in objects.values()))
+    bpy.context.window.scene=canonical
+    bpy.context.view_layer.update()
 for p in m['spec']['components']:
     obj=objects[p['componentId']]
     for actual,want in ((obj.dimensions,p['size']),(obj.matrix_world.translation,p['location'])):
@@ -29,6 +36,10 @@ if m['spec'].get('sceneDefinition'):
     from bpy_extras.object_utils import world_to_camera_view
     definition=m['spec']['sceneDefinition']
     scene=bpy.data.scenes['ProductScene.'+definition['templateId']]
+    canonical_matrices={key:obj.matrix_world.copy() for key,obj in objects.items()}
+    assert startup_scene==scene
+    bpy.context.window.scene=scene
+    bpy.context.view_layer.update()
     assert scene['sceneHash']==m['sceneHash']
     assert json.loads(scene['sceneDefinition'])==definition
     clones={o['sceneComponentId']:o for o in scene.objects if o.get('sceneComponentId')}
@@ -37,7 +48,7 @@ if m['spec'].get('sceneDefinition'):
     for key,clone in clones.items():
         original=objects[key]
         assert clone.data==original.data  # exact mesh, materials and UV datablocks after reopen
-        want=pose @ original.matrix_world
+        want=pose @ canonical_matrices[key]
         assert all(abs(a-b)<1e-5 for row,wr in zip(clone.matrix_world,want) for a,b in zip(row,wr))
         assert all(abs(v-1.)<1e-5 for v in clone.matrix_world.to_scale())
     assert sum(o.name.startswith('Environment.') for o in scene.objects)==len(definition['boxes'])
