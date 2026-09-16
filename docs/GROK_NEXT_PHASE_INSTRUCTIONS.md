@@ -1,252 +1,236 @@
-# Development Agent 指令：Issue #6 Round 3B — DOOR_OPEN_8S Authority Integration Gate / REAL Blender Ground Truth
+# Development Agent 指令：PR #15 Static Variant Batch Round 2 — Durable Batch State / Lineage Hardening
 
-> Supervisor checkpoint: 2026-09-15
-> Current main before this instruction: `4fb4f14a36e505255479397b905d18de13e1da8a`
-> Reviewed prerequisite PR: #14 `codex/articulation-authority-v1` — OPEN / unmerged
-> Accepted prerequisite CODE: `791bf084caa05ad6369ebd1422f0a400e533f44c`
-> Accepted prerequisite DOCS: `40e6dd3c27beda0df6aaaaf80041685a813d553c`
-> PR #14 decision: **ACCEPT WITH SCOPE / NO MERGE AUTHORIZATION**
-> Existing video PR: #13 `codex/video-ground-truth` — OPEN / unmerged / DOOR_OPEN HOLD
+> Supervisor checkpoint: 2026-09-16
+> Current main before this instruction: `dfccd2cd750320e1ab53850bdf3093096aab3044`
+> Reviewed PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
+> PR #15 base: PR #12 branch `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`
+> Reviewed CODE: `2a43d9b51001176164bd534f51b63debf3f391cd`
+> Reviewed DOCS/head: `f88d5c896be424da54ab379cdd97a9dc35d08f90`
+> Clean REAL acceptance: `34fbd5bf-a46d-4914-8d08-cf86e36b83bb`
+> Decision: **ACCEPT WITH SCOPE / NO MERGE AUTHORIZATION**
 > Global Production Ready: **false**
 
 ## 0. Supervisor decision
 
-Round 3A is accepted within its exact authority-only scope.
+PR #15 的 static product variant batch slice 可接受，但只接受在以下精確範圍內：
 
-Independent review confirms:
+- exact CODE `2a43d9b51001176164bd534f51b63debf3f391cd` 的 GitHub Actions `35044283265`：Ubuntu + Windows SUCCESS；CI 使用 `FOX3D_MOCK_BLENDER=1`，只算 MOCK/unit/regression evidence。
+- exact DOCS `f88d5c896be424da54ab379cdd97a9dc35d08f90` 的 GitHub Actions `35045863163`：Ubuntu + Windows SUCCESS；同樣只算 MOCK/unit/regression evidence。
+- clean exact-CODE acceptance `34fbd5bf-a46d-4914-8d08-cf86e36b83bb`：6 個 Blender 5.2.1 LTS + OptiX 輸出，`workingTreeClean=true`、`usedMock=false`、`realOptix=true`；所有 `.blend` reopen、artifact SHA/bytes、歷史下載、restart、geometry invalidation/restoration、artwork revocation、cross-tenant path isolation checks 有證據。
+- 批次沿用既有 `RecipePreviewService` serial queue 與既有 composition/render path，沒有建立第二套 Scheduler / Queue / DAM / geometry / artwork engine。
+- input truth 明確為 `SYNTHETIC_STATIC_FIXTURE`；`productionReady=false`、`physicalPrintValidated=false`，沒有把 fixture 或 Mock 升格成實體 CAD / 印刷 / Production Ready。
 
-- CODE `791bf084caa05ad6369ebd1422f0a400e533f44c` has exact Ubuntu + Windows GitHub Actions SUCCESS in run `34917002099`.
-- DOCS `40e6dd3c27beda0df6aaaaf80041685a813d553c` has exact Ubuntu + Windows GitHub Actions SUCCESS in run `34918715339`.
-- Clean exact-CODE authority acceptance `4173c17c-479d-404f-b69a-841ebfa7f2db` reports a clean tree and 18 adversarial authority probes.
-- `src/fox3d/articulation_authority.py` is additive and fail-closed: strict schema, deterministic seal, exact pinned resolver, component/product identity binding, transform verification, revision/hash invalidation and cache identity binding.
-- Legacy `build_articulated_state()` / Blender helper output remains explicitly DERIVED_RENDER_STATE / OBSERVATION and cannot be promoted to engineering authority.
-- The four-door Round 2 source is explicitly authored as `FIXTURE_AUTHORITY`, canonical OPEN 60°, and explicitly states it is not measured/CAD-certified physical hardware truth.
+### Truth boundary
 
-Truth boundary for Round 3A:
+**REAL_RENDER**
+- 本輪 clean acceptance 的 6 個 Blender 5.2.1 LTS + OptiX synthetic static renders。
+- `.blend` reopen、實際 artifact bytes/SHA、real worker execution。
 
-- **REAL:** no new physical articulation or Blender render is claimed.
-- **REAL_LOGIC:** authority schema/seal/verifier/resolver/product+cache identity/fail-closed behavior.
-- **FIXTURE_AUTHORITY:** explicit synthetic four-door motion only.
-- **MOCK:** CI Blender path remains regression-only evidence.
-- **PARTIAL:** approval/provenance remains a trusted reviewed engineering input; SHA-256 proves integrity, not engineering approval; legacy OPEN convenience path is not migrated.
-- **BLOCKED:** physical articulation truth, DOOR_OPEN render ground truth, assembly/exploded authority, live H3/LTX/Vision/provider, Final Commerce Video, machines, Supervisor LIVE and global/full-autonomous readiness.
+**REAL_LOGIC**
+- batch preflight、最多 24 variants、serial queue ownership、per-row generation identity、restart/non-latest history、current geometry/artwork revalidation、historical download artifact validation、publication manifest seal。
 
-This acceptance **does not authorize merging PR #14**. It also does not allow PR #13 to copy/cherry-pick the prerequisite while PR #14 is absent from `main`.
+**MOCK**
+- GitHub Actions pytest Blender path與 cancellation/interruption/tamper regression fixtures；它們不是 REAL render evidence。
 
-## 1. Mandatory prerequisite gate — do not code around it
+**PARTIAL**
+- persisted batch progress/status record 目前仍是 local mutable state；`model_batches.current()` 雖註明 persisted state untrusted，但尚未完整驗證 `batchId` / master / tenant / immutable request lineage / rows identity，因此 UI/status truth 還需要 durable lineage hardening。
+- cross-tenant測試證明目前 workspace/path isolation behavior，但不等於完整 production authentication/authorization security certification。
+- 三個 scene preset 只是簡單展示背景，不是 furnished-room scene library。
+- 目前 21 masters 中仍只有 4 available previews / 17 drafts；本輪沒有補齊缺少的真實尺寸、板厚、門片缺口、正式刀模或曲面產品 authority。
 
-Before any Round 3B implementation or render:
+**BLOCKED**
+- physical CAD / measured product geometry truth。
+- physical print / RIP / calibrated UV / production color proof。
+- live H3/LTX/Vision/provider。
+- LIVE_CNC/LIVE_LASER/PLC/machine control。
+- `globalProductionReady` / `fullAutonomousFactoryReady`。
 
-1. fetch exact current `main`;
-2. prove that the accepted Round 3A authority implementation is actually present on current `main` through an authorized repository integration;
-3. at minimum verify current-main contains the accepted ArticulationSpec/resolver contract and the exact synthetic fixture authority/binding semantics reviewed in PR #14;
-4. record the current-main SHA that contains that prerequisite.
+本 acceptance **不授權 merge PR #15**。PR #15 仍 stacked on PR #12；PR #12 本身也未 merge。不要自行改 base、squash 到 main、cherry-pick 到 main 或開新的 stacked PR。
 
-If PR #14 / equivalent accepted authority source is **not present on current main**:
+---
 
-- do not modify PR #13;
-- do not copy/cherry-pick PR #14 files into PR #13;
-- do not render DOOR_OPEN;
-- do not manufacture a replacement authority;
-- report `BLOCKED_PR14_NOT_ON_MAIN` to Issue #1 with current-main SHA and STOP.
+## 1. Issue #6 / PR #14 / PR #13 gate 必須原封不動保留
 
-An instruction commit on main is not the prerequisite itself. The authority implementation must be present on main.
+這一輪 static-batch lane 與 Issue #6 Round 3B 是不同 lane。
 
-## 2. Once prerequisite is present — resume existing PR #13 only
+目前仍成立：
 
-After Section 1 passes, continue the existing PR #13 lane. Do not open another stacked video PR.
+- PR #14 articulation authority：**ACCEPT WITH SCOPE / NO MERGE AUTHORIZATION**。
+- accepted authority source 尚未存在 current `main`。
+- PR #13 DOOR_OPEN Round 3B 仍為 `BLOCKED_PR14_NOT_ON_MAIN`。
+- 不得 copy/cherry-pick PR #14 到 PR #13。
+- 不得使用 legacy/default 75°、worker observation、mesh/Vision inference 當 articulation engineering authority。
+- 不得產生 DOOR_OPEN REAL evidence，直到 accepted authority 經授權真正進 main。
 
-Bring the then-current `main` into PR #13 using normal Git ancestry integration so the accepted authority source is consumed from main. Do not manually duplicate the authority module or fixture records. Preserve Round 2 history/evidence as historical evidence; Round 3B must produce a new exact CODE SHA and new evidence.
+PR #15 Round 2 禁止修改 PR #13 / PR #14，禁止藉 static product work 繞過此 gate。
 
-Do not rewrite Scheduler, Queue, DAM, Product Truth, Artwork Placement, Render Pack, Product Content Factory, geometry interpretation, or the accepted Round 2 video architecture.
+---
 
-## 3. DOOR_OPEN_8S must consume exact engineering authority
+## 2. Round 2 只在既有 PR #15 做 durable batch-state / lineage hardening
 
-Integrate the existing video ground-truth path with `resolve_articulation_authority(...)` / accepted equivalent from current main.
+不要開 PR #16。只在 `codex/product-variant-batches` 上做最小 additive hardening。
 
-The DOOR_OPEN source/authority/manifest/cache lineage must bind at least:
+不要重寫：
 
-- tenant/product/SKU/version/engineering identity;
-- `articulationAuthorityHash`;
-- `productAuthorityHash`;
-- `authorityRevision`;
-- `authorityKind`;
-- exact moving component/object IDs;
-- parent identities;
-- VideoRecipe identity/hash;
-- artwork/source identity already required by Round 2;
-- render/cache identity;
-- DAM/job lineage.
+- `RecipePreviewService`
+- Scheduler / Queue / DAM
+- Product master / category tree
+- composition/render engine
+- Artwork Placement
+- Product Truth / Render Pack
+- existing PR #15 UI flow
 
-Fail closed before Blender execution when authority is missing, stale, ambiguous, cross-product, cross-tenant, hash-mismatched, revision-mismatched or component-incompatible.
+### 2A. Durable batch identity contract
 
-Absolutely forbidden as authority:
+目前 mutable batch record 至少含 `batchId`, `masterInputHash`, `sourceRevision`, `selectionHash`, rows；但 read path 必須把這些當 untrusted persisted data。
 
-- legacy/default 75°;
-- dimension-derived hinge guesses;
-- worker-observed transform;
-- mesh inference;
-- Vision inference;
-- provider-generated motion;
-- a caller-supplied `ready=true` flag.
+建立/強化一個明確、versioned 的 batch identity contract。至少綁定：
 
-## 4. Video trajectory is derivative animation, not physical dynamics
+- tenant identity
+- master/model ID
+- `batchId` == outer service `taskId`
+- batch schema/version
+- `masterInputHash`
+- master revision at submit
+- immutable selection/request hash
+- exact row count
+- 每 row 的 immutable `generationId`
+- 每 row 的 SKU / scene / selection identity
+- row ordering/index
 
-For the accepted synthetic fixture, engineering authority provides the closed pose, pivot/axis/range and canonical 60° OPEN endpoint.
+不要用「單一 stored hash 自己證明自己」當 authority。Verifier 必須能從 submit-time immutable request snapshot / existing canonical selection data 獨立重算應有 identity，並與 mutable progress state 比對。
 
-The video recipe may define a deterministic interpolation from CLOSED to canonical OPEN for presentation. That interpolation/easing is **VideoRecipe derivative animation**, not measured hinge speed, torque, acceleration or physical dynamics.
+如果現有 architecture 已有可重用的 canonical request/state persistence helper，直接 reuse；不要造第二套 state engine。
 
-Requirements:
+### 2B. `model_batches.current()` fail closed
 
-- every frame angle must remain inside the exact resolved authority range;
-- first frame must match authoritative CLOSED transform;
-- final OPEN frame must match authoritative canonical OPEN transform;
-- interpolation semantics must be deterministic and hashed in VideoRecipe;
-- no frame may consult the legacy 75° helper as an authority source;
-- per-frame expected transform must be derived from the resolved authority and recipe interpolation, then independently compared with Blender-observed component transforms.
+`current()` 必須在把 persisted batch state交給 API/UI 前做 exact validation。
 
-If exact component mapping into the Blender scene cannot be proven, stop with `BLOCKED_DOOR_OPEN_COMPONENT_MAPPING`; do not guess object names or pivots.
+至少以下情況要 fail closed，不能顯示成成功批次：
 
-## 5. Clean REAL Blender acceptance — scoped synthetic ground truth
+- `batchId != taskId`
+- wrong master / wrong tenant binding
+- missing/unknown version
+- row count mismatch
+- duplicate `generationId`
+- malformed/invalid generation UUID
+- row SKU / scene / immutable selection identity mismatch
+- selection/request hash mismatch
+- reordered/inserted/deleted rows
+- mutable state偽造 `succeeded`，但該 row 沒有可驗證的 exact generation publication
+- persisted state truncation / invalid JSON / missing required identity fields
 
-After exact CODE dual-CI SUCCESS, run one clean-tree REAL Blender 5.2.1 LTS / OptiX DOOR_OPEN_8S acceptance on the accepted synthetic Round 2 product.
+Fail closed 可以回傳明確 `corrupt/interrupted/failed` 狀態或讓 API 回可操作錯誤，但不可把 tampered state 當 completed truth。
 
-Target scope unless an existing canonical recipe already specifies stricter values:
-
-- 8 seconds;
-- 12 fps;
-- 96 frames;
-- same technical control resolution convention as accepted Round 2 unless intentionally versioned in the recipe;
-- RGB plus existing required control passes (Depth, Normal, ProductMask, ArtworkMask and any articulation/component observations required by the verifier);
-- deterministic matrices/optics/light/scene lineage;
-- exact authority + recipe + source hashes in manifest/DAM lineage.
+### 2C. Completed-row truth must come from published generation evidence
 
-Evidence must include:
+對 `succeeded` row，不得只相信 batch state 字串。
 
-- `workingTreeClean=true` at exact CODE;
-- Blender version/device and `usedMock=false`;
-- artifact SHA/bytes for all required outputs;
-- first/middle/final BLEND reopen or equivalent accepted checkpoint reopen;
-- first/middle/final door component transforms observed from the saved scene and matched against authority-derived expectations;
-- final frame canonical 60° OPEN for the exact FIXTURE_AUTHORITY source;
-- process restart/persisted reload checks;
-- stale authority revision/hash blocks old cache/download/publication;
-- no new candidate/DAM output on fail-closed authority tests.
+必須使用既有 `compositions.generation(...)` / publication validation path（或等價既有 canonical verifier）核對：
 
-Do not substitute CI Mock Blender, copied candidate pixels or old Round 2 HERO/DETAIL/ROOM evidence for this new DOOR_OPEN REAL render run.
+- exact generationId
+- exact masterId / current master input identity
+- artifact manifest integrity
+- `published.json` publication seal（對 historyVersion 1）
+- current artwork classification/permission
 
-## 6. Truth labels after successful Round 3B
+如果 row state 說 succeeded，但 publication missing / unpublished / corrupted / wrong master / revoked/stale，batch status 必須 fail closed或至少該 row不可宣稱 succeeded/available。
 
-If Section 5 succeeds, use precise scoped labels:
+不要重複實作 artifact verifier；reuse existing `compositions.generation(...)` / `print_preview.validate(...)`。
 
-### REAL_RENDER
+### 2D. Restart / cancellation semantics
 
-- actual clean Blender/OptiX DOOR_OPEN_8S frames and saved-scene observations.
+維持現有規則：
 
-### REAL_LOGIC
+- completed rows 保留；
+- queued/running rows在服務中斷後不能自動 replay；
+- cancellation不得讓尚未完成 row變成 success；
+- interrupted/cancelled batch不得因 stray manifest / tampered state復活成 completed；
+- restart後 UI 要可清楚區分 succeeded / failed / interrupted / cancelled。
 
-- exact ArticulationSpec resolution;
-- authority-to-video identity binding;
-- deterministic trajectory semantics;
-- per-frame transform verification;
-- cache/DAM/restart/tamper guards.
+若需要持久化 transition，只做 additive state metadata；不要另造 worker queue。
 
-### FIXTURE_AUTHORITY
+---
 
-- the synthetic four-door engineering motion source, including canonical 60° OPEN.
+## 3. Required negative / adversarial tests
 
-### PARTIAL
+新增 focused tests，至少涵蓋：
 
-- the sequence is technical/synthetic reference ground truth, not measured company hardware;
-- VideoRecipe timing/easing is presentation motion, not physical dynamics;
-- no measured hinge clearance/collision/lifetime validation;
-- deterministic QA is not semantic Vision unless separately proven.
+1. batch file `batchId` 改成別的 task ID → BLOCK。
+2. tenant/master identity tamper → BLOCK。
+3. masterInputHash / sourceRevision / selectionHash tamper → BLOCK。
+4. row 插入、刪除、重排 → BLOCK。
+5. duplicate generationId / malformed generationId → BLOCK。
+6. SKU / scene 改寫但 generationId 不變 → BLOCK。
+7. row 偽造 `succeeded`，但沒有 published generation → 不得成功。
+8. publication seal / manifest SHA tamper → 不得成功/下載。
+9. completed row 指向另一 master 的 generation → BLOCK。
+10. artwork revoked / geometry stale 後，batch history/status不可仍宣稱 downloadable current result。
+11. cancelled/interrupted persisted record改成 succeeded → BLOCK。
+12. valid historical non-latest completed generation仍可正常讀取與下載。
+13. service restart後 completed保留，未完成不 replay。
+14. existing single-composition flow完全不退化。
+15. existing category tree / 4 available preview / 17 draft inventory semantics不被改寫。
 
-### BLOCKED
+Mock tests 必須明確標 MOCK regression，不得用作 REAL Blender acceptance。
 
-Remain blocked:
+---
 
-- physical/company articulation truth;
-- arbitrary real-product DOOR_OPEN without measured/CAD/approved authority;
-- authoritative assembly/exploded motion unless separately sourced;
-- live H3/LTX/Vision/provider;
-- Final Commerce Video production approval;
-- calibrated physical UV/RIP/print;
-- hot-folder/LIVE_CNC/LIVE_LASER/PLC/machine control;
-- Supervisor LIVE prerequisites;
-- `globalProductionReady`;
-- `fullAutonomousFactoryReady`.
+## 4. CODE → REAL → DOCS gate order
 
-If the legacy boolean `DOOR_OPEN_REAL` is retained, it may only mean **REAL Blender render for this exact FIXTURE_AUTHORITY scope** and must be accompanied by `physicalArticulationTruth=false`. Never expose it as a global production claim.
+嚴格依序：
 
-## 7. Required negative/regression tests
+1. fetch PR #15 exact current head；確認沒有誤動 PR #13/#14。
+2. implementation minimal hardening on PR #15 only。
+3. focused tests + full `pytest -q`。
+4. freeze new CODE SHA。
+5. exact CODE SHA GitHub Actions Ubuntu + Windows SUCCESS。
+6. clean exact-CODE REAL acceptance：至少跑一個 2-row synthetic batch，必須 real Blender 5.2.1 LTS + OptiX / `usedMock=false`，再驗證 restart + retained history + state tamper fail-closed；若既有 runner 可安全擴充就 reuse，不要造平行 acceptance framework。
+7. REAL evidence 要包含 exact CODE、`workingTreeClean=true`、artifact SHA/bytes、BLEND reopen、publication identity、batch identity、representative tamper results。
+8. 再 commit DOCS/evidence。
+9. exact DOCS SHA Ubuntu + Windows CI SUCCESS。
+10. Issue #1 回報 `READY_FOR_RE_GATE` 並 STOP。
 
-Add focused tests without weakening existing suites. At minimum:
+若任何 gate 失敗：回報精確 `CHANGES_REQUIRED` / `BLOCKED` 原因，停止，不得把 Mock/FIXTURE補成 Production Ready。
 
-- missing authority/binding blocks before render;
-- PR14 authority absent from main gate blocks work;
-- stale revision/hash blocks;
-- cross-tenant/product/SKU/version/engineering substitution blocks;
-- wrong component/object/parent mapping blocks;
-- legacy 75° path cannot satisfy authority;
-- worker observation cannot become authority;
-- tampered pivot/axis/range/open transform blocks;
-- mutated authority changes cache/video identity;
-- cached outputs under old authority cannot publish/download as current;
-- first/final transform contradiction blocks;
-- trajectory angle outside authorized range blocks;
-- authorityKind remains `FIXTURE_AUTHORITY` end-to-end and cannot be relabeled as physical truth.
+---
 
-Run focused tests and the full local regression suite.
+## 5. Documentation / truth labels
 
-## 8. CODE / REAL / DOCS gate order
+更新：
 
-Strict order:
+- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
+- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
+- `docs/PRODUCT_VARIANT_BATCH_GUIDE.md`（只有 operator behavior 真有變才改）
+- 可更新 agent progress/handoff 文件，但不要把 historical Supervisor docs 改寫成假最新 truth。
 
-1. prerequisite present on current main;
-2. integrate current main into existing PR #13;
-3. implement minimal Round 3B bridge;
-4. focused tests + full local regression;
-5. freeze final CODE SHA;
-6. exact CODE SHA Ubuntu + Windows CI SUCCESS;
-7. clean exact-CODE REAL Blender DOOR_OPEN acceptance with `usedMock=false`;
-8. inspect representative frames/checkpoints;
-9. commit DOCS/evidence separately;
-10. exact DOCS SHA Ubuntu + Windows CI SUCCESS;
-11. post `READY_FOR_RE_GATE` and STOP.
+只有在 scoped readiness 真有改變時才動 `docs/REAL_E2E_ACCEPTANCE.md`。
 
-CI with `FOX3D_MOCK_BLENDER=1` remains regression evidence only.
+`docs/CABINET_REAL_ACCEPTANCE.md` 不得因 static batch feature 改動，除非 cabinet engineering truth真的變更。
 
-## 9. Documentation
+不要把 historical legacy 75° articulation描述成目前 Round 3B engineering authority。
 
-Update only relevant truth/evidence docs. Prefer additive Round 3B evidence such as:
+---
 
-- `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ROUND3_ACCEPTANCE.md`
-- `docs/GENERATIVE_VIDEO_GROUND_TRUTH_ROUND3_ACCEPTANCE.json`
-- `docs/GROK_PROGRESS_REPORT.md`
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
+## 6. Final handoff contract
 
-Update `docs/REAL_E2E_ACCEPTANCE.md` only if a new narrowly scoped REAL-render readiness fact genuinely changes. Do not modify `docs/CABINET_REAL_ACCEPTANCE.md` unless cabinet engineering truth itself changes.
+Issue #1 最終至少回報：
 
-Do not erase historical Round 2 or Round 3A truth boundaries.
+- PR #15 current head / base PR #12 relationship
+- new CODE SHA
+- new DOCS SHA
+- exact CODE CI run + Ubuntu/Windows conclusion
+- exact DOCS CI run + Ubuntu/Windows conclusion
+- clean REAL acceptance ID
+- Blender version/device / `usedMock=false`
+- batch identity contract/version
+- tamper matrix結果
+- retained/history/download/restart結果
+- `inputTruth=SYNTHETIC_STATIC_FIXTURE`
+- `physicalPrintValidated=false`
+- `physicalProductGeometryTruth=false`（或等價明確聲明）
+- `globalProductionReady=false`
+- Issue #6 `BLOCKED_PR14_NOT_ON_MAIN` 仍維持
+- `MERGE_AUTHORIZED=false`
 
-## 10. Handoff contract / STOP
-
-Final Issue #1 handoff must include at least:
-
-- prerequisite current-main SHA containing Round 3A authority;
-- PR #13;
-- Round 3B CODE SHA;
-- Round 3B DOCS SHA;
-- CODE CI run ID and exact Ubuntu/Windows conclusions;
-- DOCS CI run ID and exact Ubuntu/Windows conclusions;
-- clean REAL evidence generation ID;
-- Blender version/device / `usedMock=false`;
-- exact `articulationAuthorityHash`, `productAuthorityHash`, revision and kind;
-- frame/artifact counts;
-- representative reopen/transform verification results;
-- `physicalArticulationTruth=false` for FIXTURE authority;
-- live provider/Vision/physical/global flags;
-- `MERGE_AUTHORIZED=false` unless a separate explicit merge authorization exists.
-
-If any required gate fails, report the exact BLOCKED/CHANGES_REQUIRED reason and STOP. Do not substitute Mock/FIXTURE evidence for Production Ready.
+完成後 STOP for Supervisor Re-Gate。不要開下一個 stacked PR，不要自行 merge。
