@@ -1,0 +1,298 @@
+{
+  "evidenceId": "34fbd5bf-a46d-4914-8d08-cf86e36b83bb",
+  "codeCommit": "2a43d9b51001176164bd534f51b63debf3f391cd",
+  "workingTreeClean": true,
+  "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
+  "physicalPrintValidated": false,
+  "productionReady": false,
+  "generations": [
+    {
+      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
+      "generationId": "43c84889-2f2c-4946-9469-2bef27c98026",
+      "sku": "FIXTURE-2",
+      "scene": "WARM_ROOM",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "73e13cb5bfa5e9d0462a33ee8791dc88b0e4151ef7884f3416cf5f72e634e3ef",
+        "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "front-closed.png": "9b56972db0f287ec3146307ae50864e7db95830543c490ef8efe3ca0a991f058",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "4ccb2281c3aaa7cc2a61ef21f98c06ab765b7a93c9b24188e1b595df20a9a759",
+        "model.blend": "4e05dcf257d3200403825de73c862c0b76d37ccfdb60caf2a1969af766f78a8b",
+        "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
+      },
+      "sizes": {
+        "beauty.png": 645585,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 636242,
+        "geometry.json": 1637,
+        "golden-observation.json": 6186,
+        "model.blend": 970709,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "6683d250-9208-42eb-9676-4ee214e51284",
+      "requestedJobId": "6683d250-9208-42eb-9676-4ee214e51284",
+      "cacheHit": false,
+      "blendReopen": true
+    },
+    {
+      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
+      "generationId": "49aa6498-93a8-4b17-aaf6-7c7b05106c22",
+      "sku": "FIXTURE-2",
+      "scene": "STUDIO",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "66a9bda8724fbb6a52b9636519f1e8aceda2129d9a87996cadb777a0c05cb3c8",
+        "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "front-closed.png": "de88c18f81639f88ed57b5e30794c9126460bbabf282184628dec7bf6fd65e99",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "be93dfd5c0758a0bf92cdf69afb6d528e8261c1f9f4c40e197068d2527570f76",
+        "model.blend": "db829b8d78a72ac425adfcb5e71a4fadbe961608db47e82a6150f878e0b8476a",
+        "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
+      },
+      "sizes": {
+        "beauty.png": 646900,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 647256,
+        "geometry.json": 1637,
+        "golden-observation.json": 6186,
+        "model.blend": 964518,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "067f1b8b-d239-4a54-a8f3-d234d1f8dbb1",
+      "requestedJobId": "067f1b8b-d239-4a54-a8f3-d234d1f8dbb1",
+      "cacheHit": false,
+      "blendReopen": true
+    },
+    {
+      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
+      "generationId": "2dd38bdc-856e-439a-99ff-512b25560774",
+      "sku": "FIXTURE-1",
+      "scene": "WARM_ROOM",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "6a309e70bdcf63b8a4acccb1e1c9b6cc04d3c184367adc4dddf2646eafc2c773",
+        "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "front-closed.png": "fd06fcdf5d1861831c0073de0ba4f392e571416ab075290082fa14e66afa5910",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "544cc7999a05d31edb3ae9e5b84e2b21dd640597a12e8871af354f730e0913fe",
+        "model.blend": "8640fceca5cb0a93c999b2f0e9d12fcd2bd493272557b2a887a1caf26390a0e3",
+        "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
+      },
+      "sizes": {
+        "beauty.png": 643301,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 635198,
+        "geometry.json": 1637,
+        "golden-observation.json": 6186,
+        "model.blend": 970709,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "969dd87c-14d7-4fb0-9abf-df28ced1bf8a",
+      "requestedJobId": "969dd87c-14d7-4fb0-9abf-df28ced1bf8a",
+      "cacheHit": false,
+      "blendReopen": true
+    },
+    {
+      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
+      "generationId": "7d4e10d3-c8ce-489e-9e46-50c59c1c9381",
+      "sku": "FIXTURE-1",
+      "scene": "STUDIO",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "7b9b48a0198213d64234d369231a025361277eb07c6e88cbb59eae4346efb605",
+        "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "front-closed.png": "d58ca8f143693376c7b3058fd45ed9172c7a6cf2ec7a4b7e23b8e7b9adb7e3e3",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "82537b157b6dcfc72bde665e3cd1f83fb4c94fda04ea0248f4254d6cd4921375",
+        "model.blend": "b3dac61d5b919cea31e7f7e250780c915b8e74033b5c154f3e4ffc1073d2895b",
+        "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
+      },
+      "sizes": {
+        "beauty.png": 646457,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 648401,
+        "geometry.json": 1637,
+        "golden-observation.json": 6186,
+        "model.blend": 964518,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "fcd1a662-5f19-47fa-a509-8102bdb90ce5",
+      "requestedJobId": "fcd1a662-5f19-47fa-a509-8102bdb90ce5",
+      "cacheHit": false,
+      "blendReopen": true
+    },
+    {
+      "modelId": "67724054-12da-4a07-a679-34f2583fb6d7",
+      "generationId": "5eaa3300-1fee-48af-a315-dbb210d2172b",
+      "sku": "FIXTURE-2",
+      "scene": "STUDIO",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "52b558b581e9939071127171190dd9b58a2a2b55d09db9f88e0cc2ae61786f56",
+        "front-closed.png": "ab9ead202bc12d5419a3ae1cc8b30c26722b6ab5d82eab7660114a32b803a7af",
+        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "golden-observation.json": "adce5bd228ad215783c2188634a4aae5c6a4fbcc4c7019e42b188cb779759fb5",
+        "model.blend": "78fd86932220cb5b2b6af989c94e02983b9041441ecd75e68b36ad81454f61cb",
+        "model.glb": "d480acc022556bccd3c2e146856a85a9db989f802d5f91936b5e00ae1232961a",
+        "surface-preview.png": "b5304da2741eeaf155b161b282b84d1bb0ef6e831147152d9920c475f350c575"
+      },
+      "sizes": {
+        "beauty.png": 627903,
+        "front-closed.png": 626129,
+        "geometry.json": 210,
+        "golden-observation.json": 1909,
+        "model.blend": 627197,
+        "model.glb": 4644,
+        "surface-preview.png": 1422
+      },
+      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+      "jobId": "79a20420-cd56-4db5-b94c-a008a1e35039",
+      "requestedJobId": "79a20420-cd56-4db5-b94c-a008a1e35039",
+      "cacheHit": false,
+      "blendReopen": true
+    },
+    {
+      "modelId": "67724054-12da-4a07-a679-34f2583fb6d7",
+      "generationId": "801a2767-8292-4edb-88fa-4c05219eddcc",
+      "sku": "FIXTURE-1",
+      "scene": "STUDIO",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "ff7a94b71bdff24a4eca3111e7668c5733ea5b2e4424f9d2445dbd8c1132a7fa",
+        "front-closed.png": "9814af14ec0f7186fe19bccd109021ccd4a06fbb1f23c782411662b838347c21",
+        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "golden-observation.json": "9d3480c9d4b03461a05b606154c4d8461c1314313d83aa0e5d51770e00bd586e",
+        "model.blend": "f91baff7cf9d947880182b995f60a463b1bd54b295828eb14fc9f0e619ce57c6",
+        "model.glb": "bd499eab8bdb1b60338a01128542894b9033a7914ef1d9c8a6f28ebadac1cfb9",
+        "surface-preview.png": "36d8f6163d19d41cc9488627b57216886f0573eb000358add027a87c3cad867d"
+      },
+      "sizes": {
+        "beauty.png": 627867,
+        "front-closed.png": 627445,
+        "geometry.json": 210,
+        "golden-observation.json": 1909,
+        "model.blend": 627197,
+        "model.glb": 4644,
+        "surface-preview.png": 1422
+      },
+      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+      "jobId": "02ce79f4-db94-4387-bcf3-2df618b9401e",
+      "requestedJobId": "02ce79f4-db94-4387-bcf3-2df618b9401e",
+      "cacheHit": false,
+      "blendReopen": true
+    }
+  ],
+  "status": "PASS",
+  "geometryPreserved": true,
+  "variantPixelsDistinct": true,
+  "restartPreserved": true,
+  "staleBlocked": true,
+  "revokedBlocked": true,
+  "serialQueue": true,
+  "authorization": {
+    "type": "EXPLICIT_USER_REQUEST",
+    "date": "2026-09-16",
+    "request": "Reusable product 3D masters with artwork and scene variants; user said 開工",
+    "instructionSha": null,
+    "sourceIssue": null
+  },
+  "pr": 15,
+  "basePr": 12,
+  "codeCiRunId": 35044283265,
+  "codeCi": [
+    {
+      "name": "unit (windows-latest)",
+      "id": 104630648705,
+      "conclusion": "success",
+      "testCount": 939
+    },
+    {
+      "name": "unit (ubuntu-latest)",
+      "id": 104630648838,
+      "conclusion": "success",
+      "testCount": 939
+    }
+  ],
+  "uiChecks": {
+    "categoryTreePreserved": true,
+    "existingCounts": {
+      "preview": 4,
+      "draft": 17
+    },
+    "twoBackgroundsAdded": true,
+    "duplicateSelectionBlocked": true,
+    "pendingGeometryDisabled": true,
+    "switchingMasterPreservesUnsubmittedList": true,
+    "clearUnsubmittedList": true,
+    "threeExistingResultsVisible": true,
+    "consoleErrors": []
+  },
+  "docsCi": "PENDING_AT_DOCUMENT_AUTHORING; final exact DOCS SHA/run recorded in Issue #1 handoff",
+  "truth": {
+    "real": "Six Blender 5.2.1 LTS OptiX generations and reopen checks, synthetic input geometry/artwork",
+    "mock": "939 regression tests per OS; mock job tests are not render evidence",
+    "physicalDimensionsVerified": false,
+    "physicalPrintValidated": false,
+    "globalProductionReady": false,
+    "liveProviderUsed": false,
+    "pr13Modified": false,
+    "pr14Bypassed": false
+  }
+}
