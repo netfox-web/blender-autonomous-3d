@@ -1,53 +1,67 @@
-# Product variant batches — Round 7 scoped crash-debris acceptance
+# Product variant batches — Round 7 strict serialized outer-state identity correction
 
-Instruction `3f70403b19596c723995e14aca29e94eaeb637a8` / Issue #1 comment 5700808414. Existing PR #15 remains DRAFT/OPEN on PR #12 `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge authorization, runtime deployment, scene feature or architecture rewrite.
+Instruction `71d2c7f0d24e2cf4ac8a5ba940249bd68b4a8cde` / Supervisor [comment 5702286623](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5702286623). PR #15 DRAFT/OPEN on PR #12 `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`; merge authorization false, Round 8 HOLD. Prior Round 7 cleanup was accepted within its local scope; **overall prior Round 7 was CHANGES_REQUIRED**, because its retained mutable-state identity fence was not serialized-exact.
 
-## Current gate
+## Exact gates
 
-- Exact CODE `eaa4d683937e09a7de2e4b30e7156772a98ca596`: [Actions 35124100743](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35124100743). Actual checkout SHA verified on both jobs: **Windows 1165 PASS; Ubuntu 1161 PASS + 4 existing Windows-only skips**. CI artifacts remain MOCK regression, not real Blender evidence.
-- Pre-commit focus **182 PASS**. New clean exact-CODE focus **35 PASS: six actual subprocess/OS cases + 29 unit/fault regressions**. Retained clean ownership focus 21 PASS; persistence focus 30 PASS including three REAL_OS_IO cases. No separate local full-suite rerun claimed.
-- Superseded CODE `6203a87ecc8aa86de628038a591c6f52e66921e2`, Actions 35123515020 **CANCELLED**, not PASS. A test-only fixture mock leaked into the parent verifier; the final CODE restores the original functions and adds an isolation regression before formal acceptance.
-- Clean exact-CODE REAL acceptance `61493611-302a-4503-a6a0-0a93e374e468`: Blender **5.2.1 LTS / OptiX**, `realOptix=true`, `usedMock=false`, two synthetic static variants. Artifact SHA/size, finite pixels, `.blend` reopen, restart/history/download and lineage PASS; retained **30 + 21 + 35** matrices PASS.
-- CODE CI precedes clean REAL acceptance; DOCS is committed only after this evidence exists. Exact DOCS CI identity/results are reported in the subsequent Issue #1 handoff because a commit cannot contain its own SHA.
+- CODE **`0c6bb2a0e8ed8a8a7d23b8a938b5670e83f3b6c1`**, [Actions 35135148177](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35135148177): **Windows 1236 PASS; Ubuntu 1232 PASS +4 existing Windows-only skips**, exact checkout SHA verified in both jobs. Prior 1165 tests retained; 71 strict-identity regressions added. CI is non-Blender regression.
+- Pre-commit combined focus **375 PASS**. Clean exact-CODE strict identity **71 PASS**, cleanup **35 PASS**, ownership **21 PASS**, persistence **30 PASS** including 3 REAL_OS_IO. No separate local full-suite rerun claimed.
+- Clean exact-CODE REAL acceptance **`6e7d1d4f-17b2-48d4-abcb-518e878a5273`**: Blender **5.2.1 LTS / OptiX**, `realOptix=true`, `usedMock=false`, two synthetic static cabinet variants. Artifact SHA/size, finite pixels, .blend reopen, restart/history/download and job/cache/attempt/DAM/publication lineage PASS; **30+21+35** retained matrices PASS.
+- Exact CODE dual-platform CI precedes clean REAL acceptance. DOCS commit follows these results; its own exact SHA and subsequent dual CI are recorded in the final Issue #1 handoff, not self-referentially invented here.
 
-## Baseline and narrow correction
+## Unchanged reviewed-CODE baseline
 
-Unchanged clean accepted CODE `70587508bb8afc2ebe876cebd4304c369be7ed76` reproduced six actual hard-kill cases. Exact orphan outer-state temps survived fresh ownership. Authoritative destination bytes (or absence) remained intact; orphan bytes were never adopted and no automatic replay occurred. Baseline F allowed an explicit submission while an orphan was locked because there was no cleanup gate; that is missing hygiene, not a publication-authority promotion. Original and refined raw captures are preserved locally; complete refined state bytes/hash, temp SHA/size, PIDs, inventories, outcomes and logs are embedded in JSON. [Baseline checkpoint](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5701064895).
+Before production edits, a clean detached worktree at **`eaa4d683937e09a7de2e4b30e7156772a98ca596`** reproduced both required fail-open cases with a held PreviewOwnership/open stream. S1 persisted `batchVersion=true` compared equal to expected integer 1; S2 expected absent key compared equal to persisted null. In both cases `_write_owned` returned without rejection and overwrote the original state. This violated mutable-state fencing; it was not evidence of physical/publication truth promotion. Full expected/persisted objects, exact before/after bytes/SHA, module source root, harness source and harness SHA are preserved in JSON.
 
-`scavenge_state_temps()` requires a live held `PreviewOwnership` object, an open guard stream, exact `state.json` target and matching resolved workspace. It matches only direct children with **`state.json.[0-9a-f]{8}.tmp`**, using the actual atomic writer's eight-character UUID token contract. All candidates are checked for regular-file type, one link and absence of reparse attributes before deletion starts. Unknown/nested files are untouched. Type ambiguity, permission denial or unlink failure propagates before a fresh state write. A partial cleanup is not reported as success; a fresh retry can complete after external conditions are removed.
+| Case | Exact old CODE state SHA before → after | New exact CODE mismatch |
+|---|---|---|
+| S1 | `65b42ae0742bfcfac0a8e0e123108e105a054ebe8d9be0847dafcb4a17163100` → `dfa6ab6302baf5a5c54b5494aab960ca19f9da7d657c4d092e8fc629a4224752`; FAIL_OPEN | `65b42ae0742bfcfac0a8e0e123108e105a054ebe8d9be0847dafcb4a17163100` → same SHA; BLOCK/PASS |
+| S2 | `c9e5f40ad42dc50ab08ad2df5ee1922d6fc199bb8073bbcc300adb8492c6c23c` → `d8f67ca1ccb2f8ee1412ae1d7c5ec64dd814ad175844cd233b0a0ad690906e78`; FAIL_OPEN | `c9e5f40ad42dc50ab08ad2df5ee1922d6fc199bb8073bbcc300adb8492c6c23c` → same SHA; BLOCK/PASS |
 
-Call sites: `RecipePreviewService.status()` after acquiring ownership and before interrupted-state recovery; `submit()` after ownership and before the initial queued-state write. A live competitor cannot acquire the guard, performs no cleanup and cannot submit a second writer. Normal same-process active reads do not scavenge. No candidate contents, mtime, age, PID, lease, wildcard recursion or lock-file deletion is used. Cleanup emits an INFO log per basename; it adds no product/publication metadata and grants no availability/readiness or replay authority.
+## Minimal correction and regression contract
 
-| Case | Baseline PID / outcome | Exact CODE killed → fresh PID / outcome | Baseline orphan evidence |
-|---|---|---|---|
-| A | 43156 / FAIL cleanup | 31320 → 24320 / PASS | `state.json.91e8d61f.tmp` SHA `13ac2e7874cb50be9d14877abf1981d9f9919bff5f460116729dd5798de33dd9` (220 bytes) |
-| B | 31488 / FAIL cleanup | 33500 → 29972 / PASS | `state.json.e5d30e55.tmp` SHA `cef04692e86336dc6124aefa1a7d91267ec44eeeaea8f86f47666026eb0a5391` (220 bytes) |
-| C | 22612 / FAIL cleanup | 31024 → 44772 / PASS | `state.json.bd8d6be0.tmp` SHA `2f805f24bfe0b32b5e02d23d157eecb9d987b153f6975e33857bf880b0c44da3` (220 bytes) |
-| D | 43556 / FAIL cleanup | 27344 → 7980 / PASS | `state.json.c01b7eb1.tmp` SHA `28a4f5f06274486f6f4bd9747fae3049d0a24787d0c7bf9114c86f1432d51428` (220 bytes) |
-| E | 44060 / FAIL cleanup | 44172 → 46880 / PASS | `state.json.602f279b.tmp` SHA `8fc82cc8baa8e0f17097932755c2a3ce6a1b08e753ceb7d1d91a7d311e834d97` (220 bytes) |
-| F | 45948 / FAIL cleanup | 44216 → 33488 / PASS | `state.json.581429af.tmp` SHA `6602b6bf890385f8808dd0f0f993d8a8f8d1d2486364ff6eb8bc6450a6e8c0eb` (220 bytes) |
+Only `RecipePreviewService`'s outer-state comparator changed. `_same_state_identity(current, expected)` requires object states; taskId/inputHash keys must exist on both sides, values must be exact `str`, and values must match. BatchVersion key presence must match; if present, both values must have `type(value) is int` and exact equality. Boolean/string/float/null are rejected without conversion. Exact absent/absent and integer/integer writes still work. `_write_owned` also requires owner held and stream open. Mismatch raises before atomic_json, preserving original bytes; it does not repair or normalize them.
 
-A preserves absent state and cleans before explicit resubmit. B preserves existing authoritative bytes exactly. C uses actual Windows destination delete-sharing conflict/probe 32 and bounded writer retry before external TerminateProcess; the destination lock is released before fresh cleanup. Ubuntu runs the corresponding real SIGKILL/temp-exists case without claiming Windows semantics. D keeps the owner alive while another process reads/submits: the competitor is read-only/busy, has zero cleanup/writes/render entry, and the live temp remains intact. E cleans multiple exact direct candidates while unknown names, nested temps, owner.lock and immutable request/row/terminal/publication/authority sentinels remain byte-identical. F denies deletion through an actual Windows handle (Ubuntu directory permission denial under non-root runner): submission surfaces failure with unchanged state/inventory, then succeeds after external release. All six use actual external process termination and fresh independent processes. Their publication artifacts/validators are **MOCK**; none is REAL_RENDER.
+The 71 focused tests comprise 16 version-type/presence tamper cases; 3 positive writes; 32 required-string missing/type/value tests across both sides; 6 scalar-subclass tests; 6 non-object tests; 2 released/closed-stream tests; 4 `_run` on_job/finally cases covering S1/S2. Two additional status-recovery cases reject missing required keys without writing. The callback/finally cases tamper state during the generation callback, then assert zero subsequent atomic writes and byte-identical tampered state, while ownership still releases. Existing stale/newer-task fencing cases remain PASS. These are **MOCK/unit fixtures testing REAL_LOGIC**, not renderer evidence.
 
-## Retained product and persistence behavior
+Local compatibility initially exposed two legacy normal-restart fixtures missing required identity fields. Those fixtures now contain valid taskId/inputHash; malformed-state rejection has its own two new tests. The cancelled intermediate CODE e1c6289 / Actions 35134020720 is not PASS evidence; original local failures are retained in JSON. No production relaxation was made.
 
-Current exact CODE retains Round6 A–F ownership/fencing and two isolation cases, all PASS. A separate clean real-Blender double-submit trial has one render winner and a busy loser with zero writes/render entry. Round5 A/A_PROGRESS/B/C/D reran and passed; B/C use real Blender publications and the canonical verifier. Round5 generic `atomic_json` case D still leaves its orphan: it is outside the RecipePreviewService cleanup boundary. The existing 30 persistence tests, exclusive immutable records, bounded Windows replace retry and 30+21+35 authority/tamper/type matrices remain intact. Server retry warnings: 1; acceptance-process retry warnings: 0.
+No cleanup algorithm, queue, renderer, DAM, master, request, receipt, publication or authority design changed. Round 7 scoped scavenging still fullmatches direct `state.json.[0-9a-f]{8}.tmp`, requires exact workspace ownership, prevalidates candidate type/link/reparse metadata, and propagates deletion failure before a fresh outer write. No content adoption, replay, age/PID/lease or recursive cleanup was introduced.
 
-The existing batch feature binds artwork/scene selections to exact tenant/master/revision/input/authority identities and preserves independently verified history. Current batch completion requires the current revision/hash and active declaration; historical downloads retain their original snapshot and verifier. Progress, latest pointers, lock files and cleanup outcomes confer no publication truth. Synthetic, reference and operator-declared unmeasured inputs are supported only within their declared visual scope; measured/CAD authority remains unavailable. Prior accepted implementation details and original failures are preserved at [Round6 DOCS `7c01e0306db106cee146e70f04e8f7b6c8e452bd`](https://github.com/netfox-web/blender-autonomous-3d/blob/7c01e0306db106cee146e70f04e8f7b6c8e452bd/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) and its full JSON; current reruns and all original Round5/6 baselines are retained in this JSON.
+## Retained cleanup and process gates on new CODE
 
-## Truth and stop boundary
+| Cleanup case | Actual killed child → fresh process PID | Result |
+|---|---|---|
+| A | 42376 → 23820 | PASS; all recorded invariants true |
+| B | 44564 → 44528 | PASS; all recorded invariants true |
+| C | 39208 → 39092 | PASS; all recorded invariants true |
+| D | 40752 → 27852 | PASS; all recorded invariants true |
+| E | 10940 → 18548 | PASS; all recorded invariants true |
+| F | 38148 → 12540 | PASS; all recorded invariants true |
+
+A preserves absence; B preserves prior state bytes; C performs Windows delete-sharing/probe32 bounded-retry hard kill and fresh cleanup after external release (Ubuntu corresponding SIGKILL case, not Windows evidence). D's live competitor is read-only/busy with zero cleanup/writes/render entry and live temp intact. E removes only exact direct candidates while unknown/nested temps, owner.lock and immutable request/row/terminal/publication/authority sentinels remain byte-identical. F's actual locked candidate/permission failure is surfaced before new state writes, then external release permits retry. All six actual-process/OS cases pass on new CODE; their artifacts/validator remain MOCK. Original cleanup baseline on 70587508 and all full inventories/logs remain in JSON.
+
+Retained Round 6 A–F process ownership/fencing plus two isolation cases PASS. A separate clean real-Blender identical-submit trial still has one winner/render, and a busy loser with zero writes/render entry. Round 5 A/A_PROGRESS/B/C/D actual recovery PASS; B/C use real Blender/full canonical verifier. Round 5 generic atomic_json D orphan remains intentionally untouched: **global/generic cleanup is UNCLAIMED/PARTIAL**. The30 persistence regressions retain bounded Windows retry and immutable-write semantics. Server retry warnings: 1; acceptance-process warnings: 0.
+
+## Product contract and historical evidence
+
+Batch selections retain exact tenant/master/revision/input/authority identities; completed results and history require the canonical publication verifier. Mutable progress, latest pointers, locks, cleanup outcomes and identity checks confer no physical or publication authority. Current completion requires current revision/hash and an active declaration. Historical downloads retain their original authority snapshot and verifier. Fixture/reference/operator-declared unmeasured inputs remain visual-only; no measured/CAD approval provider is added.
+
+[Prior Round 7 report and raw evidence](https://github.com/netfox-web/blender-autonomous-3d/blob/1b8687e1feb12ff305c3478b675c138d2f7b1666/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) preserve the earlier accepted-in-scope cleanup and original failures; current exact reruns are in this JSON. Prior Round 6 evidence remains linked by immutable DOCS SHA. Earlier superseded CODE 6203a87 / run 35123515020 remains CANCELLED, not PASS; no cancelled/superseded run is reused as current success.
+
+## Truth boundary and stop
 
 | Evidence | Classification / limit |
 |---|---|
-| Publication/authority and scoped cleanup logic | REAL_LOGIC |
-| Live independent owner/competitor and isolation | REAL_PROCESS_CONCURRENCY |
+| Serialized identity rejection, publication/authority/scoped cleanup | REAL_LOGIC |
+| Actual independent competitors and isolation | REAL_PROCESS_CONCURRENCY |
 | Actual killed child and fresh recovery | REAL_PROCESS_RECOVERY |
-| Real local OS guard / Windows sharing handle / POSIX permission | REAL_OS_IO, platform-specific |
-| Separate clean Blender winner and two variants | REAL_RENDER; synthetic visual fixture only |
-| Unit/fault tests and CI/cleanup artifacts | MOCK regression; no physical/render claim |
-| Other atomic destinations/global cleanup/product-room workflow | UNCLAIMED / PARTIAL |
-| Physical geometry / printing / manufacturing / global readiness | BLOCKED / false |
+| Directly exercised local guards/OS handles/permissions | REAL_OS_IO, platform-specific |
+| Separate clean winning Blender paths/two variants | REAL_RENDER; synthetic visual inputs only |
+| Strict comparator/callback fixtures and CI/cleanup artifacts | MOCK regression |
+| Generic/global temp cleanup and product-room workflow | UNCLAIMED/PARTIAL |
+| Physical geometry/printing/manufacturing/global readiness | BLOCKED/false |
 
-`inputTruth=SYNTHETIC_STATIC_FIXTURE`; `physicalProductGeometryTruth=false`; `physicalPrintValidated=false`; `manufacturingReady=false`; `globalProductionReady=false`. No physical CAD truth or Production Ready cabinet claim. Scope is trusted local filesystems/cooperating services, not distributed storage, arbitrary ACL, disk/power-loss durability or hostile replacement.
+`inputTruth=SYNTHETIC_STATIC_FIXTURE`; `physicalProductGeometryTruth=false`; `physicalPrintValidated=false`; `manufacturingReady=false`; `globalProductionReady=false`. REAL Blender visual evidence is not physical CAD, print proof or manufacturing readiness. No distributed-filesystem, hostile-admin or arbitrary disk/power-loss guarantee.
 
-PR #16 remains FROZEN DRAFT; PR #13/#14 unchanged; Issue #6 BLOCKED_PR14_NOT_ON_MAIN; `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC or user-runtime deployment. After exact DOCS Ubuntu/Windows CI PASS and one READY_FOR_RE_GATE handoff, STOP for Supervisor Re-Gate; do not start Round 8 automatically.
+PR #15 DRAFT/OPEN/unmerged; Round 8 HOLD; PR #16 FROZEN DRAFT; PR #13/#14 unchanged; Issue #6 BLOCKED_PR14_NOT_ON_MAIN; `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC, merge/retarget/rebase/cherry-pick or runtime deployment. After exact DOCS dual CI PASS and one READY_FOR_RE_GATE handoff, STOP; do not start Round 8 automatically.
