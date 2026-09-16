@@ -1,71 +1,87 @@
-# Product variant batches — Round 8 immutable crash-window gate
+# Product variant batches — Round 9B file and namespace flush gate
 
-Instruction `487301abac95d206cba391d0869fde5ba2f2c429` / [Supervisor comment5703707434](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5703707434). Round7 strict identity closure was **ACCEPT WITH SCOPE / GO Round8**. PR15 stays DRAFT/OPEN on `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`. **MERGE_AUTHORIZED=false; Round9 HOLD.**
+Instruction `511e9169421947c155dd47da34dda6b506e27ee4` / [Supervisor comment5705530120](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5705530120) authorizes the corrected indeterminate-commit contract. PR15 remains DRAFT/OPEN on `codex/model-category-tree` (PR12); **MERGE_AUTHORIZED=false, PR16 FROZEN, Round10 HOLD**.
 
-## Exact gates
+Final closure-only instruction **`7ae49f5f956b43f7981fbcde92452deedffd0847`** / [Supervisor comment5706078068](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5706078068) provisionally accepted the direction and froze CODE87ea4d3 while requiring exact CODE CI, new clean REAL and exact DOCS CI. That review was PARTIAL, not final acceptance; the gates below complete the requested evidence.
 
-- CODE **`8129309c45b1db566385305e0db5a03f23c64e33`**; [Actions 35147126655](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35147126655): **Windows1285 PASS; Ubuntu1281 PASS +4 existing Windows-only skips**. Checkout SHA verified in both jobs. CI is regression, not REAL_RENDER.
-- Local full suite on clean exact CODE: **1285 PASS**, zero skips/failures. Precommit combined focus301 PASS; final Round8 focus49 PASS. Clean exact-CODE reruns: Round8 **49**, persistence **30**, ownership **21**, state-temp **35**, strict identity **71** PASS.
-- Clean exact-CODE REAL acceptance **`4c084b88-a7b3-4780-89e9-7bc60721d07e`**, after CODE CI success: Blender **5.2.1 LTS / OptiX**, `realOptix=true`, `usedMock=false`; two synthetic static cabinet variants. Artifact SHA/size, finite pixels, .blend reopen, restart/history/download, cache/attempt/DAM/job/publication lineage PASS; retained **30+21+35** logical matrices PASS.
-- DOCS follows these gates. Its exact DOCS SHA and subsequent Ubuntu/Windows CI run are recorded in the final Issue1 handoff; this commit cannot self-reference its own future SHA.
+## Exact verification
 
-## Baseline before production edits
+- CODE **`87ea4d3ba753c811f693cec8f4a3f465aca94364`**; [Actions 35161605399](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35161605399): Windows **1314 PASS**, Ubuntu **1310 PASS +4 existing Windows-only skips**. Both checkout SHAs verified. CI render paths are **MOCK regression**.
+- Clean exact-CODE local full suite **1314 PASS**, zero skips/failures. Added **29** focused tests; these also pass in a separate Linux container. The final full suite retains the prior persistence, cleanup and identity gates.
+- Clean REAL Blender acceptance **`12711dff-d675-4a2e-a620-7d5ad81bf05e`**, run after exact CODE dual-CI success: **Blender5.2.1 LTS / OptiX**, `usedMock=false`, two synthetic/static cabinet variants. Artifact SHA/size, finite pixels, .blend reopen, restart/history/download and cache/attempt/DAM/job/publication lineage PASS. Existing authority/serialization matrices remain PASS.
+- DOCS follows these completed gates. Exact DOCS SHA and its subsequent Ubuntu/Windows CI are recorded in the final Issue1 handoff after success; a document cannot embed its own future commit SHA.
 
-Exact accepted CODE **`0c6bb2a0e8ed8a8a7d23b8a938b5670e83f3b6c1`**, clean detached worktree, actual child-process hard kills. Each window was exercised for **request.json, 0.json, terminal.json**: nine actual killed writers and nine fresh recovery processes. Test hooks paused existing os.link/Path.replace boundaries; production baseline behavior was unchanged. Full directory inventories, path types/link counts/inodes, exact bytes/size/SHA, killed/fresh PIDs and final verification results are embedded in JSON.
+## Baseline and corrected contract
 
-| Window | Accepted-CODE observation | Classification |
-|---|---|---|
-| W1: outer temp materialized, before link | Final absent; durable single-link UUID-only temp remains. Fresh process never adopts or replays it. | Unpublished bytes, but old name cannot bind an exact final: unknown, preserve. |
-| W2: link completed, before temp unlink | Final and temp have equal SHA/bytes/inode and link count2. Final verifies; duplicate publish rejected without changing final bytes. | Final is immutable published authority. Extra hard link is ambiguous for auto-cleanup: preserve, never infer authority from it. |
-| W3: inner atomic temp materialized, before replace | Final absent; nested UUID-only atomic temp survives. Fresh process never adopts/replays. | Unknown legacy debris; preserve. |
+Clean accepted CODE **`8129309c45b1db566385305e0db5a03f23c64e33`** was imported unchanged before production edits. Actual Windows and Linux child processes exercised state/request/row/terminal/publication-shaped JSON writes. The actual symbols are `recipe_3d.atomic_json` and `model_batches._once`; the alternate names in the original instruction did not exist. Source inspection and operation tracing found no explicit durable file flush or namespace synchronization. This is **REAL_LOGIC_AUDIT**, not observed data loss or a kernel trace.
 
-All nine baseline orphans remained after recovery. No baseline authority promotion or automatic generation was observed. This justifies recognizable future names and bounded cleanup, not a global sweep or authority redesign. Harness source hash and original failing harness attempts remain local: the first pre-baseline harness tried reading the locked owner byte; that instrumentation was corrected before the nine valid baseline cases. No failed run is PASS evidence.
+Windows11 local E: NTFS writable-file and writable-directory FlushFileBuffers succeeded. Linux Docker writable-overlay file fsync and directory-fd fsync after replace/link/unlink succeeded. Windows GENERIC_READ directory error5 was only a diagnostic; writable directory flushing was available. Capability calls alone did not establish an application commit contract.
 
-## Minimal correction
+The negative baseline in [comment5705499390](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5705499390) remains valid: after real replace, an injected namespace-sync EIO made the writer fail but left a complete seal that the existing unmocked verifier accepted in a fresh process. That was **MOCK / FAULT_INJECTION_LOGIC** at the injected boundary, using an isolated copy of accepted Round8 artifacts. It was not a new render or physical device failure. The original over-constrained D5 was stopped and reported; it is not retroactively relabeled PASS. Supervisor explicitly changed the requirement to an indeterminate outcome without a new authority protocol.
 
-Only `model_batches.py` production code changes. Batch request/row/terminal temps now use `<final>.once.<16 lowercase hex>.tmp`; nested atomic temps append the unchanged `.<8 lowercase hex>.tmp` contract. The target-bound name stays within the prior Windows path-length budget. Non-batch authority declarations keep their existing UUID-only temp names.
+## Implementation
 
-`scavenge_once_temps` requires a live held PreviewOwnership/open stream for the exact product workspace and explicit allowed immutable targets. It checks canonical batch UUID and final basename, direct directory scope, parent-directory reparse/alias checks, then candidate regular-file/single-link/reparse metadata. All candidates in the supplied set are validated before removal. Only matching direct children are considered; it does not read debris contents, use age/mtime/PID heuristics, recurse, or promote orphan bytes.
+Initial CODE `fa6afd48e08b11f2e9eaf2de9df3684c5cd6d5ba` / Actions35159595918 passed Windows1302 and Ubuntu1298+4, but clean REAL `b940339a-eb0c-443a-9ba8-25f911421e5e` **FAILED** before generating artifacts: status polling saw an active writer's initial request/progress flush window as missing/corrupt metadata (HTTP422). It is not accepted REAL evidence. Two deterministic cases reproduced FAIL before correction; 239 related tests then passed before final freeze, and the final 29 focus tests include 12 startup/corruption guards. All final gates are rerun on the final CODE above; the initial green CI is not substituted for them.
 
-Terminal-state `current()` recovery takes the existing workspace guard, services request.json, validates the existing request identity, then services only identity-derived row paths and terminal.json before any interruption receipt write. A live owner blocks competing recovery. `_once(..., owner=...)` propagates cleanup failure before a replacement immutable write. Active queued/running reads retain the existing read path. No queue, PreviewOwnership, renderer, DAM, master, schema, hash or publication verifier redesign occurred. Relative workspace paths retain their previous support through lexical absolute normalization; reparse/alias checks remain enforced.
+The correction returns only the existing pending/no-batch view while the exact workspace OS lock proves a live writer, initial progress is still absent, and no row/terminal facts exist. It validates serialized task/state/version and any committed request identity/hash; it reads no temp data and writes/replays nothing. No owner, malformed records, wrong identity, or existing row/terminal facts retain rejection. This addresses the timing window enlarged by real sync without changing publication verification or treating missing authority as success.
 
-**W2 remains deliberately fail-closed:** multi-link candidates are preserved, final bytes verify unchanged, and recovery reports ambiguity. No automatic hard-link deletion is claimed. The old unbound UUID-only names, unknown files, retired batches and generic/global cleanup remain **PARTIAL / UNCLAIMED**. Cleanup never supplies request/receipt/terminal authority or turns interrupted work into success.
+`durability.flush_file` flushes runtime buffering and the still-open host file handle before atomic replacement. Windows uses FlushFileBuffers; POSIX uses fsync. Existing bounded Windows replace contention retries are unchanged. After replace, immutable link and existing scoped temp unlink, `namespace_committed` synchronizes the containing directory.
 
-## Current exact-CODE process evidence
+Windows opens a writable directory with backup semantics and full sharing, queries its filesystem through the same handle, requires NTFS, then calls FlushFileBuffers. Non-NTFS or API errors do not silently succeed. POSIX opens the directory and fsyncs its descriptor. Every descriptor/handle is closed; no volume handle, elevation, broad scan or background storage subsystem is added.
 
-| Window | Target | Killed → fresh PID | Result |
-|---|---|---|---|
-| W1 | request.json | 19688 → 35604 | Recognized debris removed; no adoption/replay |
-| W2 | request.json | 45932 → 33624 | Preserved; final verified, duplicate blocked; recovery fails closed |
-| W3 | request.json | 45668 → 16928 | Recognized debris removed; no adoption/replay |
-| W1 | 0.json | 34124 → 36820 | Recognized debris removed; no adoption/replay |
-| W2 | 0.json | 32448 → 26344 | Preserved; final verified, duplicate blocked; recovery fails closed |
-| W3 | 0.json | 37740 → 45188 | Recognized debris removed; no adoption/replay |
-| W1 | terminal.json | 31568 → 5224 | Recognized debris removed; no adoption/replay |
-| W2 | terminal.json | 44352 → 40848 | Preserved; final verified, duplicate blocked; recovery fails closed |
-| W3 | terminal.json | 46224 → 17760 | Recognized debris removed; no adoption/replay |
+A file-flush error before the commit leaves final authority absent/unchanged. An error after namespace mutation raises **CommitIndeterminate** with the operation/path and chained cause. The failed call never returns success, does not retry or roll back the committed final, and the batch loop propagates this exception before another row/receipt. The existing service records failure through its existing error path. No schema, verifier, queue, PreviewOwnership, DAM, renderer, Product Master, identity hash, or naming contract changes.
 
-Every case also runs an independent live competitor while the original owner is held: competitor returns PreviewBusy with identical before/after inventories, zero cleanup and zero immutable write. Final request/row/terminal/publication records present before restart remain byte-identical. Actual Windows junction/reparse and delete-sharing denial tests PASS; corresponding Ubuntu tests exercise POSIX symlink and directory-permission behavior. Failed deletion blocks publication before a new write. These are **REAL_PROCESS_RECOVERY / REAL_OS_IO** with **MOCK artifact validation**, not real renders. The49 focus tests include9 process cases,2 OS cases and38 unit/fault/fixture regressions.
+This is a bounded JSON/containing-directory primitive. It does **not** prove durability of every ancestor directory, copied render artifact, remote filesystem, storage controller or power-loss scenario. An indeterminate final may later be observable and valid under the unchanged verifier; that observation is **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**, not proof of durable success from the failing call.
 
-## Retained gates and REAL rendering
+## D1–D6 evidence
 
-Round5 persistence30, Round6 ownership21, Round7 state-temp35 and strict-identity71 PASS on clean current CODE. Six previous cleanup kill/restart cases, six concurrency cases plus two isolation cases, and all five actual Windows recovery cases remain PASS. The retained B/C recovery paths and a separate one-winner/one-busy-loser trial use real Blender/full publication verification; loser performs zero writes/render entry. The two-variant acceptance also verifies restart/history/download and published lineage. Server retry warnings: 1; acceptance-process retry warnings: 0.
-
-Superseded CODE ed63440459021f79348c3cba8f9daf8f26d2b01f / Actions35146743812 was **CANCELLED**, not PASS, when relative-root compatibility was identified before final freeze. Its local full suite was terminated and has no PASS claim. Earlier focused301 passed on that version; all required current gates above are rerun on final CODE. The first precommit 32-character token caused a Windows long-path failure;16 characters restores the old temp path budget and all final process cases pass. Neither precommit failure is hidden or used as successful evidence.
-
-[Prior accepted Round7 evidence](https://github.com/netfox-web/blender-autonomous-3d/blob/d36600e4831d7a86e29a4647cf72560b62b744d3/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json) preserves the true-vs-int and absent-vs-null baselines, prior process failures and earlier cancelled runs. Current retained evidence replaces only current-run fields; historical provenance remains linked by immutable SHA.
-
-## Truth boundary
-
-| Evidence | Classification / limit |
+| Gate | Current result and classification |
 |---|---|
-| Exact publication identity, scoped cleanup and serialized fencing | REAL_LOGIC |
-| Actual killed/fresh process and live competitors | REAL_PROCESS_RECOVERY / REAL_PROCESS_CONCURRENCY |
-| Actual link/lock/reparse/delete-denial operations | REAL_OS_IO, platform-specific |
-| Separate Blender winner and two synthetic variants | REAL_RENDER, synthetic visual input only |
-| Unit/fault fixtures and CI artifact validation | MOCK regression |
-| Legacy/global/retired temp cleanup; full-room product workflow | PARTIAL / UNCLAIMED |
-| W2 extra hard link | UNKNOWN / PRESERVED / FAIL_CLOSED |
-| Physical geometry/print/manufacturing/global readiness | false |
+| D1 | Actual flush then real child kill before replace on Windows and Linux; fresh process no phantom final or temp adoption. Injected file-flush errors leave absent/existing final unchanged. REAL_OS_IO_FLUSH / REAL_PROCESS_RECOVERY; injected errors MOCK. |
+| D2 | Actual file flush → replace → directory sync → link → directory sync → owned unlink → directory sync, on both exercised platforms. Scoped cleanup errors stop before subsequent writes. REAL_OS_IO_FLUSH; fault paths MOCK. |
+| D3 | Copied accepted artifacts, full unmocked verifier. Injected post-replace sync EIO returns CommitIndeterminate; fresh verifier accepts the already-existing valid seal, rejects absent/tampered controls, blocks duplicate generation/receipt, and preserves bytes. PARTIAL / COMMIT_INDETERMINATE_DURABILITY. |
+| D4 | Retained nine actual W1/W2/W3 × request/row/terminal crash cases. W2 same-file two-link candidates preserved and recovery fails closed; final verified and duplicate blocked. PARTIAL / PRESERVED UNKNOWN. |
+| D5 | Actual flush-complete request/row/terminal/publication JSON writes, killed owner, fresh readers and immutable facts preserved. Duplicate generation/receipt, stale writer and replay blocked. REAL_PROCESS_RECOVERY + REAL_OS_IO_FLUSH; artifact generation/validation in this focused harness is MOCK. |
+| D6 | Current full suite retains persistence30, ownership/concurrency21, state-temp35, identity71 and immutable-temp49 cases, including real Windows sharing handles and actual killed/fresh processes. Render fixtures remain MOCK. |
 
-`inputTruth=SYNTHETIC_STATIC_FIXTURE`; `physicalProductGeometryTruth=false`; `physicalPrintValidated=false`; `manufacturingReady=false`; `globalProductionReady=false`. Fixture renders are not physical CAD truth or production readiness. PR16 FROZEN DRAFT; PR13/14 unchanged; Issue6 BLOCKED_PR14_NOT_ON_MAIN. No merge, retarget, rebase-to-main, cherry-pick or live H3/LTX/Vision/CNC/LASER/PLC work. After exact DOCS dual CI, report READY_FOR_RE_GATE once and STOP; Round9 needs a new Re-Gate.
+Raw per-process PIDs, operation ordering, paths, bytes/hashes, classifications and test properties are embedded in the JSON evidence. Windows evidence comes from the clean exact-CODE full suite; Linux focused evidence comes from an isolated Docker Linux6.18.33.2-microsoft-standard-WSL2 writable overlay with the same read-only source checkout. Both Actions jobs independently passed on their own runners. No container evidence is mislabeled native Ubuntu CI.
+
+D3 reuses only a copied input artifact tree from accepted Round8 REAL `4c084b88-a7b3-4780-89e9-7bc60721d07e`; original evidence remains byte-identical. The **new** clean REAL evidence is `12711dff-d675-4a2e-a620-7d5ad81bf05e`. No reused render is represented as a new execution.
+
+## Reproduction
+
+From the exact CODE checkout (Python3.12 and declared dependencies installed):
+
+```text
+python -X utf8 -m pytest -rA -o junit_family=xunit1 --junitxml=local-full.xml
+python -X utf8 -m pytest tests/test_durability.py -rA -o junit_family=xunit1 --junitxml=durability.xml
+```
+
+CI/mock regression sets `FOX3D_MOCK_BLENDER=1`. The manual full-verifier D3 helper requires the retained accepted artifact tree; use a new isolated root on every run:
+
+```text
+python -X utf8 tests/helpers/durability_publication.py --code-root . --source .fox3d-work/batches/4c084b88/d --root .fox3d-work/r9bf-pub --expected-code 87ea4d3ba753c811f693cec8f4a3f465aca94364 --tenant sonaqueen-home --model a25cc814-30a5-4f30-a7e7-0fc48a0b2625 --generation 97b1a86c-25e1-5613-84bd-34af9e8b9847
+```
+
+Clean REAL acceptance sets `FOX3D_MOCK_BLENDER=0` and `BLENDER_PATH=C:/Program Files/Blender Foundation/Blender 5.2/blender.exe`, then runs `python -X utf8 scripts/run_model_batches_e2e.py --round3` only after exact CODE dual-CI SUCCESS. Baseline audit harness source, its hashes and exact commands are embedded in the JSON; baseline worktree remains unchanged.
+
+## Platform references and limits
+
+The file primitive follows [Microsoft FlushFileBuffers](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers). Directory persistence uses the [MS-FSA flush contract](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/0de7dc40-9627-437e-a4df-c4696cdc3d02) with the [NTFS-specific product-behavior limitation, footnote80](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fsa/4e3695bd-7574-4f24-a223-b4679c065b63); the helper rejects other Windows filesystem names rather than interpreting no-op success as a guarantee. POSIX file and directory calls follow [Linux fsync](https://man7.org/linux/man-pages/man2/fsync.2.html). These document platform requests, not destructive hardware test results.
+
+| Truth | Scope |
+|---|---|
+| File/namespace calls directly exercised | REAL_OS_IO_FLUSH on the named surface |
+| Killed writer + fresh reader | REAL_PROCESS_RECOVERY |
+| Typed outcome, identity/verifier/ownership retention | REAL_LOGIC |
+| Injected EIO, mock artifacts and CI renderer | MOCK / FAULT_INJECTION_LOGIC |
+| Failed post-namespace sync | PARTIAL / COMMIT_INDETERMINATE_DURABILITY |
+| W2 extra hard link | PARTIAL / PRESERVED UNKNOWN |
+| Hardware power-cut/reset survival | BLOCKED / NOT_TESTED |
+| New clean synthetic/static Blender output | REAL_RENDER only |
+
+`physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`. No physical CAD, print calibration or Production Ready claim. PR13/14 remain unchanged; Issue6 is BLOCKED_PR14_NOT_ON_MAIN. PR16 scenes remain FROZEN and the user's local runtime has not been deployed/restarted. No live H3/LTX/Vision/CNC/LASER/PLC or machine operations.
+
+[Prior accepted Round8 report](https://github.com/netfox-web/blender-autonomous-3d/blob/85ecad41da13bcd14140a7dd373fed4e09012a4f/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json) retains historical evidence. Its actual counts were Windows1285/Ubuntu1281+4 and REAL4c084b88; Supervisor corrected the earlier misquoted values in comment5705530120. Those prior counts/renders are not current gates.
+
+After exact DOCS dual-CI success: one READY_FOR_RE_GATE handoff, then **STOP for Supervisor; Round10 HOLD**.
