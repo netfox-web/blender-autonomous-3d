@@ -14,7 +14,8 @@ class PreviewBusy(ValueError):
 class PreviewOwnership:
     def __init__(self, folder):
         folder.mkdir(parents=True, exist_ok=True)
-        self.stream = (folder / 'owner.lock').open('a+b')
+        self.folder = folder.resolve()
+        self.stream = (self.folder / 'owner.lock').open('a+b')
         self.held = False
         try:
             if os.name == 'nt':

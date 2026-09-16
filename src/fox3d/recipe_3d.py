@@ -20,6 +20,7 @@ from fox3d.pngutil import is_png
 ADAPTER_VERSION = "recipe-preview-2"
 FILES = {"png": "beauty.png", "blend": "model.blend", "glb": "model.glb", "geometry": "geometry.json"}
 _ATOMIC_RETRY_DELAYS = (.025, .05, .1, .2, .2, .2, .2)
+_ATOMIC_TEMP_TOKEN_LENGTH = 8  # new_id() is a lowercase canonical UUID string.
 
 
 def input_hash(draft):
@@ -58,7 +59,7 @@ def _windows_replace_contention(error, path):
 def atomic_json(path, value):
     """Same-directory atomic replace; bounded Windows contention retries only."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + "." + new_id()[:8] + ".tmp")
+    temporary = path.with_name(path.name + "." + new_id()[:_ATOMIC_TEMP_TOKEN_LENGTH] + ".tmp")
     owned = False
     try:
         with temporary.open('x', encoding='utf-8') as stream:
