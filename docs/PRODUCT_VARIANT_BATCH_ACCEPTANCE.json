@@ -1,6 +1,6 @@
 {
-  "evidenceId": "0af30671-aa63-44a6-9d6f-39de99892b35",
-  "codeCommit": "6b118898ebd430592e293c04c5cabe4bc30f37d8",
+  "evidenceId": "2b0d86f8-a738-40f5-8420-fab8faccdb8b",
+  "codeCommit": "65299811abd076645edbe1cd0777b12b63968c0b",
   "workingTreeClean": true,
   "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
   "physicalPrintValidated": false,
@@ -9,8 +9,8 @@
   "productionReady": false,
   "generations": [
     {
-      "modelId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
-      "generationId": "370e40d1-cdce-5cf6-8542-0b30fd7037b0",
+      "modelId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
+      "generationId": "fb429e0d-2f3a-5c4a-ad42-37d4763e1a27",
       "sku": "FIXTURE-2",
       "scene": "STUDIO",
       "renderInfo": {
@@ -21,37 +21,37 @@
         "realOptix": true
       },
       "files": {
-        "beauty.png": "163899f9f3f34fa4aa42215e5e77e6c1a697b39c04d30b1fb8b9bc2142737e6f",
+        "beauty.png": "b0f3d5bf69d86919bc405083812ac201249fcdda6c642f8844225692dfbb5df2",
         "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
         "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
         "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
-        "front-closed.png": "471dd5d3c3a63fa0d8ebba3ea68146de03621c98034093f2b9e3250ab6c68ec9",
+        "front-closed.png": "dd9d0e64d4e56eed48958cbbc35b6fcdfecd619270da14e743ea8e75b18845c6",
         "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
-        "golden-observation.json": "a94d0605f40a03abab376ff8d80aefd755560ab2a0e724b923cd68fe39fc3da8",
-        "model.blend": "76451ffecbd8dc87d57b2b9a3cd4af90371c58d152250e2a22eaf5d24167ee61",
+        "golden-observation.json": "3661dcdb6114fd75a2acc68231a3a93141f9d04881a56b1f3f535ddeccda2516",
+        "model.blend": "13608db07b5bf4eb5d05275fb12f9f5c3d18b7574813b55e5ba9d4fe0c865794",
         "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
       },
       "sizes": {
-        "beauty.png": 646891,
+        "beauty.png": 647195,
         "door_1-preview.png": 2473,
         "door_2-preview.png": 2473,
         "door_3-preview.png": 2473,
-        "front-closed.png": 647551,
+        "front-closed.png": 647550,
         "geometry.json": 1637,
         "golden-observation.json": 6186,
         "model.blend": 964518,
         "model.glb": 27960
       },
       "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
-      "jobId": "b6d447f9-b469-4d52-9a28-5fbaa7e02bda",
-      "requestedJobId": "b6d447f9-b469-4d52-9a28-5fbaa7e02bda",
+      "jobId": "d7bc7fc0-2a3b-462f-8433-039031d09181",
+      "requestedJobId": "d7bc7fc0-2a3b-462f-8433-039031d09181",
       "cacheHit": false,
       "blendReopen": true,
-      "inputAuthorityHash": "98720dff7e91f1425ea02a2f45516836eed9d93834bd95002b50a34325855aa4",
+      "inputAuthorityHash": "410bee02234028d5df6da592bdb02cd706aa764bb3375e7541f6047065c463d1",
       "inputAuthority": {
         "authorityVersion": 1,
         "tenantId": "sonaqueen-home",
-        "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+        "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
         "masterRevision": 1,
         "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
         "geometryAuthorityKind": "SYNTHETIC_FIXTURE",
@@ -68,7 +68,7 @@
             "role": "ARTWORK",
             "note": "Synthetic asymmetric fixture",
             "revision": 1,
-            "updatedAt": "2026-09-16T09:22:54.944218+00:00",
+            "updatedAt": "2026-09-16T11:23:19.791736+00:00",
             "assetSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
             "authority": "OPERATOR_CLASSIFICATION_ONLY",
             "label": "印刷圖稿",
@@ -77,7 +77,7 @@
             "physicalPrintValidated": false
           }
         },
-        "artworkAuthorityHash": "d689f243044b1efde616a6798f80a87efcd59900e0a0d65f371a677744958ac5",
+        "artworkAuthorityHash": "6a15c13ae7df2c2b8f3099164f2a5d7ed6dc7769b15e6b533e6d2f96182f3a1b",
         "classificationMetadata": {
           "categoryId": "wood_other",
           "path": [
@@ -91,31 +91,31 @@
         },
         "declaration": {
           "version": 1,
-          "id": "dc745599-50bf-4196-99fb-8329f3fe3e09",
+          "id": "48cb40cf-82e3-4477-9077-a5e73f0e4b3b",
           "tenantId": "sonaqueen-home",
-          "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+          "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
           "masterRevision": 1,
           "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
           "kind": "SYNTHETIC_FIXTURE",
           "provenance": {
-            "createdAt": "2026-09-16T09:22:54.916142+00:00",
+            "createdAt": "2026-09-16T11:23:19.754850+00:00",
             "createdBy": "REAL_ACCEPTANCE_FIXTURE_SETUP",
             "decision": "Explicit synthetic dimensions; no physical measurement or CAD approval",
             "approvedBy": null,
             "physicalApproval": false
           }
         },
-        "declarationHash": "e50260677c99f2df629914c7c7012467c2840d65cb0efde76b879d7b8d853da0"
+        "declarationHash": "6fa9cdc351e061e80922ddbf2a2ec9659fa3178de5ab02d85460ac6b8be8459e"
       },
       "publication": {
-        "manifestSha256": "98c790bd559e70a12f2d92ee07ef396c6d95c7342e4991195b56ea98f3234940"
+        "manifestSha256": "4bdacd0091eda0e5d9688594fd68acfd29ee8b4cc6db762e58d5ed2378a3bce5"
       },
-      "manifestSha256": "98c790bd559e70a12f2d92ee07ef396c6d95c7342e4991195b56ea98f3234940",
+      "manifestSha256": "4bdacd0091eda0e5d9688594fd68acfd29ee8b4cc6db762e58d5ed2378a3bce5",
       "finitePixels": true
     },
     {
-      "modelId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
-      "generationId": "0ccdb5e6-3027-5966-b983-3087ce24448a",
+      "modelId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
+      "generationId": "cc49a68b-aa8e-539f-8224-f9cdab355cb1",
       "sku": "FIXTURE-1",
       "scene": "STUDIO",
       "renderInfo": {
@@ -126,37 +126,37 @@
         "realOptix": true
       },
       "files": {
-        "beauty.png": "95f0eceb21008f31dcadf57b117a8e7b5da79600bcfd814e65d592974c703ef6",
+        "beauty.png": "f1fa1f767bf8b82b1db137cfa5dbd8dae7c7a3f9442b5e7fdc160ace975ff33e",
         "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
         "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
         "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
-        "front-closed.png": "450a68cb4eb59fa5153198a1777f1791ec2fbaa19d0cf98a0241a983f193c23a",
+        "front-closed.png": "7d9fa7c3035f0658677e1f66ccffdf1e1da88b5b35dd2e826f74231a47404ebe",
         "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
-        "golden-observation.json": "90f97ca3b9c58fce20cea70713eb24f0d26e80cb1448d261499408b6032b15ca",
-        "model.blend": "42683457dbe0278157c3503cf771bf76796ace0b766d9e56d8946a971730b6b6",
+        "golden-observation.json": "064172d6f0cd57c460324738cae987a09b1871748247c5a9cc11c745157aaa5b",
+        "model.blend": "5906cd9e3050a255eadddd33e22bec2b675ba423be6627cd03d48ffa7a3de1b1",
         "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
       },
       "sizes": {
-        "beauty.png": 646459,
+        "beauty.png": 646358,
         "door_1-preview.png": 2473,
         "door_2-preview.png": 2473,
         "door_3-preview.png": 2473,
-        "front-closed.png": 648457,
+        "front-closed.png": 648510,
         "geometry.json": 1637,
         "golden-observation.json": 6186,
         "model.blend": 964518,
         "model.glb": 27960
       },
       "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
-      "jobId": "8b9541c4-8347-47ff-8020-acae776443e2",
-      "requestedJobId": "8b9541c4-8347-47ff-8020-acae776443e2",
+      "jobId": "b41affc6-b737-4c30-ab2b-de8af8f369b4",
+      "requestedJobId": "b41affc6-b737-4c30-ab2b-de8af8f369b4",
       "cacheHit": false,
       "blendReopen": true,
-      "inputAuthorityHash": "01d9fa1751479a710febb97a7738d5d865386e2be004d22d2ce82295b3c63d1c",
+      "inputAuthorityHash": "afaaf7ce0d84f3110c6b9b2a913a77972f4d8781a33045dcb9ad52d32ef7d38f",
       "inputAuthority": {
         "authorityVersion": 1,
         "tenantId": "sonaqueen-home",
-        "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+        "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
         "masterRevision": 1,
         "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
         "geometryAuthorityKind": "SYNTHETIC_FIXTURE",
@@ -173,7 +173,7 @@
             "role": "ARTWORK",
             "note": "Synthetic asymmetric fixture",
             "revision": 1,
-            "updatedAt": "2026-09-16T09:22:54.934202+00:00",
+            "updatedAt": "2026-09-16T11:23:19.776694+00:00",
             "assetSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
             "authority": "OPERATOR_CLASSIFICATION_ONLY",
             "label": "印刷圖稿",
@@ -182,7 +182,7 @@
             "physicalPrintValidated": false
           }
         },
-        "artworkAuthorityHash": "6cb257263603cd6c2d56b408c8338af476904dfb6af0dd18bb715038f54962d7",
+        "artworkAuthorityHash": "e4a053fa25a53da525a831c3947ca6f3175e94e3e2217e05d7a4daf515e8d811",
         "classificationMetadata": {
           "categoryId": "wood_other",
           "path": [
@@ -196,26 +196,26 @@
         },
         "declaration": {
           "version": 1,
-          "id": "dc745599-50bf-4196-99fb-8329f3fe3e09",
+          "id": "48cb40cf-82e3-4477-9077-a5e73f0e4b3b",
           "tenantId": "sonaqueen-home",
-          "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+          "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
           "masterRevision": 1,
           "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
           "kind": "SYNTHETIC_FIXTURE",
           "provenance": {
-            "createdAt": "2026-09-16T09:22:54.916142+00:00",
+            "createdAt": "2026-09-16T11:23:19.754850+00:00",
             "createdBy": "REAL_ACCEPTANCE_FIXTURE_SETUP",
             "decision": "Explicit synthetic dimensions; no physical measurement or CAD approval",
             "approvedBy": null,
             "physicalApproval": false
           }
         },
-        "declarationHash": "e50260677c99f2df629914c7c7012467c2840d65cb0efde76b879d7b8d853da0"
+        "declarationHash": "6fa9cdc351e061e80922ddbf2a2ec9659fa3178de5ab02d85460ac6b8be8459e"
       },
       "publication": {
-        "manifestSha256": "851bdf84bfe6c7eb0a4ceec6f0d35a95b6cda86b26086f679c8d81f130fbd1a1"
+        "manifestSha256": "5d865cd30da55e7f2de8eba94f8f87216297ed2d11547471c25a839f08fbc8fe"
       },
-      "manifestSha256": "851bdf84bfe6c7eb0a4ceec6f0d35a95b6cda86b26086f679c8d81f130fbd1a1",
+      "manifestSha256": "5d865cd30da55e7f2de8eba94f8f87216297ed2d11547471c25a839f08fbc8fe",
       "finitePixels": true
     }
   ],
@@ -223,28 +223,28 @@
   "round3": true,
   "batches": [
     {
-      "batchId": "7b5f5ee8-bb71-4acb-b03e-96f9c3e29599",
-      "modelId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+      "batchId": "823725c1-74ef-4afe-aa3b-f7f3d4c8cfef",
+      "modelId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
       "identityVersion": 1,
       "verifiedState": {
         "identityVersion": 1,
         "tenantId": "sonaqueen-home",
-        "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
-        "batchId": "7b5f5ee8-bb71-4acb-b03e-96f9c3e29599",
+        "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
+        "batchId": "823725c1-74ef-4afe-aa3b-f7f3d4c8cfef",
         "name": "REAL batch fixture",
         "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
         "sourceRevision": 1,
-        "selectionHash": "edc1b485538b8000a12b8f8dfb1905a7cf2db22f4970c447dc326b78967bf68a",
+        "selectionHash": "c392b5ac2c1a22208e277a2eed9d088006a72f3fdd5597d2e2fce61351b5c1bb",
         "authorityVersion": 1,
-        "authorityHash": "6c7ac5c0c90251e4fe09ca41b2c1f0e84a15c470a7f2613a80351495ee6b5157",
+        "authorityHash": "16b9324efdfcd49e1bb928a854e19101db894f5e3960f3b3c5c337b019809064",
         "rowCount": 2,
         "rows": [
           {
             "index": 0,
-            "generationId": "0ccdb5e6-3027-5966-b983-3087ce24448a",
+            "generationId": "cc49a68b-aa8e-539f-8224-f9cdab355cb1",
             "sku": "FIXTURE-1",
             "scene": "STUDIO",
-            "selectionHash": "321f6fcdade8f80b266e9855ccaeeac4666f821d5349f58379bfc2bb8fe012f6",
+            "selectionHash": "8d662089a5529acbd56edb58e2974cf1b6a8bf4fe81a66e0f491cab2e757d19e",
             "state": "succeeded",
             "error": null,
             "available": true,
@@ -253,15 +253,15 @@
             "printSurfaceAuthorityReady": false,
             "manufacturingReady": false,
             "physicalPrintValidated": false,
-            "inputAuthorityHash": "01d9fa1751479a710febb97a7738d5d865386e2be004d22d2ce82295b3c63d1c",
+            "inputAuthorityHash": "afaaf7ce0d84f3110c6b9b2a913a77972f4d8781a33045dcb9ad52d32ef7d38f",
             "geometryAuthorityKind": "SYNTHETIC_FIXTURE"
           },
           {
             "index": 1,
-            "generationId": "370e40d1-cdce-5cf6-8542-0b30fd7037b0",
+            "generationId": "fb429e0d-2f3a-5c4a-ad42-37d4763e1a27",
             "sku": "FIXTURE-2",
             "scene": "STUDIO",
-            "selectionHash": "9957c32467c93b59a3ddd3406c618c8cf251d2c96a181a7979326d6c1c5b2535",
+            "selectionHash": "dd19fdb79867ff405a9d86dd929ac31e824694089504605d34cdf767e6a156ac",
             "state": "succeeded",
             "error": null,
             "available": true,
@@ -270,7 +270,7 @@
             "printSurfaceAuthorityReady": false,
             "manufacturingReady": false,
             "physicalPrintValidated": false,
-            "inputAuthorityHash": "98720dff7e91f1425ea02a2f45516836eed9d93834bd95002b50a34325855aa4",
+            "inputAuthorityHash": "410bee02234028d5df6da592bdb02cd706aa764bb3375e7541f6047065c463d1",
             "geometryAuthorityKind": "SYNTHETIC_FIXTURE"
           }
         ],
@@ -285,15 +285,15 @@
       "request": {
         "identityVersion": 1,
         "tenantId": "sonaqueen-home",
-        "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
-        "batchId": "7b5f5ee8-bb71-4acb-b03e-96f9c3e29599",
+        "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
+        "batchId": "823725c1-74ef-4afe-aa3b-f7f3d4c8cfef",
         "sourceRevision": 1,
         "draft": {
           "batchVersion": 1,
           "name": "REAL batch fixture",
           "selections": [
             {
-              "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+              "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
               "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
               "masterRevision": 1,
               "master": {
@@ -343,7 +343,7 @@
                 "snapshot": {
                   "authorityVersion": 1,
                   "tenantId": "sonaqueen-home",
-                  "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+                  "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
                   "masterRevision": 1,
                   "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
                   "geometryAuthorityKind": "SYNTHETIC_FIXTURE",
@@ -360,7 +360,7 @@
                       "role": "ARTWORK",
                       "note": "Synthetic asymmetric fixture",
                       "revision": 1,
-                      "updatedAt": "2026-09-16T09:22:54.934202+00:00",
+                      "updatedAt": "2026-09-16T11:23:19.776694+00:00",
                       "assetSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
                       "authority": "OPERATOR_CLASSIFICATION_ONLY",
                       "label": "印刷圖稿",
@@ -369,7 +369,7 @@
                       "physicalPrintValidated": false
                     }
                   },
-                  "artworkAuthorityHash": "6cb257263603cd6c2d56b408c8338af476904dfb6af0dd18bb715038f54962d7",
+                  "artworkAuthorityHash": "e4a053fa25a53da525a831c3947ca6f3175e94e3e2217e05d7a4daf515e8d811",
                   "classificationMetadata": {
                     "categoryId": "wood_other",
                     "path": [
@@ -383,27 +383,27 @@
                   },
                   "declaration": {
                     "version": 1,
-                    "id": "dc745599-50bf-4196-99fb-8329f3fe3e09",
+                    "id": "48cb40cf-82e3-4477-9077-a5e73f0e4b3b",
                     "tenantId": "sonaqueen-home",
-                    "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+                    "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
                     "masterRevision": 1,
                     "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
                     "kind": "SYNTHETIC_FIXTURE",
                     "provenance": {
-                      "createdAt": "2026-09-16T09:22:54.916142+00:00",
+                      "createdAt": "2026-09-16T11:23:19.754850+00:00",
                       "createdBy": "REAL_ACCEPTANCE_FIXTURE_SETUP",
                       "decision": "Explicit synthetic dimensions; no physical measurement or CAD approval",
                       "approvedBy": null,
                       "physicalApproval": false
                     }
                   },
-                  "declarationHash": "e50260677c99f2df629914c7c7012467c2840d65cb0efde76b879d7b8d853da0"
+                  "declarationHash": "6fa9cdc351e061e80922ddbf2a2ec9659fa3178de5ab02d85460ac6b8be8459e"
                 },
-                "hash": "01d9fa1751479a710febb97a7738d5d865386e2be004d22d2ce82295b3c63d1c"
+                "hash": "afaaf7ce0d84f3110c6b9b2a913a77972f4d8781a33045dcb9ad52d32ef7d38f"
               }
             },
             {
-              "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+              "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
               "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
               "masterRevision": 1,
               "master": {
@@ -453,7 +453,7 @@
                 "snapshot": {
                   "authorityVersion": 1,
                   "tenantId": "sonaqueen-home",
-                  "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+                  "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
                   "masterRevision": 1,
                   "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
                   "geometryAuthorityKind": "SYNTHETIC_FIXTURE",
@@ -470,7 +470,7 @@
                       "role": "ARTWORK",
                       "note": "Synthetic asymmetric fixture",
                       "revision": 1,
-                      "updatedAt": "2026-09-16T09:22:54.944218+00:00",
+                      "updatedAt": "2026-09-16T11:23:19.791736+00:00",
                       "assetSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
                       "authority": "OPERATOR_CLASSIFICATION_ONLY",
                       "label": "印刷圖稿",
@@ -479,7 +479,7 @@
                       "physicalPrintValidated": false
                     }
                   },
-                  "artworkAuthorityHash": "d689f243044b1efde616a6798f80a87efcd59900e0a0d65f371a677744958ac5",
+                  "artworkAuthorityHash": "6a15c13ae7df2c2b8f3099164f2a5d7ed6dc7769b15e6b533e6d2f96182f3a1b",
                   "classificationMetadata": {
                     "categoryId": "wood_other",
                     "path": [
@@ -493,58 +493,58 @@
                   },
                   "declaration": {
                     "version": 1,
-                    "id": "dc745599-50bf-4196-99fb-8329f3fe3e09",
+                    "id": "48cb40cf-82e3-4477-9077-a5e73f0e4b3b",
                     "tenantId": "sonaqueen-home",
-                    "masterId": "bc31c16c-66b5-45ce-a2be-1645c1ac9bce",
+                    "masterId": "9f361fb7-a034-4111-9355-d4ac83956b3a",
                     "masterRevision": 1,
                     "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
                     "kind": "SYNTHETIC_FIXTURE",
                     "provenance": {
-                      "createdAt": "2026-09-16T09:22:54.916142+00:00",
+                      "createdAt": "2026-09-16T11:23:19.754850+00:00",
                       "createdBy": "REAL_ACCEPTANCE_FIXTURE_SETUP",
                       "decision": "Explicit synthetic dimensions; no physical measurement or CAD approval",
                       "approvedBy": null,
                       "physicalApproval": false
                     }
                   },
-                  "declarationHash": "e50260677c99f2df629914c7c7012467c2840d65cb0efde76b879d7b8d853da0"
+                  "declarationHash": "6fa9cdc351e061e80922ddbf2a2ec9659fa3178de5ab02d85460ac6b8be8459e"
                 },
-                "hash": "98720dff7e91f1425ea02a2f45516836eed9d93834bd95002b50a34325855aa4"
+                "hash": "410bee02234028d5df6da592bdb02cd706aa764bb3375e7541f6047065c463d1"
               }
             }
           ],
           "authorityVersion": 1,
-          "authorityHash": "6c7ac5c0c90251e4fe09ca41b2c1f0e84a15c470a7f2613a80351495ee6b5157",
+          "authorityHash": "16b9324efdfcd49e1bb928a854e19101db894f5e3960f3b3c5c337b019809064",
           "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
           "masterRevision": 1
         }
       },
-      "requestSha256": "bcb33f790000d52b2d3774d1e2c9819ee5eed5c5a1fd4616e94b22065800e1c5",
+      "requestSha256": "078b6f04a4996d9f43f6ebfda63b315f94479c52ca8d230f479d74a9051cbf4d",
       "terminal": {
-        "batchIdentityHash": "931559f66f7eec067bd413e4da958d2b5e16f015eaf467620dc2e590eac8718d",
+        "batchIdentityHash": "cfec09d4e39dfa013fc2a33ef06f3d3993154d85debe8e4100020a4b3788cfab",
         "state": "succeeded"
       },
       "rowReceipts": [
         {
-          "batchIdentityHash": "931559f66f7eec067bd413e4da958d2b5e16f015eaf467620dc2e590eac8718d",
+          "batchIdentityHash": "cfec09d4e39dfa013fc2a33ef06f3d3993154d85debe8e4100020a4b3788cfab",
           "row": {
             "index": 0,
-            "generationId": "0ccdb5e6-3027-5966-b983-3087ce24448a",
+            "generationId": "cc49a68b-aa8e-539f-8224-f9cdab355cb1",
             "sku": "FIXTURE-1",
             "scene": "STUDIO",
-            "selectionHash": "321f6fcdade8f80b266e9855ccaeeac4666f821d5349f58379bfc2bb8fe012f6"
+            "selectionHash": "8d662089a5529acbd56edb58e2974cf1b6a8bf4fe81a66e0f491cab2e757d19e"
           },
           "state": "succeeded",
           "error": null
         },
         {
-          "batchIdentityHash": "931559f66f7eec067bd413e4da958d2b5e16f015eaf467620dc2e590eac8718d",
+          "batchIdentityHash": "cfec09d4e39dfa013fc2a33ef06f3d3993154d85debe8e4100020a4b3788cfab",
           "row": {
             "index": 1,
-            "generationId": "370e40d1-cdce-5cf6-8542-0b30fd7037b0",
+            "generationId": "fb429e0d-2f3a-5c4a-ad42-37d4763e1a27",
             "sku": "FIXTURE-2",
             "scene": "STUDIO",
-            "selectionHash": "9957c32467c93b59a3ddd3406c618c8cf251d2c96a181a7979326d6c1c5b2535"
+            "selectionHash": "dd19fdb79867ff405a9d86dd929ac31e824694089504605d34cdf767e6a156ac"
           },
           "state": "succeeded",
           "error": null
@@ -645,7 +645,7 @@
     "outerTask:../escape": {
       "status": "BLOCK"
     },
-    "outerTask:7d3a07e1-91d2-4ffa-ad23-7242d74e5c77": {
+    "outerTask:98327e30-0edc-4187-ac38-81479731789e": {
       "status": "BLOCK"
     },
     "published.json": {
@@ -774,7 +774,7 @@
     },
     "historicalExactSnapshot": {
       "status": "PASS",
-      "hash": "01d9fa1751479a710febb97a7738d5d865386e2be004d22d2ce82295b3c63d1c",
+      "hash": "afaaf7ce0d84f3110c6b9b2a913a77972f4d8781a33045dcb9ad52d32ef7d38f",
       "neverRebound": true
     },
     "forgedMeasuredDeclaration": {
@@ -782,7 +782,7 @@
     },
     "restartExactAuthority": {
       "status": "PASS",
-      "authorityHash": "6c7ac5c0c90251e4fe09ca41b2c1f0e84a15c470a7f2613a80351495ee6b5157"
+      "authorityHash": "16b9324efdfcd49e1bb928a854e19101db894f5e3960f3b3c5c337b019809064"
     },
     "restoredVisualDownload": {
       "status": "PASS",
@@ -984,55 +984,150 @@
   "staleBlocked": true,
   "revokedBlocked": true,
   "serialQueue": true,
-  "failedAttempts": [
-    {
-      "evidenceId": "02c928e7-06ec-4001-859a-844e21c6d82e",
-      "codeCommit": "6b118898ebd430592e293c04c5cabe4bc30f37d8",
-      "status": "FAIL",
-      "reason": "Windows WinError 5 during atomic batch progress file replacement; not counted as PASS",
-      "rerun": "Same CODE, fresh isolated data passed. Underlying Windows access contention not independently diagnosed or fixed."
-    }
-  ],
-  "instructionSha": "8dc6bb9146cb4bd20958682f1f2ee03dfba5be71",
-  "instructionCommentId": 5694753406,
+  "persistenceContentionRetries": 0,
+  "atomicProgressWrites": "PASS",
+  "instructionSha": "2467eda072ceadd3e9677349fb1c56a27d97617f",
+  "instructionCommentId": 5696273483,
+  "round4": true,
   "codeCi": {
-    "runId": 35076940707,
+    "runId": 35088102902,
     "jobs": [
       {
-        "databaseId": 104731486908,
-        "name": "unit (windows-latest)",
-        "conclusion": "success",
-        "passMarkers": 1069,
-        "checkoutSha": "6b118898ebd430592e293c04c5cabe4bc30f37d8"
-      },
-      {
-        "databaseId": 104731487268,
+        "databaseId": 104767639746,
         "name": "unit (ubuntu-latest)",
         "conclusion": "success",
-        "passMarkers": 1069,
-        "checkoutSha": "6b118898ebd430592e293c04c5cabe4bc30f37d8"
+        "passMarkers": 1096,
+        "skipMarkers": 3,
+        "checkoutSha": "65299811abd076645edbe1cd0777b12b63968c0b",
+        "realOsIoTests": 0
+      },
+      {
+        "databaseId": 104767639933,
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "passMarkers": 1099,
+        "skipMarkers": 0,
+        "checkoutSha": "65299811abd076645edbe1cd0777b12b63968c0b",
+        "realOsIoTests": 3
       }
     ]
   },
   "localTests": {
-    "full": 1069,
-    "focused": 165,
-    "newSerializedTypeTests": 59,
-    "label": "MOCK_REGRESSION"
+    "full": 1099,
+    "focused": 195,
+    "persistenceFocused": 30,
+    "realOsIo": 3,
+    "normalPersistenceRegressions": 27,
+    "label": "MOCK_REGRESSION plus separately identified REAL_OS_IO"
   },
-  "reproduction": {
-    "code": "d684686f076fb91c1d9a87ca996a9bd917f1a735",
-    "tests": 46,
-    "failed": 27,
-    "passed": 19,
-    "issueComment": 5694802662,
-    "classification": "MOCK_REGRESSION; artifact bytes stubbed"
+  "windowsPersistence": {
+    "reproduction": {
+      "code": "6b118898ebd430592e293c04c5cabe4bc30f37d8",
+      "implementation": "E:\\projects\\fox3d-persistence-repro\\src\\fox3d\\recipe_3d.py",
+      "trackedTreeClean": true,
+      "classification": "REAL_OS_IO",
+      "lock": "CreateFileW GENERIC_READ; FILE_SHARE_READ|WRITE; DELETE sharing disabled",
+      "lockDurationSeconds": 0.4,
+      "elapsedSeconds": 0.0,
+      "error": {
+        "type": "PermissionError",
+        "winerror": 5,
+        "errno": 13,
+        "message": "[WinError 5] 存取被拒。: 'E:\\\\projects\\\\sonaqueen-product-variants\\\\.fox3d-work\\\\round4\\\\baseline-data\\\\state.json.6418ec6c.tmp' -> 'E:\\\\projects\\\\sonaqueen-product-variants\\\\.fox3d-work\\\\round4\\\\baseline-data\\\\state.json'"
+      },
+      "failedBeforeRelease": true,
+      "destinationBytesUnchanged": true,
+      "destinationJson": {
+        "version": 1,
+        "value": "A"
+      },
+      "orphanTemps": [
+        "state.json.6418ec6c.tmp"
+      ],
+      "deleteAccessProbeError": 32
+    },
+    "postFixExactCode": {
+      "codeCommit": "65299811abd076645edbe1cd0777b12b63968c0b",
+      "status": "PASS",
+      "classification": "REAL_OS_IO",
+      "focusedTests": 30,
+      "realOsIoTests": [
+        {
+          "test": "test_windows_real_transient_delete_sharing_lock[0.05]",
+          "result": {
+            "kind": "transient",
+            "errors": [
+              5,
+              5
+            ],
+            "releaseDelay": 0.05,
+            "elapsed": 0.07800000000133878,
+            "exactB": true,
+            "tempClean": true
+          }
+        },
+        {
+          "test": "test_windows_real_transient_delete_sharing_lock[0.2]",
+          "result": {
+            "kind": "transient",
+            "errors": [
+              5,
+              5,
+              5,
+              5
+            ],
+            "releaseDelay": 0.2,
+            "elapsed": 0.375,
+            "exactB": true,
+            "tempClean": true
+          }
+        },
+        {
+          "test": "test_windows_real_sustained_delete_sharing_lock",
+          "result": {
+            "kind": "sustained",
+            "errors": [
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5,
+              5
+            ],
+            "elapsed": 0.9850000000005821,
+            "oldAUnchanged": true,
+            "tempClean": true
+          }
+        }
+      ],
+      "normalFaultInjectionTests": 27,
+      "platform": "win32",
+      "junit": "E:\\projects\\sonaqueen-product-variants\\.fox3d-work\\round4\\exact-code-persistence.xml"
+    },
+    "maxReplaceAttempts": 8,
+    "backoffMilliseconds": [
+      25,
+      50,
+      100,
+      200,
+      200,
+      200,
+      200
+    ],
+    "totalScheduledBackoffMilliseconds": 975,
+    "retryable": "Windows errors 32/33; error 5 only if DELETE-access probe returns 32/33",
+    "nonRetryable": "Bare access/ACL denial; non-Windows errno; ENOSPC; invalid path; serialization/encoding/write errors",
+    "terminalFailure": "Propagate typed error, preserve old destination, clean owned temp; immutable _once hard-link guard unchanged",
+    "serverRetryWarnings": 0,
+    "acceptanceProcessRetryWarnings": 0
   },
-  "priorRound3": {
-    "docs": "91111ed57039df2d537a717b8897d1be82b80625",
-    "code": "d684686f076fb91c1d9a87ca996a9bd917f1a735",
-    "evidenceId": "113ade57-fbe8-46c4-8af5-895de4e65d3d",
-    "scope": "Historical pre-correction evidence only; not correction acceptance"
+  "priorAcceptedRound3": {
+    "docs": "1e70faa99088e5a6f0189f5a19a6ffa8d903285c",
+    "code": "6b118898ebd430592e293c04c5cabe4bc30f37d8",
+    "evidenceId": "0af30671-aa63-44a6-9d6f-39de99892b35",
+    "scope": "Historical accepted Round3 only; new CODE reruns all matrices"
   },
   "truthMatrix": {
     "durableBatchLineage": "REAL_LOGIC",
@@ -1040,14 +1135,15 @@
     "blenderExecution": "REAL_RENDER",
     "fixtureGeometry": "SYNTHETIC_STATIC_FIXTURE",
     "referenceRecipeTests": "MOCK_REGRESSION / REFERENCE, not physical truth",
-    "githubCI": "MOCK_REGRESSION",
+    "githubCI": "Non-Blender regression: MOCK/unit plus 3 Windows REAL_OS_IO cases; Ubuntu skips those 3",
     "physicalGeometryAuthority": false,
     "physicalPrintValidated": false,
     "manufacturingReady": false,
     "liveH3LTXVision": "UNCHANGED_BLOCKED_OR_MOCK",
     "liveCncLaserPlc": "BLOCKED",
     "globalProductionReady": false,
-    "serializedIdentityExactness": "REAL_LOGIC"
+    "serializedIdentityExactness": "REAL_LOGIC",
+    "windowsFileLockIntegration": "REAL_OS_IO"
   },
   "mergeAuthorized": false,
   "pr16": "FROZEN_DRAFT",

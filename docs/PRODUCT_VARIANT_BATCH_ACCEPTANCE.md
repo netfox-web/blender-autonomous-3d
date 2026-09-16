@@ -1,6 +1,6 @@
-# Product variant batches — Round 3 serialized identity correction acceptance
+# Product variant batches — Round 4 Windows atomic persistence acceptance
 
-Instruction `8dc6bb9146cb4bd20958682f1f2ee03dfba5be71` / Issue #1 comment 5694753406. Existing PR #15 stays based on unmerged PR #12 `codex/model-category-tree` at `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge, retarget, rebase or new PR.
+Instruction `2467eda072ceadd3e9677349fb1c56a27d97617f` / Issue #1 comment 5696273483. Existing PR #15 stays based on unmerged PR #12 `codex/model-category-tree` at `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge, retarget, rebase or new PR.
 
 ## Result
 
@@ -29,9 +29,9 @@ Older batches without the authority contract fail closed and must be resubmitted
 
 ## Exact gates
 
-- CODE `6b118898ebd430592e293c04c5cabe4bc30f37d8`: [Actions 35076940707](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35076940707); Ubuntu + Windows SUCCESS, **1069 tests each**. Actual checkout SHA verified for both jobs. CI is MOCK regression only.
-- Local full suite **1069 PASS**; focused batch/composition/category suite **165 PASS**, including the 30 authority cases and 59 additive serialized-type cases.
-- Clean exact-CODE REAL acceptance `0af30671-aa63-44a6-9d6f-39de99892b35`: two static synthetic cabinet artwork variants, Blender **5.2.1 LTS / OPTIX**, `realOptix=true`, `usedMock=false`.
+- CODE `65299811abd076645edbe1cd0777b12b63968c0b`: [Actions 35088102902](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35088102902); **Windows 1099 PASS; Ubuntu 1096 PASS + 3 Windows-only skips**. Actual checkout SHA verified for both jobs. CI is non-Blender regression; only the three actual Windows handle-lock cases are REAL_OS_IO. Other CI tests remain MOCK/unit regression.
+- Local Windows full suite **1099 PASS**; combined focused suite **195 PASS**. Persistence focus **30 PASS**: 27 unit/fault-injection regressions and 3 separately identified REAL_OS_IO handle-lock integrations. Existing 1069 tests retained.
+- Clean exact-CODE REAL acceptance `2b0d86f8-a738-40f5-8420-fab8faccdb8b`: two static synthetic cabinet artwork variants, Blender **5.2.1 LTS / OPTIX**, `realOptix=true`, `usedMock=false`.
 - Both renders pass SHA/size, finite nonuniform 800×800 image, `.blend` reopen, original queue/job/attempt/cache/DAM/publication lineage. Geometry hashes match and artwork pixels differ.
 - Actual server restart preserves and re-verifies exact authority identity. The 30 Round 2 corruption/restoration outcomes still pass on these new artifacts.
 - **21 authority outcomes** pass: current master content/hash contradiction, stored hash/reference/version tampering (including numeric/boolean type contradictions), missing snapshot/control, cross-tenant content, forged measured type/declaration, revocation, downgrade, and publication authority mismatch even with recomputed ordinary manifest/publication seals. Category metadata, historical identity, restart and restored visual download checks pass.
@@ -49,7 +49,19 @@ The new exact-CODE REAL run passes **35 serialized-type outcomes** alongside the
 
 The [previous Round 3 report](https://github.com/netfox-web/blender-autonomous-3d/blob/91111ed57039df2d537a717b8897d1be82b80625/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) is retained as historical evidence; it does not substitute for this correction run.
 
-The first correction acceptance attempt `02c928e7-06ec-4001-859a-844e21c6d82e` failed with Windows `WinError 5` while replacing an atomic batch progress file. That attempt is retained as FAIL and excluded from PASS evidence. A fresh isolated run on the same unchanged CODE passed all gates. The underlying Windows access contention was not independently diagnosed or fixed; this scope does not claim that intermittent filesystem failures are eliminated.
+The historical Round 3 attempt `02c928e7-06ec-4001-859a-844e21c6d82e` remains FAIL (Windows WinError 5); its later unchanged-CODE rerun passed but did not claim a fix. Round 4 now reproduces a real delete-sharing lock with the same error and validates the bounded behavior below. This does not certify arbitrary ACL, disk, network, crash or power-loss durability.
+
+## Round 4 — Windows atomic persistence
+
+The clean pre-fix accepted CODE `6b118898ebd430592e293c04c5cabe4bc30f37d8` was exercised with a real Windows CreateFileW handle (READ/WRITE sharing allowed, DELETE sharing denied) held for 400 ms. atomic_json immediately raised actual **PermissionError / WinError 5** before release; destination remained exact, parse-valid JSON A; one orphan temp remained. A non-mutating DELETE-access probe returned actual sharing violation **32**. [Reproduction record](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5696334025). No injected error was used in this baseline reproduction.
+
+The existing helper still writes a same-directory temp and atomically replaces its target. It now owns the temp via exclusive creation and tries at most **8 replacements**, with **25/50/100/200/200/200/200 ms** backoff (**975 ms cumulative scheduled sleep**, excluding OS call/scheduling time). Only Windows error 32/33 or error 5 corroborated by a DELETE-access probe returning 32/33 qualifies. Bare permission/ACL denial, ENOSPC, invalid paths, serialization/encoding/write errors and unrelated I/O do not retry. Terminal errors propagate, the previous target remains unchanged when no replacement happened, and owned temp files are removed. A colliding pre-existing temp is never overwritten or deleted. `_once()` exclusive hard-link semantics remain unchanged.
+
+After exact CODE CI passed, the clean exact CODE persistence suite passed **30** tests. Three use actual Windows handles: two bounded transient holds (50/200 ms after first real failure) complete with exact JSON B and no orphan temp; one sustained hold exhausts eight attempts, raises the actual typed error, retains exact JSON A and cleans its temp. The 27 other focused cases use normal/unit or injected failures and are not REAL_OS_IO evidence. Exact timings/error lists and the pre-fix orphan observation are retained in the JSON report.
+
+The subsequent clean REAL Blender run passes all **30 + 21 + 35** prior matrices and completes atomic batch progress writes. Observed contention during that run: **0 server retry warnings; 0 acceptance-process retry warnings**. Retry events are logged rather than hidden; a terminal persistence failure still fails the caller/acceptance. This controlled test establishes bounded Windows sharing-lock handling, not blanket Production Ready or power-loss safety.
+
+The [accepted Round 3 evidence](https://github.com/netfox-web/blender-autonomous-3d/blob/1e70faa99088e5a6f0189f5a19a6ffa8d903285c/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) remains historical; its render/CI evidence is not substituted for the new CODE run.
 
 ## Truth matrix
 
@@ -60,7 +72,8 @@ The first correction acceptance attempt `02c928e7-06ec-4001-859a-844e21c6d82e` f
 | Serialized identity exactness | REAL_LOGIC |
 | Blender execution | REAL_RENDER, usedMock=false |
 | Geometry inputs | SYNTHETIC / REFERENCE; not physical truth |
-| GitHub CI | MOCK regression |
+| GitHub CI | Non-Blender MOCK/unit regression; 3 Windows REAL_OS_IO tests separately identified |
+| Windows delete-sharing lock integration | REAL_OS_IO; Ubuntu skips the 3 platform-only tests |
 | Physical geometry authority | BLOCKED / false for fixture/reference inputs |
 | Physical print / manufacturing release | BLOCKED / false |
 | Live H3/LTX/Vision | Unchanged, BLOCKED or MOCK |
