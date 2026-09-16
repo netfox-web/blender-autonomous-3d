@@ -6,6 +6,7 @@ import re
 import stat
 
 from fox3d.ids import new_id
+from fox3d import durability
 from fox3d.preview_ownership import PreviewOwnership, PreviewBusy
 from fox3d.recipe_3d import (
     atomic_json, read_json, get_recipe_3d_dir, get_recipe_3d_status,
@@ -51,7 +52,7 @@ def scavenge_state_temps(path, owner):
             raise ValueError('暫存檔型態無法確認，拒絕清理：' + candidate.name)
     removed = []
     for candidate in candidates:
-        candidate.unlink()  # Any failure propagates before a new outer-state write.
+        durability.unlink_owned(candidate)  # Failure precedes any new outer-state write.
         removed.append(candidate.name)
         logging.getLogger(__name__).info('Scavenged outer-state temp debris: %s', candidate.name)
     return removed

@@ -18,6 +18,7 @@ from fox3d.ids import new_id, stable_hash
 from fox3d.recipe_3d import atomic_json, input_hash, read_json, _ATOMIC_TEMP_TOKEN_LENGTH
 from fox3d.preview_ownership import PreviewOwnership
 from fox3d import variant_authority as authority
+from fox3d import durability
 
 IDENTITY_VERSION = 1
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
@@ -87,7 +88,7 @@ def scavenge_once_temps(targets, owner):
             raise ValueError('批次暫存檔型態或連結無法確認，拒絕清理：' + candidate.name)
     removed = []
     for candidate in candidates:
-        candidate.unlink()
+        durability.unlink_owned(candidate)
         removed.append(str(candidate))
         logging.getLogger(__name__).info('Scavenged immutable target temp debris: %s', candidate.name)
     return removed
@@ -105,8 +106,9 @@ def _once(path, value, *, owner=None):
     try:
         atomic_json(temporary, value)
         os.link(temporary, path)  # Atomic publish; fails if already present.
+        durability.namespace_committed(path, 'link')
     finally:
-        temporary.unlink(missing_ok=True)
+        durability.unlink_owned(temporary, missing_ok=True)
 
 
 def _load(path):
@@ -306,6 +308,9 @@ def generate(platform, tenant, mid, draft, *, revision=0, generation_id=None,
             _published(platform.root, tenant, mid, expected, selection, revision,
                        models.get(platform.root, tenant, mid))
             row['state'] = 'succeeded'
+        except durability.CommitIndeterminate:
+            # No success response or continuation after an uncertain commit.
+            raise
         except Exception as exc:
             row.update(state='cancelled' if cancel_flag and cancel_flag.is_set() else 'failed', error=str(exc)[:1000])
         _once(anchor/(str(expected['index'])+'.json'), _row_receipt(identity, expected, row['state'], row['error']))

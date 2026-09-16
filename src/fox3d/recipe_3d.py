@@ -16,6 +16,7 @@ from fox3d.ids import new_id, stable_hash, sha256_bytes
 from fox3d.infra import utcnow
 from fox3d.recipe_workbench import ProductDraft, FIELD_LABELS
 from fox3d.pngutil import is_png
+from fox3d import durability
 
 ADAPTER_VERSION = "recipe-preview-2"
 FILES = {"png": "beauty.png", "blend": "model.blend", "glb": "model.glb", "geometry": "geometry.json"}
@@ -57,7 +58,7 @@ def _windows_replace_contention(error, path):
 
 
 def atomic_json(path, value):
-    """Same-directory atomic replace; bounded Windows contention retries only."""
+    """Flushed same-directory replace; post-commit sync errors are indeterminate."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + new_id()[:_ATOMIC_TEMP_TOKEN_LENGTH] + ".tmp")
     owned = False
@@ -65,6 +66,7 @@ def atomic_json(path, value):
         with temporary.open('x', encoding='utf-8') as stream:
             owned = True
             stream.write(json.dumps(value, ensure_ascii=False, indent=2))
+            durability.flush_file(stream)
         for attempt in range(len(_ATOMIC_RETRY_DELAYS) + 1):
             try:
                 temporary.replace(path)
@@ -76,15 +78,16 @@ def atomic_json(path, value):
                     'Transient Windows atomic replace contention (winerror=%s, retry=%s/%s)',
                     error.winerror, attempt + 1, len(_ATOMIC_RETRY_DELAYS))
                 time.sleep(_ATOMIC_RETRY_DELAYS[attempt])
+        durability.namespace_committed(path, 'replace')
     except BaseException as failure:
         if owned:
             try:
-                temporary.unlink(missing_ok=True)
+                durability.unlink_owned(temporary, missing_ok=True)
             except OSError as cleanup_error:
                 raise failure from cleanup_error
         raise
     else:
-        temporary.unlink(missing_ok=True)
+        durability.unlink_owned(temporary, missing_ok=True)
 
 
 def read_json(path):
