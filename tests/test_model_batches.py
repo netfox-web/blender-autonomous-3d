@@ -402,3 +402,16 @@ def test_current_master_content_must_match_declared_input_hash(tmp_path,complete
     atomic_json(path,value)  # Keep revision/hash unchanged, alter only mutable source.
     result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
     assert not result['visualAssetReady']
+
+
+@pytest.mark.parametrize('source',['snapshot','declaration','artwork','master_revision'])
+def test_authority_uses_exact_hash_not_python_numeric_equality(tmp_path,completed_batch,source):
+    model,asset,draft,bid,folder=completed_batch;binding=draft['selections'][0]['inputAuthority']
+    base=a.folder(tmp_path,'t',model['id'])
+    if source=='snapshot':path=base/'snapshots'/(binding['hash']+'.json');key='authorityVersion'
+    if source=='declaration':path=base/'declarations'/(binding['snapshot']['declaration']['id']+'.json');key='version'
+    if source=='artwork':path=asset_usage.folder(tmp_path,'t',asset['id'])/'usage.json';key='revision'
+    if source=='master_revision':path=m.directory(tmp_path,'t')/model['id']/'master.json';key='revision'
+    value=read_json(path);assert value[key]==1;value[key]=True;atomic_json(path,value)
+    # True == 1 in Python, but their JSON hashes and authority versions differ.
+    assert not b.current(tmp_path,'t',model['id'],bid,'succeeded')['visualAssetReady']

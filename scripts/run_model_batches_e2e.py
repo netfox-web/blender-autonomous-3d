@@ -259,7 +259,7 @@ def round2_tamper_checks(client,path,data,tenant,item,state):
 
 def round3_authority_checks(client,path,data,tenant,item,state):
     """REAL_LOGIC authority corruption trials using this run's real artifacts."""
-    from fox3d import model_compositions as c, variant_authority as a, model_categories, product_models
+    from fox3d import model_compositions as c, variant_authority as a, model_categories, product_models, asset_usage
     from fox3d.recipe_3d import atomic_json,read_json
     from fox3d.ids import stable_hash,sha256_bytes
     base=c.folder_for(data,tenant,item['id']);bid=state['taskId']
@@ -296,6 +296,17 @@ def round3_authority_checks(client,path,data,tenant,item,state):
             if change=='missingControl':control_file.unlink()
             blocked(change)
         finally:control_file.write_bytes(control_raw)
+    declaration_file=authority_base/'declarations'/(binding['snapshot']['declaration']['id']+'.json')
+    artwork_file=asset_usage.folder(data,tenant,selection['placements'][0]['assetId'])/'usage.json'
+    for file,key,label in [(snapshot_file,'authorityVersion','typedSnapshotVersion'),
+                           (declaration_file,'version','typedDeclarationVersion'),
+                           (artwork_file,'revision','typedArtworkRevision'),
+                           (product_models.directory(data,tenant)/item['id']/'master.json','revision','typedMasterRevision')]:
+        raw=file.read_bytes()
+        try:
+            value=json.loads(raw);assert value[key]==1;value[key]=True;atomic_json(file,value)
+            blocked(label)
+        finally:file.write_bytes(raw)
     master_file=product_models.directory(data,tenant)/item['id']/'master.json';master_raw=master_file.read_bytes()
     try:
         master=json.loads(master_raw);master['draft']['widthMm']+=1;atomic_json(master_file,master)

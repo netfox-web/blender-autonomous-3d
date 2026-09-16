@@ -29,7 +29,7 @@ class Provenance(models.Strict):
 
 
 class Declaration(models.Strict):
-    version: Literal[1]
+    version: int = Field(ge=1, le=1)
     id: str = Field(pattern=r'^[a-f0-9-]{36}$')
     tenantId: str
     masterId: str
@@ -40,7 +40,7 @@ class Declaration(models.Strict):
 
 
 class Control(models.Strict):
-    version: Literal[1]
+    version: int = Field(ge=1, le=1)
     currentId: str = Field(pattern=r'^[a-f0-9-]{36}$')
     revokedIds: list[str]
 
@@ -148,7 +148,7 @@ def snapshot(root, tenant, item, selection):
     target = folder(root, tenant, item['id'])/'snapshots'/(binding['hash']+'.json')
     try: _once(target, value)
     except FileExistsError:
-        if _load(target) != value: raise ValueError('來源權威快照已損壞')
+        if stable_hash(_load(target)) != binding['hash']: raise ValueError('來源權威快照已損壞')
     return binding
 
 
@@ -180,9 +180,9 @@ def verify(root, tenant, selection, *, current):
         mid = selection['masterId']; item = models.get(root, tenant, mid)
         value = identity(selection['inputAuthority'], tenant, mid, selection['masterRevision'], selection['masterInputHash'])
         base = folder(root, tenant, mid); declaration = value['declaration']
-        if _load(base/'snapshots'/(selection['inputAuthority']['hash']+'.json')) != value:
+        if stable_hash(_load(base/'snapshots'/(selection['inputAuthority']['hash']+'.json'))) != selection['inputAuthority']['hash']:
             raise ValueError('來源權威快照已變更')
-        if _load(base/'declarations'/(declaration['id']+'.json')) != declaration:
+        if stable_hash(_load(base/'declarations'/(declaration['id']+'.json'))) != value['declarationHash']:
             raise ValueError('來源權威聲明已變更')
         control = Control.model_validate(_load(base/'control.json'))
         if declaration['id'] in control.revokedIds or (current and control.currentId != declaration['id']):
@@ -191,13 +191,15 @@ def verify(root, tenant, selection, *, current):
         if (original['inputHash'] != value['masterInputHash'] or input_hash(original['draft']) != value['masterInputHash']
                 or original['draft'] != selection['master'] or _references(original['draft']) != value['geometryReferenceHashes']
                 or input_hash(item['draft']) != item['inputHash']
+                or type(item['revision']) is not int or type(original['revision']) is not int
+                or original['revision'] != value['masterRevision']
                 or item['inputHash'] != value['masterInputHash'] or (current and item['revision'] != value['masterRevision'])):
             raise ValueError('來源權威母版版本已過期')
         _kind(declaration['kind'], original['draft'])
         ids = {p['assetId'] for p in selection['placements']}
         if ids != set(value['artworkAuthority']): raise ValueError('圖稿權威身分不符')
         for aid, authority in value['artworkAuthority'].items():
-            if asset_usage.require_artwork(root, tenant, aid) != authority:
+            if stable_hash(asset_usage.require_artwork(root, tenant, aid)) != stable_hash(authority):
                 raise ValueError('圖稿權威版本已變更')
         return value
     except (KeyError, TypeError, OSError) as exc:
