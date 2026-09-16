@@ -13,7 +13,7 @@ from fox3d import nas_catalog as nas, product_models as models, recipe_3d as ren
 from fox3d.recipe_preview_service import RecipePreviewService
 from fox3d.recipe_workbench import DraftConflict
 from fox3d import model_compositions as compositions, print_preview
-from fox3d import model_batches
+from fox3d import model_batches, scene_templates
 from fox3d import model_categories as categories
 
 class Classification(models.Strict):
@@ -78,6 +78,9 @@ def product_models_router(provider):
     def page():
         return HTMLResponse((Path(__file__).with_name('static')/'product-models.html').read_text(encoding='utf-8'),
             headers={'Content-Security-Policy':"default-src 'self'; img-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"})
+    @r.get('/api/product-models/scenes')
+    def scene_library(x_tenant_id:str|None=Header(None)):
+        tid(x_tenant_id); return {'items':scene_templates.catalog(),'labels':scene_templates.LABELS}
     @r.get('/api/product-models/catalog')
     def catalog(q:str=Query('',max_length=200),family:str='',subtype:str='',offset:int=Query(0,ge=0),x_tenant_id:str|None=Header(None)):
         tid(x_tenant_id); data=call(nas.checked_snapshot,root())
@@ -169,7 +172,7 @@ def product_models_router(provider):
         try: faces=compositions.surfaces(item['draft'])
         except ValueError: faces=[]
         batch=call(model_batches.current,root(),t,mid,state.get('taskId'),state['state'])
-        return {**state,'scenes':compositions.SCENES,'surfaces':faces,'batch':batch}
+        return {**state,'scenes':compositions.SCENES,'surfaces':faces,'batch':batch,'sceneLibrary':scene_templates.catalog()}
 
     @r.get('/api/product-models/{mid}/compositions')
     def composition_history(mid:str,offset:int=Query(0,ge=0),x_tenant_id:str|None=Header(None)):

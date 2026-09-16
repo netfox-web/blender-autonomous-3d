@@ -16,8 +16,8 @@ def snapshot(root, tenant, item, value):
     if not batch.name.strip():
         raise ValueError('請填批次名稱')
     rows = [compositions.snapshot(root, tenant, item, s.model_dump()) for s in batch.selections]
-    if len({(s['sku'].strip(), s['scene']) for s in rows}) != len(rows):
-        raise ValueError('同一批次的款式名稱與場景不可重複')
+    if len({(s['sku'].strip(), s['scene'], s.get('placement','AUTO'), s.get('view','THREE_QUARTER')) for s in rows}) != len(rows):
+        raise ValueError('同一批次的款式、場景、位置與視角不可重複')
     return {'batchVersion': 1, 'name': batch.name.strip(), 'selections': rows,
             'masterInputHash': item['inputHash'], 'masterRevision': item['revision']}
 
@@ -46,7 +46,7 @@ def generate(platform, tenant, mid, draft, *, revision=0, generation_id=None,
     path = compositions.folder_for(platform.root, tenant, mid)/'batches'/(bid+'.json')
     record = {'batchId': bid, 'name': draft['name'], 'masterInputHash': draft['masterInputHash'],
               'sourceRevision': revision, 'selectionHash': stable_hash(draft),
-              'rows': [{'sku': s['sku'], 'scene': s['scene'], 'state': 'queued',
+              'rows': [{'sku': s['sku'], 'scene': s['scene'], 'view':s.get('view','THREE_QUARTER'), 'placement':s.get('placement','AUTO'), 'state': 'queued',
                         'generationId': new_id(), 'error': None} for s in draft['selections']]}
     atomic_json(path, record)
     for row, selection in zip(record['rows'], draft['selections']):
