@@ -1,369 +1,258 @@
-# Development Agent 下一輪指令：PR #15 Round 7 — Scoped Hard-Kill Temp Scavenging / Crash Debris Hygiene Gate
+# Development Agent 修正指令：PR #15 Round 7 Re-Gate — Strict Serialized Outer-State Identity Fencing
 
 > Supervisor checkpoint: 2026-09-17
 > Reviewed PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
 > PR base: PR #12 branch `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`
-> Accepted CODE: `70587508bb8afc2ebe876cebd4304c369be7ed76`
-> Accepted DOCS / PR head: `7c01e0306db106cee146e70f04e8f7b6c8e452bd`
-> Decision: **Round 6 ACCEPT WITH SCOPE / GO Round 7**
+> Reviewed CODE: `eaa4d683937e09a7de2e4b30e7156772a98ca596`
+> Reviewed DOCS / PR head: `1b8687e1feb12ff305c3478b675c138d2f7b1666`
+> CODE Actions: `35124100743` — Ubuntu + Windows SUCCESS
+> DOCS Actions: `35126724135` — Ubuntu + Windows SUCCESS
+> Decision: **CHANGES REQUIRED — Round 7 cleanup accepted in scope, but retained mutable-state identity fencing is still fail-open; Round 8 HOLD**
 > Merge authorization: **false**
 > Global Production Ready: **false**
 
-## 0. Round 6 Re-Gate result
+## 0. Re-Gate result
 
-Round 6 Cross-Process Single-Writer / Duplicate Submit Ownership Gate is accepted within its declared local-filesystem scope.
+Round 7 的 scoped hard-kill temp scavenging 本身方向正確，以下證據可保留：
 
-Accepted evidence:
+- `scavenge_state_temps()` 只匹配 direct-child `state.json.[0-9a-f]{8}.tmp`；
+- 只有持有相同 workspace 的 live `PreviewOwnership` 才可清理；
+- live competitor 無法取得 ownership，因此不會清掉 live writer temp；
+- unknown/nested temp、`owner.lock`、request/receipt/publication/authority sentinel 都保持不動；
+- cleanup failure 在 fresh state write 前 fail-closed；
+- 六組 real child-process hard-kill / fresh-process recovery case 有實質 OS/process evidence；
+- Windows delete-sharing handle 與 Ubuntu 對應 kill/permission case 都有實際 OS 行為；
+- Exact CODE `eaa4d683...` 與 DOCS `1b8687e1...` 的 GitHub Actions 都已雙平台 SUCCESS；
+- clean REAL acceptance `61493611-302a-4503-a6a0-0a93e374e468` 保持 Blender 5.2.1 LTS / OptiX / `usedMock=false`，但輸入仍是 synthetic static fixture；
+- generic/global temp cleanup 仍是 PARTIAL / UNCLAIMED；physical geometry / print / manufacturing / global readiness 仍 false / BLOCKED。
 
-- baseline exact CODE `f5ac3a6773d99f30709a84dc9adb97231ca53ba9` reproduced A–F cross-process fail-open behavior with independent subprocesses;
-- minimal correction CODE `70587508bb8afc2ebe876cebd4304c369be7ed76` adds one tenant/master-scoped OS-backed ownership guard (`msvcrt.locking` on Windows, `flock` on Ubuntu) and exact `taskId/inputHash/batchVersion` mutable-state fencing;
-- no DB, Redis, second queue, second state store or renderer/DAM/master/authority/publication rewrite was introduced;
-- exact CODE Actions `35109488260`: Windows **1130 PASS**, Ubuntu **1126 PASS + 4 Windows-only skips**;
-- exact DOCS/head `7c01e0306db106cee146e70f04e8f7b6c8e452bd`, Actions `35112516774`: Windows and Ubuntu SUCCESS with the same test totals and exact checkout SHA;
-- six A–F process cases and two isolation cases use independent child processes on both OSes;
-- actual process death releases ownership and explicit resubmit works without deleting `owner.lock`;
-- stale callback/finally writes cannot overwrite a newer exact task;
-- clean local real-Blender double-submit trial produced exactly one winner render and a `PreviewBusy` loser with zero writes/request/publication/render entry;
-- clean REAL acceptance `d837bbaf-6bce-438e-aaae-f2fb2db65ec5`: Blender 5.2.1 LTS / OptiX, `usedMock=false`, two synthetic static variants, artifact/reopen/restart/download and retained 30 + 21 + 35 matrices PASS;
-- hard-kill orphan atomic temp cleanup remains **PARTIAL / NOT SCAVENGED**;
-- `inputTruth=SYNTHETIC_STATIC_FIXTURE`; `physicalProductGeometryTruth=false`; `physicalPrintValidated=false`; `manufacturingReady=false`; `globalProductionReady=false`.
-
-Classification remains strict:
-
-- publication / authority / fencing logic = **REAL_LOGIC**;
-- independent process contention = **REAL_PROCESS_CONCURRENCY**;
-- actual terminate/restart = **REAL_PROCESS_RECOVERY**;
-- actual OS ownership/Windows handle behavior = **REAL_OS_IO** where directly exercised;
-- winning Blender path only = **REAL_RENDER**;
-- ordinary CI pytest/artifact path = **MOCK / regression**;
-- hard-kill temp cleanup = **PARTIAL / NOT SCAVENGED** until this round proves otherwise;
-- physical CAD/print/manufacturing/global readiness = **BLOCKED / false**.
-
-Do not rewrite existing architecture. Round 7 is a narrow crash-debris hygiene gate only. Do not add product features and do not open a new PR.
+但是 Supervisor code review 找到一個 retained prerequisite 的實質 fail-open，因此 **不能把 Round 7 整體標為 ACCEPT，也不得進 Round 8**。
 
 ---
 
-## 1. Why Round 7 exists
+## 1. Blocker — `_write_owned()` 不是 exact serialized identity fencing
 
-`atomic_json()` writes a same-directory temporary file using the existing naming contract and atomically replaces the destination. Normal exceptions attempt to remove the owned temp file, but an external hard kill can terminate the process before Python cleanup runs. Round 5/6 deliberately preserved this fact as `PARTIAL_NOT_SCAVENGED`.
+目前 `src/fox3d/recipe_preview_service.py`：
 
-The remaining gap is operational hygiene, not publication authority: after a hard kill, a `state.json.<token>.tmp` owned by the dead writer can remain in the tenant/master workspace. A fresh owner must never interpret that temp file as state, request, receipt, publication or product truth.
+```python
+current = read_json(path)
+if not owner.held or any(current.get(k) != state.get(k) for k in ("taskId", "inputHash", "batchVersion")):
+    raise ValueError(...)
+atomic_json(path, state)
+```
 
-This round must prove whether a narrowly scoped, ownership-safe cleanup can remove only dead **outer-state atomic temp debris** without touching any immutable or unknown file.
+這是 Python value equality，不是 serialized identity exactness。
 
-Do **not** turn this into a repository-wide temp cleaner, generic GC, age-based sweeper, queue rewrite or storage migration.
+### Fail-open A — `true == 1`
 
----
+當 in-memory owner state：
 
-## 2. Scope boundary
+```json
+{"taskId":"T","inputHash":"H","batchVersion":1}
+```
 
-Round 7 scope is only the RecipePreviewService outer mutable state destination in the exact tenant/master workspace:
+而 persisted `state.json` 被改成：
 
-- authoritative destination: `state.json`;
-- candidate debris: only the exact temp naming contract generated for that destination by current `atomic_json()`;
-- cleanup may run only after the caller successfully holds the existing `PreviewOwnership` for that exact workspace;
-- cleanup must occur before the fresh owner performs a new outer-state write.
+```json
+{"taskId":"T","inputHash":"H","batchVersion":true}
+```
 
-Out of scope and forbidden to scavenge in this round:
+Python 中 `True == 1`，所以現有 comparator 會把不同 JSON type 誤判為相同 identity，然後 stale/live writer 可覆寫 persisted state。
 
-- `owner.lock`;
-- `batches/**/request.json`;
-- row receipts / `terminal.json`;
-- `generations/**/published.json`;
-- artifact files, `.blend`, images, DAM files;
-- `latest.json` or publication pointers;
-- authority snapshots/declarations;
-- arbitrary `*.tmp` elsewhere;
-- unknown files that merely look old;
-- another tenant/master workspace.
+這與 PR #15 前面已對 request / manifest / authority 做過的 strict serialized-type closure 原則不一致，也與 Round 6 文件宣稱的「exact `taskId/inputHash/batchVersion` mutable-state fencing」不一致。
 
-Global atomic-temp cleanup remains unclaimed unless separately proved in a later gate.
+### Fail-open B — optional key presence collapse
 
----
+單一 composition state 可以沒有 `batchVersion`。現有 `.get()` 會把：
 
-## 3. Required cleanup invariants
+- expected：`batchVersion` key **absent**
+- persisted：`"batchVersion": null`
 
-A valid correction must satisfy all of the following:
+都視為 `None`，因此 key-presence 不同仍可能通過 identity fence。
 
-1. cleanup requires a **live held `PreviewOwnership`** for the exact tenant/master workspace;
-2. a process that cannot acquire ownership must perform **zero cleanup**;
-3. candidate matching must be derived from the actual `atomic_json(state.json, ...)` naming contract — exact destination basename + exact token shape + `.tmp`; do not use a broad `*.tmp` glob as authority;
-4. candidate must be a direct child of the exact workspace and must not escape by path normalization;
-5. never delete `state.json` itself;
-6. never delete `owner.lock`, immutable request/receipt/publication files, assets or unknown sentinels;
-7. do not use file age/mtime alone to decide ownership or staleness;
-8. cleanup must not read orphan temp bytes and promote them into current state;
-9. cleanup must not auto-replay a batch;
-10. cleanup must not grant `available=true`, success, physical truth or publication authority;
-11. if a candidate cannot be safely removed because of permission/locking/type ambiguity, fail closed before a new mutable-state write rather than silently reporting clean success;
-12. multiple exact orphan state-temp files may be cleaned deterministically after ownership is acquired;
-13. a live writer's temp file must never be removed by a competitor, because the competitor must fail ownership acquisition first;
-14. cleanup result must be observable in tests/log evidence but must not become product state or publication metadata.
-
-No PID file, wall-clock lease, stale timeout or lock-file deletion is authorized.
+這不是 product/publication authority promotion，但它會讓 mutable-state writer 在 serialized identity 已不再 exact 的情況下繼續寫入，違反既有 fencing contract。
 
 ---
 
-## 4. Baseline hard-kill reproduction on exact accepted CODE
+## 2. First reproduce on exact reviewed CODE
 
-First use exact accepted CODE `70587508bb8afc2ebe876cebd4304c369be7ed76` unchanged.
+先在 exact CODE `eaa4d683937e09a7de2e4b30e7156772a98ca596` 上建立 focused regression，證明舊版真的 fail-open。不要先修改 production code。
 
-Build a **test-only real subprocess harness** that pauses a child inside the real outer `state.json` atomic-write path after its same-directory temp file exists but before successful replace/cleanup. Kill that child externally with actual process termination.
+至少保留以下 baseline：
 
-Do not substitute a raised exception for the baseline hard kill. Do not add a production crash API.
+### Case S1 — bool/int identity confusion
 
-Record:
+1. 建立 held `PreviewOwnership`；
+2. in-memory state `batchVersion=1`；
+3. persisted `state.json` 改成 `batchVersion=true`；
+4. 呼叫現有 `_write_owned()`；
+5. baseline 必須記錄舊 CODE 未拒絕／會覆寫的行為。
 
-- child PID;
-- workspace path;
-- exact destination path;
-- exact temp filename(s);
-- temp SHA/size if readable after death;
-- pre-kill authoritative `state.json` SHA/bytes or explicit absence;
-- post-kill authoritative `state.json` SHA/bytes or explicit absence;
-- request/receipt/publication inventory before and after;
-- `owner.lock` persistence;
-- fresh-process status/submit result;
-- whether any cleanup occurred on accepted CODE.
+### Case S2 — absent/null presence confusion
 
-The expected accepted-CODE baseline is that the dead writer releases OS ownership but one or more owned state temp files may remain. Preserve that baseline evidence before correction.
+1. in-memory single-composition state **不含** `batchVersion`；
+2. persisted state 額外含 `"batchVersion": null`；
+3. baseline 記錄現有 `.get()` comparator 未視為 identity mismatch。
+
+若任一 baseline 無法重現，先停止並在 Issue #1 回報實際結果；不要臆測修正。
 
 ---
 
-## 5. Required real-process cases
+## 3. Minimal correction only
 
-### Case A — kill before first queued-state replace
+只修 `RecipePreviewService` outer mutable-state identity comparator。不要重寫 Queue / Renderer / DAM / Product Master / model batch request / receipt / publication / authority。
 
-Pause after `state.json.<token>.tmp` exists but before the initial queued `state.json` replace. Hard-kill the child.
+要求：
 
-Required post-fix result:
+1. `taskId` 必須 key 存在、persisted 與 expected 都是 exact `str`，並 exact equality；
+2. `inputHash` 必須 key 存在、persisted 與 expected 都是 exact `str`，並 exact equality；
+3. `batchVersion` 的 **key presence 必須 exact match**；
+4. 若 `batchVersion` 存在，兩邊都必須 `type(value) is int`，拒絕 `bool` / string / float / null；
+5. 若 expected 不含 `batchVersion`，persisted 也不得偷偷多一個 null/false/0/1；
+6. owner 必須仍 `held` 且 stream open；保留既有 ownership gate；
+7. mismatch 時不得修復／normalize persisted state，不得寫回；原 bytes 必須保持不變；
+8. 不要用 `int(...)`、`bool(...)`、truthiness 或其他 coercion；
+9. 不需建立第二套 canonical state store；一個小型 helper / exact comparator 即可；
+10. 不改 `scavenge_state_temps()` 已接受的 Round 7 scope，除非新 regression 證明它被此修正直接影響。
 
-- ownership is released by process death;
-- authoritative `state.json` remains absent if it was absent before;
-- exact orphan state temp is removed only by a fresh process after it acquires ownership;
-- no request, receipt, generation or publication is fabricated;
-- explicit resubmit can proceed normally.
-
-### Case B — kill while replacing an existing state
-
-Start with a valid prior `state.json`, pause the dead writer after its temp is complete but before replace, then kill it.
-
-Required:
-
-- prior `state.json` bytes remain exact and valid;
-- orphan temp is cleaned after fresh ownership acquisition;
-- orphan temp contents are never adopted as state;
-- explicit subsequent state transition uses the existing normal path.
-
-### Case C — Windows delete-sharing / retry hard kill
-
-On Windows, reproduce the existing real destination sharing contention used by Round 4/5: hold a real delete-sharing-conflicting handle so `atomic_json()` enters its bounded retry/backoff, then terminate the writer while its owned temp exists.
-
-Required:
-
-- destination old JSON remains valid;
-- process death releases the writer-owned handles;
-- after the external destination lock is released and fresh `PreviewOwnership` is acquired, exact orphan state temp is removable;
-- no wildcard cleanup and no deletion of another-writer sentinel;
-- no claim about arbitrary ACL/disk/power-loss durability.
-
-On Ubuntu, use the corresponding hard-kill temp-exists case; do not fabricate Windows semantics there.
-
-### Case D — live owner protects its temp from a competitor
-
-Keep process A alive, owning the workspace and paused with a valid state temp file present. Process B calls status/submit concurrently.
-
-Required:
-
-- B receives busy/read-only live-owner behavior according to existing Round 6 semantics;
-- B performs zero scavenging and zero writes;
-- A's temp remains until A completes or dies;
-- no second render owner.
-
-### Case E — multiple exact orphans + unrelated sentinels
-
-After dead ownership is released, place multiple files matching the exact state-temp naming contract plus unrelated files:
-
-- unknown `.tmp` names;
-- similarly prefixed but invalid-token names;
-- `owner.lock`;
-- request/receipt/publication sentinels;
-- nested temp-like files outside direct workspace root.
-
-Required:
-
-- clean only exact eligible dead state-temp candidates;
-- every unrelated/unknown/immutable sentinel remains byte-identical;
-- cleanup never descends recursively.
-
-### Case F — cleanup failure is fail-closed
-
-Make one exact candidate undeletable/locked/permission-denied in a controlled OS-specific test.
-
-Required:
-
-- cleanup failure is surfaced deterministically;
-- no new `state.json` write occurs after ambiguous cleanup failure;
-- no success/available/readiness promotion occurs;
-- once the external lock/permission condition is removed, a fresh retry can clean and continue.
+如要抽 helper，名稱應清楚表示 serialized mutable-state identity，例如 `_same_state_identity(current, expected)`；不要把它擴張成通用 schema framework。
 
 ---
 
-## 6. Minimal correction constraints
+## 4. Required regressions
 
-If the baseline confirms the orphan behavior, implement only the smallest helper necessary.
+至少新增：
 
-Preferred shape:
+- `batchVersion: true` vs expected `1` → BLOCK；
+- `batchVersion: false` vs expected integer → BLOCK；
+- `batchVersion: "1"` → BLOCK；
+- `batchVersion: 1.0` → BLOCK；
+- expected absent vs persisted `null` → BLOCK；
+- expected absent vs persisted extra integer → BLOCK；
+- exact absent/absent → PASS；
+- exact integer/integer → PASS；
+- wrong `taskId` → BLOCK（保留既有）；
+- wrong `inputHash` → BLOCK（保留既有）；
+- released ownership → BLOCK（保留既有）；
+- mismatch 時 persisted `state.json` bytes 完全不變；
+- `_run()` 的 `on_job` / `finally` 路徑遇到 serialized identity tamper 時不得覆寫 tampered/newer state；
+- Round 6 stale callback/finally fencing regression 保持 PASS；
+- Round 7 cleanup 35 focus 保持 PASS；
+- Round 5 persistence 30 與 Round 6 ownership 21 保持 PASS。
 
-- a tiny helper near the existing atomic-write/service code that enumerates **only** temp names belonging to the exact `state.json` target;
-- require the caller to pass/hold the already-existing `PreviewOwnership` and verify `owner.held`;
-- call it only at a bounded recovery/submit point after ownership acquisition and before a fresh outer-state write;
-- no periodic background sweeper;
-- no repository startup scan;
-- no database/index/registry of temp files;
-- no deletion based only on age;
-- no change to `_once()` immutable semantics;
-- no change to publication verification;
-- no change to authority, renderer, DAM, Product Master or batch identity.
+Classification：
 
-Do not broaden `atomic_json()` into a storage subsystem. Keep the helper easy to audit.
-
-If the exact current token generated by `new_id()[:8]` is used for matching, validate the token using the actual generator contract rather than accepting arbitrary basename suffixes.
-
----
-
-## 7. Required regressions
-
-Add focused tests for:
-
-- exact state-temp candidate recognition;
-- reject wrong basename / wrong token shape / nested path / directory candidate;
-- require held ownership;
-- no cleanup when `PreviewBusy`;
-- absent destination + orphan cleanup;
-- existing valid destination + orphan cleanup;
-- multiple exact orphan cleanup;
-- unknown temp/sentinel preservation;
-- immutable request/receipt/publication preservation;
-- cleanup deletion failure fail-closed;
-- retry after external lock release;
-- live-owner competitor cannot scavenge;
-- no automatic replay;
-- no regression to Round 6 A–F concurrency/isolation;
-- no regression to Round 5 A/A_PROGRESS/B/C/D recovery;
-- no regression to 30 + 21 + 35 matrices;
-- no regression to Windows bounded replace retry semantics.
-
-Classification:
-
-- pure filename/helper tests = **MOCK / unit regression**;
-- actual killed child leaving a temp = **REAL_PROCESS_RECOVERY / REAL_OS_IO**;
-- actual Windows delete-sharing handle = **REAL_OS_IO**;
-- independent live-owner/competitor case = **REAL_PROCESS_CONCURRENCY**;
-- successful cleanup logic itself = **REAL_LOGIC**;
-- none of these are renderer/physical/manufacturing Production Ready evidence.
+- pure comparator tests = **MOCK / unit regression**；
+- serialized tamper blocking logic = **REAL_LOGIC**；
+- existing subprocess ownership/recovery tests = **REAL_PROCESS_CONCURRENCY / REAL_PROCESS_RECOVERY / REAL_OS_IO** only where actual OS/process behavior is exercised；
+- GitHub pytest 仍不是 REAL_RENDER / Production Ready。
 
 ---
 
-## 8. Exact CODE gate
+## 5. Exact CODE gate
 
-After baseline capture and minimal correction:
+修正後：
 
-1. freeze one new CODE SHA on existing PR #15;
-2. run exact CODE GitHub Actions;
-3. Ubuntu SUCCESS;
-4. Windows SUCCESS;
-5. actual checkout SHA must equal the CODE SHA;
-6. report full test totals per OS;
-7. report focused Round 7 counts and which cases use actual child-process termination / real OS handles;
-8. preserve accepted-CODE baseline orphan evidence;
-9. if CI fails, fix only the failing issue and repeat on a new exact CODE SHA.
+1. freeze 一個新的 CODE SHA on PR #15；
+2. exact CODE GitHub Actions Ubuntu + Windows 都必須 SUCCESS；
+3. actual checkout SHA 必須等於新 CODE SHA；
+4. 回報完整 test totals；
+5. 回報 focused strict-identity regression count；
+6. 保留 S1/S2 舊 CODE baseline fail-open 證據；
+7. 若 CI 失敗，只修本 blocker，不要擴 scope。
 
-CI remains non-Blender regression evidence.
+Superseded / cancelled run 不得當 PASS evidence。
 
 ---
 
-## 9. Clean retained REAL acceptance
+## 6. Retained Round 7 evidence gate
 
-Only after exact CODE dual-platform SUCCESS:
+新 CODE 雙平台綠燈後，再確認：
 
-- rerun the existing clean exact-CODE product-variant REAL acceptance;
-- Blender 5.2.1 LTS;
-- OptiX / `realOptix=true`;
-- `usedMock=false`;
-- at least two synthetic/reference variants;
-- exact artifact SHA/bytes and `.blend` reopen;
-- restart/history/download verification;
-- retained 30 + 21 + 35 matrices PASS;
-- retained Round 5 recovery PASS;
-- retained Round 6 A–F ownership/fencing PASS;
-- run at least one killed outer-state writer + fresh cleanup/recovery case on the clean CODE tree.
+- Round 7 A–F hard-kill cleanup cases仍 PASS；
+- live owner competitor 仍 zero cleanup / zero write；
+- unknown/nested/sentinel preservation 仍 byte-identical；
+- cleanup failure 仍在 new state write 前 fail-closed；
+- generic/global temp cleanup 仍 UNCLAIMED / PARTIAL；
+- retained Round 5 recovery與 Round 6 process ownership/fencing 全部 PASS。
 
-A Blender render is not required inside every cleanup case. Do not label a cleanup-only case REAL_RENDER.
-
-Truth boundary after a successful Round 7 may become:
-
-- RecipePreviewService outer-state dead-temp cleanup = **REAL_LOGIC + REAL_PROCESS_RECOVERY / REAL_OS_IO** within this exact local-workspace scope;
-- generic repository/global atomic temp cleanup = still **UNCLAIMED / PARTIAL**;
-- physical geometry/print/manufacturing/global readiness = still **false / BLOCKED**.
+若 production code 只改 comparator，無需重新設計 cleanup harness；只需證明沒有 regression。
 
 ---
 
-## 10. DOCS closure
+## 7. Clean REAL acceptance
 
-Only after CODE CI + required real-process cleanup cases + retained REAL acceptance PASS:
+因 production service code 有變更，exact CODE CI PASS 後重新跑既有 clean product-variant REAL acceptance：
 
-- update existing `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md` and `.json`;
-- record accepted-CODE baseline orphan temp evidence;
-- record exact candidate-matching rule;
-- record cleanup call site and ownership prerequisite;
-- include Cases A–F results;
-- prove sentinel/immutable files byte-identical;
-- state explicitly that cleanup does not confer publication/physical truth;
-- state explicitly that cleanup is scoped only to RecipePreviewService outer `state.json` temp debris;
-- keep generic/global cleanup unclaimed;
-- commit DOCS after evidence exists;
-- run exact DOCS SHA Ubuntu + Windows CI;
-- both must be SUCCESS before `READY_FOR_RE_GATE`.
+- Blender 5.2.1 LTS；
+- OptiX / `realOptix=true`；
+- `usedMock=false`；
+- 至少兩個 synthetic/reference variants；
+- artifact SHA/size、finite pixels、`.blend` reopen；
+- restart/history/download verification；
+- retained 30 + 21 + 35 matrices PASS；
+- retained cleanup cases PASS。
 
-Do not rewrite `GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md` or `CABINET_REAL_ACCEPTANCE.md` merely to make historical docs look current. Update them only if their declared truth actually changes.
+仍必須明確標示：
 
----
+- `inputTruth=SYNTHETIC_STATIC_FIXTURE`；
+- `physicalProductGeometryTruth=false`；
+- `physicalPrintValidated=false`；
+- `manufacturingReady=false`；
+- `globalProductionReady=false`。
 
-## 11. Existing gates stay frozen
-
-- PR #15 remains DRAFT / OPEN on PR #12; **no merge, retarget, rebase-to-main or cherry-pick**.
-- PR #16 remains **FROZEN DRAFT**.
-- PR #14 remains unmerged and without merge authorization.
-- Issue #6 remains `BLOCKED_PR14_NOT_ON_MAIN`.
-- PR #13 Round 3B remains blocked; no articulation authority copy and no DOOR_OPEN promotion.
-- No live H3/LTX/Vision/CNC/LASER/PLC work.
-- `MERGE_AUTHORIZED=false`.
+REAL Blender visual evidence ≠ physical product truth / print proof / manufacturing readiness。
 
 ---
 
-## 12. Final handoff
+## 8. DOCS closure
 
-When all gates pass, leave one concise Issue #1 `READY_FOR_RE_GATE` handoff containing:
+全部通過後只更新必要 acceptance docs：
 
-- this instruction SHA;
-- exact accepted baseline and post-fix CODE SHA;
-- exact CODE CI run/jobs and per-OS test totals;
-- baseline orphan temp filenames/hashes and authoritative state before/after kill;
-- Cases A–F results with real PIDs where applicable;
-- exact cleanup candidate rule and cleanup call site;
-- proof ownership is required before cleanup;
-- proof live competitor performs zero cleanup;
-- proof unknown temp/owner.lock/immutable sentinels remain byte-identical;
-- cleanup-failure fail-closed result;
-- retained Round 5 and Round 6 matrices;
-- clean REAL acceptance ID and Blender/OptiX/usedMock fields;
-- exact DOCS SHA + DOCS CI run/jobs;
-- REAL_LOGIC / REAL_PROCESS_CONCURRENCY / REAL_PROCESS_RECOVERY / REAL_OS_IO / REAL_RENDER / MOCK / PARTIAL / BLOCKED matrix;
-- `physicalProductGeometryTruth=false`;
-- `physicalPrintValidated=false`;
-- `manufacturingReady=false`;
-- `globalProductionReady=false`;
-- PR #16 frozen / Issue #6 blocked / `MERGE_AUTHORIZED=false`.
+- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
+- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
 
-Then STOP for Supervisor Re-Gate. Do not start Round 8 automatically.
+新增：
+
+- S1/S2 baseline fail-open；
+- strict type + exact key-presence correction；
+- focused regression results；
+- new exact CODE SHA + CODE CI run；
+- retained Round 7 cleanup evidence；
+- new clean REAL acceptance generation；
+- truth classification 不變。
+
+然後 commit DOCS，跑 exact DOCS SHA Ubuntu + Windows CI；兩邊都 SUCCESS 才可 `READY_FOR_RE_GATE`。
+
+不要為了「看起來最新」而重寫 `GROK_PROGRESS_REPORT.md`、`CURRENT_IMPLEMENTATION_AUDIT.md`、`REAL_E2E_ACCEPTANCE.md`、`CABINET_REAL_ACCEPTANCE.md`。只有它們宣告的 truth 真正改變才更新。
+
+---
+
+## 9. Existing gates remain frozen
+
+- PR #15 remains **DRAFT / OPEN / unmerged**；
+- **Round 8 HOLD** until this correction is Re-Gated；
+- PR #16 remains **FROZEN DRAFT**；
+- PR #13 / #14 unchanged；
+- Issue #6 remains `BLOCKED_PR14_NOT_ON_MAIN`；
+- no merge / retarget / rebase-to-main / cherry-pick；
+- no live H3 / LTX / Vision / CNC / LASER / PLC work；
+- `MERGE_AUTHORIZED=false`。
+
+---
+
+## 10. Final handoff
+
+完成後在 Issue #1 留 **一則** `READY_FOR_RE_GATE`：
+
+- baseline CODE `eaa4d683...` S1/S2 fail-open reproduction；
+- new exact CODE SHA；
+- CODE Actions run ID + Ubuntu/Windows totals；
+- strict identity regression totals；
+- retained Round 7 cleanup A–F result；
+- clean REAL acceptance generation；
+- DOCS SHA + DOCS Actions run ID + dual-platform result；
+- REAL / MOCK / PARTIAL / BLOCKED truth matrix；
+- `MERGE_AUTHORIZED=false`。
+
+完成後 STOP。**不得自動進 Round 8。**
