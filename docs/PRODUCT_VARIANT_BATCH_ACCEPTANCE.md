@@ -1,6 +1,6 @@
-# Product variant batches — Round 3 input authority acceptance
+# Product variant batches — Round 3 serialized identity correction acceptance
 
-Instruction `782d0bd884473f151e7ed8de909015c08f1a712f` / Issue #1 comment 5693576330. Existing PR #15 stays based on unmerged PR #12 `codex/model-category-tree` at `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge, retarget, rebase or new PR.
+Instruction `8dc6bb9146cb4bd20958682f1f2ee03dfba5be71` / Issue #1 comment 5694753406. Existing PR #15 stays based on unmerged PR #12 `codex/model-category-tree` at `68f64d604bb750c0c48830c0d50516ef5157d296`. No merge, retarget, rebase or new PR.
 
 ## Result
 
@@ -29,9 +29,9 @@ Older batches without the authority contract fail closed and must be resubmitted
 
 ## Exact gates
 
-- CODE `d684686f076fb91c1d9a87ca996a9bd917f1a735`: [Actions 35071688400](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35071688400); Ubuntu + Windows SUCCESS, **1010 tests each**. Actual checkout SHA verified for both jobs. CI is MOCK regression only.
-- Local full suite **1010 PASS**; focused batch/composition/category suite **106 PASS**, including 30 additive authority cases.
-- Clean exact-CODE REAL acceptance `113ade57-fbe8-46c4-8af5-895de4e65d3d`: two static synthetic cabinet artwork variants, Blender **5.2.1 LTS / OPTIX**, `realOptix=true`, `usedMock=false`.
+- CODE `6b118898ebd430592e293c04c5cabe4bc30f37d8`: [Actions 35076940707](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35076940707); Ubuntu + Windows SUCCESS, **1069 tests each**. Actual checkout SHA verified for both jobs. CI is MOCK regression only.
+- Local full suite **1069 PASS**; focused batch/composition/category suite **165 PASS**, including the 30 authority cases and 59 additive serialized-type cases.
+- Clean exact-CODE REAL acceptance `0af30671-aa63-44a6-9d6f-39de99892b35`: two static synthetic cabinet artwork variants, Blender **5.2.1 LTS / OPTIX**, `realOptix=true`, `usedMock=false`.
 - Both renders pass SHA/size, finite nonuniform 800×800 image, `.blend` reopen, original queue/job/attempt/cache/DAM/publication lineage. Geometry hashes match and artwork pixels differ.
 - Actual server restart preserves and re-verifies exact authority identity. The 30 Round 2 corruption/restoration outcomes still pass on these new artifacts.
 - **21 authority outcomes** pass: current master content/hash contradiction, stored hash/reference/version tampering (including numeric/boolean type contradictions), missing snapshot/control, cross-tenant content, forged measured type/declaration, revocation, downgrade, and publication authority mismatch even with recomputed ordinary manifest/publication seals. Category metadata, historical identity, restart and restored visual download checks pass.
@@ -39,12 +39,25 @@ Older batches without the authority contract fail closed and must be resubmitted
 
 Full evidence: [JSON](PRODUCT_VARIANT_BATCH_ACCEPTANCE.json). Prior accepted [Round 2 report](https://github.com/netfox-web/blender-autonomous-3d/blob/7ca89384c1328710a60ddbff18c160c64e7680d1/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) is historical context only. Exact DOCS SHA and its dual-platform CI are reported in Issue #1 after success; no circular self-SHA claim.
 
+## Serialized identity correction
+
+Supervisor found that Python numeric equality could accept JSON `true` as integer `1` at neighboring persisted batch/publication boundaries. Before correction, 46 targeted tests on isolated exact CODE `d684686f076fb91c1d9a87ca996a9bd917f1a735` produced **27 FAIL / 19 PASS**, with actual `DID NOT RAISE ValueError` failures. This is MOCK regression reproduction, not REAL rendering. [Reproduction record](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5694802662).
+
+The existing request verifier now requires exact integer identityVersion, sourceRevision, draft batchVersion/masterRevision and selection masterRevision. Queue/service batchVersion is strict, including pending requests. Terminal receipt rows use canonical hashes rather than Python dict numeric equality. The canonical generation verifier and batch verifier require exact publication historyVersion/sourceRevision and matching draft masterRevision. Authority-bound results cannot remove historyVersion to enter legacy handling; independent pre-V1 history keeps its original visual-only path.
+
+The new exact-CODE REAL run passes **35 serialized-type outcomes** alongside the prior **30 durable-lineage** and **21 authority** outcomes. It tests bool/float/string substitutions in request version/revisions, service batchVersion, terminal row indices 0 and 1, publication historyVersion/sourceRevision/draft revision, plus missing authority publication historyVersion. Publication and meta seals are recomputed in manifest trials; invalid identity still blocks availability/download. Each of the 34 corruption trials restores exact bytes and verifies valid availability/download again; the final outcome records restored readiness. Physical and manufacturing flags remain false.
+
+The [previous Round 3 report](https://github.com/netfox-web/blender-autonomous-3d/blob/91111ed57039df2d537a717b8897d1be82b80625/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) is retained as historical evidence; it does not substitute for this correction run.
+
+The first correction acceptance attempt `02c928e7-06ec-4001-859a-844e21c6d82e` failed with Windows `WinError 5` while replacing an atomic batch progress file. That attempt is retained as FAIL and excluded from PASS evidence. A fresh isolated run on the same unchanged CODE passed all gates. The underlying Windows access contention was not independently diagnosed or fixed; this scope does not claim that intermittent filesystem failures are eliminated.
+
 ## Truth matrix
 
 | Area | Evidence / readiness |
 | --- | --- |
 | Durable batch lineage | REAL_LOGIC |
 | Input authority enforcement | REAL_LOGIC |
+| Serialized identity exactness | REAL_LOGIC |
 | Blender execution | REAL_RENDER, usedMock=false |
 | Geometry inputs | SYNTHETIC / REFERENCE; not physical truth |
 | GitHub CI | MOCK regression |
