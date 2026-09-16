@@ -16,7 +16,7 @@ from pydantic import Field
 from fox3d import model_compositions as compositions, product_models as models
 from fox3d.ids import new_id, stable_hash
 from fox3d.recipe_3d import atomic_json, input_hash, read_json, _ATOMIC_TEMP_TOKEN_LENGTH
-from fox3d.preview_ownership import PreviewOwnership
+from fox3d.preview_ownership import PreviewOwnership, PreviewBusy
 from fox3d import variant_authority as authority
 from fox3d import durability
 
@@ -186,6 +186,30 @@ def current(root, tenant, mid, task_id, state):
             raise ValueError('批次紀錄遺失，無法確認完成')
         return None  # Single-composition tasks have no batch record.
     if state in {'queued', 'running'}:
+        # File flushing makes the initial request/progress window observable.
+        # A live writer may still be committing these files. Return only the
+        # existing pending view (no batch authority), never reconstruct/adopt.
+        if not path.exists() and not any((anchor/name).exists() for name in
+                ['terminal.json', *[str(i)+'.json' for i in range(24)]]):
+            try:
+                guard = PreviewOwnership(base)
+            except PreviewBusy:
+                service = _load(base/'state.json')
+                if (service.get('taskId') != task_id or service.get('state') != state
+                        or type(service.get('inputHash')) is not str
+                        or type(service.get('batchVersion')) is not int or service['batchVersion'] != 1):
+                    raise ValueError('批次與佇列請求不符')
+                if (anchor/'request.json').exists():
+                    request = _load(anchor/'request.json')
+                    try:
+                        _identity(request, tenant, mid, task_id)
+                        if service['inputHash'] != input_hash(request['draft']):
+                            raise ValueError('批次與佇列請求不符')
+                    except (KeyError, TypeError, IndexError) as exc:
+                        raise ValueError('批次紀錄不完整，請重新核對後建立新批次') from exc
+                return None
+            else:
+                guard.close()  # No live writer: retain missing-record rejection.
         return _current(root, tenant, mid, task_id, state, base, path, anchor)
     with PreviewOwnership(base) as owner:
         return _current(root, tenant, mid, task_id, state, base, path, anchor, owner)

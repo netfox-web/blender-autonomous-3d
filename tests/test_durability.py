@@ -169,3 +169,53 @@ def test_submit_namespace_failure_returns_no_success_and_releases_owner(tmp_path
         with PreviewOwnership(tmp_path) as owner: assert owner.held
     finally:
         service.executor.shutdown()
+
+
+@pytest.mark.parametrize('request_committed', [False, True])
+def test_live_initial_metadata_flush_is_pending_not_corrupt(tmp_path, request_committed):
+    from batch_process_concurrency import fixture
+    from batch_process_recovery import read
+    fixture(tmp_path);ctx=read(tmp_path/'context.json');draft=ctx['drafts']['same'];model=ctx['model']
+    bid='12345678-1234-4234-8234-123456789012'
+    base=b.compositions.folder_for(tmp_path/'d',ctx['tenant'],model['id']);anchor=base/'batches'/bid
+    with PreviewOwnership(base):
+        anchor.mkdir(parents=True)
+        r.atomic_json(base/'state.json',{'taskId':bid,'inputHash':r.input_hash(draft),'batchVersion':1,'state':'running'})
+        if request_committed:
+            b._once(anchor/'request.json',{'identityVersion':1,'tenantId':ctx['tenant'],'masterId':model['id'],
+                'batchId':bid,'sourceRevision':model['revision'],'draft':draft})
+        else:
+            # The actual new flush enlarges this existing initial-temp-only window.
+            (anchor/('request.json.once.'+'a'*16+'.tmp.1234abcd.tmp')).write_bytes(b'not authority')
+        before={str(p):p.read_bytes() for p in base.rglob('*') if p.is_file() and p.name!='owner.lock'}
+        assert b.current(tmp_path/'d',ctx['tenant'],model['id'],bid,'running') is None
+        assert {str(p):p.read_bytes() for p in base.rglob('*') if p.is_file() and p.name!='owner.lock'}==before
+    # No live owner: preserve the previous fail-closed missing-record behavior.
+    with pytest.raises(ValueError):b.current(tmp_path/'d',ctx['tenant'],model['id'],bid,'running')
+
+
+@pytest.mark.parametrize('kind', ['task','hash','version_bool','state','malformed_request','request_missing_field','terminal','row','missing_state','cross_product'])
+def test_pending_flush_view_does_not_hide_corruption_or_completed_facts(tmp_path, kind):
+    from batch_process_concurrency import fixture
+    from batch_process_recovery import read
+    fixture(tmp_path);ctx=read(tmp_path/'context.json');draft=ctx['drafts']['same'];model=ctx['model']
+    bid='12345678-1234-4234-8234-123456789012'
+    base=b.compositions.folder_for(tmp_path/'d',ctx['tenant'],model['id']);anchor=base/'batches'/bid
+    state={'taskId':bid,'inputHash':r.input_hash(draft),'batchVersion':1,'state':'running'}
+    if kind=='task':state['taskId']='wrong'
+    if kind=='hash':state['inputHash']='wrong'
+    if kind=='version_bool':state['batchVersion']=True
+    if kind=='state':state['state']='succeeded'
+    with PreviewOwnership(base):
+        r.atomic_json(base/'state.json',state)
+        request={'identityVersion':1,'tenantId':ctx['tenant'],'masterId':model['id'],
+                 'batchId':bid,'sourceRevision':model['revision'],'draft':draft}
+        if kind=='cross_product':request['masterId']='wrong'
+        if kind=='request_missing_field':request.pop('draft')
+        b._once(anchor/'request.json',request)
+        if kind=='malformed_request':(anchor/'request.json').write_bytes(b'{broken')
+        if kind=='missing_state':(base/'state.json').unlink()
+        if kind in {'terminal','row'}:(anchor/('terminal.json' if kind=='terminal' else '0.json')).write_bytes(b'FACT')
+        before={str(p):p.read_bytes() for p in base.rglob('*') if p.is_file() and p.name!='owner.lock'}
+        with pytest.raises(ValueError):b.current(tmp_path/'d',ctx['tenant'],model['id'],bid,'running')
+        assert {str(p):p.read_bytes() for p in base.rglob('*') if p.is_file() and p.name!='owner.lock'}==before
