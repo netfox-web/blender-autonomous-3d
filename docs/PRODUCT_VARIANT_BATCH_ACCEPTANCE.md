@@ -1,35 +1,44 @@
-# Product variant batches — static preview acceptance
+# Product variant batches — Round 2 durable identity acceptance
 
-Explicit user request, 2026-09-16: reuse 3D product masters for multiple artwork and scene variants, with an operator UI. This is separate from Issue #6 Round 3B. No synthetic instruction commit or source Issue identity is assigned.
+Supervisor instruction: `29f45051cb7fc2153dca695f628bb854fc307394`, Issue #1 comment 5691577003. Correction instruction `64e9d12380b5c4d2329f383d1fd481656075239e` / comment 5692029044 also applies. This additive hardening is on existing PR #15, based on unmerged PR #12. It does not merge either PR or extend the scene-library scope.
 
-## Delivered behavior
+## Behavior and identity
 
-The model workbench now has a reviewed batch list (up to 24 variants), per-row progress/cancellation and a paginated retained-results gallery. It supports the existing master adapters, including cabinets and flat products. Operators select each surface artwork, page and rotation, add the selection to one or more of the three existing background presets, then submit the batch. All selections are preflighted before enqueueing, and each row rechecks current master identity and artwork classification before rendering.
+A batch's mutable progress can no longer prove completion. `identityVersion=1` binds tenant, master ID, batch/task ID, source revision, master input hash, immutable request hash, exact row count/order and each SKU/scene/selection identity. Generation UUIDs are derived deterministically from the batch UUID, row index and exact selection hash.
 
-Single renders and batches share the same serial composition queue. Failures and cancellation preserve completed results. Service interruption does not automatically replay work or label incomplete rows successful. Historical downloads independently validate generation/master identity, artifact integrity and current artwork permission; changed geometry or revoked artwork disables downloads. New output publication is sealed only after final source/cancellation checks. Existing older valid composition results remain accessible.
+The existing serial service persists only an additive batch-version marker beside its existing task/input hash. A separate exclusive-write request snapshot anchors recomputation; write-once row and batch terminal receipts prevent mutable cancelled/interrupted progress from resurrecting success. Existing atomic JSON persistence is reused; no second scheduler, queue, DAM or rendering engine is introduced. Exclusive publication uses a fully written temporary file and an atomic no-overwrite hard link.
 
-## Exact CODE gate
+`current()` checks the outer service task/input identity, independently reconstructs all expected rows from the request, and rejects corrupted, incomplete, swapped, reordered or unknown-version records. For each completed row it reuses `compositions.generation()` and the existing artifact/publication verifier, then binds the exact manifest draft, revision, plan hash and scene to the requested row. Missing, corrupt, stale or revoked results become unavailable/failed. API status cannot keep an outer stale succeeded label; the UI clears old batch progress when verification errors occur.
 
-- CODE: `2a43d9b51001176164bd534f51b63debf3f391cd`
-- [CODE CI 35044283265](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35044283265): Ubuntu job 104630648838 and Windows job 104630648705 both SUCCESS; 939 passed markers each, reaching 100%. MOCK regression only.
-- Clean-CODE REAL generation: `34fbd5bf-a46d-4914-8d08-cf86e36b83bb`
-- Six outputs: two artwork patterns × two backgrounds on a synthetic static three-door cabinet; two patterns on a synthetic flat panel.
-- All six use REAL Blender 5.2.1 LTS + OptiX, `usedMock=false`, distinct beauty image hashes, constant geometry within each model, complete artifact hashes/sizes and successful `.blend` reopen.
-- Actual HTTP acceptance checks: simultaneous single/batch submission rejection; historical downloads including non-latest results; retained results after process restart; all variants blocked after geometry changes; restoration of identical geometry; selective blocking after artwork revocation; cross-tenant denial.
-- Browser UI smoke checks: existing category tree and 4-preview/17-draft inventory preserved; one selection added to two backgrounds; duplicate rejection; pending geometry disabled; switching masters preserves unsent lists; clear list; three existing historical results visible; no console errors.
+Completed valid results survive restart. Unfinished rows never replay automatically. A cancelled/interrupted outer task is not promoted to a successful batch merely because completion files exist. Older batches without the new identity records require rechecking; their independently valid historical compositions still use the existing download path. Single-composition flow and category/inventory semantics remain intact.
 
-Machine-readable evidence: [PRODUCT_VARIANT_BATCH_ACCEPTANCE.json](PRODUCT_VARIANT_BATCH_ACCEPTANCE.json). Raw local evidence is in `.fox3d-work/batches/34fbd5bf`; user data and NAS originals were not used as synthetic test fixtures.
+## Historical Round 1
 
-## DOCS gate and delivery
+Round 1 CODE `2a43d9b51001176164bd534f51b63debf3f391cd` produced six REAL synthetic static renders under acceptance `34fbd5bf-a46d-4914-8d08-cf86e36b83bb`. Its evidence remains available in [the immutable Round 1 report](https://github.com/netfox-web/blender-autonomous-3d/blob/f88d5c896be424da54ab379cdd97a9dc35d08f90/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json). Those six renders prove only that earlier static slice; they do not substitute for this Round 2 durable-lineage acceptance. The two renders and REAL_LOGIC corruption/restart checks below are new exact-CODE Round 2 evidence.
 
-This document is committed only after exact CODE dual-platform CI and clean REAL acceptance. The exact DOCS SHA and its Ubuntu/Windows run are recorded in the final Issue #1 handoff after they pass; they are not invented or circularly embedded here. [PR #15](https://github.com/netfox-web/blender-autonomous-3d/pull/15) targets `codex/model-category-tree` and explicitly depends on PR #12. No merge is authorized or performed.
+## Exact-CODE regression correction
 
-Operator steps: [PRODUCT_VARIANT_BATCH_GUIDE.md](PRODUCT_VARIANT_BATCH_GUIDE.md).
+The first CODE `155fd2b602ea6d9c0519a28d28150e5d2a43b275` was reproduced in a clean detached checkout using the added API regression: **2 FAIL / 1 PASS** (MOCK/API logic). Null or malformed persisted outer task IDs returned HTTP 200 before batch validation. A minimal two-line non-idle task-ID guard corrects this; three API regression cases now pass. This was reported in Issue #1 comment 5692136979. The first CI attempt was cancelled while investigating this real gap; its cancellation is not counted as PASS. The later exact CODE below supersedes it under the correction instruction’s actual pytest-failure path.
 
-## Limits and remaining work
+## Gates
 
-This completes a static batch-preview slice, not the whole requested product library. The existing inventory remains 21 masters / 4 available previews / 17 drafts. No new real product geometry or physical dimensions are certified. Three presets are simple studio/wall backgrounds, not a furnished-room scene library. Veneer texture/material selection, curved bottle/box adapters, drawer/rotating cabinet geometry and missing product measurements/dielines remain outstanding. AI artwork/provider integration and UV manufacturing are not exercised here.
+- Exact CODE: `bedc9a08bcdec19076ea70d0000a2a2a272e15db`.
+- Exact CODE CI: https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35057461216; Ubuntu + Windows SUCCESS, each **980** pass markers. **MOCK regression only**.
+- Local full pytest: 980 pass markers; focused batch/composition/category checks: 76 passed.
+- Clean exact-CODE REAL acceptance: `8305eb4c-8bd6-4112-a248-4219d8d92aac`.
+- Two synthetic static cabinet artwork variants, REAL Blender 5.2.1 LTS + OptiX, `usedMock=false`. Both validate actual artifact SHA/bytes, publication seal, batch identity/receipts, `.blend` reopen and finite nonuniform 800 × 800 images. Geometry identity remains fixed, beauty hashes differ.
+- Actual server restart retains completed batch/results and historical non-latest downloads; changed geometry and revoked artwork disable availability/downloads. Queue exclusion and cross-tenant path isolation remain checked.
+- Representative REAL_LOGIC tamper matrix: 30 recorded outcomes, all expected blocks/pass restoration. Batch/task, tenant/master, hash/revision/version, count/order, duplicate/malformed UUID, SKU/scene, truncated JSON, manifest/publication corruption and terminal-state resurrection checks are included. Request/service-input contradiction and succeeded-without-receipt also block in REAL_LOGIC corruption trials; additional adversarial cases are covered in MOCK regressions.
+- The interrupted-row scenario is explicitly **SIMULATED_INTERRUPTION_REAL_ARTIFACTS**: persisted progress and receipts are manipulated in the isolated acceptance fixture; this does not claim a real killed Blender process. A stray existing publication cannot mark the interrupted batch row successful.
 
-NAS inspection located cabinet assembly illustrations but they did not establish board thickness or exact door-notch outlines. A file named actual size was a commerce poster with overall dimensions for a different bedside product; it was not substituted as a part drawing for the requested cabinet.
+Full machine-readable evidence: [PRODUCT_VARIANT_BATCH_ACCEPTANCE.json](PRODUCT_VARIANT_BATCH_ACCEPTANCE.json). Operator guide: [PRODUCT_VARIANT_BATCH_GUIDE.md](PRODUCT_VARIANT_BATCH_GUIDE.md).
 
-Issue #6 / PR #13 stays blocked until PR #14 authority is authorized and actually on main. This branch contains no Articulation Source V1 copy, cherry-pick, 75-degree animation workaround, DOOR_OPEN render or live H3/LTX/Vision/CNC action. FIXTURE input and REAL render must not be described as physical CAD truth or Production Ready.
+DOCS is committed after CODE CI and clean REAL PASS. Exact DOCS SHA and its dual-platform CI are recorded in the Issue #1 handoff after they pass, avoiding circular self-SHA claims.
+
+## Truth and scope
+
+`inputTruth=SYNTHETIC_STATIC_FIXTURE`, `physicalPrintValidated=false`, `physicalProductGeometryTruth=false`, `globalProductionReady=false`, `MERGE_AUTHORIZED=false`.
+
+This is local durable lineage validation, not cryptographic protection against an administrator who rewrites all local anchors or production authentication certification. Existing inventory remains 21 masters / 4 previews / 17 drafts. No NAS originals or operator product records were used as tamper fixtures or changed. Missing dimensions/dielines, veneer material management and curved/rotating product adapters remain outstanding.
+
+PR #16 was created under the explicit scene request before this instruction was observed and is now frozen as a draft; it is not part of this Round 2 acceptance. No scene changes were copied into PR #15. PR #13/#14 were not changed. Issue #6 stays `BLOCKED_PR14_NOT_ON_MAIN`; no authority cherry-pick, door-open render, legacy 75-degree substitution, live H3/LTX/Vision or machine control occurred. No merge is authorized. Stop for Supervisor Re-Gate.

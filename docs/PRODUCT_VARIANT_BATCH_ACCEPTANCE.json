@@ -1,54 +1,16 @@
 {
-  "evidenceId": "34fbd5bf-a46d-4914-8d08-cf86e36b83bb",
-  "codeCommit": "2a43d9b51001176164bd534f51b63debf3f391cd",
+  "evidenceId": "8305eb4c-8bd6-4112-a248-4219d8d92aac",
+  "codeCommit": "bedc9a08bcdec19076ea70d0000a2a2a272e15db",
   "workingTreeClean": true,
   "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
   "physicalPrintValidated": false,
+  "physicalProductGeometryTruth": false,
+  "globalProductionReady": false,
   "productionReady": false,
   "generations": [
     {
-      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
-      "generationId": "43c84889-2f2c-4946-9469-2bef27c98026",
-      "sku": "FIXTURE-2",
-      "scene": "WARM_ROOM",
-      "renderInfo": {
-        "realBlender": true,
-        "usedMock": false,
-        "device": "OPTIX",
-        "blenderVersion": "5.2.1 LTS",
-        "realOptix": true
-      },
-      "files": {
-        "beauty.png": "73e13cb5bfa5e9d0462a33ee8791dc88b0e4151ef7884f3416cf5f72e634e3ef",
-        "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
-        "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
-        "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
-        "front-closed.png": "9b56972db0f287ec3146307ae50864e7db95830543c490ef8efe3ca0a991f058",
-        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
-        "golden-observation.json": "4ccb2281c3aaa7cc2a61ef21f98c06ab765b7a93c9b24188e1b595df20a9a759",
-        "model.blend": "4e05dcf257d3200403825de73c862c0b76d37ccfdb60caf2a1969af766f78a8b",
-        "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
-      },
-      "sizes": {
-        "beauty.png": 645585,
-        "door_1-preview.png": 2473,
-        "door_2-preview.png": 2473,
-        "door_3-preview.png": 2473,
-        "front-closed.png": 636242,
-        "geometry.json": 1637,
-        "golden-observation.json": 6186,
-        "model.blend": 970709,
-        "model.glb": 27960
-      },
-      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
-      "jobId": "6683d250-9208-42eb-9676-4ee214e51284",
-      "requestedJobId": "6683d250-9208-42eb-9676-4ee214e51284",
-      "cacheHit": false,
-      "blendReopen": true
-    },
-    {
-      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
-      "generationId": "49aa6498-93a8-4b17-aaf6-7c7b05106c22",
+      "modelId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+      "generationId": "783d8e2c-d3a0-50bf-80ae-5be3f15f48e4",
       "sku": "FIXTURE-2",
       "scene": "STUDIO",
       "renderInfo": {
@@ -59,76 +21,41 @@
         "realOptix": true
       },
       "files": {
-        "beauty.png": "66a9bda8724fbb6a52b9636519f1e8aceda2129d9a87996cadb777a0c05cb3c8",
+        "beauty.png": "d7b7ed7f7705365f5a77b67f279307749bb0b5d17da55f404b4e228b0eef82ab",
         "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
         "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
         "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
-        "front-closed.png": "de88c18f81639f88ed57b5e30794c9126460bbabf282184628dec7bf6fd65e99",
+        "front-closed.png": "43382dfa2e0a84d28df9dd6f36822d852d7b5df8bf8d85e897189d96fef500ba",
         "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
-        "golden-observation.json": "be93dfd5c0758a0bf92cdf69afb6d528e8261c1f9f4c40e197068d2527570f76",
-        "model.blend": "db829b8d78a72ac425adfcb5e71a4fadbe961608db47e82a6150f878e0b8476a",
+        "golden-observation.json": "f201a2509e8bb2b33a810fadf871d7715dec81725b4628ea0861b53512da7b1b",
+        "model.blend": "89a387396aa158bb7321b6b19786790747e7b521c5aea42406051580eb63d69f",
         "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
       },
       "sizes": {
-        "beauty.png": 646900,
+        "beauty.png": 646859,
         "door_1-preview.png": 2473,
         "door_2-preview.png": 2473,
         "door_3-preview.png": 2473,
-        "front-closed.png": 647256,
+        "front-closed.png": 647518,
         "geometry.json": 1637,
         "golden-observation.json": 6186,
         "model.blend": 964518,
         "model.glb": 27960
       },
       "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
-      "jobId": "067f1b8b-d239-4a54-a8f3-d234d1f8dbb1",
-      "requestedJobId": "067f1b8b-d239-4a54-a8f3-d234d1f8dbb1",
+      "jobId": "3f3ece64-cce1-4433-b0ec-c303c32af827",
+      "requestedJobId": "3f3ece64-cce1-4433-b0ec-c303c32af827",
       "cacheHit": false,
-      "blendReopen": true
+      "blendReopen": true,
+      "publication": {
+        "manifestSha256": "69c14dc7b701d286b83e2fce539b1311c312ea99c92515de3c2ba84d73db3a0d"
+      },
+      "manifestSha256": "69c14dc7b701d286b83e2fce539b1311c312ea99c92515de3c2ba84d73db3a0d",
+      "finitePixels": true
     },
     {
-      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
-      "generationId": "2dd38bdc-856e-439a-99ff-512b25560774",
-      "sku": "FIXTURE-1",
-      "scene": "WARM_ROOM",
-      "renderInfo": {
-        "realBlender": true,
-        "usedMock": false,
-        "device": "OPTIX",
-        "blenderVersion": "5.2.1 LTS",
-        "realOptix": true
-      },
-      "files": {
-        "beauty.png": "6a309e70bdcf63b8a4acccb1e1c9b6cc04d3c184367adc4dddf2646eafc2c773",
-        "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
-        "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
-        "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
-        "front-closed.png": "fd06fcdf5d1861831c0073de0ba4f392e571416ab075290082fa14e66afa5910",
-        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
-        "golden-observation.json": "544cc7999a05d31edb3ae9e5b84e2b21dd640597a12e8871af354f730e0913fe",
-        "model.blend": "8640fceca5cb0a93c999b2f0e9d12fcd2bd493272557b2a887a1caf26390a0e3",
-        "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
-      },
-      "sizes": {
-        "beauty.png": 643301,
-        "door_1-preview.png": 2473,
-        "door_2-preview.png": 2473,
-        "door_3-preview.png": 2473,
-        "front-closed.png": 635198,
-        "geometry.json": 1637,
-        "golden-observation.json": 6186,
-        "model.blend": 970709,
-        "model.glb": 27960
-      },
-      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
-      "jobId": "969dd87c-14d7-4fb0-9abf-df28ced1bf8a",
-      "requestedJobId": "969dd87c-14d7-4fb0-9abf-df28ced1bf8a",
-      "cacheHit": false,
-      "blendReopen": true
-    },
-    {
-      "modelId": "b08e4d91-d350-497b-9548-9ec9b7f8bbef",
-      "generationId": "7d4e10d3-c8ce-489e-9e46-50c59c1c9381",
+      "modelId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+      "generationId": "3a2f990c-5bd3-5b31-904f-48a30d7fa91b",
       "sku": "FIXTURE-1",
       "scene": "STUDIO",
       "renderInfo": {
@@ -139,106 +66,338 @@
         "realOptix": true
       },
       "files": {
-        "beauty.png": "7b9b48a0198213d64234d369231a025361277eb07c6e88cbb59eae4346efb605",
+        "beauty.png": "4403f8b13f62d645c78dd92c36cc166ada2978fb17f14a96f078e244d027ee80",
         "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
         "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
         "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
-        "front-closed.png": "d58ca8f143693376c7b3058fd45ed9172c7a6cf2ec7a4b7e23b8e7b9adb7e3e3",
+        "front-closed.png": "ff954c6108d514e04f8b03e39db1b92f1b25dcec71d757e72cd1b253cf6ddc13",
         "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
-        "golden-observation.json": "82537b157b6dcfc72bde665e3cd1f83fb4c94fda04ea0248f4254d6cd4921375",
-        "model.blend": "b3dac61d5b919cea31e7f7e250780c915b8e74033b5c154f3e4ffc1073d2895b",
+        "golden-observation.json": "4a386a3213448d1192bc9601d384ac3059917f4116ef3e6224519850b8bb92e5",
+        "model.blend": "cc15a58fb13acb212b592c04f0acf78dc7c099e86abf85d9b02272c648d53bb7",
         "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
       },
       "sizes": {
-        "beauty.png": 646457,
+        "beauty.png": 646434,
         "door_1-preview.png": 2473,
         "door_2-preview.png": 2473,
         "door_3-preview.png": 2473,
-        "front-closed.png": 648401,
+        "front-closed.png": 648376,
         "geometry.json": 1637,
         "golden-observation.json": 6186,
         "model.blend": 964518,
         "model.glb": 27960
       },
       "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
-      "jobId": "fcd1a662-5f19-47fa-a509-8102bdb90ce5",
-      "requestedJobId": "fcd1a662-5f19-47fa-a509-8102bdb90ce5",
+      "jobId": "d1944a49-8112-4696-a798-a91d1a9c968e",
+      "requestedJobId": "d1944a49-8112-4696-a798-a91d1a9c968e",
       "cacheHit": false,
-      "blendReopen": true
-    },
-    {
-      "modelId": "67724054-12da-4a07-a679-34f2583fb6d7",
-      "generationId": "5eaa3300-1fee-48af-a315-dbb210d2172b",
-      "sku": "FIXTURE-2",
-      "scene": "STUDIO",
-      "renderInfo": {
-        "realBlender": true,
-        "usedMock": false,
-        "device": "OPTIX",
-        "blenderVersion": "5.2.1 LTS",
-        "realOptix": true
+      "blendReopen": true,
+      "publication": {
+        "manifestSha256": "6517b33054420cfeb8efcfd431d7885f19c80bb64996ce00b39a08d81374b6a0"
       },
-      "files": {
-        "beauty.png": "52b558b581e9939071127171190dd9b58a2a2b55d09db9f88e0cc2ae61786f56",
-        "front-closed.png": "ab9ead202bc12d5419a3ae1cc8b30c26722b6ab5d82eab7660114a32b803a7af",
-        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
-        "golden-observation.json": "adce5bd228ad215783c2188634a4aae5c6a4fbcc4c7019e42b188cb779759fb5",
-        "model.blend": "78fd86932220cb5b2b6af989c94e02983b9041441ecd75e68b36ad81454f61cb",
-        "model.glb": "d480acc022556bccd3c2e146856a85a9db989f802d5f91936b5e00ae1232961a",
-        "surface-preview.png": "b5304da2741eeaf155b161b282b84d1bb0ef6e831147152d9920c475f350c575"
-      },
-      "sizes": {
-        "beauty.png": 627903,
-        "front-closed.png": 626129,
-        "geometry.json": 210,
-        "golden-observation.json": 1909,
-        "model.blend": 627197,
-        "model.glb": 4644,
-        "surface-preview.png": 1422
-      },
-      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
-      "jobId": "79a20420-cd56-4db5-b94c-a008a1e35039",
-      "requestedJobId": "79a20420-cd56-4db5-b94c-a008a1e35039",
-      "cacheHit": false,
-      "blendReopen": true
-    },
-    {
-      "modelId": "67724054-12da-4a07-a679-34f2583fb6d7",
-      "generationId": "801a2767-8292-4edb-88fa-4c05219eddcc",
-      "sku": "FIXTURE-1",
-      "scene": "STUDIO",
-      "renderInfo": {
-        "realBlender": true,
-        "usedMock": false,
-        "device": "OPTIX",
-        "blenderVersion": "5.2.1 LTS",
-        "realOptix": true
-      },
-      "files": {
-        "beauty.png": "ff7a94b71bdff24a4eca3111e7668c5733ea5b2e4424f9d2445dbd8c1132a7fa",
-        "front-closed.png": "9814af14ec0f7186fe19bccd109021ccd4a06fbb1f23c782411662b838347c21",
-        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
-        "golden-observation.json": "9d3480c9d4b03461a05b606154c4d8461c1314313d83aa0e5d51770e00bd586e",
-        "model.blend": "f91baff7cf9d947880182b995f60a463b1bd54b295828eb14fc9f0e619ce57c6",
-        "model.glb": "bd499eab8bdb1b60338a01128542894b9033a7914ef1d9c8a6f28ebadac1cfb9",
-        "surface-preview.png": "36d8f6163d19d41cc9488627b57216886f0573eb000358add027a87c3cad867d"
-      },
-      "sizes": {
-        "beauty.png": 627867,
-        "front-closed.png": 627445,
-        "geometry.json": 210,
-        "golden-observation.json": 1909,
-        "model.blend": 627197,
-        "model.glb": 4644,
-        "surface-preview.png": 1422
-      },
-      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
-      "jobId": "02ce79f4-db94-4387-bcf3-2df618b9401e",
-      "requestedJobId": "02ce79f4-db94-4387-bcf3-2df618b9401e",
-      "cacheHit": false,
-      "blendReopen": true
+      "manifestSha256": "6517b33054420cfeb8efcfd431d7885f19c80bb64996ce00b39a08d81374b6a0",
+      "finitePixels": true
     }
   ],
+  "round2": true,
+  "batches": [
+    {
+      "batchId": "8716ff5c-bbd3-4eff-9879-81a1198b736b",
+      "modelId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+      "identityVersion": 1,
+      "verifiedState": {
+        "identityVersion": 1,
+        "tenantId": "sonaqueen-home",
+        "masterId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+        "batchId": "8716ff5c-bbd3-4eff-9879-81a1198b736b",
+        "name": "REAL batch fixture",
+        "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
+        "sourceRevision": 1,
+        "selectionHash": "0bd263888578a21ebbb0747a259efc012f2857d6c55bb65c3d152ed8a56c3aef",
+        "rowCount": 2,
+        "rows": [
+          {
+            "index": 0,
+            "generationId": "3a2f990c-5bd3-5b31-904f-48a30d7fa91b",
+            "sku": "FIXTURE-1",
+            "scene": "STUDIO",
+            "selectionHash": "01f6f5b0e81926b206fc33ec2f42f9d91587d62cac4a9eb07f64a95091671d53",
+            "state": "succeeded",
+            "error": null,
+            "available": true
+          },
+          {
+            "index": 1,
+            "generationId": "783d8e2c-d3a0-50bf-80ae-5be3f15f48e4",
+            "sku": "FIXTURE-2",
+            "scene": "STUDIO",
+            "selectionHash": "529787afb35eba06a04c70e5b58e68bb637a52261411a65690474c4ba851afdf",
+            "state": "succeeded",
+            "error": null,
+            "available": true
+          }
+        ],
+        "state": "succeeded",
+        "available": true
+      },
+      "request": {
+        "identityVersion": 1,
+        "tenantId": "sonaqueen-home",
+        "masterId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+        "batchId": "8716ff5c-bbd3-4eff-9879-81a1198b736b",
+        "sourceRevision": 1,
+        "draft": {
+          "batchVersion": 1,
+          "name": "REAL batch fixture",
+          "selections": [
+            {
+              "masterId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+              "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
+              "masterRevision": 1,
+              "master": {
+                "name": "FIXTURE HINGED_CABINET",
+                "family": "cabinet",
+                "subtype": "other",
+                "sourceGroupId": "",
+                "geometry": "HINGED_CABINET",
+                "recipeReference": null,
+                "widthMm": 424.0,
+                "depthMm": 295.0,
+                "heightMm": 900.0,
+                "panelMm": 15.0,
+                "backMm": 3.0,
+                "doorMm": 15.0,
+                "gapMm": 2.0,
+                "rows": 3,
+                "dimensionEvidence": "SYNTHETIC FIXTURE dimensions, not physical product truth",
+                "structureEvidence": "SYNTHETIC rectangular static geometry",
+                "notes": "",
+                "variants": [],
+                "printFaces": []
+              },
+              "sku": "FIXTURE-1",
+              "scene": "STUDIO",
+              "placements": [
+                {
+                  "componentId": "door_3",
+                  "assetId": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+                  "page": 0,
+                  "rotation": 0
+                },
+                {
+                  "componentId": "door_2",
+                  "assetId": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+                  "page": 0,
+                  "rotation": 0
+                },
+                {
+                  "componentId": "door_1",
+                  "assetId": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+                  "page": 0,
+                  "rotation": 0
+                }
+              ]
+            },
+            {
+              "masterId": "1db7d64c-dffd-4fa2-a6af-41f8c312cf59",
+              "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
+              "masterRevision": 1,
+              "master": {
+                "name": "FIXTURE HINGED_CABINET",
+                "family": "cabinet",
+                "subtype": "other",
+                "sourceGroupId": "",
+                "geometry": "HINGED_CABINET",
+                "recipeReference": null,
+                "widthMm": 424.0,
+                "depthMm": 295.0,
+                "heightMm": 900.0,
+                "panelMm": 15.0,
+                "backMm": 3.0,
+                "doorMm": 15.0,
+                "gapMm": 2.0,
+                "rows": 3,
+                "dimensionEvidence": "SYNTHETIC FIXTURE dimensions, not physical product truth",
+                "structureEvidence": "SYNTHETIC rectangular static geometry",
+                "notes": "",
+                "variants": [],
+                "printFaces": []
+              },
+              "sku": "FIXTURE-2",
+              "scene": "STUDIO",
+              "placements": [
+                {
+                  "componentId": "door_3",
+                  "assetId": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+                  "page": 0,
+                  "rotation": 0
+                },
+                {
+                  "componentId": "door_2",
+                  "assetId": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+                  "page": 0,
+                  "rotation": 0
+                },
+                {
+                  "componentId": "door_1",
+                  "assetId": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+                  "page": 0,
+                  "rotation": 0
+                }
+              ]
+            }
+          ],
+          "masterInputHash": "87704dda82773d49e02bd1576f9262671d1a86dddb6863706087f94dacf63030",
+          "masterRevision": 1
+        }
+      },
+      "requestSha256": "2eeebafad066b3d706e1627eb5592b9d555f45f4cc4b8117070942e7801a50ba",
+      "terminal": {
+        "batchIdentityHash": "bfcee197ca1ee3af48f9e9b912df46af7837a2131523dae80c4585b5fa3984a3",
+        "state": "succeeded"
+      },
+      "rowReceipts": [
+        {
+          "batchIdentityHash": "bfcee197ca1ee3af48f9e9b912df46af7837a2131523dae80c4585b5fa3984a3",
+          "row": {
+            "index": 0,
+            "generationId": "3a2f990c-5bd3-5b31-904f-48a30d7fa91b",
+            "sku": "FIXTURE-1",
+            "scene": "STUDIO",
+            "selectionHash": "01f6f5b0e81926b206fc33ec2f42f9d91587d62cac4a9eb07f64a95091671d53"
+          },
+          "state": "succeeded",
+          "error": null
+        },
+        {
+          "batchIdentityHash": "bfcee197ca1ee3af48f9e9b912df46af7837a2131523dae80c4585b5fa3984a3",
+          "row": {
+            "index": 1,
+            "generationId": "783d8e2c-d3a0-50bf-80ae-5be3f15f48e4",
+            "sku": "FIXTURE-2",
+            "scene": "STUDIO",
+            "selectionHash": "529787afb35eba06a04c70e5b58e68bb637a52261411a65690474c4ba851afdf"
+          },
+          "state": "succeeded",
+          "error": null
+        }
+      ]
+    }
+  ],
+  "tamperMatrix": {
+    "batchId": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "tenant": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "master": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "masterHash": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "revision": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "selectionHash": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "version": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "unknownVersion": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "insert": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "delete": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "reorder": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "duplicateGeneration": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "malformedGeneration": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "sku": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "scene": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "rowHash": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "rowIndex": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "truncation": {
+      "status": "BLOCK",
+      "http": 422
+    },
+    "requestContradiction": {
+      "status": "BLOCK"
+    },
+    "serviceInputHash": {
+      "status": "BLOCK"
+    },
+    "succeededWithoutRowReceipt": {
+      "status": "BLOCK"
+    },
+    "outerTask:None": {
+      "status": "BLOCK"
+    },
+    "outerTask:../escape": {
+      "status": "BLOCK"
+    },
+    "outerTask:62d70b84-d5cb-457e-803b-58a2fc855ab0": {
+      "status": "BLOCK"
+    },
+    "published.json": {
+      "status": "BLOCK",
+      "downloadHttp": 409
+    },
+    "manifest.json": {
+      "status": "BLOCK",
+      "downloadHttp": 409
+    },
+    "cancelledResurrection": {
+      "status": "BLOCK"
+    },
+    "interruptedResurrection": {
+      "status": "BLOCK"
+    },
+    "simulatedInterruptedStateWithRealStrayPublication": {
+      "status": "BLOCK_REPLAY",
+      "retainedCompleted": true,
+      "input": "SIMULATED_INTERRUPTION_REAL_ARTIFACTS"
+    },
+    "restoredNonLatestDownload": {
+      "status": "PASS"
+    }
+  },
   "status": "PASS",
   "geometryPreserved": true,
   "variantPixelsDistinct": true,
@@ -246,53 +405,57 @@
   "staleBlocked": true,
   "revokedBlocked": true,
   "serialQueue": true,
-  "authorization": {
-    "type": "EXPLICIT_USER_REQUEST",
-    "date": "2026-09-16",
-    "request": "Reusable product 3D masters with artwork and scene variants; user said 開工",
-    "instructionSha": null,
-    "sourceIssue": null
+  "instructionSha": "29f45051cb7fc2153dca695f628bb854fc307394",
+  "correctionInstructionSha": "64e9d12380b5c4d2329f383d1fd481656075239e",
+  "code155Regression": {
+    "failed": 2,
+    "passed": 1,
+    "label": "MOCK_API_REGRESSION",
+    "cases": [
+      "null outer taskId",
+      "malformed outer taskId"
+    ],
+    "failure": "HTTP 200 instead of fail-closed 422",
+    "fix": "Minimal non-idle missing/malformed task ID guard"
   },
-  "pr": 15,
-  "basePr": 12,
-  "codeCiRunId": 35044283265,
-  "codeCi": [
-    {
-      "name": "unit (windows-latest)",
-      "id": 104630648705,
-      "conclusion": "success",
-      "testCount": 939
-    },
-    {
-      "name": "unit (ubuntu-latest)",
-      "id": 104630648838,
-      "conclusion": "success",
-      "testCount": 939
-    }
-  ],
-  "uiChecks": {
-    "categoryTreePreserved": true,
-    "existingCounts": {
-      "preview": 4,
-      "draft": 17
-    },
-    "twoBackgroundsAdded": true,
-    "duplicateSelectionBlocked": true,
-    "pendingGeometryDisabled": true,
-    "switchingMasterPreservesUnsubmittedList": true,
-    "clearUnsubmittedList": true,
-    "threeExistingResultsVisible": true,
-    "consoleErrors": []
+  "codeCi": {
+    "runId": 35057461216,
+    "jobs": [
+      {
+        "databaseId": 104670514926,
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "passMarkers": 980,
+        "checkoutSha": "bedc9a08bcdec19076ea70d0000a2a2a272e15db"
+      },
+      {
+        "databaseId": 104670515194,
+        "name": "unit (ubuntu-latest)",
+        "conclusion": "success",
+        "passMarkers": 980,
+        "checkoutSha": "bedc9a08bcdec19076ea70d0000a2a2a272e15db"
+      }
+    ]
   },
-  "docsCi": "PENDING_AT_DOCUMENT_AUTHORING; final exact DOCS SHA/run recorded in Issue #1 handoff",
-  "truth": {
-    "real": "Six Blender 5.2.1 LTS OptiX generations and reopen checks, synthetic input geometry/artwork",
-    "mock": "939 regression tests per OS; mock job tests are not render evidence",
-    "physicalDimensionsVerified": false,
-    "physicalPrintValidated": false,
-    "globalProductionReady": false,
-    "liveProviderUsed": false,
-    "pr13Modified": false,
-    "pr14Bypassed": false
+  "priorRound1": {
+    "code": "2a43d9b51001176164bd534f51b63debf3f391cd",
+    "docs": "f88d5c896be424da54ab379cdd97a9dc35d08f90",
+    "evidenceId": "34fbd5bf-a46d-4914-8d08-cf86e36b83bb",
+    "realStaticRenders": 6,
+    "scope": "Historical static batch evidence, not Round2 durable identity acceptance"
+  },
+  "truthLabels": {
+    "REAL_RENDER": "Two synthetic static cabinet artwork renders, Blender 5.2.1 LTS / OPTIX",
+    "REAL_LOGIC": "HTTP restart/history/download and persisted-state/publication corruption checks against real artifacts",
+    "MOCK": "980 pytest regressions on each CI OS; no real render claim",
+    "SIMULATED_INTERRUPTION": "One persisted interrupted-row scenario uses already published REAL artifacts; not a real killed-render claim",
+    "PARTIAL": "Local exclusive-write request/receipt integrity; no hostile filesystem-owner resistance or production authentication certification",
+    "BLOCKED": "Physical product/print truth, live providers, machines, global Production Ready; Issue6 Round3B authority not on main"
+  },
+  "inventory": {
+    "masters": 21,
+    "availablePreviews": 4,
+    "drafts": 17,
+    "source": "Pre-existing operator data, unchanged; regression scope, not new modeling acceptance"
   }
 }
