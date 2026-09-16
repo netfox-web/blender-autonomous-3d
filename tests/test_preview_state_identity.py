@@ -8,7 +8,7 @@ import pytest
 
 from fox3d import recipe_preview_service as service_module
 from fox3d.preview_ownership import PreviewOwnership
-from fox3d.recipe_3d import atomic_json, read_json
+from fox3d.recipe_3d import atomic_json, read_json, get_recipe_3d_dir
 from fox3d.recipe_preview_service import RecipePreviewService, _same_state_identity
 
 
@@ -117,6 +117,24 @@ def test_identity_match_still_requires_live_open_owner(tmp_path, release):
         assert path.read_bytes() == before
     finally:
         owner.close()
+
+
+@pytest.mark.parametrize('missing', ['taskId', 'inputHash'])
+def test_status_recovery_cannot_normalize_incomplete_identity(tmp_path, missing):
+    path = get_recipe_3d_dir(tmp_path, 't', 'm') / 'state.json'
+    malformed = state()
+    malformed.pop(missing)
+    atomic_json(path, malformed)
+    before = path.read_bytes()
+    service = RecipePreviewService(SimpleNamespace(root=tmp_path))
+    try:
+        with pytest.raises(ValueError, match='身分'):
+            service.status('t', 'm', {})
+        assert path.read_bytes() == before and not service.tasks
+        with PreviewOwnership(path.parent):
+            pass
+    finally:
+        service.executor.shutdown()
 
 
 @pytest.mark.parametrize('case', ['S1', 'S2'])
