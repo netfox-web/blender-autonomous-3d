@@ -1,298 +1,202 @@
-# Development Agent 指令：PR #15 Round 3 — Variant Input Authority Gate V1
+# Development Agent 修正指令：PR #15 Round 3 Re-Gate — Serialized Identity Exactness Closure
 
 > Supervisor checkpoint: 2026-09-16
-> Current main before this instruction: `64e9d12380b5c4d2329f383d1fd481656075239e`
+> Current main before this instruction: `782d0bd884473f151e7ed8de909015c08f1a712f`
 > Reviewed PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
 > PR #15 base: PR #12 branch `codex/model-category-tree` @ `68f64d604bb750c0c48830c0d50516ef5157d296`
-> Reviewed CODE: `bedc9a08bcdec19076ea70d0000a2a2a272e15db`
-> Reviewed DOCS / PR head: `7ca89384c1328710a60ddbff18c160c64e7680d1`
-> Decision: **ACCEPT WITH SCOPE / GO**
+> Reviewed CODE: `d684686f076fb91c1d9a87ca996a9bd917f1a735`
+> Reviewed DOCS / PR head: `91111ed57039df2d537a717b8897d1be82b80625`
+> Decision: **CHANGES REQUIRED / FAIL-CLOSED TYPE CLOSURE**
 > Merge authorization: **false**
 > Global Production Ready: **false**
 
-## 0. Supervisor decision
+## 0. Re-Gate result
 
-PR #15 Round 2 durable batch-state / exact request-row-publication lineage gate is accepted **within its declared scope**.
+Round 3 evidence closure itself is substantially complete:
 
-Verified evidence:
+- CODE `d684686f076fb91c1d9a87ca996a9bd917f1a735` / Actions `35071688400`: Ubuntu + Windows SUCCESS;
+- DOCS `91111ed57039df2d537a717b8897d1be82b80625` / Actions `35073905451`: Ubuntu + Windows SUCCESS;
+- CI remains **MOCK regression only** (`FOX3D_MOCK_BLENDER=1`);
+- clean REAL acceptance `113ade57-fbe8-46c4-8af5-895de4e65d3d`: Blender 5.2.1 LTS + OptiX, `usedMock=false`, two synthetic variants, reopen/restart/publication checks, 30 durable-lineage outcomes and 21 authority outcomes;
+- authority source hashing / strict declaration-control integer validation added in `d684686...` correctly closes the Python `True == 1` problem for the authority files it covers.
 
-- exact CODE `bedc9a08bcdec19076ea70d0000a2a2a272e15db`;
-- Actions `35057461216`: Ubuntu + Windows SUCCESS, 980 tests each;
-- exact DOCS `7ca89384c1328710a60ddbff18c160c64e7680d1`;
-- Actions `35059083680`: Ubuntu + Windows SUCCESS, 980 tests each;
-- clean REAL acceptance `8305eb4c-8bd6-4112-a248-4219d8d92aac`;
-- Blender 5.2.1 LTS + OptiX, `realOptix=true`, `usedMock=false`;
-- two REAL synthetic static cabinet variants with artifact SHA/bytes, finite images, `.blend` reopen, publication seal, exact batch/request/row/generation binding;
-- actual server restart/history/download validation;
-- stale geometry / artwork revoke invalidation;
-- 30 tamper/restoration outcomes;
-- cancelled/interrupted state does not resurrect success;
-- existing Scheduler / Queue / DAM / composition renderer were reused rather than rewritten.
+However, static review found the **same numeric-type coercion class still exists at adjacent persisted batch/publication boundaries**. Because Round 3 promises exact request/row/publication/authority binding and fail-closed tamper handling, this must be closed before ACCEPT.
 
-Truth boundary remains mandatory:
-
-- GitHub CI = **MOCK regression only**;
-- REAL render evidence = **REAL_RENDER + SYNTHETIC_STATIC_FIXTURE**;
-- batch verifier / receipts / lineage = **REAL_LOGIC**;
-- `physicalProductGeometryTruth=false`;
-- `physicalPrintValidated=false`;
-- `globalProductionReady=false`;
-- local trusted filesystem semantics are not hostile-admin cryptographic security;
-- PR #15 remains stacked on unmerged PR #12;
-- `MERGE_AUTHORIZED=false`.
-
-Do not merge PR #15, do not change its base, do not rebase-to-main, and do not open PR #17 for this round.
+Do not broaden feature scope. Do not open a new PR. Do not rewrite queue, renderer, DAM, Product Master, publication, or authority architecture.
 
 ---
 
-## 1. Round 3 objective — make batch input authority explicit and fail-closed
+## 1. Reproduce the residual fail-open cases first
 
-Round 2 proves durable lineage of **what was requested and what was published**. Round 3 must add an explicit authority boundary for **what the product master input actually means**.
+On clean exact CODE `d684686f076fb91c1d9a87ca996a9bd917f1a735`, add focused regressions that prove the current behavior before fixing it.
 
-Current synthetic/static/reference masters must never become physical manufacturing truth merely because a batch rendered successfully.
+At minimum cover these serialized JSON type substitutions:
 
-Add an additive, versioned authority snapshot used by product-variant batch submission and verification. Reuse existing master, classification, artwork, composition, publication and batch identity systems. Do not create a second Product Master service.
+1. immutable `request.json.identityVersion: 1 -> true`;
+2. immutable `request.json.sourceRevision: 1 -> true`;
+3. queue/service `state.json.batchVersion: 1 -> true`;
+4. published manifest `historyVersion: 1 -> true`, with publication seal recomputed;
+5. published manifest `sourceRevision: 1 -> true`, with publication seal recomputed;
+6. terminal row receipt `row.index: 0/1 -> false/true` where Python dict equality could otherwise treat it as equal.
 
-Required authority model (name may follow existing code conventions):
+Also test any directly adjacent serialized integer/version/revision field touched by the minimal fix if it is validated with plain Python numeric equality.
 
-- authority version;
-- tenant ID;
-- master/model ID;
-- master revision;
-- master input hash;
-- geometry authority kind;
-- geometry evidence/reference hashes;
-- dimension authority status;
-- dieline/surface authority status where applicable;
-- artwork authority hash / current artwork revision where applicable;
-- source classification/category revision only as metadata, **not** physical truth;
-- created/approved provenance sufficient to reproduce the decision;
-- immutable authority snapshot hash included in batch request identity.
+The test is successful only if the pre-fix exact CODE demonstrates at least one real fail-open in this class. Record the reproduction in Issue #1. Do not claim a fabricated failure if the current code already blocks a case.
 
-Minimum authority kinds:
+Why this matters:
 
-- `SYNTHETIC_FIXTURE`
-- `REFERENCE_RECIPE`
-- `OPERATOR_DECLARED_UNMEASURED`
-- `MEASURED_OR_CAD_AUTHORITY`
+- `True == 1` in Python;
+- `_identity()` currently uses plain equality for request identity/version/revision fields;
+- service `batchVersion` uses plain equality;
+- `_published()` uses plain equality for manifest version/revision;
+- row receipt verification compares a persisted row dict directly with the expected row.
 
-Do not infer `MEASURED_OR_CAD_AUTHORITY` from Blender geometry, category name, screenshots, Vision, AI, worker observation or successful render output.
+A changed JSON type is still changed serialized evidence. It must not be accepted as the exact original identity merely because Python considers the numeric values equal.
 
 ---
 
-## 2. Required behavior
+## 2. Minimal correction only
 
-### 2.1 Batch request binding
+Implement one consistent fail-closed rule for persisted integer/version/revision/index values used as identity evidence:
 
-Every new batch request must bind the exact authority snapshot/hash in addition to existing Round 2 identity.
+- exact integer type required: `type(value) is int` (or an existing strict schema that has equivalent behavior);
+- booleans must never satisfy an integer/version/revision/index gate;
+- do not coerce strings/floats/bools into integers;
+- where persisted structured identity is compared, prefer canonical hash / strict schema validation over Python dict equality if that removes this class of ambiguity;
+- preserve all accepted Round 2/3 semantics and file formats where possible.
 
-A completed generation is valid only when all of these still match:
+Required boundaries:
 
-- tenant;
-- master/model ID;
-- master revision;
-- master input hash;
-- authority version/hash;
-- geometry authority kind;
-- exact request/selection hash;
-- row order / SKU / scene / generation ID;
-- publication/manifest authority;
-- current artwork validity.
+### 2.1 Immutable request
 
-Authority snapshot mismatch or disappearance must fail closed.
+Fail closed when `identityVersion` or `sourceRevision` is not an exact integer of the expected value. If `batchVersion`, `masterRevision`, or another identity-bearing integer from the request draft reaches `_identity()`, ensure its type is exact too.
 
-### 2.2 Availability versus readiness
+### 2.2 Queue/service state
 
-Separate visual availability from manufacturing/print readiness.
+`batchVersion` must be exact integer `1`; `true` must not pass. Do not weaken existing task/input-hash/state checks.
 
-A REAL Blender render may remain downloadable as a **visual/reference asset** when its exact historical authority remains valid, but it must not imply manufacturing/print readiness.
+### 2.3 Publication manifest
 
-Expose machine-readable flags at verified batch/row level such as:
+`historyVersion` and `sourceRevision` must be exact integers of the expected values. Recomputing the ordinary publication seal after changing `1` to `true` must **not** make the generation valid.
 
-- `visualAssetReady`
-- `physicalGeometryAuthorityReady`
-- `printSurfaceAuthorityReady`
-- `manufacturingReady`
-- `physicalPrintValidated`
+Do not replace the existing canonical publication verifier; harden the existing path.
 
-For all existing synthetic/static fixture acceptance data in this round:
+### 2.4 Terminal row receipts
 
-- `visualAssetReady` may be true after normal publication verification;
-- `physicalGeometryAuthorityReady=false`;
-- `printSurfaceAuthorityReady=false` unless an already-reviewed exact surface authority exists;
-- `manufacturingReady=false`;
-- `physicalPrintValidated=false`.
-
-Do not add a bare unscoped `productionReady=true`.
-
-### 2.3 Revocation / stale behavior
-
-The following must invalidate current batch availability/readiness in a deterministic fail-closed way:
-
-- master revision/hash changed;
-- authority snapshot/hash changed;
-- authority downgraded/revoked;
-- artwork revoked/stale;
-- request snapshot tampered;
-- row identity tampered;
-- publication/manifest tampered.
-
-Historical exact generations may remain historically inspectable/downloadable only when the historical authority snapshot and publication are still valid under existing historical-download rules. Do not silently bind a historical row to the latest authority.
-
-### 2.4 No fake physical truth
-
-The following are forbidden authority upgrades:
-
-- using category/tree placement as dimensional proof;
-- using generated mesh dimensions as source measurement;
-- using prior fixture dimensions as measured product data;
-- using Vision/AI/photo inference to mark CAD/measured authority;
-- using Blender reopen success as physical correctness;
-- using artifact SHA as engineering approval;
-- using Mock CI as REAL evidence.
+The persisted receipt row must be semantically and serially exact. A boolean substituted for `index` must fail even though Python numeric equality would otherwise accept it. Keep existing batch identity hash and receipt lifecycle behavior.
 
 ---
 
-## 3. Tests — additive regression only
+## 3. Regression matrix
 
-Keep existing 980-test behavior green and add focused tests for authority binding.
+Add focused tests for both direct verifier and API/current-state behavior where applicable.
 
-At minimum cover:
+Minimum PASS expectations after the fix:
 
-1. synthetic fixture request persists `SYNTHETIC_FIXTURE` and cannot become physical-ready;
-2. reference Recipe preserves `REFERENCE_RECIPE` and explicit unmeasured state;
-3. authority hash tamper -> fail closed;
-4. authority version missing/unknown -> fail closed;
-5. master revision/input hash changes -> stale/unavailable;
-6. authority downgrade/revoke -> current readiness false;
-7. category/classification change alone does not upgrade physical authority;
-8. row/publication still exact while authority mismatch -> reject current completion/readiness;
-9. historical generation never rebinds to latest authority silently;
-10. cross-tenant authority snapshot -> block;
-11. artwork revoke remains blocking;
-12. forged `MEASURED_OR_CAD_AUTHORITY` without required evidence/provenance -> block;
-13. Mock worker/CI cannot set physical truth flags;
-14. restart preserves exact authority snapshot identity;
-15. Round 2 request/row/publication tamper matrix remains green.
+- request identityVersion bool tamper -> BLOCK;
+- request sourceRevision bool tamper -> BLOCK;
+- service batchVersion bool tamper -> BLOCK;
+- manifest historyVersion bool tamper + recomputed publication seal -> BLOCK;
+- manifest sourceRevision bool tamper + recomputed publication seal -> BLOCK;
+- receipt row index bool tamper -> BLOCK;
+- restored exact integer values -> valid again;
+- existing 1010 tests remain green;
+- existing 30 durable-lineage outcomes remain green;
+- existing 21 authority outcomes remain green;
+- authority `MEASURED_OR_CAD_AUTHORITY` remains rejected without reviewed provider;
+- physical/manufacturing/print readiness flags remain false for fixture/reference inputs.
 
-If existing tests reveal a real regression, make the smallest correction; do not broaden scope.
+Do not add unrelated UI, scene, room, provider, articulation, CNC, print or manufacturing features.
 
 ---
 
-## 4. Exact CODE CI gate
+## 4. Exact CODE gate
 
-When implementation is complete:
+After the minimal fix:
 
-1. commit CODE only;
-2. run exact CODE SHA GitHub Actions;
-3. Ubuntu must be SUCCESS;
-4. Windows must be SUCCESS;
-5. record exact run ID and both job IDs;
-6. verify checkout/head SHA exactly matches CODE SHA.
+1. freeze a new CODE SHA on existing PR #15;
+2. run exact CODE GitHub Actions;
+3. Ubuntu SUCCESS;
+4. Windows SUCCESS;
+5. verify actual checkout SHA equals the new CODE SHA;
+6. report total and focused test counts.
 
-GitHub Actions still uses `FOX3D_MOCK_BLENDER=1`; therefore CI remains **MOCK/unit/regression evidence**, never REAL render evidence.
+GitHub Actions remains MOCK/unit/regression evidence only.
 
-If CODE CI fails, fix only the failure and repeat on the new exact CODE SHA.
+If CI fails, fix only that failure and repeat with a new exact CODE SHA.
 
 ---
 
-## 5. Clean REAL Round 3 acceptance
+## 5. Clean REAL correction acceptance
 
-After exact CODE dual-platform SUCCESS, extend the existing `scripts/run_model_batches_e2e.py --round2` path rather than creating a parallel renderer/queue. A `--round3` or additive authority mode is acceptable if it reuses the same batch/composition/publication path.
+After exact CODE dual-platform SUCCESS, rerun the existing Round 3 acceptance path from a clean tree against the **new exact CODE**. Reuse `scripts/run_model_batches_e2e.py --round3`; do not create another acceptance architecture.
 
-Run from clean working tree and bind evidence to exact CODE SHA.
-
-Required REAL acceptance:
+Required evidence:
 
 - Blender 5.2.1 LTS;
 - OptiX / `realOptix=true`;
 - `usedMock=false`;
-- at least two static synthetic/reference variants;
-- artifact SHA/bytes and finite nonuniform image checks;
-- `.blend` reopen;
-- exact Round 2 request/batch/row/generation/publication lineage still PASS;
-- exact authority snapshot/hash included and re-verified after restart;
-- synthetic fixture remains explicitly `physicalProductGeometryTruth=false`;
-- authority tamper/revoke/downgrade scenarios fail closed;
-- no claim of real killed-render interruption unless a process is actually killed and evidenced;
-- no physical print/CAD/manufacturing claim.
+- at least two synthetic/reference visual variants;
+- artifact SHA/bytes, finite nonuniform images and `.blend` reopen;
+- restart/history/download checks;
+- all prior durable-lineage and authority outcomes;
+- new serialized-type tamper outcomes listed above, including manifest cases with recomputed ordinary publication seal;
+- restored exact data becomes valid only when all existing authority/publication conditions are satisfied.
 
-This REAL run proves **REAL render execution + REAL_LOGIC authority enforcement over non-physical fixtures**. It does not prove physical product geometry.
+Truth classification remains:
+
+- render execution: **REAL_RENDER**;
+- authority/batch/publication verification: **REAL_LOGIC**;
+- fixture geometry/input: **SYNTHETIC / REFERENCE**;
+- CI: **MOCK regression**;
+- physical geometry truth: **BLOCKED / false**;
+- physical print: **BLOCKED / false**;
+- manufacturing readiness: **BLOCKED / false**;
+- global Production Ready: **false**.
 
 ---
 
-## 6. Documentation and truth matrix
+## 6. DOCS closure
 
-After REAL acceptance PASS, update the existing batch acceptance documents rather than creating a competing truth source:
+Only after the new CODE CI and clean REAL correction acceptance PASS:
 
-- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
-- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
-- `docs/PRODUCT_VARIANT_BATCH_GUIDE.md` if operator behavior changes
-
-Add a clear truth matrix:
-
-- durable batch lineage: REAL_LOGIC
-- input authority gate: REAL_LOGIC
-- Blender execution: REAL when `usedMock=false`
-- fixture/reference geometry: SYNTHETIC / REFERENCE, not physical truth
-- GitHub CI: MOCK regression
-- physical geometry authority: BLOCKED/false for fixture/reference inputs
-- physical print: BLOCKED/false
-- manufacturing release: BLOCKED/false
-- live H3/LTX/Vision: unchanged / BLOCKED or MOCK
-- live CNC/LASER/PLC: BLOCKED
-- global Production Ready: false
-
-DOCS commit must occur after CODE CI + clean REAL acceptance. Then run exact DOCS SHA Ubuntu + Windows CI.
+- update the existing `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md` and `.json` with the new exact CODE/evidence and the numeric-type closure outcomes;
+- do not rewrite unrelated historical audit documents merely to make them look current;
+- commit DOCS after REAL evidence;
+- run exact DOCS SHA Ubuntu + Windows CI;
+- both must be SUCCESS before READY_FOR_RE_GATE.
 
 ---
 
 ## 7. Existing gates remain unchanged
 
-### PR #16
-
-Remain **FROZEN DRAFT**. No new scene feature commits. Do not use PR #16 evidence to satisfy this round.
-
-### PR #13 / PR #14 / Issue #6
-
-Unchanged:
-
-- PR #14 remains accepted-with-scope but unmerged;
-- Issue #6 remains `BLOCKED_PR14_NOT_ON_MAIN`;
-- PR #13 Round 3B must not bypass PR #14 authority gate;
-- no cherry-pick/copy of unmerged articulation authority;
-- no legacy 75-degree fallback promotion;
-- no DOOR_OPEN REAL claim in this round.
-
-### PR #12 / PR #15 stack
-
-Do not merge, retarget, rebase or flatten the stack in this round. If PR #12 head/base changes before implementation starts, report `BLOCKED_BASE_MOVED` and stop instead of silently rebasing.
+- PR #15 remains DRAFT / OPEN, stacked on PR #12; **no merge, retarget, rebase-to-main or cherry-pick**.
+- PR #16 remains **FROZEN DRAFT**; no scene work.
+- PR #14 remains unmerged and without merge authorization.
+- Issue #6 remains `BLOCKED_PR14_NOT_ON_MAIN`.
+- PR #13 Round 3B remains blocked; no articulation authority copy, no legacy 75° promotion, no DOOR_OPEN claim.
+- No live H3/LTX/Vision/CNC/LASER/PLC work.
+- `MERGE_AUTHORIZED=false`.
 
 ---
 
-## 8. Final handoff contract
+## 8. Final handoff
 
-Only after all gates pass, leave one concise Issue #1 handoff containing:
+When all correction gates pass, leave one concise Issue #1 `READY_FOR_RE_GATE` handoff with:
 
-- instruction SHA;
-- PR #15 current base/head relationship;
-- exact CODE SHA;
-- exact CODE CI run ID + Ubuntu/Windows SUCCESS;
+- this instruction SHA;
+- exact new CODE SHA and CODE CI run/jobs;
+- reproduction result from old CODE `d684686...`;
+- exact fields fixed;
 - total/focused test counts;
-- clean REAL acceptance ID;
-- Blender version/device, `realOptix`, `usedMock`;
-- authority model version;
-- authority kinds exercised;
-- authority tamper/revoke/restart summary;
-- exact DOCS SHA;
-- exact DOCS CI run ID + Ubuntu/Windows SUCCESS;
-- `inputTruth`;
-- `physicalProductGeometryTruth=false` for fixture/reference evidence;
+- clean REAL acceptance ID and Blender/OptiX/usedMock fields;
+- counts/results for prior + new tamper matrices;
+- exact DOCS SHA and DOCS CI run/jobs;
+- `inputTruth` and REAL/MOCK/PARTIAL/BLOCKED truth matrix;
+- `physicalProductGeometryTruth=false`;
 - `physicalPrintValidated=false`;
-- `manufacturingReady=false` for fixture/reference evidence;
+- `manufacturingReady=false`;
 - `globalProductionReady=false`;
-- PR #16 frozen;
-- Issue #6 still blocked;
-- `MERGE_AUTHORIZED=false`.
+- PR #16 frozen / Issue #6 blocked / `MERGE_AUTHORIZED=false`.
 
-Then STOP for Supervisor Re-Gate. Do not start a new feature scope automatically.
+Then STOP for Supervisor Re-Gate. Do not start Round 4 automatically.
