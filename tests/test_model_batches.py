@@ -269,6 +269,28 @@ def test_outer_interruption_never_becomes_success(tmp_path,completed_batch,state
     assert result['state']==expected and all(r['available'] for r in result['rows'])
 
 
+@pytest.mark.parametrize('state',['failed','cancelled','running','succeeded'])
+def test_missing_progress_recovery_requires_interrupted_outer_state(tmp_path,completed_batch,state):
+    model,asset,draft,bid,folder=completed_batch
+    path=folder/'batches'/(bid+'.json');path.unlink()
+    queue_state(tmp_path,model,draft,bid,state)
+    if state in {'failed','cancelled'}:
+        recovered=b.current(tmp_path,'t',model['id'],bid,state)
+        assert recovered['state']==('interrupted' if state=='failed' else 'cancelled')
+        assert all(row['available'] for row in recovered['rows'])
+    else:
+        with pytest.raises(ValueError):b.current(tmp_path,'t',model['id'],bid,state)
+    assert not path.exists()  # reconstruction is a view, not a new authority/store
+
+
+def test_interrupted_recovery_never_repairs_malformed_progress(tmp_path,completed_batch):
+    model,asset,draft,bid,folder=completed_batch
+    path=folder/'batches'/(bid+'.json');path.write_bytes(b'{"torn":')
+    queue_state(tmp_path,model,draft,bid,'failed')
+    with pytest.raises(ValueError):b.current(tmp_path,'t',model['id'],bid,'failed')
+    assert path.read_bytes()==b'{"torn":'
+
+
 @pytest.mark.parametrize('task_id',[None,'../escape','00000000-0000-0000-0000-000000000000'])
 def test_api_outer_task_identity_cannot_hide_batch(tmp_path,completed_batch,task_id):
     model,asset,draft,bid,folder=completed_batch

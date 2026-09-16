@@ -133,7 +133,13 @@ def current(root, tenant, mid, task_id, state):
                 or service.get('state') != state or type(service.get('batchVersion')) is not int
                 or service['batchVersion'] != 1):
             raise ValueError('批次與佇列請求不符')
-        record = _load(path)
+        if not path.exists() and state in {'failed', 'cancelled'}:
+            # A kill may land after request publication but before the first
+            # progress write. Rebuild only disposable progress from the exact
+            # request; receipts and the publication verifier still decide facts.
+            record = {**identity, 'rows': [{**r, 'state': 'queued', 'error': None} for r in rows]}
+        else:
+            record = _load(path)
         if stable_hash({k: record[k] for k in identity}) != stable_hash(identity) or len(record['rows']) != len(rows):
             raise ValueError('批次身分或款式數量不符')
         item = models.get(root, tenant, mid)
