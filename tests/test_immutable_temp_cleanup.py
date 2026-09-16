@@ -75,6 +75,14 @@ def test_exact_targets_only_all_sentinels_unchanged(tmp_path):
     for name in names: assert (anchor/name).read_bytes() == ('KEEP '+name).encode()
 
 
+def test_relative_workspace_path_uses_same_exact_owner(tmp_path, monkeypatch):
+    path = target(tmp_path); orphan = debris(path); orphan.write_bytes(b'ORPHAN')
+    monkeypatch.chdir(tmp_path)
+    with PreviewOwnership(Path('.')) as owner:
+        assert b.scavenge_once_temps([path.relative_to(tmp_path)], owner) == [str(orphan)]
+    assert not orphan.exists() and not path.exists()
+
+
 @pytest.mark.parametrize('kind', ['none', 'fake', 'released', 'closed', 'other'])
 def test_live_exact_owner_required(tmp_path, kind):
     path = target(tmp_path); orphan = debris(path); orphan.write_bytes(b'KEEP')

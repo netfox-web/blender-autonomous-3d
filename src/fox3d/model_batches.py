@@ -59,7 +59,7 @@ def scavenge_once_temps(targets, owner):
     """
     if not isinstance(owner, PreviewOwnership) or not owner.held or owner.stream.closed:
         raise ValueError('清理批次暫存前需取得商品工作區的生成鎖')
-    targets = list(targets)
+    targets = [path.absolute() for path in targets]
     candidates = []
     for path in targets:
         if not _batch_target(path) or path.parent.parent.parent != owner.folder:
