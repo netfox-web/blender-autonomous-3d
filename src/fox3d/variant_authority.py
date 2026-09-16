@@ -190,6 +190,7 @@ def verify(root, tenant, selection, *, current):
         original = _load(models.directory(root, tenant)/mid/'revisions'/(str(value['masterRevision'])+'.json'))
         if (original['inputHash'] != value['masterInputHash'] or input_hash(original['draft']) != value['masterInputHash']
                 or original['draft'] != selection['master'] or _references(original['draft']) != value['geometryReferenceHashes']
+                or input_hash(item['draft']) != item['inputHash']
                 or item['inputHash'] != value['masterInputHash'] or (current and item['revision'] != value['masterRevision'])):
             raise ValueError('來源權威母版版本已過期')
         _kind(declaration['kind'], original['draft'])

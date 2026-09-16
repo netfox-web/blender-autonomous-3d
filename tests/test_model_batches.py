@@ -393,3 +393,12 @@ def test_mutable_progress_cannot_invent_physical_readiness(tmp_path,completed_ba
     atomic_json(path,record)
     result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
     for value in [result,*result['rows']]:assert all(value[k]==v for k,v in a.readiness(True).items())
+
+
+def test_current_master_content_must_match_declared_input_hash(tmp_path,completed_batch):
+    model,asset,draft,bid,folder=completed_batch
+    path=m.directory(tmp_path,'t')/model['id']/'master.json'
+    value=read_json(path);value['draft']['widthMm']+=1
+    atomic_json(path,value)  # Keep revision/hash unchanged, alter only mutable source.
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    assert not result['visualAssetReady']
