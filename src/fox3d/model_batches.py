@@ -97,6 +97,8 @@ def _published(root, tenant, mid, row, selection, revision, item):
 
 def current(root, tenant, mid, task_id, state):
     if not compositions.valid_generation(task_id):
+        if task_id is not None or state != 'idle':
+            raise ValueError('工作編號缺少或無效，無法核對批次')
         return None
     base = compositions.folder_for(root, tenant, mid)
     path = base/'batches'/(task_id+'.json')

@@ -264,3 +264,12 @@ def test_outer_interruption_never_becomes_success(tmp_path,completed_batch,state
     queue_state(tmp_path,model,draft,bid,state)
     result=b.current(tmp_path,'t',model['id'],bid,state)
     assert result['state']==expected and all(r['available'] for r in result['rows'])
+
+
+@pytest.mark.parametrize('task_id',[None,'../escape','00000000-0000-0000-0000-000000000000'])
+def test_api_outer_task_identity_cannot_hide_batch(tmp_path,completed_batch,task_id):
+    model,asset,draft,bid,folder=completed_batch
+    state=read_json(folder/'state.json');state['taskId']=task_id;atomic_json(folder/'state.json',state)
+    app=FastAPI();app.include_router(product_models_router(lambda:SimpleNamespace(root=tmp_path,mock_blender=True)))
+    response=TestClient(app).get(f'/api/product-models/{model["id"]}/composition',headers={'X-Tenant-Id':'t'})
+    assert response.status_code==422

@@ -156,8 +156,8 @@ def round2_tamper_checks(client,path,data,tenant,item,state):
     bid=state['taskId'];base=c.folder_for(data,tenant,item['id']);batch=base/'batches'/(bid+'.json')
     anchor=base/'batches'/bid;original=batch.read_bytes();service=(base/'state.json').read_bytes()
     terminal=(anchor/'terminal.json').read_bytes();results={}
-    for kind in ['batchId','tenant','master','masterHash','revision','selectionHash','version',
-                 'insert','delete','reorder','duplicateGeneration','malformedGeneration','sku','scene','truncation']:
+    for kind in ['batchId','tenant','master','masterHash','revision','selectionHash','version','unknownVersion',
+                 'insert','delete','reorder','duplicateGeneration','malformedGeneration','sku','scene','rowHash','rowIndex','truncation']:
         record=json.loads(original)
         if kind=='batchId':record['batchId']=str(uuid.uuid4())
         if kind=='tenant':record['tenantId']='other'
@@ -166,6 +166,7 @@ def round2_tamper_checks(client,path,data,tenant,item,state):
         if kind=='revision':record['sourceRevision']+=1
         if kind=='selectionHash':record['selectionHash']='tampered'
         if kind=='version':record.pop('identityVersion')
+        if kind=='unknownVersion':record['identityVersion']=99
         if kind=='insert':record['rows'].append(copy.deepcopy(record['rows'][0]))
         if kind=='delete':record['rows'].pop()
         if kind=='reorder':record['rows'].reverse()
@@ -173,12 +174,36 @@ def round2_tamper_checks(client,path,data,tenant,item,state):
         if kind=='malformedGeneration':record['rows'][0]['generationId']='../escape'
         if kind=='sku':record['rows'][0]['sku']='tampered'
         if kind=='scene':record['rows'][0]['scene']='COOL_ROOM'
+        if kind=='rowHash':record['rows'][0]['selectionHash']='tampered'
+        if kind=='rowIndex':record['rows'][0]['index']=1
         atomic_json(batch,record)
         if kind=='truncation':batch.write_text('{',encoding='utf-8')
         try:
             response=client.get(path+'/composition');assert response.status_code==422,response.text
             results[kind]={'status':'BLOCK','http':response.status_code}
         finally:batch.write_bytes(original)
+    for file,field,label in [(anchor/'request.json','draft','requestContradiction'),
+                             (base/'state.json','inputHash','serviceInputHash')]:
+        raw=file.read_bytes();value=json.loads(raw)
+        if field=='draft':value['draft']['name']='changed request'
+        else:value[field]='tampered'
+        try:
+            atomic_json(file,value)
+            assert client.get(path+'/composition').status_code==422
+            results[label]={'status':'BLOCK'}
+        finally:file.write_bytes(raw)
+    receipt_file=anchor/'0.json';receipt_raw=receipt_file.read_bytes()
+    try:
+        receipt_file.unlink()
+        assert client.get(path+'/composition').status_code==422
+        results['succeededWithoutRowReceipt']={'status':'BLOCK'}
+    finally:receipt_file.write_bytes(receipt_raw)
+    for bad_task in [None,'../escape',str(uuid.uuid4())]:
+        outer=json.loads(service);outer['taskId']=bad_task;atomic_json(base/'state.json',outer)
+        try:
+            assert client.get(path+'/composition').status_code==422
+            results['outerTask:'+str(bad_task)]={'status':'BLOCK'}
+        finally:(base/'state.json').write_bytes(service)
     gid=state['batch']['rows'][0]['generationId'];target=base/'generations'/gid
     for filename in ['published.json','manifest.json']:
         file=target/filename;raw=file.read_bytes()
