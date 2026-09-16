@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id), tenant = 'sonaqueen-home', base = '/api/product-models';
   const scenes = {STUDIO:'白底棚拍',WARM_ROOM:'暖色簡易背景',COOL_ROOM:'冷色簡易背景'};
   const states = {queued:'等待中',running:'生成中',succeeded:'完成',failed:'失敗',cancelled:'已取消',interrupted:'已中斷'};
+  const authorities = {SYNTHETIC_FIXTURE:'合成測試模型',REFERENCE_RECIPE:'Recipe 參考，未實測',OPERATOR_DECLARED_UNMEASURED:'人員填寫，未實測'};
   const drafts = new Map();
   let master=null, dirty=false, task=null, busy=false, pending=[], offset=0, epoch=0, lastGeneration=null;
   const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -45,7 +46,7 @@
     }
     if(token!==epoch)return;
     const before=task;task=['queued','running'].includes(s.state)?s.taskId:null;
-    $('batch-progress').innerHTML=(s.batch?.rows||[]).map(r=>`<li>${esc(r.sku)} · ${esc(scenes[r.scene])}：${esc(states[r.state]||r.state)}${r.error?' — '+esc(r.error):''}</li>`).join('');
+    $('batch-progress').innerHTML=(s.batch?.rows||[]).map(r=>`<li>${esc(r.sku)} · ${esc(scenes[r.scene])}：${esc(states[r.state]||r.state)} · ${esc(authorities[r.geometryAuthorityKind]||'來源待核對')} · ${r.visualAssetReady?'可下載展示素材':'展示素材未就緒'} · 製造／印刷尚未驗證${r.error?' — '+esc(r.error):''}</li>`).join('');
     if(s.batch)message(`${s.batch.name}：${s.batch.rows.filter(r=>r.state==='succeeded').length} / ${s.batch.rows.length} 完成`+(s.error?'；'+s.error:''));
     buttons();
     if((before&&!task)||lastGeneration!==s.generationId){lastGeneration=s.generationId;await history();drawPending();}
@@ -74,14 +75,14 @@
     } finally {busy=false;drawPending();}
   });
   $('batch-cancel').onclick=safe(async()=>{if(task)await api(`/${master.id}/composition/cancel`,{method:'POST',body:JSON.stringify({taskId:task})});message('已要求取消；已完成款式仍保留。');});
-  $('batch-history-refresh').onclick=safe(async()=>{await status();await history();});
+  $('batch-history-refresh').onclick=safe(async()=>{try{await status();}finally{await history();}});
   $('batch-history-prev').onclick=safe(async()=>{offset=Math.max(0,offset-12);await history();});
   $('batch-history-next').onclick=safe(async()=>{offset+=12;await history();});
   window.addEventListener('product-master-selected',e=>{
     epoch++;master=e.detail;dirty=false;task=null;offset=0;lastGeneration=null;pending=master?(drafts.get(master.id+master.inputHash)||[]):[];
     $('batch-history').replaceChildren();$('batch-progress').replaceChildren();$('batch-history-count').textContent='';$('batch-accept').checked=false;
     $('batch-readiness').textContent=master?(master.readiness.previewReady?'此外形可生成展示預覽；實物尺寸仍需核對。':master.readiness.missing):'先選模型。';
-    message('');drawPending();safe(async()=>{await status();await history();})();
+    message('');drawPending();safe(async()=>{try{await status();}finally{await history();}})();
   });
   window.addEventListener('product-master-dirty',()=>{dirty=true;buttons();message('母版尚未儲存，請先儲存並重新核對清單。');});
   window.addEventListener('product-material-changed',()=>{history().catch(e=>message(e.message));});

@@ -13,17 +13,19 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 
 
-def main(*, round2=False):
+def main(*, round2=False, round3=False):
     import httpx
     from PIL import Image, ImageDraw
     from fox3d import print_assets, asset_usage, product_models, model_compositions as c
     from fox3d.blender import find_blender
     from fox3d.recipe_3d import atomic_json, read_json
     from fox3d import model_batches as b
+    from fox3d import variant_authority as authority
     from fox3d.ids import sha256_bytes
     if subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip():
         raise SystemExit('Formal acceptance requires clean CODE')
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    round2 = round2 or round3
     eid=str(uuid.uuid4());base=ROOT/'.fox3d-work'/'batches'/eid[:8];base.mkdir(parents=True)
     data=base/'d';tenant='sonaqueen-home';models=[];assets=[]
     for kind,size in ([('HINGED_CABINET',(780,552))] if round2 else [('HINGED_CABINET',(780,552)),('RECTANGLE',(400,400))]):
@@ -35,6 +37,8 @@ def main(*, round2=False):
             'panelMm':15.,'backMm':3.,'doorMm':15.,'gapMm':2.,'rows':3,
             'dimensionEvidence':'SYNTHETIC FIXTURE dimensions, not physical product truth',
             'structureEvidence':'SYNTHETIC rectangular static geometry'},0)
+        authority.declare(data,tenant,model,'SYNTHETIC_FIXTURE',actor='REAL_ACCEPTANCE_FIXTURE_SETUP',
+                          reason='Explicit synthetic dimensions; no physical measurement or CAD approval')
         models.append(model);group=[]
         for color in ['#ce923a','#8d51a8']:
             im=Image.new('RGB',size,color);draw=ImageDraw.Draw(im)
@@ -59,7 +63,8 @@ def main(*, round2=False):
         p.terminate();raise RuntimeError('Server timeout')
     evidence={'evidenceId':eid,'codeCommit':sha,'workingTreeClean':True,'inputTruth':'SYNTHETIC_STATIC_FIXTURE',
               'physicalPrintValidated':False,'physicalProductGeometryTruth':False,'globalProductionReady':False,
-              'productionReady':False,'generations':[],'round2':round2,'batches':[]}
+              'productionReady':False,'generations':[],'round2':round2,'round3':round3,'batches':[],
+              'manufacturingReady':False,'authorityVersion':authority.VERSION,'authorityKinds':['SYNTHETIC_FIXTURE']}
     try:
         proc=start()
         with httpx.Client(base_url=url,headers={'X-Tenant-Id':tenant},timeout=180,trust_env=False) as client:
@@ -84,6 +89,8 @@ def main(*, round2=False):
                     time.sleep(3)
                 assert state['state']=='succeeded' and state['taskId']==task,state
                 assert all(r['state']=='succeeded' and r['available'] for r in state['batch']['rows'])
+                for verified in [state['batch'],*state['batch']['rows']]:
+                    assert all(verified[key]==value for key,value in authority.readiness(True).items())
                 batch_folder=c.folder_for(data,tenant,mid)/'batches'/task
                 evidence['batches'].append({'batchId':task,'modelId':mid,'identityVersion':b.IDENTITY_VERSION,
                     'verifiedState':state['batch'],'request':read_json(batch_folder/'request.json'),
@@ -110,6 +117,8 @@ def main(*, round2=False):
                         'sizes':{n:(folder/n).stat().st_size for n in manifest['files']},
                         'geometryHash':hashes[-1],'jobId':manifest['jobId'],'requestedJobId':manifest['requestedJobId'],
                         'cacheHit':manifest['cacheHit'],'blendReopen':True,
+                        'inputAuthorityHash':manifest['inputAuthorityHash'],
+                        'inputAuthority':manifest['draft']['inputAuthority']['snapshot'],
                         'publication':read_json(folder/'published.json'),'manifestSha256':sha256_bytes((folder/'manifest.json').read_bytes()),
                         'finitePixels':Image.open(folder/'beauty.png').size==(800,800) and any(a!=z for a,z in Image.open(folder/'beauty.png').convert('RGB').getextrema())})
                 assert len(set(hashes))==1 and len(set(pixels))==len(selections)
@@ -120,8 +129,13 @@ def main(*, round2=False):
                 assert all(r['available'] for r in history['items'])
                 restored=client.get(path+'/composition');restored.raise_for_status()
                 assert restored.json()['batch']['available']
+                assert restored.json()['batch']['authorityHash']==evidence['batches'][index]['verifiedState']['authorityHash']
+                for selection in evidence['batches'][index]['request']['draft']['selections']:
+                    authority.verify(data,tenant,selection,current=True)
                 if round2:
                     evidence['tamperMatrix']=round2_tamper_checks(client,path,data,tenant,item,restored.json())
+                if round3:
+                    evidence['authorityChecks']=round3_authority_checks(client,path,data,tenant,item,restored.json())
                 gid=history['items'][0]['generationId']
                 # Change geometry after restart: all old variants become unavailable.
                 r=client.put(path,json={'expectedRevision':1,'draft':{**item['draft'],'widthMm':item['draft']['widthMm']+1}});r.raise_for_status()
@@ -130,6 +144,7 @@ def main(*, round2=False):
                 assert client.get(path+'/composition/files/model.glb',params={'workspace':tenant,'generation':gid}).status_code==409
                 r=client.put(path,json={'expectedRevision':2,'draft':item['draft']});r.raise_for_status()
                 assert all(r['available'] for r in client.get(path+'/compositions').json()['items'])
+                assert not client.get(path+'/composition').json()['batch']['visualAssetReady']
                 asset_usage.classify(data,tenant,assets[index][0]['id'],'REFERENCE','Revoked fixture',1)
                 rows=client.get(path+'/compositions').json()['items']
                 assert all(r['available']==(r['sku']=='FIXTURE-2') for r in rows)
@@ -241,7 +256,76 @@ def round2_tamper_checks(client,path,data,tenant,item,state):
     client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid}).raise_for_status()
     return results
 
+
+def round3_authority_checks(client,path,data,tenant,item,state):
+    """REAL_LOGIC authority corruption trials using this run's real artifacts."""
+    from fox3d import model_compositions as c, variant_authority as a, model_categories
+    from fox3d.recipe_3d import atomic_json,read_json
+    from fox3d.ids import stable_hash,sha256_bytes
+    base=c.folder_for(data,tenant,item['id']);bid=state['taskId']
+    request=read_json(base/'batches'/bid/'request.json');selection=request['draft']['selections'][0]
+    binding=selection['inputAuthority'];authority_base=a.folder(data,tenant,item['id'])
+    snapshot_file=authority_base/'snapshots'/(binding['hash']+'.json');snapshot_raw=snapshot_file.read_bytes()
+    control_file=authority_base/'control.json';control_raw=control_file.read_bytes()
+    gid=state['batch']['rows'][0]['generationId'];target=base/'generations'/gid
+    results={}
+    def blocked(label):
+        response=client.get(path+'/composition');response.raise_for_status();batch=response.json()['batch']
+        assert not batch['rows'][0]['available'] and not batch['visualAssetReady']
+        assert not batch['manufacturingReady'] and not batch['physicalPrintValidated']
+        download=client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid})
+        assert download.status_code==409
+        results[label]={'status':'BLOCK','visualAssetReady':False,'manufacturingReady':False,'downloadHttp':409}
+    for change in ['snapshotHash','missingVersion','unknownVersion','crossTenant','forgedMeasured','missingSnapshot','referenceHash']:
+        value=json.loads(snapshot_raw)
+        if change=='snapshotHash':value['masterInputHash']='0'*64
+        if change=='missingVersion':value.pop('authorityVersion')
+        if change=='unknownVersion':value['authorityVersion']=99
+        if change=='crossTenant':value['tenantId']='other'
+        if change=='forgedMeasured':value['geometryAuthorityKind']='MEASURED_OR_CAD_AUTHORITY'
+        if change=='referenceHash':value['geometryReferenceHashes']['dimensionEvidence']='0'*64
+        try:
+            atomic_json(snapshot_file,value)
+            if change=='missingSnapshot':snapshot_file.unlink()
+            blocked(change)
+        finally:snapshot_file.write_bytes(snapshot_raw)
+    for change in ['revoke','downgrade','missingControl']:
+        try:
+            if change=='revoke':a.revoke(data,tenant,item['id'])
+            if change=='downgrade':a.declare(data,tenant,item,'OPERATOR_DECLARED_UNMEASURED',actor='ACCEPTANCE_TRIAL',reason='Nonphysical authority downgrade trial')
+            if change=='missingControl':control_file.unlink()
+            blocked(change)
+        finally:control_file.write_bytes(control_raw)
+    manifest_file=target/'manifest.json';publication_file=target/'published.json'
+    meta_file=target/'meta.json'
+    manifest_raw=manifest_file.read_bytes();publication_raw=publication_file.read_bytes();meta_raw=meta_file.read_bytes()
+    try:
+        manifest=json.loads(manifest_raw);manifest['inputAuthorityHash']='0'*64
+        atomic_json(manifest_file,manifest)
+        # Even if the ordinary publication seal is recomputed, authority differs.
+        atomic_json(publication_file,{'manifestSha256':sha256_bytes(manifest_file.read_bytes())})
+        atomic_json(meta_file,{'manifestSha256':sha256_bytes(manifest_file.read_bytes())})
+        blocked('publicationAuthorityMismatch')
+    finally:manifest_file.write_bytes(manifest_raw);publication_file.write_bytes(publication_raw);meta_file.write_bytes(meta_raw)
+    for key,expected in a.readiness(True).items():assert state['batch'][key]==expected
+    category=model_categories.get(data,tenant,item['id'])
+    model_categories.save(data,tenant,item['id'],'unclassified',category['revision'])
+    fresh=client.get(path+'/composition');fresh.raise_for_status()
+    assert fresh.json()['batch']['visualAssetReady'] and not fresh.json()['batch']['physicalGeometryAuthorityReady']
+    retained=c.generation(data,tenant,item['id'],gid,item)['draft']['inputAuthority']
+    assert retained==binding and retained['snapshot']['classificationMetadata']['revision']==category['revision']
+    results['categoryMetadataOnly']={'status':'PASS','physicalGeometryAuthorityReady':False}
+    results['historicalExactSnapshot']={'status':'PASS','hash':binding['hash'],'neverRebound':True}
+    for kind in ['MEASURED_OR_CAD_AUTHORITY']:
+        try:a.declare(data,tenant,item,kind,actor='AI/mock',reason='Rendered mesh dimensions are not measurement')
+        except ValueError:results['forgedMeasuredDeclaration']={'status':'BLOCK'}
+        else:raise AssertionError('Unreviewed measured authority accepted')
+    results['restartExactAuthority']={'status':'PASS','authorityHash':state['batch']['authorityHash']}
+    client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid}).raise_for_status()
+    results['restoredVisualDownload']={'status':'PASS','readiness':a.readiness(True)}
+    return results
+
 if __name__=='__main__':
     import argparse
-    parser=argparse.ArgumentParser();parser.add_argument('--round2',action='store_true')
-    main(round2=parser.parse_args().round2)
+    parser=argparse.ArgumentParser();parser.add_argument('--round2',action='store_true');parser.add_argument('--round3',action='store_true')
+    args=parser.parse_args();main(round2=args.round2,round3=args.round3)

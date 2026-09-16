@@ -15,6 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
+from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
 
@@ -38,6 +39,10 @@ def generation(root, tenant, mid, gid, item):
         raise ValueError('成果不屬於此模型')
     if draft['masterInputHash'] != item['inputHash']:
         raise ValueError('母版已變更；此款保留為歷史紀錄，請重新生成')
+    if 'inputAuthority' in draft or 'inputAuthorityHash' in manifest:
+        authority.verify(root, tenant, draft, current=False)
+        if manifest.get('inputAuthorityHash') != draft['inputAuthority']['hash']:
+            raise ValueError('發布成果與來源權威不符')
     for placement in manifest['package']['placements']:
         asset_usage.require_artwork(root, tenant, placement['originalAssetId'])
     return manifest
@@ -52,9 +57,14 @@ def history(root, tenant, mid, item, offset=0):
         row = {'generationId': path.parent.name, 'sku': stored.get('draft', {}).get('sku', ''),
                'scene': stored.get('scene', ''), 'sourceRevision': stored.get('sourceRevision'),
                'available': False, 'error': None}
+        row.update(authority.readiness())
         try:
             manifest = generation(root, tenant, mid, path.parent.name, item)
             row.update(available=True, renderInfo=manifest['renderInfo'])
+            row.update(authority.readiness(True))
+            if 'inputAuthority' in manifest['draft']:
+                row['inputAuthorityHash'] = manifest['draft']['inputAuthority']['hash']
+                row['geometryAuthorityKind'] = manifest['draft']['inputAuthority']['snapshot']['geometryAuthorityKind']
         except (ValueError, OSError, KeyError) as exc:
             row['error'] = str(exc)[:500]
         rows.append(row)
@@ -102,6 +112,8 @@ def snapshot(root, tenant, item, selection):
 
 
 def plan(root, tenant, draft):
+    if 'inputAuthority' in draft:
+        authority.verify(root, tenant, draft, current=True)
     Selection.model_validate({k:draft[k] for k in ('sku','scene','placements')})
     spec=models.build_spec(draft['master'],tenant_id=tenant)
     spec['engineeringHash']=stable_hash({'adapter':'MASTER_COMPOSITION_V1','components':spec['components']})
@@ -178,6 +190,8 @@ def status(root,tenant,mid,*,current_draft=None):
             import re
             if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']): raise ValueError('無效預覽編號')
             manifest=print_preview.validate(base/'generations'/pointer['generationId'])
+            if 'inputAuthority' in manifest['draft'] or 'inputAuthorityHash' in manifest:
+                manifest=generation(root,tenant,mid,pointer['generationId'],models.get(root,tenant,mid))
             for x in manifest['package']['placements']: asset_usage.require_artwork(root,tenant,x['originalAssetId'])
         except (ValueError,OSError,KeyError) as exc: manifest=None;error=str(exc)
     return {'state':state.get('state','idle'),'taskId':state.get('taskId'),'progress':state.get('progress',0),
@@ -216,6 +230,8 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
         'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
         'requestedJobId':job['jobId'],'jobId':read_json(target/'golden-observation.json')['jobId'],
         'cacheHit':done.get('cacheHit',False),'productionReady':False,'colorAuthority':'RGB_SCREEN_PREVIEW_NOT_PRINT_PROOF'}
+    if 'inputAuthority' in draft:
+        manifest['inputAuthorityHash'] = draft['inputAuthority']['hash']
     atomic_json(target/'manifest.json',manifest)
     atomic_json(target/'meta.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
     print_preview.validate(target);check()
@@ -223,6 +239,8 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     current=models.get(platform.root,tenant,mid)
     if current['inputHash']!=draft['masterInputHash']: raise ValueError('母版已變更，請重新生成')
     for x in draft['placements']: asset_usage.require_artwork(platform.root,tenant,x['assetId'])
+    if 'inputAuthority' in draft:
+        authority.verify(platform.root,tenant,draft,current=True)
     check()
     atomic_json(target/'published.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
     atomic_json(target.parent.parent/'latest.json',{'generationId':gid})

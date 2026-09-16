@@ -11,6 +11,7 @@ from PIL import Image
 
 from fox3d import model_batches as b, model_compositions as c, product_models as m
 from fox3d import print_assets, asset_usage
+from fox3d import variant_authority as a, model_categories
 from fox3d.ids import new_id, stable_hash, sha256_bytes
 from fox3d.product_models_api import product_models_router
 from fox3d.recipe_3d import atomic_json, read_json, input_hash
@@ -35,6 +36,8 @@ def mock_publication(root, tenant, mid, draft, *, revision, generation_id, **kwa
     manifest={'generationId':generation_id,'historyVersion':1,'draft':draft,'sourceRevision':revision,
               'planHash':stable_hash(draft),'scene':draft['scene'],
               'package':{'placements':[{'originalAssetId':p['assetId']} for p in draft['placements']]}}
+    if 'inputAuthority' in draft:
+        manifest['inputAuthorityHash']=draft['inputAuthority']['hash']
     atomic_json(target/'manifest.json',manifest)
     atomic_json(target/'published.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
     (target/'beauty.png').write_bytes(b'MOCK regression, not render evidence')
@@ -273,3 +276,120 @@ def test_api_outer_task_identity_cannot_hide_batch(tmp_path,completed_batch,task
     app=FastAPI();app.include_router(product_models_router(lambda:SimpleNamespace(root=tmp_path,mock_blender=True)))
     response=TestClient(app).get(f'/api/product-models/{model["id"]}/composition',headers={'X-Tenant-Id':'t'})
     assert response.status_code==422
+
+
+def test_synthetic_authority_is_explicit_and_never_physical(tmp_path,monkeypatch):
+    model,asset,batch=setup(tmp_path)
+    a.declare(tmp_path,'t',model,'SYNTHETIC_FIXTURE',actor='TEST_FIXTURE',reason='Generated test data, not measurement')
+    draft=b.snapshot(tmp_path,'t',model,batch);bid=new_id()
+    assert draft['selections'][0]['inputAuthority']['snapshot']['geometryAuthorityKind']=='SYNTHETIC_FIXTURE'
+    mock_verifier(monkeypatch)
+    monkeypatch.setattr(c,'generate',lambda platform,*args,**kw:mock_publication(platform.root,*args,**kw))
+    queue_state(tmp_path,model,draft,bid)
+    b.generate(SimpleNamespace(root=tmp_path),'t',model['id'],draft,revision=1,generation_id=bid)
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    for value in [result,*result['rows']]:
+        assert all(value[key]==expected for key,expected in a.readiness(True).items())
+    assert a.verify(tmp_path,'t',draft['selections'][0],current=True)['dimensionAuthorityStatus']=='UNMEASURED'
+
+
+@pytest.mark.parametrize('change',['hash','missing_version','unknown_version','cross_tenant','forged_measured','reference_hash','artwork_revision','declaration_hash'])
+def test_authority_snapshot_corruption_blocks_exact_publication(tmp_path,completed_batch,change):
+    model,asset,draft,bid,folder=completed_batch
+    selection=draft['selections'][0];binding=selection['inputAuthority']
+    stored=a.folder(tmp_path,'t',model['id'])/'snapshots'/(binding['hash']+'.json')
+    value=read_json(stored)
+    if change=='hash':value['masterInputHash']='0'*64
+    if change=='missing_version':value.pop('authorityVersion')
+    if change=='unknown_version':value['authorityVersion']=99
+    if change=='cross_tenant':value['tenantId']='other'
+    if change=='forged_measured':value['geometryAuthorityKind']='MEASURED_OR_CAD_AUTHORITY'
+    if change=='reference_hash':value['geometryReferenceHashes']['dimensionEvidence']='0'*64
+    if change=='artwork_revision':value['artworkAuthority'][asset['id']]['revision']+=1
+    if change=='declaration_hash':value['declarationHash']='0'*64
+    atomic_json(stored,value)
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    assert not result['available'] and not result['visualAssetReady']
+    assert all(not row['available'] for row in result['rows'])
+    with pytest.raises(ValueError):c.generation(tmp_path,'t',model['id'],result['rows'][0]['generationId'],model)
+
+
+@pytest.mark.parametrize('change',['missing_binding','hash','missing_version','unknown_version','cross_tenant','forged_measured'])
+def test_authority_in_request_rejects_self_consistent_forgery(tmp_path,change):
+    model,asset,batch=setup(tmp_path);draft=b.snapshot(tmp_path,'t',model,batch)
+    binding=draft['selections'][0]['inputAuthority'];value=binding['snapshot']
+    if change=='missing_binding':draft['selections'][0].pop('inputAuthority')
+    if change=='hash':binding['hash']='0'*64
+    if change=='missing_version':value.pop('authorityVersion')
+    if change=='unknown_version':value['authorityVersion']=99
+    if change=='cross_tenant':value['tenantId']='other'
+    if change=='forged_measured':
+        value['geometryAuthorityKind']=value['declaration']['kind']='MEASURED_OR_CAD_AUTHORITY'
+        value['declarationHash']=stable_hash(value['declaration'])
+    if change not in {'missing_binding','hash'}:binding['hash']=stable_hash(value)
+    if change!='missing_binding':draft['authorityHash']=stable_hash([s['inputAuthority']['hash'] for s in draft['selections']])
+    request={'identityVersion':1,'tenantId':'t','masterId':model['id'],'batchId':new_id(),'sourceRevision':1,'draft':draft}
+    with pytest.raises((ValueError,KeyError)):b._identity(request,'t',model['id'],request['batchId'])
+
+
+@pytest.mark.parametrize('action',['revoke','downgrade','missing_snapshot','missing_control','changed_artwork'])
+def test_authority_revocation_and_disappearance_block_download(tmp_path,completed_batch,action):
+    model,asset,draft,bid,folder=completed_batch;base=a.folder(tmp_path,'t',model['id'])
+    if action=='revoke':a.revoke(tmp_path,'t',model['id'])
+    if action=='downgrade':a.declare(tmp_path,'t',model,'OPERATOR_DECLARED_UNMEASURED',actor='operator',reason='Independent authority removed')
+    if action=='missing_snapshot':(base/'snapshots'/(draft['selections'][0]['inputAuthority']['hash']+'.json')).unlink()
+    if action=='missing_control':(base/'control.json').unlink()
+    if action=='changed_artwork':asset_usage.classify(tmp_path,'t',asset['id'],'ARTWORK','New classification revision',1)
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    assert not result['visualAssetReady'] and not result['manufacturingReady']
+    assert not any(row['available'] for row in result['rows'])
+    assert not any(row['available'] for row in c.history(tmp_path,'t',model['id'],model)['items'])
+
+
+def test_same_geometry_new_revision_is_not_current_but_exact_history_retained(tmp_path,completed_batch):
+    model,asset,draft,bid,folder=completed_batch
+    updated=m.save(tmp_path,'t',model['draft'],1,model['id'])
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    assert not result['available'] and not result['visualAssetReady']
+    old=result['rows'][0]['generationId'];binding=copy.deepcopy(draft['selections'][0]['inputAuthority'])
+    assert c.generation(tmp_path,'t',model['id'],old,updated)['draft']['inputAuthority']==binding
+    # Submitting a new revision never rewrites historical authority.
+    fresh=b.snapshot(tmp_path,'t',updated,{'name':'new','selections':[{'sku':'new','placements':[]}]})
+    assert fresh['selections'][0]['inputAuthority']['hash']!=binding['hash']
+    assert c.generation(tmp_path,'t',model['id'],old,updated)['draft']['inputAuthority']==binding
+
+
+def test_category_metadata_does_not_upgrade_or_revoke_authority(tmp_path,completed_batch):
+    model,asset,draft,bid,folder=completed_batch
+    model_categories.save(tmp_path,'t',model['id'],'unclassified',0)
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    assert result['visualAssetReady'] and not result['physicalGeometryAuthorityReady']
+    value=a.verify(tmp_path,'t',draft['selections'][0],current=True)
+    assert value['classificationMetadata']['revision']==0 and not value['classificationMetadata']['geometryAuthority']
+    assert value['geometryAuthorityKind']=='OPERATOR_DECLARED_UNMEASURED'
+
+
+def test_measured_declaration_has_no_unreviewed_upgrade_path(tmp_path):
+    model,asset,batch=setup(tmp_path)
+    with pytest.raises(ValueError,match='CAD'):
+        a.declare(tmp_path,'t',model,'MEASURED_OR_CAD_AUTHORITY',actor='AI / mock worker',reason='Blender dimensions and render SHA')
+
+
+def test_reference_recipe_preserves_unmeasured_snapshot(tmp_path):
+    app=FastAPI();app.include_router(product_models_router(lambda:SimpleNamespace(root=tmp_path,mock_blender=True)))
+    rows=TestClient(app).get('/api/product-models/recipe-references',headers={'X-Tenant-Id':'t'}).json()['items']
+    model=m.save(tmp_path,'t',rows[0]['draft'],0)
+    draft=b.snapshot(tmp_path,'t',model,{'name':'reference','selections':[{'sku':'reference','placements':[]}]})
+    value=a.verify(tmp_path,'t',draft['selections'][0],current=True)
+    assert value['geometryAuthorityKind']=='REFERENCE_RECIPE'
+    assert value['dimensionAuthorityStatus']=='UNMEASURED'
+    assert value['geometryReferenceHashes']['recipeReference']==stable_hash(model['draft']['recipeReference'])
+    assert value['declaration']['provenance']['approvedBy'] is None
+
+
+def test_mutable_progress_cannot_invent_physical_readiness(tmp_path,completed_batch):
+    model,asset,draft,bid,folder=completed_batch;path=folder/'batches'/(bid+'.json');record=read_json(path)
+    for value in [record,*record['rows']]:value.update({key:True for key in a.readiness()})
+    atomic_json(path,record)
+    result=b.current(tmp_path,'t',model['id'],bid,'succeeded')
+    for value in [result,*result['rows']]:assert all(value[k]==v for k,v in a.readiness(True).items())

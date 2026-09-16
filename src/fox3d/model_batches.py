@@ -13,6 +13,7 @@ from pydantic import Field
 from fox3d import model_compositions as compositions, product_models as models
 from fox3d.ids import new_id, stable_hash
 from fox3d.recipe_3d import atomic_json, input_hash, read_json
+from fox3d import variant_authority as authority
 
 IDENTITY_VERSION = 1
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
@@ -30,7 +31,11 @@ def snapshot(root, tenant, item, value):
     rows = [compositions.snapshot(root, tenant, item, s.model_dump()) for s in batch.selections]
     if len({(s['sku'].strip(), s['scene']) for s in rows}) != len(rows):
         raise ValueError('同一批次的款式名稱與場景不可重複')
+    for row in rows:
+        row['inputAuthority'] = authority.snapshot(root, tenant, item, row)
     return {'batchVersion': 1, 'name': batch.name.strip(), 'selections': rows,
+            'authorityVersion': authority.VERSION,
+            'authorityHash': stable_hash([row['inputAuthority']['hash'] for row in rows]),
             'masterInputHash': item['inputHash'], 'masterRevision': item['revision']}
 
 
@@ -38,7 +43,7 @@ def _once(path, value):
     # Exclusive creation prevents replay/overwriting request and terminal facts.
     # A torn write is rejected by _load, never repaired from mutable progress.
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name+'.'+new_id()+'.tmp')
+    temporary = path.with_name(new_id()+'.tmp')
     try:
         atomic_json(temporary, value)
         os.link(temporary, path)  # Atomic publish; fails if already present.
@@ -65,6 +70,9 @@ def _identity(request, tenant, mid, bid):
     if draft['batchVersion'] != 1 or request['sourceRevision'] != draft['masterRevision']:
         raise ValueError('批次來源版本不符')
     selections = draft['selections']
+    if (type(draft['authorityVersion']) is not int or draft['authorityVersion'] != authority.VERSION
+            or draft['authorityHash'] != stable_hash([s['inputAuthority']['hash'] for s in selections])):
+        raise ValueError('批次來源權威版本／雜湊不符')
     Batch.model_validate({'name': draft['name'], 'selections': [
         {k: s[k] for k in ('sku', 'scene', 'placements')} for s in selections]})
     rows = []
@@ -72,12 +80,14 @@ def _identity(request, tenant, mid, bid):
         if (selection['masterId'] != mid or selection['masterInputHash'] != draft['masterInputHash']
                 or selection['masterRevision'] != draft['masterRevision']):
             raise ValueError('批次款式來源不符')
+        authority.identity(selection['inputAuthority'], tenant, mid, draft['masterRevision'], draft['masterInputHash'])
         sh = stable_hash(selection)
         rows.append({'index': i, 'generationId': str(uuid5(UUID(bid), stable_hash({'index': i, 'selection': sh}))),
                      'sku': selection['sku'], 'scene': selection['scene'], 'selectionHash': sh})
     return {'identityVersion': IDENTITY_VERSION, 'tenantId': tenant, 'masterId': mid,
             'batchId': bid, 'name': draft['name'], 'masterInputHash': draft['masterInputHash'],
             'sourceRevision': draft['masterRevision'], 'selectionHash': stable_hash(draft),
+            'authorityVersion': draft['authorityVersion'], 'authorityHash': draft['authorityHash'],
             'rowCount': len(rows)}, rows
 
 
@@ -86,6 +96,7 @@ def _row_receipt(identity, row, state, error=None):
 
 
 def _published(root, tenant, mid, row, selection, revision, item):
+    authority.verify(root, tenant, selection, current=True)
     manifest = compositions.generation(root, tenant, mid, row['generationId'], item)
     if (manifest.get('historyVersion') != 1 or manifest.get('sourceRevision') != revision
             or manifest.get('planHash') != row['selectionHash']
@@ -147,10 +158,14 @@ def current(root, tenant, mid, task_id, state):
                 row.update(state='cancelled' if terminal['state'] == 'cancelled' else 'interrupted',
                            error='工作已中斷，未完成項目需重新加入批次。')
             row['available'] = False
+            row.update(authority.readiness())
+            row['inputAuthorityHash'] = selection['inputAuthority']['hash']
+            row['geometryAuthorityKind'] = selection['inputAuthority']['snapshot']['geometryAuthorityKind']
             if row['state'] == 'succeeded':
                 try:
                     _published(root, tenant, mid, expected, selection, identity['sourceRevision'], item)
                     row['available'] = True
+                    row.update(authority.readiness(True))
                 except (ValueError, OSError, KeyError, TypeError) as exc:
                     row.update(state='failed', error='成果核對失敗：'+str(exc)[:500])
         if terminal and terminal['state'] == 'succeeded' and not all(r.get('state') == 'succeeded' for r in record['rows']):
@@ -162,6 +177,7 @@ def current(root, tenant, mid, task_id, state):
             # that never reached its commit point (or was explicitly cancelled).
             record['state'] = 'cancelled' if state == 'cancelled' else 'interrupted'
         record['available'] = bool(record['rows']) and all(r['available'] for r in record['rows'])
+        record.update(authority.readiness(record['available']))
         return record
     except (KeyError, TypeError, IndexError) as exc:
         raise ValueError('批次紀錄不完整，請重新核對後建立新批次') from exc
@@ -197,6 +213,7 @@ def generate(platform, tenant, mid, draft, *, revision=0, generation_id=None,
             item = models.get(platform.root, tenant, mid)
             if item['inputHash'] != draft['masterInputHash']:
                 raise ValueError('母版已變更，請重新核對後送出')
+            authority.verify(platform.root, tenant, selection, current=True)
             compositions.plan(platform.root, tenant, selection)
             row['state'] = 'running'; atomic_json(path, record)
             result = compositions.generate(platform, tenant, mid, selection, revision=revision,
