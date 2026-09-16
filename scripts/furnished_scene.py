@@ -1,15 +1,14 @@
 """Build a separate presentation scene; canonical meshes/UVs remain untouched."""
 import json
-from pathlib import Path
-import sys
+import hashlib
 
 
 def build(created, definition, device, expected_hash):
     import bpy
     from mathutils import Matrix, Vector
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-    from fox3d.scene_templates import identity
-    if identity(definition) != expected_hash:
+    # Blender ships its own Python; do not import application dependencies here.
+    digest=hashlib.sha256(json.dumps(definition,sort_keys=True,separators=(',',':'),default=str).encode('utf-8')).hexdigest()
+    if digest != expected_hash:
         raise ValueError('Scene definition hash mismatch')
     original = bpy.context.scene
     scene = bpy.data.scenes.new('ProductScene.' + definition['templateId'])
