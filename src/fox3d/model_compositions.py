@@ -3,6 +3,7 @@
 Screen previews only. Scene and artwork identities never certify physical dimensions.
 """
 import io
+import re
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -16,6 +17,48 @@ from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
+
+
+def valid_generation(value):
+    return isinstance(value, str) and bool(re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', value))
+
+
+def generation(root, tenant, mid, gid, item):
+    """Validate any retained result against current model and artwork permissions."""
+    if not valid_generation(gid):
+        raise ValueError('無效成果編號')
+    target = folder_for(root, tenant, mid)/'generations'/gid
+    manifest = print_preview.validate(target)
+    if manifest.get('historyVersion') == 1:
+        published = read_json(target/'published.json')
+        if published.get('manifestSha256') != sha256_bytes((target/'manifest.json').read_bytes()):
+            raise ValueError('成果尚未完成發布核對')
+    draft = manifest['draft']
+    if manifest['generationId'] != gid or draft['masterId'] != mid:
+        raise ValueError('成果不屬於此模型')
+    if draft['masterInputHash'] != item['inputHash']:
+        raise ValueError('母版已變更；此款保留為歷史紀錄，請重新生成')
+    for placement in manifest['package']['placements']:
+        asset_usage.require_artwork(root, tenant, placement['originalAssetId'])
+    return manifest
+
+
+def history(root, tenant, mid, item, offset=0):
+    paths = sorted((folder_for(root, tenant, mid)/'generations').glob('*/manifest.json'),
+                   key=lambda p: (p.stat().st_mtime_ns, p.parent.name), reverse=True)
+    rows = []
+    for path in paths[offset:offset+12]:
+        stored = read_json(path)
+        row = {'generationId': path.parent.name, 'sku': stored.get('draft', {}).get('sku', ''),
+               'scene': stored.get('scene', ''), 'sourceRevision': stored.get('sourceRevision'),
+               'available': False, 'error': None}
+        try:
+            manifest = generation(root, tenant, mid, path.parent.name, item)
+            row.update(available=True, renderInfo=manifest['renderInfo'])
+        except (ValueError, OSError, KeyError) as exc:
+            row['error'] = str(exc)[:500]
+        rows.append(row)
+    return {'items': rows, 'total': len(paths), 'offset': offset}
 
 
 class Placement(models.Strict):
@@ -167,7 +210,7 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     output=done.get('output',{})
     for name in print_preview.FILES:
         source=platform.dam.get(output['files'][name],tenant_id=tenant);shutil.copy2(source.path,target/name)
-    manifest={'generationId':gid,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
+    manifest={'generationId':gid,'historyVersion':1,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
         'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':stable_hash({'scene':draft['scene'],'version':1}),
         'files':{f.name:sha256_bytes(f.read_bytes()) for f in target.iterdir() if f.is_file()},
         'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
@@ -180,5 +223,7 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     current=models.get(platform.root,tenant,mid)
     if current['inputHash']!=draft['masterInputHash']: raise ValueError('母版已變更，請重新生成')
     for x in draft['placements']: asset_usage.require_artwork(platform.root,tenant,x['assetId'])
+    check()
+    atomic_json(target/'published.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
     atomic_json(target.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,mid,current_draft=current)

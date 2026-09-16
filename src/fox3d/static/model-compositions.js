@@ -39,6 +39,7 @@
   window.addEventListener('product-master-selected',safe(async e=>{epoch++;master=e.detail;masterDirty=false;task=null;dirty=true;seen='';clear();$('composition-faces').replaceChildren();buttons();if(master)await load(true);else message('先選母版並補齊尺寸。');}));
   window.addEventListener('product-master-dirty',()=>{masterDirty=true;dirty=true;clear();buttons();});
   window.addEventListener('product-material-changed',()=>{dirty=true;clear();buttons();message('素材用途已更新；請載入上次設定重新核對圖稿。');});
+  window.addEventListener('product-batch-submitted',safe(async()=>{dirty=false;await load();}));
   $('composition-form').addEventListener('input',changed);
   $('composition-accept').onchange=buttons;
   $('composition-form').onsubmit=safe(async()=>{if(!master||masterDirty||busy||task)return;const token=epoch;busy=true;buttons();

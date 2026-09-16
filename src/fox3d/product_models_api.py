@@ -13,6 +13,7 @@ from fox3d import nas_catalog as nas, product_models as models, recipe_3d as ren
 from fox3d.recipe_preview_service import RecipePreviewService
 from fox3d.recipe_workbench import DraftConflict
 from fox3d import model_compositions as compositions, print_preview
+from fox3d import model_batches
 from fox3d import model_categories as categories
 
 class Classification(models.Strict):
@@ -24,6 +25,13 @@ class Compose(models.Strict):
     inputHash: str = Field(pattern=r'^[a-f0-9]{64}$')
     assumptionsAccepted: bool
     selection: compositions.Selection
+
+
+class BatchCompose(models.Strict):
+    expectedRevision: int = Field(ge=1)
+    inputHash: str = Field(pattern=r'^[a-f0-9]{64}$')
+    assumptionsAccepted: bool
+    batch: model_batches.Batch
 
 class Save(models.Strict):
     draft: models.Master
@@ -64,7 +72,7 @@ def product_models_router(provider):
         with lock:
             if p.root not in composition_services:
                 composition_services[p.root]=RecipePreviewService(p,folder_fn=compositions.folder_for,
-                    status_fn=compositions.status,generate_fn=compositions.generate)
+                    status_fn=compositions.status,generate_fn=model_batches.generate)
             return composition_services[p.root]
     @r.get('/admin/recipes/models',response_class=HTMLResponse)
     def page():
@@ -160,7 +168,24 @@ def product_models_router(provider):
         state=call(composition_service().status,t,mid,item)
         try: faces=compositions.surfaces(item['draft'])
         except ValueError: faces=[]
-        return {**state,'scenes':compositions.SCENES,'surfaces':faces}
+        batch=call(model_batches.current,root(),t,mid,state.get('taskId'),state['state'])
+        return {**state,'scenes':compositions.SCENES,'surfaces':faces,'batch':batch}
+
+    @r.get('/api/product-models/{mid}/compositions')
+    def composition_history(mid:str,offset:int=Query(0,ge=0),x_tenant_id:str|None=Header(None)):
+        t=tid(x_tenant_id); item=call(models.get,root(),t,mid)
+        return call(compositions.history,root(),t,mid,item,offset)
+
+    @r.post('/api/product-models/{mid}/composition/batch',status_code=202)
+    def compose_batch(mid:str,body:BatchCompose,x_tenant_id:str|None=Header(None)):
+        t=tid(x_tenant_id); item=call(models.get,root(),t,mid)
+        if item['revision']!=body.expectedRevision or item['inputHash']!=body.inputHash:
+            raise HTTPException(409,'母版版本已變更，請重新載入')
+        if not body.assumptionsAccepted: raise HTTPException(422,'請確認母版尺寸與套圖用途')
+        draft=call(model_batches.snapshot,root(),t,item,body.batch.model_dump())
+        if provider().mock_blender or not provider().runtime.available():
+            raise HTTPException(503,'真實 Blender 不可用')
+        return call(composition_service().submit,t,mid,{'draft':draft,'revision':item['revision']})
     @r.post('/api/product-models/{mid}/composition',status_code=202)
     def compose(mid:str,body:Compose,x_tenant_id:str|None=Header(None)):
         t=tid(x_tenant_id);item=call(models.get,root(),t,mid)
@@ -177,9 +202,11 @@ def product_models_router(provider):
     @r.get('/api/product-models/{mid}/composition/files/{name}')
     def composition_download(mid:str,name:str,workspace:str,generation:str):
         t=tid(workspace);item=call(models.get,root(),t,mid)
-        state=call(compositions.status,root(),t,mid,current_draft=item)
-        if name not in print_preview.FILES or not state['generated'] or state['stale'] or generation!=state['generationId']:
+        if name not in print_preview.FILES:
             raise HTTPException(409,'尚無符合目前母版與素材用途的成果，請重新生成')
+        try: compositions.generation(root(),t,mid,generation,item)
+        except (ValueError,OSError,KeyError) as exc:
+            raise HTTPException(409,'成果已失效或母版／圖稿用途已變更，請重新生成') from exc
         path=compositions.folder_for(root(),t,mid)/'generations'/generation/name
         return FileResponse(path,headers={'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'})
     @r.get('/api/product-models/{mid}/files/{fmt}')
