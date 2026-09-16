@@ -1,169 +1,312 @@
-# Development Agent 指令：PR #15 Round 8 — Evidence Closure / Re-Gate HOLD
+# Development Agent 指令：PR #15 Round 9 — Durable Commit / File + Namespace Flush Gate
 
 > Supervisor checkpoint: 2026-09-17
 > Reviewed PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
-> Prior accepted CODE: `0c6bb2a0e8ed8a8a7d23b8a938b5670e83f3b6c1`
-> Prior accepted DOCS: `d36600e4831d7a86e29a4647cf72560b62b744d3`
-> Current Round 8 PR head: `8129309c45b1db566385305e0db5a03f23c64e33`
-> Round 8 CODE commits reviewed: `ed63440459021f79348c3cba8f9daf8f26d2b01f` + `8129309c45b1db566385305e0db5a03f23c64e33`
-> Exact CODE Actions: `35147126655` — Ubuntu + Windows SUCCESS on `8129309c...`
-> Decision: **PARTIAL / EVIDENCE CLOSURE REQUIRED — Round 9 HOLD**
+> Accepted Round 8 CODE: `8129309c45b1db566385305e0db5a03f23c64e33`
+> Accepted Round 8 DOCS: `85ecad41da13bcd14140a7dd373fed4e09012a4f`
+> Exact CODE Actions: `35147126655` — Ubuntu + Windows SUCCESS
+> Exact DOCS Actions: `35149729964` — Ubuntu + Windows SUCCESS
+> Clean REAL Blender acceptance: `ba4eaa0a-1e33-4e52-a2e5-061a3ffeec45`
+> Decision: **ACCEPT WITH SCOPE — GO ROUND 9**
 > Merge authorization: **false**
 > Global Production Ready: **false**
 
 ## 0. Supervisor review result
 
-Round 8 now has substantive implementation and regression coverage, but it is **not yet accepted** because the required evidence/docs closure has not been landed.
+Round 8 evidence closure is accepted. The frozen implementation and evidence prove the scoped process/OS behavior required by the prior gate, without promoting Mock evidence to Production Ready.
 
-What is accepted so far as implementation direction:
-- `_once()` batch temps are now target-specific (`<final>.once.<bounded-token>.tmp`) while non-batch authority keeps its prior naming contract;
-- `scavenge_once_temps()` is restricted to exact immutable batch targets and requires a live existing `PreviewOwnership` for the exact workspace;
-- candidates are restricted by exact name contract and regular/single-link/non-reparse checks;
-- ambiguous multi-link/reparse/non-regular candidates fail closed and are preserved;
-- cleanup failure blocks the next immutable publication;
-- duplicate immutable publication still fails closed;
-- relative workspace paths were corrected without broadening cleanup scope;
-- actual subprocess hard-kill tests exist for W1/W2/W3 and request/row/terminal targets;
-- actual OS behavior is exercised for process kill/restart, ownership contention, link semantics, reparse/symlink rejection and Windows delete-sharing denial;
-- exact Actions run `35147126655` completed successfully on Ubuntu and Windows with checkout SHA `8129309c45b1db566385305e0db5a03f23c64e33`.
-
-Truth classification for the current code/test state:
-- target-specific publication/cleanup rules: **REAL_LOGIC**;
-- actual killed writer + fresh recovery subprocess cases: **REAL_PROCESS_RECOVERY** where directly exercised;
-- actual ownership/link/reparse/delete-sharing behavior: **REAL_OS_IO** where directly exercised;
-- CI artifact/render path under `FOX3D_MOCK_BLENDER=1`: **MOCK regression**, never REAL_RENDER;
-- W2 post-link extra hardlink debris is intentionally preserved/fail-closed because link count is ambiguous: **PARTIAL / PRESERVED UNKNOWN**, not a cleanup success claim;
-- generic/global temp cleanup remains **PARTIAL / UNCLAIMED**;
+Accepted classification:
+- real child-process hard-kill/restart evidence: **REAL_PROCESS_RECOVERY**;
+- real ownership/link/reparse/delete-sharing behavior: **REAL_OS_IO** where directly exercised;
+- scoped write-once temp cleanup/fencing: **REAL_LOGIC**;
+- CI render/artifact path under `FOX3D_MOCK_BLENDER=1`: **MOCK regression** only;
+- clean Blender evidence with `usedMock=false`: **REAL_RENDER**, but still synthetic/static visual/runtime evidence;
+- W2 final+temp same-file two-hardlink crash state: **PARTIAL / PRESERVED UNKNOWN** by design — preserve + fail closed, no auto-delete/adopt/replay;
 - `physicalProductGeometryTruth=false`;
 - `physicalPrintValidated=false`;
 - `manufacturingReady=false`;
 - `globalProductionReady=false`.
 
-Do not rewrite the queue, state store, authority model, publication verifier, DAM, Renderer, Product Master, or PreviewOwnership.
+Do not rewrite queue/state/authority/publication/DAM/Renderer/Product Master/PreviewOwnership architecture.
 
 ---
 
-## 1. Missing blocker A — baseline evidence on exact accepted CODE
+# Round 9 goal
 
-Before asking for Re-Gate, produce durable evidence for the required W1/W2/W3 baseline on exact accepted CODE:
+Round 5–8 established process-crash atomicity, single-writer ownership/fencing, strict serialized identity, and scoped crash-debris handling. Round 9 must now separate **process-crash atomicity** from **actual storage durability**.
 
-`0c6bb2a0e8ed8a8a7d23b8a938b5670e83f3b6c1`
+The accepted persistence paths use temp files plus `os.replace()` / `os.link()` / `unlink()`. A Python close and a successful rename/link do not by themselves prove that file contents and namespace mutations survive a sudden OS/hardware power-loss event.
 
-Use a clean checkout/worktree of that exact SHA and real child processes. Test-harness instrumentation is allowed; production code at the baseline SHA must not be changed to manufacture the result.
+Round 9 must first audit the real commit points. Only after the gap is demonstrated may you add the smallest durability primitive possible.
 
-For each required target class (`request.json`, at least one row receipt such as `0.json`, `terminal.json`) record:
-- W1: temp fully materialized, final not linked, then hard kill;
-- W2: final linked, temp not unlinked, then hard kill;
-- W3: nested atomic temp interruption if reproducible;
-- exact file names, directory-relative paths, type, link count where available, SHA/bytes, final existence;
-- killed PID / fresh recovery PID;
+**A subprocess hard kill is not proof of power-loss durability. Never label it that way.**
+
+## 1. Frozen baseline
+
+Start from exact accepted production CODE:
+
+`8129309c45b1db566385305e0db5a03f23c64e33`
+
+Retain all accepted behavior:
+- `PreviewOwnership`;
+- exact `taskId` / `inputHash` / `batchVersion` fencing;
+- immutable `_once()` authority semantics;
+- request / row receipt / terminal receipt / publication authority rules;
+- W2 ambiguous hardlink preservation;
+- scoped target-specific temp cleanup;
+- no orphan adoption;
+- no automatic replay;
+- existing Windows sharing-violation fail-closed semantics.
+
+Before production changes, capture baseline evidence.
+
+---
+
+## 2. Phase A — Prove the durability gap before fixing it
+
+Build a focused Round 9 audit/repro harness around the actual persistence paths. Prefer real child processes and actual host filesystem behavior; pure monkeypatch-only evidence is not sufficient for the host-OS classification.
+
+Audit at minimum:
+
+### `src/fox3d/model_batches.py`
+- `BatchStorage.atomic_json()`;
+- `_once()`;
+- immutable request / row receipt / terminal / publication writes that depend on these functions.
+
+### `src/fox3d/recipe_3d.py`
+- `atomic_write_json()` / `_atomic_json`;
+- authority/state commit paths using those persistence semantics.
+
+Record explicitly:
+- whether the complete temp file receives an explicit durable host-OS file flush before `os.replace()` or `os.link()`;
+- whether containing-directory / namespace synchronization is issued after rename/link/unlink where supported/required;
+- exact Windows behavior;
+- exact POSIX/Linux behavior;
+- which guarantees are only process-crash atomicity;
+- which guarantees, if any, are genuinely storage durability guarantees.
+
+If accepted CODE has no explicit durable file flush and/or namespace durability operation, record that as the reproduced durability gap. Do not claim observed data loss unless a destructive crash actually demonstrated it.
+
+Classification:
+- child-process kill = **REAL_PROCESS_RECOVERY**;
+- directly observed real OS flush/namespace operation = **REAL_OS_IO_FLUSH**;
+- code-path audit showing a missing primitive = **REAL_LOGIC_AUDIT**;
+- sudden hardware/power-cut survival = **BLOCKED** unless actually tested with a destructive harness.
+
+---
+
+## 3. Phase B — Minimal durable-commit primitive
+
+Only if Phase A proves the gap, implement the smallest shared durability helper(s) needed by the existing persistence paths.
+
+### File data durability
+For a temp file that can become committed authority/state:
+1. write complete bytes;
+2. flush language/runtime buffering;
+3. request the platform's durable file flush on the open file handle;
+4. only after that succeeds, perform the existing namespace commit (`os.replace()` / `os.link()`).
+
+A durable-flush failure must fail closed. Do not continue and later emit success.
+
+### POSIX namespace durability
+Where supported, synchronize the containing directory after the actual namespace mutation sufficiently to make the directory entry durable according to the platform contract.
+
+Cover real commit sequences, not a disconnected helper:
+- temp -> final `os.replace()`;
+- write-once `os.link()` final creation;
+- owned temp unlink where that deletion is part of a completed commit path.
+
+Do not broaden cleanup or weaken W2 ambiguity handling.
+
+### Windows durability
+Use only a real Windows-supported file-handle flush mechanism that can be exercised on the current Windows runner.
+
+Do not invent a fake directory-fsync equivalent. If durable directory/namespace flush cannot be safely guaranteed through the current surface, implement only what is real and explicitly classify the remaining guarantee **PARTIAL/BLOCKED**.
+
+Retain current Windows sharing retry and fail-closed behavior.
+
+### Forbidden architecture changes
+Do not add:
+- SQLite/PostgreSQL/DB journal;
+- Redis;
+- second queue;
+- WAL subsystem;
+- replacement object store;
+- new replay engine;
+- alternate authority model;
+- renderer/DAM/Product Master redesign;
+- broad `*.tmp` sweeps;
+- mtime/PID stale heuristics;
+- orphan adoption as authority.
+
+---
+
+## 4. Phase C — Required acceptance matrix
+
+Use actual subprocesses/filesystem operations for process/OS cases. Fault injection may supplement them but cannot replace them.
+
+### D1 — Durable temp, kill before replace
+For atomic JSON:
+- child fully writes and performs the real file durability primitive;
+- terminate child before `os.replace()`;
+- start a fresh process;
+- no phantom final success;
+- temp is not treated as authority;
+- existing scoped recovery rules only.
+
+### D2 — Namespace commit then kill before namespace sync hook
+Create a deterministic test hook around the actual commit point:
+- `os.replace()` or `os.link()` has occurred;
+- child is killed before namespace durability hook completes;
+- fresh process inspects resulting bytes/state;
 - no automatic replay/adoption;
-- immutable final bytes preserved when already published;
-- duplicate publication remains blocked.
+- report only observed process-crash behavior; do not call this a power-loss test.
 
-If old CODE uses a legacy UUID-only temp name, record that truth exactly. Do not retroactively call it target-specific.
+### D3 — `_once()` link succeeded, temp remains
+Preserve accepted Round 8 W2 behavior:
+- final + temp same-file hardlinks may remain after interruption;
+- `WRITE_ONCE_TEMP_AMBIGUOUS` / multilink path remains fail closed;
+- do not delete/adopt either path merely to make the test pass;
+- keep classification **PARTIAL / PRESERVED UNKNOWN** unless stronger evidence truly proves otherwise.
+
+### D4 — Durable immutable authority + restart
+After durable commit succeeds:
+- terminate owner process;
+- start fresh process;
+- request / row receipt / terminal / publication authority reads consistently;
+- no duplicate publication;
+- no stale-writer overwrite;
+- no implicit replay.
+
+### D5 — Durable flush/sync failure
+Force or inject a file durability failure and, where practical, a namespace-sync failure:
+- operation fails closed;
+- success receipt/publication is not emitted;
+- existing immutable authority is not overwritten;
+- caller is not silently repaired behind its back.
+
+Injected/fake failures are **MOCK / FAULT_INJECTION_LOGIC**, not host durability evidence.
+
+### D6 — Regression retention
+Retain all accepted Round 5–8 gates, including:
+- cross-process single-writer ownership;
+- strict serialized identity (`true != 1`, absent != null);
+- real Windows sharing-handle cases;
+- hard-kill outer-state recovery;
+- scoped Round 7 cleanup;
+- Round 8 W1/W2/W3 behavior;
+- publication/receipt authority;
+- no duplicate publication.
 
 ---
 
-## 2. Missing blocker B — Round 8 evidence package
+## 5. Evidence classification rules
 
-Keep current CODE `8129309c...` frozen unless evidence reveals a real bug.
+### REAL_OS_IO_FLUSH
+Only an actually executed host-OS durable file flush / supported namespace synchronization on the target OS.
 
-Run and record the focused Round 8 matrix separately from generic pytest:
-- 3 crash windows × request/row/terminal targets;
-- live competitor while owner is held = zero cleanup / zero immutable write;
-- exact-target cleanup only;
-- unknown/legacy temp preservation;
-- nested-directory sentinel preservation;
-- symlink/reparse/non-regular/multi-link preservation and fail-closed behavior;
-- cleanup failure blocks publication;
-- duplicate publication remains blocked;
-- relative workspace path regression;
-- no replay after restart;
-- process restart never turns interrupted work into succeeded work.
+### REAL_PROCESS_RECOVERY
+Only a real child process terminated and a fresh process recovering.
 
-For W2, preserve the current conservative rule unless evidence proves a safer deterministic rule: a two-link temp/final inode is **unknown/ambiguous**, therefore preserve + fail closed. Do not delete it merely because bytes match final.
+### REAL_RENDER
+Only a clean Blender run with `usedMock=false` and real Blender runtime evidence.
 
-Retain Round 5/6/7 + strict serialized identity regressions. If any old gate regresses, fix only that regression.
+### MOCK
+GitHub CI render/artifact tests under `FOX3D_MOCK_BLENDER=1`, plus pure unit/fault-injection evidence.
+
+### PARTIAL
+Any guarantee covering only part of a platform/commit sequence, including Windows namespace durability if it cannot be safely proven.
+
+### BLOCKED
+Sudden power-loss / hardware-reset durability unless a real destructive power-loss harness is actually executed and captured.
+
+Do not use labels such as `REAL_POWER_LOSS`, `POWER_LOSS_SAFE`, `CRASH_DURABLE`, or equivalent unless that exact failure mode was actually tested.
 
 ---
 
-## 3. Missing blocker C — clean REAL acceptance because production code changed
+## 6. Clean REAL Blender acceptance
 
-Round 8 changed production persistence code, therefore rerun the existing clean product-variant REAL acceptance after the exact CODE CI is green.
+Because persistence production code will change if the durability gap is fixed, rerun clean real acceptance after final CODE SHA is frozen.
 
 Required:
-- Blender 5.2.1 LTS;
-- OptiX / `realOptix=true`;
+- trusted real runner;
+- Blender version recorded;
+- device/backend recorded;
 - `usedMock=false`;
-- at least two synthetic/reference variants;
-- artifact SHA/size + finite pixels + `.blend` reopen;
-- restart/history/download verification;
-- retained process/authority/cleanup matrices;
-- record Round 8 process/OS evidence separately from renderer evidence.
+- generation/batch/task identifiers recorded;
+- verifier results recorded;
+- input source classified honestly.
 
-Still declare:
-- `inputTruth=SYNTHETIC_STATIC_FIXTURE`;
-- `physicalProductGeometryTruth=false`;
-- `physicalPrintValidated=false`;
-- `manufacturingReady=false`;
-- `globalProductionReady=false`.
-
-REAL Blender evidence does not convert the hard-kill fixture artifacts into physical/product truth.
+Synthetic/static input remains acceptable for this regression gate but must be labeled as such. It does not establish physical product geometry, physical print, manufacturing readiness, or global Production Ready.
 
 ---
 
-## 4. Missing blocker D — DOCS closure + exact DOCS CI
+## 7. Evidence package
 
-Update only the necessary acceptance evidence, primarily:
-- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
-- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
+Update the existing truth package only:
+- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`;
+- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`.
 
-Record all of the following:
-- exact accepted baseline SHA `0c6bb2a0...` W1/W2/W3 observations;
-- new CODE SHA `8129309c...` (or a later minimal correction SHA only if evidence finds a bug);
-- CODE Actions run ID and exact Ubuntu/Windows checkout/result;
-- focused Round 8 process/OS counts;
-- retained Round 5/6/7 + strict identity counts;
-- clean REAL acceptance generation and exact evidence CODE SHA;
-- explicit REAL / MOCK / PARTIAL / BLOCKED matrix;
-- W2 ambiguous hardlink debris classification;
-- unchanged global truth boundaries.
+Record:
+- Round 9 baseline SHA;
+- final CODE SHA;
+- exact repro commands;
+- D1–D6 outcome matrix;
+- OS/platform for every real case;
+- REAL/MOCK/PARTIAL/BLOCKED classification per case;
+- exact file-flush / namespace-sync mechanism used per platform;
+- unsupported durability guarantees marked PARTIAL/BLOCKED;
+- clean REAL Blender run ID and truth boundary;
+- exact CODE Actions run ID;
+- exact DOCS SHA;
+- exact DOCS Actions run ID.
 
-Do **not** rewrite `GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md`, or `CABINET_REAL_ACCEPTANCE.md` unless their declared truth actually changes.
-
-After docs are pushed:
-1. freeze exact DOCS SHA;
-2. wait for GitHub Actions Ubuntu + Windows SUCCESS on that exact SHA;
-3. verify both jobs checked out the exact DOCS SHA;
-4. cancelled/superseded runs are not PASS evidence.
+Do **not** rewrite `GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md`, or `CABINET_REAL_ACCEPTANCE.md` merely to make them look newer. Modify them only if an existing declared truth becomes factually false.
 
 ---
 
-## 5. Frozen gates
+## 8. CI / Re-Gate protocol
 
-- PR #15 remains **DRAFT / OPEN / unmerged**;
-- Round 9 remains **HOLD** until Supervisor Re-Gate;
-- PR #16 remains **FROZEN DRAFT**;
+1. Freeze final production CODE SHA.
+2. Run exact CODE SHA CI on Ubuntu + Windows.
+3. Both must be SUCCESS and check out the exact CODE SHA.
+4. Run clean `usedMock=false` REAL Blender acceptance against final CODE SHA.
+5. Publish Round 9 evidence only after evidence is complete.
+6. Freeze exact DOCS SHA.
+7. Run exact DOCS SHA CI on Ubuntu + Windows.
+8. Both must be SUCCESS and check out the exact DOCS SHA.
+9. Leave exactly one new `[GROK_PHASE_COMPLETE]` / `READY_FOR_RE_GATE` handoff on Issue #1 containing:
+   - baseline SHA;
+   - final CODE SHA;
+   - CODE Actions run ID + Ubuntu/Windows results;
+   - D1–D6 focused evidence summary;
+   - clean REAL Blender run ID;
+   - exact DOCS SHA;
+   - DOCS Actions run ID + Ubuntu/Windows results;
+   - REAL/MOCK/PARTIAL/BLOCKED matrix;
+   - `MERGE_AUTHORIZED=false`.
+10. STOP.
+
+Do not begin Round 10 until Supervisor accepts Round 9.
+
+---
+
+## 9. Stop conditions
+
+Stop and report **BLOCKED** instead of inventing evidence if:
+- a platform does not expose the required durability primitive safely in the current architecture;
+- Windows runner cannot exercise the selected real flush primitive;
+- directory/namespace durability cannot be guaranteed on a supported platform;
+- a durability-flush failure can still produce a success receipt/publication;
+- any accepted Round 5–8 authority/fencing behavior regresses;
+- exact CODE or DOCS CI is not green on both operating systems.
+
+Frozen gates remain:
+- PR #15 = DRAFT / OPEN / unmerged;
+- PR #16 = FROZEN DRAFT;
 - PR #13 / #14 unchanged;
 - Issue #6 gate unchanged;
 - no merge / retarget / rebase-to-main / cherry-pick;
-- no live H3 / LTX / Vision / CNC / LASER / PLC work;
-- `MERGE_AUTHORIZED=false`.
-
----
-
-## 6. Final handoff
-
-When all blockers above are closed, leave exactly one new `READY_FOR_RE_GATE` comment on Issue #1 containing:
-- baseline SHA + W1/W2/W3 evidence result;
-- exact final CODE SHA;
-- CODE Actions run ID + Ubuntu/Windows result;
-- focused Round 8 process/OS counts;
-- retained Round 5/6/7 + strict identity counts;
-- clean REAL acceptance generation;
-- exact DOCS SHA + DOCS Actions run ID + Ubuntu/Windows result;
-- REAL / MOCK / PARTIAL / BLOCKED truth matrix;
-- `MERGE_AUTHORIZED=false`.
-
-Then STOP. **Do not start Round 9 automatically.**
+- no live H3 / LTX / Vision / CNC / LASER / PLC expansion in this round;
+- `MERGE_AUTHORIZED=false`;
+- **Round 10 HOLD**.
