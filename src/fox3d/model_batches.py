@@ -63,11 +63,14 @@ def _load(path):
 
 def _identity(request, tenant, mid, bid):
     if (set(request) != {'identityVersion', 'tenantId', 'masterId', 'batchId', 'sourceRevision', 'draft'}
+            or type(request['identityVersion']) is not int
             or request['identityVersion'] != IDENTITY_VERSION
             or request['tenantId'] != tenant or request['masterId'] != mid or request['batchId'] != bid):
         raise ValueError('批次來源身分不符')
     draft = request['draft']
-    if draft['batchVersion'] != 1 or request['sourceRevision'] != draft['masterRevision']:
+    if (any(type(value) is not int for value in
+            (draft['batchVersion'], request['sourceRevision'], draft['masterRevision']))
+            or draft['batchVersion'] != 1 or request['sourceRevision'] != draft['masterRevision']):
         raise ValueError('批次來源版本不符')
     selections = draft['selections']
     if (type(draft['authorityVersion']) is not int or draft['authorityVersion'] != authority.VERSION
@@ -78,6 +81,7 @@ def _identity(request, tenant, mid, bid):
     rows = []
     for i, selection in enumerate(selections):
         if (selection['masterId'] != mid or selection['masterInputHash'] != draft['masterInputHash']
+                or type(selection['masterRevision']) is not int
                 or selection['masterRevision'] != draft['masterRevision']):
             raise ValueError('批次款式來源不符')
         authority.identity(selection['inputAuthority'], tenant, mid, draft['masterRevision'], draft['masterInputHash'])
@@ -98,10 +102,11 @@ def _row_receipt(identity, row, state, error=None):
 def _published(root, tenant, mid, row, selection, revision, item):
     authority.verify(root, tenant, selection, current=True)
     manifest = compositions.generation(root, tenant, mid, row['generationId'], item)
-    if (manifest.get('historyVersion') != 1 or manifest.get('sourceRevision') != revision
+    if (type(manifest.get('historyVersion')) is not int or manifest['historyVersion'] != 1
+            or type(manifest.get('sourceRevision')) is not int or manifest['sourceRevision'] != revision
             or manifest.get('planHash') != row['selectionHash']
             or stable_hash(manifest['draft']) != row['selectionHash']
-            or manifest.get('scene') != row['scene'] or manifest['draft'] != selection):
+            or manifest.get('scene') != row['scene'] or stable_hash(manifest['draft']) != stable_hash(selection)):
         raise ValueError('批次款式與已發布成果不符')
     return manifest
 
@@ -116,7 +121,8 @@ def current(root, tenant, mid, task_id, state):
     anchor = base/'batches'/task_id
     if not path.exists() and not anchor.exists():
         service = read_json(base/'state.json')
-        if service.get('batchVersion') and state not in {'queued', 'running'}:
+        if 'batchVersion' in service and (type(service['batchVersion']) is not int
+                or service['batchVersion'] != 1 or state not in {'queued', 'running'}):
             raise ValueError('批次紀錄遺失，無法確認完成')
         return None  # Single-composition tasks have no batch record.
     try:
@@ -124,7 +130,8 @@ def current(root, tenant, mid, task_id, state):
         identity, rows = _identity(request, tenant, mid, task_id)
         service = _load(base/'state.json')
         if (service.get('taskId') != task_id or service.get('inputHash') != input_hash(request['draft'])
-                or service.get('state') != state or service.get('batchVersion') != 1):
+                or service.get('state') != state or type(service.get('batchVersion')) is not int
+                or service['batchVersion'] != 1):
             raise ValueError('批次與佇列請求不符')
         record = _load(path)
         if stable_hash({k: record[k] for k in identity}) != stable_hash(identity) or len(record['rows']) != len(rows):
@@ -147,7 +154,8 @@ def current(root, tenant, mid, task_id, state):
             receipt_path = anchor/(str(expected['index'])+'.json')
             receipt = _load(receipt_path) if receipt_path.exists() else None
             if receipt:
-                if (receipt.get('batchIdentityHash') != stable_hash(identity) or receipt.get('row') != expected
+                if (receipt.get('batchIdentityHash') != stable_hash(identity)
+                        or stable_hash(receipt.get('row')) != stable_hash(expected)
                         or receipt.get('state') not in TERMINAL
                         or (row['state'] in TERMINAL and row['state'] != receipt['state'])):
                     raise ValueError('批次款式結束紀錄不符')

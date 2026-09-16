@@ -136,6 +136,7 @@ def main(*, round2=False, round3=False):
                     evidence['tamperMatrix']=round2_tamper_checks(client,path,data,tenant,item,restored.json())
                 if round3:
                     evidence['authorityChecks']=round3_authority_checks(client,path,data,tenant,item,restored.json())
+                    evidence['serializedTypeChecks']=serialized_type_checks(client,path,data,tenant,item,restored.json())
                 gid=history['items'][0]['generationId']
                 # Change geometry after restart: all old variants become unavailable.
                 r=client.put(path,json={'expectedRevision':1,'draft':{**item['draft'],'widthMm':item['draft']['widthMm']+1}});r.raise_for_status()
@@ -340,6 +341,71 @@ def round3_authority_checks(client,path,data,tenant,item,state):
     client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid}).raise_for_status()
     results['restoredVisualDownload']={'status':'PASS','readiness':a.readiness(True)}
     return results
+
+def serialized_type_checks(client,path,data,tenant,item,state):
+    """Tamper JSON types over this run's real outputs; preserve every other gate."""
+    from fox3d import model_compositions as c, model_batches as b, variant_authority as a
+    from fox3d.recipe_3d import atomic_json,read_json
+    from fox3d.ids import sha256_bytes
+    base=c.folder_for(data,tenant,item['id']);bid=state['taskId'];anchor=base/'batches'/bid
+    gid=state['batch']['rows'][0]['generationId'];target=base/'generations'/gid
+    request_fields=[('identityVersion',),('sourceRevision',),('draft','batchVersion'),
+                    ('draft','masterRevision'),('draft','selections',0,'masterRevision')]
+    trials=[(anchor/'request.json',field,'request') for field in request_fields]
+    trials += [(base/'state.json',('batchVersion',),'service'),
+               (anchor/'0.json',('row','index'),'receipt0'),(anchor/'1.json',('row','index'),'receipt1')]
+    trials += [(target/'manifest.json',field,'manifest') for field in
+               [('historyVersion',),('sourceRevision',),('draft','masterRevision')]]
+    results={}
+    def restored():
+        response=client.get(path+'/composition');response.raise_for_status()
+        assert response.json()['batch']['available']
+        assert all(response.json()['batch'][k]==v for k,v in a.readiness(True).items())
+        client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid}).raise_for_status()
+    def blocked(source,label):
+        response=client.get(path+'/composition')
+        if source=='manifest':
+            response.raise_for_status();value=response.json()
+            assert value['state']=='failed' and not value['batch']['visualAssetReady']
+            assert not value['batch']['manufacturingReady'] and not value['batch']['physicalPrintValidated']
+            assert client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid}).status_code==409
+        else:assert response.status_code==422,response.text
+        results[label]={'status':'BLOCK','http':response.status_code,'restored':False}
+    for file,field,source in trials:
+        backups={file:file.read_bytes()}
+        if source=='manifest':
+            backups.update({target/name:(target/name).read_bytes() for name in ['published.json','meta.json']})
+        for kind in ['bool','float','string']:
+            value=json.loads(backups[file]);parent=value
+            for key in field[:-1]:parent=parent[key]
+            original=parent[field[-1]];assert type(original) is int
+            parent[field[-1]]={'bool':bool(original),'float':float(original),'string':str(original)}[kind]
+            label=source+':'+'.'.join(map(str,field))+':'+kind
+            try:
+                atomic_json(file,value)
+                if source=='manifest':
+                    seal={'manifestSha256':sha256_bytes(file.read_bytes())}
+                    atomic_json(target/'published.json',seal);atomic_json(target/'meta.json',seal)
+                if source=='request':
+                    try:b._identity(value,tenant,item['id'],bid)
+                    except ValueError:pass
+                    else:raise AssertionError('Direct request verifier accepted '+label)
+                blocked(source,label)
+            finally:
+                for saved,raw in backups.items():saved.write_bytes(raw)
+            restored();results[label]['restored']=True
+    backups={target/name:(target/name).read_bytes() for name in ['manifest.json','published.json','meta.json']}
+    try:
+        value=read_json(target/'manifest.json');value.pop('historyVersion');atomic_json(target/'manifest.json',value)
+        seal={'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())}
+        atomic_json(target/'published.json',seal);atomic_json(target/'meta.json',seal)
+        blocked('manifest','manifest:missingHistoryVersion')
+    finally:
+        for file,raw in backups.items():file.write_bytes(raw)
+    restored();results['manifest:missingHistoryVersion']['restored']=True
+    results['restoredExactData']={'status':'PASS','readiness':a.readiness(True)}
+    return results
+
 
 if __name__=='__main__':
     import argparse

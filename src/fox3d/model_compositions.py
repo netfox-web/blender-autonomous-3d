@@ -30,11 +30,18 @@ def generation(root, tenant, mid, gid, item):
         raise ValueError('無效成果編號')
     target = folder_for(root, tenant, mid)/'generations'/gid
     manifest = print_preview.validate(target)
-    if manifest.get('historyVersion') == 1:
+    draft = manifest['draft']
+    # A JSON boolean/float is not the original integer identity, even after a
+    # local publication seal is recomputed. Preserve only pre-V1 legacy absence.
+    if 'historyVersion' in manifest or 'inputAuthority' in draft or 'inputAuthorityHash' in manifest:
+        if (type(manifest.get('historyVersion')) is not int or manifest['historyVersion'] != 1
+                or type(manifest.get('sourceRevision')) is not int
+                or type(draft.get('masterRevision')) is not int
+                or manifest['sourceRevision'] != draft['masterRevision']):
+            raise ValueError('成果來源版本不符')
         published = read_json(target/'published.json')
         if published.get('manifestSha256') != sha256_bytes((target/'manifest.json').read_bytes()):
             raise ValueError('成果尚未完成發布核對')
-    draft = manifest['draft']
     if manifest['generationId'] != gid or draft['masterId'] != mid:
         raise ValueError('成果不屬於此模型')
     if draft['masterInputHash'] != item['inputHash']:
