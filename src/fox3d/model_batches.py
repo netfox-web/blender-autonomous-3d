@@ -6,17 +6,22 @@ availability. These local records do not authenticate a hostile filesystem owner
 """
 import json
 import os
+import logging
+import re
+import stat
 from uuid import UUID, uuid5
 
 from pydantic import Field
 
 from fox3d import model_compositions as compositions, product_models as models
 from fox3d.ids import new_id, stable_hash
-from fox3d.recipe_3d import atomic_json, input_hash, read_json
+from fox3d.recipe_3d import atomic_json, input_hash, read_json, _ATOMIC_TEMP_TOKEN_LENGTH
+from fox3d.preview_ownership import PreviewOwnership
 from fox3d import variant_authority as authority
 
 IDENTITY_VERSION = 1
 TERMINAL = {'succeeded', 'failed', 'cancelled', 'interrupted'}
+_ONCE_TEMP_TOKEN_LENGTH = 16  # Target binding must not lengthen the old Windows path budget.
 
 
 class Batch(models.Strict):
@@ -39,11 +44,64 @@ def snapshot(root, tenant, item, value):
             'masterInputHash': item['inputHash'], 'masterRevision': item['revision']}
 
 
-def _once(path, value):
+def _batch_target(path):
+    return (path.parent.parent.name == 'batches'
+            and compositions.valid_generation(path.parent.name)
+            and (path.name in {'request.json', 'terminal.json'}
+                 or re.fullmatch(r'(?:[0-9]|1[0-9]|2[0-3])\.json', path.name) is not None))
+
+
+def scavenge_once_temps(targets, owner):
+    """Only target-bound, single-link debris under live workspace ownership.
+
+    Old UUID-only temps and unrelated files are outside the naming contract.
+    An extra link left after publication is ambiguous: preserve it and fail closed.
+    """
+    if not isinstance(owner, PreviewOwnership) or not owner.held or owner.stream.closed:
+        raise ValueError('清理批次暫存前需取得商品工作區的生成鎖')
+    targets = list(targets)
+    candidates = []
+    for path in targets:
+        if not _batch_target(path) or path.parent.parent.parent != owner.folder:
+            raise ValueError('批次暫存目標不屬於已鎖定工作區')
+        for directory in (path.parent.parent, path.parent):
+            if not directory.exists():
+                if directory.is_symlink():
+                    raise ValueError('批次目錄連結無法確認')
+                continue
+            details = directory.lstat()
+            if (not stat.S_ISDIR(details.st_mode) or directory.resolve() != directory
+                    or getattr(details, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)):
+                raise ValueError('批次目錄型態無法確認')
+        if not path.parent.exists():
+            continue
+        pattern = re.compile(re.escape(path.name) + rf'\.once\.[0-9a-f]{{{_ONCE_TEMP_TOKEN_LENGTH}}}\.tmp'
+                             + rf'(?:\.[0-9a-f]{{{_ATOMIC_TEMP_TOKEN_LENGTH}}}\.tmp)?')
+        candidates.extend(p for p in path.parent.iterdir() if pattern.fullmatch(p.name))
+    candidates = sorted(set(candidates))
+    # Validate the entire exact-target set before deleting any candidate.
+    for candidate in candidates:
+        details = candidate.lstat()
+        if (not stat.S_ISREG(details.st_mode) or details.st_nlink != 1
+                or getattr(details, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0)):
+            raise ValueError('批次暫存檔型態或連結無法確認，拒絕清理：' + candidate.name)
+    removed = []
+    for candidate in candidates:
+        candidate.unlink()
+        removed.append(str(candidate))
+        logging.getLogger(__name__).info('Scavenged immutable target temp debris: %s', candidate.name)
+    return removed
+
+
+def _once(path, value, *, owner=None):
     # Exclusive creation prevents replay/overwriting request and terminal facts.
     # A torn write is rejected by _load, never repaired from mutable progress.
+    if owner is not None:
+        scavenge_once_temps([path], owner)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(new_id()+'.tmp')
+    # Keep non-batch authority declarations on their existing naming contract.
+    temporary = path.with_name(path.name+'.once.'+new_id().replace('-', '')[:_ONCE_TEMP_TOKEN_LENGTH]+'.tmp'
+                               if _batch_target(path) else new_id()+'.tmp')
     try:
         atomic_json(temporary, value)
         os.link(temporary, path)  # Atomic publish; fails if already present.
@@ -125,9 +183,20 @@ def current(root, tenant, mid, task_id, state):
                 or service['batchVersion'] != 1 or state not in {'queued', 'running'}):
             raise ValueError('批次紀錄遺失，無法確認完成')
         return None  # Single-composition tasks have no batch record.
+    if state in {'queued', 'running'}:
+        return _current(root, tenant, mid, task_id, state, base, path, anchor)
+    with PreviewOwnership(base) as owner:
+        return _current(root, tenant, mid, task_id, state, base, path, anchor, owner)
+
+
+def _current(root, tenant, mid, task_id, state, base, path, anchor, owner=None):
     try:
+        if owner is not None:
+            scavenge_once_temps([anchor/'request.json'], owner)
         request = _load(anchor/'request.json')
         identity, rows = _identity(request, tenant, mid, task_id)
+        if owner is not None:
+            scavenge_once_temps([anchor/'terminal.json', *[anchor/(str(r['index'])+'.json') for r in rows]], owner)
         service = _load(base/'state.json')
         if (service.get('taskId') != task_id or service.get('inputHash') != input_hash(request['draft'])
                 or service.get('state') != state or type(service.get('batchVersion')) is not int
@@ -148,7 +217,7 @@ def current(root, tenant, mid, task_id, state):
                 raise ValueError('批次缺少完成紀錄')
             # A restart never replays work. Persist interruption separately from progress.
             _once(anchor/'terminal.json', {'batchIdentityHash': stable_hash(identity),
-                                          'state': 'cancelled' if state == 'cancelled' else 'interrupted'})
+                                          'state': 'cancelled' if state == 'cancelled' else 'interrupted'}, owner=owner)
         terminal = _load(anchor/'terminal.json') if (anchor/'terminal.json').exists() else None
         if terminal and (terminal.get('batchIdentityHash') != stable_hash(identity)
                          or terminal.get('state') not in TERMINAL
