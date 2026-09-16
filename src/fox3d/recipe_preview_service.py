@@ -38,6 +38,8 @@ class RecipePreviewService:
             path = self.folder_fn(self.platform.root, tid, sku) / "state.json"
             state = {"taskId": task_id, "state": "queued", "progress": 0,
                      "inputHash": input_hash(item["draft"]), "error": None}
+            if "batchVersion" in item["draft"]:
+                state["batchVersion"] = item["draft"]["batchVersion"]
             atomic_json(path, state)
             self.tasks[key] = (task_id, stop)
             self.executor.submit(self._run, key, item, path, state, stop)

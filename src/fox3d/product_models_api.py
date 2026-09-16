@@ -169,6 +169,9 @@ def product_models_router(provider):
         try: faces=compositions.surfaces(item['draft'])
         except ValueError: faces=[]
         batch=call(model_batches.current,root(),t,mid,state.get('taskId'),state['state'])
+        if batch and state['state'] not in {'queued','running'}:
+            state={**state,'state':batch['state'],
+                   'error':next((r['error'] for r in batch['rows'] if r.get('error')),state.get('error'))}
         return {**state,'scenes':compositions.SCENES,'surfaces':faces,'batch':batch}
 
     @r.get('/api/product-models/{mid}/compositions')

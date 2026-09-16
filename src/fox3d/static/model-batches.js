@@ -38,7 +38,12 @@
   }
   async function status() {
     if(!master)return;const token=epoch,id=master.id;
-    const s=await api(`/${id}/composition`);if(token!==epoch)return;
+    let s;
+    try {s=await api(`/${id}/composition`);} catch(e) {
+      if(token===epoch)$('batch-progress').replaceChildren();
+      throw e;
+    }
+    if(token!==epoch)return;
     const before=task;task=['queued','running'].includes(s.state)?s.taskId:null;
     $('batch-progress').innerHTML=(s.batch?.rows||[]).map(r=>`<li>${esc(r.sku)} · ${esc(scenes[r.scene])}：${esc(states[r.state]||r.state)}${r.error?' — '+esc(r.error):''}</li>`).join('');
     if(s.batch)message(`${s.batch.name}：${s.batch.rows.filter(r=>r.state==='succeeded').length} / ${s.batch.rows.length} 完成`+(s.error?'；'+s.error:''));

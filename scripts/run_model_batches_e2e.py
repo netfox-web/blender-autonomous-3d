@@ -13,18 +13,20 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 
 
-def main():
+def main(*, round2=False):
     import httpx
     from PIL import Image, ImageDraw
     from fox3d import print_assets, asset_usage, product_models, model_compositions as c
     from fox3d.blender import find_blender
-    from fox3d.recipe_3d import atomic_json
+    from fox3d.recipe_3d import atomic_json, read_json
+    from fox3d import model_batches as b
+    from fox3d.ids import sha256_bytes
     if subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip():
         raise SystemExit('Formal acceptance requires clean CODE')
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     eid=str(uuid.uuid4());base=ROOT/'.fox3d-work'/'batches'/eid[:8];base.mkdir(parents=True)
     data=base/'d';tenant='sonaqueen-home';models=[];assets=[]
-    for kind,size in [('HINGED_CABINET',(780,552)),('RECTANGLE',(400,400))]:
+    for kind,size in ([('HINGED_CABINET',(780,552))] if round2 else [('HINGED_CABINET',(780,552)),('RECTANGLE',(400,400))]):
         model=product_models.save(data,tenant,{'name':'FIXTURE '+kind,
             'family':'cabinet' if kind=='HINGED_CABINET' else 'coaster','geometry':kind,
             'widthMm':424. if kind=='HINGED_CABINET' else 100.,
@@ -56,7 +58,8 @@ def main():
             time.sleep(.5)
         p.terminate();raise RuntimeError('Server timeout')
     evidence={'evidenceId':eid,'codeCommit':sha,'workingTreeClean':True,'inputTruth':'SYNTHETIC_STATIC_FIXTURE',
-              'physicalPrintValidated':False,'productionReady':False,'generations':[]}
+              'physicalPrintValidated':False,'physicalProductGeometryTruth':False,'globalProductionReady':False,
+              'productionReady':False,'generations':[],'round2':round2,'batches':[]}
     try:
         proc=start()
         with httpx.Client(base_url=url,headers={'X-Tenant-Id':tenant},timeout=180,trust_env=False) as client:
@@ -65,7 +68,7 @@ def main():
                 mid=item['id'];path='/api/product-models/'+mid
                 surfaces=client.get(path+'/composition').json()['surfaces'];selections=[]
                 for aindex,asset in enumerate(assets[index]):
-                    for scene in (['STUDIO','WARM_ROOM'] if index==0 else ['STUDIO']):
+                    for scene in (['STUDIO','WARM_ROOM'] if index==0 and not round2 else ['STUDIO']):
                         selections.append({'sku':f'FIXTURE-{aindex+1}','scene':scene,
                             'placements':[{'componentId':f['componentId'],'assetId':asset['id']} for f in surfaces if f['componentId']!='back']})
                 body={'expectedRevision':item['revision'],'inputHash':item['inputHash'],'assumptionsAccepted':True,
@@ -80,7 +83,13 @@ def main():
                     if state['state'] not in {'queued','running'}:break
                     time.sleep(3)
                 assert state['state']=='succeeded' and state['taskId']==task,state
-                assert all(r['state']=='succeeded' for r in state['batch']['rows'])
+                assert all(r['state']=='succeeded' and r['available'] for r in state['batch']['rows'])
+                batch_folder=c.folder_for(data,tenant,mid)/'batches'/task
+                evidence['batches'].append({'batchId':task,'modelId':mid,'identityVersion':b.IDENTITY_VERSION,
+                    'verifiedState':state['batch'],'request':read_json(batch_folder/'request.json'),
+                    'requestSha256':sha256_bytes((batch_folder/'request.json').read_bytes()),
+                    'terminal':read_json(batch_folder/'terminal.json'),
+                    'rowReceipts':[read_json(batch_folder/(str(i)+'.json')) for i in range(len(selections))]})
                 history=client.get(path+'/compositions').json()
                 assert history['total']==len(selections) and all(r['available'] for r in history['items'])
                 hashes=[];pixels=[]
@@ -93,28 +102,39 @@ def main():
                     for name in ['beauty.png','front-closed.png','model.glb','model.blend','geometry.json']:
                         client.get(path+'/composition/files/'+name,params={'workspace':tenant,'generation':gid}).raise_for_status()
                     assert manifest['renderInfo']['realBlender'] is True and manifest['renderInfo']['usedMock'] is False
+                    assert manifest['renderInfo']['blenderVersion']=='5.2.1 LTS'
+                    assert manifest['renderInfo']['device']=='OPTIX' and manifest['renderInfo']['realOptix'] is True
                     hashes.append(manifest['spec']['engineeringHash']);pixels.append(manifest['files']['beauty.png'])
                     evidence['generations'].append({'modelId':mid,'generationId':gid,'sku':row['sku'],'scene':row['scene'],
                         'renderInfo':manifest['renderInfo'],'files':manifest['files'],
                         'sizes':{n:(folder/n).stat().st_size for n in manifest['files']},
                         'geometryHash':hashes[-1],'jobId':manifest['jobId'],'requestedJobId':manifest['requestedJobId'],
-                        'cacheHit':manifest['cacheHit'],'blendReopen':True})
+                        'cacheHit':manifest['cacheHit'],'blendReopen':True,
+                        'publication':read_json(folder/'published.json'),'manifestSha256':sha256_bytes((folder/'manifest.json').read_bytes()),
+                        'finitePixels':Image.open(folder/'beauty.png').size==(800,800) and any(a!=z for a,z in Image.open(folder/'beauty.png').convert('RGB').getextrema())})
                 assert len(set(hashes))==1 and len(set(pixels))==len(selections)
                 print(json.dumps({'model':index,'generations':len(selections),'history':'PASS'}),flush=True)
             proc.terminate();proc.wait(timeout=30);proc=start()
             for index,item in enumerate(models):
                 path='/api/product-models/'+item['id'];history=client.get(path+'/compositions').json()
                 assert all(r['available'] for r in history['items'])
+                restored=client.get(path+'/composition');restored.raise_for_status()
+                assert restored.json()['batch']['available']
+                if round2:
+                    evidence['tamperMatrix']=round2_tamper_checks(client,path,data,tenant,item,restored.json())
                 gid=history['items'][0]['generationId']
                 # Change geometry after restart: all old variants become unavailable.
                 r=client.put(path,json={'expectedRevision':1,'draft':{**item['draft'],'widthMm':item['draft']['widthMm']+1}});r.raise_for_status()
                 assert all(not r['available'] for r in client.get(path+'/compositions').json()['items'])
+                assert client.get(path+'/composition').json()['batch']['available'] is False
                 assert client.get(path+'/composition/files/model.glb',params={'workspace':tenant,'generation':gid}).status_code==409
                 r=client.put(path,json={'expectedRevision':2,'draft':item['draft']});r.raise_for_status()
                 assert all(r['available'] for r in client.get(path+'/compositions').json()['items'])
                 asset_usage.classify(data,tenant,assets[index][0]['id'],'REFERENCE','Revoked fixture',1)
                 rows=client.get(path+'/compositions').json()['items']
                 assert all(r['available']==(r['sku']=='FIXTURE-2') for r in rows)
+                batch_state=client.get(path+'/composition').json()
+                assert batch_state['state']=='failed' and not batch_state['batch']['available']
                 invalid=next(r for r in rows if not r['available'])
                 assert client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':invalid['generationId']}).status_code==409
                 assert client.get(path+'/compositions',headers={'X-Tenant-Id':'other'}).status_code==404
@@ -127,4 +147,76 @@ def main():
         print(json.dumps({'evidenceFile':str(base/'evidence.json'),'status':evidence.get('status')}),flush=True)
 
 
-if __name__=='__main__':main()
+
+def round2_tamper_checks(client,path,data,tenant,item,state):
+    """REAL_LOGIC corruption trials against actual REAL published fixture outputs."""
+    import copy
+    from fox3d import model_compositions as c
+    from fox3d.recipe_3d import atomic_json,read_json
+    bid=state['taskId'];base=c.folder_for(data,tenant,item['id']);batch=base/'batches'/(bid+'.json')
+    anchor=base/'batches'/bid;original=batch.read_bytes();service=(base/'state.json').read_bytes()
+    terminal=(anchor/'terminal.json').read_bytes();results={}
+    for kind in ['batchId','tenant','master','masterHash','revision','selectionHash','version',
+                 'insert','delete','reorder','duplicateGeneration','malformedGeneration','sku','scene','truncation']:
+        record=json.loads(original)
+        if kind=='batchId':record['batchId']=str(uuid.uuid4())
+        if kind=='tenant':record['tenantId']='other'
+        if kind=='master':record['masterId']='other'
+        if kind=='masterHash':record['masterInputHash']='tampered'
+        if kind=='revision':record['sourceRevision']+=1
+        if kind=='selectionHash':record['selectionHash']='tampered'
+        if kind=='version':record.pop('identityVersion')
+        if kind=='insert':record['rows'].append(copy.deepcopy(record['rows'][0]))
+        if kind=='delete':record['rows'].pop()
+        if kind=='reorder':record['rows'].reverse()
+        if kind=='duplicateGeneration':record['rows'][0]['generationId']=record['rows'][1]['generationId']
+        if kind=='malformedGeneration':record['rows'][0]['generationId']='../escape'
+        if kind=='sku':record['rows'][0]['sku']='tampered'
+        if kind=='scene':record['rows'][0]['scene']='COOL_ROOM'
+        atomic_json(batch,record)
+        if kind=='truncation':batch.write_text('{',encoding='utf-8')
+        try:
+            response=client.get(path+'/composition');assert response.status_code==422,response.text
+            results[kind]={'status':'BLOCK','http':response.status_code}
+        finally:batch.write_bytes(original)
+    gid=state['batch']['rows'][0]['generationId'];target=base/'generations'/gid
+    for filename in ['published.json','manifest.json']:
+        file=target/filename;raw=file.read_bytes()
+        try:
+            file.write_text('{}',encoding='utf-8')
+            response=client.get(path+'/composition');response.raise_for_status();bad=response.json()
+            assert bad['state']=='failed' and not bad['batch']['rows'][0]['available']
+            download=client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid})
+            assert download.status_code==409
+            results[filename]={'status':'BLOCK','downloadHttp':409}
+        finally:file.write_bytes(raw)
+    for mode in ['cancelled','interrupted']:
+        ending=json.loads(terminal);ending['state']=mode;atomic_json(anchor/'terminal.json',ending)
+        try:
+            assert client.get(path+'/composition').status_code==422
+            results[mode+'Resurrection']={'status':'BLOCK'}
+        finally:(anchor/'terminal.json').write_bytes(terminal)
+    # Simulated interrupted row with a stray real publication: no terminal receipt,
+    # no replay, no conversion to succeeded merely because a manifest is present.
+    row_receipt=anchor/'1.json';receipt=row_receipt.read_bytes()
+    try:
+        row_receipt.unlink();(anchor/'terminal.json').unlink()
+        interrupted=json.loads(original);interrupted['rows'][1]['state']='running';atomic_json(batch,interrupted)
+        outer=json.loads(service);outer['state']='failed';atomic_json(base/'state.json',outer)
+        response=client.get(path+'/composition');response.raise_for_status();value=response.json()
+        assert value['state']=='interrupted'
+        assert [r['state'] for r in value['batch']['rows']]==['succeeded','interrupted']
+        assert value['batch']['rows'][0]['available'] and not value['batch']['rows'][1]['available']
+        results['simulatedInterruptedStateWithRealStrayPublication']={'status':'BLOCK_REPLAY','retainedCompleted':True,'input':'SIMULATED_INTERRUPTION_REAL_ARTIFACTS'}
+    finally:
+        batch.write_bytes(original);row_receipt.write_bytes(receipt)
+        (anchor/'terminal.json').write_bytes(terminal);(base/'state.json').write_bytes(service)
+    restored=client.get(path+'/composition');restored.raise_for_status();assert restored.json()['batch']['available']
+    results['restoredNonLatestDownload']={'status':'PASS'}
+    client.get(path+'/composition/files/beauty.png',params={'workspace':tenant,'generation':gid}).raise_for_status()
+    return results
+
+if __name__=='__main__':
+    import argparse
+    parser=argparse.ArgumentParser();parser.add_argument('--round2',action='store_true')
+    main(round2=parser.parse_args().round2)
