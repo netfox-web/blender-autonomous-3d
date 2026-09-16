@@ -40,6 +40,8 @@ def resolve(scene, master, spec, placement='AUTO', view='THREE_QUARTER'):
     box('SideWall', (.12,6,3.1), (-3,0,1.55), (.64,.66,.61), .0)
     if scene == 'LIVING_ROOM':
         box('SofaBase',(1.8,.72,.27),(-1.48,.95,.32),teal,.065)
+        for x in (-2.12,-.84):
+            for y in (.7,1.18): box('SofaFoot'+str((x,y)),(.075,.075,.19),(x,y,.095),oak,.008)
         box('SofaBack',(1.8,.18,.58),(-1.48,1.23,.73),teal,.065)
         for x in (-2.31,-.65): box('SofaArm'+str(x),(.16,.78,.49),(x,.94,.51),teal,.045)
         for x in (-1.9,-1.1): box('Cushion'+str(x),(.72,.58,.14),(x,.89,.52),(.2,.35,.31),.05)
@@ -55,16 +57,17 @@ def resolve(scene, master, spec, placement='AUTO', view='THREE_QUARTER'):
         box('LampShade',(.4,.4,.32),(1.35,1.05,1.48),(.84,.72,.48),.06)
     else:
         # Keep the central floor slot clear; the back counter is behind the product.
-        cy = 0 if slot=='SURFACE' else 1.15
+        cy = 0 if slot=='SURFACE' else 1.23
         box('BaseCabinet',(2.8,.65,.82),(0,cy,.43),(.18,.29,.27),.012)
+        box('CabinetPlinth',(2.68,.57,.1),(0,cy,.05),(.12,.19,.18),.006)
         box('Worktop',(2.9,.72,.055),(0,cy,.8725),(.77,.73,.62),.014)
         for x in (-1.02,-.34,.34,1.02):
             box('CabinetDoor'+str(x),(.66,.022,.7),(x,cy-.34,.46),(.24,.36,.33),.006)
             box('Handle'+str(x),(.18,.022,.015),(x,cy-.36,.72),(.055,.065,.058),.002)
-        box('Backsplash',(2.9,.03,.6),(0,1.56,1.2),(.63,.65,.57),.0)
-        for x in (-.98,0,.98): box('UpperCabinet'+str(x),(.94,.32,.64),(x,1.35,2.02),white,.012)
+        box('Backsplash',(2.9,.03,.6),(0,1.575,1.2),(.63,.65,.57),.0)
+        for x in (-.98,0,.98): box('UpperCabinet'+str(x),(.94,.32,.64),(x,1.43,2.02),white,.012)
         # Props are outside the product slot, never over its artwork.
-        box('ChoppingBoard',(.3,.035,.4),(-1.08,cy+.21,1.12),oak,.025)
+        box('ChoppingBoard',(.3,.035,.4),(-1.08,cy+.21,1.1),oak,.025)
         box('Canister',(.15,.15,.24),(1.03,cy,.9+.12),(.48,.31,.13),.035)
         box('CanisterLid',(.16,.16,.025),(1.03,cy,1.1525),oak,.008)
     extent=max(w,h if flat else d,h if not flat else .0)
