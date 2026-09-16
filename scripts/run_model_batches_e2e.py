@@ -13,7 +13,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 
 
-def main():
+def main(*, scene_mode=False):
     import httpx
     from PIL import Image, ImageDraw
     from fox3d import print_assets, asset_usage, product_models, model_compositions as c
@@ -22,7 +22,7 @@ def main():
     if subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip():
         raise SystemExit('Formal acceptance requires clean CODE')
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
-    eid=str(uuid.uuid4());base=ROOT/'.fox3d-work'/'batches'/eid[:8];base.mkdir(parents=True)
+    eid=str(uuid.uuid4());base=ROOT/'.fox3d-work'/('scenes' if scene_mode else 'batches')/eid[:8];base.mkdir(parents=True)
     data=base/'d';tenant='sonaqueen-home';models=[];assets=[]
     for kind,size in [('HINGED_CABINET',(780,552)),('RECTANGLE',(400,400))]:
         model=product_models.save(data,tenant,{'name':'FIXTURE '+kind,
@@ -56,7 +56,7 @@ def main():
             time.sleep(.5)
         p.terminate();raise RuntimeError('Server timeout')
     evidence={'evidenceId':eid,'codeCommit':sha,'workingTreeClean':True,'inputTruth':'SYNTHETIC_STATIC_FIXTURE',
-              'physicalPrintValidated':False,'productionReady':False,'generations':[]}
+              'physicalPrintValidated':False,'productionReady':False,'generations':[],'sceneMode':scene_mode}
     try:
         proc=start()
         with httpx.Client(base_url=url,headers={'X-Tenant-Id':tenant},timeout=180,trust_env=False) as client:
@@ -65,8 +65,9 @@ def main():
                 mid=item['id'];path='/api/product-models/'+mid
                 surfaces=client.get(path+'/composition').json()['surfaces'];selections=[]
                 for aindex,asset in enumerate(assets[index]):
-                    for scene in (['STUDIO','WARM_ROOM'] if index==0 else ['STUDIO']):
+                    for scene in (['LIVING_ROOM','KITCHEN'] if scene_mode else (['STUDIO','WARM_ROOM'] if index==0 else ['STUDIO'])):
                         selections.append({'sku':f'FIXTURE-{aindex+1}','scene':scene,
+                            **({'view':'LEFT' if aindex else 'THREE_QUARTER'} if scene_mode else {}),
                             'placements':[{'componentId':f['componentId'],'assetId':asset['id']} for f in surfaces if f['componentId']!='back']})
                 body={'expectedRevision':item['revision'],'inputHash':item['inputHash'],'assumptionsAccepted':True,
                       'batch':{'name':'REAL batch fixture','selections':selections}}
@@ -83,7 +84,7 @@ def main():
                 assert all(r['state']=='succeeded' for r in state['batch']['rows'])
                 history=client.get(path+'/compositions').json()
                 assert history['total']==len(selections) and all(r['available'] for r in history['items'])
-                hashes=[];pixels=[]
+                hashes=[];pixels=[];actual_geometry=[]
                 for row in history['items']:
                     gid=row['generationId'];folder=c.folder_for(data,tenant,mid)/'generations'/gid
                     manifest=c.generation(data,tenant,mid,gid,item)
@@ -94,12 +95,25 @@ def main():
                         client.get(path+'/composition/files/'+name,params={'workspace':tenant,'generation':gid}).raise_for_status()
                     assert manifest['renderInfo']['realBlender'] is True and manifest['renderInfo']['usedMock'] is False
                     hashes.append(manifest['spec']['engineeringHash']);pixels.append(manifest['files']['beauty.png'])
+                    actual_geometry.append((folder/'geometry.json').read_bytes())
+                    if scene_mode:
+                        import math
+                        from PIL import ImageStat
+                        from fox3d.scene_templates import validate_observation
+                        observation=json.loads((folder/'golden-observation.json').read_text(encoding='utf-8'))
+                        validate_observation(manifest,observation)
+                        image=Image.open(folder/'beauty.png')
+                        stats=ImageStat.Stat(image)
+                        assert image.size==(800,800) and all(math.isfinite(v) for pair in stats.extrema for v in pair) and max(stats.stddev)>5
+                        assert manifest['renderInfo']['realOptix'] is True
                     evidence['generations'].append({'modelId':mid,'generationId':gid,'sku':row['sku'],'scene':row['scene'],
                         'renderInfo':manifest['renderInfo'],'files':manifest['files'],
                         'sizes':{n:(folder/n).stat().st_size for n in manifest['files']},
                         'geometryHash':hashes[-1],'jobId':manifest['jobId'],'requestedJobId':manifest['requestedJobId'],
-                        'cacheHit':manifest['cacheHit'],'blendReopen':True})
+                        'cacheHit':manifest['cacheHit'],'blendReopen':True,
+                        **({'sceneHash':manifest['sceneHash'],'sceneObservation':observation['presentationScene'],'finitePixels':True} if scene_mode else {})})
                 assert len(set(hashes))==1 and len(set(pixels))==len(selections)
+                assert len(set(actual_geometry))==1
                 print(json.dumps({'model':index,'generations':len(selections),'history':'PASS'}),flush=True)
             proc.terminate();proc.wait(timeout=30);proc=start()
             for index,item in enumerate(models):

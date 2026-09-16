@@ -1,0 +1,2005 @@
+{
+  "evidenceId": "595824b2-ee68-495a-b00a-1b3d39273ee6",
+  "codeCommit": "0c4039fcea18ce15c0f7b414db5972b048ed1f05",
+  "workingTreeClean": true,
+  "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
+  "physicalPrintValidated": false,
+  "productionReady": false,
+  "generations": [
+    {
+      "modelId": "9512d730-9d96-48db-b3f1-c5657cf5cf06",
+      "generationId": "4c2a3aea-f848-40f8-aa11-ee2d0d425ae3",
+      "sku": "FIXTURE-2",
+      "scene": "KITCHEN",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "728f089545fa2c87b4196a5a49b9907adb779d55667b4646dcb9c22f2054f1ab",
+        "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "front-closed.png": "d5e0aadda26d8430698eccbaa08b5f529ea338d9615eeaaec28e85ae9e4be1b4",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "5904fb0c0d34ef0c64bde5848f92d8e17286cd1fd0f0816fa866d0bf85d9bb96",
+        "model.blend": "2f0e3087e45774c50740e87684fe35d91ddf6c1b57b1dc336f71b2e057c72a35",
+        "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
+      },
+      "sizes": {
+        "beauty.png": 663309,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 647382,
+        "geometry.json": 1637,
+        "golden-observation.json": 8358,
+        "model.blend": 1669914,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "2ac32b71-d1cf-4346-ac40-a35a9e2cde33",
+      "requestedJobId": "2ac32b71-d1cf-4346-ac40-a35a9e2cde33",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "5ff04079a7332ef1a7e206e310f3845255b85964694c1966ba7e828e0ac0599a",
+      "sceneObservation": {
+        "sceneHash": "5ff04079a7332ef1a7e206e310f3845255b85964694c1966ba7e828e0ac0599a",
+        "templateId": "KITCHEN",
+        "version": 1,
+        "slot": "FLOOR",
+        "view": "LEFT",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "left",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                -0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "right",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "top",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.8924999833106995
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "bottom",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.007499999832361937
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "back",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.1459999978542328
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.30250000953674316
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.1550000011920929
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.5975000262260437
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_3",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.7450000047683716
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 22,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "9512d730-9d96-48db-b3f1-c5657cf5cf06",
+      "generationId": "0dd77a39-62c7-4fee-9c86-a00bf4015980",
+      "sku": "FIXTURE-2",
+      "scene": "LIVING_ROOM",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "6c496fbfe07bf37e109a4593ff63e74716355ff43791764d1e87966c4c0de368",
+        "door_1-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_2-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "door_3-preview.png": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+        "front-closed.png": "bb49e47aa9f8774fbce184adb49281b9cbeb37ec1df68bdaf25da72470eef0f5",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "56b8a9e6f9b2b22480be9e4ef5926aa6318212dfdbcb31eaebb38767ad035879",
+        "model.blend": "2573baf47777bf7a72c5aa43de79e15ba3faa868dc0899aaa6f03f9c44ecdfee",
+        "model.glb": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
+      },
+      "sizes": {
+        "beauty.png": 658688,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 647469,
+        "geometry.json": 1637,
+        "golden-observation.json": 8362,
+        "model.blend": 1757596,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "2b6220a2-c4a5-41db-865d-0ddffa5be76b",
+      "requestedJobId": "2b6220a2-c4a5-41db-865d-0ddffa5be76b",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "9574986d3154f9e39770cbff8f353b48cfd37d1e87e40d7ec42df70554488eb7",
+      "sceneObservation": {
+        "sceneHash": "9574986d3154f9e39770cbff8f353b48cfd37d1e87e40d7ec42df70554488eb7",
+        "templateId": "LIVING_ROOM",
+        "version": 1,
+        "slot": "FLOOR",
+        "view": "LEFT",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "left",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                -0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "right",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "top",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.8924999833106995
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "bottom",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.007499999832361937
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "back",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.1459999978542328
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.30250000953674316
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.1550000011920929
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.5975000262260437
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_3",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.7450000047683716
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 25,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "9512d730-9d96-48db-b3f1-c5657cf5cf06",
+      "generationId": "bcf5b84f-3516-45fc-84d2-687bfc8f2428",
+      "sku": "FIXTURE-1",
+      "scene": "KITCHEN",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "16d4bb1a09b423962f83ca9cb472b300de550f04f437806d42a64be8ed6b2425",
+        "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "front-closed.png": "0229754edc8f5f77b2b5641127dcffde84d5e6e4b495056d426e403ff1299c59",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "51864e156343675ef7bcb7fccefad5245743bc919c382247840b6c9e0258ff80",
+        "model.blend": "f5ff6adee879047036a91ccb8011f8aabe6f04bd8e2eecf54769fca8bbe0c048",
+        "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
+      },
+      "sizes": {
+        "beauty.png": 667474,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 648423,
+        "geometry.json": 1637,
+        "golden-observation.json": 8367,
+        "model.blend": 1669922,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "94af4da9-d719-48b6-a314-24244a6c5f13",
+      "requestedJobId": "94af4da9-d719-48b6-a314-24244a6c5f13",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "1c3e7a9d8cbea78c9f02510bba1ab642db42f1be149b80a052f79218b713606f",
+      "sceneObservation": {
+        "sceneHash": "1c3e7a9d8cbea78c9f02510bba1ab642db42f1be149b80a052f79218b713606f",
+        "templateId": "KITCHEN",
+        "version": 1,
+        "slot": "FLOOR",
+        "view": "THREE_QUARTER",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "left",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                -0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "right",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "top",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.8924999833106995
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "bottom",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.007499999832361937
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "back",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.1459999978542328
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.30250000953674316
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.1550000011920929
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.5975000262260437
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_3",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.7450000047683716
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 22,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "9512d730-9d96-48db-b3f1-c5657cf5cf06",
+      "generationId": "ffd4f3da-518c-4290-8c51-1517b18f1dea",
+      "sku": "FIXTURE-1",
+      "scene": "LIVING_ROOM",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "2b19f9097beb94fbaf152dd802ca83038c62272b9fa8e02c22442146230f376d",
+        "door_1-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_2-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "door_3-preview.png": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+        "front-closed.png": "0d467ffd21bcf9bf8c5305304a5a6016d4d8ddd64b1382969b2480cab533daa6",
+        "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+        "golden-observation.json": "84d8acee2f4a1178bdf07042887158bad5cb5a75edfaa280825e5cb1236e99bd",
+        "model.blend": "3194a6fede3d54c8c5e476102066bf7cf382265b0cf1834957ad2511d22c6ba4",
+        "model.glb": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
+      },
+      "sizes": {
+        "beauty.png": 669255,
+        "door_1-preview.png": 2473,
+        "door_2-preview.png": 2473,
+        "door_3-preview.png": 2473,
+        "front-closed.png": 648392,
+        "geometry.json": 1637,
+        "golden-observation.json": 8371,
+        "model.blend": 1757604,
+        "model.glb": 27960
+      },
+      "geometryHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+      "jobId": "b63169a3-e6a8-4454-af69-600c7fc5e065",
+      "requestedJobId": "b63169a3-e6a8-4454-af69-600c7fc5e065",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "4113e367a82601e0420415fcf8cf08bfdc59cbd9f8af040f46d50b3f5fb59092",
+      "sceneObservation": {
+        "sceneHash": "4113e367a82601e0420415fcf8cf08bfdc59cbd9f8af040f46d50b3f5fb59092",
+        "templateId": "LIVING_ROOM",
+        "version": 1,
+        "slot": "FLOOR",
+        "view": "THREE_QUARTER",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "left",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                -0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "right",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.2045000046491623
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "top",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.8924999833106995
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "bottom",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.007499999832361937
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "back",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.1459999978542328
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.30250000953674316
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_1",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.1550000011920929
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "shelf_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                0.007000000216066837
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.5975000262260437
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_2",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.44999998807907104
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          },
+          {
+            "componentId": "door_3",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0,
+                -0.14000000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.7450000047683716
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 25,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "53f17bbd-6234-499a-bed0-0de26851153d",
+      "generationId": "8fce7b15-3bdb-4d2b-8bbc-4836c72ec15f",
+      "sku": "FIXTURE-2",
+      "scene": "KITCHEN",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "89d4a148b21247ab0942963ee227bfcbefad85806fdda3aa48bba313045bcbef",
+        "front-closed.png": "817a834296cb9704da5718d0f00423183e92afaa3c59ce392fed21b284fca294",
+        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "golden-observation.json": "85a56c8b72116862a515f3bada418b4437e4681b798255bd81afb62cdb2b8424",
+        "model.blend": "a9d8eed9dee6344027c92dd7372639a921b0935bba89c1a6d466073fd31635ec",
+        "model.glb": "d480acc022556bccd3c2e146856a85a9db989f802d5f91936b5e00ae1232961a",
+        "surface-preview.png": "b5304da2741eeaf155b161b282b84d1bb0ef6e831147152d9920c475f350c575"
+      },
+      "sizes": {
+        "beauty.png": 655271,
+        "front-closed.png": 626012,
+        "geometry.json": 210,
+        "golden-observation.json": 2456,
+        "model.blend": 1313137,
+        "model.glb": 4644,
+        "surface-preview.png": 1422
+      },
+      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+      "jobId": "b5ea96be-70a0-4254-bcc5-8d872fca6671",
+      "requestedJobId": "b5ea96be-70a0-4254-bcc5-8d872fca6671",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "b03ab655abb4b0a4c0d12e869d02b8474ab79d0060dddf5f25e455514e0f3c34",
+      "sceneObservation": {
+        "sceneHash": "b03ab655abb4b0a4c0d12e869d02b8474ab79d0060dddf5f25e455514e0f3c34",
+        "templateId": "KITCHEN",
+        "version": 1,
+        "slot": "SURFACE",
+        "view": "LEFT",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -0.05
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0,
+            0.9025
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "surface",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                -1.0,
+                0.0,
+                0.9024999737739563
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 22,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "53f17bbd-6234-499a-bed0-0de26851153d",
+      "generationId": "b47f56d3-fa1d-4c77-8e41-37d879880a06",
+      "sku": "FIXTURE-2",
+      "scene": "LIVING_ROOM",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "dfc25d582d3a87fdd44dda8f6b0155fcd8ac2b85225b3b6f0cd647d5c6ece8ac",
+        "front-closed.png": "b1b8d835f9cd0bf569604c4a144dc2cf75ddb69e6b79f896eddd640d58f75426",
+        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "golden-observation.json": "9cabdd6c7e31b848e67c4d7c5b72540d358141e1853cc9a7c60b37ffd6c8a181",
+        "model.blend": "a8aa064c18bda4049ccf0a41c4df6ea20d1d973ff6779c778c1f77b571d2c385",
+        "model.glb": "d480acc022556bccd3c2e146856a85a9db989f802d5f91936b5e00ae1232961a",
+        "surface-preview.png": "b5304da2741eeaf155b161b282b84d1bb0ef6e831147152d9920c475f350c575"
+      },
+      "sizes": {
+        "beauty.png": 669921,
+        "front-closed.png": 625818,
+        "geometry.json": 210,
+        "golden-observation.json": 2460,
+        "model.blend": 1400811,
+        "model.glb": 4644,
+        "surface-preview.png": 1422
+      },
+      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+      "jobId": "57d6818f-79e1-42d3-93df-b55cab6392e9",
+      "requestedJobId": "57d6818f-79e1-42d3-93df-b55cab6392e9",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "6e3c65a3fe027b388c6e607b05f8a17ac28ba7312e420446d825257f20a1e2d4",
+      "sceneObservation": {
+        "sceneHash": "6e3c65a3fe027b388c6e607b05f8a17ac28ba7312e420446d825257f20a1e2d4",
+        "templateId": "LIVING_ROOM",
+        "version": 1,
+        "slot": "SURFACE",
+        "view": "LEFT",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -0.05
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0,
+            0.4625
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "surface",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                -1.0,
+                0.0,
+                0.4625000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 25,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "53f17bbd-6234-499a-bed0-0de26851153d",
+      "generationId": "cd8450ad-5c00-49fb-84d8-d80b83a57e74",
+      "sku": "FIXTURE-1",
+      "scene": "KITCHEN",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "0ed0084ef403eb9b7f9a6120f6bc9038f7495cf210522518861b65078b020de8",
+        "front-closed.png": "9c77350102736651ca7718a02795f0f4ef987bb21e325490b65b1e0666305f53",
+        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "golden-observation.json": "4fb5807d4a07ec1fdb18206f65bcf879e04ab03d19a62362ad93605111f1e2cf",
+        "model.blend": "92586268eefca1346ca99428221f8578b914ec601432ccbbd0af0387b24aba3a",
+        "model.glb": "bd499eab8bdb1b60338a01128542894b9033a7914ef1d9c8a6f28ebadac1cfb9",
+        "surface-preview.png": "36d8f6163d19d41cc9488627b57216886f0573eb000358add027a87c3cad867d"
+      },
+      "sizes": {
+        "beauty.png": 651150,
+        "front-closed.png": 627347,
+        "geometry.json": 210,
+        "golden-observation.json": 2465,
+        "model.blend": 1313145,
+        "model.glb": 4644,
+        "surface-preview.png": 1422
+      },
+      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+      "jobId": "bda2dd19-e774-4245-bc7c-4f1191c2e3e0",
+      "requestedJobId": "bda2dd19-e774-4245-bc7c-4f1191c2e3e0",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "11c54f8b133b909dda1e032e37989092c8ed508ea3103891670f2b9ba22d75b2",
+      "sceneObservation": {
+        "sceneHash": "11c54f8b133b909dda1e032e37989092c8ed508ea3103891670f2b9ba22d75b2",
+        "templateId": "KITCHEN",
+        "version": 1,
+        "slot": "SURFACE",
+        "view": "THREE_QUARTER",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -0.05
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0,
+            0.9025
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "surface",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                -1.0,
+                0.0,
+                0.9024999737739563
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 22,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    },
+    {
+      "modelId": "53f17bbd-6234-499a-bed0-0de26851153d",
+      "generationId": "f395e28f-fe6e-497a-abbe-e8337667fd37",
+      "sku": "FIXTURE-1",
+      "scene": "LIVING_ROOM",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "device": "OPTIX",
+        "blenderVersion": "5.2.1 LTS",
+        "realOptix": true
+      },
+      "files": {
+        "beauty.png": "168a6ba749ebc43fdbe51edd2fa02f6b0d365d646b6fc2a2d57ecd5981a70c79",
+        "front-closed.png": "3389a7892eee705625f2f6e47ecf4acbe7145683a73d06c6e3e8a28d214ce56d",
+        "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "golden-observation.json": "a63aa77638579e5026a2083632ddbbec6bcbad49d5069dac27566091dc185317",
+        "model.blend": "dfdbdacd9ab719000eda09d4a8d567c3970a5ce9c280861e1121f0b4e4008a64",
+        "model.glb": "bd499eab8bdb1b60338a01128542894b9033a7914ef1d9c8a6f28ebadac1cfb9",
+        "surface-preview.png": "36d8f6163d19d41cc9488627b57216886f0573eb000358add027a87c3cad867d"
+      },
+      "sizes": {
+        "beauty.png": 685486,
+        "front-closed.png": 627431,
+        "geometry.json": 210,
+        "golden-observation.json": 2469,
+        "model.blend": 1400819,
+        "model.glb": 4644,
+        "surface-preview.png": 1422
+      },
+      "geometryHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+      "jobId": "9afc4b6c-d9f9-4fdb-b2aa-9a8163c3851c",
+      "requestedJobId": "9afc4b6c-d9f9-4fdb-b2aa-9a8163c3851c",
+      "cacheHit": false,
+      "blendReopen": true,
+      "sceneHash": "c51d80562848cb98f7d6d58d4bb06ebf1d81f137a65f8828a5be9f47d51ff85b",
+      "sceneObservation": {
+        "sceneHash": "c51d80562848cb98f7d6d58d4bb06ebf1d81f137a65f8828a5be9f47d51ff85b",
+        "templateId": "LIVING_ROOM",
+        "version": 1,
+        "slot": "SURFACE",
+        "view": "THREE_QUARTER",
+        "productScale": 1.0,
+        "productMatrix": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            -0.05
+          ],
+          [
+            0.0,
+            -1.0,
+            0.0,
+            0.4625
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "products": [
+          {
+            "componentId": "surface",
+            "linkedMesh": true,
+            "matrixWorld": [
+              [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                -1.0,
+                0.0,
+                0.4625000059604645
+              ],
+              [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+              ]
+            ]
+          }
+        ],
+        "environmentCount": 25,
+        "physicalRoomTruth": false
+      },
+      "finitePixels": true
+    }
+  ],
+  "sceneMode": true,
+  "status": "PASS",
+  "geometryPreserved": true,
+  "variantPixelsDistinct": true,
+  "restartPreserved": true,
+  "staleBlocked": true,
+  "revokedBlocked": true,
+  "serialQueue": true,
+  "codeCi": {
+    "runId": 35051142918,
+    "jobs": [
+      {
+        "databaseId": 104651576406,
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "passMarkers": 958
+      },
+      {
+        "databaseId": 104651576695,
+        "name": "unit (ubuntu-latest)",
+        "conclusion": "success",
+        "passMarkers": 958
+      }
+    ]
+  },
+  "uiChecks": {
+    "localUrl": "http://127.0.0.1:8791/admin/recipes/models",
+    "masterInventory": "21 masters / 4 previews / 17 drafts unchanged",
+    "checks": [
+      "existing master selected",
+      "living room and kitchen added together with LEFT camera",
+      "duplicate blocked",
+      "same SKU and scenes with FRONT camera accepted",
+      "4 pending rows cleared",
+      "no JS console errors",
+      "screenshot layout checked"
+    ],
+    "realGenerationSubmittedInUserData": false
+  },
+  "scope": {
+    "furnishedTemplates": [
+      "LIVING_ROOM",
+      "KITCHEN"
+    ],
+    "templateVersion": 1,
+    "physicalRoomTruth": false,
+    "liveMachineActions": false,
+    "pr13Modified": false,
+    "basePr": 15,
+    "pr": 16
+  }
+}

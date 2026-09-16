@@ -813,6 +813,7 @@ def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0,
                     shader.inputs["Base Color"].default_value = (0.55, 0.38, 0.20, 1)
                     shader.inputs["Roughness"].default_value = 0.65
             preset = engineering.get("nasScene")
+            if engineering.get("sceneDefinition"): preset = "STUDIO"
             if preset in {"STUDIO", "WARM_ROOM", "COOL_ROOM"}:
                 # Decorative environment never changes product meshes or export selection.
                 colors = {"STUDIO": (0.92, 0.92, 0.92, 1),
@@ -1616,8 +1617,21 @@ def build_and_render(job: dict) -> dict:
     cam = job.get("camera") if isinstance(job.get("camera"), dict) else {}
     if cam.get("location") and (cam.get("lookAt") or cam.get("target")):
         _add_camera(tuple(cam["location"]), tuple(cam.get("lookAt") or cam.get("target")), float(cam.get("focalLengthMm") or 85))
+    room_scene = None
+    room_observation = None
+    if (job.get("engineering") or {}).get("sceneDefinition"):
+        # Presentation is a separate scene sharing exact product mesh/UV datablocks.
+        import importlib.util
+        module_spec = importlib.util.spec_from_file_location("furnished_scene", Path(__file__).with_name("furnished_scene.py"))
+        room_module = importlib.util.module_from_spec(module_spec); module_spec.loader.exec_module(room_module)
+        room_scene, room_observation = room_module.build(created, job["engineering"]["sceneDefinition"], used_device, job["engineering"]["sceneHash"])
     want_aov = bool(job.get("aovs") or mode in {"SYNTHETIC_DATA"} or job.get("passes") or job.get("productTruthAovs"))
-    png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
+    canonical_scene = bpy.context.scene
+    try:
+        if room_scene is not None: bpy.context.window.scene = room_scene
+        png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
+    finally:
+        bpy.context.window.scene = canonical_scene
     found = png_path if png_path.exists() and png_path.stat().st_size >= 32 else _find_beauty_png(Path(job.get("workDir") or ".").resolve())
     if found is None or not found.exists() or found.stat().st_size < 32:
         return {"status": "failed", "error": "no PNG written", "realBlender": True, "workDir": job.get("workDir")}
@@ -1755,6 +1769,7 @@ def build_and_render(job: dict) -> dict:
     if job.get("exportBlend"):
         blend_path = Path(job.get("workDir") or ".") / "model.blend"
         try:
+            if room_scene is not None: bpy.context.window.scene = room_scene
             if job.get("recipePreview"):
                 bpy.ops.wm.save_as_mainfile(filepath=str(blend_path), compress=False)
             else:
@@ -1763,6 +1778,8 @@ def build_and_render(job: dict) -> dict:
                 outputs["model.blend"] = str(blend_path)
         except Exception:
             pass
+        finally:
+            bpy.context.window.scene = canonical_scene
     if job.get("exportGlb"):
         glb_path = Path(job.get("workDir") or ".") / "model.glb"
         try:
@@ -1771,7 +1788,8 @@ def build_and_render(job: dict) -> dict:
                 for obj in created.values():
                     if obj.type == "MESH" and obj.get("recipeComponentId"):
                         obj.select_set(True)
-            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selection=bool(job.get("recipePreview")))
+            bpy.ops.export_scene.gltf(filepath=str(glb_path), export_format="GLB", use_selection=bool(job.get("recipePreview")),
+                                      use_active_scene=room_scene is not None)
             if glb_path.exists():
                 outputs["model.glb"] = str(glb_path)
         except Exception:
@@ -1790,6 +1808,7 @@ def build_and_render(job: dict) -> dict:
                 "packageHash":job["goldenIdentity"]["packageHash"],
                 "engineeringHash":job["engineering"]["engineeringHash"],"usedMock":False,
                 "jobId":job.get("jobId"),"artwork":applied_placements}
+            if room_observation is not None: observation["presentationScene"] = room_observation
             observation_path = Path(job["workDir"]) / "golden-observation.json"
             _write_json(observation_path,observation)
             outputs["golden-observation.json"] = str(observation_path)

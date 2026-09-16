@@ -73,6 +73,9 @@ def validate(folder):
             raise ValueError('3D 預覽檔案已變更')
     validate_outputs(folder,m['spec'])
     validate_worker_observation(read_json(folder/'golden-observation.json'),m['package'],m['spec'])
+    if m['spec'].get('sceneDefinition'):
+        from fox3d.scene_templates import validate_observation
+        validate_observation(m,read_json(folder/'golden-observation.json'))
     if m['renderInfo'].get('realBlender') is not True or m['renderInfo'].get('usedMock') is not False:
         raise ValueError('需要真實 Blender 成果')
     return m
