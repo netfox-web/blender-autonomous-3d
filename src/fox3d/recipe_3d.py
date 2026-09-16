@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import shutil
 import struct
+import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,17 +19,71 @@ from fox3d.pngutil import is_png
 
 ADAPTER_VERSION = "recipe-preview-2"
 FILES = {"png": "beauty.png", "blend": "model.blend", "glb": "model.glb", "geometry": "geometry.json"}
+_ATOMIC_RETRY_DELAYS = (.025, .05, .1, .2, .2, .2, .2)
 
 
 def input_hash(draft):
     return stable_hash({"adapter": ADAPTER_VERSION, "draft": draft})
 
 
+def _delete_sharing_error(path):
+    """Probe DELETE sharing without deleting or changing the destination."""
+    import ctypes
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path.resolve()), 0x10000, 0x1 | 0x2 | 0x4, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        return ctypes.get_last_error()
+    if not kernel.CloseHandle(handle):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return 0
+
+
+def _windows_replace_contention(error, path):
+    if sys.platform != 'win32':
+        return False
+    code = getattr(error, 'winerror', None)
+    if code in (32, 33):  # ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION
+        return True
+    # MoveFileEx may report access denied for a delete-sharing lock. Do not
+    # retry a bare permission denial, read-only path or ACL/policy failure.
+    return code == 5 and _delete_sharing_error(path) in (32, 33)
+
+
 def atomic_json(path, value):
+    """Same-directory atomic replace; bounded Windows contention retries only."""
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + "." + new_id()[:8] + ".tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
-    temporary.replace(path)
+    owned = False
+    try:
+        with temporary.open('x', encoding='utf-8') as stream:
+            owned = True
+            stream.write(json.dumps(value, ensure_ascii=False, indent=2))
+        for attempt in range(len(_ATOMIC_RETRY_DELAYS) + 1):
+            try:
+                temporary.replace(path)
+                break
+            except OSError as error:
+                if attempt == len(_ATOMIC_RETRY_DELAYS) or not _windows_replace_contention(error, path):
+                    raise
+                logging.getLogger(__name__).warning(
+                    'Transient Windows atomic replace contention (winerror=%s, retry=%s/%s)',
+                    error.winerror, attempt + 1, len(_ATOMIC_RETRY_DELAYS))
+                time.sleep(_ATOMIC_RETRY_DELAYS[attempt])
+    except BaseException as failure:
+        if owned:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError as cleanup_error:
+                raise failure from cleanup_error
+        raise
+    else:
+        temporary.unlink(missing_ok=True)
 
 
 def read_json(path):

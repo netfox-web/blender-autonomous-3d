@@ -159,7 +159,10 @@ def main(*, round2=False, round3=False):
     except Exception as exc:evidence.update(status='FAIL',error=str(exc));raise
     finally:
         if proc and proc.poll() is None:proc.terminate();proc.wait(timeout=30)
-        atomic_json(base/'evidence.json',evidence);log.close()
+        log.close()
+        evidence['persistenceContentionRetries']=(base/'server.log').read_text(encoding='utf-8').count('Transient Windows atomic replace contention')
+        evidence['atomicProgressWrites']='PASS' if evidence.get('status')=='PASS' else 'FAIL'
+        atomic_json(base/'evidence.json',evidence)
         print(json.dumps({'evidenceFile':str(base/'evidence.json'),'status':evidence.get('status')}),flush=True)
 
 
