@@ -13,6 +13,24 @@ from fox3d.recipe_3d import (
 )
 
 
+def _same_state_identity(current, expected):
+    """Compare serialized identity types and optional-key presence without coercion."""
+    if type(current) is not dict or type(expected) is not dict:
+        return False
+    for key in ('taskId', 'inputHash'):
+        if (key not in current or key not in expected
+                or type(current[key]) is not str or type(expected[key]) is not str
+                or current[key] != expected[key]):
+            return False
+    if ('batchVersion' in current) != ('batchVersion' in expected):
+        return False
+    if 'batchVersion' in expected:
+        return (type(current['batchVersion']) is int
+                and type(expected['batchVersion']) is int
+                and current['batchVersion'] == expected['batchVersion'])
+    return True
+
+
 def scavenge_state_temps(path, owner):
     """Remove only dead outer-state atomic debris under this workspace's guard.
 
@@ -70,7 +88,7 @@ class RecipePreviewService:
     @staticmethod
     def _write_owned(path, state, owner):
         current = read_json(path)
-        if not owner.held or any(current.get(k) != state.get(k) for k in ("taskId", "inputHash", "batchVersion")):
+        if not owner.held or owner.stream.closed or not _same_state_identity(current, state):
             raise ValueError("生成工作身分已變更，拒絕舊工作覆寫狀態")
         atomic_json(path, state)
 
