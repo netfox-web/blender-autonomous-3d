@@ -32,7 +32,9 @@ def test_room_changes_context_not_product_or_uv(tmp_path,scene):
     definition=p['spec']['sceneDefinition']
     assert definition['slot']=='SURFACE' and definition['productScale']==1.
     assert definition['supportHeightM']==(.46 if scene=='LIVING_ROOM' else .9)
-    assert definition['productMatrix'][2][1]==1  # artwork -Y normal faces upward
+    pose=definition['productMatrix']
+    front_normal=[0.,-1.,0.]
+    assert [sum(pose[i][j]*front_normal[j] for j in range(3)) for i in range(3)]==[0.,0.,1.]
 
 
 @pytest.mark.parametrize('change',['hash','version','pose','mesh','missing','scale','environment'])
@@ -73,8 +75,8 @@ def test_mat_lies_on_floor_without_scaling(tmp_path,scene):
     assert definition['supportHeightM']==0. and definition['productScale']==1.
     pose=definition['productMatrix']
     # The two thickness faces become bottom/top exactly at z=0 and z=5 mm.
-    assert pose[2][1]*(-.0025)+pose[2][3]==0.
-    assert pose[2][1]*(.0025)+pose[2][3]==.005
+    assert pose[2][1]*(.0025)+pose[2][3]==0.
+    assert pose[2][1]*(-.0025)+pose[2][3]==.005
 
 
 @pytest.mark.parametrize('case',['wrong_slot','oversize','unsupported','invalid_view','unknown_scene'])

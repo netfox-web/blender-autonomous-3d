@@ -28,7 +28,7 @@ def resolve(scene, master, spec, placement='AUTO', view='THREE_QUARTER'):
     if any(a > b for a, b in zip(occupied, limits)):
         raise ValueError('商品超出此場景的擺放空間；不會自動縮放，請改用棚拍或其他場景')
     support = (0.46 if scene == 'LIVING_ROOM' else .9) if slot == 'SURFACE' else 0.
-    transform = ([[1., 0., 0., 0.], [0., 0., -1., h/2], [0., 1., 0., support+d/2], [0., 0., 0., 1.]]
+    transform = ([[1., 0., 0., 0.], [0., 0., 1., -h/2], [0., -1., 0., support+d/2], [0., 0., 0., 1.]]
                  if flat else [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.], [0., 0., 0., 1.]])
     boxes = []
     def box(name, size, location, color, bevel=.015):
