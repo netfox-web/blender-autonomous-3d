@@ -10,7 +10,7 @@ from fox3d.artwork import final_uv_identity
 from fox3d.golden_product import build_golden, GoldenRecipe, Measurement, validate_worker_observation
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import read_json, atomic_json, input_hash, validate_outputs
-from fox3d.durability import publish_binary
+from fox3d.durability import publish_binary, publish_bytes
 from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail
 
@@ -46,7 +46,9 @@ def prepare(root,tenant,p,folder):
         im=Image.open(io.BytesIO(raw)).rotate(-row['rotation'],expand=True)
         left,bottom,right,top=row['trimBoxMm'];w,h=row['widthMm'],row['heightMm']
         box=(round(left/w*im.width),round((h-top)/h*im.height),round(right/w*im.width),round((h-bottom)/h*im.height))
-        trim=im.crop(box);name=part['componentId']+'-preview.png';target=folder/name;trim.save(target,format='PNG')
+        trim=im.crop(box);name=part['componentId']+'-preview.png';target=folder/name
+        publish_bytes(lambda stream: trim.save(stream,format='PNG'), target)
+        with Image.open(target) as decoded: decoded.verify()
         digest=sha256_bytes(target.read_bytes());uv={'u0':0.,'v0':0.,'u1':1.,'v1':1.}
         item={'componentId':part['componentId'],'objectName':part['partName'],'face':'FRONT',
               'engineeringHash':spec['engineeringHash'],'artworkHash':art_hash,'surfaceHash':stable_hash(row),

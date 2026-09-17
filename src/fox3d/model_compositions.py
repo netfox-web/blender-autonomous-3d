@@ -15,7 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.durability import publish_binary
+from fox3d.durability import publish_binary, publish_bytes
 from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
@@ -171,7 +171,9 @@ def prepare(root,tenant,draft,target):
             left,bottom,right,top=map(float,page.trimbox);w,h=float(page.mediabox.width),float(page.mediabox.height)
             box=(round(left/w*image.width),round((h-top)/h*image.height),round(right/w*image.width),round((h-bottom)/h*image.height))
         if box[2]<=box[0] or box[3]<=box[1]: raise ValueError('圖稿裁切範圍為空')
-        name=row['componentId']+'-preview.png';image.crop(box).save(target/name,'PNG')
+        name=row['componentId']+'-preview.png'
+        publish_bytes(lambda stream: image.crop(box).save(stream,'PNG'), target/name)
+        with Image.open(target/name) as decoded: decoded.verify()
         uv={'u0':0.,'v0':0.,'u1':1.,'v1':1.}
         item={'componentId':row['componentId'],'objectName':parts[row['componentId']]['partName'],
               'face':'FRONT','relation':'SINGLE_SURFACE','engineeringHash':spec['engineeringHash'],

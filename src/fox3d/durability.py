@@ -130,3 +130,37 @@ def publish_binary(source, target, *, expected_sha256=None, expected_size=None):
             except OSError: pass
         raise
     return {'sha256': digest.hexdigest(), 'size': size}
+
+
+def publish_bytes(writer, target, *, expected_sha256=None, expected_size=None):
+    """Publish bytes produced into a stream using the same artifact invariant."""
+    target = Path(target)
+    if target.is_symlink():
+        raise ValueError('refuse symlink artifact target')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f'.{target.name}.artifact.{secrets.token_hex(8)}.tmp')
+    digest = hashlib.sha256(); size = 0
+    try:
+        class DigestingStream:
+            def __init__(self, stream): self.stream = stream
+            def write(self, data):
+                nonlocal size
+                digest.update(data); size += len(data)
+                return self.stream.write(data)
+            def flush(self): return self.stream.flush()
+            def __getattr__(self, name): return getattr(self.stream, name)
+        with temporary.open('xb') as raw:
+            writer(DigestingStream(raw))
+            flush_file(raw)
+        if expected_size is not None and size != expected_size:
+            raise ValueError('artifact size mismatch')
+        if expected_sha256 is not None and digest.hexdigest() != expected_sha256:
+            raise ValueError('artifact SHA mismatch')
+        os.replace(temporary, target)
+        namespace_committed(target, 'replace')
+    except Exception:
+        if temporary.exists():
+            try: unlink_owned(temporary, missing_ok=True)
+            except OSError: pass
+        raise
+    return {'sha256': digest.hexdigest(), 'size': size}

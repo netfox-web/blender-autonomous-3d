@@ -51,3 +51,24 @@ def test_publish_binary_wrong_source_and_symlink_target_fail_closed(tmp_path):
         pytest.skip(f'symlink privilege unavailable: {exc}')
     with pytest.raises(Exception): durability.publish_binary(source, target)
     assert outside.read_bytes() == b'keep'
+
+
+def test_publish_bytes_streams_png_payload_without_final_write_window(tmp_path):
+    target = tmp_path / 'generation' / 'derived-preview.png'
+    payload = b'PNG-derived-bytes'
+    result = durability.publish_bytes(lambda stream: stream.write(payload), target,
+                                      expected_sha256=hashlib.sha256(payload).hexdigest(),
+                                      expected_size=len(payload))
+    assert result['size'] == len(payload)
+    assert target.read_bytes() == payload
+    assert not list(target.parent.glob('*.tmp'))
+
+
+def test_publish_bytes_writer_error_preserves_old_final(tmp_path):
+    target = tmp_path / 'generation' / 'derived-preview.png'; target.parent.mkdir(); target.write_bytes(b'old')
+    def fail(stream):
+        stream.write(b'partial')
+        raise RuntimeError('writer failed')
+    with pytest.raises(RuntimeError): durability.publish_bytes(fail, target)
+    assert target.read_bytes() == b'old'
+    assert not list(target.parent.glob('*.tmp'))
