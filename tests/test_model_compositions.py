@@ -9,7 +9,7 @@ from PIL import Image
 from pypdf import PdfWriter
 from pypdf.generic import RectangleObject
 
-from fox3d import model_compositions as c, product_models as m, print_assets, asset_usage
+from fox3d import model_compositions as c, product_models as m, print_assets, asset_usage, durability
 from fox3d.product_models_api import product_models_router
 
 
@@ -104,7 +104,6 @@ def test_corrupt_or_revoked_composition_never_downloadable(tmp_path,monkeypatch)
     from fox3d.recipe_3d import atomic_json
     gid='00000000-0000-0000-0000-000000000000';atomic_json(base/'latest.json',{'generationId':gid})
     assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
-
     manifest={'draft':{'masterInputHash':model['inputHash']},'package':{'placements':[{'originalAssetId':a['id']}]}}
     monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
     assert c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
@@ -112,6 +111,39 @@ def test_corrupt_or_revoked_composition_never_downloadable(tmp_path,monkeypatch)
     asset_usage.classify(tmp_path,'t',a['id'],'REFERENCE','Revoked fixture after generation',1)
     assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
 
+
+def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
+    monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
+                                                       {'packageHash': 'package'}, []))
+    class Dam:
+        def __init__(self, path): self.path = path
+    files = {}
+    for name in c.print_preview.FILES:
+        path = tmp_path / ('source-' + name)
+        path.write_bytes(b'complete-worker-artifact')
+        files[name] = name
+    platform = SimpleNamespace(root=tmp_path, mock_blender=False,
+                               runtime=SimpleNamespace(available=lambda: True),
+                               probe=SimpleNamespace(optix=True))
+    platform.submit_job = lambda payload: {'jobId': 'worker-job'}
+    platform.execute_job = lambda job, **kwargs: {'status': 'completed', 'realBlender': True,
+        'usedMock': False, 'output': {'files': files, 'realBlender': True, 'usedMock': False,
+                                      'device': 'OPTIX', 'blenderVersion': '5.2.1 LTS', 'realOptix': True}}
+    platform.dam = SimpleNamespace(get=lambda ref, tenant_id: Dam(tmp_path / ('source-' + ref)))
+    def indeterminate(source, target, **kwargs):
+        raise durability.CommitIndeterminate(target, 'replace', OSError(5, 'injected sync'))
+    monkeypatch.setattr(c, 'publish_binary', indeterminate)
+    with pytest.raises(durability.CommitIndeterminate):
+        c.generate(platform, 't', model['id'], draft, revision=0,
+                   generation_id='11111111-1111-1111-1111-111111111111')
+    base = c.folder_for(tmp_path, 't', model['id'])
+    generation = base / 'generations' / '11111111-1111-1111-1111-111111111111'
+    assert not (generation / 'manifest.json').exists()
+    assert not (generation / 'published.json').exists()
+    assert not (base / 'latest.json').exists()
 
 def test_existing_recipe_snapshots_keep_original_geometry_and_assumptions(tmp_path):
     from fox3d.recipe_3d import build_recipe_spec

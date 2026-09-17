@@ -27,7 +27,7 @@ def test_publish_binary_mismatch_leaves_old_final(tmp_path, kind):
     assert not list(target.parent.glob('*.tmp'))
 
 
-def test_publish_binary_pre_namespace_failure_is_indeterminate_and_final_is_valid(tmp_path, monkeypatch):
+def test_publish_binary_post_replace_namespace_sync_failure_is_indeterminate_and_final_is_valid(tmp_path, monkeypatch):
     source = tmp_path / 'dam.bin'; source.write_bytes(b'complete')
     target = tmp_path / 'generation' / 'model.glb'
     original = durability.namespace_committed
@@ -37,6 +37,24 @@ def test_publish_binary_pre_namespace_failure_is_indeterminate_and_final_is_vali
     with pytest.raises(durability.CommitIndeterminate): durability.publish_binary(source, target)
     assert target.read_bytes() == b'complete'
     monkeypatch.setattr(durability, 'namespace_committed', original)
+
+
+@pytest.mark.parametrize('publisher', ['binary', 'bytes'])
+def test_publish_pre_replace_flush_failure_preserves_previous_final(tmp_path, monkeypatch, publisher):
+    source = tmp_path / 'dam.bin'; source.write_bytes(b'new-complete')
+    target = tmp_path / 'generation' / 'artifact.bin'; target.parent.mkdir(); target.write_bytes(b'old')
+    original = durability.flush_file
+    def fail(stream):
+        raise OSError(5, 'injected file flush failure')
+    monkeypatch.setattr(durability, 'flush_file', fail)
+    with pytest.raises(OSError, match='flush'):
+        if publisher == 'binary':
+            durability.publish_binary(source, target)
+        else:
+            durability.publish_bytes(lambda stream: stream.write(b'new-complete'), target)
+    assert target.read_bytes() == b'old'
+    assert not list(target.parent.glob('*.tmp'))
+    monkeypatch.setattr(durability, 'flush_file', original)
 
 
 def test_publish_binary_wrong_source_and_symlink_target_fail_closed(tmp_path):
