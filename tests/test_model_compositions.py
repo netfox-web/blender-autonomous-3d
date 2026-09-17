@@ -105,6 +105,12 @@ def test_corrupt_or_revoked_composition_never_downloadable(tmp_path,monkeypatch)
     from fox3d.recipe_3d import atomic_json
     gid='00000000-0000-0000-0000-000000000000';atomic_json(base/'latest.json',{'generationId':gid})
     assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
+    manifest={'draft':{'masterInputHash':model['inputHash']},'package':{'placements':[{'originalAssetId':a['id']} ]}}
+    monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
+    assert c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
+    changed={**model,'inputHash':'0'*64};assert c.status(tmp_path,'t',model['id'],current_draft=changed)['stale']
+    asset_usage.classify(tmp_path,'t',a['id'],'REFERENCE','Revoked fixture after generation',1)
+    assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
 
 
 def test_modern_generation_rejects_publication_symlink(tmp_path, monkeypatch):
@@ -120,12 +126,6 @@ def test_modern_generation_rejects_publication_symlink(tmp_path, monkeypatch):
     except OSError:
         pytest.skip('symlink creation unavailable on this platform')
     with pytest.raises(ValueError): c.generation(tmp_path,'t',model['id'],gid,model)
-    manifest={'draft':{'masterInputHash':model['inputHash']},'package':{'placements':[{'originalAssetId':a['id']}]}}
-    monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
-    assert c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
-    changed={**model,'inputHash':'0'*64};assert c.status(tmp_path,'t',model['id'],current_draft=changed)['stale']
-    asset_usage.classify(tmp_path,'t',a['id'],'REFERENCE','Revoked fixture after generation',1)
-    assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
 
 
 def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_path, monkeypatch):
