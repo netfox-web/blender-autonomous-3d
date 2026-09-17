@@ -177,3 +177,22 @@ Clean final REAL acceptance `7ba7806e-aa18-4325-8c58-e704b7d2f729` ran after tha
 The retained baseline A–D child-process evidence remains bound to accepted CODE `87ea4d3ba753c811f693cec8f4a3f465aca94364` and classified **REAL_PROCESS_RECOVERY / local filesystem only**. The final correction test classifications are: host flush **REAL_OS_IO_FLUSH** on exercised local surfaces; injected failure **MOCK / FAULT_INJECTION_LOGIC**; post-namespace uncertainty **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**; W2 extra hard-link ambiguity **PARTIAL / PRESERVED UNKNOWN**; hardware power cut/reset/controller cache and NAS **BLOCKED / NOT_TESTED**.
 
 `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No H3/LTX/Vision/CNC/LASER/PLC or production operation was used.
+
+
+## Round 11 — DAM artifact source identity
+
+Supervisor instruction commit `e0417845f9aacf99c8455f95042157c3c8049eff` / blob `fcac50e5e60679f4f09b20ceb00d4e4e0379790c` and decision comment [5708290953](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5708290953) required evidence closure for PR #15. PR #15 remains DRAFT/OPEN/unmerged; `MERGE_AUTHORIZED=false`, `globalProductionReady=false`, PR #16 remains frozen, and Round 12 is HOLD.
+
+### Accepted CODE baseline and correction
+
+On accepted CODE `0082b98bbaf9f233eda32a5382b9fc373f5a6236`, a real local DAM object was registered, its source path was mutated after registration, and the old copy path accepted the mutated bytes. Stored digest `95fed465d4f73c401e132a26434b599a642ec4b2976571c0e68792bd5785ed2c` differed from the mutated/final copied digest `73eac7f4bd7c539d6b893c96d61938b15c910de5b1d653bb3ad012940f65ba8c`; the manifest was present. This is `REAL_OS_IO_INTEGRITY` evidence of the missing source-identity binding, not a production DAM claim.
+
+Final CODE `74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd` adds strict `DamObject` identity validation and passes the stored SHA (plus valid authoritative size metadata when present) to `publish_binary()` from both worker artifact publishers. Missing, malformed or non-hex identity fails closed before manifest/meta/published/latest. Derived PNG `publish_bytes()` behavior is unchanged. Adversarial coverage proves stored mismatch, source-change-during-copy fault injection, correct source, malformed/missing identity, retained isolation failures, and no retry/rollback/replay.
+
+Exact CODE Actions [35180923106](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35180923106) passed on both exact checkouts: Windows **1324 PASS / 0 skipped**, Ubuntu **1320 PASS / 4 existing skips**. Local full pytest passed. CI and injected TOCTOU paths are `MOCK / FAULT_INJECTION_LOGIC`; source-binding implementation and local filesystem result are `REAL_LOGIC` / tested local behavior.
+
+### Clean REAL acceptance
+
+Evidence `53b009bc-74f8-4fab-acba-38a967bc0271` ran after exact CODE CI on clean tree with Blender **5.2.1 LTS / OptiX**, `usedMock=false`, `realOptix=true`, and two `SYNTHETIC_STATIC_FIXTURE` cabinet generations. Both generations passed `.blend` reopen, finite pixels, artifact SHA/size and manifest publication records; cache/attempt/DAM/job/publication lineage and restart/history/download checks passed. Manifest SHA records were `3d18fbe1b08c37f5f6368a0f793ba0bf814dc8c65a265564173472975ee06acf` and `dc3d3cb49418796518c9910987a232cc2e7016f8f35ae37eb4387fb7c0bee72b`. This is `REAL_RENDER` for synthetic/static visual evidence only. It does not establish physical CAD truth, print validation, NAS durability, manufacturing readiness or Production Ready.
+
+`physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC or production operation was used. After exact DOCS dual-CI, one READY_FOR_RE_GATE handoff is required, then STOP for Supervisor.

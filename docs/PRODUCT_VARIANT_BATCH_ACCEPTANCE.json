@@ -19363,5 +19363,93 @@
       "pre-replace file-flush failure preserves previous final for publish_binary and publish_bytes",
       "CommitIndeterminate from generated artifact publication stops before manifest/published/latest authority advancement"
     ]
+  },
+  "round11": {
+    "instructionCommit": "e0417845f9aacf99c8455f95042157c3c8049eff",
+    "instructionBlob": "fcac50e5e60679f4f09b20ceb00d4e4e0379790c",
+    "supervisorCommentId": 5708290953,
+    "supervisorDecision": "PARTIAL / EVIDENCE CLOSURE REQUIRED",
+    "baseline": {
+      "status": "PASS",
+      "classification": "REAL_OS_IO_INTEGRITY",
+      "assetId": "c4067a35-a3ee-4d44-be20-1b061d623c5c",
+      "storedSha256": "95fed465d4f73c401e132a26434b599a642ec4b2976571c0e68792bd5785ed2c",
+      "mutatedSha256": "73eac7f4bd7c539d6b893c96d61938b15c910de5b1d653bb3ad012940f65ba8c",
+      "finalCopiedSha256": "73eac7f4bd7c539d6b893c96d61938b15c910de5b1d653bb3ad012940f65ba8c",
+      "storedEqualsMutated": false,
+      "storedEqualsFinal": false,
+      "manifestPresent": true,
+      "verifier": "baseline copy path accepted mutated bytes because no expected digest binding",
+      "codeCommit": "0082b98bbaf9f233eda32a5382b9fc373f5a6236"
+    },
+    "finalCode": "74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd",
+    "codeActions": {
+      "runId": 35180923106,
+      "status": "success",
+      "windows": "1324 PASS / 0 skipped",
+      "ubuntu": "1320 PASS / 4 existing skips",
+      "exactCheckoutSha": "74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd"
+    },
+    "localFullPytest": "PASS",
+    "changedFiles": [
+      "src/fox3d/durability.py",
+      "src/fox3d/model_compositions.py",
+      "src/fox3d/print_preview.py",
+      "tests/test_binary_publication.py",
+      "tests/test_model_compositions.py"
+    ],
+    "correction": "model_compositions.generate and print_preview.generate bind every worker DAM copy to stored DamObject.sha256 and optional authoritative metadata bytes/size; malformed or missing identity fails closed before manifest/meta/publication/latest.",
+    "adversarialMatrix": {
+      "storedDigestMismatch": "PASS / REAL_LOGIC",
+      "sourceChangesDuringCopy": "PASS / MOCK fault injection",
+      "correctSource": "PASS / REAL_LOGIC",
+      "malformedOrMissingDigest": "PASS / REAL_LOGIC fail-closed",
+      "isolationRegression": "PASS / retained existing isolation tests",
+      "retryRollbackReplay": "PASS / no retry, rollback, replay or adoption"
+    },
+    "realAcceptance": {
+      "evidenceId": "53b009bc-74f8-4fab-acba-38a967bc0271",
+      "status": "PASS",
+      "codeCommit": "74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd",
+      "workingTreeClean": true,
+      "blender": "5.2.1 LTS",
+      "device": "OptiX",
+      "usedMock": false,
+      "realOptix": true,
+      "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
+      "generations": [
+        {
+          "generationId": "b217a520-c096-52aa-a3b9-21b91e86d9aa",
+          "sku": "FIXTURE-2",
+          "scene": "STUDIO",
+          "blendReopen": true,
+          "finitePixels": true,
+          "publication": {
+            "manifestSha256": "3d18fbe1b08c37f5f6368a0f793ba0bf814dc8c65a265564173472975ee06acf"
+          },
+          "manifestSha256": "3d18fbe1b08c37f5f6368a0f793ba0bf814dc8c65a265564173472975ee06acf"
+        },
+        {
+          "generationId": "68c37b6f-8584-5bb0-b599-723f4b65ba71",
+          "sku": "FIXTURE-1",
+          "scene": "STUDIO",
+          "blendReopen": true,
+          "finitePixels": true,
+          "publication": {
+            "manifestSha256": "dc3d3cb49418796518c9910987a232cc2e7016f8f35ae37eb4387fb7c0bee72b"
+          },
+          "manifestSha256": "dc3d3cb49418796518c9910987a232cc2e7016f8f35ae37eb4387fb7c0bee72b"
+        }
+      ],
+      "lineage": "cache/attempt/DAM/job/publication lineage PASS; restart/history/download retained PASS",
+      "boundary": "REAL_RENDER for synthetic/static fixture only; not physical CAD, print, NAS or Production Ready"
+    },
+    "truthFlags": {
+      "physicalProductGeometryTruth": false,
+      "physicalPrintValidated": false,
+      "manufacturingReady": false,
+      "globalProductionReady": false,
+      "mergeAuthorized": false
+    }
   }
 }
