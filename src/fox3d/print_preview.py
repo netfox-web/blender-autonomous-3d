@@ -10,6 +10,7 @@ from fox3d.artwork import final_uv_identity
 from fox3d.golden_product import build_golden, GoldenRecipe, Measurement, validate_worker_observation
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import read_json, atomic_json, input_hash, validate_outputs
+from fox3d.durability import publish_binary
 from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail
 
@@ -114,7 +115,8 @@ def generate(platform,tenant,jid,draft,*,revision=0,generation_id=None,on_job=No
         raise ValueError('Blender 未完成：'+str(done.get('error') or done.get('status')))
     output=done.get('output',{})
     for name in FILES:
-        source=platform.dam.get(output['files'][name],tenant_id=tenant);shutil.copy2(source.path,folder/name)
+        source=platform.dam.get(output['files'][name],tenant_id=tenant)
+        publish_binary(source.path, folder/name)
     m={'generationId':gid,'draft':draft,'sourceRevision':revision,'planHash':p['planHash'],'spec':spec,'package':package,
        'files':{f.name:sha256_bytes(f.read_bytes()) for f in folder.iterdir() if f.is_file()},
        'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},

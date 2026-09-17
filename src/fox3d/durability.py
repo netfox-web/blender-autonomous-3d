@@ -1,7 +1,10 @@
 """Small host flush primitives; success is not a tested power-loss guarantee."""
 import errno
+import hashlib
 import os
+import secrets
 import sys
+from pathlib import Path
 
 
 class CommitIndeterminate(OSError):
@@ -98,3 +101,32 @@ def unlink_owned(path, *, missing_ok=False):
             raise
     else:
         namespace_committed(path, 'unlink')
+
+
+def publish_binary(source, target, *, expected_sha256=None, expected_size=None):
+    """Copy one artifact through an owned same-directory durable temp."""
+    source, target = Path(source), Path(target)
+    if not source.is_file():
+        raise FileNotFoundError(str(source))
+    if target.is_symlink():
+        raise ValueError('refuse symlink artifact target')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f'.{target.name}.artifact.{secrets.token_hex(8)}.tmp')
+    digest = hashlib.sha256(); size = 0
+    try:
+        with source.open('rb') as src, temporary.open('xb') as dst:
+            while chunk := src.read(1024 * 1024):
+                dst.write(chunk); digest.update(chunk); size += len(chunk)
+            flush_file(dst)
+        if expected_size is not None and size != expected_size:
+            raise ValueError('artifact size mismatch')
+        if expected_sha256 is not None and digest.hexdigest() != expected_sha256:
+            raise ValueError('artifact SHA mismatch')
+        os.replace(temporary, target)
+        namespace_committed(target, 'replace')
+    except Exception:
+        if temporary.exists():
+            try: unlink_owned(temporary, missing_ok=True)
+            except OSError: pass
+        raise
+    return {'sha256': digest.hexdigest(), 'size': size}

@@ -15,6 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
+from fox3d.durability import publish_binary
 from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
@@ -230,7 +231,8 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
         raise ValueError('Blender 未完成：'+str(done.get('error') or done.get('status')))
     output=done.get('output',{})
     for name in print_preview.FILES:
-        source=platform.dam.get(output['files'][name],tenant_id=tenant);shutil.copy2(source.path,target/name)
+        source=platform.dam.get(output['files'][name],tenant_id=tenant)
+        publish_binary(source.path, target/name)
     manifest={'generationId':gid,'historyVersion':1,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
         'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':stable_hash({'scene':draft['scene'],'version':1}),
         'files':{f.name:sha256_bytes(f.read_bytes()) for f in target.iterdir() if f.is_file()},
