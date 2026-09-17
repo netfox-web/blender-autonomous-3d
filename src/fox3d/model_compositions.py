@@ -15,7 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta
 from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
@@ -201,7 +201,7 @@ def status(root,tenant,mid,*,current_draft=None):
             import re
             if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']): raise ValueError('無效預覽編號')
             manifest=print_preview.validate(base/'generations'/pointer['generationId'])
-            if 'inputAuthority' in manifest['draft'] or 'inputAuthorityHash' in manifest:
+            if type(manifest.get('historyVersion')) is int and manifest['historyVersion'] == 1:
                 manifest=generation(root,tenant,mid,pointer['generationId'],models.get(root,tenant,mid))
             for x in manifest['package']['placements']: asset_usage.require_artwork(root,tenant,x['originalAssetId'])
         except (ValueError,OSError,KeyError) as exc: manifest=None;error=str(exc)
@@ -249,7 +249,8 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     if 'inputAuthority' in draft:
         manifest['inputAuthorityHash'] = draft['inputAuthority']['hash']
     atomic_json(target/'manifest.json',manifest)
-    atomic_json(target/'meta.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
+    manifest_sha=sha256_bytes((target/'manifest.json').read_bytes())
+    atomic_json(target/'meta.json',{'manifestSha256':manifest_sha})
     print_preview.validate(target);check()
     # An operator can edit the master or revoke artwork while Blender is working.
     current=models.get(platform.root,tenant,mid)
@@ -259,6 +260,10 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
         authority.verify(platform.root,tenant,draft,current=True)
     check()
     verify_receipt_set(target, receipts, expected_artifacts)
-    atomic_json(target/'published.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
+    verify_manifest_meta(target, manifest_sha)
+    atomic_json(target/'published.json',{'manifestSha256':manifest_sha})
+    published=target/'published.json'
+    if published.is_symlink() or not published.is_file() or read_json(published).get('manifestSha256') != manifest_sha:
+        raise ValueError('publication seal mismatch')
     atomic_json(target.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,mid,current_draft=current)

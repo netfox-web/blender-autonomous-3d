@@ -1,6 +1,7 @@
 """Small host flush primitives; success is not a tested power-loss guarantee."""
 import errno
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -201,3 +202,20 @@ def verify_receipt_set(folder, receipts, expected):
     for name in expected:
         verified[name] = verify_receipt(Path(folder) / name, receipts[name])
     return verified
+
+
+def verify_manifest_meta(folder, manifest_sha):
+    """Keep the validated manifest/meta pair bound to one transaction digest."""
+    folder = Path(folder)
+    manifest = folder / 'manifest.json'; meta = folder / 'meta.json'
+    if manifest.is_symlink() or not manifest.is_file() or meta.is_symlink() or not meta.is_file():
+        raise ValueError('manifest/meta authority is not regular')
+    if hashlib.sha256(manifest.read_bytes()).hexdigest() != manifest_sha:
+        raise ValueError('manifest authority changed')
+    try:
+        record = json.loads(meta.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise ValueError('invalid manifest metadata') from exc
+    if record.get('manifestSha256') != manifest_sha:
+        raise ValueError('manifest metadata changed')
+    return manifest_sha

@@ -10,7 +10,7 @@ from fox3d.artwork import final_uv_identity
 from fox3d.golden_product import build_golden, GoldenRecipe, Measurement, validate_worker_observation
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import read_json, atomic_json, input_hash, validate_outputs
-from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta
 from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail
 
@@ -130,6 +130,6 @@ def generate(platform,tenant,jid,draft,*,revision=0,generation_id=None,on_job=No
        'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
        'requestedJobId':job['jobId'],'jobId':read_json(folder/'golden-observation.json')['jobId'],'cacheHit':done.get('cacheHit',False),
        'productionReady':False,'colorAuthority':'RGB_APPROXIMATION_NOT_RIP_COLOR_PROOF'}
-    atomic_json(folder/'manifest.json',m);atomic_json(folder/'meta.json',{'manifestSha256':sha256_bytes((folder/'manifest.json').read_bytes())})
-    validate(folder);check();verify_receipt_set(folder, receipts, expected_artifacts);atomic_json(folder.parent.parent/'latest.json',{'generationId':gid})
+    atomic_json(folder/'manifest.json',m);manifest_sha=sha256_bytes((folder/'manifest.json').read_bytes());atomic_json(folder/'meta.json',{'manifestSha256':manifest_sha})
+    validate(folder);check();verify_receipt_set(folder, receipts, expected_artifacts);verify_manifest_meta(folder, manifest_sha);atomic_json(folder.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,jid,current_draft=draft)
