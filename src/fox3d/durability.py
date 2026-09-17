@@ -2,6 +2,7 @@
 import errno
 import hashlib
 import os
+import re
 import secrets
 import sys
 from pathlib import Path
@@ -18,6 +19,20 @@ class CommitIndeterminate(OSError):
         self.operation = operation
         super().__init__(cause.errno or errno.EIO,
                          f'COMMIT_INDETERMINATE: {operation} namespace sync failed: {cause}', str(path))
+
+
+def dam_identity(source):
+    """Return strict authoritative DAM digest/size metadata for a worker artifact."""
+    digest = getattr(source, 'sha256', None)
+    if type(digest) is not str or re.fullmatch(r'[0-9a-f]{64}', digest) is None:
+        raise ValueError('worker DAM sha256 missing or malformed')
+    metadata = getattr(source, 'metadata', {})
+    if not isinstance(metadata, dict):
+        raise ValueError('worker DAM metadata malformed')
+    size = metadata.get('bytes', metadata.get('size'))
+    if size is not None and (type(size) is not int or size < 0):
+        raise ValueError('worker DAM size malformed')
+    return digest, size
 
 
 def _kernel():

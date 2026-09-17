@@ -90,3 +90,15 @@ def test_publish_bytes_writer_error_preserves_old_final(tmp_path):
     with pytest.raises(RuntimeError): durability.publish_bytes(fail, target)
     assert target.read_bytes() == b'old'
     assert not list(target.parent.glob('*.tmp'))
+
+
+def test_dam_identity_is_strict_and_does_not_rehash_source(tmp_path):
+    class Source:
+        sha256 = 'a' * 64
+        metadata = {'bytes': 3}
+    assert durability.dam_identity(Source()) == ('a' * 64, 3)
+    Source.sha256 = 'not-a-digest'
+    with pytest.raises(ValueError): durability.dam_identity(Source())
+    Source.sha256 = 'a' * 64
+    Source.metadata = {'bytes': True}
+    with pytest.raises(ValueError): durability.dam_identity(Source())

@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import io
 from types import SimpleNamespace
 
@@ -119,7 +120,10 @@ def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_pat
     monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
                                                        {'packageHash': 'package'}, []))
     class Dam:
-        def __init__(self, path): self.path = path
+        def __init__(self, path):
+            self.path = path
+            self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.metadata = {'bytes': path.stat().st_size}
     files = {}
     for name in c.print_preview.FILES:
         path = tmp_path / ('source-' + name)
