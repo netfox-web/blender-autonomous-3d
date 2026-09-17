@@ -98,7 +98,7 @@ def status(root,tenant,jid,*,current_draft=None):
             if pointer['manifestSha256'] != sha256_bytes((base/'generations'/pointer['generationId']/'manifest.json').read_bytes()): raise ValueError('預覽發布指標不符')
         except (ValueError,OSError,KeyError) as exc:error=str(exc)
     return {'state':s.get('state','idle'),'progress':s.get('progress',0),'taskId':s.get('taskId'),
-            'generated':bool(m),'generationId':pointer.get('generationId'),'error':error,
+            'generated':bool(m),'generationId':(pointer or {}).get('generationId'),'error':error,
             'stale':bool(m and current_draft and m['draft']!=current_draft),'manifest':m}
 
 
