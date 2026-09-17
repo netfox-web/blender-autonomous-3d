@@ -85,3 +85,46 @@ The file primitive follows [Microsoft FlushFileBuffers](https://learn.microsoft.
 [Prior accepted Round8 report](https://github.com/netfox-web/blender-autonomous-3d/blob/85ecad41da13bcd14140a7dd373fed4e09012a4f/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json) retains historical evidence. Its actual counts were Windows1285/Ubuntu1281+4 and REAL4c084b88; Supervisor corrected the earlier misquoted values in comment5705530120. Those prior counts/renders are not current gates.
 
 After exact DOCS dual-CI success: one READY_FOR_RE_GATE handoff, then **STOP for Supervisor; Round10 HOLD**.
+
+
+## Round 10 — binary artifact publication durability
+
+Supervisor instruction `450b35b55afeb2a198c8896105a87e6e99a297bd` / comment [5706795692](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5706795692) accepted Round 9B with scope and authorized Round 10. The final CODE remains `MERGE_AUTHORIZED=false`, PR15 DRAFT/OPEN/unmerged, PR16 FROZEN, Round11 HOLD.
+
+### Baseline audit and A–D crash windows
+
+Accepted baseline CODE `87ea4d3ba753c811f693cec8f4a3f465aca94364` was inspected before production edits. `model_compositions.generate()` and `print_preview.generate()` copied worker DAM files directly to final names with `shutil.copy2`: no runtime flush, host file flush or containing-directory synchronization. `manifest.json` then recorded hashes, `meta.json` bound the manifest, the existing verifier ran, and publication/latest authority followed. Round 9B JSON files already used the durable `atomic_json` path. Worker-origin DAM files were never modified. This is a **REAL_LOGIC_AUDIT**, not inferred data loss.
+
+Fresh child processes with actual local filesystem writes exercised A–D. The persisted evidence is `.fox3d-work/round10-baseline-probe-evidence.json`, classified **REAL_PROCESS_RECOVERY / local filesystem only**:
+
+- A: killed while a large artifact temp was materializing; no publication/latest and no available generation.
+- B: killed after artifact bytes but before manifest; no publication/latest and no available generation.
+- C: killed after manifest but before `published.json`; no publication/latest and no available generation; loose files are not authority.
+- D: killed after `published.json` but before `latest.json`; published generation remained intact, mutable latest pointer was absent, and no fresh available result was inferred.
+
+These probes do not test power loss, NAS/network storage, controller cache or physical production.
+
+### Minimal correction
+
+`durability.publish_binary()` now streams each DAM artifact to an exact target-bound same-directory temporary, flushes Python and the open host handle, verifies expected SHA/size when supplied, atomically replaces the final name, and synchronizes the containing directory through the accepted Round 9B primitive. Symlink targets are rejected; unknown debris is never adopted or broad-swept. A pre-publication error leaves the prior final unchanged. A post-namespace error propagates `CommitIndeterminate`; the caller receives no success and does not retry, rollback or continue publication. `model_compositions.py` and `print_preview.py` now use this helper for every manifest-authoritative binary/derived file. The authority chain remains `artifact bytes -> manifest hashes -> meta/verifier -> published.json -> latest pointer`; no second marker, DB, WAL, replay or architecture change was added.
+
+### Adversarial and retained tests
+
+New focused tests cover complete byte/hash/size publication, wrong SHA/size preserving the old final, injected namespace indeterminate outcome with complete final bytes, missing source and symlink rejection. The clean exact-CODE full suite passed; the final test set is **Windows 1319 PASS**, **Ubuntu 1315 PASS + 4 existing Windows-only skips**. Exact Actions run [35170538114](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35170538114), checkout SHA verified in both logs. Existing Round 6–9B ownership, identity, temp-debris, and JSON durability suites remain green. CI renderer paths are **MOCK regression**; actual tested OS primitives retain only the narrower REAL label.
+
+### Clean REAL acceptance
+
+After exact CODE dual-platform success, clean acceptance `2fe5d1cd-08bb-4e17-9ca1-ecec317a8c97` ran on Blender **5.2.1 LTS / OptiX**, `usedMock=false`, with two **SYNTHETIC_STATIC_FIXTURE** cabinet variants. All real artifact files (`beauty.png`, `front-closed.png`, `model.glb`, `model.blend`, `geometry.json`, `golden-observation.json`, and door previews) have recorded SHA/size. `.blend` reopen, finite pixels, restart/history/download, cache/attempt/DAM/job/publication lineage and retained Round 9B matrices passed. This is **REAL_RENDER** for the render path only; it is not physical CAD geometry, print validation, manufacturing readiness, NAS durability or power-loss evidence.
+
+| Truth | Classification / boundary |
+|---|---|
+| Local artifact flush and containing-directory sync | REAL_OS_IO_FLUSH on tested local surface only |
+| Fresh child kill and reader | REAL_PROCESS_RECOVERY |
+| Hash/size/verifier/publication ordering | REAL_LOGIC |
+| Injected I/O and CI fixture artifacts | MOCK / FAULT_INJECTION_LOGIC |
+| Namespace-sync uncertainty | PARTIAL / COMMIT_INDETERMINATE_DURABILITY |
+| NAS/network filesystem | BLOCKED / NOT_TESTED |
+| Physical power cut/reset | BLOCKED / NOT_TESTED |
+| Physical product/print/manufacturing/global Production Ready | false |
+
+Round 10 leaves `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No H3/LTX/Vision/CNC/LASER/PLC or production operation was used.
