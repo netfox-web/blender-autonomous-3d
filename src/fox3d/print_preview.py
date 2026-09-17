@@ -84,13 +84,16 @@ def validate(folder):
 
 
 def status(root,tenant,jid,*,current_draft=None):
-    base=folder_for(root,tenant,jid);pointer=read_json(base/'latest.json');s=read_json(base/'state.json')
-    m=None;error=s.get('error')
+    base=folder_for(root,tenant,jid);pointer_path=base/'latest.json';pointer=None
+    invalid_pointer = pointer_path.exists() and (pointer_path.is_symlink() or not pointer_path.is_file())
+    if pointer_path.exists() and not invalid_pointer:
+        pointer=read_json(pointer_path)
+    s=read_json(base/'state.json')
+    m=None;error=s.get('error') or ('無效預覽發布指標' if invalid_pointer else None)
     if pointer:
         try:
             if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']):raise ValueError('無效預覽編號')
-            pointer_path=base/'latest.json'
-            if pointer_path.is_symlink() or not pointer_path.is_file() or not isinstance(pointer.get('manifestSha256'),str): raise ValueError('無效預覽發布指標')
+            if not isinstance(pointer.get('manifestSha256'),str): raise ValueError('無效預覽發布指標')
             m=validate(base/'generations'/pointer['generationId'])
             if pointer['manifestSha256'] != sha256_bytes((base/'generations'/pointer['generationId']/'manifest.json').read_bytes()): raise ValueError('預覽發布指標不符')
         except (ValueError,OSError,KeyError) as exc:error=str(exc)
