@@ -14,7 +14,7 @@ from fox3d.golden_api import golden_router
 from fox3d.ids import stable_hash
 from fox3d.artwork import decode_png_rgb, crop_rgb
 from fox3d.recipe_preview_service import RecipePreviewService
-from fox3d.recipe_3d import atomic_json
+from fox3d.recipe_3d import atomic_json, input_hash
 
 
 def test_mm_geometry_and_manufacturing_scope():
@@ -160,7 +160,8 @@ def test_golden_lifecycle_cancel_and_restart(tmp_path):
     with pytest.raises(ValueError):service.submit('t',SKUS[0],{'draft':draft,'revision':0})
     service.cancel('t',SKUS[0],task['taskId']);service.executor.shutdown(wait=True)
     assert service.status('t',SKUS[0],draft)['state']=='cancelled'
-    atomic_json(folder_for(tmp_path,'t',SKUS[0])/'state.json',{'state':'running'})
+    atomic_json(folder_for(tmp_path,'t',SKUS[0])/'state.json',
+                {'state':'running','taskId':task['taskId'],'inputHash':input_hash(draft)})
     assert service.status('t',SKUS[0],draft)['state']=='failed'
 
 

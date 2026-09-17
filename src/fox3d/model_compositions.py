@@ -3,6 +3,7 @@
 Screen previews only. Scene and artwork identities never certify physical dimensions.
 """
 import io
+import re
 import shutil
 from pathlib import Path
 from typing import Literal
@@ -14,8 +15,66 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta, verify_publication_seal
+from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
+
+
+def valid_generation(value):
+    return isinstance(value, str) and bool(re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', value))
+
+
+def generation(root, tenant, mid, gid, item):
+    """Validate any retained result against current model and artwork permissions."""
+    if not valid_generation(gid):
+        raise ValueError('無效成果編號')
+    target = folder_for(root, tenant, mid)/'generations'/gid
+    manifest = print_preview.validate(target)
+    draft = manifest['draft']
+    # A JSON boolean/float is not the original integer identity, even after a
+    # local publication seal is recomputed. Preserve only pre-V1 legacy absence.
+    if 'historyVersion' in manifest or 'inputAuthority' in draft or 'inputAuthorityHash' in manifest:
+        if (type(manifest.get('historyVersion')) is not int or manifest['historyVersion'] != 1
+                or type(manifest.get('sourceRevision')) is not int
+                or type(draft.get('masterRevision')) is not int
+                or manifest['sourceRevision'] != draft['masterRevision']):
+            raise ValueError('成果來源版本不符')
+        verify_publication_seal(target/'published.json', sha256_bytes((target/'manifest.json').read_bytes()))
+    if manifest['generationId'] != gid or draft['masterId'] != mid:
+        raise ValueError('成果不屬於此模型')
+    if draft['masterInputHash'] != item['inputHash']:
+        raise ValueError('母版已變更；此款保留為歷史紀錄，請重新生成')
+    if 'inputAuthority' in draft or 'inputAuthorityHash' in manifest:
+        authority.verify(root, tenant, draft, current=False)
+        if manifest.get('inputAuthorityHash') != draft['inputAuthority']['hash']:
+            raise ValueError('發布成果與來源權威不符')
+    for placement in manifest['package']['placements']:
+        asset_usage.require_artwork(root, tenant, placement['originalAssetId'])
+    return manifest
+
+
+def history(root, tenant, mid, item, offset=0):
+    paths = sorted((folder_for(root, tenant, mid)/'generations').glob('*/manifest.json'),
+                   key=lambda p: (p.stat().st_mtime_ns, p.parent.name), reverse=True)
+    rows = []
+    for path in paths[offset:offset+12]:
+        stored = read_json(path)
+        row = {'generationId': path.parent.name, 'sku': stored.get('draft', {}).get('sku', ''),
+               'scene': stored.get('scene', ''), 'sourceRevision': stored.get('sourceRevision'),
+               'available': False, 'error': None}
+        row.update(authority.readiness())
+        try:
+            manifest = generation(root, tenant, mid, path.parent.name, item)
+            row.update(available=True, renderInfo=manifest['renderInfo'])
+            row.update(authority.readiness(True))
+            if 'inputAuthority' in manifest['draft']:
+                row['inputAuthorityHash'] = manifest['draft']['inputAuthority']['hash']
+                row['geometryAuthorityKind'] = manifest['draft']['inputAuthority']['snapshot']['geometryAuthorityKind']
+        except (ValueError, OSError, KeyError) as exc:
+            row['error'] = str(exc)[:500]
+        rows.append(row)
+    return {'items': rows, 'total': len(paths), 'offset': offset}
 
 
 class Placement(models.Strict):
@@ -59,6 +118,8 @@ def snapshot(root, tenant, item, selection):
 
 
 def plan(root, tenant, draft):
+    if 'inputAuthority' in draft:
+        authority.verify(root, tenant, draft, current=True)
     Selection.model_validate({k:draft[k] for k in ('sku','scene','placements')})
     spec=models.build_spec(draft['master'],tenant_id=tenant)
     spec['engineeringHash']=stable_hash({'adapter':'MASTER_COMPOSITION_V1','components':spec['components']})
@@ -92,7 +153,7 @@ def plan(root, tenant, draft):
 
 
 def prepare(root,tenant,draft,target):
-    p=plan(root,tenant,draft);spec=p['spec'];placements=[]
+    p=plan(root,tenant,draft);spec=p['spec'];placements=[];receipts={}
     artwork_hash=stable_hash({'placements':draft['placements'],'contract':'MASTER_COMPOSITION_V1'})
     parts={x['componentId']:x for x in spec['components']}
     for row in p['rows']:
@@ -108,12 +169,15 @@ def prepare(root,tenant,draft,target):
             left,bottom,right,top=map(float,page.trimbox);w,h=float(page.mediabox.width),float(page.mediabox.height)
             box=(round(left/w*image.width),round((h-top)/h*image.height),round(right/w*image.width),round((h-bottom)/h*image.height))
         if box[2]<=box[0] or box[3]<=box[1]: raise ValueError('圖稿裁切範圍為空')
-        name=row['componentId']+'-preview.png';image.crop(box).save(target/name,'PNG')
+        name=row['componentId']+'-preview.png'
+        receipts[name]=publish_bytes(lambda stream: image.crop(box).save(stream,'PNG'), target/name)
+        verify_receipt(target/name, receipts[name])
+        with Image.open(target/name) as decoded: decoded.verify()
         uv={'u0':0.,'v0':0.,'u1':1.,'v1':1.}
         item={'componentId':row['componentId'],'objectName':parts[row['componentId']]['partName'],
               'face':'FRONT','relation':'SINGLE_SURFACE','engineeringHash':spec['engineeringHash'],
               'artworkHash':artwork_hash,'surfaceHash':stable_hash(row),'uvRect':uv,'rotationDeg':0.,'mirrored':False,
-              'source':{'name':name,'fileSha256':sha256_bytes((target/name).read_bytes())},
+              'source':{'name':name,'fileSha256':receipts[name]['sha256']},
               'originalAssetId':row['assetId'],'sourcePage':row['page'],'sourceRotation':row['rotation'],
               'derivedPreviewCropPx':list(box),'targetWidthMm':row['widthMm'],'targetHeightMm':row['heightMm']}
         item['placementHash']=stable_hash(item);item['placementId']=item['placementHash']
@@ -124,7 +188,7 @@ def prepare(root,tenant,draft,target):
     package['packageHash']=stable_hash(package)
     inputs=[{**x,'imagePath':str((target/x['source']['name']).resolve()),
              'artworkSha256':x['source']['fileSha256'],'goldenObservedUv':True} for x in placements]
-    return p,spec,package,inputs
+    return p,spec,package,inputs,receipts
 
 
 def status(root,tenant,mid,*,current_draft=None):
@@ -135,6 +199,8 @@ def status(root,tenant,mid,*,current_draft=None):
             import re
             if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']): raise ValueError('無效預覽編號')
             manifest=print_preview.validate(base/'generations'/pointer['generationId'])
+            if type(manifest.get('historyVersion')) is int and manifest['historyVersion'] == 1:
+                manifest=generation(root,tenant,mid,pointer['generationId'],models.get(root,tenant,mid))
             for x in manifest['package']['placements']: asset_usage.require_artwork(root,tenant,x['originalAssetId'])
         except (ValueError,OSError,KeyError) as exc: manifest=None;error=str(exc)
     return {'state':state.get('state','idle'),'taskId':state.get('taskId'),'progress':state.get('progress',0),
@@ -150,7 +216,7 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     if platform.mock_blender or not platform.runtime.available(): raise ValueError('需要真實 Blender')
     gid=generation_id or new_id();target=folder_for(platform.root,tenant,mid)/'generations'/gid
     target.mkdir(parents=True,exist_ok=False)
-    p,spec,package,placements=prepare(platform.root,tenant,draft,target)
+    p,spec,package,placements,receipts=prepare(platform.root,tenant,draft,target)
     h=spec['height']/1000;extent=max(spec['width'],spec['height'],spec['depth'])/1000
     payload={'tenantId':tenant,'jobType':'PARAMETRIC_3D','mode':'CABINET_PREVIEW','engineering':spec,
         'recipePreview':True,'goldenRecipe':True,'goldenIdentity':{'sku':draft['sku'],'packageHash':package['packageHash']},
@@ -166,19 +232,35 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
         raise ValueError('Blender 未完成：'+str(done.get('error') or done.get('status')))
     output=done.get('output',{})
     for name in print_preview.FILES:
-        source=platform.dam.get(output['files'][name],tenant_id=tenant);shutil.copy2(source.path,target/name)
-    manifest={'generationId':gid,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
+        source=platform.dam.get(output['files'][name],tenant_id=tenant)
+        expected_sha256, expected_size = dam_identity(source)
+        receipts[name]=publish_binary(source.path, target/name, expected_sha256=expected_sha256, expected_size=expected_size)
+        verify_receipt(target/name, receipts[name])
+    expected_artifacts=set(print_preview.FILES)|{x['source']['name'] for x in package['placements']}
+    verify_receipt_set(target, receipts, expected_artifacts)
+    manifest={'generationId':gid,'historyVersion':1,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
         'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':stable_hash({'scene':draft['scene'],'version':1}),
-        'files':{f.name:sha256_bytes(f.read_bytes()) for f in target.iterdir() if f.is_file()},
+        'files':{f.name:(receipts[f.name]['sha256'] if f.name in receipts else sha256_bytes(f.read_bytes())) for f in target.iterdir() if f.is_file()},
         'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
         'requestedJobId':job['jobId'],'jobId':read_json(target/'golden-observation.json')['jobId'],
         'cacheHit':done.get('cacheHit',False),'productionReady':False,'colorAuthority':'RGB_SCREEN_PREVIEW_NOT_PRINT_PROOF'}
+    if 'inputAuthority' in draft:
+        manifest['inputAuthorityHash'] = draft['inputAuthority']['hash']
     atomic_json(target/'manifest.json',manifest)
-    atomic_json(target/'meta.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
+    manifest_sha=sha256_bytes((target/'manifest.json').read_bytes())
+    atomic_json(target/'meta.json',{'manifestSha256':manifest_sha})
     print_preview.validate(target);check()
     # An operator can edit the master or revoke artwork while Blender is working.
     current=models.get(platform.root,tenant,mid)
     if current['inputHash']!=draft['masterInputHash']: raise ValueError('母版已變更，請重新生成')
     for x in draft['placements']: asset_usage.require_artwork(platform.root,tenant,x['assetId'])
+    if 'inputAuthority' in draft:
+        authority.verify(platform.root,tenant,draft,current=True)
+    check()
+    verify_receipt_set(target, receipts, expected_artifacts)
+    verify_manifest_meta(target, manifest_sha)
+    atomic_json(target/'published.json',{'manifestSha256':manifest_sha})
+    published=target/'published.json'
+    verify_publication_seal(published, manifest_sha)
     atomic_json(target.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,mid,current_draft=current)

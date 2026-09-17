@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import io
 from types import SimpleNamespace
 
@@ -9,7 +10,7 @@ from PIL import Image
 from pypdf import PdfWriter
 from pypdf.generic import RectangleObject
 
-from fox3d import model_compositions as c, product_models as m, print_assets, asset_usage
+from fox3d import model_compositions as c, product_models as m, print_assets, asset_usage, durability
 from fox3d.product_models_api import product_models_router
 
 
@@ -32,7 +33,7 @@ def test_art_and_scene_keep_geometry_identity(tmp_path):
     assert p['spec']['components']==q['spec']['components']
     assert not p['physicalPrintValidated']
     out=tmp_path/'prepared';out.mkdir()
-    _,spec,package,inputs=c.prepare(tmp_path,'t',second,out)
+    _,spec,package,inputs,_=c.prepare(tmp_path,'t',second,out)
     assert len(inputs)==1 and package['placements'][0]['targetWidthMm']==100
     assert Image.open(out/'surface-preview.png').size==(400,200)
 
@@ -57,7 +58,7 @@ def test_pdf_trim_and_rotation(tmp_path):
     a=print_assets.import_asset(tmp_path,'t',stream.getvalue(),'trim.pdf')
     asset_usage.classify(tmp_path,'t',a['id'],'ARTWORK','Synthetic blank PDF trim fixture',0)
     s['placements'][0]['assetId']=a['id'];d=c.snapshot(tmp_path,'t',model,s)
-    out=tmp_path/'out';out.mkdir();_,_,pkg,_=c.prepare(tmp_path,'t',d,out)
+    out=tmp_path/'out';out.mkdir();_,_,pkg,_,_=c.prepare(tmp_path,'t',d,out)
     box=pkg['placements'][0]['derivedPreviewCropPx']
     assert box[0]>0 and box[1]>0
     im=Image.open(out/'surface-preview.png');assert abs(im.width/im.height-2)<.01
@@ -104,14 +105,119 @@ def test_corrupt_or_revoked_composition_never_downloadable(tmp_path,monkeypatch)
     from fox3d.recipe_3d import atomic_json
     gid='00000000-0000-0000-0000-000000000000';atomic_json(base/'latest.json',{'generationId':gid})
     assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
-
-    manifest={'draft':{'masterInputHash':model['inputHash']},'package':{'placements':[{'originalAssetId':a['id']}]}}
+    manifest={'draft':{'masterInputHash':model['inputHash']},'package':{'placements':[{'originalAssetId':a['id']} ]}}
     monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
     assert c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
     changed={**model,'inputHash':'0'*64};assert c.status(tmp_path,'t',model['id'],current_draft=changed)['stale']
     asset_usage.classify(tmp_path,'t',a['id'],'REFERENCE','Revoked fixture after generation',1)
     assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
 
+
+def test_modern_generation_rejects_publication_symlink(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    gid='33333333-3333-3333-3333-333333333333'
+    target=c.folder_for(tmp_path,'t',model['id'])/'generations'/gid; target.mkdir(parents=True)
+    manifest={'historyVersion':1,'sourceRevision':0,'draft':{'masterId':model['id'],'masterInputHash':model['inputHash'],'masterRevision':0},'generationId':gid,'package':{'placements':[]}}
+    monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
+    (target/'manifest.json').write_text('{}',encoding='utf-8')
+    seal=target/'seal.json'; seal.write_text('{"manifestSha256":"'+('0'*64)+'"}',encoding='utf-8')
+    try:
+        (target/'published.json').symlink_to(seal)
+    except OSError:
+        pytest.skip('symlink creation unavailable on this platform')
+    with pytest.raises(ValueError): c.generation(tmp_path,'t',model['id'],gid,model)
+
+
+def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
+    monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
+                                                       {'packageHash': 'package', 'placements': []}, [], {}))
+    class Dam:
+        def __init__(self, path):
+            self.path = path
+            self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.metadata = {'bytes': path.stat().st_size}
+    files = {}
+    for name in c.print_preview.FILES:
+        path = tmp_path / ('source-' + name)
+        path.write_bytes(b'complete-worker-artifact')
+        files[name] = name
+    platform = SimpleNamespace(root=tmp_path, mock_blender=False,
+                               runtime=SimpleNamespace(available=lambda: True),
+                               probe=SimpleNamespace(optix=True))
+    platform.submit_job = lambda payload: {'jobId': 'worker-job'}
+    platform.execute_job = lambda job, **kwargs: {'status': 'completed', 'realBlender': True,
+        'usedMock': False, 'output': {'files': files, 'realBlender': True, 'usedMock': False,
+                                      'device': 'OPTIX', 'blenderVersion': '5.2.1 LTS', 'realOptix': True}}
+    platform.dam = SimpleNamespace(get=lambda ref, tenant_id: Dam(tmp_path / ('source-' + ref)))
+    def indeterminate(source, target, **kwargs):
+        raise durability.CommitIndeterminate(target, 'replace', OSError(5, 'injected sync'))
+    monkeypatch.setattr(c, 'publish_binary', indeterminate)
+    with pytest.raises(durability.CommitIndeterminate):
+        c.generate(platform, 't', model['id'], draft, revision=0,
+                   generation_id='11111111-1111-1111-1111-111111111111')
+    base = c.folder_for(tmp_path, 't', model['id'])
+    generation = base / 'generations' / '11111111-1111-1111-1111-111111111111'
+    assert not (generation / 'manifest.json').exists()
+    assert not (generation / 'published.json').exists()
+    assert not (base / 'latest.json').exists()
+
+
+def test_worker_receipt_tamper_before_manifest_fails_closed(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
+    monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
+                                                       {'packageHash': 'package', 'placements': []}, [], {}))
+    class Dam:
+        def __init__(self, path):
+            self.path = path; self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.metadata = {'bytes': path.stat().st_size}
+    files = {}
+    for name in c.print_preview.FILES:
+        path = tmp_path / ('source-' + name)
+        path.write_bytes(b'{"jobId":"worker-job"}' if name == 'golden-observation.json' else b'complete-worker-artifact')
+        files[name] = name
+    platform = SimpleNamespace(root=tmp_path, mock_blender=False,
+                               runtime=SimpleNamespace(available=lambda: True),
+                               probe=SimpleNamespace(optix=True))
+    platform.submit_job = lambda payload: {'jobId': 'worker-job'}
+    platform.execute_job = lambda job, **kwargs: {'status': 'completed', 'realBlender': True,
+        'usedMock': False, 'output': {'files': files, 'realBlender': True, 'usedMock': False,
+                                      'device': 'OPTIX', 'blenderVersion': '5.2.1 LTS', 'realOptix': True}}
+    platform.dam = SimpleNamespace(get=lambda ref, tenant_id: Dam(tmp_path / ('source-' + ref)))
+    original = c.verify_receipt
+    calls = {'count': 0}
+    def tamper_after_verify(target, receipt):
+        result = original(target, receipt)
+        calls['count'] += 1
+        if calls['count'] == 1:
+            target.write_bytes(b'tampered-after-initial-verification')
+        return result
+    monkeypatch.setattr(c, 'verify_receipt', tamper_after_verify)
+    monkeypatch.setattr(c.print_preview, 'validate', lambda folder: {'status': 'test'})
+    with pytest.raises(ValueError, match='receipt'):
+        c.generate(platform, 't', model['id'], draft, generation_id='22222222-2222-2222-2222-222222222222')
+    generation = c.folder_for(tmp_path, 't', model['id']) / 'generations' / '22222222-2222-2222-2222-222222222222'
+    assert not (generation / 'manifest.json').exists()
+    assert not (generation / 'published.json').exists()
+    assert not (c.folder_for(tmp_path, 't', model['id']) / 'latest.json').exists()
+
+
+def test_derived_receipt_tamper_before_package_fails_closed(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    out = tmp_path / 'out'; out.mkdir()
+    original = c.publish_bytes
+    def tamper(writer, target, **kwargs):
+        receipt = original(writer, target, **kwargs)
+        target.write_bytes(b'tampered-derived')
+        return receipt
+    monkeypatch.setattr(c, 'publish_bytes', tamper)
+    with pytest.raises(ValueError, match='receipt'):
+        c.prepare(tmp_path, 't', draft, out)
 
 def test_existing_recipe_snapshots_keep_original_geometry_and_assumptions(tmp_path):
     from fox3d.recipe_3d import build_recipe_spec

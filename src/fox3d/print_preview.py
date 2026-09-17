@@ -10,6 +10,7 @@ from fox3d.artwork import final_uv_identity
 from fox3d.golden_product import build_golden, GoldenRecipe, Measurement, validate_worker_observation
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import read_json, atomic_json, input_hash, validate_outputs
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta
 from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail
 
@@ -38,15 +39,18 @@ def geometry(p):
 
 
 def prepare(root,tenant,p,folder):
-    spec=geometry(p);parts=[x for x in spec['components'] if x['role']=='door'];placements=[]
+    spec=geometry(p);parts=[x for x in spec['components'] if x['role']=='door'];placements=[];receipts={}
     art_hash=stable_hash({'planHash':p['planHash'],'purpose':'RGB_SCREEN_PREVIEW_ONLY'})
     for row,part in zip(p['panels'],parts):
         raw=thumbnail(root,tenant,row['assetId'],row['page'])
         im=Image.open(io.BytesIO(raw)).rotate(-row['rotation'],expand=True)
         left,bottom,right,top=row['trimBoxMm'];w,h=row['widthMm'],row['heightMm']
         box=(round(left/w*im.width),round((h-top)/h*im.height),round(right/w*im.width),round((h-bottom)/h*im.height))
-        trim=im.crop(box);name=part['componentId']+'-preview.png';target=folder/name;trim.save(target,format='PNG')
-        digest=sha256_bytes(target.read_bytes());uv={'u0':0.,'v0':0.,'u1':1.,'v1':1.}
+        trim=im.crop(box);name=part['componentId']+'-preview.png';target=folder/name
+        receipts[name]=publish_bytes(lambda stream: trim.save(stream,format='PNG'), target)
+        verify_receipt(target, receipts[name])
+        with Image.open(target) as decoded: decoded.verify()
+        digest=receipts[name]['sha256'];uv={'u0':0.,'v0':0.,'u1':1.,'v1':1.}
         item={'componentId':part['componentId'],'objectName':part['partName'],'face':'FRONT',
               'engineeringHash':spec['engineeringHash'],'artworkHash':art_hash,'surfaceHash':stable_hash(row),
               'uvRect':uv,'rotationDeg':0.,'mirrored':False,'relation':'SINGLE_SURFACE',
@@ -59,7 +63,7 @@ def prepare(root,tenant,p,folder):
     package={'sku':p['draft']['sku'],'engineeringHash':spec['engineeringHash'],'placements':placements,'artworkHash':art_hash}
     package['packageHash']=stable_hash(package)
     inputs=[{**i,'imagePath':str((folder/i['source']['name']).resolve()),'artworkSha256':i['source']['fileSha256'],'goldenObservedUv':True} for i in placements]
-    return spec,package,inputs
+    return spec,package,inputs,receipts
 
 
 def validate(folder):
@@ -69,7 +73,8 @@ def validate(folder):
     expected=set(FILES)|{p['source']['name'] for p in m['package']['placements']}
     if set(m['files'])!=expected:raise ValueError('3D 預覽檔案清單不符')
     for name,digest in m['files'].items():
-        if Path(name).name!=name or sha256_bytes((folder/name).read_bytes())!=digest:
+        path=folder/name
+        if Path(name).name!=name or path.is_symlink() or not path.is_file() or sha256_bytes(path.read_bytes())!=digest:
             raise ValueError('3D 預覽檔案已變更')
     validate_outputs(folder,m['spec'])
     validate_worker_observation(read_json(folder/'golden-observation.json'),m['package'],m['spec'])
@@ -79,15 +84,21 @@ def validate(folder):
 
 
 def status(root,tenant,jid,*,current_draft=None):
-    base=folder_for(root,tenant,jid);pointer=read_json(base/'latest.json');s=read_json(base/'state.json')
-    m=None;error=s.get('error')
+    base=folder_for(root,tenant,jid);pointer_path=base/'latest.json';pointer=None
+    invalid_pointer = pointer_path.exists() and (pointer_path.is_symlink() or not pointer_path.is_file())
+    if pointer_path.exists() and not invalid_pointer:
+        pointer=read_json(pointer_path)
+    s=read_json(base/'state.json')
+    m=None;error=s.get('error') or ('無效預覽發布指標' if invalid_pointer else None)
     if pointer:
         try:
             if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']):raise ValueError('無效預覽編號')
+            if not isinstance(pointer.get('manifestSha256'),str): raise ValueError('無效預覽發布指標')
             m=validate(base/'generations'/pointer['generationId'])
+            if pointer['manifestSha256'] != sha256_bytes((base/'generations'/pointer['generationId']/'manifest.json').read_bytes()): raise ValueError('預覽發布指標不符')
         except (ValueError,OSError,KeyError) as exc:error=str(exc)
     return {'state':s.get('state','idle'),'progress':s.get('progress',0),'taskId':s.get('taskId'),
-            'generated':bool(m),'generationId':pointer.get('generationId'),'error':error,
+            'generated':bool(m),'generationId':(pointer or {}).get('generationId'),'error':error,
             'stale':bool(m and current_draft and m['draft']!=current_draft),'manifest':m}
 
 
@@ -98,7 +109,7 @@ def generate(platform,tenant,jid,draft,*,revision=0,generation_id=None,on_job=No
     if platform.mock_blender or not platform.runtime.available():raise ValueError('需要真實 Blender')
     p=plan(platform.root,tenant,draft);gid=generation_id or new_id()
     folder=folder_for(platform.root,tenant,jid)/'generations'/gid;folder.mkdir(parents=True,exist_ok=False)
-    spec,package,placements=prepare(platform.root,tenant,p,folder);check()
+    spec,package,placements,receipts=prepare(platform.root,tenant,p,folder);check()
     h=spec['height']/1000;extent=max(spec['width'],spec['height'])/1000
     payload={'tenantId':tenant,'jobType':'PARAMETRIC_3D','mode':'CABINET_PREVIEW','engineering':spec,
              'recipePreview':True,'goldenRecipe':True,'goldenIdentity':{'sku':draft['sku'],'packageHash':package['packageHash']},
@@ -114,12 +125,17 @@ def generate(platform,tenant,jid,draft,*,revision=0,generation_id=None,on_job=No
         raise ValueError('Blender 未完成：'+str(done.get('error') or done.get('status')))
     output=done.get('output',{})
     for name in FILES:
-        source=platform.dam.get(output['files'][name],tenant_id=tenant);shutil.copy2(source.path,folder/name)
+        source=platform.dam.get(output['files'][name],tenant_id=tenant)
+        expected_sha256, expected_size = dam_identity(source)
+        receipts[name]=publish_binary(source.path, folder/name, expected_sha256=expected_sha256, expected_size=expected_size)
+        verify_receipt(folder/name, receipts[name])
+    expected_artifacts=set(FILES)|{x['source']['name'] for x in package['placements']}
+    verify_receipt_set(folder, receipts, expected_artifacts)
     m={'generationId':gid,'draft':draft,'sourceRevision':revision,'planHash':p['planHash'],'spec':spec,'package':package,
-       'files':{f.name:sha256_bytes(f.read_bytes()) for f in folder.iterdir() if f.is_file()},
+       'files':{f.name:(receipts[f.name]['sha256'] if f.name in receipts else sha256_bytes(f.read_bytes())) for f in folder.iterdir() if f.is_file()},
        'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
        'requestedJobId':job['jobId'],'jobId':read_json(folder/'golden-observation.json')['jobId'],'cacheHit':done.get('cacheHit',False),
        'productionReady':False,'colorAuthority':'RGB_APPROXIMATION_NOT_RIP_COLOR_PROOF'}
-    atomic_json(folder/'manifest.json',m);atomic_json(folder/'meta.json',{'manifestSha256':sha256_bytes((folder/'manifest.json').read_bytes())})
-    validate(folder);check();atomic_json(folder.parent.parent/'latest.json',{'generationId':gid})
+    atomic_json(folder/'manifest.json',m);manifest_sha=sha256_bytes((folder/'manifest.json').read_bytes());atomic_json(folder/'meta.json',{'manifestSha256':manifest_sha})
+    validate(folder);check();verify_receipt_set(folder, receipts, expected_artifacts);verify_manifest_meta(folder, manifest_sha);atomic_json(folder.parent.parent/'latest.json',{'generationId':gid,'manifestSha256':manifest_sha})
     return status(platform.root,tenant,jid,current_draft=draft)
