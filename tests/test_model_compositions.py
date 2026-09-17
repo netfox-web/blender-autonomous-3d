@@ -118,7 +118,7 @@ def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_pat
     draft = c.snapshot(tmp_path, 't', model, selection)
     spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
     monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
-                                                       {'packageHash': 'package'}, [], {}))
+                                                       {'packageHash': 'package', 'placements': []}, [], {}))
     class Dam:
         def __init__(self, path):
             self.path = path
@@ -155,7 +155,7 @@ def test_worker_receipt_tamper_before_manifest_fails_closed(tmp_path, monkeypatc
     draft = c.snapshot(tmp_path, 't', model, selection)
     spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
     monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
-                                                       {'packageHash': 'package'}, [], {}))
+                                                       {'packageHash': 'package', 'placements': []}, [], {}))
     class Dam:
         def __init__(self, path):
             self.path = path; self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -173,12 +173,15 @@ def test_worker_receipt_tamper_before_manifest_fails_closed(tmp_path, monkeypatc
         'usedMock': False, 'output': {'files': files, 'realBlender': True, 'usedMock': False,
                                       'device': 'OPTIX', 'blenderVersion': '5.2.1 LTS', 'realOptix': True}}
     platform.dam = SimpleNamespace(get=lambda ref, tenant_id: Dam(tmp_path / ('source-' + ref)))
-    original = c.publish_binary
-    def tamper(source, target, **kwargs):
-        receipt = original(source, target, **kwargs)
-        target.write_bytes(b'tampered-after-receipt')
-        return receipt
-    monkeypatch.setattr(c, 'publish_binary', tamper)
+    original = c.verify_receipt
+    calls = {'count': 0}
+    def tamper_after_verify(target, receipt):
+        result = original(target, receipt)
+        calls['count'] += 1
+        if calls['count'] == 1:
+            target.write_bytes(b'tampered-after-initial-verification')
+        return result
+    monkeypatch.setattr(c, 'verify_receipt', tamper_after_verify)
     monkeypatch.setattr(c.print_preview, 'validate', lambda folder: {'status': 'test'})
     with pytest.raises(ValueError, match='receipt'):
         c.generate(platform, 't', model['id'], draft, generation_id='22222222-2222-2222-2222-222222222222')
