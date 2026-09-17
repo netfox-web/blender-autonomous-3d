@@ -1,261 +1,200 @@
-# Development Agent 指令：PR #15 Round 11 — DAM Artifact Source Identity Gate
+# Development Agent 指令：PR #15 Round 11 — DAM Artifact Source Identity Gate / Evidence Closure
 
 > Supervisor checkpoint: 2026-09-17
 > Repo: `netfox-web/blender-autonomous-3d`
 > PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
 > Accepted Round 10 CODE: `0082b98bbaf9f233eda32a5382b9fc373f5a6236`
 > Accepted Round 10 DOCS: `c95179455982d5caeb5338d0ed5603d1479408ea`
-> CODE Actions: `35176969210` — Ubuntu SUCCESS / Windows SUCCESS on exact `0082b98...`
-> DOCS Actions: `35178506868` — Ubuntu SUCCESS / Windows SUCCESS on exact `c951794...`
-> Clean REAL acceptance: `7ba7806e-aa18-4325-8c58-e704b7d2f729` — Blender 5.2.1 LTS / OptiX / `usedMock=false`, synthetic/static variants only
-> Supervisor decision: **ACCEPT WITH SCOPE / GO ROUND 11**
+> Current Round 11 implementation checkpoint: `74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`
+> Current checkpoint Actions: `35180923106` — still in progress at Supervisor review; **not acceptance evidence yet**
+> Supervisor decision: **PARTIAL / EVIDENCE CLOSURE REQUIRED**
 > Round 12: **HOLD**
 > `MERGE_AUTHORIZED=false`
 > `globalProductionReady=false`
 
-## 0. Round 10 Re-Gate result
+## 0. Supervisor audit result
 
-Round 10 is accepted **with scope**.
+The Round 11 production-code direction is acceptable and narrow:
 
-The final correction is complete:
+- `dam_identity(source)` reads the existing `DamObject.sha256` as the authoritative digest and validates it as an exact lowercase 64-hex string;
+- if existing DAM metadata has `bytes` / `size`, the implementation binds that exact integer as `expected_size` without re-hashing the current source path and calling the result authoritative;
+- both `model_compositions.generate()` and `print_preview.generate()` now pass the stored DAM digest/size into `publish_binary()`;
+- `publish_binary()` hashes the bytes actually copied into its owned temp and compares those copied bytes to the stored expected digest before namespace publication;
+- no DAM/queue/state-store/authority rewrite was introduced.
 
-- `0082b98...` correctly renames the namespace-sync test to **post-replace / post-namespace-mutation** semantics;
-- a distinct pre-replace file-flush failure probe covers both `publish_binary()` and `publish_bytes()` and preserves the previous final with no owned temp debris;
-- a service-level regression proves `CommitIndeterminate` during generated artifact publication stops before `manifest.json`, `published.json`, and `latest.json` authority advancement;
-- exact final CODE Actions `35176969210` are dual-platform SUCCESS;
-- clean REAL Blender acceptance `7ba7806e-aa18-4325-8c58-e704b7d2f729` ran after the final CODE gate with `usedMock=false`;
-- exact DOCS Actions `35178506868` are dual-platform SUCCESS.
+This is **REAL_LOGIC** implementation work. It is **not yet Round 11 acceptance**.
 
-Truth boundary remains strict:
+Do not start Round 12. Do not merge PR #15.
 
-- real Blender output exercised in the clean run: **REAL_RENDER** only;
-- actual host file / containing-directory flush on exercised local surfaces: **REAL_OS_IO_FLUSH**;
-- retained actual killed-child / fresh-reader A–D probes: **REAL_PROCESS_RECOVERY / local filesystem only**;
-- injected flush/sync errors and ordinary CI renderer: **MOCK / FAULT_INJECTION_LOGIC**;
-- post-namespace sync uncertainty: **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**;
-- W2 additional hard-link ambiguity: **PARTIAL / PRESERVED UNKNOWN**;
-- hardware power-cut/reset/controller-cache survival, NAS/network-filesystem durability: **BLOCKED / NOT_TESTED**;
-- `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`.
+## 1. Why Round 11 is not accepted yet
 
-Do not reopen Round 10 unless a concrete regression proves this accepted scope false.
+The new commit is substantive, but the evidence package required by the accepted Round 11 gate is incomplete.
 
-## 1. Round 11 target — bind copied worker artifacts to authoritative DAM identity
+Missing closure at this checkpoint:
 
-The next gate is deliberately narrow. Do **not** redesign DAM, the worker, the queue, publication authority, or the storage architecture.
+1. the mandatory baseline on exact accepted CODE `0082b98...` has not been recorded in the PR authority package;
+2. focused adversarial coverage is incomplete — current changes add strict helper coverage, but do not yet prove the service-level mismatch/race/success/isolation matrix;
+3. exact checkpoint Actions `35180923106` was still running at review time and cannot be treated as PASS;
+4. no new clean `FOX3D_MOCK_BLENDER=0`, `usedMock=false` Blender acceptance exists on a final Round 11 CODE SHA;
+5. `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md/.json` has not yet been closed for Round 11;
+6. no exact final DOCS SHA + dual-platform DOCS CI exists for this round.
 
-Current accepted CODE has a remaining source-identity boundary:
+CI with `FOX3D_MOCK_BLENDER=1` remains **MOCK regression**, even when green.
 
-- `platform.dam.get(assetId, tenant_id=tenant)` returns a DAM object that already carries the recorded content digest (`DamObject.sha256`);
-- `durability.publish_binary()` already supports `expected_sha256` and `expected_size`;
-- however `model_compositions.generate()` and `print_preview.generate()` currently call `publish_binary(source.path, target)` without binding the copy to the DAM object's recorded digest;
-- therefore a DAM path whose bytes are mutated after registration can potentially be copied and then re-hashed into a new internally self-consistent manifest without proving that the copied bytes still equal the worker-returned DAM identity.
+## 2. Baseline first — accepted CODE `0082b98...`
 
-Round 11 must close that exact boundary with the smallest possible change.
+Use an isolated checkout/worktree of exact accepted CODE `0082b98bbaf9f233eda32a5382b9fc373f5a6236`. Do not alter the accepted branch while collecting the baseline.
 
-## 2. Baseline first — prove the accepted CODE behavior before modifying production code
+Required actual local-filesystem probe:
 
-Before changing production code, use an isolated workspace against exact accepted CODE `0082b98bbaf9f233eda32a5382b9fc373f5a6236` and record a durable baseline.
-
-Required baseline probe:
-
-1. create/store a worker-style DAM object through the existing DAM API and record its asset ID plus authoritative stored `sha256`;
-2. mutate the actual file bytes at the returned `DamObject.path` **after** DAM registration while leaving the DAM object/index metadata unchanged;
-3. exercise the existing artifact-copy path used by `model_compositions.generate()` and/or `print_preview.generate()` far enough to establish whether mutated bytes can be copied into the generation folder and become part of a manifest, or whether another existing verifier stops them;
-4. record exact original digest, mutated digest, final copied digest, manifest/publication presence, and verifier result;
-5. use an actual filesystem mutation/read for this baseline. If Blender/worker execution is substituted, label that part **MOCK**. Do not call a monkeypatched byte mutation REAL process evidence.
+1. create a worker-style object through the existing DAM API;
+2. record asset ID, stored `DamObject.sha256`, source path and original byte count;
+3. mutate the bytes at `DamObject.path` after DAM registration while leaving stored DAM identity unchanged;
+4. exercise the accepted artifact-copy service path far enough to determine whether mutated bytes can enter the generation folder and whether manifest/publication/latest authority advances;
+5. record stored digest, mutated source digest, copied-final digest if any, manifest digest if any, authority-file presence, and verifier result.
 
 Classification:
 
-- source/code inspection: **REAL_LOGIC_AUDIT**;
-- actual local file mutation and read/copy: **REAL_OS_IO_INTEGRITY** only for the exercised local surface;
-- mocked worker / mocked Blender: **MOCK regression**;
-- do not call this NAS, object-store, power-loss, or production storage evidence.
+- code/source inspection: **REAL_LOGIC_AUDIT**;
+- actual file mutation/read/copy on the exercised local filesystem: **REAL_OS_IO_INTEGRITY**;
+- mocked Blender/worker portions: **MOCK**;
+- do not call this NAS/object-store/power-loss evidence.
 
-The baseline exists to demonstrate the boundary. Do not manufacture a failure if the existing verifier already blocks it; report the actual result.
+Report the actual baseline outcome. Do not manufacture a fail-open if another accepted verifier already blocks it.
 
-## 3. Minimal production correction
+## 3. Complete the focused Round 11 test matrix
 
-If the baseline confirms that copied worker artifacts are not bound to the stored DAM digest, make only the minimum correction needed.
+Keep the current production correction unless a concrete failing test proves another minimum fix is necessary.
 
-For every worker-returned DAM artifact copied into the manifest-authoritative generation folder in:
-
-- `src/fox3d/model_compositions.py`
-- `src/fox3d/print_preview.py`
-
-bind publication to the existing DAM object's authoritative content identity.
-
-Minimum contract:
-
-- `expected_sha256` must come from the DAM object metadata returned for the exact worker asset ID, not from re-hashing the current source path and calling that value authoritative;
-- pass that stored digest into `publish_binary(..., expected_sha256=...)` or an equivalent tiny existing-layer helper;
-- if an authoritative byte size already exists in the DAM object/metadata, bind `expected_size` too. If no durable authoritative size exists, **do not invent a second size authority**; the digest is mandatory and sufficient for this round;
-- malformed/missing authoritative digest for a worker-returned artifact must fail closed before manifest/meta/publication/latest advancement;
-- no bool/int/string coercion tricks; validate identity fields strictly enough that malformed metadata cannot silently become accepted;
-- a mismatch must preserve the previous/absent target state according to the existing `publish_binary` contract and must not advance `manifest.json`, `meta.json`, `published.json`, or `latest.json`;
-- derived local preview PNGs generated by `publish_bytes()` are not worker-DAM source artifacts. Keep their current publication logic; do not create fake DAM lineage for them.
-
-Do **not** add:
-
-- a new DAM database or ledger;
-- a second artifact authority;
-- a replay/adoption subsystem;
-- a new queue/state store;
-- broad filesystem scans;
-- architecture rewrites;
-- silent fallback that recomputes expected identity from potentially tampered source bytes.
-
-## 4. Adversarial / TOCTOU coverage
-
-Add focused tests for the exact boundary.
-
-Required cases:
+Add focused tests that exercise the production callers, not only `dam_identity()` in isolation.
 
 ### A. Stored digest mismatch before copy
 
-- DAM metadata says digest A;
-- on-disk source bytes are changed to digest B;
-- publication fails closed;
-- no valid new manifest/publication/latest authority is advanced;
-- prior final, when present, remains byte-identical; otherwise target remains absent;
-- owned temp is not adopted as authority.
+- DAM stores digest A;
+- on-disk source bytes become digest B;
+- `model_compositions.generate()` and/or `print_preview.generate()` fail closed through the real copy path;
+- no valid new `manifest.json`, `meta.json`, `published.json`, or `latest.json` authority advances;
+- the mismatching target is absent or a prior target remains byte-identical;
+- no owned temp is adopted as authority.
 
 ### B. Source changes during copy
 
-Exercise or deterministically simulate a source mutation while `publish_binary()` is streaming.
+Deterministically mutate the source while `publish_binary()` is reading it.
 
-The invariant is: the digest computed from bytes actually copied must be compared against the stored DAM digest and mismatch must stop publication.
+Required invariant: SHA computed from the **bytes actually copied** is compared against stored `DamObject.sha256`; mismatch stops publication before authority advancement.
 
-If this is implemented with monkeypatch/fault injection, classify it **MOCK / FAULT_INJECTION_LOGIC**. Only label an actual independent process mutating the file during a real copy as REAL process/OS evidence.
+If monkeypatch/fault injection is used, classify it **MOCK / FAULT_INJECTION_LOGIC**. Only a genuine independent-process mutation may be called REAL process/OS evidence.
 
-### C. Correct source
+### C. Correct source success
 
-- stored DAM digest equals current bytes;
-- publication succeeds;
-- final copied worker artifact digest equals the stored DAM digest;
-- manifest digest for each source-backed worker artifact equals that same digest;
-- existing Blender/verifier/identity checks remain unchanged and green.
+- stored DAM digest equals source bytes;
+- copy succeeds;
+- copied final digest == stored DAM digest;
+- manifest digest == copied final digest == stored DAM digest for every source-backed worker artifact;
+- stored authoritative size, when present, equals copied size;
+- existing Blender/verifier/history/download/publication lineage remains green.
 
-### D. Existing isolation failures remain closed
+### D. Isolation / malformed identity remains fail-closed
 
-Retain and verify:
+Retain or add proof for:
 
-- wrong DAM asset ID fails;
-- cross-tenant DAM access fails;
-- missing source fails;
-- symlink target remains rejected;
-- wrong SHA/size keeps prior final unchanged;
-- no new retry/rollback/replay behavior after `CommitIndeterminate`.
+- malformed/missing `DamObject.sha256`;
+- malformed authoritative `bytes` / `size` including bool/string/negative values;
+- wrong asset ID;
+- cross-tenant DAM access;
+- missing source;
+- symlink artifact target rejection;
+- wrong SHA/size preserving prior final;
+- `CommitIndeterminate` never creates retry/adoption/replay authority.
 
-## 5. CODE gate
+Do not introduce a second digest authority. `expected_sha256` must come from the stored DAM object returned for the exact worker asset ID.
 
-After the minimal correction and focused tests:
+## 4. Final CODE gate
 
-1. freeze one exact Round 11 CODE SHA;
-2. run focused source-identity / binary-publication tests;
+After baseline + focused tests are complete:
+
+1. freeze one exact final Round 11 CODE SHA;
+2. run the focused source-identity/publication tests;
 3. run the full local suite;
-4. run GitHub Actions on the exact final CODE SHA;
-5. Ubuntu + Windows must both finish SUCCESS and checkout the exact SHA;
-6. record exact run ID and pass/skip counts.
+4. run GitHub Actions on that exact final CODE SHA;
+5. Ubuntu + Windows must both complete SUCCESS and checkout the exact final SHA;
+6. record exact Actions run ID and pass/skip counts.
 
-CI remains **MOCK regression** where `FOX3D_MOCK_BLENDER=1`; do not promote CI to REAL_RENDER or Production Ready.
+The current `35180923106` run may be retained as checkpoint evidence if it completes, but if any tests/docs/code are added afterward it is **not** the final CODE gate and must not be cited as such.
 
-## 6. New clean REAL Blender acceptance on final Round 11 CODE
+If CI fails, make only the smallest correction supported by the failure. Do not rewrite architecture.
 
-Because Round 11 changes the production artifact-lineage gate, run one new clean acceptance after exact final CODE dual-CI succeeds.
+## 5. New clean REAL Blender acceptance on final CODE
 
-Requirements:
+Only after exact final CODE dual-platform CI is green, run a fresh clean acceptance:
 
 - `FOX3D_MOCK_BLENDER=0`;
 - Blender 5.2.1 LTS + OptiX;
 - `usedMock=false`;
 - clean working tree bound to the exact final Round 11 CODE SHA;
 - at least two current synthetic/static variants;
-- for every worker-DAM artifact copied into the final generation, record worker asset ID, stored DAM digest, copied final digest, manifest digest, size, and equality result;
-- generated preview PNGs and source-backed PNG/BLEND/GLB/geometry/golden-observation artifacts retain decode/reopen/finite checks as applicable;
+- record for each source-backed worker artifact: asset ID, stored DAM digest, copied digest, manifest digest, stored size if present, copied size and equality result;
+- keep PNG/BLEND/GLB/geometry/golden-observation decode/reopen/finite checks as applicable;
 - restart/history/download/publication lineage remains green;
-- no duplicate publication, no temp adoption/replay;
-- all prior ownership/identity/durability gates remain green.
+- no duplicate publication and no temp adoption/replay.
 
-Classify only what was exercised:
+Truth labels:
 
-- real Blender outputs: **REAL_RENDER**;
-- actual DAM-object digest-to-final-byte verification in the local run: **REAL_LOGIC + REAL_OS_IO_INTEGRITY** for that local surface;
+- exercised Blender output: **REAL_RENDER** only;
+- local stored-DAM-digest → copied-byte verification: **REAL_LOGIC + REAL_OS_IO_INTEGRITY** on that local surface;
 - actual host flush: **REAL_OS_IO_FLUSH** where exercised;
-- injected mutation/race: **MOCK / FAULT_INJECTION_LOGIC** unless truly cross-process;
-- remote object store / MinIO / NAS immutable-source guarantee: **BLOCKED / NOT_TESTED** unless a real configured remote store is actually exercised;
-- hardware power loss remains **BLOCKED / NOT_TESTED**.
+- injected races/errors: **MOCK / FAULT_INJECTION_LOGIC** unless truly cross-process;
+- post-namespace sync uncertainty remains **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**;
+- W2 hard-link ambiguity remains **PARTIAL / PRESERVED UNKNOWN**;
+- NAS/object-store immutable-source guarantee and hardware power-loss remain **BLOCKED / NOT_TESTED**.
 
-Do not change the physical/manufacturing/global readiness flags.
+Do not change physical/manufacturing/global readiness flags.
 
-## 7. Acceptance-document closure
+## 6. Acceptance docs and final handoff
 
-Update only the existing PR #15 authority package unless a canonical statement genuinely becomes false:
+Update only the existing PR #15 authority package:
 
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
 
-Round 11 evidence must record:
+Record:
 
-- accepted Round 10 CODE/DOCS/CI/REAL lineage;
-- exact baseline tamper probe and its actual result;
-- final Round 11 CODE SHA and changed files;
-- exact CODE Actions/run counts;
-- source asset ID + stored DAM digest + copied digest + manifest digest equality for clean success evidence;
-- adversarial mismatch/race classifications;
+- accepted Round 10 lineage;
+- exact accepted-CODE baseline probe and outcome;
+- final Round 11 CODE SHA + changed files;
+- exact final CODE Actions and pass/skip counts;
+- mismatch/race/success/isolation evidence and correct REAL/MOCK classification;
+- stored DAM digest → copied final digest → manifest digest equality for clean success;
 - new clean REAL acceptance ID;
-- remaining PARTIAL/BLOCKED truth boundaries;
-- exact DOCS SHA and exact DOCS dual-platform CI.
+- remaining PARTIAL/BLOCKED boundaries;
+- exact final DOCS SHA + exact dual-platform DOCS CI.
 
-Do **not** rewrite these merely to make timestamps current:
+Do not rewrite merely for freshness:
 
 - `docs/GROK_PROGRESS_REPORT.md`
 - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
 - `docs/REAL_E2E_ACCEPTANCE.md`
 - `docs/CABINET_REAL_ACCEPTANCE.md`
 
-Their current boundaries remain valid: Mock pytest is not production evidence, CNC live control remains BLOCKED, Vision Judge remains MOCK, and `globalProductionReady=false`.
+Their boundaries remain valid: Mock pytest is not production evidence; CNC live control is BLOCKED; Vision Judge is MOCK; `globalProductionReady=false`.
 
-## 8. Final handoff gate
-
-When Round 11 CODE + clean REAL + acceptance docs are complete:
-
-1. freeze exact DOCS/head SHA on PR #15;
-2. run exact DOCS GitHub Actions;
-3. Ubuntu + Windows both SUCCESS on that exact DOCS SHA;
-4. verify checkout/head SHA exactly;
-5. leave exactly one Issue #1 handoff headed:
+When all closure is complete, leave exactly one Issue #1 handoff headed:
 
 `[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 11 DAM artifact source identity`
 
-Include:
+Include final CODE SHA/Actions, baseline outcome, clean REAL ID, final DOCS SHA/Actions, digest-equality summary, truth matrix, `MERGE_AUTHORIZED=false`, PR #15 DRAFT/OPEN/unmerged, PR #16 FROZEN, and **Round 12 HOLD**. Then STOP for Supervisor Re-Gate.
 
-- final CODE SHA + CODE Actions;
-- baseline tamper outcome;
-- new clean REAL ID;
-- DOCS SHA + DOCS Actions;
-- stored-DAM-digest → copied-final-digest → manifest-digest equality summary;
-- REAL/MOCK/PARTIAL/BLOCKED matrix;
-- `globalProductionReady=false`;
-- `MERGE_AUTHORIZED=false`;
-- PR #15 DRAFT/OPEN/unmerged;
-- PR #16 FROZEN;
-- **Round 12 HOLD**.
-
-Then STOP for Supervisor Re-Gate.
-
-## 9. Frozen boundaries
+## 7. Frozen boundaries
 
 - No merge / retarget / rebase-to-main / cherry-pick.
 - PR #15 stays DRAFT / OPEN / unmerged.
 - PR #16 stays FROZEN DRAFT.
 - PR #13 / #14 and Issue #6 gates unchanged.
 - No live H3 / LTX / Vision / CNC / LASER / PLC work.
-- No architecture rewrite.
+- No DAM/queue/storage/authority architecture rewrite.
 - No second authority, storage ledger, replay subsystem, or duplicate DAM.
 - No Mock/FIXTURE promotion to Production Ready.
 - No physical manufacturing-readiness claim.
-- No NAS/object-store durability or immutability claim without real configured evidence.
-- No hardware power-loss claim without actual destructive power/reset evidence.
 - `MERGE_AUTHORIZED=false`.
 - `globalProductionReady=false`.
 - **Round 12 HOLD**.
