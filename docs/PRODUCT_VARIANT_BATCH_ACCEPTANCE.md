@@ -162,3 +162,18 @@ After corrected CODE CI, clean REAL evidence `f87232e2-5b33-48bb-998a-bb102232e0
 | Physical product/print/manufacturing/global Production Ready | false |
 
 Round 10 correction leaves `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No H3/LTX/Vision/CNC/LASER/PLC or production operation was used.
+
+
+## Round 10 final correction — failure semantics and evidence closure
+
+Supervisor final-correction instruction `215657aac77b3e3f175b47368d20ec6c720a8805` / decision [5707544987](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5707544987) required the smallest test-semantic closure. Final CODE is `0082b98bbaf9f233eda32a5382b9fc373f5a6236`; PR #15 remains DRAFT/OPEN/unmerged, `MERGE_AUTHORIZED=false`, PR #16 FROZEN, Round 11 HOLD.
+
+The former namespace test is now explicitly named **post-replace namespace sync failure**: `os.replace()` may have installed complete bytes, then containing-namespace synchronization raises `CommitIndeterminate`; the call returns no success and the complete final may remain visible. A distinct **pre-replace file-flush failure** probe covers both `publish_binary()` and `publish_bytes()` and verifies the prior final remains byte-identical with no owned temp debris. A service-level regression injects `CommitIndeterminate` during generated artifact publication and proves `manifest.json`, `published.json`, and `latest.json` are not advanced. No retry, rollback, replay, second marker, DB or WAL was introduced.
+
+Exact final CODE Actions [35176969210](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35176969210) passed on `0082b98bbaf9f233eda32a5382b9fc373f5a6236`: **Windows 1324 PASS / 0 skipped; Ubuntu 1320 PASS / 4 existing skips**. Local full pytest passed.
+
+Clean final REAL acceptance `7ba7806e-aa18-4325-8c58-e704b7d2f729` ran after that exact CODE CI on Blender **5.2.1 LTS / OptiX**, `usedMock=false`, with two `SYNTHETIC_STATIC_FIXTURE` variants. Generated preview PNG plus manifest-authoritative PNG/BLEND/GLB/geometry/golden-observation artifacts have SHA/size records; PNG decode/reopen, `.blend` reopen, finite pixels, restart/history/download, cache/attempt/DAM/job/publication lineage and no duplicate publication checks passed. This is **REAL_RENDER** and local process/OS evidence only; it is not physical CAD, print, manufacturing, NAS or power-loss evidence.
+
+The retained baseline A–D child-process evidence remains bound to accepted CODE `87ea4d3ba753c811f693cec8f4a3f465aca94364` and classified **REAL_PROCESS_RECOVERY / local filesystem only**. The final correction test classifications are: host flush **REAL_OS_IO_FLUSH** on exercised local surfaces; injected failure **MOCK / FAULT_INJECTION_LOGIC**; post-namespace uncertainty **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**; W2 extra hard-link ambiguity **PARTIAL / PRESERVED UNKNOWN**; hardware power cut/reset/controller cache and NAS **BLOCKED / NOT_TESTED**.
+
+`physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No H3/LTX/Vision/CNC/LASER/PLC or production operation was used.

@@ -19163,8 +19163,8 @@
     "globalProductionReady": false
   },
   "round10": {
-    "instructionSha": "93a607a3cd0416734f4f9db55e1e7dc495100861",
-    "supervisorCommentId": 5707089429,
+    "instructionSha": "215657aac77b3e3f175b47368d20ec6c720a8805",
+    "supervisorCommentId": 5707544987,
     "baselineCode": "87ea4d3ba753c811f693cec8f4a3f465aca94364",
     "baselineAudit": {
       "status": "PASS",
@@ -19336,6 +19336,32 @@
     "physicalProductGeometryTruth": false,
     "physicalPrintValidated": false,
     "manufacturingReady": false,
-    "globalProductionReady": false
+    "globalProductionReady": false,
+    "finalCorrectionCodeCommit": "0082b98bbaf9f233eda32a5382b9fc373f5a6236",
+    "finalCorrectionCodeCi": {
+      "runId": 35176969210,
+      "headSha": "0082b98bbaf9f233eda32a5382b9fc373f5a6236",
+      "status": "success",
+      "jobs": [
+        {
+          "log": ".fox3d-work\\round10-final-code-105060689488.log",
+          "passed": 1324,
+          "skipped": 0,
+          "checkoutSha": "0082b98bbaf9f233eda32a5382b9fc373f5a6236"
+        },
+        {
+          "log": ".fox3d-work\\round10-final-code-105060689644.log",
+          "passed": 1320,
+          "skipped": 4,
+          "checkoutSha": "0082b98bbaf9f233eda32a5382b9fc373f5a6236"
+        }
+      ]
+    },
+    "finalCorrectionRealEvidenceId": "7ba7806e-aa18-4325-8c58-e704b7d2f729",
+    "finalCorrectionTests": [
+      "post-replace namespace sync failure is indeterminate and final may be visible",
+      "pre-replace file-flush failure preserves previous final for publish_binary and publish_bytes",
+      "CommitIndeterminate from generated artifact publication stops before manifest/published/latest authority advancement"
+    ]
   }
 }
