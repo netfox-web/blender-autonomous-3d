@@ -219,3 +219,16 @@ def verify_manifest_meta(folder, manifest_sha):
     if record.get('manifestSha256') != manifest_sha:
         raise ValueError('manifest metadata changed')
     return manifest_sha
+
+
+def verify_publication_seal(path, manifest_sha):
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError('publication seal is not regular')
+    try:
+        record = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise ValueError('invalid publication seal') from exc
+    if record.get('manifestSha256') != manifest_sha:
+        raise ValueError('publication seal mismatch')
+    return record

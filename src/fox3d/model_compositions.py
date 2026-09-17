@@ -15,7 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta, verify_publication_seal
 from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
@@ -40,9 +40,7 @@ def generation(root, tenant, mid, gid, item):
                 or type(draft.get('masterRevision')) is not int
                 or manifest['sourceRevision'] != draft['masterRevision']):
             raise ValueError('成果來源版本不符')
-        published = read_json(target/'published.json')
-        if published.get('manifestSha256') != sha256_bytes((target/'manifest.json').read_bytes()):
-            raise ValueError('成果尚未完成發布核對')
+        verify_publication_seal(target/'published.json', sha256_bytes((target/'manifest.json').read_bytes()))
     if manifest['generationId'] != gid or draft['masterId'] != mid:
         raise ValueError('成果不屬於此模型')
     if draft['masterInputHash'] != item['inputHash']:
@@ -263,7 +261,6 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     verify_manifest_meta(target, manifest_sha)
     atomic_json(target/'published.json',{'manifestSha256':manifest_sha})
     published=target/'published.json'
-    if published.is_symlink() or not published.is_file() or read_json(published).get('manifestSha256') != manifest_sha:
-        raise ValueError('publication seal mismatch')
+    verify_publication_seal(published, manifest_sha)
     atomic_json(target.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,mid,current_draft=current)

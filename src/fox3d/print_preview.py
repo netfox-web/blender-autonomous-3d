@@ -89,7 +89,10 @@ def status(root,tenant,jid,*,current_draft=None):
     if pointer:
         try:
             if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']):raise ValueError('無效預覽編號')
+            pointer_path=base/'latest.json'
+            if pointer_path.is_symlink() or not pointer_path.is_file() or not isinstance(pointer.get('manifestSha256'),str): raise ValueError('無效預覽發布指標')
             m=validate(base/'generations'/pointer['generationId'])
+            if pointer['manifestSha256'] != sha256_bytes((base/'generations'/pointer['generationId']/'manifest.json').read_bytes()): raise ValueError('預覽發布指標不符')
         except (ValueError,OSError,KeyError) as exc:error=str(exc)
     return {'state':s.get('state','idle'),'progress':s.get('progress',0),'taskId':s.get('taskId'),
             'generated':bool(m),'generationId':pointer.get('generationId'),'error':error,
@@ -131,5 +134,5 @@ def generate(platform,tenant,jid,draft,*,revision=0,generation_id=None,on_job=No
        'requestedJobId':job['jobId'],'jobId':read_json(folder/'golden-observation.json')['jobId'],'cacheHit':done.get('cacheHit',False),
        'productionReady':False,'colorAuthority':'RGB_APPROXIMATION_NOT_RIP_COLOR_PROOF'}
     atomic_json(folder/'manifest.json',m);manifest_sha=sha256_bytes((folder/'manifest.json').read_bytes());atomic_json(folder/'meta.json',{'manifestSha256':manifest_sha})
-    validate(folder);check();verify_receipt_set(folder, receipts, expected_artifacts);verify_manifest_meta(folder, manifest_sha);atomic_json(folder.parent.parent/'latest.json',{'generationId':gid})
+    validate(folder);check();verify_receipt_set(folder, receipts, expected_artifacts);verify_manifest_meta(folder, manifest_sha);atomic_json(folder.parent.parent/'latest.json',{'generationId':gid,'manifestSha256':manifest_sha})
     return status(platform.root,tenant,jid,current_draft=draft)

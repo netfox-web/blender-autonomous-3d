@@ -105,6 +105,21 @@ def test_corrupt_or_revoked_composition_never_downloadable(tmp_path,monkeypatch)
     from fox3d.recipe_3d import atomic_json
     gid='00000000-0000-0000-0000-000000000000';atomic_json(base/'latest.json',{'generationId':gid})
     assert not c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
+
+
+def test_modern_generation_rejects_publication_symlink(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    gid='33333333-3333-3333-3333-333333333333'
+    target=c.folder_for(tmp_path,'t',model['id'])/'generations'/gid; target.mkdir(parents=True)
+    manifest={'historyVersion':1,'sourceRevision':0,'draft':{'masterId':model['id'],'masterInputHash':model['inputHash'],'masterRevision':0},'generationId':gid,'package':{'placements':[]}}
+    monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
+    (target/'manifest.json').write_text('{}',encoding='utf-8')
+    seal=target/'seal.json'; seal.write_text('{"manifestSha256":"'+('0'*64)+'"}',encoding='utf-8')
+    try:
+        (target/'published.json').symlink_to(seal)
+    except OSError:
+        pytest.skip('symlink creation unavailable on this platform')
+    with pytest.raises(ValueError): c.generation(tmp_path,'t',model['id'],gid,model)
     manifest={'draft':{'masterInputHash':model['inputHash']},'package':{'placements':[{'originalAssetId':a['id']}]}}
     monkeypatch.setattr(c.print_preview,'validate',lambda folder:manifest)
     assert c.status(tmp_path,'t',model['id'],current_draft=model)['generated']
