@@ -1,217 +1,171 @@
-# Development Agent 指令：PR #15 Round 13 Correction — Publication Seal / Latest Pointer Evidence Closure
+# Development Agent 指令：PR #15 Round 13 Correction Checkpoint — Fail-Closed Publication / Latest Identity
 
 > Supervisor Re-Gate: 2026-09-17
 > Repo: `netfox-web/blender-autonomous-3d`
 > PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
-> Candidate CODE: `985385db01bdc354edbce44a4aedd78af52e0735`
-> Candidate DOCS: `ec4fd968c0fdf5d98ccb0399cd0543258963f263`
-> CODE Actions: `35201860277` — SUCCESS
-> DOCS Actions: `35204672640` — SUCCESS
+> Reviewed candidate head: `aceda581e447acd0a79cc8b81d45439f7671f79d`
+> New commits reviewed: `ef62e3321586cd3f16a237a58d1751a3791c191a`, `5978817f45976a8f9128bb1f34a6b1baaece2542`, `72a210076995ca6bfe52e82b79e2418eb1222568`, `aceda581e447acd0a79cc8b81d45439f7671f79d`
+> Exact head Actions: `35217851646` — still `in_progress` at Supervisor review time; even if green it is MOCK regression because `FOX3D_MOCK_BLENDER=1`
 > Supervisor decision: **CHANGES REQUIRED / ROUND 13 CORRECTION ONLY**
 > Round 14: **HOLD**
 > `MERGE_AUTHORIZED=false`
 > `globalProductionReady=false`
 
-## 0. What is accepted from the candidate
+## 0. Keep the valid narrow fixes
 
-Keep the current narrow direction. Do **not** revert or redesign it.
+Do not revert or redesign the current direction.
 
-Accepted implementation intent:
+Accepted implementation intent in the new candidate:
 
-- one captured `manifest_sha` is created after manifest write;
-- `meta.json` is bound to that captured digest;
-- `verify_manifest_meta()` rechecks regular/non-symlink manifest + meta before authority advancement;
-- model-composition `published.json` is written from the captured digest instead of a fresh re-hash;
-- modern `historyVersion == 1` composition status is routed through `generation()`;
-- print preview rechecks manifest/meta immediately before advancing `latest.json`;
-- no DB/WAL/new ledger/replay/global lock/storage rewrite was introduced.
+- `verify_publication_seal()` rejects symlink/non-regular modern `published.json` and pins `manifestSha256`;
+- model-composition modern read path uses that publication-seal verifier;
+- print-preview `latest.json` now carries `{generationId, manifestSha256}`;
+- print-preview status rejects obvious symlink/non-regular `latest.json` before parsing;
+- print-preview final writer uses the captured manifest digest when advancing `latest.json`;
+- no DB/WAL/new ledger/replay/storage architecture rewrite was introduced.
 
-The candidate CI is still **MOCK regression**, not REAL Blender evidence. Clean Blender evidence remains **REAL_RENDER** only within its observed scope.
+These are **REAL_LOGIC** changes only. GitHub Actions remains **MOCK regression**. No new final `usedMock=false` REAL Blender acceptance has been supplied for this corrected head.
 
-## 1. Why Round 13 is not accepted yet
+## 1. Critical blocker — digest mismatch can still return `generated=true`
 
-### Blocker A — required production-caller adversarial tests were not added
+Current `print_preview.status()` does this sequence:
 
-Round 13 explicitly required production-caller tests for the manifest/meta/published/latest boundary. The diff from accepted Round 12 DOCS `46615b2befb3d2e9b707754266677268ed2b9962` to candidate DOCS `ec4fd968c0fdf5d98ccb0399cd0543258963f263` changes only:
+1. `m = validate(generation)`;
+2. compare `latest.manifestSha256` against current `manifest.json` SHA;
+3. on mismatch, raise `ValueError` and only set `error` in `except`;
+4. return `generated = bool(m)`.
 
-- `src/fox3d/durability.py`
-- `src/fox3d/model_compositions.py`
-- `src/fox3d/print_preview.py`
-- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
-- `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
+Because `m` was already populated before the pointer-digest check, a stale/tampered pointer can produce an error **while still returning `generated=true` and exposing the manifest**.
 
-No tracked test file was added or modified for the required Round 13 matrix. Passing the retained suite does not prove the newly introduced authority behavior.
+That violates the Round 13 fail-closed requirement.
 
-**Required correction:** add production-caller tests for the exact post-validation/pre-authority windows. Helper-only tests are not sufficient.
+### Required minimal correction
 
-### Blocker B — modern model-composition read path still follows a symlinked `published.json`
+Do one of these, without adding a new authority layer:
 
-Current `generation()` does:
+- validate into a temporary variable, verify pointer digest, and assign `m` only after all pointer checks pass; **preferred**;
+- or clear `m=None` on every pointer-validation exception before returning.
 
-`published = read_json(target/'published.json')`
+For every invalid current-schema pointer condition, public status must satisfy:
 
-then compares `published.manifestSha256` with the current manifest digest. `read_json()` uses normal path reads and follows symlinks. Therefore a `published.json` symlink to same-content JSON can satisfy the digest comparison.
+- `generated == false`;
+- `manifest == null`;
+- invalid generation is not exposed as usable/current;
+- no `latest.json` advancement or silent repair occurs.
 
-This violates the prior requirement that missing / malformed / symlink / non-regular `published.json` fail closed on the public read path.
+## 2. Required current-schema latest-pointer behavior
 
-**Required correction:** before parsing `published.json` for a modern generation, require the path to exist, be a regular file, and not be a symlink. Then parse and require exact `manifestSha256 == validated manifest digest`. Keep legacy behavior only for explicitly supported no-`historyVersion` records.
+Keep the existing `latest.json`; do not create a second seal.
 
-### Blocker C — print-preview `latest.json` does not durably pin the captured manifest identity
+For new/current print-preview generations, fresh status must fail closed when any of these is true:
 
-The current print-preview correction re-verifies `manifest.json + meta.json` before writing `latest.json`, but the pointer still stores only:
+- `latest.json` missing after a completed current-schema generation;
+- symlink;
+- directory/non-regular file;
+- malformed/empty JSON;
+- missing `generationId`;
+- malformed `generationId`;
+- generation directory missing;
+- missing `manifestSha256`;
+- wrong `manifestSha256`;
+- manifest/meta pair changed consistently after completion while `latest.manifestSha256` remains frozen.
 
-`{"generationId": gid}`
+`read_json()` returning `{}` on malformed JSON is acceptable only if the public result is unambiguously fail-closed (`generated=false`, no manifest exposure). Do not auto-repair the pointer.
 
-After successful completion, a later mutation that changes both `manifest.json` and `meta.json` consistently can still pass `print_preview.validate()` because no persisted value outside that pair pins the originally published digest. This means the Round 13 **latest pointer identity** gate is not actually closed for print preview.
+Legacy compatibility, if still intentionally supported, must be explicit and covered by a regression test. Do not let legacy absence silently satisfy the current-schema truth gate.
 
-Do **not** add `published.json` to print preview. Use the existing pointer as the final authority:
+## 3. Production-caller adversarial tests are still incomplete
 
-- write `latest.json` with both `generationId` and the captured `manifestSha256`;
-- on `print_preview.status()`, require `latest.json` to be regular/non-symlink JSON;
-- strictly validate `generationId`;
-- validate the pointed generation;
-- require pointer `manifestSha256` to equal the validated current manifest digest / `meta.manifestSha256`;
-- missing/malformed/mismatched pointer digest for the new/current schema must fail closed;
-- preserve legacy compatibility only if explicitly required and covered by a regression test; do not silently upgrade old history.
+The reviewed correction changed only `tests/test_model_compositions.py`, adding the publication-symlink case/fixup. That does **not** satisfy the previously required production-caller matrix.
 
-This is an extension of the **existing** `latest.json` authority, not a new ledger.
+Add tracked tests through real production service/caller paths, not helper-only assertions.
 
-### Blocker D — clean REAL evidence did not demonstrate the required print-preview authority chain
+### Model composition — required cases
 
-The handoff states both clean REAL generations satisfy:
+1. regular matching `published.json` succeeds;
+2. missing publication seal fails closed;
+3. publication seal symlink to the **same valid JSON bytes** fails closed;
+4. publication seal directory/non-regular fails closed;
+5. malformed/empty publication JSON fails closed;
+6. missing/wrong `manifestSha256` fails closed;
+7. manifest changed after initial validation / before publication does not advance latest;
+8. meta changed after initial validation / before publication does not advance latest;
+9. correct completed modern generation remains readable with `manifest SHA == meta SHA == published SHA`;
+10. explicitly supported legacy no-`historyVersion` behavior stays isolated and cannot inherit modern truth.
 
-`manifestSha == meta.manifestSha256 == published.manifestSha256`
+### Print preview — required cases
 
-That is model-composition evidence. Print preview intentionally has no `published.json`, so this does not demonstrate the separately required print-preview chain:
+11. regular latest pointer succeeds with `manifest SHA == meta SHA == latest.manifestSha256`;
+12. latest symlink fails closed;
+13. latest directory/non-regular fails closed;
+14. malformed/empty latest JSON fails closed;
+15. missing/malformed `generationId` fails closed;
+16. missing `manifestSha256` fails closed;
+17. wrong `manifestSha256` returns **`generated=false` and `manifest=None`** — this is the critical regression test;
+18. after successful completion, coherently mutate manifest + meta while leaving latest untouched; fresh status must return `generated=false`;
+19. pointer to missing generation fails closed;
+20. fresh status after every rejected pointer attempt must not expose an invalid generation as current.
 
-`manifest_sha -> meta.manifestSha256 -> latest.manifestSha256 + latest.generationId`
+You may organize/parameterize these tests to avoid duplication. The requirement is coverage of the production boundaries, not a specific test-function count.
 
-**Required correction:** after final corrected CODE CI is green, run fresh `usedMock=false` Blender acceptance that exercises both authority paths:
+Retain all Round 9B–12 durability, DAM identity, publication receipt, tenant isolation, revocation, wrong SHA/size, indeterminate commit, no replay/rollback/adoption regressions.
 
-1. model composition: manifest -> meta -> published -> latest;
-2. print preview: manifest -> meta -> latest(pointer digest + generation id).
+## 4. Evidence classification must remain truthful
 
-Do not reuse the candidate REAL run as final evidence after code changes.
+Use only these labels for this round:
 
-## 2. Required correction-only implementation
-
-Make the smallest possible patch.
-
-### A. Publication seal verifier
-
-Prefer a tiny helper in an existing module if it reduces duplication. It must:
-
-- reject missing path;
-- reject symlink;
-- reject non-regular file;
-- parse JSON fail closed;
-- require exact `manifestSha256` string equal to the expected captured/validated digest.
-
-Use it in both write-boundary verification and modern model-composition read validation. Do not create another authority file.
-
-### B. Print-preview latest pointer binding
-
-For new/current print-preview generations:
-
-1. capture `manifest_sha` once;
-2. write `meta.json` from it;
-3. validate generation + receipts;
-4. final `verify_manifest_meta(folder, manifest_sha)`;
-5. write existing `latest.json` as `{generationId, manifestSha256}` using existing durable JSON publication;
-6. fresh public status must verify the pointer path and pointer digest before returning `generated=true`.
-
-No DB, WAL, replay, duplicate manifest, second publication seal, or background reconciliation.
-
-### C. Model-composition latest behavior
-
-Do not weaken the existing chain. A modern composition is available only when:
-
-- manifest/meta validate;
-- artifact files validate;
-- current source/artwork rules validate;
-- publication seal is regular/non-symlink and pins the same manifest digest;
-- latest points to that generation.
-
-Do not change unrelated master/history/business semantics.
-
-## 3. Mandatory tracked production-caller tests
-
-Add tests under the existing test layout. They must call the production service/caller paths, not only `verify_manifest_meta()`.
-
-### Model compositions
-
-1. mutate manifest after initial successful validation and before `published.json` -> fail closed; no latest advancement;
-2. mutate meta after initial successful validation and before `published.json` -> fail closed; no latest advancement;
-3. manifest symlink at final boundary -> fail closed;
-4. meta symlink/non-regular -> fail closed;
-5. after a completed modern generation, delete `published.json` -> public `status.generated == false`;
-6. published digest mismatch -> `status()` and `generation()` fail closed;
-7. published symlink to **same valid JSON bytes** -> fail closed;
-8. correct success -> manifest SHA == meta SHA == published SHA; latest points to same generation;
-9. valid historical modern generation remains readable;
-10. explicitly supported legacy no-`historyVersion` behavior is covered and cannot inherit modern truth.
-
-### Print preview
-
-11. mutate manifest after initial successful validation / before latest -> fail closed; latest not advanced;
-12. mutate meta after initial successful validation / before latest -> fail closed;
-13. manifest/meta symlink/non-regular at final boundary -> fail closed;
-14. correct success -> manifest SHA == meta SHA == latest.manifestSha256 and latest generationId matches;
-15. mutate manifest + meta consistently **after successful completion** while leaving latest untouched -> fresh status fails closed because pointer digest remains pinned;
-16. latest symlink/non-regular -> fail closed for new/current schema;
-17. latest manifest digest mismatch -> `generated == false`;
-18. fresh status after every rejected pointer attempt does not expose the invalid generation.
-
-Retain all Round 9B–12 durability, DAM, receipt, tenant, revocation, wrong SHA/size, indeterminate-commit, no replay/rollback/adoption tests.
-
-## 4. Evidence classification
-
-Keep these boundaries exact:
-
-- captured identity / verifier logic: **REAL_LOGIC**;
-- GitHub Actions and mock Blender paths: **MOCK regression**;
-- deterministic monkeypatch timing trigger: **MOCK / FAULT_INJECTION_CONTROL**;
-- actual local file bytes/read observations: scoped **REAL_OS_IO_INTEGRITY** only where directly observed;
-- clean `usedMock=false` Blender output: **REAL_RENDER** only;
-- hard-link / hostile concurrent writer: **PARTIAL / PRESERVED UNKNOWN** unless directly solved and proven;
-- NAS/object storage, controller durability, hardware power-loss: **BLOCKED / NOT_TESTED**;
+- publication/latest identity code: **REAL_LOGIC**;
+- GitHub Actions with `FOX3D_MOCK_BLENDER=1`: **MOCK regression**;
+- monkeypatch/timing/fault triggers: **MOCK / FAULT_INJECTION_CONTROL**;
+- directly observed local file bytes/read/write identity: scoped **REAL_OS_IO_INTEGRITY**;
+- clean `FOX3D_MOCK_BLENDER=0`, `usedMock=false` output: **REAL_RENDER** only;
+- hard-link / hostile concurrent writer not directly proven: **PARTIAL / PRESERVED UNKNOWN**;
+- NAS/object storage/controller durability/hardware power-loss: **BLOCKED / NOT_TESTED**;
 - physical CAD authority, physical print proof, manufacturing readiness: **BLOCKED / false**.
 
-`globalProductionReady=false` remains mandatory.
+Do not promote CI or mock/fault tests to Production Ready. `globalProductionReady=false` remains mandatory.
 
 ## 5. Final evidence closure order
 
-Do this in order and stop on any failure:
+Do this in order; stop on any failure.
 
-1. implement the narrow correction + tracked production-caller tests;
-2. run focused tests;
-3. run full local pytest;
-4. freeze one exact final Round 13 CODE SHA;
-5. run exact CODE GitHub Actions; Ubuntu + Windows must both SUCCESS and checkout that SHA;
-6. only then run a **new** clean REAL Blender acceptance on that exact CODE with `FOX3D_MOCK_BLENDER=0`, `usedMock=false`;
-7. REAL acceptance must exercise at least one valid model-composition generation and one valid print-preview generation, with the two authority chains recorded separately;
-8. restart/status/history/download/reopen checks remain green where applicable;
-9. update only the existing PR #15 evidence package (`docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md/.json`) with exact baseline/correction/adversarial outcomes;
-10. freeze one exact DOCS SHA and run exact DOCS dual-platform CI;
-11. leave one Issue #1 `[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 13 correction` handoff and STOP.
+1. Apply only the minimal fail-closed correction above and add the missing production-caller tests.
+2. Run focused tests.
+3. Run full local pytest.
+4. Freeze one exact final Round 13 CODE SHA.
+5. Run exact CODE GitHub Actions; Ubuntu + Windows must both SUCCESS and checkout that exact SHA.
+6. Only after CODE CI is green, run a **new clean REAL Blender** acceptance on the exact final CODE with `FOX3D_MOCK_BLENDER=0`, `usedMock=false`.
+7. Record the two authority chains separately:
+   - model composition: `manifest -> meta -> published -> latest generation`;
+   - print preview: `manifest -> meta -> latest.manifestSha256 + latest.generationId`.
+8. REAL run must include fresh status/reopen verification after success; also capture the fail-closed pointer-digest mismatch outcome without calling it REAL render evidence.
+9. Update only the existing PR #15 acceptance package `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md/.json` with exact CODE SHA, CI run, REAL generation/run identity, hashes/sizes, and truthful REAL/MOCK/PARTIAL/BLOCKED labels.
+10. Freeze one exact DOCS SHA and run exact DOCS dual-platform CI.
+11. Leave one Issue #1 handoff: `[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 13 correction`, including final CODE SHA + CODE run ID + REAL run/generation ID + DOCS SHA + DOCS run ID.
+12. STOP. Do not begin Round 14 until Supervisor explicitly says GO.
 
-## 6. Files that must not be rewritten for freshness
+## 6. Canonical files — do not rewrite for freshness
 
-Do not rewrite these merely to make timestamps look current:
+Do not rewrite these merely to update timestamps:
 
 - `docs/GROK_PROGRESS_REPORT.md`
 - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
 - `docs/REAL_E2E_ACCEPTANCE.md`
 - `docs/CABINET_REAL_ACCEPTANCE.md`
 
-Their truth boundaries remain authoritative: Mock pytest is not Production Ready; Vision Judge remains MOCK; CNC live control remains BLOCKED; `physicalPrintValidated=false`; `globalProductionReady=false`.
+Their truth boundaries remain authoritative:
+
+- Mock pytest is not Production Ready;
+- `globalProductionReady=false`;
+- `physicalPrintValidated=false`;
+- CNC live control remains **BLOCKED**;
+- Vision Judge remains **MOCK**.
 
 ## 7. Frozen boundaries
 
 - No merge / retarget / rebase-to-main / cherry-pick.
-- PR #15 stays DRAFT / OPEN / unmerged.
-- PR #16 stays FROZEN DRAFT.
-- PR #13 / #14 and Issue #6 gates unchanged.
+- PR #15 remains DRAFT / OPEN / unmerged.
+- PR #16 remains FROZEN DRAFT.
 - Round 14 stays HOLD.
 - No H3 / LTX / Vision / CNC / LASER / PLC work.
 - No DAM/queue/storage/authority architecture rewrite.
