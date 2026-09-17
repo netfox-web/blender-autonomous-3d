@@ -19163,9 +19163,10 @@
     "globalProductionReady": false
   },
   "round10": {
-    "instructionSha": "450b35b55afeb2a198c8896105a87e6e99a297bd",
-    "supervisorCommentId": 5706795692,
-    "baseline": {
+    "instructionSha": "93a607a3cd0416734f4f9db55e1e7dc495100861",
+    "supervisorCommentId": 5707089429,
+    "baselineCode": "87ea4d3ba753c811f693cec8f4a3f465aca94364",
+    "baselineAudit": {
       "status": "PASS",
       "baselineCode": "87ea4d3ba753c811f693cec8f4a3f465aca94364",
       "workingTree": "clean before Round 10 production edit",
@@ -19246,11 +19247,11 @@
     },
     "crashWindows": {
       "status": "PASS",
-      "root": "C:\\Users\\office\\AppData\\Local\\Temp\\fox3d-r10-baseline-odrrvh1g",
+      "root": "C:\\Users\\office\\AppData\\Local\\Temp\\fox3d-r10-baseline-5kd0ob8v",
       "windows": [
         {
           "window": "A",
-          "pid": 17528,
+          "pid": 46224,
           "killed": true,
           "publishedBeforeKill": false,
           "latestBeforeKill": false,
@@ -19260,7 +19261,7 @@
         },
         {
           "window": "B",
-          "pid": 31904,
+          "pid": 38272,
           "killed": true,
           "publishedBeforeKill": false,
           "latestBeforeKill": false,
@@ -19270,7 +19271,7 @@
         },
         {
           "window": "C",
-          "pid": 19744,
+          "pid": 21036,
           "killed": true,
           "publishedBeforeKill": false,
           "latestBeforeKill": false,
@@ -19280,7 +19281,7 @@
         },
         {
           "window": "D",
-          "pid": 36116,
+          "pid": 35344,
           "killed": true,
           "publishedBeforeKill": true,
           "latestBeforeKill": false,
@@ -19291,27 +19292,27 @@
       ],
       "limitations": "Synthetic crash harness; no power-loss, NAS or production claim."
     },
-    "codeCommit": "e128c44484bf8f8939a5725fb80306b0e8f5c376",
+    "codeCommit": "febdd8b1bd471e7b0cf572fffc1135e761ad48db",
     "codeCi": {
-      "runId": 35170538114,
-      "headSha": "e128c44484bf8f8939a5725fb80306b0e8f5c376",
+      "runId": 35172649152,
+      "headSha": "febdd8b1bd471e7b0cf572fffc1135e761ad48db",
       "status": "success",
       "jobs": [
         {
-          "log": "E:\\projects\\sonaqueen-product-variants\\.fox3d-work\\round10-code-105041045569.log",
-          "passed": 1319,
-          "skipped": 0,
-          "checkoutSha": "e128c44484bf8f8939a5725fb80306b0e8f5c376"
+          "log": "E:\\projects\\sonaqueen-product-variants\\.fox3d-work\\round10-corrected-code-105047417820.log",
+          "passed": 1317,
+          "skipped": 4,
+          "checkoutSha": "febdd8b1bd471e7b0cf572fffc1135e761ad48db"
         },
         {
-          "log": "E:\\projects\\sonaqueen-product-variants\\.fox3d-work\\round10-code-105041045750.log",
-          "passed": 1315,
-          "skipped": 4,
-          "checkoutSha": "e128c44484bf8f8939a5725fb80306b0e8f5c376"
+          "log": "E:\\projects\\sonaqueen-product-variants\\.fox3d-work\\round10-corrected-code-105047417961.log",
+          "passed": 1321,
+          "skipped": 0,
+          "checkoutSha": "febdd8b1bd471e7b0cf572fffc1135e761ad48db"
         }
       ]
     },
-    "realEvidenceId": "2fe5d1cd-08bb-4e17-9ca1-ecec317a8c97",
+    "realEvidenceId": "f87232e2-5b33-48bb-998a-bb102232e090",
     "changedFiles": [
       "src/fox3d/durability.py",
       "src/fox3d/model_compositions.py",
@@ -19319,7 +19320,10 @@
       "tests/test_binary_publication.py"
     ],
     "ordering": "artifact bytes -> manifest hashes -> meta/verifier -> published.json -> latest pointer",
-    "helper": "durability.publish_binary: same-directory owned temp, runtime+host flush, expected SHA/size, atomic replace, containing-directory sync; CommitIndeterminate after namespace failure; no retry/rollback/adoption.",
+    "helpers": {
+      "publish_binary": "same-directory owned temp, runtime+host flush, expected SHA/size, atomic replace, containing-directory sync; CommitIndeterminate after namespace failure; no retry/rollback/adoption.",
+      "publish_bytes": "target-bound same-directory owned temp for derived PNG writers, runtime+host flush, expected SHA/size, atomic replace, containing-directory sync, cleanup on pre-publication failure."
+    },
     "classifications": {
       "artifactHostFlush": "REAL_OS_IO_FLUSH only tested local surface",
       "childKill": "REAL_PROCESS_RECOVERY local filesystem only",

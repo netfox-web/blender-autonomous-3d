@@ -128,3 +128,37 @@ After exact CODE dual-platform success, clean acceptance `2fe5d1cd-08bb-4e17-9ca
 | Physical product/print/manufacturing/global Production Ready | false |
 
 Round 10 leaves `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No H3/LTX/Vision/CNC/LASER/PLC or production operation was used.
+
+
+## Round 10 correction — derived PNG publication durability
+
+Supervisor instruction `93a607a3cd0416734f4f9db55e1e7dc495100861` / correction comment [5707089429](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5707089429) authorized the correction. PR #15 remains DRAFT/OPEN/unmerged; `MERGE_AUTHORIZED=false`, PR #16 is frozen, and Round 11 remains HOLD.
+
+### Corrected CODE
+
+The baseline audit identified direct final-name `shutil.copy2` writes in both `model_compositions.prepare()` and `print_preview.prepare()`. Commit `febdd8b1bd471e7b0cf572fffc1135e761ad48db` replaces those derived PNG writes with `durability.publish_bytes()`: target-bound same-directory owned temporary, runtime and host flush, optional SHA/size validation, atomic replacement, containing-directory synchronization, symlink rejection and owned-temp cleanup. Decode verification occurs only after the durable target exists. Pre-publication errors preserve the prior final; namespace uncertainty propagates `CommitIndeterminate`, with no retry, rollback or adoption. Worker-origin DAM files remain untouched.
+
+### Fresh accepted-baseline A–D crash windows
+
+A fresh child-process probe ran from clean accepted CODE `87ea4d3ba753c811f693cec8f4a3f465aca94364` before the correction. Evidence `.fox3d-work/round10-baseline-accepted87-evidence.json` is classified **REAL_PROCESS_RECOVERY / local filesystem only**: A killed during binary/derived materialization left no fresh available/adoption and preserved the prior generation; B killed after final bytes before manifest left no publication authority; C killed after manifest/meta before publication left no model-composition `published.json` (print-preview latest boundary is preserved as implemented); D killed after publication before latest left the immutable published authority intact while a missing/stale pointer did not duplicate. This does not claim NAS, power-loss, controller-cache or physical-production evidence.
+
+### Adversarial tests and exact CI
+
+Focused tests cover complete derived byte publication with hash/size, writer failure preserving an old final, namespace commit indeterminate with complete final bytes, missing source and symlink safety. Exact CODE Actions run [35172649152](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35172649152) passed on the corrected SHA in both jobs: **Windows 1321 PASS / 0 skipped; Ubuntu 1317 PASS / 4 existing skips**. Local full pytest also passed. CI renderer paths remain **MOCK regression**; only the narrower tested OS primitives carry REAL labels.
+
+### Clean REAL acceptance
+
+After corrected CODE CI, clean REAL evidence `f87232e2-5b33-48bb-998a-bb102232e090` ran Blender **5.2.1 LTS / OptiX**, `usedMock=false`, with two `SYNTHETIC_STATIC_FIXTURE` cabinet variants. SHA/size were recorded for beauty/front-closed/door previews/GLB/BLEND/geometry/golden observation; `.blend` reopen, finite pixels, cache/attempt/DAM/job/publication lineage and restart/history/download checks passed. This is **REAL_RENDER** for the render path only; physical CAD geometry, print validation, manufacturing readiness, NAS durability and power-loss evidence remain unproven.
+
+| Truth | Classification / boundary |
+|---|---|
+| Local artifact flush and containing-directory sync | REAL_OS_IO_FLUSH on tested local surface only |
+| Fresh child kill and reader | REAL_PROCESS_RECOVERY |
+| Hash/size/verifier/publication ordering | REAL_LOGIC |
+| Injected I/O and CI fixture artifacts | MOCK / FAULT_INJECTION_LOGIC |
+| Namespace-sync uncertainty | PARTIAL / COMMIT_INDETERMINATE_DURABILITY |
+| NAS/network filesystem | BLOCKED / NOT_TESTED |
+| Physical power cut/reset | BLOCKED / NOT_TESTED |
+| Physical product/print/manufacturing/global Production Ready | false |
+
+Round 10 correction leaves `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No H3/LTX/Vision/CNC/LASER/PLC or production operation was used.
