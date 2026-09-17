@@ -1,191 +1,192 @@
-# Development Agent 指令：PR #15 Round 12 — Publication Receipt → Manifest Identity Gate
+# Development Agent 指令：PR #15 Round 12 Re-Gate Correction — Receipt Boundary Closure
 
 > Supervisor Re-Gate: 2026-09-17
 > Repo: `netfox-web/blender-autonomous-3d`
 > PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
 > Accepted Round 11 CODE: `74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`
 > Accepted Round 11 DOCS: `a40c5005f8e2f6d32f7aa76012bf934c975124f5`
-> CODE Actions: `35180923106` — Ubuntu + Windows SUCCESS
-> DOCS Actions: `35183320822` — Ubuntu + Windows SUCCESS
-> Clean REAL evidence: `53b009bc-74f8-4fab-acba-38a967bc0271`
-> Supervisor decision: **Round 11 ACCEPT WITH SCOPE / GO Round 12**
+> Round 12 candidate reviewed: `9062ae92f3b4f2171e6328ec6c1025ff495bc21b`
+> Candidate CODE Actions: `35190925369` — Ubuntu + Windows SUCCESS
+> Supervisor decision: **CHANGES REQUIRED / correction-only**
 > Round 13: **HOLD**
 > `MERGE_AUTHORIZED=false`
 > `globalProductionReady=false`
 
-## 0. Round 11 accepted scope
+## 0. What is accepted from candidate `9062ae92...`
 
-Round 11 is accepted for its stated DAM source-identity objective.
+The direction is correct and must be preserved:
 
-Accepted facts:
+- `publish_bytes()` receipts are retained for derived PNGs;
+- `placement.source.fileSha256` now comes from the publication receipt rather than a later read;
+- `publish_binary()` receipts are retained for worker/DAM-backed artifacts;
+- manifest SHA selection prefers the retained receipt for receipt-tracked files;
+- `verify_receipt()` rejects a symlink/non-regular target **when that helper is actually called** and checks current SHA/size against the receipt;
+- exact candidate CI run `35190925369` completed SUCCESS on both Ubuntu and Windows.
 
-- the accepted-code baseline proved the old path could copy post-registration mutated DAM bytes while stored `DamObject.sha256` remained unchanged;
-- `dam_identity(source)` now requires a strict stored lowercase 64-hex digest and valid optional authoritative size;
-- `model_compositions.generate()` and `print_preview.generate()` pass that stored identity into `publish_binary()`;
-- `publish_binary()` hashes the **bytes actually copied** and compares them against stored DAM identity before namespace publication;
-- exact CODE CI and exact DOCS CI are dual-platform green;
-- clean Blender 5.2.1 LTS + OptiX evidence is `usedMock=false`, but input remains `SYNTHETIC_STATIC_FIXTURE`.
+Truth classification at this checkpoint:
 
-Truth classification remains:
+- receipt lineage / digest binding code: **REAL_LOGIC**;
+- actual local file reads/writes exercised outside mocks may be reported as scoped **REAL_OS_IO_INTEGRITY** only when separately evidenced;
+- GitHub Actions remain **MOCK regression** because CI uses the mock Blender lane;
+- monkeypatch boundary triggers are **MOCK / FAULT_INJECTION_CONTROL**;
+- no new clean `usedMock=false` evidence exists yet for this candidate, so no new **REAL_RENDER** acceptance is granted;
+- hostile hard-link/concurrent-writer immunity, NAS/object-store durability, hardware power-loss, physical CAD/print/manufacturing remain **PARTIAL or BLOCKED / NOT_TESTED** as previously stated.
 
-- DAM digest binding / publication checks: **REAL_LOGIC**;
-- accepted local tamper baseline: **REAL_OS_IO_INTEGRITY** on the exercised local filesystem;
-- GitHub Actions with `FOX3D_MOCK_BLENDER=1`: **MOCK regression**;
-- injected TOCTOU/failure paths: **MOCK / FAULT_INJECTION_LOGIC** unless a genuine independent process is used;
-- clean Blender evidence: **REAL_RENDER** for synthetic/static fixtures only;
-- NAS/object-store guarantees, hardware power-loss, physical CAD/print/manufacturing: **BLOCKED / NOT_TESTED**.
+Do not promote candidate `9062ae92...` to Round 12 acceptance yet.
 
-Do not promote any of the above to global Production Ready.
+## 1. Blocking finding A — current new tests do not hit the required window
 
-## 1. New Round 12 finding — manifest can re-authorize bytes after publication
+The newly added tests named around “tamper before manifest/package” currently mutate the target **inside the monkeypatched `publish_binary()` / `publish_bytes()` wrapper before the production caller performs its immediate `verify_receipt()`**.
 
-Do **not** rewrite the architecture. The next gate is a narrow identity-continuity problem.
+That proves the immediate receipt check works, but it does **not** prove the Round 12 invariant:
 
-Current accepted code correctly verifies worker DAM bytes at `publish_binary()` time, but both generation paths later build `manifest['files']` by re-reading the current files from the generation directory:
+`successful publication + successful initial receipt verification -> later mutation -> manifest/publication authority must fail closed`.
 
-- `model_compositions.generate()` → `files={f.name: sha256_bytes(f.read_bytes()) ...}`
-- `print_preview.generate()` → same pattern.
+Correction requirement:
 
-Also, derived preview PNG publication currently ignores the `publish_bytes()` return receipt and then re-reads the final path to establish `source.fileSha256`.
+- keep the immediate verification tests;
+- add separate tests that mutate only **after** the initial `verify_receipt()` has succeeded;
+- the later mutation must occur before manifest authority capture / publication pointer advancement;
+- record whether failure occurs at the explicit receipt-boundary check or the existing manifest validator;
+- no `published.json` / `latest.json` authority may advance after mismatch.
 
-That means a byte change **after successful publication but before manifest/package identity capture** can potentially be re-hashed and silently become the new authority. Round 11 proves source identity at copy time; Round 12 must prove that identity remains continuous through manifest authority.
+Do not rename an immediate post-copy failure test as evidence for a post-verification/pre-manifest window.
 
-Required invariant:
+## 2. Blocking finding B — receipt verification is not yet enforced at the authority boundary
 
-**publication receipt / stored expected identity → final file verification → manifest digest must remain the same identity. A later re-read must never become a new authority merely because the bytes are self-consistent at that moment.**
+Candidate `9062ae92...` calls `verify_receipt()` immediately after each publication, but then:
 
-## 2. Baseline first — exact accepted CODE `74ef218...`
+- derived PNGs can remain in the generation folder while the Blender worker runs;
+- worker artifacts can remain after their immediate receipt check while manifest/pointer gates continue;
+- `print_preview.validate()` hashes `read_bytes()` but does not explicitly reject a later symlink/non-regular replacement before following the path;
+- `model_compositions.generate()` performs current-master / artwork / input-authority checks after `print_preview.validate()` and before `published.json`, leaving another interval before authority advancement.
 
-Use an isolated checkout/worktree of exact accepted CODE `74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`.
+The Round 12 requirement was explicit: **before authority advancement, current finals must still equal the original receipts and symlink/non-regular/missing targets must fail closed.**
 
-Create a deterministic actual-local-filesystem probe at the narrow window:
+Make the smallest correction; do not redesign storage.
 
-1. let a source-backed worker artifact complete `publish_binary()` successfully with the correct stored DAM digest;
-2. after publication returns, mutate the **generation-folder final artifact** before `manifest.json` is constructed;
-3. use a structurally valid replacement where practical (for example a valid PNG) so an unrelated decoder error does not hide the identity problem;
-4. continue the existing production caller path;
-5. record publication receipt digest/size, mutated final digest/size, manifest digest if produced, verifier result, and presence of `manifest.json`, `meta.json`, `published.json`, `latest.json`;
-6. repeat the same idea for one derived PNG produced by `publish_bytes()` if the current path can similarly re-authorize changed bytes.
+### A. Verify the complete receipt set immediately before manifest construction
 
-Classification:
+For both `model_compositions.generate()` and `print_preview.generate()`:
 
-- actual file mutation/read/write on local storage: **REAL_OS_IO_INTEGRITY**;
-- monkeypatch used only to place the mutation at an exact call boundary: **MOCK / FAULT_INJECTION_CONTROL** for the trigger, while the file IO result itself may still be recorded separately as actual local IO;
-- do not call this cross-process, NAS or power-loss evidence unless those were truly exercised.
+1. derive the exact expected artifact names from the existing package/`FILES` contract;
+2. require every expected artifact to have exactly one retained publication receipt;
+3. reject missing, unexpected, symlink or non-regular entries at this authority boundary;
+4. call receipt verification for every expected final and preserve SHA/size equality;
+5. construct `manifest['files']` from the accepted receipt identities for the exact expected set — do not allow a later uncontrolled read to become a new digest authority.
 
-Report the real outcome. Do not fabricate a fail-open if another existing verifier already blocks the mutation.
+Required chain for worker artifacts:
 
-## 3. Minimum implementation correction
+`stored DAM SHA == publish_binary receipt SHA == authority-boundary verified final SHA == manifest SHA`
 
-Make the smallest change that preserves the current architecture and authority model.
+and when stored size is authoritative:
 
-### A. Source-backed worker artifacts
+`stored DAM size == receipt size == authority-boundary verified final size`.
 
-For every `publish_binary()` call:
+Required chain for derived PNGs:
 
-- retain its returned `{sha256, size}` receipt in memory for that generation;
-- assert receipt SHA equals stored `DamObject.sha256` and authoritative size when present (the helper already enforces this; retain the explicit lineage in evidence);
-- build the manifest digest for that file from the accepted publication identity/receipt — **not from a later uncontrolled re-read that can become a new authority**;
-- before authority advancement, re-open the final path and verify current SHA/size still equals the receipt;
-- mismatch/missing/non-regular/symlink target must fail closed before `published.json` / `latest.json` advancement.
+`publish_bytes receipt SHA == placement source.fileSha256 == authority-boundary verified final SHA == manifest SHA`.
 
-Required clean-success chain:
+### B. Keep validators fail-closed for later reads
 
-`stored DAM SHA == publish_binary receipt SHA == verified final SHA == manifest SHA`
+`print_preview.validate()` must explicitly reject expected paths that are symlinks or non-regular before hashing them. Preserve exact file-set verification, `validate_outputs()`, worker observation checks and REAL-Blender flags.
 
-and, when authoritative size exists:
+Do not weaken validation merely because a receipt existed earlier.
 
-`stored DAM size == receipt size == verified final size`.
+### C. Re-check immediately before final pointer/publication authority
 
-### B. Derived PNGs from `publish_bytes()`
+After all existing master-current / revocation / input-authority gates and immediately before advancing `published.json` / `latest.json`, re-verify the receipt-tracked finals against the retained receipts.
 
-Do not create a second digest authority.
+- `model_compositions`: before `published.json`, then existing `latest.json` order remains intact;
+- `print_preview`: before `latest.json`.
 
-- use the `publish_bytes()` return receipt as the original derived-file identity;
-- `placement.source.fileSha256` must come from that receipt, not from a later read becoming authoritative;
-- keep the existing decode/reopen validation;
-- before manifest/publication authority advances, verify final file SHA/size against the receipt/placement identity;
-- manifest SHA must equal the same receipt identity.
+This is not a claim of hostile concurrent-writer atomicity. Existing hard-link/concurrent-writer ambiguity may remain **PARTIAL / PRESERVED UNKNOWN** unless independently solved and tested.
 
-Required clean-success chain:
+Do not add locks, DB/WAL, replay, second ledger, duplicate manifest or a new storage architecture in this round.
 
-`publish_bytes receipt SHA == placement source.fileSha256 == verified final SHA == manifest SHA`.
+## 3. Blocking finding C — required adversarial coverage is incomplete
 
-### C. Keep existing validators authoritative
-
-Do not weaken or replace:
-
-- exact file-set verification;
-- existing `print_preview.validate()` / worker observation checks;
-- tenant isolation / revocation / master-current checks;
-- `CommitIndeterminate` semantics;
-- existing atomic JSON / publication ordering.
-
-Do **not** add DB/WAL, a second ledger, replay engine, rollback authority, duplicate manifest, new queue or new DAM implementation.
-
-## 4. Required adversarial tests
-
-Add focused production-caller tests for both `model_compositions` and `print_preview` where applicable.
+Add focused production-caller tests for **both** `model_compositions` and `print_preview` where applicable.
 
 Minimum matrix:
 
-1. **worker final tampered after `publish_binary()` / before manifest** → fail closed; tampered bytes must not become manifest authority; no `published.json` / `latest.json` advancement;
-2. **derived PNG tampered after `publish_bytes()` / before manifest** → fail closed; placement/manifest identity must remain the original receipt;
-3. **missing final after receipt** → fail closed;
-4. **final replaced by symlink or non-regular path** where the platform permits the test → fail closed; platform-limited skipped tests must be labeled honestly;
-5. **correct success** → prove the complete SHA/size equality chains above for every source-backed worker artifact and every derived PNG;
-6. existing wrong tenant, revoked artwork, malformed DAM identity, wrong SHA/size, no retry/rollback/replay, and `CommitIndeterminate` regressions remain green.
+1. immediate post-copy corruption before first `verify_receipt()` -> fail closed (existing coverage may remain);
+2. worker final mutated **after first receipt verification** / before manifest -> fail closed; original receipt must remain authority;
+3. derived PNG mutated **after first receipt verification** / before manifest -> fail closed; placement SHA and manifest authority remain the original receipt;
+4. receipt-tracked final deleted after first verification -> fail closed;
+5. receipt-tracked final replaced by symlink to bytes with the **same digest** after first verification -> still fail closed because path type is not authoritative regular-file state; skip only when platform truly cannot create the case and label the skip honestly;
+6. non-regular replacement where practical -> fail closed;
+7. correct worker success -> prove stored DAM SHA/size == receipt == verified final == manifest for every worker artifact;
+8. correct derived success -> prove receipt == placement SHA == verified final == manifest for every derived PNG;
+9. no `published.json` / `latest.json` advancement on any mismatch;
+10. wrong tenant, revoked artwork, malformed DAM identity, wrong SHA/size, `CommitIndeterminate`, no replay/rollback/adoption regressions remain green.
 
-Do not claim hard-link or hostile concurrent-writer immunity beyond what is actually tested. Existing hard-link ambiguity may remain **PARTIAL / PRESERVED UNKNOWN** unless this round genuinely resolves it without broad architecture changes.
+The trigger may use a monkeypatch only to place mutation at an exact boundary; classify the trigger as **MOCK / FAULT_INJECTION_CONTROL**. Actual local filesystem mutation/read result may be documented separately as scoped local IO evidence.
+
+## 4. Accepted-code baseline is still required
+
+Before claiming Round 12 closure, run the original baseline probe against an isolated exact checkout/worktree of accepted CODE:
+
+`74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`
+
+Exercise the actual local-filesystem window after successful publication and before manifest authority for:
+
+- one worker/DAM-backed artifact;
+- one derived PNG.
+
+Record the real outcome, including original receipt/stored digest, mutated final digest, manifest digest if produced, validator result, and presence of `manifest.json`, `meta.json`, `published.json`, `latest.json`.
+
+Do not fabricate a fail-open if another existing gate blocks it. This baseline is evidence of the defect/window, not proof of the correction.
 
 ## 5. Final CODE gate
 
-After the narrow correction and focused tests:
+After the narrow correction and tests:
 
 1. freeze one exact final Round 12 CODE SHA;
 2. run focused tests;
 3. run full local `pytest`;
 4. run GitHub Actions on that exact CODE SHA;
-5. Ubuntu + Windows must both be SUCCESS and checkout that exact SHA;
+5. Ubuntu + Windows must both be SUCCESS and checkout the exact SHA;
 6. record exact Actions run ID and pass/skip counts.
 
-CI uses `FOX3D_MOCK_BLENDER=1`, therefore it remains **MOCK regression evidence**, not REAL Blender acceptance.
+Candidate Actions `35190925369` is useful regression evidence for `9062ae92...`, but once production code changes again it is not the final Round 12 CI evidence.
 
-If CI fails, make only the smallest correction supported by the failure. Do not start Round 13.
+CI remains **MOCK regression**, not REAL Blender acceptance.
 
 ## 6. New clean REAL Blender acceptance
 
-Only after exact final CODE dual-platform CI is green, run a fresh clean acceptance on the exact CODE SHA:
+Only after the exact final corrected CODE dual-platform CI is green, run fresh clean acceptance on that exact CODE SHA:
 
 - Blender 5.2.1 LTS + OptiX;
 - `FOX3D_MOCK_BLENDER=0`;
 - `usedMock=false`;
 - clean working tree;
 - at least two current synthetic/static variants;
-- record publication receipt SHA/size, stored DAM SHA/size, verified final SHA/size and manifest SHA for source-backed worker artifacts;
-- record receipt/placement/final/manifest SHA for derived PNGs;
-- `.blend` reopen, finite pixels, artifact decode/reopen and existing lineage/history/download checks remain green;
+- record worker stored DAM SHA/size -> receipt -> final verification -> manifest chain;
+- record derived PNG receipt -> placement SHA -> final verification -> manifest chain;
+- `.blend` reopen, finite pixels, artifact decode/reopen and lineage/history/download checks remain green;
 - no duplicate publication, replay or temp adoption.
 
-This can be **REAL_RENDER** plus exercised local **REAL_OS_IO_INTEGRITY**. It is still not physical CAD truth, print proof, NAS durability, power-loss durability or manufacturing readiness.
+This may be classified as **REAL_RENDER** plus scoped exercised local **REAL_OS_IO_INTEGRITY** only. It is not physical CAD truth, print proof, NAS durability, power-loss durability or manufacturing readiness.
 
-## 7. Acceptance docs and handoff
+## 7. Acceptance docs and final handoff
 
-Update only the existing PR #15 authority package unless a factual correction to another canonical document is strictly required:
+Update only the existing PR #15 authority package unless a factual correction elsewhere is strictly required:
 
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
 
-Record a `round12` section with:
+Round 12 evidence must record:
 
 - accepted Round 11 lineage;
-- exact accepted-code baseline probe and outcome;
+- exact accepted-code baseline outcome;
+- candidate `9062ae92...` checkpoint and why it required correction;
 - exact final Round 12 CODE SHA + changed files;
-- exact CODE Actions ID and pass/skip counts;
-- adversarial matrix with REAL/MOCK/PARTIAL/BLOCKED classification;
-- complete receipt → final → manifest identity chains;
+- exact final CODE Actions ID and pass/skip counts;
+- full adversarial matrix and REAL/MOCK/PARTIAL/BLOCKED labels;
+- receipt -> final -> manifest equality chains;
 - fresh clean REAL acceptance ID;
-- remaining hard-link / NAS / power-loss / physical-manufacturing boundaries;
+- remaining hard-link / hostile concurrent-writer / NAS / power-loss / physical-manufacturing boundaries;
 - exact final DOCS SHA + exact dual-platform DOCS CI.
 
 Do not rewrite merely for freshness:
@@ -195,7 +196,7 @@ Do not rewrite merely for freshness:
 - `docs/REAL_E2E_ACCEPTANCE.md`
 - `docs/CABINET_REAL_ACCEPTANCE.md`
 
-Their truth boundaries remain authoritative: Mock pytest is not Production Ready; CNC live control remains BLOCKED; Vision Judge remains MOCK; `physicalPrintValidated=false`; `globalProductionReady=false`.
+Their canonical boundaries remain in force: Mock pytest is not Production Ready; CNC live control remains BLOCKED; Vision Judge remains MOCK; `physicalPrintValidated=false`; `globalProductionReady=false`.
 
 When closure is complete, leave exactly one Issue #1 handoff headed:
 
