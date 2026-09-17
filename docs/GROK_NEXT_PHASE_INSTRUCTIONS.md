@@ -1,208 +1,238 @@
-# Development Agent 指令：PR #15 Round 12 Re-Gate Correction — Receipt Boundary Closure
+# Development Agent 指令：PR #15 Round 13 — Manifest / Publication Seal / Latest Pointer Identity Gate
 
 > Supervisor Re-Gate: 2026-09-17
 > Repo: `netfox-web/blender-autonomous-3d`
 > PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
-> Accepted Round 11 CODE: `74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`
-> Accepted Round 11 DOCS: `a40c5005f8e2f6d32f7aa76012bf934c975124f5`
-> Round 12 candidate reviewed: `9062ae92f3b4f2171e6328ec6c1025ff495bc21b`
-> Candidate CODE Actions: `35190925369` — Ubuntu + Windows SUCCESS
-> Supervisor decision: **CHANGES REQUIRED / correction-only**
-> Round 13: **HOLD**
+> Accepted Round 12 CODE: `0780d24e04fbed59e33f7fad36d7bff886998b01`
+> Accepted Round 12 DOCS: `46615b2befb3d2e9b707754266677268ed2b9962`
+> CODE Actions: `35196017765` — Ubuntu + Windows SUCCESS
+> DOCS Actions: `35198732575` — Ubuntu + Windows SUCCESS
+> Supervisor decision: **ACCEPT WITH SCOPE / GO Round 13**
+> Round 14: **HOLD**
 > `MERGE_AUTHORIZED=false`
 > `globalProductionReady=false`
 
-## 0. What is accepted from candidate `9062ae92...`
+## 0. Round 12 accepted scope
 
-The direction is correct and must be preserved:
+Round 12 is accepted with the existing truth boundaries.
 
-- `publish_bytes()` receipts are retained for derived PNGs;
-- `placement.source.fileSha256` now comes from the publication receipt rather than a later read;
-- `publish_binary()` receipts are retained for worker/DAM-backed artifacts;
-- manifest SHA selection prefers the retained receipt for receipt-tracked files;
-- `verify_receipt()` rejects a symlink/non-regular target **when that helper is actually called** and checks current SHA/size against the receipt;
-- exact candidate CI run `35190925369` completed SUCCESS on both Ubuntu and Windows.
+Accepted facts:
 
-Truth classification at this checkpoint:
+- both production callers retain publication receipts for worker/DAM-backed artifacts and derived PNGs;
+- the complete expected receipt set is verified before manifest construction and again before publication/latest authority advancement;
+- `print_preview.validate()` rejects symlink/non-regular expected artifact paths;
+- final CODE `0780d24e04fbed59e33f7fad36d7bff886998b01` has exact dual-platform Actions `35196017765` SUCCESS;
+- final DOCS `46615b2befb3d2e9b707754266677268ed2b9962` has exact dual-platform Actions `35198732575` SUCCESS;
+- clean REAL evidence `4c135de2-3aa2-4988-8201-8633a02cc5ae` used Blender 5.2.1 LTS + OptiX with `usedMock=false`, and recorded receipt -> verified final -> manifest equality for current synthetic/static variants.
 
-- receipt lineage / digest binding code: **REAL_LOGIC**;
-- actual local file reads/writes exercised outside mocks may be reported as scoped **REAL_OS_IO_INTEGRITY** only when separately evidenced;
-- GitHub Actions remain **MOCK regression** because CI uses the mock Blender lane;
-- monkeypatch boundary triggers are **MOCK / FAULT_INJECTION_CONTROL**;
-- no new clean `usedMock=false` evidence exists yet for this candidate, so no new **REAL_RENDER** acceptance is granted;
-- hostile hard-link/concurrent-writer immunity, NAS/object-store durability, hardware power-loss, physical CAD/print/manufacturing remain **PARTIAL or BLOCKED / NOT_TESTED** as previously stated.
+Truth classification remains:
 
-Do not promote candidate `9062ae92...` to Round 12 acceptance yet.
+- receipt/manifest binding implementation: **REAL_LOGIC**;
+- actual local file mutation/read observations: scoped **REAL_OS_IO_INTEGRITY** only where directly exercised;
+- clean Blender evidence: **REAL_RENDER** only;
+- GitHub Actions: **MOCK regression** because CI uses the mock Blender lane;
+- monkeypatch timing triggers: **MOCK / FAULT_INJECTION_CONTROL**;
+- hard-link/hostile concurrent-writer immunity: **PARTIAL / PRESERVED UNKNOWN**;
+- NAS/object-store durability, hardware power-loss, physical CAD/print/manufacturing: **BLOCKED / NOT_TESTED**.
 
-## 1. Blocking finding A — current new tests do not hit the required window
+Do not reinterpret Round 12 as global Production Ready.
 
-The newly added tests named around “tamper before manifest/package” currently mutate the target **inside the monkeypatched `publish_binary()` / `publish_bytes()` wrapper before the production caller performs its immediate `verify_receipt()`**.
+## 1. New Round 13 finding — artifact receipts are closed, but JSON authority identity can still drift between validation and pointer advancement
 
-That proves the immediate receipt check works, but it does **not** prove the Round 12 invariant:
+The current accepted Round 12 code closes the artifact-byte receipt gap, but the JSON authority chain still has a smaller TOCTOU/read-path gap.
 
-`successful publication + successful initial receipt verification -> later mutation -> manifest/publication authority must fail closed`.
+### A. `model_compositions.generate()`
 
-Correction requirement:
+Current order is effectively:
 
-- keep the immediate verification tests;
-- add separate tests that mutate only **after** the initial `verify_receipt()` has succeeded;
-- the later mutation must occur before manifest authority capture / publication pointer advancement;
-- record whether failure occurs at the explicit receipt-boundary check or the existing manifest validator;
-- no `published.json` / `latest.json` authority may advance after mismatch.
+`manifest.json -> meta.json(manifestSha) -> validate -> business/current checks -> receipt reverify -> published.json(re-hash current manifest) -> latest.json`
 
-Do not rename an immediate post-copy failure test as evidence for a post-verification/pre-manifest window.
+The code re-reads and re-hashes `manifest.json` when creating `published.json`. If `manifest.json` changes after the earlier validator has passed but before `published.json` is written, `published.json` can bind the later bytes even though those later bytes were not the validated manifest/meta pair. The following `latest.json` can then advance to a generation that the read path later rejects.
 
-## 2. Blocking finding B — receipt verification is not yet enforced at the authority boundary
+This is an **authority pollution / identity drift window**, not proof of a successful invalid production result.
 
-Candidate `9062ae92...` calls `verify_receipt()` immediately after each publication, but then:
+### B. `model_compositions.status()` read path
 
-- derived PNGs can remain in the generation folder while the Blender worker runs;
-- worker artifacts can remain after their immediate receipt check while manifest/pointer gates continue;
-- `print_preview.validate()` hashes `read_bytes()` but does not explicitly reject a later symlink/non-regular replacement before following the path;
-- `model_compositions.generate()` performs current-master / artwork / input-authority checks after `print_preview.validate()` and before `published.json`, leaving another interval before authority advancement.
+`generation()` correctly checks `published.json` for modern `historyVersion=1` generations, but `status()` only escalates to `generation()` when `inputAuthority` / `inputAuthorityHash` is present.
 
-The Round 12 requirement was explicit: **before authority advancement, current finals must still equal the original receipts and symlink/non-regular/missing targets must fail closed.**
+Therefore a normal current composition with `historyVersion=1` but no input-authority extension can potentially report `generated=true` after `published.json` is deleted or corrupted, because `print_preview.validate()` alone validates manifest/meta/artifacts but does not require the publication seal.
 
-Make the smallest correction; do not redesign storage.
+This read-path inconsistency is the primary Round 13 blocker.
 
-### A. Verify the complete receipt set immediately before manifest construction
+### C. `print_preview.generate()`
 
-For both `model_compositions.generate()` and `print_preview.generate()`:
+Print preview has no separate `published.json` contract and must not gain a new second authority. Its existing authority is `manifest.json + meta.json + latest.json`.
 
-1. derive the exact expected artifact names from the existing package/`FILES` contract;
-2. require every expected artifact to have exactly one retained publication receipt;
-3. reject missing, unexpected, symlink or non-regular entries at this authority boundary;
-4. call receipt verification for every expected final and preserve SHA/size equality;
-5. construct `manifest['files']` from the accepted receipt identities for the exact expected set — do not allow a later uncontrolled read to become a new digest authority.
+However, after the existing `validate(folder)` call, the code performs receipt verification and then advances `latest.json` without re-binding the manifest/meta pair to the exact validated manifest digest at that final pointer boundary. A mutation after validation can therefore advance `latest.json` to a generation that the next read rejects.
 
-Required chain for worker artifacts:
+Round 13 must close this with the existing manifest/meta contract, not by inventing a new publication ledger.
 
-`stored DAM SHA == publish_binary receipt SHA == authority-boundary verified final SHA == manifest SHA`
+## 2. Required accepted-code baseline before correction
 
-and when stored size is authoritative:
+Use an isolated exact checkout/worktree of accepted CODE:
 
-`stored DAM size == receipt size == authority-boundary verified final size`.
+`0780d24e04fbed59e33f7fad36d7bff886998b01`
 
-Required chain for derived PNGs:
+Run real local-filesystem probes with deterministic timing controls. Do not modify the accepted checkout.
 
-`publish_bytes receipt SHA == placement source.fileSha256 == authority-boundary verified final SHA == manifest SHA`.
+Minimum baseline cases:
 
-### B. Keep validators fail-closed for later reads
+1. **Model composition manifest drift after successful validate / before published**
+   - allow current `print_preview.validate(target)` to return success;
+   - mutate `manifest.json` before `published.json` creation;
+   - record old validated manifest SHA, mutated SHA, `meta.json` SHA, resulting `published.json` SHA if created, `latest.json` presence, and fresh `status()` / `generation()` behavior.
 
-`print_preview.validate()` must explicitly reject expected paths that are symlinks or non-regular before hashing them. Preserve exact file-set verification, `validate_outputs()`, worker observation checks and REAL-Blender flags.
+2. **Model composition publication seal loss after successful completion**
+   - complete one accepted-path generation;
+   - delete `published.json`, then call the public/current status path;
+   - repeat with mismatched `published.json.manifestSha256`;
+   - record whether `generated` remains true or false.
 
-Do not weaken validation merely because a receipt existed earlier.
+3. **Print preview manifest/meta drift after successful validate / before latest**
+   - allow `validate(folder)` to return success;
+   - mutate `manifest.json` or `meta.json` before `latest.json` advancement;
+   - record pointer presence and fresh status behavior.
 
-### C. Re-check immediately before final pointer/publication authority
+The timing hook may be monkeypatched and is **MOCK / FAULT_INJECTION_CONTROL**. The filesystem bytes/read result can be labeled only as scoped **REAL_OS_IO_INTEGRITY** when actually exercised.
 
-After all existing master-current / revocation / input-authority gates and immediately before advancing `published.json` / `latest.json`, re-verify the receipt-tracked finals against the retained receipts.
+Do not fabricate a fail-open result. Record the actual behavior.
 
-- `model_compositions`: before `published.json`, then existing `latest.json` order remains intact;
-- `print_preview`: before `latest.json`.
+## 3. Minimal production correction — bind one validated manifest identity through existing authorities
 
-This is not a claim of hostile concurrent-writer atomicity. Existing hard-link/concurrent-writer ambiguity may remain **PARTIAL / PRESERVED UNKNOWN** unless independently solved and tested.
+Do not redesign storage. Do not add DB/WAL, a new ledger, a duplicate manifest, replay engine or global locks.
 
-Do not add locks, DB/WAL, replay, second ledger, duplicate manifest or a new storage architecture in this round.
+### A. Capture one manifest digest and keep it immutable for the publication transaction
 
-## 3. Blocking finding C — required adversarial coverage is incomplete
+For each generation path, after the final manifest object is assembled and durably written:
 
-Add focused production-caller tests for **both** `model_compositions` and `print_preview` where applicable.
+1. require `manifest.json` to be a regular non-symlink file;
+2. compute a single `manifest_sha` from the written bytes;
+3. write existing `meta.json` using exactly that `manifest_sha`;
+4. validate current manifest/meta/artifacts through the existing validator;
+5. preserve the captured `manifest_sha` as the transaction identity; do not silently replace it later with a new digest read from changed bytes.
 
-Minimum matrix:
+### B. Re-verify manifest/meta immediately before pointer/publication authority
 
-1. immediate post-copy corruption before first `verify_receipt()` -> fail closed (existing coverage may remain);
-2. worker final mutated **after first receipt verification** / before manifest -> fail closed; original receipt must remain authority;
-3. derived PNG mutated **after first receipt verification** / before manifest -> fail closed; placement SHA and manifest authority remain the original receipt;
-4. receipt-tracked final deleted after first verification -> fail closed;
-5. receipt-tracked final replaced by symlink to bytes with the **same digest** after first verification -> still fail closed because path type is not authoritative regular-file state; skip only when platform truly cannot create the case and label the skip honestly;
-6. non-regular replacement where practical -> fail closed;
-7. correct worker success -> prove stored DAM SHA/size == receipt == verified final == manifest for every worker artifact;
-8. correct derived success -> prove receipt == placement SHA == verified final == manifest for every derived PNG;
-9. no `published.json` / `latest.json` advancement on any mismatch;
-10. wrong tenant, revoked artwork, malformed DAM identity, wrong SHA/size, `CommitIndeterminate`, no replay/rollback/adoption regressions remain green.
+Add a small reusable helper in an existing module if useful, but do not create a second authority protocol.
 
-The trigger may use a monkeypatch only to place mutation at an exact boundary; classify the trigger as **MOCK / FAULT_INJECTION_CONTROL**. Actual local filesystem mutation/read result may be documented separately as scoped local IO evidence.
+Immediately before `published.json` / `latest.json` advancement, require:
 
-## 4. Accepted-code baseline is still required
+- `manifest.json` exists, is regular, non-symlink, and SHA == captured `manifest_sha`;
+- `meta.json` exists, is regular, non-symlink, parses correctly, and `meta.manifestSha256 == manifest_sha`;
+- the existing artifact receipt set remains verified;
+- the existing current-master/revocation/input-authority checks remain unchanged.
 
-Before claiming Round 12 closure, run the original baseline probe against an isolated exact checkout/worktree of accepted CODE:
+For `model_compositions`:
 
-`74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`
+- create `published.json` with the **captured** `manifest_sha`, not a fresh authority-changing re-hash;
+- verify the resulting publication seal is a regular non-symlink JSON authority and still references the captured `manifest_sha` before advancing `latest.json`;
+- preserve current order: manifest/meta -> validate/current checks -> published -> latest.
 
-Exercise the actual local-filesystem window after successful publication and before manifest authority for:
+For `print_preview`:
 
-- one worker/DAM-backed artifact;
-- one derived PNG.
+- keep the existing authority model; **do not add `published.json`**;
+- re-verify the captured manifest/meta identity and artifact receipt set immediately before `latest.json`.
 
-Record the real outcome, including original receipt/stored digest, mutated final digest, manifest digest if produced, validator result, and presence of `manifest.json`, `meta.json`, `published.json`, `latest.json`.
+### C. Align model-composition read paths with the publication seal
 
-Do not fabricate a fail-open if another existing gate blocks it. This baseline is evidence of the defect/window, not proof of the correction.
+Modern retained results with `historyVersion == 1` must not be reported `generated=true` unless the existing publication seal is present and matches the validated manifest.
+
+Make the smallest change:
+
+- `status()` should route modern `historyVersion==1` composition results through the existing `generation()` validation path (or an equivalent shared verifier);
+- missing, malformed, symlink/non-regular or mismatched `published.json` must make the result unavailable/fail closed;
+- legacy results without `historyVersion` may keep the existing legacy behavior if currently supported;
+- do not weaken current input-authority, tenant, artwork-revocation, source-revision or history checks.
+
+## 4. Required adversarial matrix
+
+Add production-caller tests, not helper-only tests.
+
+### Model compositions
+
+1. manifest mutation after successful validator / before `published.json` -> fail closed; no latest advancement;
+2. meta mutation after successful validator / before `published.json` -> fail closed; no latest advancement;
+3. manifest replaced by symlink to same bytes at final authority boundary -> fail closed;
+4. meta replaced by symlink/non-regular where supported -> fail closed;
+5. published seal missing after an otherwise complete modern generation -> public `status()` must not report `generated=true`;
+6. published seal digest mismatch -> public `status()` and `generation()` fail closed;
+7. published seal symlink/non-regular -> fail closed;
+8. correct success -> `meta.manifestSha256 == captured manifest SHA == published.manifestSha256`, then `latest.json` points to that generation;
+9. historical valid generation remains readable through `history()` / current public retrieval rules;
+10. legacy no-`historyVersion` compatibility remains only if explicitly supported and tested.
+
+### Print preview
+
+11. manifest mutation after successful validate / before latest -> fail closed; no latest advancement;
+12. meta mutation after successful validate / before latest -> fail closed; no latest advancement;
+13. manifest/meta symlink/non-regular at final pointer boundary -> fail closed;
+14. correct success -> captured manifest SHA == meta SHA, artifacts/receipts valid, then latest advances;
+15. fresh status after any rejected pointer attempt must not report the invalid generation as generated.
+
+Retain Round 9B–12 tests for `CommitIndeterminate`, artifact receipts, source DAM identity, tenant isolation, wrong SHA/size, no replay/rollback/adoption and current-master/artwork revocation.
 
 ## 5. Final CODE gate
 
-After the narrow correction and tests:
+After the narrow correction:
 
-1. freeze one exact final Round 12 CODE SHA;
-2. run focused tests;
-3. run full local `pytest`;
-4. run GitHub Actions on that exact CODE SHA;
-5. Ubuntu + Windows must both be SUCCESS and checkout the exact SHA;
-6. record exact Actions run ID and pass/skip counts.
+1. freeze one exact Round 13 CODE SHA;
+2. run focused tests and full local `pytest`;
+3. run GitHub Actions on that exact SHA;
+4. Ubuntu + Windows must both be SUCCESS and checkout that exact SHA;
+5. record Actions run ID and pass/skip counts.
 
-Candidate Actions `35190925369` is useful regression evidence for `9062ae92...`, but once production code changes again it is not the final Round 12 CI evidence.
+CI remains **MOCK regression**. Do not label it REAL Blender acceptance.
 
-CI remains **MOCK regression**, not REAL Blender acceptance.
+## 6. Clean REAL acceptance
 
-## 6. New clean REAL Blender acceptance
-
-Only after the exact final corrected CODE dual-platform CI is green, run fresh clean acceptance on that exact CODE SHA:
+Only after exact final CODE dual-platform CI is green, run one fresh clean acceptance on that exact CODE:
 
 - Blender 5.2.1 LTS + OptiX;
 - `FOX3D_MOCK_BLENDER=0`;
 - `usedMock=false`;
 - clean working tree;
 - at least two current synthetic/static variants;
-- record worker stored DAM SHA/size -> receipt -> final verification -> manifest chain;
-- record derived PNG receipt -> placement SHA -> final verification -> manifest chain;
-- `.blend` reopen, finite pixels, artifact decode/reopen and lineage/history/download checks remain green;
-- no duplicate publication, replay or temp adoption.
+- prove existing receipt -> final -> manifest chain remains exact;
+- additionally record `manifest_sha -> meta.manifestSha256 -> published.manifestSha256` for model compositions;
+- for print preview record `manifest_sha -> meta.manifestSha256 -> latest generationId` with final boundary verification;
+- restart/history/status/download checks must remain green;
+- `.blend` reopen, finite pixels and artifact decode/reopen remain green.
 
-This may be classified as **REAL_RENDER** plus scoped exercised local **REAL_OS_IO_INTEGRITY** only. It is not physical CAD truth, print proof, NAS durability, power-loss durability or manufacturing readiness.
+Classify only as **REAL_RENDER** plus scoped local **REAL_OS_IO_INTEGRITY** where directly observed. It is not physical product geometry, print proof, manufacturing readiness, NAS durability or power-loss proof.
 
-## 7. Acceptance docs and final handoff
+## 7. Acceptance package and handoff
 
-Update only the existing PR #15 authority package unless a factual correction elsewhere is strictly required:
+Update the existing PR #15 evidence package:
 
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
 
-Round 12 evidence must record:
+Record:
 
-- accepted Round 11 lineage;
-- exact accepted-code baseline outcome;
-- candidate `9062ae92...` checkpoint and why it required correction;
-- exact final Round 12 CODE SHA + changed files;
-- exact final CODE Actions ID and pass/skip counts;
-- full adversarial matrix and REAL/MOCK/PARTIAL/BLOCKED labels;
-- receipt -> final -> manifest equality chains;
-- fresh clean REAL acceptance ID;
-- remaining hard-link / hostile concurrent-writer / NAS / power-loss / physical-manufacturing boundaries;
-- exact final DOCS SHA + exact dual-platform DOCS CI.
+- accepted Round 12 CODE/DOCS lineage;
+- exact baseline outcomes for the three Round 13 windows;
+- final CODE SHA and changed files;
+- exact CODE Actions + platform results;
+- adversarial matrix;
+- manifest/meta/published/latest identity chains;
+- new clean REAL acceptance ID;
+- final DOCS SHA and exact DOCS dual-platform CI;
+- remaining REAL/MOCK/PARTIAL/BLOCKED boundaries.
 
-Do not rewrite merely for freshness:
+Do not rewrite for freshness only:
 
 - `docs/GROK_PROGRESS_REPORT.md`
 - `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
 - `docs/REAL_E2E_ACCEPTANCE.md`
 - `docs/CABINET_REAL_ACCEPTANCE.md`
 
-Their canonical boundaries remain in force: Mock pytest is not Production Ready; CNC live control remains BLOCKED; Vision Judge remains MOCK; `physicalPrintValidated=false`; `globalProductionReady=false`.
+Their current boundaries remain authoritative: Mock pytest is not Production Ready; CNC live control remains BLOCKED; Vision Judge remains MOCK; `physicalPrintValidated=false`; `globalProductionReady=false`.
 
-When closure is complete, leave exactly one Issue #1 handoff headed:
+When complete, leave exactly one Issue #1 handoff headed:
 
-`[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 12 publication-to-manifest identity`
+`[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 13 manifest/publication pointer identity`
 
-Include final CODE SHA/Actions, baseline outcome, clean REAL ID, final DOCS SHA/Actions, identity-chain summary, truth matrix, `MERGE_AUTHORIZED=false`, PR #15 DRAFT/OPEN/unmerged, PR #16 FROZEN, and **Round 13 HOLD**. Then STOP for Supervisor Re-Gate.
+Include final CODE SHA/Actions, accepted-code baseline outcomes, clean REAL ID, DOCS SHA/Actions, truth matrix, `MERGE_AUTHORIZED=false`, PR #15 DRAFT/OPEN/unmerged, PR #16 FROZEN, and **Round 14 HOLD**. Then STOP for Supervisor Re-Gate.
 
 ## 8. Frozen boundaries
 
@@ -220,4 +250,4 @@ Include final CODE SHA/Actions, baseline outcome, clean REAL ID, final DOCS SHA/
 - `manufacturingReady=false`.
 - `globalProductionReady=false`.
 - `MERGE_AUTHORIZED=false`.
-- **Round 13 HOLD**.
+- **Round 14 HOLD**.
