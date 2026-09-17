@@ -33,7 +33,7 @@ def test_art_and_scene_keep_geometry_identity(tmp_path):
     assert p['spec']['components']==q['spec']['components']
     assert not p['physicalPrintValidated']
     out=tmp_path/'prepared';out.mkdir()
-    _,spec,package,inputs=c.prepare(tmp_path,'t',second,out)
+    _,spec,package,inputs,_=c.prepare(tmp_path,'t',second,out)
     assert len(inputs)==1 and package['placements'][0]['targetWidthMm']==100
     assert Image.open(out/'surface-preview.png').size==(400,200)
 
@@ -58,7 +58,7 @@ def test_pdf_trim_and_rotation(tmp_path):
     a=print_assets.import_asset(tmp_path,'t',stream.getvalue(),'trim.pdf')
     asset_usage.classify(tmp_path,'t',a['id'],'ARTWORK','Synthetic blank PDF trim fixture',0)
     s['placements'][0]['assetId']=a['id'];d=c.snapshot(tmp_path,'t',model,s)
-    out=tmp_path/'out';out.mkdir();_,_,pkg,_=c.prepare(tmp_path,'t',d,out)
+    out=tmp_path/'out';out.mkdir();_,_,pkg,_,_=c.prepare(tmp_path,'t',d,out)
     box=pkg['placements'][0]['derivedPreviewCropPx']
     assert box[0]>0 and box[1]>0
     im=Image.open(out/'surface-preview.png');assert abs(im.width/im.height-2)<.01
@@ -118,7 +118,7 @@ def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_pat
     draft = c.snapshot(tmp_path, 't', model, selection)
     spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
     monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
-                                                       {'packageHash': 'package'}, []))
+                                                       {'packageHash': 'package'}, [], {}))
     class Dam:
         def __init__(self, path):
             self.path = path
@@ -148,6 +148,58 @@ def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_pat
     assert not (generation / 'manifest.json').exists()
     assert not (generation / 'published.json').exists()
     assert not (base / 'latest.json').exists()
+
+
+def test_worker_receipt_tamper_before_manifest_fails_closed(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
+    monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
+                                                       {'packageHash': 'package'}, [], {}))
+    class Dam:
+        def __init__(self, path):
+            self.path = path; self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.metadata = {'bytes': path.stat().st_size}
+    files = {}
+    for name in c.print_preview.FILES:
+        path = tmp_path / ('source-' + name)
+        path.write_bytes(b'{"jobId":"worker-job"}' if name == 'golden-observation.json' else b'complete-worker-artifact')
+        files[name] = name
+    platform = SimpleNamespace(root=tmp_path, mock_blender=False,
+                               runtime=SimpleNamespace(available=lambda: True),
+                               probe=SimpleNamespace(optix=True))
+    platform.submit_job = lambda payload: {'jobId': 'worker-job'}
+    platform.execute_job = lambda job, **kwargs: {'status': 'completed', 'realBlender': True,
+        'usedMock': False, 'output': {'files': files, 'realBlender': True, 'usedMock': False,
+                                      'device': 'OPTIX', 'blenderVersion': '5.2.1 LTS', 'realOptix': True}}
+    platform.dam = SimpleNamespace(get=lambda ref, tenant_id: Dam(tmp_path / ('source-' + ref)))
+    original = c.publish_binary
+    def tamper(source, target, **kwargs):
+        receipt = original(source, target, **kwargs)
+        target.write_bytes(b'tampered-after-receipt')
+        return receipt
+    monkeypatch.setattr(c, 'publish_binary', tamper)
+    monkeypatch.setattr(c.print_preview, 'validate', lambda folder: {'status': 'test'})
+    with pytest.raises(ValueError, match='receipt'):
+        c.generate(platform, 't', model['id'], draft, generation_id='22222222-2222-2222-2222-222222222222')
+    generation = c.folder_for(tmp_path, 't', model['id']) / 'generations' / '22222222-2222-2222-2222-222222222222'
+    assert not (generation / 'manifest.json').exists()
+    assert not (generation / 'published.json').exists()
+    assert not (c.folder_for(tmp_path, 't', model['id']) / 'latest.json').exists()
+
+
+def test_derived_receipt_tamper_before_package_fails_closed(tmp_path, monkeypatch):
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    out = tmp_path / 'out'; out.mkdir()
+    original = c.publish_bytes
+    def tamper(writer, target, **kwargs):
+        receipt = original(writer, target, **kwargs)
+        target.write_bytes(b'tampered-derived')
+        return receipt
+    monkeypatch.setattr(c, 'publish_bytes', tamper)
+    with pytest.raises(ValueError, match='receipt'):
+        c.prepare(tmp_path, 't', draft, out)
 
 def test_existing_recipe_snapshots_keep_original_geometry_and_assumptions(tmp_path):
     from fox3d.recipe_3d import build_recipe_spec

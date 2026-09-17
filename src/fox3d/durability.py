@@ -179,3 +179,15 @@ def publish_bytes(writer, target, *, expected_sha256=None, expected_size=None):
             except OSError: pass
         raise
     return {'sha256': digest.hexdigest(), 'size': size}
+
+
+def verify_receipt(target, receipt):
+    """Verify that the current regular file is still the published receipt."""
+    target = Path(target)
+    if target.is_symlink() or not target.is_file():
+        raise ValueError('published artifact missing or non-regular')
+    size = target.stat().st_size
+    digest = hashlib.sha256(target.read_bytes()).hexdigest()
+    if digest != receipt.get('sha256') or size != receipt.get('size'):
+        raise ValueError('published artifact receipt mismatch')
+    return {'sha256': digest, 'size': size}

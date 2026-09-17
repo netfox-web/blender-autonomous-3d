@@ -15,7 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.durability import publish_binary, publish_bytes, dam_identity
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt
 from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
@@ -155,7 +155,7 @@ def plan(root, tenant, draft):
 
 
 def prepare(root,tenant,draft,target):
-    p=plan(root,tenant,draft);spec=p['spec'];placements=[]
+    p=plan(root,tenant,draft);spec=p['spec'];placements=[];receipts={}
     artwork_hash=stable_hash({'placements':draft['placements'],'contract':'MASTER_COMPOSITION_V1'})
     parts={x['componentId']:x for x in spec['components']}
     for row in p['rows']:
@@ -172,13 +172,14 @@ def prepare(root,tenant,draft,target):
             box=(round(left/w*image.width),round((h-top)/h*image.height),round(right/w*image.width),round((h-bottom)/h*image.height))
         if box[2]<=box[0] or box[3]<=box[1]: raise ValueError('圖稿裁切範圍為空')
         name=row['componentId']+'-preview.png'
-        publish_bytes(lambda stream: image.crop(box).save(stream,'PNG'), target/name)
+        receipts[name]=publish_bytes(lambda stream: image.crop(box).save(stream,'PNG'), target/name)
+        verify_receipt(target/name, receipts[name])
         with Image.open(target/name) as decoded: decoded.verify()
         uv={'u0':0.,'v0':0.,'u1':1.,'v1':1.}
         item={'componentId':row['componentId'],'objectName':parts[row['componentId']]['partName'],
               'face':'FRONT','relation':'SINGLE_SURFACE','engineeringHash':spec['engineeringHash'],
               'artworkHash':artwork_hash,'surfaceHash':stable_hash(row),'uvRect':uv,'rotationDeg':0.,'mirrored':False,
-              'source':{'name':name,'fileSha256':sha256_bytes((target/name).read_bytes())},
+              'source':{'name':name,'fileSha256':receipts[name]['sha256']},
               'originalAssetId':row['assetId'],'sourcePage':row['page'],'sourceRotation':row['rotation'],
               'derivedPreviewCropPx':list(box),'targetWidthMm':row['widthMm'],'targetHeightMm':row['heightMm']}
         item['placementHash']=stable_hash(item);item['placementId']=item['placementHash']
@@ -189,7 +190,7 @@ def prepare(root,tenant,draft,target):
     package['packageHash']=stable_hash(package)
     inputs=[{**x,'imagePath':str((target/x['source']['name']).resolve()),
              'artworkSha256':x['source']['fileSha256'],'goldenObservedUv':True} for x in placements]
-    return p,spec,package,inputs
+    return p,spec,package,inputs,receipts
 
 
 def status(root,tenant,mid,*,current_draft=None):
@@ -217,7 +218,7 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     if platform.mock_blender or not platform.runtime.available(): raise ValueError('需要真實 Blender')
     gid=generation_id or new_id();target=folder_for(platform.root,tenant,mid)/'generations'/gid
     target.mkdir(parents=True,exist_ok=False)
-    p,spec,package,placements=prepare(platform.root,tenant,draft,target)
+    p,spec,package,placements,receipts=prepare(platform.root,tenant,draft,target)
     h=spec['height']/1000;extent=max(spec['width'],spec['height'],spec['depth'])/1000
     payload={'tenantId':tenant,'jobType':'PARAMETRIC_3D','mode':'CABINET_PREVIEW','engineering':spec,
         'recipePreview':True,'goldenRecipe':True,'goldenIdentity':{'sku':draft['sku'],'packageHash':package['packageHash']},
@@ -235,10 +236,11 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     for name in print_preview.FILES:
         source=platform.dam.get(output['files'][name],tenant_id=tenant)
         expected_sha256, expected_size = dam_identity(source)
-        publish_binary(source.path, target/name, expected_sha256=expected_sha256, expected_size=expected_size)
+        receipts[name]=publish_binary(source.path, target/name, expected_sha256=expected_sha256, expected_size=expected_size)
+        verify_receipt(target/name, receipts[name])
     manifest={'generationId':gid,'historyVersion':1,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
         'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':stable_hash({'scene':draft['scene'],'version':1}),
-        'files':{f.name:sha256_bytes(f.read_bytes()) for f in target.iterdir() if f.is_file()},
+        'files':{f.name:(receipts[f.name]['sha256'] if f.name in receipts else sha256_bytes(f.read_bytes())) for f in target.iterdir() if f.is_file()},
         'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
         'requestedJobId':job['jobId'],'jobId':read_json(target/'golden-observation.json')['jobId'],
         'cacheHit':done.get('cacheHit',False),'productionReady':False,'colorAuthority':'RGB_SCREEN_PREVIEW_NOT_PRINT_PROOF'}
