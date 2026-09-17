@@ -196,3 +196,22 @@ Exact CODE Actions [35180923106](https://github.com/netfox-web/blender-autonomou
 Evidence `53b009bc-74f8-4fab-acba-38a967bc0271` ran after exact CODE CI on clean tree with Blender **5.2.1 LTS / OptiX**, `usedMock=false`, `realOptix=true`, and two `SYNTHETIC_STATIC_FIXTURE` cabinet generations. Both generations passed `.blend` reopen, finite pixels, artifact SHA/size and manifest publication records; cache/attempt/DAM/job/publication lineage and restart/history/download checks passed. Manifest SHA records were `3d18fbe1b08c37f5f6368a0f793ba0bf814dc8c65a265564173472975ee06acf` and `dc3d3cb49418796518c9910987a232cc2e7016f8f35ae37eb4387fb7c0bee72b`. This is `REAL_RENDER` for synthetic/static visual evidence only. It does not establish physical CAD truth, print validation, NAS durability, manufacturing readiness or Production Ready.
 
 `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC or production operation was used. After exact DOCS dual-CI, one READY_FOR_RE_GATE handoff is required, then STOP for Supervisor.
+
+
+## Round 12 — publication receipt to manifest identity
+
+Supervisor Re-Gate instruction commit `b17e624c6e152477b8cb4f23a1a17633692eda0a` / blob `3ee5031471c470766b92083dd405477210979ff6` required correction-only closure after candidate `9062ae92f3b4f2171e6328ec6c1025ff495bc21b`. Round 11 was accepted with scope; PR #15 remains DRAFT/OPEN/unmerged, `MERGE_AUTHORIZED=false`, and Round 13 is HOLD.
+
+### Accepted baseline and correction
+
+On exact accepted CODE `74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd`, an actual local publication receipt (`796120837694d3f3f29259cfeb25091698c2a0aa87873658d840b4993ee889b3`, 3 bytes) was followed by a valid local final mutation (`c64a95afd9f2258615e027712f89e807ebd48525a666ecb85305feb58e07a7f6`, 15 bytes). The old path constructed manifest authority from the mutated digest; `manifest.json`, `meta.json`, and `published.json` appeared while `latest.json` did not. This is scoped `REAL_OS_IO_INTEGRITY` with a boundary trigger classified `MOCK / FAULT_INJECTION_CONTROL`; it is not cross-process, NAS or power-loss evidence.
+
+Final CODE `0780d24e04fbed59e33f7fad36d7bff886998b01` retains receipt identities through both callers, verifies the complete expected receipt set immediately before manifest construction and again immediately before pointer/publication authority, and rejects missing, symlink or non-regular finals. `print_preview.validate()` also rejects symlink/non-regular paths. The production caller test matrix includes immediate corruption, post-verification worker tamper, derived receipt protection, missing final, symlink/non-regular fail-closed behavior, correct success, isolation, malformed identity, wrong SHA/size, `CommitIndeterminate`, and no retry/rollback/replay regressions.
+
+Exact CODE Actions [35196017765](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35196017765) passed on the exact SHA: Windows **1326 PASS / 0 skipped**, Ubuntu **1322 PASS / 4 existing skips**. Local full pytest passed. CI remains `MOCK regression`; injected boundary triggers are `MOCK / FAULT_INJECTION_CONTROL`; hard-link/concurrent-writer remains `PARTIAL / PRESERVED UNKNOWN`; NAS, power-loss and physical manufacturing remain `BLOCKED / NOT_TESTED`.
+
+### Clean REAL acceptance
+
+Evidence `4c135de2-3aa2-4988-8201-8633a02cc5ae` ran after final CODE CI on clean tree with Blender **5.2.1 LTS + OptiX**, `usedMock=false`, and two `SYNTHETIC_STATIC_FIXTURE` variants. `.blend` reopen, finite pixels, artifact decode/reopen, cache/attempt/DAM/job/publication lineage and restart/history/download passed. Receipt→verified final→manifest equality chains were recorded for every worker artifact and derived PNG in the round12 evidence package. This is `REAL_RENDER` plus scoped local `REAL_OS_IO_INTEGRITY`; it is not physical CAD truth, print validation, NAS durability, power-loss durability, manufacturing readiness or Production Ready.
+
+`physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC or production operation was used. Exact DOCS dual-platform CI and one final READY_FOR_RE_GATE handoff remain required, then STOP for Supervisor.

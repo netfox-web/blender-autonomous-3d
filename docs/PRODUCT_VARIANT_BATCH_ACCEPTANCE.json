@@ -19451,5 +19451,238 @@
       "globalProductionReady": false,
       "mergeAuthorized": false
     }
+  },
+  "round12": {
+    "instructionCommit": "b17e624c6e152477b8cb4f23a1a17633692eda0a",
+    "instructionBlob": "3ee5031471c470766b92083dd405477210979ff6",
+    "supervisorDecision": "CHANGES REQUIRED / correction-only",
+    "acceptedCandidate": "9062ae92f3b4f2171e6328ec6c1025ff495bc21b",
+    "candidateActions": 35190925369,
+    "acceptedRound11": {
+      "code": "74ef218e47f10958cb8a8a66a1bf4a6aa7df7cbd",
+      "docs": "a40c5005f8e2f6d32f7aa76012bf934c975124f5"
+    },
+    "baseline": {
+      "status": "PASS",
+      "classification": "REAL_OS_IO_INTEGRITY",
+      "root": "C:\\Users\\office\\AppData\\Local\\Temp\\fox3d-r12-baseline-5334gnoc",
+      "outcome": "completed",
+      "publicationReceipt": {
+        "sha256": "796120837694d3f3f29259cfeb25091698c2a0aa87873658d840b4993ee889b3",
+        "size": 3
+      },
+      "mutatedFinal": {
+        "sha256": "c64a95afd9f2258615e027712f89e807ebd48525a666ecb85305feb58e07a7f6",
+        "size": 15
+      },
+      "manifestDigest": "c64a95afd9f2258615e027712f89e807ebd48525a666ecb85305feb58e07a7f6",
+      "verifierResult": "baseline validator bypassed at controlled boundary",
+      "presence": {
+        "manifest.json": true,
+        "meta.json": true,
+        "published.json": true,
+        "latest.json": false
+      }
+    },
+    "finalCode": "0780d24e04fbed59e33f7fad36d7bff886998b01",
+    "changedFiles": [
+      "src/fox3d/durability.py",
+      "src/fox3d/model_compositions.py",
+      "src/fox3d/print_preview.py",
+      "tests/test_model_compositions.py",
+      "tests/test_print_workspace.py"
+    ],
+    "codeActions": {
+      "runId": 35196017765,
+      "status": "success",
+      "windows": "1326 PASS / 0 skipped",
+      "ubuntu": "1322 PASS / 4 existing skips",
+      "exactCheckoutSha": "0780d24e04fbed59e33f7fad36d7bff886998b01"
+    },
+    "localFullPytest": "PASS",
+    "adversarialMatrix": {
+      "immediatePostCopyTamper": "PASS / MOCK fault-injection control + local IO result",
+      "postVerificationWorkerTamper": "PASS / receipt boundary fail-closed",
+      "postVerificationDerivedTamper": "PASS / receipt boundary implementation; production path retained",
+      "missingFinal": "PASS / verify_receipt fail-closed",
+      "symlinkNonRegular": "PASS / verify_receipt and validator fail-closed",
+      "correctSuccess": "PASS / complete receipt chains",
+      "isolationAndCommitIndeterminate": "PASS / retained regressions",
+      "hardLinkConcurrentWriter": "PARTIAL / PRESERVED UNKNOWN",
+      "nasPowerLossPhysical": "BLOCKED / NOT_TESTED"
+    },
+    "receiptChains": {
+      "evidenceId": "4c135de2-3aa2-4988-8201-8633a02cc5ae",
+      "codeCommit": "0780d24e04fbed59e33f7fad36d7bff886998b01",
+      "status": "PASS",
+      "generations": [
+        {
+          "generationId": "b78a6f6d-7ed4-5296-be7a-e42feb306246",
+          "workerArtifacts": {
+            "beauty.png": {
+              "receiptSha256": "58031bed32c2e298086707cf9ed6dc846f267a5d5b897aa2074c6b596380e997",
+              "receiptSize": 646543,
+              "finalSha256": "58031bed32c2e298086707cf9ed6dc846f267a5d5b897aa2074c6b596380e997",
+              "finalSize": 646543,
+              "manifestSha256": "58031bed32c2e298086707cf9ed6dc846f267a5d5b897aa2074c6b596380e997"
+            },
+            "front-closed.png": {
+              "receiptSha256": "b75f3217c391b0a017892c120f4dc96c77f7772dd7ad17cb1b1da1fd5860ef1b",
+              "receiptSize": 648463,
+              "finalSha256": "b75f3217c391b0a017892c120f4dc96c77f7772dd7ad17cb1b1da1fd5860ef1b",
+              "finalSize": 648463,
+              "manifestSha256": "b75f3217c391b0a017892c120f4dc96c77f7772dd7ad17cb1b1da1fd5860ef1b"
+            },
+            "geometry.json": {
+              "receiptSha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+              "receiptSize": 1637,
+              "finalSha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+              "finalSize": 1637,
+              "manifestSha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab"
+            },
+            "golden-observation.json": {
+              "receiptSha256": "96e4bda4e4dbeff3064806a05c0333cbb2720c2bd35d0e194760c6ec0176fc52",
+              "receiptSize": 6186,
+              "finalSha256": "96e4bda4e4dbeff3064806a05c0333cbb2720c2bd35d0e194760c6ec0176fc52",
+              "finalSize": 6186,
+              "manifestSha256": "96e4bda4e4dbeff3064806a05c0333cbb2720c2bd35d0e194760c6ec0176fc52"
+            },
+            "model.blend": {
+              "receiptSha256": "f9786af9634bf42c3420830dbd92449f4c201a4d127aeae6863854c7070d9eb7",
+              "receiptSize": 964518,
+              "finalSha256": "f9786af9634bf42c3420830dbd92449f4c201a4d127aeae6863854c7070d9eb7",
+              "finalSize": 964518,
+              "manifestSha256": "f9786af9634bf42c3420830dbd92449f4c201a4d127aeae6863854c7070d9eb7"
+            },
+            "model.glb": {
+              "receiptSha256": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454",
+              "receiptSize": 27960,
+              "finalSha256": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454",
+              "finalSize": 27960,
+              "manifestSha256": "67065218d07baf3f0583b109feb4c6462a39abacfa3868a8387c102cda8dc454"
+            }
+          },
+          "derivedPngs": [
+            {
+              "name": "door_3-preview.png",
+              "receiptSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "placementSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "finalSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "finalSize": 2473,
+              "manifestSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac"
+            },
+            {
+              "name": "door_2-preview.png",
+              "receiptSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "placementSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "finalSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "finalSize": 2473,
+              "manifestSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac"
+            },
+            {
+              "name": "door_1-preview.png",
+              "receiptSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "placementSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "finalSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac",
+              "finalSize": 2473,
+              "manifestSha256": "3b7f5541e1b882d85c5424a52d38caee17735b5cd5b3b406b65c466aced73bac"
+            }
+          ]
+        },
+        {
+          "generationId": "f939ee7a-fecb-5486-b2a6-9fd47861784c",
+          "workerArtifacts": {
+            "beauty.png": {
+              "receiptSha256": "f298614949a53cd111acdca548a5d981b6a7e1af448deef088fece6ecc498fec",
+              "receiptSize": 647115,
+              "finalSha256": "f298614949a53cd111acdca548a5d981b6a7e1af448deef088fece6ecc498fec",
+              "finalSize": 647115,
+              "manifestSha256": "f298614949a53cd111acdca548a5d981b6a7e1af448deef088fece6ecc498fec"
+            },
+            "front-closed.png": {
+              "receiptSha256": "08b11673c53e51d1caf09d9688a87ecd81072938a309433bb3e8b45a4ad7778f",
+              "receiptSize": 647523,
+              "finalSha256": "08b11673c53e51d1caf09d9688a87ecd81072938a309433bb3e8b45a4ad7778f",
+              "finalSize": 647523,
+              "manifestSha256": "08b11673c53e51d1caf09d9688a87ecd81072938a309433bb3e8b45a4ad7778f"
+            },
+            "geometry.json": {
+              "receiptSha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+              "receiptSize": 1637,
+              "finalSha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+              "finalSize": 1637,
+              "manifestSha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab"
+            },
+            "golden-observation.json": {
+              "receiptSha256": "892c19f7ae8f8d63b7d7642270743eaf7752a99ba69b16e337bdb3ca6a5b9d5c",
+              "receiptSize": 6186,
+              "finalSha256": "892c19f7ae8f8d63b7d7642270743eaf7752a99ba69b16e337bdb3ca6a5b9d5c",
+              "finalSize": 6186,
+              "manifestSha256": "892c19f7ae8f8d63b7d7642270743eaf7752a99ba69b16e337bdb3ca6a5b9d5c"
+            },
+            "model.blend": {
+              "receiptSha256": "8d30228f645e68bf62046a3d08f627b8fb3e0dd13cc21eb49ab0f8d90db05b1a",
+              "receiptSize": 964518,
+              "finalSha256": "8d30228f645e68bf62046a3d08f627b8fb3e0dd13cc21eb49ab0f8d90db05b1a",
+              "finalSize": 964518,
+              "manifestSha256": "8d30228f645e68bf62046a3d08f627b8fb3e0dd13cc21eb49ab0f8d90db05b1a"
+            },
+            "model.glb": {
+              "receiptSha256": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be",
+              "receiptSize": 27960,
+              "finalSha256": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be",
+              "finalSize": 27960,
+              "manifestSha256": "b55e634bc8ea6fc3973fc9b4b4b7de30cba3ddf20d9b4897e98254749a67e2be"
+            }
+          },
+          "derivedPngs": [
+            {
+              "name": "door_3-preview.png",
+              "receiptSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "placementSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "finalSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "finalSize": 2473,
+              "manifestSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0"
+            },
+            {
+              "name": "door_2-preview.png",
+              "receiptSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "placementSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "finalSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "finalSize": 2473,
+              "manifestSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0"
+            },
+            {
+              "name": "door_1-preview.png",
+              "receiptSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "placementSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "finalSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0",
+              "finalSize": 2473,
+              "manifestSha256": "63e75ac08d17eba97a80d3c88a5c6523d8aa9d083ecbf98bd05ada36194df9a0"
+            }
+          ]
+        }
+      ]
+    },
+    "realAcceptance": {
+      "evidenceId": "4c135de2-3aa2-4988-8201-8633a02cc5ae",
+      "status": "PASS",
+      "codeCommit": "0780d24e04fbed59e33f7fad36d7bff886998b01",
+      "workingTreeClean": true,
+      "blender": "5.2.1 LTS",
+      "device": "OptiX",
+      "usedMock": false,
+      "realOptix": true,
+      "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
+      "lineage": "cache/attempt/DAM/job/publication, restart/history/download PASS",
+      "boundary": "REAL_RENDER and scoped local REAL_OS_IO_INTEGRITY only; synthetic/static fixtures"
+    },
+    "truthFlags": {
+      "physicalProductGeometryTruth": false,
+      "physicalPrintValidated": false,
+      "manufacturingReady": false,
+      "globalProductionReady": false,
+      "mergeAuthorized": false
+    }
   }
 }
