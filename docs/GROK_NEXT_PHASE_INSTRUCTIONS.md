@@ -1,338 +1,233 @@
-# Development Agent 指令：PR #15 Round 10 — BINARY ARTIFACT PUBLICATION DURABILITY GATE
+# Development Agent 指令：PR #15 Round 10 — ARTIFACT PUBLICATION CORRECTION / EVIDENCE CLOSURE
 
 > Supervisor checkpoint: 2026-09-17
 > Repo: `netfox-web/blender-autonomous-3d`
 > PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
 > Accepted Round 9B CODE: `87ea4d3ba753c811f693cec8f4a3f465aca94364`
 > Accepted Round 9B DOCS: `14a2c83528b3a0d76c0ec71a51afa40cc443e30b`
-> CODE Actions: `35161605399` — Ubuntu + Windows SUCCESS
-> DOCS Actions: `35163856420` — Ubuntu + Windows SUCCESS
-> Clean REAL Blender acceptance: `12711dff-d675-4a2e-a620-7d5ad81bf05e`
-> Supervisor decision: **ACCEPT WITH SCOPE / GO ROUND 10**
+> Reviewed Round 10 CODE: `e128c44484bf8f8939a5725fb80306b0e8f5c376`
+> Reviewed CODE Actions: `35170538114` — **IN_PROGRESS / NOT ACCEPTANCE EVIDENCE at review time**
+> Supervisor decision: **CHANGES REQUIRED / ROUND 10 CORRECTION AUTHORIZED**
+> Round 11: **HOLD**
 > Merge authorization: **false**
 > Global Production Ready: **false**
 
-## 0. Round 9B acceptance boundary
+## 0. What is accepted vs not accepted
 
-Round 9B is accepted only for the scope actually proven:
+The direction in `e128c444...` is partially correct and must be retained unless a concrete defect requires a minimal change:
 
-- actual host file / containing-directory flush calls on the exercised Windows NTFS and Linux surfaces: **REAL_OS_IO_FLUSH**;
-- actual killed-writer / fresh-reader cases: **REAL_PROCESS_RECOVERY**;
-- typed durability outcomes, ownership, identity and verifier rules: **REAL_LOGIC**;
-- injected EIO / sync failures and CI renderer paths: **MOCK / FAULT_INJECTION_LOGIC**;
-- post-namespace sync failure: **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**;
-- W2 extra hard-link case: **PARTIAL / PRESERVED UNKNOWN**;
-- real hardware power cut / controller-cache / reset survival: **BLOCKED / NOT_TESTED**;
-- clean Blender run is **REAL_RENDER** only and uses a synthetic/static cabinet fixture.
+- shared `durability.publish_binary()` uses a target-bound same-directory temp;
+- bytes are streamed to temp, host-flushed, then atomically replaced and containing namespace sync is requested;
+- post-replace namespace-sync failure propagates `CommitIndeterminate` rather than returning success;
+- worker-origin files in `model_compositions.generate()` and `print_preview.generate()` no longer use direct `shutil.copy2(..., final_name)`.
 
-Do not upgrade any of the following:
+This is **not yet Round 10 acceptance**. Do not mark `e128c444...` READY merely because its CI eventually turns green.
 
-- `physicalProductGeometryTruth=false`
-- `physicalPrintValidated=false`
-- `manufacturingReady=false`
-- `globalProductionReady=false`
-- `MERGE_AUTHORIZED=false`
+Truth labels remain strict:
 
-Round 9B does **not** prove durability of copied Blender artifacts, every ancestor directory, NAS/network storage, storage-controller caches, or real power-loss survival.
+- durability/verifier/order code: **REAL_LOGIC** only after exercised evidence;
+- actual host flush on a named tested surface: **REAL_OS_IO_FLUSH**;
+- actual killed child + fresh reader: **REAL_PROCESS_RECOVERY**;
+- monkeypatch/injected I/O failures and ordinary CI render fixtures: **MOCK / FAULT_INJECTION_LOGIC**;
+- post-namespace sync failure with a possibly visible valid final: **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**;
+- hardware power cut/reset/controller-cache survival: **BLOCKED / NOT_TESTED**;
+- `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`.
 
-`docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`, and `docs/CABINET_REAL_ACCEPTANCE.md` remain canonical/historical lanes. Do not rewrite them just to make dates look current. Update them only if an existing declared truth becomes factually false.
+No architecture rewrite. No DB/WAL/second manifest/second authority/replay engine.
 
 ---
 
-# 1. Round 10 objective
+# 1. Blocker A — manifest-authoritative derived PNGs still write directly to final names
 
-Close the next concrete durability boundary without redesigning the system:
+The reviewed CODE still contains two direct final-name image writes that are inside the generation authority set and are also Blender inputs:
 
-**Binary render/artifact files must be fully materialized and verifier-consistent before the existing manifest / publication seal can make a generation available.**
+### `src/fox3d/print_preview.py`
 
-The current accepted branch still contains direct final-name writes such as worker artifact copies in `model_compositions.generate()` / `print_preview.generate()` and derived preview image writes. Round 10 must audit and, only where required, harden those existing paths.
+`prepare()` currently does the equivalent of:
 
-This is **not** a request for a new bundle database, WAL, transaction manager, queue, authority marker, or publication protocol.
+```python
+target = folder / name
+trim.save(target, format='PNG')
+```
 
-Keep the existing authority chain:
+`validate()` later includes each placement `source.name` in the exact expected manifest file set and hashes those bytes. Therefore this is not disposable scratch data.
 
-`artifact bytes -> manifest hashes -> meta / verifier -> published.json -> latest pointer`
+### `src/fox3d/model_compositions.py`
 
-Do not create a second source of truth.
+`prepare()` currently does the equivalent of:
 
----
+```python
+image.crop(box).save(target / name, 'PNG')
+```
 
-# 2. Baseline audit first — accepted CODE only
+Those bytes become `source.fileSha256`, `imagePath`, Blender artwork input, and later a manifest-authoritative file.
 
-Start from clean exact CODE:
+**Required correction:** remove the direct-final write window for these generated PNGs.
 
-`87ea4d3ba753c811f693cec8f4a3f465aca94364`
+Use the same Round 10 invariant as worker binaries:
 
-Before production changes, map every file that can enter a published generation and record how it is created today.
+1. create an exact target-bound same-directory temp;
+2. write the PNG to that temp — never write the final name first and then copy it;
+3. flush runtime buffering and the actual host file handle;
+4. optionally verify the generated PNG can be reopened/decoded where practical;
+5. atomically replace the final target;
+6. synchronize the containing directory with the existing Round 9B primitive;
+7. compute/store the SHA only from the bytes that became the final artifact;
+8. propagate `CommitIndeterminate` after namespace mutation; do not continue into Blender/manifest/publication from that failing call;
+9. never adopt unknown temp debris and never broad-sweep `*.tmp`.
 
-At minimum inspect:
-
-- `src/fox3d/model_compositions.py`
-- `src/fox3d/print_preview.py`
-- `src/fox3d/recipe_3d.py`
-- `src/fox3d/durability.py`
-- existing DAM retrieval/copy path used by the generation
-- existing `manifest.json`, `meta.json`, `published.json`, and `latest.json` ordering
-
-Explicitly enumerate:
-
-1. worker-copied binary artifacts (`beauty.png`, `front-closed.png`, `model.glb`, `model.blend`, `geometry.json`, `golden-observation.json`, or the exact current set);
-2. derived preview/artwork PNG files written locally before Blender;
-3. JSON authority files already covered by Round 9B;
-4. which files are verifier inputs and which files are only disposable/intermediate.
-
-For each artifact path classify whether it currently has:
-
-- write-to-final-name vs same-directory temp publication;
-- runtime flush;
-- host file flush;
-- namespace synchronization;
-- SHA/size verification;
-- verifier binding before `published.json`;
-- safe behavior after process death.
-
-Do not call an audit finding REAL data-loss evidence unless an actual process/filesystem experiment demonstrates it.
+Prefer one small reusable durability helper (for example a producer/callback or bytes publication variant) rather than duplicating fsync/FlushFileBuffers logic. Do not change DAM, queue, renderer, Product Master, PreviewOwnership, generation identity, manifest schema, or publication protocol.
 
 ---
 
-# 3. Required crash-window baseline evidence
+# 2. Blocker B — mandatory Round 10 crash-window baseline evidence is still missing
 
-Use fresh child processes and real filesystem I/O. Do not rely only on monkeypatches.
+Before claiming the correction closes the gate, run the original required baseline against a clean detached checkout of the **accepted CODE `87ea4d3...`**, not the modified CODE.
 
-Create deterministic Round 10 probes for the existing accepted CODE covering at least these windows:
+Use actual fresh child processes and real filesystem I/O for all four windows:
 
-### A. Kill during binary materialization
+### A — kill during binary/derived artifact materialization
 
-Kill the child while a sufficiently large artifact is still being copied/written.
+Prove fresh readers do not report the generation available, do not adopt partial/temp bytes, and do not disturb an older valid generation.
 
-After a fresh process starts, prove:
+### B — kill after artifact final bytes exist but before manifest/meta authority
 
-- no generation is reported `available=true` unless the full existing verifier passes;
-- no download path treats the partial artifact as published authority;
-- no temp/intermediate file is adopted as final authority;
-- existing prior generations remain unchanged.
+Prove loose complete files alone do not create publication authority.
 
-### B. Kill after artifact file write but before manifest authority
+### C — kill after manifest/meta but before the existing final publication boundary
 
-After artifact bytes are present but before `manifest.json` / `meta.json` authority is complete, kill the writer.
+For `model_compositions`, prove absence of `published.json` prevents availability where that seal is required. For `print_preview`, preserve its existing protocol; do **not** invent a `published.json` if that path currently uses validated manifest/meta + `latest.json` as its publication boundary. Prove only the actual existing authority chain.
 
-Fresh process must fail closed for that generation and must not reconstruct publication authority from loose files.
+### D — publication / latest-pointer boundary
 
-### C. Kill after manifest/meta but before `published.json`
+Prove a committed immutable generation is not corrupted by a failed/stale `latest.json` update, and that fresh readers do not duplicate render/publication or rewrite history.
 
-A verifier-consistent artifact set without the existing final publication seal must not be promoted to an available published batch result where `published.json` is required.
+Record PIDs, kill point, files present, SHA/size, prior-generation bytes, fresh-reader result, verifier result, and whether any automatic replay/adoption occurred.
 
-### D. Publication / latest-pointer boundary
-
-Exercise the window after `published.json` is committed but before or during `latest.json` update.
-
-Keep the semantics explicit:
-
-- immutable published generation authority and mutable convenience pointer are different;
-- a failed/indeterminate latest-pointer update must never corrupt or overwrite the published generation;
-- a stale latest pointer must not cause duplicate render/publication or rewrite history.
-
-All child-kill cases are **REAL_PROCESS_RECOVERY** only for the process/filesystem behavior actually exercised. They are not power-loss tests.
+These process-kill probes are **REAL_PROCESS_RECOVERY**, not power-loss evidence.
 
 ---
 
-# 4. Minimal production hardening only if baseline justifies it
+# 3. Blocker C — current focused tests are insufficient and one failure label is misleading
 
-If the baseline confirms final-name binary publication can be partially visible or lacks the intended durable ordering, implement the smallest shared primitive necessary.
+The current `tests/test_binary_publication.py` is useful unit/fault coverage but is not the required A–D process evidence.
 
-Preferred shape: extend `src/fox3d/durability.py` with a narrowly scoped helper for **same-directory artifact publication** rather than duplicating ad-hoc fsync logic in multiple modules.
+Correct the semantic naming/expectation around the test that monkeypatches `namespace_committed()` after `os.replace()`: this is a **post-namespace-mutation sync failure**, not a pre-namespace failure. The valid contract is:
 
-A valid implementation may use this sequence:
+- current call raises `CommitIndeterminate` and returns no success;
+- a complete final may already be visible;
+- no later publication step is allowed from the failed call;
+- later fresh readers use the unchanged verifier;
+- this remains **MOCK / FAULT_INJECTION_LOGIC** for the injected error and **PARTIAL / COMMIT_INDETERMINATE_DURABILITY** for the outcome model.
 
-1. create an exact target-bound same-directory temp file;
-2. stream/copy bytes to that temp;
-3. flush Python/runtime buffering;
-4. execute the existing platform-specific host file flush;
-5. verify expected bytes/hash/size where an expected digest is already available;
-6. atomically replace/rename the final artifact name;
-7. synchronize the containing directory using the accepted Round 9B primitive;
-8. never auto-adopt unknown debris;
-9. never broad-sweep `*.tmp`;
-10. never delete unrelated files.
+Add a distinct pre-replace/file-flush failure case proving old final bytes remain absent/unchanged.
 
-For locally generated preview PNGs, use an equivalent target-bound temp publication path if they are part of the manifest authority set. Do not invent another seal just for PNGs.
+Add focused regressions for the newly corrected generated-PNG path:
 
-Do **not**:
-
-- add SQLite/PostgreSQL/Redis/WAL;
-- add a second manifest/publication marker;
-- add background replay;
-- retry a `CommitIndeterminate` publication as though it definitely failed;
-- rewrite DAM, queue, renderer, Product Master, PreviewOwnership, or batch identity architecture;
-- modify worker-origin files in DAM;
-- claim remote/NAS durability from a local filesystem helper.
-
----
-
-# 5. Required ordering invariant
-
-After the fix, the following must be true for a successful generation:
-
-1. every manifest-authoritative binary/derived artifact is complete on its final path;
-2. every such file's bytes/hash/size match what the manifest records;
-3. `manifest.json` and `meta.json` are committed using the existing durable JSON path;
-4. the existing full verifier passes;
-5. only then may `published.json` be committed;
-6. only after publication may `latest.json` advance.
-
-A failure before artifact final-name publication must leave the old final absent/unchanged.
-
-A post-namespace synchronization failure for an artifact or publication file must use the existing conservative **`CommitIndeterminate`** semantics:
-
-- the current call returns no success;
-- no automatic retry/rollback/replay;
-- later readers use the unchanged verifier;
-- if exact valid bytes are visible later, classify the outcome **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**;
-- never label this `POWER_LOSS_SAFE` or `CRASH_DURABLE`.
-
----
-
-# 6. Mandatory adversarial tests
-
-Add focused tests that prove at least:
-
-- partial/truncated temp bytes never satisfy the generation verifier;
-- partial/truncated final bytes never coexist with a valid publication seal through the supported success path;
-- wrong SHA, wrong size, swapped artifact, cross-generation artifact, and stale artifact all fail closed;
-- corrupted `.blend`, PNG, GLB, geometry JSON, or golden observation cannot be surfaced as available when covered by the manifest;
-- artifact temp from another generation is never adopted;
-- symlink/reparse/extra-hardlink cases are preserved or rejected safely; do not broaden cleanup semantics;
-- `CommitIndeterminate` stops the current success path and does not continue to later publication work;
+- interruption during PNG temp write leaves no valid publication;
+- truncated/corrupt PNG cannot satisfy the full generation verifier;
+- temp from another generation is never adopted;
+- wrong SHA / wrong size / swapped artifact / cross-generation artifact / stale artifact fail closed;
+- corrupted BLEND/PNG/GLB/geometry/golden-observation fail closed when manifest-authoritative;
+- `CommitIndeterminate` stops before manifest/published/latest advancement;
 - latest-pointer failure does not duplicate a generation;
-- prior accepted Round 6–9B ownership, strict identity, temp-debris, and durability suites remain green.
+- prior Round 6–9B ownership, strict identity, temp-debris, and durability tests remain green.
 
-Fault-injected I/O errors are **MOCK / FAULT_INJECTION_LOGIC** even if they test real production code.
-
-Use actual child processes / actual host calls separately for **REAL_PROCESS_RECOVERY / REAL_OS_IO_FLUSH** evidence.
+If DAM metadata already exposes an immutable expected SHA/size for a worker artifact, pass that existing expected identity into `publish_binary()` and test mismatch. If it does not, **do not invent a second digest authority**; document that final-path re-hash + existing manifest/full verifier remains the authority.
 
 ---
 
-# 7. Exact CODE gate
+# 4. Exact CODE gate after the correction
 
-When production changes are complete:
+After the minimal correction only:
 
-1. freeze one exact Round 10 CODE SHA;
-2. run the focused Round 10 tests on Windows and Linux;
+1. freeze one exact final Round 10 CODE SHA;
+2. run focused Round 10 tests on Windows and Linux;
 3. run the full local suite;
-4. run GitHub Actions against exact CODE SHA;
-5. Ubuntu + Windows must both complete SUCCESS;
-6. record exact pass/skip counts and exact run ID;
-7. do not substitute an earlier CI run.
+4. run GitHub Actions on the exact final CODE SHA;
+5. Ubuntu + Windows must both complete `SUCCESS` on that exact SHA;
+6. record exact run ID and pass/skip counts;
+7. an earlier green run, including `35170538114` on `e128c444...`, must not substitute for the final corrected CODE gate.
 
-GitHub CI renderer/artifact fixtures remain **MOCK regression** unless an individual test is specifically exercising the actual OS primitive, in which case only that primitive receives the narrower REAL label.
-
-If the exact CODE CI fails, classify the defect, fix minimally, freeze a new CODE SHA, and restart this gate. Do not keep stacking speculative fixes while CI is running.
+If exact CI fails, fix only the concrete defect and restart the exact CODE gate. Do not stack speculative changes while CI is running.
 
 ---
 
-# 8. Clean REAL Blender acceptance
+# 5. Clean REAL Blender acceptance
 
-Only after exact CODE dual-platform CI is green, run a new clean acceptance on the exact Round 10 CODE:
+Only after exact corrected CODE dual-platform CI is green, run a new clean acceptance bound to that exact CODE:
 
 - `FOX3D_MOCK_BLENDER=0`;
 - Blender 5.2.1 LTS + OptiX;
 - `usedMock=false`;
-- clean working tree bound to exact CODE SHA;
-- existing synthetic/static fixture scope only;
-- at least two product variants;
-- real PNG/BLEND/GLB/geometry/golden-observation artifact bytes;
-- SHA/size checks;
-- `.blend` reopen;
-- finite image checks;
-- restart/history/download checks;
-- request/row/terminal/publication lineage checks;
-- no duplicate generation/publication;
-- no adoption/replay of debris;
+- clean working tree;
+- current synthetic/static fixture scope only;
+- at least two variants;
+- real manifest-authoritative PNG/BLEND/GLB/geometry/golden-observation bytes;
+- SHA/size checks and PNG/BLEND reopen/finite checks;
+- restart/history/download and publication-lineage checks;
+- no duplicate publication;
+- no debris adoption/replay;
 - Round 9B durability gates retained.
 
-This clean run is **REAL_RENDER** for the render path only. It remains synthetic visual evidence, not physical geometry, print, manufacturing, or power-loss proof.
+This can be **REAL_RENDER** for the render path and **REAL_OS_IO_FLUSH** only for host operations actually exercised. It is not physical product, print, manufacturing, NAS durability, or power-loss evidence.
 
 ---
 
-# 9. Evidence package
+# 6. Evidence closure
 
-Update the existing Round 9/10 product-variant acceptance package rather than creating a competing authority document:
+Update the existing authority package only:
 
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
 - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.json`
 
-Record:
+Include:
 
 - accepted Round 9B baseline CODE/DOCS;
-- Round 10 baseline crash-window results A–D;
-- exact files/path(s) changed;
-- final Round 10 CODE SHA;
-- exact CODE Actions run ID and both OS results;
-- clean REAL acceptance ID;
-- per-artifact SHA/size and verifier result;
-- actual OS/file-system scope for host flush evidence;
-- injected-fault classification;
-- any remaining PARTIAL/BLOCKED conditions;
-- exact DOCS SHA and exact DOCS CI.
+- A–D baseline results on exact `87ea4d3...`;
+- reviewed incomplete CODE `e128c444...` and why it was not accepted;
+- exact corrected CODE SHA;
+- exact CODE Actions run/results/counts;
+- exact changed files;
+- actual process/OS evidence separately from fault-injection evidence;
+- clean REAL acceptance ID and artifact SHA/size/verifier results;
+- remaining PARTIAL/BLOCKED items;
+- exact DOCS SHA and exact DOCS dual-platform CI.
 
-Keep these boundaries explicit:
-
-- local host artifact flush: **REAL_OS_IO_FLUSH** only on tested surface;
-- process kill/fresh reader: **REAL_PROCESS_RECOVERY**;
-- verifier/order logic: **REAL_LOGIC**;
-- injected errors / mock renderer paths: **MOCK / FAULT_INJECTION_LOGIC**;
-- post-namespace uncertain outcome: **PARTIAL / COMMIT_INDETERMINATE_DURABILITY**;
-- NAS/network filesystem durability: **BLOCKED / NOT_TESTED** unless actually exercised;
-- physical power-cut/reset survival: **BLOCKED / NOT_TESTED**;
-- physical product/print/manufacturing/global Production Ready: **false**.
+Do not rewrite `GROK_PROGRESS_REPORT.md`, `CURRENT_IMPLEMENTATION_AUDIT.md`, `REAL_E2E_ACCEPTANCE.md`, or `CABINET_REAL_ACCEPTANCE.md` just to look current. Change a canonical/historical document only if an existing declared truth has become factually false.
 
 ---
 
-# 10. Exact DOCS gate and handoff
+# 7. Final handoff gate
 
-After evidence docs are complete:
+After final CODE + clean REAL + acceptance docs are complete:
 
 1. freeze exact DOCS/head SHA on PR #15;
-2. run GitHub Actions on that exact SHA;
-3. Ubuntu + Windows both SUCCESS;
-4. verify checkout/head SHA exactly matches the DOCS SHA;
-5. record pass/skip counts;
-6. then leave one Issue #1 comment headed:
+2. run exact DOCS GitHub Actions;
+3. Ubuntu + Windows both `SUCCESS` on that exact SHA;
+4. verify checkout/head SHA exactly;
+5. leave exactly one Issue #1 handoff headed:
 
 `[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 10 artifact publication durability`
 
-The handoff must include:
-
-- final CODE SHA;
-- exact CODE Actions run ID/results;
-- clean REAL acceptance ID;
-- exact DOCS SHA;
-- exact DOCS Actions run ID/results;
-- A–D crash-window summary;
-- REAL/MOCK/PARTIAL/BLOCKED matrix;
-- `globalProductionReady=false`;
-- `MERGE_AUTHORIZED=false`;
-- PR #15 still DRAFT / OPEN / unmerged;
-- PR #16 still FROZEN;
-- **Round 11 HOLD**.
+The handoff must include final CODE SHA, CODE Actions, clean REAL ID, DOCS SHA, DOCS Actions, A–D summary, REAL/MOCK/PARTIAL/BLOCKED matrix, `globalProductionReady=false`, `MERGE_AUTHORIZED=false`, PR #15 DRAFT/OPEN/unmerged, PR #16 FROZEN, and **Round 11 HOLD**.
 
 Then STOP for Supervisor Re-Gate.
 
-If the baseline proves no production change is necessary, do not manufacture a code change. Produce reproducible evidence showing the current verifier/publication ordering is already sufficient for the stated Round 10 process-crash scope, run the same exact CODE/REAL/DOCS gates, and STOP for Re-Gate.
-
 ---
 
-# 11. Frozen boundaries
+# 8. Frozen boundaries
 
 - No merge / retarget / rebase-to-main / cherry-pick.
-- PR #15 remains DRAFT / OPEN / unmerged.
-- PR #16 remains FROZEN DRAFT.
+- PR #15 stays DRAFT / OPEN / unmerged.
+- PR #16 stays FROZEN DRAFT.
 - PR #13 / #14 and Issue #6 gates unchanged.
 - No live H3 / LTX / Vision / CNC / LASER / PLC work.
 - No architecture rewrite.
+- No second authority or replay subsystem.
 - No Mock/FIXTURE promotion to Production Ready.
 - No physical manufacturing readiness claim.
-- No power-loss claim without actual destructive hardware/power-reset evidence.
+- No hardware power-loss claim without actual destructive power/reset evidence.
 - `MERGE_AUTHORIZED=false`.
 - `globalProductionReady=false`.
 - **Round 11 HOLD**.
