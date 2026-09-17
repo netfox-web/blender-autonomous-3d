@@ -191,3 +191,13 @@ def verify_receipt(target, receipt):
     if digest != receipt.get('sha256') or size != receipt.get('size'):
         raise ValueError('published artifact receipt mismatch')
     return {'sha256': digest, 'size': size}
+
+
+def verify_receipt_set(folder, receipts, expected):
+    """Verify the complete receipt-bound artifact set at an authority boundary."""
+    if set(receipts) != set(expected):
+        raise ValueError('publication receipt set mismatch')
+    verified = {}
+    for name in expected:
+        verified[name] = verify_receipt(Path(folder) / name, receipts[name])
+    return verified

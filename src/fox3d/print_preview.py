@@ -10,7 +10,7 @@ from fox3d.artwork import final_uv_identity
 from fox3d.golden_product import build_golden, GoldenRecipe, Measurement, validate_worker_observation
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import read_json, atomic_json, input_hash, validate_outputs
-from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set
 from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail
 
@@ -73,7 +73,8 @@ def validate(folder):
     expected=set(FILES)|{p['source']['name'] for p in m['package']['placements']}
     if set(m['files'])!=expected:raise ValueError('3D 預覽檔案清單不符')
     for name,digest in m['files'].items():
-        if Path(name).name!=name or sha256_bytes((folder/name).read_bytes())!=digest:
+        path=folder/name
+        if Path(name).name!=name or path.is_symlink() or not path.is_file() or sha256_bytes(path.read_bytes())!=digest:
             raise ValueError('3D 預覽檔案已變更')
     validate_outputs(folder,m['spec'])
     validate_worker_observation(read_json(folder/'golden-observation.json'),m['package'],m['spec'])
@@ -122,11 +123,13 @@ def generate(platform,tenant,jid,draft,*,revision=0,generation_id=None,on_job=No
         expected_sha256, expected_size = dam_identity(source)
         receipts[name]=publish_binary(source.path, folder/name, expected_sha256=expected_sha256, expected_size=expected_size)
         verify_receipt(folder/name, receipts[name])
+    expected_artifacts=set(FILES)|{x['source']['name'] for x in package['placements']}
+    verify_receipt_set(folder, receipts, expected_artifacts)
     m={'generationId':gid,'draft':draft,'sourceRevision':revision,'planHash':p['planHash'],'spec':spec,'package':package,
        'files':{f.name:(receipts[f.name]['sha256'] if f.name in receipts else sha256_bytes(f.read_bytes())) for f in folder.iterdir() if f.is_file()},
        'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
        'requestedJobId':job['jobId'],'jobId':read_json(folder/'golden-observation.json')['jobId'],'cacheHit':done.get('cacheHit',False),
        'productionReady':False,'colorAuthority':'RGB_APPROXIMATION_NOT_RIP_COLOR_PROOF'}
     atomic_json(folder/'manifest.json',m);atomic_json(folder/'meta.json',{'manifestSha256':sha256_bytes((folder/'manifest.json').read_bytes())})
-    validate(folder);check();atomic_json(folder.parent.parent/'latest.json',{'generationId':gid})
+    validate(folder);check();verify_receipt_set(folder, receipts, expected_artifacts);atomic_json(folder.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,jid,current_draft=draft)

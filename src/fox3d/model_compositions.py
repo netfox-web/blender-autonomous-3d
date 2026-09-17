@@ -15,7 +15,7 @@ from fox3d import asset_usage, print_assets, product_models as models, print_pre
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt
+from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set
 from fox3d import variant_authority as authority
 
 SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
@@ -238,6 +238,8 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
         expected_sha256, expected_size = dam_identity(source)
         receipts[name]=publish_binary(source.path, target/name, expected_sha256=expected_sha256, expected_size=expected_size)
         verify_receipt(target/name, receipts[name])
+    expected_artifacts=set(print_preview.FILES)|{x['source']['name'] for x in package['placements']}
+    verify_receipt_set(target, receipts, expected_artifacts)
     manifest={'generationId':gid,'historyVersion':1,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
         'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':stable_hash({'scene':draft['scene'],'version':1}),
         'files':{f.name:(receipts[f.name]['sha256'] if f.name in receipts else sha256_bytes(f.read_bytes())) for f in target.iterdir() if f.is_file()},
@@ -256,6 +258,7 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     if 'inputAuthority' in draft:
         authority.verify(platform.root,tenant,draft,current=True)
     check()
+    verify_receipt_set(target, receipts, expected_artifacts)
     atomic_json(target/'published.json',{'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())})
     atomic_json(target.parent.parent/'latest.json',{'generationId':gid})
     return status(platform.root,tenant,mid,current_draft=current)
