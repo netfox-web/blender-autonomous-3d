@@ -215,3 +215,16 @@ Exact CODE Actions [35196017765](https://github.com/netfox-web/blender-autonomou
 Evidence `4c135de2-3aa2-4988-8201-8633a02cc5ae` ran after final CODE CI on clean tree with Blender **5.2.1 LTS + OptiX**, `usedMock=false`, and two `SYNTHETIC_STATIC_FIXTURE` variants. `.blend` reopen, finite pixels, artifact decode/reopen, cache/attempt/DAM/job/publication lineage and restart/history/download passed. Receipt→verified final→manifest equality chains were recorded for every worker artifact and derived PNG in the round12 evidence package. This is `REAL_RENDER` plus scoped local `REAL_OS_IO_INTEGRITY`; it is not physical CAD truth, print validation, NAS durability, power-loss durability, manufacturing readiness or Production Ready.
 
 `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, and `MERGE_AUTHORIZED=false`. No live H3/LTX/Vision/CNC/LASER/PLC or production operation was used. Exact DOCS dual-platform CI and one final READY_FOR_RE_GATE handoff remain required, then STOP for Supervisor.
+
+
+## Round 13 — manifest, publication seal and latest pointer identity
+
+Supervisor Re-Gate instruction commit `dad29ca7cb80e03a43f67b0771ee9a4cb2ca2513` / blob `f379a38a940775c73f350f6e9c10081662af8162` accepted Round 12 and authorized Round 13. PR #15 remains DRAFT/OPEN/unmerged; `MERGE_AUTHORIZED=false`, and Round 14 is HOLD.
+
+The correction captures one manifest SHA after durable write, binds `meta.json` and the model-composition `published.json` seal to that captured identity, verifies both again immediately before pointer/publication advancement, and routes modern historyVersion 1 status reads through the publication-seal validator. Print preview retains its manifest/meta/latest authority and rechecks the captured pair before latest advancement. Symlink/non-regular manifest, metadata and publication paths fail closed. No second ledger, replay, lock, DB/WAL or storage architecture was added.
+
+Exact final CODE `985385db01bdc354edbce44a4aedd78af52e0735`; CODE Actions [35201860277](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35201860277) passed: Windows **1328 PASS / 0 skipped**, Ubuntu **1324 PASS / 4 existing skips**. Local full pytest passed. The retained baseline timing probes are scoped `MOCK / FAULT_INJECTION_CONTROL` with local IO observations; hard-link/concurrent-writer remains `PARTIAL / PRESERVED UNKNOWN`, NAS/power-loss/physical manufacturing remain `BLOCKED / NOT_TESTED`.
+
+Clean REAL evidence `d0f1e215-b3c9-4432-9720-bf1de5232d54` ran after exact CODE CI with Blender **5.2.1 LTS + OptiX**, `usedMock=false`, two synthetic/static variants, `.blend` reopen, finite pixels, decode/reopen and lineage/history/status/download checks PASS. For both generations, `manifestSha == meta.manifestSha256 == published.manifestSha256` and latest pointed to the generation. This is `REAL_RENDER` plus scoped local `REAL_OS_IO_INTEGRITY`, not physical CAD/print/manufacturing proof.
+
+Truth flags remain `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, `MERGE_AUTHORIZED=false`; no live H3/LTX/Vision/CNC/LASER/PLC or production operation was used. Exact DOCS dual-platform CI and final Round 13 handoff remain.

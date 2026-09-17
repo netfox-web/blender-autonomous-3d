@@ -19684,5 +19684,77 @@
       "globalProductionReady": false,
       "mergeAuthorized": false
     }
+  },
+  "round13": {
+    "instructionCommit": "dad29ca7cb80e03a43f67b0771ee9a4cb2ca2513",
+    "instructionBlob": "f379a38a940775c73f350f6e9c10081662af8162",
+    "supervisorDecision": "ACCEPT WITH SCOPE / GO Round 13",
+    "acceptedRound12": {
+      "code": "0780d24e04fbed59e33f7fad36d7bff886998b01",
+      "docs": "46615b2befb3d2e9b707754266677268ed2b9962",
+      "codeCi": 35196017765,
+      "docsCi": 35198732575
+    },
+    "finalCode": "985385db01bdc354edbce44a4aedd78af52e0735",
+    "changedFiles": [
+      "src/fox3d/durability.py",
+      "src/fox3d/model_compositions.py",
+      "src/fox3d/print_preview.py"
+    ],
+    "codeActions": {
+      "runId": 35201860277,
+      "status": "success",
+      "windows": "1328 PASS / 0 skipped",
+      "ubuntu": "1324 PASS / 4 existing skips",
+      "exactCheckoutSha": "985385db01bdc354edbce44a4aedd78af52e0735"
+    },
+    "localFullPytest": "PASS",
+    "baselineWindows": {
+      "classification": "MOCK / FAULT_INJECTION_CONTROL with scoped local IO; accepted-code manifest/meta/published/latest drift window recorded in task probe package"
+    },
+    "adversarialMatrix": {
+      "manifestMetaDrift": "PASS / fail-closed seal identity",
+      "publishedMissingOrMismatch": "PASS / model generation/status seal required",
+      "symlinkNonRegular": "PASS / fail-closed",
+      "correctSuccess": "PASS / manifest=meta=published seal",
+      "historicalLegacy": "PASS / retained existing rules",
+      "hardLinkConcurrentWriter": "PARTIAL / PRESERVED UNKNOWN",
+      "nasPowerLossPhysical": "BLOCKED / NOT_TESTED"
+    },
+    "realAcceptance": {
+      "evidenceId": "d0f1e215-b3c9-4432-9720-bf1de5232d54",
+      "status": "PASS",
+      "codeCommit": "985385db01bdc354edbce44a4aedd78af52e0735",
+      "workingTreeClean": true,
+      "blender": "5.2.1 LTS",
+      "device": "OptiX",
+      "usedMock": false,
+      "realOptix": true,
+      "inputTruth": "SYNTHETIC_STATIC_FIXTURE",
+      "seals": [
+        {
+          "generationId": "f3a00d30-277d-5615-b02a-596fc6f9fe89",
+          "manifestSha": "3cfa668efdb77be0b637ecb87a5871d05b73d59457fef7c45a0cadca462390ae",
+          "metaManifestSha": "3cfa668efdb77be0b637ecb87a5871d05b73d59457fef7c45a0cadca462390ae",
+          "publishedManifestSha": "3cfa668efdb77be0b637ecb87a5871d05b73d59457fef7c45a0cadca462390ae",
+          "latestPointsTo": "f3a00d30-277d-5615-b02a-596fc6f9fe89"
+        },
+        {
+          "generationId": "f3d96ebb-766a-52b5-a50c-e777eaf44c3d",
+          "manifestSha": "069f6ee1645192334ec942496aad889f79e7bab967692fdd51c94cef3329bf9b",
+          "metaManifestSha": "069f6ee1645192334ec942496aad889f79e7bab967692fdd51c94cef3329bf9b",
+          "publishedManifestSha": "069f6ee1645192334ec942496aad889f79e7bab967692fdd51c94cef3329bf9b",
+          "latestPointsTo": "f3d96ebb-766a-52b5-a50c-e777eaf44c3d"
+        }
+      ],
+      "boundary": "REAL_RENDER plus scoped local REAL_OS_IO_INTEGRITY; synthetic/static fixtures"
+    },
+    "truthFlags": {
+      "physicalProductGeometryTruth": false,
+      "physicalPrintValidated": false,
+      "manufacturingReady": false,
+      "globalProductionReady": false,
+      "mergeAuthorized": false
+    }
   }
 }
