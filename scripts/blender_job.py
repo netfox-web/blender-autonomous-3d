@@ -676,6 +676,10 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
             principled = nt.nodes.get("Principled BSDF")
             tex = nt.nodes.new("ShaderNodeTexImage")
             tex.image = img
+            if item.get("goldenObservedUv"):
+                img.pack()
+                tex.interpolation = "Closest"
+                tex.extension = "EXTEND"
             texcoord = nt.nodes.new("ShaderNodeTexCoord")
             nt.links.new(texcoord.outputs["UV"], tex.inputs["Vector"])
             if principled:
@@ -706,6 +710,21 @@ def apply_canonical_artwork(created: dict, job: dict) -> list[dict]:
                 corners = mapping["finalSampling"]
                 for i in range(int(hit["loop_total"])):
                     uv_layer.data[hit["loop_start"] + i].uv = corners[i % 4]
+                if item.get("goldenObservedUv"):
+                    # V1 Golden front UV is assigned by actual mesh x/z, not
+                    # the implementation-dependent cube loop order.
+                    observed = [None] * 4
+                    front = mesh.polygons[hit["index"]]
+                    for li in front.loop_indices:
+                        vertex = mesh.vertices[mesh.loops[li].vertex_index].co
+                        ci = (0 if vertex.x < 0 else 1) if vertex.z < 0 else (3 if vertex.x < 0 else 2)
+                        uv_layer.data[li].uv = corners[ci]
+                        observed[ci] = list(uv_layer.data[li].uv)
+                    if any(a is None for a in observed) or any(abs(x-y)>1e-6 for a,b in zip(observed,corners) for x,y in zip(a,b)):
+                        raise ArtworkApplyError("Golden mesh UV readback mismatch")
+                    mapping["observedCorners"] = observed
+                    mapping["observedUvHash"] = _stable_hash(observed)
+                    mapping["packedImageSha256"] = hashlib.sha256(bytes(img.packed_file.data)).hexdigest()
             mapping["frontFaceIndex"] = hit["index"]
         elif isinstance(obj, dict) and obj.get("polygons"):
             hit = select_unique_front_face(obj["polygons"], item.get("face") or "FRONT")
@@ -814,7 +833,12 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         width_p = float(part.get("width") or 0) / 1000.0
         thick = float(part.get("thickness") or 18) / 1000.0
         door_w = width_p
-        if part.get("location") and part.get("size"):
+        if engineering.get("goldenRecipe"):
+            size = [float(v)/1000.0 for v in part["sizeMm"]]
+            loc = [float(v)/1000.0 for v in part["locationMm"]]
+            if len(size)!=3 or len(loc)!=3 or not all(math.isfinite(v) for v in size+loc) or min(size)<=0:
+                raise ArtworkApplyError("invalid Golden mm geometry")
+        elif part.get("location") and part.get("size"):
             loc = [float(x) for x in part["location"]]
             size = [float(x) * 2.0 for x in part["size"]]
             if role in counts:
@@ -884,7 +908,16 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
         if explode and role not in {"door"}:
             loc = [loc[0], loc[1] - 0.05, loc[2] + 0.02]
         loc = [loc[0] + origin[0], loc[1] + origin[1], loc[2] + origin[2]]
-        obj = _add_box(name_prefix + name, size, loc, material)
+        if engineering.get("goldenRecipe"):
+            import bpy
+            bpy.ops.mesh.primitive_cube_add(size=1.0, location=loc)
+            obj = bpy.context.object
+            obj.name = name_prefix + name
+            obj.dimensions = size
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+            obj.data.materials.append(_bsdf(material, material + ".golden"))
+        else:
+            obj = _add_box(name_prefix + name, size, loc, material)
         if engineering.get("recipePreview"):
             obj["recipeComponentId"] = part["componentId"]
         created[name_prefix + name] = obj
@@ -1734,6 +1767,14 @@ def build_and_render(job: dict) -> dict:
         ], "realBlender": True, "blenderVersion": _blender_version()}
         geometry_path.write_text(json.dumps(geometry, ensure_ascii=False), encoding="utf-8")
         outputs["geometry.json"] = str(geometry_path)
+        if job.get("goldenRecipe"):
+            observation = {**geometry,"sku":job["goldenIdentity"]["sku"],
+                "packageHash":job["goldenIdentity"]["packageHash"],
+                "engineeringHash":job["engineering"]["engineeringHash"],"usedMock":False,
+                "jobId":job.get("jobId"),"artwork":applied_placements}
+            observation_path = Path(job["workDir"]) / "golden-observation.json"
+            _write_json(observation_path,observation)
+            outputs["golden-observation.json"] = str(observation_path)
     result = {
         "status": "succeeded",
         "engine": "CYCLES",
