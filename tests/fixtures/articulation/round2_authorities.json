@@ -1,0 +1,321 @@
+[
+  {
+    "authorityHash": "84ee2872caaeb7dd9fb8efbc726b8ddf0bf18e802cf2238cec7fa82ab2c66202",
+    "authorityRevision": 1,
+    "authoritySource": {
+      "kind": "FIXTURE_AUTHORITY",
+      "reference": "tests/fixtures/articulation/round2_authoring.txt",
+      "sourceHash": "cf1a59ac3f743458342051ca54d71a9c3d8be97177959df7f45da77b129c3f9e"
+    },
+    "components": [
+      {
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "closedAngleDeg": 0.0,
+        "closedLocalTransform": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -0.30000000000000004
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -0.1565
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "componentId": "door_1",
+        "objectName": "DOOR_1",
+        "openAngleDeg": 60.0,
+        "openLocalTransform": [
+          [
+            0.5,
+            0.8660254037844386,
+            0.0,
+            -0.35
+          ],
+          [
+            -0.8660254037844386,
+            0.5,
+            0.0,
+            -0.24310254037844384
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "openMaxDeg": 90.0,
+        "openMinDeg": 0.0,
+        "parentComponentId": "PRODUCT_ROOT",
+        "pivot": [
+          -0.4,
+          -0.1565,
+          0.45
+        ],
+        "pivotSpace": "PARENT_LOCAL_METRES",
+        "role": "door",
+        "rotationConvention": "RIGHT_HANDED_AXIS_ANGLE_DEGREES",
+        "rotationOrder": "PARENT_PIVOT_DELTA_PREMULTIPLY_CLOSED"
+      },
+      {
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "closedAngleDeg": 0.0,
+        "closedLocalTransform": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            -0.1
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -0.1565
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "componentId": "door_2",
+        "objectName": "DOOR_2",
+        "openAngleDeg": 60.0,
+        "openLocalTransform": [
+          [
+            0.5,
+            0.8660254037844386,
+            0.0,
+            -0.15
+          ],
+          [
+            -0.8660254037844386,
+            0.5,
+            0.0,
+            -0.24310254037844384
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "openMaxDeg": 90.0,
+        "openMinDeg": 0.0,
+        "parentComponentId": "PRODUCT_ROOT",
+        "pivot": [
+          -0.2,
+          -0.1565,
+          0.45
+        ],
+        "pivotSpace": "PARENT_LOCAL_METRES",
+        "role": "door",
+        "rotationConvention": "RIGHT_HANDED_AXIS_ANGLE_DEGREES",
+        "rotationOrder": "PARENT_PIVOT_DELTA_PREMULTIPLY_CLOSED"
+      },
+      {
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "closedAngleDeg": 0.0,
+        "closedLocalTransform": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.1
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -0.1565
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "componentId": "door_3",
+        "objectName": "DOOR_3",
+        "openAngleDeg": 60.0,
+        "openLocalTransform": [
+          [
+            0.5,
+            0.8660254037844386,
+            0.0,
+            0.05
+          ],
+          [
+            -0.8660254037844386,
+            0.5,
+            0.0,
+            -0.24310254037844384
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "openMaxDeg": 90.0,
+        "openMinDeg": 0.0,
+        "parentComponentId": "PRODUCT_ROOT",
+        "pivot": [
+          0.0,
+          -0.1565,
+          0.45
+        ],
+        "pivotSpace": "PARENT_LOCAL_METRES",
+        "role": "door",
+        "rotationConvention": "RIGHT_HANDED_AXIS_ANGLE_DEGREES",
+        "rotationOrder": "PARENT_PIVOT_DELTA_PREMULTIPLY_CLOSED"
+      },
+      {
+        "axis": [
+          0.0,
+          0.0,
+          -1.0
+        ],
+        "closedAngleDeg": 0.0,
+        "closedLocalTransform": [
+          [
+            1.0,
+            0.0,
+            0.0,
+            0.30000000000000004
+          ],
+          [
+            0.0,
+            1.0,
+            0.0,
+            -0.1565
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "componentId": "door_4",
+        "objectName": "DOOR_4",
+        "openAngleDeg": 60.0,
+        "openLocalTransform": [
+          [
+            0.5,
+            0.8660254037844386,
+            0.0,
+            0.25
+          ],
+          [
+            -0.8660254037844386,
+            0.5,
+            0.0,
+            -0.24310254037844384
+          ],
+          [
+            0.0,
+            0.0,
+            1.0,
+            0.45
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "openMaxDeg": 90.0,
+        "openMinDeg": 0.0,
+        "parentComponentId": "PRODUCT_ROOT",
+        "pivot": [
+          0.2,
+          -0.1565,
+          0.45
+        ],
+        "pivotSpace": "PARENT_LOCAL_METRES",
+        "role": "door",
+        "rotationConvention": "RIGHT_HANDED_AXIS_ANGLE_DEGREES",
+        "rotationOrder": "PARENT_PIVOT_DELTA_PREMULTIPLY_CLOSED"
+      }
+    ],
+    "identity": {
+      "engineeringHash": "c41383f71a761e56a04757e370841399b9cdfd28385fd9afa86b6208e84de0be",
+      "productId": "f899a8cc-5b16-43b6-9ede-c28a6acc6d39",
+      "productVersion": 1,
+      "sku": "VIDEO-REFERENCE-CABINET",
+      "tenantId": "video-reference"
+    },
+    "schema": "ARTICULATION_SPEC_V1"
+  }
+]
