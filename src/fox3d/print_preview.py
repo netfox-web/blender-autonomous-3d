@@ -1,7 +1,9 @@
 """Reuse the real Blender worker for source-sized print faces, without print release."""
 import io
+import json
 import re
 import shutil
+import stat
 from pathlib import Path
 
 from PIL import Image
@@ -15,6 +17,8 @@ from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail
 
 FILES=('beauty.png','front-closed.png','model.glb','model.blend','geometry.json','golden-observation.json')
+_GENERATION_ID_RE = re.compile(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}')
+_SHA256_RE = re.compile(r'[a-f0-9]{64}')
 
 
 def folder_for(root,tenant,jid):
@@ -83,20 +87,49 @@ def validate(folder):
     return m
 
 
+def _read_pointer(path):
+    """Read one pointer only when it is a regular, non-symlink JSON object."""
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return None
+    if path.is_symlink() or not stat.S_ISREG(mode):
+        raise ValueError('無效預覽發布指標')
+    try:
+        value = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise ValueError('無效預覽發布指標') from exc
+    if not isinstance(value, dict) or not value:
+        raise ValueError('無效預覽發布指標')
+    return value
+
+
 def status(root,tenant,jid,*,current_draft=None):
     base=folder_for(root,tenant,jid);pointer_path=base/'latest.json';pointer=None
-    invalid_pointer = pointer_path.exists() and (pointer_path.is_symlink() or not pointer_path.is_file())
-    if pointer_path.exists() and not invalid_pointer:
-        pointer=read_json(pointer_path)
     s=read_json(base/'state.json')
-    m=None;error=s.get('error') or ('無效預覽發布指標' if invalid_pointer else None)
-    if pointer:
+    m=None;error=s.get('error')
+    try:
+        pointer=_read_pointer(pointer_path)
+        if pointer is None and s.get('state') in {'succeeded','completed'}:
+            raise ValueError('缺少預覽發布指標')
+    except (OSError,ValueError) as exc:
+        error=str(exc)
+    if pointer is not None:
         try:
-            if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']):raise ValueError('無效預覽編號')
-            if not isinstance(pointer.get('manifestSha256'),str): raise ValueError('無效預覽發布指標')
-            m=validate(base/'generations'/pointer['generationId'])
-            if pointer['manifestSha256'] != sha256_bytes((base/'generations'/pointer['generationId']/'manifest.json').read_bytes()): raise ValueError('預覽發布指標不符')
-        except (ValueError,OSError,KeyError) as exc:error=str(exc)
+            generation_id=pointer.get('generationId')
+            manifest_sha=pointer.get('manifestSha256')
+            if not isinstance(generation_id,str) or _GENERATION_ID_RE.fullmatch(generation_id) is None:
+                raise ValueError('無效預覽編號')
+            if not isinstance(manifest_sha,str) or _SHA256_RE.fullmatch(manifest_sha) is None:
+                raise ValueError('無效預覽發布指標')
+            folder=base/'generations'/generation_id
+            candidate=validate(folder)
+            current_sha=sha256_bytes((folder/'manifest.json').read_bytes())
+            if manifest_sha != current_sha:
+                raise ValueError('預覽發布指標不符')
+            m=candidate
+        except (ValueError,OSError,KeyError) as exc:
+            error=str(exc);pointer=None;m=None
     return {'state':s.get('state','idle'),'progress':s.get('progress',0),'taskId':s.get('taskId'),
             'generated':bool(m),'generationId':(pointer or {}).get('generationId'),'error':error,
             'stale':bool(m and current_draft and m['draft']!=current_draft),'manifest':m}

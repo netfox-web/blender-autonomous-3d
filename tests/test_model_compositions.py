@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import io
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -128,6 +129,154 @@ def test_modern_generation_rejects_publication_symlink(tmp_path, monkeypatch):
     with pytest.raises(ValueError): c.generation(tmp_path,'t',model['id'],gid,model)
 
 
+def _write_sealed_manifest(folder, manifest, *, publication=True):
+    from fox3d.ids import sha256_bytes
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder/'manifest.json').write_text(json.dumps(manifest),encoding='utf-8')
+    digest=sha256_bytes((folder/'manifest.json').read_bytes())
+    (folder/'meta.json').write_text(json.dumps({'manifestSha256':digest}),encoding='utf-8')
+    if publication:
+        (folder/'published.json').write_text(json.dumps({'manifestSha256':digest}),encoding='utf-8')
+    return digest
+
+
+def _read_sealed_manifest(folder):
+    from fox3d.ids import sha256_bytes
+    from fox3d.recipe_3d import read_json
+    manifest_path=folder/'manifest.json';meta_path=folder/'meta.json'
+    if (manifest_path.is_symlink() or not manifest_path.is_file()
+            or meta_path.is_symlink() or not meta_path.is_file()):
+        raise ValueError('manifest/meta authority is not regular')
+    if sha256_bytes(manifest_path.read_bytes()) != read_json(meta_path).get('manifestSha256'):
+        raise ValueError('manifest metadata mismatch')
+    return read_json(manifest_path)
+
+
+def _composition_manifest(model, gid, *, modern=True):
+    manifest={'generationId':gid,
+              'draft':{'masterId':model['id'],'masterInputHash':model['inputHash'],
+                       'masterRevision':model['revision'],'sku':'fixture'},
+              'sourceRevision':model['revision'],
+              'package':{'placements':[]}}
+    if modern: manifest['historyVersion']=1
+    return manifest
+
+
+@pytest.mark.parametrize('damage',[
+    'missing','symlink_same_bytes','directory','malformed','missing_digest','wrong_digest'])
+def test_composition_status_requires_regular_exact_publication_seal(tmp_path, monkeypatch, damage):
+    from fox3d.ids import sha256_bytes
+    from fox3d.recipe_3d import atomic_json
+    model,asset,selection=setup(tmp_path)
+    gid='44444444-4444-4444-8444-444444444444'
+    base=c.folder_for(tmp_path,'t',model['id']);target=base/'generations'/gid
+    manifest=_composition_manifest(model,gid)
+    _write_sealed_manifest(target,manifest,publication=False)
+    published=target/'published.json'
+    if damage=='symlink_same_bytes':
+        other=tmp_path/'same-valid-seal.json'
+        other.write_bytes(b'{"manifestSha256":"'+sha256_bytes((target/'manifest.json').read_bytes()).encode()+b'"}')
+        try: published.symlink_to(other)
+        except OSError: pytest.skip('symlink creation unavailable on this platform')
+    elif damage=='directory': published.mkdir()
+    elif damage=='malformed': published.write_text('',encoding='utf-8')
+    elif damage=='missing_digest': atomic_json(published,{})
+    elif damage=='wrong_digest': atomic_json(published,{'manifestSha256':'0'*64})
+    atomic_json(base/'latest.json',{'generationId':gid})
+    atomic_json(base/'state.json',{'state':'succeeded','progress':100})
+    monkeypatch.setattr(c.print_preview,'validate',_read_sealed_manifest)
+    if damage=='missing': assert not published.exists()
+    result=c.status(tmp_path,'t',model['id'],current_draft=model)
+    assert result['generated'] is False and result['manifest'] is None
+    assert result['generationId'] is None and result['error']
+    again=c.status(tmp_path,'t',model['id'],current_draft=model)
+    assert again['generated'] is False and again['manifest'] is None and again['generationId'] is None
+
+
+def test_composition_status_accepts_matching_publication_and_isolates_legacy(tmp_path, monkeypatch):
+    from fox3d.recipe_3d import atomic_json
+    model,asset,selection=setup(tmp_path)
+    monkeypatch.setattr(c.print_preview,'validate',_read_sealed_manifest)
+    modern='55555555-5555-4555-8555-555555555555'
+    base=c.folder_for(tmp_path,'t',model['id']);folder=base/'generations'/modern
+    manifest=_composition_manifest(model,modern)
+    _write_sealed_manifest(folder,manifest)
+    atomic_json(base/'latest.json',{'generationId':modern})
+    atomic_json(base/'state.json',{'state':'succeeded','progress':100})
+    result=c.status(tmp_path,'t',model['id'],current_draft=model)
+    assert result['generated'] and result['manifest']['generationId']==modern
+
+    legacy='66666666-6666-4666-8666-666666666666'
+    legacy_folder=base/'generations'/legacy
+    _write_sealed_manifest(legacy_folder,_composition_manifest(model,legacy,modern=False),publication=False)
+    atomic_json(base/'latest.json',{'generationId':legacy})
+    result=c.status(tmp_path,'t',model['id'],current_draft=model)
+    assert result['generated'] and result['manifest']['generationId']==legacy
+    assert not (legacy_folder/'published.json').exists()
+
+
+def _print_preview_status_fixture(tmp_path, monkeypatch, *, pointer=None):
+    from fox3d import print_preview
+    from fox3d.ids import sha256_bytes
+    from fox3d.recipe_3d import atomic_json
+    jid='77777777-7777-4777-8777-777777777777'
+    base=print_preview.folder_for(tmp_path,'t',jid)
+    base.mkdir(parents=True, exist_ok=True)
+    target=base/'generations'/'88888888-8888-4888-8888-888888888888'
+    manifest={'generationId':target.name,'draft':{'sku':'fixture'},'files':{}}
+    _write_sealed_manifest(target,manifest,publication=False)
+    if pointer is None:
+        digest=sha256_bytes((target/'manifest.json').read_bytes())
+        pointer={'generationId':target.name,'manifestSha256':digest}
+    atomic_json(base/'latest.json',pointer)
+    atomic_json(base/'state.json',{'state':'succeeded','progress':100})
+    monkeypatch.setattr(print_preview,'validate',_read_sealed_manifest)
+    return jid,base,target,pointer
+
+
+def test_print_preview_status_accepts_exact_latest_manifest_identity(tmp_path, monkeypatch):
+    from fox3d import print_preview
+    jid,base,target,pointer=_print_preview_status_fixture(tmp_path,monkeypatch)
+    result=print_preview.status(tmp_path,'t',jid)
+    assert result['generated'] and result['generationId']==target.name
+    assert result['manifest']['generationId']==target.name
+    assert pointer['manifestSha256']==print_preview.sha256_bytes((target/'manifest.json').read_bytes())
+    assert pointer['manifestSha256']==print_preview.read_json(target/'meta.json')['manifestSha256']
+
+
+@pytest.mark.parametrize('damage',[
+    'missing_pointer','symlink','directory','malformed','missing_generation_id','malformed_generation_id',
+    'missing_digest','malformed_digest','wrong_digest','coherent_manifest_meta_mutation','missing_generation'])
+def test_print_preview_status_rejects_invalid_current_latest_pointer(tmp_path, monkeypatch, damage):
+    from fox3d import print_preview
+    from fox3d.ids import sha256_bytes
+    from fox3d.recipe_3d import atomic_json
+    jid,base,target,pointer=_print_preview_status_fixture(tmp_path,monkeypatch)
+    path=base/'latest.json'
+    if damage=='missing_pointer': path.unlink()
+    elif damage=='symlink':
+        path.unlink();other=tmp_path/'same-pointer.json'
+        other.write_text(__import__('json').dumps(pointer),encoding='utf-8')
+        try: path.symlink_to(other)
+        except OSError: pytest.skip('symlink creation unavailable on this platform')
+    elif damage=='directory': path.unlink();path.mkdir()
+    elif damage=='malformed': path.write_text('',encoding='utf-8')
+    elif damage=='missing_generation_id': atomic_json(path,{'manifestSha256':pointer['manifestSha256']})
+    elif damage=='malformed_generation_id': atomic_json(path,{**pointer,'generationId':'../../escape'})
+    elif damage=='missing_digest': atomic_json(path,{'generationId':pointer['generationId']})
+    elif damage=='malformed_digest': atomic_json(path,{**pointer,'manifestSha256':'bad'})
+    elif damage=='wrong_digest': atomic_json(path,{**pointer,'manifestSha256':'0'*64})
+    elif damage=='coherent_manifest_meta_mutation':
+        (target/'manifest.json').write_text(json.dumps({'generationId':target.name,'draft':{'sku':'tampered'},'files':{}}),encoding='utf-8')
+        (target/'meta.json').write_text(json.dumps({'manifestSha256':sha256_bytes((target/'manifest.json').read_bytes())}),encoding='utf-8')
+    elif damage=='missing_generation': atomic_json(path,{**pointer,'generationId':'99999999-9999-4999-8999-999999999999'})
+    result=print_preview.status(tmp_path,'t',jid)
+    assert result['generated'] is False and result['manifest'] is None and result['generationId'] is None
+    assert result['error']
+    fresh=print_preview.status(tmp_path,'t',jid)
+    assert fresh['generated'] is False and fresh['manifest'] is None and fresh['generationId'] is None
+
+
 def test_commit_indeterminate_derived_publication_stops_before_authority(tmp_path, monkeypatch):
     model, asset, selection = setup(tmp_path)
     draft = c.snapshot(tmp_path, 't', model, selection)
@@ -204,6 +353,57 @@ def test_worker_receipt_tamper_before_manifest_fails_closed(tmp_path, monkeypatc
     assert not (generation / 'manifest.json').exists()
     assert not (generation / 'published.json').exists()
     assert not (c.folder_for(tmp_path, 't', model['id']) / 'latest.json').exists()
+
+
+def test_coherent_manifest_meta_mutation_before_latest_fails_closed(tmp_path, monkeypatch):
+    from fox3d.ids import sha256_bytes
+    from fox3d.recipe_3d import atomic_json
+    model, asset, selection = setup(tmp_path)
+    draft = c.snapshot(tmp_path, 't', model, selection)
+    spec = {'width': 100., 'depth': 5., 'height': 50., 'components': []}
+    monkeypatch.setattr(c, 'prepare', lambda *args: ({'selectionHash': 'plan'}, spec,
+                                                       {'packageHash': 'package', 'placements': []}, [], {}))
+
+    class Dam:
+        def __init__(self, path):
+            self.path = path
+            self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.metadata = {'bytes': path.stat().st_size}
+
+    files = {}
+    for name in c.print_preview.FILES:
+        path = tmp_path / ('source-' + name)
+        path.write_bytes(b'{"jobId":"worker-job"}' if name == 'golden-observation.json'
+                         else b'complete-worker-artifact')
+        files[name] = name
+    platform = SimpleNamespace(root=tmp_path, mock_blender=False,
+                               runtime=SimpleNamespace(available=lambda: True),
+                               probe=SimpleNamespace(optix=True))
+    platform.submit_job = lambda payload: {'jobId': 'worker-job'}
+    platform.execute_job = lambda job, **kwargs: {'status': 'completed', 'realBlender': True,
+        'usedMock': False, 'output': {'files': files, 'realBlender': True, 'usedMock': False,
+                                      'device': 'OPTIX', 'blenderVersion': '5.2.1 LTS', 'realOptix': True}}
+    platform.dam = SimpleNamespace(get=lambda ref, tenant_id: Dam(tmp_path / ('source-' + ref)))
+
+    def mutate_after_manifest_validation(folder):
+        manifest_path = folder / 'manifest.json'
+        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+        manifest['colorAuthority'] = manifest['colorAuthority'] + '_TAMPERED'
+        manifest_path.write_text(json.dumps(manifest), encoding='utf-8')
+        atomic_json(folder / 'meta.json', {'manifestSha256': sha256_bytes(manifest_path.read_bytes())})
+        return {'status': 'validated-before-injected-mutation'}
+
+    monkeypatch.setattr(c.print_preview, 'validate', mutate_after_manifest_validation)
+    gid = '33333333-3333-4333-8333-333333333333'
+    with pytest.raises(ValueError, match='manifest'):
+        c.generate(platform, 't', model['id'], draft, generation_id=gid)
+    generation = c.folder_for(tmp_path, 't', model['id']) / 'generations' / gid
+    base = c.folder_for(tmp_path, 't', model['id'])
+    assert (generation / 'manifest.json').is_file()
+    assert not (generation / 'published.json').exists()
+    assert not (base / 'latest.json').exists()
+    status = c.status(tmp_path, 't', model['id'], current_draft=model)
+    assert status['generated'] is False and status['manifest'] is None
 
 
 def test_derived_receipt_tamper_before_package_fails_closed(tmp_path, monkeypatch):

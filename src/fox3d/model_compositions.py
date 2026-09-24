@@ -192,19 +192,24 @@ def prepare(root,tenant,draft,target):
 
 
 def status(root,tenant,mid,*,current_draft=None):
-    base=folder_for(root,tenant,mid); pointer=read_json(base/'latest.json');state=read_json(base/'state.json')
+    base=folder_for(root,tenant,mid); pointer_path=base/'latest.json';state=read_json(base/'state.json')
     manifest=None; error=state.get('error')
+    try:
+        pointer=print_preview._read_pointer(pointer_path)
+        if pointer is None and state.get('state') in {'succeeded','completed'}:
+            raise ValueError('缺少預覽發布指標')
+    except (OSError,ValueError) as exc:
+        pointer=None; error=str(exc)
     if pointer:
         try:
-            import re
-            if not re.fullmatch(r'[a-f0-9-]{36}',pointer['generationId']): raise ValueError('無效預覽編號')
+            if not valid_generation(pointer.get('generationId')): raise ValueError('無效預覽編號')
             manifest=print_preview.validate(base/'generations'/pointer['generationId'])
             if type(manifest.get('historyVersion')) is int and manifest['historyVersion'] == 1:
                 manifest=generation(root,tenant,mid,pointer['generationId'],models.get(root,tenant,mid))
             for x in manifest['package']['placements']: asset_usage.require_artwork(root,tenant,x['originalAssetId'])
-        except (ValueError,OSError,KeyError) as exc: manifest=None;error=str(exc)
+        except (ValueError,OSError,KeyError) as exc: manifest=None;pointer=None;error=str(exc)
     return {'state':state.get('state','idle'),'taskId':state.get('taskId'),'progress':state.get('progress',0),
-            'generated':bool(manifest),'generationId':pointer.get('generationId'),'error':error,
+            'generated':bool(manifest),'generationId':(pointer or {}).get('generationId'),'error':error,
             'stale':bool(manifest and current_draft and manifest['draft']['masterInputHash']!=current_draft['inputHash']),
             'manifest':manifest}
 
