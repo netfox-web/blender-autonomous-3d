@@ -154,7 +154,7 @@ def test_transparency_and_unknown_physical_size_blocked(tmp_path):
 
 def test_preview_geometry_and_source_lineage(tmp_path):
     j,p=setup_job(tmp_path);folder=tmp_path/'preview';folder.mkdir()
-    spec,package,inputs=preview.prepare(tmp_path,'test',p,folder)
+    spec,package,inputs,_=preview.prepare(tmp_path,'test',p,folder)
     doors=[c for c in spec['components'] if c['role']=='door']
     assert all(c['sizeMm']==pytest.approx([395.,15.,280.]) for c in doors)
     assert len(inputs)==3
