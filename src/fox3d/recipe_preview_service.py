@@ -10,20 +10,24 @@ from fox3d.recipe_3d import (
 
 
 class RecipePreviewService:
-    def __init__(self, platform):
+    def __init__(self, platform, *, folder_fn=get_recipe_3d_dir,
+                 status_fn=get_recipe_3d_status, generate_fn=None):
         self.platform = platform
+        self.folder_fn = folder_fn
+        self.status_fn = status_fn
+        self.generate_fn = generate_fn
         self.lock = RLock()
         self.tasks = {}
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="recipe-preview")
 
     def status(self, tid, sku, draft):
         with self.lock:
-            path = get_recipe_3d_dir(self.platform.root, tid, sku) / "state.json"
+            path = self.folder_fn(self.platform.root, tid, sku) / "state.json"
             state = read_json(path)
             if state.get("state") in {"queued", "running"} and (tid, sku) not in self.tasks:
                 state.update(state="failed", error="工作台曾中斷，請重新生成；上一版成果仍保留。")
                 atomic_json(path, state)
-            return get_recipe_3d_status(self.platform.root, tid, sku, current_draft=draft)
+            return self.status_fn(self.platform.root, tid, sku, current_draft=draft)
 
     def submit(self, tid, sku, item):
         with self.lock:
@@ -31,7 +35,7 @@ class RecipePreviewService:
             if key in self.tasks:
                 raise ValueError("此商品已有生成工作，請完成或取消後再試")
             task_id, stop = new_id(), Event()
-            path = get_recipe_3d_dir(self.platform.root, tid, sku) / "state.json"
+            path = self.folder_fn(self.platform.root, tid, sku) / "state.json"
             state = {"taskId": task_id, "state": "queued", "progress": 0,
                      "inputHash": input_hash(item["draft"]), "error": None}
             atomic_json(path, state)
@@ -50,7 +54,7 @@ class RecipePreviewService:
                 with self.lock:
                     state.update(jobId=job.get("jobId"), progress=25)
                     atomic_json(path, state)
-            generate_recipe_3d_product(self.platform, *key, item["draft"], revision=item["revision"],
+            (self.generate_fn or generate_recipe_3d_product)(self.platform, *key, item["draft"], revision=item["revision"],
                                       generation_id=state["taskId"], on_job=on_job, cancel_flag=stop)
             state.update(state="succeeded", progress=100)
         except Exception as exc:

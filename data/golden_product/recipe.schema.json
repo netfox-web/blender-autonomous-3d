@@ -1,0 +1,120 @@
+{
+  "$defs": {
+    "Measurement": {
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "exclusiveMinimum": 0,
+          "maximum": 5000,
+          "title": "Value",
+          "type": "number"
+        },
+        "truth": {
+          "default": "CONFIG",
+          "enum": [
+            "CONFIG",
+            "ESTIMATED",
+            "VERIFIED"
+          ],
+          "title": "Truth",
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "evidenceSha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidencesha256"
+        }
+      },
+      "required": [
+        "value",
+        "evidence"
+      ],
+      "title": "Measurement",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "recipeId": {
+      "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+      "default": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+      "title": "Recipeid",
+      "type": "string"
+    },
+    "widthMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "depthMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "heightMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "boardThicknessMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "backThicknessMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "doorThicknessMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "doorGapMm": {
+      "$ref": "#/$defs/Measurement"
+    },
+    "tiers": {
+      "const": 3,
+      "default": 3,
+      "title": "Tiers",
+      "type": "integer"
+    },
+    "doors": {
+      "const": 3,
+      "default": 3,
+      "title": "Doors",
+      "type": "integer"
+    },
+    "safeMm": {
+      "default": 5.0,
+      "maximum": 20,
+      "minimum": 0,
+      "title": "Safemm",
+      "type": "number"
+    },
+    "bleedMm": {
+      "default": 3.0,
+      "maximum": 20,
+      "minimum": 0,
+      "title": "Bleedmm",
+      "type": "number"
+    },
+    "hardwareAuthority": {
+      "const": "UNKNOWN",
+      "default": "UNKNOWN",
+      "title": "Hardwareauthority",
+      "type": "string"
+    },
+    "articulationAuthority": {
+      "const": "UNKNOWN",
+      "default": "UNKNOWN",
+      "title": "Articulationauthority",
+      "type": "string"
+    }
+  },
+  "title": "GoldenRecipe",
+  "type": "object"
+}
