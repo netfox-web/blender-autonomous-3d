@@ -20231,5 +20231,989 @@
     "mergeAuthorized": false,
     "round14": "HOLD",
     "docsClosure": "Exact DOCS SHA and CI run are reported in Issue #1 after this document commit passes both platforms."
+  },
+  "round13IndependentCorrection": {
+    "status": "REAL_EVIDENCE_CLOSED_DOCS_CI_AND_INDEPENDENT_REVIEW_PENDING",
+    "instructionCommit": "b8c6fe911e6c8358ed7bcdecafc84cab86630810",
+    "instructionBlob": "d25920f0140f6e3ab2b839f85150b59b2fe70987",
+    "sourceIssue": 1,
+    "supervisorDecisionCommentId": 5853584739,
+    "reviewedPriorHead": "6f1038c69e1586bdf6649596d603e64b21e9d73d",
+    "codeCommit": "2abcc3d817451d54a4ba6cd7793717745ad9bd43",
+    "codeCi": {
+      "runId": 36301858659,
+      "headSha": "2abcc3d817451d54a4ba6cd7793717745ad9bd43",
+      "classification": "MOCK_REGRESSION",
+      "jobs": [
+        {
+          "name": "unit (ubuntu-latest)",
+          "id": 108570832646,
+          "conclusion": "success",
+          "checkoutVerified": true,
+          "passed": 1381,
+          "skipped": 4,
+          "progressCount": 1385
+        },
+        {
+          "name": "unit (windows-latest)",
+          "id": 108570832780,
+          "conclusion": "success",
+          "checkoutVerified": true,
+          "passed": 1385,
+          "skipped": 0,
+          "progressCount": 1385
+        }
+      ]
+    },
+    "localFocused": {
+      "passed": 93,
+      "skipped": 7,
+      "classification": "MOCK_REGRESSION_AND_FAULT_INJECTION_WITH_LOCAL_IO"
+    },
+    "guardRemovalControls": {
+      "killed": 10,
+      "covered": [
+        "publish_binary exclusive-temp ownership",
+        "publish_bytes exclusive-temp ownership",
+        "manifest/meta symlink and regular checks through actual validator in both chains"
+      ],
+      "classification": "IN_MEMORY_MUTATION_CONTROL",
+      "allHistoricalGuardsCovered": false
+    },
+    "modelCompositions": {
+      "evidenceId": "98e85e93-8cfe-4bba-810e-8157d5bd942b",
+      "codeCommit": "2abcc3d817451d54a4ba6cd7793717745ad9bd43",
+      "workingTreeClean": true,
+      "developmentOnly": false,
+      "inputTruth": "TWO_SYNTHETIC_GEOMETRIES_PLUS_THREE_EXISTING_RECIPE_REFERENCE_SNAPSHOTS_NOT_PHYSICALLY_VALIDATED",
+      "physicalPrintValidated": false,
+      "generations": [
+        {
+          "modelId": "5cc5efea-97ca-4cbb-8cda-7c451533d4af",
+          "scene": "STUDIO",
+          "generationId": "5cb801b9-892f-466c-98fa-a23d7b828cc4",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+          "artworkHash": "c644f868adc54ca36e88f450e74b22e9d030079a78761e310f315de863a5a868",
+          "files": {
+            "beauty.png": "b3245cd1c9d3bdfea368547ccd13719c6049f263dd5177f002e44eb381dfc40d",
+            "door_1-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "door_2-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "door_3-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "front-closed.png": "a2e773c2182d903d1b935523cf111af89f53d87b2418b55f1e6ae326659b518c",
+            "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+            "golden-observation.json": "f114230a8df0c8c0bb92071c58bbc0a0aa281e42fc0a9cff5ded0ee54bffeec0",
+            "model.blend": "b2dc8e2cf7793054d131a3f076a571ce605dcf20163e37b39e2551f2d58403e0",
+            "model.glb": "6d70ead0bd0d1da10b9b783fe298fd5a199199b2cac6079b522a76fd24ffeaea"
+          },
+          "blendReopen": true,
+          "manifestSha256": "7454df955d4fafe06a8ecffe8457abdc8e4bde69800f6bb4740c18c870b8baee",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "5cc5efea-97ca-4cbb-8cda-7c451533d4af",
+          "scene": "WARM_ROOM",
+          "generationId": "3d79d382-2877-4fc5-a551-b752f14562c3",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+          "artworkHash": "c644f868adc54ca36e88f450e74b22e9d030079a78761e310f315de863a5a868",
+          "files": {
+            "beauty.png": "ad89ecdeeb6c1a85bbc5fb04cb1d530914b4c4b65f331bc398e967c4c18b0b72",
+            "door_1-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "door_2-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "door_3-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "front-closed.png": "bf234a7e1d59e705efe40f9b313070d705a4464fcd5846bb9b5f1906e6e9bbae",
+            "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+            "golden-observation.json": "015607d69cbee89a58da6afee105751e0984693a5b2ed622782097d842b57c3c",
+            "model.blend": "1e9d73995d6040925508e5f8dbb8ace30d7a2b5f2d358ed9379e6b85ec865cf1",
+            "model.glb": "6d70ead0bd0d1da10b9b783fe298fd5a199199b2cac6079b522a76fd24ffeaea"
+          },
+          "blendReopen": true,
+          "manifestSha256": "39101e38b1b1a35b9b65e8bb7398386724e5fc1fe4df7a935128d315ac81f322",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "5cc5efea-97ca-4cbb-8cda-7c451533d4af",
+          "scene": "COOL_ROOM",
+          "generationId": "00b20e45-2cae-44fd-8689-8b1b585523ed",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "7f7bbe9b3f8c447f9af753c6e6ff42a1382abd067d8a64d683ae5a69803ba676",
+          "artworkHash": "c644f868adc54ca36e88f450e74b22e9d030079a78761e310f315de863a5a868",
+          "files": {
+            "beauty.png": "a2de7258fdec3313e9a5af881f4939b12395463fa9f9815588ec718a0f0438e1",
+            "door_1-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "door_2-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "door_3-preview.png": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "front-closed.png": "728072206892275b46b7b12268866add01b5dce335438d9cd06ca359b6ebc645",
+            "geometry.json": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+            "golden-observation.json": "29735255efbcb678db4733cea95b433efaeae0466fa5bae8517371801af20722",
+            "model.blend": "73cbabdabacef3cb8c6132246df42b39bd5805af0fffcf96a143c965285324d1",
+            "model.glb": "6d70ead0bd0d1da10b9b783fe298fd5a199199b2cac6079b522a76fd24ffeaea"
+          },
+          "blendReopen": true,
+          "manifestSha256": "3796a2e5194bb10a6ab2be246f6787689c5394961dc84fbdb4e9497fd68cb32c",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "b5cccc6a-d2ac-409a-b155-70e735159c8a",
+          "scene": "STUDIO",
+          "generationId": "52c9b71b-07c5-4c7c-b672-cb1062e85f33",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+          "artworkHash": "7902b29a5c6762beb348eb317ac8d0d54384972a11ab522a7dcd3afec8260024",
+          "files": {
+            "beauty.png": "824bfd220e1dbff32310154cea2a3d74f3840d678126ce14a9eaca2d2be58852",
+            "front-closed.png": "df166cd07af98249a0e89c6d0978c6bef3caf0e8330efd4645402aa7ab383c30",
+            "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+            "golden-observation.json": "4d475d91b3a62efe48162aec1069a4eb1369b452424174cad079d7804e48734f",
+            "model.blend": "5f39c29526b31a15fcd80eada4cbbcaf6cb601b985e4e642b93c60db3694f148",
+            "model.glb": "333ddac0ec974e3136915512311f6dca25b6a3cea4ce447995d12b85273d360f",
+            "surface-preview.png": "e617d254f9a37932cb15dd16cbcac5563d99cd410c1957c9aa4af1e0ed46b1b4"
+          },
+          "blendReopen": true,
+          "manifestSha256": "fb5210eadd5a3d668433d9d355b0a13f39689b79537f813bf3d28eedd854ee87",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "b5cccc6a-d2ac-409a-b155-70e735159c8a",
+          "scene": "WARM_ROOM",
+          "generationId": "8294303b-8b95-4190-82ad-68dd199f4918",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+          "artworkHash": "7902b29a5c6762beb348eb317ac8d0d54384972a11ab522a7dcd3afec8260024",
+          "files": {
+            "beauty.png": "b82990d37d4a0c23b82b170793f2ac7e48015d88efdd940d8c504b2e3bcca382",
+            "front-closed.png": "bbadbdafaef37968d1c4ada0288e02f4ffb06820fb78280329f35a3d60e9b940",
+            "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+            "golden-observation.json": "8c3d7216502ac441cd2af34a029e70c42815fc0a59cd55cbefa0e090e255df7b",
+            "model.blend": "d11bbabcf435204adb7119479edfd00c59e719067cd23478c1e80685b8e196ef",
+            "model.glb": "333ddac0ec974e3136915512311f6dca25b6a3cea4ce447995d12b85273d360f",
+            "surface-preview.png": "e617d254f9a37932cb15dd16cbcac5563d99cd410c1957c9aa4af1e0ed46b1b4"
+          },
+          "blendReopen": true,
+          "manifestSha256": "1c08ec057906f26e97902e9dc13005527036230d2c55c350d70786c22c7d501a",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "b5cccc6a-d2ac-409a-b155-70e735159c8a",
+          "scene": "COOL_ROOM",
+          "generationId": "312a8d4f-2cc4-44c2-adb6-d196692f6ea2",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "a07cefe49abe612cb9b712844843ff042a28e0f23eb067f7b8f6eee8d97c101f",
+          "artworkHash": "7902b29a5c6762beb348eb317ac8d0d54384972a11ab522a7dcd3afec8260024",
+          "files": {
+            "beauty.png": "fcabe445d9cfb8c4844aec0fc40f961b9a95475705fe50f53d6d96e49e3c161b",
+            "front-closed.png": "e1fc1e2dccfebe5c99eb8693537cf72380f47ce37cca9cde2949d91e5670ecb6",
+            "geometry.json": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+            "golden-observation.json": "9934ece1e408993d7beb9cac2db94358bc631cc7cd74ec47837d8be89b4ea99b",
+            "model.blend": "b9f14880977cebd1fa5b17cc6db44dd916c7516a4f381ade5a5865923a85c8d7",
+            "model.glb": "333ddac0ec974e3136915512311f6dca25b6a3cea4ce447995d12b85273d360f",
+            "surface-preview.png": "e617d254f9a37932cb15dd16cbcac5563d99cd410c1957c9aa4af1e0ed46b1b4"
+          },
+          "blendReopen": true,
+          "manifestSha256": "1a75203f678c01896ce18a68f7974ae6d79e891087791bdd4d910987e7d6ea4d",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "f44ca203-b9e9-46c3-a674-42a70c45b859",
+          "scene": "STUDIO",
+          "generationId": "e3d450c2-7f39-4fa6-a7d8-9ddf0cd7722f",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "47e616243de3470a1206b439fd441302399a883961c9976add7917c38ab3f030",
+          "artworkHash": "e18e89b4e6228095dfd7b31bcbb9ad92c57df6c5f4f870d55a4c8afb1c363576",
+          "files": {
+            "beauty.png": "f13f91af3c9423f38e33169866f212ba1d68c00ac5dfe3e43c9c3094097312b9",
+            "front-closed.png": "371829eceb9ba140c3340916c50f6234c2ef881989c8831360ce54013222946b",
+            "geometry.json": "133bdb5c8f082e8a2eabcc439f94aaf5e10a319485ea9f7647e5b6be37bcf9d8",
+            "golden-observation.json": "0254dcd0475d2d6ee12f8389bf9b453e7c6047f43ae61dc71473a16bf2b71911",
+            "model.blend": "03713cafc048fbf5cc10caed1eff0815461609a3da5dc122f8274fba0b1fe398",
+            "model.glb": "cf99df5efada6ad0f7dfbfa4ba0dc7bf3fc54167d96d1fb2495968b4adc9a206"
+          },
+          "blendReopen": true,
+          "manifestSha256": "7eacc72a48e7356802bf863c62a66132df0730516f4d540ce7bd3578cbccbcb3",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "bd268dff-1e94-4144-9815-16f9a7fa6066",
+          "scene": "STUDIO",
+          "generationId": "e4b3858f-9f5c-4193-a385-4988dbb57e8d",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "620921fa3782fcf8cf63616bd92354d8f99049485cdbdd79ab6ecb00d90b44fc",
+          "artworkHash": "e18e89b4e6228095dfd7b31bcbb9ad92c57df6c5f4f870d55a4c8afb1c363576",
+          "files": {
+            "beauty.png": "800de0a37271b56216fda438749c3ba5da0c755c1d9740e00af92c380954d799",
+            "front-closed.png": "b9c27e0af5041cdcf1805a4638eada6455227ac09d62e22681a83001819e4cad",
+            "geometry.json": "53227484f700f3249a7ae65e664a9f5ce887080269e04a84f9b40ba5c76b900c",
+            "golden-observation.json": "a3a546b2ce51b560b9485ae9df45cdfe50642433117bd44fbdd75d9bcfc3108c",
+            "model.blend": "0d1f3dc6f227e1e957171c8cd6531647216f7f91f1984d0adbc224e01e540e2b",
+            "model.glb": "029755e6933ba669c29bc40a3c8b7f5abe652e1b1d1289499864707bc907afc5"
+          },
+          "blendReopen": true,
+          "manifestSha256": "b8d39f792fc838c60fc987e9caf0b6f8da829aade5e37f80d34979c2044e7c1e",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "modelId": "a68d2c42-9468-454a-888f-a25dfa90f7f3",
+          "scene": "STUDIO",
+          "generationId": "182b1214-5c83-4f35-a95b-b4a5a90b333d",
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "engineeringHash": "f1ca755bcccd4f12014c36437a497133f906237654c6c5934305484ac779abd8",
+          "artworkHash": "e18e89b4e6228095dfd7b31bcbb9ad92c57df6c5f4f870d55a4c8afb1c363576",
+          "files": {
+            "beauty.png": "4643f19fadaf7d42355c677ba555730a1f57d9d0760e66c5b762dc221080a79b",
+            "front-closed.png": "05b2f8f187ce6f7acf05753484d4bc9aaca204a531f1f7c3c4fefe73b57ff877",
+            "geometry.json": "38c7e45c55ab0a5465bfb4e99b116427f5145f24749182c39f9f846efd53b909",
+            "golden-observation.json": "2d09656e2eb64ece42f3675d29bced62830ef9c882099fa0afcfde8aa72a3c81",
+            "model.blend": "74c1f6d6813b4f4b097ad8cff6db2c93625008a81d9410bc63fe4ba1e42d8bff",
+            "model.glb": "c7c3d6aa565e6f8d70f9e238a6ef280553816bcc69a783ccd2a925fd2b64390d"
+          },
+          "blendReopen": true,
+          "manifestSha256": "73e79104b4efd0fb33bb909827414b785e2c2a0d3954214fc317a20eb478d788",
+          "publicationChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        }
+      ],
+      "status": "PASS",
+      "sceneGeometryIdentity": true,
+      "sceneArtworkIdentity": true,
+      "scenePixelsDistinct": true,
+      "restartPreserved": true,
+      "revocationBlocked": true,
+      "staleDownloadsBlocked": true,
+      "originalsPreserved": true
+    },
+    "printWorkspace": {
+      "evidenceId": "700a9c5d-ae50-4879-aaf9-6d88717083ab",
+      "codeCommit": "2abcc3d817451d54a4ba6cd7793717745ad9bd43",
+      "workingTreeClean": true,
+      "developmentOnly": false,
+      "originalAssetSha256": "4d010ac71e5e689788c33900d9a5024e0dda8014c1c7b314c836de8df37b3ca9",
+      "sourceName": "fixture-three-page.pdf",
+      "cases": [
+        {
+          "layout": "THREE_DOOR",
+          "jobId": "8ab2850c-c64a-4b0a-b527-21bec852ef89",
+          "generationId": "89accfaa-9456-44fa-b173-ce5f1adde373",
+          "planHash": "41c28dc3d0dee709831392c3457507587bae5a05509eccb0c037241945a6cc9e",
+          "panels": [
+            {
+              "index": 0,
+              "label": "原稿第 1 頁",
+              "quantity": 1,
+              "assetId": "4d010ac71e5e689788c33900d9a5024e0dda8014c1c7b314c836de8df37b3ca9",
+              "page": 0,
+              "rotation": 90,
+              "sourceName": "fixture-three-page.pdf",
+              "sourceType": "PDF",
+              "sourceTruth": "USER_PROVIDED_SOURCE",
+              "widthMm": 400.9999988055555,
+              "heightMm": 285.9999998527777,
+              "trimWidthMm": 395.00000127702765,
+              "trimHeightMm": 279.99999985480554,
+              "trimBoxMm": [
+                3.0000000007499996,
+                2.9999999972222047,
+                398.0000012777777,
+                282.9999998520277
+              ],
+              "sourceColor": "SOURCE_PDF_PRESERVED",
+              "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+              "face": "FRONT_OF_SELECTED_PART"
+            },
+            {
+              "index": 1,
+              "label": "原稿第 2 頁",
+              "quantity": 1,
+              "assetId": "4d010ac71e5e689788c33900d9a5024e0dda8014c1c7b314c836de8df37b3ca9",
+              "page": 1,
+              "rotation": 90,
+              "sourceName": "fixture-three-page.pdf",
+              "sourceType": "PDF",
+              "sourceTruth": "USER_PROVIDED_SOURCE",
+              "widthMm": 400.9999988055555,
+              "heightMm": 285.9999998527777,
+              "trimWidthMm": 395.00000127702765,
+              "trimHeightMm": 279.99999985480554,
+              "trimBoxMm": [
+                3.0000000007499996,
+                2.9999999972222047,
+                398.0000012777777,
+                282.9999998520277
+              ],
+              "sourceColor": "SOURCE_PDF_PRESERVED",
+              "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+              "face": "FRONT_OF_SELECTED_PART"
+            },
+            {
+              "index": 2,
+              "label": "原稿第 3 頁",
+              "quantity": 1,
+              "assetId": "4d010ac71e5e689788c33900d9a5024e0dda8014c1c7b314c836de8df37b3ca9",
+              "page": 2,
+              "rotation": 90,
+              "sourceName": "fixture-three-page.pdf",
+              "sourceType": "PDF",
+              "sourceTruth": "USER_PROVIDED_SOURCE",
+              "widthMm": 400.9999988055555,
+              "heightMm": 285.9999998527777,
+              "trimWidthMm": 395.00000127702765,
+              "trimHeightMm": 279.99999985480554,
+              "trimBoxMm": [
+                3.0000000007499996,
+                2.9999999972222047,
+                398.0000012777777,
+                282.9999998520277
+              ],
+              "sourceColor": "SOURCE_PDF_PRESERVED",
+              "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+              "face": "FRONT_OF_SELECTED_PART"
+            }
+          ],
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "packedTextureAndUvReopen": true,
+          "proofBundleId": "8cca61b2-ea5a-4652-9930-2f53c7361950",
+          "proofZipSha256": "ccd2ebe13366b880e8d2205c9dc8460c21e9daa6d38201fe8da30b57a62c957a",
+          "manifestSha256": "1af7e0441452a7c4da60f47e82cb2c6c6d819e3e0af68efd5f9934016463c3dc",
+          "latestChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        },
+        {
+          "layout": "FLAT",
+          "jobId": "825d1b6a-8d23-4c6d-99a2-57bb04bb29c7",
+          "generationId": "7d68cee7-f829-4c7d-986e-2385591f5f17",
+          "planHash": "1f9e4599df6c4a56e83efeb90051e20258ec37f6088234880f6f5040b657ca78",
+          "panels": [
+            {
+              "index": 0,
+              "label": "原稿第 1 頁",
+              "quantity": 1,
+              "assetId": "4d010ac71e5e689788c33900d9a5024e0dda8014c1c7b314c836de8df37b3ca9",
+              "page": 0,
+              "rotation": 90,
+              "sourceName": "fixture-three-page.pdf",
+              "sourceType": "PDF",
+              "sourceTruth": "USER_PROVIDED_SOURCE",
+              "widthMm": 400.9999988055555,
+              "heightMm": 285.9999998527777,
+              "trimWidthMm": 395.00000127702765,
+              "trimHeightMm": 279.99999985480554,
+              "trimBoxMm": [
+                3.0000000007499996,
+                2.9999999972222047,
+                398.0000012777777,
+                282.9999998520277
+              ],
+              "sourceColor": "SOURCE_PDF_PRESERVED",
+              "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+              "face": "FRONT_OF_SELECTED_PART"
+            }
+          ],
+          "renderInfo": {
+            "realBlender": true,
+            "usedMock": false,
+            "device": "OPTIX",
+            "blenderVersion": "5.2.1 LTS",
+            "realOptix": true
+          },
+          "packedTextureAndUvReopen": true,
+          "proofBundleId": "ac3e9ca6-520e-4ead-9bf2-9e9e6b125daa",
+          "proofZipSha256": "bf871225e4b277ac135ae09684930e97f68211ab6c1b747dd111a78dcf538e26",
+          "manifestSha256": "f3b949cca02399e7cf836097bca9b3b0d6c2f964381ab8a8aa58df800010ff16",
+          "latestChainVerified": true,
+          "latestTamperRejected": true,
+          "integrityClassification": "REAL_OS_IO_INTEGRITY"
+        }
+      ],
+      "liveMachineControl": false,
+      "netfoxIntegration": "FILE_HANDOFF_ONLY_NOT_SUBMITTED",
+      "physicalMeasurementsVerified": false,
+      "actualArtworkReleased": false,
+      "status": "PASS",
+      "restartVerified": true
+    },
+    "artifactReceipts": [
+      {
+        "chain": "model",
+        "generationId": "5cb801b9-892f-466c-98fa-a23d7b828cc4",
+        "manifestSha256": "7454df955d4fafe06a8ecffe8457abdc8e4bde69800f6bb4740c18c870b8baee",
+        "files": {
+          "beauty.png": {
+            "sha256": "b3245cd1c9d3bdfea368547ccd13719c6049f263dd5177f002e44eb381dfc40d",
+            "sizeBytes": 648138
+          },
+          "door_1-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "door_2-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "door_3-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "front-closed.png": {
+            "sha256": "a2e773c2182d903d1b935523cf111af89f53d87b2418b55f1e6ae326659b518c",
+            "sizeBytes": 645344
+          },
+          "geometry.json": {
+            "sha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+            "sizeBytes": 1637
+          },
+          "golden-observation.json": {
+            "sha256": "f114230a8df0c8c0bb92071c58bbc0a0aa281e42fc0a9cff5ded0ee54bffeec0",
+            "sizeBytes": 6186
+          },
+          "model.blend": {
+            "sha256": "b2dc8e2cf7793054d131a3f076a571ce605dcf20163e37b39e2551f2d58403e0",
+            "sizeBytes": 964518
+          },
+          "model.glb": {
+            "sha256": "6d70ead0bd0d1da10b9b783fe298fd5a199199b2cac6079b522a76fd24ffeaea",
+            "sizeBytes": 27960
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "3d79d382-2877-4fc5-a551-b752f14562c3",
+        "manifestSha256": "39101e38b1b1a35b9b65e8bb7398386724e5fc1fe4df7a935128d315ac81f322",
+        "files": {
+          "beauty.png": {
+            "sha256": "ad89ecdeeb6c1a85bbc5fb04cb1d530914b4c4b65f331bc398e967c4c18b0b72",
+            "sizeBytes": 644219
+          },
+          "door_1-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "door_2-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "door_3-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "front-closed.png": {
+            "sha256": "bf234a7e1d59e705efe40f9b313070d705a4464fcd5846bb9b5f1906e6e9bbae",
+            "sizeBytes": 632999
+          },
+          "geometry.json": {
+            "sha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+            "sizeBytes": 1637
+          },
+          "golden-observation.json": {
+            "sha256": "015607d69cbee89a58da6afee105751e0984693a5b2ed622782097d842b57c3c",
+            "sizeBytes": 6186
+          },
+          "model.blend": {
+            "sha256": "1e9d73995d6040925508e5f8dbb8ace30d7a2b5f2d358ed9379e6b85ec865cf1",
+            "sizeBytes": 970709
+          },
+          "model.glb": {
+            "sha256": "6d70ead0bd0d1da10b9b783fe298fd5a199199b2cac6079b522a76fd24ffeaea",
+            "sizeBytes": 27960
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "00b20e45-2cae-44fd-8689-8b1b585523ed",
+        "manifestSha256": "3796a2e5194bb10a6ab2be246f6787689c5394961dc84fbdb4e9497fd68cb32c",
+        "files": {
+          "beauty.png": {
+            "sha256": "a2de7258fdec3313e9a5af881f4939b12395463fa9f9815588ec718a0f0438e1",
+            "sizeBytes": 644210
+          },
+          "door_1-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "door_2-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "door_3-preview.png": {
+            "sha256": "35d4c094dd8cd6e4e228cce2fae85fdbadb43aad3af055b27beee06abbacc756",
+            "sizeBytes": 2473
+          },
+          "front-closed.png": {
+            "sha256": "728072206892275b46b7b12268866add01b5dce335438d9cd06ca359b6ebc645",
+            "sizeBytes": 630954
+          },
+          "geometry.json": {
+            "sha256": "a68d42ad382a56024ea26c6e638c5eadea0160297ce031098faccd10312e77ab",
+            "sizeBytes": 1637
+          },
+          "golden-observation.json": {
+            "sha256": "29735255efbcb678db4733cea95b433efaeae0466fa5bae8517371801af20722",
+            "sizeBytes": 6186
+          },
+          "model.blend": {
+            "sha256": "73cbabdabacef3cb8c6132246df42b39bd5805af0fffcf96a143c965285324d1",
+            "sizeBytes": 970709
+          },
+          "model.glb": {
+            "sha256": "6d70ead0bd0d1da10b9b783fe298fd5a199199b2cac6079b522a76fd24ffeaea",
+            "sizeBytes": 27960
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "52c9b71b-07c5-4c7c-b672-cb1062e85f33",
+        "manifestSha256": "fb5210eadd5a3d668433d9d355b0a13f39689b79537f813bf3d28eedd854ee87",
+        "files": {
+          "beauty.png": {
+            "sha256": "824bfd220e1dbff32310154cea2a3d74f3840d678126ce14a9eaca2d2be58852",
+            "sizeBytes": 626254
+          },
+          "front-closed.png": {
+            "sha256": "df166cd07af98249a0e89c6d0978c6bef3caf0e8330efd4645402aa7ab383c30",
+            "sizeBytes": 625265
+          },
+          "geometry.json": {
+            "sha256": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+            "sizeBytes": 210
+          },
+          "golden-observation.json": {
+            "sha256": "4d475d91b3a62efe48162aec1069a4eb1369b452424174cad079d7804e48734f",
+            "sizeBytes": 1909
+          },
+          "model.blend": {
+            "sha256": "5f39c29526b31a15fcd80eada4cbbcaf6cb601b985e4e642b93c60db3694f148",
+            "sizeBytes": 627197
+          },
+          "model.glb": {
+            "sha256": "333ddac0ec974e3136915512311f6dca25b6a3cea4ce447995d12b85273d360f",
+            "sizeBytes": 4644
+          },
+          "surface-preview.png": {
+            "sha256": "e617d254f9a37932cb15dd16cbcac5563d99cd410c1957c9aa4af1e0ed46b1b4",
+            "sizeBytes": 1422
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "8294303b-8b95-4190-82ad-68dd199f4918",
+        "manifestSha256": "1c08ec057906f26e97902e9dc13005527036230d2c55c350d70786c22c7d501a",
+        "files": {
+          "beauty.png": {
+            "sha256": "b82990d37d4a0c23b82b170793f2ac7e48015d88efdd940d8c504b2e3bcca382",
+            "sizeBytes": 616984
+          },
+          "front-closed.png": {
+            "sha256": "bbadbdafaef37968d1c4ada0288e02f4ffb06820fb78280329f35a3d60e9b940",
+            "sizeBytes": 609458
+          },
+          "geometry.json": {
+            "sha256": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+            "sizeBytes": 210
+          },
+          "golden-observation.json": {
+            "sha256": "8c3d7216502ac441cd2af34a029e70c42815fc0a59cd55cbefa0e090e255df7b",
+            "sizeBytes": 1909
+          },
+          "model.blend": {
+            "sha256": "d11bbabcf435204adb7119479edfd00c59e719067cd23478c1e80685b8e196ef",
+            "sizeBytes": 633388
+          },
+          "model.glb": {
+            "sha256": "333ddac0ec974e3136915512311f6dca25b6a3cea4ce447995d12b85273d360f",
+            "sizeBytes": 4644
+          },
+          "surface-preview.png": {
+            "sha256": "e617d254f9a37932cb15dd16cbcac5563d99cd410c1957c9aa4af1e0ed46b1b4",
+            "sizeBytes": 1422
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "312a8d4f-2cc4-44c2-adb6-d196692f6ea2",
+        "manifestSha256": "1a75203f678c01896ce18a68f7974ae6d79e891087791bdd4d910987e7d6ea4d",
+        "files": {
+          "beauty.png": {
+            "sha256": "fcabe445d9cfb8c4844aec0fc40f961b9a95475705fe50f53d6d96e49e3c161b",
+            "sizeBytes": 627056
+          },
+          "front-closed.png": {
+            "sha256": "e1fc1e2dccfebe5c99eb8693537cf72380f47ce37cca9cde2949d91e5670ecb6",
+            "sizeBytes": 613334
+          },
+          "geometry.json": {
+            "sha256": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+            "sizeBytes": 210
+          },
+          "golden-observation.json": {
+            "sha256": "9934ece1e408993d7beb9cac2db94358bc631cc7cd74ec47837d8be89b4ea99b",
+            "sizeBytes": 1909
+          },
+          "model.blend": {
+            "sha256": "b9f14880977cebd1fa5b17cc6db44dd916c7516a4f381ade5a5865923a85c8d7",
+            "sizeBytes": 633388
+          },
+          "model.glb": {
+            "sha256": "333ddac0ec974e3136915512311f6dca25b6a3cea4ce447995d12b85273d360f",
+            "sizeBytes": 4644
+          },
+          "surface-preview.png": {
+            "sha256": "e617d254f9a37932cb15dd16cbcac5563d99cd410c1957c9aa4af1e0ed46b1b4",
+            "sizeBytes": 1422
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "e3d450c2-7f39-4fa6-a7d8-9ddf0cd7722f",
+        "manifestSha256": "7eacc72a48e7356802bf863c62a66132df0730516f4d540ce7bd3578cbccbcb3",
+        "files": {
+          "beauty.png": {
+            "sha256": "f13f91af3c9423f38e33169866f212ba1d68c00ac5dfe3e43c9c3094097312b9",
+            "sizeBytes": 635072
+          },
+          "front-closed.png": {
+            "sha256": "371829eceb9ba140c3340916c50f6234c2ef881989c8831360ce54013222946b",
+            "sizeBytes": 640510
+          },
+          "geometry.json": {
+            "sha256": "133bdb5c8f082e8a2eabcc439f94aaf5e10a319485ea9f7647e5b6be37bcf9d8",
+            "sizeBytes": 1984
+          },
+          "golden-observation.json": {
+            "sha256": "0254dcd0475d2d6ee12f8389bf9b453e7c6047f43ae61dc71473a16bf2b71911",
+            "sizeBytes": 2257
+          },
+          "model.blend": {
+            "sha256": "03713cafc048fbf5cc10caed1eff0815461609a3da5dc122f8274fba0b1fe398",
+            "sizeBytes": 910360
+          },
+          "model.glb": {
+            "sha256": "cf99df5efada6ad0f7dfbfa4ba0dc7bf3fc54167d96d1fb2495968b4adc9a206",
+            "sizeBytes": 21012
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "e4b3858f-9f5c-4193-a385-4988dbb57e8d",
+        "manifestSha256": "b8d39f792fc838c60fc987e9caf0b6f8da829aade5e37f80d34979c2044e7c1e",
+        "files": {
+          "beauty.png": {
+            "sha256": "800de0a37271b56216fda438749c3ba5da0c755c1d9740e00af92c380954d799",
+            "sizeBytes": 671410
+          },
+          "front-closed.png": {
+            "sha256": "b9c27e0af5041cdcf1805a4638eada6455227ac09d62e22681a83001819e4cad",
+            "sizeBytes": 653300
+          },
+          "geometry.json": {
+            "sha256": "53227484f700f3249a7ae65e664a9f5ce887080269e04a84f9b40ba5c76b900c",
+            "sizeBytes": 2212
+          },
+          "golden-observation.json": {
+            "sha256": "a3a546b2ce51b560b9485ae9df45cdfe50642433117bd44fbdd75d9bcfc3108c",
+            "sizeBytes": 2485
+          },
+          "model.blend": {
+            "sha256": "0d1f3dc6f227e1e957171c8cd6531647216f7f91f1984d0adbc224e01e540e2b",
+            "sizeBytes": 939427
+          },
+          "model.glb": {
+            "sha256": "029755e6933ba669c29bc40a3c8b7f5abe652e1b1d1289499864707bc907afc5",
+            "sizeBytes": 22824
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "model",
+        "generationId": "182b1214-5c83-4f35-a95b-b4a5a90b333d",
+        "manifestSha256": "73e79104b4efd0fb33bb909827414b785e2c2a0d3954214fc317a20eb478d788",
+        "files": {
+          "beauty.png": {
+            "sha256": "4643f19fadaf7d42355c677ba555730a1f57d9d0760e66c5b762dc221080a79b",
+            "sizeBytes": 664984
+          },
+          "front-closed.png": {
+            "sha256": "05b2f8f187ce6f7acf05753484d4bc9aaca204a531f1f7c3c4fefe73b57ff877",
+            "sizeBytes": 664548
+          },
+          "geometry.json": {
+            "sha256": "38c7e45c55ab0a5465bfb4e99b116427f5145f24749182c39f9f846efd53b909",
+            "sizeBytes": 2420
+          },
+          "golden-observation.json": {
+            "sha256": "2d09656e2eb64ece42f3675d29bced62830ef9c882099fa0afcfde8aa72a3c81",
+            "sizeBytes": 2693
+          },
+          "model.blend": {
+            "sha256": "74c1f6d6813b4f4b097ad8cff6db2c93625008a81d9410bc63fe4ba1e42d8bff",
+            "sizeBytes": 997541
+          },
+          "model.glb": {
+            "sha256": "c7c3d6aa565e6f8d70f9e238a6ef280553816bcc69a783ccd2a925fd2b64390d",
+            "sizeBytes": 26120
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "print",
+        "generationId": "89accfaa-9456-44fa-b173-ce5f1adde373",
+        "manifestSha256": "1af7e0441452a7c4da60f47e82cb2c6c6d819e3e0af68efd5f9934016463c3dc",
+        "files": {
+          "beauty.png": {
+            "sha256": "02da5bcf89fe18375605ad869ba7e38f90150c5d8be9112a8680c85411a67a8c",
+            "sizeBytes": 638069
+          },
+          "door_1-preview.png": {
+            "sha256": "a6752ab9aa697d5cf9baa56b622a90153f3f2417bc79ce67ec7b5b9b268b0ff6",
+            "sizeBytes": 3615
+          },
+          "door_2-preview.png": {
+            "sha256": "a6752ab9aa697d5cf9baa56b622a90153f3f2417bc79ce67ec7b5b9b268b0ff6",
+            "sizeBytes": 3615
+          },
+          "door_3-preview.png": {
+            "sha256": "a6752ab9aa697d5cf9baa56b622a90153f3f2417bc79ce67ec7b5b9b268b0ff6",
+            "sizeBytes": 3615
+          },
+          "front-closed.png": {
+            "sha256": "21327e0f0895d86b7cd9f2cb1aee59050a47c79d2ab20c2e994d1ee2daa1f547",
+            "sizeBytes": 643375
+          },
+          "geometry.json": {
+            "sha256": "c46f10d6a98ca3f1f90a9d0eb39e213dc4fe0ed5cdbf2d575e430930f39e3083",
+            "sizeBytes": 1662
+          },
+          "golden-observation.json": {
+            "sha256": "5a70494e6ebeed76bc96054dfd649323297dc701f6dafbcf77ad57e1cd4a0a70",
+            "sizeBytes": 6355
+          },
+          "model.blend": {
+            "sha256": "f076c2425277662b2e81b762dffd4adbe402d6a693b53a64c61028054d231636",
+            "sizeBytes": 967972
+          },
+          "model.glb": {
+            "sha256": "9f06d867cfbee49d736debe5a82b5b154d7d28eef5d85b04236ff7473ce11aed",
+            "sizeBytes": 31720
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      },
+      {
+        "chain": "print",
+        "generationId": "7d68cee7-f829-4c7d-986e-2385591f5f17",
+        "manifestSha256": "f3b949cca02399e7cf836097bca9b3b0d6c2f964381ab8a8aa58df800010ff16",
+        "files": {
+          "beauty.png": {
+            "sha256": "a6a22ce03a25d21aeda766ed692d1df600d5f5bdd7cb7b951804f8b8a10a1002",
+            "sizeBytes": 622480
+          },
+          "front-closed.png": {
+            "sha256": "4e8f723e479a2501d38f93eea33b8664c5ad7eb581bc6ab067ca6cbc30c399cb",
+            "sizeBytes": 622370
+          },
+          "geometry.json": {
+            "sha256": "7a321850823a3e202e257e40a3f91a646d37a4687be2d593955dd8320648489f",
+            "sizeBytes": 213
+          },
+          "golden-observation.json": {
+            "sha256": "bf65a0e30ec90d5c92f4ef176c130496a0d7178d673a0c7750ce98b04aec267b",
+            "sizeBytes": 1945
+          },
+          "model.blend": {
+            "sha256": "5156684229b9f028c548633be633edf2975de5981a0574484e2aa4f57a1f17e9",
+            "sizeBytes": 629394
+          },
+          "model.glb": {
+            "sha256": "34c1050acafdcf5803df118a7c5933f3884bf32f045a20926ffe1706ba282f65",
+            "sizeBytes": 6880
+          },
+          "print_panel-preview.png": {
+            "sha256": "a6752ab9aa697d5cf9baa56b622a90153f3f2417bc79ce67ec7b5b9b268b0ff6",
+            "sizeBytes": 3615
+          }
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        }
+      }
+    ],
+    "evidenceIdentity": {
+      "modelJsonSha256": "b469dafd1f78b7d2aaaabcd694e56029f26a5a3a6ba01ff60ee2e2262c86e99f",
+      "printJsonSha256": "080a2e544dfc07bfc8298207bbb5329dd781926813e6c2f517c7ea04e7581d72",
+      "recordedAtUtc": "2026-09-27T07:32:40.296020+00:00",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "python": "3.12.10"
+    },
+    "readiness": {
+      "physicalProductGeometryTruth": false,
+      "physicalPrintValidated": false,
+      "manufacturingReady": false,
+      "globalProductionReady": false,
+      "mergeAuthorized": false
+    },
+    "limitations": [
+      "Synthetic/reference geometries and artwork, not physical product truth",
+      "No new batch-dispatch REAL run; prior batch evidence stays historical",
+      "Hostile concurrent writer/hard-links PARTIAL",
+      "NAS/object storage/power-loss NOT_TESTED",
+      "Full historical every-guard mutation matrix not established",
+      "PR16 FROZEN; Round14 HOLD"
+    ]
   }
 }

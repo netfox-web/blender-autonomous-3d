@@ -1,4 +1,23 @@
-> Current correction: see **Round 13 correction — clean CODE composition and print closure** below. Earlier sections retain historical evidence and are not fresh acceptance for the current CODE.
+> Current correction: see **Round 13 independent Re-Gate correction — current checkpoint** below. Earlier sections retain historical evidence and are not fresh acceptance for the current CODE.
+
+## Round 13 independent Re-Gate correction — current checkpoint
+
+Independent [Supervisor decision 5853584739](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5853584739) found two defects in HEAD `6f1038c69e1586bdf6649596d603e64b21e9d73d`. This same-Round correction preserves unrelated temporary files when exclusive creation fails, clears temp ownership after replacement, and rejects non-regular/symlink/missing manifest and metadata at the actual read validator. No authority architecture or new feature was added. Historical entries below retain their original evidence; this checkpoint supersedes earlier Worker readiness reports for review purposes, without claiming Supervisor PASS.
+
+Instruction identity: legacy Round 13 commit `b8c6fe911e6c8358ed7bcdecafc84cab86630810`, blob `d25920f0140f6e3ab2b839f85150b59b2fe70987`; source Issue #1 decision `5853584739`. The AGENT alias still contains older Phase 901–960 instructions and is not a new Round 13 instruction.
+
+Exact CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43`; [CODE CI 36301858659](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36301858659) is SUCCESS with log-confirmed exact checkout: unit (ubuntu-latest): 1381 passed / 4 skipped; unit (windows-latest): 1385 passed / 0 skipped. Workflow classification remains MOCK regression. Focused local tests: 93 passed / 7 symlink skips. Ten in-memory guard-removal controls verify that preservation/type assertions fail when these specific guards are removed; this does not claim every historical guard has mutation coverage. Fixtures with synthetic BLEND/GLB and render flags are test data only, never REAL evidence.
+
+After CODE CI, fresh clean-CODE headless Blender evidence:
+
+- Model compositions `98e85e93-8cfe-4bba-810e-8157d5bd942b`: 9 generations; synthetic geometry plus existing unmeasured recipe references; actual `.blend` reopen, UV/packed texture, artifact and publication identities, scene changes, restart, stale/revoked download and latest-pointer tamper controls recorded.
+- Print preview `700a9c5d-ae50-4879-aaf9-6d88717083ab`: 2 cases (THREE_DOOR/FLAT), source `fixture-three-page.pdf` is a synthetic software fixture. Source ingestion label USER_PROVIDED_SOURCE does not establish artwork release, measured geometry, print accuracy or visual proofreading. Reopen, source-size UV, restart and manifest/meta/latest checks recorded.
+- Both record Blender 5.2.1 LTS, actual OptiX device, `usedMock=false`, `workingTreeClean=true`, exact CODE. Full generation IDs, original evidence JSON digests and rehashed artifact SHA/size receipts are in JSON `round13IndependentCorrection`.
+
+Classification: REAL_RENDER for those actual local headless runs; scoped REAL_OS_IO_INTEGRITY for directly checked file bytes; injected path-type/collision selection/mutation controls remain FAULT_INJECTION. No new batch-dispatch REAL run is claimed. Hard-link/hostile writer remains PARTIAL; NAS/object storage/power loss/physical CAD/print/manufacturing remain BLOCKED/NOT_TESTED. All global/physical/manufacturing readiness and merge authorization remain false.
+
+This documentation snapshot precedes its own exact-SHA CI and independent final review. Final DOCS SHA, run/jobs and the Supervisor decision will be recorded in Issue #1 after completion; they cannot be embedded in the commit they identify. See the latest linked handoff/decision for current status. PR #16 FROZEN; Round 14 HOLD.
+
 
 # Product variant batches — Round 9B file and namespace flush gate
 
