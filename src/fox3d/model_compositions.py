@@ -25,6 +25,10 @@ def valid_generation(value):
     return isinstance(value, str) and bool(re.fullmatch(r'[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}', value))
 
 
+class StaleCompositionError(ValueError):
+    """An intact, authorized result belongs to an older master input."""
+
+
 def generation(root, tenant, mid, gid, item):
     """Validate any retained result against current model and artwork permissions."""
     if not valid_generation(gid):
@@ -43,14 +47,14 @@ def generation(root, tenant, mid, gid, item):
         verify_publication_seal(target/'published.json', sha256_bytes((target/'manifest.json').read_bytes()))
     if manifest['generationId'] != gid or draft['masterId'] != mid:
         raise ValueError('成果不屬於此模型')
-    if draft['masterInputHash'] != item['inputHash']:
-        raise ValueError('母版已變更；此款保留為歷史紀錄，請重新生成')
     if 'inputAuthority' in draft or 'inputAuthorityHash' in manifest:
         authority.verify(root, tenant, draft, current=False)
         if manifest.get('inputAuthorityHash') != draft['inputAuthority']['hash']:
             raise ValueError('發布成果與來源權威不符')
     for placement in manifest['package']['placements']:
         asset_usage.require_artwork(root, tenant, placement['originalAssetId'])
+    if draft['masterInputHash'] != item['inputHash']:
+        raise StaleCompositionError('母版已變更；此款保留為歷史紀錄，請重新生成')
     return manifest
 
 
@@ -193,7 +197,7 @@ def prepare(root,tenant,draft,target):
 
 def status(root,tenant,mid,*,current_draft=None):
     base=folder_for(root,tenant,mid); pointer_path=base/'latest.json';state=read_json(base/'state.json')
-    manifest=None; error=state.get('error')
+    manifest=None; error=state.get('error'); stale=False
     try:
         pointer=print_preview._read_pointer(pointer_path)
         if pointer is None and state.get('state') in {'succeeded','completed'}:
@@ -207,10 +211,12 @@ def status(root,tenant,mid,*,current_draft=None):
             if type(manifest.get('historyVersion')) is int and manifest['historyVersion'] == 1:
                 manifest=generation(root,tenant,mid,pointer['generationId'],models.get(root,tenant,mid))
             for x in manifest['package']['placements']: asset_usage.require_artwork(root,tenant,x['originalAssetId'])
+        except StaleCompositionError as exc:
+            manifest=None;pointer=None;error=str(exc);stale=True
         except (ValueError,OSError,KeyError) as exc: manifest=None;pointer=None;error=str(exc)
     return {'state':state.get('state','idle'),'taskId':state.get('taskId'),'progress':state.get('progress',0),
             'generated':bool(manifest),'generationId':(pointer or {}).get('generationId'),'error':error,
-            'stale':bool(manifest and current_draft and manifest['draft']['masterInputHash']!=current_draft['inputHash']),
+            'stale':stale or bool(manifest and current_draft and manifest['draft']['masterInputHash']!=current_draft['inputHash']),
             'manifest':manifest}
 
 

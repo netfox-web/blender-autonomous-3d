@@ -7,6 +7,25 @@ import pytest
 from fox3d import durability
 
 
+@pytest.mark.parametrize('publisher', ['binary', 'bytes'])
+def test_publish_artifact_under_windows_path_budget(tmp_path, publisher):
+    # The real print generation directory was 212 characters; repeating the
+    # output name in its temp name pushed it beyond Windows MAX_PATH.
+    root = tmp_path.resolve()
+    length = max(212, len(str(root)) + 2)
+    folder = root / ('p' * (length - len(str(root)) - 1))
+    target = folder / 'door_1-preview.png'
+    source = root / 'input.bin'
+    source.write_bytes(b'preview-bytes')
+    if publisher == 'binary':
+        receipt = durability.publish_binary(source, target)
+    else:
+        receipt = durability.publish_bytes(lambda stream: stream.write(b'preview-bytes'), target)
+    durability.verify_receipt(target, receipt)
+    assert target.read_bytes() == source.read_bytes()
+    assert list(folder.iterdir()) == [target]
+
+
 def test_publish_binary_hash_size_and_no_debris(tmp_path):
     source = tmp_path / 'dam.bin'; source.write_bytes(os.urandom(2_000_000))
     target = tmp_path / 'generation' / 'model.blend'

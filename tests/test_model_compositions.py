@@ -162,6 +162,31 @@ def _composition_manifest(model, gid, *, modern=True):
     return manifest
 
 
+def test_modern_stale_status_survives_fresh_read_without_exposing_download(tmp_path, monkeypatch):
+    from fox3d.recipe_3d import atomic_json
+    model, _, _ = setup(tmp_path)
+    gid='77777777-7777-4777-8777-777777777777'
+    base=c.folder_for(tmp_path,'t',model['id']);target=base/'generations'/gid
+    _write_sealed_manifest(target,_composition_manifest(model,gid))
+    atomic_json(base/'latest.json',{'generationId':gid})
+    monkeypatch.setattr(c.print_preview,'validate',_read_sealed_manifest)
+    changed=m.save(tmp_path,'t',{**model['draft'],'widthMm':101.},model['revision'],model['id'])
+    for _ in range(2):
+        state=c.status(tmp_path,'t',model['id'],current_draft=changed)
+        assert state['stale'] and not state['generated']
+        assert state['generationId'] is None and state['manifest'] is None
+    with pytest.raises(c.StaleCompositionError):
+        c.generation(tmp_path,'t',model['id'],gid,changed)
+    restored=m.save(tmp_path,'t',model['draft'],changed['revision'],model['id'])
+    state=c.status(tmp_path,'t',model['id'],current_draft=restored)
+    assert state['generated'] and not state['stale']
+    changed=m.save(tmp_path,'t',changed['draft'],restored['revision'],model['id'])
+    # Corruption must never be recategorized as an intact stale generation.
+    (target/'published.json').write_text('{}',encoding='utf-8')
+    state=c.status(tmp_path,'t',model['id'],current_draft=changed)
+    assert not state['stale'] and not state['generated']
+
+
 @pytest.mark.parametrize('damage',[
     'missing','symlink_same_bytes','directory','malformed','missing_digest','wrong_digest'])
 def test_composition_status_requires_regular_exact_publication_seal(tmp_path, monkeypatch, damage):

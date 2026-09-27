@@ -127,7 +127,7 @@ def publish_binary(source, target, *, expected_sha256=None, expected_size=None):
     if target.is_symlink():
         raise ValueError('refuse symlink artifact target')
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f'.{target.name}.artifact.{secrets.token_hex(8)}.tmp')
+    temporary = target.with_name(f'.artifact.{secrets.token_hex(8)}.tmp')
     digest = hashlib.sha256(); size = 0
     try:
         with source.open('rb') as src, temporary.open('xb') as dst:
@@ -154,7 +154,7 @@ def publish_bytes(writer, target, *, expected_sha256=None, expected_size=None):
     if target.is_symlink():
         raise ValueError('refuse symlink artifact target')
     target.parent.mkdir(parents=True, exist_ok=True)
-    temporary = target.with_name(f'.{target.name}.artifact.{secrets.token_hex(8)}.tmp')
+    temporary = target.with_name(f'.artifact.{secrets.token_hex(8)}.tmp')
     digest = hashlib.sha256(); size = 0
     try:
         class DigestingStream:

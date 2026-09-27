@@ -20,6 +20,7 @@ def main():
     from fox3d import print_assets, asset_usage, product_models, model_compositions
     from fox3d.recipe_3d import atomic_json, read_json
     from fox3d.blender import find_blender
+    from fox3d.ids import sha256_bytes
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--allow-dirty',action='store_true');parser.add_argument('--keep-server',action='store_true')
     args=parser.parse_args()
@@ -86,8 +87,20 @@ def main():
                     m=state['manifest'];hashes.append(m['spec']['engineeringHash']);pixels.append(m['files']['beauty.png']);artwork_hashes.append(m['package']['artworkHash'])
                     for name in ['beauty.png','front-closed.png','model.glb','model.blend','geometry.json']:
                         client.get(f'/api/product-models/{mid}/composition/files/{name}',params={'workspace':tenant,'generation':state['generationId']}).raise_for_status()
+                    manifest_sha=sha256_bytes((folder/'manifest.json').read_bytes())
+                    assert manifest_sha==read_json(folder/'meta.json')['manifestSha256']==read_json(folder/'published.json')['manifestSha256']
+                    pointer_path=folder.parent.parent/'latest.json';pointer=read_json(pointer_path)
+                    assert pointer['generationId']==state['generationId']
+                    try:
+                        atomic_json(pointer_path,{'generationId':'invalid'})
+                        rejected=get(mid)
+                        assert not rejected['generated'] and rejected['manifest'] is None and rejected['generationId'] is None
+                    finally:
+                        atomic_json(pointer_path,pointer)
+                    assert get(mid)['generationId']==state['generationId']
                     evidence['generations'].append({'modelId':mid,'scene':scene,'generationId':state['generationId'],'renderInfo':m['renderInfo'],
-                        'engineeringHash':m['spec']['engineeringHash'],'artworkHash':m['package']['artworkHash'],'files':m['files'],'blendReopen':True})
+                        'engineeringHash':m['spec']['engineeringHash'],'artworkHash':m['package']['artworkHash'],'files':m['files'],'blendReopen':True,
+                        'manifestSha256':manifest_sha,'publicationChainVerified':True,'latestTamperRejected':True,'integrityClassification':'REAL_OS_IO_INTEGRITY'})
                     print(json.dumps({'geometry':item['draft']['geometry'],'scene':scene,'status':'PASS'}),flush=True)
                 assert len(set(hashes))==1 and len(set(artwork_hashes))==1 and len(set(pixels))==(3 if index<2 else 1)
                 assert any(x['id']==mid and x['templateState']=='PREVIEW_AVAILABLE' for x in client.get('/api/product-models').json()['items'])
