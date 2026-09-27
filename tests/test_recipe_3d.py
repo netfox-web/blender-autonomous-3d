@@ -130,7 +130,8 @@ def test_background_cancel_duplicate_and_failure(tmp_path,drafts,monkeypatch):
     service.executor.shutdown()
 
 def test_interrupted_process_is_recoverable(tmp_path,drafts):
-    atomic_json(get_recipe_3d_dir(tmp_path,"t","MY-012")/"state.json",{"state":"running","taskId":"old"})
+    atomic_json(get_recipe_3d_dir(tmp_path,"t","MY-012")/"state.json",
+                {"state":"running","taskId":"old","inputHash":input_hash(drafts["MY-012"])})
     service=RecipePreviewService(SimpleNamespace(root=tmp_path))
     status=service.status("t","MY-012",drafts["MY-012"])
     assert status["state"]=="failed" and "中斷" in status["error"]
