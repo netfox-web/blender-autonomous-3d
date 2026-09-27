@@ -1,3 +1,5 @@
+> Current correction: see **Round 13 correction — clean CODE composition and print closure** below. Earlier sections retain historical evidence and are not fresh acceptance for the current CODE.
+
 # Product variant batches — Round 9B file and namespace flush gate
 
 Instruction `511e9169421947c155dd47da34dda6b506e27ee4` / [Supervisor comment5705530120](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5705530120) authorizes the corrected indeterminate-commit contract. PR15 remains DRAFT/OPEN on `codex/model-category-tree` (PR12); **MERGE_AUTHORIZED=false, PR16 FROZEN, Round10 HOLD**.
@@ -228,3 +230,20 @@ Exact final CODE `985385db01bdc354edbce44a4aedd78af52e0735`; CODE Actions [35201
 Clean REAL evidence `d0f1e215-b3c9-4432-9720-bf1de5232d54` ran after exact CODE CI with Blender **5.2.1 LTS + OptiX**, `usedMock=false`, two synthetic/static variants, `.blend` reopen, finite pixels, decode/reopen and lineage/history/status/download checks PASS. For both generations, `manifestSha == meta.manifestSha256 == published.manifestSha256` and latest pointed to the generation. This is `REAL_RENDER` plus scoped local `REAL_OS_IO_INTEGRITY`, not physical CAD/print/manufacturing proof.
 
 Truth flags remain `physicalProductGeometryTruth=false`, `physicalPrintValidated=false`, `manufacturingReady=false`, `globalProductionReady=false`, `MERGE_AUTHORIZED=false`; no live H3/LTX/Vision/CNC/LASER/PLC or production operation was used. Exact DOCS dual-platform CI and final Round 13 handoff remain.
+
+## Round 13 correction — clean CODE composition and print closure
+
+Instruction commit `b8c6fe911e6c8358ed7bcdecafc84cab86630810`, blob `d25920f0140f6e3ab2b839f85150b59b2fe70987`, Supervisor comment `5807979587`. User subsequently authorized this optimization with “開工”. PR #15 remains draft/open; no merge and Round 14 HOLD.
+
+CODE `3bcd4214040779176d034f2a8113aedcae0e6dcd` fixes two acceptance blockers: a validated changed composition master now reports stale while withholding generation/download authority; same-directory exclusive artifact temporary names no longer duplicate long final filenames and exceed the Windows path limit. Publication/authority architecture is unchanged. Regression tests cover persisted master edits, corrupt seals and real Windows file IO at the failing path length.
+
+CODE CI [36293169114](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36293169114) passed with actual checkout SHA verified in both logs: Windows job `108546999027`, **1351 passed / 0 skipped**; Ubuntu job `108546999225`, **1347 passed / 4 skipped**. Local full regression: **1347 passed / 4 skipped**; pytest is MOCK regression, not real rendering.
+
+After CODE CI, both acceptance scripts ran on the clean exact CODE with Blender **5.2.1 LTS / OptiX**, `REAL_BLENDER=true`, `USED_MOCK=false`:
+
+- Composition evidence `85b4ff41-346d-4e68-bdf4-0215208c7e32`: nine generations (two synthetic geometries across three scenes, plus three recipe-reference snapshots). Blend reopen, geometry/artwork identity, distinct scene pixels, restart, stale download blocking, revocation and original preservation passed. Every generation records manifest/meta/publication-seal equality, latest generation identity, actual latest-file tamper rejection through a fresh HTTP status read, and recovery after restoring the pointer.
+- Print evidence `cac4f332-973c-45bd-83f7-da122be3a2bf`: THREE_DOOR and FLAT passed, including packed texture/UV reopen, restart, manifest/meta/latest equality, actual latest-file hash tamper rejection and recovery. Source `fixture-three-page.pdf` is a synthetic software acceptance fixture; ingestion label USER_PROVIDED_SOURCE does not establish real artwork release. Existing fixture panel labels contain encoding artifacts, so this run does not establish text/visual-proofreading quality.
+
+Full generation IDs, artifact hashes, render information and chain/tamper observations are preserved in the matching JSON `round13Correction`. These runs establish REAL_RENDER and scoped local REAL_OS_IO_INTEGRITY. No new batch-dispatch REAL run is claimed; prior batch evidence remains historical. They do not establish physical geometry, physical printing, NAS/power-loss durability, manufacturing or global production readiness. All such readiness flags remain false.
+
+Exact DOCS SHA and its dual-platform CI results will be recorded in the Issue #1 handoff after this documentation commit passes. Then STOP for Re-Gate. Batch draft persistence and visual proofreading remain queued; no next large phase is started.
