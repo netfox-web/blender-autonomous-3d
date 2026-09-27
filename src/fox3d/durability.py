@@ -129,8 +129,10 @@ def publish_binary(source, target, *, expected_sha256=None, expected_size=None):
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f'.artifact.{secrets.token_hex(8)}.tmp')
     digest = hashlib.sha256(); size = 0
+    owned = False
     try:
         with source.open('rb') as src, temporary.open('xb') as dst:
+            owned = True
             while chunk := src.read(1024 * 1024):
                 dst.write(chunk); digest.update(chunk); size += len(chunk)
             flush_file(dst)
@@ -139,9 +141,10 @@ def publish_binary(source, target, *, expected_sha256=None, expected_size=None):
         if expected_sha256 is not None and digest.hexdigest() != expected_sha256:
             raise ValueError('artifact SHA mismatch')
         os.replace(temporary, target)
+        owned = False
         namespace_committed(target, 'replace')
     except Exception:
-        if temporary.exists():
+        if owned and temporary.exists():
             try: unlink_owned(temporary, missing_ok=True)
             except OSError: pass
         raise
@@ -156,6 +159,7 @@ def publish_bytes(writer, target, *, expected_sha256=None, expected_size=None):
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.with_name(f'.artifact.{secrets.token_hex(8)}.tmp')
     digest = hashlib.sha256(); size = 0
+    owned = False
     try:
         class DigestingStream:
             def __init__(self, stream): self.stream = stream
@@ -166,6 +170,7 @@ def publish_bytes(writer, target, *, expected_sha256=None, expected_size=None):
             def flush(self): return self.stream.flush()
             def __getattr__(self, name): return getattr(self.stream, name)
         with temporary.open('xb') as raw:
+            owned = True
             writer(DigestingStream(raw))
             flush_file(raw)
         if expected_size is not None and size != expected_size:
@@ -173,9 +178,10 @@ def publish_bytes(writer, target, *, expected_sha256=None, expected_size=None):
         if expected_sha256 is not None and digest.hexdigest() != expected_sha256:
             raise ValueError('artifact SHA mismatch')
         os.replace(temporary, target)
+        owned = False
         namespace_committed(target, 'replace')
     except Exception:
-        if temporary.exists():
+        if owned and temporary.exists():
             try: unlink_owned(temporary, missing_ok=True)
             except OSError: pass
         raise

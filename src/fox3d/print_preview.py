@@ -71,6 +71,10 @@ def prepare(root,tenant,p,folder):
 
 
 def validate(folder):
+    for name in ('manifest.json', 'meta.json'):
+        authority = folder/name
+        if authority.is_symlink() or not authority.is_file():
+            raise ValueError('manifest/meta authority is not regular')
     meta=read_json(folder/'meta.json');m=read_json(folder/'manifest.json')
     if not m or sha256_bytes((folder/'manifest.json').read_bytes())!=meta.get('manifestSha256'):
         raise ValueError('3D 預覽紀錄驗證失敗')
