@@ -10,6 +10,14 @@ Issue #1: Autonomous Development Handoff
 
 This document tracks autonomous development rounds and Re-Gate decisions.
 
+## Latest user request — reusable masters, artwork and scenes (2026-09-14)
+
+Worker: Codex. Explicit user authorization; instructionCommitSha=null. PR #11 stacked on #10, no merge authorization. CODE `e9384c63c6e61cb0fca2a4e0ba70c729d2a4f0da`; exact CODE Actions 34860658072 Ubuntu + Windows SUCCESS (**916 tests/OS**), focused local **89 PASS**. Clean REAL evidence `baf90892-1b61-440b-9c4a-a3ff6b7929ee` PASS: nine Blender/HTTP generations, reopened BLEND/observed UV and mesh checks, stable geometry/artwork across scenes, stale/restart/revocation and artifact hashes/bytes. Separate DOCS dual CI follows in Issue #1.
+
+Three original Recipe reference masters now have local 3D previews and nine scene stills, retaining prior assumptions and demonstration materials. The Chinese UI supports reviewed artwork per eligible surface and three deterministic Blender scene presets. Eight NAS drafts remain incomplete, zero masters physically validated. No original artwork restoration, print calibration, arbitrary AI interior, live provider or machine claim. See [acceptance](PRODUCT_MASTER_COMPOSITIONS_ACCEPTANCE.md), [evidence](PRODUCT_MASTER_COMPOSITIONS_ACCEPTANCE.json), and [operator guide](PRODUCT_MASTER_COMPOSITIONS.md).
+
+Supervisor comment 5666268334 accepts only previous PR #10 CODE 3fd0a30 / DOCS b479544 with scope and no merge. Main instruction b8ccbcb8ad47c3ad1b9ce97b7687295f69509c7d for Issue #6 was read and queued as a separate current-main lane with no unmerged dependencies. Finish this user-requested handoff then STOP for Re-Gate; do not merge PR #7/#8/#9/#10/#11 or change Supervisor LIVE prerequisites.
+
 ## Latest user correction — clean template/material library (2026-09-14)
 
 Worker: Codex. Authorization: explicit user correction; no new instruction commit. Prior PR #10 review comment 5664501379 ACCEPT WITH SCOPE applies to its earlier CODE, not these changes.

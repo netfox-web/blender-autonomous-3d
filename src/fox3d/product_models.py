@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from fox3d.ids import new_id, stable_hash
 from fox3d import nas_catalog as nas, print_assets, asset_usage
 from fox3d import recipe_3d as render
-from fox3d.recipe_workbench import DraftConflict, timestamp
+from fox3d.recipe_workbench import DraftConflict, timestamp, ProductDraft
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, allow_inf_nan=False)
@@ -29,12 +29,17 @@ class Variant(Strict):
     artworkAssetId: str = Field(default='', pattern=r'^([a-f0-9]{64})?$')
     note: str = Field(default='', max_length=1000)
 
+class RecipeReference(Strict):
+    revision: int = Field(ge=0)
+    draft: ProductDraft
+
 class Master(Strict):
     name: str = Field(min_length=1, max_length=240)
     family: Literal['coaster','mat','cabinet','curtain','mask_box','storage_box_50','spray_bottle']
     subtype: Literal['hinged','open','bedside','bookcase','other'] = 'other'
     sourceGroupId: str = Field(default='', pattern=r'^([a-f0-9]{64})?$')
-    geometry: Literal['PENDING','RECTANGLE','OPEN_CABINET','HINGED_CABINET'] = 'PENDING'
+    geometry: Literal['PENDING','RECTANGLE','OPEN_CABINET','HINGED_CABINET','RECIPE_REFERENCE'] = 'PENDING'
+    recipeReference: RecipeReference | None = None
     widthMm: float | None = Field(default=None, gt=0, le=6000)
     depthMm: float | None = Field(default=None, gt=0, le=6000)
     heightMm: float | None = Field(default=None, gt=0, le=6000)
@@ -76,6 +81,18 @@ def generate(platform, tid, mid, draft, **kwargs):
 
 def build_spec(data, *, tenant_id='default'):
     m = Master.model_validate(data)
+    if m.geometry=='RECIPE_REFERENCE':
+        if not m.recipeReference or m.family!='cabinet': raise ValueError('缺少原有 Recipe 配方快照')
+        spec=render.build_recipe_spec(m.recipeReference.draft.model_dump(),tenant_id=tenant_id)
+        if [m.widthMm,m.depthMm,m.heightMm]!=[spec['width'],spec['depth'],spec['height']]:
+            raise ValueError('原有 Recipe 快照的外尺寸不可分開修改；請回 Recipe 庫修改，再載入新快照')
+        for p in spec['components']:
+            p.update(sizeMm=[v*1000 for v in p['size']],locationMm=[v*1000 for v in p['location']])
+        spec.update(goldenRecipe=True,adapterVersion='NAS_RECIPE_REFERENCE_V1',sku=m.name,name=m.name,
+            previewAssumptions=[f"{x['label']}：{x['value']} {x['unit']}；{x['note']}" for x in spec['previewAssumptions']])
+        spec['previewAssumptions'].append('沿用原有 Recipe 參考快照與明示假設，未取得實物尺寸或印刷校正。')
+        spec['previewHash']=stable_hash(spec)
+        return spec
     missing = [label for key,label in [('widthMm','寬'),('depthMm','深／厚'),('heightMm','高／長')]
                if getattr(m,key) is None]
     if not m.dimensionEvidence.strip(): missing.append('外形尺寸依據')
@@ -151,6 +168,10 @@ def listing(root,tid):
             available=preview.get('generated') and not preview.get('stale')
         except (ValueError,OSError,KeyError):
             available=False
+        if not available:
+            from fox3d import model_compositions
+            composed=model_compositions.status(root,tid,item['id'],current_draft=item)
+            available=composed['generated'] and not composed['stale']
         items.append({**item,'templateState':'PREVIEW_AVAILABLE' if available else 'DRAFT'})
     return items
 

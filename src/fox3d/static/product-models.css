@@ -3,3 +3,5 @@
 #usage-image{display:block;max-width:100%;width:480px;max-height:420px;object-fit:contain}#usage-status{display:block;margin-top:10px}#usage-list button{margin:5px 0} .usage-badge{font-weight:700;color:#6a5426}
 
 .workspace-tabs{display:flex;gap:12px;margin-bottom:20px}.workspace-tabs button[aria-pressed=true]{background:#163e36;color:white;box-shadow:0 0 0 2px #87b8a1}.workspace-tabs button[aria-pressed=false]{background:#eaf1eb;color:#244737}
+
+.composition-images{display:flex;flex-wrap:wrap;gap:12px}.composition-images img{width:min(100%,440px);object-fit:contain}.composition-source{max-width:180px;max-height:150px;object-fit:contain}.composition-surface{padding:12px;background:#f5f7f3;border-radius:8px;margin:10px 0}
