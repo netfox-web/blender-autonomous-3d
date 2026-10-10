@@ -22,6 +22,7 @@ def main():
     from fox3d import print_assets, print_workspace, print_preview, asset_usage
     from fox3d.blender import find_blender
     from fox3d.ids import sha256_bytes
+    from fox3d.recipe_3d import atomic_json, read_json
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     clean=not subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip()
     if not clean and not args.allow_dirty:raise SystemExit('Formal evidence requires clean CODE')
@@ -76,10 +77,22 @@ def main():
                 reopen=subprocess.run([find_blender(),'-b',str(out/'model.blend'),'--python-exit-code','1','--python',str(ROOT/'scripts/check_print_blend.py'),'--',str(out)],capture_output=True,timeout=90,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
                 (folder/(layout+'-reopen.log')).write_bytes(reopen.stdout+reopen.stderr)
                 assert reopen.returncode==0 and b'PRINT_BLEND_REOPEN_PASS' in reopen.stdout,reopen.stdout[-1500:]
+                manifest_sha=sha256_bytes((out/'manifest.json').read_bytes())
+                pointer_path=out.parent.parent/'latest.json';pointer=read_json(pointer_path)
+                assert manifest_sha==read_json(out/'meta.json')['manifestSha256']==pointer['manifestSha256']
+                assert pointer['generationId']==s['generationId']
+                try:
+                    atomic_json(pointer_path,{**pointer,'manifestSha256':'0'*64})
+                    rejected=c.get(base+'/preview').json()
+                    assert not rejected['generated'] and rejected['manifest'] is None and rejected['generationId'] is None
+                finally:
+                    atomic_json(pointer_path,pointer)
+                assert c.get(base+'/preview').json()['generationId']==s['generationId']
                 case={'layout':layout,'jobId':jid,'generationId':s['generationId'],'planHash':p['planHash'],
                       'panels':p['panels'],'renderInfo':m['renderInfo'],'packedTextureAndUvReopen':True,
                       'proofBundleId':proof['bundleId'],'proofZipSha256':sha256_bytes(download.content),
-                      'manifestSha256':sha256_bytes((out/'manifest.json').read_bytes())}
+                      'manifestSha256':manifest_sha,'latestChainVerified':True,'latestTamperRejected':True,
+                      'integrityClassification':'REAL_OS_IO_INTEGRITY'}
                 evidence['cases'].append(case);print(json.dumps(case,ensure_ascii=False),flush=True)
             process.terminate();process.wait(timeout=30);process=start(c)
             for case in evidence['cases']:

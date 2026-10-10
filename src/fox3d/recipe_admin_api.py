@@ -69,7 +69,7 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
 
     @router.get("/admin/recipes/assets/{name}")
     def assets(name: str):
-        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js", "golden-product.js", "golden-product.css", "print-workspace.js", "print-workspace.css", "printfox-bridge.js", "printfox-bridge.css", "product-models.css", "product-models.js", "model-compositions.js"}:
+        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js", "golden-product.js", "golden-product.css", "print-workspace.js", "print-workspace.css", "printfox-bridge.js", "printfox-bridge.css", "product-models.css", "product-models.js", "model-compositions.js", "model-batches.js"}:
             raise HTTPException(404)
         return FileResponse(STATIC / name, media_type="text/css" if name.endswith("css") else "application/javascript")
 
