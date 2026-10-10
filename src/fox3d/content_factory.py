@@ -268,7 +268,12 @@ def build_articulated_state(
     state: str = "CLOSED",
     angle_deg: float = 75.0,
 ) -> dict[str, Any]:
-    """Computes explicit articulated component transforms from engineering parts."""
+    """DERIVED_RENDER_STATE only: legacy convenience, NOT engineering authority.
+
+    The 75-degree default and dimension-derived pivot are visualization behavior.
+    ArticulationSpec consumers must exact-resolve a separately authored source;
+    this output cannot be promoted by the authority verifier.
+    """
     state_norm = str(state).upper()
     angle = float(angle_deg) if state_norm == "OPEN" else 0.0
     angle_rad = -math.radians(angle)

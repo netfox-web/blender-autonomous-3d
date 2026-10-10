@@ -1296,6 +1296,7 @@ def _render_artwork_surface_mask(job: dict, applied: list, *, width: int, height
 
 
 def _set_door_articulation(created: dict, engineering: dict, angle_deg: float) -> list[dict]:
+    """Legacy render helper; returned transforms are OBSERVATION, never authority."""
     import math
     transforms = []
     angle_rad = -math.radians(angle_deg)

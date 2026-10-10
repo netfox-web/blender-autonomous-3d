@@ -1,5 +1,17 @@
 # Grok Progress Report
 
+## Issue #6 Round 3A — Articulation Engineering Authority Source V1 (2026-09-15)
+
+Instruction `4fb4f14a36e505255479397b905d18de13e1da8a`; independent main-based PR #14. CODE `791bf084caa05ad6369ebd1422f0a400e533f44c` passed exact Ubuntu/Windows CI **34917002099**, **953 tests per OS**. Local full regression: 953 passed; focused authority tests: 166 passed. Clean-CODE REAL_LOGIC acceptance `4173c17c-479d-404f-b69a-841ebfa7f2db` passed 18 adversarial probes; no Blender execution required or claimed.
+
+The additive source/schema/verifier/resolver pins authority revision, seal, exact identity, component set and provenance in a composite product authority hash. The old engineering hash is preserved. Four explicit synthetic door definitions are **FIXTURE_AUTHORITY**, not measured hardware truth. Legacy 75-degree helper output is DERIVED_RENDER_STATE / OBSERVATION and cannot be promoted to this contract.
+
+`ARTICULATION_AUTHORITY_LOGIC_READY=true`; `FIXTURE_AUTHORITY_READY=true`; `DOOR_OPEN_REAL=false`; `DOOR_OPEN_GROUND_TRUTH_READY=false`; `GLOBAL_PRODUCTION_READY=false`; `fullAutonomousFactoryReady=false`. PR13 remains HOLD and unmerged until the prerequisite is accepted and present on main. No physical machine, live provider or Supervisor LIVE readiness change.
+
+Full scope, trust boundary, limitations and machine-readable evidence: [ARTICULATION_AUTHORITY_ACCEPTANCE.md](ARTICULATION_AUTHORITY_ACCEPTANCE.md), [ARTICULATION_AUTHORITY_ACCEPTANCE.json](ARTICULATION_AUTHORITY_ACCEPTANCE.json). This separate DOCS commit still requires its own exact Ubuntu/Windows CI; final immutable DOCS SHA/run identities will be published in the Issue handoff. No merge authorization.
+
+## Historical reports (prior scopes retained)
+
 Repo: `netfox-web/blender-autonomous-3d`  
 Date: 2026-09-14  
 Source 旨令: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `2c7463b26f26361e3c94991f259a413da56a7057` (Event-Driven Supervisor Re-Gate Round 9 — LIVE E2E PRODUCTION GATE)  

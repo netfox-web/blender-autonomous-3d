@@ -1,0 +1,215 @@
+{
+  "scope": "ISSUE_6_ROUND_3A_AUTHORITY_ONLY",
+  "instructionSha": "4fb4f14a36e505255479397b905d18de13e1da8a",
+  "pr": 14,
+  "branch": "codex/articulation-authority-v1",
+  "baseSha": "4fb4f14a36e505255479397b905d18de13e1da8a",
+  "codeSha": "791bf084caa05ad6369ebd1422f0a400e533f44c",
+  "codeCi": {
+    "runId": 34917002099,
+    "headSha": "791bf084caa05ad6369ebd1422f0a400e533f44c",
+    "conclusion": "success",
+    "jobs": [
+      {
+        "id": 104216707968,
+        "name": "unit (ubuntu-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "testsPassed": 953,
+        "countMethod": "Passed-dot progress totals in exact job log (pytest double quiet suppresses summary)",
+        "logSha256": "19d2e6fc5caf1c39cf6cc37884e869e5ea7142797614dc6f89fd46ba917fcdcc"
+      },
+      {
+        "id": 104216708120,
+        "name": "unit (windows-latest)",
+        "status": "completed",
+        "conclusion": "success",
+        "testsPassed": 953,
+        "countMethod": "Passed-dot progress totals in exact job log (pytest double quiet suppresses summary)",
+        "logSha256": "533587b4e62008b55fce890135972be511f0f178e1103c67a6514dbdb2ddb7bf"
+      }
+    ]
+  },
+  "docsGate": {
+    "stateAtAuthoring": "PENDING_EXACT_DOCS_CI",
+    "identityLocation": "Final source Issue6 and Issue1 READY_FOR_RE_GATE contract after DOCS commit and exact dual CI."
+  },
+  "tests": {
+    "focusedPassed": 166,
+    "fullLocalPassed": 953,
+    "fullLocalWarnings": 1,
+    "fullLocalSeconds": 1090.02,
+    "regressionMockBlender": true
+  },
+  "acceptance": {
+    "status": "PASS",
+    "evidenceClass": "REAL_LOGIC + FIXTURE_AUTHORITY",
+    "identity": {
+      "engineeringHash": "c41383f71a761e56a04757e370841399b9cdfd28385fd9afa86b6208e84de0be",
+      "productId": "f899a8cc-5b16-43b6-9ede-c28a6acc6d39",
+      "productVersion": 1,
+      "sku": "VIDEO-REFERENCE-CABINET",
+      "tenantId": "video-reference"
+    },
+    "authorityHash": "84ee2872caaeb7dd9fb8efbc726b8ddf0bf18e802cf2238cec7fa82ab2c66202",
+    "authorityRevision": 1,
+    "productAuthorityHash": "85ebe5c1f55f26f013f60af5a62ecc3d552a39c69b410d1a61cc658f49bac9b3",
+    "fixtureSourceHash": "cf1a59ac3f743458342051ca54d71a9c3d8be97177959df7f45da77b129c3f9e",
+    "doorComponents": [
+      "door_1",
+      "door_2",
+      "door_3",
+      "door_4"
+    ],
+    "adversarialProbeCount": 18,
+    "adversarialProbes": {
+      "legacy_missing_binding": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ARTICULATION_AUTHORITY_MISSING"
+      },
+      "missing_source": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ARTICULATION_AUTHORITY_MISSING"
+      },
+      "duplicate_source": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "AMBIGUOUS_AUTHORITY_SET"
+      },
+      "wrong_tenantId": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ENGINEERING_IDENTITY_MISMATCH"
+      },
+      "wrong_productId": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ENGINEERING_IDENTITY_MISMATCH"
+      },
+      "wrong_sku": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ENGINEERING_IDENTITY_MISMATCH"
+      },
+      "wrong_productVersion": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ENGINEERING_IDENTITY_MISMATCH"
+      },
+      "wrong_engineeringHash": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "ENGINEERING_IDENTITY_MISMATCH"
+      },
+      "tamper_pivot": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "OPEN_TRANSFORM_CONTRADICTION"
+      },
+      "tamper_axis": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "AXIS_NOT_NORMALIZED"
+      },
+      "tamper_openAngleDeg": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "INVALID_ANGLE"
+      },
+      "tamper_authorityRevision": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "AUTHORITY_HASH_MISMATCH"
+      },
+      "tamper_authorityHash": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "AUTHORITY_HASH_MISMATCH"
+      },
+      "observation_not_authority": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "NOT_ENGINEERING_AUTHORITY"
+      },
+      "unknown_parent": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "UNKNOWN_PARENT"
+      },
+      "contradictory_open_transform": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "OPEN_TRANSFORM_CONTRADICTION"
+      },
+      "new_revision_old_pin": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "STALE_AUTHORITY_REVISION"
+      },
+      "stale_source_new_pin": {
+        "passed": true,
+        "status": "BLOCKED_ARTICULATION_AUTHORITY",
+        "reason": "STALE_AUTHORITY_REVISION"
+      }
+    },
+    "revisionChangesCacheIdentity": true,
+    "cacheIdentities": [
+      "638626093a444ee698144d948bb2818689f98bc9515705be60a298c186517227",
+      "39103b37141e0029de9684c012d5cbcca422e1ac774c0c3042e2b41b0edb5e6a"
+    ],
+    "articulationAuthorityLogicReady": true,
+    "fixtureAuthorityReady": true,
+    "realBlender": false,
+    "blenderInvoked": false,
+    "physicalArticulationTruth": false,
+    "doorOpenReal": false,
+    "doorOpenGroundTruthReady": false,
+    "liveProviderReady": false,
+    "globalProductionReady": false,
+    "fullAutonomousFactoryReady": false,
+    "limits": [
+      "Synthetic authority is not measured hardware truth.",
+      "Binding must come from a trusted reviewed product definition, not the candidate.",
+      "Integrity hash is not an approval signature.",
+      "Future video integration and REAL DOOR_OPEN acceptance remain gated."
+    ],
+    "generationId": "4173c17c-479d-404f-b69a-841ebfa7f2db",
+    "observedAt": "2026-09-15T01:46:46.902924+00:00",
+    "instructionSha": "4fb4f14a36e505255479397b905d18de13e1da8a",
+    "codeSha": "791bf084caa05ad6369ebd1422f0a400e533f44c",
+    "workingTreeClean": true
+  },
+  "truthMatrix": {
+    "REAL": "No new physical articulation or Blender execution.",
+    "REAL_LOGIC": [
+      "strict schema and numeric/transform verification",
+      "canonical authority sealing",
+      "exact pinned source resolution",
+      "composite product and future cache identity binding",
+      "fail-closed adversarial checks"
+    ],
+    "FIXTURE_AUTHORITY": "Explicit synthetic Round2 four-door engineering source; 60-degree canonical open authored before execution.",
+    "PARTIAL": [
+      "Not measured hardware or collision clearance truth",
+      "Existing Product Content OPEN helpers remain convenience behavior",
+      "Future video consumer must integrate this boundary after Re-Gate; no PR13 motion enabled",
+      "Trusted product bindings must be reviewed upstream; integrity seals are not signatures"
+    ],
+    "BLOCKED": [
+      "DOOR_OPEN_REAL",
+      "DOOR_OPEN_GROUND_TRUTH_READY",
+      "authoritative assembly/exploded motion",
+      "live H3/LTX/Vision/provider",
+      "Final Commerce Video",
+      "physical print/machines",
+      "Supervisor LIVE",
+      "globalProductionReady",
+      "fullAutonomousFactoryReady"
+    ]
+  },
+  "mergeAuthorized": false,
+  "stopAfterHandoff": true,
+  "cabinetPhysicalTruthChanged": false
+}

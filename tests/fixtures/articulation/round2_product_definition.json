@@ -1,0 +1,673 @@
+{
+  "articulationBinding": {
+    "articulationAuthorityHash": "84ee2872caaeb7dd9fb8efbc726b8ddf0bf18e802cf2238cec7fa82ab2c66202",
+    "authorityKind": "FIXTURE_AUTHORITY",
+    "authorityRevision": 1,
+    "componentSetHash": "dffc0310ce244c6ae85c6d6a4da4769f510f3524597c4fe5be0c3f3d84fc94b6",
+    "identity": {
+      "engineeringHash": "c41383f71a761e56a04757e370841399b9cdfd28385fd9afa86b6208e84de0be",
+      "productId": "f899a8cc-5b16-43b6-9ede-c28a6acc6d39",
+      "productVersion": 1,
+      "sku": "VIDEO-REFERENCE-CABINET",
+      "tenantId": "video-reference"
+    },
+    "productAuthorityHash": "85ebe5c1f55f26f013f60af5a62ecc3d552a39c69b410d1a61cc658f49bac9b3",
+    "schema": "PRODUCT_ARTICULATION_BINDING_V1"
+  },
+  "classification": "FIXTURE_AUTHORITY",
+  "componentSet": [
+    {
+      "closedLocalTransform": [
+        [
+          1,
+          0,
+          0,
+          -0.30000000000000004
+        ],
+        [
+          0,
+          1,
+          0,
+          -0.1565
+        ],
+        [
+          0,
+          0,
+          1,
+          0.45
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "componentId": "door_1",
+      "objectName": "DOOR_1",
+      "parentComponentId": "PRODUCT_ROOT",
+      "role": "door"
+    },
+    {
+      "closedLocalTransform": [
+        [
+          1,
+          0,
+          0,
+          -0.1
+        ],
+        [
+          0,
+          1,
+          0,
+          -0.1565
+        ],
+        [
+          0,
+          0,
+          1,
+          0.45
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "componentId": "door_2",
+      "objectName": "DOOR_2",
+      "parentComponentId": "PRODUCT_ROOT",
+      "role": "door"
+    },
+    {
+      "closedLocalTransform": [
+        [
+          1,
+          0,
+          0,
+          0.1
+        ],
+        [
+          0,
+          1,
+          0,
+          -0.1565
+        ],
+        [
+          0,
+          0,
+          1,
+          0.45
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "componentId": "door_3",
+      "objectName": "DOOR_3",
+      "parentComponentId": "PRODUCT_ROOT",
+      "role": "door"
+    },
+    {
+      "closedLocalTransform": [
+        [
+          1,
+          0,
+          0,
+          0.30000000000000004
+        ],
+        [
+          0,
+          1,
+          0,
+          -0.1565
+        ],
+        [
+          0,
+          0,
+          1,
+          0.45
+        ],
+        [
+          0,
+          0,
+          0,
+          1
+        ]
+      ],
+      "componentId": "door_4",
+      "objectName": "DOOR_4",
+      "parentComponentId": "PRODUCT_ROOT",
+      "role": "door"
+    }
+  ],
+  "engineering": {
+    "backPanel": true,
+    "backThickness": 3.0,
+    "boardThickness": 18.0,
+    "components": [
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "none",
+        "length": 900.0,
+        "location": [
+          -0.391,
+          0.0,
+          0.45
+        ],
+        "partId": "l_side",
+        "partName": "L_SIDE",
+        "partType": "left",
+        "quantity": 1,
+        "role": "left",
+        "size": [
+          0.018,
+          0.295,
+          0.9
+        ],
+        "thickness": 18.0,
+        "width": 295.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "none",
+        "length": 900.0,
+        "location": [
+          0.391,
+          0.0,
+          0.45
+        ],
+        "partId": "r_side",
+        "partName": "R_SIDE",
+        "partType": "right",
+        "quantity": 1,
+        "role": "right",
+        "size": [
+          0.018,
+          0.295,
+          0.9
+        ],
+        "thickness": 18.0,
+        "width": 295.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "length",
+        "length": 800.0,
+        "location": [
+          0.0,
+          0.0,
+          0.891
+        ],
+        "partId": "top",
+        "partName": "TOP",
+        "partType": "top",
+        "quantity": 1,
+        "role": "top",
+        "size": [
+          0.8,
+          0.295,
+          0.018
+        ],
+        "thickness": 18.0,
+        "width": 295.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "length",
+        "length": 764.0,
+        "location": [
+          0.0,
+          0.0,
+          0.009
+        ],
+        "partId": "bottom",
+        "partName": "BOTTOM",
+        "partType": "bottom",
+        "quantity": 1,
+        "role": "bottom",
+        "size": [
+          0.764,
+          0.295,
+          0.018
+        ],
+        "thickness": 18.0,
+        "width": 295.0
+      },
+      {
+        "edgeBanding": false,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": false,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "none",
+        "length": 764.0,
+        "location": [
+          0.0,
+          0.146,
+          0.45
+        ],
+        "partId": "back",
+        "partName": "BACK",
+        "partType": "back",
+        "quantity": 1,
+        "role": "back",
+        "size": [
+          0.794,
+          0.003,
+          0.894
+        ],
+        "thickness": 3,
+        "width": 864.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "length",
+        "length": 764.0,
+        "location": [
+          0.0,
+          -0.005,
+          0.225
+        ],
+        "partId": "shelf_1",
+        "partName": "SHELF_1",
+        "partType": "shelf",
+        "quantity": 1,
+        "role": "shelf",
+        "size": [
+          0.764,
+          0.27499999999999997,
+          0.018
+        ],
+        "thickness": 18.0,
+        "width": 275.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "length",
+        "length": 764.0,
+        "location": [
+          0.0,
+          -0.005,
+          0.45
+        ],
+        "partId": "shelf_2",
+        "partName": "SHELF_2",
+        "partType": "shelf",
+        "quantity": 1,
+        "role": "shelf",
+        "size": [
+          0.764,
+          0.27499999999999997,
+          0.018
+        ],
+        "thickness": 18.0,
+        "width": 275.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": false,
+          "front": true,
+          "left": false,
+          "right": false
+        },
+        "grainDirection": "length",
+        "length": 764.0,
+        "location": [
+          0.0,
+          -0.005,
+          0.675
+        ],
+        "partId": "shelf_3",
+        "partName": "SHELF_3",
+        "partType": "shelf",
+        "quantity": 1,
+        "role": "shelf",
+        "size": [
+          0.764,
+          0.27499999999999997,
+          0.018
+        ],
+        "thickness": 18.0,
+        "width": 275.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": true,
+          "front": true,
+          "left": true,
+          "right": true
+        },
+        "grainDirection": "length",
+        "length": 900.0,
+        "location": [
+          -0.30000000000000004,
+          -0.1565,
+          0.45
+        ],
+        "partId": "door_1",
+        "partName": "DOOR_1",
+        "partType": "door",
+        "quantity": 1,
+        "role": "door",
+        "size": [
+          0.2,
+          0.018,
+          0.9
+        ],
+        "thickness": 18.0,
+        "width": 200.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": true,
+          "front": true,
+          "left": true,
+          "right": true
+        },
+        "grainDirection": "length",
+        "length": 900.0,
+        "location": [
+          -0.1,
+          -0.1565,
+          0.45
+        ],
+        "partId": "door_2",
+        "partName": "DOOR_2",
+        "partType": "door",
+        "quantity": 1,
+        "role": "door",
+        "size": [
+          0.2,
+          0.018,
+          0.9
+        ],
+        "thickness": 18.0,
+        "width": 200.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": true,
+          "front": true,
+          "left": true,
+          "right": true
+        },
+        "grainDirection": "length",
+        "length": 900.0,
+        "location": [
+          0.1,
+          -0.1565,
+          0.45
+        ],
+        "partId": "door_3",
+        "partName": "DOOR_3",
+        "partType": "door",
+        "quantity": 1,
+        "role": "door",
+        "size": [
+          0.2,
+          0.018,
+          0.9
+        ],
+        "thickness": 18.0,
+        "width": 200.0
+      },
+      {
+        "edgeBanding": true,
+        "edgeBandingEdges": {
+          "back": true,
+          "front": true,
+          "left": true,
+          "right": true
+        },
+        "grainDirection": "length",
+        "length": 900.0,
+        "location": [
+          0.30000000000000004,
+          -0.1565,
+          0.45
+        ],
+        "partId": "door_4",
+        "partName": "DOOR_4",
+        "partType": "door",
+        "quantity": 1,
+        "role": "door",
+        "size": [
+          0.2,
+          0.018,
+          0.9
+        ],
+        "thickness": 18.0,
+        "width": 200.0
+      }
+    ],
+    "connections": [
+      {
+        "from": "L_SIDE",
+        "joint": "cam",
+        "to": "TOP"
+      },
+      {
+        "from": "R_SIDE",
+        "joint": "cam",
+        "to": "TOP"
+      },
+      {
+        "from": "L_SIDE",
+        "joint": "cam",
+        "to": "BOTTOM"
+      },
+      {
+        "from": "R_SIDE",
+        "joint": "cam",
+        "to": "BOTTOM"
+      }
+    ],
+    "constraints": {
+      "bays": 1
+    },
+    "depth": 295.0,
+    "doorCount": 4,
+    "drawerCount": 0,
+    "handleStyle": "bar",
+    "handles": true,
+    "hardware": [
+      {
+        "partName": "hinge",
+        "quantity": 8,
+        "sku": "hinge",
+        "vendorNeutralId": "HW_HINGE_CLIP_110"
+      },
+      {
+        "partName": "handle",
+        "quantity": 4,
+        "sku": "handle",
+        "vendorNeutralId": "HW_HANDLE_BAR"
+      },
+      {
+        "partName": "cam_lock",
+        "quantity": 16,
+        "sku": "cam_lock",
+        "vendorNeutralId": "HW_CAM_LOCK_15"
+      },
+      {
+        "partName": "dowel",
+        "quantity": 16,
+        "sku": "dowel",
+        "vendorNeutralId": "HW_DOWEL_8"
+      }
+    ],
+    "height": 900.0,
+    "horizontalPartitions": 0,
+    "kind": "STORAGE_CABINET",
+    "legs": false,
+    "material": "particle_board",
+    "metadata": {
+      "geometrySource": "SYNTHETIC_EXPLICIT_SIZE_LOCATION_FIXTURE"
+    },
+    "modules": [
+      {
+        "depth": 275.0,
+        "height": 288.0,
+        "kind": "CLOSED_COMPARTMENT",
+        "moduleId": "1bf6dadc-f805-43f0-a5d0-c90370a1abbf",
+        "notes": "",
+        "openingStyle": null,
+        "originX": 0.0,
+        "originY": 0.0,
+        "originZ": 234.0,
+        "quantity": 1,
+        "width": 764.0
+      },
+      {
+        "depth": 275.0,
+        "height": 288.0,
+        "kind": "CLOSED_COMPARTMENT",
+        "moduleId": "ddf8d73d-24f2-42da-a22b-36f39f7d2f1a",
+        "notes": "",
+        "openingStyle": null,
+        "originX": 0.0,
+        "originY": 0.0,
+        "originZ": 450.0,
+        "quantity": 1,
+        "width": 764.0
+      },
+      {
+        "depth": 275.0,
+        "height": 288.0,
+        "kind": "CLOSED_COMPARTMENT",
+        "moduleId": "8026eb30-dc4d-4265-b975-81e5eac86cfd",
+        "notes": "",
+        "openingStyle": null,
+        "originX": 0.0,
+        "originY": 0.0,
+        "originZ": 666.0,
+        "quantity": 1,
+        "width": 764.0
+      },
+      {
+        "depth": 18.0,
+        "height": 900.0,
+        "kind": "HINGED_DOOR",
+        "moduleId": "53fb02b7-112b-45ee-a6f1-3428917cce85",
+        "notes": "",
+        "openingStyle": "hinged",
+        "originX": 0.0,
+        "originY": 0.0,
+        "originZ": 0.0,
+        "quantity": 1,
+        "width": 200.0
+      },
+      {
+        "depth": 18.0,
+        "height": 900.0,
+        "kind": "HINGED_DOOR",
+        "moduleId": "db41d2ce-7ac0-492d-bcd2-fd8139d2370b",
+        "notes": "",
+        "openingStyle": "hinged",
+        "originX": 200.0,
+        "originY": 0.0,
+        "originZ": 0.0,
+        "quantity": 1,
+        "width": 200.0
+      },
+      {
+        "depth": 18.0,
+        "height": 900.0,
+        "kind": "HINGED_DOOR",
+        "moduleId": "7281e0a1-7034-4d4b-af69-6785f9f1f3b7",
+        "notes": "",
+        "openingStyle": "hinged",
+        "originX": 400.0,
+        "originY": 0.0,
+        "originZ": 0.0,
+        "quantity": 1,
+        "width": 200.0
+      },
+      {
+        "depth": 18.0,
+        "height": 900.0,
+        "kind": "HINGED_DOOR",
+        "moduleId": "1f6329eb-8496-4476-aec5-ce8117992262",
+        "notes": "",
+        "openingStyle": "hinged",
+        "originX": 600.0,
+        "originY": 0.0,
+        "originZ": 0.0,
+        "quantity": 1,
+        "width": 200.0
+      }
+    ],
+    "openingStyle": "hinged",
+    "parentProductId": null,
+    "plinthHeight": 0.0,
+    "productId": "f899a8cc-5b16-43b6-9ede-c28a6acc6d39",
+    "revision": 1,
+    "shelfCount": 3,
+    "sideFillerWidth": 0.0,
+    "tenantId": "video-reference",
+    "thickness": 18.0,
+    "toeKickHeight": 0.0,
+    "topFillerHeight": 0.0,
+    "verticalPartitions": null,
+    "wallClearance": 0.0,
+    "width": 800.0
+  },
+  "identity": {
+    "engineeringHash": "c41383f71a761e56a04757e370841399b9cdfd28385fd9afa86b6208e84de0be",
+    "productId": "f899a8cc-5b16-43b6-9ede-c28a6acc6d39",
+    "productVersion": 1,
+    "sku": "VIDEO-REFERENCE-CABINET",
+    "tenantId": "video-reference"
+  },
+  "parentIds": [
+    "PRODUCT_ROOT"
+  ],
+  "sourceGeneration": "d320a651-c2a4-403e-9322-a37630fcea6e"
+}
