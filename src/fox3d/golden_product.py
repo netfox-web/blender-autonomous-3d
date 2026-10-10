@@ -224,7 +224,7 @@ def validate_worker_observation(observed, package, spec):
         if not near(got.get("size"),want["size"]) or not near(got.get("location"),want["location"]):
             raise ValueError("Worker geometry differs from mm authority")
     rows=observed.get("artwork",[])
-    if len(rows)!=3:
+    if len(rows)!=len(package['placements']):
         raise ValueError("Worker artwork count mismatch")
     for want,got in zip(package["placements"],rows):
         for key in ("componentId","objectName","placementHash","finalUvHash","artworkHash","surfaceHash"):

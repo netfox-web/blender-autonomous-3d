@@ -1,0 +1,269 @@
+{
+  "scope": "USER_AUTHORIZED_ARTWORK_PRINT_WORKSPACE",
+  "codeCommit": "a8a9def4750135ab38e33499fe1c543ad601aacd",
+  "codeCiRunId": 34825977605,
+  "codeCiUrl": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34825977605",
+  "codeCiJobs": [
+    {
+      "jobId": 103918125584,
+      "name": "unit (ubuntu-latest)",
+      "passed": 849,
+      "conclusion": "success"
+    },
+    {
+      "jobId": 103918125963,
+      "name": "unit (windows-latest)",
+      "passed": 849,
+      "conclusion": "success"
+    }
+  ],
+  "testCount": 849,
+  "focusedPrintTests": 21,
+  "focusedPrintAndGoldenTests": 62,
+  "formalEvidence": {
+    "evidenceId": "de87a0b9-1610-454c-be93-e2dab2f5ea71",
+    "codeCommit": "a8a9def4750135ab38e33499fe1c543ad601aacd",
+    "workingTreeClean": true,
+    "developmentOnly": false,
+    "originalAssetSha256": "c6fa3b337cc1066e7f888c2cd0f728df5cf03dea4775c2595f9de74dbea1598b",
+    "sourceName": "雙三印刷.ai",
+    "cases": [
+      {
+        "layout": "THREE_DOOR",
+        "jobId": "d7411740-2ed8-461d-9852-bef852021483",
+        "generationId": "b1c2e8b0-237c-4494-9236-c9b3e1ec0302",
+        "planHash": "236f361199af2f292d85b3f8b7bf65cdb06067727117f13192f25422abd98861",
+        "panels": [
+          {
+            "index": 0,
+            "label": "原稿第 1 頁",
+            "quantity": 1,
+            "assetId": "c6fa3b337cc1066e7f888c2cd0f728df5cf03dea4775c2595f9de74dbea1598b",
+            "page": 0,
+            "rotation": 90,
+            "sourceName": "雙三印刷.ai",
+            "sourceType": "PDF",
+            "sourceTruth": "USER_PROVIDED_SOURCE",
+            "widthMm": 400.9989722222222,
+            "heightMm": 286.00011944444435,
+            "trimWidthMm": 395.0003600555555,
+            "trimHeightMm": 280.0000961666666,
+            "trimBoxMm": [
+              3.0000010555555554,
+              3.0000222222221886,
+              398.0003611111111,
+              283.0001183888888
+            ],
+            "sourceColor": "SOURCE_PDF_PRESERVED",
+            "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+            "face": "FRONT_OF_SELECTED_PART"
+          },
+          {
+            "index": 1,
+            "label": "原稿第 2 頁",
+            "quantity": 1,
+            "assetId": "c6fa3b337cc1066e7f888c2cd0f728df5cf03dea4775c2595f9de74dbea1598b",
+            "page": 1,
+            "rotation": 90,
+            "sourceName": "雙三印刷.ai",
+            "sourceType": "PDF",
+            "sourceTruth": "USER_PROVIDED_SOURCE",
+            "widthMm": 400.9989722222222,
+            "heightMm": 286.00011944444435,
+            "trimWidthMm": 395.0003600555555,
+            "trimHeightMm": 280.0000961666666,
+            "trimBoxMm": [
+              3.0000010555555554,
+              3.0000222222221886,
+              398.0003611111111,
+              283.0001183888888
+            ],
+            "sourceColor": "SOURCE_PDF_PRESERVED",
+            "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+            "face": "FRONT_OF_SELECTED_PART"
+          },
+          {
+            "index": 2,
+            "label": "原稿第 3 頁",
+            "quantity": 1,
+            "assetId": "c6fa3b337cc1066e7f888c2cd0f728df5cf03dea4775c2595f9de74dbea1598b",
+            "page": 2,
+            "rotation": 90,
+            "sourceName": "雙三印刷.ai",
+            "sourceType": "PDF",
+            "sourceTruth": "USER_PROVIDED_SOURCE",
+            "widthMm": 400.9989722222222,
+            "heightMm": 286.00011944444435,
+            "trimWidthMm": 395.0003600555555,
+            "trimHeightMm": 280.0000961666666,
+            "trimBoxMm": [
+              3.0000010555555554,
+              3.0000222222221886,
+              398.0003611111111,
+              283.0001183888888
+            ],
+            "sourceColor": "SOURCE_PDF_PRESERVED",
+            "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+            "face": "FRONT_OF_SELECTED_PART"
+          }
+        ],
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        },
+        "packedTextureAndUvReopen": true,
+        "proofBundleId": "7774a084-d0ce-4545-a2ac-858ad29a98f4",
+        "proofZipSha256": "6cc3b6737b3f826b915ce648acf003cdeff768cf626ce369e6a592ddeec46a76",
+        "manifestSha256": "72423e7815c940c12c50af2d7c37996a9b681acc6ee8862a61c6342605ce0a8a"
+      },
+      {
+        "layout": "FLAT",
+        "jobId": "8b45d4e7-4af3-4d5b-b0a1-ce1b5cffd86e",
+        "generationId": "52b8d3d3-92be-4826-a6fd-cd9e2855d30e",
+        "planHash": "b55d3950a2c7d932175a6bc4bdf8c2a50b8710a3a04155675d00a6e05129d451",
+        "panels": [
+          {
+            "index": 0,
+            "label": "原稿第 1 頁",
+            "quantity": 1,
+            "assetId": "c6fa3b337cc1066e7f888c2cd0f728df5cf03dea4775c2595f9de74dbea1598b",
+            "page": 0,
+            "rotation": 90,
+            "sourceName": "雙三印刷.ai",
+            "sourceType": "PDF",
+            "sourceTruth": "USER_PROVIDED_SOURCE",
+            "widthMm": 400.9989722222222,
+            "heightMm": 286.00011944444435,
+            "trimWidthMm": 395.0003600555555,
+            "trimHeightMm": 280.0000961666666,
+            "trimBoxMm": [
+              3.0000010555555554,
+              3.0000222222221886,
+              398.0003611111111,
+              283.0001183888888
+            ],
+            "sourceColor": "SOURCE_PDF_PRESERVED",
+            "sizeAuthority": "SOURCE_LAYOUT_NOT_MEASURED_PART",
+            "face": "FRONT_OF_SELECTED_PART"
+          }
+        ],
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "device": "OPTIX",
+          "blenderVersion": "5.2.1 LTS",
+          "realOptix": true
+        },
+        "packedTextureAndUvReopen": true,
+        "proofBundleId": "41a96851-689a-4d41-b7e1-26b4616ee666",
+        "proofZipSha256": "dbbea7d9fa206fc0129be03532dfbb8e35842f008d1c9e7a616adf12453a75ab",
+        "manifestSha256": "5b2482b48d77f6e3b3aa88a3328bb7644681983389e52f7c2343dd611a744734"
+      }
+    ],
+    "liveMachineControl": false,
+    "netfoxIntegration": "FILE_HANDOFF_ONLY_NOT_SUBMITTED",
+    "physicalMeasurementsVerified": false,
+    "actualArtworkReleased": false,
+    "status": "PASS",
+    "restartVerified": true
+  },
+  "localEvidencePath": "E:\\projects\\sonaqueen-recipe-library\\.fox3d-work\\print-e2e\\de87a0b9\\evidence.json",
+  "sourceInventoryCount": 4451,
+  "userJobs": [
+    {
+      "jobId": "fab2bbb7-67c3-4262-80b9-9be733238677",
+      "generationId": "b2af1862-9658-414a-922e-1fbec2863d90",
+      "proofId": "f55b87c8-6dab-4d34-af60-5c2263b51dd6",
+      "pageMapping": [
+        1,
+        2,
+        6
+      ],
+      "rotation": 90,
+      "sku": "DN067301",
+      "release": null
+    },
+    {
+      "sku": "DN067302",
+      "jobId": "b92c33a4-9242-43b9-b693-bc30ebabec81",
+      "generationId": "64754f6d-3014-4b4f-83de-cd08c4e07e59",
+      "proofId": "3badbb88-baa6-408c-9089-d77ce7029274",
+      "sourcePages": [
+        3,
+        4,
+        5
+      ],
+      "rotation": 90,
+      "release": null
+    }
+  ],
+  "netfoxReadOnlyInspection": {
+    "scope": "READ_ONLY",
+    "sourceRoot": "/data/apps/mw/web/uvprint",
+    "sourceHashes": {
+      "api/app.py": "71b5c9977c533fd0223007fb636f4728dbb3f0b0da49714de9d4755fa67dc506",
+      "api/layout_engine.py": "b8d7888924dad78d880f427cbeed2719691c908316c5908634a466a0c5aac562",
+      "api_proxy.php": "ae9ad1f0b853fbf094211d4acc064aca393d1622e7636d1a659a33aba4f96999"
+    },
+    "jobAttachmentFormats": [
+      "pdf",
+      "zip"
+    ],
+    "layoutInputs": "CSV plus JPG/PNG",
+    "backendPort": 5050,
+    "hostListenerObserved": false,
+    "phpContainerHttpStatus": "000",
+    "remoteChanges": false,
+    "credentialsRead": false,
+    "liveDispatch": false,
+    "runtimeProbe": {
+      "pythonVersion": "3.14.4",
+      "flaskImport": "ModuleNotFoundError"
+    },
+    "databaseLastModifiedUtc": "2026-07-03T17:19:09Z",
+    "dataAuthority": "LEGACY_JOB_DATA_UNCONFIRMED_NOT_REQUIRED_FOR_LOCAL_WORKBENCH",
+    "userReportedStatus": {
+      "jobs": "RARELY_USED_STATUS_UNKNOWN",
+      "imageImposition": "WORKING_USER_REPORTED",
+      "exactWorkingEntry": "PENDING_IDENTIFICATION"
+    },
+    "inspectedLayoutUI": {
+      "template": "AI die/template",
+      "list": "CSV/TXT",
+      "images": [
+        "JPG",
+        "JPEG",
+        "PNG"
+      ],
+      "endpoint": "POST /api/layout/generate",
+      "scalesToSlot": true,
+      "nativePdfDirectImport": false
+    },
+    "inspectedMergeRoute": {
+      "file": "merge_layout.php",
+      "endpoint": "http://127.0.0.1:5050/api/layout/generate",
+      "canMutateJobs": true,
+      "invoked": false
+    },
+    "nextStep": "Identify working imposition entry and validate physical-size/color contract; do not restore unused job backend as prerequisite."
+  },
+  "readiness": {
+    "artworkLibraryReady": true,
+    "sourceSizePdfProofReady": true,
+    "realBlenderPreviewReady": true,
+    "humanReleaseLogicTested": true,
+    "actualArtworkReleased": false,
+    "physicalPrintValidated": false,
+    "netfoxLiveIntegrationReady": false,
+    "liveMachineControl": false,
+    "manufacturingReady": false,
+    "productionReady": false,
+    "nativeNetfoxLayoutImportReady": false
+  },
+  "docsCiStatus": "PENDING_SEPARATE_DOCS_COMMIT",
+  "nextAuthorizedIssue": 6,
+  "nextInstructionSha": "7f8126144c6d26996b0f91843a4023748e466b79"
+}

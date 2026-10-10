@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>圖稿與 UV 印刷工作台｜收納王妃</title>
+<link rel="stylesheet" href="/admin/recipes/assets/print-workspace.css?v=1">
+<script defer src="/admin/recipes/assets/recipe-viewer.js"></script><script defer src="/admin/recipes/assets/print-workspace.js?v=1"></script></head>
+<body><header><div><p class="eyebrow">SONAQUEEN · PRODUCT STUDIO</p><h1>圖稿與 UV 印刷工作台</h1><p>保留原稿尺寸，套圖看效果，核對後交給印刷人員。</p></div>
+<nav><a href="/admin/recipes">Recipe 庫</a><a href="/admin/recipes/golden">三層櫃工作台</a><a href="https://aioffice.com.tw/uvprint/" target="_blank" rel="noopener">NetFox Print ↗</a></nav></header>
+<div id="notice" role="status" aria-live="polite">正在載入工作台…</div>
+<main><aside><section><h2>已建立的商品</h2><button id="new">＋ 建立印刷商品</button><div id="jobs" class="list"></div></section>
+<section><h2>原稿資料庫</h2><p>來源唯讀。選取後另存到工作台，保留原檔。</p><form id="search"><label>搜尋來源檔案<input id="query" placeholder="例如 DN0673、門板、print"></label><button>搜尋</button></form><p id="sourceCount"></p><div id="sources" class="list"></div><button id="more" class="secondary">載入更多</button><button id="refresh" class="secondary">重新掃描來源</button>
+<label class="upload">或上傳自己的原稿<input id="upload" type="file" accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff"></label><small>PDF 相容 AI、PDF、JPG、PNG、TIFF；每檔上限 150 MB。</small></section></aside>
+<article><section><div class="section-title"><h2>1 · 選擇商品與印刷面</h2><span id="version" class="badge">尚未儲存</span></div>
+<form id="editor"><div class="fields"><label>商品編號<input id="sku" required placeholder="DN067301"></label><label>商品名稱<input id="name" required placeholder="維尼花草風三層門櫃"></label><label>套圖方式<select id="layout"><option value="THREE_DOOR">三層櫃 · 三片門</option><option value="FLAT">單片 · 門片／背板／平板商品</option></select></label></div>
+<div id="panels"></div><details><summary>印刷交接設定</summary><div class="fields"><label>RIP 軟體<input id="rip" value="RasterLink 6"></label><label>實際機台<input id="machine" placeholder="請填現場使用的機台"></label><label>材質／表面處理<input id="substrate" placeholder="請填實際板材與塗層"></label></div></details><button id="save">儲存設定</button></form><div id="dimensions"></div></section>
+<section><h2>2 · 查看 3D 套圖與校稿</h2><p class="hint">印刷面依原稿裁切框建模；櫃身深度、板厚與間隙為示意設定，尚未實測。螢幕 RGB 預覽不能代替現場色彩打樣。</p><div class="preview-grid"><div id="viewer"></div><div id="rendered"><p>儲存後可生成實際套圖。</p></div></div>
+<div class="actions"><button id="generate" disabled>生成 3D 套圖</button><button id="cancel" disabled class="secondary">取消生成</button><button id="proof" disabled class="secondary">產生校稿下載包</button></div><p id="previewStatus"></p><div id="downloads"></div></section>
+<section><h2>3 · 人員核對後下載印刷檔</h2><p>校稿包有紅色浮水印。完成板件量測與實體打樣後，可下載原尺寸 PDF 交給 RIP，以 100% 比例匯入。</p>
+<form id="releaseForm"><div class="checks"><label><input type="checkbox" name="dimensionsChecked" required> 已實測板件，確認裁切尺寸</label><label><input type="checkbox" name="orderAndOrientationChecked" required> 已開啟校稿，確認圖稿順序與方向</label><label><input type="checkbox" name="bleedAndKeepOutChecked" required> 已核對出血、孔位、治具原點與禁印區</label><label><input type="checkbox" name="colorWhiteVarnishTestPassed" required> 已完成材質、色彩、白墨／光油的現場打樣</label><label><input type="checkbox" name="ripScale100Confirmed" required> 已確認 RIP 使用 100% 比例，未自動縮放</label></div>
+<div class="fields"><label>確認人員<input name="operator" minlength="2" maxlength="100" required></label><label>量測紀錄<textarea name="measurementRecord" minlength="8" maxlength="2000" required placeholder="實測尺寸、量測日期及治具位置"></textarea></label><label>打樣紀錄<textarea name="testPrintRecord" minlength="8" maxlength="2000" required placeholder="打樣編號、材質設定與檢查結果"></textarea></label></div><button id="release" disabled>確認並產生印刷下載包</button></form><p class="hint">NetFox Print 目前採檔案交接，下載包附交接清單。尚未連線建立工單，也不會送入熱資料夾或啟動 UV 機。</p><div id="released"></div></section></article></main></body></html>
