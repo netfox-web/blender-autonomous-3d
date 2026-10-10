@@ -46,5 +46,6 @@
   $('generate').onclick=()=>action(async()=>{const r=await api('/jobs/'+current.id+'/preview',{method:'POST',body:JSON.stringify(version())});renderTask=r.taskId;await poll(current.id,epoch);message('已送交本機 Blender 生成套圖。');});
   $('cancel').onclick=()=>action(async()=>{await api('/jobs/'+current.id+'/preview/cancel',{method:'POST',body:JSON.stringify({taskId:renderTask})});message('已要求取消生成，正在等待 Blender 結束。');});
   window.addEventListener('beforeunload',e=>{if(dirty&&current){e.preventDefault();e.returnValue='';}});
+  window.addEventListener('printfox:imported',()=>{const refresh=()=>{if(busy){setTimeout(refresh,300);return;}action(async()=>{await loadAssets();const d=draft();panelRows(d.panels);message('PrintFox 原圖已匯入，可在各印刷面的原稿清單選取。請核對比例、毫米尺寸與解析度。');});};refresh();});
   action(async()=>{await loadAssets();panelRows([{}, {}, {}]);await loadJobs();await sources();message('工作台已就緒。先選取原稿，再建立印刷商品。');});
 })();

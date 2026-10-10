@@ -2,14 +2,25 @@
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>圖稿與 UV 印刷工作台｜收納王妃</title>
 <link rel="stylesheet" href="/admin/recipes/assets/print-workspace.css?v=1">
-<script defer src="/admin/recipes/assets/recipe-viewer.js"></script><script defer src="/admin/recipes/assets/print-workspace.js?v=1"></script></head>
+<link rel="stylesheet" href="/admin/recipes/assets/printfox-bridge.css?v=1"><script defer src="/admin/recipes/assets/printfox-bridge.js?v=1"></script>
+<script defer src="/admin/recipes/assets/recipe-viewer.js"></script><script defer src="/admin/recipes/assets/print-workspace.js?v=2"></script></head>
 <body><header><div><p class="eyebrow">SONAQUEEN · PRODUCT STUDIO</p><h1>圖稿與 UV 印刷工作台</h1><p>保留原稿尺寸，套圖看效果，核對後交給印刷人員。</p></div>
 <nav><a href="/admin/recipes">Recipe 庫</a><a href="/admin/recipes/golden">三層櫃工作台</a><a href="https://aioffice.com.tw/uvprint/" target="_blank" rel="noopener">NetFox Print ↗</a></nav></header>
 <div id="notice" role="status" aria-live="polite">正在載入工作台…</div>
 <main><aside><section><h2>已建立的商品</h2><button id="new">＋ 建立印刷商品</button><div id="jobs" class="list"></div></section>
 <section><h2>原稿資料庫</h2><p>來源唯讀。選取後另存到工作台，保留原檔。</p><form id="search"><label>搜尋來源檔案<input id="query" placeholder="例如 DN0673、門板、print"></label><button>搜尋</button></form><p id="sourceCount"></p><div id="sources" class="list"></div><button id="more" class="secondary">載入更多</button><button id="refresh" class="secondary">重新掃描來源</button>
 <label class="upload">或上傳自己的原稿<input id="upload" type="file" accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff"></label><small>PDF 相容 AI、PDF、JPG、PNG、TIFF；每檔上限 150 MB。</small></section></aside>
-<article><section><div class="section-title"><h2>1 · 選擇商品與印刷面</h2><span id="version" class="badge">尚未儲存</span></div>
+<article>
+<section id="printfox-panel"><details open><summary>AI 圖庫與生圖 · PrintFox</summary>
+<p>從 PrintFox 選原圖，或輸入描述產生新圖。匯入後在下方商品選擇原稿，核對實際尺寸再套圖。</p>
+<p>服務：<span id="pf-origin"></span> · <span id="pf-connection-status">檢查中…</span></p>
+<form id="pf-connect"><div class="fields"><label>PrintFox Token<input id="pf-token" type="password" autocomplete="off" maxlength="4096" required placeholder="由操作人員自行輸入"></label></div><button id="pf-connect-button">連接 PrintFox</button><button id="pf-disconnect" type="button" class="secondary" disabled>中斷連線</button></form>
+<small>Token 僅傳給上列 PrintFox 服務，暫存於本機服務記憶體一小時；不寫入檔案，重啟後需重新連接。</small>
+<div id="pf-message" role="status" aria-live="polite"></div>
+<div id="pf-work" hidden><form id="pf-search"><label>搜尋設計圖<input id="pf-query" maxlength="150" placeholder="圖稿名稱或編號"></label><button>搜尋圖庫</button><button id="pf-refresh" type="button" class="secondary">更新圖庫與進度</button></form><p id="pf-count"></p><div id="pf-designs" class="pf-grid"></div><button id="pf-more" type="button" class="secondary">載入更多設計</button>
+<details><summary>輸入描述，產生新圖</summary><form id="pf-generate"><label>圖案描述<textarea id="pf-prompt" required minlength="3" maxlength="3000" placeholder="例如：淡綠色植物線條、米白底色、簡約風格"></textarea></label><label>避免出現的內容<input id="pf-negative" maxlength="1500" placeholder="例如：文字、商標"></label><div class="fields"><label>生圖引擎<select id="pf-engine"><option value="comfyui">本地 ComfyUI</option><option value="grok_imagine">grok imagine · 既有雲端引擎</option></select></label><label>圖稿比例<select id="pf-size"><option value="wide">橫式 1216 × 832</option><option value="sq">正方形 1024 × 1024</option><option value="tall">直式 832 × 1216</option><option value="cabinet">長直式 768 × 1344</option></select></label><label>張數<input id="pf-number" type="number" min="1" max="4" value="1" required></label></div><p>按下生圖會使用所選引擎執行一次，最多 4 張。圖稿比例、像素與色彩仍需核對；工作台不會拉伸圖片或自動放行印刷。</p><button id="pf-generate-button">送出一次生圖</button></form></details>
+<h3>此工作台的生圖任務</h3><div id="pf-tasks"></div></div></details></section>
+<section><div class="section-title"><h2>1 · 選擇商品與印刷面</h2><span id="version" class="badge">尚未儲存</span></div>
 <form id="editor"><div class="fields"><label>商品編號<input id="sku" required placeholder="DN067301"></label><label>商品名稱<input id="name" required placeholder="維尼花草風三層門櫃"></label><label>套圖方式<select id="layout"><option value="THREE_DOOR">三層櫃 · 三片門</option><option value="FLAT">單片 · 門片／背板／平板商品</option></select></label></div>
 <div id="panels"></div><details><summary>印刷交接設定</summary><div class="fields"><label>RIP 軟體<input id="rip" value="RasterLink 6"></label><label>實際機台<input id="machine" placeholder="請填現場使用的機台"></label><label>材質／表面處理<input id="substrate" placeholder="請填實際板材與塗層"></label></div></details><button id="save">儲存設定</button></form><div id="dimensions"></div></section>
 <section><h2>2 · 查看 3D 套圖與校稿</h2><p class="hint">印刷面依原稿裁切框建模；櫃身深度、板厚與間隙為示意設定，尚未實測。螢幕 RGB 預覽不能代替現場色彩打樣。</p><div class="preview-grid"><div id="viewer"></div><div id="rendered"><p>儲存後可生成實際套圖。</p></div></div>

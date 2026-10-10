@@ -32,6 +32,8 @@ class Cancel(BaseModel):
 
 def print_router(provider):
     r=APIRouter();services={};lock=RLock()
+    from fox3d.printfox_api import printfox_router
+    r.include_router(printfox_router(provider))
     def root():return provider().root
     def call(fn,*args,**kwargs):
         try:return fn(*args,**kwargs)
