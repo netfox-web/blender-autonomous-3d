@@ -30,6 +30,8 @@ STATIC = Path(__file__).with_name("static")
 
 def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
     router = APIRouter()
+    from fox3d.golden_api import golden_router
+    router.include_router(golden_router(provider))
     stores = {}
     services = {}
     lock = RLock()
@@ -63,7 +65,7 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
 
     @router.get("/admin/recipes/assets/{name}")
     def assets(name: str):
-        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js"}:
+        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js", "golden-product.js", "golden-product.css"}:
             raise HTTPException(404)
         return FileResponse(STATIC / name, media_type="text/css" if name.endswith("css") else "application/javascript")
 

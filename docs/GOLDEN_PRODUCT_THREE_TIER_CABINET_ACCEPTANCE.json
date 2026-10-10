@@ -1,0 +1,5127 @@
+{
+  "generationId": "b1d53004-3a4c-4f6d-b192-1ebb85877a6d",
+  "evidenceCodeCommit": "c9f685854a964d567643cab55f06aceb0c7375d2",
+  "workingTreeClean": true,
+  "developmentOnly": false,
+  "instructionIssue": 4,
+  "realBlender": true,
+  "usedMock": false,
+  "products": [
+    {
+      "sku": "KU002101",
+      "version": "FIXTURE_MASTER_V1",
+      "generationId": "479a7782-530e-4734-98bf-bb0ad441a19e",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+      "artworkHash": "1d9fbae3ea42d95f8721df725eae880da0152b40ddc4e66b2b1dd8350227cbda",
+      "packageHash": "9e670ba6435932442904c6ef00e75851c67aeb0c314b028c9be8cfef82215066",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "realOptix": true,
+        "device": "OPTIX",
+        "samples": 32,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "manifestSha256": "365baa928db89dc975536bc0b0234ea7552fc30763dc8ff1984375e682c1c47f",
+      "manifest": {
+        "generationId": "479a7782-530e-4734-98bf-bb0ad441a19e",
+        "sku": "KU002101",
+        "version": "FIXTURE_MASTER_V1",
+        "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+        "package": {
+          "sku": "KU002101",
+          "version": "FIXTURE_MASTER_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "sources": [
+            {
+              "name": "fixture-1.png",
+              "widthPx": 390,
+              "heightPx": 866,
+              "rgbSha256": "c6ea97ffaa6369060ce26bd761f50cc427144ff6e8453cd2eacabbcd2a46fc66",
+              "fileSha256": "074d22e93531a7fbfc194fd2a3ec195bc58b791c9b53b53a8bdbff9563d4ca78",
+              "truth": "FIXTURE"
+            }
+          ],
+          "truth": "FIXTURE",
+          "artworkHash": "1d9fbae3ea42d95f8721df725eae880da0152b40ddc4e66b2b1dd8350227cbda",
+          "placements": [
+            {
+              "sku": "KU002101",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "1d9fbae3ea42d95f8721df725eae880da0152b40ddc4e66b2b1dd8350227cbda",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb",
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "order": 1,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "c6ea97ffaa6369060ce26bd761f50cc427144ff6e8453cd2eacabbcd2a46fc66",
+                "fileSha256": "074d22e93531a7fbfc194fd2a3ec195bc58b791c9b53b53a8bdbff9563d4ca78",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.6812933025404158,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "8f152822878aca8309da227d037c54ddee92ae227f0a631dd5f8537c1243c3d5",
+              "placementId": "8f152822878aca8309da227d037c54ddee92ae227f0a631dd5f8537c1243c3d5",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "9b5f817094730fab71c6a2b0e82b7bc5fab02264fa8c6cfdd5bec42730f2dc8b"
+            },
+            {
+              "sku": "KU002101",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "1d9fbae3ea42d95f8721df725eae880da0152b40ddc4e66b2b1dd8350227cbda",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367",
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "order": 2,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "c6ea97ffaa6369060ce26bd761f50cc427144ff6e8453cd2eacabbcd2a46fc66",
+                "fileSha256": "074d22e93531a7fbfc194fd2a3ec195bc58b791c9b53b53a8bdbff9563d4ca78",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 295.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 295,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.3406466512702079,
+                "u1": 1.0,
+                "v1": 0.6593533487297921
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "e9a4342cc6e23910f094066c159d663b4e45f36e5dd77076fcc038bcc7548b76",
+              "placementId": "e9a4342cc6e23910f094066c159d663b4e45f36e5dd77076fcc038bcc7548b76",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.6593533487297921
+                ],
+                [
+                  0.0,
+                  0.6593533487297921
+                ]
+              ],
+              "finalUvHash": "9ed5bb6fb0908f400e007a88e409c56411c87361c12129a57645381f5f79c545"
+            },
+            {
+              "sku": "KU002101",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "1d9fbae3ea42d95f8721df725eae880da0152b40ddc4e66b2b1dd8350227cbda",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f",
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "order": 3,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "c6ea97ffaa6369060ce26bd761f50cc427144ff6e8453cd2eacabbcd2a46fc66",
+                "fileSha256": "074d22e93531a7fbfc194fd2a3ec195bc58b791c9b53b53a8bdbff9563d4ca78",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 590.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 590,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 0.3187066974595843
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "653ad2bf992a78156f416b05b334fd8128ae6f9553ef3cba7df2887d19d0c5b3",
+              "placementId": "653ad2bf992a78156f416b05b334fd8128ae6f9553ef3cba7df2887d19d0c5b3",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.3187066974595843
+                ],
+                [
+                  0.0,
+                  0.3187066974595843
+                ]
+              ],
+              "finalUvHash": "0c101d5d47eccf10b88a2fcf90b6155bb67c5eb7527a759f299896bafb00ec9b"
+            }
+          ],
+          "ready": true,
+          "doorOrder": "TOP_TO_BOTTOM",
+          "masterCanvasMm": [
+            390.0,
+            866.0
+          ],
+          "seamsMm": [
+            19.0,
+            19.0
+          ],
+          "productionReady": false,
+          "productionCropScope": "TRIM_ONLY; bleed and unknown keep-outs need print authority",
+          "packageHash": "9e670ba6435932442904c6ef00e75851c67aeb0c314b028c9be8cfef82215066"
+        },
+        "production": [
+          {
+            "componentId": "door_1",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "8f152822878aca8309da227d037c54ddee92ae227f0a631dd5f8537c1243c3d5",
+            "finalUvHash": "9b5f817094730fab71c6a2b0e82b7bc5fab02264fa8c6cfdd5bec42730f2dc8b",
+            "productionArtworkHash": "3f5a66f5c23207e3359fcc9c23b3b5b7f20f5e607bd241a12bbf3cca436be77b",
+            "file": "door_1-production-trim.png"
+          },
+          {
+            "componentId": "door_2",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 295.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 295,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "e9a4342cc6e23910f094066c159d663b4e45f36e5dd77076fcc038bcc7548b76",
+            "finalUvHash": "9ed5bb6fb0908f400e007a88e409c56411c87361c12129a57645381f5f79c545",
+            "productionArtworkHash": "79191bbc3850262916ad685d5f358ab816b34f3b94a6428a65dddbd194c25316",
+            "file": "door_2-production-trim.png"
+          },
+          {
+            "componentId": "door_3",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 590.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 590,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "653ad2bf992a78156f416b05b334fd8128ae6f9553ef3cba7df2887d19d0c5b3",
+            "finalUvHash": "0c101d5d47eccf10b88a2fcf90b6155bb67c5eb7527a759f299896bafb00ec9b",
+            "productionArtworkHash": "233c6f9bcacfd4e2a6a7d4ecb988a7057c3eb2fc17179b761c508efd439c0321",
+            "file": "door_3-production-trim.png"
+          }
+        ],
+        "spec": {
+          "width": 424.0,
+          "depth": 295.0,
+          "height": 900.0,
+          "thickness": 15.0,
+          "material": "white_wood",
+          "components": [
+            {
+              "componentId": "left_side",
+              "partName": "左側板",
+              "role": "left",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                -204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                -0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "right_side",
+              "partName": "右側板",
+              "role": "right",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "top_panel",
+              "partName": "頂板",
+              "role": "top",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                892.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.8925
+              ]
+            },
+            {
+              "componentId": "bottom_panel",
+              "partName": "底板",
+              "role": "bottom",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                7.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.0075
+              ]
+            },
+            {
+              "componentId": "back_panel",
+              "partName": "背板",
+              "role": "back",
+              "sizeMm": [
+                394.0,
+                3.0,
+                870.0
+              ],
+              "locationMm": [
+                0.0,
+                146.0,
+                450.0
+              ],
+              "size": [
+                0.394,
+                0.003,
+                0.87
+              ],
+              "location": [
+                0.0,
+                0.146,
+                0.45
+              ]
+            },
+            {
+              "componentId": "shelf_1",
+              "partName": "內層板 1",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                302.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.3025
+              ]
+            },
+            {
+              "componentId": "shelf_2",
+              "partName": "內層板 2",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                597.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.5975
+              ]
+            },
+            {
+              "componentId": "door_1",
+              "partName": "門片 1（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                745.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.745
+              ]
+            },
+            {
+              "componentId": "door_2",
+              "partName": "門片 2（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                450.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.45
+              ]
+            },
+            {
+              "componentId": "door_3",
+              "partName": "門片 3（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                155.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.155
+              ]
+            }
+          ],
+          "goldenRecipe": true,
+          "recipePreview": true,
+          "recipeId": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "doorCount": 3,
+          "shelfCount": 2,
+          "engineeringReady": false,
+          "productionReady": false
+        },
+        "files": {
+          "beauty.png": {
+            "sha256": "e8e44fe5b8ae26e84e8e3bc5f87a0faa03c83c006eec3e0bd72f8e212bac2883",
+            "sizeBytes": 735749
+          },
+          "door-detail.png": {
+            "sha256": "8ba04bc0e73ea6e7720d6656b3866d1235435c2bd149f1e238268062da9904ac",
+            "sizeBytes": 739915
+          },
+          "door_1-production-trim.png": {
+            "sha256": "3f5a66f5c23207e3359fcc9c23b3b5b7f20f5e607bd241a12bbf3cca436be77b",
+            "sizeBytes": 184990
+          },
+          "door_2-production-trim.png": {
+            "sha256": "79191bbc3850262916ad685d5f358ab816b34f3b94a6428a65dddbd194c25316",
+            "sizeBytes": 184865
+          },
+          "door_3-production-trim.png": {
+            "sha256": "233c6f9bcacfd4e2a6a7d4ecb988a7057c3eb2fc17179b761c508efd439c0321",
+            "sizeBytes": 184998
+          },
+          "fixture-1.png": {
+            "sha256": "074d22e93531a7fbfc194fd2a3ec195bc58b791c9b53b53a8bdbff9563d4ca78",
+            "sizeBytes": 580316
+          },
+          "front-closed.png": {
+            "sha256": "60c1982aba956bae14edb3ab32e76a8be09692460e4cc8c1c619e55700e54a86",
+            "sizeBytes": 740004
+          },
+          "geometry.json": {
+            "sha256": "67362ad5b87eb48420410ba8d776a44f8b1da08778ddcea9cdcc4c0f4bb92bd8",
+            "sizeBytes": 1665
+          },
+          "golden-observation.json": {
+            "sha256": "216e42a0ec141cce10e79d90e5e0de3417b982f1bdb045ef87cf30a1bb0d2759",
+            "sizeBytes": 6759
+          },
+          "model.blend": {
+            "sha256": "b36cd94f33c068b8f09026896a9823bfb4803799dbf9c358a60d061a1812dce1",
+            "sizeBytes": 2704167
+          },
+          "model.glb": {
+            "sha256": "3763aa97e72d6c7967da0d84623040e7fe17bd523a37102455501554b6fe7658",
+            "sizeBytes": 600972
+          }
+        },
+        "jobId": "5c575eb7-67cf-457c-a12f-29dc13ab94bc",
+        "requestedJobId": "5c575eb7-67cf-457c-a12f-29dc13ab94bc",
+        "cacheHit": false,
+        "views": {
+          "HERO_45": "beauty.png",
+          "FRONT_CLOSED": "front-closed.png",
+          "DOOR_DETAIL": "door-detail.png",
+          "FRONT_OPEN": "BLOCKED"
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "realOptix": true,
+          "device": "OPTIX",
+          "samples": 32,
+          "blenderVersion": "5.2.1 LTS"
+        },
+        "truth": {
+          "dimensions": "CONFIG — Issue #4 declared dimensions",
+          "thickness": "ESTIMATED",
+          "hardware": "UNKNOWN",
+          "FRONT_OPEN": "BLOCKED — no verified hinge/articulation",
+          "engineeringReady": false,
+          "productionReady": false,
+          "manufacturingReady": false,
+          "liveMachineControl": false
+        },
+        "artworkTruth": "FIXTURE",
+        "manufacturing": {
+          "scope": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+          "bomCandidate": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "boardList": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "printableSurfaces": [
+            {
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                0.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb"
+            },
+            {
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                295.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367"
+            },
+            {
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                590.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f"
+            }
+          ],
+          "nestingInput": {
+            "parts": [
+              {
+                "componentId": "left_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "right_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "top_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "bottom_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "back_panel",
+                "quantity": 1,
+                "lengthMm": 870.0,
+                "widthMm": 394.0,
+                "thicknessMm": 3.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_1",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_2",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_1",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_2",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_3",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              }
+            ],
+            "sheetSizeMm": null,
+            "kerfMm": null,
+            "grainDirection": "UNKNOWN"
+          },
+          "wasteRemnantInput": {
+            "netBoardAreaMm2": 1645860.0,
+            "stockSheets": null,
+            "remnants": null,
+            "wastePercent": null,
+            "status": "BLOCKED_STOCK_AND_KERF_REQUIRED"
+          },
+          "manufacturingReady": false
+        }
+      },
+      "blendReopenVerified": true
+    },
+    {
+      "sku": "KT015101",
+      "version": "FIXTURE_MASTER_V1",
+      "generationId": "9d2f0c29-385f-4113-8481-6e4b6785ce8b",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+      "artworkHash": "02d90f2aa8359713c6aecd26e6bad704b0b11823f7c61d742b93b72d20db1629",
+      "packageHash": "263e5829a5ed8d5bb2acdddc17f4a7d7db3f58027d5352e0add315120314b74c",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "realOptix": true,
+        "device": "OPTIX",
+        "samples": 32,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "manifestSha256": "592dffcb0347bab02a040a00e037f890fed22ff38f99087771c6abee8837628b",
+      "manifest": {
+        "generationId": "9d2f0c29-385f-4113-8481-6e4b6785ce8b",
+        "sku": "KT015101",
+        "version": "FIXTURE_MASTER_V1",
+        "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+        "package": {
+          "sku": "KT015101",
+          "version": "FIXTURE_MASTER_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "sources": [
+            {
+              "name": "fixture-1.png",
+              "widthPx": 390,
+              "heightPx": 866,
+              "rgbSha256": "06f5b42b3acf843dbfd2840a723a8f0f1a808e5da302926e907cb45d1d97c1c0",
+              "fileSha256": "500df0ca3a1333a2e8295ffc0401f8e0af4a281d06baf1b04a5b9947e26f8de8",
+              "truth": "FIXTURE"
+            }
+          ],
+          "truth": "FIXTURE",
+          "artworkHash": "02d90f2aa8359713c6aecd26e6bad704b0b11823f7c61d742b93b72d20db1629",
+          "placements": [
+            {
+              "sku": "KT015101",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "02d90f2aa8359713c6aecd26e6bad704b0b11823f7c61d742b93b72d20db1629",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb",
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "order": 1,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "06f5b42b3acf843dbfd2840a723a8f0f1a808e5da302926e907cb45d1d97c1c0",
+                "fileSha256": "500df0ca3a1333a2e8295ffc0401f8e0af4a281d06baf1b04a5b9947e26f8de8",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.6812933025404158,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "9fb061778aec09b7e5a3dfadb95fddcde81c2abbdacd69464951dd96e633dd7c",
+              "placementId": "9fb061778aec09b7e5a3dfadb95fddcde81c2abbdacd69464951dd96e633dd7c",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "92fa2c320fc99b1a2acecc5caa93c20d877d84e075ea0b6e608c1f0d12d5ca91"
+            },
+            {
+              "sku": "KT015101",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "02d90f2aa8359713c6aecd26e6bad704b0b11823f7c61d742b93b72d20db1629",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367",
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "order": 2,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "06f5b42b3acf843dbfd2840a723a8f0f1a808e5da302926e907cb45d1d97c1c0",
+                "fileSha256": "500df0ca3a1333a2e8295ffc0401f8e0af4a281d06baf1b04a5b9947e26f8de8",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 295.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 295,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.3406466512702079,
+                "u1": 1.0,
+                "v1": 0.6593533487297921
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "c91619e93ad5dddb0d02186913124cec39c87a728d80eff62680ff4bce772e73",
+              "placementId": "c91619e93ad5dddb0d02186913124cec39c87a728d80eff62680ff4bce772e73",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.6593533487297921
+                ],
+                [
+                  0.0,
+                  0.6593533487297921
+                ]
+              ],
+              "finalUvHash": "5498aae8b8d1f6509d16bd04685369903397e7d5e3ea67d23f83005abcf0a19c"
+            },
+            {
+              "sku": "KT015101",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "02d90f2aa8359713c6aecd26e6bad704b0b11823f7c61d742b93b72d20db1629",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f",
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "order": 3,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "06f5b42b3acf843dbfd2840a723a8f0f1a808e5da302926e907cb45d1d97c1c0",
+                "fileSha256": "500df0ca3a1333a2e8295ffc0401f8e0af4a281d06baf1b04a5b9947e26f8de8",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 590.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 590,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 0.3187066974595843
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "e2ede303afb93841839f6a1dbbcea347e4a2c53a0810076110bf8fec6593e020",
+              "placementId": "e2ede303afb93841839f6a1dbbcea347e4a2c53a0810076110bf8fec6593e020",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.3187066974595843
+                ],
+                [
+                  0.0,
+                  0.3187066974595843
+                ]
+              ],
+              "finalUvHash": "c2760bac8a82bd2e0bc232299b05121897341b91705d06a90bda18933bd42482"
+            }
+          ],
+          "ready": true,
+          "doorOrder": "TOP_TO_BOTTOM",
+          "masterCanvasMm": [
+            390.0,
+            866.0
+          ],
+          "seamsMm": [
+            19.0,
+            19.0
+          ],
+          "productionReady": false,
+          "productionCropScope": "TRIM_ONLY; bleed and unknown keep-outs need print authority",
+          "packageHash": "263e5829a5ed8d5bb2acdddc17f4a7d7db3f58027d5352e0add315120314b74c"
+        },
+        "production": [
+          {
+            "componentId": "door_1",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "9fb061778aec09b7e5a3dfadb95fddcde81c2abbdacd69464951dd96e633dd7c",
+            "finalUvHash": "92fa2c320fc99b1a2acecc5caa93c20d877d84e075ea0b6e608c1f0d12d5ca91",
+            "productionArtworkHash": "fd6c71681fbcaeb39971761bb00d6442bc6553618d2043d5adac77a8a92569ff",
+            "file": "door_1-production-trim.png"
+          },
+          {
+            "componentId": "door_2",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 295.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 295,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "c91619e93ad5dddb0d02186913124cec39c87a728d80eff62680ff4bce772e73",
+            "finalUvHash": "5498aae8b8d1f6509d16bd04685369903397e7d5e3ea67d23f83005abcf0a19c",
+            "productionArtworkHash": "6de899ee32d39f23a17175edfc6785551d892db259a964818e34a315ef700a2c",
+            "file": "door_2-production-trim.png"
+          },
+          {
+            "componentId": "door_3",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 590.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 590,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "e2ede303afb93841839f6a1dbbcea347e4a2c53a0810076110bf8fec6593e020",
+            "finalUvHash": "c2760bac8a82bd2e0bc232299b05121897341b91705d06a90bda18933bd42482",
+            "productionArtworkHash": "00156a3bf5d39b356d7a1993765913d8c344e94fc2bdfc1045b43a0049bf1c2d",
+            "file": "door_3-production-trim.png"
+          }
+        ],
+        "spec": {
+          "width": 424.0,
+          "depth": 295.0,
+          "height": 900.0,
+          "thickness": 15.0,
+          "material": "white_wood",
+          "components": [
+            {
+              "componentId": "left_side",
+              "partName": "左側板",
+              "role": "left",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                -204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                -0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "right_side",
+              "partName": "右側板",
+              "role": "right",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "top_panel",
+              "partName": "頂板",
+              "role": "top",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                892.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.8925
+              ]
+            },
+            {
+              "componentId": "bottom_panel",
+              "partName": "底板",
+              "role": "bottom",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                7.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.0075
+              ]
+            },
+            {
+              "componentId": "back_panel",
+              "partName": "背板",
+              "role": "back",
+              "sizeMm": [
+                394.0,
+                3.0,
+                870.0
+              ],
+              "locationMm": [
+                0.0,
+                146.0,
+                450.0
+              ],
+              "size": [
+                0.394,
+                0.003,
+                0.87
+              ],
+              "location": [
+                0.0,
+                0.146,
+                0.45
+              ]
+            },
+            {
+              "componentId": "shelf_1",
+              "partName": "內層板 1",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                302.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.3025
+              ]
+            },
+            {
+              "componentId": "shelf_2",
+              "partName": "內層板 2",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                597.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.5975
+              ]
+            },
+            {
+              "componentId": "door_1",
+              "partName": "門片 1（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                745.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.745
+              ]
+            },
+            {
+              "componentId": "door_2",
+              "partName": "門片 2（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                450.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.45
+              ]
+            },
+            {
+              "componentId": "door_3",
+              "partName": "門片 3（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                155.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.155
+              ]
+            }
+          ],
+          "goldenRecipe": true,
+          "recipePreview": true,
+          "recipeId": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "doorCount": 3,
+          "shelfCount": 2,
+          "engineeringReady": false,
+          "productionReady": false
+        },
+        "files": {
+          "beauty.png": {
+            "sha256": "33d526a69d99a5563328e4306eb4466ff35b7e7332ac04a318d9cd1797e69b56",
+            "sizeBytes": 733005
+          },
+          "door-detail.png": {
+            "sha256": "b9f549e44feab3fc0489784a3973cb95a613031e8f359f0abcce3d747a77ba8d",
+            "sizeBytes": 736693
+          },
+          "door_1-production-trim.png": {
+            "sha256": "fd6c71681fbcaeb39971761bb00d6442bc6553618d2043d5adac77a8a92569ff",
+            "sizeBytes": 184829
+          },
+          "door_2-production-trim.png": {
+            "sha256": "6de899ee32d39f23a17175edfc6785551d892db259a964818e34a315ef700a2c",
+            "sizeBytes": 184992
+          },
+          "door_3-production-trim.png": {
+            "sha256": "00156a3bf5d39b356d7a1993765913d8c344e94fc2bdfc1045b43a0049bf1c2d",
+            "sizeBytes": 184990
+          },
+          "fixture-1.png": {
+            "sha256": "500df0ca3a1333a2e8295ffc0401f8e0af4a281d06baf1b04a5b9947e26f8de8",
+            "sizeBytes": 580256
+          },
+          "front-closed.png": {
+            "sha256": "b0ceed1e2bcf11d5ece20d690ebe8902f3e0e3ae98d57ce8ab511aab4b9bb459",
+            "sizeBytes": 736396
+          },
+          "geometry.json": {
+            "sha256": "67362ad5b87eb48420410ba8d776a44f8b1da08778ddcea9cdcc4c0f4bb92bd8",
+            "sizeBytes": 1665
+          },
+          "golden-observation.json": {
+            "sha256": "589c3193a78310f8161dd67a5b5252a2f82a2b0beed02ccdcdaa6d11d5d1e76e",
+            "sizeBytes": 6759
+          },
+          "model.blend": {
+            "sha256": "be7bb6a8bba60083f8f2b42161fcfba7e549b618da973104cf195e2ebb8c312e",
+            "sizeBytes": 2703987
+          },
+          "model.glb": {
+            "sha256": "339dacb7760e1e6416357737ab8c116bd5435e7554562803c6a09c330bcb8cb9",
+            "sizeBytes": 600912
+          }
+        },
+        "jobId": "d055f1a8-8871-4d01-82c7-629a5ff426c5",
+        "requestedJobId": "d055f1a8-8871-4d01-82c7-629a5ff426c5",
+        "cacheHit": false,
+        "views": {
+          "HERO_45": "beauty.png",
+          "FRONT_CLOSED": "front-closed.png",
+          "DOOR_DETAIL": "door-detail.png",
+          "FRONT_OPEN": "BLOCKED"
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "realOptix": true,
+          "device": "OPTIX",
+          "samples": 32,
+          "blenderVersion": "5.2.1 LTS"
+        },
+        "truth": {
+          "dimensions": "CONFIG — Issue #4 declared dimensions",
+          "thickness": "ESTIMATED",
+          "hardware": "UNKNOWN",
+          "FRONT_OPEN": "BLOCKED — no verified hinge/articulation",
+          "engineeringReady": false,
+          "productionReady": false,
+          "manufacturingReady": false,
+          "liveMachineControl": false
+        },
+        "artworkTruth": "FIXTURE",
+        "manufacturing": {
+          "scope": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+          "bomCandidate": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "boardList": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "printableSurfaces": [
+            {
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                0.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb"
+            },
+            {
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                295.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367"
+            },
+            {
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                590.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f"
+            }
+          ],
+          "nestingInput": {
+            "parts": [
+              {
+                "componentId": "left_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "right_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "top_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "bottom_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "back_panel",
+                "quantity": 1,
+                "lengthMm": 870.0,
+                "widthMm": 394.0,
+                "thicknessMm": 3.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_1",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_2",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_1",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_2",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_3",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              }
+            ],
+            "sheetSizeMm": null,
+            "kerfMm": null,
+            "grainDirection": "UNKNOWN"
+          },
+          "wasteRemnantInput": {
+            "netBoardAreaMm2": 1645860.0,
+            "stockSheets": null,
+            "remnants": null,
+            "wastePercent": null,
+            "status": "BLOCKED_STOCK_AND_KERF_REQUIRED"
+          },
+          "manufacturingReady": false
+        }
+      },
+      "blendReopenVerified": true
+    },
+    {
+      "sku": "CN003701",
+      "version": "FIXTURE_MASTER_V1",
+      "generationId": "ce93d958-27e6-4584-a1b4-c45cd334170a",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+      "artworkHash": "8c945ff37773a66345e4f7f996b75ed16fc54f59fcbec158e3b654f1416092de",
+      "packageHash": "f1d37981b317ce049036428f5194c66f3f6568dd6c6ba457e80e38f9d19acb3d",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "realOptix": true,
+        "device": "OPTIX",
+        "samples": 32,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "manifestSha256": "81a9fdbf8e257e457824e09ed5c5b70efd8b96fb20a76257349bebcbafe5f82a",
+      "manifest": {
+        "generationId": "ce93d958-27e6-4584-a1b4-c45cd334170a",
+        "sku": "CN003701",
+        "version": "FIXTURE_MASTER_V1",
+        "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+        "package": {
+          "sku": "CN003701",
+          "version": "FIXTURE_MASTER_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "sources": [
+            {
+              "name": "fixture-1.png",
+              "widthPx": 390,
+              "heightPx": 866,
+              "rgbSha256": "cd82b6b43c5674a5fa264e15a7061aba92ab48a965da76be06d17e17f1985125",
+              "fileSha256": "d47a4380b0c7a729b5f7da5990ec4f8fdd8d8e5ee81a3db36b5381d47d1425e8",
+              "truth": "FIXTURE"
+            }
+          ],
+          "truth": "FIXTURE",
+          "artworkHash": "8c945ff37773a66345e4f7f996b75ed16fc54f59fcbec158e3b654f1416092de",
+          "placements": [
+            {
+              "sku": "CN003701",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "8c945ff37773a66345e4f7f996b75ed16fc54f59fcbec158e3b654f1416092de",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb",
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "order": 1,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "cd82b6b43c5674a5fa264e15a7061aba92ab48a965da76be06d17e17f1985125",
+                "fileSha256": "d47a4380b0c7a729b5f7da5990ec4f8fdd8d8e5ee81a3db36b5381d47d1425e8",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.6812933025404158,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "829b7a96b2a7ddc81c4cb9591ebaf2cc8cbde733ad585b19443032874e8fd7db",
+              "placementId": "829b7a96b2a7ddc81c4cb9591ebaf2cc8cbde733ad585b19443032874e8fd7db",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "d1cf5b451d2582e843809e0f46228e020168f01ebdd4830c86e043800e405416"
+            },
+            {
+              "sku": "CN003701",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "8c945ff37773a66345e4f7f996b75ed16fc54f59fcbec158e3b654f1416092de",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367",
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "order": 2,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "cd82b6b43c5674a5fa264e15a7061aba92ab48a965da76be06d17e17f1985125",
+                "fileSha256": "d47a4380b0c7a729b5f7da5990ec4f8fdd8d8e5ee81a3db36b5381d47d1425e8",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 295.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 295,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.3406466512702079,
+                "u1": 1.0,
+                "v1": 0.6593533487297921
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "97a7cfb26825020c0520fefeb72a6677d2bee965a5d57ae310718d65889925ac",
+              "placementId": "97a7cfb26825020c0520fefeb72a6677d2bee965a5d57ae310718d65889925ac",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.6593533487297921
+                ],
+                [
+                  0.0,
+                  0.6593533487297921
+                ]
+              ],
+              "finalUvHash": "92f9c6feb74c08c1c2396f8722f96ef26f8b7a259ac7785c49d025a46906858d"
+            },
+            {
+              "sku": "CN003701",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "8c945ff37773a66345e4f7f996b75ed16fc54f59fcbec158e3b654f1416092de",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f",
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "order": 3,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "cd82b6b43c5674a5fa264e15a7061aba92ab48a965da76be06d17e17f1985125",
+                "fileSha256": "d47a4380b0c7a729b5f7da5990ec4f8fdd8d8e5ee81a3db36b5381d47d1425e8",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 590.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 590,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 0.3187066974595843
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "f5fd9829d9f1b20981e599a06ba25f6acc6e7a8eab7a6bc4292f6aab37a8aba2",
+              "placementId": "f5fd9829d9f1b20981e599a06ba25f6acc6e7a8eab7a6bc4292f6aab37a8aba2",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.3187066974595843
+                ],
+                [
+                  0.0,
+                  0.3187066974595843
+                ]
+              ],
+              "finalUvHash": "ba87ab8edc427e7fd32aa1589a1cb3e4c37340d647e8eeb140fd9a881f66d41c"
+            }
+          ],
+          "ready": true,
+          "doorOrder": "TOP_TO_BOTTOM",
+          "masterCanvasMm": [
+            390.0,
+            866.0
+          ],
+          "seamsMm": [
+            19.0,
+            19.0
+          ],
+          "productionReady": false,
+          "productionCropScope": "TRIM_ONLY; bleed and unknown keep-outs need print authority",
+          "packageHash": "f1d37981b317ce049036428f5194c66f3f6568dd6c6ba457e80e38f9d19acb3d"
+        },
+        "production": [
+          {
+            "componentId": "door_1",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "829b7a96b2a7ddc81c4cb9591ebaf2cc8cbde733ad585b19443032874e8fd7db",
+            "finalUvHash": "d1cf5b451d2582e843809e0f46228e020168f01ebdd4830c86e043800e405416",
+            "productionArtworkHash": "8b4d5cddae0bae7a8a55c200dd908d317f5bc2db22d3e44c53729f34b1d5cc46",
+            "file": "door_1-production-trim.png"
+          },
+          {
+            "componentId": "door_2",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 295.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 295,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "97a7cfb26825020c0520fefeb72a6677d2bee965a5d57ae310718d65889925ac",
+            "finalUvHash": "92f9c6feb74c08c1c2396f8722f96ef26f8b7a259ac7785c49d025a46906858d",
+            "productionArtworkHash": "ca4c92669d6ee063821e09ac74aeadf70f045f230fd03d735b706ad5ec2b5b32",
+            "file": "door_2-production-trim.png"
+          },
+          {
+            "componentId": "door_3",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 590.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 590,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "f5fd9829d9f1b20981e599a06ba25f6acc6e7a8eab7a6bc4292f6aab37a8aba2",
+            "finalUvHash": "ba87ab8edc427e7fd32aa1589a1cb3e4c37340d647e8eeb140fd9a881f66d41c",
+            "productionArtworkHash": "2c8e5eeb3eb395752fe63db942e821d41ad15e9a6b5829562ed1eb5acfc0762c",
+            "file": "door_3-production-trim.png"
+          }
+        ],
+        "spec": {
+          "width": 424.0,
+          "depth": 295.0,
+          "height": 900.0,
+          "thickness": 15.0,
+          "material": "white_wood",
+          "components": [
+            {
+              "componentId": "left_side",
+              "partName": "左側板",
+              "role": "left",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                -204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                -0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "right_side",
+              "partName": "右側板",
+              "role": "right",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "top_panel",
+              "partName": "頂板",
+              "role": "top",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                892.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.8925
+              ]
+            },
+            {
+              "componentId": "bottom_panel",
+              "partName": "底板",
+              "role": "bottom",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                7.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.0075
+              ]
+            },
+            {
+              "componentId": "back_panel",
+              "partName": "背板",
+              "role": "back",
+              "sizeMm": [
+                394.0,
+                3.0,
+                870.0
+              ],
+              "locationMm": [
+                0.0,
+                146.0,
+                450.0
+              ],
+              "size": [
+                0.394,
+                0.003,
+                0.87
+              ],
+              "location": [
+                0.0,
+                0.146,
+                0.45
+              ]
+            },
+            {
+              "componentId": "shelf_1",
+              "partName": "內層板 1",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                302.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.3025
+              ]
+            },
+            {
+              "componentId": "shelf_2",
+              "partName": "內層板 2",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                597.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.5975
+              ]
+            },
+            {
+              "componentId": "door_1",
+              "partName": "門片 1（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                745.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.745
+              ]
+            },
+            {
+              "componentId": "door_2",
+              "partName": "門片 2（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                450.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.45
+              ]
+            },
+            {
+              "componentId": "door_3",
+              "partName": "門片 3（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                155.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.155
+              ]
+            }
+          ],
+          "goldenRecipe": true,
+          "recipePreview": true,
+          "recipeId": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "doorCount": 3,
+          "shelfCount": 2,
+          "engineeringReady": false,
+          "productionReady": false
+        },
+        "files": {
+          "beauty.png": {
+            "sha256": "8894d129bb3b2275b04160947f872930755caff2b0fc3cf5b52061a1933dcee5",
+            "sizeBytes": 732731
+          },
+          "door-detail.png": {
+            "sha256": "af71418eacea597c233c7aaa59edb9acb6707af62ec7058dd1fdbe28949fdad9",
+            "sizeBytes": 731182
+          },
+          "door_1-production-trim.png": {
+            "sha256": "8b4d5cddae0bae7a8a55c200dd908d317f5bc2db22d3e44c53729f34b1d5cc46",
+            "sizeBytes": 185168
+          },
+          "door_2-production-trim.png": {
+            "sha256": "ca4c92669d6ee063821e09ac74aeadf70f045f230fd03d735b706ad5ec2b5b32",
+            "sizeBytes": 185176
+          },
+          "door_3-production-trim.png": {
+            "sha256": "2c8e5eeb3eb395752fe63db942e821d41ad15e9a6b5829562ed1eb5acfc0762c",
+            "sizeBytes": 185185
+          },
+          "fixture-1.png": {
+            "sha256": "d47a4380b0c7a729b5f7da5990ec4f8fdd8d8e5ee81a3db36b5381d47d1425e8",
+            "sizeBytes": 581001
+          },
+          "front-closed.png": {
+            "sha256": "ccbc2c766baf512ca4245928a90a62176fa1708afb3ec399662adf41cc22f1b6",
+            "sizeBytes": 734067
+          },
+          "geometry.json": {
+            "sha256": "67362ad5b87eb48420410ba8d776a44f8b1da08778ddcea9cdcc4c0f4bb92bd8",
+            "sizeBytes": 1665
+          },
+          "golden-observation.json": {
+            "sha256": "3136ec5e2ecc62ba92d7c17a83e12b3334b00e5b7a186e97c2e92696c829dc80",
+            "sizeBytes": 6759
+          },
+          "model.blend": {
+            "sha256": "833111c78f5c26ff0c339aebc30fd6537ef63f557e7fe75c3f8a21b3c15b4dd4",
+            "sizeBytes": 2706222
+          },
+          "model.glb": {
+            "sha256": "b8e50e6830c6f7cb70336d235866b176c5b7ea67ef67d8b57cd45b1030d86c0a",
+            "sizeBytes": 601660
+          }
+        },
+        "jobId": "e050495f-5e2d-4457-8faa-687e73d7efe3",
+        "requestedJobId": "e050495f-5e2d-4457-8faa-687e73d7efe3",
+        "cacheHit": false,
+        "views": {
+          "HERO_45": "beauty.png",
+          "FRONT_CLOSED": "front-closed.png",
+          "DOOR_DETAIL": "door-detail.png",
+          "FRONT_OPEN": "BLOCKED"
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "realOptix": true,
+          "device": "OPTIX",
+          "samples": 32,
+          "blenderVersion": "5.2.1 LTS"
+        },
+        "truth": {
+          "dimensions": "CONFIG — Issue #4 declared dimensions",
+          "thickness": "ESTIMATED",
+          "hardware": "UNKNOWN",
+          "FRONT_OPEN": "BLOCKED — no verified hinge/articulation",
+          "engineeringReady": false,
+          "productionReady": false,
+          "manufacturingReady": false,
+          "liveMachineControl": false
+        },
+        "artworkTruth": "FIXTURE",
+        "manufacturing": {
+          "scope": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+          "bomCandidate": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "boardList": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "printableSurfaces": [
+            {
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                0.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb"
+            },
+            {
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                295.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367"
+            },
+            {
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                590.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f"
+            }
+          ],
+          "nestingInput": {
+            "parts": [
+              {
+                "componentId": "left_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "right_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "top_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "bottom_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "back_panel",
+                "quantity": 1,
+                "lengthMm": 870.0,
+                "widthMm": 394.0,
+                "thicknessMm": 3.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_1",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_2",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_1",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_2",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_3",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              }
+            ],
+            "sheetSizeMm": null,
+            "kerfMm": null,
+            "grainDirection": "UNKNOWN"
+          },
+          "wasteRemnantInput": {
+            "netBoardAreaMm2": 1645860.0,
+            "stockSheets": null,
+            "remnants": null,
+            "wastePercent": null,
+            "status": "BLOCKED_STOCK_AND_KERF_REQUIRED"
+          },
+          "manufacturingReady": false
+        }
+      },
+      "blendReopenVerified": true
+    },
+    {
+      "sku": "PN010201",
+      "version": "FIXTURE_MASTER_V1",
+      "generationId": "800d4e27-ce48-48ba-9955-b4517e6f1990",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+      "artworkHash": "fdb3d0ce452970fdc46314aad0586cce6dc74ab7c8f82b9277909acf2f8f9205",
+      "packageHash": "0c393b408daa6498f6c6b6ad17977fb81530f35e84cae1883f27ce26e6654d45",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "realOptix": true,
+        "device": "OPTIX",
+        "samples": 32,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "manifestSha256": "a706a0002c8afefe4fc87a18627b1d46241df026d0f51edbbe699cffdd922398",
+      "manifest": {
+        "generationId": "800d4e27-ce48-48ba-9955-b4517e6f1990",
+        "sku": "PN010201",
+        "version": "FIXTURE_MASTER_V1",
+        "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+        "package": {
+          "sku": "PN010201",
+          "version": "FIXTURE_MASTER_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "sources": [
+            {
+              "name": "fixture-1.png",
+              "widthPx": 390,
+              "heightPx": 866,
+              "rgbSha256": "188ba99c03b6986a5ee5e60b7a6922baaa88ef857be96f29427165a8bd3c3971",
+              "fileSha256": "9dfdab5f2c6e77bf4449d552ebe92dfaeabff9f76d76e59bd97309028be5c66c",
+              "truth": "FIXTURE"
+            }
+          ],
+          "truth": "FIXTURE",
+          "artworkHash": "fdb3d0ce452970fdc46314aad0586cce6dc74ab7c8f82b9277909acf2f8f9205",
+          "placements": [
+            {
+              "sku": "PN010201",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "fdb3d0ce452970fdc46314aad0586cce6dc74ab7c8f82b9277909acf2f8f9205",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb",
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "order": 1,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "188ba99c03b6986a5ee5e60b7a6922baaa88ef857be96f29427165a8bd3c3971",
+                "fileSha256": "9dfdab5f2c6e77bf4449d552ebe92dfaeabff9f76d76e59bd97309028be5c66c",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.6812933025404158,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "6c6155a9bc1f00f341a9ff20bdd1f0953ea7e3a4a7b6c7a44b401ba1a0ad0a7b",
+              "placementId": "6c6155a9bc1f00f341a9ff20bdd1f0953ea7e3a4a7b6c7a44b401ba1a0ad0a7b",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  0.6812933025404158
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "78e34125a1f3b378fdcdcf641a23e1f91c4d17302a04e809bbee2abd6e08f023"
+            },
+            {
+              "sku": "PN010201",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "fdb3d0ce452970fdc46314aad0586cce6dc74ab7c8f82b9277909acf2f8f9205",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367",
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "order": 2,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "188ba99c03b6986a5ee5e60b7a6922baaa88ef857be96f29427165a8bd3c3971",
+                "fileSha256": "9dfdab5f2c6e77bf4449d552ebe92dfaeabff9f76d76e59bd97309028be5c66c",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 295.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 295,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.3406466512702079,
+                "u1": 1.0,
+                "v1": 0.6593533487297921
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "11407eea87687df55d492b16b4ba758ed0c4b46a31c7fb53d81d5bf85c590299",
+              "placementId": "11407eea87687df55d492b16b4ba758ed0c4b46a31c7fb53d81d5bf85c590299",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.3406466512702079
+                ],
+                [
+                  1.0,
+                  0.6593533487297921
+                ],
+                [
+                  0.0,
+                  0.6593533487297921
+                ]
+              ],
+              "finalUvHash": "7fa06e7bba2b653f2bef6bb76de7f427b6b800b0779265f27761f56a9337bd7c"
+            },
+            {
+              "sku": "PN010201",
+              "version": "FIXTURE_MASTER_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "fdb3d0ce452970fdc46314aad0586cce6dc74ab7c8f82b9277909acf2f8f9205",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f",
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "order": 3,
+              "relation": "MASTER_SPLIT",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 866,
+                "rgbSha256": "188ba99c03b6986a5ee5e60b7a6922baaa88ef857be96f29427165a8bd3c3971",
+                "fileSha256": "9dfdab5f2c6e77bf4449d552ebe92dfaeabff9f76d76e59bd97309028be5c66c",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 590.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 590,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 0.3187066974595843
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "064dad9477600794ad840bb4f1b7fe76ee9d9f24fa3e5bf2ac9a98098a62e2ce",
+              "placementId": "064dad9477600794ad840bb4f1b7fe76ee9d9f24fa3e5bf2ac9a98098a62e2ce",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.3187066974595843
+                ],
+                [
+                  0.0,
+                  0.3187066974595843
+                ]
+              ],
+              "finalUvHash": "18e2dec24a17fda2202d00c5aaaeddecc3d01c1e68cf58d2f7a06ccf52697977"
+            }
+          ],
+          "ready": true,
+          "doorOrder": "TOP_TO_BOTTOM",
+          "masterCanvasMm": [
+            390.0,
+            866.0
+          ],
+          "seamsMm": [
+            19.0,
+            19.0
+          ],
+          "productionReady": false,
+          "productionCropScope": "TRIM_ONLY; bleed and unknown keep-outs need print authority",
+          "packageHash": "0c393b408daa6498f6c6b6ad17977fb81530f35e84cae1883f27ce26e6654d45"
+        },
+        "production": [
+          {
+            "componentId": "door_1",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "6c6155a9bc1f00f341a9ff20bdd1f0953ea7e3a4a7b6c7a44b401ba1a0ad0a7b",
+            "finalUvHash": "78e34125a1f3b378fdcdcf641a23e1f91c4d17302a04e809bbee2abd6e08f023",
+            "productionArtworkHash": "e6ded7bfb4be97d5b583c559bea08710b199052c08cf05a040e80ea9726e0d8e",
+            "file": "door_1-production-trim.png"
+          },
+          {
+            "componentId": "door_2",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 295.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 295,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "11407eea87687df55d492b16b4ba758ed0c4b46a31c7fb53d81d5bf85c590299",
+            "finalUvHash": "7fa06e7bba2b653f2bef6bb76de7f427b6b800b0779265f27761f56a9337bd7c",
+            "productionArtworkHash": "37f0ee821af2818bfe42095f1280e25b53b407411c4d87fe20b8df8ef2be0b7b",
+            "file": "door_2-production-trim.png"
+          },
+          {
+            "componentId": "door_3",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 590.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 590,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "064dad9477600794ad840bb4f1b7fe76ee9d9f24fa3e5bf2ac9a98098a62e2ce",
+            "finalUvHash": "18e2dec24a17fda2202d00c5aaaeddecc3d01c1e68cf58d2f7a06ccf52697977",
+            "productionArtworkHash": "7b76f10a0177afd3b8786e431b661983c6ee3c1d77b9d52200098532486fcd2d",
+            "file": "door_3-production-trim.png"
+          }
+        ],
+        "spec": {
+          "width": 424.0,
+          "depth": 295.0,
+          "height": 900.0,
+          "thickness": 15.0,
+          "material": "white_wood",
+          "components": [
+            {
+              "componentId": "left_side",
+              "partName": "左側板",
+              "role": "left",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                -204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                -0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "right_side",
+              "partName": "右側板",
+              "role": "right",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "top_panel",
+              "partName": "頂板",
+              "role": "top",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                892.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.8925
+              ]
+            },
+            {
+              "componentId": "bottom_panel",
+              "partName": "底板",
+              "role": "bottom",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                7.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.0075
+              ]
+            },
+            {
+              "componentId": "back_panel",
+              "partName": "背板",
+              "role": "back",
+              "sizeMm": [
+                394.0,
+                3.0,
+                870.0
+              ],
+              "locationMm": [
+                0.0,
+                146.0,
+                450.0
+              ],
+              "size": [
+                0.394,
+                0.003,
+                0.87
+              ],
+              "location": [
+                0.0,
+                0.146,
+                0.45
+              ]
+            },
+            {
+              "componentId": "shelf_1",
+              "partName": "內層板 1",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                302.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.3025
+              ]
+            },
+            {
+              "componentId": "shelf_2",
+              "partName": "內層板 2",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                597.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.5975
+              ]
+            },
+            {
+              "componentId": "door_1",
+              "partName": "門片 1（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                745.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.745
+              ]
+            },
+            {
+              "componentId": "door_2",
+              "partName": "門片 2（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                450.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.45
+              ]
+            },
+            {
+              "componentId": "door_3",
+              "partName": "門片 3（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                155.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.155
+              ]
+            }
+          ],
+          "goldenRecipe": true,
+          "recipePreview": true,
+          "recipeId": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "doorCount": 3,
+          "shelfCount": 2,
+          "engineeringReady": false,
+          "productionReady": false
+        },
+        "files": {
+          "beauty.png": {
+            "sha256": "d83c70f8c8cd2b78e9e642840d2c44245e6c73fa8b3a4798f33ca00bc8b5f304",
+            "sizeBytes": 732467
+          },
+          "door-detail.png": {
+            "sha256": "4ceb883141b1c54119f5a58f4b339ec189bc2717bb44936809acd020835f9d9c",
+            "sizeBytes": 726537
+          },
+          "door_1-production-trim.png": {
+            "sha256": "e6ded7bfb4be97d5b583c559bea08710b199052c08cf05a040e80ea9726e0d8e",
+            "sizeBytes": 185170
+          },
+          "door_2-production-trim.png": {
+            "sha256": "37f0ee821af2818bfe42095f1280e25b53b407411c4d87fe20b8df8ef2be0b7b",
+            "sizeBytes": 185191
+          },
+          "door_3-production-trim.png": {
+            "sha256": "7b76f10a0177afd3b8786e431b661983c6ee3c1d77b9d52200098532486fcd2d",
+            "sizeBytes": 185025
+          },
+          "fixture-1.png": {
+            "sha256": "9dfdab5f2c6e77bf4449d552ebe92dfaeabff9f76d76e59bd97309028be5c66c",
+            "sizeBytes": 580843
+          },
+          "front-closed.png": {
+            "sha256": "aaf2cba8c33bed1588f5ba2366641743d6697b54dcd5ddfacacbefaf68d79f4b",
+            "sizeBytes": 732065
+          },
+          "geometry.json": {
+            "sha256": "67362ad5b87eb48420410ba8d776a44f8b1da08778ddcea9cdcc4c0f4bb92bd8",
+            "sizeBytes": 1665
+          },
+          "golden-observation.json": {
+            "sha256": "b74b4d90f90052a481e3b47cea175e95ec77efc1183535dbb49fa1df5c135340",
+            "sizeBytes": 6759
+          },
+          "model.blend": {
+            "sha256": "957078f85c35e10277442e53d9c9817cd8363dd5f18361b7d890951e7fcd90be",
+            "sizeBytes": 2705748
+          },
+          "model.glb": {
+            "sha256": "adaacee5521d479b329bbc1301dd36e813cce425c53b4c2383715f387493c435",
+            "sizeBytes": 601500
+          }
+        },
+        "jobId": "cfba6323-07ec-48c2-8ea2-0d371ee6cd3c",
+        "requestedJobId": "cfba6323-07ec-48c2-8ea2-0d371ee6cd3c",
+        "cacheHit": false,
+        "views": {
+          "HERO_45": "beauty.png",
+          "FRONT_CLOSED": "front-closed.png",
+          "DOOR_DETAIL": "door-detail.png",
+          "FRONT_OPEN": "BLOCKED"
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "realOptix": true,
+          "device": "OPTIX",
+          "samples": 32,
+          "blenderVersion": "5.2.1 LTS"
+        },
+        "truth": {
+          "dimensions": "CONFIG — Issue #4 declared dimensions",
+          "thickness": "ESTIMATED",
+          "hardware": "UNKNOWN",
+          "FRONT_OPEN": "BLOCKED — no verified hinge/articulation",
+          "engineeringReady": false,
+          "productionReady": false,
+          "manufacturingReady": false,
+          "liveMachineControl": false
+        },
+        "artworkTruth": "FIXTURE",
+        "manufacturing": {
+          "scope": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+          "bomCandidate": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "boardList": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "printableSurfaces": [
+            {
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                0.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb"
+            },
+            {
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                295.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367"
+            },
+            {
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                590.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f"
+            }
+          ],
+          "nestingInput": {
+            "parts": [
+              {
+                "componentId": "left_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "right_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "top_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "bottom_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "back_panel",
+                "quantity": 1,
+                "lengthMm": 870.0,
+                "widthMm": 394.0,
+                "thicknessMm": 3.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_1",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_2",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_1",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_2",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_3",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              }
+            ],
+            "sheetSizeMm": null,
+            "kerfMm": null,
+            "grainDirection": "UNKNOWN"
+          },
+          "wasteRemnantInput": {
+            "netBoardAreaMm2": 1645860.0,
+            "stockSheets": null,
+            "remnants": null,
+            "wastePercent": null,
+            "status": "BLOCKED_STOCK_AND_KERF_REQUIRED"
+          },
+          "manufacturingReady": false
+        }
+      },
+      "blendReopenVerified": true
+    },
+    {
+      "sku": "KU002101",
+      "version": "FIXTURE_SINGLE_V1",
+      "generationId": "776ff044-71d5-4654-946e-e9dc061409be",
+      "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+      "artworkHash": "d090c50bfee19cc971db2ee8dd90f19dbd905250d1a11f3ff730a5c97da02720",
+      "packageHash": "7f9130a4d31cdc30ac5c831d6bca9a319c284e6b17322862f1a5ecc6c738d865",
+      "renderInfo": {
+        "realBlender": true,
+        "usedMock": false,
+        "realOptix": true,
+        "device": "OPTIX",
+        "samples": 32,
+        "blenderVersion": "5.2.1 LTS"
+      },
+      "manifestSha256": "303fee1092526a5d001bc46d0ae80e61f81f5f323edf22548e4dd5eeea408c65",
+      "manifest": {
+        "generationId": "776ff044-71d5-4654-946e-e9dc061409be",
+        "sku": "KU002101",
+        "version": "FIXTURE_SINGLE_V1",
+        "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+        "package": {
+          "sku": "KU002101",
+          "version": "FIXTURE_SINGLE_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "sources": [
+            {
+              "name": "fixture-1.png",
+              "widthPx": 390,
+              "heightPx": 276,
+              "rgbSha256": "13b45b3d9379dc621f7c53ebfeea39cb5cb8e4ba6732f4257570d4a14bef5e4f",
+              "fileSha256": "d86598657efc68b3941bc3df0a51591d263ce4ca71845558c59e1ce613341808",
+              "truth": "FIXTURE"
+            },
+            {
+              "name": "fixture-2.png",
+              "widthPx": 390,
+              "heightPx": 276,
+              "rgbSha256": "c203ef80e37a1a20c833602376a7851979c02a430acf4b9f3744934251169e9a",
+              "fileSha256": "52191dafcca990bd24f3b571f00df2828f5ae6f904ed5000c038fa42e9d2a83e",
+              "truth": "FIXTURE"
+            },
+            {
+              "name": "fixture-3.png",
+              "widthPx": 390,
+              "heightPx": 276,
+              "rgbSha256": "943b14531ff18edaae57a9266757f9a04d65fc81bb89272176d333ec700db3c3",
+              "fileSha256": "8baa42a08bca83723ff72fd328aae7d5e2252e942e0a45d18d34feefee0ef337",
+              "truth": "FIXTURE"
+            }
+          ],
+          "truth": "FIXTURE",
+          "artworkHash": "d090c50bfee19cc971db2ee8dd90f19dbd905250d1a11f3ff730a5c97da02720",
+          "placements": [
+            {
+              "sku": "KU002101",
+              "version": "FIXTURE_SINGLE_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "d090c50bfee19cc971db2ee8dd90f19dbd905250d1a11f3ff730a5c97da02720",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb",
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "order": 1,
+              "relation": "SINGLE_SURFACE",
+              "source": {
+                "name": "fixture-1.png",
+                "widthPx": 390,
+                "heightPx": 276,
+                "rgbSha256": "13b45b3d9379dc621f7c53ebfeea39cb5cb8e4ba6732f4257570d4a14bef5e4f",
+                "fileSha256": "d86598657efc68b3941bc3df0a51591d263ce4ca71845558c59e1ce613341808",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "e3dfe13d2da3e3c0d596c83ee49ae985c0c9b688f9b9f92fae10e64c8cac06dc",
+              "placementId": "e3dfe13d2da3e3c0d596c83ee49ae985c0c9b688f9b9f92fae10e64c8cac06dc",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "3a0f46f81db32559ecfaf1c34afef42c1bfb0db4fd4906afe369642bca9aa80a"
+            },
+            {
+              "sku": "KU002101",
+              "version": "FIXTURE_SINGLE_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "d090c50bfee19cc971db2ee8dd90f19dbd905250d1a11f3ff730a5c97da02720",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367",
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "order": 2,
+              "relation": "SINGLE_SURFACE",
+              "source": {
+                "name": "fixture-2.png",
+                "widthPx": 390,
+                "heightPx": 276,
+                "rgbSha256": "c203ef80e37a1a20c833602376a7851979c02a430acf4b9f3744934251169e9a",
+                "fileSha256": "52191dafcca990bd24f3b571f00df2828f5ae6f904ed5000c038fa42e9d2a83e",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "dbc06e3895eb3838bb77c6527abaa8bb737edf5bfb408b8cf2e33c6f9b6e927c",
+              "placementId": "dbc06e3895eb3838bb77c6527abaa8bb737edf5bfb408b8cf2e33c6f9b6e927c",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "e70c5168c5f32e5a97a646c506324c9e3d76e08064e0e3122f5c729f5a3da325"
+            },
+            {
+              "sku": "KU002101",
+              "version": "FIXTURE_SINGLE_V1",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "artworkHash": "d090c50bfee19cc971db2ee8dd90f19dbd905250d1a11f3ff730a5c97da02720",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f",
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "order": 3,
+              "relation": "SINGLE_SURFACE",
+              "source": {
+                "name": "fixture-3.png",
+                "widthPx": 390,
+                "heightPx": 276,
+                "rgbSha256": "943b14531ff18edaae57a9266757f9a04d65fc81bb89272176d333ec700db3c3",
+                "fileSha256": "8baa42a08bca83723ff72fd328aae7d5e2252e942e0a45d18d34feefee0ef337",
+                "truth": "FIXTURE"
+              },
+              "cropMm": {
+                "xMm": 0.0,
+                "yMm": 0.0,
+                "widthMm": 390.0,
+                "heightMm": 276.0
+              },
+              "cropPx": {
+                "x": 0,
+                "y": 0,
+                "width": 390,
+                "height": 276
+              },
+              "uvRect": {
+                "u0": 0.0,
+                "v0": 0.0,
+                "u1": 1.0,
+                "v1": 1.0
+              },
+              "rotationDeg": 0.0,
+              "mirrored": false,
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "keepOutAuthority": "UNKNOWN",
+              "fit": "EXACT_NO_STRETCH",
+              "pixelScalePxPerMm": 1.0,
+              "placementHash": "f10472f78c50889f5fed24ccf04b0857fb3f1fa5380259ec3da124a00bcd2120",
+              "placementId": "f10472f78c50889f5fed24ccf04b0857fb3f1fa5380259ec3da124a00bcd2120",
+              "finalSampling": [
+                [
+                  0.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  0.0
+                ],
+                [
+                  1.0,
+                  1.0
+                ],
+                [
+                  0.0,
+                  1.0
+                ]
+              ],
+              "finalUvHash": "de79d44e660d717e5c2533a286fdaaee52e375cde0f9849a273c340e0dd7271d"
+            }
+          ],
+          "ready": true,
+          "doorOrder": "TOP_TO_BOTTOM",
+          "masterCanvasMm": null,
+          "seamsMm": [],
+          "productionReady": false,
+          "productionCropScope": "TRIM_ONLY; bleed and unknown keep-outs need print authority",
+          "packageHash": "7f9130a4d31cdc30ac5c831d6bca9a319c284e6b17322862f1a5ecc6c738d865"
+        },
+        "production": [
+          {
+            "componentId": "door_1",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "e3dfe13d2da3e3c0d596c83ee49ae985c0c9b688f9b9f92fae10e64c8cac06dc",
+            "finalUvHash": "3a0f46f81db32559ecfaf1c34afef42c1bfb0db4fd4906afe369642bca9aa80a",
+            "productionArtworkHash": "d86598657efc68b3941bc3df0a51591d263ce4ca71845558c59e1ce613341808",
+            "file": "door_1-production-trim.png"
+          },
+          {
+            "componentId": "door_2",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "dbc06e3895eb3838bb77c6527abaa8bb737edf5bfb408b8cf2e33c6f9b6e927c",
+            "finalUvHash": "e70c5168c5f32e5a97a646c506324c9e3d76e08064e0e3122f5c729f5a3da325",
+            "productionArtworkHash": "52191dafcca990bd24f3b571f00df2828f5ae6f904ed5000c038fa42e9d2a83e",
+            "file": "door_2-production-trim.png"
+          },
+          {
+            "componentId": "door_3",
+            "cropMm": {
+              "xMm": 0.0,
+              "yMm": 0.0,
+              "widthMm": 390.0,
+              "heightMm": 276.0
+            },
+            "cropPx": {
+              "x": 0,
+              "y": 0,
+              "width": 390,
+              "height": 276
+            },
+            "placementHash": "f10472f78c50889f5fed24ccf04b0857fb3f1fa5380259ec3da124a00bcd2120",
+            "finalUvHash": "de79d44e660d717e5c2533a286fdaaee52e375cde0f9849a273c340e0dd7271d",
+            "productionArtworkHash": "8baa42a08bca83723ff72fd328aae7d5e2252e942e0a45d18d34feefee0ef337",
+            "file": "door_3-production-trim.png"
+          }
+        ],
+        "spec": {
+          "width": 424.0,
+          "depth": 295.0,
+          "height": 900.0,
+          "thickness": 15.0,
+          "material": "white_wood",
+          "components": [
+            {
+              "componentId": "left_side",
+              "partName": "左側板",
+              "role": "left",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                -204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                -0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "right_side",
+              "partName": "右側板",
+              "role": "right",
+              "sizeMm": [
+                15.0,
+                295.0,
+                900.0
+              ],
+              "locationMm": [
+                204.5,
+                0.0,
+                450.0
+              ],
+              "size": [
+                0.015,
+                0.295,
+                0.9
+              ],
+              "location": [
+                0.2045,
+                0.0,
+                0.45
+              ]
+            },
+            {
+              "componentId": "top_panel",
+              "partName": "頂板",
+              "role": "top",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                892.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.8925
+              ]
+            },
+            {
+              "componentId": "bottom_panel",
+              "partName": "底板",
+              "role": "bottom",
+              "sizeMm": [
+                394.0,
+                295.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                0.0,
+                7.5
+              ],
+              "size": [
+                0.394,
+                0.295,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.0,
+                0.0075
+              ]
+            },
+            {
+              "componentId": "back_panel",
+              "partName": "背板",
+              "role": "back",
+              "sizeMm": [
+                394.0,
+                3.0,
+                870.0
+              ],
+              "locationMm": [
+                0.0,
+                146.0,
+                450.0
+              ],
+              "size": [
+                0.394,
+                0.003,
+                0.87
+              ],
+              "location": [
+                0.0,
+                0.146,
+                0.45
+              ]
+            },
+            {
+              "componentId": "shelf_1",
+              "partName": "內層板 1",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                302.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.3025
+              ]
+            },
+            {
+              "componentId": "shelf_2",
+              "partName": "內層板 2",
+              "role": "shelf",
+              "sizeMm": [
+                394.0,
+                275.0,
+                15.0
+              ],
+              "locationMm": [
+                0.0,
+                7.0,
+                597.5
+              ],
+              "size": [
+                0.394,
+                0.275,
+                0.015
+              ],
+              "location": [
+                0.0,
+                0.007,
+                0.5975
+              ]
+            },
+            {
+              "componentId": "door_1",
+              "partName": "門片 1（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                745.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.745
+              ]
+            },
+            {
+              "componentId": "door_2",
+              "partName": "門片 2（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                450.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.45
+              ]
+            },
+            {
+              "componentId": "door_3",
+              "partName": "門片 3（由上到下）",
+              "role": "door",
+              "sizeMm": [
+                390.0,
+                15.0,
+                276.0
+              ],
+              "locationMm": [
+                0.0,
+                -140.0,
+                155.0
+              ],
+              "size": [
+                0.39,
+                0.015,
+                0.276
+              ],
+              "location": [
+                0.0,
+                -0.14,
+                0.155
+              ]
+            }
+          ],
+          "goldenRecipe": true,
+          "recipePreview": true,
+          "recipeId": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+          "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+          "doorCount": 3,
+          "shelfCount": 2,
+          "engineeringReady": false,
+          "productionReady": false
+        },
+        "files": {
+          "beauty.png": {
+            "sha256": "0ed6168b6c6d608c524763935a4e0a52b3576b41df7bee12345045bddde87688",
+            "sizeBytes": 733797
+          },
+          "door-detail.png": {
+            "sha256": "c8f49387930a30aa5edb3d8269924e720c3c6de0d0d1042ffc739d78426209ba",
+            "sizeBytes": 738009
+          },
+          "door_1-production-trim.png": {
+            "sha256": "d86598657efc68b3941bc3df0a51591d263ce4ca71845558c59e1ce613341808",
+            "sizeBytes": 185005
+          },
+          "door_2-production-trim.png": {
+            "sha256": "52191dafcca990bd24f3b571f00df2828f5ae6f904ed5000c038fa42e9d2a83e",
+            "sizeBytes": 185174
+          },
+          "door_3-production-trim.png": {
+            "sha256": "8baa42a08bca83723ff72fd328aae7d5e2252e942e0a45d18d34feefee0ef337",
+            "sizeBytes": 184967
+          },
+          "fixture-1.png": {
+            "sha256": "d86598657efc68b3941bc3df0a51591d263ce4ca71845558c59e1ce613341808",
+            "sizeBytes": 185005
+          },
+          "fixture-2.png": {
+            "sha256": "52191dafcca990bd24f3b571f00df2828f5ae6f904ed5000c038fa42e9d2a83e",
+            "sizeBytes": 185174
+          },
+          "fixture-3.png": {
+            "sha256": "8baa42a08bca83723ff72fd328aae7d5e2252e942e0a45d18d34feefee0ef337",
+            "sizeBytes": 184967
+          },
+          "front-closed.png": {
+            "sha256": "a945c719e5b99f34f869f3da5fe937db6cbb0d6b09578e8442c908ca71297a92",
+            "sizeBytes": 737287
+          },
+          "geometry.json": {
+            "sha256": "67362ad5b87eb48420410ba8d776a44f8b1da08778ddcea9cdcc4c0f4bb92bd8",
+            "sizeBytes": 1665
+          },
+          "golden-observation.json": {
+            "sha256": "68bdb30e0bc718bf3f97571e54cec43dd0e5be07f7f7e364881ff81d30be46b3",
+            "sizeBytes": 6345
+          },
+          "model.blend": {
+            "sha256": "c0edd63d60887b11688c779ecfd5c9ad8d30892d5d1a6675e1cc8e89a5b77c18",
+            "sizeBytes": 1518305
+          },
+          "model.glb": {
+            "sha256": "601f0c4214351ef9a25f92db729c27b1b6143c1b24847c953a9749f37b983baf",
+            "sizeBytes": 576036
+          }
+        },
+        "jobId": "86f09b61-b654-4010-8015-4a851cb4a429",
+        "requestedJobId": "86f09b61-b654-4010-8015-4a851cb4a429",
+        "cacheHit": false,
+        "views": {
+          "HERO_45": "beauty.png",
+          "FRONT_CLOSED": "front-closed.png",
+          "DOOR_DETAIL": "door-detail.png",
+          "FRONT_OPEN": "BLOCKED"
+        },
+        "renderInfo": {
+          "realBlender": true,
+          "usedMock": false,
+          "realOptix": true,
+          "device": "OPTIX",
+          "samples": 32,
+          "blenderVersion": "5.2.1 LTS"
+        },
+        "truth": {
+          "dimensions": "CONFIG — Issue #4 declared dimensions",
+          "thickness": "ESTIMATED",
+          "hardware": "UNKNOWN",
+          "FRONT_OPEN": "BLOCKED — no verified hinge/articulation",
+          "engineeringReady": false,
+          "productionReady": false,
+          "manufacturingReady": false,
+          "liveMachineControl": false
+        },
+        "artworkTruth": "FIXTURE",
+        "manufacturing": {
+          "scope": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+          "bomCandidate": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "boardList": [
+            {
+              "componentId": "left_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "right_side",
+              "quantity": 1,
+              "lengthMm": 900.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "top_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "bottom_panel",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 295.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "back_panel",
+              "quantity": 1,
+              "lengthMm": 870.0,
+              "widthMm": 394.0,
+              "thicknessMm": 3.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_1",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "shelf_2",
+              "quantity": 1,
+              "lengthMm": 394.0,
+              "widthMm": 275.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_1",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_2",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            },
+            {
+              "componentId": "door_3",
+              "quantity": 1,
+              "lengthMm": 390.0,
+              "widthMm": 276.0,
+              "thicknessMm": 15.0,
+              "truth": "ESTIMATED"
+            }
+          ],
+          "printableSurfaces": [
+            {
+              "componentId": "door_1",
+              "objectName": "門片 1（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                0.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "e01e924c177ad612a472cb85701f9ae721423a05761015b0afb7a2c05c4fd6bb"
+            },
+            {
+              "componentId": "door_2",
+              "objectName": "門片 2（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                295.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "d1bfe3439b2596b3eebbba959c7e131babe341cb740ce257b38ebb5e516bc367"
+            },
+            {
+              "componentId": "door_3",
+              "objectName": "門片 3（由上到下）",
+              "face": "FRONT",
+              "engineeringHash": "7044ba2217f569bbc3303d5c274163cdcc75709dfd8c650c1f17ae60dacfce46",
+              "widthMm": 390.0,
+              "heightMm": 276.0,
+              "originTopMm": [
+                0.0,
+                590.0
+              ],
+              "safeMm": 5.0,
+              "bleedMm": 3.0,
+              "trimTruth": "CONFIG",
+              "keepOuts": [],
+              "keepOutAuthority": "UNKNOWN",
+              "hingeAuthority": "UNKNOWN",
+              "surfaceHash": "a4132f0e047044df9e9dc8c747fef6b9d099427ce6f25928fe55df755296d32f"
+            }
+          ],
+          "nestingInput": {
+            "parts": [
+              {
+                "componentId": "left_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "right_side",
+                "quantity": 1,
+                "lengthMm": 900.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "top_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "bottom_panel",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 295.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "back_panel",
+                "quantity": 1,
+                "lengthMm": 870.0,
+                "widthMm": 394.0,
+                "thicknessMm": 3.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_1",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "shelf_2",
+                "quantity": 1,
+                "lengthMm": 394.0,
+                "widthMm": 275.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_1",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_2",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              },
+              {
+                "componentId": "door_3",
+                "quantity": 1,
+                "lengthMm": 390.0,
+                "widthMm": 276.0,
+                "thicknessMm": 15.0,
+                "truth": "ESTIMATED"
+              }
+            ],
+            "sheetSizeMm": null,
+            "kerfMm": null,
+            "grainDirection": "UNKNOWN"
+          },
+          "wasteRemnantInput": {
+            "netBoardAreaMm2": 1645860.0,
+            "stockSheets": null,
+            "remnants": null,
+            "wastePercent": null,
+            "status": "BLOCKED_STOCK_AND_KERF_REQUIRED"
+          },
+          "manufacturingReady": false
+        }
+      },
+      "blendReopenVerified": true
+    }
+  ],
+  "historicalArtwork": "BLOCKED_MISSING_SOURCE",
+  "engineeringReady": false,
+  "productionReady": false,
+  "frontOpen": "BLOCKED_ARTICULATION_AUTHORITY",
+  "status": "PASS",
+  "restartPersistenceVerified": true,
+  "instruction": {
+    "number": 4,
+    "url": "https://github.com/netfox-web/blender-autonomous-3d/issues/4",
+    "bodySha256": "9ce0dc4aed4a5a6d744accb2e36e348de257b93a03b33af03f3158c1bd7a16e8"
+  },
+  "codeCI": {
+    "conclusion": "success",
+    "databaseId": 34811888485,
+    "headSha": "c9f685854a964d567643cab55f06aceb0c7375d2",
+    "jobs": [
+      {
+        "completedAt": "2026-09-14T06:25:21Z",
+        "conclusion": "success",
+        "databaseId": 103874724391,
+        "name": "unit (windows-latest)",
+        "startedAt": "2026-09-14T06:03:48Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-09-14T06:03:50Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-09-14T06:03:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:03:57Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "startedAt": "2026-09-14T06:03:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:03:57Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-python@v5",
+            "number": 3,
+            "startedAt": "2026-09-14T06:03:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:04:22Z",
+            "conclusion": "success",
+            "name": "Install",
+            "number": 4,
+            "startedAt": "2026-09-14T06:03:57Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:25:17Z",
+            "conclusion": "success",
+            "name": "Unit / regression tests",
+            "number": 5,
+            "startedAt": "2026-09-14T06:04:22Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:25:17Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-python@v5",
+            "number": 9,
+            "startedAt": "2026-09-14T06:25:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:25:20Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 10,
+            "startedAt": "2026-09-14T06:25:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:25:20Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 11,
+            "startedAt": "2026-09-14T06:25:20Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34811888485/job/103874724391"
+      },
+      {
+        "completedAt": "2026-09-14T06:24:49Z",
+        "conclusion": "success",
+        "databaseId": 103874724511,
+        "name": "unit (ubuntu-latest)",
+        "startedAt": "2026-09-14T06:03:49Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-09-14T06:03:51Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-09-14T06:03:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:03:52Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@v4",
+            "number": 2,
+            "startedAt": "2026-09-14T06:03:51Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:03:52Z",
+            "conclusion": "success",
+            "name": "Run actions/setup-python@v5",
+            "number": 3,
+            "startedAt": "2026-09-14T06:03:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:04:00Z",
+            "conclusion": "success",
+            "name": "Install",
+            "number": 4,
+            "startedAt": "2026-09-14T06:03:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:24:46Z",
+            "conclusion": "success",
+            "name": "Unit / regression tests",
+            "number": 5,
+            "startedAt": "2026-09-14T06:04:00Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:24:46Z",
+            "conclusion": "success",
+            "name": "Post Run actions/setup-python@v5",
+            "number": 9,
+            "startedAt": "2026-09-14T06:24:46Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:24:46Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@v4",
+            "number": 10,
+            "startedAt": "2026-09-14T06:24:46Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-09-14T06:24:46Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 11,
+            "startedAt": "2026-09-14T06:24:46Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34811888485/job/103874724511"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34811888485",
+    "verifiedTestCounts": {
+      "unit (windows-latest)": 828,
+      "unit (ubuntu-latest)": 828
+    }
+  },
+  "uiVerification": {
+    "verified": [
+      "historical artwork blocked",
+      "fixture truth labels",
+      "generation through UI",
+      "cancel before render",
+      "regenerate after cancel",
+      "cancel with cached artwork preserves previous generation",
+      "switch artwork shows prior-version warning",
+      "model and trim download links",
+      "hide door structural view"
+    ],
+    "url": "http://127.0.0.1:8792/admin/recipes/golden",
+    "sku": "KT015101",
+    "scope": "UI development verification; formal Blender evidence pending CODE CI",
+    "code": "5f6dc730daa7a0366d6761fe8b3ba8ea57f9e8f2",
+    "preservedGeneration": "d5005c98-6423-4ecf-8949-8040a2a23849",
+    "finalUiCheck": {
+      "code": "c9f685854a964d567643cab55f06aceb0c7375d2",
+      "verified": [
+        "cancelled notice replaces cancellation pending",
+        "generate button restored",
+        "previous generation retained",
+        "SKU and version selection reinitializes viewer"
+      ]
+    },
+    "userHandoff": {
+      "url": "http://127.0.0.1:8790/admin/recipes/golden",
+      "code": "c9f685854a964d567643cab55f06aceb0c7375d2",
+      "sku": "KU002101",
+      "imagesLoaded": [
+        {
+          "view": "HERO_45",
+          "width": 800,
+          "height": 800
+        },
+        {
+          "view": "FRONT_CLOSED",
+          "width": 800,
+          "height": 800
+        },
+        {
+          "view": "DOOR_DETAIL",
+          "width": 800,
+          "height": 800
+        }
+      ]
+    }
+  }
+}
