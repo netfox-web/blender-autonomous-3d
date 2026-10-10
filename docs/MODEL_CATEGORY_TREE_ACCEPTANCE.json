@@ -1,0 +1,219 @@
+{
+  "evidenceId": "0c83109d-1e6c-4ec6-8d34-ec8c14c68851",
+  "codeCommit": "052be7f057c24b982b6c6c716c1a9aef094999da",
+  "workingTreeClean": true,
+  "developmentOnly": false,
+  "inputTruth": "SYNTHETIC_RECTANGLE_FIXTURE",
+  "physicalPrintValidated": false,
+  "globalProductionReady": false,
+  "preview": {
+    "generationId": "ffcc1f15-44a1-48cc-9d88-ff55e60a3086",
+    "renderInfo": {
+      "realBlender": true,
+      "realOptix": true,
+      "usedMock": false,
+      "device": "OPTIX",
+      "samples": 32,
+      "renderTimeSec": 1.925,
+      "blenderVersion": "5.2.1 LTS"
+    },
+    "reopenPassed": true
+  },
+  "composition": {
+    "generationId": "33c457aa-b188-4a5f-9dbc-aa8b4fb899fa",
+    "renderInfo": {
+      "realBlender": true,
+      "usedMock": false,
+      "device": "OPTIX",
+      "blenderVersion": "5.2.1 LTS",
+      "realOptix": true
+    },
+    "reopenPassed": true
+  },
+  "status": "PASS",
+  "classificationPersisted": true,
+  "modelBytesUnchanged": true,
+  "modelInputHashUnchanged": true,
+  "sameGenerationIds": {
+    "preview": "ffcc1f15-44a1-48cc-9d88-ff55e60a3086",
+    "composition": "33c457aa-b188-4a5f-9dbc-aa8b4fb899fa"
+  },
+  "downloadsPreserved": true,
+  "restartVerified": true,
+  "staleClassificationRejected": true,
+  "artifacts": {
+    "preview": {
+      "beauty.png": {
+        "sha256": "aad60b5acd3727c05f0dea89267b86c3f04f933dbe584005401b1c815a5e7eaa",
+        "sizeBytes": 613582
+      },
+      "model.blend": {
+        "sha256": "5eb9bdbf73f755c784f7d266a4939e350e91f1e35a2a7ef303c09d2eac05f934",
+        "sizeBytes": 578757
+      },
+      "model.glb": {
+        "sha256": "2ad2370329a2e4f95c6e6457a7b029fc2916e1d0ff423547871218656c9df494",
+        "sizeBytes": 2120
+      },
+      "geometry.json": {
+        "sha256": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "sizeBytes": 210
+      }
+    },
+    "composition": {
+      "beauty.png": {
+        "sha256": "5805b270e51f64df078ff5a08a2ce2848fac128984a39fad2913f2797aa725e2",
+        "sizeBytes": 605861
+      },
+      "model.blend": {
+        "sha256": "4aa8dddd389bb48126148f2dd8c72cf4d7ac4709327e61237cba2d7ced2ed522",
+        "sizeBytes": 597012
+      },
+      "model.glb": {
+        "sha256": "2ad2370329a2e4f95c6e6457a7b029fc2916e1d0ff423547871218656c9df494",
+        "sizeBytes": 2120
+      },
+      "geometry.json": {
+        "sha256": "b834b3a6c2969206a363d643f98692c5d6cee4fdb173324df9bb6a7efea90238",
+        "sizeBytes": 210
+      }
+    }
+  },
+  "scope": "USER_PRODUCT_MODEL_CATEGORY_TREE",
+  "authorization": {
+    "type": "EXPLICIT_USER_REQUEST",
+    "instructionCommitSha": null,
+    "mergeAuthorized": false,
+    "basePr": 11,
+    "supervisorContextCommit": "40e64f343287969712a1d6e6fe0b32b49b77aa96",
+    "priorScopeReviewCommentId": 5667208483
+  },
+  "codeCi": {
+    "runId": 34866913056,
+    "headSha": "052be7f057c24b982b6c6c716c1a9aef094999da",
+    "status": "SUCCESS",
+    "jobs": [
+      {
+        "name": "unit (windows-latest)",
+        "conclusion": "success",
+        "testsPassed": 924,
+        "jobId": 104052918328
+      },
+      {
+        "name": "unit (ubuntu-latest)",
+        "conclusion": "success",
+        "testsPassed": 924,
+        "jobId": 104052918735
+      }
+    ]
+  },
+  "localFocusedTests": 54,
+  "newTests": 8,
+  "uiChecks": {
+    "categoryTreeSixRequestedGroups": true,
+    "woodCabinetTwoToFiveLayers": true,
+    "emptyCategoriesDoNotCreateModels": true,
+    "classificationMovePreservesDownloads": true,
+    "newDraftDefaultsOnlyFamilyAndLayers": true,
+    "newDraftUnknownDimensionsRemainEmpty": true,
+    "newDraftRemainsPending": true,
+    "modelSearchFiltersResults": true,
+    "liveGenerated": 3,
+    "liveDrafts": 8,
+    "livePageHasTree": true,
+    "consoleErrors": [],
+    "liveStateFilterVerified": true,
+    "liveSkuSearchVerified": true,
+    "allModelsRestoredAfterSearch": true
+  },
+  "liveChecks": {
+    "status": "PASS",
+    "allMasterBytesPreserved": true,
+    "draftsPreserved": true,
+    "generatedStatesPreserved": true,
+    "generated": 3,
+    "drafts": 8,
+    "classificationSources": "MODEL_FIELDS_NOT_OPERATOR_CONFIRMATION",
+    "categories": [
+      {
+        "name": "DN0805 簡約維尼（待補結構）",
+        "path": [
+          "其他商品",
+          "門簾"
+        ]
+      },
+      {
+        "name": "DN0722 奇奇蒂蒂（待補結構）",
+        "path": [
+          "地墊"
+        ]
+      },
+      {
+        "name": "DN0843 動物方城市(方)（待補結構）",
+        "path": [
+          "杯墊"
+        ]
+      },
+      {
+        "name": "KQ0024 三層空櫃（420×300×900 mm，待補板厚）",
+        "path": [
+          "木櫃",
+          "空櫃",
+          "3 層空櫃"
+        ]
+      },
+      {
+        "name": "DN0502 迪士尼 噴霧式50ML 登山系列（待補結構）",
+        "path": [
+          "其他商品",
+          "噴瓶"
+        ]
+      },
+      {
+        "name": "DN0732 腦筋急轉彎（待補結構）",
+        "path": [
+          "其他商品",
+          "口罩收納盒"
+        ]
+      },
+      {
+        "name": "日系禪風十二格書櫃（Recipe 參考母版，待實測）",
+        "path": [
+          "木櫃",
+          "書櫃"
+        ]
+      },
+      {
+        "name": "夏爾六格滑門收納櫃（Recipe 參考母版，待實測）",
+        "path": [
+          "木櫃",
+          "滑門櫃"
+        ]
+      },
+      {
+        "name": "瓦格四門收納櫃（Recipe 參考母版，待實測）",
+        "path": [
+          "木櫃",
+          "門櫃",
+          "4 層門櫃"
+        ]
+      },
+      {
+        "name": "DN0851 動物方城市-狂野系列杯墊(方)",
+        "path": [
+          "杯墊"
+        ]
+      },
+      {
+        "name": "DN0726 腦筋急轉彎（待補結構）",
+        "path": [
+          "其他商品",
+          "50 入收納盒"
+        ]
+      }
+    ]
+  },
+  "veneerLibraryImplemented": false,
+  "liveMachineControl": false,
+  "liveProviderCalls": false
+}
