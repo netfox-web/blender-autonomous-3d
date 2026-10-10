@@ -1,119 +1,61 @@
-# Development Agent 指令：PR #15 Round 13 Evidence Closure Checkpoint — Publication / Latest Identity
+<!-- Legacy filename. The current-state body is identical to docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md -->
+# Current gate: PR #15 Round 13 ACCEPT_WITH_SCOPE / OWNER_DECISION_HOLD
 
-> Supervisor Re-Gate: 2026-09-24
 > Repo: `netfox-web/blender-autonomous-3d`
-> PR: #15 `codex/product-variant-batches` — DRAFT / OPEN / unmerged
-> Previous reviewed head: `aceda581e447acd0a79cc8b81d45439f7671f79d`
-> New candidate head reviewed: `dc998e80365931b5e73508e8da3d86f91a53f3cd`
-> New commits reviewed: 1 (`dc998e80365931b5e73508e8da3d86f91a53f3cd`)
-> Exact CODE Actions: `35957489307` — `in_progress` at Supervisor review time; Ubuntu + Windows unit/regression jobs are still running
-> Supervisor decision: **PARTIAL / EVIDENCE CLOSURE REQUIRED**
-> Round 14: **HOLD**
-> `MERGE_AUTHORIZED=false`
-> `globalProductionReady=false`
+> Canonical watcher filename: `docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md`
+> Legacy compatibility filename: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`
+> These two files carry the same current gate. Older revisions that say Phase 901–960 Re-Gate Round 2 CHANGES_REQUIRED, or PR #15 Round 13 PARTIAL / EVIDENCE CLOSURE REQUIRED, are superseded and are not work orders.
 
-## 0. Keep the new correction; do not redesign it
+GitHub is the source of truth. Facts below were re-read from GitHub on 2026-10-10 by worker `bc-6b95bfac-9463-5dfa-9c50-4d18481baad8`. This document does not authorize merge, release, deploy, or a new phase.
 
-The new CODE direction is accepted as **REAL_LOGIC** and should be preserved:
+## 0. Current facts
 
-- `print_preview.status()` now validates into a temporary candidate and only exposes it after `latest.manifestSha256` matches the current manifest bytes;
-- every caught current-pointer validation failure clears `pointer` and `m`, so public status fails closed with `generated=false`, `manifest=None`, and no usable `generationId`;
-- `latest.json` is read through `_read_pointer()`, which rejects symlink/non-regular files and malformed/empty JSON;
-- current generation IDs and SHA-256 values are shape-validated before use;
-- model-composition status also fails closed on invalid/missing current pointer and clears invalid generation exposure;
-- modern model-composition publication still requires the existing `published.json` seal; legacy no-`historyVersion` behavior remains isolated;
-- the new tracked tests exercise publication-seal failures, current latest-pointer failures, coherent manifest/meta mutation, missing generation, and fresh-read fail-closed behavior.
+- Canonical main: `b8c6fe911e6c8358ed7bcdecafc84cab86630810` (`supervisor: Round 13 evidence closure checkpoint`, committer date 2026-09-24T04:59:19Z).
+- Main Actions [35957962415](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35957962415) is SUCCESS on that exact SHA for `unit (ubuntu-latest)` and `unit (windows-latest)`. That run is MOCK regression (`FOX3D_MOCK_BLENDER=1`). It is not REAL Blender evidence and it is not production readiness.
+- Independent Supervisor decision [5854068961](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854068961) (2026-09-27T08:06:33Z): **PR #15 Round 13 = ACCEPT_WITH_SCOPE / Round 14 HOLD**. Reviewed commit `c01f95d95ad21b97a48442c592f0259415a93c99`; CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43`. This supersedes CHANGES_REQUIRED comment [5853584739](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5853584739) for its two concrete defects. It is not all-project completion, integration acceptance, or Production PASS.
+- Commander handoff [5854087167](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854087167) (2026-09-27T08:09:02Z): **PROJECT_STATUS = SCOPED_CORRECTION_ACCEPTED / OWNER_DECISION_HOLD**. No `COMMANDER_NEXT_TASK` was issued.
+- PRs #7–#16 are OPEN and unmerged. #7–#15 have scoped Supervisor acceptance. #13 counts only accepted Round 2; Issue #6 Round 3B stays `BLOCKED_DEPENDENCY` until accepted #14 is actually on main under a separate Owner authorization. PR #16 is **FROZEN** at `d03041dedd9002c74e65dd3e5a0cbd096d9575ca` with no acceptance and no GO.
+- Round 14 is **HOLD**. No next-phase GO exists.
+- `MERGE_AUTHORIZED=false`
+- `globalProductionReady=false`
+- `physicalProductGeometryTruth=false`
+- `physicalPrintValidated=false`
+- `manufacturingReady=false`
 
-Do **not** rewrite DAM, queue, storage, publication authority, manifest format, or generation architecture. Do not add DB/WAL/second ledger/replay/duplicate manifest.
+Inventory of that handoff is `docs/PROJECT_COMPLETION_INVENTORY.md`. The copy that previously existed only on PR #15 DOCS SHA `c01f95d95ad21b97a48442c592f0259415a93c99` is a pre-final snapshot: its pending review and 8-of-10 statements are historical. The mainline copy records the final status from comment 5854087167.
 
-## 1. Current gate result
+**Completion calculation from that handoff:** 9 / 10 of the inventoried PR scopes (#7 through #16) have a scoped Supervisor acceptance. This is an unweighted acceptance count. It is not product completion, implementation effort, merged delivery, or Production readiness. Global completion percentage is not established.
 
-No new implementation blocker was found in the reviewed diff that justifies another architecture or code refactor.
+## 1. Do not execute superseded instructions
 
-However Round 13 is **not accepted yet** because evidence closure is incomplete:
+Do not implement the old Phase 901–960 Round 2 blockers, and do not run the old Round 13 evidence-closure sequence, as if they were still the current order. Those rounds have independent decisions. Preserve accepted architecture. Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, publication authority, or the database.
 
-1. exact CODE Actions `35957489307` is still running; it is not evidence until both Ubuntu and Windows are `SUCCESS` on exact SHA `dc998e80365931b5e73508e8da3d86f91a53f3cd`;
-2. GitHub Actions remains **MOCK regression** (`FOX3D_MOCK_BLENDER=1`), never REAL Blender / Production Ready evidence;
-3. no new clean `FOX3D_MOCK_BLENDER=0`, `usedMock=false` REAL Blender acceptance exists on this exact corrected CODE;
-4. no Round 13 final acceptance MD/JSON package has been published for this exact CODE;
-5. no exact final DOCS SHA + dual-platform DOCS CI exists yet;
-6. no `[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE` handoff exists for this corrected CODE.
+Do not:
 
-Therefore: **do not make unrelated code changes while CODE CI is still running**. If the current exact CODE CI succeeds, proceed directly to evidence closure below. If it fails, fix only the concrete failing regression(s), create one new CODE SHA, and restart the closure sequence from step 1.
+- merge, Mark Ready, retarget, rebase onto main, cherry-pick, force-push, or reset PRs #7–#16;
+- start Round 14, Phase 961+, or any new implementation phase;
+- claim that any PR or main is production-ready or merged;
+- touch Production, NAS, FoxStudio Fleet, a production GPU, or LIVE CNC / LASER / PLC;
+- rebuild DAM, queue, scheduler, recipe, authority, or DB.
 
-## 2. Required closure sequence — strict order
+## 2. Owner decisions still required
 
-1. Wait for exact CODE Actions `35957489307` to finish.
-2. Verify both jobs are `SUCCESS` and both checkout exact SHA `dc998e80365931b5e73508e8da3d86f91a53f3cd`.
-3. Record CI as **MOCK regression only**.
-4. On that exact CODE SHA, run a **new clean REAL Blender** acceptance with:
-   - `FOX3D_MOCK_BLENDER=0`;
-   - `usedMock=false`;
-   - real Blender 5.2.1 LTS / actual available device recorded;
-   - clean working tree / exact CODE SHA recorded.
-5. Verify and record both authority chains separately on fresh reopen/status reads:
-   - model composition: `manifest SHA == meta.manifestSha256 == published.manifestSha256`, then `latest.generationId` resolves only to that valid modern generation;
-   - print preview: `manifest SHA == meta.manifestSha256 == latest.manifestSha256` and `latest.generationId` resolves to that exact generation.
-6. Include one fail-closed post-completion tamper check for each public read path. These are **REAL_OS_IO_INTEGRITY** only if using actual local file bytes; injected timing/monkeypatch controls remain **MOCK / FAULT_INJECTION_CONTROL**.
-7. Update only the existing PR #15 acceptance package:
-   - `docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md`
-   - matching JSON evidence file if already used by this package.
-8. Acceptance package must include exact CODE SHA, CODE run ID, Ubuntu/Windows result, REAL run/generation ID, Blender/device, `usedMock`, relevant SHA/size identities, fresh-read result, and truthful REAL/MOCK/PARTIAL/BLOCKED labels.
-9. Freeze one exact DOCS SHA and run dual-platform GitHub Actions on that exact DOCS SHA.
-10. Verify both DOCS CI jobs are `SUCCESS` and checkout the exact DOCS SHA.
-11. Leave one Issue #1 handoff exactly in this form:
-   - `[GROK_PHASE_COMPLETE] READY_FOR_RE_GATE — PR #15 Round 13 correction`
-   - final CODE SHA
-   - CODE CI run ID
-   - REAL run/generation ID
-   - DOCS SHA
-   - DOCS CI run ID
-   - short truth matrix
-12. STOP. Do not begin Round 14 until Supervisor explicitly says GO.
+From handoff 5854087167, still waiting on the Owner:
 
-## 3. Truth classification — unchanged
+1. Whether and how to authorize integration of the accepted stacks and #14, with exact targets and post-integration validation.
+2. Disposition of duplicate Issue #5 while preserving Issue #6 history.
+3. Scope and priority of the remaining evidence gaps and any future physical, artwork, or Fleet acceptance.
 
-Use only truthful scoped labels:
+Release, deploy, and Production require separate explicit authorization. Proposed integration order, only after that separate authorization: product stack #7 → #8 → #9 → #10 → #11 → #12 → #15, then separately #14 before any Supervisor permission for #13 Round 3B. #16 stays FROZEN until dependencies formally pass and the Supervisor explicitly says GO.
 
-- publication/latest identity implementation: **REAL_LOGIC**;
-- GitHub Actions / pytest with mock Blender: **MOCK regression**;
-- monkeypatch/timing/fault injection: **MOCK / FAULT_INJECTION_CONTROL**;
-- directly observed local file identity and fresh reopen: scoped **REAL_OS_IO_INTEGRITY**;
-- clean `usedMock=false` Blender output: **REAL_RENDER** only;
-- hard-link / hostile concurrent-writer race not directly proven: **PARTIAL / PRESERVED UNKNOWN**;
-- NAS/object storage/controller durability and hardware power-loss: **BLOCKED / NOT_TESTED**;
-- physical CAD authority, physical print proof, manufacturing readiness: **BLOCKED / false**.
+## 3. Truth boundaries
 
-Never promote a green CI run, fixture, monkeypatch, or mock renderer to Production Ready.
+- CI pytest with mock Blender is MOCK regression.
+- Scoped PR #15 publication and latest-read behavior accepted in comment 5854068961 is REAL_LOGIC inside that scope.
+- Local file-byte checks described there are scoped REAL_OS_IO_INTEGRITY.
+- The eleven headless outputs described there are REAL_RENDER for synthetic and reference inputs only, on their recorded Blender 5.2.1 LTS / CYCLES / OptiX / `usedMock=false` runs. This file does not re-run them.
+- Hard-link, hostile writer, and TOCTOU remain PARTIAL.
+- NAS, object storage, hardware power loss, measured CAD, physical print, manufacturing, live H3 / LTX / Vision, and LIVE CNC / LASER / PLC remain BLOCKED.
+- The excluded PR #13 attempt `d5d7140b-4b9a-420b-a75d-2c3be56ac3d3` is classified in `docs/evidence/PR13_WATCHDOG_D5D7140B.md`. The stop mechanism is REAL_LOGIC. The in-process reason the frame-0 depth call did not return is BLOCKED. The finding is PARTIAL. It is not a PASS.
 
-## 4. Canonical files — do not rewrite for freshness
-
-Do not edit these merely to refresh timestamps:
-
-- `docs/GROK_PROGRESS_REPORT.md`
-- `docs/CURRENT_IMPLEMENTATION_AUDIT.md`
-- `docs/REAL_E2E_ACCEPTANCE.md`
-- `docs/CABINET_REAL_ACCEPTANCE.md`
-
-Their existing boundaries remain authoritative:
-
-- `globalProductionReady=false`;
-- Mock pytest is not production evidence;
-- `physicalPrintValidated=false`;
-- CNC live control remains **BLOCKED**;
-- Vision Judge remains **MOCK**.
-
-## 5. Frozen boundaries
-
-- PR #15 remains DRAFT / OPEN / unmerged.
-- PR #16 remains FROZEN DRAFT.
-- No merge / retarget / rebase-to-main / cherry-pick.
-- Round 14 remains HOLD.
-- No H3 / LTX / Vision / CNC / LASER / PLC work.
-- No authority/storage architecture rewrite.
-- No Mock/FIXTURE promotion to Production Ready.
-- `physicalProductGeometryTruth=false`.
-- `physicalPrintValidated=false`.
-- `manufacturingReady=false`.
-- `globalProductionReady=false`.
-- `MERGE_AUTHORIZED=false`.
+STOP. An unchanged OWNER_DECISION_HOLD is not a GO.

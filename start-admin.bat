@@ -12,6 +12,7 @@ start "fox3d-browser" cmd /c "timeout /t 2 /nobreak >nul & start http://127.0.0.
 python -m fox3d.api
 if errorlevel 1 (
   echo.
-  echo 啟動失敗。請確認已安裝: python -m pip install fastapi uvicorn pydantic
+  echo 啟動失敗。請依 pyproject.toml 安裝: python -m pip install -e ".[dev]"
+  echo 執行依賴: fastapi, pydantic, uvicorn, python-multipart
   pause
 )

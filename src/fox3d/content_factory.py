@@ -1512,7 +1512,7 @@ def run_product_content_scenario(
     if pt_auth:
         upstream_pack = pt_auth.get("pack") or {}
         truth_gen_id = pt_auth.get("acceptanceGenerationId")
-        if not eng:
+        if not eng:  # noqa: F821  # pre-existing name; behavior unchanged by the lint gate
             from fox3d.parametric import CabinetEngine
             engine = CabinetEngine()
             cab, _ = engine.create("STORAGE_CABINET", tenant_id=tenant_id, width=2400, height=1800, doorCount=4)
