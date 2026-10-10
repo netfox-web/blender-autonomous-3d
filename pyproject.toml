@@ -50,9 +50,11 @@ namespace_packages = true
 ignore_missing_imports = true
 follow_imports = "silent"
 files = ["src", "scripts", "services", "tests"]
-# Modules below already fail default mypy on main b8c6fe9 (2026-10-10).
-# They stay ignored so this gate can run without a repo-wide type rewrite.
-# Every other module is typechecked. A new module is checked unless added here.
+# Modules below already fail mypy 2.4 on main b8c6fe9 once pyproject
+# dependencies are installed (the CI `pip install -e ".[dev]"` environment,
+# including pydantic). They stay ignored so this gate can run without a
+# repo-wide type rewrite. Every other module is typechecked. A new module
+# is checked unless added here.
 disable_error_code = ["annotation-unchecked"]
 
 [[tool.mypy.overrides]]
@@ -91,6 +93,7 @@ module = [
   "fox3d.publish",
   "fox3d.qc",
   "fox3d.receipt",
+  "fox3d.recipe_3d",
   "fox3d.recipe_workbench",
   "fox3d.recovery",
   "fox3d.release",
@@ -109,5 +112,6 @@ module = [
   "tests.test_recipe_admin_runner",
   "tests.test_supervisor",
   "services.supervisor.github_client",
+  "services.supervisor.models",
 ]
 ignore_errors = true
