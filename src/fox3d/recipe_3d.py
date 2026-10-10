@@ -222,14 +222,15 @@ def validate_outputs(folder, spec):
     return {fmt:{"sha256":sha256_bytes((folder/name).read_bytes()),"sizeBytes":(folder/name).stat().st_size} for fmt,name in FILES.items()}
 
 
-def generate_recipe_3d_product(platform, tenant_id, sku, draft_data, *, revision=0, generation_id=None, on_job=None, cancel_flag=None):
+def generate_recipe_3d_product(platform, tenant_id, sku, draft_data, *, revision=0, generation_id=None, on_job=None, cancel_flag=None,
+                               spec_builder=build_recipe_spec, folder_builder=get_recipe_3d_dir, status_builder=get_recipe_3d_status):
     if getattr(platform,"mock_blender",True) or not platform.runtime.available():
         raise RuntimeError("找不到可用的 Blender。請安裝 Blender 後重新啟動工作台")
     gid = generation_id or new_id()
-    folder = get_recipe_3d_dir(platform.root,tenant_id,sku)
+    folder = folder_builder(platform.root,tenant_id,sku)
     target = folder/"generations"/gid
     target.mkdir(parents=True,exist_ok=False)
-    spec = build_recipe_spec(draft_data,tenant_id=tenant_id)
+    spec = spec_builder(draft_data,tenant_id=tenant_id)
     job = platform.submit_job({"tenantId":tenant_id,"jobType":"PARAMETRIC_3D","mode":"CABINET_PREVIEW",
         "engineering":spec,"render":{"device":"OPTIX" if platform.probe and platform.probe.optix else "CPU","samples":32,"width":800,"height":800},
         "exportBlend":True,"exportGlb":True,"recipePreview":True,"maxAttempts":1,"timeoutSeconds":600})
@@ -256,4 +257,4 @@ def generate_recipe_3d_product(platform, tenant_id, sku, draft_data, *, revision
             "engineeringReady":False,"productionReady":False}
     atomic_json(target/"meta.json",meta)
     atomic_json(folder/"meta.json",meta)
-    return get_recipe_3d_status(platform.root,tenant_id,sku,current_draft=draft_data)
+    return status_builder(platform.root,tenant_id,sku,current_draft=draft_data)

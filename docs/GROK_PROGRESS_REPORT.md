@@ -1,3 +1,7 @@
+# Grok Progress Report — legacy compatibility
+
+Latest Codex user correction: see [Agent Progress Report](AGENT_PROGRESS_REPORT.md) and [asset/template acceptance](ASSET_USAGE_TEMPLATE_ACCEPTANCE.md). The report below is historical Supervisor work, not the current correction.
+
 # Grok Progress Report
 
 ## Issue #6 Round 3A — Articulation Engineering Authority Source V1 (2026-09-15)
