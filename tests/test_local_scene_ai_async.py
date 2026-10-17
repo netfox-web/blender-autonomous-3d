@@ -167,3 +167,29 @@ def test_fresh_running_batch_is_left_alone(tmp_path: Path):
     (bdir / "batch.json").write_text(json.dumps({"batchId": "fresh001", "state": "running", "total": 1, "completed": 0, "succeeded": 0, "failed": 0, "items": [{"itemId": "item_01", "index": 1, "state": "running", "stage": "blender"}]}), encoding="utf-8")
     got = client.get("/api/ecommerce-scenes/batches/fresh001", headers=headers).json()
     assert got["state"] == "running" and got["items"][0]["state"] == "running"
+
+
+def test_batch_owned_by_this_process_is_never_marked_stale(tmp_path: Path, monkeypatch):
+    """A batch queued behind another one writes no progress for a while; it must not be reported as interrupted."""
+    import os as _os
+
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    plat.runtime = FakeRuntime()  # type: ignore[assignment]
+    fleet = HoldingFleet()
+    monkeypatch.setattr("fox3d.ecommerce_scene_studio.FleetImageClient.from_settings", classmethod(lambda cls, settings=None: FleetImageClient(base_url="http://fleet.test", token="tok", _opener=fleet.opener)))
+    real_sleep = time.sleep
+    monkeypatch.setattr("fox3d.local_scene_ai.time.sleep", lambda s: real_sleep(0.01))
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    client.post("/api/ecommerce-scenes/ai-settings", headers=headers, json={"fleetToken": "tok", "publicBaseUrl": "http://192.168.66.21:8790"})
+    r = client.post("/api/ecommerce-scenes/batches", headers=headers, json={"cabinet": CABINET_PRESETS[0], "sceneIds": [BUILTIN_SCENES[0]["id"]], "themeIds": ["THEME_NORDIC_OAK"], "views": ["FRONT"], "aiEngine": "fleet_flux3", "aiVariants": 1})
+    batch_id = r.json()["batchId"]
+    _poll(client, batch_id, headers, lambda b: b["items"][0]["stage"] == "ai")
+    bpath = Path(plat.root) / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / batch_id / "batch.json"
+    old = time.time() - 3600
+    _os.utime(bpath, (old, old))  # pretend nothing was written for an hour while the fleet holds the task
+    got = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
+    assert got["state"] == "running" and got["items"][0]["state"] == "running"
+    fleet.release.set()
+    done = _poll(client, batch_id, headers, lambda b: b["state"] != "running")
+    assert done["state"] == "completed"

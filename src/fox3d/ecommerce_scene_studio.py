@@ -1181,6 +1181,11 @@ class EcommerceSceneStore:
         """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
         if doc.get("state") != "running":
             return doc
+        # A batch this process still owns (queued behind another batch, or mid-render) is alive even when its file
+        # has not changed for a while; only batches left over from a previous process can be stale.
+        with self.lock:
+            if str(doc.get("batchId") or bpath.parent.name) in self._live_docs:
+                return doc
         try:
             age = time.time() - bpath.stat().st_mtime
         except OSError:
