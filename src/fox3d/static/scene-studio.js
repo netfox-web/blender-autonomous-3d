@@ -907,13 +907,13 @@
       const imgHtml = item.state === 'succeeded'
         ? `<img src="${base}/png${qs}&inline=true" alt="${esc(item.sceneName)}">`
         : `<div style="aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;background:#1e2422;color:#a9d6c6;font-weight:700;padding:12px;text-align:center;">
-            ${item.state === 'running' ? '🔥 Blender Cycles 算圖中…' : (item.state === 'queued' ? '⏳ 排隊等待中…' : '⚠️ ' + esc(item.error || '失敗'))}
+            ${item.state === 'running' ? '🔥 Blender Cycles GPU 光追算圖中…' : (item.state === 'queued' ? '⏳ 排隊等待中…' : '⚠️ ' + esc(item.error || '失敗'))}
           </div>`;
       const linksHtml = item.state === 'succeeded'
         ? `<div class="gallery-links">
-            <a href="${base}/png${qs}">PNG ↓</a>
-            <a href="${base}/glb${qs}">GLB ↓</a>
-            <a href="${base}/blend${qs}">BLEND ↓</a>
+            <a href="${base}/png${qs}">下載逼真圖 PNG ↓</a>
+            <a href="${base}/glb${qs}">3D 模型 GLB ↓</a>
+            <a href="${base}/blend${qs}">Blender 原檔 ↓</a>
           </div>`
         : '';
       return `<article class="gallery-card">
@@ -921,11 +921,60 @@
         <div class="gallery-card-body">
           <strong>#${item.index} · ${esc(item.sceneName)}</strong>
           <span>配色：${esc(item.themeLabel)}</span>
-          <span>視角：${esc(item.viewLabel)} ${item.renderTimeSec ? `(${item.renderTimeSec}s)` : ''}</span>
+          <span>視角：${esc(item.viewLabel)} ${item.renderTimeSec ? `(${item.renderTimeSec}s · ${item.device || 'GPU'})` : ''}</span>
           ${linksHtml}
         </div>
       </article>`;
     }).join('');
+
+    const first = (batch.items || [])[0];
+    if (first && $('single-photoreal-box') && !$('single-photoreal-box').hidden) {
+      const base = `/api/ecommerce-scenes/batches/${encodeURIComponent(batch.batchId)}/items/${encodeURIComponent(first.itemId)}/download`;
+      const qs = `?workspace=${encodeURIComponent(tenant)}`;
+      $('single-photoreal-status').textContent = first.state === 'succeeded'
+        ? `🟢 渲染完成 (${first.renderTimeSec || ''}s · Blender ${first.blenderVersion || ''} ${first.device || 'OPTIX'})`
+        : (first.state === 'running' ? '🔥 Blender Cycles 光追渲染中（約 4~8 秒）…' : first.error || '排隊中…');
+      if (first.state === 'succeeded') {
+        $('single-photoreal-content').innerHTML = `
+          <img class="photoreal-hero-img" src="${base}/png${qs}&inline=true" alt="${esc(first.sceneName)}">
+          <div class="photoreal-meta">
+            <h4>${esc(first.sceneName)} · ${esc(first.themeLabel)}</h4>
+            <p>已套用 Cycles 物理光線追蹤、PBR 木紋凹凸、織物微絨感、家具導角與柔和窗光陰影。</p>
+            <div class="gallery-links">
+              <a class="btn-sm primary" href="${base}/png${qs}">⬇ 下載 800×800 逼真電商圖 (PNG)</a>
+              <a class="btn-sm" href="${base}/glb${qs}">⬇ 下載 3D 場景模型 (GLB)</a>
+              <a class="btn-sm" href="${base}/blend${qs}">⬇ 下載 Blender 專案檔 (.blend)</a>
+            </div>
+          </div>`;
+      } else {
+        $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 進行物理光線追蹤與 AI 降噪，請稍候約 4～8 秒…</div>`;
+      }
+    }
+  }
+
+  async function startSinglePhotorealRender() {
+    if (!state.cabinet || !state.currentScene) return;
+    try {
+      $('single-photoreal-box').hidden = false;
+      $('single-photoreal-status').textContent = '🔥 啟動 Blender Cycles GPU 光追…';
+      $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 進行物理光線追蹤與 AI 降噪，請稍候約 4～8 秒…</div>`;
+      const batch = await api('/api/ecommerce-scenes/batches', {
+        method: 'POST',
+        body: JSON.stringify({
+          cabinet: state.cabinet,
+          currentScene: state.currentScene,
+          sceneIds: [state.currentScene.id],
+          themeIds: [state.cabinet.themeId || 'THEME_NORDIC_OAK'],
+          views: [$('scene-view').value || 'THREE_QUARTER'],
+          samples: 36
+        })
+      });
+      state.activeBatchId = batch.batchId;
+      renderBlenderBatch(batch);
+      pollBlenderBatch(batch.batchId);
+    } catch (e) {
+      notify(e.message, true);
+    }
   }
 
   async function pollBlenderBatch(batchId) {
@@ -1130,6 +1179,9 @@
 
     $('instant-matrix-btn').addEventListener('click', generateInstant3DMatrixGallery);
     $('blender-matrix-btn').addEventListener('click', startRealBlenderBatch);
+    if ($('render-single-photoreal-btn')) {
+      $('render-single-photoreal-btn').addEventListener('click', startSinglePhotorealRender);
+    }
   }
 
   async function init() {

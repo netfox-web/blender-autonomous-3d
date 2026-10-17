@@ -211,15 +211,24 @@
         <!-- 3D Live Interactive Room + Cabinet Viewport -->
         <div class="viewport-card">
           <div class="vp-header">
-            <strong>🎥 3D 房間＋組合櫃即時預覽（滑鼠拖曳旋轉視角／滾輪縮放）</strong>
+            <strong>🎥 3D 空間即時構圖預覽（拖拉調好位置後，點右方「🔥 算逼真圖」）</strong>
             <div class="btn-group">
               <button id="reset-cam-btn" type="button" class="btn-xs">重設視角</button>
-              <button id="snapshot-png-btn" type="button" class="btn-xs primary">📸 下載此張電商圖 PNG</button>
+              <button id="snapshot-png-btn" type="button" class="btn-xs">📸 存構圖草稿</button>
+              <button id="render-single-photoreal-btn" type="button" class="btn-xs btn-accent">🔥 立即用 Blender 光追算這張逼真圖</button>
             </div>
           </div>
           <canvas id="scene3d-canvas" width="560" height="400"></canvas>
           <div id="camera-quick-pills" class="camera-pills"></div>
         </div>
+      </div>
+
+      <div id="single-photoreal-box" class="photoreal-showcase" hidden>
+        <div class="row-between">
+          <strong>✨ Blender Cycles GPU 物理光追逼真大圖（含木紋凹凸、布料織紋、柔和窗光陰影與景深）</strong>
+          <span id="single-photoreal-status" class="badge">準備中…</span>
+        </div>
+        <div id="single-photoreal-content" class="photoreal-content"></div>
       </div>
     </section>
 

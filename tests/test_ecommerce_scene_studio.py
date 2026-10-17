@@ -34,9 +34,10 @@ def test_compile_custom_scene_produces_furnished_scene_v1():
     scene_Cfg_rot = {**scene_cfg, "productPose": {"x": 0.25, "y": 1.10, "z": 0.0, "rotationDeg": 45.0}}
     scene_def, scene_hash = compile_custom_scene(scene_Cfg_rot, cab_spec, view="THREE_QUARTER")
     assert scene_def["rendererContract"] == "FURNISHED_SCENE_V1"
+    assert scene_def["photorealMode"] is True
     assert len(scene_hash) == 64
     assert len(scene_def["boxes"]) > 10
-    assert len(scene_def["lights"]) == 2
+    assert len(scene_def["lights"]) == 3
     assert len(scene_def["productMatrix"]) == 4
 
 

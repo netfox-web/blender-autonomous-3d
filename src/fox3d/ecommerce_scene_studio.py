@@ -686,6 +686,30 @@ def compile_custom_scene(
     for idx, prop in enumerate(scene_cfg.get("props") or [], start=1):
         boxes.extend(_expand_prop_boxes(prop, idx))
 
+    # Add sleek brushed-metal handles on cabinet doors/drawers in the presentation scene
+    for h_idx, part in enumerate(cabinet_spec.get("components") or [], start=1):
+        if part.get("role") != "door":
+            continue
+        lx, ly, lz = [float(v) for v in part.get("location") or [0, 0, 0]]
+        sx, sy, sz = [float(v) for v in part.get("size") or [0.4, 0.015, 0.3]]
+        is_drawer = str(part.get("componentId") or "").startswith("drawer_")
+        local_hx = lx if is_drawer else (lx + sx * 0.36)
+        local_hy = ly - sy * 0.5 - 0.008
+        local_hz = lz + (0.02 if is_drawer else 0.0)
+        wx = px + (local_hx * cos_r - local_hy * sin_r)
+        wy = py + (local_hx * sin_r + local_hy * cos_r)
+        wz = pz + local_hz
+        h_size = [0.11, 0.016, 0.014] if is_drawer else [0.014, 0.016, 0.11]
+        if abs(sin_r) > 0.7:
+            h_size = [h_size[1], h_size[0], h_size[2]]
+        boxes.append({
+            "name": f"CabinetHandle_{h_idx}_METAL",
+            "size": h_size,
+            "location": [round(wx, 4), round(wy, 4), round(wz, 4)],
+            "color": [0.22, 0.20, 0.18],
+            "bevel": 0.003,
+        })
+
     w_m = float(cabinet_spec.get("width") or 424.0) / 1000.0
     d_m = float(cabinet_spec.get("depth") or 295.0) / 1000.0
     h_m = float(cabinet_spec.get("height") or 900.0) / 1000.0
@@ -708,6 +732,7 @@ def compile_custom_scene(
         "sceneName": str(scene_cfg.get("name") or "自訂 3D 場景"),
         "version": 1,
         "rendererContract": "FURNISHED_SCENE_V1",
+        "photorealMode": True,
         "slot": "FLOOR",
         "view": view_cfg["id"],
         "supportHeightM": round(pz, 4),
@@ -717,8 +742,9 @@ def compile_custom_scene(
         "worldColor": light_cfg["worldColor"],
         "worldStrength": light_cfg["worldStrength"],
         "lights": [
-            {"name": "WindowKey", "location": [-1.8, -2.1, 3.1], "target": target, "energy": light_cfg["keyEnergy"], "size": 2.8, "color": light_cfg["keyColor"]},
-            {"name": "RoomFill", "location": [2.1, -0.5, 2.4], "target": target, "energy": light_cfg["fillEnergy"], "size": 2.2, "color": light_cfg["fillColor"]},
+            {"name": "WindowKey", "type": "AREA", "location": [-1.8, -2.1, 3.1], "target": target, "energy": light_cfg["keyEnergy"], "size": 2.8, "color": light_cfg["keyColor"]},
+            {"name": "RoomFill", "type": "AREA", "location": [2.1, -0.5, 2.4], "target": target, "energy": light_cfg["fillEnergy"], "size": 2.2, "color": light_cfg["fillColor"]},
+            {"name": "SunBeam", "type": "SUN", "location": [-2.2, -2.5, 3.8], "target": target, "energy": 2.2, "angle": 0.065, "color": light_cfg["keyColor"]},
         ],
         "productScale": 1.0,
         "physicalRoomTruth": False,
@@ -969,10 +995,10 @@ class EcommerceSceneStore:
                     "engineering": cab_spec,
                     "camera": scene_def["camera"],
                     "render": {
-                        "width": 640,
-                        "height": 640,
-                        "samples": samples,
-                        "device": "CPU",
+                        "width": 800,
+                        "height": 800,
+                        "samples": max(32, samples),
+                        "device": "OPTIX",
                     },
                     "exportBlend": True,
                     "exportGlb": True,
