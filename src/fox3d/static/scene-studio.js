@@ -17,6 +17,7 @@
     activeBatchId: null,
     singleBatchId: null,
     lastBatch: null,
+    batches: [],
     pollTimer: null,
     aiEngine: 'fleet_flux3',
     engines: [],
@@ -179,22 +180,69 @@
     renderColumnsEditor();
   }
 
+  // Scene library cards: every scene gets a live 3D thumbnail (same renderer as the viewport, wide view, current
+  // cabinet), a hover peek shows it large, a click selects it.
+  const sceneThumbCache = new Map();
+  function sceneThumb(scene, w, h) {
+    const spec = state.previewPlan?.cabinetSpec;
+    const key = `${scene.id}|${w}x${h}|${spec ? (spec.width + 'x' + spec.height + '|' + (state.cabinet?.themeId || '')) : 'nospec'}|${JSON.stringify(scene.props || []).length}|${scene.wallColorHex}|${scene.floorColorHex}`;
+    if (sceneThumbCache.has(key)) return sceneThumbCache.get(key);
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    let url = '';
+    if (spec) {
+      state.thumbMode = true;
+      try {
+        // pulled back a little and slightly higher than the WIDE shot so the whole room set reads at thumbnail size
+        renderLive3DScene(off, scene, spec, 'WIDE', { yawOffset: 0, pitchOffset: 0.12, zoom: 0.72 });
+      } finally {
+        state.thumbMode = false;
+      }
+      url = off.toDataURL('image/png');
+    }
+    if (url) sceneThumbCache.set(key, url);
+    return url;
+  }
+
   function renderSceneTabs() {
     const scenes = state.overview?.scenes || [];
-    $('scene-tabs').innerHTML = scenes.map(s =>
-      `<button type="button" class="chip-btn ${state.currentScene?.id === s.id ? 'active' : ''}" data-scene-id="${esc(s.id)}">
-        ${esc(s.name)}${s.builtin ? '' : ' · 自訂'}
-      </button>`
-    ).join('');
-    $('scene-tabs').querySelectorAll('[data-scene-id]').forEach(btn => {
+    const box = $('scene-tabs');
+    box.innerHTML = scenes.map(s => {
+      const thumb = sceneThumb(s, 240, 160);
+      return `<button type="button" class="scene-card ${state.currentScene?.id === s.id ? 'active' : ''}" data-scene-id="${esc(s.id)}" title="${esc(s.name)}">
+        ${thumb ? `<img src="${thumb}" alt="${esc(s.name)}">` : '<img alt="">'}
+        <span>${esc(s.name)}<em>${esc(s.category || '')}${s.builtin ? '' : ' · 自訂'}</em></span>
+      </button>`;
+    }).join('');
+    const peek = $('scene-peek');
+    box.querySelectorAll('[data-scene-id]').forEach(btn => {
+      const scene = scenes.find(x => x.id === btn.dataset.sceneId);
       btn.addEventListener('click', () => {
-        const found = scenes.find(x => x.id === btn.dataset.sceneId);
-        if (!found) return;
-        state.currentScene = clone(found);
+        if (!scene) return;
+        state.currentScene = clone(scene);
         state.selectedTarget = { kind: 'cabinet', index: -1 };
         syncSceneInputsFromState();
         refreshPreviewPlan();
+        if (peek) peek.hidden = true;
       });
+      if (!peek || !scene) return;
+      btn.addEventListener('mouseenter', () => {
+        const big = sceneThumb(scene, 720, 480);
+        if (!big) return;
+        peek.querySelector('img').src = big;
+        peek.querySelector('span').textContent = `${scene.name} · ${scene.category || ''}`;
+        const r = btn.getBoundingClientRect();
+        const pw = 432;
+        let left = r.right + 12;
+        if (left + pw > window.innerWidth - 8) left = Math.max(8, r.left - pw - 12);
+        let top = r.top - 40;
+        if (top + 330 > window.innerHeight - 8) top = Math.max(8, window.innerHeight - 338);
+        peek.style.left = `${left}px`;
+        peek.style.top = `${Math.max(8, top)}px`;
+        peek.hidden = false;
+      });
+      btn.addEventListener('mouseleave', () => { peek.hidden = true; });
     });
   }
 
@@ -381,13 +429,62 @@
   }
 
   // ==================== 2D FLOORPLAN INTERACTIVE CANVAS ====================
+  // Canvases are laid out by CSS (width:100%). Drawing at the attribute size (520x400) and letting the browser
+  // stretch it is what made the plan blurry and squashed: size the backing store to the CSS box x devicePixelRatio
+  // and draw in CSS pixels. Offscreen canvases (no layout) keep their attribute size.
+  function canvasCssSize(canvas) {
+    const W = canvas.clientWidth || canvas.width;
+    const H = canvas.clientHeight || canvas.height;
+    return { W, H };
+  }
+
+  function prepareCanvas(canvas) {
+    const { W, H } = canvasCssSize(canvas);
+    const dpr = canvas.clientWidth ? Math.min(3, window.devicePixelRatio || 1) : 1;
+    const bw = Math.max(1, Math.round(W * dpr));
+    const bh = Math.max(1, Math.round(H * dpr));
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W, H };
+  }
+
+  function drawLabel(ctx, textValue, x, y, { size = 11, bg = 'rgba(14, 18, 17, 0.72)', fg = '#ffffff', align = 'center' } = {}) {
+    ctx.save();
+    ctx.font = `bold ${size}px "Noto Sans TC", "Microsoft JhengHei", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const padX = 6;
+    const w = ctx.measureText(textValue).width + padX * 2;
+    const h = size + 8;
+    let bx = x - w / 2;
+    if (align === 'left') bx = x;
+    const r = 5;
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, y - h / 2);
+    ctx.arcTo(bx + w, y - h / 2, bx + w, y + h / 2, r);
+    ctx.arcTo(bx + w, y + h / 2, bx, y + h / 2, r);
+    ctx.arcTo(bx, y + h / 2, bx, y - h / 2, r);
+    ctx.arcTo(bx, y - h / 2, bx + w, y - h / 2, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = fg;
+    ctx.fillText(textValue, bx + w / 2, y + 0.5);
+    ctx.restore();
+  }
+
   function floorplanTransform(canvas) {
     const rw = Number(state.currentScene?.roomWidthM || 5.6);
     const rd = Number(state.currentScene?.roomDepthM || 4.2);
-    const pad = 38;
-    const scale = Math.min((canvas.width - pad * 2) / rw, (canvas.height - pad * 2) / rd);
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2 + 12;
+    const { W, H } = canvasCssSize(canvas);
+    const pad = 40;
+    const scale = Math.min((W - pad * 2) / rw, (H - pad * 2) / rd);
+    const cx = W / 2;
+    const cy = H / 2 + 12;
     return {
       rw, rd, scale, cx, cy,
       toScreen(x, y) {
@@ -405,9 +502,9 @@
   function drawFloorplan() {
     const canvas = $('floorplan-canvas');
     if (!canvas || !state.currentScene) return;
-    const ctx = canvas.getContext('2d');
+    const { ctx, W, H } = prepareCanvas(canvas);
     const tf = floorplanTransform(canvas);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, W, H);
 
     // Room floor rectangle (y from -rd/2 to +1.65)
     const [x0, y0] = tf.toScreen(-tf.rw / 2, 1.65);
@@ -440,9 +537,7 @@
     ctx.strokeStyle = state.currentScene.sideWallColorHex || '#a3a89c';
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.stroke();
 
-    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.font = '11px "Microsoft JhengHei", sans-serif';
-    ctx.fillText('▲ 主背牆 (Back Wall Y=1.65m)', x0 + 10, y0 - 8);
+    drawLabel(ctx, '主背牆（鏡頭從下方往上看）', x0 + 6, y0 - 12, { size: 10, bg: 'rgba(255,255,255,0.14)', fg: 'rgba(255,255,255,0.85)', align: 'left' });
 
     // Draw props
     (state.currentScene.props || []).forEach((p, idx) => {
@@ -461,11 +556,10 @@
       ctx.lineWidth = isSel ? 2.5 : 1.2;
       ctx.strokeStyle = isSel ? '#ffd166' : 'rgba(255,255,255,0.6)';
       ctx.strokeRect(-pw / 2, -pd / 2, pw, pd);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.label || p.type, 0, 4);
       ctx.restore();
+      const labelText = String(p.label || p.type);
+      const short = labelText.length > 8 ? labelText.slice(0, 7) + '…' : labelText;
+      drawLabel(ctx, short, px, py, { size: 11, bg: isSel ? 'rgba(255,209,102,0.95)' : 'rgba(14,18,17,0.72)', fg: isSel ? '#1d2320' : '#ffffff' });
     });
 
     // Draw Cabinet Target Slot
@@ -493,11 +587,8 @@
     ctx.lineTo(6, cd / 2);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('組合櫃', 0, 4);
     ctx.restore();
+    drawLabel(ctx, '組合櫃', cx, cy, { size: 12, bg: 'rgba(184,93,41,0.96)', fg: '#ffffff' });
   }
 
   function setupFloorplanEvents() {
@@ -506,10 +597,7 @@
 
     function getMousePos(e) {
       const rect = canvas.getBoundingClientRect();
-      return [
-        (e.clientX - rect.left) * (canvas.width / rect.width),
-        (e.clientY - rect.top) * (canvas.height / rect.height)
-      ];
+      return [e.clientX - rect.left, e.clientY - rect.top];
     }
 
     canvas.addEventListener('mousedown', e => {
@@ -642,8 +730,7 @@
 
   function renderLive3DScene(canvas, sceneCfg, cabinetSpec, viewId = 'THREE_QUARTER', orbit = { yawOffset: 0, pitchOffset: 0, zoom: 1.0 }, themeOverride = null) {
     if (!canvas || !sceneCfg || !cabinetSpec) return;
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width, H = canvas.height;
+    const { ctx, W, H } = prepareCanvas(canvas);
 
     // Sky/World background gradient
     const grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -674,7 +761,9 @@
     const dist = Math.max(extent * vcfg.distMult, 2.0) / Math.max(0.5, orbit.zoom || 1.0);
 
     const target = [px * 0.55, py * 0.5, pz + cabH * 0.48];
-    const baseYaw = Math.atan2(vcfg.side, -1.0) + (orbit.yawOffset || 0);
+    // yaw 0 = camera in front of the room (-y) looking at the back wall, like the Blender camera; the old
+    // atan2(side, -1) put the camera behind the back wall, which mirrored the whole preview left/right.
+    const baseYaw = Math.atan2(vcfg.side, 1.0) + (orbit.yawOffset || 0);
     const basePitch = Math.atan(vcfg.elev) + (orbit.pitchOffset || 0);
 
     const camPos = [
@@ -810,16 +899,20 @@
     });
 
     // Watermark badge on 3D preview
-    ctx.fillStyle = 'rgba(18, 28, 25, 0.72)';
-    ctx.fillRect(12, H - 34, 310, 24);
-    ctx.fillStyle = '#e7f3ee';
-    ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
-    ctx.fillText(`${sceneCfg.name} · ${themeOverride?.label || cabinetSpec.themeLabel || ''}`, 20, H - 18);
+    if (!state.thumbMode) drawLabel(ctx, `${sceneCfg.name} · ${themeOverride?.label || cabinetSpec.themeLabel || ''}`, 12, H - 18, { size: 11, bg: 'rgba(18, 28, 25, 0.78)', fg: '#e7f3ee', align: 'left' });
   }
 
   function setup3DViewportEvents() {
     const canvas = $('scene3d-canvas');
     if (!canvas) return;
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        drawFloorplan();
+        renderLive3DScene(canvas, state.currentScene, state.previewPlan?.cabinetSpec, $('scene-view').value, state.camOrbit);
+      }, 120);
+    });
     canvas.addEventListener('mousedown', e => {
       state.camOrbit.dragging = true;
       state.camOrbit.lastX = e.clientX;
@@ -860,6 +953,11 @@
       state.previewPlan = res;
       drawFloorplan();
       renderLive3DScene($('scene3d-canvas'), state.currentScene, res.cabinetSpec, $('scene-view').value || 'THREE_QUARTER', state.camOrbit);
+      const specKey = `${res.cabinetSpec?.width}x${res.cabinetSpec?.height}|${state.cabinet?.themeId || ''}`;
+      if (state.sceneCardsKey !== specKey) {
+        state.sceneCardsKey = specKey;
+        renderSceneTabs();
+      }
     } catch (e) {
       notify(e.message, true);
     }
@@ -982,6 +1080,9 @@
     const batch = await api('/api/ecommerce-scenes/batches', { method: 'POST', body: JSON.stringify(body) });
     state.activeBatchId = batch.batchId;
     state.singleBatchId = single ? batch.batchId : null;
+    state.batches = [batch, ...state.batches.filter(b => b.batchId !== batch.batchId)].slice(0, 15);
+    rememberBatch(batch.batchId);
+    renderBatchPicker();
     renderBlenderBatch(batch);
     pollBlenderBatch(batch.batchId);
     return batch;
@@ -1055,7 +1156,7 @@
 
   function describeStage(batch, item) {
     if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
-    if (item.state === 'queued') return { cls: 'is-queued', text: '排隊等待 Blender…' };
+    if (item.state === 'queued') return { cls: 'is-queued', text: '排隊等待 Blender（上一組算完就輪到）' };
     if (item.stage === 'ai') {
       const vs = item.aiVariants || [];
       const done = vs.filter(v => v.state === 'succeeded').length;
@@ -1076,7 +1177,8 @@
     const sources = [];
     const rendered = item.state === 'succeeded' || item.stage === 'ai';
     (item.aiVariants || []).forEach((v, i) => sources.push({
-      key: `v${i + 1}`, label: `AI 實景 ${i + 1}`, state: v.state, note: v.error || v.progressNote || '',
+      key: `v${i + 1}`, label: `AI 實景 ${i + 1}${v.drift ? ' ⚠' : ''}`, state: v.state, drift: Boolean(v.drift),
+      note: v.error || (v.drift ? `疑似重影（構圖分數 ${v.driftScore}），建議再生成` : (v.progressNote || '')),
       src: `${base}/ai_local_png${qs}&variant=${i + 1}&inline=true`, dl: `${base}/ai_local_png${qs}&variant=${i + 1}`, seed: v.seed, caption: v.caption
     }));
     if (rendered) {
@@ -1091,10 +1193,10 @@
     const { sources, base, qs, rendered } = itemSources(batch, item);
     const imgId = `bimg-${batch.batchId}-${item.itemId}`;
     const ready = sources.filter(s => s.state === 'succeeded');
-    const primary = ready[0];
+    const primary = ready.find(s => !s.drift) || ready[0];
     const stage = describeStage(batch, item);
     const tabs = sources.map(s =>
-      `<button type="button" class="thumb-tab ${primary && s.key === primary.key ? 'primary' : ''} is-${esc(s.state)}" data-target="${imgId}" data-src="${s.state === 'succeeded' ? esc(s.src) : ''}" title="${esc(s.note || '')}" ${s.state === 'succeeded' ? '' : 'disabled'}>${esc(s.label)}${s.state === 'failed' ? ' ✕' : ''}</button>`
+      `<button type="button" class="thumb-tab ${primary && s.key === primary.key ? 'primary' : ''} is-${esc(s.state)} ${s.drift ? 'is-drift' : ''}" data-target="${imgId}" data-src="${s.state === 'succeeded' ? esc(s.src) : ''}" title="${esc(s.note || '')}" ${s.state === 'succeeded' ? '' : 'disabled'}>${esc(s.label)}${s.state === 'failed' ? ' ✕' : ''}</button>`
     ).join('');
     const hero = primary
       ? `<img id="${imgId}" class="card-hero" src="${esc(primary.src)}" alt="${esc(item.sceneName)}">`
@@ -1145,14 +1247,75 @@
     $('single-photoreal-content').innerHTML = blocks.join('');
   }
 
+  const BATCH_KEY = 'fox3d.scene-studio.batch';
+  function rememberBatch(batchId) {
+    try { localStorage.setItem(BATCH_KEY, batchId || ''); } catch (e) { /* private mode */ }
+  }
+  function rememberedBatch() {
+    try { return localStorage.getItem(BATCH_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function batchLabel(b) {
+    const when = b.createdAt ? new Date(b.createdAt) : null;
+    const ts = when && !isNaN(when) ? `${String(when.getMonth() + 1).padStart(2, '0')}/${String(when.getDate()).padStart(2, '0')} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
+    const st = b.state === 'running' ? '執行中' : (b.state === 'interrupted' ? '已中斷' : `完成 ${b.succeeded}/${b.total}`);
+    const ai = b.aiVariantsPerItem ? ` · AI×${b.aiVariantsPerItem}` : '';
+    return `${ts} · ${b.total} 組${ai} · ${st} · ${b.cabinetName || ''}`;
+  }
+
+  function renderBatchPicker() {
+    const sel = $('batch-picker');
+    if (!sel) return;
+    const list = state.batches || [];
+    sel.innerHTML = list.length
+      ? list.map(b => `<option value="${esc(b.batchId)}">${esc(batchLabel(b))}</option>`).join('')
+      : '<option value="">尚無批次</option>';
+    if (state.activeBatchId && list.some(b => b.batchId === state.activeBatchId)) sel.value = state.activeBatchId;
+  }
+
+  async function refreshBatchList(selectId) {
+    try {
+      const ov = await api('/api/ecommerce-scenes/overview');
+      state.overview = ov;
+      state.batches = ov.batches || [];
+      renderBatchPicker();
+      if (selectId) await showBatch(selectId);
+    } catch (e) {
+      notify(e.message, true);
+    }
+  }
+
+  async function showBatch(batchId) {
+    if (!batchId) return;
+    clearTimeout(state.pollTimer);
+    state.activeBatchId = batchId;
+    state.singleBatchId = null;
+    rememberBatch(batchId);
+    try {
+      const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
+      state.batches = [batch, ...state.batches.filter(b => b.batchId !== batchId)].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 15);
+      renderBatchPicker();
+      renderBlenderBatch(batch);
+      if (batch.state === 'running') pollBlenderBatch(batch.batchId);
+    } catch (e) {
+      notify(e.message, true);
+    }
+  }
+
   function renderBlenderBatch(batch) {
     if (!batch) return;
     state.lastBatch = batch;
+    const picker = $('batch-picker');
+    if (picker && picker.value !== batch.batchId && (state.batches || []).some(b => b.batchId === batch.batchId)) picker.value = batch.batchId;
     const running = batch.state === 'running';
+    const interrupted = batch.state === 'interrupted';
     const aiNote = batch.aiVariantsPerItem ? ` · ${batch.aiEngineLabel || '地端 AI'} ×${batch.aiVariantsPerItem}` : '';
     const statusEl = $('blender-batch-status');
-    statusEl.textContent = `${running ? '執行中' : '已完成'} ${batch.completed}/${batch.total} · 成功 ${batch.succeeded}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}`;
-    statusEl.className = `badge ${running ? 'warn' : (batch.failed ? 'bad' : 'ok')}`;
+    const aiWaiting = running && (batch.items || []).filter(it => it.stage === 'ai').length;
+    statusEl.textContent = `${running ? '執行中' : (interrupted ? '已中斷' : '已完成')} ${batch.completed}/${batch.total} · 成功 ${batch.succeeded}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}${aiWaiting ? ` · ${aiWaiting} 組等 GPU` : ''}`;
+    statusEl.className = `badge ${running ? 'warn' : ((batch.failed || interrupted) ? 'bad' : 'ok')}`;
+    const rerunBtn = $('batch-rerun');
+    if (rerunBtn) rerunBtn.hidden = !(batch.request && batch.state !== 'running');
     const zipLink = $('download-zip-link');
     if (batch.succeeded > 0) {
       zipLink.hidden = false;
@@ -1172,12 +1335,16 @@
     clearTimeout(state.pollTimer);
     try {
       const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
+      state.batches = (state.batches || []).map(b => (b.batchId === batch.batchId ? batch : b));
+      if (batch.state !== 'running') renderBatchPicker();
       renderBlenderBatch(batch);
       if (batch.state === 'running') {
         state.pollTimer = setTimeout(() => pollBlenderBatch(batchId), 2500);
       } else {
         const aiCount = (batch.items || []).reduce((n, it) => n + (it.aiVariants || []).filter(v => v.state === 'succeeded').length, 0);
-        notify(`批次完成：${batch.succeeded}/${batch.total} 組光追圖${aiCount ? `、${aiCount} 張地端 AI 實景` : ''}${batch.failed ? `，${batch.failed} 組失敗` : ''}。`);
+        notify(batch.state === 'interrupted'
+          ? '這個批次在工作台重新啟動時中斷了，請重新送出。'
+          : `批次完成：${batch.succeeded}/${batch.total} 組光追圖${aiCount ? `、${aiCount} 張地端 AI 實景` : ''}${batch.failed ? `，${batch.failed} 組失敗` : ''}。`, batch.state === 'interrupted');
         refreshEngineStatus();
       }
     } catch (e) {
@@ -1439,10 +1606,10 @@
     $('ai-prompt-preview-btn').addEventListener('click', () => previewAiPrompt(false));
     $('ai-prompt-polish-btn').addEventListener('click', () => previewAiPrompt(true));
     $('ai-variants').addEventListener('change', updateMatrixFormula);
-    ['ai-variation', 'ai-upsample'].forEach(id => {
+    ['ai-variation', 'ai-upsample', 'ai-pin-product'].forEach(id => {
       $(id).addEventListener('change', async () => {
         try {
-          await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify({ aiVariation: $('ai-variation').value, aiUpsample: $('ai-upsample').checked, aiVariants: Number($('ai-variants').value || 2) }) });
+          await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify({ aiVariation: $('ai-variation').value, aiUpsample: $('ai-upsample').checked, aiPinProduct: $('ai-pin-product').checked, aiVariants: Number($('ai-variants').value || 2) }) });
         } catch (e) { /* keep UI value; surfaced on save */ }
       });
     });
@@ -1453,6 +1620,7 @@
         aiVariants: Number($('ai-variants').value || 2),
         aiVariation: $('ai-variation').value,
         aiUpsample: $('ai-upsample').checked,
+        aiPinProduct: $('ai-pin-product').checked,
         imageEngine: state.aiEngine
       };
       const tok = $('fleet-token').value.trim();
@@ -1486,6 +1654,21 @@
       });
     };
     delegateGallery($('blender-gallery'));
+    $('batch-picker').addEventListener('change', () => showBatch($('batch-picker').value));
+    $('batch-rerun').addEventListener('click', async () => {
+      const b = state.lastBatch;
+      if (!b || !b.request) return;
+      $('batch-rerun').disabled = true;
+      try {
+        await submitBatch({ ...b.request, aiSeed: 0 });
+        notify(`已用同樣設定重新送出 ${b.total} 組。`);
+      } catch (e) {
+        notify(e.message, true);
+      } finally {
+        $('batch-rerun').disabled = false;
+      }
+    });
+    $('batch-refresh').addEventListener('click', () => refreshBatchList($('batch-picker').value || null));
 
     // Step Tabs Switching Logic
     function switchTab(tabId) {
@@ -1547,9 +1730,13 @@
       await refreshAiKeyStatus();
       refreshEngineStatus();
 
-      if (ov.batches?.length) {
-        renderBlenderBatch(ov.batches[0]);
-        if (ov.batches[0].state === 'running') pollBlenderBatch(ov.batches[0].batchId);
+      state.batches = ov.batches || [];
+      renderBatchPicker();
+      if (state.batches.length) {
+        const wanted = rememberedBatch();
+        const running = state.batches.find(b => b.state === 'running');
+        const pick = (running && running.batchId) || (state.batches.some(b => b.batchId === wanted) ? wanted : state.batches[0].batchId);
+        await showBatch(pick);
       }
       await refreshPreviewPlan();
     } catch (e) {
@@ -1596,6 +1783,7 @@
       $('ai-variants').value = String(s.aiVariants || 2);
       $('ai-variation').value = s.aiVariation || 'faithful';
       $('ai-upsample').checked = s.aiUpsample !== false;
+      if ($('ai-pin-product')) $('ai-pin-product').checked = s.aiPinProduct !== false;
       updateMatrixFormula();
     } catch (e) {
       $('ai-key-status').textContent = 'AI 設定讀取失敗';

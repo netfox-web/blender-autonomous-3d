@@ -326,6 +326,7 @@ def test_ai_engine_status_endpoint_never_raises(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("FOX3D_BIND_HOST", "127.0.0.1")
     monkeypatch.setenv("FLEET_SERVICE_TOKEN", "")
     monkeypatch.delenv("FLEET_SERVICE_TOKEN_FILE", raising=False)
+    monkeypatch.setattr("fox3d.fleet_image_client.DEFAULT_TOKEN_FILE", tmp_path / "no-default-token")
     client.post("/api/ecommerce-scenes/ai-settings", headers={"X-Tenant-Id": "sonaqueen-home"}, json={"fleetApiUrl": "http://127.0.0.1:1"})
     r = client.get("/api/ecommerce-scenes/ai-engine-status")
     assert r.status_code == 200
@@ -350,6 +351,7 @@ def test_matrix_batch_runs_local_ai_variants_and_serves_them(tmp_path: Path, mon
     batch = r.json()
     assert batch["aiEngine"] == "fleet_flux3" and batch["aiVariantsPerItem"] == 2 and batch["aiSeed"] == 500
     assert batch["publicBaseUrl"] == "http://192.168.66.21:8790"
+    assert batch["request"]["sceneIds"] == [BUILTIN_SCENES[0]["id"]] and batch["request"]["aiVariants"] == 2 and batch["request"]["cabinet"]["columns"]
 
     done = _wait_batch(client, batch["batchId"], headers)
     item = done["items"][0]
@@ -397,6 +399,7 @@ def test_matrix_batch_without_token_fails_ai_but_keeps_render(tmp_path: Path, mo
     plat.runtime = FakeRuntime()  # type: ignore[assignment]
     monkeypatch.setenv("FLEET_SERVICE_TOKEN", "")
     monkeypatch.setenv("FLEET_SERVICE_TOKEN_FILE", str(tmp_path / "missing-token"))
+    monkeypatch.setattr("fox3d.fleet_image_client.DEFAULT_TOKEN_FILE", tmp_path / "no-default-token")  # never touch the real fleet
     client = TestClient(create_app(plat))
     headers = {"X-Tenant-Id": "sonaqueen-home"}
     r = client.post("/api/ecommerce-scenes/batches", headers=headers, json={"cabinet": CABINET_PRESETS[0], "sceneIds": [BUILTIN_SCENES[0]["id"]], "themeIds": ["THEME_NORDIC_OAK"], "views": ["FRONT"], "aiEngine": "fleet_flux3"})

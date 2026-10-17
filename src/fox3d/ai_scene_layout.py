@@ -99,6 +99,7 @@ def load_settings(settings_dir: Path | None = None) -> dict[str, Any]:
         "aiVariants": variants,
         "aiVariation": data.get("aiVariation") if data.get("aiVariation") in AI_VARIATIONS else "faithful",
         "aiUpsample": _as_bool(data.get("aiUpsample"), True),
+        "aiPinProduct": _as_bool(data.get("aiPinProduct"), True),
         "promptPolish": _as_bool(data.get("promptPolish"), False),
     }
 
@@ -118,7 +119,7 @@ def save_settings(settings_dir: Path, updates: dict[str, Any]) -> None:
             current["aiVariants"] = max(1, min(MAX_AI_VARIANTS, int(updates["aiVariants"])))
         except (TypeError, ValueError):
             pass
-    for k in ("aiUpsample", "promptPolish"):
+    for k in ("aiUpsample", "promptPolish", "aiPinProduct"):
         if k in updates and updates[k] is not None:
             current[k] = _as_bool(updates[k], True)
     settings_dir.mkdir(parents=True, exist_ok=True)

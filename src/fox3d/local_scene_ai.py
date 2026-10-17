@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
 from PIL import Image, ImageFilter
 
 from fox3d.fleet_image_client import FleetError, FleetImageClient, IMAGE_TASK_TYPE, task_status
@@ -51,6 +52,9 @@ SCENE_AI_ENGINES: dict[str, dict[str, Any]] = {
 }
 DEFAULT_ENGINE = "fleet_flux3"
 MAX_VARIANTS = 4
+# Composition guard: when FLUX draws the product shifted / scaled relative to the locked cutout, the paste leaves a
+# ghost next to it. drift_score() locates the AI product by template matching; one automatic retry with a new seed.
+DRIFT_MAX_RETRIES = 1
 
 PROP_PROMPT_WORDS: dict[str, str] = {
     "SOFA": "upholstered fabric sofa with soft cushions",
@@ -321,6 +325,116 @@ def composite_locked_product(generated: Image.Image, cutout: Image.Image, *, fea
     return Image.alpha_composite(base, layer).convert("RGB")
 
 
+# ----------------------------------------------------------------------------- composition guard
+def product_bbox_1000(cutout: Image.Image, *, pad: float = 0.0) -> list[int] | None:
+    """[top, left, bottom, right] of the opaque product pixels on FLUX 3's 0–1000 layout grid (None if empty)."""
+    alpha = np.asarray(cutout.convert("RGBA").getchannel("A"))
+    ys, xs = np.where(alpha > 128)
+    if xs.size == 0:
+        return None
+    h, w = alpha.shape
+    top, left = ys.min() / h, xs.min() / w
+    bottom, right = (ys.max() + 1) / h, (xs.max() + 1) / w
+    return [
+        int(max(0.0, top - pad) * 1000),
+        int(max(0.0, left - pad) * 1000),
+        int(min(1.0, bottom + pad) * 1000),
+        int(min(1.0, right + pad) * 1000),
+    ]
+
+
+def product_layout_box(cutout: Image.Image, product_description: str = "") -> dict[str, Any] | None:
+    bbox = product_bbox_1000(cutout)
+    if bbox is None:
+        return None
+    what = (product_description or "product").strip()
+    return {
+        "id": "product",
+        "bbox": bbox,
+        "desc": f"the {what} from the reference image, exactly the same size, position and perspective; no part of it outside this box",
+    }
+
+
+def _edge_map(gray: Image.Image) -> np.ndarray:
+    a = np.asarray(gray, dtype=np.float32)
+    gx = np.abs(np.diff(a, axis=1, prepend=a[:, :1]))
+    gy = np.abs(np.diff(a, axis=0, prepend=a[:1, :]))
+    return gx + gy
+
+
+def drift_score(
+    reference: Image.Image,
+    generated: Image.Image,
+    cutout: Image.Image,
+    *,
+    size: int = 320,
+    scales: tuple[float, ...] = (0.92, 0.96, 1.0, 1.04, 1.08, 1.12, 1.16),
+    max_shift: float = 0.12,
+    step: int = 3,
+) -> dict[str, Any] | None:
+    """Where did the model draw the product? Template-match the reference product (edge map inside the mask) in
+    the generated image over shifts and scales. If the best placement no longer coincides with the mask, the
+    locked cutout will leave a ghost of the AI-drawn product next to it.
+
+    Returns ``{"drift", "score", "outside", "scale", "dx", "dy", "ncc"}`` (``dx``/``dy`` as a fraction of the
+    image, ``outside`` = share of the AI product's area that falls outside the mask box) or None when the mask is
+    empty / the reference carries no detail (flat synthetic images).
+    """
+    ref = reference.convert("L").resize((size, size), Image.Resampling.BILINEAR)
+    gen = generated.convert("L").resize((size, size), Image.Resampling.BILINEAR)
+    alpha = np.asarray(cutout.convert("RGBA").getchannel("A").resize((size, size), Image.Resampling.BILINEAR), dtype=np.float32) / 255.0
+    mask = alpha > 0.9
+    ys, xs = np.where(mask)
+    if xs.size < 64:
+        return None
+    x0, x1, y0, y1 = int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max())
+    er, eg = _edge_map(ref), _edge_map(gen)
+    sub_mask = mask[y0:y1 + 1, x0:x1 + 1]
+    tpl = er[y0:y1 + 1, x0:x1 + 1] * sub_mask
+    th, tw = tpl.shape
+    if float(tpl[sub_mask].std()) < 0.5:
+        return None
+    best_ncc, best_s, best_dx, best_dy = -1.0, 1.0, 0, 0
+    cx, cy = x0 + tw / 2.0, y0 + th / 2.0
+    rng = int(size * max_shift)
+    for s in scales:
+        W, H = max(4, int(round(tw * s))), max(4, int(round(th * s)))
+        t_img = np.asarray(Image.fromarray(tpl).resize((W, H), Image.Resampling.BILINEAR), dtype=np.float32)
+        m_img = np.asarray(Image.fromarray((sub_mask * 255).astype(np.uint8)).resize((W, H), Image.Resampling.BILINEAR), dtype=np.float32) > 127
+        if m_img.sum() < 16:
+            continue
+        tv = t_img[m_img]
+        tv = tv - tv.mean()
+        tn = float(np.sqrt((tv * tv).sum())) + 1e-6
+        for dy in range(-rng, rng + 1, step):
+            for dx in range(-rng, rng + 1, step):
+                X0, Y0 = int(round(cx - W / 2.0 + dx)), int(round(cy - H / 2.0 + dy))
+                if X0 < 0 or Y0 < 0 or X0 + W > size or Y0 + H > size:
+                    continue
+                g = eg[Y0:Y0 + H, X0:X0 + W][m_img]
+                g = g - g.mean()
+                ncc = float((g * tv).sum() / ((float(np.sqrt((g * g).sum())) + 1e-6) * tn))
+                if ncc > best_ncc:
+                    best_ncc, best_s, best_dx, best_dy = ncc, s, dx, dy
+    W, H = tw * best_s, th * best_s
+    ax0, ay0 = cx + best_dx - W / 2.0, cy + best_dy - H / 2.0
+    ix0, iy0 = max(ax0, x0), max(ay0, y0)
+    ix1, iy1 = min(ax0 + W, x1 + 1), min(ay0 + H, y1 + 1)
+    inter = max(0.0, ix1 - ix0) * max(0.0, iy1 - iy0)
+    outside = 1.0 - inter / (W * H)
+    dxf, dyf = best_dx / size, best_dy / size
+    drift = outside >= 0.04 or abs(dxf) >= 0.02 or abs(dyf) >= 0.02 or best_s >= 1.08
+    return {
+        "drift": bool(drift),
+        "score": round(1.0 - outside, 3),
+        "outside": round(outside, 3),
+        "scale": best_s,
+        "dx": round(dxf, 3),
+        "dy": round(dyf, 3),
+        "ncc": round(best_ncc, 3),
+    }
+
+
 # ----------------------------------------------------------------------------- network helpers
 def detect_lan_ip(probe_host: str = "192.168.66.101", probe_port: int = 3004) -> str | None:
     """Pick the local interface that routes to the fleet console (no packets are actually sent)."""
@@ -418,8 +532,17 @@ def run_local_scene_variants(
     timeout: float = 900.0,
     poll_interval: float = 4.0,
     sleep: Callable[[float], None] = time.sleep,
+    reference_path: Path | None = None,
+    product_description: str = "",
+    pin_product: bool = True,
+    max_retries: int = DRIFT_MAX_RETRIES,
 ) -> list[dict[str, Any]]:
     """Submit N ``image_flux3`` tasks for one item, wait for all of them, composite the locked product, write files.
+
+    With ``pin_product`` the product's bounding box is sent as a FLUX 3 layout box so the model draws the cabinet
+    exactly where the locked cutout will be pasted. Every result is drift-scored against ``reference_path``; a
+    variant below ``DRIFT_THRESHOLD`` is regenerated with a new seed (up to ``max_retries``) and the better one kept,
+    still flagged ``drift=True`` if it never passed.
 
     Returns the variant records (also persisted to ``ai_local.json``). Never raises for a single failed variant:
     each record carries its own ``state`` / ``error``.
@@ -434,6 +557,17 @@ def run_local_scene_variants(
         except Exception:
             cutout_img = None
 
+    reference_img: Image.Image | None = None
+    if reference_path and Path(reference_path).exists():
+        try:
+            reference_img = Image.open(reference_path).convert("RGB")
+        except Exception:
+            reference_img = None
+    boxes: list[dict[str, Any]] | None = None
+    if pin_product and cutout_img is not None:
+        box = product_layout_box(cutout_img, product_description)
+        boxes = [box] if box else None
+
     records: list[dict[str, Any]] = []
     for k in range(n):
         records.append({
@@ -447,11 +581,17 @@ def run_local_scene_variants(
             "elapsedSec": None,
             "caption": None,
             "productLocked": cutout_img is not None,
+            "pinned": boxes is not None,
+            "retries": 0,
+            "driftScore": None,
+            "drift": False,
         })
+    # best candidate so far per variant index while retrying: (score, raw bytes, caption)
+    candidates: dict[int, tuple[float, bytes, str | None]] = {}
 
     def emit() -> None:
         try:
-            (item_dir / "ai_local.json").write_text(json.dumps({"prompt": prompt, "referenceUrl": reference_url, "upsample": bool(upsample), "variants": records}, ensure_ascii=False, indent=2), encoding="utf-8")
+            (item_dir / "ai_local.json").write_text(json.dumps({"prompt": prompt, "referenceUrl": reference_url, "upsample": bool(upsample), "boxes": boxes, "variants": records}, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             pass
         if on_progress:
@@ -462,7 +602,8 @@ def run_local_scene_variants(
 
     emit()
     started: dict[int, float] = {}
-    for rec in records:
+
+    def submit(rec: dict[str, Any]) -> None:
         try:
             task = client.submit_flux3(
                 prompt=prompt,
@@ -472,13 +613,31 @@ def run_local_scene_variants(
                 width=width,
                 height=height,
                 job_id=f"{job_prefix}-v{rec['index'] + 1}-{int(time.time())}",
+                boxes=boxes,
             )
             rec["taskId"] = str(task.get("id"))
             rec["state"] = "running" if task_status(task) in ("running", "assigned") else "queued"
-            started[rec["index"]] = time.monotonic()
+            started.setdefault(rec["index"], time.monotonic())
         except FleetError as exc:
             rec["state"] = "failed"
             rec["error"] = str(exc)[:300]
+
+    def finalize(rec: dict[str, Any], raw: bytes, caption: str | None, drift: dict[str, float] | None) -> None:
+        from io import BytesIO
+
+        gen = Image.open(BytesIO(raw)).convert("RGBA")
+        final = composite_locked_product(gen, cutout_img) if cutout_img is not None else gen.convert("RGB")
+        final.save(item_dir / rec["file"], format="PNG")
+        (item_dir / rec["file"].replace(".png", "_raw.png")).write_bytes(raw)
+        rec["state"] = "succeeded"
+        rec["width"], rec["height"] = final.size
+        rec["caption"] = caption
+        rec["driftScore"] = drift["score"] if drift else None
+        rec["driftDetail"] = drift
+        rec["drift"] = bool(drift and drift.get("drift"))
+
+    for rec in records:
+        submit(rec)
         emit()
 
     pending = [r for r in records if r["taskId"] and r["state"] not in ("failed", "succeeded")]
@@ -503,16 +662,36 @@ def run_local_scene_variants(
                     raw = client.artifact_bytes(task)
                     from io import BytesIO
 
-                    gen = Image.open(BytesIO(raw)).convert("RGBA")
-                    final = composite_locked_product(gen, cutout_img) if cutout_img is not None else gen.convert("RGB")
-                    final.save(item_dir / rec["file"], format="PNG")
-                    (item_dir / rec["file"].replace(".png", "_raw.png")).write_bytes(raw)
-                    rec["state"] = "succeeded"
-                    rec["width"], rec["height"] = final.size
                     payload = task.get("outputPayload") or {}
                     data = payload.get("data") if isinstance(payload, dict) and isinstance(payload.get("data"), dict) else payload
-                    if isinstance(data, dict) and data.get("caption"):
-                        rec["caption"] = str(data["caption"])[:600]
+                    caption = str(data["caption"])[:600] if isinstance(data, dict) and data.get("caption") else None
+                    drift = None
+                    if reference_img is not None and cutout_img is not None:
+                        try:
+                            drift = drift_score(reference_img, Image.open(BytesIO(raw)), cutout_img)
+                        except Exception:
+                            drift = None
+                    score = float(drift["score"]) if drift else 1.0
+                    best = candidates.get(rec["index"])
+                    if best is None or score > best[0]:
+                        candidates[rec["index"]] = (score, raw, caption)
+                    if drift and drift.get("drift") and rec["retries"] < max_retries:
+                        # Composition drifted (ghost cabinet likely): try once more with a fresh seed, keep the best.
+                        rec["retries"] += 1
+                        rec["seed"] = int(rec["seed"]) + 1000
+                        rec["taskId"] = None
+                        rec["progressNote"] = f"櫃子位置偏移（框外 {drift['outside']:.0%}），換種子重生成"
+                        submit(rec)
+                        emit()
+                        if rec["state"] == "failed":
+                            best_score, best_raw, best_caption = candidates[rec["index"]]
+                            finalize(rec, best_raw, best_caption, {"drift": True, "score": best_score, "outside": round(1 - best_score, 3)})
+                            rec["error"] = None
+                        else:
+                            continue
+                    else:
+                        best_score, best_raw, best_caption = candidates[rec["index"]]
+                        finalize(rec, best_raw, best_caption, drift if best_raw is raw else {"drift": True, "score": best_score, "outside": round(1 - best_score, 3)})
                 except (FleetError, OSError, ValueError) as exc:
                     rec["state"] = "failed"
                     rec["error"] = str(exc)[:300]

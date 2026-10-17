@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import random
 import shutil
+import time
 import urllib.parse
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, wait as wait_futures
 from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
@@ -38,6 +40,12 @@ from fox3d.photoreal_assets import (
 )
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.recipe_workbench import timestamp
+
+# A batch whose batch.json has not been touched for this long while still 'running' has lost its worker
+# (the workbench was restarted mid-batch); it is shown as interrupted instead of spinning forever.
+STALE_RUNNING_SEC = 300
+log = logging.getLogger(__name__)
+AI_ITEM_CONCURRENCY = 3
 
 
 def hex_to_rgb(hex_str: str, default: tuple[float, float, float] = (0.75, 0.70, 0.62)) -> list[float]:
@@ -1011,7 +1019,12 @@ class EcommerceSceneStore:
         self.root = Path(platform.root).resolve() / "ecommerce-scene-studio"
         self.lock = RLock()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ecom-scene-matrix")
+        # 地端 AI 實景 runs per item in parallel so Blender never waits for the GPU fleet queue.
+        self.ai_executor = ThreadPoolExecutor(max_workers=AI_ITEM_CONCURRENCY, thread_name_prefix="ecom-scene-ai")
         self.tasks: dict[str, Any] = {}
+        # Live batch documents owned by this process, keyed by batch id: progress is written from memory, never
+        # rebuilt from a read of batch.json that may transiently fail while the UI polls the same file.
+        self._live_docs: dict[str, dict[str, Any]] = {}
         try:
             ensure_pbr_texture_assets()
         except Exception:
@@ -1149,15 +1162,55 @@ class EcommerceSceneStore:
         for p in paths[:15]:
             data = read_json(p)
             if data:
-                out.append(data)
+                out.append(self._mark_if_stale(p, data))
         return out
 
     def get_batch(self, tenant_id: str, batch_id: str) -> dict[str, Any]:
         bpath = self._tenant_dir(tenant_id) / "batches" / batch_id / "batch.json"
         data = read_json(bpath)
+        for _ in range(4):  # the worker may be replacing the file right now (Windows: short window where it is unreadable)
+            if data or not bpath.exists():
+                break
+            time.sleep(0.03)
+            data = read_json(bpath)
         if not data:
             raise KeyError("找不到此批次渲染任務")
-        return data
+        return self._mark_if_stale(bpath, data)
+
+    def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
+        """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
+        if doc.get("state") != "running":
+            return doc
+        try:
+            age = time.time() - bpath.stat().st_mtime
+        except OSError:
+            return doc
+        if age < STALE_RUNNING_SEC:
+            return doc
+        with self.lock:
+            doc = read_json(bpath) or doc
+            if doc.get("state") != "running":
+                return doc
+            for item in doc.get("items") or []:
+                if item.get("state") in ("queued", "running"):
+                    item["state"] = "failed"
+                    item["stage"] = "done"
+                    item["error"] = "工作台重新啟動，批次中斷；請重新送出這一組"
+                    if item.get("aiState") in ("pending", "running"):
+                        item["aiState"] = "failed"
+                        item["aiError"] = item["error"]
+                    for v in item.get("aiVariants") or []:
+                        if v.get("state") in ("queued", "running"):
+                            v["state"] = "failed"
+                            v["error"] = item["error"]
+            items = doc.get("items") or []
+            doc["succeeded"] = sum(1 for x in items if x.get("state") == "succeeded")
+            doc["failed"] = sum(1 for x in items if x.get("state") == "failed")
+            doc["completed"] = doc["succeeded"] + doc["failed"]
+            doc["state"] = "interrupted"
+            doc["updatedAt"] = timestamp()
+            atomic_json(bpath, doc)
+        return doc
 
     def start_matrix_batch(self, tenant_id: str, payload: dict[str, Any], *, public_base_url: str = "") -> dict[str, Any]:
         from fox3d.ai_scene_layout import load_settings  # lazy: ai_scene_layout imports this module
@@ -1254,6 +1307,22 @@ class EcommerceSceneStore:
             "aiUpsample": ai_upsample,
             "aiVariation": ai_variation,
             "publicBaseUrl": public_base_url,
+            # Everything needed to resubmit this batch as-is (e.g. after a workbench restart interrupted it).
+            "request": {
+                "cabinet": cabinet_cfg,
+                "currentScene": custom_scene_inline if isinstance(custom_scene_inline, dict) else None,
+                "sceneIds": scene_ids,
+                "themeIds": theme_ids,
+                "views": views,
+                "samples": samples,
+                "aiEngine": ai_engine,
+                "aiStyleId": ai_style_id,
+                "aiPrompt": ai_prompt,
+                "aiFinalPrompt": ai_final_prompt,
+                "aiVariants": ai_variants,
+                "aiVariation": ai_variation,
+                "aiUpsample": ai_upsample,
+            },
             "createdAt": timestamp(),
             "state": "running",
             "samples": samples,
@@ -1264,6 +1333,8 @@ class EcommerceSceneStore:
             "items": items,
         }
         atomic_json(bdir / "batch.json", batch_doc)
+        with self.lock:
+            self._live_docs[batch_id] = batch_doc
 
         self.executor.submit(
             self._run_matrix_worker,
@@ -1327,9 +1398,11 @@ class EcommerceSceneStore:
                     fleet_error = "沒有可讓 GPU 節點抓取參考圖的工作台網址（請用 --host 0.0.0.0 啟動或在設定填 publicBaseUrl）"
             except Exception as exc:  # pragma: no cover - defensive
                 fleet_error = str(exc)[:300]
+        ai_futures: list[Future[None]] = []
         for item in items:
-            item["state"] = "running"
-            item["stage"] = "blender"
+            with self.lock:
+                item["state"] = "running"
+                item["stage"] = "blender"
             self._save_batch_progress(bdir, items)
             item_dir = bdir / item["itemId"]
             item_dir.mkdir(parents=True, exist_ok=True)
@@ -1398,24 +1471,51 @@ class EcommerceSceneStore:
                 item["hasAiComposite"] = (item_dir / "ai_composite.png").exists()
 
                 # Plan C (地端 AI 實景): FLUX 3 on the GPU fleet re-photographs the render, product pixels stay locked.
+                # It runs on the AI pool so the next item's Blender render starts immediately; the item stays
+                # "running / stage=ai" until its variants are back, and the batch completes when every item is done.
                 if ai_engine == "fleet_flux3":
-                    item["stage"] = "ai"
-                    item["aiState"] = "running"
+                    with self.lock:
+                        item["stage"] = "ai"
+                        item["aiState"] = "running"
                     self._save_batch_progress(bdir, items)
                     if fleet_error or fleet_client is None:
-                        item["aiState"] = "failed"
-                        item["aiError"] = fleet_error or "GPU 艦隊用戶端未初始化"
+                        with self.lock:
+                            item["aiState"] = "failed"
+                            item["aiError"] = fleet_error or "GPU 艦隊用戶端未初始化"
+                            item["state"] = "succeeded"
+                            item["stage"] = "done"
                     else:
-                        self._run_local_ai_for_item(
+                        ai_futures.append(self.ai_executor.submit(
+                            self._finish_item_ai,
                             tenant_id, batch_id, bdir, items, item, item_dir, cab_copy, cab_spec, scfg,
                             ai_style_id, ai_prompt, ai_variants, ai_seed, ai_upsample, public_base_url, fleet_client, ai_final_prompt, ai_variation,
-                        )
+                        ))
+                else:
+                    with self.lock:
+                        item["state"] = "succeeded"
+                        item["stage"] = "done"
+            except Exception as exc:
+                with self.lock:
+                    item["state"] = "failed"
+                    item["stage"] = "done"
+                    item["error"] = str(exc)[:300]
+            self._save_batch_progress(bdir, items)
+        if ai_futures:
+            wait_futures(ai_futures)
+            self._save_batch_progress(bdir, items)
+
+    def _finish_item_ai(self, tenant_id: str, batch_id: str, bdir: Path, items: list[dict[str, Any]], item: dict[str, Any], *args: Any) -> None:
+        """AI-pool entry: run the item's 地端 AI variants, then close the item whatever happened."""
+        try:
+            self._run_local_ai_for_item(tenant_id, batch_id, bdir, items, item, *args)
+        except Exception as exc:  # pragma: no cover - defensive, _run_local_ai_for_item already catches
+            with self.lock:
+                item["aiState"] = "failed"
+                item["aiError"] = str(exc)[:300]
+        finally:
+            with self.lock:
                 item["state"] = "succeeded"
                 item["stage"] = "done"
-            except Exception as exc:
-                item["state"] = "failed"
-                item["stage"] = "done"
-                item["error"] = str(exc)[:300]
             self._save_batch_progress(bdir, items)
 
     def _run_local_ai_for_item(
@@ -1439,29 +1539,32 @@ class EcommerceSceneStore:
         ai_final_prompt: str = "",
         ai_variation: str = "faithful",
     ) -> None:
+        from fox3d.ai_scene_layout import load_settings  # lazy: circular import otherwise
+
         style_cfg = AI_STYLE_PRESETS.get(ai_style_id) or {}
         theme = STYLE_THEMES.get(item.get("themeId") or "")
-        if ai_final_prompt:
-            prompt = ai_final_prompt
-        else:
-            prompt = build_scene_prompt(
-                scene_cfg,
-                cabinet_cfg,
-                cabinet_spec=cabinet_spec,
-                theme=theme,
-                style_prompt=str(style_cfg.get("prompt") or ""),
-                custom_prompt=ai_prompt,
-                view=item["view"],
-                variation=ai_variation,
-            )["prompt"]
-        item["aiPrompt"] = prompt
+        built = build_scene_prompt(
+            scene_cfg,
+            cabinet_cfg,
+            cabinet_spec=cabinet_spec,
+            theme=theme,
+            style_prompt=str(style_cfg.get("prompt") or ""),
+            custom_prompt=ai_prompt,
+            view=item["view"],
+            variation=ai_variation,
+        )
+        prompt = ai_final_prompt or built["prompt"]
+        pin_product = bool(load_settings(self.root).get("aiPinProduct", True))
+        with self.lock:
+            item["aiPrompt"] = prompt
         reference_url = (
             f"{public_base_url.rstrip('/')}/api/ecommerce-scenes/batches/{batch_id}/items/{item['itemId']}/download/png"
             f"?workspace={urllib.parse.quote(tenant_id)}&inline=true"
         )
 
         def on_progress(records: list[dict[str, Any]]) -> None:
-            item["aiVariants"] = [dict(r) for r in records]
+            with self.lock:
+                item["aiVariants"] = [dict(r) for r in records]
             self._save_batch_progress(bdir, items)
 
         try:
@@ -1476,32 +1579,54 @@ class EcommerceSceneStore:
                 upsample=ai_upsample,
                 job_prefix=f"fox3d-{batch_id[:8]}-{item['itemId']}",
                 on_progress=on_progress,
+                reference_path=item_dir / "beauty.png",
+                product_description=built["productDescription"],
+                pin_product=pin_product,
             )
         except Exception as exc:
-            item["aiState"] = "failed"
-            item["aiError"] = str(exc)[:300]
+            with self.lock:
+                item["aiState"] = "failed"
+                item["aiError"] = str(exc)[:300]
             return
-        item["aiVariants"] = [dict(r) for r in records]
         ok = sum(1 for r in records if r.get("state") == "succeeded")
-        item["aiState"] = "succeeded" if ok == len(records) else ("partial" if ok else "failed")
-        if not ok:
-            item["aiError"] = next((str(r.get("error")) for r in records if r.get("error")), "GPU 沒有產出任何變化圖")
+        with self.lock:
+            item["aiVariants"] = [dict(r) for r in records]
+            item["aiState"] = "succeeded" if ok == len(records) else ("partial" if ok else "failed")
+            if not ok:
+                item["aiError"] = next((str(r.get("error")) for r in records if r.get("error")), "GPU 沒有產出任何變化圖")
 
     def _save_batch_progress(self, bdir: Path, items: list[dict[str, Any]]) -> None:
-        doc = read_json(bdir / "batch.json") or {}
-        succeeded = sum(1 for x in items if x["state"] == "succeeded")
-        failed = sum(1 for x in items if x["state"] == "failed")
-        completed = succeeded + failed
-        total = len(items)
-        doc.update(
-            items=items,
-            completed=completed,
-            succeeded=succeeded,
-            failed=failed,
-            state="completed" if completed >= total else "running",
-            updatedAt=timestamp(),
-        )
-        atomic_json(bdir / "batch.json", doc)
+        with self.lock:  # items are mutated by the Blender loop and the AI pool; serialise under one lock
+            doc = self._live_docs.get(bdir.name) or read_json(bdir / "batch.json") or {}
+            succeeded = sum(1 for x in items if x["state"] == "succeeded")
+            failed = sum(1 for x in items if x["state"] == "failed")
+            completed = succeeded + failed
+            total = len(items)
+            doc.update(
+                items=json.loads(json.dumps(items)),
+                completed=completed,
+                succeeded=succeeded,
+                failed=failed,
+                state="completed" if completed >= total else "running",
+                updatedAt=timestamp(),
+            )
+            done = completed >= total
+            # Windows: a reader (UI poll, tests) holding batch.json open makes the atomic replace fail with
+            # winerror 5 even after atomic_json's own retries. Intermediate progress may simply be skipped (the
+            # next save carries it); the final state must land, so keep trying for a while.
+            for attempt in range(20 if done else 1):
+                try:
+                    atomic_json(bdir / "batch.json", doc)
+                    break
+                except OSError as exc:
+                    if not done:
+                        log.warning("batch %s progress write skipped (transient): %s", bdir.name, exc)
+                        return
+                    if attempt >= 19:
+                        raise
+                    time.sleep(0.2)
+            if done:
+                self._live_docs.pop(bdir.name, None)
 
     def item_asset_path(self, tenant_id: str, batch_id: str, item_id: str, fmt: str, variant: int = 1) -> Path:
         files = {

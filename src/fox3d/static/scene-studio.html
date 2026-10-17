@@ -156,8 +156,9 @@
       </div>
 
       <div class="field-group">
-        <label class="group-label">場景庫（內建 15 款 + 自訂）</label>
-        <div id="scene-tabs" class="scene-tabs"></div>
+        <label class="group-label">場景庫（內建 15 款 + 自訂）<span class="muted"> · 滑過看大圖，點一下選用</span></label>
+        <div id="scene-tabs" class="scene-grid"></div>
+        <div id="scene-peek" class="scene-peek" hidden><img alt=""><span></span></div>
       </div>
 
       <details class="collapsible-card">
@@ -304,6 +305,7 @@
           </div>
           <div class="form-row three-col">
             <label class="check-inline"><input id="ai-upsample" type="checkbox" checked> 提示詞擴寫（品質較佳，需 24GB 以上顯卡）</label>
+            <label class="check-inline"><input id="ai-pin-product" type="checkbox" checked> 釘住櫃體位置（框選，避免重影）</label>
             <label>固定種子（選填）<input id="ai-seed" type="number" min="0" placeholder="空白＝隨機"></label>
             <label>Cycles 採樣<input id="matrix-samples" type="number" min="12" max="64" value="32"></label>
           </div>
@@ -354,9 +356,14 @@
 
       <div class="gallery-section">
         <div class="row-between">
-          <h3>批次成果</h3>
+          <div class="btn-group batch-head">
+            <h3>批次成果</h3>
+            <select id="batch-picker" class="batch-picker" title="切換要看的批次（最近 15 批都在，重新整理也不會不見）"></select>
+            <button id="batch-refresh" type="button" class="btn-xs" title="重新讀取批次清單">重新整理</button>
+          </div>
           <div class="btn-group">
             <span id="blender-batch-status" class="badge">尚無執行中的批次</span>
+            <button id="batch-rerun" type="button" class="btn-sm" hidden title="用同樣的櫃體、場景、配色、視角與 AI 設定再送一批">重新送出這批</button>
             <a id="download-zip-link" class="btn-sm primary" href="#" hidden>下載整批 .zip</a>
           </div>
         </div>

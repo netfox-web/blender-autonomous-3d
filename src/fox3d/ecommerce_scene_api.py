@@ -124,6 +124,7 @@ def ecommerce_scene_router(provider) -> APIRouter:
             "aiVariants": s["aiVariants"],
             "aiVariation": s["aiVariation"],
             "aiUpsample": s["aiUpsample"],
+            "aiPinProduct": s["aiPinProduct"],
             "promptPolish": s["promptPolish"],
         }
 
@@ -234,7 +235,7 @@ def ecommerce_scene_router(provider) -> APIRouter:
                 updates["aiVariants"] = int(payload.get("aiVariants") or 2)
             except (TypeError, ValueError):
                 raise HTTPException(422, "變化張數必須是 1–4 的整數") from None
-        for key in ("aiUpsample", "promptPolish"):
+        for key in ("aiUpsample", "promptPolish", "aiPinProduct"):
             if key in payload:
                 updates[key] = bool(payload.get(key))
         if "aiVariation" in payload:
