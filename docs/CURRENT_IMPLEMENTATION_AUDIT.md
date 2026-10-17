@@ -10,6 +10,14 @@ The additive source/schema/verifier/resolver pins authority revision, seal, exac
 
 Full scope, trust boundary, limitations and machine-readable evidence: [ARTICULATION_AUTHORITY_ACCEPTANCE.md](ARTICULATION_AUTHORITY_ACCEPTANCE.md), [ARTICULATION_AUTHORITY_ACCEPTANCE.json](ARTICULATION_AUTHORITY_ACCEPTANCE.json). This separate DOCS commit still requires its own exact Ubuntu/Windows CI; final immutable DOCS SHA/run identities will be published in the Issue handoff. No merge authorization.
 
+## Issue #6 Round 2 — scoped video evidence closure
+
+Closure instruction `6f68f7e59f490495c35f22f4d4aaeb266fd37d96` authorizes retaining frozen CODE `a5b368a3d907950c5165f4b1a0058853ace617fc` and exact CODE CI `34900852044` (901 tests per OS). The unchanged CODE and its manifests bind original implementation instruction `84a39b3ce5f4186fe0824fb66add1a9d1db720ef`; these are distinct, real instruction commits. The closure instruction was not falsely attributed to the frozen CODE checkout.
+
+Clean REAL generation `d320a651-c2a4-403e-9322-a37630fcea6e`: HERO, ARTWORK_DETAIL and SMALL_ROOM, 288 frames / 1728 product controls + 120 independent room masks; Blender 5.2.1 LTS / OPTIX, usedMock=false, byte/matrix/mask/reopen/DAM lineage PASS. `videoGroundTruthReady`, `heroOrbitReal`, `artworkDetailReal`, `smallRoomReal` are true for this synthetic reference acceptance only. Durable candidate lineage is REAL_LOGIC: 19 runner cases plus 9 supplemental invocations of unchanged tracked adversarial tests against this generation's real ground-truth bytes PASS; candidate pixels remain FIXTURE_COPY/MOCK provider output. Details: [Round 2 acceptance](GENERATIVE_VIDEO_GROUND_TRUTH_ROUND2_ACCEPTANCE.md).
+
+Visual inspection of first/middle/last confirms visible cabinet/artwork and distinct room context, with pronounced noise and bright surfaces. 128×128 preview quality and non-semantic QA remain PARTIAL; door/assembly authority, live H3/LTX/Vision, Final Commerce Video, physical UV/RIP/print/hot-folder/machines, Supervisor LIVE prerequisites and global Production Ready remain BLOCKED/false. Round 2 DOCS SHA/exact dual CI are recorded in the final Issue #6/#1 handoff after this document commit passes. No merge authorization.
+
 ## Historical reports (prior scopes retained)
 
 Audit of `main` (Event-Driven Autonomous Supervisor Control Plane V1 Re-Gate Round 9 LIVE E2E PRODUCTION GATE CODE_EVIDENCE_SHA `d9402f3a966581aa66d39b0097e518366d87626c`; prior `d444505` / `2bc44ac` / `b0ad38a` / `b0941c7` / `9bed184` / `d77cfe7` / `4406119` / instruction `2c7463b26f26361e3c94991f259a413da56a7057`) against `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md` @ `2c7463b26f26361e3c94991f259a413da56a7057`. Historical Phase 1–960 notes below remain intact. Scheduler/Queue/DAM/Recipe/TwinStore/CabinetSpec were not rewritten.
