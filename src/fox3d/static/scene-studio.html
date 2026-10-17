@@ -29,41 +29,44 @@
     </div>
   </header>
 
-  <section class="workflow-banner" aria-label="三步驟操作導覽">
-    <div class="wf-step active">
+  <section class="workflow-tabs" aria-label="工作流程切換">
+    <button type="button" class="wf-tab-btn active" data-tab="tab-cabinet">
       <span class="wf-num">1</span>
-      <div>
-        <strong>步驟 1 · 拼裝組合櫃產品</strong>
-        <span>選擇單櫃、雙併、三併或高低階梯櫃，每格可獨立設「門片 / 開放格 / 抽屜」與配色</span>
+      <div class="wf-tab-text">
+        <strong>步驟 1 · 設計組合櫃</strong>
+        <span>拼裝櫃體規格、格位門片與色彩主題</span>
       </div>
-    </div>
-    <div class="wf-step active">
+    </button>
+    <button type="button" class="wf-tab-btn" data-tab="tab-scene">
       <span class="wf-num">2</span>
-      <div>
-        <strong>步驟 2 · 自己畫 3D 場景並置入櫃子</strong>
-        <span>在 2D 平面圖直接拖拉沙發、床組、書桌、植栽與「🎯 櫃子位置」，右側即時同步 3D 空間</span>
+      <div class="wf-tab-text">
+        <strong>步驟 2 · 3D 場景空間</strong>
+        <span>AI 自動排景、2D 拖拉家具、即時 3D 預覽</span>
       </div>
-    </div>
-    <div class="wf-step active">
+    </button>
+    <button type="button" class="wf-tab-btn" data-tab="tab-matrix">
       <span class="wf-num">3</span>
-      <div>
-        <strong>步驟 3 · 無限電商圖矩陣批次出圖</strong>
-        <span>勾選「多個場景 × 多組櫃體配色 × 多個視角」，支援 1 秒即時矩陣快拍與 Blender Cycles 光追算圖</span>
+      <div class="wf-tab-text">
+        <strong>步驟 3 · 批次渲染出圖</strong>
+        <span>勾選多場景 × 多配色 × 多視角，一鍵出圖與放大檢視</span>
       </div>
-    </div>
+    </button>
   </section>
 
   <p id="studio-notice" class="notice" role="status" aria-live="polite" hidden></p>
 
-  <main class="studio-grid">
-    <!-- Left Column: Step 1 Modular Cabinet Builder -->
-    <section class="panel step-panel" aria-labelledby="step1-title">
+  <main class="studio-main">
+    <!-- Tab 1: Modular Cabinet Builder -->
+    <section id="tab-cabinet" class="panel tab-section active" aria-labelledby="step1-title">
       <div class="panel-head">
         <div>
           <span class="step-badge">步驟 1</span>
           <h2 id="step1-title">組合櫃自由拼裝器</h2>
         </div>
-        <span id="cab-dim-badge" class="badge">424 × 295 × 900 mm</span>
+        <div class="btn-group">
+          <span id="cab-dim-badge" class="badge">424 × 295 × 900 mm</span>
+          <button type="button" class="btn-sm primary next-tab-btn" data-go="tab-scene">下一步：置入 3D 場景 ➔</button>
+        </div>
       </div>
 
       <div class="field-group">
@@ -80,20 +83,23 @@
         </label>
       </div>
 
-      <div class="form-row four-col">
-        <label>總深度 (mm)
-          <input id="cab-depth" type="number" min="180" max="800" step="5" value="295">
-        </label>
-        <label>板厚 (mm)
-          <input id="cab-panel" type="number" min="9" max="36" step="1" value="15">
-        </label>
-        <label>門厚 (mm)
-          <input id="cab-door" type="number" min="9" max="30" step="1" value="15">
-        </label>
-        <label>門縫 (mm)
-          <input id="cab-gap" type="number" min="1" max="8" step="0.5" value="2">
-        </label>
-      </div>
+      <details class="collapsible-card" style="margin-bottom:14px;">
+        <summary>⚙️ 進階板厚與門縫尺寸設定（預設已最佳化，點此微調）</summary>
+        <div class="form-row four-col" style="margin-top:10px;">
+          <label>總深度 (mm)
+            <input id="cab-depth" type="number" min="180" max="800" step="5" value="295">
+          </label>
+          <label>板厚 (mm)
+            <input id="cab-panel" type="number" min="9" max="36" step="1" value="15">
+          </label>
+          <label>門厚 (mm)
+            <input id="cab-door" type="number" min="9" max="30" step="1" value="15">
+          </label>
+          <label>門縫 (mm)
+            <input id="cab-gap" type="number" min="1" max="8" step="0.5" value="2">
+          </label>
+        </div>
+      </details>
 
       <div class="field-group">
         <label class="group-label">櫃體配色主題（點擊立即換裝）</label>
@@ -113,77 +119,112 @@
       </div>
     </section>
 
-    <!-- Center Column: Step 2 Visual 2D/3D Scene Builder -->
-    <section class="panel scene-panel" aria-labelledby="step2-title">
+    <!-- Tab 2: Visual 2D/3D Scene Builder -->
+    <section id="tab-scene" class="panel tab-section" aria-labelledby="step2-title">
       <div class="panel-head">
         <div>
           <span class="step-badge">步驟 2</span>
-          <h2 id="step2-title">3D 場景繪製器 &amp; 櫃子置放</h2>
+          <h2 id="step2-title">3D 場景空間 &amp; 櫃子置放</h2>
         </div>
         <div class="btn-group">
           <button id="new-scene-btn" type="button" class="btn-sm">＋ 新建空白房間</button>
-          <button id="save-scene-btn" type="button" class="btn-sm primary">💾 儲存場景至場景庫</button>
-          <button id="delete-scene-btn" type="button" class="btn-sm danger" hidden>刪除自訂場景</button>
+          <button id="save-scene-btn" type="button" class="btn-sm">💾 儲存場景</button>
+          <button id="delete-scene-btn" type="button" class="btn-sm danger" hidden>刪除場景</button>
+          <button type="button" class="btn-sm primary next-tab-btn" data-go="tab-matrix">下一步：批次出圖 ➔</button>
         </div>
       </div>
 
+      <!-- AI Interior Designer Header Bar -->
+      <div class="ai-bar-card" style="margin-bottom:14px;border:1px solid #e0c8b0;border-radius:12px;padding:12px 14px;background:linear-gradient(135deg, #fffcf8 0%, #fbf5ee 100%);box-shadow:0 2px 8px rgba(0,0,0,0.03);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+          <strong style="color:#6d3b19;font-size:14px;">🤖 AI 室內設計師（一句話自動挑家具、排位置、調燈光）</strong>
+          <span id="ai-key-status" style="font-size:12px;color:#8a6a50;">檢查中…</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input id="ai-prompt" type="text" style="flex:1;min-width:260px;" placeholder="例如：日系原木風客廳，暖光，櫃子旁邊放綠植和休閒單椅">
+          <button id="ai-layout-btn" type="button" class="btn-sm primary">✨ 請 AI 排場景</button>
+        </div>
+        <div id="ai-result" style="margin-top:8px;font-size:13px;color:#5b4a3c;background:rgba(255,255,255,0.7);padding:6px 10px;border-radius:6px;" hidden></div>
+        <details id="ai-settings-box" style="margin-top:8px;font-size:12px;color:#705845;">
+          <summary>⚙️ 切換 AI 引擎（可選 Claude 雲端 或 本機 Ollama / LM Studio 地端免費運行）</summary>
+          <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap;">
+            <label><input type="radio" name="ai-provider" value="anthropic"> ☁️ Claude（雲端）</label>
+            <label><input type="radio" name="ai-provider" value="local"> 🖥️ 本機 AI（Ollama / LM Studio 免費地端）</label>
+          </div>
+          <div id="ai-anthropic-box" style="margin-top:6px;">
+            <div style="display:flex;gap:8px;">
+              <input id="ai-key-input" type="password" autocomplete="off" style="flex:1;" placeholder="Anthropic 金鑰 sk-ant-...（留空＝沿用已存金鑰）">
+            </div>
+          </div>
+          <div id="ai-local-box" style="margin-top:6px;" hidden>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <input id="ai-local-url" type="text" style="flex:2;min-width:200px;" placeholder="http://127.0.0.1:11434/v1">
+              <input id="ai-local-model" type="text" list="ai-local-model-list" style="flex:1;min-width:140px;" placeholder="模型名，如 qwen2.5:7b">
+              <datalist id="ai-local-model-list"></datalist>
+              <button id="ai-local-scan" type="button" class="btn-sm">🔍 偵測模型</button>
+            </div>
+          </div>
+          <div style="margin-top:8px;"><button id="ai-key-save" type="button" class="btn-sm primary">儲存設定</button></div>
+        </details>
+      </div>
+
       <div class="field-group">
-        <label class="group-label">選擇或切換 3D 場景庫（內建 6 大空間＋您的自訂場景）</label>
+        <label class="group-label">選擇或切換 3D 場景庫（15 款精裝客廳、臥室、書房、玄關＋自訂場景）</label>
         <div id="scene-tabs" class="scene-tabs"></div>
       </div>
 
-      <div class="form-row four-col">
-        <label>場景名稱
-          <input id="scene-name" type="text" value="北歐採光客廳">
-        </label>
-        <label>空間分類
-          <input id="scene-category" type="text" value="客廳空間">
-        </label>
-        <label>燈光氛圍
-          <select id="scene-lighting"></select>
-        </label>
-        <label>預設鏡頭視角
-          <select id="scene-view"></select>
-        </label>
-      </div>
+      <details class="collapsible-card" style="margin-bottom:14px;">
+        <summary>📐 空間尺寸與牆面色調細節（點此自訂房間長寬高與顏色）</summary>
+        <div class="form-row four-col" style="margin-top:10px;">
+          <label>場景名稱
+            <input id="scene-name" type="text" value="北歐採光客廳">
+          </label>
+          <label>空間分類
+            <input id="scene-category" type="text" value="客廳空間">
+          </label>
+          <label>燈光氛圍
+            <select id="scene-lighting"></select>
+          </label>
+          <label>預設鏡頭視角
+            <select id="scene-view"></select>
+          </label>
+        </div>
+        <div class="form-row six-col">
+          <label>房寬 (m)
+            <input id="room-w" type="number" min="3.0" max="9.0" step="0.2" value="5.6">
+          </label>
+          <label>房深 (m)
+            <input id="room-d" type="number" min="2.6" max="7.0" step="0.2" value="4.2">
+          </label>
+          <label>房高 (m)
+            <input id="room-h" type="number" min="2.4" max="4.2" step="0.1" value="3.0">
+          </label>
+          <label>主牆色
+            <input id="wall-color" type="color" value="#b8ab96">
+          </label>
+          <label>側牆色
+            <input id="side-color" type="color" value="#a3a89c">
+          </label>
+          <label>地板色
+            <input id="floor-color" type="color" value="#78583a">
+          </label>
+        </div>
+      </details>
 
-      <div class="form-row six-col">
-        <label>房寬 (m)
-          <input id="room-w" type="number" min="3.0" max="9.0" step="0.2" value="5.6">
-        </label>
-        <label>房深 (m)
-          <input id="room-d" type="number" min="2.6" max="7.0" step="0.2" value="4.2">
-        </label>
-        <label>房高 (m)
-          <input id="room-h" type="number" min="2.4" max="4.2" step="0.1" value="3.0">
-        </label>
-        <label>主牆色
-          <input id="wall-color" type="color" value="#b8ab96">
-        </label>
-        <label>側牆色
-          <input id="side-color" type="color" value="#a3a89c">
-        </label>
-        <label>地板色
-          <input id="floor-color" type="color" value="#78583a">
-        </label>
-      </div>
-
+      <!-- Furniture Toolbox -->
       <div class="field-group">
         <div class="row-between">
-          <label class="group-label">一鍵加入家具道具（點擊加入房間，可在下方平面圖直接用滑鼠拖拉位置）</label>
+          <label class="group-label">家具道具箱（點擊加入房間，在下方平面圖隨意拖拉擺放）</label>
           <div class="btn-group">
             <input id="upload-glb-input" type="file" accept=".glb,.gltf" hidden>
-            <button id="upload-glb-btn" type="button" class="btn-xs primary">📥 匯入自訂 .glb 3D 家具模型（方案 A 高模擴充）</button>
+            <button id="upload-glb-btn" type="button" class="btn-xs">📥 匯入自訂 .glb 模型</button>
           </div>
         </div>
         <div id="prop-palette" class="prop-palette"></div>
-        <div class="ph-library-box" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.28);">
-          <div class="row-between" style="margin-bottom:8px;">
-            <strong style="color:#6ee7b7;font-size:13px;">🏛️ 內建 Poly Haven (CC0 免費開源) 2K 攝影掃描級 3D 家具庫（點擊直接替換房間沙發／茶几／植栽，或點「✨ 義式拉釦皺褶布沙發」切回方式 2）</strong>
-            <span class="badge" style="background:#065f46;color:#d1fae5;">已下載內建 8 組 2K PBR 高模</span>
-          </div>
-          <div id="polyhaven-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:8px;"></div>
-        </div>
+        <details class="collapsible-card" style="margin-top:8px;">
+          <summary>🏛️ 展開 Poly Haven 2K 攝影掃描家具庫（27 款高擬真沙發、茶几、單椅、飾品）</summary>
+          <div id="polyhaven-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;margin-top:10px;"></div>
+        </details>
       </div>
 
       <div class="dual-viewport">
@@ -251,7 +292,7 @@
     </section>
 
     <!-- Right / Bottom Full-Width Section: Step 3 Infinite E-Commerce Matrix Factory -->
-    <section class="panel matrix-panel" aria-labelledby="step3-title">
+    <section id="tab-matrix" class="panel tab-section matrix-panel" aria-labelledby="step3-title">
       <div class="panel-head">
         <div>
           <span class="step-badge">步驟 3</span>

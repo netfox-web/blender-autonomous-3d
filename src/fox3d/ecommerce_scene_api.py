@@ -86,6 +86,97 @@ def ecommerce_scene_router(provider) -> APIRouter:
             raise HTTPException(404, "找不到預覽縮圖")
         return FileResponse(thumb, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
 
+    @router.post("/api/ecommerce-scenes/polyhaven-fetch", status_code=201)
+    def polyhaven_fetch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        from fox3d.photoreal_assets import download_custom_polyhaven_asset
+
+        _ = tenant(x_tenant_id)
+        try:
+            item = download_custom_polyhaven_asset(
+                asset_id_or_url=str(payload.get("assetIdOrUrl") or ""),
+                prop_type=str(payload.get("propType") or "SOFA"),
+                label=str(payload.get("label") or ""),
+                root_dir=Path(provider().root).resolve(),
+            )
+            return item
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(500, f"Poly Haven 下載失敗：{exc}") from exc
+
+
+    def _ai_public_settings() -> dict[str, Any]:
+        from fox3d.ai_scene_layout import load_settings
+
+        s = load_settings(store().root)
+        return {"provider": s["provider"], "hasKey": bool(s["anthropicApiKey"]), "localBaseUrl": s["localBaseUrl"], "localModel": s["localModel"]}
+
+    @router.get("/api/ecommerce-scenes/ai-settings")
+    def ai_settings() -> dict[str, Any]:
+        return _ai_public_settings()
+
+    @router.post("/api/ecommerce-scenes/ai-settings")
+    def save_ai_settings(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        from fox3d.ai_scene_layout import save_settings
+
+        _ = tenant(x_tenant_id)
+        updates: dict[str, Any] = {}
+        if "provider" in payload:
+            if payload["provider"] not in ("anthropic", "local"):
+                raise HTTPException(422, "不支援的 AI 來源")
+            updates["provider"] = payload["provider"]
+        key = str(payload.get("anthropicApiKey") or "").strip()
+        if key:
+            if not key.startswith("sk-ant-") or len(key) > 300:
+                raise HTTPException(422, "金鑰格式不正確，Anthropic 金鑰應以 sk-ant- 開頭")
+            updates["anthropicApiKey"] = key
+        if "localBaseUrl" in payload:
+            url = str(payload.get("localBaseUrl") or "").strip().rstrip("/")
+            if not url.startswith(("http://", "https://")) or len(url) > 200:
+                raise HTTPException(422, "本機伺服器網址須以 http:// 或 https:// 開頭，例如 http://127.0.0.1:11434/v1")
+            updates["localBaseUrl"] = url
+        if "localModel" in payload:
+            updates["localModel"] = str(payload.get("localModel") or "").strip()[:120]
+        save_settings(store().root, updates)
+        return _ai_public_settings()
+
+    @router.get("/api/ecommerce-scenes/ai-local-models")
+    def ai_local_models() -> dict[str, Any]:
+        import json as _json
+        import urllib.request as _ur
+
+        from fox3d.ai_scene_layout import load_settings
+
+        base = load_settings(store().root)["localBaseUrl"]
+        try:
+            with _ur.urlopen(f"{base}/models", timeout=5) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            return {"ok": True, "models": [m.get("id") for m in data.get("data", []) if m.get("id")]}
+        except Exception as exc:
+            return {"ok": False, "models": [], "error": f"連不到 {base}：{exc}"}
+
+    @router.post("/api/ecommerce-scenes/ai-layout")
+    def ai_layout(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        from fox3d.ai_scene_layout import AiLayoutError, generate_ai_layout, load_settings
+        from fox3d.ecommerce_scene_studio import CABINET_PRESETS, build_modular_cabinet_spec
+
+        tid = tenant(x_tenant_id)
+        try:
+            spec = build_modular_cabinet_spec(payload.get("cabinet") or CABINET_PRESETS[0], tenant_id=tid)
+            scene = generate_ai_layout(
+                str(payload.get("prompt") or ""),
+                float(spec["width"]) / 1000.0,
+                float(spec["depth"]) / 1000.0,
+                float(spec["height"]) / 1000.0,
+                load_settings(store().root),
+                model=str(payload.get("model") or "") or None,
+            )
+            return scene
+        except AiLayoutError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @router.post("/api/ecommerce-scenes/batches", status_code=202)
     def start_batch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:

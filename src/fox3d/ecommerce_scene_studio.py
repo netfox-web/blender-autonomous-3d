@@ -414,6 +414,148 @@ BUILTIN_SCENES: list[dict[str, Any]] = [
 ]
 
 
+def _ph_glb(asset_id: str) -> str:
+    """Absolute path to a pre-downloaded Poly Haven 2K glTF (empty string if the asset is unknown)."""
+    cfg = POLYHAVEN_CURATED_MODELS.get(asset_id)
+    if not cfg:
+        return ""
+    res = cfg.get("resolution", "2k")
+    return str((Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven" / asset_id / f"{asset_id}_{res}.gltf").resolve())
+
+
+def _ph_prop(pid: str, ptype: str, label: str, asset_id: str, x: float, y: float, w: float, d: float, h: float, rot: float = 0, z: float = 0.0) -> dict[str, Any]:
+    return {"id": pid, "type": ptype, "label": label, "x": x, "y": y, "z": z, "widthM": w, "depthM": d, "heightM": h,
+            "rotationDeg": rot, "colorHex": "#c4b6a6", "accentColorHex": "#8c7a6b", "glbPath": _ph_glb(asset_id), "polyhavenId": asset_id}
+
+
+def _rug(x: float, y: float, w: float, d: float, color: str = "#e2d9c8", accent: str = "#cabba4") -> dict[str, Any]:
+    return {"id": "p_rug", "type": "RUG", "label": "編織地毯", "x": x, "y": y, "z": 0.0, "widthM": w, "depthM": d, "heightM": 0.015,
+            "rotationDeg": 0, "colorHex": color, "accentColorHex": accent}
+
+
+def _art(pid: str, x: float, w: float = 0.78, h: float = 0.85, color: str = "#b56935") -> dict[str, Any]:
+    return {"id": pid, "type": "WALL_ART", "label": "掛畫", "x": x, "y": 1.52, "z": 1.45, "widthM": w, "depthM": 0.05, "heightM": h,
+            "rotationDeg": 0, "colorHex": color, "accentColorHex": "#5c361a"}
+
+
+BUILTIN_SCENES += [
+    {
+        "id": "SCENE_PH_FRENCH_CREAM_LIVING", "name": "法式奶油亞麻沙發客廳（Poly Haven 2K）", "category": "客廳空間", "builtin": True,
+        "roomWidthM": 5.8, "roomDepthM": 4.2, "roomHeightM": 3.0, "wallColorHex": "#d9cfbf", "sideWallColorHex": "#cbc2b3", "floorColorHex": "#9a7a58",
+        "lightingPreset": "WARM_SUNLIGHT", "productPose": {"x": 1.55, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _rug(-0.8, 0.3, 2.6, 1.7),
+            _ph_prop("p_sofa", "SOFA", "奶油亞麻雙人沙發", "Sofa_01", -1.0, 1.0, 1.9, 0.9, 0.85),
+            _ph_prop("p_table", "COFFEE_TABLE", "現代茶几", "modern_coffee_table_01", -1.0, 0.0, 1.0, 0.6, 0.42),
+            _ph_prop("p_plant", "PLANT", "觀葉植栽", "potted_plant_02", -2.35, 1.1, 0.45, 0.45, 0.95),
+            _art("p_art", -1.0),
+        ],
+    },
+    {
+        "id": "SCENE_PH_VINTAGE_LIVING", "name": "經典三人沙發大客廳（Poly Haven 2K）", "category": "客廳空間", "builtin": True,
+        "roomWidthM": 6.2, "roomDepthM": 4.4, "roomHeightM": 3.0, "wallColorHex": "#c9bda8", "sideWallColorHex": "#b8ad99", "floorColorHex": "#6f5037",
+        "lightingPreset": "COZY_EVENING", "productPose": {"x": 1.75, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _rug(-1.0, 0.25, 2.8, 1.8, "#c9b79b", "#a89475"),
+            _ph_prop("p_sofa", "SOFA", "三人沙發", "sofa_03", -1.2, 1.0, 2.2, 0.95, 0.85),
+            _ph_prop("p_table", "COFFEE_TABLE", "圓形茶几", "coffee_table_round_01", -1.2, -0.05, 0.85, 0.85, 0.42),
+            _ph_prop("p_chair", "SOFA", "休閒單椅", "mid_century_lounge_chair", -2.7, 0.2, 0.8, 0.85, 0.85, 35),
+            _ph_prop("p_plant", "PLANT", "落地植栽", "potted_plant_01", -2.7, 1.2, 0.5, 0.5, 1.1),
+        ],
+    },
+    {
+        "id": "SCENE_PH_READING_NOOK", "name": "胡桃木單椅陽光閱讀角（Poly Haven 2K）", "category": "客廳空間", "builtin": True,
+        "roomWidthM": 5.0, "roomDepthM": 4.0, "roomHeightM": 2.9, "wallColorHex": "#d4cbbb", "sideWallColorHex": "#c2b9aa", "floorColorHex": "#85613f",
+        "lightingPreset": "WARM_SUNLIGHT", "productPose": {"x": 1.1, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _ph_prop("p_chair", "SOFA", "法式單椅", "GreenChair_01", -1.3, 0.9, 0.85, 0.85, 0.95),
+            _ph_prop("p_side", "COFFEE_TABLE", "實木邊几", "side_table_01", -0.45, 1.1, 0.45, 0.45, 0.55),
+            _ph_prop("p_plant", "PLANT", "多肉盆栽", "potted_plant_04", -2.0, 1.2, 0.35, 0.35, 0.5),
+            _rug(-1.0, 0.3, 2.0, 1.4),
+            _art("p_art", -1.1, 0.65, 0.8, "#6c848c"),
+        ],
+    },
+    {
+        "id": "SCENE_PH_JAPANDI_MASTER", "name": "日系原木主臥室（Poly Haven 2K）", "category": "臥室空間", "builtin": True,
+        "roomWidthM": 5.6, "roomDepthM": 4.2, "roomHeightM": 2.9, "wallColorHex": "#d2c8b6", "sideWallColorHex": "#c3b9a6", "floorColorHex": "#93704b",
+        "lightingPreset": "COZY_EVENING", "productPose": {"x": 1.45, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _ph_prop("p_bed", "BED", "實木貴妃臥床", "vintage_day_bed", -1.1, 0.7, 1.0, 2.0, 0.85),
+            _ph_prop("p_night", "COFFEE_TABLE", "床頭邊櫃", "ClassicNightstand_01", -2.0, 1.25, 0.5, 0.45, 0.55),
+            _ph_prop("p_ottoman", "BENCH", "床尾腳凳", "Ottoman_01", -0.2, -0.2, 0.7, 0.5, 0.42),
+            _rug(-0.6, 0.0, 2.4, 1.6),
+            _art("p_art", -1.1, 0.8, 0.7, "#cbbba4"),
+        ],
+    },
+    {
+        "id": "SCENE_PH_STUDY_LONGDESK", "name": "北歐實木長桌陽光書房（Poly Haven 2K）", "category": "書房工作室", "builtin": True,
+        "roomWidthM": 5.4, "roomDepthM": 4.0, "roomHeightM": 3.0, "wallColorHex": "#bfc3bc", "sideWallColorHex": "#aab0a9", "floorColorHex": "#76573a",
+        "lightingPreset": "NORDIC_BRIGHT", "productPose": {"x": 1.5, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _ph_prop("p_desk", "DESK", "實木長書桌", "WoodenTable_01", -1.0, 0.9, 1.6, 0.75, 0.76),
+            _ph_prop("p_chair", "SOFA", "書桌椅", "modern_arm_chair_01", -1.0, 0.1, 0.65, 0.65, 0.85, 180),
+            _ph_prop("p_plant", "PLANT", "書房綠植", "potted_plant_02", -2.2, 1.1, 0.42, 0.42, 0.9),
+            _art("p_art", -1.0, 0.9, 0.6, "#6c848c"),
+        ],
+    },
+    {
+        "id": "SCENE_PH_FOYER_CONSOLE", "name": "法式玄關端景落塵區（Poly Haven 2K）", "category": "玄關走廊", "builtin": True,
+        "roomWidthM": 4.8, "roomDepthM": 3.6, "roomHeightM": 2.9, "wallColorHex": "#cfc8bb", "sideWallColorHex": "#bdb7ab", "floorColorHex": "#6e655c",
+        "lightingPreset": "NORDIC_BRIGHT", "productPose": {"x": 1.15, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _ph_prop("p_console", "DESK", "胡桃木端景桌", "ClassicConsole_01", -1.0, 1.15, 1.2, 0.4, 0.82),
+            _ph_prop("p_bench", "BENCH", "穿鞋腳凳", "Ottoman_01", -1.0, 0.35, 0.6, 0.45, 0.42),
+            _ph_prop("p_plant", "PLANT", "迎賓植栽", "potted_plant_01", -2.0, 1.1, 0.5, 0.5, 1.1),
+            _art("p_art", -1.0, 0.65, 0.88, "#6c848c"),
+            _rug(-1.0, 0.4, 1.8, 0.95, "#9c9488", "#7d756b"),
+        ],
+    },
+]
+
+
+BUILTIN_SCENES += [
+    {
+        "id": "SCENE_PH_MODERN_MINIMAL_LIVING", "name": "現代極簡客廳（石材茶几＋休閒椅）", "category": "客廳空間", "builtin": True,
+        "roomWidthM": 5.8, "roomDepthM": 4.2, "roomHeightM": 3.0, "wallColorHex": "#dcdad5", "sideWallColorHex": "#cfcdc8", "floorColorHex": "#8d7a66",
+        "lightingPreset": "NORDIC_BRIGHT", "productPose": {"x": 1.6, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _rug(-0.9, 0.2, 2.6, 1.7, "#cfcac1", "#b9b3a8"),
+            _ph_prop("p_chair1", "SOFA", "現代休閒椅", "modern_arm_chair_01", -1.7, 0.6, 0.8, 0.85, 0.85, 30),
+            _ph_prop("p_chair2", "SOFA", "中世紀休閒椅", "mid_century_lounge_chair", -0.1, 0.6, 0.8, 0.85, 0.85, -30),
+            _ph_prop("p_table", "COFFEE_TABLE", "石材木質茶几", "modern_coffee_table_02", -0.9, 0.0, 1.0, 0.6, 0.4),
+            _ph_prop("p_side", "COFFEE_TABLE", "極簡邊几", "side_table_01", -2.5, 1.2, 0.45, 0.45, 0.55),
+            _ph_prop("p_vase", "CUSTOM_BOX", "陶瓷花瓶", "ceramic_vase_01", -2.5, 1.2, 0.2, 0.2, 0.35, z=0.55),
+            _art("p_art", -0.9, 0.9, 0.7, "#8aa09a"),
+        ],
+    },
+    {
+        "id": "SCENE_PH_MODERN_SIDEBOARD", "name": "現代餐邊櫃牆面（餐椅＋花瓶擺飾）", "category": "餐廚空間", "builtin": True,
+        "roomWidthM": 5.6, "roomDepthM": 4.2, "roomHeightM": 3.0, "wallColorHex": "#d8d4cc", "sideWallColorHex": "#c9c5bd", "floorColorHex": "#8a6f55",
+        "lightingPreset": "WARM_SUNLIGHT", "productPose": {"x": 1.5, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _ph_prop("p_cabinet", "CUSTOM_BOX", "現代木質矮櫃", "modern_wooden_cabinet", -1.1, 1.15, 1.4, 0.45, 0.8),
+            _ph_prop("p_vase", "CUSTOM_BOX", "陶瓷花瓶", "ceramic_vase_03", -1.5, 1.15, 0.2, 0.2, 0.4, z=0.8),
+            _ph_prop("p_frame", "CUSTOM_BOX", "桌上相框", "standing_picture_frame_01", -0.7, 1.15, 0.2, 0.05, 0.25, z=0.8),
+            _ph_prop("p_chair", "SOFA", "現代餐椅", "dining_chair_02", -1.1, 0.2, 0.5, 0.5, 0.9, 180),
+            _ph_prop("p_plant", "PLANT", "觀葉植栽", "potted_plant_02", -2.3, 1.1, 0.45, 0.45, 0.95),
+            _art("p_art", -1.1, 1.0, 0.7, "#8aa09a"),
+        ],
+    },
+    {
+        "id": "SCENE_PH_MODERN_SHELF_STUDY", "name": "現代展示層架書房（層架＋抽屜櫃）", "category": "書房工作室", "builtin": True,
+        "roomWidthM": 5.4, "roomDepthM": 4.0, "roomHeightM": 3.0, "wallColorHex": "#d3d3cd", "sideWallColorHex": "#c2c3bd", "floorColorHex": "#7d6247",
+        "lightingPreset": "STUDIO_CLEAN", "productPose": {"x": 1.55, "y": 1.15, "z": 0.0, "rotationDeg": 0.0},
+        "props": [
+            _ph_prop("p_shelf", "CUSTOM_BOX", "木質展示層架", "wooden_display_shelves_01", -1.9, 1.15, 0.9, 0.35, 1.6),
+            _ph_prop("p_drawer", "CUSTOM_BOX", "抽屜收納櫃", "drawer_cabinet", -0.8, 1.15, 0.9, 0.45, 0.8),
+            _ph_prop("p_chair", "SOFA", "現代休閒椅", "modern_arm_chair_01", -0.8, 0.2, 0.7, 0.7, 0.85, 180),
+            _ph_prop("p_plant", "PLANT", "多肉盆栽", "potted_plant_04", -0.4, 1.15, 0.3, 0.3, 0.4, z=0.8),
+            _rug(-1.0, 0.3, 2.2, 1.4, "#cfcac1", "#b9b3a8"),
+        ],
+    },
+]
+
+
 class CellSpec(BaseModel):
     model_config = ConfigDict(extra="ignore")
     mode: Literal["DOOR", "OPEN", "DRAWER"] = "DOOR"
@@ -800,7 +942,16 @@ def compile_custom_scene(
     extent = max(w_m, d_m, h_m)
     dist = max(extent * float(view_cfg["distMult"]), 1.85 if view == "CLOSEUP" else 2.25)
     side = float(view_cfg["side"])
-    target = [round(px * 0.65, 4), round(py * 0.55, 4), round(pz + h_m * 0.48, 4)]
+    # Frame the product together with the surrounding furniture so wide shots do not crop the room set
+    prop_xs = [float(p.get("x") or 0.0) for p in (scene_cfg.get("props") or []) if str(p.get("type") or "").upper() not in ("WINDOW_FRAME", "SHEER_CURTAIN")]
+    if prop_xs and view in ("WIDE", "THREE_QUARTER", "LEFT"):
+        mid_x = (px + sum(prop_xs) / len(prop_xs)) * 0.5
+        span = abs(px - min(prop_xs)) + 1.0
+        if view == "WIDE":
+            dist = max(dist, span * 0.78)
+    else:
+        mid_x = px * 0.65
+    target = [round(mid_x, 4), round(py * 0.55, 4), round(pz + h_m * 0.48, 4)]
     camera = {
         "location": [
             round(target[0] + dist * side, 4),

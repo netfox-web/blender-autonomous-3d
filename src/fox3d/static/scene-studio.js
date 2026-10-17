@@ -1365,6 +1365,25 @@
         }
       });
     }
+
+    // Step Tabs Switching Logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.wf-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabId);
+      });
+      document.querySelectorAll('.tab-section').forEach(sec => {
+        sec.classList.toggle('active', sec.id === tabId);
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    document.querySelectorAll('.wf-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
+    document.querySelectorAll('.next-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.go));
+    });
   }
 
   async function init() {
@@ -1407,5 +1426,152 @@
     }
   }
 
+  // ---- AI interior designer (Claude Cloud OR Local Ollama/LM Studio) ----
+  function updateAiProviderVisibility(provider) {
+    const isLocal = provider === 'local';
+    const antBox = $('ai-anthropic-box');
+    const locBox = $('ai-local-box');
+    if (antBox) antBox.hidden = isLocal;
+    if (locBox) locBox.hidden = !isLocal;
+  }
+
+  document.querySelectorAll('input[name="ai-provider"]').forEach(r => {
+    r.addEventListener('change', () => updateAiProviderVisibility(r.value));
+  });
+
+  async function refreshAiKeyStatus() {
+    try {
+      const s = await api('/api/ecommerce-scenes/ai-settings');
+      const provider = s.provider || 'anthropic';
+      const rad = document.querySelector(`input[name="ai-provider"][value="${provider}"]`);
+      if (rad) rad.checked = true;
+      updateAiProviderVisibility(provider);
+
+      if ($('ai-local-url')) $('ai-local-url').value = s.localBaseUrl || 'http://127.0.0.1:11434/v1';
+      if ($('ai-local-model')) $('ai-local-model').value = s.localModel || '';
+
+      if (provider === 'local') {
+        $('ai-key-status').textContent = `AI 來源：🖥️ 本機 AI (${s.localModel || '未指定模型'})`;
+      } else {
+        $('ai-key-status').textContent = s.hasKey
+          ? 'AI 來源：☁️ Claude（✅ 金鑰已設定）'
+          : 'AI 來源：☁️ Claude（⚠️ 尚未設定金鑰，點此填寫）';
+      }
+    } catch (e) {
+      $('ai-key-status').textContent = 'AI 來源設定：讀取失敗';
+    }
+  }
+
+  $('ai-local-scan')?.addEventListener('click', async () => {
+    const btn = $('ai-local-scan');
+    btn.disabled = true;
+    btn.textContent = '掃描中…';
+    try {
+      const res = await api('/api/ecommerce-scenes/ai-local-models');
+      if (res.ok && res.models?.length) {
+        const dl = $('ai-local-model-list');
+        if (dl) {
+          dl.innerHTML = res.models.map(m => `<option value="${esc(m)}"></option>`).join('');
+        }
+        if ($('ai-local-model') && !$('ai-local-model').value) {
+          $('ai-local-model').value = res.models[0];
+        }
+        notify(`🔍 找到本機模型：${res.models.join(', ')}`);
+      } else {
+        notify(`⚠️ ${res.error || '未偵測到本機模型，請先啟動 Ollama 或 LM Studio'}`, true);
+      }
+    } catch (e) {
+      notify(`偵測失敗：${e.message}`, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🔍 偵測模型';
+    }
+  });
+
+  $('ai-key-save').addEventListener('click', async () => {
+    const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'anthropic';
+    const payload = {
+      provider,
+      anthropicApiKey: $('ai-key-input')?.value || '',
+      localBaseUrl: $('ai-local-url')?.value || '',
+      localModel: $('ai-local-model')?.value || ''
+    };
+    try {
+      await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify(payload) });
+      if ($('ai-key-input')) $('ai-key-input').value = '';
+      notify('✅ 已成功儲存 AI 設定！');
+      refreshAiKeyStatus();
+    } catch (e) {
+      notify(e.message, true);
+    }
+  });
+
+  $('ai-layout-btn').addEventListener('click', async () => {
+    const btn = $('ai-layout-btn');
+    const resultBox = $('ai-result');
+    const prompt = $('ai-prompt').value.trim();
+    if (!prompt) { notify('請先輸入想要的空間風格。', true); return; }
+    btn.disabled = true;
+    const oldLabel = btn.textContent;
+    btn.textContent = '🤖 AI 設計中…（約 10~30 秒）';
+    try {
+      const scene = await api('/api/ecommerce-scenes/ai-layout', { method: 'POST', body: JSON.stringify({ prompt, cabinet: state.cabinet }) });
+      state.currentScene = scene;
+      state.selectedTarget = { kind: 'cabinet', index: -1 };
+      syncSceneInputsFromState();
+      refreshPreviewPlan();
+      const lines = [`✨ ${scene.name}：AI 擺了 ${scene.props.length} 件家具。${scene.aiRationale || ''}`];
+      if (scene.aiDropped && scene.aiDropped.length) lines.push(`（已略過：${scene.aiDropped.join('、')}）`);
+      lines.push('可在 2D 平面圖拖拉微調，滿意後按「儲存場景至場景庫」。');
+      resultBox.textContent = lines.join(' ');
+      resultBox.hidden = false;
+      notify('✨ AI 已完成場景設計，預覽已更新。');
+    } catch (e) {
+      notify(e.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldLabel;
+    }
+  });
+
+  refreshAiKeyStatus();
+
   init();
+})();
+
+
+// ---- Image lightbox: click any generated image to enlarge it in-page (no download) ----
+(function initImageLightbox() {
+  const style = document.createElement('style');
+  style.textContent = `
+    .gallery-card > img, .photoreal-hero-img, .gallery-card img { cursor: zoom-in; }
+    #img-lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(12,12,12,0.92); display: none; overflow: auto; cursor: zoom-out; }
+    #img-lightbox.open { display: flex; align-items: center; justify-content: center; }
+    #img-lightbox img { max-width: 96vw; max-height: 94vh; object-fit: contain; box-shadow: 0 8px 40px rgba(0,0,0,0.6); border-radius: 6px; background: #fff; }
+    #img-lightbox.full { display: block; }
+    #img-lightbox.full img { max-width: none; max-height: none; cursor: zoom-out; }
+    #img-lightbox .lb-hint { position: fixed; top: 12px; right: 18px; color: #eee; font-size: 13px; background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 14px; pointer-events: none; }
+  `;
+  document.head.appendChild(style);
+
+  const box = document.createElement('div');
+  box.id = 'img-lightbox';
+  box.innerHTML = '<img alt=""><div class="lb-hint">點圖放大／縮小 · 點背景或按 Esc 關閉</div>';
+  document.body.appendChild(box);
+  const big = box.querySelector('img');
+
+  const close = () => { box.classList.remove('open', 'full'); big.removeAttribute('src'); };
+  box.addEventListener('click', (e) => {
+    if (e.target === big) { box.classList.toggle('full'); } else { close(); }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+
+  document.addEventListener('click', (e) => {
+    const img = e.target.closest && e.target.closest('.gallery-card img, img.photoreal-hero-img');
+    if (!img || !img.src) return;
+    e.preventDefault();
+    big.src = img.currentSrc || img.src;
+    box.classList.remove('full');
+    box.classList.add('open');
+  });
 })();
