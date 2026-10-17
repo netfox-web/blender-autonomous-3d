@@ -48,7 +48,22 @@ class AiLayoutError(ValueError):
     pass
 
 
-DEFAULT_LOCAL_URL = "http://127.0.0.1:11434/v1"  # Ollama; LM Studio is http://127.0.0.1:1234/v1
+# Fox AI Gateway on netfox-home is an Ollama drop-in with an OpenAI-compatible /v1 (qwen3.8:27b, qwen3:8b, qwen2.5vl:7b…).
+# Override with FOX3D_LOCAL_LLM_URL / FOX3D_LOCAL_LLM_MODEL (e.g. a laptop running Ollama at http://127.0.0.1:11434/v1).
+DEFAULT_LOCAL_URL = (os.environ.get("FOX3D_LOCAL_LLM_URL") or "http://192.168.66.101:11434/v1").strip().rstrip("/")
+DEFAULT_LOCAL_MODEL = (os.environ.get("FOX3D_LOCAL_LLM_MODEL") or "qwen3.8:27b").strip()
+IMAGE_ENGINES = ("fleet_flux3", "builtin", "off")
+AI_VARIATIONS = ("faithful", "creative")
+DEFAULT_IMAGE_ENGINE = "fleet_flux3"
+MAX_AI_VARIANTS = 4
+
+
+def _as_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _settings_file(settings_dir: Path) -> Path:
@@ -64,11 +79,27 @@ def load_settings(settings_dir: Path | None = None) -> dict[str, Any]:
         except Exception:
             data = {}
     env_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    api_key = env_key or str(data.get("anthropicApiKey") or "").strip()
+    # 地端優先：沒有 Anthropic 金鑰就用公司閘道的本機模型
+    provider = data.get("provider") if data.get("provider") in ("anthropic", "local") else ("anthropic" if api_key else "local")
+    try:
+        variants = max(1, min(MAX_AI_VARIANTS, int(data.get("aiVariants") or 2)))
+    except (TypeError, ValueError):
+        variants = 2
     return {
-        "provider": data.get("provider") if data.get("provider") in ("anthropic", "local") else "anthropic",
-        "anthropicApiKey": env_key or str(data.get("anthropicApiKey") or "").strip(),
+        "provider": provider,
+        "anthropicApiKey": api_key,
         "localBaseUrl": str(data.get("localBaseUrl") or DEFAULT_LOCAL_URL).strip().rstrip("/"),
-        "localModel": str(data.get("localModel") or "").strip(),
+        "localModel": str(data.get("localModel") or DEFAULT_LOCAL_MODEL).strip(),
+        # 地端 AI 實景（GPU 艦隊 image_flux3）
+        "imageEngine": data.get("imageEngine") if data.get("imageEngine") in IMAGE_ENGINES else DEFAULT_IMAGE_ENGINE,
+        "fleetApiUrl": str(data.get("fleetApiUrl") or os.environ.get("FLEET_API_URL") or "").strip().rstrip("/"),
+        "fleetToken": str(data.get("fleetToken") or "").strip(),
+        "publicBaseUrl": str(data.get("publicBaseUrl") or os.environ.get("FOX3D_PUBLIC_BASE_URL") or "").strip().rstrip("/"),
+        "aiVariants": variants,
+        "aiVariation": data.get("aiVariation") if data.get("aiVariation") in AI_VARIATIONS else "faithful",
+        "aiUpsample": _as_bool(data.get("aiUpsample"), True),
+        "promptPolish": _as_bool(data.get("promptPolish"), False),
     }
 
 
@@ -79,9 +110,17 @@ def save_settings(settings_dir: Path, updates: dict[str, Any]) -> None:
             current = json.loads(_settings_file(settings_dir).read_text(encoding="utf-8"))
         except Exception:
             current = {}
-    for k in ("provider", "anthropicApiKey", "localBaseUrl", "localModel"):
+    for k in ("provider", "anthropicApiKey", "localBaseUrl", "localModel", "imageEngine", "fleetApiUrl", "fleetToken", "publicBaseUrl", "aiVariation"):
         if k in updates and updates[k] is not None:
             current[k] = str(updates[k]).strip()
+    if updates.get("aiVariants") is not None:
+        try:
+            current["aiVariants"] = max(1, min(MAX_AI_VARIANTS, int(updates["aiVariants"])))
+        except (TypeError, ValueError):
+            pass
+    for k in ("aiUpsample", "promptPolish"):
+        if k in updates and updates[k] is not None:
+            current[k] = _as_bool(updates[k], True)
     settings_dir.mkdir(parents=True, exist_ok=True)
     _settings_file(settings_dir).write_text(json.dumps(current), encoding="utf-8")
 

@@ -2,6 +2,8 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 set "PYTHONPATH=%~dp0src"
+rem 0.0.0.0: GPU fleet nodes must reach this workstation to fetch reference renders (local AI scenes)
+if not defined FOX3D_HOST set "FOX3D_HOST=0.0.0.0"
 if exist "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" set "BLENDER_PATH=C:\Program Files\Blender Foundation\Blender 5.2\blender.exe"
 echo.
 echo  Autonomous 3D Admin

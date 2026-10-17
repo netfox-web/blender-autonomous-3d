@@ -9,7 +9,9 @@ from __future__ import annotations
 import io
 import json
 import math
+import random
 import shutil
+import urllib.parse
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -18,7 +20,15 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from fox3d.fleet_image_client import FleetImageClient
 from fox3d.ids import new_id, stable_hash
+from fox3d.local_scene_ai import (
+    DEFAULT_ENGINE as DEFAULT_AI_ENGINE,
+    MAX_VARIANTS as MAX_AI_VARIANTS,
+    SCENE_AI_ENGINES,
+    build_scene_prompt,
+    run_local_scene_variants,
+)
 from fox3d.photoreal_assets import (
     AI_STYLE_PRESETS,
     POLYHAVEN_CURATED_MODELS,
@@ -1100,6 +1110,8 @@ class EcommerceSceneStore:
             "polyhavenModels": ph_list,
             "lightingPresets": [{"id": k, **v} for k, v in LIGHTING_PRESETS.items()],
             "aiStylePresets": list(AI_STYLE_PRESETS.values()),
+            "sceneAiEngines": list(SCENE_AI_ENGINES.values()),
+            "maxAiVariants": MAX_AI_VARIANTS,
             "cameraViews": list(CAMERA_VIEWS.values()),
             "scenes": self.list_scenes(tenant_id),
             "batches": self.list_batches(tenant_id),
@@ -1142,14 +1154,32 @@ class EcommerceSceneStore:
             raise KeyError("找不到此批次渲染任務")
         return data
 
-    def start_matrix_batch(self, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def start_matrix_batch(self, tenant_id: str, payload: dict[str, Any], *, public_base_url: str = "") -> dict[str, Any]:
+        from fox3d.ai_scene_layout import load_settings  # lazy: ai_scene_layout imports this module
+
+        settings = load_settings(self.root)
         cabinet_cfg = dict(payload.get("cabinet") or CABINET_PRESETS[0])
         scene_ids = list(payload.get("sceneIds") or ["SCENE_NORDIC_LIVING"])
         theme_ids = list(payload.get("themeIds") or [cabinet_cfg.get("themeId") or "THEME_NORDIC_OAK"])
         views = list(payload.get("views") or ["THREE_QUARTER"])
         samples = max(12, min(64, int(payload.get("samples") or 24)))
         ai_style_id = str(payload.get("aiStyleId") or "AI_NORDIC_SUNLIT_LOFT")
-        ai_prompt = str(payload.get("aiPrompt") or "").strip()
+        ai_prompt = str(payload.get("aiPrompt") or "").strip()[:2000]
+        ai_final_prompt = str(payload.get("aiFinalPrompt") or "").strip()[:4000]
+        ai_engine = str(payload.get("aiEngine") or settings.get("imageEngine") or DEFAULT_AI_ENGINE)
+        if ai_engine not in SCENE_AI_ENGINES:
+            raise ValueError("不支援的 AI 實景引擎")
+        try:
+            ai_variants = max(1, min(MAX_AI_VARIANTS, int(payload.get("aiVariants") or settings.get("aiVariants") or 2)))
+        except (TypeError, ValueError):
+            ai_variants = 2
+        try:
+            raw_seed = payload.get("aiSeed")
+            ai_seed = int(raw_seed) if raw_seed not in (None, "", 0, "0") else random.randint(1, 2_000_000_000)
+        except (TypeError, ValueError):
+            ai_seed = random.randint(1, 2_000_000_000)
+        ai_upsample = bool(payload.get("aiUpsample", settings.get("aiUpsample", True)))
+        ai_variation = "creative" if str(payload.get("aiVariation") or settings.get("aiVariation") or "faithful") == "creative" else "faithful"
 
         if not scene_ids or not theme_ids or not views:
             raise ValueError("請至少勾選 1 個場景、1 種櫃體配色與 1 個鏡頭視角")
@@ -1166,6 +1196,7 @@ class EcommerceSceneStore:
         bdir = self._tenant_dir(tenant_id) / "batches" / batch_id
         bdir.mkdir(parents=True, exist_ok=True)
 
+        initial_ai_state = {"fleet_flux3": "pending", "builtin": "builtin", "off": "skipped"}[ai_engine]
         items: list[dict[str, Any]] = []
         idx = 0
         for sid in scene_ids:
@@ -1187,13 +1218,19 @@ class EcommerceSceneStore:
                             "view": vcfg["id"],
                             "viewLabel": vcfg["label"],
                             "aiStyleId": ai_style_id,
+                            "aiEngine": ai_engine,
                             "state": "queued",
+                            "stage": "queued",
                             "error": None,
                             "renderTimeSec": None,
                             "blenderVersion": None,
                             "device": None,
                             "hasAiComposite": False,
                             "hasCutout": False,
+                            "aiState": initial_ai_state,
+                            "aiVariants": [],
+                            "aiError": None,
+                            "aiPrompt": None,
                         }
                     )
 
@@ -1204,6 +1241,14 @@ class EcommerceSceneStore:
             "cabinetSku": cabinet_cfg.get("sku") or "SQ-MOD-CABINET",
             "aiStyleId": ai_style_id,
             "aiPrompt": ai_prompt,
+            "aiFinalPrompt": ai_final_prompt,
+            "aiEngine": ai_engine,
+            "aiEngineLabel": SCENE_AI_ENGINES[ai_engine]["label"],
+            "aiVariantsPerItem": ai_variants if ai_engine == "fleet_flux3" else 0,
+            "aiSeed": ai_seed,
+            "aiUpsample": ai_upsample,
+            "aiVariation": ai_variation,
+            "publicBaseUrl": public_base_url,
             "createdAt": timestamp(),
             "state": "running",
             "samples": samples,
@@ -1226,6 +1271,13 @@ class EcommerceSceneStore:
             samples,
             ai_style_id,
             ai_prompt,
+            ai_engine,
+            ai_variants,
+            ai_seed,
+            ai_upsample,
+            public_base_url,
+            ai_final_prompt,
+            ai_variation,
         )
         return batch_doc
 
@@ -1240,6 +1292,13 @@ class EcommerceSceneStore:
         samples: int,
         ai_style_id: str = "AI_NORDIC_SUNLIT_LOFT",
         ai_prompt: str = "",
+        ai_engine: str = DEFAULT_AI_ENGINE,
+        ai_variants: int = 2,
+        ai_seed: int = 0,
+        ai_upsample: bool = True,
+        public_base_url: str = "",
+        ai_final_prompt: str = "",
+        ai_variation: str = "faithful",
     ) -> None:
         try:
             ensure_pbr_texture_assets()
@@ -1250,8 +1309,22 @@ class EcommerceSceneStore:
             and getattr(self.platform, "runtime", None)
             and self.platform.runtime.available()
         )
+        fleet_client: FleetImageClient | None = None
+        fleet_error: str | None = None
+        if ai_engine == "fleet_flux3":
+            try:
+                from fox3d.ai_scene_layout import load_settings
+
+                fleet_client = FleetImageClient.from_settings(load_settings(self.root))
+                if not fleet_client.token:
+                    fleet_error = "尚未設定 GPU 艦隊服務金鑰，請到「AI 設定」貼上 FLEET_SERVICE_TOKEN"
+                elif not public_base_url:
+                    fleet_error = "沒有可讓 GPU 節點抓取參考圖的工作台網址（請用 --host 0.0.0.0 啟動或在設定填 publicBaseUrl）"
+            except Exception as exc:  # pragma: no cover - defensive
+                fleet_error = str(exc)[:300]
         for item in items:
             item["state"] = "running"
+            item["stage"] = "blender"
             self._save_batch_progress(bdir, items)
             item_dir = bdir / item["itemId"]
             item_dir.mkdir(parents=True, exist_ok=True)
@@ -1279,8 +1352,9 @@ class EcommerceSceneStore:
                     "engineering": cab_spec,
                     "camera": scene_def["camera"],
                     "render": {
-                        "width": 800,
-                        "height": 800,
+                        # 1024² matches the FLUX 3 output size so the locked cutout is pasted back at native resolution
+                        "width": 1024,
+                        "height": 1024,
                         "samples": max(32, samples),
                         "device": "OPTIX",
                     },
@@ -1298,29 +1372,115 @@ class EcommerceSceneStore:
                     err_msg = getattr(res, "error", None) or (res.get("error") if isinstance(res, dict) else None)
                     raise RuntimeError(err_msg or "Blender 算圖未產出 beauty.png")
 
-                # Plan B: Run AI Studio Room Compositor with 100% locked cabinet cutout + shadow catcher
-                try:
-                    build_ai_photoreal_composite(
-                        item_dir / "beauty.png",
-                        item_dir / "product_cutout.png" if (item_dir / "product_cutout.png").exists() else None,
-                        item_dir / "ai_composite.png",
-                        ai_style_id=ai_style_id,
-                        custom_prompt=ai_prompt,
-                        view=item["view"],
-                    )
-                except Exception:
-                    pass
-
-                item["state"] = "succeeded"
-                item["hasAiComposite"] = (item_dir / "ai_composite.png").exists()
                 item["hasCutout"] = (item_dir / "product_cutout.png").exists()
                 item["renderTimeSec"] = getattr(res, "render_time_sec", None) or (res.get("renderTimeSec") if isinstance(res, dict) else None)
                 item["blenderVersion"] = getattr(res, "blender_version", None) or (res.get("blenderVersion") if isinstance(res, dict) else None)
                 item["device"] = getattr(res, "device", None) or (res.get("device") if isinstance(res, dict) else None)
+
+                # Plan B (built-in compositor): always cheap, doubles as the fallback image when the fleet is busy.
+                if ai_engine in ("builtin", "fleet_flux3"):
+                    try:
+                        build_ai_photoreal_composite(
+                            item_dir / "beauty.png",
+                            item_dir / "product_cutout.png" if (item_dir / "product_cutout.png").exists() else None,
+                            item_dir / "ai_composite.png",
+                            ai_style_id=ai_style_id,
+                            custom_prompt=ai_prompt,
+                            view=item["view"],
+                        )
+                    except Exception:
+                        pass
+                item["hasAiComposite"] = (item_dir / "ai_composite.png").exists()
+
+                # Plan C (地端 AI 實景): FLUX 3 on the GPU fleet re-photographs the render, product pixels stay locked.
+                if ai_engine == "fleet_flux3":
+                    item["stage"] = "ai"
+                    item["aiState"] = "running"
+                    self._save_batch_progress(bdir, items)
+                    if fleet_error or fleet_client is None:
+                        item["aiState"] = "failed"
+                        item["aiError"] = fleet_error or "GPU 艦隊用戶端未初始化"
+                    else:
+                        self._run_local_ai_for_item(
+                            tenant_id, batch_id, bdir, items, item, item_dir, cab_copy, cab_spec, scfg,
+                            ai_style_id, ai_prompt, ai_variants, ai_seed, ai_upsample, public_base_url, fleet_client, ai_final_prompt, ai_variation,
+                        )
+                item["state"] = "succeeded"
+                item["stage"] = "done"
             except Exception as exc:
                 item["state"] = "failed"
+                item["stage"] = "done"
                 item["error"] = str(exc)[:300]
             self._save_batch_progress(bdir, items)
+
+    def _run_local_ai_for_item(
+        self,
+        tenant_id: str,
+        batch_id: str,
+        bdir: Path,
+        items: list[dict[str, Any]],
+        item: dict[str, Any],
+        item_dir: Path,
+        cabinet_cfg: dict[str, Any],
+        cabinet_spec: dict[str, Any],
+        scene_cfg: dict[str, Any],
+        ai_style_id: str,
+        ai_prompt: str,
+        ai_variants: int,
+        ai_seed: int,
+        ai_upsample: bool,
+        public_base_url: str,
+        client: FleetImageClient,
+        ai_final_prompt: str = "",
+        ai_variation: str = "faithful",
+    ) -> None:
+        style_cfg = AI_STYLE_PRESETS.get(ai_style_id) or {}
+        theme = STYLE_THEMES.get(item.get("themeId") or "")
+        if ai_final_prompt:
+            prompt = ai_final_prompt
+        else:
+            prompt = build_scene_prompt(
+                scene_cfg,
+                cabinet_cfg,
+                cabinet_spec=cabinet_spec,
+                theme=theme,
+                style_prompt=str(style_cfg.get("prompt") or ""),
+                custom_prompt=ai_prompt,
+                view=item["view"],
+                variation=ai_variation,
+            )["prompt"]
+        item["aiPrompt"] = prompt
+        reference_url = (
+            f"{public_base_url.rstrip('/')}/api/ecommerce-scenes/batches/{batch_id}/items/{item['itemId']}/download/png"
+            f"?workspace={urllib.parse.quote(tenant_id)}&inline=true"
+        )
+
+        def on_progress(records: list[dict[str, Any]]) -> None:
+            item["aiVariants"] = [dict(r) for r in records]
+            self._save_batch_progress(bdir, items)
+
+        try:
+            records = run_local_scene_variants(
+                client,
+                item_dir=item_dir,
+                reference_url=reference_url,
+                cutout_path=item_dir / "product_cutout.png",
+                prompt=prompt,
+                variants=ai_variants,
+                seed=int(ai_seed) + int(item.get("index") or 0) * 100,
+                upsample=ai_upsample,
+                job_prefix=f"fox3d-{batch_id[:8]}-{item['itemId']}",
+                on_progress=on_progress,
+            )
+        except Exception as exc:
+            item["aiState"] = "failed"
+            item["aiError"] = str(exc)[:300]
+            return
+        item["aiVariants"] = [dict(r) for r in records]
+        ok = sum(1 for r in records if r.get("state") == "succeeded")
+        item["aiState"] = "succeeded" if ok == len(records) else ("partial" if ok else "failed")
+        if not ok:
+            item["aiError"] = next((str(r.get("error")) for r in records if r.get("error")), "GPU 沒有產出任何變化圖")
 
     def _save_batch_progress(self, bdir: Path, items: list[dict[str, Any]]) -> None:
         doc = read_json(bdir / "batch.json") or {}
@@ -1338,7 +1498,7 @@ class EcommerceSceneStore:
         )
         atomic_json(bdir / "batch.json", doc)
 
-    def item_asset_path(self, tenant_id: str, batch_id: str, item_id: str, fmt: str) -> Path:
+    def item_asset_path(self, tenant_id: str, batch_id: str, item_id: str, fmt: str, variant: int = 1) -> Path:
         files = {
             "png": "beauty.png",
             "ai_png": "ai_composite.png",
@@ -1346,11 +1506,21 @@ class EcommerceSceneStore:
             "glb": "model.glb",
             "blend": "model.blend",
         }
+        safe_batch = "".join(c for c in str(batch_id) if c.isalnum() or c in ("-", "_"))
+        safe_item = "".join(c for c in str(item_id) if c.isalnum() or c in ("-", "_"))
+        base = self._tenant_dir(tenant_id) / "batches" / safe_batch / safe_item
+        if fmt in ("ai_local_png", "ai_local_raw_png"):
+            k = max(1, min(MAX_AI_VARIANTS, int(variant or 1)))
+            name = f"ai_local_{k:02d}.png" if fmt == "ai_local_png" else f"ai_local_{k:02d}_raw.png"
+            p = base / name
+            if not p.exists():
+                raise KeyError("此變化圖尚未產出或不存在")
+            return p
         if fmt not in files:
-            raise ValueError("支援格式：png、ai_png、cutout_png、glb、blend")
-        p = self._tenant_dir(tenant_id) / "batches" / batch_id / item_id / files[fmt]
+            raise ValueError("支援格式：png、ai_png、ai_local_png、cutout_png、glb、blend")
+        p = base / files[fmt]
         if not p.exists() and fmt == "ai_png":
-            p = self._tenant_dir(tenant_id) / "batches" / batch_id / item_id / "beauty.png"
+            p = base / "beauty.png"
         if not p.exists():
             raise KeyError("檔案尚未產出或不存在")
         return p
@@ -1374,4 +1544,8 @@ class EcommerceSceneStore:
                 cut_png = bdir / item["itemId"] / "product_cutout.png"
                 if cut_png.exists():
                     zf.write(cut_png, arcname=f"{base_prefix}_Cutout_Transparent.png")
+                for k in range(1, MAX_AI_VARIANTS + 1):
+                    v_png = bdir / item["itemId"] / f"ai_local_{k:02d}.png"
+                    if v_png.exists():
+                        zf.write(v_png, arcname=f"{base_prefix}_C_AI_Local_v{k}.png")
         return buf.getvalue()

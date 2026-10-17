@@ -60,7 +60,8 @@ def main():
             executable = Path(sys.executable).with_name("python.exe") if sys.platform == "win32" else Path(sys.executable)
             with (logs / "server.log").open("a", encoding="utf-8") as log:
                 process = subprocess.Popen(
-                    [str(executable), str(ROOT / "scripts/run_recipe_admin.py"), "--port", str(port)],
+                    # 0.0.0.0：GPU 艦隊節點要能連回工作台抓參考圖（地端 AI 實景）
+                    [str(executable), str(ROOT / "scripts/run_recipe_admin.py"), "--host", "0.0.0.0", "--port", str(port)],
                     cwd=ROOT,
                     stdout=log,
                     stderr=log,
