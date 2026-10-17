@@ -35,12 +35,50 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         shader.inputs['Roughness'].default_value = 0.28
         if 'Coat Weight' in shader.inputs:
             shader.inputs['Coat Weight'].default_value = 0.28
-    elif any(k in name_u for k in ('FLOOR', 'TABLE', 'DESK', 'BENCH', 'FRAME', 'WORKTOP', 'WOOD', 'CABINET')):
-        # Procedural timber / hardwood grain with satin finish
-        mapping.inputs['Scale'].default_value = (12.0, 2.5, 2.5) if 'FLOOR' in name_u else (4.0, 1.5, 1.5)
+    elif 'FLOOR' in name_u and 'LAMP' not in name_u:
+        # Staggered hardwood plank floor with individual board seams + wood grain
+        brick = nodes.new('ShaderNodeTexBrick')
+        brick.offset = 0.5
+        brick.squash = 5.5
+        brick.inputs['Scale'].default_value = 9.0
+        brick.inputs['Mortar Size'].default_value = 0.005
+        brick.inputs['Mortar Smooth'].default_value = 0.25
+        brick.inputs['Color1'].default_value = (min(1.0, r * 1.05), min(1.0, g * 1.05), min(1.0, b * 1.05), 1.0)
+        brick.inputs['Color2'].default_value = (r * 0.80, g * 0.78, b * 0.75, 1.0)
+        brick.inputs['Mortar'].default_value = (r * 0.22, g * 0.18, b * 0.14, 1.0)
+        links.new(tex_coord.outputs['Generated'], brick.inputs['Vector'])
+
+        mapping.inputs['Scale'].default_value = (14.0, 2.8, 2.5)
         wave = nodes.new('ShaderNodeTexWave')
         wave.wave_type = 'BANDS'
-        wave.bands_direction = 'Y' if 'FLOOR' not in name_u else 'X'
+        wave.bands_direction = 'X'
+        wave.inputs['Scale'].default_value = 5.0
+        wave.inputs['Distortion'].default_value = 2.4
+        wave.inputs['Detail'].default_value = 2.5
+        links.new(mapping.outputs['Vector'], wave.inputs['Vector'])
+
+        mix = nodes.new('ShaderNodeMix')
+        mix.data_type = 'RGBA'
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 0.14
+        links.new(brick.outputs['Color'], mix.inputs[6])
+        links.new(wave.outputs['Color'], mix.inputs[7])
+        links.new(mix.outputs[2], shader.inputs['Base Color'])
+
+        bump = nodes.new('ShaderNodeBump')
+        bump.inputs['Strength'].default_value = 0.08
+        bump.inputs['Distance'].default_value = 0.002
+        links.new(brick.outputs['Fac'], bump.inputs['Height'])
+        links.new(bump.outputs['Normal'], shader.inputs['Normal'])
+        shader.inputs['Roughness'].default_value = 0.30
+        if 'Coat Weight' in shader.inputs:
+            shader.inputs['Coat Weight'].default_value = 0.25
+    elif any(k in name_u for k in ('TABLE', 'DESK', 'BENCH', 'FRAME', 'WORKTOP', 'WOOD', 'CABINET')):
+        # Procedural timber / hardwood grain with satin finish
+        mapping.inputs['Scale'].default_value = (4.0, 1.5, 1.5)
+        wave = nodes.new('ShaderNodeTexWave')
+        wave.wave_type = 'BANDS'
+        wave.bands_direction = 'Y'
         wave.inputs['Scale'].default_value = 4.5
         wave.inputs['Distortion'].default_value = 2.2
         wave.inputs['Detail'].default_value = 2.0
@@ -49,20 +87,32 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         mix = nodes.new('ShaderNodeMix')
         mix.data_type = 'RGBA'
         mix.blend_type = 'MULTIPLY'
-        mix.inputs['Factor'].default_value = 0.16 if 'FLOOR' in name_u else 0.10
+        mix.inputs['Factor'].default_value = 0.10
         mix.inputs[6].default_value = (r, g, b, 1.0)
         links.new(wave.outputs['Color'], mix.inputs[7])
         links.new(mix.outputs[2], shader.inputs['Base Color'])
 
         bump = nodes.new('ShaderNodeBump')
-        bump.inputs['Strength'].default_value = 0.04 if 'FLOOR' in name_u else 0.02
+        bump.inputs['Strength'].default_value = 0.02
         bump.inputs['Distance'].default_value = 0.0015
         links.new(wave.outputs['Fac'], bump.inputs['Height'])
         links.new(bump.outputs['Normal'], shader.inputs['Normal'])
-        shader.inputs['Roughness'].default_value = 0.34 if 'FLOOR' in name_u else 0.38
+        shader.inputs['Roughness'].default_value = 0.36
         if 'Coat Weight' in shader.inputs:
             shader.inputs['Coat Weight'].default_value = 0.20
-    elif any(k in name_u for k in ('SOFA', 'RUG', 'MAT', 'BED', 'PILLOW', 'CUSHION')):
+    elif any(k in name_u for k in ('FOLIAGE', 'LEAF')):
+        # Botanical waxy leaf with subtle subsurface scattering
+        shader.inputs['Roughness'].default_value = 0.32
+        if 'Coat Weight' in shader.inputs:
+            shader.inputs['Coat Weight'].default_value = 0.35
+        if 'Subsurface Weight' in shader.inputs:
+            shader.inputs['Subsurface Weight'].default_value = 0.18
+    elif any(k in name_u for k in ('POT', 'VASE')):
+        # Matte glazed ceramic / terracotta vessel
+        shader.inputs['Roughness'].default_value = 0.38
+        if 'Coat Weight' in shader.inputs:
+            shader.inputs['Coat Weight'].default_value = 0.22
+    elif any(k in name_u for k in ('SOFA', 'RUG', 'MAT', 'BED', 'PILLOW', 'CUSHION', 'BASKET')):
         # Woven fabric micro-bump & sheen
         noise = nodes.new('ShaderNodeTexNoise')
         noise.inputs['Scale'].default_value = 160.0
@@ -79,13 +129,13 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         if 'Sheen Weight' in shader.inputs:
             shader.inputs['Sheen Weight'].default_value = 0.65
     elif any(k in name_u for k in ('SHADE', 'GLASS')):
-        shader.inputs['Roughness'].default_value = 0.25
+        shader.inputs['Roughness'].default_value = 0.35
         if 'Emission Color' in shader.inputs and 'Emission Strength' in shader.inputs:
             shader.inputs['Emission Color'].default_value = (r, g, b, 1.0)
-            shader.inputs['Emission Strength'].default_value = 2.8 if 'GLASS' in name_u else 1.8
+            shader.inputs['Emission Strength'].default_value = 2.6 if 'GLASS' in name_u else 1.6
     elif any(k in name_u for k in ('STEM', 'HANDLE', 'METAL')):
-        shader.inputs['Metallic'].default_value = 0.85
-        shader.inputs['Roughness'].default_value = 0.28
+        shader.inputs['Metallic'].default_value = 0.88
+        shader.inputs['Roughness'].default_value = 0.24
     elif any(k in name_u for k in ('WALL',)):
         # Architectural matte plaster
         noise = nodes.new('ShaderNodeTexNoise')
@@ -99,7 +149,15 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         links.new(bump.outputs['Normal'], shader.inputs['Normal'])
         shader.inputs['Roughness'].default_value = 0.82
     else:
-        shader.inputs['Roughness'].default_value = 0.52
+        shader.inputs['Roughness'].default_value = 0.48
+
+
+def _smooth_polygons(obj):
+    try:
+        for poly in obj.data.polygons:
+            poly.use_smooth = True
+    except Exception:
+        pass
 
 
 def build(created, definition, device, expected_hash):
@@ -169,21 +227,99 @@ def build(created, definition, device, expected_hash):
     try:
         bpy.context.window.scene = scene
         for item in definition['boxes']:
+            iname = item['name']
+            name_u = iname.upper()
+            sx, sy, sz = [float(v) for v in item['size']]
+            lx, ly, lz = [float(v) for v in item['location']]
+            mat = bpy.data.materials.new('Environment.' + iname)
+            _apply_pbr_shader(mat, iname, item['color'], photoreal=photoreal)
+
+            if photoreal and ('FOLIAGE' in name_u):
+                # Build an organic multi-leaf indoor botanical plant instead of a cube
+                bpy.ops.mesh.primitive_cylinder_add(vertices=20, radius=0.014, depth=sz * 0.92, location=(lx, ly, lz - sz * 0.08))
+                stem = bpy.context.object
+                stem.name = 'Environment.' + iname
+                stem_mat = bpy.data.materials.new(stem.name + '.Stem')
+                _apply_pbr_shader(stem_mat, 'PLANT_WOOD', [0.32, 0.22, 0.14], photoreal=True)
+                stem.data.materials.append(stem_mat)
+                _smooth_polygons(stem)
+                for lf_i in range(12):
+                    ang = lf_i * 2.39996  # golden angle in radians
+                    tier = lf_i / 11.0
+                    rad_out = (sx * 0.28) * (0.55 + 0.45 * (1.0 - tier * 0.4))
+                    leaf_z = (lz - sz * 0.30) + tier * (sz * 0.65)
+                    leaf_x = lx + math.cos(ang) * rad_out * 0.55
+                    leaf_y = ly + math.sin(ang) * rad_out * 0.55
+                    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=12, radius=1.0, location=(leaf_x, leaf_y, leaf_z))
+                    lf = bpy.context.object
+                    lf.name = f'Environment.{iname}.Leaf{lf_i}'
+                    lf.scale = (sx * 0.24, sy * 0.14, 0.012)
+                    tilt = 0.42 + (1.0 - tier) * 0.45
+                    lf.rotation_euler = (math.sin(ang) * tilt, -math.cos(ang) * tilt, ang)
+                    lf.data.materials.append(mat)
+                    _smooth_polygons(lf)
+                continue
+
+            if photoreal and any(k in name_u for k in ('_POT', 'VASE')):
+                rx = max(sx, sy) * 0.5
+                bpy.ops.mesh.primitive_cone_add(vertices=40, radius1=rx * 0.76, radius2=rx, depth=sz, location=(lx, ly, lz))
+                obj = bpy.context.object
+                obj.name = 'Environment.' + iname
+                obj.data.materials.append(mat)
+                bevel = obj.modifiers.new('SoftEdges', 'BEVEL')
+                bevel.width = 0.004
+                bevel.segments = 2
+                _smooth_polygons(obj)
+                continue
+
+            if photoreal and 'FLOOR_LAMP' in name_u and any(k in name_u for k in ('_BASE', '_STEM', '_SHADE')):
+                rx = max(sx, sy) * 0.5
+                r1 = rx * 1.08 if '_SHADE' in name_u else rx
+                r2 = rx * 0.86 if '_SHADE' in name_u else rx
+                bpy.ops.mesh.primitive_cone_add(vertices=48, radius1=r1, radius2=r2, depth=sz, location=(lx, ly, lz))
+                obj = bpy.context.object
+                obj.name = 'Environment.' + iname
+                obj.data.materials.append(mat)
+                _smooth_polygons(obj)
+                if '_SHADE' in name_u:
+                    bulb = bpy.data.lights.new(iname + '.Bulb', 'POINT')
+                    bulb.energy = 32.0
+                    bulb.color = (1.0, 0.84, 0.62)
+                    bulb.shadow_soft_size = 0.12
+                    b_obj = bpy.data.objects.new(iname + '.Bulb', bulb)
+                    scene.collection.objects.link(b_obj)
+                    b_obj.location = (lx, ly, lz - sz * 0.15)
+                continue
+
+            if photoreal and '_LEG_' in name_u:
+                rx = max(sx, sy) * 0.5
+                bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=rx * 0.68, radius2=rx, depth=sz, location=(lx, ly, lz))
+                obj = bpy.context.object
+                obj.name = 'Environment.' + iname
+                obj.data.materials.append(mat)
+                _smooth_polygons(obj)
+                continue
+
             bpy.ops.mesh.primitive_cube_add(size=1, location=item['location'])
             obj = bpy.context.object
-            obj.name = 'Environment.' + item['name']
+            obj.name = 'Environment.' + iname
             obj.dimensions = item['size']
             bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
-            mat = bpy.data.materials.new(obj.name)
-            _apply_pbr_shader(mat, item['name'], item['color'], photoreal=photoreal)
             obj.data.materials.append(mat)
             if item['bevel']:
                 bevel = obj.modifiers.new('SoftEdges', 'BEVEL')
                 bevel.width = item['bevel']
-                bevel.segments = 3
+                bevel.segments = 4 if photoreal else 3
+                _smooth_polygons(obj)
+            if photoreal and any(k in name_u for k in ('CUSHION', 'PILLOW', 'MATTRESS')):
                 try:
-                    for poly in obj.data.polygons:
-                        poly.use_smooth = True
+                    sub = obj.modifiers.new('PlushSubsurf', 'SUBSURF')
+                    sub.levels = 2
+                    sub.render_levels = 2
+                    if 'PILLOWTHROWL' in name_u:
+                        obj.rotation_euler = (-0.22, 0.18, 0.25)
+                    elif 'PILLOWTHROWR' in name_u:
+                        obj.rotation_euler = (-0.22, -0.18, -0.25)
                 except Exception:
                     pass
         for lamp in definition['lights']:

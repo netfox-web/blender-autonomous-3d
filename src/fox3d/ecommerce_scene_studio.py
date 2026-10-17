@@ -587,33 +587,44 @@ def _expand_prop_boxes(prop: dict[str, Any], index: int) -> list[dict[str, Any]]
         )
 
     if ptype == "SOFA":
-        add("Base", w, d, h * 0.36, 0, 0, h * 0.28, main_rgb, 0.05)
-        add("Back", w, d * 0.24, h * 0.65, 0, d * 0.36, h * 0.65, main_rgb, 0.05)
-        add("ArmL", w * 0.10, d * 0.92, h * 0.55, -w * 0.46, 0, h * 0.48, main_rgb, 0.04)
-        add("ArmR", w * 0.10, d * 0.92, h * 0.55, w * 0.46, 0, h * 0.48, main_rgb, 0.04)
-        for sx in (-w * 0.38, w * 0.38):
-            for sy in (-d * 0.32, d * 0.32):
-                add(f"Leg_{sx:.2f}_{sy:.2f}", 0.06, 0.06, h * 0.14, sx, sy, h * 0.07, acc_rgb, 0.006)
+        add("FrameBase", w * 0.98, d * 0.94, h * 0.16, 0, 0, h * 0.18, main_rgb, 0.03)
+        cw_seat = (w * 0.80) / 2.0 - 0.008
+        add("CushionSeatL", cw_seat, d * 0.78, h * 0.20, -cw_seat / 2.0 - 0.006, -d * 0.05, h * 0.34, main_rgb, 0.055)
+        add("CushionSeatR", cw_seat, d * 0.78, h * 0.20, cw_seat / 2.0 + 0.006, -d * 0.05, h * 0.34, main_rgb, 0.055)
+        add("BackFrame", w * 0.98, d * 0.16, h * 0.62, 0, d * 0.40, h * 0.56, main_rgb, 0.04)
+        add("CushionBackL", cw_seat * 0.96, d * 0.20, h * 0.44, -cw_seat / 2.0 - 0.006, d * 0.24, h * 0.64, main_rgb, 0.06)
+        add("CushionBackR", cw_seat * 0.96, d * 0.20, h * 0.44, cw_seat / 2.0 + 0.006, d * 0.24, h * 0.64, main_rgb, 0.06)
+        add("ArmL", w * 0.11, d * 0.92, h * 0.48, -w * 0.45, 0, h * 0.44, main_rgb, 0.045)
+        add("ArmR", w * 0.11, d * 0.92, h * 0.48, w * 0.45, 0, h * 0.44, main_rgb, 0.045)
+        add("PillowThrowL", 0.34, 0.16, 0.32, -w * 0.30, d * 0.10, h * 0.56, [0.91, 0.87, 0.80], 0.06)
+        add("PillowThrowR", 0.30, 0.15, 0.28, w * 0.28, d * 0.11, h * 0.54, [0.76, 0.46, 0.32], 0.055)
+        for sx in (-w * 0.40, w * 0.40):
+            for sy in (-d * 0.34, d * 0.34):
+                add(f"Leg_{sx:.2f}_{sy:.2f}", 0.05, 0.05, h * 0.12, sx, sy, h * 0.06, acc_rgb, 0.012)
     elif ptype == "COFFEE_TABLE":
-        add("Top", w, d, 0.05, 0, 0, h - 0.025, main_rgb, 0.02)
+        add("Top", w, d, 0.042, 0, 0, h - 0.021, main_rgb, 0.02)
         for sx in (-w * 0.38, w * 0.38):
-            for sy in (-d * 0.36, d * 0.36):
-                add(f"Leg_{sx:.2f}_{sy:.2f}", 0.05, 0.05, h - 0.05, sx, sy, (h - 0.05) / 2.0, acc_rgb, 0.008)
+            for sy in (-d * 0.34, d * 0.34):
+                add(f"Leg_{sx:.2f}_{sy:.2f}", 0.045, 0.045, h - 0.042, sx, sy, (h - 0.042) / 2.0, acc_rgb, 0.015)
+        add("DecorBook1", 0.24, 0.18, 0.026, -w * 0.16, 0.02, h + 0.013, [0.90, 0.87, 0.81], 0.004)
+        add("DecorBook2", 0.20, 0.15, 0.022, -w * 0.16, 0.02, h + 0.037, [0.36, 0.48, 0.44], 0.004)
+        add("DecorVase_POT", 0.11, 0.11, 0.16, w * 0.18, -0.03, h + 0.08, [0.84, 0.78, 0.70], 0.02)
     elif ptype == "RUG":
-        add("Mat", w, d, 0.014, 0, 0, 0.007, main_rgb, 0.004)
-        add("Border", w * 0.88, d * 0.84, 0.016, 0, 0, 0.009, acc_rgb, 0.003)
+        add("Mat", w, d, 0.012, 0, 0, 0.006, main_rgb, 0.005)
+        add("Border", w * 0.90, d * 0.86, 0.014, 0, 0, 0.008, acc_rgb, 0.004)
     elif ptype == "FLOOR_LAMP":
-        add("Base", w * 0.75, d * 0.75, 0.04, 0, 0, 0.02, acc_rgb, 0.01)
-        add("Stem", 0.035, 0.035, h * 0.82, 0, 0, h * 0.43, acc_rgb, 0.005)
-        add("Shade", w, d, h * 0.22, 0, 0, h * 0.88, main_rgb, 0.05)
+        add("Base", w * 0.72, d * 0.72, 0.035, 0, 0, 0.018, acc_rgb, 0.01)
+        add("Stem", 0.028, 0.028, h * 0.82, 0, 0, h * 0.42, acc_rgb, 0.005)
+        add("Shade", w * 0.95, d * 0.95, h * 0.22, 0, 0, h * 0.86, main_rgb, 0.04)
     elif ptype == "WALL_ART":
         z_art = pz if pz > 0.2 else 1.45
-        boxes.append({"name": f"{prefix}_Frame", "size": [round(w, 4), round(max(0.04, d), 4), round(h, 4)], "location": [round(px, 4), round(py, 4), round(z_art, 4)], "color": acc_rgb, "bevel": 0.008})
-        boxes.append({"name": f"{prefix}_Canvas", "size": [round(w * 0.86, 4), 0.02, round(h * 0.86, 4)], "location": [round(px, 4), round(py - 0.022, 4), round(z_art, 4)], "color": main_rgb, "bevel": 0.002})
+        boxes.append({"name": f"{prefix}_Frame", "size": [round(w, 4), round(max(0.038, d), 4), round(h, 4)], "location": [round(px, 4), round(py, 4), round(z_art, 4)], "color": acc_rgb, "bevel": 0.006})
+        boxes.append({"name": f"{prefix}_MatBoard", "size": [round(w * 0.90, 4), 0.018, round(h * 0.90, 4)], "location": [round(px, 4), round(py - 0.016, 4), round(z_art, 4)], "color": [0.93, 0.90, 0.85], "bevel": 0.002})
+        boxes.append({"name": f"{prefix}_Canvas", "size": [round(w * 0.68, 4), 0.016, round(h * 0.68, 4)], "location": [round(px, 4), round(py - 0.021, 4), round(z_art, 4)], "color": main_rgb, "bevel": 0.002})
+        boxes.append({"name": f"{prefix}_ArtAccent", "size": [round(w * 0.34, 4), 0.014, round(h * 0.36, 4)], "location": [round(px + w * 0.08, 4), round(py - 0.025, 4), round(z_art - h * 0.06, 4)], "color": [0.24, 0.34, 0.32], "bevel": 0.01})
     elif ptype == "PLANT":
-        add("Pot", w * 0.65, d * 0.65, h * 0.34, 0, 0, h * 0.17, acc_rgb, 0.03)
-        add("FoliageMain", w * 0.92, d * 0.92, h * 0.55, 0, 0, h * 0.62, main_rgb, 0.08)
-        add("FoliageTop", w * 0.62, d * 0.62, h * 0.38, 0.04, -0.03, h * 0.82, main_rgb, 0.06)
+        add("Pot", w * 0.62, d * 0.62, h * 0.34, 0, 0, h * 0.17, acc_rgb, 0.03)
+        add("FoliageMain", w * 0.92, d * 0.92, h * 0.62, 0, 0, h * 0.62, main_rgb, 0.08)
     elif ptype == "BED":
         add("Frame", w, d, h * 0.26, 0, 0, h * 0.13, acc_rgb, 0.015)
         add("Headboard", w, 0.10, h, 0, d * 0.46, h * 0.50, acc_rgb, 0.02)
@@ -686,8 +697,10 @@ def compile_custom_scene(
     for idx, prop in enumerate(scene_cfg.get("props") or [], start=1):
         boxes.extend(_expand_prop_boxes(prop, idx))
 
-    # Add sleek brushed-metal handles on cabinet doors/drawers in the presentation scene
-    for h_idx, part in enumerate(cabinet_spec.get("components") or [], start=1):
+    # Add sleek brushed-metal handles on cabinet doors/drawers + interior decor in open shelves
+    comps = cabinet_spec.get("components") or []
+    comp_ids = {str(p.get("componentId") or "") for p in comps}
+    for h_idx, part in enumerate(comps, start=1):
         if part.get("role") != "door":
             continue
         lx, ly, lz = [float(v) for v in part.get("location") or [0, 0, 0]]
@@ -708,6 +721,55 @@ def compile_custom_scene(
             "location": [round(wx, 4), round(wy, 4), round(wz, 4)],
             "color": [0.22, 0.20, 0.18],
             "bevel": 0.003,
+        })
+
+    # Automatically style open cabinet compartments with books & ceramic vessels
+    open_idx = 0
+    for part in comps:
+        pid = str(part.get("componentId") or "")
+        role = part.get("role")
+        if role not in ("bottom", "shelf"):
+            continue
+        if role == "bottom" and pid.startswith("c") and pid.endswith("_bottom"):
+            c_num = pid.split("_")[0][1:]
+            r_num = "1"
+        elif role == "shelf" and "_shelf_" in pid:
+            c_part, s_num = pid.split("_shelf_")
+            c_num = c_part[1:]
+            r_num = str(int(s_num) + 1)
+        else:
+            continue
+        if f"door_c{c_num}_r{r_num}" in comp_ids or f"drawer_c{c_num}_r{r_num}_1" in comp_ids:
+            continue
+        open_idx += 1
+        lx, ly, lz = [float(v) for v in part.get("location") or [0, 0, 0]]
+        sx, sy, sz = [float(v) for v in part.get("size") or [0.35, 0.26, 0.015]]
+        surf_z = pz + lz + sz * 0.5
+        if open_idx % 2 == 1:
+            # Stacked hardcover books + ceramic bowl inside open shelf
+            b1_lx, b1_ly = lx - sx * 0.14, ly - sy * 0.05
+            wx1 = px + (b1_lx * cos_r - b1_ly * sin_r)
+            wy1 = py + (b1_lx * sin_r + b1_ly * cos_r)
+            boxes.append({"name": f"CabinetDecorBookA_{open_idx}", "size": [round(min(0.18, sx * 0.52), 4), round(min(0.15, sy * 0.62), 4), 0.024], "location": [round(wx1, 4), round(wy1, 4), round(surf_z + 0.012, 4)], "color": [0.88, 0.84, 0.77], "bevel": 0.003})
+            boxes.append({"name": f"CabinetDecorBookB_{open_idx}", "size": [round(min(0.16, sx * 0.46), 4), round(min(0.13, sy * 0.56), 4), 0.022], "location": [round(wx1, 4), round(wy1, 4), round(surf_z + 0.035, 4)], "color": [0.68, 0.44, 0.32], "bevel": 0.003})
+            v_lx, v_ly = lx + sx * 0.22, ly - sy * 0.04
+            wx2 = px + (v_lx * cos_r - v_ly * sin_r)
+            wy2 = py + (v_lx * sin_r + v_ly * cos_r)
+            boxes.append({"name": f"CabinetDecorVase_{open_idx}_POT", "size": [0.085, 0.085, 0.12], "location": [round(wx2, 4), round(wy2, 4), round(surf_z + 0.06, 4)], "color": [0.85, 0.81, 0.75], "bevel": 0.015})
+        else:
+            # Woven storage basket inside open shelf
+            wx1 = px + (lx * cos_r - ly * sin_r)
+            wy1 = py + (lx * sin_r + ly * cos_r)
+            boxes.append({"name": f"CabinetDecorBasket_{open_idx}_RUG", "size": [round(sx * 0.76, 4), round(sy * 0.78, 4), 0.14], "location": [round(wx1, 4), round(wy1, 4), round(surf_z + 0.07, 4)], "color": [0.78, 0.70, 0.58], "bevel": 0.018})
+
+    # Off-camera window blind slats to cast natural sunlight stripes onto the upper wall
+    for b_idx in range(6):
+        boxes.append({
+            "name": f"WindowBlindSlat_{b_idx}",
+            "size": [1.8, 0.14, 0.012],
+            "location": [-1.35, -1.35 + b_idx * 0.22, 2.55 + b_idx * 0.12],
+            "color": [0.92, 0.90, 0.86],
+            "bevel": 0.001,
         })
 
     w_m = float(cabinet_spec.get("width") or 424.0) / 1000.0
@@ -744,7 +806,7 @@ def compile_custom_scene(
         "lights": [
             {"name": "WindowKey", "type": "AREA", "location": [-1.8, -2.1, 3.1], "target": target, "energy": light_cfg["keyEnergy"], "size": 2.8, "color": light_cfg["keyColor"]},
             {"name": "RoomFill", "type": "AREA", "location": [2.1, -0.5, 2.4], "target": target, "energy": light_cfg["fillEnergy"], "size": 2.2, "color": light_cfg["fillColor"]},
-            {"name": "SunBeam", "type": "SUN", "location": [-2.2, -2.5, 3.8], "target": target, "energy": 1.15, "angle": 0.065, "color": light_cfg["keyColor"]},
+            {"name": "SunBeam", "type": "SUN", "location": [-2.2, -2.5, 3.8], "target": target, "energy": 1.35, "angle": 0.038, "color": light_cfg["keyColor"]},
         ],
         "productScale": 1.0,
         "physicalRoomTruth": False,
