@@ -1,165 +1,63 @@
 <!-- Neutral alias for docs/GROK_NEXT_PHASE_INSTRUCTIONS.md -->
 <!-- Autonomous agents should prioritize reading this AGENT_* entry -->
-# Development Agent 修正指令：Phase 901–960 Re-Gate Round 2 — CHANGES REQUIRED
+<!-- The current-state body below is identical to docs/GROK_NEXT_PHASE_INSTRUCTIONS.md -->
+# Current gate: PR #15 Round 13 ACCEPT_WITH_SCOPE / OWNER_DECISION_HOLD
 
 > Repo: `netfox-web/blender-autonomous-3d`
 > Canonical watcher filename: `docs/AGENT_NEXT_PHASE_INSTRUCTIONS.md`
 > Legacy compatibility filename: `docs/GROK_NEXT_PHASE_INSTRUCTIONS.md`
-> Reviewed CODE: `4406119cbf5bc62dcb43d0dd1ec6fc041353dd28`
-> Reviewed docs/head: `aac040c292d07289ec358171af11d12c65b7fb33`
-> Product Content acceptance generation: `57f72869-a017-415f-bf66-7df55824d486`
-> CODE Actions: `34740940584` — SUCCESS on exact CODE SHA
-> docs/head Actions: `34741953464` — still IN_PROGRESS at Re-Gate time; do not count it as completed evidence
-> Full pytest reported: **628 passed**
-> Re-Gate result: **CHANGES REQUIRED — Phase 961+ HOLD.**
+> These two files carry the same current gate. Older revisions that say Phase 901–960 Re-Gate Round 2 CHANGES_REQUIRED, or PR #15 Round 13 PARTIAL / EVIDENCE CLOSURE REQUIRED, are superseded and are not work orders.
 
-## 0. Accepted work — preserve it
+GitHub is the source of truth. Facts below were re-read from GitHub on 2026-10-10 by worker `bc-6b95bfac-9463-5dfa-9c50-4d18481baad8`. This document does not authorize merge, release, deploy, or a new phase.
 
-Do not rewrite Scheduler / Queue / DAM / Recipe / TwinStore / CabinetSpec / Product Truth / Artwork authorities. This is correction-only.
+## 0. Current facts
 
-Accepted within scope:
+- Canonical main: `b8c6fe911e6c8358ed7bcdecafc84cab86630810` (`supervisor: Round 13 evidence closure checkpoint`, committer date 2026-09-24T04:59:19Z).
+- Main Actions [35957962415](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35957962415) is SUCCESS on that exact SHA for `unit (ubuntu-latest)` and `unit (windows-latest)`. That run is MOCK regression (`FOX3D_MOCK_BLENDER=1`). It is not REAL Blender evidence and it is not production readiness.
+- Independent Supervisor decision [5854068961](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854068961) (2026-09-27T08:06:33Z): **PR #15 Round 13 = ACCEPT_WITH_SCOPE / Round 14 HOLD**. Reviewed commit `c01f95d95ad21b97a48442c592f0259415a93c99`; CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43`. This supersedes CHANGES_REQUIRED comment [5853584739](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5853584739) for its two concrete defects. It is not all-project completion, integration acceptance, or Production PASS.
+- Commander handoff [5854087167](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854087167) (2026-09-27T08:09:02Z): **PROJECT_STATUS = SCOPED_CORRECTION_ACCEPTED / OWNER_DECISION_HOLD**. No `COMMANDER_NEXT_TASK` was issued.
+- PRs #7–#16 are OPEN and unmerged. #7–#15 have scoped Supervisor acceptance. #13 counts only accepted Round 2; Issue #6 Round 3B stays `BLOCKED_DEPENDENCY` until accepted #14 is actually on main under a separate Owner authorization. PR #16 is **FROZEN** at `d03041dedd9002c74e65dd3e5a0cbd096d9575ca` with no acceptance and no GO.
+- Round 14 is **HOLD**. No next-phase GO exists.
+- `MERGE_AUTHORIZED=false`
+- `globalProductionReady=false`
+- `physicalProductGeometryTruth=false`
+- `physicalPrintValidated=false`
+- `manufacturingReady=false`
 
-- REAL commerce render artifacts now fail closed on missing worker record/path, missing file, zero bytes, malformed PNG, and wrong dimensions.
-- `FRONT_OPEN` / `FRONT_CLOSED` now publish observed `workerViews` articulation evidence and compare observed transforms/angle/state against independently derived Engineering expectations.
-- required DAM identity/source metadata is materially stricter than Round 1.
-- `DIMENSION_FRONT` now rasterizes deterministic visible W/H/D numeric labels with repository-controlled `FONT_5X7`, and QA independently recomputes `dimensionLabelLayerHash`.
-- Ground/AOV isolation regression was corrected in CODE `4406119`; keep baseline `_add_box` half-scale authority intact.
-- Fresh clean-tree REAL Blender 5.2.1 LTS + NVIDIA T1000 OptiX evidence exists with `usedMock=false`.
-- Truth boundaries remain correct: live H3 MAX/LTX 2.5 BLOCKED, Vision MOCK/BLOCKED, physical print false, LIVE CNC/LASER/PLC BLOCKED, and all commercial/global/full/live readiness flags false.
+Inventory of that handoff is `docs/PROJECT_COMPLETION_INVENTORY.md`. The copy that previously existed only on PR #15 DOCS SHA `c01f95d95ad21b97a48442c592f0259415a93c99` is a pre-final snapshot: its pending review and 8-of-10 statements are historical. The mainline copy records the final status from comment 5854087167.
 
-Do not continue unrelated UI/control-plane refactors in this correction round.
+**Completion calculation from that handoff:** 9 / 10 of the inventoried PR scopes (#7 through #16) have a scoped Supervisor acceptance. This is an unweighted acceptance count. It is not product completion, implementation effort, merged delivery, or Production readiness. Global completion percentage is not established.
 
-## 1. Blocker A — Product Truth acceptance-generation lineage is currently synthetic/fail-open
+## 1. Do not execute superseded instructions
 
-The current runner can mint a fallback acceptance id:
+Do not implement the old Phase 901–960 Round 2 blockers, and do not run the old Round 13 evidence-closure sequence, as if they were still the current order. Those rounds have independent decisions. Preserve accepted architecture. Do not rewrite Scheduler, Queue, DAM, Recipe, TwinStore, CabinetSpec, publication authority, or the database.
 
-```python
-f"pt_acc_{upstream_pack.get('renderPackId')}"
-```
+Do not:
 
-when the current Product Truth render pack does not match a real `docs/PRODUCT_TRUTH_RENDER_PACK_ACCEPTANCE.json` generation. The current Product Content acceptance demonstrates this problem: it binds `sourceRenderPackId=c2d620ab-...` to `sourceAcceptanceGenerationId=pt_acc_c2d620ab-...`, while the actual committed Product Truth acceptance file still identifies generation `78ef13b7-...` / renderPack `784df4d3-...` / CODE `cb045af`.
+- merge, Mark Ready, retarget, rebase onto main, cherry-pick, force-push, or reset PRs #7–#16;
+- start Round 14, Phase 961+, or any new implementation phase;
+- claim that any PR or main is production-ready or merged;
+- touch Production, NAS, FoxStudio Fleet, a production GPU, or LIVE CNC / LASER / PLC;
+- rebuild DAM, queue, scheduler, recipe, authority, or DB.
 
-This is not an externally established acceptance generation. It is a self-created label derived from the renderPackId, so the current lineage can be internally consistent while not pointing to a real accepted Product Truth bundle.
+## 2. Owner decisions still required
 
-### Required correction
+From handoff 5854087167, still waiting on the Owner:
 
-1. Remove every fallback that fabricates a Product Truth acceptance generation from `renderPackId` or another current payload field.
-2. Product Content must consume a **real Product Truth acceptance authority** produced/published before Product Content publication.
-3. If the newly generated Product Truth render pack does not have a matching acceptance authority, fail closed or first execute/publish the existing Product Truth acceptance step; do not manufacture an id in Product Content.
-4. The consumed Product Truth acceptance authority must bind at minimum:
-   - acceptanceGenerationId
-   - exact Product Truth renderPackId
-   - exact Product Truth evidenceCodeCommit
-   - tenantId
-   - product/SKU id + version
-   - engineeringHash
-   - placementHash + finalUvHash
-   - ProductMask / ArtworkMask DAM refs + SHA
-   - `usedMock=false` for REAL path
-   - clean-tree evidence where the existing acceptance process requires it
-5. Product Content `sourceAcceptanceGenerationId` must exact-match that externally published authority.
-6. QA must independently load/receive that authority; do not mutate `upstream_pack` to make expected and observed values match before validation.
+1. Whether and how to authorize integration of the accepted stacks and #14, with exact targets and post-integration validation.
+2. Disposition of duplicate Issue #5 while preserving Issue #6 history.
+3. Scope and priority of the remaining evidence gaps and any future physical, artwork, or Fleet acceptance.
 
-### Required negative cases
+Release, deploy, and Production require separate explicit authorization. Proposed integration order, only after that separate authorization: product stack #7 → #8 → #9 → #10 → #11 → #12 → #15, then separately #14 before any Supervisor permission for #13 Round 3B. #16 stays FROZEN until dependencies formally pass and the Supervisor explicitly says GO.
 
-- missing Product Truth acceptance generation;
-- synthetic `pt_acc_<renderPackId>` value;
-- stale generation belonging to another renderPackId;
-- right renderPackId but wrong Product Truth CODE SHA;
-- generation copied from another tenant/SKU/version;
-- generation with wrong engineeringHash / placementHash / finalUvHash / mask refs.
+## 3. Truth boundaries
 
-## 2. Blocker B — observed Camera/Scene authority is not validated; current REAL acceptance already shows a passing mismatch
+- CI pytest with mock Blender is MOCK regression.
+- Scoped PR #15 publication and latest-read behavior accepted in comment 5854068961 is REAL_LOGIC inside that scope.
+- Local file-byte checks described there are scoped REAL_OS_IO_INTEGRITY.
+- The eleven headless outputs described there are REAL_RENDER for synthetic and reference inputs only, on their recorded Blender 5.2.1 LTS / CYCLES / OptiX / `usedMock=false` runs. This file does not re-run them.
+- Hard-link, hostile writer, and TOCTOU remain PARTIAL.
+- NAS, object storage, hardware power loss, measured CAD, physical print, manufacturing, live H3 / LTX / Vision, and LIVE CNC / LASER / PLC remain BLOCKED.
+- The excluded PR #13 attempt `d5d7140b-4b9a-420b-a75d-2c3be56ac3d3` is classified in `docs/evidence/PR13_WATCHDOG_D5D7140B.md`. The stop mechanism is REAL_LOGIC. The in-process reason the frame-0 depth call did not return is BLOCKED. The finding is PARTIAL. It is not a PASS.
 
-The current Product Content acceptance is `ok=true`, but `WHITE_BACKGROUND_HERO` contains a concrete contradiction:
-
-- canonical commerce recipe `cameraRecipeHash = 3c95d2afedf4...`
-- observed `workerEvidence.cameraRecipeHash = 4b8d92f7601...`
-- observed `workerEvidence.sceneRecipeHash = null`
-
-QA currently validates role/job/device/articulation, but does not require observed worker camera/scene hashes to exact-match the canonical commerce recipe. Therefore a worker may render the wrong camera/scene while the manifest recipe remains correct and acceptance can still pass.
-
-### Required correction
-
-1. Include canonical `cameraRecipeHash` and `sceneRecipeHash` explicitly in each commerce Blender view payload.
-2. In the Blender worker, publish the **observed/applied** camera and scene semantic hashes after applying the view, not a blind copy of expected payload fields.
-3. For every REAL rendered commerce role, QA must require:
-   - worker `cameraRecipeHash` present and exact-match canonical recipe hash;
-   - worker `sceneRecipeHash` present and exact-match canonical recipe hash;
-   - role/view id and job id exact;
-   - observed camera semantic fields (location/lookAt/focal/sensor/safe margin/resolution) consistent with the canonical recipe or independently rehashed to the same hash.
-4. Missing/null camera or scene hash = FAIL.
-5. Wrong camera with a correct manifest recipe = FAIL.
-6. Cross-view worker camera/scene evidence = FAIL.
-7. Preserve Phase 841–900 Camera/Scene semantic-authority rules; reuse them instead of creating a second hashing scheme.
-
-### DIMENSION_FRONT derivation
-
-`DIMENSION_FRONT` is derived from `FRONT_CLOSED`; do not imply that it is an independently Blender-rendered worker view.
-
-Publish explicit derivation lineage such as:
-
-- `derivedFromViewRole=FRONT_CLOSED`
-- source DAM ref / SHA
-- source Blender job id
-- source worker-evidence hash or equivalent stable lineage
-
-QA must exact-match this derivation lineage and separately validate the deterministic dimension overlay authority.
-
-### Required negative cases
-
-- observed camera hash differs but manifest recipe remains canonical;
-- missing observed scene hash;
-- cross-swapped camera evidence between HERO_45 and FRONT_OPEN;
-- wrong location/focal/safeMargin with forged/copied hash;
-- DIMENSION_FRONT points to another view/DAM/job;
-- correct dimension pixels but stale/foreign FRONT_CLOSED derivation source.
-
-## 3. Blocker C — remaining asset/mask integrity checks are still conditional instead of required
-
-Round 1 improved DAM metadata checks, but several authority fields still use truthy-condition validation. Missing evidence can therefore skip comparison.
-
-### Required correction
-
-1. `productMaskRef` and `artworkMaskRef` must each require non-empty `damRef` and `sha256`; exact-match upstream Product Truth. Missing fields = FAIL.
-2. Every required commerce view must require non-empty:
-   - `sha256`
-   - positive `size`
-   - width / height
-   - `format=PNG`
-   - DAM ref
-   - source path
-   - job/derivation lineage
-3. DAM bytes/path SHA and size checks must be unconditional after the field is required. Do not use `if v_data.get("sha256") ...` or `if v_data.get("size") ...` as a way to skip missing authority.
-4. For REAL rendered views, DAM `blenderVersion`, `device`, and `usedMock=false` must exact-match observed worker evidence, not merely be present.
-5. For derived DIMENSION_FRONT, provenance must exact-match the validated FRONT_CLOSED source plus deterministic overlay lineage.
-6. Add fail-closed tests for missing mask refs/SHA, missing view SHA/size, altered version/device, foreign DAM with identical bytes, and missing derivation lineage.
-
-## 4. Evidence process for Round 2
-
-1. Make only the corrections above; preserve accepted architecture and behavior.
-2. Run full `pytest -q`; report exact count. Mock/FIXTURE tests are not Production Ready.
-3. Commit/push exact CODE SHA.
-4. Wait for Ubuntu + Windows SUCCESS on that exact CODE SHA; record run/job IDs.
-5. On a clean tree at that CODE SHA, produce a fresh REAL Product Truth acceptance authority first, with Blender 5.2.1 LTS + NVIDIA T1000 OptiX and `usedMock=false`.
-6. Then run Product Content acceptance consuming that exact Product Truth acceptance authority. No fabricated acceptance-generation fallback is allowed.
-7. Acceptance must prove exact observed camera/scene, articulation, DAM/source lineage, mask lineage, DIMENSION_FRONT derivation, and deterministic visible dimension labels.
-8. Commit docs/evidence separately and wait for Ubuntu + Windows SUCCESS on the exact docs SHA.
-9. Update `docs/GROK_PROGRESS_REPORT.md`, `docs/CURRENT_IMPLEMENTATION_AUDIT.md`, `docs/REAL_E2E_ACCEPTANCE.md`, `docs/PRODUCT_CONTENT_FACTORY_ACCEPTANCE.{md,json}`, and Product Truth acceptance docs only when supported by fresh evidence. Leave `docs/CABINET_REAL_ACCEPTANCE.md` unchanged unless cabinet truth actually changes.
-10. Add an Issue #1 handoff with CODE SHA, docs SHA, pytest count, both CI runs, Product Truth acceptance generation, Product Content acceptance generation, and REAL/MOCK/PARTIAL/BLOCKED summary.
-11. STOP for ChatGPT Re-Gate. **Phase 961+ remains HOLD.**
-
-## 5. Truth boundaries remain fixed
-
-Until independent new REAL evidence exists:
-
-- live H3 MAX / LTX 2.5 = BLOCKED;
-- Vision Judge = MOCK/BLOCKED;
-- physical print = false/BLOCKED;
-- LIVE_CNC / LIVE_LASER / PLC = BLOCKED;
-- `commercialAssetProductionReady=false`;
-- `globalProductionReady=false`;
-- `fullAutonomousFactoryReady=false`;
-- `liveFactoryExecutionReady=false`.
-
-Do not label Mock, fixture, metadata-only evidence, self-minted lineage ids, copied expected hashes, or recomputed expected state as observed Production/REAL execution evidence.
+STOP. An unchanged OWNER_DECISION_HOLD is not a GO.

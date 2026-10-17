@@ -21,6 +21,10 @@ jobs:
           python-version: "3.12"
       - name: Install
         run: pip install -e ".[dev]"
+      - name: Lint and type-check
+        run: |
+          ruff check .
+          mypy
       - name: Unit / regression tests
         run: pytest -q
         env:

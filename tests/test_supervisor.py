@@ -2278,7 +2278,7 @@ def test_58_window_b1_blob_fetch_error_and_digest_authority(env_setup):
         f"DOCS_SHA={contract.docs_sha}\n"
         f"INSTRUCTION_SHA={contract.instruction_sha}\n"
         f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n"
-        f"DECISION={output.decision.value if False else 'ACCEPT_WITH_SCOPE'}\n"
+        f"DECISION={output.decision.value if False else 'ACCEPT_WITH_SCOPE'}\n"  # noqa: F821
         f"REVIEW_ID={review_id}\n"
         f"-->\n"
     )
