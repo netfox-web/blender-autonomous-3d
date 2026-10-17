@@ -98,7 +98,8 @@ def load_settings(settings_dir: Path | None = None) -> dict[str, Any]:
         "publicBaseUrl": str(data.get("publicBaseUrl") or os.environ.get("FOX3D_PUBLIC_BASE_URL") or "").strip().rstrip("/"),
         "aiVariants": variants,
         "aiVariation": data.get("aiVariation") if data.get("aiVariation") in AI_VARIATIONS else "faithful",
-        "aiUpsample": _as_bool(data.get("aiUpsample"), True),
+        # 10-18 owner call: prompt upsampling off by default (same quality in trials, 16 s vs 25 s per image, 12.7GB vs 20.5GB)
+        "aiUpsample": _as_bool(data.get("aiUpsample"), False),
         "aiPinProduct": _as_bool(data.get("aiPinProduct"), True),
         "promptPolish": _as_bool(data.get("promptPolish"), False),
     }

@@ -1793,7 +1793,7 @@
       $('fleet-token').placeholder = s.fleetTokenConfigured ? '已設定（留空＝沿用）' : '尚未設定，請貼上 FLEET_SERVICE_TOKEN';
       $('ai-variants').value = String(s.aiVariants || 2);
       $('ai-variation').value = s.aiVariation || 'faithful';
-      $('ai-upsample').checked = s.aiUpsample !== false;
+      $('ai-upsample').checked = s.aiUpsample === true;
       if ($('ai-pin-product')) $('ai-pin-product').checked = s.aiPinProduct !== false;
       updateMatrixFormula();
     } catch (e) {

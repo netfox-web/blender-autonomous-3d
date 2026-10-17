@@ -52,7 +52,7 @@ FLUX 有時會把櫃子畫得略大或往右偏，貼回鎖定的去背圖後，
 | `publicBaseUrl` | 自動偵測（連到中控的那張網卡 IP + 目前埠） | 節點抓參考圖用；也可用 `FOX3D_PUBLIC_BASE_URL` |
 | `aiVariants` | 2 | 每組變化張數 1–4 |
 | `aiVariation` | `faithful` | `faithful` / `creative` |
-| `aiUpsample` | true | FLUX 3 提示詞擴寫（多 19GB 顯存，只有 24GB 以上卡能跑；關掉可讓 5080 接單） |
+| `aiUpsample` | **false**（10-18 改） | FLUX 3 提示詞擴寫：實測品質相近，開著每張 24–25 秒／需 20.5GB，關掉 16–17 秒／12.7GB |
 | `aiPinProduct` | true | 送 FLUX 3 layout box 把櫃子釘在去背圖的位置（避免重影） |
 | `localBaseUrl` / `localModel` | 閘道 / `qwen3.8:27b` | 排景與提示詞擴寫用的 OpenAI 相容端點（`FOX3D_LOCAL_LLM_URL` / `FOX3D_LOCAL_LLM_MODEL`） |
 
