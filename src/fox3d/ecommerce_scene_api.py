@@ -153,8 +153,10 @@ def ecommerce_scene_router(provider) -> APIRouter:
         from fox3d.photoreal_assets import AI_STYLE_PRESETS
 
         tid = tenant(x_tenant_id)
-        scene = payload.get("scene") if isinstance(payload.get("scene"), dict) else {}
-        cabinet = payload.get("cabinet") if isinstance(payload.get("cabinet"), dict) else CABINET_PRESETS[0]
+        raw_scene = payload.get("scene")
+        scene: dict[str, Any] = dict(raw_scene) if isinstance(raw_scene, dict) else {}
+        raw_cabinet = payload.get("cabinet")
+        cabinet: dict[str, Any] = dict(raw_cabinet) if isinstance(raw_cabinet, dict) else dict(CABINET_PRESETS[0])
         try:
             spec = build_modular_cabinet_spec(cabinet, tenant_id=tid)
         except Exception as exc:

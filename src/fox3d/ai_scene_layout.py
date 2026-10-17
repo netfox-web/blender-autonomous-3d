@@ -264,16 +264,17 @@ def sanitize_layout(raw: dict[str, Any], cabinet_w: float, cabinet_d: float) -> 
         x = _num(item.get("x"), 0.0, -half + 0.25, half - 0.25)
         y = 1.52 if on_wall else _num(item.get("y"), 0.6, PLACE_Y_MIN, PLACE_Y_MAX)
         z = _num(item.get("z"), 1.4 if ptype == "WALL_ART" else 0.0, 0.0, 2.2)
-        prop = {
+        prop: dict[str, Any] = {
             "id": f"ai_{idx}", "type": ptype, "label": label, "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),
             "widthM": round(w, 3), "depthM": round(d, 3), "heightM": round(h, 3),
             "rotationDeg": round(_num(item.get("rotationDeg"), 0.0, -360.0, 360.0), 1),
             "colorHex": _hex(item.get("colorHex"), "#c4b6a6"), "accentColorHex": _hex(item.get("accentColorHex"), "#8c7a6b"),
         }
         if aid:
-            prop["glbPath"] = _ph_glb(aid)
+            glb_path = _ph_glb(aid)
+            prop["glbPath"] = glb_path
             prop["polyhavenId"] = aid
-            if not Path(prop["glbPath"]).exists():
+            if not Path(glb_path).exists():
                 dropped.append(f"{label}（素材 {aid} 尚未下載）")
                 continue
 

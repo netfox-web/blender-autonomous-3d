@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -21,11 +21,11 @@ from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.recipe_3d import atomic_json, read_json
 
-SCHEMA = "fox3d.product_dna.export.v1"
+SCHEMA: Final = "fox3d.product_dna.export.v1"
 ENVELOPE_SCHEMA = "fox3d.product_dna.export-envelope.v1"
 RECONCILE_SCHEMA = "fox3d.product_dna.reconcile.v1"
-FAMILY_ID = "fox3d.family.three_tier_door_cabinet"
-MOLD_ID = "fox3d.mold.three_tier_424x295x900.v1"
+FAMILY_ID: Final = "fox3d.family.three_tier_door_cabinet"
+MOLD_ID: Final = "fox3d.mold.three_tier_424x295x900.v1"
 EXPORT_SKUS = SKUS[:3]
 ARTWORK_VERSIONS = ("FIXTURE_MASTER_V1", "FIXTURE_SINGLE_V1")
 CONSUMERS = ("FOXRECORDER", "IMAGEAI", "FOXSTUDIO")
@@ -34,7 +34,7 @@ ISSUE_18 = "https://github.com/netfox-web/blender-autonomous-3d/issues/18"
 SPECPILOT_58 = "https://github.com/netfox-web/AI-Project-Asset-Intelligence-Platform/issues/58"
 SPECPILOT_59 = "https://github.com/netfox-web/AI-Project-Asset-Intelligence-Platform/issues/59"
 PRINT_PROCESS = "PRINT_SURFACE_PREVIEW"
-USAGE_LIMIT = "READ_ONLY_NON_PRODUCTION_PREVIEW"
+USAGE_LIMIT: Final = "READ_ONLY_NON_PRODUCTION_PREVIEW"
 _TENANT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,118}$")
 _HASH = r"^[a-f0-9]{64}$"
 KNOWN_GAPS = (

@@ -337,7 +337,7 @@ def test_ai_engine_status_endpoint_never_raises(tmp_path: Path, monkeypatch):
 
 def test_matrix_batch_runs_local_ai_variants_and_serves_them(tmp_path: Path, monkeypatch):
     plat = Platform(tmp_path / "data", mock_blender=False)
-    plat.runtime = FakeRuntime()
+    plat.runtime = FakeRuntime()  # type: ignore[assignment]
     fake = FakeFleet()
     monkeypatch.setattr("fox3d.ecommerce_scene_studio.FleetImageClient.from_settings", classmethod(lambda cls, settings=None: _client(fake)))
     monkeypatch.setattr("fox3d.local_scene_ai.time.sleep", lambda s: None)
@@ -379,7 +379,7 @@ def test_matrix_batch_runs_local_ai_variants_and_serves_them(tmp_path: Path, mon
 
 def test_matrix_batch_builtin_engine_skips_fleet(tmp_path: Path, monkeypatch):
     plat = Platform(tmp_path / "data", mock_blender=False)
-    plat.runtime = FakeRuntime()
+    plat.runtime = FakeRuntime()  # type: ignore[assignment]
     called = []
     monkeypatch.setattr("fox3d.ecommerce_scene_studio.FleetImageClient.from_settings", classmethod(lambda cls, settings=None: called.append(1)))
     client = TestClient(create_app(plat))
@@ -394,7 +394,7 @@ def test_matrix_batch_builtin_engine_skips_fleet(tmp_path: Path, monkeypatch):
 
 def test_matrix_batch_without_token_fails_ai_but_keeps_render(tmp_path: Path, monkeypatch):
     plat = Platform(tmp_path / "data", mock_blender=False)
-    plat.runtime = FakeRuntime()
+    plat.runtime = FakeRuntime()  # type: ignore[assignment]
     monkeypatch.setenv("FLEET_SERVICE_TOKEN", "")
     monkeypatch.setenv("FLEET_SERVICE_TOKEN_FILE", str(tmp_path / "missing-token"))
     client = TestClient(create_app(plat))

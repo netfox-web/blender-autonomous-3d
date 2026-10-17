@@ -9,6 +9,7 @@ import pytest
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tests/helpers'))
 spec=importlib.util.spec_from_file_location('batch_process_concurrency',ROOT/'tests/helpers/batch_process_concurrency.py')
+assert spec is not None and spec.loader is not None
 harness=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(harness)
 

@@ -667,7 +667,12 @@ def build_modular_cabinet_spec(payload: dict[str, Any], *, tenant_id: str = "son
                 )
             cell_cfg = col.cells[r_idx] if r_idx < len(col.cells) else CellSpec(mode="DOOR")
             mode = cell_cfg.mode
-            custom_rgb = hex_to_rgb(cell_cfg.colorHex, tuple(door_palette[(c_idx + r_idx) % len(door_palette)])) if cell_cfg.colorHex else door_palette[(c_idx + r_idx) % len(door_palette)]
+            fallback_rgb = door_palette[(c_idx + r_idx) % len(door_palette)]
+            custom_rgb = (
+                hex_to_rgb(cell_cfg.colorHex, (float(fallback_rgb[0]), float(fallback_rgb[1]), float(fallback_rgb[2])))
+                if cell_cfg.colorHex
+                else fallback_rgb
+            )
             if mode == "DOOR":
                 pid = f"door_c{c_idx}_r{cell_num}"
                 dw = inner_w - 2.0 * gap
