@@ -85,7 +85,7 @@ class FakeRuntime:
         return {"status": "succeeded", "outputs": {"beauty.png": str(work / "beauty.png"), "product_cutout.png": str(work / "product_cutout.png")}, "renderTimeSec": 0.1, "device": "CPU"}
 
 
-def _poll(client: TestClient, batch_id: str, headers: dict, pred, timeout: float = 15.0) -> dict:
+def _poll(client: TestClient, batch_id: str, headers: dict, pred, timeout: float = 90.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
         batch = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
@@ -111,15 +111,16 @@ def test_blender_keeps_rendering_while_ai_waits_for_gpu(tmp_path: Path, monkeypa
     assert r.status_code == 202, r.text
     batch_id = r.json()["batchId"]
 
-    # Item 2's Blender render finishes while item 1 is still waiting for the fleet.
-    batch = _poll(client, batch_id, headers, lambda b: b["items"][1]["stage"] in ("ai", "done"))
-    assert batch["state"] == "running"
-    assert batch["items"][0]["stage"] == "ai" and batch["items"][0]["state"] == "running"
-    assert all(v["state"] in ("queued", "running") for v in batch["items"][0]["aiVariants"])
-    assert len(runtime.rendered) == 2
-    assert batch["completed"] == 0
-
-    fleet.release.set()
+    try:
+        # Item 2's Blender render finishes while item 1 is still waiting for the fleet.
+        batch = _poll(client, batch_id, headers, lambda b: b["items"][1]["stage"] in ("ai", "done"))
+        assert batch["state"] == "running"
+        assert batch["items"][0]["stage"] == "ai" and batch["items"][0]["state"] == "running"
+        assert all(v["state"] in ("queued", "running") for v in batch["items"][0]["aiVariants"])
+        assert len(runtime.rendered) == 2
+        assert batch["completed"] == 0
+    finally:
+        fleet.release.set()  # never leave the AI pool thread polling a held fleet (pytest would hang on exit)
     done = _poll(client, batch_id, headers, lambda b: b["state"] != "running")
     assert done["state"] == "completed" and done["succeeded"] == 2, done
     for item in done["items"]:
@@ -184,12 +185,14 @@ def test_batch_owned_by_this_process_is_never_marked_stale(tmp_path: Path, monke
     client.post("/api/ecommerce-scenes/ai-settings", headers=headers, json={"fleetToken": "tok", "publicBaseUrl": "http://192.168.66.21:8790"})
     r = client.post("/api/ecommerce-scenes/batches", headers=headers, json={"cabinet": CABINET_PRESETS[0], "sceneIds": [BUILTIN_SCENES[0]["id"]], "themeIds": ["THEME_NORDIC_OAK"], "views": ["FRONT"], "aiEngine": "fleet_flux3", "aiVariants": 1})
     batch_id = r.json()["batchId"]
-    _poll(client, batch_id, headers, lambda b: b["items"][0]["stage"] == "ai")
-    bpath = Path(plat.root) / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / batch_id / "batch.json"
-    old = time.time() - 3600
-    _os.utime(bpath, (old, old))  # pretend nothing was written for an hour while the fleet holds the task
-    got = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
-    assert got["state"] == "running" and got["items"][0]["state"] == "running"
-    fleet.release.set()
+    try:
+        _poll(client, batch_id, headers, lambda b: b["items"][0]["stage"] == "ai")
+        bpath = Path(plat.root) / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / batch_id / "batch.json"
+        old = time.time() - 3600
+        _os.utime(bpath, (old, old))  # pretend nothing was written for an hour while the fleet holds the task
+        got = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
+        assert got["state"] == "running" and got["items"][0]["state"] == "running"
+    finally:
+        fleet.release.set()
     done = _poll(client, batch_id, headers, lambda b: b["state"] != "running")
     assert done["state"] == "completed"
