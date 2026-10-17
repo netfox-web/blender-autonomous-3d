@@ -15,7 +15,7 @@ import shutil
 import time
 import urllib.parse
 import zipfile
-from concurrent.futures import Future, ThreadPoolExecutor, wait as wait_futures
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from threading import RLock
 from typing import Any, Literal
@@ -1500,9 +1500,9 @@ class EcommerceSceneStore:
                     item["stage"] = "done"
                     item["error"] = str(exc)[:300]
             self._save_batch_progress(bdir, items)
-        if ai_futures:
-            wait_futures(ai_futures)
-            self._save_batch_progress(bdir, items)
+        # Do not block the (single) Blender worker on the AI pool: each _finish_item_ai saves its own progress and the
+        # batch flips to completed when the last item lands, so the next batch's Blender renders can start right away.
+        self._save_batch_progress(bdir, items)
 
     def _finish_item_ai(self, tenant_id: str, batch_id: str, bdir: Path, items: list[dict[str, Any]], item: dict[str, Any], *args: Any) -> None:
         """AI-pool entry: run the item's 地端 AI variants, then close the item whatever happened."""

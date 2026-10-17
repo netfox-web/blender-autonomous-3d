@@ -1154,6 +1154,17 @@
     return `/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/download`;
   }
 
+  // The fleet console's raw progress note ("等待 GPU 資源:需 20.5GB,目前可用 11.3GB…") just means the card is busy
+  // with the previous image; say that instead of alarming people with VRAM arithmetic.
+  function friendlyFleetNote(note) {
+    const s = String(note || '');
+    if (/等待 GPU 資源/.test(s)) {
+      const hot = /87°C|降溫/.test(s) ? '，另一張卡過熱暫停派工' : '';
+      return `排隊中：GPU 正在處理前面的圖，每張約 25～40 秒${hot}`;
+    }
+    return s;
+  }
+
   function describeStage(batch, item) {
     if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
     if (item.state === 'queued') return { cls: 'is-queued', text: '排隊等待 Blender（上一組算完就輪到）' };
@@ -1161,7 +1172,7 @@
       const vs = item.aiVariants || [];
       const done = vs.filter(v => v.state === 'succeeded').length;
       const active = vs.find(v => v.state === 'running') || vs.find(v => v.state === 'queued');
-      const note = active && active.progressNote ? `（${active.progressNote}）` : '';
+      const note = active && active.progressNote ? `（${friendlyFleetNote(active.progressNote)}）` : '';
       return { cls: 'is-running', text: `地端 AI 實景生成中 ${done}/${vs.length || batch.aiVariantsPerItem || ''}${note}` };
     }
     if (item.state === 'running') return { cls: 'is-running', text: 'Blender Cycles 光追算圖中…' };
@@ -1178,7 +1189,7 @@
     const rendered = item.state === 'succeeded' || item.stage === 'ai';
     (item.aiVariants || []).forEach((v, i) => sources.push({
       key: `v${i + 1}`, label: `AI 實景 ${i + 1}${v.drift ? ' ⚠' : ''}`, state: v.state, drift: Boolean(v.drift),
-      note: v.error || (v.drift ? `疑似重影（構圖分數 ${v.driftScore}），建議再生成` : (v.progressNote || '')),
+      note: v.error || (v.drift ? `疑似重影（構圖分數 ${v.driftScore}），建議再生成` : friendlyFleetNote(v.progressNote || '')),
       src: `${base}/ai_local_png${qs}&variant=${i + 1}&inline=true`, dl: `${base}/ai_local_png${qs}&variant=${i + 1}`, seed: v.seed, caption: v.caption
     }));
     if (rendered) {
