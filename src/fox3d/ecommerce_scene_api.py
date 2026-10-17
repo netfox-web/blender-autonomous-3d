@@ -65,6 +65,19 @@ def ecommerce_scene_router(provider) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    @router.post("/api/ecommerce-scenes/props/upload-glb", status_code=201)
+    def upload_glb_prop(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        import base64
+
+        try:
+            raw_b64 = str(payload.get("dataBase64") or "").strip()
+            if "," in raw_b64:
+                raw_b64 = raw_b64.split(",", 1)[1]
+            raw_bytes = base64.b64decode(raw_b64) if raw_b64 else b""
+            return store().upload_glb_prop(tenant(x_tenant_id), str(payload.get("filename") or "model.glb"), raw_bytes)
+        except Exception as exc:
+            raise HTTPException(422, f"GLB 檔案解析失敗：{exc}") from exc
+
     @router.post("/api/ecommerce-scenes/batches", status_code=202)
     def start_batch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:
@@ -95,13 +108,20 @@ def ecommerce_scene_router(provider) -> APIRouter:
             raise HTTPException(404, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        media = {"png": "image/png", "glb": "model/gltf-binary", "blend": "application/x-blender"}[fmt]
-        if inline and fmt == "png":
+        media = {
+            "png": "image/png",
+            "ai_png": "image/png",
+            "cutout_png": "image/png",
+            "glb": "model/gltf-binary",
+            "blend": "application/x-blender",
+        }[fmt]
+        ext = "png" if fmt in ("png", "ai_png", "cutout_png") else fmt
+        if inline and ext == "png":
             return FileResponse(target, media_type=media, headers={"Cache-Control": "no-store"})
         return FileResponse(
             target,
             media_type=media,
-            filename=f"{batch_id[:8]}_{item_id}.{fmt}",
+            filename=f"{batch_id[:8]}_{item_id}_{fmt}.{ext}",
             headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
         )
 

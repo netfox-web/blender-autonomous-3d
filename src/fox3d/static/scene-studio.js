@@ -869,7 +869,7 @@
     }
     try {
       $('blender-matrix-btn').disabled = true;
-      notify(`🔥 正在啟動真實 Blender Cycles 批次算圖（共 ${total} 張）…`);
+      notify(`🔥 正在啟動 A+B 雙引擎光追批次算圖（共 ${total} 組，每組含 3D光追 + AI攝影棚合成 + 透明去背圖）…`);
       const batch = await api('/api/ecommerce-scenes/batches', {
         method: 'POST',
         body: JSON.stringify({
@@ -878,7 +878,9 @@
           sceneIds,
           themeIds,
           views,
-          samples: Number($('matrix-samples').value || 24)
+          samples: Number($('matrix-samples').value || 32),
+          aiStyleId: $('ai-style-select') ? $('ai-style-select').value : 'AI_NORDIC_SUNLIT_LOFT',
+          aiPrompt: $('ai-prompt-input') ? $('ai-prompt-input').value : ''
         })
       });
       state.activeBatchId = batch.batchId;
@@ -893,7 +895,7 @@
 
   function renderBlenderBatch(batch) {
     if (!batch) return;
-    $('blender-batch-status').textContent = `狀態：${batch.state === 'completed' ? '已完成' : 'Blender 渲染中'} (${batch.completed}/${batch.total} · 成功 ${batch.succeeded})`;
+    $('blender-batch-status').textContent = `狀態：${batch.state === 'completed' ? '已完成' : 'A+B 雙引擎渲染中'} (${batch.completed}/${batch.total} · 成功 ${batch.succeeded})`;
     const zipLink = $('download-zip-link');
     if (batch.succeeded > 0) {
       zipLink.hidden = false;
@@ -904,21 +906,31 @@
     $('blender-gallery').innerHTML = (batch.items || []).map(item => {
       const base = `/api/ecommerce-scenes/batches/${encodeURIComponent(batch.batchId)}/items/${encodeURIComponent(item.itemId)}/download`;
       const qs = `?workspace=${encodeURIComponent(tenant)}`;
+      const imgId = `bimg-${batch.batchId}-${item.itemId}`;
+      const modeTabs = item.state === 'succeeded'
+        ? `<div class="btn-group">
+            <button type="button" class="btn-xs primary batch-img-tab" data-target="${imgId}" data-src="${base}/png${qs}&inline=true">🅰️ 3D 實景光追</button>
+            <button type="button" class="btn-xs batch-img-tab" data-target="${imgId}" data-src="${base}/ai_png${qs}&inline=true">🅱️ AI 攝影棚合成</button>
+            <button type="button" class="btn-xs batch-img-tab" data-target="${imgId}" data-src="${base}/cutout_png${qs}&inline=true">✂️ 透明去背地影</button>
+          </div>`
+        : '';
       const imgHtml = item.state === 'succeeded'
-        ? `<img src="${base}/png${qs}&inline=true" alt="${esc(item.sceneName)}">`
-        : `<div style="aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;background:#1e2422;color:#a9d6c6;font-weight:700;padding:12px;text-align:center;">
-            ${item.state === 'running' ? '🔥 Blender Cycles GPU 光追算圖中…' : (item.state === 'queued' ? '⏳ 排隊等待中…' : '⚠️ ' + esc(item.error || '失敗'))}
+        ? `<img id="${imgId}" src="${base}/ai_png${qs}&inline=true" alt="${esc(item.sceneName)}">`
+        : `<div class="photoreal-loading">
+            ${item.state === 'running' ? '🔥 Blender Cycles GPU + AI 攝影棚雙引擎算圖中…' : (item.state === 'queued' ? '⏳ 排隊等待中…' : '⚠️ ' + esc(item.error || '失敗'))}
           </div>`;
       const linksHtml = item.state === 'succeeded'
         ? `<div class="gallery-links">
-            <a href="${base}/png${qs}">下載逼真圖 PNG ↓</a>
-            <a href="${base}/glb${qs}">3D 模型 GLB ↓</a>
-            <a href="${base}/blend${qs}">Blender 原檔 ↓</a>
+            <a href="${base}/ai_png${qs}">🅱️ AI合成圖 ↓</a>
+            <a href="${base}/png${qs}">🅰️ 3D光追圖 ↓</a>
+            <a href="${base}/cutout_png${qs}">✂️ 去背圖 ↓</a>
+            <a href="${base}/glb${qs}">GLB ↓</a>
           </div>`
         : '';
       return `<article class="gallery-card">
         ${imgHtml}
         <div class="gallery-card-body">
+          ${modeTabs}
           <strong>#${item.index} · ${esc(item.sceneName)}</strong>
           <span>配色：${esc(item.themeLabel)}</span>
           <span>視角：${esc(item.viewLabel)} ${item.renderTimeSec ? `(${item.renderTimeSec}s · ${item.device || 'GPU'})` : ''}</span>
@@ -927,27 +939,45 @@
       </article>`;
     }).join('');
 
+    document.querySelectorAll('.batch-img-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetImg = $(btn.dataset.target);
+        if (targetImg) targetImg.src = btn.dataset.src;
+        const parent = btn.parentElement;
+        if (parent) {
+          parent.querySelectorAll('.batch-img-tab').forEach(b => b.classList.remove('primary'));
+        }
+        btn.classList.add('primary');
+      });
+    });
+
     const first = (batch.items || [])[0];
     if (first && $('single-photoreal-box') && !$('single-photoreal-box').hidden) {
       const base = `/api/ecommerce-scenes/batches/${encodeURIComponent(batch.batchId)}/items/${encodeURIComponent(first.itemId)}/download`;
       const qs = `?workspace=${encodeURIComponent(tenant)}`;
       $('single-photoreal-status').textContent = first.state === 'succeeded'
-        ? `🟢 渲染完成 (${first.renderTimeSec || ''}s · Blender ${first.blenderVersion || ''} ${first.device || 'OPTIX'})`
-        : (first.state === 'running' ? '🔥 Blender Cycles 光追渲染中（約 4~8 秒）…' : first.error || '排隊中…');
+        ? `🟢 A+B 雙引擎渲染完成 (${first.renderTimeSec || ''}s · Blender ${first.blenderVersion || ''} ${first.device || 'OPTIX'})`
+        : (first.state === 'running' ? '🔥 Blender Cycles + AI 攝影棚渲染中（約 5~9 秒）…' : first.error || '排隊中…');
       if (first.state === 'succeeded') {
         $('single-photoreal-content').innerHTML = `
-          <img class="photoreal-hero-img" src="${base}/png${qs}&inline=true" alt="${esc(first.sceneName)}">
           <div class="photoreal-meta">
-            <h4>${esc(first.sceneName)} · ${esc(first.themeLabel)}</h4>
-            <p>已套用 Cycles 物理光線追蹤、PBR 木紋凹凸、織物微絨感、家具導角與柔和窗光陰影。</p>
+            <h4>🅰️ 方案 A：Blender 3D 高模實景光追圖</h4>
+            <img class="photoreal-hero-img" src="${base}/png${qs}&inline=true" alt="方案 A 3D 實景光追圖">
             <div class="gallery-links">
-              <a class="btn-sm primary" href="${base}/png${qs}">⬇ 下載 800×800 逼真電商圖 (PNG)</a>
-              <a class="btn-sm" href="${base}/glb${qs}">⬇ 下載 3D 場景模型 (GLB)</a>
-              <a class="btn-sm" href="${base}/blend${qs}">⬇ 下載 Blender 專案檔 (.blend)</a>
+              <a class="btn-sm primary" href="${base}/png${qs}">⬇ 下載方案 A (3D 光追 PNG)</a>
+              <a class="btn-sm" href="${base}/glb${qs}">⬇ 下載 3D 場景 (.glb)</a>
+            </div>
+          </div>
+          <div class="photoreal-meta">
+            <h4>🅱️ 方案 B：AI 實景攝影棚合成圖（100% 鎖定櫃體與地影）</h4>
+            <img class="photoreal-hero-img" src="${base}/ai_png${qs}&inline=true" alt="方案 B AI 攝影棚合成圖">
+            <div class="gallery-links">
+              <a class="btn-sm primary" href="${base}/ai_png${qs}">⬇ 下載方案 B (AI 實景合成 PNG)</a>
+              <a class="btn-sm" href="${base}/cutout_png${qs}">⬇ 下載透明去背+光追地影圖 (PNG)</a>
             </div>
           </div>`;
       } else {
-        $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 進行物理光線追蹤與 AI 降噪，請稍候約 4～8 秒…</div>`;
+        $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 算圖並合成 AI 實景攝影棚，請稍候約 5～9 秒…</div>`;
       }
     }
   }
@@ -956,8 +986,8 @@
     if (!state.cabinet || !state.currentScene) return;
     try {
       $('single-photoreal-box').hidden = false;
-      $('single-photoreal-status').textContent = '🔥 啟動 Blender Cycles GPU 光追…';
-      $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 進行物理光線追蹤與 AI 降噪，請稍候約 4～8 秒…</div>`;
+      $('single-photoreal-status').textContent = '🔥 啟動 A+B 雙引擎光追…';
+      $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 算圖並合成 AI 實景攝影棚，請稍候約 5～9 秒…</div>`;
       const batch = await api('/api/ecommerce-scenes/batches', {
         method: 'POST',
         body: JSON.stringify({
@@ -966,7 +996,9 @@
           sceneIds: [state.currentScene.id],
           themeIds: [state.cabinet.themeId || 'THEME_NORDIC_OAK'],
           views: [$('scene-view').value || 'THREE_QUARTER'],
-          samples: 36
+          samples: 36,
+          aiStyleId: $('ai-style-select') ? $('ai-style-select').value : 'AI_NORDIC_SUNLIT_LOFT',
+          aiPrompt: $('ai-prompt-input') ? $('ai-prompt-input').value : ''
         })
       });
       state.activeBatchId = batch.batchId;
@@ -985,7 +1017,7 @@
       if (batch.state === 'running') {
         state.pollTimer = setTimeout(() => pollBlenderBatch(batchId), 2500);
       } else {
-        notify(`🎉 Blender Cycles 批次渲染完成！成功產出 ${batch.succeeded} 張光追電商圖，可一鍵打包下載 ZIP。`);
+        notify(`🎉 A+B 雙引擎批次渲染完成！每組皆已產出 🅰️ 3D光追圖、🅱️ AI攝影棚合成圖 與 ✂️ 透明去背圖！`);
       }
     } catch (e) {
       notify(e.message, true);
@@ -1181,6 +1213,50 @@
     $('blender-matrix-btn').addEventListener('click', startRealBlenderBatch);
     if ($('render-single-photoreal-btn')) {
       $('render-single-photoreal-btn').addEventListener('click', startSinglePhotorealRender);
+    }
+    if ($('upload-glb-btn') && $('upload-glb-input')) {
+      $('upload-glb-btn').addEventListener('click', () => $('upload-glb-input').click());
+      $('upload-glb-input').addEventListener('change', async (ev) => {
+        const file = ev.target.files && ev.target.files[0];
+        if (!file || !state.currentScene) return;
+        try {
+          notify(`📥 正在匯入 3D 家具模型「${file.name}」…`);
+          const reader = new FileReader();
+          const dataBase64 = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('讀取檔案失敗'));
+            reader.readAsDataURL(file);
+          });
+          const res = await api('/api/ecommerce-scenes/props/upload-glb', {
+            method: 'POST',
+            body: JSON.stringify({ filename: file.name, dataBase64 })
+          });
+          state.currentScene.props = state.currentScene.props || [];
+          state.currentScene.props.push({
+            id: res.propId,
+            type: 'CUSTOM_BOX',
+            label: res.label,
+            glbPath: res.glbPath,
+            x: -0.8,
+            y: 0.4,
+            z: 0.0,
+            widthM: 0.75,
+            depthM: 0.75,
+            heightM: 0.85,
+            rotationDeg: 0,
+            colorHex: '#a38970',
+            accentColorHex: '#5e4934'
+          });
+          state.selectedTarget = { kind: 'prop', index: state.currentScene.props.length - 1 };
+          syncSelectedBar();
+          await refreshPreviewPlan();
+          notify(`🎉 已將「${res.label}」放入房間！可在 2D 平面圖拖拉位置，Blender 光追算圖時將自動載入此高模 GLB。`);
+        } catch (err) {
+          notify(err.message, true);
+        } finally {
+          ev.target.value = '';
+        }
+      });
     }
   }
 

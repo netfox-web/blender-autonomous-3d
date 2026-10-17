@@ -1641,9 +1641,45 @@ def build_and_render(job: dict) -> dict:
         room_scene, room_observation = room_module.build(created, job["engineering"]["sceneDefinition"], used_device, job["engineering"]["sceneHash"])
     want_aov = bool(job.get("aovs") or mode in {"SYNTHETIC_DATA"} or job.get("passes") or job.get("productTruthAovs"))
     canonical_scene = bpy.context.scene
+    cutout_written = None
     try:
         if room_scene is not None: bpy.context.window.scene = room_scene
         png_path, elapsed = _render_still(job, width=width, height=height, samples=samples)
+        if room_scene is not None and ((job.get("engineering") or {}).get("sceneDefinition") or {}).get("photorealMode"):
+            try:
+                cutout_target = Path(job.get("workDir") or ".").resolve() / "product_cutout.png"
+                saved_film = room_scene.render.film_transparent
+                saved_cm = room_scene.render.image_settings.color_mode
+                saved_samples = room_scene.cycles.samples
+                saved_fp = room_scene.render.filepath
+                room_scene.render.film_transparent = True
+                room_scene.render.image_settings.color_mode = "RGBA"
+                room_scene.cycles.samples = max(12, samples // 2)
+                room_scene.render.filepath = str(cutout_target)
+                saved_states = []
+                for o in room_scene.objects:
+                    if o.type == "MESH" and o.name.startswith("Environment."):
+                        nu = o.name.upper()
+                        if o.name == "Environment.Floor":
+                            saved_states.append((o, "sc", getattr(o, "is_shadow_catcher", False)))
+                            o.is_shadow_catcher = True
+                        elif not any(k in nu for k in ("CABINETHANDLE_", "CABINETDECOR")):
+                            saved_states.append((o, "hr", o.hide_render))
+                            o.hide_render = True
+                bpy.ops.render.render(write_still=True, scene=room_scene.name)
+                for o, kind, val in saved_states:
+                    if kind == "sc":
+                        o.is_shadow_catcher = val
+                    else:
+                        o.hide_render = val
+                room_scene.render.film_transparent = saved_film
+                room_scene.render.image_settings.color_mode = saved_cm
+                room_scene.cycles.samples = saved_samples
+                room_scene.render.filepath = saved_fp
+                if cutout_target.exists() and cutout_target.stat().st_size >= 32:
+                    cutout_written = cutout_target
+            except Exception:
+                pass
     finally:
         bpy.context.window.scene = canonical_scene
     found = png_path if png_path.exists() and png_path.stat().st_size >= 32 else _find_beauty_png(Path(job.get("workDir") or ".").resolve())
@@ -1651,6 +1687,8 @@ def build_and_render(job: dict) -> dict:
         return {"status": "failed", "error": "no PNG written", "realBlender": True, "workDir": job.get("workDir")}
     png_path = found
     outputs = {"beauty.png": str(png_path)}
+    if cutout_written is not None:
+        outputs["product_cutout.png"] = str(cutout_written)
     produced = ["RGB"]
     if want_aov:
         try:

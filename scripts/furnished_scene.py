@@ -136,6 +136,28 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
     elif any(k in name_u for k in ('STEM', 'HANDLE', 'METAL')):
         shader.inputs['Metallic'].default_value = 0.88
         shader.inputs['Roughness'].default_value = 0.24
+    elif any(k in name_u for k in ('CURTAIN', 'SHEER')):
+        # Translucent linen sheer curtain with subsurface light transmission & soft sheen
+        shader.inputs['Roughness'].default_value = 0.62
+        if 'Subsurface Weight' in shader.inputs:
+            shader.inputs['Subsurface Weight'].default_value = 0.55
+        if 'Sheen Weight' in shader.inputs:
+            shader.inputs['Sheen Weight'].default_value = 0.80
+        if 'Transmission Weight' in shader.inputs:
+            shader.inputs['Transmission Weight'].default_value = 0.25
+    elif 'WALL_ART' in name_u and 'CANVAS' in name_u:
+        shader.inputs['Roughness'].default_value = 0.68
+        try:
+            import bpy
+            from pathlib import Path
+            art_path = Path(__file__).resolve().parents[1] / 'assets' / 'textures' / 'pbr' / 'nordic_canvas_art.png'
+            if art_path.exists():
+                tex_img = nodes.new('ShaderNodeTexImage')
+                tex_img.image = bpy.data.images.load(str(art_path), check_existing=True)
+                links.new(tex_coord.outputs['Generated'], tex_img.inputs['Vector'])
+                links.new(tex_img.outputs['Color'], shader.inputs['Base Color'])
+        except Exception:
+            pass
     elif any(k in name_u for k in ('WALL',)):
         # Architectural matte plaster
         noise = nodes.new('ShaderNodeTexNoise')
@@ -163,6 +185,7 @@ def _smooth_polygons(obj):
 def build(created, definition, device, expected_hash):
     import bpy
     from mathutils import Matrix, Vector
+    from pathlib import Path
     # Blender ships its own Python; do not import application dependencies here.
     digest = hashlib.sha256(json.dumps(definition, sort_keys=True, separators=(',', ':'), default=str).encode('utf-8')).hexdigest()
     if digest != expected_hash:
@@ -233,6 +256,35 @@ def build(created, definition, device, expected_hash):
             lx, ly, lz = [float(v) for v in item['location']]
             mat = bpy.data.materials.new('Environment.' + iname)
             _apply_pbr_shader(mat, iname, item['color'], photoreal=photoreal)
+
+            glb_path = item.get('glbPath')
+            if photoreal and glb_path and Path(str(glb_path)).exists():
+                try:
+                    before = set(scene.objects)
+                    bpy.ops.import_scene.gltf(filepath=str(glb_path))
+                    imported = [o for o in scene.objects if o not in before and o.type == 'MESH']
+                    if imported:
+                        for idx_o, o in enumerate(imported):
+                            o.name = f'Environment.{iname}.Glb{idx_o}'
+                            o.location = (lx, ly, lz - sz * 0.5)
+                        continue
+                except Exception:
+                    pass
+
+            if photoreal and 'SHEERCURTAIN' in name_u:
+                # Build wave-pleated floor-to-ceiling sheer linen curtain
+                n_pleats = 10
+                pleat_w = sx / n_pleats
+                for p_i in range(n_pleats):
+                    px_i = (lx - sx * 0.5) + (p_i + 0.5) * pleat_w
+                    py_i = ly + (0.018 if p_i % 2 == 0 else -0.018)
+                    bpy.ops.mesh.primitive_cylinder_add(vertices=20, radius=pleat_w * 0.58, depth=sz, location=(px_i, py_i, lz))
+                    pl = bpy.context.object
+                    pl.name = f'Environment.{iname}.Pleat{p_i}'
+                    pl.scale = (1.0, 0.55, 1.0)
+                    pl.data.materials.append(mat)
+                    _smooth_polygons(pl)
+                continue
 
             if photoreal and ('FOLIAGE' in name_u):
                 # Build an organic multi-leaf indoor botanical plant instead of a cube

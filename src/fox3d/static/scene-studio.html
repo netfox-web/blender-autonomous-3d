@@ -169,7 +169,13 @@
       </div>
 
       <div class="field-group">
-        <label class="group-label">一鍵加入家具道具（點擊加入房間，可在下方平面圖直接用滑鼠拖拉位置）</label>
+        <div class="row-between">
+          <label class="group-label">一鍵加入家具道具（點擊加入房間，可在下方平面圖直接用滑鼠拖拉位置）</label>
+          <div class="btn-group">
+            <input id="upload-glb-input" type="file" accept=".glb,.gltf" hidden>
+            <button id="upload-glb-btn" type="button" class="btn-xs primary">📥 匯入自訂 .glb 3D 家具模型（方案 A 高模擴充）</button>
+          </div>
+        </div>
         <div id="prop-palette" class="prop-palette"></div>
       </div>
 
@@ -211,11 +217,11 @@
         <!-- 3D Live Interactive Room + Cabinet Viewport -->
         <div class="viewport-card">
           <div class="vp-header">
-            <strong>🎥 3D 空間即時構圖預覽（拖拉調好位置後，點右方「🔥 算逼真圖」）</strong>
+            <strong>🎥 3D 空間即時構圖預覽（拖拉調好位置後，點右方「🔥 算 A+B 逼真圖」）</strong>
             <div class="btn-group">
               <button id="reset-cam-btn" type="button" class="btn-xs">重設視角</button>
               <button id="snapshot-png-btn" type="button" class="btn-xs">📸 存構圖草稿</button>
-              <button id="render-single-photoreal-btn" type="button" class="btn-xs btn-accent">🔥 立即用 Blender 光追算這張逼真圖</button>
+              <button id="render-single-photoreal-btn" type="button" class="btn-xs btn-accent">🔥 立即算這張 A+B 雙引擎逼真圖</button>
             </div>
           </div>
           <canvas id="scene3d-canvas" width="560" height="400"></canvas>
@@ -225,7 +231,7 @@
 
       <div id="single-photoreal-box" class="photoreal-showcase" hidden>
         <div class="row-between">
-          <strong>✨ Blender Cycles GPU 物理光追逼真大圖（含木紋凹凸、布料織紋、柔和窗光陰影與景深）</strong>
+          <strong>✨ A+B 雙引擎逼真大圖（同時產出：🅰️ 3D 實景光追圖 ＋ 🅱️ AI 攝影棚合成圖 ＋ ✂️ 透明去背地影圖）</strong>
           <span id="single-photoreal-status" class="badge">準備中…</span>
         </div>
         <div id="single-photoreal-content" class="photoreal-content"></div>
@@ -237,12 +243,26 @@
       <div class="panel-head">
         <div>
           <span class="step-badge">步驟 3</span>
-          <h2 id="step3-title">無限電商圖矩陣批次渲染工廠（多場景 × 多配色 × 多視角）</h2>
+          <h2 id="step3-title">無限電商圖矩陣批次渲染工廠（A+B 雙引擎：3D 實景光追 ＋ AI 室內攝影棚合成）</h2>
         </div>
         <div class="matrix-actions">
           <button id="instant-matrix-btn" type="button" class="btn-primary">⚡ 1 秒生成即時 3D 電商圖矩陣</button>
-          <button id="blender-matrix-btn" type="button" class="btn-accent">🔥 送交真實 Blender Cycles 光追批次算圖</button>
+          <button id="blender-matrix-btn" type="button" class="btn-accent">🔥 送交 A+B 雙引擎光追批次算圖</button>
         </div>
+      </div>
+
+      <div class="form-row two-col">
+        <label>✨ 方案 B · AI 實景室內攝影棚底圖風格（100% 鎖定組合櫃結構與光追地影）
+          <select id="ai-style-select">
+            <option value="AI_NORDIC_SUNLIT_LOFT">✨ 北歐晨光落地窗實景公寓（極致自然光影）</option>
+            <option value="AI_JAPANDI_WABI_SABI">🍵 日系侘寂微水泥靜謐宅（溫潤木質調）</option>
+            <option value="AI_LUXURY_WALNUT_LOUNGE">🥂 現代輕奢胡桃木大宅客廳（午後斜陽）</option>
+            <option value="AI_CREAM_FRENCH_BISTRO">🥐 法式奶油風陽光書房／餐廚（柔和漫射光）</option>
+          </select>
+        </label>
+        <label>AI 場景微調提示詞（選填，若串接外部 SD WebUI / ComfyUI 將自動套用 Inpainting）
+          <input id="ai-prompt-input" type="text" placeholder="例：Photorealistic Scandinavian sunlit living room, sheer linen curtains, oak parquet floor, 8k">
+        </label>
       </div>
 
       <div class="matrix-selectors">
@@ -266,11 +286,11 @@
           <div class="row-between">
             <strong>3. 勾選拍攝視角與 Cycles 採樣</strong>
             <label class="inline-sample">Cycles Samples
-              <input id="matrix-samples" type="number" min="12" max="64" value="24">
+              <input id="matrix-samples" type="number" min="12" max="64" value="32">
             </label>
           </div>
           <div id="matrix-views-list" class="check-list"></div>
-          <div id="matrix-formula" class="matrix-formula">預計產出：1 個場景 × 1 種配色 × 1 個視角 ＝ 1 張電商情境圖</div>
+          <div id="matrix-formula" class="matrix-formula">預計產出：1 個場景 × 1 種配色 × 1 個視角 ＝ 1 組（含 🅰️ 3D光追 + 🅱️ AI合成 + ✂️ 去背圖）</div>
         </div>
       </div>
 
@@ -286,10 +306,10 @@
       <!-- Real Blender Cycles Batch Progress & Gallery -->
       <div class="gallery-section">
         <div class="row-between">
-          <h3>🔥 真實 Blender Cycles 光追批次成果（含 PNG / GLB / BLEND / 整批 ZIP 下載）</h3>
+          <h3>🔥 A+B 雙引擎真實光追批次成果（每張皆含：🅰️ 3D 光追實景 / 🅱️ AI 攝影棚合成 / ✂️ 透明去背地影 / GLB / ZIP）</h3>
           <div class="btn-group">
             <span id="blender-batch-status" class="badge">尚無執行中的批次</span>
-            <a id="download-zip-link" class="btn-sm primary" href="#" hidden>📦 一鍵下載整批電商圖 (.zip)</a>
+            <a id="download-zip-link" class="btn-sm primary" href="#" hidden>📦 一鍵下載整批 A+B 電商圖包 (.zip)</a>
           </div>
         </div>
         <div id="blender-gallery" class="matrix-gallery"></div>

@@ -19,6 +19,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from fox3d.ids import new_id, stable_hash
+from fox3d.photoreal_assets import AI_STYLE_PRESETS, build_ai_photoreal_composite, ensure_pbr_texture_assets
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.recipe_workbench import timestamp
 
@@ -232,7 +233,8 @@ PROP_CATALOG: list[dict[str, Any]] = [
     {"type": "BENCH", "label": "🪑 穿鞋長凳", "widthM": 0.95, "depthM": 0.38, "heightM": 0.45, "colorHex": "#a67545", "accentColorHex": "#d8cfc2"},
     {"type": "KITCHEN_COUNTER", "label": "🍽️ 餐廚流理台", "widthM": 2.2, "depthM": 0.65, "heightM": 0.88, "colorHex": "#3d5a54", "accentColorHex": "#ded6c6"},
     {"type": "WINDOW_FRAME", "label": "🪟 採光落地窗", "widthM": 1.4, "depthM": 0.06, "heightM": 1.6, "colorHex": "#eef6ff", "accentColorHex": "#f4f1ea", "defaultZ": 0.65},
-    {"type": "CUSTOM_BOX", "label": "📦 自訂裝飾台", "widthM": 0.6, "depthM": 0.4, "heightM": 0.5, "colorHex": "#c4b6a6", "accentColorHex": "#8c7a6b"},
+    {"type": "SHEER_CURTAIN", "label": "🎐 透光亞麻落地紗簾", "widthM": 0.85, "depthM": 0.14, "heightM": 2.65, "colorHex": "#f5f1e8", "accentColorHex": "#d8cfc2"},
+    {"type": "CUSTOM_BOX", "label": "📦 自訂裝飾台 / 外部 GLB", "widthM": 0.6, "depthM": 0.4, "heightM": 0.5, "colorHex": "#c4b6a6", "accentColorHex": "#8c7a6b"},
 ]
 
 LIGHTING_PRESETS: dict[str, dict[str, Any]] = {
@@ -303,6 +305,7 @@ BUILTIN_SCENES: list[dict[str, Any]] = [
             {"id": "p_lamp", "type": "FLOOR_LAMP", "label": "北歐立燈", "x": 1.55, "y": 1.15, "z": 0.0, "widthM": 0.38, "depthM": 0.38, "heightM": 1.52, "rotationDeg": 0, "colorHex": "#dec183", "accentColorHex": "#332a22"},
             {"id": "p_art", "type": "WALL_ART", "label": "抽象掛畫", "x": -1.45, "y": 1.52, "z": 1.45, "widthM": 0.78, "depthM": 0.05, "heightM": 0.85, "rotationDeg": 0, "colorHex": "#b56935", "accentColorHex": "#5c361a"},
             {"id": "p_plant", "type": "PLANT", "label": "琴葉榕盆栽", "x": 1.18, "y": 1.10, "z": 0.0, "widthM": 0.42, "depthM": 0.42, "heightM": 0.92, "rotationDeg": 0, "colorHex": "#2f6b48", "accentColorHex": "#c27a52"},
+            {"id": "p_curtain", "type": "SHEER_CURTAIN", "label": "透光落地紗簾", "x": -2.35, "y": 1.46, "z": 0.0, "widthM": 0.76, "depthM": 0.14, "heightM": 2.85, "rotationDeg": 0, "colorHex": "#f4efe6", "accentColorHex": "#d8cfc2"},
         ],
     },
     {
@@ -620,8 +623,7 @@ def _expand_prop_boxes(prop: dict[str, Any], index: int) -> list[dict[str, Any]]
         z_art = pz if pz > 0.2 else 1.45
         boxes.append({"name": f"{prefix}_Frame", "size": [round(w, 4), round(max(0.038, d), 4), round(h, 4)], "location": [round(px, 4), round(py, 4), round(z_art, 4)], "color": acc_rgb, "bevel": 0.006})
         boxes.append({"name": f"{prefix}_MatBoard", "size": [round(w * 0.90, 4), 0.018, round(h * 0.90, 4)], "location": [round(px, 4), round(py - 0.016, 4), round(z_art, 4)], "color": [0.93, 0.90, 0.85], "bevel": 0.002})
-        boxes.append({"name": f"{prefix}_Canvas", "size": [round(w * 0.68, 4), 0.016, round(h * 0.68, 4)], "location": [round(px, 4), round(py - 0.021, 4), round(z_art, 4)], "color": main_rgb, "bevel": 0.002})
-        boxes.append({"name": f"{prefix}_ArtAccent", "size": [round(w * 0.34, 4), 0.014, round(h * 0.36, 4)], "location": [round(px + w * 0.08, 4), round(py - 0.025, 4), round(z_art - h * 0.06, 4)], "color": [0.24, 0.34, 0.32], "bevel": 0.01})
+        boxes.append({"name": f"{prefix}_Canvas", "size": [round(w * 0.78, 4), 0.016, round(h * 0.78, 4)], "location": [round(px, 4), round(py - 0.022, 4), round(z_art, 4)], "color": main_rgb, "bevel": 0.002})
     elif ptype == "PLANT":
         add("Pot", w * 0.62, d * 0.62, h * 0.34, 0, 0, h * 0.17, acc_rgb, 0.03)
         add("FoliageMain", w * 0.92, d * 0.92, h * 0.62, 0, 0, h * 0.62, main_rgb, 0.08)
@@ -647,8 +649,19 @@ def _expand_prop_boxes(prop: dict[str, Any], index: int) -> list[dict[str, Any]]
         z_win = pz if pz > 0.1 else 0.75
         boxes.append({"name": f"{prefix}_Frame", "size": [round(w, 4), 0.06, round(h, 4)], "location": [round(px, 4), round(py, 4), round(z_win + h / 2.0, 4)], "color": acc_rgb, "bevel": 0.008})
         boxes.append({"name": f"{prefix}_Glass", "size": [round(w * 0.90, 4), 0.02, round(h * 0.90, 4)], "location": [round(px, 4), round(py - 0.02, 4), round(z_win + h / 2.0, 4)], "color": main_rgb, "bevel": 0.002})
+    elif ptype == "SHEER_CURTAIN":
+        boxes.append({"name": f"{prefix}_SheerCurtain", "size": [round(w, 4), round(d, 4), round(h, 4)], "location": [round(px, 4), round(py, 4), round(pz + h / 2.0, 4)], "color": main_rgb, "bevel": 0.01})
     else:
-        add("Box", w, d, h, 0, 0, h / 2.0, main_rgb, 0.015)
+        entry: dict[str, Any] = {
+            "name": f"{prefix}_Box",
+            "size": [round(max(0.01, w), 4), round(max(0.01, d), 4), round(max(0.008, h), 4)],
+            "location": [round(px, 4), round(py, 4), round(pz + h / 2.0, 4)],
+            "color": main_rgb,
+            "bevel": 0.015,
+        }
+        if prop.get("glbPath"):
+            entry["glbPath"] = str(prop["glbPath"])
+        boxes.append(entry)
 
     return boxes
 
@@ -824,12 +837,33 @@ class EcommerceSceneStore:
         self.lock = RLock()
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ecom-scene-matrix")
         self.tasks: dict[str, Any] = {}
+        try:
+            ensure_pbr_texture_assets()
+        except Exception:
+            pass
 
     def _tenant_dir(self, tenant_id: str) -> Path:
         safe = "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
         d = self.root / safe
         d.mkdir(parents=True, exist_ok=True)
         return d
+
+    def upload_glb_prop(self, tenant_id: str, filename: str, raw_bytes: bytes) -> dict[str, Any]:
+        if not raw_bytes or len(raw_bytes) < 16:
+            raise ValueError("上傳的 .glb 檔案內容為空")
+        safe_name = "".join(c for c in Path(filename or "custom_prop.glb").stem if c.isalnum() or c in ("-", "_")) or "custom_prop"
+        prop_id = f"glb_{safe_name}_{new_id().split('-')[0]}"
+        gdir = self._tenant_dir(tenant_id) / "glb-props"
+        gdir.mkdir(parents=True, exist_ok=True)
+        target = gdir / f"{prop_id}.glb"
+        target.write_bytes(raw_bytes)
+        return {
+            "propId": prop_id,
+            "filename": f"{prop_id}.glb",
+            "label": f"📦 3D 模型：{safe_name}",
+            "glbPath": str(target.resolve()),
+            "sizeBytes": len(raw_bytes),
+        }
 
     def list_scenes(self, tenant_id: str) -> list[dict[str, Any]]:
         path = self._tenant_dir(tenant_id) / "scenes.json"
@@ -893,6 +927,7 @@ class EcommerceSceneStore:
             "styleThemes": list(STYLE_THEMES.values()),
             "propCatalog": PROP_CATALOG,
             "lightingPresets": [{"id": k, **v} for k, v in LIGHTING_PRESETS.items()],
+            "aiStylePresets": list(AI_STYLE_PRESETS.values()),
             "cameraViews": list(CAMERA_VIEWS.values()),
             "scenes": self.list_scenes(tenant_id),
             "batches": self.list_batches(tenant_id),
@@ -941,6 +976,8 @@ class EcommerceSceneStore:
         theme_ids = list(payload.get("themeIds") or [cabinet_cfg.get("themeId") or "THEME_NORDIC_OAK"])
         views = list(payload.get("views") or ["THREE_QUARTER"])
         samples = max(12, min(64, int(payload.get("samples") or 24)))
+        ai_style_id = str(payload.get("aiStyleId") or "AI_NORDIC_SUNLIT_LOFT")
+        ai_prompt = str(payload.get("aiPrompt") or "").strip()
 
         if not scene_ids or not theme_ids or not views:
             raise ValueError("請至少勾選 1 個場景、1 種櫃體配色與 1 個鏡頭視角")
@@ -977,11 +1014,14 @@ class EcommerceSceneStore:
                             "themeLabel": tcfg["label"],
                             "view": vcfg["id"],
                             "viewLabel": vcfg["label"],
+                            "aiStyleId": ai_style_id,
                             "state": "queued",
                             "error": None,
                             "renderTimeSec": None,
                             "blenderVersion": None,
                             "device": None,
+                            "hasAiComposite": False,
+                            "hasCutout": False,
                         }
                     )
 
@@ -990,6 +1030,8 @@ class EcommerceSceneStore:
             "tenantId": tenant_id,
             "cabinetName": cabinet_cfg.get("name") or "收納王妃組合櫃",
             "cabinetSku": cabinet_cfg.get("sku") or "SQ-MOD-CABINET",
+            "aiStyleId": ai_style_id,
+            "aiPrompt": ai_prompt,
             "createdAt": timestamp(),
             "state": "running",
             "samples": samples,
@@ -1010,6 +1052,8 @@ class EcommerceSceneStore:
             scenes_by_id,
             items,
             samples,
+            ai_style_id,
+            ai_prompt,
         )
         return batch_doc
 
@@ -1022,7 +1066,13 @@ class EcommerceSceneStore:
         scenes_by_id: dict[str, dict[str, Any]],
         items: list[dict[str, Any]],
         samples: int,
+        ai_style_id: str = "AI_NORDIC_SUNLIT_LOFT",
+        ai_prompt: str = "",
     ) -> None:
+        try:
+            ensure_pbr_texture_assets()
+        except Exception:
+            pass
         blender_ok = bool(
             not getattr(self.platform, "mock_blender", True)
             and getattr(self.platform, "runtime", None)
@@ -1068,7 +1118,7 @@ class EcommerceSceneStore:
                 res = self.platform.runtime.run_job(job)
                 status_val = getattr(res, "status", None) or (res.get("status") if isinstance(res, dict) else None)
                 outputs_val = getattr(res, "outputs", None) or (res.get("outputs") if isinstance(res, dict) else {}) or {}
-                for fname in ("beauty.png", "model.glb", "model.blend"):
+                for fname in ("beauty.png", "product_cutout.png", "model.glb", "model.blend"):
                     src_p = outputs_val.get(fname)
                     if src_p and Path(src_p).exists() and Path(src_p).resolve() != (item_dir / fname).resolve():
                         shutil.copy2(src_p, item_dir / fname)
@@ -1076,7 +1126,22 @@ class EcommerceSceneStore:
                     err_msg = getattr(res, "error", None) or (res.get("error") if isinstance(res, dict) else None)
                     raise RuntimeError(err_msg or "Blender 算圖未產出 beauty.png")
 
+                # Plan B: Run AI Studio Room Compositor with 100% locked cabinet cutout + shadow catcher
+                try:
+                    build_ai_photoreal_composite(
+                        item_dir / "beauty.png",
+                        item_dir / "product_cutout.png" if (item_dir / "product_cutout.png").exists() else None,
+                        item_dir / "ai_composite.png",
+                        ai_style_id=ai_style_id,
+                        custom_prompt=ai_prompt,
+                        view=item["view"],
+                    )
+                except Exception:
+                    pass
+
                 item["state"] = "succeeded"
+                item["hasAiComposite"] = (item_dir / "ai_composite.png").exists()
+                item["hasCutout"] = (item_dir / "product_cutout.png").exists()
                 item["renderTimeSec"] = getattr(res, "render_time_sec", None) or (res.get("renderTimeSec") if isinstance(res, dict) else None)
                 item["blenderVersion"] = getattr(res, "blender_version", None) or (res.get("blenderVersion") if isinstance(res, dict) else None)
                 item["device"] = getattr(res, "device", None) or (res.get("device") if isinstance(res, dict) else None)
@@ -1102,10 +1167,18 @@ class EcommerceSceneStore:
         atomic_json(bdir / "batch.json", doc)
 
     def item_asset_path(self, tenant_id: str, batch_id: str, item_id: str, fmt: str) -> Path:
-        files = {"png": "beauty.png", "glb": "model.glb", "blend": "model.blend"}
+        files = {
+            "png": "beauty.png",
+            "ai_png": "ai_composite.png",
+            "cutout_png": "product_cutout.png",
+            "glb": "model.glb",
+            "blend": "model.blend",
+        }
         if fmt not in files:
-            raise ValueError("支援格式：png、glb、blend")
+            raise ValueError("支援格式：png、ai_png、cutout_png、glb、blend")
         p = self._tenant_dir(tenant_id) / "batches" / batch_id / item_id / files[fmt]
+        if not p.exists() and fmt == "ai_png":
+            p = self._tenant_dir(tenant_id) / "batches" / batch_id / item_id / "beauty.png"
         if not p.exists():
             raise KeyError("檔案尚未產出或不存在")
         return p
@@ -1119,8 +1192,14 @@ class EcommerceSceneStore:
             for item in batch.get("items") or []:
                 if item.get("state") != "succeeded":
                     continue
+                base_prefix = f"{item['index']:02d}_{item['sceneId']}_{item['themeId']}_{item['view']}"
                 png = bdir / item["itemId"] / "beauty.png"
                 if png.exists():
-                    fname = f"{item['index']:02d}_{item['sceneId']}_{item['themeId']}_{item['view']}.png"
-                    zf.write(png, arcname=fname)
+                    zf.write(png, arcname=f"{base_prefix}_A_3D_Photoreal.png")
+                ai_png = bdir / item["itemId"] / "ai_composite.png"
+                if ai_png.exists():
+                    zf.write(ai_png, arcname=f"{base_prefix}_B_AI_Studio.png")
+                cut_png = bdir / item["itemId"] / "product_cutout.png"
+                if cut_png.exists():
+                    zf.write(cut_png, arcname=f"{base_prefix}_Cutout_Transparent.png")
         return buf.getvalue()
