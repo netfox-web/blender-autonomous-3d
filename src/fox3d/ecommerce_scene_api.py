@@ -78,6 +78,14 @@ def ecommerce_scene_router(provider) -> APIRouter:
         except Exception as exc:
             raise HTTPException(422, f"GLB 檔案解析失敗：{exc}") from exc
 
+    @router.get("/api/ecommerce-scenes/polyhaven-thumb/{asset_id}")
+    def polyhaven_thumb(asset_id: str) -> FileResponse:
+        safe_id = "".join(c for c in asset_id if c.isalnum() or c in ("_", "-"))
+        thumb = Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven" / "thumbs" / f"{safe_id}.png"
+        if not thumb.exists():
+            raise HTTPException(404, "找不到預覽縮圖")
+        return FileResponse(thumb, media_type="image/png", headers={"Cache-Control": "max-age=3600"})
+
     @router.post("/api/ecommerce-scenes/batches", status_code=202)
     def start_batch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:

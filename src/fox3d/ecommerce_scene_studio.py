@@ -19,7 +19,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from fox3d.ids import new_id, stable_hash
-from fox3d.photoreal_assets import AI_STYLE_PRESETS, build_ai_photoreal_composite, ensure_pbr_texture_assets
+from fox3d.photoreal_assets import (
+    AI_STYLE_PRESETS,
+    POLYHAVEN_CURATED_MODELS,
+    build_ai_photoreal_composite,
+    ensure_pbr_texture_assets,
+    ensure_polyhaven_models,
+)
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.recipe_workbench import timestamp
 
@@ -591,16 +597,17 @@ def _expand_prop_boxes(prop: dict[str, Any], index: int) -> list[dict[str, Any]]
 
     if ptype == "SOFA":
         add("FrameBase", w * 0.98, d * 0.94, h * 0.16, 0, 0, h * 0.18, main_rgb, 0.03)
-        cw_seat = (w * 0.80) / 2.0 - 0.008
-        add("CushionSeatL", cw_seat, d * 0.78, h * 0.20, -cw_seat / 2.0 - 0.006, -d * 0.05, h * 0.34, main_rgb, 0.055)
-        add("CushionSeatR", cw_seat, d * 0.78, h * 0.20, cw_seat / 2.0 + 0.006, -d * 0.05, h * 0.34, main_rgb, 0.055)
-        add("BackFrame", w * 0.98, d * 0.16, h * 0.62, 0, d * 0.40, h * 0.56, main_rgb, 0.04)
-        add("CushionBackL", cw_seat * 0.96, d * 0.20, h * 0.44, -cw_seat / 2.0 - 0.006, d * 0.24, h * 0.64, main_rgb, 0.06)
-        add("CushionBackR", cw_seat * 0.96, d * 0.20, h * 0.44, cw_seat / 2.0 + 0.006, d * 0.24, h * 0.64, main_rgb, 0.06)
+        cw_seat = (w * 0.80) / 2.0 - 0.006
+        add("CushionSeatL", cw_seat, d * 0.78, h * 0.21, -cw_seat / 2.0 - 0.004, -d * 0.05, h * 0.34, main_rgb, 0.055)
+        add("CushionSeatR", cw_seat, d * 0.78, h * 0.21, cw_seat / 2.0 + 0.004, -d * 0.05, h * 0.34, main_rgb, 0.055)
+        add("BackFrame", w * 0.98, d * 0.15, h * 0.62, 0, d * 0.40, h * 0.56, main_rgb, 0.04)
+        add("CushionBackL", cw_seat * 0.97, d * 0.22, h * 0.45, -cw_seat / 2.0 - 0.004, d * 0.23, h * 0.64, main_rgb, 0.06)
+        add("CushionBackR", cw_seat * 0.97, d * 0.22, h * 0.45, cw_seat / 2.0 + 0.004, d * 0.23, h * 0.64, main_rgb, 0.06)
         add("ArmL", w * 0.11, d * 0.92, h * 0.48, -w * 0.45, 0, h * 0.44, main_rgb, 0.045)
         add("ArmR", w * 0.11, d * 0.92, h * 0.48, w * 0.45, 0, h * 0.44, main_rgb, 0.045)
-        add("PillowThrowL", 0.34, 0.16, 0.32, -w * 0.30, d * 0.10, h * 0.56, [0.91, 0.87, 0.80], 0.06)
-        add("PillowThrowR", 0.30, 0.15, 0.28, w * 0.28, d * 0.11, h * 0.54, [0.76, 0.46, 0.32], 0.055)
+        add("PillowThrowL", 0.38, 0.17, 0.36, -w * 0.30, d * 0.08, h * 0.57, [0.91, 0.87, 0.80], 0.06)
+        add("PillowThrowR", 0.35, 0.16, 0.33, w * 0.29, d * 0.09, h * 0.55, [0.76, 0.46, 0.32], 0.055)
+        add("PillowLumbar", 0.42, 0.15, 0.24, -w * 0.12, d * 0.03, h * 0.51, [0.80, 0.72, 0.60], 0.05)
         for sx in (-w * 0.40, w * 0.40):
             for sy in (-d * 0.34, d * 0.34):
                 add(f"Leg_{sx:.2f}_{sy:.2f}", 0.05, 0.05, h * 0.12, sx, sy, h * 0.06, acc_rgb, 0.012)
@@ -659,9 +666,11 @@ def _expand_prop_boxes(prop: dict[str, Any], index: int) -> list[dict[str, Any]]
             "color": main_rgb,
             "bevel": 0.015,
         }
-        if prop.get("glbPath"):
-            entry["glbPath"] = str(prop["glbPath"])
         boxes.append(entry)
+
+    if boxes and prop.get("glbPath"):
+        boxes[0]["glbPath"] = str(prop["glbPath"])
+        boxes[0]["propBounds"] = [round(px, 4), round(py, 4), round(pz, 4), round(w, 4), round(d, 4), round(h, 4)]
 
     return boxes
 
@@ -921,11 +930,23 @@ class EcommerceSceneStore:
             and getattr(self.platform, "runtime", None)
             and self.platform.runtime.available()
         )
+        ph_root = Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven"
+        ph_list = []
+        for aid, cfg in POLYHAVEN_CURATED_MODELS.items():
+            res = cfg.get("resolution", "2k")
+            gpath = ph_root / aid / f"{aid}_{res}.gltf"
+            ph_list.append({
+                **cfg,
+                "glbPath": str(gpath.resolve()),
+                "thumbUrl": f"/api/ecommerce-scenes/polyhaven-thumb/{aid}",
+                "installed": gpath.exists(),
+            })
         return {
             "blenderAvailable": blender_ok,
             "cabinetPresets": CABINET_PRESETS,
             "styleThemes": list(STYLE_THEMES.values()),
             "propCatalog": PROP_CATALOG,
+            "polyhavenModels": ph_list,
             "lightingPresets": [{"id": k, **v} for k, v in LIGHTING_PRESETS.items()],
             "aiStylePresets": list(AI_STYLE_PRESETS.values()),
             "cameraViews": list(CAMERA_VIEWS.values()),

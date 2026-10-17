@@ -177,6 +177,13 @@
           </div>
         </div>
         <div id="prop-palette" class="prop-palette"></div>
+        <div class="ph-library-box" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.28);">
+          <div class="row-between" style="margin-bottom:8px;">
+            <strong style="color:#6ee7b7;font-size:13px;">🏛️ 內建 Poly Haven (CC0 免費開源) 2K 攝影掃描級 3D 家具庫（點擊直接替換房間沙發／茶几／植栽，或點「✨ 義式拉釦皺褶布沙發」切回方式 2）</strong>
+            <span class="badge" style="background:#065f46;color:#d1fae5;">已下載內建 8 組 2K PBR 高模</span>
+          </div>
+          <div id="polyhaven-gallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:8px;"></div>
+        </div>
       </div>
 
       <div class="dual-viewport">
@@ -198,6 +205,11 @@
                   <option value="-45">-45° 斜放</option>
                   <option value="-90">-90° 朝左</option>
                   <option value="180">180° 朝後</option>
+                </select>
+              </label>
+              <label id="sel-ph-wrap" hidden>3D 高模
+                <select id="sel-ph-model">
+                  <option value="">✨ 預設（皺褶布藝滾邊沙發 / 自動高模）</option>
                 </select>
               </label>
               <label id="sel-color-wrap" hidden>主色

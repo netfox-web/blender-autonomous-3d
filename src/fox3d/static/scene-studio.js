@@ -202,6 +202,7 @@
     $('delete-scene-btn').hidden = Boolean(s.builtin);
     renderSceneTabs();
     syncSelectedBar();
+    renderPolyhavenGallery();
   }
 
   function renderPropPalette() {
@@ -234,6 +235,93 @@
         refreshPreviewPlan();
       });
     });
+    renderPolyhavenGallery();
+  }
+
+  function renderPolyhavenGallery() {
+    const box = $('polyhaven-gallery');
+    if (!box) return;
+    const models = state.overview?.polyhavenModels || [];
+    const curProps = state.currentScene?.props || [];
+    const curSofa = curProps.find(p => p.type === 'SOFA');
+    const isProcSofa = curSofa && !curSofa.glbPath;
+
+    const procCard = `
+      <button type="button" data-ph-proc="SOFA" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border-radius:8px;cursor:pointer;background:${isProcSofa ? 'rgba(16,185,129,0.25)' : 'rgba(15,23,42,0.75)'};border:1px solid ${isProcSofa ? '#10b981' : 'rgba(148,163,184,0.25)'};color:#f8fafc;text-align:center;">
+        <div style="height:54px;display:flex;align-items:center;justify-content:center;font-size:26px;">🛋️✨</div>
+        <strong style="font-size:11px;line-height:1.2;">方式 2：義式拉釦皺褶布沙發</strong>
+        <span style="font-size:10px;color:#94a3b8;">可自由改色＋立體滾邊</span>
+      </button>
+    `;
+
+    const modelCards = models.map(m => {
+      const active = curProps.some(p => p.glbPath && p.glbPath === m.glbPath);
+      return `
+        <button type="button" data-ph-id="${esc(m.assetId)}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border-radius:8px;cursor:pointer;background:${active ? 'rgba(16,185,129,0.25)' : 'rgba(15,23,42,0.75)'};border:1px solid ${active ? '#10b981' : 'rgba(148,163,184,0.25)'};color:#f8fafc;text-align:center;">
+          <img src="${esc(m.thumbUrl)}" alt="${esc(m.shortLabel || m.assetId)}" style="height:54px;width:100%;object-fit:contain;border-radius:4px;background:rgba(0,0,0,0.25);">
+          <strong style="font-size:11px;line-height:1.2;">🏛️ ${esc(m.shortLabel || m.assetId)}</strong>
+          <span style="font-size:10px;color:#6ee7b7;">Poly Haven 2K 高模</span>
+        </button>
+      `;
+    }).join('');
+
+    box.innerHTML = procCard + modelCards;
+
+    box.querySelectorAll('[data-ph-proc]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!state.currentScene) return;
+        state.currentScene.props = state.currentScene.props || [];
+        let idx = state.currentScene.props.findIndex(p => p.type === 'SOFA');
+        if (idx >= 0) {
+          delete state.currentScene.props[idx].glbPath;
+          state.currentScene.props[idx].label = '雙人沙發 (義式皺褶布藝)';
+          state.selectedTarget = { kind: 'prop', index: idx };
+        }
+        syncSelectedBar();
+        renderPolyhavenGallery();
+        refreshPreviewPlan();
+        notify('✨ 已切換為「方式 2：義式圓潤拉釦皺褶布藝沙發」（支援自由改色＋實掃描法線貼圖）！');
+      });
+    });
+
+    box.querySelectorAll('[data-ph-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = models.find(x => x.assetId === btn.dataset.phId);
+        if (!m || !state.currentScene) return;
+        state.currentScene.props = state.currentScene.props || [];
+        let idx = state.currentScene.props.findIndex(p => p.type === m.propType);
+        if (idx >= 0) {
+          state.currentScene.props[idx].glbPath = m.glbPath;
+          state.currentScene.props[idx].label = m.shortLabel || m.label;
+          if (m.assetId === 'coffee_table_round_01') {
+            state.currentScene.props[idx].widthM = 0.85;
+            state.currentScene.props[idx].depthM = 0.85;
+          }
+        } else {
+          state.currentScene.props.push({
+            id: 'ph_' + m.assetId,
+            type: m.propType,
+            label: m.shortLabel || m.label,
+            glbPath: m.glbPath,
+            x: m.propType === 'SOFA' ? -1.45 : (m.propType === 'PLANT' ? 1.18 : -1.35),
+            y: m.propType === 'SOFA' ? 1.05 : (m.propType === 'PLANT' ? 1.10 : -0.05),
+            z: 0.0,
+            widthM: m.propType === 'SOFA' ? 1.75 : (m.propType === 'PLANT' ? 0.45 : 0.95),
+            depthM: m.propType === 'SOFA' ? 0.78 : (m.propType === 'PLANT' ? 0.45 : 0.60),
+            heightM: m.propType === 'SOFA' ? 0.82 : (m.propType === 'PLANT' ? 0.95 : 0.43),
+            rotationDeg: 0,
+            colorHex: '#8a6b4e',
+            accentColorHex: '#4a3520'
+          });
+          idx = state.currentScene.props.length - 1;
+        }
+        state.selectedTarget = { kind: 'prop', index: idx };
+        syncSelectedBar();
+        renderPolyhavenGallery();
+        refreshPreviewPlan();
+        notify(`🏛️ 已將房間內的家具切換為「${m.label}」！點右方「🔥 立即算這張 A+B 雙引擎逼真圖」即可渲染此 2K 掃描高模。`);
+      });
+    });
   }
 
   function renderCameraPills() {
@@ -261,6 +349,7 @@
       const pose = s.productPose || { x: 0, y: 1.1, z: 0, rotationDeg: 0 };
       $('sel-item-label').textContent = '🎯 已選中：組合櫃置放點（可在平面圖拖拉）';
       $('sel-rot').value = String(pose.rotationDeg || 0);
+      if ($('sel-ph-wrap')) $('sel-ph-wrap').hidden = true;
       $('sel-color-wrap').hidden = true;
       $('sel-w-wrap').hidden = true;
       $('sel-d-wrap').hidden = true;
@@ -270,6 +359,10 @@
       const p = s.props[state.selectedTarget.index];
       $('sel-item-label').textContent = `🛋️ 已選中家具：${p.label || p.type}`;
       $('sel-rot').value = String(p.rotationDeg || 0);
+      if ($('sel-ph-wrap') && $('sel-ph-model')) {
+        $('sel-ph-wrap').hidden = false;
+        $('sel-ph-model').value = p.glbPath || '';
+      }
       $('sel-color-wrap').hidden = false;
       $('sel-color').value = p.colorHex || '#26534e';
       $('sel-w-wrap').hidden = false;
@@ -1214,6 +1307,20 @@
     if ($('render-single-photoreal-btn')) {
       $('render-single-photoreal-btn').addEventListener('click', startSinglePhotorealRender);
     }
+    if ($('sel-ph-model')) {
+      $('sel-ph-model').addEventListener('change', () => {
+        const p = state.currentScene?.props?.[state.selectedTarget.index];
+        if (!p) return;
+        const val = $('sel-ph-model').value;
+        if (val) {
+          p.glbPath = val;
+        } else {
+          delete p.glbPath;
+        }
+        refreshPreviewPlan();
+        notify('🏛️ 已切換此家具的 3D 高模資產設定！點「🔥 立即算這張 A+B 雙引擎逼真圖」即可套用。');
+      });
+    }
     if ($('upload-glb-btn') && $('upload-glb-input')) {
       $('upload-glb-btn').addEventListener('click', () => $('upload-glb-input').click());
       $('upload-glb-input').addEventListener('change', async (ev) => {
@@ -1272,6 +1379,10 @@
       $('scene-view').innerHTML = (ov.cameraViews || []).map(v =>
         `<option value="${esc(v.id)}">${esc(v.label)}</option>`
       ).join('');
+      if ($('sel-ph-model') && ov.polyhavenModels) {
+        $('sel-ph-model').innerHTML = `<option value="">✨ 預設（高擬真皺褶布藝滾邊沙發 / 自動匹配高模）</option>` +
+          ov.polyhavenModels.map(m => `<option value="${esc(m.glbPath)}">🏛️ ${esc(m.label)}</option>`).join('');
+      }
 
       state.cabinet = clone(ov.cabinetPresets[1] || ov.cabinetPresets[0]);
       state.cabinet.name = '收納王妃雙併六格組合櫃';

@@ -74,6 +74,7 @@ def ensure_pbr_texture_assets(root_dir: Path | None = None) -> dict[str, str]:
         "wall_art_canvas": base / "nordic_canvas_art.png",
         "plaster_bump": base / "plaster_wall_bump.png",
         "fabric_bump": base / "boucle_fabric_bump.png",
+        "cloth_wrinkle": base / "cloth_wrinkle_disp.png",
     }
 
     if not paths["wall_art_canvas"].exists():
@@ -82,8 +83,117 @@ def ensure_pbr_texture_assets(root_dir: Path | None = None) -> dict[str, str]:
         _generate_plaster_bump(paths["plaster_bump"])
     if not paths["fabric_bump"].exists():
         _generate_fabric_bump(paths["fabric_bump"])
+    if not paths["cloth_wrinkle"].exists():
+        _generate_cloth_wrinkle_map(paths["cloth_wrinkle"])
 
     return {k: str(v.resolve()) for k, v in paths.items()}
+
+
+POLYHAVEN_CURATED_MODELS: dict[str, dict[str, Any]] = {
+    "Sofa_01": {
+        "assetId": "Sofa_01",
+        "propType": "SOFA",
+        "label": "Poly Haven 奶油亞麻實木雙人沙發 (Sofa 01 · 2K PBR)",
+        "shortLabel": "奶油亞麻沙發",
+        "resolution": "2k",
+    },
+    "sofa_03": {
+        "assetId": "sofa_03",
+        "propType": "SOFA",
+        "label": "Poly Haven 經典抱枕三人沙發 (Sofa 03 · 2K PBR)",
+        "shortLabel": "經典抱枕沙發",
+        "resolution": "2k",
+    },
+    "sofa_02": {
+        "assetId": "sofa_02",
+        "propType": "SOFA",
+        "label": "Poly Haven 拉釦皮革實木沙發 (Sofa 02 · 2K PBR)",
+        "shortLabel": "拉釦真皮沙發",
+        "resolution": "2k",
+    },
+    "mid_century_lounge_chair": {
+        "assetId": "mid_century_lounge_chair",
+        "propType": "SOFA",
+        "label": "Poly Haven 設計師胡桃木真皮單椅 (Lounge Chair · 2K PBR)",
+        "shortLabel": "胡桃木真皮單椅",
+        "resolution": "2k",
+    },
+    "modern_coffee_table_01": {
+        "assetId": "modern_coffee_table_01",
+        "propType": "COFFEE_TABLE",
+        "label": "Poly Haven 現代石材實木茶几 (Coffee Table 01 · 2K PBR)",
+        "shortLabel": "石材實木茶几",
+        "resolution": "2k",
+    },
+    "coffee_table_round_01": {
+        "assetId": "coffee_table_round_01",
+        "propType": "COFFEE_TABLE",
+        "label": "Poly Haven 現代圓形大理石茶几 (Round Table 01 · 2K PBR)",
+        "shortLabel": "圓形大理石茶几",
+        "resolution": "2k",
+    },
+    "potted_plant_01": {
+        "assetId": "potted_plant_01",
+        "propType": "PLANT",
+        "label": "Poly Haven 落地赤陶闊葉植栽 (Plant 01 · 2K PBR)",
+        "shortLabel": "落地赤陶植栽",
+        "resolution": "2k",
+    },
+    "potted_plant_02": {
+        "assetId": "potted_plant_02",
+        "propType": "PLANT",
+        "label": "Poly Haven 室內觀葉植物盆栽 (Plant 02 · 2K PBR)",
+        "shortLabel": "觀葉植物盆栽",
+        "resolution": "2k",
+    },
+}
+
+
+def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] | None = None) -> dict[str, str]:
+    """Download and cache curated CC0 2K glTF 3D furniture models + PBR textures from Poly Haven."""
+    base = Path(root_dir or Path(__file__).resolve().parents[2]) / "assets" / "models" / "polyhaven"
+    base.mkdir(parents=True, exist_ok=True)
+    target_ids = asset_ids or list(POLYHAVEN_CURATED_MODELS.keys())
+    resolved_paths: dict[str, str] = {}
+
+    headers = {"User-Agent": "Fox3D-Studio/1.0 (https://github.com/netfox-web/blender-autonomous-3d)"}
+    for aid in target_ids:
+        cfg = POLYHAVEN_CURATED_MODELS.get(aid, {"assetId": aid, "resolution": "2k"})
+        res = cfg.get("resolution", "2k")
+        model_dir = base / aid
+        gltf_file = model_dir / f"{aid}_{res}.gltf"
+        if gltf_file.exists() and gltf_file.stat().st_size > 128:
+            resolved_paths[aid] = str(gltf_file.resolve())
+            continue
+
+        try:
+            req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
+            data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
+            gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
+            if not gltf_entry or not gltf_entry.get("url"):
+                continue
+
+            model_dir.mkdir(parents=True, exist_ok=True)
+            main_req = urllib.request.Request(gltf_entry["url"], headers=headers)
+            gltf_file.write_bytes(urllib.request.urlopen(main_req, timeout=30).read())
+
+            for rel_path, inc_meta in (gltf_entry.get("include") or {}).items():
+                inc_url = inc_meta.get("url")
+                if not inc_url:
+                    continue
+                dest = model_dir / rel_path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not dest.exists() or dest.stat().st_size == 0:
+                    inc_req = urllib.request.Request(inc_url, headers=headers)
+                    dest.write_bytes(urllib.request.urlopen(inc_req, timeout=45).read())
+
+            resolved_paths[aid] = str(gltf_file.resolve())
+        except Exception:
+            if gltf_file.exists():
+                resolved_paths[aid] = str(gltf_file.resolve())
+
+    return resolved_paths
+
 
 
 def _generate_nordic_canvas_art(target: Path, size: int = 768) -> None:
@@ -133,6 +243,24 @@ def _generate_fabric_bump(target: Path, size: int = 512) -> None:
     weave = np.sin(x * 0.85) * 35.0 + np.sin(y * 0.85) * 35.0 + rng.normal(0, 18.0, size=(size, size))
     arr = np.clip(128.0 + weave, 0, 255).astype(np.uint8)
     Image.fromarray(arr, mode="L").save(target, format="PNG")
+
+
+def _generate_cloth_wrinkle_map(target: Path, size: int = 512) -> None:
+    """Generate a multi-frequency organic upholstery cloth fold & seam wrinkle heightmap."""
+    y, x = np.mgrid[0:size, 0:size].astype(np.float32) / float(size)
+    # Diagonal & edge pinch creases typical of plush linen/boucle sofa cushions
+    crease_1 = np.exp(-(((x - 0.22) * 3.8 + (y - 0.5) * 1.4) ** 2) * 18.0) * 42.0
+    crease_2 = np.exp(-(((x - 0.78) * 3.8 - (y - 0.5) * 1.4) ** 2) * 18.0) * 42.0
+    waves = (
+        np.sin(x * math.tau * 4.0 + np.sin(y * math.tau * 2.0) * 1.4) * 22.0
+        + np.cos(y * math.tau * 6.0 + np.cos(x * math.tau * 3.0) * 1.2) * 18.0
+        + np.sin((x + y) * math.tau * 9.0) * 9.0
+    )
+    # Slight seat depression in center
+    center_dip = -np.exp(-(((x - 0.5) ** 2 + (y - 0.5) ** 2) / 0.12)) * 34.0
+    arr = np.clip(128.0 + crease_1 + crease_2 + waves + center_dip, 0, 255).astype(np.uint8)
+    Image.fromarray(arr, mode="L").filter(ImageFilter.GaussianBlur(radius=2.2)).save(target, format="PNG")
+
 
 
 def build_ai_photoreal_composite(
