@@ -32,6 +32,8 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
     router = APIRouter()
     from fox3d.golden_api import golden_router
     router.include_router(golden_router(provider))
+    from fox3d.product_dna_api import product_dna_router
+    router.include_router(product_dna_router(provider))
     from fox3d.print_api import print_router
     router.include_router(print_router(provider))
     from fox3d.product_models_api import product_models_router

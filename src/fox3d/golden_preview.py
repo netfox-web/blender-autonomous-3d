@@ -17,6 +17,12 @@ OUTPUTS={"png":"beauty.png","front":"front-closed.png","detail":"door-detail.png
          "glb":"model.glb","blend":"model.blend","geometry":"geometry.json",
          "observation":"golden-observation.json","manifest":"manifest.json"}
 DOWNLOADS={**OUTPUTS,**{f"trim{i}":f"door_{i}-production-trim.png" for i in range(1,4)}}
+# Camera contract shared with the Product DNA export. Values are the existing preview, not a new renderer.
+VIEW_FILES={"HERO_45":"beauty.png","FRONT_CLOSED":"front-closed.png","DOOR_DETAIL":"door-detail.png","FRONT_OPEN":"BLOCKED"}
+HERO_CAMERA={"location":[1.35,-1.65,1.1],"lookAt":[0.,0.,.45],"focalLengthMm":55.}
+PREVIEW_VIEWS=[{"id":"FRONT_CLOSED","filename":"front-closed.png","location":[0.,-2.4,.45],"lookAt":[0.,0.,.45],"focalLengthMm":70.},
+               {"id":"DOOR_DETAIL","filename":"door-detail.png","location":[.12,-1.0,.74],"lookAt":[0.,-.1475,.74],"focalLengthMm":65.}]
+LIVE_BLENDER_ORIGIN="LIVE_BLENDER_PROCESS"
 
 
 def folder_for(root,tenant,sku):
@@ -44,7 +50,7 @@ def validate_generation(folder,sku,version):
         raise ValueError("Truth classification mismatch")
     if manifest.get("renderInfo",{}).get("realBlender") is not True or manifest.get("renderInfo",{}).get("usedMock") is not False:
         raise ValueError("REAL render evidence required")
-    if manifest.get("views")!={"HERO_45":"beauty.png","FRONT_CLOSED":"front-closed.png","DOOR_DETAIL":"door-detail.png","FRONT_OPEN":"BLOCKED"}:
+    if manifest.get("views")!=VIEW_FILES:
         raise ValueError("Camera view scope mismatch")
     required={"beauty.png","front-closed.png","door-detail.png","model.glb","model.blend","geometry.json","golden-observation.json"}
     required.update(src["name"] for src in manifest["package"]["sources"])
@@ -130,13 +136,12 @@ def generate(platform,tenant,sku,draft,*,revision=0,generation_id=None,on_job=No
     folder.mkdir(parents=True,exist_ok=False)
     placements,production=materialize_package(folder,package,golden)
     check_cancelled()
-    views=[{"id":"FRONT_CLOSED","filename":"front-closed.png","location":[0.,-2.4,.45],"lookAt":[0.,0.,.45],"focalLengthMm":70.},
-           {"id":"DOOR_DETAIL","filename":"door-detail.png","location":[.12,-1.0,.74],"lookAt":[0.,-.1475,.74],"focalLengthMm":65.}]
+    views=[dict(row) for row in PREVIEW_VIEWS]
     job=platform.submit_job({"tenantId":tenant,"jobType":"PARAMETRIC_3D","mode":"CABINET_PREVIEW",
         "assetHash":stable_hash({"packageHash":package["packageHash"],"workerContract":"golden-mm-uv-v1","views":views}),
         "engineering":golden["spec"],"recipePreview":True,"goldenRecipe":True,
         "goldenIdentity":{"sku":sku,"packageHash":package["packageHash"]},"artworkPlacements":placements,
-        "camera":{"location":[1.35,-1.65,1.1],"lookAt":[0.,0.,.45],"focalLengthMm":55.},
+        "camera":dict(HERO_CAMERA),
         "productTruthViews":views,"render":{"device":"OPTIX" if platform.probe and platform.probe.optix else "CPU","width":800,"height":800,"samples":32},
         "exportGlb":True,"exportBlend":True,"maxAttempts":1,"timeoutSeconds":900})
     if on_job:
@@ -156,11 +161,12 @@ def generate(platform,tenant,sku,draft,*,revision=0,generation_id=None,on_job=No
         shutil.copy2(asset.path,folder/name)
     files={p.name:{"sha256":sha256_bytes(p.read_bytes()),"sizeBytes":p.stat().st_size} for p in folder.iterdir() if p.is_file()}
     info={k:output.get(k,done.get(k)) for k in ("realBlender","usedMock","realOptix","device","samples","blenderVersion")}
+    info["evidenceOrigin"]=LIVE_BLENDER_ORIGIN
     observed=read_json(folder/"golden-observation.json")
     manifest={"generationId":gid,"sku":sku,"version":draft["version"],"engineeringHash":golden["engineeringHash"],
         "package":package,"production":production,"spec":golden["spec"],"files":files,"jobId":observed.get("jobId"),
         "requestedJobId":job["jobId"],"cacheHit":done.get("cacheHit",False),
-        "views":{"HERO_45":"beauty.png","FRONT_CLOSED":"front-closed.png","DOOR_DETAIL":"door-detail.png","FRONT_OPEN":"BLOCKED"},
+        "views":dict(VIEW_FILES),
         "renderInfo":info,"truth":golden["truth"],"artworkTruth":"FIXTURE","manufacturing":golden["manufacturing"]}
     atomic_json(folder/"manifest.json",manifest)
     validate_generation(folder,sku,draft["version"])

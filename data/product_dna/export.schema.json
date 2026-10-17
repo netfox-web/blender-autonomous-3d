@@ -1,0 +1,1533 @@
+{
+  "$comment": "fox3d.product_dna.export.v1 typed contract. Generated from pydantic models. globalProductionReady is literal false.",
+  "familyManifest": {
+    "$defs": {
+      "AngleMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "HERO_45",
+              "FRONT_CLOSED",
+              "DOOR_DETAIL",
+              "FRONT_OPEN"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "status": {
+            "enum": [
+              "DECLARED_PREVIEW_CAMERA",
+              "BLOCKED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "const": "m",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Units"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Location"
+          },
+          "lookAt": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lookat"
+          },
+          "focalLengthMm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Focallengthmm"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "status"
+        ],
+        "title": "AngleMeta",
+        "type": "object"
+      },
+      "EvidenceSeparation": {
+        "additionalProperties": false,
+        "properties": {
+          "artworkPixels": {
+            "const": "FIXTURE",
+            "default": "FIXTURE",
+            "title": "Artworkpixels",
+            "type": "string"
+          },
+          "historicalArtwork": {
+            "const": "BLOCKED",
+            "default": "BLOCKED",
+            "title": "Historicalartwork",
+            "type": "string"
+          },
+          "geometryHashAndUv": {
+            "const": "REAL_LOGIC",
+            "default": "REAL_LOGIC",
+            "title": "Geometryhashanduv",
+            "type": "string"
+          },
+          "renderMedia": {
+            "enum": [
+              "ABSENT",
+              "MOCK_REGRESSION",
+              "REAL_BLENDER"
+            ],
+            "title": "Rendermedia",
+            "type": "string"
+          },
+          "automatedTestsAndCi": {
+            "const": "MOCK_REGRESSION",
+            "default": "MOCK_REGRESSION",
+            "title": "Automatedtestsandci",
+            "type": "string"
+          },
+          "externalSystems": {
+            "const": "DECLARED_REF_NOT_LIVE",
+            "default": "DECLARED_REF_NOT_LIVE",
+            "title": "Externalsystems",
+            "type": "string"
+          },
+          "production": {
+            "const": "BLOCKED",
+            "default": "BLOCKED",
+            "title": "Production",
+            "type": "string"
+          }
+        },
+        "required": [
+          "renderMedia"
+        ],
+        "title": "EvidenceSeparation",
+        "type": "object"
+      },
+      "HashSet": {
+        "additionalProperties": false,
+        "properties": {
+          "engineeringHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Engineeringhash",
+            "type": "string"
+          },
+          "bomHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Bomhash",
+            "type": "string"
+          },
+          "artworkHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Artworkhash",
+            "type": "string"
+          },
+          "finalUvHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Finaluvhash",
+            "type": "string"
+          },
+          "packageHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Packagehash",
+            "type": "string"
+          },
+          "bomScope": {
+            "const": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+            "title": "Bomscope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engineeringHash",
+          "bomHash",
+          "artworkHash",
+          "finalUvHash",
+          "packageHash",
+          "bomScope"
+        ],
+        "title": "HashSet",
+        "type": "object"
+      },
+      "MediaRef": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "GLB",
+              "PNG_HERO",
+              "PNG_FRONT",
+              "PNG_DETAIL",
+              "ARTWORK_SOURCE",
+              "PRODUCTION_TRIM"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "sourceHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourcehash"
+          },
+          "bytesPresent": {
+            "title": "Bytespresent",
+            "type": "boolean"
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sizebytes"
+          },
+          "evidenceClass": {
+            "enum": [
+              "FIXTURE",
+              "MOCK_REGRESSION",
+              "REAL_BLENDER",
+              "ABSENT"
+            ],
+            "title": "Evidenceclass",
+            "type": "string"
+          },
+          "entityAuthenticity": {
+            "enum": [
+              "SYNTHETIC_FIXTURE",
+              "REAL_BLENDER_PREVIEW",
+              "ABSENT"
+            ],
+            "title": "Entityauthenticity",
+            "type": "string"
+          },
+          "rightsStatus": {
+            "enum": [
+              "NO_IP_FIXTURE",
+              "RIGHTS_BLOCKED"
+            ],
+            "title": "Rightsstatus",
+            "type": "string"
+          },
+          "usageLimit": {
+            "const": "READ_ONLY_NON_PRODUCTION_PREVIEW",
+            "default": "READ_ONLY_NON_PRODUCTION_PREVIEW",
+            "title": "Usagelimit",
+            "type": "string"
+          },
+          "componentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Componentid"
+          }
+        },
+        "required": [
+          "role",
+          "filename",
+          "bytesPresent",
+          "evidenceClass",
+          "entityAuthenticity",
+          "rightsStatus"
+        ],
+        "title": "MediaRef",
+        "type": "object"
+      },
+      "PlacementView": {
+        "additionalProperties": false,
+        "properties": {
+          "componentId": {
+            "enum": [
+              "door_1",
+              "door_2",
+              "door_3"
+            ],
+            "title": "Componentid",
+            "type": "string"
+          },
+          "widthMm": {
+            "title": "Widthmm",
+            "type": "number"
+          },
+          "heightMm": {
+            "title": "Heightmm",
+            "type": "number"
+          },
+          "originTopMm": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Origintopmm",
+            "type": "array"
+          },
+          "cropMm": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Cropmm",
+            "type": "object"
+          },
+          "uvRect": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Uvrect",
+            "type": "object"
+          },
+          "safeMm": {
+            "title": "Safemm",
+            "type": "number"
+          },
+          "bleedMm": {
+            "title": "Bleedmm",
+            "type": "number"
+          },
+          "placementHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Placementhash",
+            "type": "string"
+          },
+          "finalUvHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Finaluvhash",
+            "type": "string"
+          },
+          "surfaceHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Surfacehash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "componentId",
+          "widthMm",
+          "heightMm",
+          "originTopMm",
+          "cropMm",
+          "uvRect",
+          "safeMm",
+          "bleedMm",
+          "placementHash",
+          "finalUvHash",
+          "surfaceHash"
+        ],
+        "title": "PlacementView",
+        "type": "object"
+      },
+      "RightsScope": {
+        "additionalProperties": false,
+        "properties": {
+          "authorizedCommercialArt": {
+            "const": false,
+            "default": false,
+            "title": "Authorizedcommercialart",
+            "type": "boolean"
+          },
+          "scope": {
+            "const": "FIXTURE_NON_IP",
+            "default": "FIXTURE_NON_IP",
+            "title": "Scope",
+            "type": "string"
+          },
+          "ipStatus": {
+            "const": "NO_IP_FIXTURE",
+            "default": "NO_IP_FIXTURE",
+            "title": "Ipstatus",
+            "type": "string"
+          },
+          "usageLimits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Usagelimits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "usageLimits"
+        ],
+        "title": "RightsScope",
+        "type": "object"
+      },
+      "SourceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "enum": [
+              "FOX3D_GOLDEN",
+              "ERP",
+              "AI_PRINT_OS",
+              "SPECPILOT_PRODUCT_DNA"
+            ],
+            "title": "System",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ENGINEERING_TEMPLATE",
+              "PRODUCT_FAMILY",
+              "SKU",
+              "MASTER_PRODUCT",
+              "DIE_MOLD",
+              "PRODUCT_DNA"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "binding": {
+            "enum": [
+              "LOCAL_AUTHORITY",
+              "LOCAL_SKU_CODE",
+              "LOCAL_TEMPLATE_NOT_APPROVED_PLATE",
+              "UNBOUND",
+              "DECLARED_ISSUE_REF"
+            ],
+            "title": "Binding",
+            "type": "string"
+          },
+          "truth": {
+            "enum": [
+              "REAL_LOGIC",
+              "CONFIG",
+              "DECLARED_REF_NOT_LIVE"
+            ],
+            "title": "Truth",
+            "type": "string"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ref"
+          }
+        },
+        "required": [
+          "system",
+          "kind",
+          "id",
+          "binding",
+          "truth"
+        ],
+        "title": "SourceRef",
+        "type": "object"
+      },
+      "TruthBadge": {
+        "additionalProperties": false,
+        "properties": {
+          "badge": {
+            "enum": [
+              "PREVIEW_FIXTURE",
+              "PREVIEW_REAL_BLENDER"
+            ],
+            "title": "Badge",
+            "type": "string"
+          },
+          "renderEvidenceClass": {
+            "enum": [
+              "ABSENT",
+              "MOCK_REGRESSION",
+              "REAL_BLENDER"
+            ],
+            "title": "Renderevidenceclass",
+            "type": "string"
+          },
+          "renderUsedMock": {
+            "title": "Renderusedmock",
+            "type": "boolean"
+          },
+          "realBlender": {
+            "title": "Realblender",
+            "type": "boolean"
+          },
+          "productionReady": {
+            "const": false,
+            "default": false,
+            "title": "Productionready",
+            "type": "boolean"
+          },
+          "engineeringReady": {
+            "const": false,
+            "default": false,
+            "title": "Engineeringready",
+            "type": "boolean"
+          },
+          "manufacturingReady": {
+            "const": false,
+            "default": false,
+            "title": "Manufacturingready",
+            "type": "boolean"
+          },
+          "globalProductionReady": {
+            "const": false,
+            "default": false,
+            "title": "Globalproductionready",
+            "type": "boolean"
+          },
+          "physicalPrintValidated": {
+            "const": false,
+            "default": false,
+            "title": "Physicalprintvalidated",
+            "type": "boolean"
+          },
+          "liveMachineControl": {
+            "const": false,
+            "default": false,
+            "title": "Livemachinecontrol",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "badge",
+          "renderEvidenceClass",
+          "renderUsedMock",
+          "realBlender"
+        ],
+        "title": "TruthBadge",
+        "type": "object"
+      },
+      "Twin": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "const": "fox3d.product_dna.export.v1",
+            "default": "fox3d.product_dna.export.v1",
+            "title": "Schemaversion",
+            "type": "string"
+          },
+          "twinId": {
+            "title": "Twinid",
+            "type": "string"
+          },
+          "familyId": {
+            "const": "fox3d.family.three_tier_door_cabinet",
+            "default": "fox3d.family.three_tier_door_cabinet",
+            "title": "Familyid",
+            "type": "string"
+          },
+          "moldId": {
+            "const": "fox3d.mold.three_tier_424x295x900.v1",
+            "default": "fox3d.mold.three_tier_424x295x900.v1",
+            "title": "Moldid",
+            "type": "string"
+          },
+          "engineeringTemplateId": {
+            "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+            "title": "Engineeringtemplateid",
+            "type": "string"
+          },
+          "engineeringVersion": {
+            "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+            "title": "Engineeringversion",
+            "type": "string"
+          },
+          "tenantId": {
+            "title": "Tenantid",
+            "type": "string"
+          },
+          "sku": {
+            "enum": [
+              "KU002101",
+              "KT015101",
+              "CN003701",
+              "PN010201"
+            ],
+            "title": "Sku",
+            "type": "string"
+          },
+          "artworkVersion": {
+            "enum": [
+              "FIXTURE_MASTER_V1",
+              "FIXTURE_SINGLE_V1"
+            ],
+            "title": "Artworkversion",
+            "type": "string"
+          },
+          "hashes": {
+            "$ref": "#/$defs/HashSet"
+          },
+          "geometryMm": {
+            "additionalProperties": true,
+            "title": "Geometrymm",
+            "type": "object"
+          },
+          "placements": {
+            "items": {
+              "$ref": "#/$defs/PlacementView"
+            },
+            "title": "Placements",
+            "type": "array"
+          },
+          "angles": {
+            "items": {
+              "$ref": "#/$defs/AngleMeta"
+            },
+            "title": "Angles",
+            "type": "array"
+          },
+          "media": {
+            "items": {
+              "$ref": "#/$defs/MediaRef"
+            },
+            "title": "Media",
+            "type": "array"
+          },
+          "rights": {
+            "$ref": "#/$defs/RightsScope"
+          },
+          "sourceRefs": {
+            "items": {
+              "$ref": "#/$defs/SourceRef"
+            },
+            "title": "Sourcerefs",
+            "type": "array"
+          },
+          "truth": {
+            "$ref": "#/$defs/TruthBadge"
+          },
+          "evidenceSeparation": {
+            "$ref": "#/$defs/EvidenceSeparation"
+          }
+        },
+        "required": [
+          "twinId",
+          "engineeringTemplateId",
+          "engineeringVersion",
+          "tenantId",
+          "sku",
+          "artworkVersion",
+          "hashes",
+          "geometryMm",
+          "placements",
+          "angles",
+          "media",
+          "rights",
+          "sourceRefs",
+          "truth",
+          "evidenceSeparation"
+        ],
+        "title": "Twin",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schemaVersion": {
+        "const": "fox3d.product_dna.export.v1",
+        "default": "fox3d.product_dna.export.v1",
+        "title": "Schemaversion",
+        "type": "string"
+      },
+      "familyId": {
+        "const": "fox3d.family.three_tier_door_cabinet",
+        "default": "fox3d.family.three_tier_door_cabinet",
+        "title": "Familyid",
+        "type": "string"
+      },
+      "moldId": {
+        "const": "fox3d.mold.three_tier_424x295x900.v1",
+        "default": "fox3d.mold.three_tier_424x295x900.v1",
+        "title": "Moldid",
+        "type": "string"
+      },
+      "engineeringTemplateId": {
+        "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+        "title": "Engineeringtemplateid",
+        "type": "string"
+      },
+      "engineeringVersion": {
+        "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+        "title": "Engineeringversion",
+        "type": "string"
+      },
+      "tenantId": {
+        "title": "Tenantid",
+        "type": "string"
+      },
+      "inputHash": {
+        "pattern": "^[a-f0-9]{64}$",
+        "title": "Inputhash",
+        "type": "string"
+      },
+      "engineeringHash": {
+        "pattern": "^[a-f0-9]{64}$",
+        "title": "Engineeringhash",
+        "type": "string"
+      },
+      "bomHash": {
+        "pattern": "^[a-f0-9]{64}$",
+        "title": "Bomhash",
+        "type": "string"
+      },
+      "skuCount": {
+        "const": 3,
+        "title": "Skucount",
+        "type": "integer"
+      },
+      "twins": {
+        "items": {
+          "$ref": "#/$defs/Twin"
+        },
+        "title": "Twins",
+        "type": "array"
+      },
+      "sourceRefs": {
+        "items": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "title": "Sourcerefs",
+        "type": "array"
+      },
+      "knownGaps": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Knowngaps",
+        "type": "array"
+      },
+      "truth": {
+        "$ref": "#/$defs/TruthBadge"
+      },
+      "evidenceSeparation": {
+        "$ref": "#/$defs/EvidenceSeparation"
+      },
+      "globalProductionReady": {
+        "const": false,
+        "default": false,
+        "title": "Globalproductionready",
+        "type": "boolean"
+      },
+      "liveSystemRead": {
+        "const": false,
+        "default": false,
+        "title": "Livesystemread",
+        "type": "boolean"
+      },
+      "contentHash": {
+        "pattern": "^[a-f0-9]{64}$",
+        "title": "Contenthash",
+        "type": "string"
+      }
+    },
+    "required": [
+      "engineeringTemplateId",
+      "engineeringVersion",
+      "tenantId",
+      "inputHash",
+      "engineeringHash",
+      "bomHash",
+      "skuCount",
+      "twins",
+      "sourceRefs",
+      "knownGaps",
+      "truth",
+      "evidenceSeparation",
+      "contentHash"
+    ],
+    "title": "FamilyManifest",
+    "type": "object"
+  },
+  "twin": {
+    "$defs": {
+      "AngleMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "HERO_45",
+              "FRONT_CLOSED",
+              "DOOR_DETAIL",
+              "FRONT_OPEN"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "status": {
+            "enum": [
+              "DECLARED_PREVIEW_CAMERA",
+              "BLOCKED"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "const": "m",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Units"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Location"
+          },
+          "lookAt": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Lookat"
+          },
+          "focalLengthMm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Focallengthmm"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "id",
+          "filename",
+          "status"
+        ],
+        "title": "AngleMeta",
+        "type": "object"
+      },
+      "EvidenceSeparation": {
+        "additionalProperties": false,
+        "properties": {
+          "artworkPixels": {
+            "const": "FIXTURE",
+            "default": "FIXTURE",
+            "title": "Artworkpixels",
+            "type": "string"
+          },
+          "historicalArtwork": {
+            "const": "BLOCKED",
+            "default": "BLOCKED",
+            "title": "Historicalartwork",
+            "type": "string"
+          },
+          "geometryHashAndUv": {
+            "const": "REAL_LOGIC",
+            "default": "REAL_LOGIC",
+            "title": "Geometryhashanduv",
+            "type": "string"
+          },
+          "renderMedia": {
+            "enum": [
+              "ABSENT",
+              "MOCK_REGRESSION",
+              "REAL_BLENDER"
+            ],
+            "title": "Rendermedia",
+            "type": "string"
+          },
+          "automatedTestsAndCi": {
+            "const": "MOCK_REGRESSION",
+            "default": "MOCK_REGRESSION",
+            "title": "Automatedtestsandci",
+            "type": "string"
+          },
+          "externalSystems": {
+            "const": "DECLARED_REF_NOT_LIVE",
+            "default": "DECLARED_REF_NOT_LIVE",
+            "title": "Externalsystems",
+            "type": "string"
+          },
+          "production": {
+            "const": "BLOCKED",
+            "default": "BLOCKED",
+            "title": "Production",
+            "type": "string"
+          }
+        },
+        "required": [
+          "renderMedia"
+        ],
+        "title": "EvidenceSeparation",
+        "type": "object"
+      },
+      "HashSet": {
+        "additionalProperties": false,
+        "properties": {
+          "engineeringHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Engineeringhash",
+            "type": "string"
+          },
+          "bomHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Bomhash",
+            "type": "string"
+          },
+          "artworkHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Artworkhash",
+            "type": "string"
+          },
+          "finalUvHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Finaluvhash",
+            "type": "string"
+          },
+          "packageHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Packagehash",
+            "type": "string"
+          },
+          "bomScope": {
+            "const": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
+            "title": "Bomscope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engineeringHash",
+          "bomHash",
+          "artworkHash",
+          "finalUvHash",
+          "packageHash",
+          "bomScope"
+        ],
+        "title": "HashSet",
+        "type": "object"
+      },
+      "MediaRef": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "GLB",
+              "PNG_HERO",
+              "PNG_FRONT",
+              "PNG_DETAIL",
+              "ARTWORK_SOURCE",
+              "PRODUCTION_TRIM"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "sourceHash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sourcehash"
+          },
+          "bytesPresent": {
+            "title": "Bytespresent",
+            "type": "boolean"
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sizebytes"
+          },
+          "evidenceClass": {
+            "enum": [
+              "FIXTURE",
+              "MOCK_REGRESSION",
+              "REAL_BLENDER",
+              "ABSENT"
+            ],
+            "title": "Evidenceclass",
+            "type": "string"
+          },
+          "entityAuthenticity": {
+            "enum": [
+              "SYNTHETIC_FIXTURE",
+              "REAL_BLENDER_PREVIEW",
+              "ABSENT"
+            ],
+            "title": "Entityauthenticity",
+            "type": "string"
+          },
+          "rightsStatus": {
+            "enum": [
+              "NO_IP_FIXTURE",
+              "RIGHTS_BLOCKED"
+            ],
+            "title": "Rightsstatus",
+            "type": "string"
+          },
+          "usageLimit": {
+            "const": "READ_ONLY_NON_PRODUCTION_PREVIEW",
+            "default": "READ_ONLY_NON_PRODUCTION_PREVIEW",
+            "title": "Usagelimit",
+            "type": "string"
+          },
+          "componentId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Componentid"
+          }
+        },
+        "required": [
+          "role",
+          "filename",
+          "bytesPresent",
+          "evidenceClass",
+          "entityAuthenticity",
+          "rightsStatus"
+        ],
+        "title": "MediaRef",
+        "type": "object"
+      },
+      "PlacementView": {
+        "additionalProperties": false,
+        "properties": {
+          "componentId": {
+            "enum": [
+              "door_1",
+              "door_2",
+              "door_3"
+            ],
+            "title": "Componentid",
+            "type": "string"
+          },
+          "widthMm": {
+            "title": "Widthmm",
+            "type": "number"
+          },
+          "heightMm": {
+            "title": "Heightmm",
+            "type": "number"
+          },
+          "originTopMm": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Origintopmm",
+            "type": "array"
+          },
+          "cropMm": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Cropmm",
+            "type": "object"
+          },
+          "uvRect": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Uvrect",
+            "type": "object"
+          },
+          "safeMm": {
+            "title": "Safemm",
+            "type": "number"
+          },
+          "bleedMm": {
+            "title": "Bleedmm",
+            "type": "number"
+          },
+          "placementHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Placementhash",
+            "type": "string"
+          },
+          "finalUvHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Finaluvhash",
+            "type": "string"
+          },
+          "surfaceHash": {
+            "pattern": "^[a-f0-9]{64}$",
+            "title": "Surfacehash",
+            "type": "string"
+          }
+        },
+        "required": [
+          "componentId",
+          "widthMm",
+          "heightMm",
+          "originTopMm",
+          "cropMm",
+          "uvRect",
+          "safeMm",
+          "bleedMm",
+          "placementHash",
+          "finalUvHash",
+          "surfaceHash"
+        ],
+        "title": "PlacementView",
+        "type": "object"
+      },
+      "RightsScope": {
+        "additionalProperties": false,
+        "properties": {
+          "authorizedCommercialArt": {
+            "const": false,
+            "default": false,
+            "title": "Authorizedcommercialart",
+            "type": "boolean"
+          },
+          "scope": {
+            "const": "FIXTURE_NON_IP",
+            "default": "FIXTURE_NON_IP",
+            "title": "Scope",
+            "type": "string"
+          },
+          "ipStatus": {
+            "const": "NO_IP_FIXTURE",
+            "default": "NO_IP_FIXTURE",
+            "title": "Ipstatus",
+            "type": "string"
+          },
+          "usageLimits": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Usagelimits",
+            "type": "array"
+          }
+        },
+        "required": [
+          "usageLimits"
+        ],
+        "title": "RightsScope",
+        "type": "object"
+      },
+      "SourceRef": {
+        "additionalProperties": false,
+        "properties": {
+          "system": {
+            "enum": [
+              "FOX3D_GOLDEN",
+              "ERP",
+              "AI_PRINT_OS",
+              "SPECPILOT_PRODUCT_DNA"
+            ],
+            "title": "System",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "ENGINEERING_TEMPLATE",
+              "PRODUCT_FAMILY",
+              "SKU",
+              "MASTER_PRODUCT",
+              "DIE_MOLD",
+              "PRODUCT_DNA"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "binding": {
+            "enum": [
+              "LOCAL_AUTHORITY",
+              "LOCAL_SKU_CODE",
+              "LOCAL_TEMPLATE_NOT_APPROVED_PLATE",
+              "UNBOUND",
+              "DECLARED_ISSUE_REF"
+            ],
+            "title": "Binding",
+            "type": "string"
+          },
+          "truth": {
+            "enum": [
+              "REAL_LOGIC",
+              "CONFIG",
+              "DECLARED_REF_NOT_LIVE"
+            ],
+            "title": "Truth",
+            "type": "string"
+          },
+          "ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ref"
+          }
+        },
+        "required": [
+          "system",
+          "kind",
+          "id",
+          "binding",
+          "truth"
+        ],
+        "title": "SourceRef",
+        "type": "object"
+      },
+      "TruthBadge": {
+        "additionalProperties": false,
+        "properties": {
+          "badge": {
+            "enum": [
+              "PREVIEW_FIXTURE",
+              "PREVIEW_REAL_BLENDER"
+            ],
+            "title": "Badge",
+            "type": "string"
+          },
+          "renderEvidenceClass": {
+            "enum": [
+              "ABSENT",
+              "MOCK_REGRESSION",
+              "REAL_BLENDER"
+            ],
+            "title": "Renderevidenceclass",
+            "type": "string"
+          },
+          "renderUsedMock": {
+            "title": "Renderusedmock",
+            "type": "boolean"
+          },
+          "realBlender": {
+            "title": "Realblender",
+            "type": "boolean"
+          },
+          "productionReady": {
+            "const": false,
+            "default": false,
+            "title": "Productionready",
+            "type": "boolean"
+          },
+          "engineeringReady": {
+            "const": false,
+            "default": false,
+            "title": "Engineeringready",
+            "type": "boolean"
+          },
+          "manufacturingReady": {
+            "const": false,
+            "default": false,
+            "title": "Manufacturingready",
+            "type": "boolean"
+          },
+          "globalProductionReady": {
+            "const": false,
+            "default": false,
+            "title": "Globalproductionready",
+            "type": "boolean"
+          },
+          "physicalPrintValidated": {
+            "const": false,
+            "default": false,
+            "title": "Physicalprintvalidated",
+            "type": "boolean"
+          },
+          "liveMachineControl": {
+            "const": false,
+            "default": false,
+            "title": "Livemachinecontrol",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "badge",
+          "renderEvidenceClass",
+          "renderUsedMock",
+          "realBlender"
+        ],
+        "title": "TruthBadge",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "schemaVersion": {
+        "const": "fox3d.product_dna.export.v1",
+        "default": "fox3d.product_dna.export.v1",
+        "title": "Schemaversion",
+        "type": "string"
+      },
+      "twinId": {
+        "title": "Twinid",
+        "type": "string"
+      },
+      "familyId": {
+        "const": "fox3d.family.three_tier_door_cabinet",
+        "default": "fox3d.family.three_tier_door_cabinet",
+        "title": "Familyid",
+        "type": "string"
+      },
+      "moldId": {
+        "const": "fox3d.mold.three_tier_424x295x900.v1",
+        "default": "fox3d.mold.three_tier_424x295x900.v1",
+        "title": "Moldid",
+        "type": "string"
+      },
+      "engineeringTemplateId": {
+        "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+        "title": "Engineeringtemplateid",
+        "type": "string"
+      },
+      "engineeringVersion": {
+        "const": "THREE_TIER_DOOR_CABINET_424x295x900_V1",
+        "title": "Engineeringversion",
+        "type": "string"
+      },
+      "tenantId": {
+        "title": "Tenantid",
+        "type": "string"
+      },
+      "sku": {
+        "enum": [
+          "KU002101",
+          "KT015101",
+          "CN003701",
+          "PN010201"
+        ],
+        "title": "Sku",
+        "type": "string"
+      },
+      "artworkVersion": {
+        "enum": [
+          "FIXTURE_MASTER_V1",
+          "FIXTURE_SINGLE_V1"
+        ],
+        "title": "Artworkversion",
+        "type": "string"
+      },
+      "hashes": {
+        "$ref": "#/$defs/HashSet"
+      },
+      "geometryMm": {
+        "additionalProperties": true,
+        "title": "Geometrymm",
+        "type": "object"
+      },
+      "placements": {
+        "items": {
+          "$ref": "#/$defs/PlacementView"
+        },
+        "title": "Placements",
+        "type": "array"
+      },
+      "angles": {
+        "items": {
+          "$ref": "#/$defs/AngleMeta"
+        },
+        "title": "Angles",
+        "type": "array"
+      },
+      "media": {
+        "items": {
+          "$ref": "#/$defs/MediaRef"
+        },
+        "title": "Media",
+        "type": "array"
+      },
+      "rights": {
+        "$ref": "#/$defs/RightsScope"
+      },
+      "sourceRefs": {
+        "items": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "title": "Sourcerefs",
+        "type": "array"
+      },
+      "truth": {
+        "$ref": "#/$defs/TruthBadge"
+      },
+      "evidenceSeparation": {
+        "$ref": "#/$defs/EvidenceSeparation"
+      }
+    },
+    "required": [
+      "twinId",
+      "engineeringTemplateId",
+      "engineeringVersion",
+      "tenantId",
+      "sku",
+      "artworkVersion",
+      "hashes",
+      "geometryMm",
+      "placements",
+      "angles",
+      "media",
+      "rights",
+      "sourceRefs",
+      "truth",
+      "evidenceSeparation"
+    ],
+    "title": "Twin",
+    "type": "object"
+  }
+}
