@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>收納王妃 · 組合櫃 & 3D 場景電商工坊</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/scene-studio.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-brand">
+      <p class="eyebrow">SONAQUEEN E-COMMERCE 3D SCENE &amp; MODULAR CABINET STUDIO</p>
+      <h1>組合櫃自由拼裝 &amp; 3D 場景電商工坊</h1>
+      <p class="sub">步驟 1 拼裝組合櫃 ➔ 步驟 2 滑鼠拖拉自繪 3D 房間場景 ➔ 步驟 3 多場景 × 多配色 × 多視角無限變化電商圖。</p>
+    </div>
+    <div class="topbar-actions">
+      <div class="status-pills">
+        <span id="blender-pill" class="pill">檢查 Blender…</span>
+        <span id="matrix-count-pill" class="pill pill-accent">矩陣預備：1 張</span>
+      </div>
+      <nav class="workbench-nav" aria-label="工作台切換">
+        <a class="nav-link active" href="/admin/recipes/scenes">🏠 組合櫃 &amp; 3D 場景工坊</a>
+        <a class="nav-link" href="/admin/recipes/models">📦 商品 3D 模型庫</a>
+        <a class="nav-link" href="/admin/recipes/print">🎨 彩印圖與三視圖</a>
+        <a class="nav-link" href="/admin/recipes/golden">🏆 三層櫃 Golden 驗證</a>
+        <a class="nav-link" href="/admin/recipes">📐 3D 配方庫</a>
+        <a class="nav-link" href="/admin">⚙️ 系統治理總控台</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="workflow-banner" aria-label="三步驟操作導覽">
+    <div class="wf-step active">
+      <span class="wf-num">1</span>
+      <div>
+        <strong>步驟 1 · 拼裝組合櫃產品</strong>
+        <span>選擇單櫃、雙併、三併或高低階梯櫃，每格可獨立設「門片 / 開放格 / 抽屜」與配色</span>
+      </div>
+    </div>
+    <div class="wf-step active">
+      <span class="wf-num">2</span>
+      <div>
+        <strong>步驟 2 · 自己畫 3D 場景並置入櫃子</strong>
+        <span>在 2D 平面圖直接拖拉沙發、床組、書桌、植栽與「🎯 櫃子位置」，右側即時同步 3D 空間</span>
+      </div>
+    </div>
+    <div class="wf-step active">
+      <span class="wf-num">3</span>
+      <div>
+        <strong>步驟 3 · 無限電商圖矩陣批次出圖</strong>
+        <span>勾選「多個場景 × 多組櫃體配色 × 多個視角」，支援 1 秒即時矩陣快拍與 Blender Cycles 光追算圖</span>
+      </div>
+    </div>
+  </section>
+
+  <p id="studio-notice" class="notice" role="status" aria-live="polite" hidden></p>
+
+  <main class="studio-grid">
+    <!-- Left Column: Step 1 Modular Cabinet Builder -->
+    <section class="panel step-panel" aria-labelledby="step1-title">
+      <div class="panel-head">
+        <div>
+          <span class="step-badge">步驟 1</span>
+          <h2 id="step1-title">組合櫃自由拼裝器</h2>
+        </div>
+        <span id="cab-dim-badge" class="badge">424 × 295 × 900 mm</span>
+      </div>
+
+      <div class="field-group">
+        <label class="group-label">快速套用熱銷組合櫃範本</label>
+        <div id="cabinet-presets" class="preset-pills"></div>
+      </div>
+
+      <div class="form-row two-col">
+        <label>商品名稱
+          <input id="cab-name" type="text" value="收納王妃北歐組合櫃">
+        </label>
+        <label>商品 SKU 編號
+          <input id="cab-sku" type="text" value="SQ-MOD-01">
+        </label>
+      </div>
+
+      <div class="form-row four-col">
+        <label>總深度 (mm)
+          <input id="cab-depth" type="number" min="180" max="800" step="5" value="295">
+        </label>
+        <label>板厚 (mm)
+          <input id="cab-panel" type="number" min="9" max="36" step="1" value="15">
+        </label>
+        <label>門厚 (mm)
+          <input id="cab-door" type="number" min="9" max="30" step="1" value="15">
+        </label>
+        <label>門縫 (mm)
+          <input id="cab-gap" type="number" min="1" max="8" step="0.5" value="2">
+        </label>
+      </div>
+
+      <div class="field-group">
+        <label class="group-label">櫃體配色主題（點擊立即換裝）</label>
+        <div id="theme-cards" class="theme-grid"></div>
+      </div>
+
+      <div class="field-group">
+        <div class="row-between">
+          <label class="group-label">各欄櫃體與格位配置（由左至右並排）</label>
+          <div class="btn-group">
+            <button id="add-col-btn" type="button" class="btn-sm primary">＋ 新增一欄櫃體</button>
+            <button id="remove-col-btn" type="button" class="btn-sm">－ 移除末欄</button>
+          </div>
+        </div>
+        <p class="hint">點擊任一格位可循環切換：<strong>🚪 門片</strong> ➔ <strong>📂 開放格</strong> ➔ <strong>🗄️ 雙抽屜</strong></p>
+        <div id="columns-editor" class="columns-editor"></div>
+      </div>
+    </section>
+
+    <!-- Center Column: Step 2 Visual 2D/3D Scene Builder -->
+    <section class="panel scene-panel" aria-labelledby="step2-title">
+      <div class="panel-head">
+        <div>
+          <span class="step-badge">步驟 2</span>
+          <h2 id="step2-title">3D 場景繪製器 &amp; 櫃子置放</h2>
+        </div>
+        <div class="btn-group">
+          <button id="new-scene-btn" type="button" class="btn-sm">＋ 新建空白房間</button>
+          <button id="save-scene-btn" type="button" class="btn-sm primary">💾 儲存場景至場景庫</button>
+          <button id="delete-scene-btn" type="button" class="btn-sm danger" hidden>刪除自訂場景</button>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="group-label">選擇或切換 3D 場景庫（內建 6 大空間＋您的自訂場景）</label>
+        <div id="scene-tabs" class="scene-tabs"></div>
+      </div>
+
+      <div class="form-row four-col">
+        <label>場景名稱
+          <input id="scene-name" type="text" value="北歐採光客廳">
+        </label>
+        <label>空間分類
+          <input id="scene-category" type="text" value="客廳空間">
+        </label>
+        <label>燈光氛圍
+          <select id="scene-lighting"></select>
+        </label>
+        <label>預設鏡頭視角
+          <select id="scene-view"></select>
+        </label>
+      </div>
+
+      <div class="form-row six-col">
+        <label>房寬 (m)
+          <input id="room-w" type="number" min="3.0" max="9.0" step="0.2" value="5.6">
+        </label>
+        <label>房深 (m)
+          <input id="room-d" type="number" min="2.6" max="7.0" step="0.2" value="4.2">
+        </label>
+        <label>房高 (m)
+          <input id="room-h" type="number" min="2.4" max="4.2" step="0.1" value="3.0">
+        </label>
+        <label>主牆色
+          <input id="wall-color" type="color" value="#b8ab96">
+        </label>
+        <label>側牆色
+          <input id="side-color" type="color" value="#a3a89c">
+        </label>
+        <label>地板色
+          <input id="floor-color" type="color" value="#78583a">
+        </label>
+      </div>
+
+      <div class="field-group">
+        <label class="group-label">一鍵加入家具道具（點擊加入房間，可在下方平面圖直接用滑鼠拖拉位置）</label>
+        <div id="prop-palette" class="prop-palette"></div>
+      </div>
+
+      <div class="dual-viewport">
+        <!-- 2D Interactive Top-Down Floorplan -->
+        <div class="viewport-card">
+          <div class="vp-header">
+            <strong>📐 2D 房間平面配置圖（滑鼠直接拖拉家具與「🎯 組合櫃」）</strong>
+            <span id="cab-pose-readout" class="mono-tag">櫃位 X: 0.15m, Y: 1.15m</span>
+          </div>
+          <canvas id="floorplan-canvas" width="520" height="400"></canvas>
+          <div id="selected-item-bar" class="selected-item-bar">
+            <span id="sel-item-label">🎯 已選中：組合櫃置放點</span>
+            <div class="sel-controls">
+              <label>旋轉
+                <select id="sel-rot">
+                  <option value="0">0° 朝前</option>
+                  <option value="45">45° 斜放</option>
+                  <option value="90">90° 朝右</option>
+                  <option value="-45">-45° 斜放</option>
+                  <option value="-90">-90° 朝左</option>
+                  <option value="180">180° 朝後</option>
+                </select>
+              </label>
+              <label id="sel-color-wrap" hidden>主色
+                <input id="sel-color" type="color" value="#26534e">
+              </label>
+              <label id="sel-w-wrap" hidden>寬(m)
+                <input id="sel-w" type="number" min="0.2" max="4.0" step="0.1" value="1.6">
+              </label>
+              <label id="sel-d-wrap" hidden>深(m)
+                <input id="sel-d" type="number" min="0.1" max="4.0" step="0.1" value="0.7">
+              </label>
+              <button id="sel-delete-btn" type="button" class="btn-sm danger" hidden>移除此家具</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3D Live Interactive Room + Cabinet Viewport -->
+        <div class="viewport-card">
+          <div class="vp-header">
+            <strong>🎥 3D 房間＋組合櫃即時預覽（滑鼠拖曳旋轉視角／滾輪縮放）</strong>
+            <div class="btn-group">
+              <button id="reset-cam-btn" type="button" class="btn-xs">重設視角</button>
+              <button id="snapshot-png-btn" type="button" class="btn-xs primary">📸 下載此張電商圖 PNG</button>
+            </div>
+          </div>
+          <canvas id="scene3d-canvas" width="560" height="400"></canvas>
+          <div id="camera-quick-pills" class="camera-pills"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right / Bottom Full-Width Section: Step 3 Infinite E-Commerce Matrix Factory -->
+    <section class="panel matrix-panel" aria-labelledby="step3-title">
+      <div class="panel-head">
+        <div>
+          <span class="step-badge">步驟 3</span>
+          <h2 id="step3-title">無限電商圖矩陣批次渲染工廠（多場景 × 多配色 × 多視角）</h2>
+        </div>
+        <div class="matrix-actions">
+          <button id="instant-matrix-btn" type="button" class="btn-primary">⚡ 1 秒生成即時 3D 電商圖矩陣</button>
+          <button id="blender-matrix-btn" type="button" class="btn-accent">🔥 送交真實 Blender Cycles 光追批次算圖</button>
+        </div>
+      </div>
+
+      <div class="matrix-selectors">
+        <div class="selector-box">
+          <div class="row-between">
+            <strong>1. 勾選要置入的 3D 場景</strong>
+            <button id="check-all-scenes" type="button" class="btn-xs">全選場景</button>
+          </div>
+          <div id="matrix-scenes-list" class="check-list"></div>
+        </div>
+
+        <div class="selector-box">
+          <div class="row-between">
+            <strong>2. 勾選要變化的櫃體配色方案</strong>
+            <button id="check-all-themes" type="button" class="btn-xs">全選配色</button>
+          </div>
+          <div id="matrix-themes-list" class="check-list"></div>
+        </div>
+
+        <div class="selector-box">
+          <div class="row-between">
+            <strong>3. 勾選拍攝視角與 Cycles 採樣</strong>
+            <label class="inline-sample">Cycles Samples
+              <input id="matrix-samples" type="number" min="12" max="64" value="24">
+            </label>
+          </div>
+          <div id="matrix-views-list" class="check-list"></div>
+          <div id="matrix-formula" class="matrix-formula">預計產出：1 個場景 × 1 種配色 × 1 個視角 ＝ 1 張電商情境圖</div>
+        </div>
+      </div>
+
+      <!-- Instant 3D Matrix Gallery -->
+      <div id="instant-gallery-wrap" class="gallery-section" hidden>
+        <div class="row-between">
+          <h3>⚡ 即時 3D 電商情境圖庫（可立即檢視各場景構圖並單張下載 PNG）</h3>
+          <span id="instant-gallery-meta" class="badge"></span>
+        </div>
+        <div id="instant-gallery" class="matrix-gallery"></div>
+      </div>
+
+      <!-- Real Blender Cycles Batch Progress & Gallery -->
+      <div class="gallery-section">
+        <div class="row-between">
+          <h3>🔥 真實 Blender Cycles 光追批次成果（含 PNG / GLB / BLEND / 整批 ZIP 下載）</h3>
+          <div class="btn-group">
+            <span id="blender-batch-status" class="badge">尚無執行中的批次</span>
+            <a id="download-zip-link" class="btn-sm primary" href="#" hidden>📦 一鍵下載整批電商圖 (.zip)</a>
+          </div>
+        </div>
+        <div id="blender-gallery" class="matrix-gallery"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/admin/recipes/assets/scene-studio.js"></script>
+</body>
+</html>

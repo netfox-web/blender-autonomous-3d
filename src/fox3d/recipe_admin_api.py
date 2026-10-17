@@ -38,6 +38,8 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
     router.include_router(print_router(provider))
     from fox3d.product_models_api import product_models_router
     router.include_router(product_models_router(provider))
+    from fox3d.ecommerce_scene_api import ecommerce_scene_router
+    router.include_router(ecommerce_scene_router(provider))
     stores = {}
     services = {}
     lock = RLock()
@@ -71,7 +73,7 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
 
     @router.get("/admin/recipes/assets/{name}")
     def assets(name: str):
-        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js", "golden-product.js", "golden-product.css", "print-workspace.js", "print-workspace.css", "printfox-bridge.js", "printfox-bridge.css", "product-models.css", "product-models.js", "model-compositions.js", "model-batches.js"}:
+        if name not in {"recipe-library.css", "recipe-library.js", "recipe-viewer.js", "golden-product.js", "golden-product.css", "print-workspace.js", "print-workspace.css", "printfox-bridge.js", "printfox-bridge.css", "product-models.css", "product-models.js", "model-compositions.js", "model-batches.js", "scene-studio.css", "scene-studio.js"}:
             raise HTTPException(404)
         return FileResponse(STATIC / name, media_type="text/css" if name.endswith("css") else "application/javascript")
 

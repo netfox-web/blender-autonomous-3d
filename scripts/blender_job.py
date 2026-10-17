@@ -808,10 +808,21 @@ def build_cabinet(engineering: dict, *, explode: bool = False, origin=(0.0, 0.0,
             bpy.context.scene.world = world
             bpy.data.objects["Ground"].scale = (25, 25, 25)
             for obj in created.values():
-                for material in obj.data.materials:
-                    shader = material.node_tree.nodes.get("Principled BSDF")
-                    shader.inputs["Base Color"].default_value = (0.55, 0.38, 0.20, 1)
-                    shader.inputs["Roughness"].default_value = 0.65
+                custom_rgb = obj.get("customColorRgb")
+                if custom_rgb and len(custom_rgb) == 3:
+                    mat = bpy.data.materials.new(obj.name + ".CustomColor")
+                    mat.use_nodes = True
+                    shader = mat.node_tree.nodes.get("Principled BSDF")
+                    shader.inputs["Base Color"].default_value = (float(custom_rgb[0]), float(custom_rgb[1]), float(custom_rgb[2]), 1)
+                    shader.inputs["Roughness"].default_value = 0.55
+                    obj.data.materials.clear()
+                    obj.data.materials.append(mat)
+                    del obj["customColorRgb"]
+                else:
+                    for material in obj.data.materials:
+                        shader = material.node_tree.nodes.get("Principled BSDF")
+                        shader.inputs["Base Color"].default_value = (0.55, 0.38, 0.20, 1)
+                        shader.inputs["Roughness"].default_value = 0.65
             preset = engineering.get("nasScene")
             if engineering.get("sceneDefinition"): preset = "STUDIO"
             if preset in {"STUDIO", "WARM_ROOM", "COOL_ROOM"}:
@@ -939,6 +950,8 @@ def add_cabinet_parts(engineering: dict, *, explode: bool = False, origin=(0.0, 
             obj = _add_box(name_prefix + name, size, loc, material)
         if engineering.get("recipePreview"):
             obj["recipeComponentId"] = part["componentId"]
+            if isinstance(part.get("colorRgb"), list) and len(part["colorRgb"]) == 3:
+                obj["customColorRgb"] = [float(c) for c in part["colorRgb"]]
         created[name_prefix + name] = obj
         if role == "door" and not engineering.get("recipePreview"):
             handle_x = loc[0] + (door_w * 0.35) if counts["door"] % 2 == 1 else loc[0] - (door_w * 0.35)

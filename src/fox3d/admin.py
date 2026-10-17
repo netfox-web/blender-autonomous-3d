@@ -167,6 +167,7 @@ def render_admin(platform: Any) -> str:
       <span class="note" style="margin-left: 6px;">— 系統與算力總控台（不含 Blender UI）</span>
     </div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <a href="/admin/recipes/scenes" style="color:#ffd166;font-weight:700;text-decoration:none;padding:6px 11px;border:1px solid #d4a72c;border-radius:6px;background:rgba(212,167,44,0.16)">🏠 組合櫃 &amp; 3D 場景電商工坊</a>
       <a href="/admin/recipes" style="color:#7ee787;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #2ea043;border-radius:6px;background:rgba(46,160,67,0.12)">① 商品 Recipe 庫</a>
       <a href="/admin/recipes/models" style="color:#79c0ff;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #388bfd;border-radius:6px;background:rgba(56,139,253,0.12)">② 商品 3D 建模與套圖庫</a>
       <a href="/admin/recipes/golden" style="color:#d2a8ff;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #8957e5;border-radius:6px;background:rgba(137,87,229,0.12)">③ 三層櫃 Golden 與 DNA</a>
@@ -175,6 +176,10 @@ def render_admin(platform: Any) -> str:
   </header>
   {banner}
   <div style="padding:16px 24px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+    <a href="/admin/recipes/scenes" style="text-decoration:none;color:inherit;background:#161b22;border:1px solid #d4a72c;border-radius:8px;padding:12px 14px;display:block">
+      <strong style="color:#ffd166;display:block;margin-bottom:4px">🏠 組合櫃 &amp; 3D 場景電商工坊 →</strong>
+      <span class="note">自由拼裝多欄組合櫃、滑鼠拖拉自繪 3D 房間場景、多場景無限電商圖矩陣批次算圖</span>
+    </a>
     <a href="/admin/recipes" style="text-decoration:none;color:inherit;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;display:block">
       <strong style="color:#7ee787;display:block;margin-bottom:4px">① 商品 Recipe 規格總庫 →</strong>
       <span class="note">管理商品標準外尺寸、板件 BOM、待確認項目與 3D 結構預覽</span>
