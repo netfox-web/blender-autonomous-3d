@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8790)
     parser.add_argument("--data-root", type=Path, default=ROOT / ".fox3d-data")
     args = parser.parse_args(argv)
@@ -18,7 +19,7 @@ def main(argv=None):
     from fox3d.api import create_app
     from fox3d.platform import Platform
 
-    uvicorn.run(create_app(Platform(args.data_root.resolve())), host="127.0.0.1", port=args.port)
+    uvicorn.run(create_app(Platform(args.data_root.resolve())), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
