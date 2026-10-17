@@ -4,6 +4,11 @@ import hashlib
 import math
 
 
+def _srgb_to_lin(c: float) -> float:
+    c = max(0.0, min(1.0, float(c)))
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
 def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
     mat.use_nodes = True
     tree = mat.node_tree
@@ -13,6 +18,8 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
     if not shader:
         return
     r, g, b = float(base_color[0]), float(base_color[1]), float(base_color[2])
+    if photoreal:
+        r, g, b = _srgb_to_lin(r), _srgb_to_lin(g), _srgb_to_lin(b)
     shader.inputs['Base Color'].default_value = (r, g, b, 1.0)
     if not photoreal:
         shader.inputs['Roughness'].default_value = 0.7
@@ -23,33 +30,38 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
     mapping = nodes.new('ShaderNodeMapping')
     links.new(tex_coord.outputs['Generated'], mapping.inputs['Vector'])
 
-    if any(k in name_u for k in ('FLOOR', 'TABLE', 'DESK', 'BENCH', 'FRAME', 'WORKTOP', 'WOOD', 'CABINET')):
+    if any(k in name_u for k in ('DOOR', 'DRAWER')):
+        # Smooth satin furniture lacquer / melamine finish on cabinet doors & drawers
+        shader.inputs['Roughness'].default_value = 0.28
+        if 'Coat Weight' in shader.inputs:
+            shader.inputs['Coat Weight'].default_value = 0.28
+    elif any(k in name_u for k in ('FLOOR', 'TABLE', 'DESK', 'BENCH', 'FRAME', 'WORKTOP', 'WOOD', 'CABINET')):
         # Procedural timber / hardwood grain with satin finish
-        mapping.inputs['Scale'].default_value = (14.0, 3.5, 3.5) if 'FLOOR' in name_u else (6.0, 2.0, 2.0)
+        mapping.inputs['Scale'].default_value = (12.0, 2.5, 2.5) if 'FLOOR' in name_u else (4.0, 1.5, 1.5)
         wave = nodes.new('ShaderNodeTexWave')
         wave.wave_type = 'BANDS'
-        wave.bands_direction = 'X'
-        wave.inputs['Scale'].default_value = 6.5
-        wave.inputs['Distortion'].default_value = 4.2
-        wave.inputs['Detail'].default_value = 3.0
-        links.new(mapping.inputs['Vector'].links[0].from_socket, wave.inputs['Vector'])
+        wave.bands_direction = 'Y' if 'FLOOR' not in name_u else 'X'
+        wave.inputs['Scale'].default_value = 4.5
+        wave.inputs['Distortion'].default_value = 2.2
+        wave.inputs['Detail'].default_value = 2.0
+        links.new(mapping.outputs['Vector'], wave.inputs['Vector'])
 
         mix = nodes.new('ShaderNodeMix')
         mix.data_type = 'RGBA'
-        mix.inputs['Factor'].default_value = 0.22 if 'FLOOR' in name_u else 0.14
+        mix.blend_type = 'MULTIPLY'
+        mix.inputs['Factor'].default_value = 0.16 if 'FLOOR' in name_u else 0.10
         mix.inputs[6].default_value = (r, g, b, 1.0)
-        mix.inputs[7].default_value = (max(0.0, r * 0.76), max(0.0, g * 0.74), max(0.0, b * 0.72), 1.0)
-        links.new(wave.outputs['Fac'], mix.inputs['Factor'])
+        links.new(wave.outputs['Color'], mix.inputs[7])
         links.new(mix.outputs[2], shader.inputs['Base Color'])
 
         bump = nodes.new('ShaderNodeBump')
-        bump.inputs['Strength'].default_value = 0.08 if 'FLOOR' in name_u else 0.04
-        bump.inputs['Distance'].default_value = 0.002
+        bump.inputs['Strength'].default_value = 0.04 if 'FLOOR' in name_u else 0.02
+        bump.inputs['Distance'].default_value = 0.0015
         links.new(wave.outputs['Fac'], bump.inputs['Height'])
         links.new(bump.outputs['Normal'], shader.inputs['Normal'])
-        shader.inputs['Roughness'].default_value = 0.32 if 'FLOOR' in name_u else 0.38
+        shader.inputs['Roughness'].default_value = 0.34 if 'FLOOR' in name_u else 0.38
         if 'Coat Weight' in shader.inputs:
-            shader.inputs['Coat Weight'].default_value = 0.22
+            shader.inputs['Coat Weight'].default_value = 0.20
     elif any(k in name_u for k in ('SOFA', 'RUG', 'MAT', 'BED', 'PILLOW', 'CUSHION')):
         # Woven fabric micro-bump & sheen
         noise = nodes.new('ShaderNodeTexNoise')
