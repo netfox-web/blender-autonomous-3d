@@ -152,9 +152,14 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
             from pathlib import Path
             art_path = Path(__file__).resolve().parents[1] / 'assets' / 'textures' / 'pbr' / 'nordic_canvas_art.png'
             if art_path.exists():
+                sep = nodes.new('ShaderNodeSeparateXYZ')
+                comb = nodes.new('ShaderNodeCombineXYZ')
+                links.new(tex_coord.outputs['Generated'], sep.inputs['Vector'])
+                links.new(sep.outputs['X'], comb.inputs['X'])
+                links.new(sep.outputs['Z'], comb.inputs['Y'])
                 tex_img = nodes.new('ShaderNodeTexImage')
                 tex_img.image = bpy.data.images.load(str(art_path), check_existing=True)
-                links.new(tex_coord.outputs['Generated'], tex_img.inputs['Vector'])
+                links.new(comb.outputs['Vector'], tex_img.inputs['Vector'])
                 links.new(tex_img.outputs['Color'], shader.inputs['Base Color'])
         except Exception:
             pass
