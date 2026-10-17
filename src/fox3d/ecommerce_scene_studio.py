@@ -1003,14 +1003,21 @@ class EcommerceSceneStore:
                     "exportBlend": True,
                     "exportGlb": True,
                 }
-                res = self.platform.runtime.run_job(job, work_dir=item_dir)
-                if res.get("status") != "succeeded" or not (item_dir / "beauty.png").exists():
-                    raise RuntimeError(res.get("error") or "Blender 算圖未產出 beauty.png")
+                res = self.platform.runtime.run_job(job)
+                status_val = getattr(res, "status", None) or (res.get("status") if isinstance(res, dict) else None)
+                outputs_val = getattr(res, "outputs", None) or (res.get("outputs") if isinstance(res, dict) else {}) or {}
+                for fname in ("beauty.png", "model.glb", "model.blend"):
+                    src_p = outputs_val.get(fname)
+                    if src_p and Path(src_p).exists() and Path(src_p).resolve() != (item_dir / fname).resolve():
+                        shutil.copy2(src_p, item_dir / fname)
+                if status_val not in ("succeeded", "completed") or not (item_dir / "beauty.png").exists():
+                    err_msg = getattr(res, "error", None) or (res.get("error") if isinstance(res, dict) else None)
+                    raise RuntimeError(err_msg or "Blender 算圖未產出 beauty.png")
 
                 item["state"] = "succeeded"
-                item["renderTimeSec"] = res.get("renderTimeSec")
-                item["blenderVersion"] = res.get("blenderVersion")
-                item["device"] = res.get("device")
+                item["renderTimeSec"] = getattr(res, "render_time_sec", None) or (res.get("renderTimeSec") if isinstance(res, dict) else None)
+                item["blenderVersion"] = getattr(res, "blender_version", None) or (res.get("blenderVersion") if isinstance(res, dict) else None)
+                item["device"] = getattr(res, "device", None) or (res.get("device") if isinstance(res, dict) else None)
             except Exception as exc:
                 item["state"] = "failed"
                 item["error"] = str(exc)[:300]
