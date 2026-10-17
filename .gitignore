@@ -8,3 +8,5 @@ dist/
 build/
 .venv/
 .claude/
+.fox3d-data-dev/
+.fox3d-data*/

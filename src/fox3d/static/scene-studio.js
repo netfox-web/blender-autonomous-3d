@@ -3,6 +3,8 @@
   const $ = id => document.getElementById(id);
   const tenant = 'sonaqueen-home';
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Server labels still carry emoji prefixes for older pages; the studio UI renders plain text.
+  const stripEmoji = s => String(s ?? '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{200D}]/gu, '').replace(/^\s+/, '').trim();
 
   let state = {
     overview: null,
@@ -13,7 +15,14 @@
     dragging: null,
     camOrbit: { yawOffset: 0, pitchOffset: 0, zoom: 1.0, dragging: false, lastX: 0, lastY: 0 },
     activeBatchId: null,
-    pollTimer: null
+    singleBatchId: null,
+    lastBatch: null,
+    batches: [],
+    pollTimer: null,
+    aiEngine: 'fleet_flux3',
+    engines: [],
+    engineStatus: null,
+    aiSettings: null
   };
 
   async function api(url, options = {}) {
@@ -35,8 +44,9 @@
     }
     el.hidden = false;
     el.textContent = msg;
-    el.style.background = isError ? '#fef3f2' : '#fdf1ea';
-    el.style.color = isError ? '#b42318' : '#7c3510';
+    el.classList.toggle('error', Boolean(isError));
+    clearTimeout(notify.timer);
+    if (!isError) notify.timer = setTimeout(() => { el.hidden = true; }, 9000);
   }
 
   function clone(obj) {
@@ -74,13 +84,15 @@
     $('theme-cards').innerHTML = themes.map(t => {
       const active = state.cabinet?.themeId === t.id ? 'active' : '';
       const swatches = [t.carcassHex, ...(t.doorPaletteHex || []).slice(0, 2)].map(h =>
-        `<span class="swatch" style="background:${esc(h)}"></span>`
+        `<span class="swatch" data-color="${esc(h)}"></span>`
       ).join('');
       return `<button type="button" class="theme-card ${active}" data-theme="${esc(t.id)}">
         <span class="swatches">${swatches}</span>
         <span>${esc(t.label)}</span>
       </button>`;
     }).join('');
+    // CSP forbids inline style attributes; colours go through the CSSOM instead.
+    $('theme-cards').querySelectorAll('.swatch[data-color]').forEach(el => { el.style.background = el.dataset.color; });
     $('theme-cards').querySelectorAll('[data-theme]').forEach(btn => {
       btn.addEventListener('click', () => {
         state.cabinet.themeId = btn.dataset.theme;
@@ -168,22 +180,69 @@
     renderColumnsEditor();
   }
 
+  // Scene library cards: every scene gets a live 3D thumbnail (same renderer as the viewport, wide view, current
+  // cabinet), a hover peek shows it large, a click selects it.
+  const sceneThumbCache = new Map();
+  function sceneThumb(scene, w, h) {
+    const spec = state.previewPlan?.cabinetSpec;
+    const key = `${scene.id}|${w}x${h}|${spec ? (spec.width + 'x' + spec.height + '|' + (state.cabinet?.themeId || '')) : 'nospec'}|${JSON.stringify(scene.props || []).length}|${scene.wallColorHex}|${scene.floorColorHex}`;
+    if (sceneThumbCache.has(key)) return sceneThumbCache.get(key);
+    const off = document.createElement('canvas');
+    off.width = w;
+    off.height = h;
+    let url = '';
+    if (spec) {
+      state.thumbMode = true;
+      try {
+        // pulled back a little and slightly higher than the WIDE shot so the whole room set reads at thumbnail size
+        renderLive3DScene(off, scene, spec, 'WIDE', { yawOffset: 0, pitchOffset: 0.12, zoom: 0.72 });
+      } finally {
+        state.thumbMode = false;
+      }
+      url = off.toDataURL('image/png');
+    }
+    if (url) sceneThumbCache.set(key, url);
+    return url;
+  }
+
   function renderSceneTabs() {
     const scenes = state.overview?.scenes || [];
-    $('scene-tabs').innerHTML = scenes.map(s =>
-      `<button type="button" class="chip-btn ${state.currentScene?.id === s.id ? 'active' : ''}" data-scene-id="${esc(s.id)}">
-        ${s.builtin ? '🏠' : '✨'} ${esc(s.name)}
-      </button>`
-    ).join('');
-    $('scene-tabs').querySelectorAll('[data-scene-id]').forEach(btn => {
+    const box = $('scene-tabs');
+    box.innerHTML = scenes.map(s => {
+      const thumb = sceneThumb(s, 240, 160);
+      return `<button type="button" class="scene-card ${state.currentScene?.id === s.id ? 'active' : ''}" data-scene-id="${esc(s.id)}" title="${esc(s.name)}">
+        ${thumb ? `<img src="${thumb}" alt="${esc(s.name)}">` : '<img alt="">'}
+        <span>${esc(s.name)}<em>${esc(s.category || '')}${s.builtin ? '' : ' · 自訂'}</em></span>
+      </button>`;
+    }).join('');
+    const peek = $('scene-peek');
+    box.querySelectorAll('[data-scene-id]').forEach(btn => {
+      const scene = scenes.find(x => x.id === btn.dataset.sceneId);
       btn.addEventListener('click', () => {
-        const found = scenes.find(x => x.id === btn.dataset.sceneId);
-        if (!found) return;
-        state.currentScene = clone(found);
+        if (!scene) return;
+        state.currentScene = clone(scene);
         state.selectedTarget = { kind: 'cabinet', index: -1 };
         syncSceneInputsFromState();
         refreshPreviewPlan();
+        if (peek) peek.hidden = true;
       });
+      if (!peek || !scene) return;
+      btn.addEventListener('mouseenter', () => {
+        const big = sceneThumb(scene, 720, 480);
+        if (!big) return;
+        peek.querySelector('img').src = big;
+        peek.querySelector('span').textContent = `${scene.name} · ${scene.category || ''}`;
+        const r = btn.getBoundingClientRect();
+        const pw = 432;
+        let left = r.right + 12;
+        if (left + pw > window.innerWidth - 8) left = Math.max(8, r.left - pw - 12);
+        let top = r.top - 40;
+        if (top + 330 > window.innerHeight - 8) top = Math.max(8, window.innerHeight - 338);
+        peek.style.left = `${left}px`;
+        peek.style.top = `${Math.max(8, top)}px`;
+        peek.hidden = false;
+      });
+      btn.addEventListener('mouseleave', () => { peek.hidden = true; });
     });
   }
 
@@ -208,7 +267,7 @@
   function renderPropPalette() {
     const props = state.overview?.propCatalog || [];
     $('prop-palette').innerHTML = props.map(p =>
-      `<button type="button" class="chip-btn" data-add-prop="${esc(p.type)}">＋ ${esc(p.label)}</button>`
+      `<button type="button" class="chip-btn" data-add-prop="${esc(p.type)}">＋ ${esc(stripEmoji(p.label))}</button>`
     ).join('');
     $('prop-palette').querySelectorAll('[data-add-prop]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -217,7 +276,7 @@
         const newProp = {
           id: 'prop_' + Date.now().toString(36),
           type: tpl.type,
-          label: tpl.label.replace(/^[^\s]+\s/, ''),
+          label: stripEmoji(tpl.label),
           x: Number(((Math.random() - 0.5) * 1.6).toFixed(2)),
           y: tpl.type === 'WALL_ART' || tpl.type === 'WINDOW_FRAME' ? 1.52 : Number((0.2 + (Math.random() - 0.5) * 0.8).toFixed(2)),
           z: tpl.defaultZ || 0.0,
@@ -246,23 +305,19 @@
     const curSofa = curProps.find(p => p.type === 'SOFA');
     const isProcSofa = curSofa && !curSofa.glbPath;
 
-    const procCard = `
-      <button type="button" data-ph-proc="SOFA" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border-radius:8px;cursor:pointer;background:${isProcSofa ? 'rgba(16,185,129,0.25)' : 'rgba(15,23,42,0.75)'};border:1px solid ${isProcSofa ? '#10b981' : 'rgba(148,163,184,0.25)'};color:#f8fafc;text-align:center;">
-        <div style="height:54px;display:flex;align-items:center;justify-content:center;font-size:26px;">🛋️✨</div>
-        <strong style="font-size:11px;line-height:1.2;">方式 2：義式拉釦皺褶布沙發</strong>
-        <span style="font-size:10px;color:#94a3b8;">可自由改色＋立體滾邊</span>
-      </button>
-    `;
+    const procCard = `<button type="button" class="ph-card ${isProcSofa ? 'active' : ''}" data-ph-proc="SOFA">
+        <div class="ph-icon">🛋</div>
+        <strong>程序式皺褶布沙發</strong>
+        <span>可自由改色＋立體滾邊</span>
+      </button>`;
 
     const modelCards = models.map(m => {
       const active = curProps.some(p => p.glbPath && p.glbPath === m.glbPath);
-      return `
-        <button type="button" data-ph-id="${esc(m.assetId)}" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px;border-radius:8px;cursor:pointer;background:${active ? 'rgba(16,185,129,0.25)' : 'rgba(15,23,42,0.75)'};border:1px solid ${active ? '#10b981' : 'rgba(148,163,184,0.25)'};color:#f8fafc;text-align:center;">
-          <img src="${esc(m.thumbUrl)}" alt="${esc(m.shortLabel || m.assetId)}" style="height:54px;width:100%;object-fit:contain;border-radius:4px;background:rgba(0,0,0,0.25);">
-          <strong style="font-size:11px;line-height:1.2;">🏛️ ${esc(m.shortLabel || m.assetId)}</strong>
-          <span style="font-size:10px;color:#6ee7b7;">Poly Haven 2K 高模</span>
-        </button>
-      `;
+      return `<button type="button" class="ph-card ${active ? 'active' : ''}" data-ph-id="${esc(m.assetId)}">
+          <img src="${esc(m.thumbUrl)}" alt="${esc(m.shortLabel || m.assetId)}" loading="lazy">
+          <strong>${esc(m.shortLabel || m.assetId)}</strong>
+          <span>Poly Haven 2K</span>
+        </button>`;
     }).join('');
 
     box.innerHTML = procCard + modelCards;
@@ -271,16 +326,16 @@
       btn.addEventListener('click', () => {
         if (!state.currentScene) return;
         state.currentScene.props = state.currentScene.props || [];
-        let idx = state.currentScene.props.findIndex(p => p.type === 'SOFA');
+        const idx = state.currentScene.props.findIndex(p => p.type === 'SOFA');
         if (idx >= 0) {
           delete state.currentScene.props[idx].glbPath;
-          state.currentScene.props[idx].label = '雙人沙發 (義式皺褶布藝)';
+          state.currentScene.props[idx].label = '雙人沙發 (皺褶布藝)';
           state.selectedTarget = { kind: 'prop', index: idx };
         }
         syncSelectedBar();
         renderPolyhavenGallery();
         refreshPreviewPlan();
-        notify('✨ 已切換為「方式 2：義式圓潤拉釦皺褶布藝沙發」（支援自由改色＋實掃描法線貼圖）！');
+        notify('已切換為程序式皺褶布藝沙發（可自由改色）。');
       });
     });
 
@@ -319,7 +374,7 @@
         syncSelectedBar();
         renderPolyhavenGallery();
         refreshPreviewPlan();
-        notify(`🏛️ 已將房間內的家具切換為「${m.label}」！點右方「🔥 立即算這張 A+B 雙引擎逼真圖」即可渲染此 2K 掃描高模。`);
+        notify(`已將「${m.shortLabel || m.label}」放進房間；按「算這張逼真圖」即可用 2K 掃描高模渲染。`);
       });
     });
   }
@@ -328,7 +383,7 @@
     const views = state.overview?.cameraViews || [];
     const curView = $('scene-view').value || 'THREE_QUARTER';
     $('camera-quick-pills').innerHTML = views.map(v =>
-      `<button type="button" class="chip-btn ${curView === v.id ? 'active' : ''}" data-cam-view="${esc(v.id)}">📷 ${esc(v.label)}</button>`
+      `<button type="button" class="chip-btn ${curView === v.id ? 'active' : ''}" data-cam-view="${esc(v.id)}">${esc(v.label)}</button>`
     ).join('');
     $('camera-quick-pills').querySelectorAll('[data-cam-view]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -347,7 +402,7 @@
     if (!s) return;
     if (state.selectedTarget.kind === 'cabinet' || state.selectedTarget.index < 0 || !s.props?.[state.selectedTarget.index]) {
       const pose = s.productPose || { x: 0, y: 1.1, z: 0, rotationDeg: 0 };
-      $('sel-item-label').textContent = '🎯 已選中：組合櫃置放點（可在平面圖拖拉）';
+      $('sel-item-label').textContent = '已選中：組合櫃置放點（可在平面圖拖拉）';
       $('sel-rot').value = String(pose.rotationDeg || 0);
       if ($('sel-ph-wrap')) $('sel-ph-wrap').hidden = true;
       $('sel-color-wrap').hidden = true;
@@ -357,7 +412,7 @@
       $('cab-pose-readout').textContent = `櫃位 X: ${Number(pose.x || 0).toFixed(2)}m, Y: ${Number(pose.y || 0).toFixed(2)}m, 角度: ${pose.rotationDeg || 0}°`;
     } else {
       const p = s.props[state.selectedTarget.index];
-      $('sel-item-label').textContent = `🛋️ 已選中家具：${p.label || p.type}`;
+      $('sel-item-label').textContent = `已選中家具：${p.label || p.type}`;
       $('sel-rot').value = String(p.rotationDeg || 0);
       if ($('sel-ph-wrap') && $('sel-ph-model')) {
         $('sel-ph-wrap').hidden = false;
@@ -374,13 +429,62 @@
   }
 
   // ==================== 2D FLOORPLAN INTERACTIVE CANVAS ====================
+  // Canvases are laid out by CSS (width:100%). Drawing at the attribute size (520x400) and letting the browser
+  // stretch it is what made the plan blurry and squashed: size the backing store to the CSS box x devicePixelRatio
+  // and draw in CSS pixels. Offscreen canvases (no layout) keep their attribute size.
+  function canvasCssSize(canvas) {
+    const W = canvas.clientWidth || canvas.width;
+    const H = canvas.clientHeight || canvas.height;
+    return { W, H };
+  }
+
+  function prepareCanvas(canvas) {
+    const { W, H } = canvasCssSize(canvas);
+    const dpr = canvas.clientWidth ? Math.min(3, window.devicePixelRatio || 1) : 1;
+    const bw = Math.max(1, Math.round(W * dpr));
+    const bh = Math.max(1, Math.round(H * dpr));
+    if (canvas.width !== bw || canvas.height !== bh) {
+      canvas.width = bw;
+      canvas.height = bh;
+    }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, W, H };
+  }
+
+  function drawLabel(ctx, textValue, x, y, { size = 11, bg = 'rgba(14, 18, 17, 0.72)', fg = '#ffffff', align = 'center' } = {}) {
+    ctx.save();
+    ctx.font = `bold ${size}px "Noto Sans TC", "Microsoft JhengHei", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const padX = 6;
+    const w = ctx.measureText(textValue).width + padX * 2;
+    const h = size + 8;
+    let bx = x - w / 2;
+    if (align === 'left') bx = x;
+    const r = 5;
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, y - h / 2);
+    ctx.arcTo(bx + w, y - h / 2, bx + w, y + h / 2, r);
+    ctx.arcTo(bx + w, y + h / 2, bx, y + h / 2, r);
+    ctx.arcTo(bx, y + h / 2, bx, y - h / 2, r);
+    ctx.arcTo(bx, y - h / 2, bx + w, y - h / 2, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = fg;
+    ctx.fillText(textValue, bx + w / 2, y + 0.5);
+    ctx.restore();
+  }
+
   function floorplanTransform(canvas) {
     const rw = Number(state.currentScene?.roomWidthM || 5.6);
     const rd = Number(state.currentScene?.roomDepthM || 4.2);
-    const pad = 38;
-    const scale = Math.min((canvas.width - pad * 2) / rw, (canvas.height - pad * 2) / rd);
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2 + 12;
+    const { W, H } = canvasCssSize(canvas);
+    const pad = 40;
+    const scale = Math.min((W - pad * 2) / rw, (H - pad * 2) / rd);
+    const cx = W / 2;
+    const cy = H / 2 + 12;
     return {
       rw, rd, scale, cx, cy,
       toScreen(x, y) {
@@ -398,9 +502,9 @@
   function drawFloorplan() {
     const canvas = $('floorplan-canvas');
     if (!canvas || !state.currentScene) return;
-    const ctx = canvas.getContext('2d');
+    const { ctx, W, H } = prepareCanvas(canvas);
     const tf = floorplanTransform(canvas);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, W, H);
 
     // Room floor rectangle (y from -rd/2 to +1.65)
     const [x0, y0] = tf.toScreen(-tf.rw / 2, 1.65);
@@ -433,9 +537,7 @@
     ctx.strokeStyle = state.currentScene.sideWallColorHex || '#a3a89c';
     ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x0, y1); ctx.stroke();
 
-    ctx.fillStyle = 'rgba(255,255,255,0.65)';
-    ctx.font = '11px "Microsoft JhengHei", sans-serif';
-    ctx.fillText('▲ 主背牆 (Back Wall Y=1.65m)', x0 + 10, y0 - 8);
+    drawLabel(ctx, '主背牆（鏡頭從下方往上看）', x0 + 6, y0 - 12, { size: 10, bg: 'rgba(255,255,255,0.14)', fg: 'rgba(255,255,255,0.85)', align: 'left' });
 
     // Draw props
     (state.currentScene.props || []).forEach((p, idx) => {
@@ -454,11 +556,10 @@
       ctx.lineWidth = isSel ? 2.5 : 1.2;
       ctx.strokeStyle = isSel ? '#ffd166' : 'rgba(255,255,255,0.6)';
       ctx.strokeRect(-pw / 2, -pd / 2, pw, pd);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.label || p.type, 0, 4);
       ctx.restore();
+      const labelText = String(p.label || p.type);
+      const short = labelText.length > 8 ? labelText.slice(0, 7) + '…' : labelText;
+      drawLabel(ctx, short, px, py, { size: 11, bg: isSel ? 'rgba(255,209,102,0.95)' : 'rgba(14,18,17,0.72)', fg: isSel ? '#1d2320' : '#ffffff' });
     });
 
     // Draw Cabinet Target Slot
@@ -486,11 +587,8 @@
     ctx.lineTo(6, cd / 2);
     ctx.closePath();
     ctx.fill();
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('🎯 組合櫃', 0, 4);
     ctx.restore();
+    drawLabel(ctx, '組合櫃', cx, cy, { size: 12, bg: 'rgba(184,93,41,0.96)', fg: '#ffffff' });
   }
 
   function setupFloorplanEvents() {
@@ -499,10 +597,7 @@
 
     function getMousePos(e) {
       const rect = canvas.getBoundingClientRect();
-      return [
-        (e.clientX - rect.left) * (canvas.width / rect.width),
-        (e.clientY - rect.top) * (canvas.height / rect.height)
-      ];
+      return [e.clientX - rect.left, e.clientY - rect.top];
     }
 
     canvas.addEventListener('mousedown', e => {
@@ -635,8 +730,7 @@
 
   function renderLive3DScene(canvas, sceneCfg, cabinetSpec, viewId = 'THREE_QUARTER', orbit = { yawOffset: 0, pitchOffset: 0, zoom: 1.0 }, themeOverride = null) {
     if (!canvas || !sceneCfg || !cabinetSpec) return;
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width, H = canvas.height;
+    const { ctx, W, H } = prepareCanvas(canvas);
 
     // Sky/World background gradient
     const grad = ctx.createLinearGradient(0, 0, 0, H);
@@ -667,7 +761,9 @@
     const dist = Math.max(extent * vcfg.distMult, 2.0) / Math.max(0.5, orbit.zoom || 1.0);
 
     const target = [px * 0.55, py * 0.5, pz + cabH * 0.48];
-    const baseYaw = Math.atan2(vcfg.side, -1.0) + (orbit.yawOffset || 0);
+    // yaw 0 = camera in front of the room (-y) looking at the back wall, like the Blender camera; the old
+    // atan2(side, -1) put the camera behind the back wall, which mirrored the whole preview left/right.
+    const baseYaw = Math.atan2(vcfg.side, 1.0) + (orbit.yawOffset || 0);
     const basePitch = Math.atan(vcfg.elev) + (orbit.pitchOffset || 0);
 
     const camPos = [
@@ -803,16 +899,20 @@
     });
 
     // Watermark badge on 3D preview
-    ctx.fillStyle = 'rgba(18, 28, 25, 0.72)';
-    ctx.fillRect(12, H - 34, 310, 24);
-    ctx.fillStyle = '#e7f3ee';
-    ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
-    ctx.fillText(`🏠 ${sceneCfg.name} · ${themeOverride?.label || cabinetSpec.themeLabel || ''}`, 20, H - 18);
+    if (!state.thumbMode) drawLabel(ctx, `${sceneCfg.name} · ${themeOverride?.label || cabinetSpec.themeLabel || ''}`, 12, H - 18, { size: 11, bg: 'rgba(18, 28, 25, 0.78)', fg: '#e7f3ee', align: 'left' });
   }
 
   function setup3DViewportEvents() {
     const canvas = $('scene3d-canvas');
     if (!canvas) return;
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        drawFloorplan();
+        renderLive3DScene(canvas, state.currentScene, state.previewPlan?.cabinetSpec, $('scene-view').value, state.camOrbit);
+      }, 120);
+    });
     canvas.addEventListener('mousedown', e => {
       state.camOrbit.dragging = true;
       state.camOrbit.lastX = e.clientX;
@@ -853,6 +953,11 @@
       state.previewPlan = res;
       drawFloorplan();
       renderLive3DScene($('scene3d-canvas'), state.currentScene, res.cabinetSpec, $('scene-view').value || 'THREE_QUARTER', state.camOrbit);
+      const specKey = `${res.cabinetSpec?.width}x${res.cabinetSpec?.height}|${state.cabinet?.themeId || ''}`;
+      if (state.sceneCardsKey !== specKey) {
+        state.sceneCardsKey = specKey;
+        renderSceneTabs();
+      }
     } catch (e) {
       notify(e.message, true);
     }
@@ -867,21 +972,21 @@
     $('matrix-scenes-list').innerHTML = scenes.map((s, idx) =>
       `<label class="check-item">
         <input type="checkbox" name="mat-scene" value="${esc(s.id)}" ${idx < 3 ? 'checked' : ''}>
-        <span>${s.builtin ? '🏠' : '✨'} ${esc(s.name)}</span>
+        <span>${esc(s.name)}</span>
       </label>`
     ).join('');
 
     $('matrix-themes-list').innerHTML = themes.map((t, idx) =>
       `<label class="check-item">
         <input type="checkbox" name="mat-theme" value="${esc(t.id)}" ${idx < 2 ? 'checked' : ''}>
-        <span>🎨 ${esc(t.label)}</span>
+        <span>${esc(t.label)}</span>
       </label>`
     ).join('');
 
     $('matrix-views-list').innerHTML = views.map((v, idx) =>
       `<label class="check-item">
         <input type="checkbox" name="mat-view" value="${esc(v.id)}" ${idx === 0 ? 'checked' : ''}>
-        <span>📷 ${esc(v.label)}</span>
+        <span>${esc(v.label)}</span>
       </label>`
     ).join('');
 
@@ -900,8 +1005,10 @@
 
   function updateMatrixFormula() {
     const { sceneIds, themeIds, views, total } = getSelectedMatrix();
-    $('matrix-formula').textContent = `預計產出：${sceneIds.length} 個場景 × ${themeIds.length} 種配色 × ${views.length} 個視角 ＝ 共 ${total} 張電商情境圖`;
-    $('matrix-count-pill').textContent = `矩陣預備：${total} 張`;
+    const n = Number($('ai-variants')?.value || 2);
+    const ai = state.aiEngine === 'fleet_flux3';
+    $('matrix-formula').textContent = `預計產出：${sceneIds.length} 場景 × ${themeIds.length} 配色 × ${views.length} 視角 ＝ ${total} 組${ai ? `，每組 ${n} 張地端 AI 實景（共 ${total * n} 張）` : ''}`;
+    $('matrix-count-pill').textContent = `矩陣：${total} 組${ai ? ` · AI ${total * n} 張` : ''}`;
   }
 
   function generateInstant3DMatrixGallery() {
@@ -951,7 +1058,34 @@
     $('instant-gallery-wrap').hidden = false;
     $('instant-gallery-meta').textContent = `已完成 ${count} 張 720×720 電商情境圖`;
     $('instant-gallery').innerHTML = cards.join('');
-    notify(`⚡ 已即時生成 ${count} 張多場景電商情境圖！可直接預覽或點擊下載 PNG。`);
+    notify(`已即時生成 ${count} 張 3D 草圖，可預覽或下載 PNG。`);
+  }
+
+  function collectAiOptions() {
+    const useFinal = $('ai-use-final-prompt')?.checked && $('ai-final-prompt').value.trim();
+    return {
+      aiEngine: state.aiEngine || 'fleet_flux3',
+      aiStyleId: $('ai-style-select').value || 'AI_NORDIC_SUNLIT_LOFT',
+      aiPrompt: $('ai-prompt-input').value.trim(),
+      aiVariants: Number($('ai-variants').value || 2),
+      aiVariation: $('ai-variation').value || 'faithful',
+      aiUpsample: $('ai-upsample').checked,
+      aiSeed: Number($('ai-seed').value || 0) || 0,
+      aiFinalPrompt: useFinal ? $('ai-final-prompt').value.trim() : '',
+      samples: Number($('matrix-samples').value || 32)
+    };
+  }
+
+  async function submitBatch(body, { single = false } = {}) {
+    const batch = await api('/api/ecommerce-scenes/batches', { method: 'POST', body: JSON.stringify(body) });
+    state.activeBatchId = batch.batchId;
+    state.singleBatchId = single ? batch.batchId : null;
+    state.batches = [batch, ...state.batches.filter(b => b.batchId !== batch.batchId)].slice(0, 15);
+    rememberBatch(batch.batchId);
+    renderBatchPicker();
+    renderBlenderBatch(batch);
+    pollBlenderBatch(batch.batchId);
+    return batch;
   }
 
   async function startRealBlenderBatch() {
@@ -960,25 +1094,11 @@
       notify('請至少勾選 1 個場景、1 種配色與 1 個視角', true);
       return;
     }
+    const opts = collectAiOptions();
     try {
       $('blender-matrix-btn').disabled = true;
-      notify(`🔥 正在啟動 A+B 雙引擎光追批次算圖（共 ${total} 組，每組含 3D光追 + AI攝影棚合成 + 透明去背圖）…`);
-      const batch = await api('/api/ecommerce-scenes/batches', {
-        method: 'POST',
-        body: JSON.stringify({
-          cabinet: state.cabinet,
-          currentScene: state.currentScene,
-          sceneIds,
-          themeIds,
-          views,
-          samples: Number($('matrix-samples').value || 32),
-          aiStyleId: $('ai-style-select') ? $('ai-style-select').value : 'AI_NORDIC_SUNLIT_LOFT',
-          aiPrompt: $('ai-prompt-input') ? $('ai-prompt-input').value : ''
-        })
-      });
-      state.activeBatchId = batch.batchId;
-      renderBlenderBatch(batch);
-      pollBlenderBatch(batch.batchId);
+      await submitBatch({ cabinet: state.cabinet, currentScene: state.currentScene, sceneIds, themeIds, views, ...opts });
+      notify(`已送出 ${total} 組算圖${opts.aiEngine === 'fleet_flux3' ? `，每組 ${opts.aiVariants} 張地端 AI 實景變化` : ''}；進度在下方成果區。`);
     } catch (e) {
       notify(e.message, true);
     } finally {
@@ -986,9 +1106,227 @@
     }
   }
 
+  async function startSinglePhotorealRender() {
+    if (!state.cabinet || !state.currentScene) return;
+    const opts = collectAiOptions();
+    try {
+      $('single-photoreal-box').hidden = false;
+      $('single-photoreal-status').textContent = '送出中…';
+      $('single-photoreal-status').className = 'badge warn';
+      $('single-photoreal-content').innerHTML = '<div class="photoreal-loading">Blender Cycles 光追算圖中（約 10～20 秒），之後交給 GPU 艦隊重拍實景…</div>';
+      await submitBatch({
+        cabinet: state.cabinet,
+        currentScene: state.currentScene,
+        sceneIds: [state.currentScene.id],
+        themeIds: [state.cabinet.themeId || 'THEME_NORDIC_OAK'],
+        views: [$('scene-view').value || 'THREE_QUARTER'],
+        ...opts,
+        samples: 36
+      }, { single: true });
+    } catch (e) {
+      notify(e.message, true);
+    }
+  }
+
+  async function rerunItemVariants(batchId, itemId) {
+    const batch = state.lastBatch && state.lastBatch.batchId === batchId ? state.lastBatch : null;
+    const item = batch && (batch.items || []).find(x => x.itemId === itemId);
+    if (!item) return;
+    const scene = (state.overview?.scenes || []).find(s => s.id === item.sceneId) || (state.currentScene?.id === item.sceneId ? state.currentScene : null);
+    const opts = collectAiOptions();
+    try {
+      await submitBatch({
+        cabinet: state.cabinet,
+        currentScene: scene || state.currentScene,
+        sceneIds: [item.sceneId],
+        themeIds: [item.themeId],
+        views: [item.view],
+        ...opts,
+        aiSeed: 0
+      });
+      notify(`已為「${item.sceneName}」再送出 ${opts.aiVariants} 張新的 AI 實景變化。`);
+    } catch (e) {
+      notify(e.message, true);
+    }
+  }
+
+  function itemDownloadBase(batchId, itemId) {
+    return `/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/download`;
+  }
+
+  // The fleet console's raw progress note ("等待 GPU 資源:需 20.5GB,目前可用 11.3GB…") just means the card is busy
+  // with the previous image; say that instead of alarming people with VRAM arithmetic.
+  function friendlyFleetNote(note) {
+    const s = String(note || '');
+    if (/等待 GPU 資源/.test(s)) {
+      const hot = /87°C|降溫/.test(s) ? '，另一張卡過熱暫停派工' : '';
+      return `排隊中：GPU 正在處理前面的圖，每張約 25～40 秒${hot}`;
+    }
+    return s;
+  }
+
+  function describeStage(batch, item) {
+    if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
+    if (item.state === 'queued') return { cls: 'is-queued', text: '排隊等待 Blender（上一組算完就輪到）' };
+    if (item.stage === 'ai') {
+      const vs = item.aiVariants || [];
+      const done = vs.filter(v => v.state === 'succeeded').length;
+      const active = vs.find(v => v.state === 'running') || vs.find(v => v.state === 'queued');
+      const note = active && active.progressNote ? `（${friendlyFleetNote(active.progressNote)}）` : '';
+      return { cls: 'is-running', text: `地端 AI 實景生成中 ${done}/${vs.length || batch.aiVariantsPerItem || ''}${note}` };
+    }
+    if (item.state === 'running') return { cls: 'is-running', text: 'Blender Cycles 光追算圖中…' };
+    if (item.aiState === 'failed') return { cls: 'is-failed', text: `AI 實景失敗：${item.aiError || ''}（光追圖仍可用）` };
+    if (item.aiState === 'partial') return { cls: 'is-done', text: '完成（部分 AI 變化失敗）' };
+    const meta = item.renderTimeSec ? ` · Blender ${item.renderTimeSec}s ${item.device || ''}` : '';
+    return { cls: 'is-done', text: `完成${meta}` };
+  }
+
+  function itemSources(batch, item) {
+    const base = itemDownloadBase(batch.batchId, item.itemId);
+    const qs = `?workspace=${encodeURIComponent(tenant)}`;
+    const sources = [];
+    const rendered = item.state === 'succeeded' || item.stage === 'ai';
+    (item.aiVariants || []).forEach((v, i) => sources.push({
+      key: `v${i + 1}`, label: `AI 實景 ${i + 1}${v.drift ? ' ⚠' : ''}`, state: v.state, drift: Boolean(v.drift),
+      note: v.error || (v.drift ? `疑似重影（構圖分數 ${v.driftScore}），建議再生成` : friendlyFleetNote(v.progressNote || '')),
+      src: `${base}/ai_local_png${qs}&variant=${i + 1}&inline=true`, dl: `${base}/ai_local_png${qs}&variant=${i + 1}`, seed: v.seed, caption: v.caption
+    }));
+    if (rendered) {
+      sources.push({ key: 'png', label: '3D 光追', state: 'succeeded', src: `${base}/png${qs}&inline=true`, dl: `${base}/png${qs}` });
+      if (item.hasAiComposite) sources.push({ key: 'ai_png', label: '內建合成', state: 'succeeded', src: `${base}/ai_png${qs}&inline=true`, dl: `${base}/ai_png${qs}` });
+      if (item.hasCutout) sources.push({ key: 'cutout_png', label: '去背', state: 'succeeded', src: `${base}/cutout_png${qs}&inline=true`, dl: `${base}/cutout_png${qs}` });
+    }
+    return { sources, base, qs, rendered };
+  }
+
+  function renderBatchCard(batch, item) {
+    const { sources, base, qs, rendered } = itemSources(batch, item);
+    const imgId = `bimg-${batch.batchId}-${item.itemId}`;
+    const ready = sources.filter(s => s.state === 'succeeded');
+    const primary = ready.find(s => !s.drift) || ready[0];
+    const stage = describeStage(batch, item);
+    const tabs = sources.map(s =>
+      `<button type="button" class="thumb-tab ${primary && s.key === primary.key ? 'primary' : ''} is-${esc(s.state)} ${s.drift ? 'is-drift' : ''}" data-target="${imgId}" data-src="${s.state === 'succeeded' ? esc(s.src) : ''}" title="${esc(s.note || '')}" ${s.state === 'succeeded' ? '' : 'disabled'}>${esc(s.label)}${s.state === 'failed' ? ' ✕' : ''}</button>`
+    ).join('');
+    const hero = primary
+      ? `<img id="${imgId}" class="card-hero" src="${esc(primary.src)}" alt="${esc(item.sceneName)}">`
+      : `<div class="card-hero photoreal-loading">${esc(stage.text)}</div>`;
+    const links = rendered
+      ? `<div class="gallery-links">${ready.map(s => `<a href="${esc(s.dl)}">${esc(s.label)} ↓</a>`).join('')}<a href="${base}/glb${qs}">GLB ↓</a></div>`
+      : '';
+    const firstCaption = (item.aiVariants || []).find(v => v.caption);
+    const caption = firstCaption ? `<div class="card-caption" title="${esc(firstCaption.caption)}">AI 描述：${esc(firstCaption.caption)}</div>` : '';
+    const rerun = item.state === 'succeeded' && item.aiEngine === 'fleet_flux3'
+      ? `<div class="card-actions"><button type="button" class="btn-xs rerun-variants-btn" data-batch="${esc(batch.batchId)}" data-item="${esc(item.itemId)}">再生成 ${$('ai-variants').value} 張新變化</button></div>`
+      : '';
+    return `<article class="gallery-card" data-item-id="${esc(item.itemId)}">
+      ${hero}
+      <div class="card-tabs">${tabs}</div>
+      <div class="gallery-card-body">
+        <strong>#${item.index} · ${esc(item.sceneName)}</strong>
+        <span>配色：${esc(item.themeLabel)} · 視角：${esc(item.viewLabel)}</span>
+        <span class="card-stage ${stage.cls}">${esc(stage.text)}</span>
+        ${caption}
+        ${links}
+        ${rerun}
+      </div>
+    </article>`;
+  }
+
+  function renderSingleShowcase(batch, item) {
+    const { sources, rendered } = itemSources(batch, item);
+    const stage = describeStage(batch, item);
+    $('single-photoreal-status').textContent = stage.text;
+    $('single-photoreal-status').className = `badge ${stage.cls === 'is-done' ? 'ok' : (stage.cls === 'is-failed' ? 'bad' : 'warn')}`;
+    if (!rendered) {
+      $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">${esc(stage.text)}</div>`;
+      return;
+    }
+    const order = { v: 0, png: 1, ai_png: 2, cutout_png: 3 };
+    const blocks = sources
+      .slice()
+      .sort((a, b) => (order[a.key.startsWith('v') ? 'v' : a.key] ?? 9) - (order[b.key.startsWith('v') ? 'v' : b.key] ?? 9))
+      .map(s => {
+        const title = `${esc(s.label)}${s.seed != null ? ` <span class="muted">seed ${esc(s.seed)}</span>` : ''}`;
+        if (s.state !== 'succeeded') {
+          const msg = s.state === 'failed' ? `失敗：${s.note || ''}` : (s.note || 'GPU 艦隊處理中…');
+          return `<div class="photoreal-meta"><h4>${title}</h4><div class="photoreal-loading">${esc(msg)}</div></div>`;
+        }
+        return `<div class="photoreal-meta"><h4>${title}</h4><img class="photoreal-hero-img" src="${esc(s.src)}" alt="${esc(s.label)}"><div class="gallery-links"><a class="btn-sm ${s.key.startsWith('v') ? 'primary' : ''}" href="${esc(s.dl)}">下載 PNG</a></div>${s.caption ? `<div class="card-caption" title="${esc(s.caption)}">AI 描述：${esc(s.caption)}</div>` : ''}</div>`;
+      });
+    $('single-photoreal-content').innerHTML = blocks.join('');
+  }
+
+  const BATCH_KEY = 'fox3d.scene-studio.batch';
+  function rememberBatch(batchId) {
+    try { localStorage.setItem(BATCH_KEY, batchId || ''); } catch (e) { /* private mode */ }
+  }
+  function rememberedBatch() {
+    try { return localStorage.getItem(BATCH_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function batchLabel(b) {
+    const when = b.createdAt ? new Date(b.createdAt) : null;
+    const ts = when && !isNaN(when) ? `${String(when.getMonth() + 1).padStart(2, '0')}/${String(when.getDate()).padStart(2, '0')} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
+    const st = b.state === 'running' ? '執行中' : (b.state === 'interrupted' ? '已中斷' : `完成 ${b.succeeded}/${b.total}`);
+    const ai = b.aiVariantsPerItem ? ` · AI×${b.aiVariantsPerItem}` : '';
+    return `${ts} · ${b.total} 組${ai} · ${st} · ${b.cabinetName || ''}`;
+  }
+
+  function renderBatchPicker() {
+    const sel = $('batch-picker');
+    if (!sel) return;
+    const list = state.batches || [];
+    sel.innerHTML = list.length
+      ? list.map(b => `<option value="${esc(b.batchId)}">${esc(batchLabel(b))}</option>`).join('')
+      : '<option value="">尚無批次</option>';
+    if (state.activeBatchId && list.some(b => b.batchId === state.activeBatchId)) sel.value = state.activeBatchId;
+  }
+
+  async function refreshBatchList(selectId) {
+    try {
+      const ov = await api('/api/ecommerce-scenes/overview');
+      state.overview = ov;
+      state.batches = ov.batches || [];
+      renderBatchPicker();
+      if (selectId) await showBatch(selectId);
+    } catch (e) {
+      notify(e.message, true);
+    }
+  }
+
+  async function showBatch(batchId) {
+    if (!batchId) return;
+    clearTimeout(state.pollTimer);
+    state.activeBatchId = batchId;
+    state.singleBatchId = null;
+    rememberBatch(batchId);
+    try {
+      const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
+      state.batches = [batch, ...state.batches.filter(b => b.batchId !== batchId)].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 15);
+      renderBatchPicker();
+      renderBlenderBatch(batch);
+      if (batch.state === 'running') pollBlenderBatch(batch.batchId);
+    } catch (e) {
+      notify(e.message, true);
+    }
+  }
+
   function renderBlenderBatch(batch) {
     if (!batch) return;
-    $('blender-batch-status').textContent = `狀態：${batch.state === 'completed' ? '已完成' : 'A+B 雙引擎渲染中'} (${batch.completed}/${batch.total} · 成功 ${batch.succeeded})`;
+    state.lastBatch = batch;
+    const picker = $('batch-picker');
+    if (picker && picker.value !== batch.batchId && (state.batches || []).some(b => b.batchId === batch.batchId)) picker.value = batch.batchId;
+    const running = batch.state === 'running';
+    const interrupted = batch.state === 'interrupted';
+    const aiNote = batch.aiVariantsPerItem ? ` · ${batch.aiEngineLabel || '地端 AI'} ×${batch.aiVariantsPerItem}` : '';
+    const statusEl = $('blender-batch-status');
+    const aiWaiting = running && (batch.items || []).filter(it => it.stage === 'ai').length;
+    statusEl.textContent = `${running ? '執行中' : (interrupted ? '已中斷' : '已完成')} ${batch.completed}/${batch.total} · 成功 ${batch.succeeded}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}${aiWaiting ? ` · ${aiWaiting} 組等 GPU` : ''}`;
+    statusEl.className = `badge ${running ? 'warn' : ((batch.failed || interrupted) ? 'bad' : 'ok')}`;
+    const rerunBtn = $('batch-rerun');
+    if (rerunBtn) rerunBtn.hidden = !(batch.request && batch.state !== 'running');
     const zipLink = $('download-zip-link');
     if (batch.succeeded > 0) {
       zipLink.hidden = false;
@@ -996,109 +1334,11 @@
     } else {
       zipLink.hidden = true;
     }
-    $('blender-gallery').innerHTML = (batch.items || []).map(item => {
-      const base = `/api/ecommerce-scenes/batches/${encodeURIComponent(batch.batchId)}/items/${encodeURIComponent(item.itemId)}/download`;
-      const qs = `?workspace=${encodeURIComponent(tenant)}`;
-      const imgId = `bimg-${batch.batchId}-${item.itemId}`;
-      const modeTabs = item.state === 'succeeded'
-        ? `<div class="btn-group">
-            <button type="button" class="btn-xs primary batch-img-tab" data-target="${imgId}" data-src="${base}/png${qs}&inline=true">🅰️ 3D 實景光追</button>
-            <button type="button" class="btn-xs batch-img-tab" data-target="${imgId}" data-src="${base}/ai_png${qs}&inline=true">🅱️ AI 攝影棚合成</button>
-            <button type="button" class="btn-xs batch-img-tab" data-target="${imgId}" data-src="${base}/cutout_png${qs}&inline=true">✂️ 透明去背地影</button>
-          </div>`
-        : '';
-      const imgHtml = item.state === 'succeeded'
-        ? `<img id="${imgId}" src="${base}/ai_png${qs}&inline=true" alt="${esc(item.sceneName)}">`
-        : `<div class="photoreal-loading">
-            ${item.state === 'running' ? '🔥 Blender Cycles GPU + AI 攝影棚雙引擎算圖中…' : (item.state === 'queued' ? '⏳ 排隊等待中…' : '⚠️ ' + esc(item.error || '失敗'))}
-          </div>`;
-      const linksHtml = item.state === 'succeeded'
-        ? `<div class="gallery-links">
-            <a href="${base}/ai_png${qs}">🅱️ AI合成圖 ↓</a>
-            <a href="${base}/png${qs}">🅰️ 3D光追圖 ↓</a>
-            <a href="${base}/cutout_png${qs}">✂️ 去背圖 ↓</a>
-            <a href="${base}/glb${qs}">GLB ↓</a>
-          </div>`
-        : '';
-      return `<article class="gallery-card">
-        ${imgHtml}
-        <div class="gallery-card-body">
-          ${modeTabs}
-          <strong>#${item.index} · ${esc(item.sceneName)}</strong>
-          <span>配色：${esc(item.themeLabel)}</span>
-          <span>視角：${esc(item.viewLabel)} ${item.renderTimeSec ? `(${item.renderTimeSec}s · ${item.device || 'GPU'})` : ''}</span>
-          ${linksHtml}
-        </div>
-      </article>`;
-    }).join('');
-
-    document.querySelectorAll('.batch-img-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const targetImg = $(btn.dataset.target);
-        if (targetImg) targetImg.src = btn.dataset.src;
-        const parent = btn.parentElement;
-        if (parent) {
-          parent.querySelectorAll('.batch-img-tab').forEach(b => b.classList.remove('primary'));
-        }
-        btn.classList.add('primary');
-      });
-    });
+    $('blender-gallery').innerHTML = (batch.items || []).map(item => renderBatchCard(batch, item)).join('');
 
     const first = (batch.items || [])[0];
-    if (first && $('single-photoreal-box') && !$('single-photoreal-box').hidden) {
-      const base = `/api/ecommerce-scenes/batches/${encodeURIComponent(batch.batchId)}/items/${encodeURIComponent(first.itemId)}/download`;
-      const qs = `?workspace=${encodeURIComponent(tenant)}`;
-      $('single-photoreal-status').textContent = first.state === 'succeeded'
-        ? `🟢 A+B 雙引擎渲染完成 (${first.renderTimeSec || ''}s · Blender ${first.blenderVersion || ''} ${first.device || 'OPTIX'})`
-        : (first.state === 'running' ? '🔥 Blender Cycles + AI 攝影棚渲染中（約 5~9 秒）…' : first.error || '排隊中…');
-      if (first.state === 'succeeded') {
-        $('single-photoreal-content').innerHTML = `
-          <div class="photoreal-meta">
-            <h4>🅰️ 方案 A：Blender 3D 高模實景光追圖</h4>
-            <img class="photoreal-hero-img" src="${base}/png${qs}&inline=true" alt="方案 A 3D 實景光追圖">
-            <div class="gallery-links">
-              <a class="btn-sm primary" href="${base}/png${qs}">⬇ 下載方案 A (3D 光追 PNG)</a>
-              <a class="btn-sm" href="${base}/glb${qs}">⬇ 下載 3D 場景 (.glb)</a>
-            </div>
-          </div>
-          <div class="photoreal-meta">
-            <h4>🅱️ 方案 B：AI 實景攝影棚合成圖（100% 鎖定櫃體與地影）</h4>
-            <img class="photoreal-hero-img" src="${base}/ai_png${qs}&inline=true" alt="方案 B AI 攝影棚合成圖">
-            <div class="gallery-links">
-              <a class="btn-sm primary" href="${base}/ai_png${qs}">⬇ 下載方案 B (AI 實景合成 PNG)</a>
-              <a class="btn-sm" href="${base}/cutout_png${qs}">⬇ 下載透明去背+光追地影圖 (PNG)</a>
-            </div>
-          </div>`;
-      } else {
-        $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 算圖並合成 AI 實景攝影棚，請稍候約 5～9 秒…</div>`;
-      }
-    }
-  }
-
-  async function startSinglePhotorealRender() {
-    if (!state.cabinet || !state.currentScene) return;
-    try {
-      $('single-photoreal-box').hidden = false;
-      $('single-photoreal-status').textContent = '🔥 啟動 A+B 雙引擎光追…';
-      $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">🔥 正在呼叫本機 Blender 5.2 Cycles (NVIDIA OptiX GPU) 算圖並合成 AI 實景攝影棚，請稍候約 5～9 秒…</div>`;
-      const batch = await api('/api/ecommerce-scenes/batches', {
-        method: 'POST',
-        body: JSON.stringify({
-          cabinet: state.cabinet,
-          currentScene: state.currentScene,
-          sceneIds: [state.currentScene.id],
-          themeIds: [state.cabinet.themeId || 'THEME_NORDIC_OAK'],
-          views: [$('scene-view').value || 'THREE_QUARTER'],
-          samples: 36,
-          aiStyleId: $('ai-style-select') ? $('ai-style-select').value : 'AI_NORDIC_SUNLIT_LOFT',
-          aiPrompt: $('ai-prompt-input') ? $('ai-prompt-input').value : ''
-        })
-      });
-      state.activeBatchId = batch.batchId;
-      renderBlenderBatch(batch);
-      pollBlenderBatch(batch.batchId);
-    } catch (e) {
-      notify(e.message, true);
+    if (first && state.singleBatchId === batch.batchId && $('single-photoreal-box') && !$('single-photoreal-box').hidden) {
+      renderSingleShowcase(batch, first);
     }
   }
 
@@ -1106,11 +1346,17 @@
     clearTimeout(state.pollTimer);
     try {
       const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
+      state.batches = (state.batches || []).map(b => (b.batchId === batch.batchId ? batch : b));
+      if (batch.state !== 'running') renderBatchPicker();
       renderBlenderBatch(batch);
       if (batch.state === 'running') {
         state.pollTimer = setTimeout(() => pollBlenderBatch(batchId), 2500);
       } else {
-        notify(`🎉 A+B 雙引擎批次渲染完成！每組皆已產出 🅰️ 3D光追圖、🅱️ AI攝影棚合成圖 與 ✂️ 透明去背圖！`);
+        const aiCount = (batch.items || []).reduce((n, it) => n + (it.aiVariants || []).filter(v => v.state === 'succeeded').length, 0);
+        notify(batch.state === 'interrupted'
+          ? '這個批次在工作台重新啟動時中斷了，請重新送出。'
+          : `批次完成：${batch.succeeded}/${batch.total} 組光追圖${aiCount ? `、${aiCount} 張地端 AI 實景` : ''}${batch.failed ? `，${batch.failed} 組失敗` : ''}。`, batch.state === 'interrupted');
+        refreshEngineStatus();
       }
     } catch (e) {
       notify(e.message, true);
@@ -1235,7 +1481,7 @@
       };
       syncSceneInputsFromState();
       refreshPreviewPlan();
-      notify('✨ 已建立新房間！可點擊上方家具道具加入房間，並在 2D 平面圖直接拖拉擺放。');
+      notify('已建立新房間：點上方家具道具加入，再到 2D 平面圖拖拉擺放。');
     });
 
     $('save-scene-btn').addEventListener('click', async () => {
@@ -1256,7 +1502,7 @@
         state.currentScene = clone(saved);
         syncSceneInputsFromState();
         renderMatrixChecklists();
-        notify(`💾 已儲存場景「${saved.name}」至場景庫！下方步驟 3 矩陣清單已同步更新。`);
+        notify(`已儲存場景「${saved.name}」，步驟 3 的場景清單已同步。`);
       } catch (e) {
         notify(e.message, true);
       }
@@ -1318,7 +1564,7 @@
           delete p.glbPath;
         }
         refreshPreviewPlan();
-        notify('🏛️ 已切換此家具的 3D 高模資產設定！點「🔥 立即算這張 A+B 雙引擎逼真圖」即可套用。');
+        notify('已切換此家具的 3D 高模；按「算這張逼真圖」即可套用。');
       });
     }
     if ($('upload-glb-btn') && $('upload-glb-input')) {
@@ -1327,7 +1573,7 @@
         const file = ev.target.files && ev.target.files[0];
         if (!file || !state.currentScene) return;
         try {
-          notify(`📥 正在匯入 3D 家具模型「${file.name}」…`);
+          notify(`正在匯入 3D 家具模型「${file.name}」…`);
           const reader = new FileReader();
           const dataBase64 = await new Promise((resolve, reject) => {
             reader.onload = () => resolve(String(reader.result || ''));
@@ -1357,7 +1603,7 @@
           state.selectedTarget = { kind: 'prop', index: state.currentScene.props.length - 1 };
           syncSelectedBar();
           await refreshPreviewPlan();
-          notify(`🎉 已將「${res.label}」放入房間！可在 2D 平面圖拖拉位置，Blender 光追算圖時將自動載入此高模 GLB。`);
+          notify(`已將「${res.label}」放入房間；可在平面圖拖拉位置，Blender 算圖時會載入此 GLB。`);
         } catch (err) {
           notify(err.message, true);
         } finally {
@@ -1365,6 +1611,75 @@
         }
       });
     }
+
+    // ---- 地端 AI 實景：engine panel, prompt preview, fleet settings, gallery delegation
+    $('ai-engine-refresh').addEventListener('click', refreshEngineStatus);
+    $('ai-prompt-preview-btn').addEventListener('click', () => previewAiPrompt(false));
+    $('ai-prompt-polish-btn').addEventListener('click', () => previewAiPrompt(true));
+    $('ai-variants').addEventListener('change', updateMatrixFormula);
+    ['ai-variation', 'ai-upsample', 'ai-pin-product'].forEach(id => {
+      $(id).addEventListener('change', async () => {
+        try {
+          await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify({ aiVariation: $('ai-variation').value, aiUpsample: $('ai-upsample').checked, aiPinProduct: $('ai-pin-product').checked, aiVariants: Number($('ai-variants').value || 2) }) });
+        } catch (e) { /* keep UI value; surfaced on save */ }
+      });
+    });
+    $('fleet-settings-save').addEventListener('click', async () => {
+      const payload = {
+        fleetApiUrl: $('fleet-url').value.trim(),
+        publicBaseUrl: $('public-base-url').value.trim(),
+        aiVariants: Number($('ai-variants').value || 2),
+        aiVariation: $('ai-variation').value,
+        aiUpsample: $('ai-upsample').checked,
+        aiPinProduct: $('ai-pin-product').checked,
+        imageEngine: state.aiEngine
+      };
+      const tok = $('fleet-token').value.trim();
+      if (tok) payload.fleetToken = tok;
+      try {
+        await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify(payload) });
+        $('fleet-token').value = '';
+        notify('已儲存 GPU 艦隊設定。');
+        await refreshAiKeyStatus();
+        refreshEngineStatus();
+      } catch (e) {
+        notify(e.message, true);
+      }
+    });
+    const delegateGallery = root => {
+      if (!root) return;
+      root.addEventListener('click', ev => {
+        const tab = ev.target.closest('.thumb-tab');
+        if (tab && tab.dataset.src) {
+          const img = $(tab.dataset.target);
+          if (img) img.src = tab.dataset.src;
+          tab.parentElement.querySelectorAll('.thumb-tab').forEach(b => b.classList.remove('primary'));
+          tab.classList.add('primary');
+          return;
+        }
+        const rerun = ev.target.closest('.rerun-variants-btn');
+        if (rerun) {
+          rerun.disabled = true;
+          rerunItemVariants(rerun.dataset.batch, rerun.dataset.item).finally(() => { rerun.disabled = false; });
+        }
+      });
+    };
+    delegateGallery($('blender-gallery'));
+    $('batch-picker').addEventListener('change', () => showBatch($('batch-picker').value));
+    $('batch-rerun').addEventListener('click', async () => {
+      const b = state.lastBatch;
+      if (!b || !b.request) return;
+      $('batch-rerun').disabled = true;
+      try {
+        await submitBatch({ ...b.request, aiSeed: 0 });
+        notify(`已用同樣設定重新送出 ${b.total} 組。`);
+      } catch (e) {
+        notify(e.message, true);
+      } finally {
+        $('batch-rerun').disabled = false;
+      }
+    });
+    $('batch-refresh').addEventListener('click', () => refreshBatchList($('batch-picker').value || null));
 
     // Step Tabs Switching Logic
     function switchTab(tabId) {
@@ -1390,17 +1705,22 @@
     try {
       const ov = await api('/api/ecommerce-scenes/overview');
       state.overview = ov;
-      $('blender-pill').textContent = ov.blenderAvailable ? '🟢 真實 Blender 已連線' : '🟡 Blender 未偵測（可使用即時 3D 矩陣）';
+      state.engines = ov.sceneAiEngines || [];
+      $('blender-pill').textContent = ov.blenderAvailable ? 'Blender 已連線' : 'Blender 未偵測（可用即時 3D 草圖）';
+      $('blender-pill').className = `pill ${ov.blenderAvailable ? 'ok' : 'warn'}`;
 
       $('scene-lighting').innerHTML = (ov.lightingPresets || []).map(l =>
-        `<option value="${esc(l.id)}">${esc(l.label)}</option>`
+        `<option value="${esc(l.id)}">${esc(stripEmoji(l.label))}</option>`
       ).join('');
       $('scene-view').innerHTML = (ov.cameraViews || []).map(v =>
         `<option value="${esc(v.id)}">${esc(v.label)}</option>`
       ).join('');
+      $('ai-style-select').innerHTML = (ov.aiStylePresets || []).map(p =>
+        `<option value="${esc(p.id)}">${esc(stripEmoji(p.label))}</option>`
+      ).join('');
       if ($('sel-ph-model') && ov.polyhavenModels) {
-        $('sel-ph-model').innerHTML = `<option value="">✨ 預設（高擬真皺褶布藝滾邊沙發 / 自動匹配高模）</option>` +
-          ov.polyhavenModels.map(m => `<option value="${esc(m.glbPath)}">🏛️ ${esc(m.label)}</option>`).join('');
+        $('sel-ph-model').innerHTML = '<option value="">預設（程序式高模）</option>' +
+          ov.polyhavenModels.map(m => `<option value="${esc(m.glbPath)}">${esc(stripEmoji(m.label))}</option>`).join('');
       }
 
       state.cabinet = clone(ov.cabinetPresets[1] || ov.cabinetPresets[0]);
@@ -1413,12 +1733,21 @@
       renderPropPalette();
       renderCameraPills();
       renderMatrixChecklists();
+      renderEngineCards();
       setupFloorplanEvents();
       setup3DViewportEvents();
       bindEvents();
 
-      if (ov.batches?.length) {
-        renderBlenderBatch(ov.batches[0]);
+      await refreshAiKeyStatus();
+      refreshEngineStatus();
+
+      state.batches = ov.batches || [];
+      renderBatchPicker();
+      if (state.batches.length) {
+        const wanted = rememberedBatch();
+        const running = state.batches.find(b => b.state === 'running');
+        const pick = (running && running.batchId) || (state.batches.some(b => b.batchId === wanted) ? wanted : state.batches[0].batchId);
+        await showBatch(pick);
       }
       await refreshPreviewPlan();
     } catch (e) {
@@ -1426,13 +1755,11 @@
     }
   }
 
-  // ---- AI interior designer (Claude Cloud OR Local Ollama/LM Studio) ----
+  // ---- AI 室內設計師（排景 LLM：地端閘道 / Ollama / LM Studio / Claude）----
   function updateAiProviderVisibility(provider) {
     const isLocal = provider === 'local';
-    const antBox = $('ai-anthropic-box');
-    const locBox = $('ai-local-box');
-    if (antBox) antBox.hidden = isLocal;
-    if (locBox) locBox.hidden = !isLocal;
+    $('ai-anthropic-box').hidden = isLocal;
+    $('ai-local-box').hidden = !isLocal;
   }
 
   document.querySelectorAll('input[name="ai-provider"]').forEach(r => {
@@ -1442,23 +1769,132 @@
   async function refreshAiKeyStatus() {
     try {
       const s = await api('/api/ecommerce-scenes/ai-settings');
-      const provider = s.provider || 'anthropic';
+      state.aiSettings = s;
+      const provider = s.provider || 'local';
       const rad = document.querySelector(`input[name="ai-provider"][value="${provider}"]`);
       if (rad) rad.checked = true;
       updateAiProviderVisibility(provider);
+      $('ai-local-url').value = s.localBaseUrl || '';
+      $('ai-local-model').value = s.localModel || '';
 
-      if ($('ai-local-url')) $('ai-local-url').value = s.localBaseUrl || 'http://127.0.0.1:11434/v1';
-      if ($('ai-local-model')) $('ai-local-model').value = s.localModel || '';
-
+      const chip = $('ai-key-status');
       if (provider === 'local') {
-        $('ai-key-status').textContent = `AI 來源：🖥️ 本機 AI (${s.localModel || '未指定模型'})`;
+        chip.textContent = `地端模型：${s.localModel || '未指定模型'}`;
+        chip.className = `status-chip ${s.localModel ? 'ok' : 'warn'}`;
       } else {
-        $('ai-key-status').textContent = s.hasKey
-          ? 'AI 來源：☁️ Claude（✅ 金鑰已設定）'
-          : 'AI 來源：☁️ Claude（⚠️ 尚未設定金鑰，點此填寫）';
+        chip.textContent = s.hasKey ? 'Claude 雲端（金鑰已設定）' : 'Claude 雲端（尚未設定金鑰）';
+        chip.className = `status-chip ${s.hasKey ? 'ok' : 'warn'}`;
+      }
+
+      state.aiEngine = s.imageEngine || 'fleet_flux3';
+      renderEngineCards();
+      $('fleet-url').value = s.fleetApiUrl || '';
+      $('public-base-url').value = s.publicBaseUrl || '';
+      $('fleet-token').placeholder = s.fleetTokenConfigured ? '已設定（留空＝沿用）' : '尚未設定，請貼上 FLEET_SERVICE_TOKEN';
+      $('ai-variants').value = String(s.aiVariants || 2);
+      $('ai-variation').value = s.aiVariation || 'faithful';
+      $('ai-upsample').checked = s.aiUpsample === true;
+      if ($('ai-pin-product')) $('ai-pin-product').checked = s.aiPinProduct !== false;
+      updateMatrixFormula();
+    } catch (e) {
+      $('ai-key-status').textContent = 'AI 設定讀取失敗';
+      $('ai-key-status').className = 'status-chip warn';
+    }
+  }
+
+  function renderEngineCards() {
+    const box = $('ai-engine-cards');
+    if (!box) return;
+    box.innerHTML = (state.engines || []).map(e =>
+      `<button type="button" class="engine-card ${state.aiEngine === e.id ? 'active' : ''}" data-engine="${esc(e.id)}">
+        <span class="radio-dot"></span>
+        <span><strong>${esc(e.label)}</strong><span>${esc(e.description)}</span></span>
+      </button>`
+    ).join('');
+    box.querySelectorAll('[data-engine]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        state.aiEngine = btn.dataset.engine;
+        renderEngineCards();
+        updateMatrixFormula();
+        try {
+          await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify({ imageEngine: state.aiEngine }) });
+        } catch (e) {
+          notify(e.message, true);
+        }
+      });
+    });
+  }
+
+  async function refreshEngineStatus() {
+    const box = $('ai-engine-status');
+    const text = box.querySelector('.engine-status-text');
+    const pill = $('engine-pill');
+    box.className = 'engine-status';
+    text.textContent = '檢查 GPU 艦隊…';
+    try {
+      const st = await api('/api/ecommerce-scenes/ai-engine-status');
+      state.engineStatus = st;
+      const cap = st.capability;
+      let cls = 'bad';
+      let main = st.error || '地端 AI 無法使用';
+      let sub = (st.warnings || []).join('；');
+      if (st.ready) {
+        cls = 'ok';
+        main = `GPU 艦隊就緒 · FLUX 3 可用節點 ${cap.capableNodes ?? '?'} · 排隊 ${cap.queueDepth ?? 0}${cap.runningCount ? ` · 執行中 ${cap.runningCount}` : ''}`;
+        sub = `預估每張約 ${cap.estimatedRuntimeSec ?? '?'} 秒（排隊時會更久）· 參考圖位址 ${st.publicBaseUrl}`;
+      } else if (st.reachable && cap) {
+        cls = 'warn';
+        main = '艦隊已連線，但尚未就緒';
+        sub = (st.warnings || []).concat(st.error ? [st.error] : []).join('；') || '請檢查設定';
+      } else if (!st.tokenConfigured) {
+        main = '尚未設定 GPU 艦隊服務金鑰';
+        sub = '展開下方「GPU 艦隊連線設定」貼上金鑰；或改用內建合成。';
+      }
+      box.classList.add(cls);
+      text.innerHTML = `${esc(main)}${sub ? `<small>${esc(sub)}</small>` : ''}`;
+      pill.textContent = st.ready ? '地端 AI 就緒' : (st.reachable ? '地端 AI 待設定' : '地端 AI 離線');
+      pill.className = `pill ${cls}`;
+    } catch (e) {
+      box.classList.add('bad');
+      text.textContent = `狀態查詢失敗：${e.message}`;
+      pill.textContent = '地端 AI 離線';
+      pill.className = 'pill bad';
+    }
+  }
+
+  async function previewAiPrompt(polish) {
+    const btn = polish ? $('ai-prompt-polish-btn') : $('ai-prompt-preview-btn');
+    if (!state.currentScene) return;
+    btn.disabled = true;
+    const oldLabel = btn.textContent;
+    if (polish) btn.textContent = '地端 LLM 擴寫中…';
+    try {
+      const res = await api('/api/ecommerce-scenes/ai-prompt', {
+        method: 'POST',
+        body: JSON.stringify({
+          scene: state.currentScene,
+          cabinet: state.cabinet,
+          themeId: state.cabinet?.themeId,
+          aiStyleId: $('ai-style-select').value,
+          aiPrompt: $('ai-prompt-input').value,
+          view: $('scene-view').value || 'THREE_QUARTER',
+          aiVariation: $('ai-variation').value,
+          polish: Boolean(polish)
+        })
+      });
+      $('ai-final-prompt').value = res.prompt;
+      $('ai-final-prompt-wrap').hidden = false;
+      if (polish) {
+        $('ai-use-final-prompt').checked = Boolean(res.polished);
+        notify(res.polished ? '地端 LLM 已擴寫提示詞，送出時會使用下方版本。' : '地端 LLM 沒有回應，顯示的是內建組出的提示詞。', !res.polished);
+      } else {
+        notify('這是依目前場景組出的提示詞（每組場景會各自組一版）；修改後勾選即可整批共用。');
       }
     } catch (e) {
-      $('ai-key-status').textContent = 'AI 來源設定：讀取失敗';
+      notify(e.message, true);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldLabel;
     }
   }
 
@@ -1470,26 +1906,22 @@
       const res = await api('/api/ecommerce-scenes/ai-local-models');
       if (res.ok && res.models?.length) {
         const dl = $('ai-local-model-list');
-        if (dl) {
-          dl.innerHTML = res.models.map(m => `<option value="${esc(m)}"></option>`).join('');
-        }
-        if ($('ai-local-model') && !$('ai-local-model').value) {
-          $('ai-local-model').value = res.models[0];
-        }
-        notify(`🔍 找到本機模型：${res.models.join(', ')}`);
+        if (dl) dl.innerHTML = res.models.map(m => `<option value="${esc(m)}"></option>`).join('');
+        if ($('ai-local-model') && !$('ai-local-model').value) $('ai-local-model').value = res.models[0];
+        notify(`找到模型：${res.models.join(', ')}`);
       } else {
-        notify(`⚠️ ${res.error || '未偵測到本機模型，請先啟動 Ollama 或 LM Studio'}`, true);
+        notify(res.error || '未偵測到模型，請確認閘道或 Ollama 已啟動', true);
       }
     } catch (e) {
       notify(`偵測失敗：${e.message}`, true);
     } finally {
       btn.disabled = false;
-      btn.textContent = '🔍 偵測模型';
+      btn.textContent = '偵測模型';
     }
   });
 
   $('ai-key-save').addEventListener('click', async () => {
-    const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'anthropic';
+    const provider = document.querySelector('input[name="ai-provider"]:checked')?.value || 'local';
     const payload = {
       provider,
       anthropicApiKey: $('ai-key-input')?.value || '',
@@ -1499,7 +1931,7 @@
     try {
       await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify(payload) });
       if ($('ai-key-input')) $('ai-key-input').value = '';
-      notify('✅ 已成功儲存 AI 設定！');
+      notify('已儲存 AI 排景設定。');
       refreshAiKeyStatus();
     } catch (e) {
       notify(e.message, true);
@@ -1513,19 +1945,19 @@
     if (!prompt) { notify('請先輸入想要的空間風格。', true); return; }
     btn.disabled = true;
     const oldLabel = btn.textContent;
-    btn.textContent = '🤖 AI 設計中…（約 10~30 秒）';
+    btn.textContent = 'AI 設計中…（地端 27B 約 1～3 分鐘；改 qwen3:8b 約 30 秒）';
     try {
       const scene = await api('/api/ecommerce-scenes/ai-layout', { method: 'POST', body: JSON.stringify({ prompt, cabinet: state.cabinet }) });
       state.currentScene = scene;
       state.selectedTarget = { kind: 'cabinet', index: -1 };
       syncSceneInputsFromState();
       refreshPreviewPlan();
-      const lines = [`✨ ${scene.name}：AI 擺了 ${scene.props.length} 件家具。${scene.aiRationale || ''}`];
+      const lines = [`${scene.name}：AI 擺了 ${scene.props.length} 件家具。${scene.aiRationale || ''}`];
       if (scene.aiDropped && scene.aiDropped.length) lines.push(`（已略過：${scene.aiDropped.join('、')}）`);
-      lines.push('可在 2D 平面圖拖拉微調，滿意後按「儲存場景至場景庫」。');
+      lines.push('可在 2D 平面圖拖拉微調，滿意後按「儲存場景」。');
       resultBox.textContent = lines.join(' ');
       resultBox.hidden = false;
-      notify('✨ AI 已完成場景設計，預覽已更新。');
+      notify('AI 已完成場景設計，預覽已更新。');
     } catch (e) {
       notify(e.message, true);
     } finally {
@@ -1534,25 +1966,12 @@
     }
   });
 
-  refreshAiKeyStatus();
-
   init();
 })();
 
 
 // ---- Image lightbox: click any generated image to enlarge it in-page (no download) ----
 (function initImageLightbox() {
-  const style = document.createElement('style');
-  style.textContent = `
-    .gallery-card > img, .photoreal-hero-img, .gallery-card img { cursor: zoom-in; }
-    #img-lightbox { position: fixed; inset: 0; z-index: 9999; background: rgba(12,12,12,0.92); display: none; overflow: auto; cursor: zoom-out; }
-    #img-lightbox.open { display: flex; align-items: center; justify-content: center; }
-    #img-lightbox img { max-width: 96vw; max-height: 94vh; object-fit: contain; box-shadow: 0 8px 40px rgba(0,0,0,0.6); border-radius: 6px; background: #fff; }
-    #img-lightbox.full { display: block; }
-    #img-lightbox.full img { max-width: none; max-height: none; cursor: zoom-out; }
-    #img-lightbox .lb-hint { position: fixed; top: 12px; right: 18px; color: #eee; font-size: 13px; background: rgba(0,0,0,0.5); padding: 6px 12px; border-radius: 14px; pointer-events: none; }
-  `;
-  document.head.appendChild(style);
 
   const box = document.createElement('div');
   box.id = 'img-lightbox';
@@ -1567,7 +1986,7 @@
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 
   document.addEventListener('click', (e) => {
-    const img = e.target.closest && e.target.closest('.gallery-card img, img.photoreal-hero-img');
+    const img = e.target.closest && e.target.closest('.gallery-card img.card-hero, .gallery-card > img, img.photoreal-hero-img');
     if (!img || !img.src) return;
     e.preventDefault();
     big.src = img.currentSrc || img.src;

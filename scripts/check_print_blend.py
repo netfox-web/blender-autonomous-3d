@@ -3,6 +3,8 @@ import hashlib
 import json
 import sys
 from pathlib import Path
+from typing import Any
+
 import bpy
 
 folder=Path(sys.argv[sys.argv.index('--')+1])
@@ -61,8 +63,8 @@ if m['spec'].get('sceneDefinition'):
     depsgraph=bpy.context.evaluated_depsgraph_get()
     for placement in m['package']['placements']:
         clone=clones[placement['componentId']]
-        front=next(f for f in clone.data.polygons if f.normal.y<-.999)
-        point=clone.matrix_world @ front.center
+        front_face: Any=next(f for f in clone.data.polygons if f.normal.y<-.999)
+        point=clone.matrix_world @ front_face.center
         direction=point-scene.camera.location
         hit=scene.ray_cast(depsgraph,scene.camera.location,direction.normalized())
         assert hit[0] and hit[4].get('sceneComponentId')==placement['componentId'], 'Artwork occluded'

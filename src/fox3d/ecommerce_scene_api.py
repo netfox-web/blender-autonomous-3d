@@ -5,7 +5,9 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException, Query
+import os
+
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from fox3d.ecommerce_scene_studio import EcommerceSceneStore
@@ -107,9 +109,77 @@ def ecommerce_scene_router(provider) -> APIRouter:
 
     def _ai_public_settings() -> dict[str, Any]:
         from fox3d.ai_scene_layout import load_settings
+        from fox3d.fleet_image_client import resolve_fleet_token, resolve_fleet_url
 
         s = load_settings(store().root)
-        return {"provider": s["provider"], "hasKey": bool(s["anthropicApiKey"]), "localBaseUrl": s["localBaseUrl"], "localModel": s["localModel"]}
+        return {
+            "provider": s["provider"],
+            "hasKey": bool(s["anthropicApiKey"]),
+            "localBaseUrl": s["localBaseUrl"],
+            "localModel": s["localModel"],
+            "imageEngine": s["imageEngine"],
+            "fleetApiUrl": resolve_fleet_url(s["fleetApiUrl"]),
+            "fleetTokenConfigured": bool(resolve_fleet_token(s["fleetToken"])),
+            "publicBaseUrl": s["publicBaseUrl"],
+            "aiVariants": s["aiVariants"],
+            "aiVariation": s["aiVariation"],
+            "aiUpsample": s["aiUpsample"],
+            "aiPinProduct": s["aiPinProduct"],
+            "promptPolish": s["promptPolish"],
+        }
+
+    def _public_base_url(request: Request) -> str:
+        from fox3d.ai_scene_layout import load_settings
+        from fox3d.fleet_image_client import resolve_fleet_url
+        from fox3d.local_scene_ai import build_public_base_url
+
+        s = load_settings(store().root)
+        port = request.url.port or (443 if request.url.scheme == "https" else 80)
+        return build_public_base_url(s["publicBaseUrl"], port, resolve_fleet_url(s["fleetApiUrl"]))
+
+    @router.get("/api/ecommerce-scenes/ai-engine-status")
+    def ai_engine_status(request: Request) -> dict[str, Any]:
+        from fox3d.ai_scene_layout import load_settings
+        from fox3d.local_scene_ai import engine_status
+
+        s = load_settings(store().root)
+        return engine_status(s, bind_host=(os.environ.get("FOX3D_BIND_HOST") or "").strip() or None, public_base_url=_public_base_url(request))
+
+    @router.post("/api/ecommerce-scenes/ai-prompt")
+    def ai_prompt_preview(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        """Show (and optionally LLM-polish) the exact prompt the fleet will receive for the current scene."""
+        from fox3d.ai_scene_layout import load_settings
+        from fox3d.ecommerce_scene_studio import CABINET_PRESETS, STYLE_THEMES, build_modular_cabinet_spec
+        from fox3d.local_scene_ai import build_scene_prompt, polish_prompt_with_llm
+        from fox3d.photoreal_assets import AI_STYLE_PRESETS
+
+        tid = tenant(x_tenant_id)
+        raw_scene = payload.get("scene")
+        scene: dict[str, Any] = dict(raw_scene) if isinstance(raw_scene, dict) else {}
+        raw_cabinet = payload.get("cabinet")
+        cabinet: dict[str, Any] = dict(raw_cabinet) if isinstance(raw_cabinet, dict) else dict(CABINET_PRESETS[0])
+        try:
+            spec = build_modular_cabinet_spec(cabinet, tenant_id=tid)
+        except Exception as exc:
+            raise HTTPException(422, f"櫃體設定無效：{exc}") from exc
+        style = AI_STYLE_PRESETS.get(str(payload.get("aiStyleId") or "")) or {}
+        built = build_scene_prompt(
+            scene,
+            cabinet,
+            cabinet_spec=spec,
+            theme=STYLE_THEMES.get(str(payload.get("themeId") or cabinet.get("themeId") or "")),
+            style_prompt=str(style.get("prompt") or ""),
+            custom_prompt=str(payload.get("aiPrompt") or ""),
+            view=str(payload.get("view") or "THREE_QUARTER"),
+            variation=str(payload.get("aiVariation") or "faithful"),
+        )
+        polished = False
+        if payload.get("polish"):
+            s = load_settings(store().root)
+            improved = polish_prompt_with_llm(built["prompt"], base_url=s["localBaseUrl"], model=s["localModel"], extra_direction=str(payload.get("aiPrompt") or ""))
+            polished = improved != built["prompt"]
+            built["prompt"] = improved
+        return {**built, "polished": polished}
 
     @router.get("/api/ecommerce-scenes/ai-settings")
     def ai_settings() -> dict[str, Any]:
@@ -137,6 +207,41 @@ def ecommerce_scene_router(provider) -> APIRouter:
             updates["localBaseUrl"] = url
         if "localModel" in payload:
             updates["localModel"] = str(payload.get("localModel") or "").strip()[:120]
+        if "imageEngine" in payload:
+            from fox3d.ai_scene_layout import IMAGE_ENGINES
+
+            if payload["imageEngine"] not in IMAGE_ENGINES:
+                raise HTTPException(422, "不支援的 AI 實景引擎")
+            updates["imageEngine"] = payload["imageEngine"]
+        if "fleetApiUrl" in payload:
+            furl = str(payload.get("fleetApiUrl") or "").strip().rstrip("/")
+            if furl and (not furl.startswith(("http://", "https://")) or len(furl) > 200):
+                raise HTTPException(422, "GPU 艦隊網址須以 http:// 或 https:// 開頭，例如 http://192.168.66.101:3004")
+            updates["fleetApiUrl"] = furl
+        ftoken = str(payload.get("fleetToken") or "").strip()
+        if ftoken:
+            if len(ftoken) > 300 or any(ch.isspace() for ch in ftoken):
+                raise HTTPException(422, "GPU 艦隊服務金鑰格式不正確")
+            updates["fleetToken"] = ftoken
+        if payload.get("clearFleetToken"):
+            updates["fleetToken"] = ""
+        if "publicBaseUrl" in payload:
+            purl = str(payload.get("publicBaseUrl") or "").strip().rstrip("/")
+            if purl and (not purl.startswith(("http://", "https://")) or len(purl) > 200):
+                raise HTTPException(422, "工作台對外網址須以 http:// 開頭，例如 http://192.168.66.21:8790")
+            updates["publicBaseUrl"] = purl
+        if "aiVariants" in payload:
+            try:
+                updates["aiVariants"] = int(payload.get("aiVariants") or 2)
+            except (TypeError, ValueError):
+                raise HTTPException(422, "變化張數必須是 1–4 的整數") from None
+        for key in ("aiUpsample", "promptPolish", "aiPinProduct"):
+            if key in payload:
+                updates[key] = bool(payload.get(key))
+        if "aiVariation" in payload:
+            if payload["aiVariation"] not in ("faithful", "creative"):
+                raise HTTPException(422, "變化幅度只能是 faithful 或 creative")
+            updates["aiVariation"] = payload["aiVariation"]
         save_settings(store().root, updates)
         return _ai_public_settings()
 
@@ -178,9 +283,9 @@ def ecommerce_scene_router(provider) -> APIRouter:
             raise HTTPException(422, str(exc)) from exc
 
     @router.post("/api/ecommerce-scenes/batches", status_code=202)
-    def start_batch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def start_batch(payload: dict[str, Any], request: Request, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:
-            return store().start_matrix_batch(tenant(x_tenant_id), payload)
+            return store().start_matrix_batch(tenant(x_tenant_id), payload, public_base_url=_public_base_url(request))
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
@@ -198,11 +303,12 @@ def ecommerce_scene_router(provider) -> APIRouter:
         fmt: str,
         workspace: str | None = Query(default=None),
         inline: bool = Query(default=False),
+        variant: int = Query(default=1, ge=1, le=4),
         x_tenant_id: str | None = Header(default=None),
     ) -> FileResponse:
         tid = tenant(x_tenant_id or workspace)
         try:
-            target = store().item_asset_path(tid, batch_id, item_id, fmt)
+            target = store().item_asset_path(tid, batch_id, item_id, fmt, variant=variant)
         except KeyError as exc:
             raise HTTPException(404, str(exc)) from exc
         except ValueError as exc:
@@ -210,17 +316,20 @@ def ecommerce_scene_router(provider) -> APIRouter:
         media = {
             "png": "image/png",
             "ai_png": "image/png",
+            "ai_local_png": "image/png",
+            "ai_local_raw_png": "image/png",
             "cutout_png": "image/png",
             "glb": "model/gltf-binary",
             "blend": "application/x-blender",
         }[fmt]
-        ext = "png" if fmt in ("png", "ai_png", "cutout_png") else fmt
+        ext = "png" if fmt.endswith("png") else fmt
         if inline and ext == "png":
             return FileResponse(target, media_type=media, headers={"Cache-Control": "no-store"})
+        suffix = f"_v{variant}" if fmt.startswith("ai_local") else ""
         return FileResponse(
             target,
             media_type=media,
-            filename=f"{batch_id[:8]}_{item_id}_{fmt}.{ext}",
+            filename=f"{batch_id[:8]}_{item_id}_{fmt}{suffix}.{ext}",
             headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
         )
 

@@ -48,7 +48,22 @@ class AiLayoutError(ValueError):
     pass
 
 
-DEFAULT_LOCAL_URL = "http://127.0.0.1:11434/v1"  # Ollama; LM Studio is http://127.0.0.1:1234/v1
+# Fox AI Gateway on netfox-home is an Ollama drop-in with an OpenAI-compatible /v1 (qwen3.8:27b, qwen3:8b, qwen2.5vl:7b…).
+# Override with FOX3D_LOCAL_LLM_URL / FOX3D_LOCAL_LLM_MODEL (e.g. a laptop running Ollama at http://127.0.0.1:11434/v1).
+DEFAULT_LOCAL_URL = (os.environ.get("FOX3D_LOCAL_LLM_URL") or "http://192.168.66.101:11434/v1").strip().rstrip("/")
+DEFAULT_LOCAL_MODEL = (os.environ.get("FOX3D_LOCAL_LLM_MODEL") or "qwen3.8:27b").strip()
+IMAGE_ENGINES = ("fleet_flux3", "builtin", "off")
+AI_VARIATIONS = ("faithful", "creative")
+DEFAULT_IMAGE_ENGINE = "fleet_flux3"
+MAX_AI_VARIANTS = 4
+
+
+def _as_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _settings_file(settings_dir: Path) -> Path:
@@ -64,11 +79,29 @@ def load_settings(settings_dir: Path | None = None) -> dict[str, Any]:
         except Exception:
             data = {}
     env_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    api_key = env_key or str(data.get("anthropicApiKey") or "").strip()
+    # 地端優先：沒有 Anthropic 金鑰就用公司閘道的本機模型
+    provider = data.get("provider") if data.get("provider") in ("anthropic", "local") else ("anthropic" if api_key else "local")
+    try:
+        variants = max(1, min(MAX_AI_VARIANTS, int(data.get("aiVariants") or 2)))
+    except (TypeError, ValueError):
+        variants = 2
     return {
-        "provider": data.get("provider") if data.get("provider") in ("anthropic", "local") else "anthropic",
-        "anthropicApiKey": env_key or str(data.get("anthropicApiKey") or "").strip(),
+        "provider": provider,
+        "anthropicApiKey": api_key,
         "localBaseUrl": str(data.get("localBaseUrl") or DEFAULT_LOCAL_URL).strip().rstrip("/"),
-        "localModel": str(data.get("localModel") or "").strip(),
+        "localModel": str(data.get("localModel") or DEFAULT_LOCAL_MODEL).strip(),
+        # 地端 AI 實景（GPU 艦隊 image_flux3）
+        "imageEngine": data.get("imageEngine") if data.get("imageEngine") in IMAGE_ENGINES else DEFAULT_IMAGE_ENGINE,
+        "fleetApiUrl": str(data.get("fleetApiUrl") or os.environ.get("FLEET_API_URL") or "").strip().rstrip("/"),
+        "fleetToken": str(data.get("fleetToken") or "").strip(),
+        "publicBaseUrl": str(data.get("publicBaseUrl") or os.environ.get("FOX3D_PUBLIC_BASE_URL") or "").strip().rstrip("/"),
+        "aiVariants": variants,
+        "aiVariation": data.get("aiVariation") if data.get("aiVariation") in AI_VARIATIONS else "faithful",
+        # 10-18 owner call: prompt upsampling off by default (same quality in trials, 16 s vs 25 s per image, 12.7GB vs 20.5GB)
+        "aiUpsample": _as_bool(data.get("aiUpsample"), False),
+        "aiPinProduct": _as_bool(data.get("aiPinProduct"), True),
+        "promptPolish": _as_bool(data.get("promptPolish"), False),
     }
 
 
@@ -79,9 +112,17 @@ def save_settings(settings_dir: Path, updates: dict[str, Any]) -> None:
             current = json.loads(_settings_file(settings_dir).read_text(encoding="utf-8"))
         except Exception:
             current = {}
-    for k in ("provider", "anthropicApiKey", "localBaseUrl", "localModel"):
+    for k in ("provider", "anthropicApiKey", "localBaseUrl", "localModel", "imageEngine", "fleetApiUrl", "fleetToken", "publicBaseUrl", "aiVariation"):
         if k in updates and updates[k] is not None:
             current[k] = str(updates[k]).strip()
+    if updates.get("aiVariants") is not None:
+        try:
+            current["aiVariants"] = max(1, min(MAX_AI_VARIANTS, int(updates["aiVariants"])))
+        except (TypeError, ValueError):
+            pass
+    for k in ("aiUpsample", "promptPolish", "aiPinProduct"):
+        if k in updates and updates[k] is not None:
+            current[k] = _as_bool(updates[k], True)
     settings_dir.mkdir(parents=True, exist_ok=True)
     _settings_file(settings_dir).write_text(json.dumps(current), encoding="utf-8")
 
@@ -225,16 +266,17 @@ def sanitize_layout(raw: dict[str, Any], cabinet_w: float, cabinet_d: float) -> 
         x = _num(item.get("x"), 0.0, -half + 0.25, half - 0.25)
         y = 1.52 if on_wall else _num(item.get("y"), 0.6, PLACE_Y_MIN, PLACE_Y_MAX)
         z = _num(item.get("z"), 1.4 if ptype == "WALL_ART" else 0.0, 0.0, 2.2)
-        prop = {
+        prop: dict[str, Any] = {
             "id": f"ai_{idx}", "type": ptype, "label": label, "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),
             "widthM": round(w, 3), "depthM": round(d, 3), "heightM": round(h, 3),
             "rotationDeg": round(_num(item.get("rotationDeg"), 0.0, -360.0, 360.0), 1),
             "colorHex": _hex(item.get("colorHex"), "#c4b6a6"), "accentColorHex": _hex(item.get("accentColorHex"), "#8c7a6b"),
         }
         if aid:
-            prop["glbPath"] = _ph_glb(aid)
+            glb_path = _ph_glb(aid)
+            prop["glbPath"] = glb_path
             prop["polyhavenId"] = aid
-            if not Path(prop["glbPath"]).exists():
+            if not Path(glb_path).exists():
                 dropped.append(f"{label}（素材 {aid} 尚未下載）")
                 continue
 

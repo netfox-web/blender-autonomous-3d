@@ -63,7 +63,8 @@ def printfox_router(provider, client_factory=None):
         except (ValueError, TypeError, KeyError):
             raise HTTPException(422, '請輸入有效的 PrintFox Token') from None
         base = guard(bridge.origin, root)
-        remote_status = await run_in_threadpool(guard, factory(bridge.Session(x_tenant_id, base, token)).status)
+        # workspace() above already rejected an empty tenant, so x_tenant_id is a non-empty str here.
+        remote_status = await run_in_threadpool(guard, factory(bridge.Session(x_tenant_id or '', base, token)).status)
         sessions.remove(request.cookies.get(bridge.COOKIE))
         sid = guard(sessions.add, x_tenant_id, base, token)
         response = JSONResponse({'connected': True, 'baseUrl': base, 'status': remote_status})
