@@ -11,14 +11,14 @@ from typing import Literal
 from PIL import Image
 from pydantic import Field
 
-from fox3d import asset_usage, print_assets, product_models as models, print_preview
+from fox3d import asset_usage, print_assets, product_models as models, print_preview, scene_templates
 from fox3d.artwork import final_uv_identity
 from fox3d.ids import stable_hash, sha256_bytes, new_id
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta, verify_publication_seal
 from fox3d import variant_authority as authority
 
-SCENES = {'STUDIO': '白底棚拍', 'WARM_ROOM': '暖色室內展示', 'COOL_ROOM': '冷色室內展示'}
+SCENES = scene_templates.LABELS
 
 
 def valid_generation(value):
@@ -65,7 +65,7 @@ def history(root, tenant, mid, item, offset=0):
     for path in paths[offset:offset+12]:
         stored = read_json(path)
         row = {'generationId': path.parent.name, 'sku': stored.get('draft', {}).get('sku', ''),
-               'scene': stored.get('scene', ''), 'sourceRevision': stored.get('sourceRevision'),
+               'scene': stored.get('scene', ''), 'view': stored.get('draft', {}).get('view','THREE_QUARTER'), 'placement': stored.get('draft', {}).get('placement','AUTO'), 'sourceRevision': stored.get('sourceRevision'),
                'available': False, 'error': None}
         row.update(authority.readiness())
         try:
@@ -90,7 +90,9 @@ class Placement(models.Strict):
 
 class Selection(models.Strict):
     sku: str = Field(min_length=1, max_length=120)
-    scene: Literal['STUDIO', 'WARM_ROOM', 'COOL_ROOM'] = 'STUDIO'
+    scene: Literal['STUDIO', 'WARM_ROOM', 'COOL_ROOM', 'LIVING_ROOM', 'KITCHEN'] = 'STUDIO'
+    placement: Literal['AUTO', 'FLOOR', 'SURFACE'] = 'AUTO'
+    view: Literal['THREE_QUARTER', 'LEFT', 'FRONT'] = 'THREE_QUARTER'
     placements: list[Placement] = Field(default_factory=list, max_length=30)
 
 
@@ -117,17 +119,24 @@ def snapshot(root, tenant, item, selection):
     if not chosen['sku'].strip(): raise ValueError('請填本次圖稿／SKU 名稱')
     value={'masterId':item['id'], 'masterInputHash':item['inputHash'],
            'masterRevision':item['revision'], 'master':item['draft'], **chosen}
-    plan(root,tenant,value)
+    p=plan(root,tenant,value)
+    if p['spec'].get('sceneDefinition'):
+        value['sceneHash']=p['spec']['sceneHash']
     return value
 
 
 def plan(root, tenant, draft):
     if 'inputAuthority' in draft:
         authority.verify(root, tenant, draft, current=True)
-    Selection.model_validate({k:draft[k] for k in ('sku','scene','placements')})
+    Selection.model_validate({k:draft[k] for k in ('sku','scene','placements') if k in draft} | {k:draft[k] for k in ('placement','view') if k in draft})
     spec=models.build_spec(draft['master'],tenant_id=tenant)
     spec['engineeringHash']=stable_hash({'adapter':'MASTER_COMPOSITION_V1','components':spec['components']})
     spec['nasScene']=draft['scene']
+    definition=scene_templates.resolve(draft['scene'],draft['master'],spec,draft.get('placement','AUTO'),draft.get('view','THREE_QUARTER'))
+    if definition:
+        digest=scene_templates.identity(definition)
+        if draft.get('sceneHash',digest)!=digest: raise ValueError('場景版本已變更，請重新核對後送出')
+        spec.update(sceneDefinition=definition,sceneHash=digest)
     spec['previewAssumptions']=[x for x in spec['previewAssumptions'] if x!='示意材質與棚拍燈光；尚未套入圖稿。']
     spec['previewAssumptions'].append('使用已分類圖稿與可重複場景；RGB 螢幕預覽，非實機色彩校樣。')
     allowed={s['componentId']:s for s in surfaces(draft['master'])}
@@ -229,10 +238,12 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     target.mkdir(parents=True,exist_ok=False)
     p,spec,package,placements,receipts=prepare(platform.root,tenant,draft,target)
     h=spec['height']/1000;extent=max(spec['width'],spec['height'],spec['depth'])/1000
+    scene_hash=spec.get('sceneHash') or stable_hash({'scene':draft['scene'],'view':draft.get('view','THREE_QUARTER'),'version':2})
+    side={'THREE_QUARTER':1.5,'LEFT':-1.5,'FRONT':0.}[draft.get('view','THREE_QUARTER')]
     payload={'tenantId':tenant,'jobType':'PARAMETRIC_3D','mode':'CABINET_PREVIEW','engineering':spec,
         'recipePreview':True,'goldenRecipe':True,'goldenIdentity':{'sku':draft['sku'],'packageHash':package['packageHash']},
-        'artworkPlacements':placements,'assetHash':stable_hash({'package':package['packageHash'],'scene':draft['scene'],'contract':'MASTER_COMPOSITION_V1'}),
-        'camera':{'location':[extent*1.5,-extent*2.,h*1.2],'lookAt':[0.,0.,h/2],'focalLengthMm':55.},
+        'artworkPlacements':placements,'assetHash':stable_hash({'package':package['packageHash'],'sceneHash':scene_hash,'contract':'MASTER_COMPOSITION_SCENES_V1'}),
+        'camera':{'location':[extent*side,-extent*2.,h*1.2],'lookAt':[0.,0.,h/2],'focalLengthMm':55.},
         'productTruthViews':[{'id':'FRONT_CLOSED','filename':'front-closed.png','location':[0.,-extent*2.6,h/2],'lookAt':[0.,0.,h/2],'focalLengthMm':70.}],
         'render':{'device':'OPTIX' if platform.probe and platform.probe.optix else 'CPU','width':800,'height':800,'samples':32},
         'exportBlend':True,'exportGlb':True,'maxAttempts':1,'timeoutSeconds':900}
@@ -250,7 +261,7 @@ def generate(platform,tenant,mid,draft,*,revision=0,generation_id=None,on_job=No
     expected_artifacts=set(print_preview.FILES)|{x['source']['name'] for x in package['placements']}
     verify_receipt_set(target, receipts, expected_artifacts)
     manifest={'generationId':gid,'historyVersion':1,'draft':draft,'sourceRevision':revision,'planHash':p['selectionHash'],
-        'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':stable_hash({'scene':draft['scene'],'version':1}),
+        'spec':spec,'package':package,'scene':draft['scene'],'sceneHash':scene_hash,
         'files':{f.name:(receipts[f.name]['sha256'] if f.name in receipts else sha256_bytes(f.read_bytes())) for f in target.iterdir() if f.is_file()},
         'renderInfo':{k:output.get(k,done.get(k)) for k in ('realBlender','usedMock','device','blenderVersion','realOptix')},
         'requestedJobId':job['jobId'],'jobId':read_json(target/'golden-observation.json')['jobId'],

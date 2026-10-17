@@ -160,18 +160,38 @@ def render_admin(platform: Any) -> str:
   </style>
 </head>
 <body>
-  <header>
+  <header style="flex-wrap:wrap;gap:12px">
     <div class="logo">
       <span>🦊</span>
-      <span>Autonomous 3D Studio</span>
-      <span class="note" style="margin-left: 6px;">— 系統操作台，不含 Blender UI</span>
+      <span>收納王妃 · Autonomous 3D Studio</span>
+      <span class="note" style="margin-left: 6px;">— 系統與算力總控台（不含 Blender UI）</span>
     </div>
-    <div>
-      <a href="/admin/recipes" style="color:#b6e3c8;font-weight:600;margin-right:20px">商品 Recipe 庫 →</a>
-      <span class="note">伺服器: http://127.0.0.1:8788/admin</span>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <a href="/admin/recipes" style="color:#7ee787;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #2ea043;border-radius:6px;background:rgba(46,160,67,0.12)">① 商品 Recipe 庫</a>
+      <a href="/admin/recipes/models" style="color:#79c0ff;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #388bfd;border-radius:6px;background:rgba(56,139,253,0.12)">② 商品 3D 建模與套圖庫</a>
+      <a href="/admin/recipes/golden" style="color:#d2a8ff;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #8957e5;border-radius:6px;background:rgba(137,87,229,0.12)">③ 三層櫃 Golden 與 DNA</a>
+      <a href="/admin/recipes/print" style="color:#ffa657;font-weight:600;text-decoration:none;padding:6px 11px;border:1px solid #db6d28;border-radius:6px;background:rgba(219,109,40,0.12)">④ 圖稿與 UV 印刷工作台</a>
     </div>
   </header>
   {banner}
+  <div style="padding:16px 24px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+    <a href="/admin/recipes" style="text-decoration:none;color:inherit;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;display:block">
+      <strong style="color:#7ee787;display:block;margin-bottom:4px">① 商品 Recipe 規格總庫 →</strong>
+      <span class="note">管理商品標準外尺寸、板件 BOM、待確認項目與 3D 結構預覽</span>
+    </a>
+    <a href="/admin/recipes/models" style="text-decoration:none;color:inherit;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;display:block">
+      <strong style="color:#79c0ff;display:block;margin-bottom:4px">② 商品 3D 建模與場景套圖庫 →</strong>
+      <span class="note">分類樹管理、NAS 素材用途核對、客廳／廚房場景與 24 款批次排程</span>
+    </a>
+    <a href="/admin/recipes/golden" style="text-decoration:none;color:inherit;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;display:block">
+      <strong style="color:#d2a8ff;display:block;margin-bottom:4px">③ 三層櫃 Golden 與 Product DNA →</strong>
+      <span class="note">424×295×900 三層櫃四款 SKU 預覽與 Issue #18 數位雙生匯出契約</span>
+    </a>
+    <a href="/admin/recipes/print" style="text-decoration:none;color:inherit;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;display:block">
+      <strong style="color:#ffa657;display:block;margin-bottom:4px">④ 圖稿與 UV 印刷校稿工作台 →</strong>
+      <span class="note">原稿／PrintFox 生圖匯入、三門／平面原寸 PDF 校稿與人工簽核放行</span>
+    </a>
+  </div>
 
   <nav class="nav-tabs">
     <button class="tab-btn active" onclick="switchTab('tab-designer')">🛋️ 一鍵 3D 櫃體設計</button>

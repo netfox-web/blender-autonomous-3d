@@ -1,24 +1,132 @@
 <!doctype html>
 <html lang="zh-Hant">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>商品 Recipe 庫｜收納王妃</title><link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css"><script src="/admin/recipes/assets/recipe-viewer.js" defer></script>
-<script src="/admin/recipes/assets/recipe-library.js" defer></script></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>收納王妃 · 商品 Recipe 庫</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css">
+  <script src="/admin/recipes/assets/recipe-viewer.js" defer></script>
+  <script src="/admin/recipes/assets/recipe-library.js" defer></script>
+</head>
 <body>
-<header class="topbar"><a class="brand" href="/admin/recipes"><span class="brand-mark">SQ</span><span>收納王妃 <small>PRODUCT STUDIO</small></span></a><a class="back" href="/admin">返回管理台 ↗</a></header>
-<main class="workspace">
-  <div class="page-heading"><div><p class="eyebrow">商品資料 · 結構配方 · 來源管理</p><h1>商品 Recipe 庫</h1><p class="subtitle">整理商品的每一個細節，讓下一次建模有據可循。</p></div><div class="heading-actions"><button id="import-button" class="secondary">匯入草稿</button><button id="export-all" class="secondary">匯出全部</button><button id="new-button" class="primary">＋ 新增商品</button></div></div>
-  <p><a href="/admin/recipes/models">NAS 商品 3D 建模庫 →</a> · <a class="back" href="/admin/recipes/golden">開啟三層櫃 Golden Product · 四款 SKU / Artwork 工作台 →</a> · <a href="/admin/recipes/print">圖稿與 UV 印刷工作台 →</a></p>
-  <div id="notice" role="status" aria-live="polite" hidden></div>
-  <section class="stats" aria-label="商品庫概況"><div><span>商品總數</span><strong id="total-stat">—</strong></div><div><span>已儲存草稿</span><strong id="draft-stat">—</strong></div><div><span>待補資料項目</span><strong id="missing-stat">—</strong></div></section>
-  <div class="workbench">
-    <aside class="catalog"><div class="catalog-heading"><h2>商品目錄</h2><button id="reload" class="text-button">重新載入</button></div><label class="sr-only" for="search">搜尋商品</label><input id="search" type="search" placeholder="搜尋名稱或商品編號"><label class="sr-only" for="family-filter">篩選結構</label><select id="family-filter"><option value="">所有結構配方</option></select><div id="product-list" aria-label="商品列表"><p class="muted loading">正在讀取商品…</p></div></aside>
-    <section class="detail" id="detail" aria-label="商品詳情"><div class="empty"><h2>準備你的商品資料</h2><p>選擇左側商品，查看規格與來源。</p></div></section>
-  </div>
-  <footer>支援商品資料管理、互動結構預覽與 Blender 3D 生成。預覽含簡化假設，製造前仍需工程與機構驗證。</footer>
-</main>
-<input type="file" id="import-file" accept="application/json,.json" hidden>
-<dialog id="new-dialog"><form id="new-form"><div class="dialog-heading"><div><p class="eyebrow">NEW PRODUCT</p><h2>新增商品</h2></div><button type="button" id="close-new" class="icon-button" aria-label="關閉新增商品">×</button></div><p class="muted">先建立基本資料，其餘規格可以稍後補齊。</p>
-<div class="form-grid"><label>商品編號 <span class="required">*</span><input name="sku" required maxlength="120" placeholder="例如 SQ-001"></label><label>商品名稱 <span class="required">*</span><input name="name" required maxlength="240" placeholder="例如 木質收納櫃"></label></div>
-<label>結構配方<select name="family" id="new-family" required></select></label><label>商品來源網址<input name="pageUrl" type="url" placeholder="https://…"></label>
-<div class="form-grid three"><label>寬度（mm）<input name="widthMm" type="number" min="0.01" step="any"></label><label>深度（mm）<input name="depthMm" type="number" min="0.01" step="any"></label><label>高度（mm）<input name="heightMm" type="number" min="0.01" step="any"></label></div>
-<label>尺寸依據<input name="evidence" placeholder="例如供應商尺寸圖、量測日期"></label><p id="new-error" class="form-error" role="alert"></p><div class="dialog-footer"><button type="button" id="cancel-new" class="secondary">取消</button><button type="submit" class="primary">建立商品草稿</button></div></form></dialog>
-</body></html>
+  <header class="topbar">
+    <a class="brand" href="/admin/recipes">
+      <span class="brand-mark">妃</span>
+      <span>收納王妃<small>PRODUCT STUDIO · 商品 Recipe 規格總庫</small></span>
+    </a>
+    <nav aria-label="工作台導覽">
+      <a href="/admin/recipes" aria-current="page">① 商品 Recipe 庫</a>
+      <a href="/admin/recipes/models">② 商品 3D 建模與套圖庫</a>
+      <a href="/admin/recipes/golden">③ 三層櫃 Golden 與 DNA</a>
+      <a href="/admin/recipes/print">④ 圖稿與 UV 印刷工作台</a>
+      <a href="/admin">⑤ 系統算力總控台</a>
+    </nav>
+  </header>
+
+  <main class="workspace">
+    <section class="page-head" aria-label="商品 Recipe 庫操作導覽">
+      <div>
+        <p class="eyebrow">商品資料 · 結構配方 · 來源管理 · 3D 預覽</p>
+        <h1>商品 Recipe 庫</h1>
+        <p class="subtitle">整理每一款商品的標準尺寸、板件結構與來源依據，並可一鍵轉入 3D 建模庫、Golden 工作台或 UV 印刷校稿。</p>
+        <div class="heading-actions">
+          <button id="new-button" class="primary">＋ 新增商品 Recipe</button>
+          <button id="import-button" class="secondary">匯入草稿 JSON</button>
+          <button id="export-all" class="secondary">匯出全部 JSON</button>
+        </div>
+      </div>
+
+      <div class="studio-launchers" aria-label="快速切換其他工作台">
+        <a class="launcher-card" href="/admin/recipes/models">
+          <strong>② 商品 3D 建模與套圖庫 →</strong>
+          <span>管理分類樹、NAS 素材用途、客廳／廚房場景與 24 款批次套圖</span>
+        </a>
+        <a class="launcher-card" href="/admin/recipes/golden">
+          <strong>③ 三層櫃 Golden 與 Product DNA →</strong>
+          <span>424×295×900 標準三層櫃四款 SKU 預覽與 Product DNA 數位雙生契約匯出</span>
+        </a>
+        <a class="launcher-card" href="/admin/recipes/print">
+          <strong>④ 圖稿與 UV 印刷工作台 →</strong>
+          <span>原稿／PrintFox 生圖匯入、三門／平面原寸 PDF 校稿與人工簽核放行</span>
+        </a>
+      </div>
+    </section>
+
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+
+    <section class="stats" aria-label="商品庫概況">
+      <div>
+        <span>已建檔商品總數</span>
+        <strong id="total-stat">—</strong>
+      </div>
+      <div>
+        <span>已儲存版本草稿</span>
+        <strong id="draft-stat">—</strong>
+      </div>
+      <div>
+        <span>待補齊結構／尺寸項目</span>
+        <strong id="missing-stat">—</strong>
+      </div>
+    </section>
+
+    <div class="workbench">
+      <aside class="catalog">
+        <div class="catalog-heading">
+          <h2>商品目錄清單</h2>
+          <button id="reload" class="text-button">↻ 重新載入</button>
+        </div>
+        <label class="sr-only" for="search">搜尋商品</label>
+        <input id="search" type="search" placeholder="搜尋商品名稱或 SKU 編號…">
+        <label class="sr-only" for="family-filter">篩選結構</label>
+        <select id="family-filter">
+          <option value="">所有結構配方</option>
+        </select>
+        <div id="product-list" aria-label="商品列表">
+          <p class="muted loading">正在讀取商品…</p>
+        </div>
+      </aside>
+
+      <section class="detail" id="detail" aria-label="商品詳情">
+        <div class="empty">
+          <h2>請從左側選擇一款商品 Recipe</h2>
+          <p>點選左側商品卡片，即可檢視或編輯「規格尺寸」、「來源圖片」與「3D 結構爆炸圖 &amp; Blender 預覽」。</p>
+        </div>
+      </section>
+    </div>
+
+    <footer>支援商品資料管理、互動結構預覽與真實 Blender 3D 生成。預覽含簡化假設，正式製造前仍需工程與機構驗證。</footer>
+  </main>
+
+  <input type="file" id="import-file" accept="application/json,.json" hidden>
+
+  <dialog id="new-dialog">
+    <form id="new-form">
+      <div class="dialog-heading">
+        <div>
+          <p class="eyebrow">NEW PRODUCT RECIPE</p>
+          <h2>新增商品 Recipe</h2>
+        </div>
+        <button type="button" id="close-new" class="icon-button" aria-label="關閉新增商品">×</button>
+      </div>
+      <p class="muted">先建立基本編號與結構配方，細部尺寸與來源可稍後補齊。</p>
+      <div class="form-grid">
+        <label>商品編號 SKU <span class="required">*</span><input name="sku" required maxlength="120" placeholder="例如 SQ-001"></label>
+        <label>商品名稱 <span class="required">*</span><input name="name" required maxlength="240" placeholder="例如 三層木質收納櫃"></label>
+      </div>
+      <label>結構配方家族<select name="family" id="new-family" required></select></label>
+      <label>商品來源網址（選填）<input name="pageUrl" type="url" placeholder="https://…"></label>
+      <div class="form-grid three">
+        <label>寬度 Width（mm）<input name="widthMm" type="number" min="0.01" step="any"></label>
+        <label>深度 Depth（mm）<input name="depthMm" type="number" min="0.01" step="any"></label>
+        <label>高度 Height（mm）<input name="heightMm" type="number" min="0.01" step="any"></label>
+      </div>
+      <label>尺寸依據說明<input name="evidence" placeholder="例如：供應商尺寸圖、實測日期"></label>
+      <p id="new-error" class="form-error" role="alert"></p>
+      <div class="dialog-footer">
+        <button type="button" id="cancel-new" class="secondary">取消</button>
+        <button type="submit" class="primary">建立商品草稿</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

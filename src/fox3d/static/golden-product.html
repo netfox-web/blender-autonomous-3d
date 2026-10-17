@@ -1,22 +1,127 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>三層櫃 Golden Product｜收納王妃</title>
-<link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css"><link rel="stylesheet" href="/admin/recipes/assets/golden-product.css">
-<script defer src="/admin/recipes/assets/recipe-viewer.js"></script><script defer src="/admin/recipes/assets/golden-product.js"></script></head>
-<body><header class="topbar"><a class="brand" href="/admin/recipes"><span class="brand-mark">SQ</span>收納王妃 <small>PRODUCT STUDIO</small></a><a href="/admin/recipes/print">圖稿與 UV 印刷工作台 →</a><a href="/admin/recipes">← 商品 Recipe 庫</a></header>
-<main class="workspace"><div class="page-heading"><div><p class="eyebrow">GOLDEN PRODUCT · 同一櫃體，不同圖稿</p><h1>三層三門櫃</h1><p class="subtitle">424 × 295 × 900 mm · 四款 SKU 共用櫃體配方</p></div></div>
-<div id="notice" role="status" aria-live="polite"></div>
-<div class="golden-layout"><aside class="catalog"><h2>1. 選擇商品與圖稿</h2>
-<label for="sku">商品 SKU</label><select id="sku"></select>
-<label for="version">Artwork 版本</label><select id="version"></select>
-<p class="muted">歷史原始圖稿尚未提供。校驗圖用來檢查三門連續裁圖與貼圖位置，不代表該 SKU 的原始外觀。</p>
-<h2>2. 確認預覽設定</h2><div id="truth"></div>
-<label class="consent"><input type="checkbox" id="accept">我了解板厚與間隙含預覽假設，校驗圖不是歷史原稿，成果不能直接製造。</label>
-<button id="generate" class="primary" disabled>生成真實 3D 預覽</button><button id="cancel" class="secondary" hidden>取消生成</button>
-<p id="progress" role="status"></p><p class="muted">開門視角：BLOCKED<br>缺少已驗證的鉸鏈／開合資料。</p></aside>
-<section class="detail"><h2>3. 檢視與下載</h2><div id="viewer"></div><p class="muted">可旋轉結構預覽不顯示 Artwork；實際貼圖請看下方 Blender 圖片。</p>
-<p id="stale" class="form-error" hidden>以下為上一版成果，與目前選擇的圖稿版本不同。</p>
-<div id="results"><p class="muted">選擇 Artwork 版本並生成，即可查看三個視角與下載模型。</p></div>
-<details><summary>板件與印刷面候選資料</summary><div id="boards"></div><p class="muted">候選板件表非裁切單。缺少五金、接合、板材規格、鋸縫及餘料資料，製造與排版耗損計算尚未放行。</p></details>
-<details><summary>資料依據與驗證摘要</summary><div id="lineage"></div></details></section></div>
-</main></body></html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>收納王妃 · 三層櫃 Golden Product 與 Product DNA 工作台</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/recipe-library.css">
+  <link rel="stylesheet" href="/admin/recipes/assets/golden-product.css">
+  <script defer src="/admin/recipes/assets/recipe-viewer.js"></script>
+  <script defer src="/admin/recipes/assets/golden-product.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/admin/recipes">
+      <span class="brand-mark">妃</span>
+      <span>收納王妃<small>PRODUCT STUDIO · 三層櫃 Golden 與 Product DNA 工作台</small></span>
+    </a>
+    <nav aria-label="工作台導覽">
+      <a href="/admin/recipes">① 商品 Recipe 庫</a>
+      <a href="/admin/recipes/models">② 商品 3D 建模與套圖庫</a>
+      <a href="/admin/recipes/golden" aria-current="page">③ 三層櫃 Golden 與 DNA</a>
+      <a href="/admin/recipes/print">④ 圖稿與 UV 印刷工作台</a>
+      <a href="/admin">⑤ 系統算力總控台</a>
+    </nav>
+  </header>
+
+  <main class="workspace">
+    <section class="page-head" aria-label="Golden Product 操作說明">
+      <div>
+        <p class="eyebrow">GOLDEN PRODUCT · 同一櫃體母版，四款 SKU 套圖與 Product DNA 契約</p>
+        <h1>三層三門櫃（424 × 295 × 900 mm）</h1>
+        <p class="subtitle">標準四款 SKU 共用同一 3D 櫃體結構配方，可一鍵生成三視角真實 Blender OptiX 渲染、門片裁圖與跨系統 Product DNA 數位雙生匯出包。</p>
+      </div>
+      <ol class="golden-steps" aria-label="三步驟操作指引">
+        <li><strong>1 · 選 SKU 與圖稿版本</strong><span>左側切換四款標準 SKU 與母版四分之一裁切／單門獨立裁切</span></li>
+        <li><strong>2 · 生成真實 3D 渲染</strong><span>勾選確認後啟動 Blender 渲染立體視角、正面與門片細節</span></li>
+        <li><strong>3 · 匯出 Product DNA</strong><span>檢視並封存匯出給 ERP / AI-Print-OS / SpecPilot 的數位雙生 JSON</span></li>
+      </ol>
+    </section>
+
+    <div id="notice" role="status" aria-live="polite"></div>
+
+    <div class="golden-layout">
+      <aside class="catalog">
+        <div class="step-card">
+          <span class="step-badge">步驟 1</span>
+          <h2>選擇商品 SKU 與圖稿裁切方式</h2>
+          <label for="sku">商品 SKU 編號</label>
+          <select id="sku"></select>
+          <label for="version">Artwork 裁切與貼圖模式</label>
+          <select id="version"></select>
+          <p class="muted">說明：校驗圖用於檢查三門連續對花、UV 座標與裁切位置，非歷史印刷原稿。</p>
+        </div>
+
+        <div class="step-card">
+          <span class="step-badge">步驟 2</span>
+          <h2>確認預覽依據與啟動 Blender</h2>
+          <div id="truth"></div>
+          <label class="consent">
+            <input type="checkbox" id="accept">
+            <span>我了解板厚與間隙含預覽假設，校驗圖不是歷史原稿，成果不能直接用於實機製造。</span>
+          </label>
+          <div class="golden-btn-row">
+            <button id="generate" class="primary" disabled>🎨 生成真實 3D 預覽</button>
+            <button id="cancel" class="secondary" hidden>取消生成</button>
+          </div>
+          <p id="progress" class="progress-pill" role="status"></p>
+          <p class="muted">開門視角狀態：<strong>BLOCKED</strong>（待補實測鉸鏈與開合角度資料）。</p>
+        </div>
+      </aside>
+
+      <section class="detail">
+        <div class="detail-block">
+          <div class="block-head">
+            <div>
+              <span class="step-badge">即時結構與渲染成果</span>
+              <h2>3. 3D 結構檢視與多視角下載</h2>
+            </div>
+          </div>
+
+          <div class="viewer-box">
+            <div class="viewer-caption">互動式 3D 板件結構預覽（可拖曳旋轉；貼圖效果請見下方 Blender 渲染圖）</div>
+            <div id="viewer"></div>
+          </div>
+
+          <p id="stale" class="form-error" hidden>以下為上一版成果，與目前選擇的圖稿版本不同，請重新點選「生成真實 3D 預覽」。</p>
+          <div id="results">
+            <p class="muted">選擇左側 SKU 與 Artwork 版本並點選生成，即可查看 HERO_45、FRONT_CLOSED、DOOR_DETAIL 三個視角與下載模型。</p>
+          </div>
+
+          <div class="accordions-grid">
+            <details open>
+              <summary>📋 板件與印刷面候選尺寸表</summary>
+              <div id="boards"></div>
+              <p class="muted">候選板件表僅供核對，非正式裁切單。製造與排版耗損計算仍需五金、接合與鋸縫資料。</p>
+            </details>
+            <details open>
+              <summary>🔐 資料依據與 SHA-256 驗證摘要</summary>
+              <div id="lineage"></div>
+            </details>
+          </div>
+        </div>
+
+        <div class="detail-block dna-block" id="dna-section">
+          <div class="block-head">
+            <div>
+              <span class="step-badge">步驟 3 · Issue #18 跨系統契約</span>
+              <h2>Product DNA 數位雙生匯出契約（ERP / AI-Print-OS / SpecPilot）</h2>
+            </div>
+            <div class="dna-actions">
+              <button id="dna-refresh" type="button" class="secondary">↻ 載入此 SKU 數位雙生</button>
+              <button id="dna-export-btn" type="button" class="primary">📦 建立並封存四款 SKU 匯出包</button>
+              <button id="dna-download-btn" type="button" class="secondary">⬇ 下載目前 JSON</button>
+            </div>
+          </div>
+          <p class="muted">提供嚴格型別與雜湊綁定的唯讀 Product DNA 合約，供下游系統對帳外框尺寸、板件 BOM、UV 貼圖座標與誠實就緒度旗標。</p>
+          <div id="dna-summary" class="dna-summary-grid"></div>
+          <details class="dna-json-drawer">
+            <summary>檢視完整 Product DNA JSON 契約內容</summary>
+            <pre id="dna-json" class="dna-pre">正在載入 Product DNA 契約…</pre>
+          </details>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -137,8 +137,9 @@
   $('scan').onclick=run(async()=>{$('scan').disabled=true;notice('正在唯讀掃描已設定的 NAS 商品資料夾…');try{const s=await api('/catalog/refresh',{method:'POST'});await loadCatalog();notice(`掃描完成：${s.fileCount} 個檔案、${s.groupCount} 個待確認群組。`);}finally{$('scan').disabled=false;}});
   $('load-recipe-reference').onclick=()=>{const r=recipeReferences.find(x=>x.sku===$('recipe-reference').value);if(r&&canLeave()){selected=null;pendingNewCategory=null;fill(r.draft);switchView('models');notice('已載入原有 Recipe 快照；保留原尺寸依據與預覽假設。請儲存後生成，不會修改原始配方。');}};
   $('new').onclick=()=>{if(canLeave()){newMaster();switchView('models');}};
-  function switchView(view){const models=view==='models';$('library-view').hidden=!models;$('material-view').hidden=models;$('show-models').setAttribute('aria-pressed',String(models));$('show-materials').setAttribute('aria-pressed',String(!models));}
+  function switchView(view){const models=view==='models';$('library-view').hidden=!models;$('material-view').hidden=models;$('show-models').setAttribute('aria-pressed',String(models));$('show-materials').setAttribute('aria-pressed',String(!models));if($('step-filter-bar'))$('step-filter-bar').hidden=!models;}
   $('show-models').onclick=()=>switchView('models');$('show-materials').onclick=()=>switchView('materials');
+  document.querySelectorAll('[data-step-filter]').forEach(btn=>{btn.onclick=()=>{const target=btn.dataset.stepFilter;document.querySelectorAll('[data-step-filter]').forEach(b=>b.setAttribute('aria-pressed',String(b===btn)));document.querySelectorAll('[data-step-group]').forEach(g=>{g.hidden=target!=='all'&&g.dataset.stepGroup!==target;});};});
   $('create-from-source').onclick=()=>{if(group&&canLeave()){newMaster(group);switchView('models');}};
   form.addEventListener('input',staleForm);form.elements.geometry.addEventListener('change',toggleCabinet);
   $('add-variant').onclick=()=>{addVariant();staleForm();};$('add-face').onclick=()=>{addFace();staleForm();};

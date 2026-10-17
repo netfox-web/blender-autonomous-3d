@@ -14,6 +14,7 @@
   function fields(s){$('composition-faces').replaceChildren();const old=s.manifest?.draft;
     $('composition-sku').value=old?.sku||master?.draft.variants?.[0]?.sku||master?.draft.name||'';
     $('composition-scene').value=old?.scene||'STUDIO';
+    $('composition-placement').value=old?.placement||'AUTO';$('composition-view').value=old?.view||'THREE_QUARTER';
     for(const f of s.surfaces){const row=document.createElement('div');row.className='composition-surface';row.dataset.component=f.componentId;
       row.innerHTML=`<strong>${esc(f.label)} · ${f.widthMm} × ${f.heightMm} mm</strong><div class="fields"><label>此面的印刷圖稿<select data-art><option value="">保留示意材質</option>${assets.filter(a=>a.usage.canUseForModel).map(a=>`<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label><label>圖稿頁碼<select data-page></select></label><label>旋轉<select data-rotation><option value="0">0°</option><option value="90">90° 順時針</option><option value="180">180°</option><option value="270">270° 順時針</option></select></label></div><img class="composition-source" hidden alt="此面的來源圖稿">`;
       const previous=old?.placements.find(x=>x.componentId===f.componentId),art=row.querySelector('select[data-art]');
@@ -31,7 +32,7 @@
     if(s.generated&&!s.stale&&!dirty&&!masterDirty){const url=name=>`${base}/${id}/composition/files/${name}?`+new URLSearchParams({workspace:tenant,generation:s.generationId});
       $('composition-beauty').src=url('beauty.png');$('composition-beauty').hidden=false;$('composition-front').src=url('front-closed.png');$('composition-front').hidden=false;
       $('composition-downloads').innerHTML=Object.entries({'beauty.png':'下載情境圖','front-closed.png':'下載正面核對圖','model.glb':'下載 GLB 模型','model.blend':'下載 Blender 母版','geometry.json':'下載尺寸紀錄'}).map(([n,l])=>`<a href="${esc(url(n))}" download>${l}</a>`).join('');
-      $('composition-identity').textContent=`母版第 ${s.manifest.sourceRevision} 版 · ${s.scenes[s.manifest.scene]} · 結構識別 ${s.manifest.spec.engineeringHash.slice(0,12)} · ${s.manifest.draft.sku}。尺寸尚待實物核對。`;
+      $('composition-identity').textContent=`母版第 ${s.manifest.sourceRevision} 版 · ${s.scenes[s.manifest.scene]} · ${s.manifest.draft.view==='LEFT'?'左前方':s.manifest.draft.view==='FRONT'?'正前方':'右前方'} · 結構識別 ${s.manifest.spec.engineeringHash.slice(0,12)} · ${s.manifest.draft.sku}。尺寸尚待實物核對。`;
       if(seen!==s.generationId){seen=s.generationId;window.dispatchEvent(new Event('product-composition-finished'));}
     }else if(s.stale||!s.generated)clear();
   }
@@ -43,7 +44,7 @@
   $('composition-form').addEventListener('input',changed);
   $('composition-accept').onchange=buttons;
   $('composition-form').onsubmit=safe(async()=>{if(!master||masterDirty||busy||task)return;const token=epoch;busy=true;buttons();
-    const selection={sku:$('composition-sku').value,scene:$('composition-scene').value,placements:Array.from(document.querySelectorAll('.composition-surface')).filter(r=>r.querySelector('[data-art]').value).map(r=>({componentId:r.dataset.component,assetId:r.querySelector('[data-art]').value,page:Number(r.querySelector('[data-page]').value),rotation:Number(r.querySelector('[data-rotation]').value)}))};
+    const selection={sku:$('composition-sku').value,scene:$('composition-scene').value,view:$('composition-view').value,placement:['LIVING_ROOM','KITCHEN'].includes($('composition-scene').value)?$('composition-placement').value:'AUTO',placements:Array.from(document.querySelectorAll('.composition-surface')).filter(r=>r.querySelector('[data-art]').value).map(r=>({componentId:r.dataset.component,assetId:r.querySelector('[data-art]').value,page:Number(r.querySelector('[data-page]').value),rotation:Number(r.querySelector('[data-rotation]').value)}))};
     $('composition-form').inert=true;
     try{const s=await api('/'+master.id+'/composition',{method:'POST',body:JSON.stringify({expectedRevision:master.revision,inputHash:master.inputHash,assumptionsAccepted:$('composition-accept').checked,selection})});if(token!==epoch)return;task=s.taskId;dirty=false;clear();message('已送出套圖／情境生成工作。');}finally{busy=false;$('composition-form').inert=false;buttons();}});
   $('composition-refresh').onclick=safe(()=>load(true));

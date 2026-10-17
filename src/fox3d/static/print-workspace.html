@@ -1,30 +1,243 @@
 <!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>圖稿與 UV 印刷工作台｜收納王妃</title>
-<link rel="stylesheet" href="/admin/recipes/assets/print-workspace.css?v=1">
-<link rel="stylesheet" href="/admin/recipes/assets/printfox-bridge.css?v=1"><script defer src="/admin/recipes/assets/printfox-bridge.js?v=1"></script>
-<script defer src="/admin/recipes/assets/recipe-viewer.js"></script><script defer src="/admin/recipes/assets/print-workspace.js?v=2"></script></head>
-<body><header><div><p class="eyebrow">SONAQUEEN · PRODUCT STUDIO</p><h1>圖稿與 UV 印刷工作台</h1><p>保留原稿尺寸，套圖看效果，核對後交給印刷人員。</p></div>
-<nav><a href="/admin/recipes/models">商品 3D 建模庫</a><a href="/admin/recipes">Recipe 庫</a><a href="/admin/recipes/golden">三層櫃工作台</a><a href="https://aioffice.com.tw/uvprint/" target="_blank" rel="noopener">NetFox Print ↗</a></nav></header>
-<div id="notice" role="status" aria-live="polite">正在載入工作台…</div>
-<main><p class="notice">新匯入與既有未分類素材都需先確認用途；商品照片、刀模及包裝不可當作套圖原稿。<a href="/admin/recipes/models#usage-panel" target="_blank">開啟素材用途管理</a></p><aside><section><h2>已建立的商品</h2><button id="new">＋ 建立印刷商品</button><div id="jobs" class="list"></div></section>
-<section><h2>原稿資料庫</h2><p>來源唯讀。選取後另存到工作台，保留原檔。</p><form id="search"><label>搜尋來源檔案<input id="query" placeholder="例如 DN0673、門板、print"></label><button>搜尋</button></form><p id="sourceCount"></p><div id="sources" class="list"></div><button id="more" class="secondary">載入更多</button><button id="refresh" class="secondary">重新掃描來源</button>
-<label class="upload">或上傳自己的原稿<input id="upload" type="file" accept=".pdf,.ai,.jpg,.jpeg,.png,.tif,.tiff"></label><small>PDF 相容 AI、PDF、JPG、PNG、TIFF；每檔上限 150 MB。</small></section></aside>
-<article>
-<section id="printfox-panel"><details open><summary>AI 圖庫與生圖 · PrintFox</summary>
-<p>從 PrintFox 選原圖，或輸入描述產生新圖。匯入後在下方商品選擇原稿，核對實際尺寸再套圖。</p>
-<p>服務：<span id="pf-origin"></span> · <span id="pf-connection-status">檢查中…</span></p>
-<form id="pf-connect"><div class="fields"><label>PrintFox Token<input id="pf-token" type="password" autocomplete="off" maxlength="4096" required placeholder="由操作人員自行輸入"></label></div><button id="pf-connect-button">連接 PrintFox</button><button id="pf-disconnect" type="button" class="secondary" disabled>中斷連線</button></form>
-<small>Token 僅傳給上列 PrintFox 服務，暫存於本機服務記憶體一小時；不寫入檔案，重啟後需重新連接。</small>
-<div id="pf-message" role="status" aria-live="polite"></div>
-<div id="pf-work" hidden><form id="pf-search"><label>搜尋設計圖<input id="pf-query" maxlength="150" placeholder="圖稿名稱或編號"></label><button>搜尋圖庫</button><button id="pf-refresh" type="button" class="secondary">更新圖庫與進度</button></form><p id="pf-count"></p><div id="pf-designs" class="pf-grid"></div><button id="pf-more" type="button" class="secondary">載入更多設計</button>
-<details><summary>輸入描述，產生新圖</summary><form id="pf-generate"><label>圖案描述<textarea id="pf-prompt" required minlength="3" maxlength="3000" placeholder="例如：淡綠色植物線條、米白底色、簡約風格"></textarea></label><label>避免出現的內容<input id="pf-negative" maxlength="1500" placeholder="例如：文字、商標"></label><div class="fields"><label>生圖引擎<select id="pf-engine"><option value="comfyui">本地 ComfyUI</option><option value="grok_imagine">grok imagine · 既有雲端引擎</option></select></label><label>圖稿比例<select id="pf-size"><option value="wide">橫式 1216 × 832</option><option value="sq">正方形 1024 × 1024</option><option value="tall">直式 832 × 1216</option><option value="cabinet">長直式 768 × 1344</option></select></label><label>張數<input id="pf-number" type="number" min="1" max="4" value="1" required></label></div><p>按下生圖會使用所選引擎執行一次，最多 4 張。圖稿比例、像素與色彩仍需核對；工作台不會拉伸圖片或自動放行印刷。</p><button id="pf-generate-button">送出一次生圖</button></form></details>
-<h3>此工作台的生圖任務</h3><div id="pf-tasks"></div></div></details></section>
-<section><div class="section-title"><h2>1 · 選擇商品與印刷面</h2><span id="version" class="badge">尚未儲存</span></div>
-<form id="editor"><div class="fields"><label>商品編號<input id="sku" required placeholder="DN067301"></label><label>商品名稱<input id="name" required placeholder="維尼花草風三層門櫃"></label><label>套圖方式<select id="layout"><option value="THREE_DOOR">三層櫃 · 三片門</option><option value="FLAT">單片 · 門片／背板／平板商品</option></select></label></div>
-<div id="panels"></div><details><summary>印刷交接設定</summary><div class="fields"><label>RIP 軟體<input id="rip" value="RasterLink 6"></label><label>實際機台<input id="machine" placeholder="請填現場使用的機台"></label><label>材質／表面處理<input id="substrate" placeholder="請填實際板材與塗層"></label></div></details><button id="save">儲存設定</button></form><div id="dimensions"></div></section>
-<section><h2>2 · 查看 3D 套圖與校稿</h2><p class="hint">印刷面依原稿裁切框建模；櫃身深度、板厚與間隙為示意設定，尚未實測。螢幕 RGB 預覽不能代替現場色彩打樣。</p><div class="preview-grid"><div id="viewer"></div><div id="rendered"><p>儲存後可生成實際套圖。</p></div></div>
-<div class="actions"><button id="generate" disabled>生成 3D 套圖</button><button id="cancel" disabled class="secondary">取消生成</button><button id="proof" disabled class="secondary">產生校稿下載包</button></div><p id="previewStatus"></p><div id="downloads"></div></section>
-<section><h2>3 · 人員核對後下載印刷檔</h2><p>校稿包有紅色浮水印。完成板件量測與實體打樣後，可下載原尺寸 PDF 交給 RIP，以 100% 比例匯入。</p>
-<form id="releaseForm"><div class="checks"><label><input type="checkbox" name="dimensionsChecked" required> 已實測板件，確認裁切尺寸</label><label><input type="checkbox" name="orderAndOrientationChecked" required> 已開啟校稿，確認圖稿順序與方向</label><label><input type="checkbox" name="bleedAndKeepOutChecked" required> 已核對出血、孔位、治具原點與禁印區</label><label><input type="checkbox" name="colorWhiteVarnishTestPassed" required> 已完成材質、色彩、白墨／光油的現場打樣</label><label><input type="checkbox" name="ripScale100Confirmed" required> 已確認 RIP 使用 100% 比例，未自動縮放</label></div>
-<div class="fields"><label>確認人員<input name="operator" minlength="2" maxlength="100" required></label><label>量測紀錄<textarea name="measurementRecord" minlength="8" maxlength="2000" required placeholder="實測尺寸、量測日期及治具位置"></textarea></label><label>打樣紀錄<textarea name="testPrintRecord" minlength="8" maxlength="2000" required placeholder="打樣編號、材質設定與檢查結果"></textarea></label></div><button id="release" disabled>確認並產生印刷下載包</button></form><p class="hint">NetFox Print 目前採檔案交接，下載包附交接清單。尚未連線建立工單，也不會送入熱資料夾或啟動 UV 機。</p><div id="released"></div></section></article></main></body></html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>收納王妃 · 圖稿與 UV 印刷工作台</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/print-workspace.css">
+  <link rel="stylesheet" href="/admin/recipes/assets/printfox-bridge.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/admin/recipes">
+      <span class="brand-mark">妃</span>
+      <span>收納王妃<small>PRODUCT STUDIO · 圖稿與 UV 印刷工作台</small></span>
+    </a>
+    <nav aria-label="工作台導覽">
+      <a href="/admin/recipes">① 商品 Recipe 庫</a>
+      <a href="/admin/recipes/models">② 商品 3D 建模與套圖庫</a>
+      <a href="/admin/recipes/golden">③ 三層櫃 Golden 與 DNA</a>
+      <a href="/admin/recipes/print" aria-current="page">④ 圖稿與 UV 印刷工作台</a>
+      <a href="/admin">⑤ 系統算力總控台</a>
+    </nav>
+  </header>
+
+  <main>
+    <div id="notice" role="status" aria-live="polite"></div>
+
+    <section class="page-head" aria-label="操作流程導引">
+      <div>
+        <span class="eyebrow">BLENDER 3D 預覽 · 原寸 PDF 校稿 · 人工核對放行</span>
+        <h1>圖稿與 3D 印刷工作台</h1>
+        <p class="lead">先選左方商品與原稿，再設定門片／平面配置，右側即時檢視 3D 結構與套圖效果，最後下載原寸 PDF 並人工簽核。</p>
+      </div>
+      <ol class="steps" aria-label="四步驟完成校稿">
+        <li><strong>1 · 選商品與圖稿</strong><span>從左側選商品，或上傳／從 PrintFox 匯入原稿</span></li>
+        <li><strong>2 · 設定印刷面</strong><span>指定三門或單片平面、對應頁碼與旋轉角度</span></li>
+        <li><strong>3 · 檢視 3D 預覽</strong><span>右側固定面板查看結構與真实 Blender 套圖</span></li>
+        <li><strong>4 · 校對與人工放行</strong><span>下載原寸 PDF 並完成四項安全核對後簽核</span></li>
+      </ol>
+    </section>
+
+    <div class="workspace">
+      <aside class="library">
+        <section class="panel-block">
+          <div class="section-head">
+            <div>
+              <h2>商品印刷工作清單</h2>
+              <small id="job-count">讀取中…</small>
+            </div>
+            <button id="new-job" type="button" class="btn-primary">＋ 新增商品</button>
+          </div>
+          <div id="jobs" class="list" role="listbox" aria-label="印刷商品清單"></div>
+        </section>
+
+        <section class="panel-block">
+          <div class="section-head">
+            <div>
+              <h2>原稿素材庫</h2>
+              <small>支援 PDF / PNG / JPG / WEBP</small>
+            </div>
+          </div>
+          <label class="file-upload" for="upload">
+            <strong>＋ 上傳設計原稿</strong>
+            <span>點擊選擇檔案（單檔上限 50 MB）</span>
+            <input id="upload" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" aria-label="上傳 PDF 或圖片原稿">
+          </label>
+          <div id="assets" class="asset-list" aria-label="已匯入原稿清單"></div>
+
+          <details class="nas-drawer">
+            <summary>從本機或 NAS 圖庫匯入</summary>
+            <div class="nas-body">
+              <small id="source-root">檢查圖庫路徑…</small>
+              <div class="search-row">
+                <input id="source-q" type="search" placeholder="搜尋檔名或資料夾">
+                <button id="source-search" type="button" class="secondary">搜尋</button>
+              </div>
+              <div id="sources" class="source-list"></div>
+            </div>
+          </details>
+        </section>
+      </aside>
+
+      <div class="editor-column">
+        <section id="printfox-panel" class="card collapsible-card">
+          <details>
+            <summary>
+              <span class="step-badge">選用工具</span>
+              <span>PrintFox AI 圖庫與單次生圖</span>
+              <span class="summary-tag">可收合 · 不影響既有原稿上傳</span>
+              <span id="pf-connection-status">讀取連線設定…</span>
+            </summary>
+            <div class="card-body">
+              <p class="muted">可直接從 PrintFox 圖庫匯入設計，或輸入提示詞生成一張新圖稿，完成後會自動加入左側「原稿素材庫」。</p>
+              <form id="pf-connect">
+                <div class="fields">
+                  <label>PrintFox 服務位址<input id="pf-url" placeholder="http://127.0.0.1:8000"></label>
+                  <label>PrintFox API Token<input id="pf-token" type="password" autocomplete="off" placeholder="留空則維持目前已儲存 Token"></label>
+                </div>
+                <button id="pf-save-config" type="submit" class="secondary">儲存並測試連線</button>
+                <button id="pf-clear-token" type="button" class="secondary" hidden>清除已儲存 Token</button>
+              </form>
+              <small id="pf-origin" class="muted"></small>
+              <p id="pf-message" role="status"></p>
+
+              <div class="pf-columns">
+                <div>
+                  <div id="pf-search">
+                    <input id="pf-q" type="search" placeholder="搜尋 PrintFox 圖庫標題、標籤或提示詞">
+                    <button id="pf-search-btn" type="button" class="secondary">搜尋圖庫</button>
+                    <button id="pf-refresh-btn" type="button" class="secondary">重新整理</button>
+                  </div>
+                  <p id="pf-count" class="muted"></p>
+                  <div id="pf-designs" class="pf-grid" aria-live="polite"></div>
+                </div>
+
+                <form id="pf-generate">
+                  <h3>單次生成新圖稿</h3>
+                  <label>生圖提示詞（必填）<textarea id="pf-prompt" rows="2" maxlength="2000" placeholder="例如：童趣森林動物、柔和奶油底色、適合三門收納櫃門片"></textarea></label>
+                  <div class="fields">
+                    <label>標題（選填）<input id="pf-title" maxlength="200" placeholder="森林動物門片試作"></label>
+                    <label>風格（選填）<input id="pf-style" maxlength="200" placeholder="插畫、北歐、木質"></label>
+                    <label>目標說明（選填）<input id="pf-target" maxlength="120" placeholder="三層櫃門片"></label>
+                  </div>
+                  <label>負向提示詞（選填）<input id="pf-negative" maxlength="1000" placeholder="模糊、文字錯字、變形"></label>
+                  <button id="pf-generate-btn" type="submit">送出 PrintFox 生圖</button>
+                  <div id="pf-tasks"></div>
+                </form>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <span class="step-badge">步驟 1</span>
+              <h2>商品印刷面設定</h2>
+            </div>
+            <div class="head-actions">
+              <span id="save-state" class="status-pill">尚未選擇商品</span>
+              <button id="save" type="button" class="btn-primary">儲存商品設定</button>
+            </div>
+          </div>
+
+          <div class="fields">
+            <label>商品代號（SKU）<input id="sku" placeholder="例如 PF-234609"></label>
+            <label>商品名稱<input id="name" placeholder="例如 三層櫃森林款"></label>
+            <label>印刷配置方式
+              <select id="layout">
+                <option value="THREE_DOOR">三門櫃（上／中／下門分別指定頁碼）</option>
+                <option value="FLAT">單片平面（杯墊／地墊／單門板）</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="sub-head">
+            <h3>各印刷面原稿與方向</h3>
+            <span class="muted">系統會自動檢查三門原稿尺寸是否一致，並標示頁面方向</span>
+          </div>
+          <div id="panels" class="panels-stack"></div>
+
+          <label class="notes-field">備註與來源說明（選填）
+            <textarea id="notes" rows="2" placeholder="記錄原稿來源、特殊出血或客戶指定事項"></textarea>
+          </label>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <div>
+              <span class="step-badge">步驟 3</span>
+              <h2>原寸校稿 PDF 與人工放行</h2>
+            </div>
+            <div class="head-actions">
+              <a id="pdf" class="button" href="#">下載原寸校稿 PDF</a>
+              <a id="manifest" class="button secondary" href="#">下載設定 JSON</a>
+            </div>
+          </div>
+
+          <div id="warnings" class="warning-banner"></div>
+          <div id="sheet" class="sheet"></div>
+
+          <div class="release-box">
+            <div class="release-head">
+              <h3>人工核對清單（全部勾選才可放行）</h3>
+              <span id="release-state" class="status-pill">尚未放行</span>
+            </div>
+            <div class="checks-grid">
+              <label class="check"><input type="checkbox" id="c-size"> 已核對實際板件／產品尺寸與出血</label>
+              <label class="check"><input type="checkbox" id="c-orientation"> 已核對上下方向、開門方向與順序</label>
+              <label class="check"><input type="checkbox" id="c-hardware"> 已核對把手、鉸鏈、磁吸等五金避讓區</label>
+              <label class="check"><input type="checkbox" id="c-color"> 已理解螢幕預覽為 RGB，實機需經 RIP 色彩管理與試印</label>
+            </div>
+            <div class="release-submit">
+              <label>核對人姓名<input id="by" placeholder="請輸入簽核人員姓名"></label>
+              <button id="release" type="button" class="btn-primary">確認人工放行</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="inspector">
+        <section id="preview-box" class="card sticky-card">
+          <div class="card-head">
+            <div>
+              <span class="step-badge">步驟 2</span>
+              <h2>3D 結構與套圖預覽</h2>
+            </div>
+            <span id="preview-state" class="status-pill">尚未生成 3D 預覽</span>
+          </div>
+
+          <p class="muted inspector-note">先在下方互動檢視 3D 板件結構，勾選確認後即可啟動真實 Blender 渲染並匯出 GLB / Blend 檔。</p>
+
+          <div class="viewer-stage">
+            <div class="viewer-label">3D 結構即時預覽（可拖曳旋轉）</div>
+            <div id="viewer" class="viewer"></div>
+          </div>
+
+          <div class="blender-controls">
+            <label class="check consent-check">
+              <input type="checkbox" id="preview-accept">
+              <span>我已知悉此 3D 為原稿尺寸搭配預設櫃體外框之 RGB 螢幕預覽，非實機 RIP 色彩校樣</span>
+            </label>
+            <div class="button-row">
+              <button id="preview-generate" type="button" class="btn-primary">生成真實 Blender 3D 預覽</button>
+              <button id="preview-cancel" type="button" class="secondary" hidden>取消生成</button>
+            </div>
+          </div>
+
+          <div id="preview-stale" class="warning-banner" hidden>印刷配置已修改，請重新生成 3D 預覽以確保畫面與目前設定一致。</div>
+          <div id="preview-images" class="preview-images"></div>
+          <div id="preview-downloads" class="preview-downloads"></div>
+          <div id="preview-lineage" class="muted lineage-box"></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+
+  <script src="/admin/recipes/assets/three.min.js"></script>
+  <script src="/admin/recipes/assets/recipe-viewer.js"></script>
+  <script src="/admin/recipes/assets/print-workspace.js"></script>
+  <script src="/admin/recipes/assets/printfox-bridge.js"></script>
+</body>
+</html>

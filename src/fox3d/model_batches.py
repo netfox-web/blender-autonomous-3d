@@ -35,8 +35,8 @@ def snapshot(root, tenant, item, value):
     if not batch.name.strip():
         raise ValueError('請填批次名稱')
     rows = [compositions.snapshot(root, tenant, item, s.model_dump()) for s in batch.selections]
-    if len({(s['sku'].strip(), s['scene']) for s in rows}) != len(rows):
-        raise ValueError('同一批次的款式名稱與場景不可重複')
+    if len({(s['sku'].strip(), s['scene'], s.get('placement','AUTO'), s.get('view','THREE_QUARTER')) for s in rows}) != len(rows):
+        raise ValueError('同一批次的款式、場景、位置與視角不可重複')
     for row in rows:
         row['inputAuthority'] = authority.snapshot(root, tenant, item, row)
     return {'batchVersion': 1, 'name': batch.name.strip(), 'selections': rows,
@@ -137,7 +137,7 @@ def _identity(request, tenant, mid, bid):
             or draft['authorityHash'] != stable_hash([s['inputAuthority']['hash'] for s in selections])):
         raise ValueError('批次來源權威版本／雜湊不符')
     Batch.model_validate({'name': draft['name'], 'selections': [
-        {k: s[k] for k in ('sku', 'scene', 'placements')} for s in selections]})
+        {k: s[k] for k in ('sku', 'scene', 'placements', 'placement', 'view') if k in s} for s in selections]})
     rows = []
     for i, selection in enumerate(selections):
         if (selection['masterId'] != mid or selection['masterInputHash'] != draft['masterInputHash']
@@ -147,7 +147,10 @@ def _identity(request, tenant, mid, bid):
         authority.identity(selection['inputAuthority'], tenant, mid, draft['masterRevision'], draft['masterInputHash'])
         sh = stable_hash(selection)
         rows.append({'index': i, 'generationId': str(uuid5(UUID(bid), stable_hash({'index': i, 'selection': sh}))),
-                     'sku': selection['sku'], 'scene': selection['scene'], 'selectionHash': sh})
+                     'sku': selection['sku'], 'scene': selection['scene'],
+                     'view': selection.get('view', 'THREE_QUARTER'),
+                     'placement': selection.get('placement', 'AUTO'),
+                     'selectionHash': sh})
     return {'identityVersion': IDENTITY_VERSION, 'tenantId': tenant, 'masterId': mid,
             'batchId': bid, 'name': draft['name'], 'masterInputHash': draft['masterInputHash'],
             'sourceRevision': draft['masterRevision'], 'selectionHash': stable_hash(draft),

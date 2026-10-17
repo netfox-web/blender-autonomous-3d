@@ -1,7 +1,7 @@
 'use strict';
 (() => {
-  const $=id=>document.getElementById(id), tenant='sonaqueen-home';
-  let current=null, generation=null, serial=0, statusSerial=0, timer=null, busy=false, lastRendered=null, disposeViewer=null;
+  const $=id=>document.getElementById(id), tenant='sonaqueen-home', familyId='SQ_THREE_TIER_CABINET_424_295_900';
+  let current=null, generation=null, serial=0, statusSerial=0, timer=null, busy=false, lastRendered=null, disposeViewer=null, latestDnaPayload=null;
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const base=sku=>'/api/recipe-library/golden/'+encodeURIComponent(sku);
   async function api(url,options={}) {
@@ -10,6 +10,36 @@
   }
   function controls(){ $('generate').disabled=busy||!current?.ready||!current?.blenderAvailable||!$('accept').checked; }
   function download(sku,gid,fmt,inline=false){return base(sku)+'/download/'+fmt+'?workspace='+encodeURIComponent(tenant)+'&generation='+encodeURIComponent(gid)+(inline?'&inline=true':'');}
+  function renderDna(data, label){
+    latestDnaPayload=data;
+    if(!$('dna-json')||!$('dna-summary'))return;
+    $('dna-json').textContent=JSON.stringify(data,null,2);
+    const twin=data.twin||data;
+    const id=twin.identity||{};
+    const geom=twin.geometry||{};
+    const art=twin.artwork||{};
+    const ready=twin.readiness||{};
+    const items=[
+      ['契約模式',label||data.contractVersion||'ProductDnaV1'],
+      ['Product DNA ID',id.productDnaId||data.manifestHash?.slice(0,16)||'—'],
+      ['SKU / 母版編號',`${id.skuId||$('sku').value} / ${id.masterProductId||familyId}`],
+      ['外框尺寸（mm）',geom.outerDimensionsMm?`${geom.outerDimensionsMm.width} × ${geom.outerDimensionsMm.depth} × ${geom.outerDimensionsMm.height}`:'424 × 295 × 900'],
+      ['結構雜湊 EngineeringHash',(geom.engineeringHash||'—').slice(0,16)+'…'],
+      ['圖稿雜湊 ArtworkHash',(art.packageHash||art.artworkHash||'—').slice(0,16)+'…'],
+      ['預覽就緒 vs 量產放行',`預覽: ${ready.previewReady!==false?'YES':'NO'} · 製造放行: ${ready.productionReady?'YES':'NO (未放行)'}`]
+    ];
+    $('dna-summary').innerHTML=items.map(([k,v])=>`<div class="dna-card"><span>${esc(k)}</span><strong>${esc(v)}</strong></div>`).join('');
+  }
+  async function loadDna(){
+    const sku=$('sku').value, version=$('version').value;
+    if(!sku||!version||!$('dna-summary'))return;
+    try{
+      const twin=await api(`/api/product-dna/v1/families/${encodeURIComponent(familyId)}/skus/${encodeURIComponent(sku)}/twin?version=${encodeURIComponent(version)}`);
+      renderDna(twin, `單一 SKU 數位雙生 (${sku})`);
+    }catch(e){
+      if($('dna-json'))$('dna-json').textContent='無法讀取此版本的 Product DNA：'+e.message;
+    }
+  }
   function showStatus(s,sku){
     generation=s;busy=['queued','running'].includes(s.state);controls();$('cancel').hidden=!busy;
     const labels={idle:'尚未生成',queued:'等待生成',running:'Blender 生成中',succeeded:'REAL Blender 預覽完成 · 圖稿 FIXTURE',cancelled:'已取消生成',failed:'生成失敗'};
@@ -42,7 +72,9 @@
       $('truth').innerHTML=[['CONFIG','外尺寸 424 × 295 × 900 mm；來源 Issue #4'],['ESTIMATED','側／橫／門板 15 mm、背板 3 mm'],['CONFIG','門隙 2 mm、安全區 5 mm、出血 3 mm'],[p.package.truth,'Artwork：'+(p.ready?'校驗圖，非歷史原稿':'歷史原稿尚待提供')],['BLOCKED','五金、孔位、開合與製造尚未驗證']].map(([tag,t])=>`<div class="truth-row"><strong>${esc(tag)}</strong>${esc(t)}</div>`).join('');
       if(disposeViewer)disposeViewer();disposeViewer=window.mountRecipeViewer($('viewer'),p.golden.spec);
       $('boards').innerHTML='<table><thead><tr><th>板件</th><th>長 × 寬 × 厚（mm）</th></tr></thead><tbody>'+p.golden.spec.components.map(c=>`<tr><td>${esc(c.partName)}</td><td>${c.sizeMm.map(esc).join(' × ')}</td></tr>`).join('')+'</tbody></table>';
-      $('notice').textContent=p.ready?(p.blenderAvailable?'':'找不到真實 Blender，請檢查本機安裝'):p.package.reason;controls();await poll(token,sku,version);
+      $('notice').textContent=p.ready?(p.blenderAvailable?'':'找不到真實 Blender，請檢查本機安裝'):p.package.reason;controls();
+      loadDna();
+      await poll(token,sku,version);
     }catch(e){if(token===serial)$('notice').textContent=e.message;}
   }
   $('sku').addEventListener('change',select);$('version').addEventListener('change',select);$('accept').addEventListener('change',controls);
@@ -55,6 +87,23 @@
   $('cancel').addEventListener('click',async()=>{
     if(!generation?.taskId)return;const token=serial,sku=$('sku').value;
     try{await api(base(sku)+'/cancel',{method:'POST',body:JSON.stringify({taskId:generation.taskId})});if(token===serial)$('notice').textContent='已提出取消，等待 Blender 停止。';}catch(e){if(token===serial)$('notice').textContent=e.message;}
+  });
+  if($('dna-refresh'))$('dna-refresh').addEventListener('click',()=>loadDna());
+  if($('dna-export-btn'))$('dna-export-btn').addEventListener('click',async()=>{
+    const version=['FIXTURE_MASTER_V1','FIXTURE_SINGLE_V1'].includes($('version').value)?$('version').value:'FIXTURE_MASTER_V1';
+    try{
+      const exported=await api('/api/product-dna/v1/exports',{method:'POST',body:JSON.stringify({version,seal:true})});
+      renderDna(exported, `已封存匯出包 (${exported.exportId.slice(0,8)})`);
+      $('notice').textContent=`已建立並封存 Product DNA 匯出包（編號：${exported.exportId}）。`;
+    }catch(e){$('notice').textContent=e.message;}
+  });
+  if($('dna-download-btn'))$('dna-download-btn').addEventListener('click',()=>{
+    if(!latestDnaPayload)return;
+    const blob=new Blob([JSON.stringify(latestDnaPayload,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download=`product-dna-${$('sku').value||'export'}.json`;
+    a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   api('/api/recipe-library/golden').then(c=>{
     $('sku').innerHTML=c.skus.map(s=>`<option>${esc(s)}</option>`).join('');
