@@ -37,6 +37,11 @@ def normalize_blender_engine(value: Any) -> str:
     return text if text in BLENDER_ENGINES else DEFAULT_BLENDER_ENGINE
 
 
+def local_fallback_allowed(engine: Any, *, local_available: bool) -> bool:
+    """Auto (and an explicit local choice) may render on the workstation. Forced fleet must not."""
+    return normalize_blender_engine(engine) != "fleet" and bool(local_available)
+
+
 def fleet_eligible(scene_definition: dict[str, Any] | None) -> tuple[bool, str]:
     """A scene can be rendered on a node only when every model path is a machine-independent ``assets://`` ref."""
     boxes = (scene_definition or {}).get("boxes") or []

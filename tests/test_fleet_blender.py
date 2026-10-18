@@ -2,10 +2,12 @@
 (pre-submit every eligible item, collect in order, fall back to the workstation when the fleet fails)."""
 from __future__ import annotations
 
+import email.message
 import io
 import json
 import threading
 import time
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -14,7 +16,7 @@ from PIL import Image
 
 from fox3d import fleet_blender as fb
 from fox3d.api import create_app
-from fox3d.ecommerce_scene_studio import BUILTIN_SCENES, CABINET_PRESETS, _ph_glb
+from fox3d.ecommerce_scene_studio import BUILTIN_SCENES, CABINET_PRESETS, EcommerceSceneStore, _ph_glb
 from fox3d.fleet_image_client import FleetError, FleetImageClient
 from fox3d.platform import Platform
 
@@ -46,10 +48,19 @@ CUTOUT = _png(color=(200, 10, 30, 255))
 class BlenderFleet:
     """Console double that advertises blender_scene_render and finishes every task right away (or fails them)."""
 
-    def __init__(self, *, capable_nodes: int = 1, fail: bool = False, with_cutout: bool = True, hold: bool = False):
+    def __init__(
+        self,
+        *,
+        capable_nodes: int = 1,
+        fail: bool = False,
+        with_cutout: bool = True,
+        hold: bool = False,
+        reject_submit: bool = False,
+    ):
         self.capable_nodes = capable_nodes
         self.fail = fail
         self.with_cutout = with_cutout
+        self.reject_submit = reject_submit
         self.release = threading.Event()
         if not hold:
             self.release.set()
@@ -66,6 +77,10 @@ class BlenderFleet:
                 {"taskType": fb.BLENDER_TASK_TYPE, "available": self.capable_nodes > 0, "capableNodes": self.capable_nodes, "queueDepth": 0},
             ])
         if url.endswith("/api/fleet/tasks") and method == "POST":
+            if self.reject_submit:
+                hdrs = email.message.EmailMessage()
+                raw = b'{"error":"admission refused"}'
+                raise urllib.error.HTTPError(url, 503, "busy", hdrs, io.BytesIO(raw))
             body = json.loads(req.data.decode("utf-8"))
             assert body["taskType"] == fb.BLENDER_TASK_TYPE
             self.payloads.append(body["inputPayload"])
@@ -112,8 +127,12 @@ class FakeRuntime:
         work.mkdir(parents=True, exist_ok=True)
         (work / "beauty.png").write_bytes(_png())
         (work / "product_cutout.png").write_bytes(_png(color=(90, 60, 30, 255)))
+        outputs = {"beauty.png": str(work / "beauty.png")}
+        if job.get("exportGlb", True):
+            (work / "model.glb").write_bytes(b"glTF-fake-local")
+            outputs["model.glb"] = str(work / "model.glb")
         self.rendered.append(job["jobId"])
-        return {"status": "succeeded", "outputs": {"beauty.png": str(work / "beauty.png")}, "renderTimeSec": 0.1, "device": "CPU", "blenderVersion": "local"}
+        return {"status": "succeeded", "outputs": outputs, "renderTimeSec": 0.1, "device": "CPU", "blenderVersion": "local"}
 
 
 def _wait(client: TestClient, batch_id: str, headers: dict, timeout: float = 60.0) -> dict:
@@ -162,6 +181,15 @@ def test_normalize_blender_engine():
     assert fb.normalize_blender_engine(" LOCAL ") == "local"
     assert fb.normalize_blender_engine("nonsense") == "auto"
     assert fb.normalize_blender_engine(None) == "auto"
+
+
+def test_local_fallback_allowed_only_when_not_forced_fleet():
+    assert fb.local_fallback_allowed("auto", local_available=True) is True
+    assert fb.local_fallback_allowed("auto", local_available=False) is False
+    assert fb.local_fallback_allowed("local", local_available=True) is True
+    assert fb.local_fallback_allowed("fleet", local_available=True) is False
+    assert fb.local_fallback_allowed(" FLEET ", local_available=True) is False
+    assert fb.local_fallback_allowed("fleet", local_available=False) is False
 
 
 def test_blender_fleet_status_paths():
@@ -311,3 +339,142 @@ def test_blender_engine_setting_roundtrip_and_status(tmp_path: Path, monkeypatch
     st = client.get("/api/ecommerce-scenes/ai-engine-status").json()
     assert st["blender"]["setting"] == "fleet" and st["blender"]["effective"] == "fleet"
     assert st["blender"]["fleet"]["ready"] is True and st["blender"]["localAvailable"] is True
+
+
+def test_note_fleet_progress_writes_status_into_batch_json(tmp_path: Path):
+    store = EcommerceSceneStore(Platform(tmp_path / "data", mock_blender=True))
+    bdir = store.root / "sonaqueen-home" / "batches" / "b1"
+    bdir.mkdir(parents=True)
+    item = {"itemId": "item_01", "state": "running", "stage": "blender", "fleetStatus": None, "progressNote": None}
+    items = [item]
+    store._live_docs["b1"] = {"batchId": "b1", "state": "running", "items": items, "total": 1}
+    store._note_fleet_progress(item, bdir, items, {"status": "queued", "progressNote": "等待 GPU 資源：需 20GB"})
+    saved = json.loads((bdir / "batch.json").read_text(encoding="utf-8"))
+    assert saved["state"] == "running"
+    assert saved["items"][0]["fleetStatus"] == "queued"
+    assert saved["items"][0]["progressNote"].startswith("等待 GPU 資源")
+    store._note_fleet_progress(item, bdir, items, {"status": "running", "progress_note": "OptiX 取樣 40%"})
+    saved = json.loads((bdir / "batch.json").read_text(encoding="utf-8"))
+    assert saved["items"][0]["fleetStatus"] == "running"
+    assert saved["items"][0]["progressNote"] == "OptiX 取樣 40%"
+
+
+def test_scene_studio_shows_fleet_progress_and_gates_glb_link():
+    js = Path(__file__).resolve().parents[1].joinpath("src/fox3d/static/scene-studio.js").read_text(encoding="utf-8")
+    assert "function fleetBlenderStageText" in js
+    assert "item.fleetStatus" in js
+    assert "item.progressNote" in js
+    assert "GPU 艦隊排隊中" in js
+    assert "item.hasGlb ? `<a href=\"${base}/glb${qs}\">GLB ↓</a>`" in js
+    assert "join('')}<a href=\"${base}/glb${qs}\">GLB ↓</a>" not in js
+
+
+def test_matrix_batch_forced_fleet_task_failure_does_not_fall_back(tmp_path: Path, monkeypatch):
+    fleet = BlenderFleet(fail=True)
+    _patch_fleet(monkeypatch, fleet)
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    runtime = FakeRuntime()
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    done = _wait(client, _submit(client, headers, blenderEngine="fleet"), headers)
+    item = done["items"][0]
+    assert item["state"] == "failed" and item["blenderEngine"] == "fleet"
+    assert "OptiX" in (item["error"] or "")
+    assert "改本機" not in (item.get("blenderNote") or "")
+    assert runtime.rendered == []
+
+
+def test_matrix_batch_auto_submit_failure_falls_back_to_local(tmp_path: Path, monkeypatch):
+    fleet = BlenderFleet(reject_submit=True)
+    _patch_fleet(monkeypatch, fleet)
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    runtime = FakeRuntime()
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    done = _wait(client, _submit(client, headers, blenderEngine="auto"), headers)
+    item = done["items"][0]
+    assert item["state"] == "succeeded" and item["blenderEngine"] == "local"
+    assert not item.get("fleetTaskId")
+    assert "送件失敗" in (item["blenderNote"] or "") and "admission refused" in item["blenderNote"]
+    assert runtime.rendered == [f"{done['batchId']}_{item['itemId']}"]
+    assert item["hasGlb"] is True  # the workstation export still produces model.glb
+
+
+def test_matrix_batch_forced_fleet_submit_failure_does_not_fall_back(tmp_path: Path, monkeypatch):
+    fleet = BlenderFleet(reject_submit=True)
+    _patch_fleet(monkeypatch, fleet)
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    runtime = FakeRuntime()
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    done = _wait(client, _submit(client, headers, blenderEngine="fleet"), headers)
+    item = done["items"][0]
+    assert item["state"] == "failed"
+    assert "送件失敗" in (item["error"] or "") and "admission refused" in item["error"]
+    assert runtime.rendered == []
+
+
+def test_matrix_batch_persists_fleet_progress_while_waiting(tmp_path: Path, monkeypatch):
+    fleet = BlenderFleet(hold=True)
+    _patch_fleet(monkeypatch, fleet)
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    runtime = FakeRuntime()
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    batch_id = _submit(client, headers, blenderEngine="fleet")
+    seen: dict | None = None
+    deadline = time.time() + 30
+    try:
+        while time.time() < deadline:
+            batch = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
+            item = (batch.get("items") or [{}])[0]
+            if item.get("fleetStatus") == "queued" and item.get("progressNote"):
+                seen = item
+                break
+            time.sleep(0.05)
+        assert seen is not None
+        assert seen["state"] == "running" and seen["blenderEngine"] == "fleet"
+        assert "等待 GPU" in str(seen["progressNote"])
+    finally:
+        fleet.release.set()
+    done = _wait(client, batch_id, headers)
+    assert done["items"][0]["state"] == "succeeded"
+    assert runtime.rendered == []
+
+
+def test_fleet_render_hides_glb_download_until_file_exists(tmp_path: Path, monkeypatch):
+    fleet = BlenderFleet()
+    _patch_fleet(monkeypatch, fleet)
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    runtime = FakeRuntime()
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    done = _wait(client, _submit(client, headers, blenderEngine="auto"), headers)
+    item = done["items"][0]
+    assert item["blenderEngine"] == "fleet" and item["state"] == "succeeded"
+    assert item["hasGlb"] is False
+    saved = json.loads(
+        (tmp_path / "data" / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / done["batchId"] / "batch.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert saved["items"][0]["hasGlb"] is False
+    missing = client.get(
+        f"/api/ecommerce-scenes/batches/{done['batchId']}/items/{item['itemId']}/download/glb",
+        headers=headers,
+    )
+    assert missing.status_code == 404
+
+    local = _wait(client, _submit(client, headers, blenderEngine="local"), headers)
+    local_item = local["items"][0]
+    assert local_item["blenderEngine"] == "local" and local_item["hasGlb"] is True
+    got = client.get(
+        f"/api/ecommerce-scenes/batches/{local['batchId']}/items/{local_item['itemId']}/download/glb",
+        headers=headers,
+    )
+    assert got.status_code == 200 and got.content == b"glTF-fake-local"

@@ -27,6 +27,7 @@ from fox3d.fleet_blender import (
     BLENDER_ENGINES,
     blender_fleet_status,
     fleet_eligible,
+    local_fallback_allowed,
     normalize_blender_engine,
     render_on_fleet,
     submit_blender_job,
@@ -1200,7 +1201,21 @@ class EcommerceSceneStore:
             data = read_json(bpath)
         if not data:
             raise KeyError("找不到此批次渲染任務")
-        return self._mark_if_stale(bpath, data)
+        doc = self._mark_if_stale(bpath, data)
+        self._annotate_item_artifacts(bpath.parent, doc)
+        return doc
+
+    def _annotate_item_artifacts(self, bdir: Path, doc: dict[str, Any]) -> None:
+        """The gallery link must follow the file on disk: a fleet render with export off has no model.glb."""
+        items = doc.get("items")
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("itemId") or "")
+            safe = "".join(c for c in item_id if c.isalnum() or c in ("-", "_"))
+            item["hasGlb"] = bool(safe) and (bdir / safe / "model.glb").is_file()
 
     def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
         """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
@@ -1316,8 +1331,10 @@ class EcommerceSceneStore:
                             "device": None,
                             "blenderEngine": None,
                             "fleetTaskId": None,
+                            "fleetStatus": None,
                             "blenderNote": None,
                             "progressNote": None,
+                            "hasGlb": False,
                             "hasAiComposite": False,
                             "hasCutout": False,
                             "aiState": initial_ai_state,
@@ -1446,12 +1463,24 @@ class EcommerceSceneStore:
             "device": getattr(res, "device", None) or (res.get("device") if isinstance(res, dict) else None),
         }
 
-    def _note_fleet_progress(self, item: dict[str, Any], task: dict[str, Any]) -> None:
+    def _note_fleet_progress(
+        self,
+        item: dict[str, Any],
+        bdir: Path,
+        items: list[dict[str, Any]],
+        task: dict[str, Any],
+    ) -> None:
+        """Copy queued/running fleet status onto the item and write batch.json so the UI poll can see it."""
         note = task.get("progressNote") or task.get("progress_note")
+        status = task_status(task) or None
+        note_text = str(note)[:160] if note else None
         with self.lock:
-            item["fleetStatus"] = task_status(task) or None
-            if note:
-                item["progressNote"] = str(note)[:160]
+            changed = item.get("fleetStatus") != status or (note_text is not None and item.get("progressNote") != note_text)
+            item["fleetStatus"] = status
+            if note_text:
+                item["progressNote"] = note_text
+        if changed:
+            self._save_batch_progress(bdir, items)
 
     def _run_matrix_worker(
         self,
@@ -1539,11 +1568,19 @@ class EcommerceSceneStore:
                 if fleet_blender_client is not None:
                     eligible, why = fleet_eligible(scene_def)
                     if eligible:
-                        task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
-                        with self.lock:
-                            item["fleetTaskId"] = str(task.get("id"))
-                            item["stage"] = "blender"
-                        engine_for_item = "fleet"
+                        try:
+                            task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
+                        except FleetError as exc:
+                            # auto: a refused or unreachable submit still renders here; forced fleet fails the item
+                            if not local_fallback_allowed(blender_engine, local_available=blender_ok):
+                                raise RuntimeError(f"艦隊送件失敗：{str(exc)[:220]}") from exc
+                            with self.lock:
+                                item["blenderNote"] = f"艦隊送件失敗，改本機光追：{str(exc)[:160]}"
+                        else:
+                            with self.lock:
+                                item["fleetTaskId"] = str(task.get("id"))
+                                item["stage"] = "blender"
+                            engine_for_item = "fleet"
                     else:
                         with self.lock:
                             item["blenderNote"] = why
@@ -1576,10 +1613,11 @@ class EcommerceSceneStore:
                     try:
                         facts = render_on_fleet(
                             fleet_blender_client, job, item_dir, job_id=job["jobId"], task={"id": item["fleetTaskId"]},
-                            on_update=partial(self._note_fleet_progress, item),
+                            on_update=partial(self._note_fleet_progress, item, bdir, items),
                         )
                     except FleetError as exc:
-                        if not blender_ok:
+                        # Forced fleet must fail the item. Auto falls back only when this workstation can render.
+                        if not local_fallback_allowed(blender_engine, local_available=blender_ok):
                             raise RuntimeError(f"艦隊 Blender 失敗：{str(exc)[:220]}") from exc
                         with self.lock:
                             item["blenderNote"] = f"艦隊失敗，改本機光追：{str(exc)[:160]}"
@@ -1589,6 +1627,7 @@ class EcommerceSceneStore:
                 if facts is None:
                     facts = self._render_locally(job, item_dir)
                 item["hasCutout"] = bool(facts.get("hasCutout"))
+                item["hasGlb"] = (item_dir / "model.glb").is_file()
                 item["renderTimeSec"] = facts.get("renderTimeSec")
                 item["blenderVersion"] = facts.get("blenderVersion")
                 item["device"] = facts.get("device")

@@ -1184,9 +1184,22 @@
     return s;
   }
 
+  function fleetBlenderStageText(item) {
+    const note = item.progressNote ? `（${friendlyFleetNote(item.progressNote)}）` : '';
+    const status = String(item.fleetStatus || '').toLowerCase();
+    if (status === 'queued' || status === 'pending' || status === 'waiting') return `GPU 艦隊排隊中…${note}`;
+    return `GPU 艦隊 Blender 光追中…${note}`;
+  }
+
   function describeStage(batch, item) {
     if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
-    if (item.state === 'queued') return { cls: 'is-queued', text: item.fleetTaskId ? '已送 GPU 艦隊，排隊等待光追' : '排隊等待 Blender（上一組算完就輪到）' };
+    if (item.state === 'queued') {
+      if (item.fleetTaskId) {
+        const note = item.progressNote ? `（${friendlyFleetNote(item.progressNote)}）` : '';
+        return { cls: 'is-queued', text: `已送 GPU 艦隊，排隊等待光追${note}` };
+      }
+      return { cls: 'is-queued', text: '排隊等待 Blender（上一組算完就輪到）' };
+    }
     if (item.stage === 'ai') {
       const vs = item.aiVariants || [];
       const done = vs.filter(v => v.state === 'succeeded').length;
@@ -1195,10 +1208,7 @@
       return { cls: 'is-running', text: `地端 AI 實景生成中 ${done}/${vs.length || batch.aiVariantsPerItem || ''}${note}` };
     }
     if (item.state === 'running') {
-      if (item.blenderEngine === 'fleet') {
-        const note = item.progressNote ? `（${friendlyFleetNote(item.progressNote)}）` : '';
-        return { cls: 'is-running', text: `GPU 艦隊 Blender 光追中…${note}` };
-      }
+      if (item.blenderEngine === 'fleet') return { cls: 'is-running', text: fleetBlenderStageText(item) };
       return { cls: 'is-running', text: `本機 Blender Cycles 光追算圖中…${item.blenderNote ? `（${item.blenderNote}）` : ''}` };
     }
     if (item.aiState === 'failed') return { cls: 'is-failed', text: `AI 實景失敗：${item.aiError || ''}（光追圖仍可用）` };
@@ -1238,8 +1248,9 @@
     const hero = primary
       ? `<img id="${imgId}" class="card-hero" src="${esc(primary.src)}" alt="${esc(item.sceneName)}">`
       : `<div class="card-hero photoreal-loading">${esc(stage.text)}</div>`;
+    const glbLink = item.hasGlb ? `<a href="${base}/glb${qs}">GLB ↓</a>` : '';
     const links = rendered
-      ? `<div class="gallery-links">${ready.map(s => `<a href="${esc(s.dl)}">${esc(s.label)} ↓</a>`).join('')}<a href="${base}/glb${qs}">GLB ↓</a></div>`
+      ? `<div class="gallery-links">${ready.map(s => `<a href="${esc(s.dl)}">${esc(s.label)} ↓</a>`).join('')}${glbLink}</div>`
       : '';
     const firstCaption = (item.aiVariants || []).find(v => v.caption);
     const caption = firstCaption ? `<div class="card-caption" title="${esc(firstCaption.caption)}">AI 描述：${esc(firstCaption.caption)}</div>` : '';

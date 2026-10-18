@@ -106,15 +106,18 @@ GPU 節點要連回工作台抓參考圖。`scripts/open_recipe_studio.py`（桌
 ### 工作台行為（`ecommerce_scene_studio._run_matrix_worker`）
 
 - 設定 `blenderEngine`：`auto`（預設；艦隊有宣告 `blender_scene_render` 的節點就送艦隊，否則本機）、`fleet`（強制；
-  艦隊不可用時整批明確失敗，不會偷偷改本機）、`local`。UI 在「AI 設定」的「光追引擎」下拉，狀態列會寫「這批會送 GPU
+  送件失敗、任務失敗或逾時都讓該項目失敗，不會偷偷改本機）、`local`。UI 在「AI 設定」的「光追引擎」下拉，狀態列會寫「這批會送 GPU
   艦隊光追 · Blender 節點 N 台」或「會在本機 Blender 光追（艦隊：原因）」。
-- Stage A 先把每組的 job 建好（純 CPU）並逐一 `POST /api/fleet/tasks`，項目記 `fleetTaskId`、`blenderEngine=fleet`；
-  Stage B 依序 `wait` → 下載 artifact 0／1 → 接原流程。艦隊單子失敗且本機有 Blender 時自動改本機重算，項目
-  `blenderNote` 會寫「艦隊失敗，改本機光追：原因」。
-- 艦隊 job 不帶 `workDir`，`exportBlend/exportGlb` 固定 false（.blend 幾十 MB，中控代抓上游 30 秒會逾時）；需要模型檔時
-  用本機引擎。
+- Stage A 先把每組的 job 建好（純 CPU）並逐一 `POST /api/fleet/tasks`，項目記 `fleetTaskId`、`blenderEngine=fleet`。
+  `auto` 若這次 POST 失敗（連線或准入）且本機有 Blender，該組改本機，`blenderNote` 寫「艦隊送件失敗，改本機光追：原因」。
+  `fleet` 同樣的失敗直接讓該項目失敗。
+- Stage B 依序 `wait` → 下載 artifact 0／1 → 接原流程。等待期間把 `fleetStatus` 與 `progressNote` 寫回 `batch.json`，
+  畫面才看得到排隊或光追中。`auto` 且任務失敗、本機有 Blender 時改本機重算，`blenderNote` 寫「艦隊失敗，改本機光追：原因」；
+  `fleet` 則該項目失敗，錯誤沿用艦隊原因。
+- 艦隊 job 不帶 `workDir`，`exportBlend/exportGlb` 固定 false（.blend 幾十 MB，中控代抓上游 30 秒會逾時）。沒有
+  `model.glb` 時項目 `hasGlb` 為 false，畫廊不顯示「GLB ↓」（否則下載是 404）。本機算圖有匯出檔才顯示。
 - 批次文件新增 `blenderEngine`、`blenderEngineLabel`、`blenderEngineEffective`（fleet/local/none）、`blenderFleetNote`；
-  項目新增 `blenderEngine`、`fleetTaskId`、`blenderNote`、`progressNote`。
+  項目新增 `blenderEngine`、`fleetTaskId`、`fleetStatus`、`blenderNote`、`progressNote`、`hasGlb`。
 
 ### 驗收清單
 
