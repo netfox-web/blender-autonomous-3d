@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pathlib import Path
 from typing import Any
 
@@ -606,9 +608,13 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 def main() -> None:
     import uvicorn
 
-    print("Autonomous 3D Admin: http://127.0.0.1:8788/admin")
-    print("Health:               http://127.0.0.1:8788/health")
-    uvicorn.run(create_app(), host="127.0.0.1", port=8788, log_level="info")
+    host = (os.environ.get("FOX3D_HOST") or "127.0.0.1").strip()
+    port = int(os.environ.get("FOX3D_PORT") or 8788)
+    os.environ.setdefault("FOX3D_BIND_HOST", host)
+    os.environ.setdefault("FOX3D_BIND_PORT", str(port))
+    print(f"Autonomous 3D Admin: http://127.0.0.1:{port}/admin")
+    print(f"Health:               http://127.0.0.1:{port}/health")
+    uvicorn.run(create_app(), host=host, port=port, log_level="info")
 
 
 if __name__ == "__main__":

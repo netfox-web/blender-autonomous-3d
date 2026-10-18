@@ -12,6 +12,7 @@ from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.recipe_3d import atomic_json, input_hash, read_json, validate_outputs
 from fox3d.artwork import decode_png_rgb, crop_rgb
+from typing import Any
 
 OUTPUTS={"png":"beauty.png","front":"front-closed.png","detail":"door-detail.png",
          "glb":"model.glb","blend":"model.blend","geometry":"geometry.json",
@@ -19,8 +20,8 @@ OUTPUTS={"png":"beauty.png","front":"front-closed.png","detail":"door-detail.png
 DOWNLOADS={**OUTPUTS,**{f"trim{i}":f"door_{i}-production-trim.png" for i in range(1,4)}}
 # Camera contract shared with the Product DNA export. Values are the existing preview, not a new renderer.
 VIEW_FILES={"HERO_45":"beauty.png","FRONT_CLOSED":"front-closed.png","DOOR_DETAIL":"door-detail.png","FRONT_OPEN":"BLOCKED"}
-HERO_CAMERA={"location":[1.35,-1.65,1.1],"lookAt":[0.,0.,.45],"focalLengthMm":55.}
-PREVIEW_VIEWS=[{"id":"FRONT_CLOSED","filename":"front-closed.png","location":[0.,-2.4,.45],"lookAt":[0.,0.,.45],"focalLengthMm":70.},
+HERO_CAMERA: dict[str, Any]={"location":[1.35,-1.65,1.1],"lookAt":[0.,0.,.45],"focalLengthMm":55.}
+PREVIEW_VIEWS: list[dict[str, Any]]=[{"id":"FRONT_CLOSED","filename":"front-closed.png","location":[0.,-2.4,.45],"lookAt":[0.,0.,.45],"focalLengthMm":70.},
                {"id":"DOOR_DETAIL","filename":"door-detail.png","location":[.12,-1.0,.74],"lookAt":[0.,-.1475,.74],"focalLengthMm":65.}]
 LIVE_BLENDER_ORIGIN="LIVE_BLENDER_PROCESS"
 

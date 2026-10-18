@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -16,7 +16,7 @@ from fox3d.artwork import crop_rgb, decode_png_rgb, final_uv_identity, mm_to_uv
 from fox3d.ids import sha256_bytes, stable_hash
 from fox3d.pngutil import write_png, encode_png
 
-RECIPE_ID = "THREE_TIER_DOOR_CABINET_424x295x900_V1"
+RECIPE_ID: Final = "THREE_TIER_DOOR_CABINET_424x295x900_V1"
 ISSUE_URL = "https://github.com/netfox-web/blender-autonomous-3d/issues/4"
 SKUS = ("KU002101", "KT015101", "CN003701", "PN010201")
 VERSIONS = ("HISTORICAL_PENDING", "FIXTURE_MASTER_V1", "FIXTURE_SINGLE_V1")
