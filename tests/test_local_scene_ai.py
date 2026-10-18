@@ -386,12 +386,13 @@ def test_matrix_batch_builtin_engine_skips_fleet(tmp_path: Path, monkeypatch):
     monkeypatch.setattr("fox3d.ecommerce_scene_studio.FleetImageClient.from_settings", classmethod(lambda cls, settings=None: called.append(1)))
     client = TestClient(create_app(plat))
     headers = {"X-Tenant-Id": "sonaqueen-home"}
-    r = client.post("/api/ecommerce-scenes/batches", headers=headers, json={"cabinet": CABINET_PRESETS[0], "sceneIds": [BUILTIN_SCENES[0]["id"]], "themeIds": ["THEME_NORDIC_OAK"], "views": ["FRONT"], "aiEngine": "builtin"})
+    r = client.post("/api/ecommerce-scenes/batches", headers=headers, json={"cabinet": CABINET_PRESETS[0], "sceneIds": [BUILTIN_SCENES[0]["id"]], "themeIds": ["THEME_NORDIC_OAK"], "views": ["FRONT"], "aiEngine": "builtin", "blenderEngine": "local"})
     assert r.status_code == 202
     done = _wait_batch(client, r.json()["batchId"], headers)
     item = done["items"][0]
     assert item["state"] == "succeeded" and item["aiState"] == "builtin" and item["aiVariants"] == []
-    assert called == []
+    assert item["blenderEngine"] == "local"
+    assert called == []  # builtin AI + local Blender: the fleet is never contacted
 
 
 def test_matrix_batch_without_token_fails_ai_but_keeps_render(tmp_path: Path, monkeypatch):

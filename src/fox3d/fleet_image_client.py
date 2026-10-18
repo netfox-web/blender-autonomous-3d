@@ -71,6 +71,22 @@ def task_image_url(task: dict[str, Any]) -> str | None:
     return None
 
 
+def task_artifact_url(task: dict[str, Any], index: int) -> str | None:
+    """URL of envelope artifact ``index`` as reported by the executor (``data.artifacts[i].url``) or the envelope."""
+    payload = task.get("outputPayload") or task.get("output_payload") or {}
+    if not isinstance(payload, dict):
+        return None
+    for container in (payload.get("data"), payload.get("result"), payload):
+        if not isinstance(container, dict):
+            continue
+        arts = container.get("artifacts")
+        if isinstance(arts, list) and 0 <= index < len(arts) and isinstance(arts[index], dict):
+            url = arts[index].get("url") or arts[index].get("sourceUrl")
+            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                return url
+    return None
+
+
 def task_error(task: dict[str, Any]) -> str:
     for key in ("error", "errorMessage", "error_message", "failureReason", "reason"):
         val = task.get(key)
@@ -168,7 +184,11 @@ class FleetImageClient:
             payload["jobId"] = str(job_id)[:80]
         if boxes:
             payload["boxes"] = boxes
-        body = {"taskType": IMAGE_TASK_TYPE, "priority": max(0, min(100, int(priority))), "inputPayload": payload}
+        return self.submit_task(IMAGE_TASK_TYPE, payload, priority=priority)
+
+    def submit_task(self, task_type: str, payload: dict[str, Any], *, priority: int = 50) -> dict[str, Any]:
+        """POST one task of any registered type; returns the console task document (with ``id``)."""
+        body = {"taskType": str(task_type), "priority": max(0, min(100, int(priority))), "inputPayload": payload}
         res = self._request("POST", "/api/fleet/tasks", body, timeout=60)
         task = res.get("task") if isinstance(res, dict) and isinstance(res.get("task"), dict) else res
         if not isinstance(task, dict) or not task.get("id"):
@@ -242,3 +262,26 @@ class FleetImageClient:
             except FleetError as exc:
                 errors.append(str(exc))
         raise FleetError("下載 GPU 生成圖失敗：" + "；".join(errors or ["任務沒有輸出圖片"]))
+
+    def artifact_bytes_at(self, task: dict[str, Any], index: int) -> bytes:
+        """Download envelope artifact ``index``: node URL first (LAN), then the console proxy ``/artifacts/<index>``."""
+        errors: list[str] = []
+        node_url = task_artifact_url(task, index)
+        if node_url and "/api/fleet/tasks/" not in node_url:
+            try:
+                req = urllib.request.Request(node_url, headers={"User-Agent": self.user_agent})
+                with self._opener(req, timeout=120) as resp:
+                    data = resp.read()
+                if data:
+                    return bytes(data)
+            except Exception as exc:  # pragma: no cover - network specific
+                errors.append(f"節點直連 {node_url[:60]}…：{exc}")
+        task_id = task.get("id")
+        if task_id:
+            try:
+                data = self._request("GET", f"/api/fleet/tasks/{urllib.parse.quote(str(task_id))}/artifacts/{int(index)}", timeout=180, raw=True)
+                if data:
+                    return bytes(data)
+            except FleetError as exc:
+                errors.append(str(exc))
+        raise FleetError(f"下載艦隊產出 #{index} 失敗：" + "；".join(errors or ["任務沒有這個產出"]))

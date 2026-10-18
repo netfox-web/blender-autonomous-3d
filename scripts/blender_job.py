@@ -14,6 +14,30 @@ import sys
 import time
 from pathlib import Path
 
+ASSET_REF_PREFIX = "assets://"
+
+
+def _assets_root() -> Path:
+    """Asset root shared by every machine: FOX3D_ASSETS_ROOT (GPU nodes) or <repo>/assets (workbench)."""
+    import os
+
+    override = os.environ.get("FOX3D_ASSETS_ROOT", "").strip()
+    return Path(override) if override else Path(__file__).resolve().parents[1] / "assets"
+
+
+def resolve_asset_ref(value: object) -> Path | None:
+    """`assets://models/x/y.gltf` -> <assets root>/models/x/y.gltf (machine independent); other strings pass through."""
+    if value is None or value == "":
+        return None
+    text = str(value)
+    if not text.startswith(ASSET_REF_PREFIX):
+        return Path(text)
+    rel = text[len(ASSET_REF_PREFIX):].replace("\\", "/").lstrip("/")
+    parts = [seg for seg in rel.split("/") if seg not in ("", ".")]
+    if any(seg == ".." for seg in parts):
+        raise ValueError("asset ref escapes the asset root: " + text)
+    return _assets_root().joinpath(*parts)
+
 
 def _argv_after_double_dash(argv: list[str]) -> list[str]:
     if "--" in argv:
@@ -1587,7 +1611,7 @@ def build_and_render(job: dict) -> dict:
     else:
         graph = job.get("sceneGraph") or {}
         created = build_from_graph(graph)
-        glb = job.get("glbPath")
+        glb = resolve_asset_ref(job.get("glbPath"))
         if glb and Path(glb).exists():
             product = import_glb(glb)
             if product is not None:

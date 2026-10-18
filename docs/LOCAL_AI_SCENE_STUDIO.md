@@ -54,6 +54,7 @@ FLUX 有時會把櫃子畫得略大或往右偏，貼回鎖定的去背圖後，
 | `aiVariation` | `faithful` | `faithful` / `creative` |
 | `aiUpsample` | **false**（10-18 改） | FLUX 3 提示詞擴寫：實測品質相近，開著每張 24–25 秒／需 20.5GB，關掉 16–17 秒／12.7GB |
 | `aiPinProduct` | true | 送 FLUX 3 layout box 把櫃子釘在去背圖的位置（避免重影） |
+| `blenderEngine` | `auto` | Blender 光追在哪裡跑：`auto`／`fleet`／`local`（見「Blender 上艦隊」） |
 | `localBaseUrl` / `localModel` | 閘道 / `qwen3.8:27b` | 排景與提示詞擴寫用的 OpenAI 相容端點（`FOX3D_LOCAL_LLM_URL` / `FOX3D_LOCAL_LLM_MODEL`） |
 
 ### 工作台一定要綁 0.0.0.0
@@ -67,8 +68,9 @@ GPU 節點要連回工作台抓參考圖。`scripts/open_recipe_studio.py`（桌
 ## API
 
 - `GET /api/ecommerce-scenes/ai-engine-status`：艦隊可達、金鑰、`image_flux3` 能力（可用節點、排隊數、預估秒數）、`publicBaseUrl`、綁定警告。
+  另有 `blender`：`{setting, effective: fleet|local|none, localAvailable, fleet: {ready, capability, error}}`。
 - `POST /api/ecommerce-scenes/ai-prompt`：`{scene, cabinet, themeId, aiStyleId, aiPrompt, view, aiVariation, polish}` → 組好的提示詞（`polish=true` 走地端 LLM）。
-- `POST /api/ecommerce-scenes/batches` 新增欄位：`aiEngine`、`aiVariants`、`aiVariation`、`aiUpsample`、`aiSeed`（0＝隨機）、`aiFinalPrompt`（整批共用的手改提示詞）。
+- `POST /api/ecommerce-scenes/batches` 新增欄位：`aiEngine`、`aiVariants`、`aiVariation`、`aiUpsample`、`aiSeed`（0＝隨機）、`aiFinalPrompt`（整批共用的手改提示詞）、`blenderEngine`（auto/fleet/local）。
 - 批次項目新增 `stage`（queued/blender/ai/done）、`aiState`（pending/running/succeeded/partial/failed/builtin/skipped）、`aiVariants[]`（每張的 state/seed/taskId/node/progressNote/elapsedSec/caption）、`aiPrompt`、`aiError`。
 - 下載：`…/download/ai_local_png?variant=1..4`（已貼回櫃體）與 `ai_local_raw_png`；zip 內為 `*_C_AI_Local_v{k}.png`。
 
@@ -80,12 +82,43 @@ GPU 節點要連回工作台抓參考圖。`scripts/open_recipe_studio.py`（桌
 
 程式：`src/fox3d/fleet_image_client.py`（中控用戶端）、`src/fox3d/local_scene_ai.py`（提示詞／合成／變化流程／狀態）、`src/fox3d/ecommerce_scene_studio.py`（矩陣 worker）、`src/fox3d/ecommerce_scene_api.py`（路由）、`src/fox3d/static/scene-studio.*`（前端）；測試 `tests/test_local_scene_ai.py`。生成圖是行銷素材，不是 Product Truth。
 
-## 下一階段：Blender 上艦隊（owner 10-18 核可）
+## Blender 上艦隊（owner 10-18 核可，10-18 實作）
 
-目標：工作台不再在本機跑 Blender，把每組光追交給艦隊（5090-3 已裝 Blender 5.2.2 headless，`/data-fast/blender/blender`，實測同一張 1024² 光追 5.2 秒／全程 11 秒，辦公室 T1000 為 9.3／約 20 秒）。
+工作台的 Cycles 光追不再綁在辦公室工作站：每一組矩陣項目的 Blender job 先全部送進 GPU 艦隊排隊（任務型別
+`blender_scene_render`），再依序收圖；收回來的 `beauty.png`／`product_cutout.png` 落在原本的項目目錄，後面的
+內建合成、地端 AI 實景、zip 完全不變。5090-3 實測同一張 1024² 光追 5.2 秒／全程 11 秒（辦公室 T1000 為 9.3／約 20 秒）。
 
-1. **節點執行器**（fleet-agent `config.json` 新增 `blender_scene_render`，type shell）：`/data-fast/blender/blender -b --factory-startup -P /data-fast/fox3d/scripts/blender_job.py -- {job.json}`；輸入 payload = 工作台的 job（engineering.sceneDefinition、camera、render），輸出 beauty.png／product_cutout.png／model.glb 放 ComfyUI output 目錄回傳 /view 網址（與 image_flux3 同一種 artifact 形狀）。素材固定在 `/data-fast/fox3d/assets`，腳本以 `parents[1]/assets` 解析，節點間用 rsync 同步。
-2. **路徑與雜湊**：`compile_custom_scene` 產出的 `glbPath` 改成相對素材根（例如 `assets://models/polyhaven/...`），由 `furnished_scene.build` 在節點上解析，這樣 `sceneHash` 在哪台機器都一致（今晚手動測試時改路徑就撞到「Scene definition hash mismatch」，暫時用 `fox3d.ids.stable_hash` 重算）。
-3. **中控登錄**（ai-fleet-console `registry.ts` 新型別 + `vram.ts` 預估 3000MB）→ PR → 部署 netfox-home（要 owner）。
-4. **工作台**：`_run_matrix_worker` 的 Blender 段改成「有艦隊就送單」，本機 Blender 當備援；結果下載後流程不變（AI 實景、合成、zip）。
-5. 驗收：同一批 6 組本機 vs 艦隊時間、圖面一致（同 seed 光追應逐像素接近）。
+### 三段式
+
+1. **節點執行器** `scripts/fleet_blender_task.py`（stdlib，節點 `/usr/bin/python3` 即可）：fleet-agent `config.json` 的
+   `blender_scene_render`（type shell）把 payload 交給它；它建立 `<work-root>/<jobId>/`、補 `workDir/progressFile/cancelFile`、
+   以 `FOX3D_ASSETS_ROOT=/data-fast/fox3d/assets` 跑 `blender -b --factory-startup -P blender_job.py -- job.json`，
+   再把 `beauty.png`（artifact 0）、`product_cutout.png`（artifact 1）、選配 `model.glb`／`model.blend` 複製到 ComfyUI output
+   目錄並回 `/view` 網址（與 image_flux3 同一種 artifact 形狀）。節點上的素材與腳本：`/data-fast/fox3d/{scripts,assets}`，
+   `assets` 與 repo 的 `assets/` 同一份、rsync 同步。
+2. **路徑與雜湊**：場景定義裡的模型路徑一律是機器無關的 `assets://models/polyhaven/<id>/<id>_2k.gltf`
+   （`ecommerce_scene_studio._ph_glb`）；`scripts/furnished_scene.py` 與 `blender_job.py` 用 `resolve_asset_ref()` 對
+   `FOX3D_ASSETS_ROOT`（沒設就是 `<repo>/assets`）解析，所以 `sceneHash` 在工作台與節點完全一致，節點不必重算。
+   租戶自行上傳的道具 GLB 仍是工作站絕對路徑 → 該組不符合艦隊條件（`fleet_blender.fleet_eligible`），自動留在本機算。
+3. **中控登錄**：ai-fleet-console PR #161（`tasks.ts`／`capabilities.ts` specialist／`registry.ts` schema／`vram.ts` 3000MB／
+   `placement.ts` 離散 GPU）。**要部署到 netfox-home 之後**，工作台的「光追引擎」狀態才會從「中控尚未登錄」變成可用。
+
+### 工作台行為（`ecommerce_scene_studio._run_matrix_worker`）
+
+- 設定 `blenderEngine`：`auto`（預設；艦隊有宣告 `blender_scene_render` 的節點就送艦隊，否則本機）、`fleet`（強制；
+  艦隊不可用時整批明確失敗，不會偷偷改本機）、`local`。UI 在「AI 設定」的「光追引擎」下拉，狀態列會寫「這批會送 GPU
+  艦隊光追 · Blender 節點 N 台」或「會在本機 Blender 光追（艦隊：原因）」。
+- Stage A 先把每組的 job 建好（純 CPU）並逐一 `POST /api/fleet/tasks`，項目記 `fleetTaskId`、`blenderEngine=fleet`；
+  Stage B 依序 `wait` → 下載 artifact 0／1 → 接原流程。艦隊單子失敗且本機有 Blender 時自動改本機重算，項目
+  `blenderNote` 會寫「艦隊失敗，改本機光追：原因」。
+- 艦隊 job 不帶 `workDir`，`exportBlend/exportGlb` 固定 false（.blend 幾十 MB，中控代抓上游 30 秒會逾時）；需要模型檔時
+  用本機引擎。
+- 批次文件新增 `blenderEngine`、`blenderEngineLabel`、`blenderEngineEffective`（fleet/local/none）、`blenderFleetNote`；
+  項目新增 `blenderEngine`、`fleetTaskId`、`blenderNote`、`progressNote`。
+
+### 驗收清單
+
+1. 中控部署後 `GET /api/ecommerce-scenes/ai-engine-status` 的 `blender.fleet.ready=true`、`capableNodes≥1`。
+2. 同一批 6 組「auto」：全部 `blenderEngine=fleet`，`renderTimeSec` 約 5 秒、`device=OPTIX`、`blenderVersion=5.2.2 LTS`。
+3. 同 seed 本機 vs 艦隊 `beauty.png` 逐像素接近（都是 Cycles OptiX 32 samples；差異只該來自驅動／版本）。
+4. 停掉節點執行器再送一批：auto 退回本機並在狀態列說明；fleet 模式整批失敗且訊息指出「沒有節點宣告 Blender 執行器」。

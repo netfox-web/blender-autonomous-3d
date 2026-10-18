@@ -70,6 +70,9 @@ def _settings_file(settings_dir: Path) -> Path:
     return Path(settings_dir) / "ai_settings.json"
 
 
+BLENDER_ENGINE_IDS = ("auto", "fleet", "local")
+
+
 def load_settings(settings_dir: Path | None = None) -> dict[str, Any]:
     """Return persisted AI settings merged with defaults (the API key is never returned to the browser)."""
     data: dict[str, Any] = {}
@@ -102,6 +105,8 @@ def load_settings(settings_dir: Path | None = None) -> dict[str, Any]:
         "aiUpsample": _as_bool(data.get("aiUpsample"), False),
         "aiPinProduct": _as_bool(data.get("aiPinProduct"), True),
         "promptPolish": _as_bool(data.get("promptPolish"), False),
+        # Blender 光追在哪裡跑：auto＝艦隊有 blender_scene_render 節點就送艦隊，否則本機；fleet／local 強制
+        "blenderEngine": data.get("blenderEngine") if data.get("blenderEngine") in BLENDER_ENGINE_IDS else "auto",
     }
 
 
@@ -112,7 +117,7 @@ def save_settings(settings_dir: Path, updates: dict[str, Any]) -> None:
             current = json.loads(_settings_file(settings_dir).read_text(encoding="utf-8"))
         except Exception:
             current = {}
-    for k in ("provider", "anthropicApiKey", "localBaseUrl", "localModel", "imageEngine", "fleetApiUrl", "fleetToken", "publicBaseUrl", "aiVariation"):
+    for k in ("provider", "anthropicApiKey", "localBaseUrl", "localModel", "imageEngine", "fleetApiUrl", "fleetToken", "publicBaseUrl", "aiVariation", "blenderEngine"):
         if k in updates and updates[k] is not None:
             current[k] = str(updates[k]).strip()
     if updates.get("aiVariants") is not None:

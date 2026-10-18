@@ -2,6 +2,36 @@
 import json
 import hashlib
 import math
+import os
+
+ASSET_REF_PREFIX = 'assets://'
+
+
+def _assets_root():
+    """Asset root shared by every machine: FOX3D_ASSETS_ROOT (GPU nodes) or <repo>/assets (workbench)."""
+    from pathlib import Path
+    override = os.environ.get('FOX3D_ASSETS_ROOT', '').strip()
+    return Path(override) if override else Path(__file__).resolve().parents[1] / 'assets'
+
+
+def resolve_asset_ref(value, root=None):
+    """`assets://models/x/y.gltf` -> <assets root>/models/x/y.gltf; anything else is returned as a Path unchanged.
+
+    Scene definitions carry these machine-independent refs so the scene hash is identical on the workbench and on
+    the fleet node; `..` segments are refused so a definition can never escape the asset root.
+    """
+    from pathlib import Path
+    if value is None:
+        return None
+    text = str(value)
+    if not text.startswith(ASSET_REF_PREFIX):
+        return Path(text)
+    rel = text[len(ASSET_REF_PREFIX):].replace('\\', '/').lstrip('/')
+    parts = [seg for seg in rel.split('/') if seg not in ('', '.')]
+    if any(seg == '..' for seg in parts):
+        raise ValueError('asset ref escapes the asset root: ' + text)
+    base = Path(root) if root is not None else _assets_root()
+    return base.joinpath(*parts)
 
 
 def _srgb_to_lin(c: float) -> float:
@@ -87,7 +117,7 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         try:
             import bpy
             from pathlib import Path
-            pbr_dir = Path(__file__).resolve().parents[1] / 'assets' / 'textures' / 'pbr'
+            pbr_dir = _assets_root() / 'textures' / 'pbr'
             if 'RUG' in name_u or 'PILLOWTHROWL' in name_u:
                 nor_file = pbr_dir / 'curly_teddy_nor_gl.jpg'
                 disp_file = pbr_dir / 'curly_teddy_disp.jpg'
@@ -230,7 +260,7 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         try:
             import bpy
             from pathlib import Path
-            art_path = Path(__file__).resolve().parents[1] / 'assets' / 'textures' / 'pbr' / 'nordic_canvas_art.png'
+            art_path = _assets_root() / 'textures' / 'pbr' / 'nordic_canvas_art.png'
             if art_path.exists():
                 sep = nodes.new('ShaderNodeSeparateXYZ')
                 comb = nodes.new('ShaderNodeCombineXYZ')
@@ -549,7 +579,7 @@ def build(created, definition, device, expected_hash):
                              'matrixWorld': [list(row) for row in clone.matrix_world]})
     try:
         bpy.context.window.scene = scene
-        root_assets = Path(__file__).resolve().parents[1] / 'assets'
+        root_assets = _assets_root()
         wrinkle_img = None
         if photoreal:
             wrinkle_path = root_assets / 'textures' / 'pbr' / 'cloth_wrinkle_disp.png'
@@ -573,7 +603,7 @@ def build(created, definition, device, expected_hash):
             ph_dir = root_assets / 'models' / 'polyhaven'
             for gkey, gitems in prop_groups.items():
                 g_upper = gkey.upper()
-                explicit_glb = next((it.get('glbPath') for it in gitems if it.get('glbPath')), None)
+                explicit_glb = resolve_asset_ref(next((it.get('glbPath') for it in gitems if it.get('glbPath')), None), root_assets)
                 explicit_bounds = next((it.get('propBounds') for it in gitems if it.get('propBounds')), None)
 
                 # Calculate combined group bounds from sub-boxes
@@ -629,7 +659,7 @@ def build(created, definition, device, expected_hash):
                     if not any(dk in iname.upper() for dk in ('DECORBOOK', 'DECORVASE')):
                         ct_groups.setdefault(gkey, []).append(item)
             for gkey, core_items in ct_groups.items():
-                explicit_glb = next((it.get('glbPath') for it in core_items if it.get('glbPath')), None)
+                explicit_glb = resolve_asset_ref(next((it.get('glbPath') for it in core_items if it.get('glbPath')), None), root_assets)
                 min_bx = min(it['location'][0] - it['size'][0] * 0.5 for it in core_items)
                 max_bx = max(it['location'][0] + it['size'][0] * 0.5 for it in core_items)
                 min_by = min(it['location'][1] - it['size'][1] * 0.5 for it in core_items)
@@ -672,7 +702,7 @@ def build(created, definition, device, expected_hash):
             mat = bpy.data.materials.new('Environment.' + iname)
             _apply_pbr_shader(mat, iname, item['color'], photoreal=photoreal)
 
-            glb_path = item.get('glbPath')
+            glb_path = resolve_asset_ref(item.get('glbPath'), root_assets)
             if photoreal and glb_path and Path(str(glb_path)).exists():
                 try:
                     if _import_and_fit_gltf(scene, glb_path, iname, lx, ly, max(0.0, lz - sz * 0.5), sx, sy, sz):

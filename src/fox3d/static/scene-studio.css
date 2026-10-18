@@ -543,3 +543,9 @@ canvas:active { cursor: grabbing; }
   .panel { padding: 16px; }
   canvas { height: 300px; }
 }
+
+/* Blender engine (fleet / local) status under the AI settings */
+.blender-engine-status { align-self: end; padding: 6px 0; }
+.blender-engine-status.ok { color: var(--ok, #2e7d32); }
+.blender-engine-status.warn { color: var(--warn, #b26a00); }
+.blender-engine-status.bad { color: var(--bad, #c62828); }
