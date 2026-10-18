@@ -758,9 +758,27 @@
     const cabH = (cabinetSpec.height || 900) / 1000;
     const cabW = (cabinetSpec.width || 424) / 1000;
     const extent = Math.max(cabW, cabH, 0.9);
-    const dist = Math.max(extent * vcfg.distMult, 2.0) / Math.max(0.5, orbit.zoom || 1.0);
+    // Mirror the Blender camera: frame the cabinet together with the furniture so wide shots do not crop the room set.
+    const propXs = (sceneCfg.props || []).filter(p => !['WINDOW_FRAME', 'SHEER_CURTAIN'].includes(String(p.type || '').toUpperCase())).map(p => Number(p.x || 0));
+    let dist = Math.max(extent * vcfg.distMult, 2.0);
+    let midX = px * 0.65;
+    if (propXs.length && ['WIDE', 'THREE_QUARTER', 'LEFT', 'FRONT'].includes(viewId)) {
+      midX = (px + propXs.reduce((a, b) => a + b, 0) / propXs.length) * 0.5;
+      const span = Math.abs(px - Math.min(...propXs)) + 1.0;
+      if (viewId === 'WIDE') dist = Math.max(dist, span * 0.78);
+      if (viewId === 'FRONT') {
+        // 50 mm on a 36 mm sensor: field width is dist * 0.72, so cover span with span / 0.72.
+        dist = Math.max(dist, span / 0.72);
+        const halfView = dist * 0.4;
+        const wHalf = cabW / 2 + 0.25;
+        const lo = px + wHalf - halfView;
+        const hi = px - wHalf + halfView;
+        midX = lo <= hi ? Math.min(Math.max(midX, lo), hi) : px;
+      }
+    }
+    dist = dist / Math.max(0.5, orbit.zoom || 1.0);
 
-    const target = [px * 0.55, py * 0.5, pz + cabH * 0.48];
+    const target = [midX, py * 0.55, pz + cabH * 0.48];
     // yaw 0 = camera in front of the room (-y) looking at the back wall, like the Blender camera; the old
     // atan2(side, -1) put the camera behind the back wall, which mirrored the whole preview left/right.
     const baseYaw = Math.atan2(vcfg.side, 1.0) + (orbit.yawOffset || 0);

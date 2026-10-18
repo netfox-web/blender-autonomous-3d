@@ -79,3 +79,13 @@ GPU 節點要連回工作台抓參考圖。`scripts/open_recipe_studio.py`（桌
 - 艦隊顯存被別的 ComfyUI 快取佔住時任務會排隊（progressNote 會顯示「等待 GPU 資源…」），UI 會一直顯示該狀態；中控只會釋放 :8188 的快取。
 
 程式：`src/fox3d/fleet_image_client.py`（中控用戶端）、`src/fox3d/local_scene_ai.py`（提示詞／合成／變化流程／狀態）、`src/fox3d/ecommerce_scene_studio.py`（矩陣 worker）、`src/fox3d/ecommerce_scene_api.py`（路由）、`src/fox3d/static/scene-studio.*`（前端）；測試 `tests/test_local_scene_ai.py`。生成圖是行銷素材，不是 Product Truth。
+
+## 下一階段：Blender 上艦隊（owner 10-18 核可）
+
+目標：工作台不再在本機跑 Blender，把每組光追交給艦隊（5090-3 已裝 Blender 5.2.2 headless，`/data-fast/blender/blender`，實測同一張 1024² 光追 5.2 秒／全程 11 秒，辦公室 T1000 為 9.3／約 20 秒）。
+
+1. **節點執行器**（fleet-agent `config.json` 新增 `blender_scene_render`，type shell）：`/data-fast/blender/blender -b --factory-startup -P /data-fast/fox3d/scripts/blender_job.py -- {job.json}`；輸入 payload = 工作台的 job（engineering.sceneDefinition、camera、render），輸出 beauty.png／product_cutout.png／model.glb 放 ComfyUI output 目錄回傳 /view 網址（與 image_flux3 同一種 artifact 形狀）。素材固定在 `/data-fast/fox3d/assets`，腳本以 `parents[1]/assets` 解析，節點間用 rsync 同步。
+2. **路徑與雜湊**：`compile_custom_scene` 產出的 `glbPath` 改成相對素材根（例如 `assets://models/polyhaven/...`），由 `furnished_scene.build` 在節點上解析，這樣 `sceneHash` 在哪台機器都一致（今晚手動測試時改路徑就撞到「Scene definition hash mismatch」，暫時用 `fox3d.ids.stable_hash` 重算）。
+3. **中控登錄**（ai-fleet-console `registry.ts` 新型別 + `vram.ts` 預估 3000MB）→ PR → 部署 netfox-home（要 owner）。
+4. **工作台**：`_run_matrix_worker` 的 Blender 段改成「有艦隊就送單」，本機 Blender 當備援；結果下載後流程不變（AI 實景、合成、zip）。
+5. 驗收：同一批 6 組本機 vs 艦隊時間、圖面一致（同 seed 光追應逐像素接近）。

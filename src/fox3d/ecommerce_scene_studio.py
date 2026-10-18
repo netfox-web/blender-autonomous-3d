@@ -967,9 +967,21 @@ def compile_custom_scene(
     side = float(view_cfg["side"])
     # Frame the product together with the surrounding furniture so wide shots do not crop the room set
     prop_xs = [float(p.get("x") or 0.0) for p in (scene_cfg.get("props") or []) if str(p.get("type") or "").upper() not in ("WINDOW_FRAME", "SHEER_CURTAIN")]
-    if prop_xs and view in ("WIDE", "THREE_QUARTER", "LEFT"):
+    # FRONT used to frame the cabinet alone, so Poly Haven room sets (bed, desk, sofa) fell outside the shot and the
+    # AI then invented its own furniture; frame the furniture for every wide-ish view.
+    if prop_xs and view in ("WIDE", "THREE_QUARTER", "LEFT", "FRONT"):
         mid_x = (px + sum(prop_xs) / len(prop_xs)) * 0.5
         span = abs(px - min(prop_xs)) + 1.0
+        if view == "FRONT":
+            # 50 mm on a 36 mm sensor: full horizontal field is dist * 36/50 = dist * 0.72,
+            # so the distance that covers `span` is span / 0.72 (not span * 0.72).
+            dist = max(dist, span / 0.72)
+            # Catalog view: the cabinet must stay fully inside the frame; clamp the aim point so the furniture shows
+            # on the side without pushing the product off the edge (36 mm sensor -> half view = dist * 18 / lens).
+            half_view = dist * (18.0 / float(view_cfg["lens"]))
+            w_half = w_m / 2.0 + 0.25
+            lo, hi = px + w_half - half_view, px - w_half + half_view
+            mid_x = min(max(mid_x, lo), hi) if lo <= hi else px
         if view == "WIDE":
             dist = max(dist, span * 0.78)
     else:
