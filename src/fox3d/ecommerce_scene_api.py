@@ -126,6 +126,7 @@ def ecommerce_scene_router(provider) -> APIRouter:
             "aiUpsample": s["aiUpsample"],
             "aiPinProduct": s["aiPinProduct"],
             "promptPolish": s["promptPolish"],
+            "blenderEngine": s["blenderEngine"],
         }
 
     def _public_base_url(request: Request) -> str:
@@ -143,7 +144,27 @@ def ecommerce_scene_router(provider) -> APIRouter:
         from fox3d.local_scene_ai import engine_status
 
         s = load_settings(store().root)
-        return engine_status(s, bind_host=(os.environ.get("FOX3D_BIND_HOST") or "").strip() or None, public_base_url=_public_base_url(request))
+        out = engine_status(s, bind_host=(os.environ.get("FOX3D_BIND_HOST") or "").strip() or None, public_base_url=_public_base_url(request))
+        out["blender"] = _blender_status(s)
+        return out
+
+    def _blender_status(s: dict[str, Any]) -> dict[str, Any]:
+        """Where Blender renders will run for the next batch: fleet capability + local availability + the setting."""
+        from fox3d.fleet_blender import blender_fleet_status
+        from fox3d.fleet_image_client import FleetImageClient
+
+        st = store()
+        runtime = getattr(st.platform, "runtime", None)
+        local_ok = bool(not getattr(st.platform, "mock_blender", True) and runtime is not None and runtime.available())
+        fleet = blender_fleet_status(FleetImageClient.from_settings(s))
+        engine = s.get("blenderEngine") or "auto"
+        if engine == "local":
+            effective = "local" if local_ok else "none"
+        elif engine == "fleet":
+            effective = "fleet" if fleet["ready"] else "none"
+        else:
+            effective = "fleet" if fleet["ready"] else ("local" if local_ok else "none")
+        return {"setting": engine, "effective": effective, "localAvailable": local_ok, "fleet": fleet}
 
     @router.post("/api/ecommerce-scenes/ai-prompt")
     def ai_prompt_preview(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -242,6 +263,12 @@ def ecommerce_scene_router(provider) -> APIRouter:
             if payload["aiVariation"] not in ("faithful", "creative"):
                 raise HTTPException(422, "變化幅度只能是 faithful 或 creative")
             updates["aiVariation"] = payload["aiVariation"]
+        if "blenderEngine" in payload:
+            from fox3d.ai_scene_layout import BLENDER_ENGINE_IDS
+
+            if payload["blenderEngine"] not in BLENDER_ENGINE_IDS:
+                raise HTTPException(422, "光追引擎只能是 auto、fleet 或 local")
+            updates["blenderEngine"] = payload["blenderEngine"]
         save_settings(store().root, updates)
         return _ai_public_settings()
 

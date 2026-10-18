@@ -1090,6 +1090,7 @@
       aiUpsample: $('ai-upsample').checked,
       aiSeed: Number($('ai-seed').value || 0) || 0,
       aiFinalPrompt: useFinal ? $('ai-final-prompt').value.trim() : '',
+      blenderEngine: $('blender-engine') ? $('blender-engine').value : 'auto',
       samples: Number($('matrix-samples').value || 32)
     };
   }
@@ -1183,9 +1184,22 @@
     return s;
   }
 
+  function fleetBlenderStageText(item) {
+    const note = item.progressNote ? `（${friendlyFleetNote(item.progressNote)}）` : '';
+    const status = String(item.fleetStatus || '').toLowerCase();
+    if (status === 'queued' || status === 'pending' || status === 'waiting') return `GPU 艦隊排隊中…${note}`;
+    return `GPU 艦隊 Blender 光追中…${note}`;
+  }
+
   function describeStage(batch, item) {
     if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
-    if (item.state === 'queued') return { cls: 'is-queued', text: '排隊等待 Blender（上一組算完就輪到）' };
+    if (item.state === 'queued') {
+      if (item.fleetTaskId) {
+        const note = item.progressNote ? `（${friendlyFleetNote(item.progressNote)}）` : '';
+        return { cls: 'is-queued', text: `已送 GPU 艦隊，排隊等待光追${note}` };
+      }
+      return { cls: 'is-queued', text: '排隊等待 Blender（上一組算完就輪到）' };
+    }
     if (item.stage === 'ai') {
       const vs = item.aiVariants || [];
       const done = vs.filter(v => v.state === 'succeeded').length;
@@ -1193,10 +1207,14 @@
       const note = active && active.progressNote ? `（${friendlyFleetNote(active.progressNote)}）` : '';
       return { cls: 'is-running', text: `地端 AI 實景生成中 ${done}/${vs.length || batch.aiVariantsPerItem || ''}${note}` };
     }
-    if (item.state === 'running') return { cls: 'is-running', text: 'Blender Cycles 光追算圖中…' };
+    if (item.state === 'running') {
+      if (item.blenderEngine === 'fleet') return { cls: 'is-running', text: fleetBlenderStageText(item) };
+      return { cls: 'is-running', text: `本機 Blender Cycles 光追算圖中…${item.blenderNote ? `（${item.blenderNote}）` : ''}` };
+    }
     if (item.aiState === 'failed') return { cls: 'is-failed', text: `AI 實景失敗：${item.aiError || ''}（光追圖仍可用）` };
     if (item.aiState === 'partial') return { cls: 'is-done', text: '完成（部分 AI 變化失敗）' };
-    const meta = item.renderTimeSec ? ` · Blender ${item.renderTimeSec}s ${item.device || ''}` : '';
+    const where = item.blenderEngine === 'fleet' ? '艦隊' : (item.blenderEngine === 'local' ? '本機' : '');
+    const meta = item.renderTimeSec ? ` · ${where}Blender ${item.renderTimeSec}s ${item.device || ''}` : (where ? ` · ${where}光追` : '');
     return { cls: 'is-done', text: `完成${meta}` };
   }
 
@@ -1230,8 +1248,9 @@
     const hero = primary
       ? `<img id="${imgId}" class="card-hero" src="${esc(primary.src)}" alt="${esc(item.sceneName)}">`
       : `<div class="card-hero photoreal-loading">${esc(stage.text)}</div>`;
+    const glbLink = item.hasGlb ? `<a href="${base}/glb${qs}">GLB ↓</a>` : '';
     const links = rendered
-      ? `<div class="gallery-links">${ready.map(s => `<a href="${esc(s.dl)}">${esc(s.label)} ↓</a>`).join('')}<a href="${base}/glb${qs}">GLB ↓</a></div>`
+      ? `<div class="gallery-links">${ready.map(s => `<a href="${esc(s.dl)}">${esc(s.label)} ↓</a>`).join('')}${glbLink}</div>`
       : '';
     const firstCaption = (item.aiVariants || []).find(v => v.caption);
     const caption = firstCaption ? `<div class="card-caption" title="${esc(firstCaption.caption)}">AI 描述：${esc(firstCaption.caption)}</div>` : '';
@@ -1635,6 +1654,14 @@
     $('ai-prompt-preview-btn').addEventListener('click', () => previewAiPrompt(false));
     $('ai-prompt-polish-btn').addEventListener('click', () => previewAiPrompt(true));
     $('ai-variants').addEventListener('change', updateMatrixFormula);
+    if ($('blender-engine')) {
+      $('blender-engine').addEventListener('change', async () => {
+        try {
+          await api('/api/ecommerce-scenes/ai-settings', { method: 'POST', body: JSON.stringify({ blenderEngine: $('blender-engine').value }) });
+          refreshEngineStatus();
+        } catch (e) { notify(`儲存光追引擎失敗：${e.message}`, true); }
+      });
+    }
     ['ai-variation', 'ai-upsample', 'ai-pin-product'].forEach(id => {
       $(id).addEventListener('change', async () => {
         try {
@@ -1813,6 +1840,7 @@
       $('ai-variation').value = s.aiVariation || 'faithful';
       $('ai-upsample').checked = s.aiUpsample === true;
       if ($('ai-pin-product')) $('ai-pin-product').checked = s.aiPinProduct !== false;
+      if ($('blender-engine')) $('blender-engine').value = s.blenderEngine || 'auto';
       updateMatrixFormula();
     } catch (e) {
       $('ai-key-status').textContent = 'AI 設定讀取失敗';
@@ -1843,6 +1871,20 @@
     });
   }
 
+  function renderBlenderEngineStatus(b) {
+    const el = $('blender-engine-status');
+    if (!el) return;
+    if (!b) { el.textContent = ''; return; }
+    const f = b.fleet || {};
+    const cap = f.capability || {};
+    let txt;
+    if (b.effective === 'fleet') txt = `這批會送 GPU 艦隊光追 · Blender 節點 ${cap.capableNodes ?? '?'} 台${cap.queueDepth ? ` · 排隊 ${cap.queueDepth}` : ''}${b.localAvailable ? '（本機 Blender 備援）' : ''}`;
+    else if (b.effective === 'local') txt = `這批會在本機 Blender 光追${f.error ? `（艦隊：${f.error}）` : ''}`;
+    else txt = `目前沒有可用的光追引擎：${f.error || '艦隊未就緒'}${b.localAvailable ? '' : '；本機也沒有 Blender'}`;
+    el.textContent = txt;
+    el.className = `hint blender-engine-status ${b.effective === 'none' ? 'bad' : (b.effective === 'fleet' ? 'ok' : 'warn')}`;
+  }
+
   async function refreshEngineStatus() {
     const box = $('ai-engine-status');
     const text = box.querySelector('.engine-status-text');
@@ -1870,6 +1912,7 @@
       }
       box.classList.add(cls);
       text.innerHTML = `${esc(main)}${sub ? `<small>${esc(sub)}</small>` : ''}`;
+      renderBlenderEngineStatus(st.blender);
       pill.textContent = st.ready ? '地端 AI 就緒' : (st.reachable ? '地端 AI 待設定' : '地端 AI 離線');
       pill.className = `pill ${cls}`;
     } catch (e) {

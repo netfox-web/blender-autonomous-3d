@@ -15,6 +15,7 @@ import shutil
 import time
 import urllib.parse
 import zipfile
+from functools import partial
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from threading import RLock
@@ -22,7 +23,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from fox3d.fleet_image_client import FleetImageClient
+from fox3d.fleet_blender import (
+    BLENDER_ENGINES,
+    blender_fleet_status,
+    fleet_eligible,
+    local_fallback_allowed,
+    normalize_blender_engine,
+    render_on_fleet,
+    submit_blender_job,
+)
+from fox3d.fleet_image_client import FleetError, FleetImageClient, task_status
 from fox3d.ids import new_id, stable_hash
 from fox3d.local_scene_ai import (
     DEFAULT_ENGINE as DEFAULT_AI_ENGINE,
@@ -433,12 +443,16 @@ BUILTIN_SCENES: list[dict[str, Any]] = [
 
 
 def _ph_glb(asset_id: str) -> str:
-    """Absolute path to a pre-downloaded Poly Haven 2K glTF (empty string if the asset is unknown)."""
+    """Machine-independent ``assets://`` ref of a bundled Poly Haven 2K glTF (empty string if the asset is unknown).
+
+    The ref (not an absolute path) goes into the scene definition so the scene hash is identical on the workbench
+    and on a GPU node; ``scripts/furnished_scene.py`` resolves it against FOX3D_ASSETS_ROOT or <repo>/assets.
+    """
     cfg = POLYHAVEN_CURATED_MODELS.get(asset_id)
     if not cfg:
         return ""
     res = cfg.get("resolution", "2k")
-    return str((Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven" / asset_id / f"{asset_id}_{res}.gltf").resolve())
+    return f"assets://models/polyhaven/{asset_id}/{asset_id}_{res}.gltf"
 
 
 def _ph_prop(pid: str, ptype: str, label: str, asset_id: str, x: float, y: float, w: float, d: float, h: float, rot: float = 0, z: float = 0.0) -> dict[str, Any]:
@@ -1187,7 +1201,21 @@ class EcommerceSceneStore:
             data = read_json(bpath)
         if not data:
             raise KeyError("找不到此批次渲染任務")
-        return self._mark_if_stale(bpath, data)
+        doc = self._mark_if_stale(bpath, data)
+        self._annotate_item_artifacts(bpath.parent, doc)
+        return doc
+
+    def _annotate_item_artifacts(self, bdir: Path, doc: dict[str, Any]) -> None:
+        """The gallery link must follow the file on disk: a fleet render with export off has no model.glb."""
+        items = doc.get("items")
+        if not isinstance(items, list):
+            return
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            item_id = str(item.get("itemId") or "")
+            safe = "".join(c for c in item_id if c.isalnum() or c in ("-", "_"))
+            item["hasGlb"] = bool(safe) and (bdir / safe / "model.glb").is_file()
 
     def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
         """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
@@ -1255,6 +1283,7 @@ class EcommerceSceneStore:
             ai_seed = random.randint(1, 2_000_000_000)
         ai_upsample = bool(payload.get("aiUpsample", settings.get("aiUpsample", True)))
         ai_variation = "creative" if str(payload.get("aiVariation") or settings.get("aiVariation") or "faithful") == "creative" else "faithful"
+        blender_engine = normalize_blender_engine(payload.get("blenderEngine") or settings.get("blenderEngine") or "auto")
 
         if not scene_ids or not theme_ids or not views:
             raise ValueError("請至少勾選 1 個場景、1 種櫃體配色與 1 個鏡頭視角")
@@ -1300,6 +1329,12 @@ class EcommerceSceneStore:
                             "renderTimeSec": None,
                             "blenderVersion": None,
                             "device": None,
+                            "blenderEngine": None,
+                            "fleetTaskId": None,
+                            "fleetStatus": None,
+                            "blenderNote": None,
+                            "progressNote": None,
+                            "hasGlb": False,
                             "hasAiComposite": False,
                             "hasCutout": False,
                             "aiState": initial_ai_state,
@@ -1323,6 +1358,9 @@ class EcommerceSceneStore:
             "aiSeed": ai_seed,
             "aiUpsample": ai_upsample,
             "aiVariation": ai_variation,
+            "blenderEngine": blender_engine,
+            "blenderEngineLabel": BLENDER_ENGINES[blender_engine]["label"],
+            "blenderEngineEffective": None,
             "publicBaseUrl": public_base_url,
             # Everything needed to resubmit this batch as-is (e.g. after a workbench restart interrupted it).
             "request": {
@@ -1339,6 +1377,7 @@ class EcommerceSceneStore:
                 "aiVariants": ai_variants,
                 "aiVariation": ai_variation,
                 "aiUpsample": ai_upsample,
+                "blenderEngine": blender_engine,
             },
             "createdAt": timestamp(),
             "state": "running",
@@ -1371,8 +1410,77 @@ class EcommerceSceneStore:
             public_base_url,
             ai_final_prompt,
             ai_variation,
+            blender_engine,
         )
         return batch_doc
+
+    def _blender_job_for_item(
+        self,
+        batch_id: str,
+        item: dict[str, Any],
+        item_dir: Path,
+        cab_spec: dict[str, Any],
+        scene_def: dict[str, Any],
+        scene_hash: str,
+        samples: int,
+    ) -> dict[str, Any]:
+        """The blender_job.py document for one matrix item (identical for the workstation and for a fleet node)."""
+        return {
+            "jobId": f"{batch_id}_{item['itemId']}",
+            "workDir": str(item_dir),
+            "recipePreview": True,
+            "goldenRecipe": True,
+            "goldenIdentity": {"sku": cab_spec["sku"], "packageHash": scene_hash},
+            "engineering": cab_spec,
+            "camera": scene_def["camera"],
+            "render": {
+                # 1024² matches the FLUX 3 output size so the locked cutout is pasted back at native resolution
+                "width": 1024,
+                "height": 1024,
+                "samples": max(32, samples),
+                "device": "OPTIX",
+            },
+            "exportBlend": True,
+            "exportGlb": True,
+        }
+
+    def _render_locally(self, job: dict[str, Any], item_dir: Path) -> dict[str, Any]:
+        """Run Blender on this workstation and leave beauty.png (+ cutout, glb, blend) in ``item_dir``."""
+        res = self.platform.runtime.run_job(job)
+        status_val = getattr(res, "status", None) or (res.get("status") if isinstance(res, dict) else None)
+        outputs_val = getattr(res, "outputs", None) or (res.get("outputs") if isinstance(res, dict) else {}) or {}
+        for fname in ("beauty.png", "product_cutout.png", "model.glb", "model.blend"):
+            src_p = outputs_val.get(fname)
+            if src_p and Path(src_p).exists() and Path(src_p).resolve() != (item_dir / fname).resolve():
+                shutil.copy2(src_p, item_dir / fname)
+        if status_val not in ("succeeded", "completed") or not (item_dir / "beauty.png").exists():
+            err_msg = getattr(res, "error", None) or (res.get("error") if isinstance(res, dict) else None)
+            raise RuntimeError(err_msg or "Blender 算圖未產出 beauty.png")
+        return {
+            "hasCutout": (item_dir / "product_cutout.png").exists(),
+            "renderTimeSec": getattr(res, "render_time_sec", None) or (res.get("renderTimeSec") if isinstance(res, dict) else None),
+            "blenderVersion": getattr(res, "blender_version", None) or (res.get("blenderVersion") if isinstance(res, dict) else None),
+            "device": getattr(res, "device", None) or (res.get("device") if isinstance(res, dict) else None),
+        }
+
+    def _note_fleet_progress(
+        self,
+        item: dict[str, Any],
+        bdir: Path,
+        items: list[dict[str, Any]],
+        task: dict[str, Any],
+    ) -> None:
+        """Copy queued/running fleet status onto the item and write batch.json so the UI poll can see it."""
+        note = task.get("progressNote") or task.get("progress_note")
+        status = task_status(task) or None
+        note_text = str(note)[:160] if note else None
+        with self.lock:
+            changed = item.get("fleetStatus") != status or (note_text is not None and item.get("progressNote") != note_text)
+            item["fleetStatus"] = status
+            if note_text:
+                item["progressNote"] = note_text
+        if changed:
+            self._save_batch_progress(bdir, items)
 
     def _run_matrix_worker(
         self,
@@ -1392,6 +1500,7 @@ class EcommerceSceneStore:
         public_base_url: str = "",
         ai_final_prompt: str = "",
         ai_variation: str = "faithful",
+        blender_engine: str = "auto",
     ) -> None:
         try:
             ensure_pbr_texture_assets()
@@ -1415,12 +1524,34 @@ class EcommerceSceneStore:
                     fleet_error = "沒有可讓 GPU 節點抓取參考圖的工作台網址（請用 --host 0.0.0.0 啟動或在設定填 publicBaseUrl）"
             except Exception as exc:  # pragma: no cover - defensive
                 fleet_error = str(exc)[:300]
-        ai_futures: list[Future[None]] = []
+        # ---- Where does Blender run? (owner 10-18: send Cycles to the fleet when a node advertises blender_scene_render)
+        blender_engine = normalize_blender_engine(blender_engine)
+        fleet_blender_client: FleetImageClient | None = None
+        fleet_blender_note = ""
+        if blender_engine != "local":
+            try:
+                from fox3d.ai_scene_layout import load_settings as _load_settings
+
+                candidate = fleet_client or FleetImageClient.from_settings(_load_settings(self.root))
+                fstat = blender_fleet_status(candidate)
+                if fstat["ready"]:
+                    fleet_blender_client = candidate
+                else:
+                    fleet_blender_note = str(fstat.get("error") or "艦隊目前無法接 Blender 光追")
+            except Exception as exc:  # pragma: no cover - defensive
+                fleet_blender_note = str(exc)[:300]
+        use_fleet_blender = fleet_blender_client is not None
+        if blender_engine == "fleet" and not use_fleet_blender:
+            blender_ok = False  # forced fleet: never fall back to the workstation silently
+        with self.lock:
+            live = self._live_docs.get(batch_id)
+            if live is not None:
+                live["blenderEngineEffective"] = "fleet" if use_fleet_blender else ("local" if blender_ok else "none")
+                live["blenderFleetNote"] = fleet_blender_note
+
+        # ---- Stage A: build every job (CPU only) and pre-submit the fleet-eligible ones so the node queue fills at once
+        prepared: dict[str, dict[str, Any]] = {}
         for item in items:
-            with self.lock:
-                item["state"] = "running"
-                item["stage"] = "blender"
-            self._save_batch_progress(bdir, items)
             item_dir = bdir / item["itemId"]
             item_dir.mkdir(parents=True, exist_ok=True)
             try:
@@ -1431,46 +1562,75 @@ class EcommerceSceneStore:
                 cab_spec["sceneDefinition"] = scene_def
                 cab_spec["sceneHash"] = scene_hash
                 cab_spec["nasScene"] = "STUDIO"
+                job = self._blender_job_for_item(batch_id, item, item_dir, cab_spec, scene_def, scene_hash, samples)
+                prepared[item["itemId"]] = {"cab_copy": cab_copy, "cab_spec": cab_spec, "scfg": scfg, "job": job}
+                engine_for_item = "local"
+                if fleet_blender_client is not None:
+                    eligible, why = fleet_eligible(scene_def)
+                    if eligible:
+                        try:
+                            task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
+                        except FleetError as exc:
+                            # auto: a refused or unreachable submit still renders here; forced fleet fails the item
+                            if not local_fallback_allowed(blender_engine, local_available=blender_ok):
+                                raise RuntimeError(f"艦隊送件失敗：{str(exc)[:220]}") from exc
+                            with self.lock:
+                                item["blenderNote"] = f"艦隊送件失敗，改本機光追：{str(exc)[:160]}"
+                        else:
+                            with self.lock:
+                                item["fleetTaskId"] = str(task.get("id"))
+                                item["stage"] = "blender"
+                            engine_for_item = "fleet"
+                    else:
+                        with self.lock:
+                            item["blenderNote"] = why
+                if engine_for_item == "local" and not blender_ok:
+                    raise RuntimeError(fleet_blender_note or "本機 Blender 未啟用或不可用")
+                with self.lock:
+                    item["blenderEngine"] = engine_for_item
+            except Exception as exc:
+                with self.lock:
+                    item["state"] = "failed"
+                    item["stage"] = "done"
+                    item["error"] = str(exc)[:300]
+            self._save_batch_progress(bdir, items)
 
-                if not blender_ok:
-                    raise RuntimeError("本機 Blender 未啟用或不可用")
-
-                job = {
-                    "jobId": f"{batch_id}_{item['itemId']}",
-                    "workDir": str(item_dir),
-                    "recipePreview": True,
-                    "goldenRecipe": True,
-                    "goldenIdentity": {
-                        "sku": cab_spec["sku"],
-                        "packageHash": scene_hash,
-                    },
-                    "engineering": cab_spec,
-                    "camera": scene_def["camera"],
-                    "render": {
-                        # 1024² matches the FLUX 3 output size so the locked cutout is pasted back at native resolution
-                        "width": 1024,
-                        "height": 1024,
-                        "samples": max(32, samples),
-                        "device": "OPTIX",
-                    },
-                    "exportBlend": True,
-                    "exportGlb": True,
-                }
-                res = self.platform.runtime.run_job(job)
-                status_val = getattr(res, "status", None) or (res.get("status") if isinstance(res, dict) else None)
-                outputs_val = getattr(res, "outputs", None) or (res.get("outputs") if isinstance(res, dict) else {}) or {}
-                for fname in ("beauty.png", "product_cutout.png", "model.glb", "model.blend"):
-                    src_p = outputs_val.get(fname)
-                    if src_p and Path(src_p).exists() and Path(src_p).resolve() != (item_dir / fname).resolve():
-                        shutil.copy2(src_p, item_dir / fname)
-                if status_val not in ("succeeded", "completed") or not (item_dir / "beauty.png").exists():
-                    err_msg = getattr(res, "error", None) or (res.get("error") if isinstance(res, dict) else None)
-                    raise RuntimeError(err_msg or "Blender 算圖未產出 beauty.png")
-
-                item["hasCutout"] = (item_dir / "product_cutout.png").exists()
-                item["renderTimeSec"] = getattr(res, "render_time_sec", None) or (res.get("renderTimeSec") if isinstance(res, dict) else None)
-                item["blenderVersion"] = getattr(res, "blender_version", None) or (res.get("blenderVersion") if isinstance(res, dict) else None)
-                item["device"] = getattr(res, "device", None) or (res.get("device") if isinstance(res, dict) else None)
+        # ---- Stage B: finish items in order (fleet: wait + download; local: render here), then Plan B / Plan C as before
+        ai_futures: list[Future[None]] = []
+        for item in items:
+            if item.get("state") == "failed":
+                continue
+            with self.lock:
+                item["state"] = "running"
+                item["stage"] = "blender"
+            self._save_batch_progress(bdir, items)
+            item_dir = bdir / item["itemId"]
+            try:
+                prep = prepared[item["itemId"]]
+                cab_copy, cab_spec, scfg, job = prep["cab_copy"], prep["cab_spec"], prep["scfg"], prep["job"]
+                facts: dict[str, Any] | None = None
+                if item.get("fleetTaskId") and fleet_blender_client is not None:
+                    try:
+                        facts = render_on_fleet(
+                            fleet_blender_client, job, item_dir, job_id=job["jobId"], task={"id": item["fleetTaskId"]},
+                            on_update=partial(self._note_fleet_progress, item, bdir, items),
+                        )
+                    except FleetError as exc:
+                        # Forced fleet must fail the item. Auto falls back only when this workstation can render.
+                        if not local_fallback_allowed(blender_engine, local_available=blender_ok):
+                            raise RuntimeError(f"艦隊 Blender 失敗：{str(exc)[:220]}") from exc
+                        with self.lock:
+                            item["blenderNote"] = f"艦隊失敗，改本機光追：{str(exc)[:160]}"
+                            item["blenderEngine"] = "local"
+                        self._save_batch_progress(bdir, items)
+                        facts = None
+                if facts is None:
+                    facts = self._render_locally(job, item_dir)
+                item["hasCutout"] = bool(facts.get("hasCutout"))
+                item["hasGlb"] = (item_dir / "model.glb").is_file()
+                item["renderTimeSec"] = facts.get("renderTimeSec")
+                item["blenderVersion"] = facts.get("blenderVersion")
+                item["device"] = facts.get("device")
 
                 # Plan B (built-in compositor): always cheap, doubles as the fallback image when the fleet is busy.
                 if ai_engine in ("builtin", "fleet_flux3"):
