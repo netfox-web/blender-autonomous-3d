@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
@@ -26,6 +28,52 @@ def test_build_modular_cabinet_presets():
         expected_h = max(c["heightMm"] for c in preset["columns"])
         assert spec["width"] == expected_w
         assert spec["height"] == expected_h
+
+
+def _front_camera_distance(scene_def: dict) -> float:
+    look = scene_def["camera"]["lookAt"]
+    loc = scene_def["camera"]["location"]
+    # FRONT side is 0, so the framing distance is the camera's -Y offset from the aim point.
+    return float(look[1]) - float(loc[1])
+
+
+def test_front_view_camera_distance_covers_furniture_span():
+    """50 mm on a 36 mm sensor sees width dist * 0.72, so FRONT distance is span / 0.72."""
+    scene = next(s for s in BUILTIN_SCENES if s["id"] == "SCENE_PH_FRENCH_CREAM_LIVING")
+    cab = build_modular_cabinet_spec(CABINET_PRESETS[0], tenant_id="sonaqueen-home")
+    scene_def, _scene_hash = compile_custom_scene(scene, cab, view="FRONT")
+
+    px = float(scene["productPose"]["x"])
+    prop_xs = [
+        float(p.get("x") or 0.0)
+        for p in scene["props"]
+        if str(p.get("type") or "").upper() not in ("WINDOW_FRAME", "SHEER_CURTAIN")
+    ]
+    span = abs(px - min(prop_xs)) + 1.0
+    assert span == 4.9
+
+    dist = _front_camera_distance(scene_def)
+    lens = 50.0
+    # Camera coordinates are rounded to 0.0001 m.
+    assert dist == pytest.approx(span / 0.72, abs=5e-4)
+    field_width = dist * (36.0 / lens)
+    assert field_width >= span - 5e-4
+    # span * 0.72 (the inverted formula) yields ~3.528 m and a field only ~2.54 m wide.
+    assert span * 0.72 * (36.0 / lens) < span * 0.6
+
+    look_x = float(scene_def["camera"]["lookAt"][0])
+    half_view = dist * (18.0 / lens)
+    w_m = float(cab["width"]) / 1000.0
+    assert look_x - half_view <= px - w_m / 2.0 + 1e-3
+    assert look_x + half_view >= px + w_m / 2.0 - 1e-3
+    assert scene_def["camera"]["focalLengthMm"] == lens
+    assert scene_def["camera"]["location"][0] == pytest.approx(look_x, abs=5e-4)
+
+
+def test_front_preview_uses_span_divided_by_field_ratio():
+    js = Path(__file__).resolve().parents[1].joinpath("src/fox3d/static/scene-studio.js").read_text(encoding="utf-8")
+    assert "span / 0.72" in js
+    assert "span * 0.72" not in js
 
 
 def test_compile_custom_scene_produces_furnished_scene_v1():

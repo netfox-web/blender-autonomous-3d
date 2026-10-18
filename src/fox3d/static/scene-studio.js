@@ -767,7 +767,8 @@
       const span = Math.abs(px - Math.min(...propXs)) + 1.0;
       if (viewId === 'WIDE') dist = Math.max(dist, span * 0.78);
       if (viewId === 'FRONT') {
-        dist = Math.max(dist, span * 0.72);
+        // 50 mm on a 36 mm sensor: field width is dist * 0.72, so cover span with span / 0.72.
+        dist = Math.max(dist, span / 0.72);
         const halfView = dist * 0.4;
         const wHalf = cabW / 2 + 0.25;
         const lo = px + wHalf - halfView;

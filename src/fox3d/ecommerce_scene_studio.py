@@ -973,7 +973,9 @@ def compile_custom_scene(
         mid_x = (px + sum(prop_xs) / len(prop_xs)) * 0.5
         span = abs(px - min(prop_xs)) + 1.0
         if view == "FRONT":
-            dist = max(dist, span * 0.72)
+            # 50 mm on a 36 mm sensor: full horizontal field is dist * 36/50 = dist * 0.72,
+            # so the distance that covers `span` is span / 0.72 (not span * 0.72).
+            dist = max(dist, span / 0.72)
             # Catalog view: the cabinet must stay fully inside the frame; clamp the aim point so the furniture shows
             # on the side without pushing the product off the edge (36 mm sensor -> half view = dist * 18 / lens).
             half_view = dist * (18.0 / float(view_cfg["lens"]))
