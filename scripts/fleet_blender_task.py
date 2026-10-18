@@ -50,6 +50,7 @@ PROGRESS_INTERVAL_SEC = 2.0
 PROGRESS_POST_TIMEOUT_SEC = 3.0
 WAIT_SLICE_SEC = 0.25
 TERMINATE_GRACE_SEC = 5.0
+SCENE_DEFINITION_JSON_KEY = "sceneDefinitionJson"  # see fox3d.fleet_blender.fleet_job_payload
 STDERR_TAIL_CHARS = 1500
 LOG_TAIL_CHARS = 4000
 MIN_OUTPUT_BYTES = 32
@@ -453,6 +454,12 @@ def prepare_work_dir(work_root: Path, job_id: str, job: JsonDict, *, export_mode
         shutil.rmtree(work_dir, ignore_errors=True)
     work_dir.mkdir(parents=True, exist_ok=True)
     doc = dict(job)
+    engineering = doc.get("engineering")
+    if isinstance(engineering, dict) and isinstance(engineering.get(SCENE_DEFINITION_JSON_KEY), str):
+        # authoritative copy: the console round trip may have turned 0.0 into 0 inside the object form
+        engineering = dict(engineering)
+        engineering["sceneDefinition"] = json.loads(engineering.pop(SCENE_DEFINITION_JSON_KEY))
+        doc["engineering"] = engineering
     doc.setdefault("jobId", job_id)
     doc["workDir"] = str(work_dir)
     doc["progressFile"] = str(work_dir / PROGRESS_FILE)

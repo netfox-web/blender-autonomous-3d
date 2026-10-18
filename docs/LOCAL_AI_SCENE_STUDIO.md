@@ -119,6 +119,13 @@ GPU 節點要連回工作台抓參考圖。`scripts/open_recipe_studio.py`（桌
 - 批次文件新增 `blenderEngine`、`blenderEngineLabel`、`blenderEngineEffective`（fleet/local/none）、`blenderFleetNote`；
   項目新增 `blenderEngine`、`fleetTaskId`、`fleetStatus`、`blenderNote`、`progressNote`、`hasGlb`。
 
+### 雷：中控會把 0.0 寫成 0
+
+首批艦隊驗收（10-18）每張 1 秒就失敗，節點 blender.log 寫 `Scene definition hash mismatch`：`inputPayload` 經 Node／Prisma
+JSON 一來一回，`[0.0, 0.0, -0.06]` 變成 `[0, 0, -0.06]`，Python `json.dumps` 就從 `0.0` 變 `0`，`stable_hash` 自然不同。
+解法：`fleet_job_payload` 另放一份 `engineering.sceneDefinitionJson`（Python `json.dumps` 字串，字串不會被改），
+`fleet_blender_task.py` 寫 job.json 前以它取代物件版。任何「雜湊要跨機器一致」的欄位都別只靠物件形式過中控。
+
 ### 驗收清單
 
 1. 中控部署後 `GET /api/ecommerce-scenes/ai-engine-status` 的 `blender.fleet.ready=true`、`capableNodes≥1`。

@@ -478,3 +478,21 @@ def test_fleet_render_hides_glb_download_until_file_exists(tmp_path: Path, monke
         headers=headers,
     )
     assert got.status_code == 200 and got.content == b"glTF-fake-local"
+
+
+def test_fleet_job_payload_scene_definition_survives_console_number_rewrite():
+    """Node/Prisma JSON turns 0.0 into 0; the object form then hashes differently (the 2026-10-18 'Scene definition
+    hash mismatch' on every fleet render). The JSON-string copy decodes back to the exact Python object."""
+    import json
+
+    from fox3d.ids import stable_hash
+
+    scene = {"templateId": "T", "boxes": [{"name": "A", "location": [0.0, 0.0, -0.06], "size": [1.0, 2.5, 3.0]}], "camera": {"x": 1.0}}
+    job = {"jobId": "j", "engineering": {"sceneDefinition": scene, "sceneHash": stable_hash(scene)}, "camera": {"x": 1.0}}
+    payload = fb.fleet_job_payload(job, job_id="j")
+    assert fb.SCENE_DEFINITION_JSON_KEY not in job["engineering"], "caller's job must stay untouched (local fallback renders it)"
+    # what the executor receives after the console round trip: integral floats collapsed to ints, strings untouched
+    received = json.loads(json.dumps(payload), parse_float=lambda s: int(float(s)) if float(s).is_integer() else float(s))
+    eng = received["job"]["engineering"]
+    assert stable_hash(eng["sceneDefinition"]) != eng["sceneHash"]  # the object form is corrupted...
+    assert stable_hash(json.loads(eng[fb.SCENE_DEFINITION_JSON_KEY])) == eng["sceneHash"]  # ...the string form is exact
