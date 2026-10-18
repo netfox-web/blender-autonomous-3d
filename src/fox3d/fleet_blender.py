@@ -12,6 +12,7 @@ paths the node cannot read; such items are not fleet-eligible and keep rendering
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Callable
 
@@ -26,6 +27,10 @@ BLENDER_ENGINES: dict[str, dict[str, str]] = {
 }
 DEFAULT_BLENDER_ENGINE = "auto"
 FLEET_JOB_STRIP_KEYS = ("workDir", "progressFile", "cancelFile")
+# The console (Node/Prisma JSON) rewrites 0.0 as 0; Python then hashes "0" instead of "0.0" and blender_job.py
+# rejects the scene ("Scene definition hash mismatch"). The definition therefore also travels as a JSON string the
+# node decodes with Python json -> identical object -> identical sceneHash.
+SCENE_DEFINITION_JSON_KEY = "sceneDefinitionJson"
 # Fixed artifact order published by scripts/fleet_blender_task.py
 ARTIFACT_BEAUTY = 0
 ARTIFACT_CUTOUT = 1
@@ -59,6 +64,11 @@ def fleet_job_payload(job: dict[str, Any], *, job_id: str, export_models: bool =
     clean = {k: v for k, v in job.items() if k not in FLEET_JOB_STRIP_KEYS}
     clean["exportBlend"] = bool(export_models)
     clean["exportGlb"] = bool(export_models)
+    engineering = clean.get("engineering")
+    if isinstance(engineering, dict) and isinstance(engineering.get("sceneDefinition"), dict):
+        engineering = dict(engineering)  # never mutate the caller's job: the local fallback renders from it
+        engineering[SCENE_DEFINITION_JSON_KEY] = json.dumps(engineering["sceneDefinition"], ensure_ascii=False)
+        clean["engineering"] = engineering
     payload: dict[str, Any] = {"jobId": str(job_id)[:80], "job": clean, "exportModels": bool(export_models)}
     if timeout_sec:
         payload["timeoutSec"] = max(60, int(timeout_sec))

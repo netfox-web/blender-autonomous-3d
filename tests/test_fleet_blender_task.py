@@ -597,3 +597,18 @@ def test_blender_command_hook_and_timeout_policy(fbt: ModuleType, tmp_path: Path
         fbt.effective_timeout(None, 0.0)
     assert fbt.output_subfolder("j1", "nested") == "fox3d/j1"
     assert fbt.output_subfolder("j1", "flat") == "fox3d_j1"
+
+
+def test_prepare_work_dir_prefers_scene_definition_json(fbt: ModuleType, tmp_path: Path) -> None:
+    """The JSON-string copy of the scene definition (exact floats) replaces the object form the console rewrote."""
+    exact = {"templateId": "T", "boxes": [{"name": "A", "location": [0.0, 0.0, -0.06]}]}
+    rewritten = {"templateId": "T", "boxes": [{"name": "A", "location": [0, 0, -0.06]}]}  # what Node/Prisma hands back
+    job: dict[str, Any] = {"jobId": "j", "engineering": {"sceneDefinition": rewritten, "sceneHash": "h", fbt.SCENE_DEFINITION_JSON_KEY: json.dumps(exact)}}
+    work_dir = fbt.prepare_work_dir(tmp_path / "work", "j", job, export_models=False)
+    written: dict[str, Any] = json.loads((work_dir / fbt.JOB_FILE).read_text(encoding="utf-8"))
+    assert written["engineering"]["sceneDefinition"] == exact
+    assert written["engineering"]["sceneDefinition"]["boxes"][0]["location"][0] == 0.0
+    assert isinstance(written["engineering"]["sceneDefinition"]["boxes"][0]["location"][0], float) or json.dumps(written["engineering"]["sceneDefinition"]).count("0.0") >= 2
+    assert fbt.SCENE_DEFINITION_JSON_KEY not in written["engineering"]
+    assert written["engineering"]["sceneHash"] == "h"
+    assert job["engineering"][fbt.SCENE_DEFINITION_JSON_KEY], "input payload object is not mutated"
