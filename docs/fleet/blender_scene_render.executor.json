@@ -1,0 +1,35 @@
+{
+  "_comment": "fleet-agent config.json executors 片段（5090-3 路徑）。合併進 /data-fast/fleet-agent/config.json 的 executors 後 sudo systemctl restart fleet-agent；先備份 config.json。",
+  "blender_scene_render": {
+    "type": "shell",
+    "requires": [
+      "file:/data-fast/blender/blender",
+      "file:/data-fast/fox3d/scripts/blender_job.py",
+      "file:/data-fast/fox3d/scripts/furnished_scene.py",
+      "file:/data-fast/fox3d/scripts/fleet_blender_task.py",
+      "dir:/data-fast/fox3d/assets/models/polyhaven"
+    ],
+    "command": [
+      "/usr/bin/python3",
+      "/data-fast/fox3d/scripts/fleet_blender_task.py",
+      "--json",
+      "{input_json}",
+      "--blender",
+      "/data-fast/blender/blender",
+      "--script",
+      "/data-fast/fox3d/scripts/blender_job.py",
+      "--assets-root",
+      "/data-fast/fox3d/assets",
+      "--work-root",
+      "/data-fast/fox3d/work",
+      "--out-dir",
+      "/data/comfy-output",
+      "--public-url",
+      "http://192.168.66.20:8188",
+      "--timeout",
+      "840"
+    ],
+    "timeout_seconds": 900,
+    "gpu_binding": "subprocess"
+  }
+}
