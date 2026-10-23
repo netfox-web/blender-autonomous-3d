@@ -1,3 +1,14 @@
+<!-- 2026-10-23 SSOT RECONCILIATION BANNER (GitHub Truth Sync) -->
+> **⚠️ 2026-10-23 SSOT 校正聲明（GitHub 現況已合併，請勿重做已合併 PR）**
+> - **GitHub `main` HEAD**：`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`（2026-10-16 已完成產品線與基礎線收斂）。
+> - **已合併（MERGED）之 17 個 PR**：`#2, #3, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #19, #20, #22, #23, #24` 皆已正式合併入 `main`（最後一筆為 PR #20 `9c9f283` 於 2026-10-16T08:06:16Z 合併）。
+> - **已關閉（CLOSED，由後續 PR 取代）**：PR `#21`（由 PR `#22` `0228aa5` 取代並合併）。
+> - **已整合但 PR 物件維持 FROZEN**：PR `#16` 之程式碼已於 commit `70a5613`（PR #19 基底）整合進 `main`，PR #16 物件本身維持 Draft/FROZEN，不需重做。
+> - **目前唯一待推進之 Open Draft PR**：PR `#18`（`codex/issue6-round3b-articulated-video-truth`，HEAD `7fd38e04e58165bbcf7971ba1793e53f2f3cb049`，對應 Issue #6 Round 3B 雙開門鉸鏈開合動畫 Ground-Truth + ComfyUI H3 橋接，待真 Blender 5.2.1 LTS / OptiX 渲染實證）。
+> - **下方 2026-10-10 及更早章節中任何寫「PR #7–#15 未合併 / OPEN and unmerged / ACCEPTED_UNMERGED」之描述均為歷史快照，已被 GitHub `main` 現況取代。**
+
+---
+
 # CURRENT_IMPLEMENTATION_AUDIT
 
 ## Issue #6 Round 3A — Articulation Engineering Authority Source V1 (2026-09-15)
@@ -6,7 +17,7 @@ Instruction `4fb4f14a36e505255479397b905d18de13e1da8a`; independent main-based P
 
 The additive source/schema/verifier/resolver pins authority revision, seal, exact identity, component set and provenance in a composite product authority hash. The old engineering hash is preserved. Four explicit synthetic door definitions are **FIXTURE_AUTHORITY**, not measured hardware truth. Legacy 75-degree helper output is DERIVED_RENDER_STATE / OBSERVATION and cannot be promoted to this contract.
 
-`ARTICULATION_AUTHORITY_LOGIC_READY=true`; `FIXTURE_AUTHORITY_READY=true`; `DOOR_OPEN_REAL=false`; `DOOR_OPEN_GROUND_TRUTH_READY=false`; `GLOBAL_PRODUCTION_READY=false`; `fullAutonomousFactoryReady=false`. PR13 remains HOLD and unmerged until the prerequisite is accepted and present on main. No physical machine, live provider or Supervisor LIVE readiness change.
+`ARTICULATION_AUTHORITY_LOGIC_READY=true`; `FIXTURE_AUTHORITY_READY=true`; `DOOR_OPEN_REAL=false`; `DOOR_OPEN_GROUND_TRUTH_READY=false`; `GLOBAL_PRODUCTION_READY=false`; `fullAutonomousFactoryReady=false`. [2026-10-23 Reconciled: PR #14 (`c312316`) and PR #13 (`d862fb4`) are both MERGED into `main`; Issue #6 Round 3B is tracked in open Draft PR #18 (`7fd38e0`).] (Historical 2026-09-15 note: PR13 remained HOLD and unmerged until prerequisite was on main.) No physical machine, live provider or Supervisor LIVE readiness change.
 
 Full scope, trust boundary, limitations and machine-readable evidence: [ARTICULATION_AUTHORITY_ACCEPTANCE.md](ARTICULATION_AUTHORITY_ACCEPTANCE.md), [ARTICULATION_AUTHORITY_ACCEPTANCE.json](ARTICULATION_AUTHORITY_ACCEPTANCE.json). This separate DOCS commit still requires its own exact Ubuntu/Windows CI; final immutable DOCS SHA/run identities will be published in the Issue handoff. No merge authorization.
 
