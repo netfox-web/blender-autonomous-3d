@@ -1,0 +1,80 @@
+name: pytest-self-hosted-candidate
+
+# CI DESIGN PENDING WIRING: no caller and no direct trigger. Do not connect
+# until both approved runner labels are verified.
+on:
+  workflow_call:
+    inputs:
+      linux_runner_label:
+        description: Approved custom label for the isolated Linux self-hosted runner
+        required: true
+        type: string
+      windows_runner_label:
+        description: Approved custom label for the isolated Windows self-hosted runner
+        required: true
+        type: string
+      authorization_ref:
+        description: Reference to the approval that authorizes these runner labels
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  linux-required:
+    name: required / Linux / Python 3.12
+    runs-on:
+      - self-hosted
+      - ${{ inputs.linux_runner_label }}
+    timeout-minutes: 30
+    steps:
+      - name: Record non-secret runner authorization reference
+        shell: bash
+        env:
+          AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+        run: test -n "$AUTHORIZATION_REF"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Lint and type-check
+        run: |
+          ruff check .
+          mypy
+      - name: Unit / regression tests
+        run: pytest -q
+        env:
+          FOX3D_MOCK_BLENDER: "1"
+
+  windows-required:
+    name: required / Windows / Python 3.12
+    runs-on:
+      - self-hosted
+      - ${{ inputs.windows_runner_label }}
+    timeout-minutes: 30
+    steps:
+      - name: Record non-secret runner authorization reference
+        shell: pwsh
+        env:
+          AUTHORIZATION_REF: ${{ inputs.authorization_ref }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AUTHORIZATION_REF)) {
+            throw "authorization_ref is required"
+          }
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Lint and type-check
+        run: |
+          ruff check .
+          mypy
+      - name: Unit / regression tests
+        run: pytest -q
+        env:
+          FOX3D_MOCK_BLENDER: "1"
