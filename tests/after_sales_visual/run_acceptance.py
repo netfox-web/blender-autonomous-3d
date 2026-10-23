@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 from pathlib import Path
 
 from PIL import Image
 
 from fox3d.after_sales_visual.catalog import adapt_product_dna_snapshot
+from fox3d.after_sales_visual.batch import BatchInterrupted, FixtureBatchRunner
 from fox3d.after_sales_visual.engine import DisabledVisualModelAdapter, analyze_case, build_replacement_draft
 from fox3d.after_sales_visual.fixtures import case_from_fixture, load_fixture_manifest
 from fox3d.after_sales_visual.intake import PhotoIntakeError, intake_photo_bytes, read_local_fixture
@@ -72,6 +74,22 @@ def main() -> int:
     draft = build_replacement_draft(case, result, decision)
     check(draft.status == "DRAFT_NOT_SUBMITTED" and draft.executable is False, "non-executable draft")
     check(draft.external_write_performed is False, "draft has no write")
+
+    repo_root = Path(__file__).resolve().parents[2]
+    schema_examples = [
+        (case.model_dump(mode="json"), repo_root / "data/after_sales_visual/case.schema.json"),
+        (result.model_dump(mode="json"), repo_root / "data/after_sales_visual/result.schema.json"),
+        (draft.model_dump(mode="json"), repo_root / "data/after_sales_visual/erp-draft.schema.json"),
+    ]
+    for runtime_value, schema_path in schema_examples:
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        check(set(runtime_value) == set(schema["properties"]), f"runtime/schema top-level shape: {schema_path.name}")
+        check(set(schema["required"]) <= set(runtime_value), f"runtime/schema required fields: {schema_path.name}")
+
+    same_photo_other_source = case.model_copy(update={"case_id": "ASV-SAME-HASH-SOURCE-B"})
+    same_photo_result = analyze_case(same_photo_other_source)
+    check(same_photo_result.provenance["photo_original_hash"] == result.provenance["photo_original_hash"], "same bytes retain same hash")
+    check(same_photo_result.candidate_set_id != result.candidate_set_id, "same hash from another case is not merged")
 
     orientation = case_from_fixture(manifest["cases"][1])
     existing_step_case = orientation.model_copy(update={
@@ -164,6 +182,28 @@ def main() -> int:
             raise AssertionError("cross tenant evidence read accepted")
         except FileNotFoundError:
             pass
+
+        batch_root = root / "batch"
+        runner = FixtureBatchRunner(batch_root)
+        try:
+            runner.run(manifest, stop_after=5)
+            raise AssertionError("batch interruption did not occur")
+        except BatchInterrupted:
+            pass
+        checkpoint = json.loads((batch_root / "checkpoint.json").read_text(encoding="utf-8"))
+        check(checkpoint["next_index"] == 5 and checkpoint["status"] == "RUNNING", "checkpoint after interruption")
+        cancelled = runner.cancel(manifest)
+        check(cancelled["status"] == "CANCELLED" and cancelled["evidence_preserved"] is True, "cancel preserves evidence")
+        completed = runner.run(manifest, resume=True)
+        check(completed["status"] == "COMPLETE" and completed["case_count"] == 24, "resume completes batch")
+        repeated = runner.run(manifest, resume=True)
+        check(repeated["results"] == completed["results"] and len(repeated["results"]) == 24, "resume retry is idempotent")
+        changed_manifest = {**manifest, "seed": 20261024}
+        try:
+            runner.run(changed_manifest, resume=True)
+            raise AssertionError("changed manifest resumed against stale checkpoint")
+        except ValueError as error:
+            check("manifest hash mismatch" in str(error), "checkpoint mismatch reason")
 
     print({
         "suite": "after_sales_visual",

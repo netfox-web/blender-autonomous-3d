@@ -11,6 +11,7 @@ from fox3d.after_sales_visual.fixtures import case_from_fixture, load_fixture_ma
 from fox3d.after_sales_visual.intake import PhotoIntakeError, intake_photo_bytes, read_local_fixture
 from fox3d.after_sales_visual.models import HumanDecision
 from fox3d.after_sales_visual.store import JsonCaseStore
+from fox3d.after_sales_visual.batch import BatchInterrupted, FixtureBatchRunner
 
 MANIFEST = load_fixture_manifest()
 
@@ -116,3 +117,14 @@ def test_store_is_idempotent_append_only_and_tenant_isolated(tmp_path: Path):
     assert repeated == changed
     with pytest.raises(FileNotFoundError):
         store.append_decision("tenant-b", case.case_id, decision)
+
+
+def test_batch_interrupt_cancel_resume_and_retry(tmp_path: Path):
+    runner = FixtureBatchRunner(tmp_path / "batch")
+    with pytest.raises(BatchInterrupted):
+        runner.run(MANIFEST, stop_after=5)
+    cancelled = runner.cancel(MANIFEST)
+    assert cancelled["status"] == "CANCELLED"
+    completed = runner.run(MANIFEST, resume=True)
+    assert completed["case_count"] == 24
+    assert runner.run(MANIFEST, resume=True)["results"] == completed["results"]
