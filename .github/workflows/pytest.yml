@@ -89,6 +89,27 @@ jobs:
           make -j2
           make install
 
+          cat > sqlite-link-probe.c <<'C'
+          #include <sqlite3.h>
+
+          int main(void) {
+              sqlite3 *database = 0;
+              if (sqlite3_open(":memory:", &database) != SQLITE_OK) {
+                  return 1;
+              }
+              return sqlite3_close(database) == SQLITE_OK ? 0 : 1;
+          }
+          C
+          cc \
+            -I"$sqlite_prefix/include" \
+            sqlite-link-probe.c \
+            "$sqlite_prefix/lib/libsqlite3.a" \
+            -L"$zlib_prefix/lib" \
+            -Wl,-rpath,"$zlib_prefix/lib" \
+            -lz -lm -ldl -lpthread \
+            -o sqlite-link-probe
+          ./sqlite-link-probe
+
           cd "$source_root"
           curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
             --output "Python-$python_version.tgz" \
@@ -99,7 +120,7 @@ jobs:
           CPPFLAGS="-I$zlib_prefix/include -I$sqlite_prefix/include" \
             LDFLAGS="-L$zlib_prefix/lib -L$sqlite_prefix/lib" \
             LIBSQLITE3_CFLAGS="-I$sqlite_prefix/include" \
-            LIBSQLITE3_LIBS="-L$sqlite_prefix/lib -lsqlite3" \
+            LIBSQLITE3_LIBS="-L$sqlite_prefix/lib -lsqlite3 -L$zlib_prefix/lib -Wl,-rpath,$zlib_prefix/lib -lz -lm -ldl -lpthread" \
             ./configure \
               --prefix="$python_prefix" \
               --with-ensurepip=install \
