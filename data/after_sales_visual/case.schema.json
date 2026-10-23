@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/netfox-web/blender-autonomous-3d/data/after_sales_visual/case.schema.json",
+  "title": "After-sales visual evidence case v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "tenant_id", "company_id", "requested_sku", "requested_engineering_version", "photo", "catalog", "observations", "source_class"],
+  "properties": {
+    "schema_version": {"const": "fox3d.after-sales-visual.case.v1"},
+    "case_id": {"type": "string", "minLength": 1},
+    "tenant_id": {"type": "string", "minLength": 1},
+    "company_id": {"type": "string", "minLength": 1},
+    "requested_sku": {"type": "string", "minLength": 1},
+    "requested_engineering_version": {"type": "string", "minLength": 1},
+    "photo_claimed_sku": {"type": ["string", "null"]},
+    "photo": {"type": "object"},
+    "catalog": {"type": "object"},
+    "observations": {"type": "array"},
+    "human_inventory_verified": {"type": "boolean"},
+    "source_class": {"enum": ["SYNTHETIC_FIXTURE", "APPROVED_DEIDENTIFIED"]}
+  }
+}
