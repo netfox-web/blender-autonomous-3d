@@ -10,7 +10,7 @@
 - Primary Issue: #25；coordination: github-supervisor#134
 - Open PR #16 is Draft/FROZEN. Scene/Fleet/render paths are untouched.
 - Issue #1 2026-10-23 reconciliation says PR #19/Product DNA is merged. Old docs may still describe pre-merge state.
-- CI workflow triggers on every pull request and uses `ubuntu-latest` + `windows-latest`; no approved self-hosted pool is proven for this repo. Owner 已核准僅修改兩 repo 測試流程，但不含 runner registration/token/permission/hosted 費用；`.github/workflows` 尚未納入 Commander path lease，故 workflow 仍為 design-only，CI=`BLOCKED`，不 push／開 PR／觸發 hosted。
+- Owner 已直接核准修改本 repo 測試 workflow，但不含 runner registration/token/permission/hosted 費用。Repo runner registry 為 HTTP 200、`total_count: 0`；已將 workflow 改為無 trigger 的 reusable self-hosted Linux＋Windows required gates。CI=`BLOCKED/NOT_RUN`，不 push／開 PR。
 - Commander: Grok per github-supervisor#115. Single-writer runtime lease 已於 github-supervisor#134 comment 6366590747 確認；只修改列明的隔離 owned paths。
 
 ## REUSE / EXTEND / GAP
