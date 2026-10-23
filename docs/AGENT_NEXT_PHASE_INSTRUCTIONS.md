@@ -1,11 +1,27 @@
 <!-- 2026-10-23 SSOT RECONCILIATION BANNER (GitHub Truth Sync) -->
 > **⚠️ 2026-10-23 SSOT 校正聲明（GitHub 現況已合併，請勿重做已合併 PR）**
-> - **GitHub `main` HEAD**：`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`（2026-10-16 已完成產品線與基礎線收斂）。
-> - **已合併（MERGED）之 17 個 PR**：`#2, #3, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #19, #20, #22, #23, #24` 皆已正式合併入 `main`（最後一筆為 PR #20 `9c9f283` 於 2026-10-16T08:06:16Z 合併）。
-> - **已關閉（CLOSED，由後續 PR 取代）**：PR `#21`（由 PR `#22` `0228aa5` 取代並合併）。
-> - **已整合但 PR 物件維持 FROZEN**：PR `#16` 之程式碼已於 commit `70a5613`（PR #19 基底）整合進 `main`，PR #16 物件本身維持 Draft/FROZEN，不需重做。
-> - **目前唯一待推進之 Open Draft PR**：PR `#18`（`codex/issue6-round3b-articulated-video-truth`，HEAD `7fd38e04e58165bbcf7971ba1793e53f2f3cb049`，對應 Issue #6 Round 3B 雙開門鉸鏈開合動畫 Ground-Truth + ComfyUI H3 橋接，待真 Blender 5.2.1 LTS / OptiX 渲染實證）。
-> - **下方 2026-10-10 及更早章節中任何寫「PR #7–#15 未合併 / OPEN and unmerged / ACCEPTED_UNMERGED」之描述均為歷史快照，已被 GitHub `main` 現況取代。**
+> - **GitHub `main` HEAD**：`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`（2026-10-18T15:04:41Z 合併 PR #24 後之最新主線）。
+> - **已合併（MERGED）之 17 個 PR 與精確 Merge Commit SHA**：
+>   - `#2` (`c53f174`, 2026-09-13) — Sonaqueen recipe library & product admin UI
+>   - `#3` (`f43d80e`, 2026-09-14) — Recipe 商品庫中文操作介面與真實 3D 生成
+>   - `#14` (`d13d9f9`, 2026-10-10) — Issue #6 Round 3A Articulation Engineering Authority Source V1
+>   - `#7` (`b8da4de`, 2026-10-10) — Golden 三層櫃四 SKU Artwork 與真實 3D 工作台
+>   - `#8` (`49b7cd2`, 2026-10-10) — Artwork library, 3D print previews & UV PDF workbench
+>   - `#9` (`e914cc5`, 2026-10-10) — PrintFox design library & single-run generation
+>   - `#10` (`5fa4c92`, 2026-10-10) — Product model workbench with separate templates & materials
+>   - `#11` (`978eb58`, 2026-10-10) — Reuse product masters for artwork and scene previews
+>   - `#12` (`f3ad3f0`, 2026-10-10) — Organize product masters with a category tree
+>   - `#15` (`e6e62dd`, 2026-10-10) — Batch artwork variants & preserve product composition history
+>   - `#17` (`1763a5b`, 2026-10-17) — Round 13 hold sync, #13 watchdog RCA, lint gate
+>   - `#13` (`7f62a9e`, 2026-10-17) — Issue #6 deterministic Blender video ground truth & candidate QA
+>   - `#19` (`7f62a9e`, 2026-10-17) — Issue #18 Product DNA Golden SKU 匯出契約（注意：`#18` 為 Issue 編號，由 PR `#19` 實作並合併）
+>   - `#20` (`3010617`, 2026-10-18) — 地端 AI 實景生成（GPU 艦隊 FLUX 3）＋ 工坊 UI 改版
+>   - `#22` (`6ba2c03`, 2026-10-18) — 正面平視視角把家具框進畫面、櫃子保證完整
+>   - `#23` (`24f33b9`, 2026-10-18) — Blender 光追上 GPU 艦隊（`blender_scene_render`）
+>   - `#24` (`9c9f283`, 2026-10-18) — 場景定義以 JSON 字串過中控，避免 `0.0→0` 造成 hash mismatch
+> - **已關閉（CLOSED，未合併、由後續 PR 取代）**：PR `#21`（由已合併之 PR `#22` `6ba2c03` 取代）。
+> - **程式碼已整合、PR 物件維持 FROZEN**：PR `#16`（`codex/product-scene-library` @ `d03041d`，其程式碼已於 `70a5613` 整合進 `main`，PR #16 物件本身維持 Draft/FROZEN，不需重做）。
+> - **下方 2026-10-10 及更早章節中任何寫「PR #7–#15 未合併 / OPEN and unmerged / ACCEPTED_UNMERGED / PR13 remains HOLD and unmerged」之描述均為歷史快照，已被上述 GitHub `main`（`9c9f283`）現況取代。**
 
 ---
 
@@ -23,11 +39,11 @@ GitHub is the source of truth. Facts below were re-read from GitHub on 2026-10-1
 
 ## 0. Current facts
 
-- Canonical main: `b8c6fe911e6c8358ed7bcdecafc84cab86630810` (`supervisor: Round 13 evidence closure checkpoint`, committer date 2026-09-24T04:59:19Z).
+- Canonical main (reconciled 2026-10-23): `9c9f2835a35d31eea9066c1ebcafa4385f61fc14` (PR #24 merged 2026-10-18T15:04:41Z; historical 2026-10-10 snapshot main was `b8c6fe911e6c8358ed7bcdecafc84cab86630810`).
 - Main Actions [35957962415](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/35957962415) is SUCCESS on that exact SHA for `unit (ubuntu-latest)` and `unit (windows-latest)`. That run is MOCK regression (`FOX3D_MOCK_BLENDER=1`). It is not REAL Blender evidence and it is not production readiness.
 - Independent Supervisor decision [5854068961](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854068961) (2026-09-27T08:06:33Z): **PR #15 Round 13 = ACCEPT_WITH_SCOPE / Round 14 HOLD**. Reviewed commit `c01f95d95ad21b97a48442c592f0259415a93c99`; CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43`. This supersedes CHANGES_REQUIRED comment [5853584739](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5853584739) for its two concrete defects. It is not all-project completion, integration acceptance, or Production PASS.
 - Commander handoff [5854087167](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854087167) (2026-09-27T08:09:02Z): **PROJECT_STATUS = SCOPED_CORRECTION_ACCEPTED / OWNER_DECISION_HOLD**. No `COMMANDER_NEXT_TASK` was issued.
-- [2026-10-23 Reconciled: PRs #2, #3, #7–#15, #17, #19, #20, #22–#24 are MERGED into `main` (`9c9f283`); PR #16 code is integrated in `70a5613` while PR #16 object remains FROZEN; PR #18 (`7fd38e0`) is the only open active implementation PR.] (Historical 2026-10-10 note: PRs #7–#16 were OPEN and unmerged at that snapshot.) #7–#15 have scoped Supervisor acceptance. #13 counts only accepted Round 2; Issue #6 Round 3B stays `BLOCKED_DEPENDENCY` until accepted #14 is actually on main under a separate Owner authorization. PR #16 is **FROZEN** at `d03041dedd9002c74e65dd3e5a0cbd096d9575ca` with no acceptance and no GO.
+- [2026-10-23 Reconciled] PRs `#2` (`c53f174`), `#3` (`f43d80e`), `#7` (`b8da4de`), `#8` (`49b7cd2`), `#9` (`e914cc5`), `#10` (`5fa4c92`), `#11` (`978eb58`), `#12` (`f3ad3f0`), `#13` (`7f62a9e`), `#14` (`d13d9f9`), `#15` (`e6e62dd`), `#17` (`1763a5b`), `#19` (`7f62a9e`, for Issue #18), `#20` (`3010617`), `#22` (`6ba2c03`), `#23` (`24f33b9`), and `#24` (`9c9f283`) are all **MERGED** into `main`. PR `#21` is **CLOSED** (superseded by `#22`). PR `#16` code is integrated into `main` at `70a5613` while the PR #16 object remains **FROZEN** at `d03041dedd9002c74e65dd3e5a0cbd096d9575ca`.
 - Round 14 is **HOLD**. No next-phase GO exists.
 - `MERGE_AUTHORIZED=false`
 - `globalProductionReady=false`
