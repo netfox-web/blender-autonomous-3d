@@ -27,10 +27,14 @@ jobs:
           zlib_sha256=bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16
           openssl_version=3.5.9
           openssl_sha256=603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a
+          sqlite_version=3.54.1
+          sqlite_archive_version=3540100
+          sqlite_sha3_256=b6ced585c750916b1052667239a12c25a7ff34e7f06e1e6e01ecb0427657d9c4
           runtime_root="$RUNNER_TEMP/fox3d-python-$python_version"
           source_root="$RUNNER_TEMP/fox3d-python-source-$python_version"
           zlib_prefix="$runtime_root/zlib"
           openssl_prefix="$runtime_root/openssl"
+          sqlite_prefix="$runtime_root/sqlite"
           python_prefix="$runtime_root/cpython"
 
           rm -rf "$runtime_root" "$source_root"
@@ -65,13 +69,37 @@ jobs:
 
           cd "$source_root"
           curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
+            --output "sqlite-autoconf-$sqlite_archive_version.tar.gz" \
+            "https://www.sqlite.org/2026/sqlite-autoconf-$sqlite_archive_version.tar.gz"
+          sqlite_actual_sha3_256="$(
+            LD_LIBRARY_PATH="$openssl_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+              "$openssl_prefix/bin/openssl" dgst -sha3-256 \
+                "sqlite-autoconf-$sqlite_archive_version.tar.gz" | awk '{print $2}'
+          )"
+          if [ "$sqlite_actual_sha3_256" != "$sqlite_sha3_256" ]; then
+            echo "SQLite $sqlite_version SHA3-256 mismatch" >&2
+            exit 1
+          fi
+          tar -xzf "sqlite-autoconf-$sqlite_archive_version.tar.gz"
+          cd "sqlite-autoconf-$sqlite_archive_version"
+          ./configure \
+            --prefix="$sqlite_prefix" \
+            --disable-shared \
+            --enable-static
+          make -j2
+          make install
+
+          cd "$source_root"
+          curl --proto '=https' --tlsv1.2 --fail --location --retry 3 \
             --output "Python-$python_version.tgz" \
             "https://www.python.org/ftp/python/$python_version/Python-$python_version.tgz"
           echo "$python_sha256  Python-$python_version.tgz" | sha256sum --check --strict
           tar -xzf "Python-$python_version.tgz"
           cd "Python-$python_version"
-          CPPFLAGS="-I$zlib_prefix/include" \
-            LDFLAGS="-L$zlib_prefix/lib" \
+          CPPFLAGS="-I$zlib_prefix/include -I$sqlite_prefix/include" \
+            LDFLAGS="-L$zlib_prefix/lib -L$sqlite_prefix/lib" \
+            LIBSQLITE3_CFLAGS="-I$sqlite_prefix/include" \
+            LIBSQLITE3_LIBS="-L$sqlite_prefix/lib -lsqlite3" \
             ./configure \
               --prefix="$python_prefix" \
               --with-ensurepip=install \
@@ -80,8 +108,37 @@ jobs:
           make -j2
           make install
 
-          "$python_prefix/bin/python3.12" -c \
-            'import ssl, sys, zlib; assert sys.version_info[:2] == (3, 12), sys.version; print(sys.version); print(ssl.OPENSSL_VERSION); print(zlib.ZLIB_VERSION)'
+          "$python_prefix/bin/python3.12" - <<'PY'
+          import _ctypes
+          import _hashlib
+          import _sqlite3
+          import _ssl
+          import ctypes
+          import hashlib
+          import io
+          import sqlite3
+          import ssl
+          import sys
+          import uuid
+          import zipfile
+          import zlib
+
+          assert sys.version_info[:2] == (3, 12), sys.version
+          assert hashlib.sha256(b"fox3d-ci-preflight").hexdigest()
+          assert uuid.uuid4().version == 4
+          with sqlite3.connect(":memory:") as connection:
+              assert connection.execute("SELECT 21 * 2").fetchone() == (42,)
+          payload = b"fox3d-ci-preflight"
+          archive_buffer = io.BytesIO()
+          with zipfile.ZipFile(archive_buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+              archive.writestr("probe.txt", payload)
+          with zipfile.ZipFile(io.BytesIO(archive_buffer.getvalue())) as archive:
+              assert archive.read("probe.txt") == payload
+          print(sys.version)
+          print(ssl.OPENSSL_VERSION)
+          print(sqlite3.sqlite_version)
+          print(zlib.ZLIB_VERSION)
+          PY
           echo "$python_prefix/bin" >> "$GITHUB_PATH"
           echo "FOX3D_CI_PYTHON=$python_prefix/bin/python3.12" >> "$GITHUB_ENV"
       - name: Create isolated virtual environment
