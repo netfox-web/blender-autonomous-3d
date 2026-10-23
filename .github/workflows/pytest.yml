@@ -53,6 +53,9 @@ jobs:
           cd "Python-$python_version"
           CPPFLAGS="-I$zlib_prefix/include" \
             LDFLAGS="-L$zlib_prefix/lib" \
+            OPENSSL_CFLAGS="-I/usr/include" \
+            OPENSSL_LDFLAGS="-L/usr/lib/x86_64-linux-gnu" \
+            OPENSSL_LIBS="-lssl -lcrypto" \
             ./configure \
               --prefix="$python_prefix" \
               --with-ensurepip=install
