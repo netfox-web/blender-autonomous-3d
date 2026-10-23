@@ -35,6 +35,7 @@
 - `python -m compileall` for the new package and tests: PASS.
 - `PYTHONPATH=/workspace/src python tests/after_sales_visual/run_acceptance.py`: PASS, 24/24 expected statuses; live model NOT_RUN; external writes 0.
 - The same runner also executed bounded existing-code smoke checks: Product DNA 1 engineering template→3 artwork hashes while engineering/manufacturing readiness remain false; existing `assembly_instruction_v2`, part labels, carton contents and `misassembly_risk` reuse all PASS.
+- Bounded 24-case acceptance pass including cached-container startup: wall `2.17s`, max RSS `28,656 KB` (`/usr/bin/time`; one local observation, not an SLA).
 - Targeted pytest specification exists, but pytest was NOT_RUN: host Python 3.14 has no pytest and the approved cached Python 3.12 image has no pytest. The repository's full pytest suite is therefore `BLOCKED/NOT_RUN`, not PASS. No package was installed and no hosted workflow was triggered.
 
 ## Rollback
