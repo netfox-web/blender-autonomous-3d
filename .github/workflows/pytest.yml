@@ -89,12 +89,20 @@ jobs:
         run: |
           "$FOX3D_CI_PYTHON" -m venv .ci-venv
           .ci-venv/bin/python -m pip install -e ".[dev]"
-      - name: Lint and type-check
+      - name: Required Linux gates
+        shell: bash
         run: |
+          set +e
           .ci-venv/bin/ruff check .
-          .ci-venv/bin/mypy
-      - name: Unit / regression tests
-        run: .ci-venv/bin/pytest -q
+          ruff_status=$?
+          .ci-venv/bin/mypy --show-traceback
+          mypy_status=$?
+          .ci-venv/bin/pytest -q
+          pytest_status=$?
+          echo "ruff_status=$ruff_status mypy_status=$mypy_status pytest_status=$pytest_status"
+          if [ "$ruff_status" -ne 0 ] || [ "$mypy_status" -ne 0 ] || [ "$pytest_status" -ne 0 ]; then
+            exit 1
+          fi
         env:
           FOX3D_MOCK_BLENDER: "1"
       - name: Remove job-local runtime sources
