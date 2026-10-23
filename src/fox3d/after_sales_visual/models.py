@@ -10,6 +10,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 HASH_RE = re.compile(r"^[a-f0-9]{64}$")
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
+PhotoMediaType = Literal["image/png", "image/jpeg", "application/x.synthetic-observation+json"]
+SourceClass = Literal["SYNTHETIC_FIXTURE", "APPROVED_DEIDENTIFIED"]
+ApprovalStatus = Literal["APPROVED", "TEST_APPROVAL", "CANDIDATE", "UNBOUND", "EXPIRED"]
+BomScope = Literal["APPROVED_SERVICE_BOM", "TEST_APPROVAL", "CANDIDATE_ONLY_NOT_A_CUT_LIST"]
+ErpBinding = Literal["BOUND_READONLY", "TEST_APPROVAL", "UNBOUND"]
+ResultStatus = Literal[
+    "NO_CANDIDATE",
+    "NEEDS_HUMAN_REVIEW",
+    "NEEDS_MORE_EVIDENCE",
+    "UNKNOWN",
+    "BLOCKED_VERSION_OR_IDENTITY",
+    "BLOCKED_APPROVAL_PROVENANCE",
+    "SAFETY_REVIEW_REQUIRED",
+]
+
 
 def canonical_hash(value: Any) -> str:
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -23,12 +38,12 @@ class StrictModel(BaseModel):
 class PhotoEvidence(StrictModel):
     original_sha256: str
     derived_sha256: str
-    media_type: Literal["image/png", "image/jpeg", "application/x.synthetic-observation+json"]
+    media_type: PhotoMediaType
     size_bytes: int = Field(ge=1, le=12_000_000)
     width: int = Field(ge=1, le=12_000)
     height: int = Field(ge=1, le=12_000)
     exif_removed: bool
-    source_class: Literal["SYNTHETIC_FIXTURE", "APPROVED_DEIDENTIFIED"]
+    source_class: SourceClass
 
     @model_validator(mode="after")
     def valid_hashes(self):
@@ -48,9 +63,9 @@ class CatalogSnapshot(StrictModel):
     artwork_hash: str
     manual_hash: str
     approval_ref: str | None
-    approval_status: Literal["APPROVED", "TEST_APPROVAL", "CANDIDATE", "UNBOUND", "EXPIRED"]
-    bom_scope: Literal["APPROVED_SERVICE_BOM", "TEST_APPROVAL", "CANDIDATE_ONLY_NOT_A_CUT_LIST"]
-    erp_binding: Literal["BOUND_READONLY", "TEST_APPROVAL", "UNBOUND"]
+    approval_status: ApprovalStatus
+    bom_scope: BomScope
+    erp_binding: ErpBinding
     source_revision: str
     production_ready: Literal[False] = False
     assembly: dict[str, Any]
@@ -101,7 +116,7 @@ class AfterSalesCase(StrictModel):
     catalog: CatalogSnapshot
     observations: list[Observation]
     human_inventory_verified: bool = False
-    source_class: Literal["SYNTHETIC_FIXTURE", "APPROVED_DEIDENTIFIED"]
+    source_class: SourceClass
 
     @model_validator(mode="after")
     def validate_identity(self):
@@ -139,15 +154,7 @@ class AfterSalesResult(StrictModel):
     case_id: str
     candidate_set_id: str
     input_hash: str
-    status: Literal[
-        "NO_CANDIDATE",
-        "NEEDS_HUMAN_REVIEW",
-        "NEEDS_MORE_EVIDENCE",
-        "UNKNOWN",
-        "BLOCKED_VERSION_OR_IDENTITY",
-        "BLOCKED_APPROVAL_PROVENANCE",
-        "SAFETY_REVIEW_REQUIRED",
-    ]
+    status: ResultStatus
     candidates: list[Candidate]
     capture_requests: list[CaptureRequest]
     warnings: list[str]

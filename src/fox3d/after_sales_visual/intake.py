@@ -6,7 +6,7 @@ from pathlib import Path
 
 from PIL import Image, UnidentifiedImageError
 
-from .models import PhotoEvidence
+from .models import PhotoEvidence, PhotoMediaType, SourceClass
 
 
 class PhotoIntakeError(ValueError):
@@ -15,10 +15,10 @@ class PhotoIntakeError(ValueError):
 
 MAX_BYTES = 12_000_000
 MAX_PIXELS = 24_000_000
-ALLOWED_FORMATS = {"PNG": "image/png", "JPEG": "image/jpeg"}
+ALLOWED_FORMATS: dict[str, PhotoMediaType] = {"PNG": "image/png", "JPEG": "image/jpeg"}
 
 
-def intake_photo_bytes(data: bytes, *, source_class: str) -> tuple[PhotoEvidence, bytes]:
+def intake_photo_bytes(data: bytes, *, source_class: SourceClass) -> tuple[PhotoEvidence, bytes]:
     if not data or len(data) > MAX_BYTES:
         raise PhotoIntakeError("photo size is outside the isolated intake limit")
     try:

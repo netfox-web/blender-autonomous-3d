@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
-from .models import CatalogSnapshot, canonical_hash
+from .models import ApprovalStatus, BomScope, CatalogSnapshot, ErpBinding, canonical_hash
 
 
 def adapt_product_dna_snapshot(
@@ -41,22 +41,20 @@ def adapt_product_dna_snapshot(
         or erp_unbound
     )
     if approval is None:
-        approval_values = {
-            "approval_status": "UNBOUND" if erp_unbound else "CANDIDATE",
-            "approval_ref": None,
-            "bom_scope": "CANDIDATE_ONLY_NOT_A_CUT_LIST",
-            "erp_binding": "UNBOUND" if erp_unbound else "BOUND_READONLY",
-            "source_revision": str(payload.get("contentHash") or "product-dna-candidate"),
-        }
+        approval_status: ApprovalStatus = "UNBOUND" if erp_unbound else "CANDIDATE"
+        approval_ref: str | None = None
+        bom_scope: BomScope = "CANDIDATE_ONLY_NOT_A_CUT_LIST"
+        erp_binding: ErpBinding = "UNBOUND" if erp_unbound else "BOUND_READONLY"
+        source_revision = str(payload.get("contentHash") or "product-dna-candidate")
     else:
-        approval_values = {
-            "approval_status": approval["approval_status"],
-            "approval_ref": approval["approval_ref"],
-            "bom_scope": approval["bom_scope"],
-            "erp_binding": approval["erp_binding"],
-            "source_revision": approval["source_revision"],
-        }
-    if current_candidate and approval_values["approval_status"] == "APPROVED" and not approval_values["approval_ref"]:
+        # CatalogSnapshot remains the runtime validator for this untrusted boundary;
+        # these casts only preserve its Literal contract for static analysis.
+        approval_status = cast(ApprovalStatus, approval["approval_status"])
+        approval_ref = approval["approval_ref"]
+        bom_scope = cast(BomScope, approval["bom_scope"])
+        erp_binding = cast(ErpBinding, approval["erp_binding"])
+        source_revision = approval["source_revision"]
+    if current_candidate and approval_status == "APPROVED" and not approval_ref:
         raise ValueError("candidate Product DNA cannot be silently promoted")
     return CatalogSnapshot(
         tenant_id=tenant_id,
@@ -68,11 +66,11 @@ def adapt_product_dna_snapshot(
         bom_hash=bom_hash,
         artwork_hash=artwork_hash,
         manual_hash=canonical_hash(assembly.get("instructionsV2") or {}),
-        approval_ref=approval_values["approval_ref"],
-        approval_status=approval_values["approval_status"],
-        bom_scope=approval_values["bom_scope"],
-        erp_binding=approval_values["erp_binding"],
-        source_revision=approval_values["source_revision"],
+        approval_ref=approval_ref,
+        approval_status=approval_status,
+        bom_scope=bom_scope,
+        erp_binding=erp_binding,
+        source_revision=source_revision,
         production_ready=False,
         assembly=assembly,
     )

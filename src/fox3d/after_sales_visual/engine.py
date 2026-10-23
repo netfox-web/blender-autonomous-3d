@@ -11,6 +11,7 @@ from .models import (
     Observation,
     ReplacementDraft,
     ReplacementLine,
+    ResultStatus,
     canonical_hash,
 )
 
@@ -88,6 +89,7 @@ def analyze_case(case: AfterSalesCase, provider: ObservationProvider | None = No
         case.photo_claimed_sku is not None and case.photo_claimed_sku != case.requested_sku,
     )
     block = _approval_block(case)
+    status: ResultStatus
     if block:
         status = "BLOCKED_VERSION_OR_IDENTITY" if any(identity_fields) else "BLOCKED_APPROVAL_PROVENANCE"
         candidate_set_id = canonical_hash({"case": case.case_id, "input": input_hash, "status": status})
