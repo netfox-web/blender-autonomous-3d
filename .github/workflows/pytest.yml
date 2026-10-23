@@ -5,13 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  unit:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  linux-required:
+    name: required / Linux / Python 3.12
+    runs-on: [self-hosted, Linux, X64, cpu, netfox-ci]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,3 +30,15 @@ jobs:
         run: pytest -q
         env:
           FOX3D_MOCK_BLENDER: "1"
+
+  windows-required:
+    name: required / Windows / BLOCKED — no authorized runner
+    runs-on: [self-hosted, Linux, X64, cpu, netfox-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Block overall success until Windows coverage is restored
+        shell: bash
+        run: |
+          echo "::error::Windows required gate is BLOCKED: no authorized online Windows runner is registered."
+          echo "Linux results do not satisfy or replace the Windows requirement."
+          exit 1

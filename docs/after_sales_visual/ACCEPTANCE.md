@@ -10,7 +10,7 @@
 - Primary Issue: #25；coordination: github-supervisor#134
 - Open PR #16 is Draft/FROZEN. Scene/Fleet/render paths are untouched.
 - Issue #1 2026-10-23 reconciliation says PR #19/Product DNA is merged. Old docs may still describe pre-merge state.
-- Owner 已直接核准修改本 repo 測試 workflow，但不含 runner registration/token/permission/hosted 費用。Repo runner registry 為 HTTP 200、`total_count: 0`。既有自動 hosted `pytest.yml` 必要 gate 保持不變；另新增無 caller／直接 trigger 的 reusable self-hosted Linux＋Windows candidate。狀態是 `CI_DESIGN_PENDING_WIRING`／`CI_EXECUTION_HOLD`，不 push／開 PR。
+- Owner 已直接核准修改 workflow、推送指定分支、建立 Draft PR 與只執行已核實自架 CI；不含 runner registration/token/permission/hosted 費用。Repo runner registry 為 HTTP 200、`total_count: 1`，Linux runner ID 21 online。`pytest.yml` 保留事件與完整 Linux gate並移除 hosted labels；Windows 是獨立必敗 blocker，仍為 `BLOCKED/NOT_RUN`，整體不可自報 PASS。
 - Commander: Grok per github-supervisor#115. Single-writer runtime lease 已於 github-supervisor#134 comment 6366590747 確認；只修改列明的隔離 owned paths。
 
 ## REUSE / EXTEND / GAP
