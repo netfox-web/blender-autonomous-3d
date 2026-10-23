@@ -1,3 +1,14 @@
+<!-- 2026-10-23 SSOT RECONCILIATION BANNER (GitHub Truth Sync) -->
+> **⚠️ 2026-10-23 SSOT 校正聲明（GitHub 現況已合併，請勿重做已合併 PR）**
+> - **GitHub `main` HEAD**：`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`（2026-10-16 已完成產品線與基礎線收斂）。
+> - **已合併（MERGED）之 17 個 PR**：`#2, #3, #7, #8, #9, #10, #11, #12, #13, #14, #15, #17, #19, #20, #22, #23, #24` 皆已正式合併入 `main`（最後一筆為 PR #20 `9c9f283` 於 2026-10-16T08:06:16Z 合併）。
+> - **已關閉（CLOSED，由後續 PR 取代）**：PR `#21`（由 PR `#22` `0228aa5` 取代並合併）。
+> - **已整合但 PR 物件維持 FROZEN**：PR `#16` 之程式碼已於 commit `70a5613`（PR #19 基底）整合進 `main`，PR #16 物件本身維持 Draft/FROZEN，不需重做。
+> - **目前唯一待推進之 Open Draft PR**：PR `#18`（`codex/issue6-round3b-articulated-video-truth`，HEAD `7fd38e04e58165bbcf7971ba1793e53f2f3cb049`，對應 Issue #6 Round 3B 雙開門鉸鏈開合動畫 Ground-Truth + ComfyUI H3 橋接，待真 Blender 5.2.1 LTS / OptiX 渲染實證）。
+> - **下方 2026-10-10 及更早章節中任何寫「PR #7–#15 未合併 / OPEN and unmerged / ACCEPTED_UNMERGED」之描述均為歷史快照，已被 GitHub `main` 現況取代。**
+
+---
+
 # Project completion inventory
 
 Initial historical snapshot: 2026-09-27T07:03:11.535704+00:00; correction evidence checkpoint: 2026-09-27T07:32Z. Mainline status sync: 2026-10-10, from Issue #1 comment [5854087167](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854087167) (2026-09-27T08:09:02Z). This is a bounded inventory, not a production certification or an authorization to merge. Nothing in this file is merged delivery or Production readiness.
@@ -17,7 +28,7 @@ Historical acceptance was independently reconciled against Issue #1 decisions, e
 - GitHub main: [`b8c6fe911e6c8358ed7bcdecafc84cab86630810`](https://github.com/netfox-web/blender-autonomous-3d/commit/b8c6fe911e6c8358ed7bcdecafc84cab86630810). The entry checkout is not assumed to be this canonical main.
 - PR #15 final HEAD: `c01f95d95ad21b97a48442c592f0259415a93c99`; CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43`; canonical branch `codex/product-variant-batches`, base `codex/model-category-tree`. The earlier reviewed HEAD `6f1038c69e1586bdf6649596d603e64b21e9d73d` / CODE `3bcd4214040779176d034f2a8113aedcae0e6dcd` is the pre-correction snapshot.
 - PR #16 frozen HEAD: `d03041dedd9002c74e65dd3e5a0cbd096d9575ca`; its base ref names PR #15, but its recorded base SHA is the older `f88d5c896be424da54ab379cdd97a9dc35d08f90`, not the reviewed Round 13 HEAD.
-- No PR #7–#16 HEAD is an ancestor of canonical main in this snapshot. #7–#14 are OPEN and non-draft; #15/#16 are OPEN/DRAFT. None is merged.
+- No PR #7–#16 HEAD is an ancestor of canonical main in this snapshot. [2026-10-23 Reconciled: #2, #3, #7–#15, #17, #19, #20, #22–#24 are MERGED into `main` (`9c9f283`); #16 code integrated in `70a5613` (PR #16 object FROZEN); #21 CLOSED (superseded by #22); #18 OPEN Draft.] (Historical 2026-10-10 note: #7–#14 were OPEN and non-draft; #15/#16 were OPEN/DRAFT.)
 
 ```mermaid
 flowchart LR
@@ -228,3 +239,4 @@ Root Commander/original Worker is the only implementation owner; the independent
 - Physical engineering/print/manufacturing, live providers, Fleet integration, and global production readiness remain outside this accepted preview/logic scope.
 
 Comment 5854087167 is the final status this mainline copy reflects. The listed evidence gaps remain. No global completion or Production PASS is implied. PRs #7–#16 stay unmerged.
+
