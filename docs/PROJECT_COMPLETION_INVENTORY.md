@@ -1,3 +1,30 @@
+<!-- 2026-10-23 SSOT RECONCILIATION BANNER (GitHub Truth Sync) -->
+> **⚠️ 2026-10-23 SSOT 校正聲明（GitHub 現況已合併，請勿重做已合併 PR）**
+> - **GitHub `main` HEAD**：`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`（2026-10-18T15:04:41Z 合併 PR #24 後之最新主線）。
+> - **已合併（MERGED）之 17 個 PR 與精確 Merge Commit SHA**：
+>   - `#2` (`c53f174`, 2026-09-13) — Sonaqueen recipe library & product admin UI
+>   - `#3` (`f43d80e`, 2026-09-14) — Recipe 商品庫中文操作介面與真實 3D 生成
+>   - `#14` (`d13d9f9`, 2026-10-10) — Issue #6 Round 3A Articulation Engineering Authority Source V1
+>   - `#7` (`b8da4de`, 2026-10-10) — Golden 三層櫃四 SKU Artwork 與真實 3D 工作台
+>   - `#8` (`49b7cd2`, 2026-10-10) — Artwork library, 3D print previews & UV PDF workbench
+>   - `#9` (`e914cc5`, 2026-10-10) — PrintFox design library & single-run generation
+>   - `#10` (`5fa4c92`, 2026-10-10) — Product model workbench with separate templates & materials
+>   - `#11` (`978eb58`, 2026-10-10) — Reuse product masters for artwork and scene previews
+>   - `#12` (`f3ad3f0`, 2026-10-10) — Organize product masters with a category tree
+>   - `#15` (`e6e62dd`, 2026-10-10) — Batch artwork variants & preserve product composition history
+>   - `#17` (`1763a5b`, 2026-10-17) — Round 13 hold sync, #13 watchdog RCA, lint gate
+>   - `#13` (`7f62a9e`, 2026-10-17) — Issue #6 deterministic Blender video ground truth & candidate QA
+>   - `#19` (`7f62a9e`, 2026-10-17) — Issue #18 Product DNA Golden SKU 匯出契約（注意：`#18` 為 Issue 編號，由 PR `#19` 實作並合併）
+>   - `#20` (`3010617`, 2026-10-18) — 地端 AI 實景生成（GPU 艦隊 FLUX 3）＋ 工坊 UI 改版
+>   - `#22` (`6ba2c03`, 2026-10-18) — 正面平視視角把家具框進畫面、櫃子保證完整
+>   - `#23` (`24f33b9`, 2026-10-18) — Blender 光追上 GPU 艦隊（`blender_scene_render`）
+>   - `#24` (`9c9f283`, 2026-10-18) — 場景定義以 JSON 字串過中控，避免 `0.0→0` 造成 hash mismatch
+> - **已關閉（CLOSED，未合併、由後續 PR 取代）**：PR `#21`（由已合併之 PR `#22` `6ba2c03` 取代）。
+> - **程式碼已整合、PR 物件維持 FROZEN**：PR `#16`（`codex/product-scene-library` @ `d03041d`，其程式碼已於 `70a5613` 整合進 `main`，PR #16 物件本身維持 Draft/FROZEN，不需重做）。
+> - **下方 2026-10-10 及更早章節中任何寫「PR #7–#15 未合併 / OPEN and unmerged / ACCEPTED_UNMERGED / PR13 remains HOLD and unmerged」之描述均為歷史快照，已被上述 GitHub `main`（`9c9f283`）現況取代。**
+
+---
+
 # Project completion inventory
 
 Initial historical snapshot: 2026-09-27T07:03:11.535704+00:00; correction evidence checkpoint: 2026-09-27T07:32Z. Mainline status sync: 2026-10-10, from Issue #1 comment [5854087167](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854087167) (2026-09-27T08:09:02Z). This is a bounded inventory, not a production certification or an authorization to merge. Nothing in this file is merged delivery or Production readiness.
@@ -14,23 +41,23 @@ Historical acceptance was independently reconciled against Issue #1 decisions, e
 
 ## Canonical refs and dependencies
 
-- GitHub main: [`b8c6fe911e6c8358ed7bcdecafc84cab86630810`](https://github.com/netfox-web/blender-autonomous-3d/commit/b8c6fe911e6c8358ed7bcdecafc84cab86630810). The entry checkout is not assumed to be this canonical main.
+- GitHub main (reconciled 2026-10-23): [`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`](https://github.com/netfox-web/blender-autonomous-3d/commit/9c9f2835a35d31eea9066c1ebcafa4385f61fc14) (historical 2026-10-10 snapshot main was `b8c6fe911e6c8358ed7bcdecafc84cab86630810`).
 - PR #15 final HEAD: `c01f95d95ad21b97a48442c592f0259415a93c99`; CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43`; canonical branch `codex/product-variant-batches`, base `codex/model-category-tree`. The earlier reviewed HEAD `6f1038c69e1586bdf6649596d603e64b21e9d73d` / CODE `3bcd4214040779176d034f2a8113aedcae0e6dcd` is the pre-correction snapshot.
 - PR #16 frozen HEAD: `d03041dedd9002c74e65dd3e5a0cbd096d9575ca`; its base ref names PR #15, but its recorded base SHA is the older `f88d5c896be424da54ab379cdd97a9dc35d08f90`, not the reviewed Round 13 HEAD.
-- No PR #7–#16 HEAD is an ancestor of canonical main in this snapshot. #7–#14 are OPEN and non-draft; #15/#16 are OPEN/DRAFT. None is merged.
+- [2026-10-23 Reconciled] PRs `#2, #3, #7–#15, #17, #19, #20, #22–#24` (17 PRs) are **MERGED** into `main` (`9c9f2835a35d31eea9066c1ebcafa4385f61fc14`). PR `#21` is **CLOSED** (superseded by `#22` `6ba2c03`). PR `#16` code is integrated into `main` at `70a5613` while PR #16 object stays Draft/FROZEN.
 
 ```mermaid
 flowchart LR
-  M["main b8c6fe9"] --> P7["#7 ACCEPTED_UNMERGED"]
-  P7 --> P8["#8 ACCEPTED_UNMERGED"]
-  P8 --> P9["#9 ACCEPTED_UNMERGED"]
-  P9 --> P10["#10 ACCEPTED_UNMERGED"]
-  P10 --> P11["#11 ACCEPTED_UNMERGED"]
-  P11 --> P12["#12 ACCEPTED_UNMERGED"]
-  P12 --> P15["#15 ACCEPT_WITH_SCOPE / unmerged"]
+  M["main b8c6fe9"] --> P7["#7 MERGED (b8da4de)"]
+  P7 --> P8["#8 MERGED (49b7cd2)"]
+  P8 --> P9["#9 MERGED (e914cc5)"]
+  P9 --> P10["#10 MERGED (5fa4c92)"]
+  P10 --> P11["#11 MERGED (978eb58)"]
+  P11 --> P12["#12 MERGED (f3ad3f0)"]
+  P12 --> P15["#15 MERGED (e6e62dd)"]
   P15 -->|"base branch; frozen older base f88d5c8"| P16["#16 FROZEN"]
-  M --> P13["#13 Round 2 accepted / Round 3B BLOCKED_DEPENDENCY"]
-  M --> P14["#14 ACCEPTED_UNMERGED"]
+  M --> P13["#13 MERGED (7f62a9e)"]
+  M --> P14["#14 MERGED (d13d9f9)"]
   P14 -. "authorized integration into main required before #13 Round 3B" .-> P13
 ```
 
@@ -68,14 +95,14 @@ CI below is **MOCK regression** (`FOX3D_MOCK_BLENDER=1`), not REAL render eviden
 
 | PR / Issue | Current inventory status | Historical Supervisor decision | CODE SHA | CODE CI / DOCS CI | Accepted evidence ID |
 |---|---|---|---|---|---|
-| #7 / #4 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5660998477](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5660998477) | `c9f685854a964d567643cab55f06aceb0c7375d2` | [34811888485](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34811888485) / [34813670099](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34813670099) | `b1d53004-3a4c-4f6d-b192-1ebb85877a6d` |
-| #8 / #1 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5662502718](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5662502718) | `a8a9def4750135ab38e33499fe1c543ad601aacd` | [34825977605](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34825977605) / [34828209094](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34828209094) | `de87a0b9-1610-454c-be93-e2dab2f5ea71` |
-| #9 / #1 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5663448255](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5663448255) | `6ac129750624ed48530f5f5988a0b5f6606c8ce0` | [34833832340](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34833832340) / [34835768990](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34835768990) | `e7ee0d4c-8858-40ae-b8da-80bc3073a4e9` |
-| #10 / #1 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5666268334](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5666268334) | `3fd0a30008ae8b19cc4bf3d5ba636f30ef73610c` | [34851148775](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34851148775) / [34853958669](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34853958669) | `5a13d16e-c19d-4d90-846b-49ebbc618bc7` |
-| #11 / #1 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5667208483](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5667208483) | `e9384c63c6e61cb0fca2a4e0ba70c729d2a4f0da` | [34860658072](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34860658072) / [34863650891](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34863650891) | `baf90892-1b61-440b-9c4a-a3ff6b7929ee` |
-| #12 / #1 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5667789200](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5667789200) | `052be7f057c24b982b6c6c716c1a9aef094999da` | [34866913056](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34866913056) / [34869377842](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34869377842) | `0c83109d-1e6c-4ec6-8d34-ec8c14c68851` |
+| #7 / #4 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5660998477](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5660998477) | `c9f685854a964d567643cab55f06aceb0c7375d2` | [34811888485](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34811888485) / [34813670099](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34813670099) | `b1d53004-3a4c-4f6d-b192-1ebb85877a6d` |
+| #8 / #1 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5662502718](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5662502718) | `a8a9def4750135ab38e33499fe1c543ad601aacd` | [34825977605](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34825977605) / [34828209094](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34828209094) | `de87a0b9-1610-454c-be93-e2dab2f5ea71` |
+| #9 / #1 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5663448255](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5663448255) | `6ac129750624ed48530f5f5988a0b5f6606c8ce0` | [34833832340](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34833832340) / [34835768990](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34835768990) | `e7ee0d4c-8858-40ae-b8da-80bc3073a4e9` |
+| #10 / #1 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5666268334](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5666268334) | `3fd0a30008ae8b19cc4bf3d5ba636f30ef73610c` | [34851148775](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34851148775) / [34853958669](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34853958669) | `5a13d16e-c19d-4d90-846b-49ebbc618bc7` |
+| #11 / #1 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5667208483](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5667208483) | `e9384c63c6e61cb0fca2a4e0ba70c729d2a4f0da` | [34860658072](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34860658072) / [34863650891](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34863650891) | `baf90892-1b61-440b-9c4a-a3ff6b7929ee` |
+| #12 / #1 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5667789200](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5667789200) | `052be7f057c24b982b6c6c716c1a9aef094999da` | [34866913056](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34866913056) / [34869377842](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34869377842) | `0c83109d-1e6c-4ec6-8d34-ec8c14c68851` |
 | #13 / #6 | `BLOCKED_DEPENDENCY` | [ACCEPT_WITH_SCOPE 5672429940](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5672429940) | `a5b368a3d907950c5165f4b1a0058853ace617fc` | [34900852044](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34900852044) / [34906622356](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34906622356) | `d320a651-c2a4-403e-9322-a37630fcea6e` |
-| #14 / #6 | `ACCEPTED_UNMERGED` | [ACCEPT_WITH_SCOPE 5674068355](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5674068355) | `791bf084caa05ad6369ebd1422f0a400e533f44c` | [34917002099](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34917002099) / [34918715339](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34918715339) | `4173c17c-479d-404f-b69a-841ebfa7f2db` |
+| #14 / #6 | `MERGED` (historical snapshot: `ACCEPTED_UNMERGED`) | [ACCEPT_WITH_SCOPE 5674068355](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5674068355) | `791bf084caa05ad6369ebd1422f0a400e533f44c` | [34917002099](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34917002099) / [34918715339](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/34918715339) | `4173c17c-479d-404f-b69a-841ebfa7f2db` |
 
 ### PR #7 — Golden 三層櫃：四 SKU Artwork 與真實 3D 工作台
 
@@ -125,9 +152,9 @@ Authority-only REAL_LOGIC + FIXTURE_AUTHORITY, 18 probes, explicit four-door60-d
 
 [Acceptance Markdown](https://github.com/netfox-web/blender-autonomous-3d/blob/40e6dd3c27beda0df6aaaaf80041685a813d553c/docs/ARTICULATION_AUTHORITY_ACCEPTANCE.md) · [Acceptance JSON](https://github.com/netfox-web/blender-autonomous-3d/blob/40e6dd3c27beda0df6aaaaf80041685a813d553c/docs/ARTICULATION_AUTHORITY_ACCEPTANCE.json). Recorded clean-CODE evidence SHA: `791bf084caa05ad6369ebd1422f0a400e533f44c`; `workingTreeClean=true`. CODE→DOCS diff contains only documentation/README/evidence assets. Historical scope acceptance is retained; no new independent functional PASS is inferred.
 
-## PR #15 — scoped acceptance, still unmerged
+## PR #15 — scoped acceptance (MERGED in `e6e62dd`)
 
-Status: **ACCEPTED_UNMERGED; READY_FOR_OWNER_MERGE_DECISION (no authorization).** [Supervisor decision 5854068961](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854068961) accepts exact CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43` / DOCS `c01f95d95ad21b97a48442c592f0259415a93c99` within the boundaries in that comment. [CODE CI 36301858659](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36301858659) and [DOCS CI 36303458845](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36303458845): each run Ubuntu 1381 passed / 4 skipped, Windows 1385 passed / 0 skipped. CI is MOCK regression. This is not merge authorization and not Production PASS.
+Status: **MERGED (`e6e62dd98da979cb4f797c8c5a7d10a50d31182e`, 2026-10-10T09:21:18Z).** (Historical 2026-10-10 pre-merge status was `ACCEPTED_UNMERGED`.) [Supervisor decision 5854068961](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5854068961) accepts exact CODE `2abcc3d817451d54a4ba6cd7793717745ad9bd43` / DOCS `c01f95d95ad21b97a48442c592f0259415a93c99` within the boundaries in that comment. [CODE CI 36301858659](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36301858659) and [DOCS CI 36303458845](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36303458845): each run Ubuntu 1381 passed / 4 skipped, Windows 1385 passed / 0 skipped. CI is MOCK regression. This is not merge authorization and not Production PASS.
 
 The paragraphs below are the historical CHANGES_REQUIRED review of HEAD `6f1038c69e1586bdf6649596d603e64b21e9d73d` / CODE `3bcd4214040779176d034f2a8113aedcae0e6dcd`. [Supervisor 5853584739](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5853584739) found the two defects. [CODE CI 36293169114](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36293169114) and [DOCS CI 36294788807](https://github.com/netfox-web/blender-autonomous-3d/actions/runs/36294788807) were exact-SHA Ubuntu/Windows success and did not override those defects. [Worker handoff 5852796539](https://github.com/netfox-web/blender-autonomous-3d/issues/1#issuecomment-5852796539) and the [acceptance package](https://github.com/netfox-web/blender-autonomous-3d/blob/6f1038c69e1586bdf6649596d603e64b21e9d73d/docs/PRODUCT_VARIANT_BATCH_ACCEPTANCE.md) remain historical reviewed inputs. Comment 5854068961 supersedes that CHANGES_REQUIRED decision for those two defects.
 
@@ -227,4 +254,5 @@ Root Commander/original Worker is the only implementation owner; the independent
 - Owner authorization remains required for merge, release, deployment, or Production/Fleet work. No such action is performed or implied.
 - Physical engineering/print/manufacturing, live providers, Fleet integration, and global production readiness remain outside this accepted preview/logic scope.
 
-Comment 5854087167 is the final status this mainline copy reflects. The listed evidence gaps remain. No global completion or Production PASS is implied. PRs #7–#16 stay unmerged.
+Comment 5854087167 is the final status this mainline copy reflects. The listed evidence gaps remain. No global completion or Production PASS is implied. [2026-10-23 Reconciled: PRs #2, #3, #7–#15, #17, #19, #20, #22–#24 are MERGED into `main` (`9c9f283`); PR #21 is CLOSED (superseded by #22 `6ba2c03`); PR #16 code is in `70a5613` while PR #16 object stays FROZEN.]
+
