@@ -55,8 +55,7 @@ jobs:
             LDFLAGS="-L$zlib_prefix/lib" \
             ./configure \
               --prefix="$python_prefix" \
-              --with-ensurepip=install \
-              --with-openssl=/usr
+              --with-ensurepip=install
           make -j2
           make install
 
