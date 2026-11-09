@@ -83,3 +83,16 @@ def test_print_page_has_no_missing_script() -> None:
 def test_plugin_page_assets_are_confined(client: TestClient) -> None:
     for bad in ["../features.py", "x.html", "..%2Ffox3d-shell.js", "missing.js"]:
         assert client.get(f"/admin/pages/assets/{bad}").status_code == 404
+
+
+def test_plugin_page_claims_turn_api_groups_into_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    import fox3d.admin_pages as pages
+    from fox3d.features import resolved_features
+
+    monkeypatch.setattr(pages, "page_features", lambda: {"factory": "/admin/factory"})
+    factory = next(f for f in resolved_features() if f["id"] == "factory")
+    assert factory["kind"] == "page" and factory["href"] == "/admin/factory"
+    assert "/admin/factory" in factory["prefixes"]
+    monkeypatch.setattr(pages, "page_features", lambda: {"no-such-feature": "/admin/x"})
+    with pytest.raises(ValueError):
+        resolved_features()

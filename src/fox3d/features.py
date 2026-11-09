@@ -118,9 +118,27 @@ def _owns(prefix: str, path: str) -> bool:
     return path == prefix or path.startswith(prefix.rstrip("/") + "/")
 
 
+def resolved_features() -> list[dict[str, Any]]:
+    """FEATURES with plug-in pages applied: an API group a page module claims becomes a page."""
+    from fox3d.admin_pages import page_features
+
+    pages = page_features()
+    unknown = set(pages) - {f["id"] for f in FEATURES}
+    if unknown:
+        raise ValueError(f"plug-in page claims unknown feature ids: {sorted(unknown)}")
+    out = []
+    for f in FEATURES:
+        href = pages.get(f["id"])
+        if href:
+            f = dict(f, kind="page", href=href, prefixes=[*f.get("prefixes", []), href.split("#")[0]])
+        out.append(f)
+    return out
+
+
 def feature_index(routes: list[Any]) -> dict[str, Any]:
     """Registry plus the real routes each feature owns (longest prefix wins), and any route nobody owns."""
-    by_feature: dict[str, list[dict[str, str]]] = {f["id"]: [] for f in FEATURES}
+    features_now = resolved_features()
+    by_feature: dict[str, list[dict[str, str]]] = {f["id"]: [] for f in features_now}
     unclaimed: list[dict[str, str]] = []
     for route in routes:
         path = getattr(route, "path", None)
@@ -129,7 +147,7 @@ def feature_index(routes: list[Any]) -> dict[str, Any]:
             continue
         entry = {"path": path, "methods": ",".join(methods)}
         owner, best = None, -1
-        for feature in FEATURES:
+        for feature in features_now:
             for prefix in feature.get("prefixes", []):
                 if _owns(prefix, path) and len(prefix) > best:
                     owner, best = feature["id"], len(prefix)
@@ -137,5 +155,5 @@ def feature_index(routes: list[Any]) -> dict[str, Any]:
             by_feature[owner].append(entry)
         else:
             unclaimed.append(entry)
-    features = [dict(f, routes=sorted(by_feature[f["id"]], key=lambda r: r["path"])) for f in FEATURES]
+    features = [dict(f, routes=sorted(by_feature[f["id"]], key=lambda r: r["path"])) for f in features_now]
     return {"groups": GROUPS, "features": features, "unclaimed": unclaimed}

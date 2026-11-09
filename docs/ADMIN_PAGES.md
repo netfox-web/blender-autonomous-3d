@@ -13,7 +13,7 @@ an entry there, so nothing can be hidden again.
 | `src/fox3d/static/pages/<name>.js`, `<name>.css` | Page code and styles. Asset names must match `^[a-z0-9][a-z0-9-]*\.(js|css)$`. |
 | `tests/test_admin_page_<name>.py` | Page returns 200 and loads the shell; the APIs it calls work with `X-Tenant-Id` (use the `platform` fixture from `tests/conftest.py`). |
 
-Edit only your own entry in `src/fox3d/features.py`. Change `"kind": "api"` to `"kind": "page"`, add `"href": "/admin/<name>"`, and add `"/admin/<name>"` to its `prefixes`. Do not touch the other entries, `api.py`, `recipe_admin_api.py` or the shell files.
+In your module, declare which API-only features the page now covers, for example `FEATURES = {"pilot": "/admin/pilot"}`. The directory and sidebar then show those features as pages with that link. Do not edit `src/fox3d/features.py`, `api.py`, `recipe_admin_api.py` or the shell files; two pages claiming the same feature id is an error.
 
 ## Look and behaviour
 

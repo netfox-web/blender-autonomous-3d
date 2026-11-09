@@ -2,9 +2,10 @@
 
 Each module in this package exposes ``router(provider) -> APIRouter`` and serves its page
 from ``static/pages/<name>.html``; its own JS/CSS go in ``static/pages/`` and are served by
-``/admin/pages/assets/{name}``. New pages therefore add files only (plus their own entry in
-fox3d/features.py) and never edit shared wiring, so several pages can be built in parallel
-without merge conflicts.
+``/admin/pages/assets/{name}``. A module also declares ``FEATURES = {"<feature id>": "/admin/<name>", ...}``:
+the feature directory then shows those features as pages with that link. New pages therefore
+add files only and never edit shared wiring or fox3d/features.py, so several pages can be
+built in parallel without merge conflicts.
 """
 
 from __future__ import annotations
@@ -44,11 +45,25 @@ def assets_router() -> APIRouter:
     return router
 
 
+def _modules() -> list[Any]:
+    return [importlib.import_module(f"{__name__}.{m.name}") for m in sorted(pkgutil.iter_modules(__path__), key=lambda m: m.name)]
+
+
 def page_routers(provider: Callable[[], Any]) -> list[APIRouter]:
     routers = [assets_router()]
-    for info in sorted(pkgutil.iter_modules(__path__), key=lambda m: m.name):
-        module = importlib.import_module(f"{__name__}.{info.name}")
+    for module in _modules():
         factory = getattr(module, "router", None)
         if callable(factory):
             routers.append(factory(provider))
     return routers
+
+
+def page_features() -> dict[str, str]:
+    """feature id -> page href, as declared by plug-in page modules."""
+    found: dict[str, str] = {}
+    for module in _modules():
+        for feature_id, href in (getattr(module, "FEATURES", None) or {}).items():
+            if feature_id in found:
+                raise ValueError(f"feature {feature_id} claimed by two pages")
+            found[str(feature_id)] = str(href)
+    return found
