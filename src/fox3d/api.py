@@ -11,6 +11,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from fox3d.admin import render_admin
+from fox3d.admin_pages import page_routers
 from fox3d.features import feature_index
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
@@ -615,6 +616,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         return feature_index(list(request.app.routes))
 
     app.include_router(recipe_router(lambda: platform if platform is not None else get_platform()))
+    for page in page_routers(lambda: platform if platform is not None else get_platform()):
+        app.include_router(page)
     return app
 
 

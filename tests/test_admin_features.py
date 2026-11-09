@@ -78,3 +78,8 @@ def test_golden_page_asks_for_the_real_dna_family() -> None:
 
 def test_print_page_has_no_missing_script() -> None:
     assert "three.min.js" not in (STATIC / "print-workspace.html").read_text(encoding="utf-8")
+
+
+def test_plugin_page_assets_are_confined(client: TestClient) -> None:
+    for bad in ["../features.py", "x.html", "..%2Ffox3d-shell.js", "missing.js"]:
+        assert client.get(f"/admin/pages/assets/{bad}").status_code == 404

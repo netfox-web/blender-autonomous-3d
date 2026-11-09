@@ -109,7 +109,7 @@ FEATURES: list[dict[str, Any]] = [
      "waitingFor": "PR #27 修完審查意見並通過 CI（Issue #25）", "keywords": "售後 照片 缺件 裝錯"},
 ]
 
-_SKIP = ("/admin/recipes/assets", "/docs/oauth2-redirect")
+_SKIP = ("/admin/recipes/assets", "/admin/pages/assets", "/docs/oauth2-redirect")
 
 
 def _owns(prefix: str, path: str) -> bool:
