@@ -7,10 +7,11 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 from fox3d.admin import render_admin
+from fox3d.features import feature_index
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
@@ -600,6 +601,18 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
         return render_admin(get_platform())
+
+    @app.get("/admin/features", response_class=HTMLResponse)
+    def admin_features() -> HTMLResponse:
+        # One searchable directory of every page and API group (fox3d/features.py).
+        return HTMLResponse(
+            (Path(__file__).with_name("static") / "features.html").read_text(encoding="utf-8"),
+            headers={"Content-Security-Policy": "default-src 'self'; img-src 'self' blob: data:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"},
+        )
+
+    @app.get("/api/admin/features")
+    def admin_features_index(request: Request) -> dict[str, Any]:
+        return feature_index(list(request.app.routes))
 
     app.include_router(recipe_router(lambda: platform if platform is not None else get_platform()))
     return app

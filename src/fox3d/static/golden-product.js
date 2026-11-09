@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const $=id=>document.getElementById(id), tenant='sonaqueen-home', familyId='SQ_THREE_TIER_CABINET_424_295_900';
+  const $=id=>document.getElementById(id), tenant='sonaqueen-home', familyId='fox3d.family.three_tier_door_cabinet';
   let current=null, generation=null, serial=0, statusSerial=0, timer=null, busy=false, lastRendered=null, disposeViewer=null, latestDnaPayload=null;
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const base=sku=>'/api/recipe-library/golden/'+encodeURIComponent(sku);

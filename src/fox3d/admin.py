@@ -158,6 +158,8 @@ def render_admin(platform: Any) -> str:
     .card {{ display: inline-block; margin: 8px; padding: 12px; border: 1px solid var(--card-border); border-radius: 6px; min-width: 180px; background: var(--card-bg); }}
     .note {{ color: var(--text-muted); font-size: 12px; }}
   </style>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
 </head>
 <body>
   <header style="flex-wrap:wrap;gap:12px">
@@ -415,7 +417,7 @@ def render_admin(platform: Any) -> str:
       const btn = document.getElementById('gen-btn');
       const box = document.getElementById('result-box');
       btn.disabled = true;
-      btn.innerHTML = '<span>⏳ Blender 5.2.1 OptiX 光追渲染中（約 1 秒）...</span>';
+      btn.innerHTML = '<span>⏳ Blender 光追渲染中，完成後會自動顯示…</span>';
 
       const payload = {{
         tenantId: 'demo',
