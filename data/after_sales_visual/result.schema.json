@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/netfox-web/blender-autonomous-3d/data/after_sales_visual/result.schema.json",
+  "title": "After-sales visual candidate result v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "case_id", "candidate_set_id", "input_hash", "status", "candidates", "capture_requests", "warnings", "safety_actions", "replacement_draft_eligible", "provenance", "live_model_used", "external_write_performed", "structural_safety_determined", "production_ready"],
+  "properties": {
+    "schema_version": {"const": "fox3d.after-sales-visual.result.v1"},
+    "case_id": {"type": "string"},
+    "candidate_set_id": {"type": "string"},
+    "input_hash": {"type": "string"},
+    "status": {"enum": ["NO_CANDIDATE", "NEEDS_HUMAN_REVIEW", "NEEDS_MORE_EVIDENCE", "UNKNOWN", "BLOCKED_VERSION_OR_IDENTITY", "BLOCKED_APPROVAL_PROVENANCE", "SAFETY_REVIEW_REQUIRED"]},
+    "candidates": {"type": "array"},
+    "capture_requests": {"type": "array"},
+    "warnings": {"type": "array"},
+    "safety_actions": {"type": "array"},
+    "replacement_draft_eligible": {"type": "boolean"},
+    "provenance": {"type": "object"},
+    "live_model_used": {"const": false},
+    "external_write_performed": {"const": false},
+    "structural_safety_determined": {"const": false},
+    "production_ready": {"const": false}
+  }
+}

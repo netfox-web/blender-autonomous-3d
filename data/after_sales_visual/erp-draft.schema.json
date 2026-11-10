@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/netfox-web/blender-autonomous-3d/data/after_sales_visual/erp-draft.schema.json",
+  "title": "ERP after-sales non-executable draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "draft_id", "case_id", "tenant_id", "company_id", "sku", "approval_ref", "source_revision", "candidate_set_id", "lines", "status", "executable", "external_write_performed", "human_decision"],
+  "properties": {
+    "schema_version": {"const": "fox3d.after-sales-visual.erp-draft.v1"},
+    "draft_id": {"type": "string"},
+    "case_id": {"type": "string"},
+    "tenant_id": {"type": "string"},
+    "company_id": {"type": "string"},
+    "sku": {"type": "string"},
+    "approval_ref": {"type": "string"},
+    "source_revision": {"type": "string"},
+    "candidate_set_id": {"type": "string"},
+    "lines": {"type": "array", "items": {"type": "object"}},
+    "status": {"const": "DRAFT_NOT_SUBMITTED"},
+    "executable": {"const": false},
+    "external_write_performed": {"const": false},
+    "human_decision": {"type": "object"}
+  }
+}
