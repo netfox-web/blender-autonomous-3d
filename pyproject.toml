@@ -30,7 +30,7 @@ fox3d = "fox3d.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-fox3d = ["static/*.html", "static/*.css", "static/*.js"]
+fox3d = ["static/*.html", "static/*.css", "static/*.js", "static/pages/*.html", "static/pages/*.css", "static/pages/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

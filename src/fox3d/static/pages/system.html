@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>系統狀態 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <link rel="stylesheet" href="/admin/pages/assets/system.css">
+  <script defer src="/admin/pages/assets/system.js"></script>
+</head>
+<body>
+<main class="system">
+  <header><p class="eyebrow">AUTONOMOUS 3D</p><h1>系統狀態</h1><p>查看服務、主機偵測與未認領的路由。</p><button id="refresh" type="button">重新載入</button></header>
+  <div class="grid">
+    <section aria-labelledby="health-title"><h2 id="health-title">服務健康</h2><div id="health" aria-live="polite">載入中…</div></section>
+    <section aria-labelledby="blender-title"><h2 id="blender-title">Blender 與運算裝置</h2><div id="blender" aria-live="polite">載入中…</div></section>
+    <section aria-labelledby="gpu-title"><h2 id="gpu-title">GPU 偵測</h2><div id="gpu" aria-live="polite">載入中…</div></section>
+    <section aria-labelledby="routes-title"><h2 id="routes-title">未認領路由</h2><div id="routes" aria-live="polite">載入中…</div></section>
+    <section aria-labelledby="docs-title"><h2 id="docs-title">API 文件</h2><p><a href="/docs">互動式 API 文件</a> · <a href="/redoc">API 參考文件</a> · <a href="/openapi.json">OpenAPI 規格</a></p></section>
+  </div>
+</main>
+</body>
+</html>
