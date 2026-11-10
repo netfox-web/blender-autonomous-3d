@@ -16,13 +16,31 @@
     items.forEach(function (item) { var row = document.createElement('tr'); fields.forEach(function (f) { var td = document.createElement('td'), v = item[f[0]]; td.textContent = v == null ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v); row.appendChild(td); }); if (onSelect) { var cell = document.createElement('td'), b = document.createElement('button'); b.textContent = '查看'; b.addEventListener('click', function () { onSelect(item); }); cell.appendChild(b); row.appendChild(cell); } t.appendChild(row); }); wrap.appendChild(t); target.appendChild(wrap);
   }
   function load(id, path, render) { $(id).textContent = '載入中…'; return api(path).then(render).catch(function (e) { $(id).textContent = '讀取失敗：' + e.message; }); }
+  var BADGE_NAMES = {LIVE_CNC: 'CNC 連線', LIVE_LASER: '雷射連線', Vision: '視覺辨識', Demand: '需求預測', quotes: '報價資料', receipts: '收料資料', sandbox: '沙盒隔離'};
+  // readable status cards; the raw API answer stays one click away for engineers
+  function cards(id, rows, raw) {
+    var box = $(id); box.textContent = '';
+    var grid = document.createElement('div'); grid.className = 'cards';
+    rows.forEach(function (r) {
+      var c = document.createElement('div'); c.className = 'card';
+      var v = r[1] == null ? '—' : String(r[1]);
+      if (/^(BLOCKED|MOCK|PARTIAL)/.test(v)) c.classList.add('warn');
+      var k = document.createElement('span'); k.textContent = r[0];
+      var b = document.createElement('b'); b.textContent = v;
+      c.appendChild(k); c.appendChild(b); grid.appendChild(c);
+    });
+    box.appendChild(grid);
+    var det = document.createElement('details'); var sum = document.createElement('summary'); sum.textContent = '顯示原始資料';
+    var pre = document.createElement('pre'); pre.textContent = JSON.stringify(raw, null, 2);
+    det.appendChild(sum); det.appendChild(pre); box.appendChild(det);
+  }
   function refresh() {
     pending = null; $('confirmation').hidden = true; selected = null; $('detail').textContent = '請選擇工單。'; $('actions').hidden = true;
-    load('overview', '/api/pilot/console', function (d) { $('overview').textContent = ''; var p = document.createElement('pre'); p.textContent = JSON.stringify({庫存: d.lots, 放行: d.releases, 狀態標記: d.badges, 機台連線控制: d.liveMachineControl}, null, 2); $('overview').appendChild(p); table('lots', d.lots, [['lotId','批號'],['material','材料'],['available','可用'],['reserved','已預留'],['quarantined','隔離'],['truthLabel','來源']]); table('receipts', d.receipts, [['receiptId','收料編號'],['material','材料'],['quantity','數量'],['status','狀態'],['truthLabel','來源']]); table('requests', d.purchaseRequests, [['requestId','請購編號'],['material','材料'],['quantity','數量'],['status','狀態']]); });
+    load('overview', '/api/pilot/console', function (d) { var badges = Object.keys(d.badges || {}).map(function (k) { return [BADGE_NAMES[k] || k, d.badges[k]]; }); cards('overview', [['材料批號', (d.lots || []).length + ' 批'], ['放行紀錄', (d.releases || []).length + ' 筆'], ['機台連線控制', d.liveMachineControl ? '已開啟' : '關閉（人工）']].concat(badges), d); table('lots', d.lots, [['lotId','批號'],['material','材料'],['available','可用'],['reserved','已預留'],['quarantined','隔離'],['truthLabel','來源']]); table('receipts', d.receipts, [['receiptId','收料編號'],['material','材料'],['quantity','數量'],['status','狀態'],['truthLabel','來源']]); table('requests', d.purchaseRequests, [['requestId','請購編號'],['material','材料'],['quantity','數量'],['status','狀態']]); });
     load('orders', '/api/pilot/work-orders', function (d) { table('orders', d.items, [['workOrderId','工單編號'],['state','狀態'],['quantity','數量'],['truthLabel','資料來源']], function (item) { selected = item; show('detail', item); $('actions').hidden = false; }); });
     load('batches', '/api/pilot/batches', function (d) { table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { show('batch-detail', item); }); });
     load('board', '/api/pilot/batches/board', function (d) { $('board').textContent = ''; var p = document.createElement('p'); p.textContent = '整體判定：' + d.decision + '；實體批次驗證：' + (d.physicalPilotBatchValidated ? '是' : '否'); $('board').appendChild(p); var rows = document.createElement('div'); rows.id = 'board-rows'; $('board').appendChild(rows); table('board-rows', d.rows, [['batchId','批次編號'],['decision','判定']], function (item) { show('batch-detail', item); }); });
-    load('health', '/api/pilot/health', function (d) { $('health').textContent = ''; var p = document.createElement('pre'); p.textContent = '健康狀態\n' + JSON.stringify(d, null, 2); $('health').appendChild(p); });
+    load('health', '/api/pilot/health', function (d) { var j = d.journalIntegrity || {}; cards('health', [['待人工處理', d.queuedManualOperations], ['進行中的站點租約', d.activeStationLeases], ['逾時租約', d.expiredStationLeases], ['預留短缺', d.reservationShortageCount], ['放行被拒（過期）', d.staleReleaseRejects], ['品檢 通過／不合格／重工', [d.qcPass, d.qcFail, d.qcRework].map(function (x) { return x == null ? '—' : x; }).join(' / ')], ['包裝異常', d.packingExceptions], ['作業日誌完整性', (j.ok ? '正常' : '異常') + (j.status ? '（' + j.status + '）' : '')]], d); });
   }
   function prepare(label, path, body) { pending = {path:path, body:body}; $('confirm-text').textContent = '請確認要' + label + '。'; show('confirm-data', body); $('confirmation').hidden = false; $('confirmation').scrollIntoView(); }
   document.querySelectorAll('[data-action]').forEach(function (b) { b.addEventListener('click', function () { if (!selected) return; var action = b.dataset.action; prepare(b.textContent + '（工單 ' + selected.workOrderId + '）', '/api/pilot/work-orders/' + encodeURIComponent(selected.workOrderId) + '/' + action, {confirm:true}); }); });
