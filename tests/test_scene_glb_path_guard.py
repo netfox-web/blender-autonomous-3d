@@ -38,7 +38,8 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
         link = None
     paths = ['/etc/passwd', r'C:\Windows\secret.glb', str(upload / '../../escape.glb'),
              str(store._tenant_dir('bob') / 'glb-props/model.glb'),
-             'assets://models/polyhaven/../../../secret.glb', str(upload / 'bad.txt')]
+             'assets://models/polyhaven/../../../secret.glb',
+             r'assets://models/polyhaven/..\..\..\secret.glb', str(upload / 'bad.txt')]
     if link:
         paths.append(str(link))
     for path in paths:
@@ -46,6 +47,17 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
         assert 'glbPath' not in result['sceneConfig']['props'][0]
         assert all('glbPath' not in box for box in result['sceneDefinition']['boxes'])
         assert result['warnings']
+
+
+def test_native_upload_path_and_traversal(store):
+    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath'])
+    guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
+    assert guarded['props'][0]['glbPath'] == str(uploaded)
+    assert not warnings
+    escaped = uploaded.parent / '..' / '..' / 'bob' / 'glb-props' / 'model.glb'
+    guarded, warnings = store.guard_scene_paths('alice', scene(str(escaped)))
+    assert 'glbPath' not in guarded['props'][0]
+    assert warnings
 
 
 def test_save_and_batch_guard_existing_and_inline_scenes(store):

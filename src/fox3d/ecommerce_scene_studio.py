@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import math
+import os
 import random
 import shutil
 import time
@@ -1076,9 +1077,11 @@ class EcommerceSceneStore:
             if "glbPath" in prop:
                 raw = prop["glbPath"]
                 try:
-                    if not isinstance(raw, str) or not raw or "\x00" in raw or "\\" in raw:
+                    if not isinstance(raw, str) or not raw or "\x00" in raw:
                         raise ValueError("路徑格式無效")
                     is_asset = raw.startswith("assets://")
+                    if "\\" in raw and (is_asset or os.name != "nt"):
+                        raise ValueError("路徑格式無效")
                     candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
                     if not candidate.is_absolute():
                         raise ValueError("必須使用絕對路徑或 assets:// 路徑")
