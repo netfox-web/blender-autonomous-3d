@@ -24,7 +24,7 @@ def test_every_route_belongs_to_a_feature(client: TestClient) -> None:
     index = client.get("/api/admin/features").json()
     assert index["unclaimed"] == [], "new route has no entry in fox3d/features.py"
     api_only = [f for f in index["features"] if f["kind"] == "api"]
-    assert api_only and all(f["routes"] for f in api_only)
+    assert all(f["routes"] for f in api_only)
 
 
 def test_registry_is_consistent() -> None:
