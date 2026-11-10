@@ -303,6 +303,8 @@ def ecommerce_scene_router(provider) -> APIRouter:
                 load_settings(store().root),
                 model=str(payload.get("model") or "") or None,
             )
+            scene, warnings = store().guard_scene_paths(tid, scene)
+            scene["warnings"] = warnings
             return scene
         except AiLayoutError as exc:
             raise HTTPException(422, str(exc)) from exc
