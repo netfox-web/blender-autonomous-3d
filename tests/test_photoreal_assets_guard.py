@@ -24,7 +24,13 @@ def tenant_headers() -> dict[str, str]:
     return {"X-Tenant-Id": "sonaqueen-home"}
 
 
-def _fake_urlopen_factory(files_payload: dict | None, gltf_body: bytes, include_map: dict[str, bytes]):
+def _fake_urlopen_factory(
+    files_payload: dict | None,
+    gltf_body: bytes,
+    include_map: dict[str, bytes],
+    *,
+    failing_include_urls: frozenset[str] | None = None,
+):
     gltf_url = "https://mock-cdn.test/models/guard_test_2k.gltf"
     api_body = json.dumps(
         {
@@ -48,6 +54,8 @@ def _fake_urlopen_factory(files_payload: dict | None, gltf_body: bytes, include_
                 raise HTTPError(url, 404, "not found", {}, io.BytesIO(b"{}"))
 
             return io.BytesIO(api_body)
+        if failing_include_urls and url in failing_include_urls:
+            raise HTTPError(url, 503, "unavailable", {}, io.BytesIO(b""))
         if url in bodies:
             return io.BytesIO(bodies[url])
         if "cdn.polyhaven.com" in url:
@@ -94,26 +102,87 @@ def test_malicious_includes_stay_inside_model_dir(tmp_path: Path, monkeypatch: p
         "urlopen",
         _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
     )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
     try:
-        photoreal_assets.download_custom_polyhaven_asset(
-            f"https://polyhaven.com/a/{aid}",
-            prop_type="SOFA",
-            label="Guard test",
-            root_dir=tmp_path,
-        )
-        model_root = tmp_path / "assets" / "models" / "polyhaven"
-        assert (model_root / aid / f"{aid}_2k.gltf").exists()
-        assert (model_root / aid / "textures" / "ok.png").read_bytes() == b"OKBYTES"
+        with pytest.raises(ValueError):
+            photoreal_assets.download_custom_polyhaven_asset(
+                f"https://polyhaven.com/a/{aid}",
+                prop_type="SOFA",
+                label="Guard test",
+                root_dir=tmp_path,
+            )
+        assert aid not in photoreal_assets.POLYHAVEN_CURATED_MODELS
         assert not (model_root.parent / "outside.png").exists()
         asset_dir = (model_root / aid).resolve()
         for path in tmp_path.rglob("*"):
             if not path.is_file():
                 continue
-            if path.name in (f"{aid}_2k.gltf",) or path.is_relative_to(asset_dir):
+            if path.is_relative_to(asset_dir):
                 continue
             if path.suffix == ".png" and "thumbs" in path.parts:
                 continue
             pytest.fail(f"unexpected file outside asset dir: {path}")
+    finally:
+        photoreal_assets.POLYHAVEN_CURATED_MODELS.pop(aid, None)
+
+
+def test_include_download_failure_does_not_register(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_include_fail"
+    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    include_map = {"textures/albedo.png": b"TEX"}
+    fail_url = "https://mock-cdn.test/include/0"
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory(
+            {"gltf": {}},
+            gltf_body,
+            include_map,
+            failing_include_urls=frozenset({fail_url}),
+        ),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    partial_gltf = model_root / aid / f"{aid}_2k.gltf"
+    partial_gltf.parent.mkdir(parents=True, exist_ok=True)
+    partial_gltf.write_bytes(gltf_body)
+    assert aid not in photoreal_assets.POLYHAVEN_CURATED_MODELS
+    with pytest.raises(ValueError):
+        photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+    assert aid not in photoreal_assets.POLYHAVEN_CURATED_MODELS
+    assert not (model_root / aid / "textures" / "albedo.png").exists()
+
+
+def test_retry_after_include_failure_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_retry_asset"
+    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    include_map = {"textures/albedo.png": b"TEX"}
+    fail_url = "https://mock-cdn.test/include/0"
+    state = {"fail_once": True}
+
+    base_urlopen = _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map)
+
+    def urlopen(req, timeout=0):
+        url = req.full_url if hasattr(req, "full_url") else req.get_full_url()
+        if state["fail_once"] and url == fail_url:
+            state["fail_once"] = False
+            raise HTTPError(url, 503, "unavailable", {}, io.BytesIO(b""))
+        return base_urlopen(req, timeout=timeout)
+
+    monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", urlopen)
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    partial_gltf = model_root / aid / f"{aid}_2k.gltf"
+    partial_gltf.parent.mkdir(parents=True, exist_ok=True)
+    partial_gltf.write_bytes(gltf_body)
+
+    with pytest.raises(ValueError):
+        photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+    assert aid not in photoreal_assets.POLYHAVEN_CURATED_MODELS
+
+    try:
+        out = photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+        assert out["ready"] is True
+        assert (model_root / aid / "textures" / "albedo.png").read_bytes() == b"TEX"
+        assert photoreal_assets._polyhaven_cache_complete(model_root / aid, partial_gltf)
     finally:
         photoreal_assets.POLYHAVEN_CURATED_MODELS.pop(aid, None)
 
