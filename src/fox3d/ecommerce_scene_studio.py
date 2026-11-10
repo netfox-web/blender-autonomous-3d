@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import math
+import os
 import random
 import shutil
 import time
@@ -1062,6 +1063,44 @@ class EcommerceSceneStore:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def guard_scene_paths(self, tenant_id: str, scene: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+        """Remove model references outside this tenant's uploads and bundled Poly Haven assets."""
+        result = dict(scene)
+        warnings: list[str] = []
+        props = []
+        tenant_dir = self._tenant_dir(tenant_id).resolve()
+        upload_root = tenant_dir / "glb-props"
+        assets_root = Path(__file__).resolve().parents[2] / "assets"
+        poly_root = assets_root / "models" / "polyhaven"
+        for index, original in enumerate(scene.get("props") or [], 1):
+            prop = dict(original)
+            if "glbPath" in prop:
+                raw = prop["glbPath"]
+                try:
+                    if not isinstance(raw, str) or not raw or "\x00" in raw:
+                        raise ValueError("路徑格式無效")
+                    is_asset = raw.startswith("assets://")
+                    if "\\" in raw and (is_asset or os.name != "nt"):
+                        raise ValueError("路徑格式無效")
+                    candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
+                    if not candidate.is_absolute():
+                        raise ValueError("必須使用絕對路徑或 assets:// 路徑")
+                    resolved = candidate.resolve()
+                    if resolved.suffix.lower() not in (".glb", ".gltf"):
+                        raise ValueError("只允許 GLB 或 glTF 模型")
+                    # A redirected whitelist directory must not authorize an external tree.
+                    upload_safe = upload_root.resolve() == upload_root and resolved.is_relative_to(upload_root)
+                    poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
+                    if not (poly_safe or (not is_asset and upload_safe)):
+                        raise ValueError("路徑不在允許的模型目錄內")
+                    prop["glbPath"] = raw if is_asset else str(resolved)
+                except (ValueError, OSError, RuntimeError) as exc:
+                    prop.pop("glbPath", None)
+                    warnings.append(f"道具 {index} 的 glbPath 已移除：{exc}；改用程序式模型")
+            props.append(prop)
+        result["props"] = props
+        return result, warnings
+
     def upload_glb_prop(self, tenant_id: str, filename: str, raw_bytes: bytes) -> dict[str, Any]:
         if not raw_bytes or len(raw_bytes) < 16:
             raise ValueError("上傳的 .glb 檔案內容為空")
@@ -1112,12 +1151,13 @@ class EcommerceSceneStore:
             "props": list(payload.get("props") or []),
             "updatedAt": timestamp(),
         }
+        record, warnings = self.guard_scene_paths(tenant_id, record)
         with self.lock:
             stored = read_json(path)
             custom = [x for x in (stored.get("items", []) if isinstance(stored, dict) else []) if x.get("id") != scene_id]
             custom.append(record)
             atomic_json(path, {"items": custom, "updatedAt": timestamp()})
-        return record
+        return {**record, "warnings": warnings}
 
     def delete_scene(self, tenant_id: str, scene_id: str) -> dict[str, Any]:
         if any(b["id"] == scene_id for b in BUILTIN_SCENES):
@@ -1169,9 +1209,11 @@ class EcommerceSceneStore:
         if not isinstance(scene_cfg, dict):
             sid = str(payload.get("sceneId") or "SCENE_NORDIC_LIVING")
             scene_cfg = scenes.get(sid) or BUILTIN_SCENES[0]
+        scene_cfg, warnings = self.guard_scene_paths(tenant_id, scene_cfg)
         view = str(payload.get("view") or "THREE_QUARTER")
         scene_def, scene_hash = compile_custom_scene(scene_cfg, cabinet_spec, view=view)
         return {
+            "warnings": warnings,
             "cabinetSpec": cabinet_spec,
             "sceneConfig": scene_cfg,
             "sceneDefinition": scene_def,
@@ -1296,6 +1338,14 @@ class EcommerceSceneStore:
         if isinstance(custom_scene_inline, dict) and custom_scene_inline.get("id"):
             scenes_by_id[custom_scene_inline["id"]] = custom_scene_inline
 
+        warnings = []
+        for sid in set(scene_ids):
+            if sid in scenes_by_id:
+                scenes_by_id[sid], scene_warnings = self.guard_scene_paths(tenant_id, scenes_by_id[sid])
+                warnings.extend(scene_warnings)
+        if isinstance(custom_scene_inline, dict) and custom_scene_inline.get("id") in scenes_by_id:
+            custom_scene_inline = scenes_by_id[custom_scene_inline["id"]]
+
         batch_id = new_id()
         bdir = self._tenant_dir(tenant_id) / "batches" / batch_id
         bdir.mkdir(parents=True, exist_ok=True)
@@ -1346,6 +1396,7 @@ class EcommerceSceneStore:
 
         batch_doc = {
             "batchId": batch_id,
+            "warnings": warnings,
             "tenantId": tenant_id,
             "cabinetName": cabinet_cfg.get("name") or "收納王妃組合櫃",
             "cabinetSku": cabinet_cfg.get("sku") or "SQ-MOD-CABINET",
