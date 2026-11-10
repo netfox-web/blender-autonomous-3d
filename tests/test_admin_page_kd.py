@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,6 +13,7 @@ from fox3d.features import resolved_features
 
 TENANT = "sonaqueen-home"
 HDR = {"X-Tenant-Id": TENANT}
+PAGES = Path(__file__).resolve().parents[1] / "src/fox3d/static/pages"
 
 
 @pytest.fixture()
@@ -87,3 +91,84 @@ def test_kd_post_apis(client: TestClient) -> None:
         json={"kind": "MENU_STAND", "sheetSku": "ACR_CLEAR_5", "render": False},
     )
     assert acr.status_code == 200
+
+
+def _js() -> str:
+    return (PAGES / "kd.js").read_text(encoding="utf-8")
+
+
+def _js_function(js: str, name: str) -> str:
+    start = js.index(f"function {name}(")
+    end = js.index("\n  }\n", start)
+    return js[start:end]
+
+
+def test_kd_js_tenant_frozen_until_reload() -> None:
+    js = _js()
+    assert "var activeTenant = DEFAULT_TENANT;" in js
+    # headers() must use the frozen tenant and never read the editable field.
+    hdr = _js_function(js, "headers")
+    assert "activeTenant" in hdr
+    assert "kd-tenant" not in hdr and "fieldTenant" not in hdr and ".value" not in hdr
+    assert "function tenant()" not in js
+    # Only the reload path adopts the field value, and it closes open confirms.
+    assert js.count("activeTenant = fieldTenant()") == 1
+    apply = _js_function(js, "applyTenant")
+    assert "activeTenant = fieldTenant()" in apply
+    assert "confirmResets.forEach" in apply
+    assert "applyTenant();" in _js_function(js, "reloadOverview")
+    assert "$('kd-refresh').addEventListener('click', reloadOverview)" in js
+    # Typing in the field only toggles the hint.
+    assert "$('kd-tenant').addEventListener('input', syncTenantHint)" in js
+    assert "fieldTenant() === activeTenant" in _js_function(js, "syncTenantHint")
+    html = (PAGES / "kd.html").read_text(encoding="utf-8")
+    assert re.search(r'id="kd-tenant-hint"[^>]*hidden>按重新載入後才會切換租戶<', html)
+    assert 'id="kd-tenant-active"' in html
+
+
+def test_kd_js_confirms_show_and_pin_tenant() -> None:
+    js = _js()
+    assert "'租戶：' + tenantId" in _js_function(js, "previewText")
+    # Each confirm form registers a reset and previews the tenant it will send to.
+    assert js.count("confirmResets.push(reset)") == 2
+    assert js.count("previewText(pending.tenant") == 2
+    # Every POST is sent with the tenant captured when its confirm was opened.
+    posts = re.findall(r"api\('POST'[^)]*\)", js)
+    assert len(posts) == 2 and all("req.tenant" in p for p in posts)
+
+
+def test_kd_js_post_guards_and_no_innerhtml() -> None:
+    js = _js()
+    assert "innerHTML" not in js
+    for fn in ("wireConfirmForm", "wireStructureForm"):
+        start = js.index(f"function {fn}(")
+        body = js[start : js.index("\n  function ", start + 1)]
+        assert "if (!pending) return;" in body
+        assert "go.disabled = true;" in body
+        assert ".catch(function (e)" in body
+        assert "go.disabled = false;" in body
+
+
+def test_kd_js_readiness_fields_match_api(client: TestClient) -> None:
+    body = client.get("/api/kd/readiness", headers=HDR).json()
+    assert isinstance(body["productionReady"], bool)
+    assert isinstance(body["productionReadyScope"], str) and body["productionReadyScope"]
+    assert body["commercialCostModelScope"] == "CONFIG_ESTIMATE_ONLY"
+    assert isinstance(body["fullAutonomousFactoryReady"], bool)
+    js = _js()
+    line = _js_function(js, "readinessScopeLine")
+    for key in ("productionReady", "productionReadyScope", "fullAutonomousFactoryReady", "commercialCostModelScope"):
+        assert f"matrix.{key}" in line
+    # Missing fields are reported as such, not silently shown as 否.
+    assert "未回傳" in line
+
+
+def test_kd_catalog_costs_labelled_as_estimates() -> None:
+    js = _js()
+    assert "var ESTIMATE_SCOPE = 'CONFIG_ESTIMATE_ONLY';" in js
+    assert "estimateCell(row.landedCost)" in js
+    assert "estimateCell(row.suggestedPrice)" in js
+    assert "'估算'" in _js_function(js, "estimateCell")
+    assert "String(row.landedCost)" not in js and "String(row.suggestedPrice)" not in js
+    html = (PAGES / "kd.html").read_text(encoding="utf-8")
+    assert "<th>到岸成本（估算）</th><th>建議售價（估算）</th>" in html

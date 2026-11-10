@@ -19,7 +19,9 @@
 
     <section class="kd-bar" aria-label="租戶與重新載入">
       <label class="kd-tenant">租戶 <input id="kd-tenant" value="sonaqueen-home" spellcheck="false" aria-label="租戶代碼"></label>
+      <span id="kd-tenant-hint" class="kd-hint" aria-live="polite" hidden>按重新載入後才會切換租戶</span>
       <button type="button" id="kd-refresh" class="kd-btn ghost">重新載入概況</button>
+      <span class="kd-tenant-now">目前送出租戶：<code id="kd-tenant-active">sonaqueen-home</code></span>
     </section>
 
     <section class="kd-panel" id="kd-readiness" aria-labelledby="kd-readiness-h">
@@ -80,7 +82,7 @@
         <thead>
           <tr>
             <th>商品編號</th><th>類型</th><th>尺寸 mm</th><th>核准狀態</th>
-            <th>需求標籤</th><th>到岸成本</th><th>建議售價</th>
+            <th>需求標籤</th><th>到岸成本（估算）</th><th>建議售價（估算）</th>
           </tr>
         </thead>
         <tbody></tbody>

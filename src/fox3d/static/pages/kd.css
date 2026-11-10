@@ -86,6 +86,23 @@ body {
   color: var(--fg);
   font: 12px ui-monospace, Consolas, monospace;
 }
+.kd-hint {
+  font-size: 12px;
+  color: var(--warn);
+  background: var(--warn-soft);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+.kd-tenant-now {
+  color: var(--mute);
+  font-size: 12px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.kd-tenant-now code {
+  font: 12px ui-monospace, Consolas, monospace;
+  color: var(--fg);
+}
 .kd-panel {
   background: var(--card);
   border: 1px solid var(--line);
