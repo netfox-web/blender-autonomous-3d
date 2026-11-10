@@ -31,12 +31,10 @@ def _wait_shell(page, base_url: str) -> None:
 
 def _assert_no_console_errors(page, feature_id: str) -> None:  # noqa: ANN001
     errors = _console_errors(page)
-    # benign: favicon; golden may 422 until operator supplies real DNA fixtures; print HTML/JS id drift is tracked in DONE.md
+    # benign: favicon; golden may 422 until operator supplies real DNA fixtures
     errors = [e for e in errors if "favicon" not in e.lower()]
     if feature_id == "golden":
         errors = [e for e in errors if "422" not in e]
-    if feature_id == "print":
-        errors = [e for e in errors if "Cannot set properties of null" not in e]
     assert not errors, f"{feature_id}: console errors: {errors}"
 
 

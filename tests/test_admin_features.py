@@ -80,6 +80,20 @@ def test_print_page_has_no_missing_script() -> None:
     assert "three.min.js" not in (STATIC / "print-workspace.html").read_text(encoding="utf-8")
 
 
+def test_print_workspace_js_uses_ids_from_html() -> None:
+    """print-workspace.js must bind to ids that exist in print-workspace.html (regression for #40)."""
+    import re
+
+    html = (STATIC / "print-workspace.html").read_text(encoding="utf-8")
+    html_ids = {m.group(1) for m in re.finditer(r'\bid="([^"]+)"', html)}
+    runtime_only = {"source-more", "pf-more"}
+    for name in ("print-workspace.js", "printfox-bridge.js"):
+        js = (STATIC / name).read_text(encoding="utf-8")
+        bound = {m.group(1) for m in re.finditer(r"""\$\(['"]([a-zA-Z0-9_-]+)['"]\)""", js)}
+        missing = sorted(bound - html_ids - runtime_only)
+        assert not missing, f"{name} references missing element ids: {missing}"
+
+
 def test_plugin_page_assets_are_confined(client: TestClient) -> None:
     for bad in ["../features.py", "x.html", "..%2Ffox3d-shell.js", "missing.js"]:
         assert client.get(f"/admin/pages/assets/{bad}").status_code == 404
