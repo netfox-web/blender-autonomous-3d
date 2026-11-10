@@ -135,6 +135,9 @@ class CycleCountService:
             raise PermissionError("tenant isolation: cycle count")
         if rec.get("applied"):
             raise PermissionError("cannot reject applied cycle count")
+        if rec.get("status") == "REJECTED":
+            # Idempotent like approve(): never overwrite the first rejection's audit fields.
+            return rec
         rec["status"] = "REJECTED"
         rec["rejectedBy"] = actor
         self.persist()
