@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>就緒、證據與放行 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/readiness.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/readiness.js"></script>
+</head>
+<body>
+  <main class="rd">
+    <header class="rd-head">
+      <p class="rd-eyebrow">AUTONOMOUS 3D · 上線就緒與放行</p>
+      <h1>就緒、證據與放行工作台</h1>
+      <p class="rd-lede">查看整體就緒與 KPI、驗證證據包、推進放行狀態、做安全評估；下方另含實體作業 OS 與電商資料匯入。</p>
+      <label class="rd-tenant">租戶 <input id="rd-tenant" value="sonaqueen-home" spellcheck="false" aria-label="API 租戶"></label>
+    </header>
+
+    <nav class="rd-tabs" aria-label="區塊捷徑">
+      <a href="#rd-overview">整體就緒</a>
+      <a href="#rd-kpi">KPI</a>
+      <a href="#rd-evidence">證據驗證</a>
+      <a href="#rd-release">放行推進</a>
+      <a href="#rd-safety">安全評估</a>
+      <a href="#physical-os">實體作業 OS</a>
+      <a href="#commerce">電商匯入</a>
+    </nav>
+
+    <div id="rd-notice" class="rd-notice" role="status" aria-live="polite" hidden></div>
+
+    <section id="rd-overview" class="rd-section" aria-labelledby="rd-h-overview">
+      <div class="rd-sec-head">
+        <h2 id="rd-h-overview">整體就緒</h2>
+        <button type="button" class="rd-btn" id="rd-reload-overview">重新載入</button>
+      </div>
+      <p id="rd-overview-status" class="rd-muted">載入中…</p>
+      <div class="rd-table-wrap" id="rd-overview-table" hidden></div>
+      <p id="rd-overview-detail" class="rd-detail" hidden></p>
+    </section>
+
+    <section id="rd-kpi" class="rd-section" aria-labelledby="rd-h-kpi">
+      <h2 id="rd-h-kpi">KPI 概覽</h2>
+      <p id="rd-kpi-status" class="rd-muted">載入中…</p>
+      <div class="rd-table-wrap" id="rd-kpi-table" hidden></div>
+    </section>
+
+    <section id="rd-evidence" class="rd-section" aria-labelledby="rd-h-evidence">
+      <h2 id="rd-h-evidence">證據包驗證</h2>
+      <p class="rd-muted">貼上 EvidenceBundle JSON（需含 engineeringHash 或 bomHash；檔案路徑存在時會驗證雜湊）。</p>
+      <label class="rd-field">證據 JSON <textarea id="rd-evidence-json" rows="8" spellcheck="false" aria-label="證據包 JSON"></textarea></label>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-evidence-run">送出驗證</button>
+      </div>
+      <div id="rd-evidence-confirm" class="rd-confirm" hidden>
+        <p>確定要送出證據驗證嗎？此操作僅查驗資料，不會改動後端狀態。</p>
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-evidence-ok">確認驗證</button>
+        <button type="button" class="rd-btn" id="rd-evidence-cancel">取消</button>
+      </div>
+      <pre id="rd-evidence-out" class="rd-out" hidden></pre>
+    </section>
+
+    <section id="rd-release" class="rd-section" aria-labelledby="rd-h-release">
+      <h2 id="rd-h-release">放行狀態推進</h2>
+      <p class="rd-muted">依序推進 PROTOTYPE → ENGINEERING_VALID → EVIDENCE_VERIFIED → WAITING_APPROVAL → APPROVED_FOR_EXPORT。禁止 LIVE 機台狀態。</p>
+      <div class="rd-form-grid">
+        <label class="rd-field">實體 ID <input id="rd-rel-entity" value="demo-sku-1" spellcheck="false"></label>
+        <label class="rd-field">目標狀態
+          <select id="rd-rel-target">
+            <option value="ENGINEERING_VALID">ENGINEERING_VALID</option>
+            <option value="EVIDENCE_VERIFIED">EVIDENCE_VERIFIED</option>
+            <option value="WAITING_APPROVAL">WAITING_APPROVAL</option>
+            <option value="APPROVED_FOR_EXPORT">APPROVED_FOR_EXPORT</option>
+          </select>
+        </label>
+        <label class="rd-field rd-check"><input type="checkbox" id="rd-rel-evidence"> 證據已通過（EVIDENCE_VERIFIED 必填）</label>
+        <label class="rd-field">實體資料 JSON <textarea id="rd-rel-entity-json" rows="4" spellcheck="false">{"skuId":"demo-sku-1","engineeringHash":"e1"}</textarea></label>
+      </div>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-rel-run">推進放行</button>
+      </div>
+      <div id="rd-rel-confirm" class="rd-confirm" hidden>
+        <p id="rd-rel-confirm-text"></p>
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-rel-ok">確認推進</button>
+        <button type="button" class="rd-btn" id="rd-rel-cancel">取消</button>
+      </div>
+      <pre id="rd-rel-out" class="rd-out" hidden></pre>
+    </section>
+
+    <section id="rd-safety" class="rd-section" aria-labelledby="rd-h-safety">
+      <h2 id="rd-h-safety">產品安全評估</h2>
+      <div class="rd-form-grid">
+        <label class="rd-field">類型
+          <select id="rd-safe-kind">
+            <option value="KD">KD 家具</option>
+            <option value="RETAIL">零售陳列</option>
+            <option value="ACRYLIC">壓克力</option>
+          </select>
+        </label>
+        <label class="rd-field">紀錄 JSON <textarea id="rd-safe-json" rows="6" spellcheck="false">{"spec":{"width":600,"depth":400,"height":1800,"boardThickness":18}}</textarea></label>
+      </div>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-safe-run">執行評估</button>
+      </div>
+      <div id="rd-safe-confirm" class="rd-confirm" hidden>
+        <p>確定要執行安全評估？結果僅供參考，不代表已通過認證。</p>
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-safe-ok">確認評估</button>
+        <button type="button" class="rd-btn" id="rd-safe-cancel">取消</button>
+      </div>
+      <pre id="rd-safe-out" class="rd-out" hidden></pre>
+    </section>
+
+    <section id="physical-os" class="rd-section" aria-labelledby="rd-h-phys">
+      <h2 id="rd-h-phys">實體作業 OS</h2>
+      <p id="rd-phys-status" class="rd-muted">載入中…</p>
+      <div class="rd-table-wrap" id="rd-families-table" hidden></div>
+      <div class="rd-table-wrap" id="rd-phys-ready-table" hidden></div>
+      <h3 class="rd-sub">人工核准閘門</h3>
+      <div class="rd-form-grid">
+        <label class="rd-field">產品／實體 ID <input id="rd-phys-entity" value="phys-demo-1" spellcheck="false"></label>
+        <label class="rd-field">種類 <input id="rd-phys-kind" value="product" spellcheck="false"></label>
+      </div>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-phys-approve-run">送出核准申請</button>
+      </div>
+      <div id="rd-phys-confirm" class="rd-confirm" hidden>
+        <p>確定要送出核准申請？狀態為 WAITING_APPROVAL，不會啟動現場機台。</p>
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-phys-approve-ok">確認送出</button>
+        <button type="button" class="rd-btn" id="rd-phys-approve-cancel">取消</button>
+      </div>
+      <pre id="rd-phys-out" class="rd-out" hidden></pre>
+    </section>
+
+    <section id="commerce" class="rd-section" aria-labelledby="rd-h-commerce">
+      <h2 id="rd-h-commerce">電商商品／報價匯入</h2>
+      <p class="rd-muted">匯入行資料到 material / hardware / packaging / logistics / fx 快照庫。liveProviderReady 一律為未就緒。</p>
+      <div class="rd-form-grid">
+        <label class="rd-field">資料庫
+          <select id="rd-com-kind">
+            <option value="material">material 材料</option>
+            <option value="hardware">hardware 五金</option>
+            <option value="packaging">packaging 包材</option>
+            <option value="logistics">logistics 物流</option>
+            <option value="fx">fx 匯率</option>
+          </select>
+        </label>
+        <label class="rd-field">來源
+          <select id="rd-com-source">
+            <option value="MANUAL">MANUAL 手動</option>
+            <option value="IMPORTED">IMPORTED 已匯入</option>
+            <option value="CONFIG_ESTIMATE">CONFIG_ESTIMATE 設定估價</option>
+          </select>
+        </label>
+        <label class="rd-field">資料列 JSON 陣列 <textarea id="rd-com-rows" rows="6" spellcheck="false">[{"zone":"TW","baseFee":80,"perKg":12}]</textarea></label>
+      </div>
+      <div class="rd-actions">
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-com-run">匯入資料</button>
+      </div>
+      <div id="rd-com-confirm" class="rd-confirm" hidden>
+        <p id="rd-com-confirm-text"></p>
+        <button type="button" class="rd-btn rd-btn-accent" id="rd-com-ok">確認匯入</button>
+        <button type="button" class="rd-btn" id="rd-com-cancel">取消</button>
+      </div>
+      <pre id="rd-com-out" class="rd-out" hidden></pre>
+    </section>
+  </main>
+</body>
+</html>
