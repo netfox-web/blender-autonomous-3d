@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>拆裝家具 KD · 陳列與包裝</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/kd.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/kd.js"></script>
+</head>
+<body>
+  <main class="kd">
+    <header class="kd-head">
+      <p class="kd-eyebrow">工廠 · KD 型錄與結構產生</p>
+      <h1>拆裝家具與陳列結構</h1>
+      <p class="kd-lede">查商品類型與就緒狀態、產生 SKU 與型錄候選；下方可產生陳列架、包裝結構與壓克力件。有 MOCK 或待補資料的欄位會標示，不當成已上線真相。</p>
+    </header>
+
+    <section class="kd-bar" aria-label="租戶與重新載入">
+      <label class="kd-tenant">租戶 <input id="kd-tenant" value="sonaqueen-home" spellcheck="false" aria-label="租戶代碼"></label>
+      <button type="button" id="kd-refresh" class="kd-btn ghost">重新載入概況</button>
+    </section>
+
+    <section class="kd-panel" id="kd-readiness" aria-labelledby="kd-readiness-h">
+      <h2 id="kd-readiness-h">就緒狀態</h2>
+      <p id="kd-readiness-msg" class="kd-muted">載入中…</p>
+      <div class="kd-scroll"><table id="kd-readiness-table" class="kd-table" hidden>
+        <thead><tr><th>項目</th><th>狀態</th><th>說明</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <section class="kd-panel" aria-labelledby="kd-types-h">
+      <h2 id="kd-types-h">KD 商品類型</h2>
+      <p id="kd-types-msg" class="kd-muted">載入中…</p>
+      <div class="kd-scroll"><table id="kd-types-table" class="kd-table" hidden>
+        <thead><tr><th>類型代碼</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <section class="kd-panel" aria-labelledby="kd-sku-h">
+      <h2 id="kd-sku-h">產生單一 SKU</h2>
+      <form id="kd-sku-form" class="kd-form">
+        <label>商品類型
+          <select id="kd-sku-kind" name="kind" required></select>
+        </label>
+        <label class="kd-check"><input type="checkbox" id="kd-sku-render" name="render"> 一併送出算圖預覽（較慢）</label>
+        <button type="submit" class="kd-btn">預覽送出內容</button>
+      </form>
+      <div id="kd-sku-confirm" class="kd-confirm" hidden>
+        <p>確定要為此租戶產生 SKU？</p>
+        <pre id="kd-sku-payload" class="kd-out"></pre>
+        <div class="kd-confirm-actions">
+          <button type="button" id="kd-sku-go" class="kd-btn">確定產生</button>
+          <button type="button" id="kd-sku-cancel" class="kd-btn ghost">取消</button>
+        </div>
+      </div>
+      <pre id="kd-sku-result" class="kd-out" hidden></pre>
+    </section>
+
+    <section class="kd-panel" aria-labelledby="kd-catalog-h">
+      <h2 id="kd-catalog-h">型錄候選（批次）</h2>
+      <form id="kd-catalog-form" class="kd-form">
+        <label>筆數 <input type="number" id="kd-catalog-count" name="count" value="12" min="1" max="48"></label>
+        <label class="kd-check"><input type="checkbox" id="kd-catalog-render" name="render"> 前幾名算圖</label>
+        <button type="submit" class="kd-btn">預覽送出內容</button>
+      </form>
+      <div id="kd-catalog-confirm" class="kd-confirm" hidden>
+        <p>確定要產生型錄候選？會建立多筆工程資料。</p>
+        <pre id="kd-catalog-payload" class="kd-out"></pre>
+        <div class="kd-confirm-actions">
+          <button type="button" id="kd-catalog-go" class="kd-btn">確定產生</button>
+          <button type="button" id="kd-catalog-cancel" class="kd-btn ghost">取消</button>
+        </div>
+      </div>
+      <p id="kd-catalog-summary" class="kd-muted" hidden></p>
+      <div class="kd-scroll"><table id="kd-catalog-table" class="kd-table" hidden>
+        <thead>
+          <tr>
+            <th>商品編號</th><th>類型</th><th>尺寸 mm</th><th>核准狀態</th>
+            <th>需求標籤</th><th>到岸成本</th><th>建議售價</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+      <details id="kd-catalog-raw" class="kd-details" hidden>
+        <summary>完整 API 回應</summary>
+        <pre id="kd-catalog-result" class="kd-out"></pre>
+      </details>
+    </section>
+
+    <section class="kd-panel" aria-labelledby="kd-cand-h">
+      <h2 id="kd-cand-h">板材優化候選榜</h2>
+      <form id="kd-cand-form" class="kd-form">
+        <label>比較筆數 <input type="number" id="kd-cand-count" name="count" value="6" min="1" max="12"></label>
+        <button type="submit" class="kd-btn">預覽送出內容</button>
+      </form>
+      <div id="kd-cand-confirm" class="kd-confirm" hidden>
+        <p>確定要跑優化候選比較？會多次建立 SKU。</p>
+        <pre id="kd-cand-payload" class="kd-out"></pre>
+        <div class="kd-confirm-actions">
+          <button type="button" id="kd-cand-go" class="kd-btn">確定執行</button>
+          <button type="button" id="kd-cand-cancel" class="kd-btn ghost">取消</button>
+        </div>
+      </div>
+      <div class="kd-scroll"><table id="kd-cand-table" class="kd-table" hidden>
+        <thead>
+          <tr><th>類型</th><th>廢材率（前）</th><th>廢材率（後）</th><th>改版</th><th>需求</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table></div>
+      <details id="kd-cand-raw" class="kd-details" hidden>
+        <summary>完整 API 回應</summary>
+        <pre id="kd-cand-result" class="kd-out"></pre>
+      </details>
+    </section>
+
+    <section class="kd-panel" id="structures" aria-labelledby="kd-struct-h">
+      <h2 id="kd-struct-h">陳列架、包裝、壓克力</h2>
+      <p class="kd-muted">依家族參數產生工程結構；結果顯示在下方，並標示是否為試算或 MOCK。</p>
+
+      <h3 class="kd-sub">零售陳列架</h3>
+      <form id="kd-retail-form" class="kd-form">
+        <label>家族
+          <select id="kd-retail-family" name="family">
+            <option value="COUNTER_DISPLAY">COUNTER_DISPLAY 櫃檯陳列</option>
+            <option value="FLOOR_DISPLAY">FLOOR_DISPLAY 落地架</option>
+            <option value="PDQ_DISPLAY">PDQ_DISPLAY</option>
+            <option value="RISER_DISPLAY">RISER_DISPLAY</option>
+            <option value="PEGBOARD_DISPLAY">PEGBOARD_DISPLAY</option>
+            <option value="ENDCAP_MODULE">ENDCAP_MODULE</option>
+          </select>
+        </label>
+        <label>面向數 <input type="number" id="kd-retail-facing" name="facing" value="2" min="1" max="4"></label>
+        <button type="submit" class="kd-btn">預覽送出內容</button>
+      </form>
+      <div id="kd-retail-confirm" class="kd-confirm" hidden></div>
+      <pre id="kd-retail-result" class="kd-out" hidden></pre>
+
+      <h3 class="kd-sub">包裝結構</h3>
+      <form id="kd-pack-form" class="kd-form">
+        <label>盒型
+          <select id="kd-pack-family" name="family">
+            <option value="RSC_CARTON">RSC_CARTON 普通紙箱</option>
+            <option value="MAILER_BOX">MAILER_BOX</option>
+            <option value="SLEEVE">SLEEVE</option>
+            <option value="TRAY">TRAY</option>
+            <option value="PDQ_TRAY">PDQ_TRAY</option>
+          </select>
+        </label>
+        <label>寬 mm <input type="number" id="kd-pack-w" value="120" min="10"></label>
+        <label>高 mm <input type="number" id="kd-pack-h" value="80" min="10"></label>
+        <label>深 mm <input type="number" id="kd-pack-d" value="40" min="10"></label>
+        <button type="submit" class="kd-btn">預覽送出內容</button>
+      </form>
+      <div id="kd-pack-confirm" class="kd-confirm" hidden></div>
+      <pre id="kd-pack-result" class="kd-out" hidden></pre>
+
+      <h3 class="kd-sub">壓克力製品</h3>
+      <form id="kd-acr-form" class="kd-form">
+        <label>種類
+          <select id="kd-acr-kind" name="kind">
+            <option value="MENU_STAND">MENU_STAND 菜單架</option>
+            <option value="SIGN_HOLDER">SIGN_HOLDER</option>
+            <option value="RISER_STAND">RISER_STAND</option>
+            <option value="DISPLAY_BOX">DISPLAY_BOX</option>
+            <option value="PRODUCT_STAND">PRODUCT_STAND</option>
+          </select>
+        </label>
+        <label>板材 SKU <input id="kd-acr-sheet" value="ACR_CLEAR_5" spellcheck="false"></label>
+        <button type="submit" class="kd-btn">預覽送出內容</button>
+      </form>
+      <div id="kd-acr-confirm" class="kd-confirm" hidden></div>
+      <pre id="kd-acr-result" class="kd-out" hidden></pre>
+    </section>
+  </main>
+</body>
+</html>
