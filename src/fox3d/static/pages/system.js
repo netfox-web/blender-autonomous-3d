@@ -19,7 +19,9 @@
     items.forEach(item => { const li = document.createElement('li'); li.textContent = render(item); ul.append(li); });
     parent.append(ul);
   };
+  let latestLoad = 0;
   async function load() {
+    const generation = ++latestLoad;
     const ids = ['health', 'blender', 'gpu', 'routes'];
     ids.forEach(id => { el(id).textContent = '載入中…'; });
     let tenant = 'sonaqueen-home';
@@ -30,6 +32,7 @@
       return response.json();
     };
     const [health, probe, routes] = await Promise.allSettled([get('/health'), get('/api/probe'), get('/api/admin/features')]);
+    if (generation !== latestLoad) return;
     if (health.status === 'fulfilled') {
       const h = health.value; el('health').textContent = '';
       line(el('health'), '服務', h.status === 'ok' ? '可連線（ok）' : value(h.status), h.status !== 'ok');
