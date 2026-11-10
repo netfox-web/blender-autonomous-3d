@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import base64
 import struct
+import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
+from fox3d.ecommerce_scene_studio import (
+    CABINET_PRESETS,
+    resolve_scene_glb_paths_for_blender,
+    validate_glb_binary,
+)
 from fox3d.platform import Platform
 from fox3d.pngutil import write_glb_stub
 
@@ -124,3 +130,134 @@ def test_upload_tenant_isolation(tmp_path: Path):
     assert "tenant-beta" in path_b.as_posix()
     assert path_a.read_bytes() == raw
     assert path_b.read_bytes() == raw
+
+
+def test_validate_glb_rejects_header_only_container():
+    raw = struct.pack("<4sII", b"glTF", 2, 12)
+    with pytest.raises(ValueError, match="JSON chunk"):
+        validate_glb_binary(raw)
+
+
+def test_validate_glb_rejects_missing_json_chunk():
+    chunk_len = 8
+    total = 12 + 8 + chunk_len
+    raw = struct.pack("<4sII", b"glTF", 2, total) + struct.pack("<II", chunk_len, 0x004E4942) + b"\x00" * chunk_len
+    with pytest.raises(ValueError, match="JSON"):
+        validate_glb_binary(raw)
+
+
+def test_validate_glb_rejects_truncated_json_chunk():
+    chunk_len = 32
+    payload = b" " * 8
+    total = 12 + 8 + len(payload)
+    raw = struct.pack("<4sII", b"glTF", 2, total) + struct.pack("<II", chunk_len, 0x4E4F534A) + payload
+    with pytest.raises(ValueError, match="JSON chunk"):
+        validate_glb_binary(raw)
+
+
+def test_validate_glb_rejects_invalid_json_payload():
+    chunk_len = 16
+    payload = b"{" + b" " * (chunk_len - 1)
+    total = 12 + 8 + chunk_len
+    raw = struct.pack("<4sII", b"glTF", 2, total) + struct.pack("<II", chunk_len, 0x4E4F534A) + payload
+    with pytest.raises(ValueError, match="JSON"):
+        validate_glb_binary(raw)
+
+
+def test_resolve_scene_glb_paths_maps_upload_ref_to_absolute(tmp_path: Path):
+    plat = Platform(tmp_path / "data", mock_blender=True)
+    root = Path(plat.root).resolve()
+    rel = "ecommerce-scene-studio/tenant-alpha/glb-props/glb_chair_x.glb"
+    glb_file = root / rel
+    glb_file.parent.mkdir(parents=True, exist_ok=True)
+    glb_file.write_bytes(_minimal_glb_bytes())
+    scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": rel}]}
+    resolved = resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant-alpha")
+    abs_path = resolved["boxes"][0]["glbPath"]
+    assert Path(abs_path).is_absolute() and Path(abs_path) == glb_file.resolve()
+
+
+class _JobCapturingRuntime:
+    blender_bin = "fake"
+
+    def __init__(self) -> None:
+        self.jobs: list[dict] = []
+
+    def available(self) -> bool:
+        return True
+
+    def run_job(self, job: dict) -> dict:
+        self.jobs.append(job)
+        work = Path(job["workDir"])
+        work.mkdir(parents=True, exist_ok=True)
+        (work / "beauty.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+        (work / "product_cutout.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+        return {"status": "succeeded", "outputs": {}, "renderTimeSec": 0.01, "device": "CPU", "blenderVersion": "local"}
+
+
+def test_uploaded_glb_path_reaches_blender_job_as_absolute(tmp_path: Path):
+    runtime = _JobCapturingRuntime()
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    raw = _minimal_glb_bytes()
+    upload = client.post(
+        "/api/ecommerce-scenes/props/upload-glb",
+        headers=headers,
+        json={"filename": "stool.glb", "dataBase64": _b64(raw)},
+    )
+    assert upload.status_code == 201
+    rel_glb = upload.json()["glbPath"]
+    scene_id = "SCENE_GLB_E2E"
+    save = client.post(
+        "/api/ecommerce-scenes/scenes",
+        headers=headers,
+        json={
+            "id": scene_id,
+            "name": "GLB e2e",
+            "props": [
+                {
+                    "type": "CUSTOM_BOX",
+                    "label": "stool",
+                    "x": 1.0,
+                    "y": 0.5,
+                    "z": 0.0,
+                    "widthM": 0.4,
+                    "depthM": 0.4,
+                    "heightM": 0.5,
+                    "glbPath": rel_glb,
+                }
+            ],
+        },
+    )
+    assert save.status_code == 201
+    batch = client.post(
+        "/api/ecommerce-scenes/batches",
+        headers=headers,
+        json={
+            "cabinet": CABINET_PRESETS[0],
+            "sceneIds": [scene_id],
+            "themeIds": ["THEME_NORDIC_OAK"],
+            "views": ["FRONT"],
+            "aiEngine": "builtin",
+            "blenderEngine": "local",
+        },
+    )
+    assert batch.status_code == 202
+    batch_id = batch.json()["batchId"]
+    deadline = time.time() + 30.0
+    while time.time() < deadline:
+        doc = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
+        if doc.get("state") in ("completed", "failed", "interrupted"):
+            break
+        time.sleep(0.05)
+    assert doc["state"] == "completed", doc
+    assert runtime.jobs, "expected local Blender job"
+    boxes = runtime.jobs[0]["engineering"]["sceneDefinition"]["boxes"]
+    glb_paths = [b["glbPath"] for b in boxes if b.get("glbPath")]
+    assert glb_paths
+    for path in glb_paths:
+        p = Path(path)
+        assert p.is_absolute() and p.is_file()
+        assert "glb-props" in p.as_posix()

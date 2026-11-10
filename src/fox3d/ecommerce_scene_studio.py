@@ -26,6 +26,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from fox3d.fleet_blender import (
+    ASSET_REF_PREFIX,
     BLENDER_ENGINES,
     blender_fleet_status,
     fleet_eligible,
@@ -34,6 +35,7 @@ from fox3d.fleet_blender import (
     render_on_fleet,
     submit_blender_job,
 )
+from fox3d.ops import path_segments
 from fox3d.fleet_image_client import FleetError, FleetImageClient, task_status
 from fox3d.ids import new_id, stable_hash
 from fox3d.local_scene_ai import (
@@ -1074,6 +1076,75 @@ def validate_glb_binary(raw_bytes: bytes, *, max_bytes: int | None = None) -> No
         raise ValueError("GLB 版本必須為 2")
     if declared_len != len(raw_bytes):
         raise ValueError("GLB 檔頭宣告的長度與實際檔案長度不符")
+    if len(raw_bytes) < 20:
+        raise ValueError("GLB 缺少 JSON chunk 檔頭")
+    chunk_len, chunk_type = struct.unpack("<II", raw_bytes[12:20])
+    if chunk_type != 0x4E4F534A:
+        raise ValueError("GLB 第一個 chunk 必須為 JSON")
+    if chunk_len < 2:
+        raise ValueError("GLB JSON chunk 過短")
+    if chunk_len % 4:
+        raise ValueError("GLB JSON chunk 長度必須為 4 的倍數")
+    json_end = 20 + chunk_len
+    if json_end > len(raw_bytes):
+        raise ValueError("GLB JSON chunk 超出檔案範圍")
+    if json_end > declared_len:
+        raise ValueError("GLB JSON chunk 長度與檔頭宣告不符")
+    try:
+        json.loads(raw_bytes[20:json_end].rstrip(b" \x00"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("GLB JSON chunk 不是合法的 JSON") from exc
+
+
+def _tenant_slug(tenant_id: str) -> str:
+    return "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
+
+
+def _tenant_glb_props_root(platform_root: Path, tenant_id: str) -> Path:
+    return Path(platform_root).resolve() / "ecommerce-scene-studio" / _tenant_slug(tenant_id) / "glb-props"
+
+
+def resolve_scene_glb_paths_for_blender(
+    scene_definition: dict[str, Any],
+    *,
+    platform_root: Path,
+    tenant_id: str,
+) -> dict[str, Any]:
+    """Resolve tenant upload refs (relative to ``platform.root``) to absolute paths for Blender subprocesses."""
+    root = Path(platform_root).resolve()
+    tenant_props = _tenant_glb_props_root(root, tenant_id)
+    out = dict(scene_definition)
+    resolved_boxes: list[Any] = []
+    for box in scene_definition.get("boxes") or []:
+        if not isinstance(box, dict):
+            resolved_boxes.append(box)
+            continue
+        item = dict(box)
+        glb = item.get("glbPath")
+        if not glb:
+            resolved_boxes.append(item)
+            continue
+        text = str(glb).strip()
+        if text.startswith(ASSET_REF_PREFIX):
+            resolved_boxes.append(item)
+            continue
+        if ".." in path_segments(text):
+            raise ValueError(f"道具「{item.get('name') or '?'}」的 GLB 路徑不合法")
+        candidate = Path(text)
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+        else:
+            resolved = (root / text).resolve()
+            try:
+                resolved.relative_to(tenant_props)
+            except ValueError as exc:
+                raise ValueError(f"道具「{item.get('name') or '?'}」的 GLB 路徑超出租戶允許範圍") from exc
+        if not resolved.is_file():
+            raise ValueError(f"找不到上傳的 GLB：{text}")
+        item["glbPath"] = str(resolved)
+        resolved_boxes.append(item)
+    out["boxes"] = resolved_boxes
+    return out
 
 
 class EcommerceSceneStore:
@@ -1599,6 +1670,11 @@ class EcommerceSceneStore:
                 cab_spec = build_modular_cabinet_spec(cab_copy, tenant_id=tenant_id)
                 scfg = scenes_by_id.get(item["sceneId"]) or BUILTIN_SCENES[0]
                 scene_def, scene_hash = compile_custom_scene(scfg, cab_spec, view=item["view"])
+                plat_root = Path(self.platform.root).resolve()
+                scene_def = resolve_scene_glb_paths_for_blender(
+                    scene_def, platform_root=plat_root, tenant_id=tenant_id,
+                )
+                scene_hash = stable_hash(scene_def)
                 cab_spec["sceneDefinition"] = scene_def
                 cab_spec["sceneHash"] = scene_hash
                 cab_spec["nasScene"] = "STUDIO"
