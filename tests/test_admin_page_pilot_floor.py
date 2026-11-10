@@ -109,3 +109,15 @@ def test_pilot_floor_apis(client: TestClient, platform) -> None:
     scan = client.post("/api/pilot/scan", headers=HEADERS, json={"token": scan_token})
     assert scan.status_code == 200
     assert scan.json()["objectId"] == wo["workOrderId"]
+
+
+def test_pilot_floor_never_parses_api_values_as_html() -> None:
+    import re
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/pilot-floor.js").read_text(encoding="utf-8")
+    assert "td.innerHTML" not in js
+    assert "'<code>' +" not in js
+    # every remaining innerHTML assignment is either static text or escaped
+    for line in re.findall(r"innerHTML = (.+)", js):
+        assert "+" not in line or "esc(" in line, line

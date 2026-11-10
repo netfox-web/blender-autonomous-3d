@@ -69,11 +69,34 @@
     }
   }
 
+  // API values (work order ids, station ids, exception messages) are never parsed as HTML.
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function code(v) {
+    var c = document.createElement('code');
+    c.textContent = v == null ? '' : String(v);
+    return c;
+  }
+  function withTag(text, tag) {
+    var span = document.createElement('span');
+    span.textContent = text == null ? '' : String(text);
+    if (tag) {
+      var t = document.createElement('span');
+      t.className = 'pf-tag warn';
+      t.textContent = tag;
+      span.appendChild(document.createTextNode(' '));
+      span.appendChild(t);
+    }
+    return span;
+  }
   function rowCells(tr, cells) {
-    cells.forEach(function (html) {
+    cells.forEach(function (cell) {
       var td = document.createElement('td');
-      if (typeof html === 'string') td.innerHTML = html;
-      else td.appendChild(html);
+      if (cell instanceof Node) td.appendChild(cell);
+      else td.textContent = cell == null ? '' : String(cell);
       tr.appendChild(td);
     });
   }
@@ -100,10 +123,10 @@
       var tr = document.createElement('tr');
       tr.dataset.json = JSON.stringify(wo);
       rowCells(tr, [
-        '<code>' + wo.workOrderId + '</code>',
-        wo.state + (wo.qcHold ? ' <span class="pf-tag warn">品檢暫停</span>' : ''),
+        code(wo.workOrderId),
+        withTag(wo.state, wo.qcHold ? '品檢暫停' : ''),
         (wo.openOps || []).join(', ') || '—',
-        '<code>' + (wo.scanToken || '') + '</code>'
+        code((wo.scanToken || ''))
       ]);
       tr.addEventListener('click', function () {
         selectRow(tr);
@@ -135,7 +158,7 @@
       var tr = document.createElement('tr');
       tr.dataset.json = JSON.stringify(lot);
       rowCells(tr, [
-        '<code>' + lot.lotId + '</code>',
+        code(lot.lotId),
         lot.material || '—',
         String(lot.available != null ? lot.available : '—'),
         lot.quarantined ? '是' : '否'
@@ -173,7 +196,7 @@
         heartbeatStation(st.stationId);
       });
       rowCells(tr, [
-        '<code>' + st.stationId + '</code>',
+        code(st.stationId),
         st.status || '—',
         (st.capabilities || []).join(', '),
         st.heartbeatAt || '—',
@@ -219,11 +242,11 @@
         actions.appendChild(b);
       });
       rowCells(tr, [
-        '<code>' + lease.leaseId + '</code>',
-        '<code>' + (lease.workOrderId || '') + '</code>',
+        code(lease.leaseId),
+        code((lease.workOrderId || '')),
         lease.operation || '—',
         lease.status || '—',
-        '<code>' + (lease.stationId || '') + '</code>',
+        code((lease.stationId || '')),
         actions
       ]);
       tr.addEventListener('click', function () {
@@ -251,7 +274,7 @@
       var tr = document.createElement('tr');
       tr.dataset.json = JSON.stringify(ex);
       rowCells(tr, [
-        '<code>' + (ex.exceptionId || ex.id || '—') + '</code>',
+        code((ex.exceptionId || ex.id || '—')),
         ex.kind || ex.code || '—',
         ex.message || ex.summary || '—',
         ex.createdAt || ex.at || '—'
@@ -359,7 +382,7 @@
     var labels = { ack: '確認收到派工', start: '開始作業', complete: '完成工序' };
     var wrap = document.createElement('div');
     wrap.className = 'pf-confirm pf-inline-confirm';
-    wrap.innerHTML = '<p class="pf-muted">' + labels[action] + '（租約 ' + leaseId + '）</p>' +
+    wrap.innerHTML = '<p class="pf-muted">' + esc(labels[action]) + '（租約 ' + esc(leaseId) + '）</p>' +
       '<label><input type="checkbox" class="pf-confirm-box"> 我確認要執行</label>' +
       '<button type="button" class="pf-btn pf-btn-primary" disabled>送出</button>';
     showDetail({ leaseId: leaseId, action: action }, '租約動作');
