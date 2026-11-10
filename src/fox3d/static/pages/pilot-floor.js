@@ -2,17 +2,27 @@
 (function () {
   'use strict';
   var TENANT_KEY = 'fox3d.tenant';
+  var DEFAULT_TENANT = 'sonaqueen-home';
   var state = { operator: null };
+  // Tenant every API call goes to. Set at page load and when 重新載入 is pressed;
+  // editing the header field alone never changes where writes go.
+  var activeTenant = DEFAULT_TENANT;
+  // Confirm controllers for the station / dispatch / scan forms.
+  var formConfirms = {};
 
   function $(id) { return document.getElementById(id); }
 
-  function tenant() {
+  function fieldTenant() {
     var v = ($('pf-tenant') && $('pf-tenant').value || '').trim();
-    return v || 'sonaqueen-home';
+    return v || DEFAULT_TENANT;
+  }
+
+  function tenant() {
+    return activeTenant;
   }
 
   function saveTenant() {
-    try { localStorage.setItem(TENANT_KEY, tenant()); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(TENANT_KEY, activeTenant); } catch (e) { /* ignore */ }
   }
 
   function loadTenant() {
@@ -20,6 +30,14 @@
       var v = localStorage.getItem(TENANT_KEY);
       if (v && $('pf-tenant')) $('pf-tenant').value = v;
     } catch (e) { /* ignore */ }
+  }
+
+  function updateTenantHint() {
+    var hint = $('pf-tenant-hint');
+    if (!hint) return;
+    var pending = fieldTenant() !== activeTenant;
+    hint.hidden = !pending;
+    hint.textContent = pending ? '按重新載入後才會切換租戶（目前仍是 ' + activeTenant + '）' : '';
   }
 
   function showDetail(obj, title) {
@@ -33,7 +51,7 @@
 
   function api(path, options) {
     var opts = options || {};
-    var headers = Object.assign({ 'X-Tenant-Id': tenant(), Accept: 'application/json' }, opts.headers || {});
+    var headers = Object.assign({ 'X-Tenant-Id': opts.tenant || tenant(), Accept: 'application/json' }, opts.headers || {});
     if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
     return fetch(path, { method: opts.method || 'GET', headers: headers, body: opts.body })
       .then(function (r) {
@@ -131,11 +149,10 @@
       tr.addEventListener('click', function () {
         selectRow(tr);
         showDetail(wo, '工單');
-        if ($('pf-dispatch-form')) {
-          var f = $('pf-dispatch-form');
-          f.workOrderId.value = wo.workOrderId;
-          if ((wo.openOps || []).length) f.operation.value = wo.openOps[0];
-        }
+        prefillDispatch(function (f) {
+          f.elements.namedItem('workOrderId').value = wo.workOrderId == null ? '' : String(wo.workOrderId);
+          if ((wo.openOps || []).length) f.elements.namedItem('operation').value = String(wo.openOps[0]);
+        });
       });
       tb.appendChild(tr);
     });
@@ -205,8 +222,9 @@
       tr.addEventListener('click', function () {
         selectRow(tr);
         showDetail(st, '工作站');
-        var df = $('pf-dispatch-form');
-        if (df) df.stationId.value = st.stationId;
+        prefillDispatch(function (f) {
+          f.elements.namedItem('stationId').value = st.stationId == null ? '' : String(st.stationId);
+        });
       });
       tb.appendChild(tr);
     });
@@ -299,12 +317,57 @@
     el.style.color = isError ? 'var(--danger)' : '';
   }
 
+  // Visible notice for every action (heartbeat, lease, register, dispatch, scan, token).
+  function notify(text, isError) {
+    setStatus('pf-action-status', text, isError);
+  }
+
+  function errorText(res) {
+    var b = res && res.body;
+    var detail = '';
+    if (b && typeof b === 'object') detail = b.detail != null ? b.detail : (b.error != null ? b.error : b.message);
+    else if (typeof b === 'string') detail = b;
+    if (detail != null && typeof detail !== 'string') detail = JSON.stringify(detail);
+    detail = String(detail || '').slice(0, 200);
+    return 'HTTP ' + (res ? res.status : '?') + (detail ? '：' + detail : '');
+  }
+
+  // Runs one API action: disables the triggering controls while in flight, re-enables them
+  // afterwards, and always leaves a visible success / failure notice (network errors included).
+  function runAction(opts) {
+    var busy = (opts.disable || []).filter(Boolean);
+    busy.forEach(function (el) { el.disabled = true; });
+    notify(opts.label + '：送出中…');
+    var p;
+    try { p = Promise.resolve(opts.request()); } catch (e) { p = Promise.reject(e); }
+    return p.then(function (res) { return { res: res }; }, function (err) { return { err: err }; })
+      .then(function (r) {
+        busy.forEach(function (el) { el.disabled = false; });
+        if (r.err) {
+          var msg = (r.err && r.err.message) || String(r.err);
+          notify(opts.label + '失敗：網路錯誤（' + msg + '），請確認連線後再試。', true);
+          showDetail(String(msg), opts.label + ' 網路錯誤');
+          return null;
+        }
+        showDetail(r.res, opts.label + ' API 回應');
+        if (!r.res.ok) {
+          notify(opts.label + '失敗（' + errorText(r.res) + '）', true);
+          return r.res;
+        }
+        notify(opts.label + '：完成（HTTP ' + r.res.status + '）');
+        if (opts.onOk) opts.onOk(r.res);
+        return r.res;
+      });
+  }
+
   function loadOperator() {
+    var t = activeTenant;
     setStatus('pf-operator-status', '載入中…');
     setStatus('pf-station-status', '載入中…');
     setStatus('pf-lease-status', '載入中…');
-  return api('/api/pilot/operator')
+    return api('/api/pilot/operator', { tenant: t })
       .then(function (res) {
+        if (t !== activeTenant) return; // tenant switched while loading; newer load wins
         if (!res.ok) {
           setStatus('pf-operator-status', '載入失敗（HTTP ' + res.status + '）', true);
           setStatus('pf-station-status', '—');
@@ -326,79 +389,186 @@
         renderLeases(res.body.stationLeases || []);
       })
       .catch(function (e) {
+        if (t !== activeTenant) return;
         setStatus('pf-operator-status', '載入失敗：' + e, true);
       });
   }
 
   function loadExceptions() {
+    var t = activeTenant;
     setStatus('pf-exc-status', '載入中…');
-    return api('/api/pilot/exceptions')
+    return api('/api/pilot/exceptions', { tenant: t })
       .then(function (res) {
+        if (t !== activeTenant) return;
         if (!res.ok) {
           setStatus('pf-exc-status', '載入失敗（HTTP ' + res.status + '）', true);
           return;
         }
-        var items = res.body.items || [];
+        var items = (res.body && res.body.items) || [];
         setStatus('pf-exc-status', items.length + ' 筆異常');
         renderExceptions(items);
       })
-      .catch(function (e) { setStatus('pf-exc-status', '載入失敗：' + e, true); });
+      .catch(function (e) {
+        if (t !== activeTenant) return;
+        setStatus('pf-exc-status', '載入失敗：' + e, true);
+      });
   }
 
-  function bindConfirmBlocks(root) {
-    (root || document).querySelectorAll('.pf-confirm').forEach(function (block) {
-      var box = block.querySelector('.pf-confirm-box');
-      var btn = block.querySelector('button[type="submit"], button.pf-btn-primary');
-      if (!box || !btn) return;
-      box.addEventListener('change', function () { btn.disabled = !box.checked; });
+  function describePayload(payload) {
+    return Object.keys(payload).map(function (k) {
+      var v = payload[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) v = JSON.stringify(v);
+      return k + '=' + (Array.isArray(v) ? v.join(',') : String(v == null ? '' : v));
+    }).join('，');
+  }
+
+  // Send = confirmed. Ticking the confirm box snapshots the payload (and the tenant),
+  // locks the form inputs, and shows the snapshot next to the box; unticking unlocks.
+  // Submitting sends exactly the snapshot, never a re-read of the form.
+  function makeConfirm(block, opts) {
+    var box = block.querySelector('.pf-confirm-box');
+    var btn = block.querySelector('button[type="submit"], button.pf-btn-primary');
+    if (!box || !btn) return null;
+    var summary = block.querySelector('.pf-confirm-summary');
+    if (!summary) {
+      summary = document.createElement('p');
+      summary.className = 'pf-confirm-summary';
+      block.appendChild(summary);
+    }
+    var form = opts.form || null;
+    var ctl = { snapshot: null, box: box, btn: btn };
+
+    function lockInputs(on) {
+      if (!form) return;
+      form.querySelectorAll('input, select, textarea').forEach(function (el) {
+        if (el !== box) el.disabled = on;
+      });
+    }
+
+    ctl.clear = function () {
+      ctl.snapshot = null;
+      box.checked = false;
+      box.disabled = false;
+      lockInputs(false);
+      btn.disabled = true;
+      summary.textContent = '';
+      summary.hidden = true;
+    };
+    ctl.isLocked = function () { return !!ctl.snapshot; };
+
+    box.addEventListener('change', function () {
+      if (!box.checked) { ctl.clear(); return; }
+      if (form && !form.checkValidity()) {
+        box.checked = false;
+        form.reportValidity();
+        return;
+      }
+      var payload = opts.build();
+      if (!payload) { box.checked = false; return; }
+      ctl.snapshot = { tenant: activeTenant, payload: payload };
+      lockInputs(true);
+      summary.textContent = '將送出（租戶 ' + ctl.snapshot.tenant + '）：' + describePayload(payload);
+      summary.hidden = false;
+      btn.disabled = false;
+    });
+
+    ctl.clear();
+    return ctl;
+  }
+
+  function trimmed(fd, name) {
+    return (fd.get(name) || '').toString().trim();
+  }
+
+  function removeInlineConfirm() {
+    document.querySelectorAll('.pf-inline-confirm').forEach(function (el) { el.remove(); });
+  }
+
+  function clearPendingConfirms() {
+    Object.keys(formConfirms).forEach(function (k) { if (formConfirms[k]) formConfirms[k].clear(); });
+    removeInlineConfirm();
+  }
+
+  // Row clicks only prefill the dispatch form while it is not confirmed (locked).
+  function prefillDispatch(apply) {
+    var f = $('pf-dispatch-form');
+    if (!f) return;
+    var ctl = formConfirms.dispatch;
+    if (ctl && ctl.isLocked()) {
+      notify('派工表單已勾選確認並鎖定，未帶入點選的資料；要修改請先取消勾選。');
+      return;
+    }
+    apply(f);
+  }
+
+  // Inline confirm in the detail panel (heartbeat / lease actions), built without innerHTML.
+  function inlineConfirm(title, confirmText, build, send) {
+    removeInlineConfirm();
+    var wrap = document.createElement('div');
+    wrap.className = 'pf-confirm pf-inline-confirm';
+    if (title) {
+      var p = document.createElement('p');
+      p.className = 'pf-muted';
+      p.textContent = title;
+      wrap.appendChild(p);
+    }
+    var label = document.createElement('label');
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'pf-confirm-box';
+    label.appendChild(box);
+    label.appendChild(document.createTextNode(' ' + confirmText));
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pf-btn pf-btn-primary';
+    btn.textContent = '送出';
+    btn.disabled = true;
+    wrap.appendChild(label);
+    wrap.appendChild(btn);
+    $('pf-detail').parentNode.appendChild(wrap);
+    var ctl = makeConfirm(wrap, { build: build });
+    btn.addEventListener('click', function () {
+      if (!ctl.snapshot) return;
+      send(ctl.snapshot, ctl, wrap);
     });
   }
 
   function heartbeatStation(stationId) {
-    var wrap = document.createElement('div');
-    wrap.className = 'pf-confirm';
-    wrap.innerHTML = '<label><input type="checkbox" class="pf-confirm-box"> 我確認要更新心跳</label><button type="button" class="pf-btn pf-btn-primary" disabled>送出</button>';
     showDetail({ stationId: stationId, step: '請在詳細面板勾選確認後送出' }, '心跳確認');
-    var panel = $('pf-detail').parentNode;
-    var old = panel.querySelector('.pf-inline-confirm');
-    if (old) old.remove();
-    wrap.className += ' pf-inline-confirm';
-    panel.appendChild(wrap);
-    bindConfirmBlocks(wrap);
-    wrap.querySelector('button').addEventListener('click', function () {
-      var actor = 'floor-admin';
-      api('/api/pilot/stations/' + encodeURIComponent(stationId) + '/heartbeat', {
-        method: 'POST',
-        body: JSON.stringify({ actor: actor })
-      }).then(function (res) {
-        showDetail(res, '心跳 API 回應');
-        wrap.remove();
-        if (res.ok) loadOperator();
+    inlineConfirm('', '我確認要更新心跳', function () {
+      return { stationId: stationId, actor: 'floor-admin' };
+    }, function (snap, ctl, wrap) {
+      runAction({
+        label: '心跳',
+        disable: [ctl.btn, ctl.box],
+        request: function () {
+          return api('/api/pilot/stations/' + encodeURIComponent(snap.payload.stationId) + '/heartbeat', {
+            method: 'POST',
+            tenant: snap.tenant,
+            body: JSON.stringify({ actor: snap.payload.actor })
+          });
+        },
+        onOk: function () { wrap.remove(); loadOperator(); }
       });
     });
   }
 
   function leaseAction(leaseId, action) {
     var labels = { ack: '確認收到派工', start: '開始作業', complete: '完成工序' };
-    var wrap = document.createElement('div');
-    wrap.className = 'pf-confirm pf-inline-confirm';
-    wrap.innerHTML = '<p class="pf-muted">' + esc(labels[action]) + '（租約 ' + esc(leaseId) + '）</p>' +
-      '<label><input type="checkbox" class="pf-confirm-box"> 我確認要執行</label>' +
-      '<button type="button" class="pf-btn pf-btn-primary" disabled>送出</button>';
     showDetail({ leaseId: leaseId, action: action }, '租約動作');
-    var panel = $('pf-detail').parentNode;
-    var old = panel.querySelector('.pf-inline-confirm');
-    if (old) old.remove();
-    panel.appendChild(wrap);
-    bindConfirmBlocks(wrap);
-    wrap.querySelector('button').addEventListener('click', function () {
-      var path = '/api/pilot/leases/' + encodeURIComponent(leaseId) + '/' + action;
+    inlineConfirm(labels[action] + '（租約 ' + leaseId + '）', '我確認要執行', function () {
       var body = { actor: 'floor-admin' };
       if (action === 'complete') body.confirm = true;
-      api(path, { method: 'POST', body: JSON.stringify(body) }).then(function (res) {
-        showDetail(res, '租約 ' + action);
-        wrap.remove();
-        if (res.ok) loadOperator();
+      return { leaseId: leaseId, action: action, body: body };
+    }, function (snap, ctl, wrap) {
+      runAction({
+        label: '租約' + labels[action],
+        disable: [ctl.btn, ctl.box],
+        request: function () {
+          var path = '/api/pilot/leases/' + encodeURIComponent(snap.payload.leaseId) + '/' + snap.payload.action;
+          return api(path, { method: 'POST', tenant: snap.tenant, body: JSON.stringify(snap.payload.body) });
+        },
+        onOk: function () { wrap.remove(); loadOperator(); }
       });
     });
   }
@@ -417,55 +587,65 @@
     if (btn.dataset.panel === 'exceptions') loadExceptions();
   }
 
+  function wireConfirmForm(key, form, label, build, path, onOk) {
+    var ctl = makeConfirm(form.querySelector('.pf-confirm'), { form: form, build: build });
+    formConfirms[key] = ctl;
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      if (!ctl || !ctl.snapshot) return; // only a confirmed snapshot is ever sent
+      var snap = ctl.snapshot;
+      runAction({
+        label: label,
+        disable: [ctl.btn, ctl.box],
+        request: function () {
+          return api(path, { method: 'POST', tenant: snap.tenant, body: JSON.stringify(snap.payload) });
+        },
+        onOk: function (res) { onOk(ctl, res); }
+      });
+    });
+  }
+
   function wireForms() {
     var sf = $('pf-station-form');
     if (sf) {
-      sf.addEventListener('submit', function (ev) {
-        ev.preventDefault();
+      wireConfirmForm('station', sf, '註冊工作站', function () {
         var fd = new FormData(sf);
         var payload = {
-          capabilities: [fd.get('capability')],
-          status: fd.get('status'),
-          actor: fd.get('actor') || 'floor-admin'
+          capabilities: [trimmed(fd, 'capability')],
+          status: trimmed(fd, 'status'),
+          actor: trimmed(fd, 'actor') || 'floor-admin'
         };
-        var sid = (fd.get('stationId') || '').toString().trim();
+        var sid = trimmed(fd, 'stationId');
         if (sid) payload.stationId = sid;
-        api('/api/pilot/stations', { method: 'POST', body: JSON.stringify(payload) }).then(function (res) {
-          showDetail(res, '註冊工作站');
-          if (res.ok) {
-            sf.reset();
-            sf.querySelector('.pf-confirm-box').checked = false;
-            sf.querySelector('button[type="submit"]').disabled = true;
-            loadOperator();
-          }
-        });
+        return payload;
+      }, '/api/pilot/stations', function (ctl) {
+        ctl.clear();
+        sf.reset();
+        loadOperator();
       });
     }
     var df = $('pf-dispatch-form');
     if (df) {
-      df.addEventListener('submit', function (ev) {
-        ev.preventDefault();
+      wireConfirmForm('dispatch', df, '派工', function () {
         var fd = new FormData(df);
-        var payload = {
-          workOrderId: fd.get('workOrderId'),
-          operation: fd.get('operation'),
-          stationId: fd.get('stationId'),
-          actor: fd.get('actor') || 'floor-admin'
+        return {
+          workOrderId: trimmed(fd, 'workOrderId'),
+          operation: trimmed(fd, 'operation'),
+          stationId: trimmed(fd, 'stationId'),
+          actor: trimmed(fd, 'actor') || 'floor-admin'
         };
-        api('/api/pilot/dispatch', { method: 'POST', body: JSON.stringify(payload) }).then(function (res) {
-          showDetail(res, '派工');
-          if (res.ok) loadOperator();
-        });
+      }, '/api/pilot/dispatch', function (ctl) {
+        ctl.clear();
+        df.reset();
+        loadOperator();
       });
     }
     var sc = $('pf-scan-form');
     if (sc) {
-      sc.addEventListener('submit', function (ev) {
-        ev.preventDefault();
-        var token = new FormData(sc).get('token');
-        api('/api/pilot/scan', { method: 'POST', body: JSON.stringify({ token: token }) }).then(function (res) {
-          showDetail(res, '掃碼');
-        });
+      wireConfirmForm('scan', sc, '掃碼', function () {
+        return { token: trimmed(new FormData(sc), 'token') };
+      }, '/api/pilot/scan', function (ctl) {
+        ctl.clear();
       });
     }
     var tf = $('pf-token-form');
@@ -473,23 +653,44 @@
       tf.addEventListener('submit', function (ev) {
         ev.preventDefault();
         var fd = new FormData(tf);
-        var kind = fd.get('kind');
-        var objectId = fd.get('objectId');
-        api('/api/pilot/scan-token/' + encodeURIComponent(kind) + '/' + encodeURIComponent(objectId))
-          .then(function (res) {
-            showDetail(res, '產生掃碼權杖');
-            if (res.ok && res.body && res.body.token && sc) sc.token.value = res.body.token;
-          });
+        var kind = trimmed(fd, 'kind');
+        var objectId = trimmed(fd, 'objectId');
+        runAction({
+          label: '產生掃碼權杖',
+          disable: [tf.querySelector('button[type="submit"]')],
+          request: function () {
+            return api('/api/pilot/scan-token/' + encodeURIComponent(kind) + '/' + encodeURIComponent(objectId));
+          },
+          onOk: function (res) {
+            if (!(res.body && res.body.token && sc)) return;
+            if (formConfirms.scan && formConfirms.scan.isLocked()) {
+              notify('產生掃碼權杖：完成；掃碼表單已勾選確認並鎖定，未帶入新權杖。');
+              return;
+            }
+            sc.elements.namedItem('token').value = String(res.body.token);
+          }
+        });
       });
     }
   }
 
+  function reloadAll() {
+    activeTenant = fieldTenant();
+    clearPendingConfirms();
+    updateTenantHint();
+    saveTenant();
+    loadOperator();
+    loadExceptions();
+  }
+
   function init() {
     loadTenant();
-    bindConfirmBlocks(document);
+    activeTenant = fieldTenant();
+    updateTenantHint();
     document.querySelectorAll('.pf-tabs button').forEach(function (b) { b.addEventListener('click', onTabClick); });
-    $('pf-tenant').addEventListener('change', function () { saveTenant(); loadOperator(); loadExceptions(); });
-    $('pf-refresh').addEventListener('click', function () { loadOperator(); loadExceptions(); });
+    $('pf-tenant').addEventListener('input', updateTenantHint);
+    $('pf-tenant').addEventListener('change', updateTenantHint);
+    $('pf-refresh').addEventListener('click', reloadAll);
     wireForms();
     loadOperator();
     loadExceptions();

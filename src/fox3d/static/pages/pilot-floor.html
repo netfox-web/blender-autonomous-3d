@@ -22,6 +22,7 @@
         <input id="pf-tenant" type="text" value="sonaqueen-home" spellcheck="false" autocomplete="off" aria-label="租戶代碼">
       </label>
       <button type="button" id="pf-refresh" class="pf-btn pf-btn-primary">重新載入</button>
+      <p id="pf-tenant-hint" class="pf-tenant-hint" role="status" hidden></p>
       <p id="pf-banner" class="pf-banner" hidden></p>
     </section>
 
@@ -92,6 +93,7 @@
             <div class="pf-confirm" data-action="station-register">
               <label><input type="checkbox" class="pf-confirm-box"> 我確認要註冊此工作站</label>
               <button type="submit" class="pf-btn pf-btn-primary" disabled>送出註冊</button>
+              <p class="pf-confirm-summary" hidden></p>
             </div>
           </form>
         </section>
@@ -116,6 +118,7 @@
             <div class="pf-confirm" data-action="dispatch">
               <label><input type="checkbox" class="pf-confirm-box"> 我確認要派工（會建立租約）</label>
               <button type="submit" class="pf-btn pf-btn-primary" disabled>送出派工</button>
+              <p class="pf-confirm-summary" hidden></p>
             </div>
           </form>
         </section>
@@ -127,6 +130,7 @@
             <div class="pf-confirm" data-action="scan">
               <label><input type="checkbox" class="pf-confirm-box"> 我確認要送出此掃碼查詢</label>
               <button type="submit" class="pf-btn pf-btn-primary" disabled>掃碼</button>
+              <p class="pf-confirm-summary" hidden></p>
             </div>
           </form>
           <form id="pf-token-form" class="pf-form" aria-label="產生掃碼權杖">
@@ -160,7 +164,8 @@
 
       <aside class="pf-detail" aria-label="詳細與 API 回應">
         <h2>詳細資料</h2>
-        <p id="pf-detail-hint" class="pf-muted">點選表格列可預覽；執行動作後會顯示 API 回應。</p>
+        <p id="pf-detail-hint" class="pf-muted">點選表格列可預覽；執行動作後會顯示 API 回應。勾選確認會鎖定表單並以當下內容送出。</p>
+        <p id="pf-action-status" class="pf-action-status" role="status" aria-live="polite"></p>
         <pre id="pf-detail" class="pf-out">尚無資料</pre>
       </aside>
     </div>

@@ -121,3 +121,78 @@ def test_pilot_floor_never_parses_api_values_as_html() -> None:
     # every remaining innerHTML assignment is either static text or escaped
     for line in re.findall(r"innerHTML = (.+)", js):
         assert "+" not in line or "esc(" in line, line
+
+
+def _pilot_floor_asset(name: str) -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages" / name).read_text(encoding="utf-8")
+
+
+def _js_function(js: str, name: str) -> str:
+    start = js.index(f"function {name}(")
+    nxt = js.find("\n  function ", start + 1)
+    return js[start: nxt if nxt != -1 else len(js)]
+
+
+def test_pilot_floor_actions_handle_errors_and_disable_while_in_flight() -> None:
+    js = _pilot_floor_asset("pilot-floor.js")
+    run = _js_function(js, "runAction")
+    # in-flight lock, re-enable afterwards, visible failure notice for HTTP and network errors
+    assert "el.disabled = true" in run and "el.disabled = false" in run
+    assert "網路錯誤" in run and "notify(" in run and "r.res.ok" in run
+    # every action endpoint goes through runAction (no bare api(...).then(...) without a rejection path)
+    for endpoint in ("/heartbeat", "/api/pilot/leases/", "/api/pilot/scan-token/"):
+        idx = js.index(endpoint)
+        run_at = js.rfind("runAction({", 0, idx)
+        assert run_at > js.rfind("\n  function ", 0, idx), endpoint
+        assert "request: function" in js[run_at:idx], endpoint
+    wire = _js_function(js, "wireConfirmForm")
+    assert "runAction({" in wire and "disable: [ctl.btn, ctl.box]" in wire
+    for key, path in (("station", "/api/pilot/stations'"), ("dispatch", "/api/pilot/dispatch"), ("scan", "/api/pilot/scan'")):
+        assert f"wireConfirmForm('{key}'" in js and path in js
+    html = _pilot_floor_asset("pilot-floor.html")
+    assert 'id="pf-action-status"' in html and 'role="status"' in html
+
+
+def test_pilot_floor_confirm_snapshots_and_locks_the_form() -> None:
+    js = _pilot_floor_asset("pilot-floor.js")
+    confirm = _js_function(js, "makeConfirm")
+    assert "ctl.snapshot = { tenant: activeTenant, payload: payload }" in confirm
+    assert "lockInputs(true)" in confirm and "lockInputs(false)" in confirm
+    assert "summary.textContent = " in confirm and "租戶" in confirm
+    assert "checkValidity()" in confirm
+    wire = _js_function(js, "wireConfirmForm")
+    # submit sends the snapshot (payload + tenant), never re-reads the form
+    assert "if (!ctl || !ctl.snapshot) return;" in wire
+    assert "JSON.stringify(snap.payload)" in wire and "tenant: snap.tenant" in wire
+    assert "new FormData" not in wire
+    # row clicks never rewrite a confirmed dispatch form
+    prefill = _js_function(js, "prefillDispatch")
+    assert "isLocked()" in prefill and "return;" in prefill
+    assert "namedItem('workOrderId')" not in _js_function(js, "renderWorkOrders").split("prefillDispatch")[0]
+    assert "df.stationId.value" not in js
+    # successful dispatch resets the form and unticks its confirm
+    forms = _js_function(js, "wireForms")
+    dispatch_ok = forms[forms.index("'/api/pilot/dispatch'"):]
+    assert dispatch_ok.index("ctl.clear();") < dispatch_ok.index("df.reset();")
+    html = _pilot_floor_asset("pilot-floor.html")
+    assert html.count('class="pf-confirm-summary"') == 3
+
+
+def test_pilot_floor_tenant_is_frozen_until_reload() -> None:
+    js = _pilot_floor_asset("pilot-floor.js")
+    assert "var activeTenant = " in js
+    assert "return activeTenant;" in _js_function(js, "tenant")
+    # header field edits only update the hint; reload switches tenant and clears pending confirms
+    init = _js_function(js, "init")
+    assert "activeTenant = fieldTenant();" in init
+    assert "addEventListener('change', function () { saveTenant(); loadOperator()" not in js
+    assert "$('pf-refresh').addEventListener('click', reloadAll)" in init
+    reload = _js_function(js, "reloadAll")
+    assert "activeTenant = fieldTenant();" in reload and "clearPendingConfirms();" in reload
+    assert "按重新載入後才會切換租戶" in _js_function(js, "updateTenantHint")
+    assert js.count("activeTenant = ") == 3  # declaration, init, reload only
+    assert "opts.tenant || tenant()" in js
+    html = _pilot_floor_asset("pilot-floor.html")
+    assert 'id="pf-tenant-hint"' in html

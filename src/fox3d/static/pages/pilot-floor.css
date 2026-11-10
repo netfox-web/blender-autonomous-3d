@@ -48,6 +48,11 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 "Noto Sans TC"
 .pf-form input,.pf-form select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;max-width:100%}
 .pf-confirm{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px;background:var(--code);border-radius:8px;border:1px solid var(--line)}
 .pf-confirm label{flex-direction:row;align-items:center;gap:8px;color:var(--fg)}
+.pf-confirm-summary{flex:1 1 100%;margin:0;font:12px/1.45 ui-monospace,Consolas,monospace;color:var(--fg);overflow-wrap:anywhere}
+.pf-form input:disabled,.pf-form select:disabled{opacity:.7;cursor:not-allowed}
+.pf-tenant-hint{margin:0;font-size:12px;color:var(--warn)}
+.pf-action-status{margin:0 0 8px;font-size:13px;color:var(--mute);overflow-wrap:anywhere}
+.pf-action-status:empty{display:none}
 .pf-detail{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0;position:sticky;top:8px;align-self:start}
 .pf-detail h2{margin:0 0 8px;font-size:15px}
 .pf-out{margin:0;max-height:min(60vh,520px);overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:10px;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
