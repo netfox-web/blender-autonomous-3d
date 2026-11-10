@@ -8,7 +8,9 @@ import logging
 import math
 import os
 import re
+import secrets
 import shutil
+import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,8 @@ from urllib.parse import urlparse
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+
+from fox3d.storelock import FileLock
 
 AI_STYLE_PRESETS: dict[str, dict[str, Any]] = {
     "AI_NORDIC_SUNLIT_LOFT": {
@@ -336,12 +340,38 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     return True
 
 
+def _polyhaven_lock_path(model_dir: Path) -> Path:
+    return model_dir / ".polyhaven.lock"
+
+
+def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
+    """Swap a complete staging tree into model_dir so readers never see a mixed bundle."""
+    token = secrets.token_hex(8)
+    incoming = model_dir.parent / f".ph-incoming-{model_dir.name}-{token}"
+    old_dir: Path | None = None
+    staging.rename(incoming)
+    try:
+        model_dir.parent.mkdir(parents=True, exist_ok=True)
+        if model_dir.exists():
+            old_dir = model_dir.parent / f".ph-old-{model_dir.name}-{token}"
+            model_dir.rename(old_dir)
+        incoming.rename(model_dir)
+    except Exception:
+        if old_dir is not None and old_dir.exists() and not model_dir.exists():
+            old_dir.rename(model_dir)
+        elif incoming.exists() and not model_dir.exists():
+            incoming.rename(model_dir)
+        raise
+    finally:
+        shutil.rmtree(incoming, ignore_errors=True)
+        if old_dir is not None:
+            shutil.rmtree(old_dir, ignore_errors=True)
+
+
 def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
-    """Download glTF + all required includes into a staging dir, then publish atomically."""
-    staging = model_dir / ".polyhaven_staging"
-    if staging.exists():
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
+    """Download glTF + all required includes into a unique staging dir, then publish atomically."""
+    model_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".ph-staging-", dir=model_dir.parent))
     try:
         main_req = urllib.request.Request(gltf_entry["url"], headers=headers)
         staging_gltf = staging / gltf_file.name
@@ -353,7 +383,8 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
         for rel_path, inc_meta in (gltf_entry.get("include") or {}).items():
             inc_url = inc_meta.get("url")
             if not inc_url:
-                continue
+                logger.warning("Missing Poly Haven include URL for %s: %r", model_dir.name, rel_path)
+                return False
             dest = _polyhaven_include_dest(staging, rel_path)
             if dest is None:
                 logger.warning("Rejecting Poly Haven include for %s: %r", model_dir.name, rel_path)
@@ -368,22 +399,14 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
         manifest = staging / _POLYHAVEN_MANIFEST_NAME
         manifest.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
 
-        model_dir.mkdir(parents=True, exist_ok=True)
-        for path in sorted(staging.rglob("*"), key=lambda p: len(p.parts)):
-            if path.is_dir():
-                continue
-            rel = path.relative_to(staging)
-            target = model_dir / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                target.unlink()
-            shutil.move(str(path), str(target))
+        _polyhaven_atomic_publish(model_dir, staging)
         return True
     except Exception:
         logger.exception("Poly Haven bundle download failed for %s", model_dir.name)
         return False
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] | None = None) -> dict[str, str]:
@@ -408,21 +431,22 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
             except Exception:
                 pass
 
-        if _polyhaven_cache_complete(model_dir, gltf_file):
-            resolved_paths[aid] = str(gltf_file.resolve())
-            continue
-
-        try:
-            req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
-            data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
-            gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
-            if not gltf_entry or not gltf_entry.get("url"):
+        with FileLock(_polyhaven_lock_path(model_dir)):
+            if _polyhaven_cache_complete(model_dir, gltf_file):
+                resolved_paths[aid] = str(gltf_file.resolve())
                 continue
 
-            if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
-                resolved_paths[aid] = str(gltf_file.resolve())
-        except Exception:
-            logger.exception("Poly Haven metadata fetch failed for %s", aid)
+            try:
+                req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
+                data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
+                gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
+                if not gltf_entry or not gltf_entry.get("url"):
+                    continue
+
+                if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
+                    resolved_paths[aid] = str(gltf_file.resolve())
+            except Exception:
+                logger.exception("Poly Haven metadata fetch failed for %s", aid)
 
     return resolved_paths
 
