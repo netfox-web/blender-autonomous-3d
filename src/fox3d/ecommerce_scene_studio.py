@@ -10,7 +10,9 @@ import io
 import json
 import logging
 import math
+import os
 import random
+import struct
 import shutil
 import time
 import urllib.parse
@@ -1037,6 +1039,43 @@ def compile_custom_scene(
     return definition, scene_hash
 
 
+DEFAULT_GLB_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+
+
+def glb_upload_max_bytes() -> int:
+    raw = os.environ.get("FOX3D_ECOMMERCE_GLB_MAX_BYTES", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return DEFAULT_GLB_UPLOAD_MAX_BYTES
+
+
+def glb_upload_max_base64_chars(max_bytes: int | None = None) -> int:
+    limit = max_bytes if max_bytes is not None else glb_upload_max_bytes()
+    return ((limit + 2) // 3) * 4
+
+
+def validate_glb_binary(raw_bytes: bytes, *, max_bytes: int | None = None) -> None:
+    """Reject empty, oversized, or structurally invalid GLB 2.0 containers."""
+    limit = max_bytes if max_bytes is not None else glb_upload_max_bytes()
+    if not raw_bytes:
+        raise ValueError("上傳的 .glb 檔案內容為空")
+    if len(raw_bytes) > limit:
+        mb = limit // (1024 * 1024)
+        raise ValueError(f"GLB 檔案超過大小上限（{mb} MB）")
+    if len(raw_bytes) < 12:
+        raise ValueError("GLB 檔案過短，無法讀取檔頭")
+    magic, version, declared_len = struct.unpack("<4sII", raw_bytes[:12])
+    if magic != b"glTF":
+        raise ValueError("GLB 檔頭 magic 必須為 glTF")
+    if version != 2:
+        raise ValueError("GLB 版本必須為 2")
+    if declared_len != len(raw_bytes):
+        raise ValueError("GLB 檔頭宣告的長度與實際檔案長度不符")
+
+
 class EcommerceSceneStore:
     """Persistent store for user-created 3D room scenes and matrix render batches."""
 
@@ -1063,19 +1102,20 @@ class EcommerceSceneStore:
         return d
 
     def upload_glb_prop(self, tenant_id: str, filename: str, raw_bytes: bytes) -> dict[str, Any]:
-        if not raw_bytes or len(raw_bytes) < 16:
-            raise ValueError("上傳的 .glb 檔案內容為空")
+        validate_glb_binary(raw_bytes)
         safe_name = "".join(c for c in Path(filename or "custom_prop.glb").stem if c.isalnum() or c in ("-", "_")) or "custom_prop"
         prop_id = f"glb_{safe_name}_{new_id().split('-')[0]}"
         gdir = self._tenant_dir(tenant_id) / "glb-props"
         gdir.mkdir(parents=True, exist_ok=True)
         target = gdir / f"{prop_id}.glb"
         target.write_bytes(raw_bytes)
+        plat_root = Path(self.platform.root).resolve()
+        glb_ref = target.resolve().relative_to(plat_root).as_posix()
         return {
             "propId": prop_id,
             "filename": f"{prop_id}.glb",
             "label": f"📦 3D 模型：{safe_name}",
-            "glbPath": str(target.resolve()),
+            "glbPath": glb_ref,
             "sizeBytes": len(raw_bytes),
         }
 
