@@ -224,6 +224,21 @@
     }).catch(function (e) { st.textContent = '載入失敗：' + e; });
   }
 
+
+  // While a confirm box is open, lock the inputs of its section so the request sent on 確認
+  // is exactly what the summary showed (the OK handlers read the fields when clicked).
+  function lockWhileConfirming(box) {
+    var area = box.closest('section') || box.parentElement;
+    new MutationObserver(function () {
+      var open = !box.hidden;
+      Array.prototype.forEach.call(area.querySelectorAll('input, select, textarea'), function (f) {
+        if (box.contains(f)) return;
+        if (open) { f.dataset.rdWasDisabled = f.disabled ? '1' : ''; f.disabled = true; }
+        else if (f.dataset.rdWasDisabled !== undefined) { f.disabled = f.dataset.rdWasDisabled === '1'; delete f.dataset.rdWasDisabled; }
+      });
+    }).observe(box, { attributes: true, attributeFilter: ['hidden'] });
+  }
+
   function bindConfirm(runId, confirmId, okId, cancelId, onOk) {
     var run = $(runId);
     var box = $(confirmId);
@@ -341,6 +356,8 @@
       });
     }
     $('rd-com-cancel').addEventListener('click', function () { $('rd-com-confirm').hidden = true; });
+  Array.prototype.forEach.call(document.querySelectorAll('[id$="-confirm"]'), lockWhileConfirming);
+
     $('rd-com-ok').addEventListener('click', function () {
       $('rd-com-confirm').hidden = true;
       var rows;

@@ -92,3 +92,14 @@ def test_readiness_page_api_calls(client: TestClient) -> None:
         headers=HEADERS,
     )
     assert app.status_code == 200
+
+
+def test_readiness_confirm_boxes_start_hidden_and_lock_inputs() -> None:
+    import re
+    from pathlib import Path
+
+    base = Path(__file__).resolve().parents[1] / "src/fox3d/static/pages"
+    html = (base / "readiness.html").read_text(encoding="utf-8")
+    boxes = re.findall(r'<[^>]*id="rd-[a-z-]+-confirm"[^>]*>', html)
+    assert boxes and all(" hidden" in b for b in boxes)
+    assert "lockWhileConfirming" in (base / "readiness.js").read_text(encoding="utf-8")
