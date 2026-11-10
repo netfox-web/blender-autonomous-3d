@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>工廠報價與改版 · 商品研發產生 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/factory.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/factory.js"></script>
+</head>
+<body>
+  <main class="fc">
+    <header class="fc-head">
+      <p class="fc-eyebrow">AUTONOMOUS 3D · 工廠與報價工作台</p>
+      <h1>工廠報價與改版 · 商品研發產生</h1>
+      <p class="fc-lede">提供門市業務、工廠估價與研發人員使用：檢視商品類型清單、輸入房間空間自動排櫃並試算報價、查看報價費用明細與人工核准、單座櫃體尺寸改版，以及從需求文字產生研發方案。</p>
+      <div class="fc-banners" id="fc-env-banners" aria-live="polite">
+        <span class="fc-badge warn" id="fc-mode-badge">環境讀取中…</span>
+        <span class="fc-badge neutral">LIVE CNC：未啟用（僅產生製造候選方案，需人工核准）</span>
+      </div>
+    </header>
+
+    <section class="fc-tools" aria-label="頁面工具與快速跳轉">
+      <div class="fc-jumps">
+        <a href="#types" class="fc-chip">商品類型清單</a>
+        <a href="#space-run" class="fc-chip">輸入空間與跑報價</a>
+        <a href="#quotes" class="fc-chip">報價明細與核准</a>
+        <a href="#revise" class="fc-chip">櫃體改版</a>
+        <a href="#rd" class="fc-chip">商品研發產生</a>
+      </div>
+      <div class="fc-tools-right">
+        <label class="fc-tenant">租戶
+          <input id="fc-tenant" value="sonaqueen-home" spellcheck="false" aria-label="目前操作租戶代號">
+        </label>
+        <button type="button" id="fc-reload" class="fc-btn secondary">重新整理</button>
+      </div>
+    </section>
+
+    <div id="fc-global-status" class="fc-alert" hidden aria-live="polite"></div>
+
+    <!-- 1. 商品類型清單 -->
+    <section class="fc-section" id="types" aria-labelledby="h-types">
+      <div class="fc-sec-head">
+        <div>
+          <h2 id="h-types">一、工廠標準商品類型清單</h2>
+          <p class="fc-sub">點擊「加入排櫃」可勾選至下方空間排櫃方案；點擊「帶入研發」可將該櫃型帶入底部研發區塊。<code>GET /api/factory/product-types</code></p>
+        </div>
+      </div>
+      <div class="fc-card">
+        <div id="fc-types-state" class="fc-state">載入商品類型清單中…</div>
+        <div class="fc-table-wrap" id="fc-types-wrap" hidden>
+          <table class="fc-table">
+            <thead>
+              <tr>
+                <th>商品類型名稱</th>
+                <th>系統代碼</th>
+                <th>預設尺寸 寬×高×深 (mm)</th>
+                <th>門片 / 層板 / 抽屜</th>
+                <th>腳座 / 踢腳高</th>
+                <th>快速帶入</th>
+              </tr>
+            </thead>
+            <tbody id="fc-types-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. 輸入空間產生方案 & 跑報價 -->
+    <section class="fc-section" id="space-run" aria-labelledby="h-space-run">
+      <div class="fc-sec-head">
+        <div>
+          <h2 id="h-space-run">二、輸入空間產生方案與跑報價</h2>
+          <p class="fc-sub">先登記房間與門窗柱位尺寸，或直接依空間牆面自動排列櫃體、展開零件表（BOM）、排版試算並產生報價單。</p>
+        </div>
+      </div>
+
+      <div class="fc-grid-2">
+        <!-- 2A: 建立空間 -->
+        <article class="fc-card">
+          <div class="fc-card-top">
+            <h3>1. 登記房間空間尺寸</h3>
+            <code>POST /api/factory/spaces</code>
+          </div>
+          <p class="fc-note">輸入房間淨寬、深度與高度（單位：毫米 mm），以及門洞、窗戶與柱位避讓區。手動尺寸輸入為確定性幾何計算；實景攝影測量目前為 <code>MOCK</code> 狀態。</p>
+
+          <form id="fc-space-form" class="fc-form" novalidate>
+            <div class="fc-row-3">
+              <label>房間寬度 (mm)
+                <input type="number" id="sp-width" value="3600" min="600" max="20000" step="10" required>
+              </label>
+              <label>房間深度 (mm)
+                <input type="number" id="sp-depth" value="3000" min="600" max="20000" step="10" required>
+              </label>
+              <label>房間高度 (mm)
+                <input type="number" id="sp-height" value="2600" min="1000" max="6000" step="10" required>
+              </label>
+            </div>
+
+            <details class="fc-details">
+              <summary>門洞、窗戶與柱位避讓設定（選填，預設含標準門窗柱）</summary>
+              <div class="fc-details-body">
+                <div class="fc-row-3">
+                  <label>門寬 (mm)
+                    <input type="number" id="sp-door-w" value="900" min="0" max="5000" step="10">
+                  </label>
+                  <label>門高 (mm)
+                    <input type="number" id="sp-door-h" value="2100" min="0" max="5000" step="10">
+                  </label>
+                  <label>門起點 (mm)
+                    <input type="number" id="sp-door-x" value="200" min="0" max="20000" step="10">
+                  </label>
+                </div>
+                <div class="fc-row-3">
+                  <label>窗寬 (mm)
+                    <input type="number" id="sp-win-w" value="1200" min="0" max="5000" step="10">
+                  </label>
+                  <label>窗高 (mm)
+                    <input type="number" id="sp-win-h" value="1200" min="0" max="5000" step="10">
+                  </label>
+                  <label>窗檯高 (mm)
+                    <input type="number" id="sp-win-sill" value="900" min="0" max="5000" step="10">
+                  </label>
+                </div>
+                <div class="fc-row-2">
+                  <label>柱寬 (mm)
+                    <input type="number" id="sp-col-w" value="200" min="0" max="2000" step="10">
+                  </label>
+                  <label>柱深 (mm)
+                    <input type="number" id="sp-col-d" value="200" min="0" max="2000" step="10">
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <div class="fc-actions">
+              <button type="button" id="sp-prepare-btn" class="fc-btn primary">建立空間資料…</button>
+            </div>
+
+            <div id="sp-confirm-box" class="fc-confirm" hidden>
+              <p class="fc-confirm-title" id="sp-confirm-msg">請確認空間尺寸後送出：</p>
+              <div class="fc-confirm-btns">
+                <button type="button" id="sp-confirm-yes" class="fc-btn primary">確認建立空間</button>
+                <button type="button" id="sp-confirm-no" class="fc-btn secondary">取消</button>
+              </div>
+            </div>
+          </form>
+
+          <div id="sp-result" class="fc-result" hidden></div>
+
+          <div class="fc-subtable">
+            <h4>已建立空間紀錄</h4>
+            <div id="fc-spaces-empty" class="fc-state">尚無空間紀錄，可由上方表單建立。</div>
+            <div class="fc-table-wrap" id="fc-spaces-wrap" hidden>
+              <table class="fc-table">
+                <thead>
+                  <tr>
+                    <th>空間編號</th>
+                    <th>寬×深×高 (mm)</th>
+                    <th>牆面數 / 避讓區</th>
+                    <th>狀態</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="fc-spaces-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <!-- 2B: 產生方案與跑報價 -->
+        <article class="fc-card">
+          <div class="fc-card-top">
+            <h3>2. 依空間產生方案與跑報價</h3>
+            <code>POST /api/factory/run</code>
+          </div>
+          <p class="fc-note">自動執行：牆面可用區間求解 → 多櫃組合驗證 → 零件清單（BOM） → 板材排版（Nesting） → 工廠成本與建議售價計算 → 進入待人工核准（<code>WAITING_APPROVAL</code>）。</p>
+
+          <form id="fc-run-form" class="fc-form" novalidate>
+            <div class="fc-row-3">
+              <label>空間寬度 (mm)
+                <input type="number" id="run-width" value="3600" min="800" max="20000" step="10" required>
+              </label>
+              <label>空間深度 (mm)
+                <input type="number" id="run-depth" value="3000" min="800" max="20000" step="10" required>
+              </label>
+              <label>空間高度 (mm)
+                <input type="number" id="run-height" value="2600" min="1200" max="6000" step="10" required>
+              </label>
+            </div>
+
+            <div class="fc-row-2">
+              <label>排櫃目標牆面
+                <select id="run-wall">
+                  <option value="N">北牆 (N) — 主家具牆</option>
+                  <option value="E">東牆 (E)</option>
+                  <option value="S">南牆 (S)</option>
+                  <option value="W">西牆 (W)</option>
+                </select>
+              </label>
+              <label>需求備註／關鍵字（選填）
+                <input type="text" id="run-text" placeholder="例：客廳 360cm 白木紋收納櫃" value="客廳 360cm 白木紋收納櫃">
+              </label>
+            </div>
+
+            <fieldset class="fc-fieldset">
+              <legend>參與排櫃的商品類型（至少勾選一項）</legend>
+              <div id="run-types-checks" class="fc-check-grid"></div>
+            </fieldset>
+
+            <label class="fc-check-inline">
+              <input type="checkbox" id="run-render">
+              <span>同時執行 3D 空間預覽算圖（若主機為測試／無光追環境，預覽結果會標記為 <code>MOCK</code> 或 <code>BLOCKED_*</code>）</span>
+            </label>
+
+            <div class="fc-actions">
+              <button type="button" id="run-prepare-btn" class="fc-btn primary">產生方案並跑報價…</button>
+            </div>
+
+            <div id="run-confirm-box" class="fc-confirm" hidden>
+              <p class="fc-confirm-title" id="run-confirm-msg">請確認排櫃與報價條件：</p>
+              <div class="fc-confirm-btns">
+                <button type="button" id="run-confirm-yes" class="fc-btn primary">確認執行排櫃與報價</button>
+                <button type="button" id="run-confirm-no" class="fc-btn secondary">取消</button>
+              </div>
+            </div>
+          </form>
+
+          <div id="run-result" class="fc-result" hidden></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- 3. 看報價明細與核准 -->
+    <section class="fc-section" id="quotes" aria-labelledby="h-quotes">
+      <div class="fc-sec-head">
+        <div>
+          <h2 id="h-quotes">三、報價單清單、費用明細與人工核准</h2>
+          <p class="fc-sub">檢視每次排櫃試算的報價單、板材排版與費用拆解，並由授權人員執行核准。<code>GET /api/factory/quotes/{quote_id}</code> · <code>POST /api/factory/quotes/{quote_id}/approve</code></p>
+        </div>
+      </div>
+
+      <div class="fc-grid-quotes">
+        <!-- 左：報價清單 + 單號查詢 -->
+        <article class="fc-card">
+          <div class="fc-card-top">
+            <h3>報價單清單</h3>
+            <div class="fc-inline-lookup">
+              <input type="text" id="qt-lookup-id" placeholder="輸入報價單號 quoteId" aria-label="報價單號">
+              <button type="button" id="qt-lookup-btn" class="fc-btn secondary">查詢明細</button>
+            </div>
+          </div>
+
+          <div id="fc-quotes-empty" class="fc-state">目前尚無報價單。請先在上方「依空間產生方案與跑報價」執行一次試算。</div>
+          <div class="fc-table-wrap" id="fc-quotes-wrap" hidden>
+            <table class="fc-table">
+              <thead>
+                <tr>
+                  <th>報價單號</th>
+                  <th>牆面 / 櫃數</th>
+                  <th>預估成本</th>
+                  <th>建議售價</th>
+                  <th>預覽狀態</th>
+                  <th>核准狀態</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="fc-quotes-tbody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <!-- 右：報價明細面板 + 核准確認 -->
+        <aside class="fc-card fc-detail-panel" id="fc-quote-detail-card" aria-live="polite">
+          <div class="fc-card-top">
+            <h3>報價明細與人工核准面板</h3>
+            <span id="qd-status-badge" class="fc-badge neutral">未選取</span>
+          </div>
+
+          <div id="qd-empty" class="fc-state">請從左側報價單清單點擊「查看明細」，或輸入報價單號查詢。</div>
+
+          <div id="qd-body" hidden>
+            <div class="fc-kv-grid" id="qd-summary"></div>
+
+            <h4>費用拆解（系統設定單價 CONFIG）</h4>
+            <div class="fc-table-wrap">
+              <table class="fc-table compact">
+                <thead>
+                  <tr>
+                    <th>費用項目</th>
+                    <th>金額 (TWD)</th>
+                    <th>說明</th>
+                  </tr>
+                </thead>
+                <tbody id="qd-breakdown-tbody"></tbody>
+              </table>
+            </div>
+
+            <div id="qd-run-extra" hidden>
+              <h4>方案內含櫃體清單（點擊可帶入下方改版）</h4>
+              <div class="fc-table-wrap">
+                <table class="fc-table compact">
+                  <thead>
+                    <tr>
+                      <th>櫃體編號</th>
+                      <th>類型</th>
+                      <th>位置起點</th>
+                      <th>寬×高×深 (mm)</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="qd-cabinets-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 核准操作區 -->
+            <div class="fc-approve-zone" id="qd-approve-zone">
+              <h4>人工核准放行（<code>POST /api/factory/quotes/{quote_id}/approve</code>）</h4>
+              <p class="fc-note">核准後此方案將標記為 <code>APPROVED</code>（製造候選方案核准；實體 CNC 機台控制維持關閉 <code>liveMachineControl=false</code>）。</p>
+              <div class="fc-row-2">
+                <label>核准人員姓名／工號
+                  <input type="text" id="qd-actor" value="sales-manager" placeholder="例：warehouse-lead">
+                </label>
+                <div class="fc-actions-bottom">
+                  <button type="button" id="qd-approve-prepare" class="fc-btn primary">核准此報價方案…</button>
+                </div>
+              </div>
+
+              <div id="qd-approve-confirm" class="fc-confirm" hidden>
+                <p class="fc-confirm-title" id="qd-approve-msg">確定要核准此報價單嗎？</p>
+                <div class="fc-confirm-btns">
+                  <button type="button" id="qd-approve-yes" class="fc-btn primary">確認核准</button>
+                  <button type="button" id="qd-approve-no" class="fc-btn secondary">取消</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="qd-api-out" class="fc-result" hidden></div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- 4. 櫃體規格改版 -->
+    <section class="fc-section" id="revise" aria-labelledby="h-revise">
+      <div class="fc-sec-head">
+        <div>
+          <h2 id="h-revise">四、櫃體尺寸與規格改版</h2>
+          <p class="fc-sub">針對已產生的櫃體（來自空間排櫃或商品研發）調整寬高深、門片、層板、抽屜與材質，自動產生新版本編號與新版報價，並保留不可竄改的改版血緣紀錄。<code>POST /api/factory/products/{product_id}/revise</code></p>
+        </div>
+      </div>
+
+      <div class="fc-grid-2">
+        <!-- 左：可改版櫃體清單 & 改版歷史 -->
+        <article class="fc-card">
+          <div class="fc-card-top">
+            <h3>可改版櫃體清單</h3>
+            <span class="fc-mute-small">點擊「選取改版」自動填入右側表單</span>
+          </div>
+
+          <div id="fc-products-empty" class="fc-state">尚無櫃體紀錄。請先執行「依空間產生方案與跑報價」或「商品研發產生」。</div>
+          <div class="fc-table-wrap" id="fc-products-wrap" hidden>
+            <table class="fc-table">
+              <thead>
+                <tr>
+                  <th>商品編號</th>
+                  <th>類型</th>
+                  <th>版本</th>
+                  <th>寬×高×深 (mm)</th>
+                  <th>門/層/抽</th>
+                  <th>板材</th>
+                  <th>預估成本</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="fc-products-tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="fc-subtable">
+            <h4>改版血緣紀錄（Lineage）</h4>
+            <div id="fc-revisions-empty" class="fc-state">尚無改版紀錄。</div>
+            <div class="fc-table-wrap" id="fc-revisions-wrap" hidden>
+              <table class="fc-table compact">
+                <thead>
+                  <tr>
+                    <th>原櫃體編號</th>
+                    <th>新櫃體編號</th>
+                    <th>版本</th>
+                    <th>工程雜湊變更</th>
+                  </tr>
+                </thead>
+                <tbody id="fc-revisions-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </article>
+
+        <!-- 右：改版表單 -->
+        <article class="fc-card">
+          <div class="fc-card-top">
+            <h3>執行櫃體改版</h3>
+            <code>POST /api/factory/products/{product_id}/revise</code>
+          </div>
+
+          <form id="fc-revise-form" class="fc-form" novalidate>
+            <label>目標櫃體商品編號（<code>productId</code>）
+              <input type="text" id="rv-product-id" placeholder="請從左側清單點擊「選取改版」或直接輸入編號" required>
+            </label>
+
+            <div class="fc-row-3">
+              <label>新寬度 (mm)
+                <input type="number" id="rv-width" value="900" min="300" max="2440" step="10" required>
+              </label>
+              <label>新高度 (mm)
+                <input type="number" id="rv-height" value="1800" min="300" max="2440" step="10" required>
+              </label>
+              <label>新深度 (mm)
+                <input type="number" id="rv-depth" value="400" min="200" max="1000" step="10" required>
+              </label>
+            </div>
+
+            <div class="fc-row-3">
+              <label>門片數
+                <input type="number" id="rv-doors" value="2" min="0" max="8" step="1">
+              </label>
+              <label>層板數
+                <input type="number" id="rv-shelves" value="3" min="0" max="10" step="1">
+              </label>
+              <label>抽屜數
+                <input type="number" id="rv-drawers" value="0" min="0" max="6" step="1">
+              </label>
+            </div>
+
+            <div class="fc-row-2">
+              <label>板材花色／材質
+                <select id="rv-material">
+                  <option value="WOOD_WHITE">白木紋防潮塑合板 (WOOD_WHITE)</option>
+                  <option value="WOOD_OAK">自然橡木紋 (WOOD_OAK)</option>
+                  <option value="WOOD_CREAM">奶油白木紋 (WOOD_CREAM)</option>
+                  <option value="WOOD_WALNUT">深胡桃木紋 (WOOD_WALNUT)</option>
+                  <option value="WOOD_BLACK">霧黑中密度板 (WOOD_BLACK)</option>
+                </select>
+              </label>
+              <label>開門方式
+                <select id="rv-opening">
+                  <option value="hinged">標準鉸鍊開門 (hinged)</option>
+                  <option value="double">對開雙門 (double)</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="fc-row-2">
+              <label>上封板高度 (mm)
+                <input type="number" id="rv-top-filler" value="0" min="0" max="600" step="5">
+              </label>
+              <label>側封板寬度 (mm)
+                <input type="number" id="rv-side-filler" value="0" min="0" max="400" step="5">
+              </label>
+            </div>
+
+            <div class="fc-actions">
+              <button type="button" id="rv-prepare-btn" class="fc-btn primary">送出櫃體改版…</button>
+            </div>
+
+            <div id="rv-confirm-box" class="fc-confirm" hidden>
+              <p class="fc-confirm-title" id="rv-confirm-msg">請確認改版內容：</p>
+              <div class="fc-confirm-btns">
+                <button type="button" id="rv-confirm-yes" class="fc-btn primary">確認產生改版</button>
+                <button type="button" id="rv-confirm-no" class="fc-btn secondary">取消</button>
+              </div>
+            </div>
+          </form>
+
+          <div id="rv-result" class="fc-result" hidden></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- 5. 商品研發產生 (id="rd") -->
+    <section class="fc-section" id="rd" aria-labelledby="h-rd">
+      <div class="fc-sec-head">
+        <div>
+          <h2 id="h-rd">五、商品研發產生（Product R&amp;D）</h2>
+          <p class="fc-sub">輸入客戶或企劃的自然語言需求，自動解析設計意圖、大量產生候選變體、執行工程規則檢核、成本估算與視覺評分，選出前三名最佳研發方案。<code>POST /api/product-rd/generate</code></p>
+        </div>
+      </div>
+
+      <div class="fc-grid-2">
+        <!-- 左：研發輸入表單 -->
+        <article class="fc-card">
+          <div class="fc-card-top">
+            <h3>輸入商品研發需求</h3>
+            <code>POST /api/product-rd/generate</code>
+          </div>
+          <p class="fc-note">可描述房間位置、櫃體種類、尺寸（公分或毫米）、風格顏色、門數、層板數、掃地機器人高度或預算上限。</p>
+
+          <div class="fc-presets" aria-label="快速範本">
+            <span class="fc-mute-small">常用範本：</span>
+            <button type="button" class="fc-preset-btn" data-text="客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000">奶油風電視櫃（掃地機）</button>
+            <button type="button" class="fc-preset-btn" data-text="臥室 寬120cm 高220cm 白木紋衣櫃 雙門 四層 預算 30000">臥室雙門衣櫃</button>
+            <button type="button" class="fc-preset-btn" data-text="玄關 寬80cm 高120cm 白木紋鞋櫃 雙門 四層">玄關四層鞋櫃</button>
+            <button type="button" class="fc-preset-btn" data-text="書房 寬80cm 高180cm 書櫃 四層">書房四層書櫃</button>
+          </div>
+
+          <form id="fc-rd-form" class="fc-form" novalidate>
+            <label>研發需求描述文字
+              <textarea id="rd-text" rows="3" required placeholder="請輸入商品需求，例如：客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000">客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000</textarea>
+            </label>
+
+            <label>產生候選變體數量（10–50 組）
+              <input type="number" id="rd-count" value="12" min="10" max="50" step="1" required>
+            </label>
+
+            <div class="fc-actions">
+              <button type="button" id="rd-prepare-btn" class="fc-btn primary">產生商品研發方案…</button>
+            </div>
+
+            <div id="rd-confirm-box" class="fc-confirm" hidden>
+              <p class="fc-confirm-title" id="rd-confirm-msg">請確認研發需求條件：</p>
+              <div class="fc-confirm-btns">
+                <button type="button" id="rd-confirm-yes" class="fc-btn primary">確認開始研發產生</button>
+                <button type="button" id="rd-confirm-no" class="fc-btn secondary">取消</button>
+              </div>
+            </div>
+          </form>
+
+          <div id="rd-api-out" class="fc-result" hidden></div>
+        </article>
+
+        <!-- 右：研發結果與 Top 候選排行 -->
+        <article class="fc-card" id="rd-summary-card" aria-live="polite">
+          <div class="fc-card-top">
+            <h3>研發方案結果與前三名候選</h3>
+            <span id="rd-gate-badge" class="fc-badge neutral">尚未執行</span>
+          </div>
+
+          <div id="rd-empty" class="fc-state">請在左側輸入研發需求並點擊「產生商品研發方案…」。</div>
+
+          <div id="rd-body" hidden>
+            <div class="fc-banners" id="rd-truth-badges"></div>
+            <div class="fc-kv-grid" id="rd-intent-summary"></div>
+
+            <h4>前三名最佳候選變體（依工程與視覺綜合評分排序）</h4>
+            <div class="fc-table-wrap">
+              <table class="fc-table compact">
+                <thead>
+                  <tr>
+                    <th>排名</th>
+                    <th>配置 (門/層/抽)</th>
+                    <th>尺寸 寬×高×深</th>
+                    <th>材質 / 顏色</th>
+                    <th>預估成本</th>
+                    <th>建議售價</th>
+                    <th>綜合評分</th>
+                    <th>評分來源</th>
+                  </tr>
+                </thead>
+                <tbody id="rd-top-tbody"></tbody>
+              </table>
+            </div>
+
+            <div id="rd-base-actions" class="fc-actions"></div>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
