@@ -103,3 +103,11 @@ def test_readiness_confirm_boxes_start_hidden_and_lock_inputs() -> None:
     boxes = re.findall(r'<[^>]*id="rd-[a-z-]+-confirm"[^>]*>', html)
     assert boxes and all(" hidden" in b for b in boxes)
     assert "lockWhileConfirming" in (base / "readiness.js").read_text(encoding="utf-8")
+
+
+def test_readiness_locks_tenant_and_handles_post_network_errors() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/readiness.js").read_text(encoding="utf-8")
+    assert "fields.push($('rd-tenant'))" in js
+    assert "連線失敗" in js and "call.catch" in js

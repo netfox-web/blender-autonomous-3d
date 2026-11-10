@@ -27,12 +27,17 @@
   function api(method, path, body) {
     var opts = { method: method, headers: headers() };
     if (body !== undefined) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function (r) {
+    var call = fetch(path, opts).then(function (r) {
       return r.text().then(function (t) {
         var data;
         try { data = t ? JSON.parse(t) : {}; } catch (e) { data = { raw: t }; }
         return { ok: r.ok, status: r.status, data: data };
       });
+    });
+    if (method === 'GET') return call;  // loaders handle their own errors
+    return call.catch(function (e) {
+      showNotice('連線失敗，請稍後再試：' + ((e && e.message) || e), true);
+      return { ok: false, status: 0, data: { error: '連線失敗', detail: String((e && e.message) || e) } };
     });
   }
 
@@ -231,7 +236,9 @@
     var area = box.closest('section') || box.parentElement;
     new MutationObserver(function () {
       var open = !box.hidden;
-      Array.prototype.forEach.call(area.querySelectorAll('input, select, textarea'), function (f) {
+      var fields = Array.prototype.slice.call(area.querySelectorAll('input, select, textarea'));
+      if ($('rd-tenant')) fields.push($('rd-tenant'));
+      fields.forEach(function (f) {
         if (box.contains(f)) return;
         if (open) { f.dataset.rdWasDisabled = f.disabled ? '1' : ''; f.disabled = true; }
         else if (f.dataset.rdWasDisabled !== undefined) { f.disabled = f.dataset.rdWasDisabled === '1'; delete f.dataset.rdWasDisabled; }
