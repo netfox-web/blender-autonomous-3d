@@ -42,3 +42,9 @@ def test_revise_unknown_or_foreign_product_is_404_not_500(platform) -> None:  # 
     assert client.post(f"/api/factory/products/{product_id}/revise", json={"width": 900}, headers={"X-Tenant-Id": "other"}).status_code == 404
     assert client.post("/api/factory/products/no-such-product/revise", json={"width": 900}, headers={"X-Tenant-Id": "t1"}).status_code == 404
     assert client.post(f"/api/factory/products/{product_id}/revise", json={"width": 900}, headers={"X-Tenant-Id": "t1"}).status_code == 200
+
+
+def test_run_body_tenant_cannot_override_header(platform) -> None:  # noqa: ANN001 - conftest fixture
+    client = TestClient(create_app(platform))
+    res = client.post("/api/factory/run", json={"text": "鞋櫃", "tenantId": "other"}, headers={"X-Tenant-Id": "t1"})
+    assert res.status_code == 403

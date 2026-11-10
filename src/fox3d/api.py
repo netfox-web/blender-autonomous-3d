@@ -199,7 +199,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/factory/run")
     def factory_run(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)  # body tenantId may not override the header
         return get_platform().furniture_factory_run(
             tenant_id=tid,
             space=payload.get("space"),
