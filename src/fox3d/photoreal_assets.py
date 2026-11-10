@@ -4,11 +4,14 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import math
 import os
+import re
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
@@ -253,6 +256,54 @@ _MODERN_EXTRA = [
 for _aid, _ptype, _label, _short in _MODERN_EXTRA:
     POLYHAVEN_CURATED_MODELS[_aid] = {"assetId": _aid, "propType": _ptype, "label": _label + " (2K PBR)", "shortLabel": _short, "resolution": "2k"}
 
+logger = logging.getLogger(__name__)
+
+_POLYHAVEN_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_POLYHAVEN_ALLOWED_HOSTS = frozenset({"polyhaven.com", "www.polyhaven.com"})
+
+
+def _parse_polyhaven_asset_id(raw: str) -> str:
+    """Parse and validate a Poly Haven asset ID or an approved polyhaven.com/a/<id> URL."""
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("請輸入 Poly Haven 模型網址或代號（例如 Sofa_01 或 https://polyhaven.com/a/steel_frame_shelves_01）")
+    if "\\" in text:
+        raise ValueError("Poly Haven 代號格式不正確（僅允許英數、底線與連字號）")
+
+    if "://" in text or text.startswith("//"):
+        url = text if "://" in text else f"https:{text}"
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if host not in _POLYHAVEN_ALLOWED_HOSTS:
+            raise ValueError("僅接受 polyhaven.com/a/<id> 網址")
+        segments = [p for p in parsed.path.split("/") if p]
+        if len(segments) < 2 or segments[0] != "a":
+            raise ValueError("僅接受 polyhaven.com/a/<id> 網址")
+        aid = segments[1].split("?")[0].strip()
+    else:
+        aid = text.rstrip("/")
+
+    if not aid or not _POLYHAVEN_ASSET_ID_RE.fullmatch(aid):
+        raise ValueError("Poly Haven 代號格式不正確（僅允許英數、底線與連字號，最長 64 字元）")
+    return aid
+
+
+def _polyhaven_include_dest(model_dir: Path, rel_path: str) -> Path | None:
+    """Return a resolved destination path only when it stays inside model_dir."""
+    if not rel_path or rel_path.startswith(("/", "\\")):
+        logger.warning("Skipping Poly Haven include with absolute path: %r", rel_path)
+        return None
+    normalized = rel_path.replace("\\", "/")
+    if ".." in Path(normalized).parts:
+        logger.warning("Skipping Poly Haven include outside model dir: %r", rel_path)
+        return None
+    dest = (model_dir / normalized).resolve()
+    model_root = model_dir.resolve()
+    if not dest.is_relative_to(model_root):
+        logger.warning("Skipping Poly Haven include outside model dir: %r", rel_path)
+        return None
+    return dest
+
 
 def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] | None = None) -> dict[str, str]:
     """Download and cache curated CC0 2K glTF 3D furniture models + PBR textures + thumbnails from Poly Haven."""
@@ -295,7 +346,9 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                 inc_url = inc_meta.get("url")
                 if not inc_url:
                     continue
-                dest = model_dir / rel_path
+                dest = _polyhaven_include_dest(model_dir, rel_path)
+                if dest is None:
+                    continue
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 if not dest.exists() or dest.stat().st_size == 0:
                     inc_req = urllib.request.Request(inc_url, headers=headers)
@@ -316,17 +369,13 @@ def download_custom_polyhaven_asset(
     root_dir: Path | None = None,
 ) -> dict[str, str]:
     """Parse a Poly Haven URL or asset ID, download its 2K glTF + PBR textures + thumbnail, and register it."""
-    raw = (asset_id_or_url or "").strip().rstrip("/")
-    if not raw:
-        raise ValueError("請輸入 Poly Haven 模型網址或代號（例如 Sofa_01 或 https://polyhaven.com/a/steel_frame_shelves_01）")
-    if "/" in raw:
-        aid = raw.split("/")[-1].split("?")[0].strip()
-    else:
-        aid = raw
-    if not aid:
-        raise ValueError("無法解析 Poly Haven 代號")
+    aid = _parse_polyhaven_asset_id(asset_id_or_url)
 
     clean_label = (label or "").strip() or f"Poly Haven {aid} (2K PBR)"
+    paths = ensure_polyhaven_models(root_dir=root_dir, asset_ids=[aid])
+    gltf_path = paths.get(aid, "")
+    if not gltf_path or not Path(gltf_path).exists():
+        raise ValueError(f"從 Poly Haven 找不到模型「{aid}」（請確認代號是否為 3D Model，例如 Sofa_01、sofa_03、vintage_cabinet_01）")
     POLYHAVEN_CURATED_MODELS[aid] = {
         "assetId": aid,
         "propType": (prop_type or "SOFA").strip().upper(),
@@ -334,10 +383,6 @@ def download_custom_polyhaven_asset(
         "shortLabel": clean_label[:14],
         "resolution": "2k",
     }
-    paths = ensure_polyhaven_models(root_dir=root_dir, asset_ids=[aid])
-    gltf_path = paths.get(aid, "")
-    if not gltf_path or not Path(gltf_path).exists():
-        raise ValueError(f"從 Poly Haven 找不到模型「{aid}」（請確認代號是否為 3D Model，例如 Sofa_01、sofa_03、vintage_cabinet_01）")
     return {
         **POLYHAVEN_CURATED_MODELS[aid],
         "gltfPath": gltf_path,
