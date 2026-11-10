@@ -64,6 +64,8 @@
       function onCancel() { dlg.close('cancel'); }
       dlg.addEventListener('close', onClose);
       $('mt-confirm-cancel').addEventListener('click', onCancel);
+      // Esc closes a <dialog> without changing returnValue: reset it so a previous 'ok' cannot confirm this one
+      dlg.returnValue = '';
       dlg.showModal();
     });
   }

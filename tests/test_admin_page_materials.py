@@ -82,3 +82,11 @@ def test_nesting_benchmark_api(client: TestClient) -> None:
     data = res.json()
     assert "cases" in data
     assert data.get("liveMachineControl") is False
+
+
+def test_confirm_dialog_resets_return_value_before_opening() -> None:
+    # Esc keeps the previous returnValue; without a reset, Esc after an earlier "ok" would confirm.
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/materials.js").read_text(encoding="utf-8")
+    assert js.index("dlg.returnValue = '';") < js.index("dlg.showModal();")
