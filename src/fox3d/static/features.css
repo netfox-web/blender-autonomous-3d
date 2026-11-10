@@ -1,0 +1,38 @@
+:root{--bg:#f3f6f4;--card:#ffffff;--fg:#15201b;--mute:#5c6a64;--line:#dfe6e2;--accent:#0f6e52;--accent-soft:#e1f3ea;--api:#2f5b93;--api-soft:#e7eef8;--warn:#8a5a00;--warn-soft:#fbf0d9;--code:#f1f4f2}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1714;--card:#16211d;--fg:#e4ece7;--mute:#9aaba3;--line:#27352f;--accent:#3ccf91;--accent-soft:#183a2c;--api:#8fb4ea;--api-soft:#1b2a40;--warn:#e2b04a;--warn-soft:#3a2f17;--code:#101a16;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#0f1714;--card:#16211d;--fg:#e4ece7;--mute:#9aaba3;--line:#27352f;--accent:#3ccf91;--accent-soft:#183a2c;--api:#8fb4ea;--api-soft:#1b2a40;--warn:#e2b04a;--warn-soft:#3a2f17;--code:#101a16;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 "Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+.fd{max-width:1180px;margin:0 auto;padding-block:28px 64px;padding-inline:24px}
+.fd-eyebrow{margin:0;color:var(--mute);font-size:11px;font-weight:700;letter-spacing:.1em}
+.fd-head h1{margin:6px 0 6px;font-size:26px;text-wrap:balance}
+.fd-lede{margin:0;color:var(--mute);max-width:65ch}
+.fd-tools{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-block:16px 12px;border-bottom:1px solid var(--line);margin-bottom:8px}
+#fd-q{flex:1 1 260px;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg);font:inherit}
+.fd-chips{display:flex;flex-wrap:wrap;gap:6px}
+.fd-chips button{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.fd-chips button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--card)}
+.fd-chips span{opacity:.75;font-variant-numeric:tabular-nums}
+.fd-tenant{display:flex;gap:6px;align-items:center;color:var(--mute);font-size:12px}
+.fd-tenant input{width:150px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);font:12px ui-monospace,Consolas,monospace}
+.fd-group{margin-top:26px}
+.fd-group h2{font-size:13px;letter-spacing:.08em;color:var(--mute);margin:0 0 10px}
+.fd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.fd-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0;scroll-margin-top:90px}
+.fd-card.hit{outline:3px solid var(--accent);outline-offset:2px}
+.fd-top{display:flex;gap:8px;align-items:baseline}
+.fd-top h3{margin:0;font-size:15px;flex:1;min-width:0}
+.fd-tag{font-size:11px;border-radius:999px;padding:1px 9px;white-space:nowrap}
+.fd-tag.page{background:var(--accent-soft);color:var(--accent)}.fd-tag.api{background:var(--api-soft);color:var(--api)}.fd-tag.blocked{background:var(--warn-soft);color:var(--warn)}
+.fd-card p{margin:0;color:var(--mute)}
+.fd-wait{color:var(--warn)!important}
+.fd-open{align-self:flex-start;background:var(--accent);color:var(--card);text-decoration:none;border-radius:7px;padding:6px 14px;font-weight:600;font-size:13px}
+.fd-routes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
+.fd-routes li{display:flex;gap:8px;align-items:center;font:12px ui-monospace,Consolas,monospace;min-width:0}
+.fd-routes code{flex:1;min-width:0;overflow-wrap:anywhere}
+.fd-m{font-size:10px;font-weight:700;border-radius:4px;padding:1px 5px;background:var(--code);color:var(--mute)}
+.fd-routes button{border:1px solid var(--line);background:var(--card);color:var(--api);border-radius:6px;padding:2px 8px;font:12px "Noto Sans TC",system-ui,sans-serif;cursor:pointer}
+details.fd-more summary{cursor:pointer;color:var(--mute);font-size:12px}
+.fd-out{margin:4px 0 0;max-height:320px;overflow:auto;background:var(--code);border:1px solid var(--line);border-radius:6px;padding:10px;font:12px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.fd-empty{color:var(--mute);padding:24px 0}
+@media (max-width:600px){.fd{padding-inline:16px}.fd-grid{grid-template-columns:1fr}}

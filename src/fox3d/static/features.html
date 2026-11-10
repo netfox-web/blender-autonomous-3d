@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>功能總覽 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/recipes/assets/features.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/recipes/assets/features.js"></script>
+</head>
+<body>
+  <main class="fd">
+    <header class="fd-head">
+      <p class="fd-eyebrow">AUTONOMOUS 3D · 功能總覽</p>
+      <h1>所有功能都在這裡</h1>
+      <p class="fd-lede">有畫面的直接開啟；只有後端 API 的，可以在這裡按「查看」讀資料；還在等資料或決定的，寫明在等什麼。</p>
+    </header>
+
+    <section class="fd-tools" aria-label="篩選">
+      <input id="fd-q" type="search" placeholder="搜尋功能、用途或 API 路徑" aria-label="搜尋功能">
+      <div class="fd-chips" role="group" aria-label="狀態">
+        <button type="button" data-kind="" aria-pressed="true">全部 <span id="fd-n-all"></span></button>
+        <button type="button" data-kind="page" aria-pressed="false">有畫面 <span id="fd-n-page"></span></button>
+        <button type="button" data-kind="api" aria-pressed="false">只有 API <span id="fd-n-api"></span></button>
+        <button type="button" data-kind="blocked" aria-pressed="false">待資料 <span id="fd-n-blocked"></span></button>
+      </div>
+      <label class="fd-tenant">租戶 <input id="fd-tenant" value="sonaqueen-home" spellcheck="false" aria-label="查看資料用的租戶"></label>
+    </section>
+
+    <div id="fd-list" aria-live="polite"><p class="fd-empty">載入中…</p></div>
+  </main>
+</body>
+</html>
