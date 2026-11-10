@@ -29,3 +29,4 @@ jobs:
         run: pytest -q
         env:
           FOX3D_MOCK_BLENDER: "1"
+          FOX3D_SKIP_BROWSER: "1"
