@@ -1,0 +1,319 @@
+:root {
+  --bg: #f4f6f5;
+  --card: #fff;
+  --fg: #15201b;
+  --mute: #5c6a64;
+  --line: #e3e7e5;
+  --accent: #0f6e52;
+  --accent-soft: #e1f3ea;
+  --warn: #8a5a00;
+  --warn-soft: #fbf0d9;
+  --code: #f1f4f2;
+  --mock: #6b4c9a;
+  --mock-soft: #ede8f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1714;
+    --card: #16211d;
+    --fg: #e4ece7;
+    --mute: #9aaba3;
+    --line: #27352f;
+    --accent: #3ccf91;
+    --accent-soft: #183a2c;
+    --warn: #e2b04a;
+    --warn-soft: #3a2f17;
+    --code: #101a16;
+    --mock: #c4a8e8;
+    --mock-soft: #2a2238;
+    color-scheme: dark;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.55 "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  overflow-x: hidden;
+}
+.mt {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px 16px 64px;
+  min-width: 0;
+}
+.mt-eyebrow {
+  margin: 0;
+  color: var(--mute);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+.mt-head h1 {
+  margin: 6px 0;
+  font-size: 24px;
+  text-wrap: balance;
+}
+.mt-lede {
+  margin: 0;
+  color: var(--mute);
+  max-width: 60ch;
+}
+.mt-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 20px 0 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.mt-tenant {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--mute);
+  font-size: 12px;
+}
+.mt-tenant input {
+  width: min(180px, 45vw);
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--fg);
+  font: 12px ui-monospace, Consolas, monospace;
+}
+.mt-banner {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.mt-banner.err {
+  background: #fde8e8;
+  color: #8b1a1a;
+}
+.mt-banner.mock {
+  background: var(--mock-soft);
+  color: var(--mock);
+}
+.mt-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.mt-tabs button {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mt-tabs button[aria-selected="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--card);
+}
+.mt-panel h2 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+.mt-hint {
+  margin: 0 0 10px;
+  color: var(--mute);
+  font-size: 13px;
+}
+.mt-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+@media (min-width: 720px) {
+  .mt-split {
+    grid-template-columns: 1fr 1.4fr;
+  }
+}
+.mt-col {
+  min-width: 0;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+}
+.mt-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.mt-empty {
+  color: var(--mute);
+  margin: 8px 0;
+}
+table.mt-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 320px;
+}
+.mt-table th,
+.mt-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.mt-table th {
+  color: var(--mute);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mt-table tr[data-selectable] {
+  cursor: pointer;
+}
+.mt-table tr[data-selectable]:hover {
+  background: var(--accent-soft);
+}
+.mt-table tr.sel {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.mt-table code {
+  font: 12px ui-monospace, Consolas, monospace;
+}
+.mt-tag {
+  display: inline-block;
+  font-size: 11px;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.mt-tag.ok {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mt-tag.wait {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.mt-tag.mock {
+  background: var(--mock-soft);
+  color: var(--mock);
+}
+.mt-detail {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.mt-detail pre {
+  margin: 0 0 10px;
+  font: 12px/1.45 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+.mt-form-block {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--card);
+}
+.mt-form-block summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.mt-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+@media (min-width: 520px) {
+  .mt-form {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.mt-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--mute);
+}
+.mt-form input,
+.mt-form select {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.mt-btn {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mt-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mt-btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--card);
+  font-weight: 600;
+}
+.mt-result {
+  margin: 10px 0 0;
+  padding: 10px;
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 12px/1.45 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow: auto;
+}
+.mt-dialog {
+  border: 0;
+  border-radius: 12px;
+  padding: 0;
+  max-width: min(420px, 92vw);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+.mt-dialog::backdrop {
+  background: rgba(6, 20, 15, 0.45);
+}
+.mt-dialog-body {
+  margin: 0;
+  padding: 18px 20px;
+  background: var(--card);
+  color: var(--fg);
+}
+.mt-dialog-body h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.mt-dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
