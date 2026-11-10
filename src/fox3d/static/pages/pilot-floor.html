@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>現場站點、派工與掃碼 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/pilot-floor.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/pilot-floor.js"></script>
+</head>
+<body>
+  <main class="pf" id="pf-root">
+    <header class="pf-head">
+      <p class="pf-eyebrow">試產現場 · 站點與派工</p>
+      <h1>現場站點、派工與掃碼</h1>
+      <p class="pf-lede">查看作業員待辦、註冊工作站、派工與租約生命週期、掃碼查資料、瀏覽異常清單。條碼硬體與機台控制若標示為模擬或部分就緒，不會當成正式上線狀態。</p>
+    </header>
+
+    <section class="pf-tools" aria-label="工具列">
+      <label class="pf-tenant">租戶
+        <input id="pf-tenant" type="text" value="sonaqueen-home" spellcheck="false" autocomplete="off" aria-label="租戶代碼">
+      </label>
+      <button type="button" id="pf-refresh" class="pf-btn pf-btn-primary">重新載入</button>
+      <p id="pf-tenant-hint" class="pf-tenant-hint" role="status" hidden></p>
+      <p id="pf-banner" class="pf-banner" hidden></p>
+    </section>
+
+    <nav class="pf-tabs" role="tablist" aria-label="功能分頁">
+      <button type="button" role="tab" id="tab-operator" aria-selected="true" aria-controls="panel-operator" data-panel="operator">作業員視圖</button>
+      <button type="button" role="tab" id="tab-stations" aria-selected="false" aria-controls="panel-stations" data-panel="stations">工作站</button>
+      <button type="button" role="tab" id="tab-dispatch" aria-selected="false" aria-controls="panel-dispatch" data-panel="dispatch">派工租約</button>
+      <button type="button" role="tab" id="tab-scan" aria-selected="false" aria-controls="panel-scan" data-panel="scan">掃碼</button>
+      <button type="button" role="tab" id="tab-exceptions" aria-selected="false" aria-controls="panel-exceptions" data-panel="exceptions">異常清單</button>
+    </nav>
+
+    <div class="pf-layout">
+      <div class="pf-panels">
+        <section id="panel-operator" class="pf-panel" role="tabpanel" aria-labelledby="tab-operator">
+          <h2>待辦工單與料批</h2>
+          <p id="pf-operator-status" class="pf-muted">載入中…</p>
+          <div class="pf-scroll">
+            <table class="pf-table" id="pf-wo-table" aria-label="待辦工單">
+              <thead>
+                <tr><th>工單</th><th>狀態</th><th>待做工序</th><th>掃碼權杖</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <h3>料批</h3>
+          <div class="pf-scroll">
+            <table class="pf-table" id="pf-lot-table" aria-label="料批">
+              <thead>
+                <tr><th>批號</th><th>材料</th><th>可用</th><th>隔離</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="panel-stations" class="pf-panel pf-hidden" role="tabpanel" aria-labelledby="tab-stations" hidden>
+          <h2>已註冊工作站</h2>
+          <p id="pf-station-status" class="pf-muted">載入中…</p>
+          <div class="pf-scroll">
+            <table class="pf-table" id="pf-station-table" aria-label="工作站">
+              <thead>
+                <tr><th>站點</th><th>狀態</th><th>能力</th><th>最後心跳</th><th></th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <form id="pf-station-form" class="pf-form" aria-label="註冊工作站">
+            <h3>註冊新工作站</h3>
+            <label>站點代碼（可留空自動產生）<input name="stationId" type="text" autocomplete="off"></label>
+            <label>能力（至少一項）
+              <select name="capability" required>
+                <option value="PANEL_CUTTING_MANUAL">手動裁板</option>
+                <option value="EDGE_BANDING_MANUAL">手動封邊</option>
+                <option value="DRILLING_MANUAL">手動鑽孔</option>
+                <option value="ASSEMBLY_MANUAL">手動組裝</option>
+                <option value="PACKING_MANUAL">手動包裝</option>
+                <option value="QC_MANUAL">手動品檢</option>
+              </select>
+            </label>
+            <label>狀態
+              <select name="status">
+                <option value="ONLINE">上線</option>
+                <option value="OFFLINE">離線</option>
+                <option value="PAUSED">暫停</option>
+              </select>
+            </label>
+            <label>操作人<input name="actor" type="text" value="floor-admin"></label>
+            <div class="pf-confirm" data-action="station-register">
+              <label><input type="checkbox" class="pf-confirm-box"> 我確認要註冊此工作站</label>
+              <button type="submit" class="pf-btn pf-btn-primary" disabled>送出註冊</button>
+              <p class="pf-confirm-summary" hidden></p>
+            </div>
+          </form>
+        </section>
+
+        <section id="panel-dispatch" class="pf-panel pf-hidden" role="tabpanel" aria-labelledby="tab-dispatch" hidden>
+          <h2>租約清單</h2>
+          <p id="pf-lease-status" class="pf-muted">載入中…</p>
+          <div class="pf-scroll">
+            <table class="pf-table" id="pf-lease-table" aria-label="租約">
+              <thead>
+                <tr><th>租約</th><th>工單</th><th>工序</th><th>狀態</th><th>站點</th><th>操作</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <form id="pf-dispatch-form" class="pf-form" aria-label="建立派工">
+            <h3>派工到站點</h3>
+            <label>工單編號<input name="workOrderId" type="text" required autocomplete="off"></label>
+            <label>工序代碼<input name="operation" type="text" required placeholder="例如 panel_cutting" autocomplete="off"></label>
+            <label>站點編號<input name="stationId" type="text" required autocomplete="off"></label>
+            <label>操作人<input name="actor" type="text" value="floor-admin"></label>
+            <div class="pf-confirm" data-action="dispatch">
+              <label><input type="checkbox" class="pf-confirm-box"> 我確認要派工（會建立租約）</label>
+              <button type="submit" class="pf-btn pf-btn-primary" disabled>送出派工</button>
+              <p class="pf-confirm-summary" hidden></p>
+            </div>
+          </form>
+        </section>
+
+        <section id="panel-scan" class="pf-panel pf-hidden" role="tabpanel" aria-labelledby="tab-scan" hidden>
+          <form id="pf-scan-form" class="pf-form" aria-label="掃碼查詢">
+            <h2>掃碼查資料</h2>
+            <label>掃碼權杖<input name="token" type="text" required placeholder="FOX3D:WO:…" autocomplete="off"></label>
+            <div class="pf-confirm" data-action="scan">
+              <label><input type="checkbox" class="pf-confirm-box"> 我確認要送出此掃碼查詢</label>
+              <button type="submit" class="pf-btn pf-btn-primary" disabled>掃碼</button>
+              <p class="pf-confirm-summary" hidden></p>
+            </div>
+          </form>
+          <form id="pf-token-form" class="pf-form" aria-label="產生掃碼權杖">
+            <h3>產生掃碼權杖</h3>
+            <label>類型
+              <select name="kind">
+                <option value="WO">工單 WO</option>
+                <option value="LOT">料批 LOT</option>
+                <option value="REL">放行 REL</option>
+                <option value="CTN">外箱 CTN</option>
+              </select>
+            </label>
+            <label>物件編號<input name="objectId" type="text" required autocomplete="off"></label>
+            <button type="submit" class="pf-btn">產生權杖</button>
+          </form>
+        </section>
+
+        <section id="panel-exceptions" class="pf-panel pf-hidden" role="tabpanel" aria-labelledby="tab-exceptions" hidden>
+          <h2>異常收件匣</h2>
+          <p id="pf-exc-status" class="pf-muted">載入中…</p>
+          <div class="pf-scroll">
+            <table class="pf-table" id="pf-exc-table" aria-label="異常">
+              <thead>
+                <tr><th>編號</th><th>類型</th><th>訊息</th><th>時間</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <aside class="pf-detail" aria-label="詳細與 API 回應">
+        <h2>詳細資料</h2>
+        <p id="pf-detail-hint" class="pf-muted">點選表格列可預覽；執行動作後會顯示 API 回應。勾選確認會鎖定表單並以當下內容送出。</p>
+        <p id="pf-action-status" class="pf-action-status" role="status" aria-live="polite"></p>
+        <pre id="pf-detail" class="pf-out">尚無資料</pre>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
