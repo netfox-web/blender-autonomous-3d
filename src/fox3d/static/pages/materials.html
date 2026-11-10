@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>材料、餘料與排版 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/materials.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/materials.js"></script>
+</head>
+<body>
+  <main class="mt">
+    <header class="mt-head">
+      <p class="mt-eyebrow">AUTONOMOUS 3D · 工廠材料</p>
+      <h1>材料、餘料與排版</h1>
+      <p class="mt-lede">查看板材規格與入庫批次、管理餘料預留，並送出排版引擎基準測試。</p>
+    </header>
+
+    <section class="mt-bar" aria-label="工作台設定">
+      <label class="mt-tenant">租戶 <input id="mt-tenant" spellcheck="false" aria-label="租戶編號"></label>
+      <button type="button" id="mt-refresh" class="mt-btn">重新載入</button>
+      <p id="mt-banner" class="mt-banner" hidden role="status"></p>
+    </section>
+
+    <nav class="mt-tabs" role="tablist" aria-label="功能分頁">
+      <button type="button" role="tab" id="tab-sheets" aria-selected="true" aria-controls="panel-sheets" data-panel="sheets">板材與批次</button>
+      <button type="button" role="tab" id="tab-remnants" aria-selected="false" aria-controls="panel-remnants" data-panel="remnants">餘料</button>
+      <button type="button" role="tab" id="tab-nesting" aria-selected="false" aria-controls="panel-nesting" data-panel="nesting">排版基準</button>
+    </nav>
+
+    <section id="panel-sheets" class="mt-panel" role="tabpanel" aria-labelledby="tab-sheets">
+      <div class="mt-split">
+        <div class="mt-col">
+          <h2>板材規格</h2>
+          <p class="mt-hint">系統內建的板材料號（來自設定檔，非即時採購價）。</p>
+          <div class="mt-scroll" id="mt-sheets-wrap"><p class="mt-empty" id="mt-sheets-empty">載入中…</p></div>
+        </div>
+        <div class="mt-col mt-col-wide">
+          <h2>入庫批次</h2>
+          <p class="mt-hint">已登錄的板材批次；選一列可看詳情。</p>
+          <div class="mt-scroll" id="mt-lots-wrap"><p class="mt-empty">載入中…</p></div>
+          <aside class="mt-detail" id="mt-lot-detail" hidden aria-live="polite">
+            <h3>批次詳情</h3>
+            <pre id="mt-lot-detail-body"></pre>
+          </aside>
+        </div>
+      </div>
+
+      <details class="mt-form-block">
+        <summary>新增入庫批次</summary>
+        <form id="mt-lot-form" class="mt-form">
+          <label>材料代碼
+            <select id="mt-lot-material" required>
+              <option value="WOOD_WHITE">WOOD_WHITE（白）</option>
+              <option value="WOOD_OAK">WOOD_OAK（橡木）</option>
+              <option value="WOOD_WALNUT">WOOD_WALNUT（胡桃）</option>
+              <option value="WOOD_BLACK">WOOD_BLACK（黑）</option>
+              <option value="WOOD_CREAM">WOOD_CREAM（米色）</option>
+            </select>
+          </label>
+          <label>厚度 (mm) <input id="mt-lot-thickness" type="number" min="1" step="0.5" value="18" required></label>
+          <label>張數 <input id="mt-lot-qty" type="number" min="1" step="1" value="1" required></label>
+          <label>供應商批號 <input id="mt-lot-supplier" type="text" placeholder="選填"></label>
+          <label>操作者 <input id="mt-lot-actor" type="text" value="warehouse" required></label>
+          <button type="submit" class="mt-btn mt-btn-primary">送出（需確認）</button>
+        </form>
+        <pre id="mt-lot-result" class="mt-result" hidden></pre>
+      </details>
+    </section>
+
+    <section id="panel-remnants" class="mt-panel" role="tabpanel" aria-labelledby="tab-remnants" hidden>
+      <div class="mt-split">
+        <div class="mt-col mt-col-wide">
+          <h2>餘料清單</h2>
+          <p class="mt-hint" id="mt-remnant-meta">載入中…</p>
+          <div class="mt-scroll" id="mt-remnants-wrap"><p class="mt-empty">載入中…</p></div>
+        </div>
+        <div class="mt-col">
+          <h2>詳情與預留</h2>
+          <p class="mt-hint">僅「可用」餘料可預留；預留後會顯示 API 回覆。</p>
+          <aside class="mt-detail" id="mt-rem-detail" hidden>
+            <pre id="mt-rem-detail-body"></pre>
+            <form id="mt-reserve-form" class="mt-form">
+              <label>預留給（工單或人員） <input id="mt-reserve-by" type="text" value="manual" required></label>
+              <label>租約秒數（選填） <input id="mt-reserve-lease" type="number" min="0" step="1" placeholder="不填則用預設"></label>
+              <button type="submit" class="mt-btn mt-btn-primary" id="mt-reserve-btn" disabled>預留餘料（需確認）</button>
+            </form>
+          </aside>
+          <p class="mt-empty" id="mt-rem-pick">請在左側表格選擇一筆餘料。</p>
+        </div>
+      </div>
+      <pre id="mt-reserve-result" class="mt-result" hidden></pre>
+    </section>
+
+    <section id="panel-nesting" class="mt-panel" role="tabpanel" aria-labelledby="tab-nesting" hidden>
+      <h2>排版（Nesting）基準測試</h2>
+      <p class="mt-hint">比較基線裁切與 V3 選料器在多組家具上的浪費與耗時；結果為誠實基準，不保證每案都較佳。</p>
+      <button type="button" id="mt-bench-run" class="mt-btn mt-btn-primary">執行基準測試（需確認）</button>
+      <p id="mt-bench-status" class="mt-hint">尚未執行。</p>
+      <div class="mt-scroll" id="mt-bench-wrap" hidden></div>
+      <pre id="mt-bench-raw" class="mt-result" hidden></pre>
+    </section>
+
+    <dialog id="mt-confirm" class="mt-dialog">
+      <form method="dialog" class="mt-dialog-body">
+        <h3 id="mt-confirm-title">請確認</h3>
+        <p id="mt-confirm-text"></p>
+        <div class="mt-dialog-actions">
+          <button type="button" value="cancel" class="mt-btn" id="mt-confirm-cancel">取消</button>
+          <button type="submit" value="ok" class="mt-btn mt-btn-primary" id="mt-confirm-ok">確認執行</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+</body>
+</html>
