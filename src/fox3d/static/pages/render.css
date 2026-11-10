@@ -119,6 +119,17 @@ body {
   background: var(--err-soft);
   color: var(--err);
 }
+.rd-banner.blocked {
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 600;
+}
+.rd-tenant-hint {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--warn);
+  font-size: 12px;
+}
 .rd-section {
   margin-top: 28px;
   scroll-margin-top: 72px;

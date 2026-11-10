@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 
 from fox3d.admin_pages import page_response
 
@@ -21,8 +21,10 @@ def router(provider: Callable[[], Any]) -> APIRouter:
 
     @router.get("/api/pages/render/twins")
     def list_twins(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = (x_tenant_id or "").strip()
+        if not tid:
+            raise HTTPException(400, "X-Tenant-Id required")
         plat = provider()
-        tid = (x_tenant_id or "sonaqueen-home").strip()
         items = [t.model_dump(mode="json") for t in plat.twins.list(tenant_id=tid)]
         return {"items": items}
 
