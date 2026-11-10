@@ -92,7 +92,7 @@ def test_plugin_page_claims_turn_api_groups_into_pages(monkeypatch: pytest.Monke
     monkeypatch.setattr(pages, "page_features", lambda: {"factory": "/admin/factory"})
     factory = next(f for f in resolved_features() if f["id"] == "factory")
     assert factory["kind"] == "page" and factory["href"] == "/admin/factory"
-    assert "/admin/factory" in factory["prefixes"]
+    assert "/admin/factory" in factory["prefixes"] and "/api/pages/factory" in factory["prefixes"]
     monkeypatch.setattr(pages, "page_features", lambda: {"no-such-feature": "/admin/x"})
     with pytest.raises(ValueError):
         resolved_features()

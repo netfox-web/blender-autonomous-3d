@@ -101,7 +101,8 @@
   }
 
   function focusHash() {
-    var id = decodeURIComponent(location.hash.slice(1));
+    var id = '';
+    try { id = decodeURIComponent(location.hash.slice(1)); } catch (e) { return; }
     if (!id) return;
     var c = document.getElementById(id);
     if (!c) { if (kind || q) { kind = ''; q = ''; $('fd-q').value = ''; setChip(''); render(); } return; }

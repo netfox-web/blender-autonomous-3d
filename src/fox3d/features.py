@@ -130,7 +130,9 @@ def resolved_features() -> list[dict[str, Any]]:
     for f in FEATURES:
         href = pages.get(f["id"])
         if href:
-            f = dict(f, kind="page", href=href, prefixes=[*f.get("prefixes", []), href.split("#")[0]])
+            page = href.split("#")[0]
+            # a plug-in page also owns its own API namespace /api/pages/<name>
+            f = dict(f, kind="page", href=href, prefixes=[*f.get("prefixes", []), page, "/api/pages/" + page.rsplit("/", 1)[-1]])
         out.append(f)
     return out
 

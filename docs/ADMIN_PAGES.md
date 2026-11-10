@@ -8,7 +8,7 @@ an entry there, so nothing can be hidden again.
 
 | File | What goes in it |
 |---|---|
-| `src/fox3d/admin_pages/<name>.py` | `def router(provider) -> APIRouter` with one `GET /admin/<name>` route returning `page_response("<name>")`. Add API routes here only if the page needs one that does not exist yet. |
+| `src/fox3d/admin_pages/<name>.py` | `def router(provider) -> APIRouter` with one `GET /admin/<name>` route returning `page_response("<name>")`. Add API routes here only if the page needs one that does not exist yet, and put them under `/api/pages/<name>/` (that namespace is owned by your page automatically, so the route-coverage test stays green). |
 | `src/fox3d/static/pages/<name>.html` | Full HTML document. In `<head>` load `/admin/recipes/assets/fox3d-shell.css`, `/admin/recipes/assets/fox3d-shell.js` (defer), then your own `/admin/pages/assets/<name>.css` and `.js`. No inline `<script>` or `<style>`: the page CSP is `default-src 'self'`. |
 | `src/fox3d/static/pages/<name>.js`, `<name>.css` | Page code and styles. Asset names must match `^[a-z0-9][a-z0-9-]*\.(js|css)$`. |
 | `tests/test_admin_page_<name>.py` | Page returns 200 and loads the shell; the APIs it calls work with `X-Tenant-Id` (use the `platform` fixture from `tests/conftest.py`). |

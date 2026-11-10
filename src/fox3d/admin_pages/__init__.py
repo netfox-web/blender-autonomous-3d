@@ -29,7 +29,10 @@ def page_response(name: str) -> HTMLResponse:
     """Serve static/pages/<name>.html with the admin CSP."""
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name):
         raise HTTPException(404)
-    return HTMLResponse((PAGES_DIR / f"{name}.html").read_text(encoding="utf-8"), headers={"Content-Security-Policy": PAGE_CSP})
+    path = PAGES_DIR / f"{name}.html"
+    if not path.is_file():
+        raise HTTPException(404)
+    return HTMLResponse(path.read_text(encoding="utf-8"), headers={"Content-Security-Policy": PAGE_CSP})
 
 
 def assets_router() -> APIRouter:
