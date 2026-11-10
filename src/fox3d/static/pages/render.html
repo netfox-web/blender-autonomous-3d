@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D 算圖與數位分身 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/render.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/render.js"></script>
+</head>
+<body>
+  <main class="rd">
+    <header class="rd-head">
+      <p class="rd-eyebrow">AUTONOMOUS 3D · 算圖工作台</p>
+      <h1>3D 算圖工作與數位分身</h1>
+      <p class="rd-lede">查看與管理 Blender 算圖排程；建立商品數位分身、上傳模型、預覽與 360 環繞。所有操作都會顯示伺服器回覆。</p>
+    </header>
+
+    <section class="rd-tools" aria-label="租戶與重新整理">
+      <label class="rd-tenant">租戶編號
+        <input id="rd-tenant" type="text" value="sonaqueen-home" spellcheck="false" aria-label="租戶編號">
+      </label>
+      <button type="button" id="rd-refresh-jobs" class="rd-btn">重新整理工作列表</button>
+      <button type="button" id="rd-refresh-twins" class="rd-btn">重新整理分身列表</button>
+    </section>
+
+    <p id="rd-banner" class="rd-banner" role="status" aria-live="polite" hidden></p>
+
+    <section class="rd-section" aria-labelledby="rd-jobs-title">
+      <h2 id="rd-jobs-title">算圖工作</h2>
+      <p class="rd-hint">工作會排進佇列；預覽用較快設定、正式算圖用 Cycles／OptiX。若狀態為 MOCK 或 BLOCKED，代表尚未接上真實 Blender。</p>
+
+      <div class="rd-split">
+        <div class="rd-panel">
+          <h3>工作列表</h3>
+          <div id="rd-jobs-loading" class="rd-muted">載入中…</div>
+          <div id="rd-jobs-empty" class="rd-muted" hidden>目前沒有算圖工作。</div>
+          <div id="rd-jobs-error" class="rd-error" hidden></div>
+          <div class="rd-scroll">
+            <table id="rd-jobs-table" class="rd-table" hidden>
+              <thead>
+                <tr>
+                  <th>編號</th>
+                  <th>類型</th>
+                  <th>狀態</th>
+                  <th>建立時間</th>
+                </tr>
+              </thead>
+              <tbody id="rd-jobs-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="rd-panel" id="rd-job-detail-panel">
+          <h3>工作明細</h3>
+          <p id="rd-job-detail-empty" class="rd-muted">點選左側一列查看明細。</p>
+          <pre id="rd-job-detail" class="rd-json" hidden></pre>
+          <div id="rd-job-actions" class="rd-actions" hidden>
+            <button type="button" id="rd-job-cancel" class="rd-btn rd-btn-warn">取消此工作</button>
+          </div>
+        </div>
+      </div>
+
+      <details class="rd-form-block">
+        <summary>送出新的算圖工作（進佇列）</summary>
+        <form id="rd-form-job" class="rd-form">
+          <label>工作類型
+            <select id="rd-job-type" name="jobType">
+              <option value="BLENDER_PREVIEW">BLENDER_PREVIEW（預覽）</option>
+              <option value="BLENDER_RENDER">BLENDER_RENDER（正式）</option>
+            </select>
+          </label>
+          <label>場景
+            <select id="rd-job-scene" name="scene">
+              <option value="WHITE_STUDIO">WHITE_STUDIO（白棚）</option>
+              <option value="BLACK_LUXURY">BLACK_LUXURY（黑奢）</option>
+              <option value="LIFESTYLE">LIFESTYLE（情境）</option>
+            </select>
+          </label>
+          <button type="submit" class="rd-btn rd-btn-primary">送出工作</button>
+        </form>
+      </details>
+
+      <details class="rd-form-block">
+        <summary>快速預覽／正式算圖（立即執行）</summary>
+        <form id="rd-form-quick" class="rd-form">
+          <label>場景
+            <select id="rd-quick-scene" name="scene">
+              <option value="WHITE_STUDIO">WHITE_STUDIO（白棚）</option>
+              <option value="BLACK_LUXURY">BLACK_LUXURY（黑奢）</option>
+              <option value="LIFESTYLE">LIFESTYLE（情境）</option>
+            </select>
+          </label>
+          <div class="rd-actions">
+            <button type="button" id="rd-quick-preview" class="rd-btn rd-btn-primary">預覽算圖</button>
+            <button type="button" id="rd-quick-final" class="rd-btn">正式算圖</button>
+          </div>
+        </form>
+        <pre id="rd-quick-out" class="rd-json" hidden></pre>
+      </details>
+
+      <div id="rd-confirm-job" class="rd-confirm" hidden role="dialog" aria-modal="true" aria-labelledby="rd-confirm-job-title">
+        <div class="rd-confirm-card">
+          <h3 id="rd-confirm-job-title">確認操作</h3>
+          <p id="rd-confirm-job-text"></p>
+          <div class="rd-actions">
+            <button type="button" id="rd-confirm-job-yes" class="rd-btn rd-btn-warn">確認</button>
+            <button type="button" id="rd-confirm-job-no" class="rd-btn">取消</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="rd-section" id="twins" aria-labelledby="rd-twins-title">
+      <h2 id="rd-twins-title">數位分身</h2>
+      <p class="rd-hint">建立 SKU 對應的 3D 商品模型；可上傳 GLB、產生預覽圖或 360 環繞影片。</p>
+
+      <div class="rd-split">
+        <div class="rd-panel">
+          <h3>分身列表</h3>
+          <div id="rd-twins-loading" class="rd-muted">載入中…</div>
+          <div id="rd-twins-empty" class="rd-muted" hidden>目前沒有數位分身，請先建立或上傳。</div>
+          <div id="rd-twins-error" class="rd-error" hidden></div>
+          <div class="rd-scroll">
+            <table id="rd-twins-table" class="rd-table" hidden>
+              <thead>
+                <tr>
+                  <th>編號</th>
+                  <th>SKU</th>
+                  <th>版本</th>
+                </tr>
+              </thead>
+              <tbody id="rd-twins-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="rd-panel">
+          <h3>分身明細</h3>
+          <p id="rd-twin-detail-empty" class="rd-muted">點選左側一列查看明細。</p>
+          <pre id="rd-twin-detail" class="rd-json" hidden></pre>
+          <div id="rd-twin-actions" class="rd-actions" hidden>
+            <button type="button" id="rd-twin-preview" class="rd-btn rd-btn-primary">產生預覽</button>
+            <button type="button" id="rd-twin-360" class="rd-btn">產生 360</button>
+          </div>
+          <div id="rd-twin-preview-wrap" class="rd-preview" hidden>
+            <img id="rd-twin-preview-img" alt="預覽圖" width="240" height="240">
+          </div>
+        </div>
+      </div>
+
+      <details class="rd-form-block" open>
+        <summary>建立數位分身（無上傳檔時會產生示意 GLB）</summary>
+        <form id="rd-form-twin" class="rd-form">
+          <label>SKU
+            <input id="rd-twin-sku" name="sku" required placeholder="例如 SQ-CAB-001">
+          </label>
+          <label>寬度 mm
+            <input id="rd-twin-w" name="width" type="number" min="1" value="800">
+          </label>
+          <label>高度 mm
+            <input id="rd-twin-h" name="height" type="number" min="1" value="900">
+          </label>
+          <label>深度 mm
+            <input id="rd-twin-d" name="depth" type="number" min="1" value="400">
+          </label>
+          <button type="submit" class="rd-btn rd-btn-primary">建立分身</button>
+        </form>
+      </details>
+
+      <details class="rd-form-block">
+        <summary>上傳 GLB 並建立分身</summary>
+        <form id="rd-form-upload" class="rd-form">
+          <label>SKU
+            <input id="rd-upload-sku" name="sku" required placeholder="例如 SQ-CAB-001">
+          </label>
+          <label>GLB 檔案
+            <input id="rd-upload-file" name="file" type="file" accept=".glb,model/gltf-binary" required>
+          </label>
+          <button type="submit" class="rd-btn rd-btn-primary">上傳並建立</button>
+        </form>
+      </details>
+
+      <pre id="rd-twin-out" class="rd-json" hidden></pre>
+
+      <div id="rd-confirm-twin" class="rd-confirm" hidden role="dialog" aria-modal="true" aria-labelledby="rd-confirm-twin-title">
+        <div class="rd-confirm-card">
+          <h3 id="rd-confirm-twin-title">確認操作</h3>
+          <p id="rd-confirm-twin-text"></p>
+          <div class="rd-actions">
+            <button type="button" id="rd-confirm-twin-yes" class="rd-btn rd-btn-primary">確認</button>
+            <button type="button" id="rd-confirm-twin-no" class="rd-btn">取消</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
