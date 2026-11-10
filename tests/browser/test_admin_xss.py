@@ -13,6 +13,11 @@ pytestmark = pytest.mark.browser
 XSS_PAGES = [
     ("/admin/pilot", "#receipts", "試產工單"),
     ("/admin/materials", "#mt-lots-wrap", "材料、餘料"),
+    ("/admin/render", "#rd-jobs-table", "算圖"),
+    ("/admin/kd", "#kd-types-table", "拆裝"),
+    ("/admin/factory", "#fc-quotes-wrap", "報價"),
+    ("/admin/readiness", "#rd-overview-table", "就緒"),
+    ("/admin/pilot-floor", "#pf-station-table", "現場"),
 ]
 
 
@@ -29,10 +34,19 @@ def test_xss_payload_renders_as_text_not_script(
     page.goto(base + href, wait_until="domcontentloaded")
     page.wait_for_selector(".fx-side", timeout=20_000)
     page.wait_for_load_state("networkidle")
-    if href == "/admin/materials":
-        page.wait_for_selector(region, timeout=25_000)
-    else:
-        page.wait_for_selector(region, timeout=25_000)
+    if href == "/admin/pilot-floor":
+        page.locator("#tab-stations").click()
+    page.wait_for_selector(region, timeout=25_000)
+    if href == "/admin/factory":
+        page.wait_for_function(
+            "() => document.body.innerText.includes(%r)" % XSS_PROBE,
+            timeout=25_000,
+        )
+    if href == "/admin/readiness":
+        page.wait_for_function(
+            "() => document.body.innerText.includes(%r)" % XSS_PROBE,
+            timeout=25_000,
+        )
     assert page.evaluate("window.__fox3dXss || 0") == 0
     body = page.inner_text("body")
     assert XSS_PROBE in body, f"fixture {XSS_PROBE} not visible on {href}"

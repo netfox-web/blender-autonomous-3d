@@ -6,8 +6,9 @@ import os
 import socket
 import threading
 import time
-from collections.abc import Generator
-from typing import Any
+import types
+from collections.abc import Callable, Generator
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -50,8 +51,9 @@ def _make_platform(root) -> Platform:  # noqa: ANN001
     return plat
 
 
-def seed_xss_fixture(platform: Platform, tenant: str = TENANT) -> None:
+def seed_xss_fixture(platform: Platform, tenant: str = TENANT) -> Callable[[], None]:
     """Strings that must render as text on admin pages, never execute."""
+    platform.tenants.ensure(tenant)
     platform.pilot.receiving.import_receipt(
         {
             "material": XSS_STRING,
@@ -72,6 +74,72 @@ def seed_xss_fixture(platform: Platform, tenant: str = TENANT) -> None:
         sheet_count=1,
         supplier_lot=XSS_STRING,
     )
+
+    platform.submit_job(
+        {
+            "tenantId": tenant,
+            "jobType": XSS_STRING,
+            "render": {"mode": "preview"},
+        }
+    )
+
+    import fox3d.kd as kd_mod
+    import fox3d.readiness as readiness_mod
+
+    orig_flatpack = kd_mod.FLATPACK_PRODUCT_TYPES
+    if XSS_STRING not in orig_flatpack:
+        cast(Any, kd_mod).FLATPACK_PRODUCT_TYPES = tuple((*orig_flatpack, XSS_STRING))
+    rec = platform.kd.build_sku(tenant_id=tenant, kind="OPEN_SHELF", render=False)
+    spec = rec["spec"]
+    spec["productId"] = XSS_STRING
+    platform.parametrics[XSS_STRING] = {
+        "spec": spec,
+        "report": rec["report"],
+        "bom": rec["bom"],
+        "engineeringHash": rec["engineeringHash"],
+    }
+
+    run = platform.factory.run(tenant_id=tenant, render=False, wall_name="N")
+    if run.get("runId"):
+        stored = platform.factory.runs.get(run["runId"])
+        if stored and stored.get("space"):
+            stored["space"]["wallName"] = XSS_STRING
+
+    _orig_kd_readiness = platform.kd.readiness
+
+    def _kd_readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        matrix = _orig_kd_readiness(evidence=evidence)
+        matrix.setdefault("requiredChecks", {})["coreFactoryE2EReady"] = [XSS_STRING]
+        return matrix
+
+    setattr(platform.kd, "readiness", types.MethodType(_kd_readiness, platform.kd))
+
+    _orig_scoped_readiness = readiness_mod.scoped_readiness
+
+    def _scoped_readiness(*, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        matrix = _orig_scoped_readiness(evidence=evidence)
+        matrix[f"{XSS_PROBE}Ready"] = {"label": XSS_STRING, "ready": False, "note": XSS_PROBE}
+        return matrix
+
+    readiness_mod.scoped_readiness = _scoped_readiness
+
+    platform.pilot.stations.register(
+        tenant_id=tenant,
+        capabilities=["ASSEMBLY_MANUAL"],
+        station_id=XSS_STRING,
+        actor=XSS_STRING,
+    )
+    platform.pilot.identity.register_operator(
+        tenant_id=tenant,
+        display_name=XSS_STRING,
+        operator_id=f"{XSS_PROBE}-operator",
+    )
+
+    def _restore_globals() -> None:
+        cast(Any, kd_mod).FLATPACK_PRODUCT_TYPES = orig_flatpack
+        readiness_mod.scoped_readiness = _orig_scoped_readiness
+
+    return _restore_globals
 
 
 def admin_page_features() -> list[dict[str, Any]]:
@@ -106,7 +174,7 @@ def browser_available() -> bool:
 def admin_server(tmp_path_factory: pytest.TempPathFactory) -> Generator[dict[str, Any], None, None]:
     data_root = tmp_path_factory.mktemp("browser-admin")
     platform = _make_platform(data_root / "data")
-    seed_xss_fixture(platform)
+    restore_globals = seed_xss_fixture(platform)
     port = _free_port()
     config = uvicorn.Config(create_app(platform), host="127.0.0.1", port=port, log_level="error")
     server = uvicorn.Server(config)
@@ -123,9 +191,12 @@ def admin_server(tmp_path_factory: pytest.TempPathFactory) -> Generator[dict[str
     else:
         server.should_exit = True
         pytest.fail("admin uvicorn did not become ready")
-    yield {"base_url": base, "platform": platform, "port": port}
-    server.should_exit = True
-    thread.join(timeout=5)
+    try:
+        yield {"base_url": base, "platform": platform, "port": port}
+    finally:
+        restore_globals()
+        server.should_exit = True
+        thread.join(timeout=5)
 
 
 @pytest.fixture(scope="module")
