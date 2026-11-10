@@ -96,3 +96,8 @@ def test_plugin_page_claims_turn_api_groups_into_pages(monkeypatch: pytest.Monke
     monkeypatch.setattr(pages, "page_features", lambda: {"no-such-feature": "/admin/x"})
     with pytest.raises(ValueError):
         resolved_features()
+
+
+def test_shell_keeps_hidden_attribute_authoritative() -> None:
+    # page CSS like `.panel{display:flex}` must not reveal elements marked hidden
+    assert "[hidden]{display:none!important}" in (STATIC / "fox3d-shell.css").read_text(encoding="utf-8")
