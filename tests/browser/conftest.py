@@ -6,6 +6,7 @@ import os
 import socket
 import threading
 import time
+import types
 from collections.abc import Generator
 from typing import Any
 
@@ -52,6 +53,7 @@ def _make_platform(root) -> Platform:  # noqa: ANN001
 
 def seed_xss_fixture(platform: Platform, tenant: str = TENANT) -> None:
     """Strings that must render as text on admin pages, never execute."""
+    platform.tenants.ensure(tenant)
     platform.pilot.receiving.import_receipt(
         {
             "material": XSS_STRING,
@@ -71,6 +73,65 @@ def seed_xss_fixture(platform: Platform, tenant: str = TENANT) -> None:
         thickness=18,
         sheet_count=1,
         supplier_lot=XSS_STRING,
+    )
+
+    platform.submit_job(
+        {
+            "tenantId": tenant,
+            "jobType": XSS_STRING,
+            "render": {"mode": "preview"},
+        }
+    )
+
+    import fox3d.kd as kd_mod
+
+    kd_mod.FLATPACK_PRODUCT_TYPES = tuple(list(kd_mod.FLATPACK_PRODUCT_TYPES) + [XSS_STRING])
+    rec = platform.kd.build_sku(tenant_id=tenant, kind="OPEN_SHELF", render=False)
+    spec = rec["spec"]
+    spec["productId"] = XSS_STRING
+    platform.parametrics[XSS_STRING] = {
+        "spec": spec,
+        "report": rec["report"],
+        "bom": rec["bom"],
+        "engineeringHash": rec["engineeringHash"],
+    }
+
+    run = platform.factory.run(tenant_id=tenant, render=False, wall_name="N")
+    if run.get("runId"):
+        stored = platform.factory.runs.get(run["runId"])
+        if stored and stored.get("space"):
+            stored["space"]["wallName"] = XSS_STRING
+
+    _orig_kd_readiness = platform.kd.readiness
+
+    def _kd_readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        matrix = _orig_kd_readiness(evidence=evidence)
+        matrix.setdefault("requiredChecks", {})["coreFactoryE2EReady"] = [XSS_STRING]
+        return matrix
+
+    platform.kd.readiness = types.MethodType(_kd_readiness, platform.kd)
+
+    import fox3d.readiness as readiness_mod
+
+    _orig_scoped_readiness = readiness_mod.scoped_readiness
+
+    def _scoped_readiness(*, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
+        matrix = _orig_scoped_readiness(evidence=evidence)
+        matrix[f"{XSS_PROBE}Ready"] = {"label": XSS_STRING, "ready": False, "note": XSS_PROBE}
+        return matrix
+
+    readiness_mod.scoped_readiness = _scoped_readiness
+
+    platform.pilot.stations.register(
+        tenant_id=tenant,
+        capabilities=["ASSEMBLY_MANUAL"],
+        station_id=XSS_STRING,
+        actor=XSS_STRING,
+    )
+    platform.pilot.identity.register_operator(
+        tenant_id=tenant,
+        display_name=XSS_STRING,
+        operator_id=f"{XSS_PROBE}-operator",
     )
 
 
