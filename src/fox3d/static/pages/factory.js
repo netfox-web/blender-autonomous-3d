@@ -62,6 +62,22 @@
     return v || 'sonaqueen-home';
   }
 
+
+  // While a confirm box is open, lock the inputs of the card it belongs to, so the request
+  // sent on 確認 is exactly what the summary showed (the handlers read the fields on 確認).
+  function lockWhileConfirming(box) {
+    var card = box.closest('.fc-card') || box.parentElement;
+    var fields = card.querySelectorAll('input, select, textarea');
+    new MutationObserver(function () {
+      var open = !box.hidden;
+      Array.prototype.forEach.call(fields, function (f) {
+        if (open) { f.dataset.fcWasDisabled = f.disabled ? '1' : ''; f.disabled = true; }
+        else if (f.dataset.fcWasDisabled !== undefined) { f.disabled = f.dataset.fcWasDisabled === '1'; delete f.dataset.fcWasDisabled; }
+      });
+    }).observe(box, { attributes: true, attributeFilter: ['hidden'] });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.fc-confirm'), lockWhileConfirming);
+
   function apiFetch(path, opts) {
     opts = opts || {};
     var headers = Object.assign(
@@ -930,6 +946,9 @@
             showGlobalAlert('建立空間失敗（HTTP ' + res.status + '）', 'err');
           }
         })
+        .catch(function (e) {
+          showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
+        })
         .finally(function () {
           btn.disabled = false;
         });
@@ -988,7 +1007,7 @@
           height: Number($('run-height').value) || 2600
         },
         wallName: $('run-wall').value || 'N',
-        productTypes: checked.length ? checked : ['STORAGE_CABINET', 'WARDROBE', 'BOOKCASE'],
+        productTypes: checked,
         text: $('run-text').value.trim() || undefined,
         render: Boolean($('run-render').checked)
       };
@@ -1010,6 +1029,9 @@
           } else {
             showGlobalAlert('執行排櫃報價失敗（HTTP ' + res.status + '）', 'err');
           }
+        })
+        .catch(function (e) {
+          showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
         })
         .finally(function () {
           btn.disabled = false;
@@ -1062,6 +1084,9 @@
           } else {
             showGlobalAlert('核准報價單失敗（HTTP ' + res.status + '）', 'err');
           }
+        })
+        .catch(function (e) {
+          showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
         })
         .finally(function () {
           btn.disabled = false;
@@ -1142,6 +1167,9 @@
             showGlobalAlert('櫃體改版失敗（HTTP ' + res.status + '）', 'err');
           }
         })
+        .catch(function (e) {
+          showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
+        })
         .finally(function () {
           btn.disabled = false;
         });
@@ -1196,6 +1224,9 @@
             renderApiAnswer($('rd-api-out'), '商品研發產生失敗', res);
             showGlobalAlert('商品研發產生失敗（HTTP ' + res.status + '）', 'err');
           }
+        })
+        .catch(function (e) {
+          showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
         })
         .finally(function () {
           btn.disabled = false;

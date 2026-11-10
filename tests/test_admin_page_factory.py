@@ -161,3 +161,12 @@ def test_factory_and_product_rd_apis_work_end_to_end(client: TestClient) -> None
     assert other["quotes"] == []
     assert other["products"] == []
     assert other["revisions"] == []
+
+
+def test_factory_confirm_boxes_start_hidden() -> None:
+    import re
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.html").read_text(encoding="utf-8")
+    boxes = re.findall(r'<div[^>]*class="fc-confirm"[^>]*>', html)
+    assert boxes and all(" hidden" in b for b in boxes)

@@ -710,3 +710,5 @@ code {
     flex: 1 1 120px;
   }
 }
+
+.fc-confirm[hidden],[hidden]{display:none!important}
