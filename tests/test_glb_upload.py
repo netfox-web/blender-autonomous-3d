@@ -164,6 +164,29 @@ def test_validate_glb_rejects_invalid_json_payload():
         validate_glb_binary(raw)
 
 
+def test_resolve_scene_glb_paths_rejects_other_tenant_absolute_path(tmp_path: Path):
+    plat = Platform(tmp_path / "data", mock_blender=True)
+    root = Path(plat.root).resolve()
+    victim = root / "ecommerce-scene-studio/tenant-beta/glb-props/glb_chair_x.glb"
+    victim.parent.mkdir(parents=True, exist_ok=True)
+    victim.write_bytes(_minimal_glb_bytes())
+    scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": str(victim.resolve())}]}
+    with pytest.raises(ValueError, match="超出租戶允許範圍"):
+        resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant-alpha")
+
+
+def test_resolve_scene_glb_paths_rejects_other_tenant_relative_path(tmp_path: Path):
+    plat = Platform(tmp_path / "data", mock_blender=True)
+    root = Path(plat.root).resolve()
+    rel = "ecommerce-scene-studio/tenant-beta/glb-props/glb_chair_x.glb"
+    glb_file = root / rel
+    glb_file.parent.mkdir(parents=True, exist_ok=True)
+    glb_file.write_bytes(_minimal_glb_bytes())
+    scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": rel}]}
+    with pytest.raises(ValueError, match="超出租戶允許範圍"):
+        resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant-alpha")
+
+
 def test_resolve_scene_glb_paths_maps_upload_ref_to_absolute(tmp_path: Path):
     plat = Platform(tmp_path / "data", mock_blender=True)
     root = Path(plat.root).resolve()

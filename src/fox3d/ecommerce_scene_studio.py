@@ -1135,10 +1135,10 @@ def resolve_scene_glb_paths_for_blender(
             resolved = candidate.resolve()
         else:
             resolved = (root / text).resolve()
-            try:
-                resolved.relative_to(tenant_props)
-            except ValueError as exc:
-                raise ValueError(f"道具「{item.get('name') or '?'}」的 GLB 路徑超出租戶允許範圍") from exc
+        try:
+            resolved.relative_to(tenant_props)
+        except ValueError as exc:
+            raise ValueError(f"道具「{item.get('name') or '?'}」的 GLB 路徑超出租戶允許範圍") from exc
         if not resolved.is_file():
             raise ValueError(f"找不到上傳的 GLB：{text}")
         item["glbPath"] = str(resolved)
