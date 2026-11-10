@@ -929,3 +929,8 @@ small {
     grid-template-columns: 1fr;
   }
 }
+
+#panels .panel img {
+  max-width: 100%;
+  height: auto;
+}

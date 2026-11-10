@@ -97,7 +97,7 @@
       : '') +
     assets
       .filter(a => a.usage?.canUseForPrint !== false)
-      .map(a => `<option value="${a.id}" ${a.id === chosen ? 'selected' : ''}>${esc(a.name)} · ${a.info.pages.length} 頁</option>`)
+      .map(a => `<option value="${esc(a.id)}" ${a.id === chosen ? 'selected' : ''}>${esc(a.name)} · ${a.info.pages.length} 頁</option>`)
       .join('');
 
   function panelRows(rows) {
@@ -192,7 +192,7 @@
     $('jobs').innerHTML =
       js.map(
         j =>
-          `<button type="button" data-id="${j.id}">${esc(j.draft.sku)}<small>${esc(j.draft.name)} · 版本 ${j.revision}</small></button>`
+          `<button type="button" data-id="${esc(j.id)}">${esc(j.draft.sku)}<small>${esc(j.draft.name)} · 版本 ${j.revision}</small></button>`
       ).join('') || '<p>尚無商品，先匯入原稿再建立。</p>';
     $('jobs').querySelectorAll('button[data-id]').forEach(b => (b.onclick = () => action(() => select(b.dataset.id))));
   }
