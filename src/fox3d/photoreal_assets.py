@@ -341,7 +341,8 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
 
 
 def _polyhaven_lock_path(model_dir: Path) -> Path:
-    return model_dir / ".polyhaven.lock"
+    """Lock beside model_dir, not inside it — publish renames model_dir on disk (Windows cannot rename dirs with open files)."""
+    return model_dir.parent / f".{model_dir.name}.polyhaven.lock"
 
 
 def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:

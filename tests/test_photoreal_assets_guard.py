@@ -127,6 +127,8 @@ def test_malicious_includes_stay_inside_model_dir(tmp_path: Path, monkeypatch: p
                 continue
             if path.suffix == ".png" and "thumbs" in path.parts:
                 continue
+            if path.name.endswith(".polyhaven.lock") and path.parent == model_root:
+                continue
             pytest.fail(f"unexpected file outside asset dir: {path}")
     finally:
         photoreal_assets.POLYHAVEN_CURATED_MODELS.pop(aid, None)
