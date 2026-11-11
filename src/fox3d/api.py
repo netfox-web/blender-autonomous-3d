@@ -186,7 +186,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/e2e/smoke")
     def e2e_smoke() -> dict[str, Any]:
-        return get_platform().real_smoke_test()
+        platform = get_platform()
+        result = platform.real_smoke_test()
+        if platform.mock_blender:
+            return {**result, "discoverySource": "MOCK", "usedMock": True, "realBlender": False}
+        return result
 
     @app.get("/api/factory/product-types")
     def factory_types() -> dict[str, Any]:

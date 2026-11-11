@@ -146,6 +146,10 @@ class RecipePreviewService:
     def cancel(self, tid, sku, task_id):
         with self.lock:
             task = self.tasks.get((tid, sku))
+            if task is None:
+                state = read_json(self.folder_fn(self.platform.root, tid, sku) / "state.json")
+                if state.get("state") == "cancelled" and state.get("taskId") == task_id:
+                    return {"taskId": task_id, "cancelRequested": True}
             if task is None or task[0] != task_id:
                 raise ValueError("此工作已結束，請重新整理狀態")
             task[1].set()
