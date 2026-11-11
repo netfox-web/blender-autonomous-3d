@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from fox3d.api import create_app
 from fox3d import photoreal_assets
 from fox3d.platform import Platform
+from fox3d.polyhaven_paths import POLYHAVEN_CATALOG_NAME, resolve_polyhaven_bundle_paths, resolve_polyhaven_asset_ref_path
 
 
 @pytest.fixture
@@ -47,6 +48,13 @@ def _gltf_body_with_uris(*external_uris: str) -> bytes:
     if len(raw) <= photoreal_assets._POLYHAVEN_MIN_GLTF_BYTES:
         raw += b" " * (photoreal_assets._POLYHAVEN_MIN_GLTF_BYTES - len(raw) + 1)
     return raw
+
+
+def _bundle_root(model_root: Path, aid: str) -> Path:
+    slot = model_root / aid
+    gltf_file = slot / f"{aid}_2k.gltf"
+    bundle_root, _resolved = resolve_polyhaven_bundle_paths(slot, gltf_file)
+    return bundle_root
 
 
 def _fake_urlopen_factory(
@@ -212,7 +220,8 @@ def test_retry_after_include_failure_completes(tmp_path: Path, monkeypatch: pyte
     try:
         out = photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
         assert out["ready"] is True
-        assert (model_root / aid / "textures" / "albedo.png").read_bytes() == b"TEX"
+        bundle = _bundle_root(model_root, aid)
+        assert (bundle / "textures" / "albedo.png").read_bytes() == b"TEX"
         assert photoreal_assets._polyhaven_cache_complete(model_root / aid, partial_gltf)
     finally:
         photoreal_assets.POLYHAVEN_CURATED_MODELS.pop(aid, None)
@@ -283,9 +292,10 @@ def test_parallel_downloads_same_asset(tmp_path: Path, monkeypatch: pytest.Monke
         for fut in as_completed(futs):
             fut.result()
     assert not errors
-    assert gltf_file.exists()
-    assert (model_root / aid / "textures" / "albedo.png").read_bytes() == b"TEX"
-    assert (model_root / aid / "textures" / "normal.png").read_bytes() == b"NORM"
+    bundle = _bundle_root(model_root, aid)
+    assert bundle.joinpath(gltf_file.name).exists()
+    assert (bundle / "textures" / "albedo.png").read_bytes() == b"TEX"
+    assert (bundle / "textures" / "normal.png").read_bytes() == b"NORM"
     assert photoreal_assets._polyhaven_cache_complete(model_root / aid, gltf_file)
     staging_leftovers = list(model_root.parent.glob(".ph-staging-*"))
     assert not staging_leftovers, staging_leftovers
@@ -353,11 +363,13 @@ def test_concurrent_read_during_publish_never_sees_mixed_bundle(tmp_path: Path, 
     def reader():
         while not publish_enter.wait(timeout=2):
             continue
+        bundle_root, pinned_gltf, _version = photoreal_assets.pin_polyhaven_bundle(model_dir, gltf_file)
         if not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file):
             return
-        tex = model_dir / "textures" / "albedo.png"
+        tex = bundle_root / "textures" / "albedo.png"
         if tex.exists() and tex.read_bytes() != b"TEX":
             mixed_observed.set()
+        _ = pinned_gltf.read_bytes()
 
     monkeypatch.setattr(photoreal_assets, "_polyhaven_atomic_publish", slow_publish)
     reader_thread = threading.Thread(target=reader)
@@ -466,6 +478,66 @@ def test_cache_complete_false_when_manifest_omits_gltf_dependency(tmp_path: Path
     assert not photoreal_assets._polyhaven_cache_complete(model_root, gltf_file)
 
 
+def test_concurrent_read_pinned_across_catalog_switch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_catalog_switch"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    switch_ready = threading.Event()
+    proceed_switch = threading.Event()
+    version_mismatch = threading.Event()
+
+    def first_round(req, timeout=0):
+        return _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"OLD_TEX"})(req, timeout=timeout)
+
+    monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", first_round)
+    assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+
+    def reader():
+        bundle_root, pinned_gltf, _version = photoreal_assets.pin_polyhaven_bundle(model_dir, gltf_file)
+        _ = pinned_gltf.read_bytes()
+        switch_ready.set()
+        assert proceed_switch.wait(timeout=5)
+        tex = bundle_root / "textures" / "albedo.png"
+        if not tex.exists() or tex.read_bytes() != b"OLD_TEX":
+            version_mismatch.set()
+
+    reader_thread = threading.Thread(target=reader)
+    reader_thread.start()
+    assert switch_ready.wait(timeout=5)
+
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"NEW_TEX"}),
+    )
+    (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+    proceed_switch.set()
+    assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+    reader_thread.join(timeout=5)
+    bundle = _bundle_root(model_root, aid)
+    assert (bundle / "textures" / "albedo.png").read_bytes() == b"NEW_TEX"
+    assert not version_mismatch.is_set()
+
+
+def test_resolve_polyhaven_asset_ref_follows_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_asset_ref"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"TEX"}),
+    )
+    assets_root = tmp_path / "assets"
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    ref = f"models/polyhaven/{aid}/{aid}_2k.gltf"
+    resolved = resolve_polyhaven_asset_ref_path(assets_root, ref)
+    assert resolved is not None
+    assert resolved.is_file()
+    assert resolved.is_relative_to(_bundle_root(assets_root / "models" / "polyhaven", aid))
+
+
 def test_publish_rename_failure_keeps_old_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_rename_fail"
     gltf_body = _gltf_body_with_uris("textures/albedo.png")
@@ -490,27 +562,18 @@ def test_publish_rename_failure_keeps_old_cache(tmp_path: Path, monkeypatch: pyt
     assert photoreal_assets._polyhaven_gltf_bundle_ready(model_dir, gltf_file) is None
 
     real_rename = Path.rename
-    calls = {"incoming_to_target": 0}
 
     def flaky_rename(self: Path, target: Path) -> None:
-        name = self.name
-        if name.startswith(".ph-incoming-") and target == model_dir:
-            calls["incoming_to_target"] += 1
-            raise OSError("simulated incoming rename failure")
-        if name.startswith(".ph-old-") and target == model_dir:
-            raise OSError("simulated rollback rename failure")
+        if self.name.startswith(".ph-staging-") and target.parent == model_dir / POLYHAVEN_VERSIONS_DIR:
+            raise OSError("simulated version rename failure")
         real_rename(self, target)
 
     monkeypatch.setattr(Path, "rename", flaky_rename)
     paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
     assert aid not in paths
-    leftover_old = list(model_root.glob(".ph-old-guard_rename_fail-*"))
-    assert leftover_old, "expected preserved old-dir backup after failed rollback"
-    backup_root = leftover_old[0]
-    assert (backup_root / gltf_file.name).read_bytes() == old_bytes
-    assert (backup_root / "textures" / "albedo.png").read_bytes() == b"OLD"
-    assert not model_dir.exists() or gltf_file.read_bytes() == old_bytes
-    assert calls["incoming_to_target"] >= 1
+    assert gltf_file.read_bytes() == old_bytes
+    assert (model_dir / "textures" / "albedo.png").read_bytes() == b"OLD"
+    assert not (model_dir / POLYHAVEN_CATALOG_NAME).exists()
 
 
 def test_polyhaven_download_lock_timeout_exceeds_default_wait_budget():
@@ -698,7 +761,8 @@ def test_short_buffer_rejected_until_byte_length_matches(tmp_path: Path, monkeyp
     try:
         out = photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
         assert out["ready"] is True
-        assert (model_dir / "meshes" / "data.bin").stat().st_size == 100
+        bundle = _bundle_root(model_root, aid)
+        assert (bundle / "meshes" / "data.bin").stat().st_size == 100
         assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
     finally:
         photoreal_assets.POLYHAVEN_CURATED_MODELS.pop(aid, None)
