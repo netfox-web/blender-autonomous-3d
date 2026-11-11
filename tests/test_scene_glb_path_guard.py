@@ -6,6 +6,8 @@ import pytest
 
 from fox3d.ecommerce_scene_studio import EcommerceSceneStore
 
+from tests.test_glb_upload import _minimal_glb_bytes
+
 
 @pytest.fixture
 def store(tmp_path):
@@ -18,7 +20,8 @@ def scene(path):
 
 
 def test_allowed_upload_and_polyhaven(store):
-    uploaded = store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath']
+    rel = store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes())['glbPath']
+    uploaded = str((Path(store.platform.root).resolve() / rel).resolve())
     poly = Path(__file__).resolve().parents[1] / 'assets/models/polyhaven/test/model.gltf'
     for path in (uploaded, str(poly), 'assets://models/polyhaven/test/model.gltf'):
         guarded, warnings = store.guard_scene_paths('alice', scene(path))
@@ -50,7 +53,8 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
 
 
 def test_native_upload_path_and_traversal(store):
-    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath'])
+    rel = store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes())['glbPath']
+    uploaded = (Path(store.platform.root).resolve() / rel).resolve()
     guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
     assert guarded['props'][0]['glbPath'] == str(uploaded)
     assert not warnings

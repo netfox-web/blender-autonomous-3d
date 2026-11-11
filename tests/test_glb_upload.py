@@ -345,6 +345,7 @@ def test_uploaded_glb_path_reaches_blender_job_as_absolute(tmp_path: Path):
     )
     assert upload.status_code == 201
     rel_glb = upload.json()["glbPath"]
+    abs_glb = str((Path(plat.root).resolve() / rel_glb).resolve())
     scene_id = "SCENE_GLB_E2E"
     save = client.post(
         "/api/ecommerce-scenes/scenes",
@@ -362,7 +363,7 @@ def test_uploaded_glb_path_reaches_blender_job_as_absolute(tmp_path: Path):
                     "widthM": 0.4,
                     "depthM": 0.4,
                     "heightM": 0.5,
-                    "glbPath": rel_glb,
+                    "glbPath": abs_glb,
                 }
             ],
         },
