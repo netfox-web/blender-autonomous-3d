@@ -8,15 +8,6 @@ from fox3d.ecommerce_scene_studio import EcommerceSceneStore
 from fox3d.pngutil import write_glb_stub
 
 
-def _minimal_glb_bytes() -> bytes:
-    path = Path("_minimal_fixture.glb")
-    try:
-        write_glb_stub(path, name="Prop")
-        return path.read_bytes()
-    finally:
-        path.unlink(missing_ok=True)
-
-
 @pytest.fixture
 def store(tmp_path):
     with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'):
@@ -27,8 +18,10 @@ def scene(path):
     return {'id': 'custom', 'name': 'Test', 'props': [{'type': 'CUSTOM_BOX', 'glbPath': path}]}
 
 
-def test_allowed_upload_and_polyhaven(store):
-    uploaded = store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes())['glbPath']
+def test_allowed_upload_and_polyhaven(store, tmp_path):
+    fixture = tmp_path / 'fixture.glb'
+    write_glb_stub(fixture, name='Prop')
+    uploaded = store.upload_glb_prop('alice', 'chair.glb', fixture.read_bytes())['glbPath']
     poly = Path(__file__).resolve().parents[1] / 'assets/models/polyhaven/test/model.gltf'
     for path in (uploaded, str(poly), 'assets://models/polyhaven/test/model.gltf'):
         guarded, warnings = store.guard_scene_paths('alice', scene(path))
@@ -59,8 +52,10 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
         assert result['warnings']
 
 
-def test_native_upload_path_and_traversal(store):
-    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes())['glbPath'])
+def test_native_upload_path_and_traversal(store, tmp_path):
+    fixture = tmp_path / 'fixture.glb'
+    write_glb_stub(fixture, name='Prop')
+    uploaded = tmp_path / store.upload_glb_prop('alice', 'chair.glb', fixture.read_bytes())['glbPath']
     guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
     assert guarded['props'][0]['glbPath'] == str(uploaded)
     assert not warnings
@@ -96,3 +91,52 @@ def test_ai_layout_endpoint_guards_generated_paths(store):
     assert response.status_code == 200
     assert response.json()['warnings']
     assert 'glbPath' not in response.json()['props'][0]
+
+
+def test_relative_upload_path_is_preserved(store, tmp_path):
+    fixture = tmp_path / 'fixture.glb'
+    write_glb_stub(fixture, name='Prop')
+    uploaded = store.upload_glb_prop('alice', 'chair.glb', fixture.read_bytes())['glbPath']
+    guarded, warnings = store.guard_scene_paths('alice', scene(uploaded))
+    assert guarded['props'][0]['glbPath'] == uploaded
+    assert not warnings
+
+
+def test_relative_other_tenant_upload_is_rejected(store, tmp_path):
+    fixture = tmp_path / 'fixture.glb'
+    write_glb_stub(fixture, name='Prop')
+    uploaded = store.upload_glb_prop('bob', 'chair.glb', fixture.read_bytes())['glbPath']
+    guarded, warnings = store.guard_scene_paths('alice', scene(uploaded))
+    assert 'glbPath' not in guarded['props'][0]
+    assert warnings
+
+
+def test_relative_unsafe_upload_paths_are_rejected(store, tmp_path):
+    upload = store._tenant_dir('alice') / 'glb-props'
+    upload.mkdir()
+    outside = tmp_path / 'outside.glb'
+    outside.write_bytes(b'x')
+    link = upload / 'escape.glb'
+    paths = [
+        (upload / '..' / 'glb-props' / 'model.glb').relative_to(tmp_path).as_posix(),
+        (upload / 'bad.txt').relative_to(tmp_path).as_posix(),
+        r'ecommerce-scene-studio\alice\glb-props\model.glb',
+    ]
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pass
+    else:
+        paths.append(link.relative_to(tmp_path).as_posix())
+    for path in paths:
+        guarded, warnings = store.guard_scene_paths('alice', scene(path))
+        assert 'glbPath' not in guarded['props'][0]
+        assert warnings
+
+
+def test_missing_upload_is_rejected_for_relative_and_absolute_paths(store, tmp_path):
+    missing = store._tenant_dir('alice') / 'glb-props' / 'missing.glb'
+    for path in (str(missing), missing.relative_to(tmp_path).as_posix()):
+        guarded, warnings = store.guard_scene_paths('alice', scene(path))
+        assert 'glbPath' not in guarded['props'][0]
+        assert warnings
