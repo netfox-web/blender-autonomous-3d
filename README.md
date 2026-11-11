@@ -17,6 +17,8 @@ framework, DAM, or recipe registry.
 
 [組合櫃 3D 場景電商工坊](http://127.0.0.1:8790/admin/recipes/scenes)：拼裝組合櫃 → AI 排景／拖拉家具 → Blender 光追＋**地端 AI 實景**（公司 GPU 艦隊 FLUX 3，櫃體像素鎖定、每組多張變化）。詳見 [docs/LOCAL_AI_SCENE_STUDIO.md](docs/LOCAL_AI_SCENE_STUDIO.md)；工作台須以 0.0.0.0 啟動讓節點抓得到參考圖。
 
+所有後台頁面及對應 API 群組請參見 [後台頁面總表](docs/ADMIN_PAGES.md)。
+
 三層三門櫃另有 [Golden Product 工作台](http://127.0.0.1:8790/admin/recipes/golden)，提供四 SKU、兩種校驗圖版本、真實 Blender 三視角與逐門裁圖下載；詳見 [操作手冊](docs/GOLDEN_PRODUCT_THREE_TIER_CABINET.md) 與 [驗收證據](docs/GOLDEN_PRODUCT_THREE_TIER_CABINET_ACCEPTANCE.md)。歷史原稿待補，工程／製造仍未放行。
 
 ## Run
