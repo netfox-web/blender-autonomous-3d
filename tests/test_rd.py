@@ -231,4 +231,4 @@ def test_product_rd_agent_repeated_approve_idempotent(platform) -> None:
 def test_product_rd_agent_approve_requires_actor_keyword() -> None:
     agent = ProductRDAgent(None, None, VisionJudge(), None)  # type: ignore[arg-type]
     with pytest.raises(TypeError):
-        agent.approve({"top": []})
+        agent.approve({"top": []})  # type: ignore[call-arg]
