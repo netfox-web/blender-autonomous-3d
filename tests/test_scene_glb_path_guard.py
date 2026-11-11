@@ -5,6 +5,13 @@ from unittest.mock import patch
 import pytest
 
 from fox3d.ecommerce_scene_studio import EcommerceSceneStore
+from fox3d.pngutil import write_glb_stub
+
+
+def _minimal_glb_bytes(tmp_path: Path) -> bytes:
+    path = tmp_path / "fixture.glb"
+    write_glb_stub(path, name="Prop")
+    return path.read_bytes()
 
 
 @pytest.fixture
@@ -17,8 +24,8 @@ def scene(path):
     return {'id': 'custom', 'name': 'Test', 'props': [{'type': 'CUSTOM_BOX', 'glbPath': path}]}
 
 
-def test_allowed_upload_and_polyhaven(store):
-    uploaded = store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath']
+def test_allowed_upload_and_polyhaven(store, tmp_path):
+    uploaded = store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes(tmp_path))['glbPath']
     poly = Path(__file__).resolve().parents[1] / 'assets/models/polyhaven/test/model.gltf'
     for path in (uploaded, str(poly), 'assets://models/polyhaven/test/model.gltf'):
         guarded, warnings = store.guard_scene_paths('alice', scene(path))
@@ -49,8 +56,8 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
         assert result['warnings']
 
 
-def test_native_upload_path_and_traversal(store):
-    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath'])
+def test_native_upload_path_and_traversal(store, tmp_path):
+    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes(tmp_path))['glbPath'])
     guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
     assert guarded['props'][0]['glbPath'] == str(uploaded)
     assert not warnings
