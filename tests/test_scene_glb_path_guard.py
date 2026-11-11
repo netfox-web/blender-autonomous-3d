@@ -5,6 +5,16 @@ from unittest.mock import patch
 import pytest
 
 from fox3d.ecommerce_scene_studio import EcommerceSceneStore
+from fox3d.pngutil import write_glb_stub
+
+
+def _minimal_glb_bytes() -> bytes:
+    path = Path("_minimal_fixture.glb")
+    try:
+        write_glb_stub(path, name="Prop")
+        return path.read_bytes()
+    finally:
+        path.unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -18,7 +28,7 @@ def scene(path):
 
 
 def test_allowed_upload_and_polyhaven(store):
-    uploaded = store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath']
+    uploaded = store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes())['glbPath']
     poly = Path(__file__).resolve().parents[1] / 'assets/models/polyhaven/test/model.gltf'
     for path in (uploaded, str(poly), 'assets://models/polyhaven/test/model.gltf'):
         guarded, warnings = store.guard_scene_paths('alice', scene(path))
@@ -50,7 +60,7 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
 
 
 def test_native_upload_path_and_traversal(store):
-    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', b'x' * 16)['glbPath'])
+    uploaded = Path(store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes())['glbPath'])
     guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
     assert guarded['props'][0]['glbPath'] == str(uploaded)
     assert not warnings
