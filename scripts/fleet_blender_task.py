@@ -568,6 +568,8 @@ def main(argv: list[str] | None = None) -> int:
         log_path = work_dir / LOG_FILE
         env = dict(os.environ)
         env["FOX3D_ASSETS_ROOT"] = str(assets_root)
+        fox3d_src = str(script.resolve().parents[1] / "src")
+        env.setdefault("FOX3D_SRC", fox3d_src)
         cmd = blender_command(blender, str(script), work_dir / JOB_FILE)
         log(f"[{TASK_TYPE}] job={job_id} timeout={timeout_sec:g}s exportModels={export_models}")
         log(f"[{TASK_TYPE}] cmd: {' '.join(cmd)}")

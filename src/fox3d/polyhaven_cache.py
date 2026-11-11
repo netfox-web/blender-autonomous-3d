@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import tempfile
 import threading
 from collections import defaultdict
 from contextlib import contextmanager
@@ -22,6 +23,8 @@ _POLYHAVEN_REF_RE = re.compile(
 
 _CURRENT_FILENAME = "current"
 _VERSIONS_DIRNAME = "versions"
+_RETAIN_DIRNAME = ".fox3d-retain"
+_LEGACY_MANIFEST_NAME = ".polyhaven_complete.json"
 
 # Test hooks (threading.Event): publisher waits before/after switching current.
 publish_pause_before_switch: threading.Event | None = None
@@ -135,6 +138,61 @@ def _release_version(asset_id: str, version: str) -> None:
             del _version_refcounts[key]
 
 
+def _acquire_cross_process_retain(asset_root: Path, version: str) -> Path:
+    """Pin a version for other OS processes (e.g. Blender) via on-disk markers."""
+    pin_dir = version_directory(asset_root, version) / _RETAIN_DIRNAME
+    pin_dir.mkdir(parents=True, exist_ok=True)
+    token = hashlib.sha256(os.urandom(8)).hexdigest()[:12]
+    pin = pin_dir / f"{os.getpid()}.{token}"
+    pin.write_text(str(os.getpid()), encoding="utf-8")
+    return pin
+
+
+def _release_cross_process_retain(pin_path: Path) -> None:
+    try:
+        pin_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    try:
+        pin_dir = pin_path.parent
+        if pin_dir.is_dir() and not any(pin_dir.iterdir()):
+            pin_dir.rmdir()
+    except OSError:
+        pass
+
+
+def _version_dir_has_retain_pins(version_dir: Path) -> bool:
+    pin_dir = version_dir / _RETAIN_DIRNAME
+    if not pin_dir.is_dir():
+        return False
+    try:
+        return any(pin_dir.iterdir())
+    except OSError:
+        return True
+
+
+def _materialize_version_from_bundle(
+    source_dir: Path,
+    dest_dir: Path,
+    gltf_file: Path,
+    include_rels: list[str],
+) -> None:
+    """Copy a flat or legacy bundle into versions/<hash>/ without disturbing the source tree."""
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir, ignore_errors=True)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(gltf_file, dest_dir / gltf_file.name)
+    for rel in include_rels:
+        src = source_dir / rel
+        if src.is_file():
+            dst = dest_dir / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+    manifest_src = source_dir / _LEGACY_MANIFEST_NAME
+    if manifest_src.is_file():
+        shutil.copy2(manifest_src, dest_dir / _LEGACY_MANIFEST_NAME)
+
+
 def _maybe_gc_asset_versions(asset_root: Path) -> None:
     asset_id = asset_root.name
     current = read_current_version(asset_root)
@@ -151,6 +209,8 @@ def _maybe_gc_asset_versions(asset_root: Path) -> None:
             if ver in keep:
                 continue
             if _version_refcounts.get((asset_id, ver), 0) > 0:
+                continue
+            if _version_dir_has_retain_pins(child):
                 continue
             shutil.rmtree(child, ignore_errors=True)
 
@@ -191,18 +251,33 @@ def migrate_legacy_flat_bundle(
         _cleanup_asset_root_after_migration(asset_root)
         return True
 
-    token = version[:8]
-    incoming = asset_root.parent / f".ph-migrate-incoming-{asset_root.name}-{token}"
-    if incoming.exists():
-        shutil.rmtree(incoming, ignore_errors=True)
-
-    asset_root.rename(incoming)
-    asset_root.mkdir(parents=True, exist_ok=True)
     (asset_root / _VERSIONS_DIRNAME).mkdir(parents=True, exist_ok=True)
-    incoming.rename(dest)
-    _atomic_write_current(asset_root, version)
-    _cleanup_asset_root_after_migration(asset_root)
-    return read_current_version(asset_root) == version
+    staging_parent: Path | None = None
+    try:
+        staging_parent = Path(
+            tempfile.mkdtemp(prefix=f".ph-migrate-{asset_root.name}-{version[:8]}-", dir=asset_root.parent)
+        )
+        staging_bundle = staging_parent / "bundle"
+        _materialize_version_from_bundle(asset_root, staging_bundle, gltf_file, include_rels)
+        if not cache_complete_fn(staging_bundle, staging_bundle / gltf_file.name):
+            return False
+        if dest.exists():
+            shutil.rmtree(dest, ignore_errors=True)
+        staging_bundle.rename(dest)
+        staging_parent = None
+        try:
+            _atomic_write_current(asset_root, version)
+        except BaseException:
+            return False
+        _cleanup_asset_root_after_migration(asset_root)
+        return read_current_version(asset_root) == version
+    except BaseException:
+        if staging_parent is not None and dest.exists() and read_current_version(asset_root) != version:
+            shutil.rmtree(dest, ignore_errors=True)
+        raise
+    finally:
+        if staging_parent is not None:
+            shutil.rmtree(staging_parent, ignore_errors=True)
 
 
 def _cleanup_asset_root_after_migration(asset_root: Path) -> None:
@@ -243,6 +318,7 @@ class PolyhavenReadSession:
     def __init__(self, polyhaven_root: Path) -> None:
         self._root = Path(polyhaven_root)
         self._pins: dict[str, str] = {}
+        self._retain_files: dict[str, Path] = {}
         self._closed = False
 
     def pin_asset(self, asset_id: str) -> str | None:
@@ -253,6 +329,8 @@ class PolyhavenReadSession:
         if not version:
             return None
         _retain_version(asset_id, version)
+        if asset_id not in self._retain_files:
+            self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
         self._pins[asset_id] = version
         return version
 
@@ -277,7 +355,10 @@ class PolyhavenReadSession:
             return
         for aid, version in self._pins.items():
             _release_version(aid, version)
+        for pin in self._retain_files.values():
+            _release_cross_process_retain(pin)
         self._pins.clear()
+        self._retain_files.clear()
         self._closed = True
 
     def __enter__(self) -> PolyhavenReadSession:

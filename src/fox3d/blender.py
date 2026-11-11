@@ -393,7 +393,10 @@ class BlenderRuntime:
         ]
         log_path = job_dir / "blender.log"
         log_fh = open(log_path, "w", encoding="utf-8", errors="replace")
-        proc = subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT, text=True)
+        env = dict(os.environ)
+        src_root = str(self.script_path.resolve().parents[1] / "src")
+        env.setdefault("FOX3D_SRC", src_root)
+        proc = subprocess.Popen(cmd, stdout=log_fh, stderr=subprocess.STDOUT, text=True, env=env)
         start = (clock_monotonic or time.monotonic)()
         last_progress_at = start
         last_progress_val = -1.0

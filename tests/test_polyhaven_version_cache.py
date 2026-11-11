@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -108,6 +110,81 @@ def test_offline_legacy_flat_cache_migrates(tmp_path: Path, monkeypatch: pytest.
     assert polyhaven_cache.version_directory(asset_root, version) == bundle_dir
     assert photoreal_assets._polyhaven_cache_complete(bundle_dir, resolved)
     assert (bundle_dir / "textures/albedo.png").read_bytes() == b"LEGACY"
+
+
+def test_cross_process_retain_pins_block_gc(tmp_path: Path):
+    aid = "cross_proc"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    v_old = "d" * 64
+    v_new = "e" * 64
+    _seed_version_bundle(asset_root, aid, v_old, tex_marker=b"PIN_OLD")
+
+    repo_src = Path(__file__).resolve().parents[1] / "src"
+    ph_root = tmp_path / "assets" / "models" / "polyhaven"
+    ready = tmp_path / "reader_ready"
+    hold_script = tmp_path / "hold_pin.py"
+    hold_script.write_text(
+        "\n".join(
+            [
+                "import sys, time",
+                "from pathlib import Path",
+                f"sys.path.insert(0, {str(repo_src)!r})",
+                "from fox3d import polyhaven_cache",
+                f"root = Path({str(ph_root)!r})",
+                f"ready = Path({str(ready)!r})",
+                "with polyhaven_cache.polyhaven_read_session(root) as session:",
+                f"    main = session.resolve_ref_suffix('models/polyhaven/{aid}/{aid}_2k.gltf')",
+                "    assert main is not None",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'PIN_OLD'",
+                "    ready.write_text('1', encoding='utf-8')",
+                "    time.sleep(1.0)",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.Popen([sys.executable, str(hold_script)])
+    try:
+        deadline = time.time() + 5.0
+        while not ready.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert ready.is_file(), "child must pin v1 before publisher switches current"
+        assert proc.poll() is None, "child must still hold cross-process retain pin"
+        old_bundle = polyhaven_cache.version_directory(asset_root, v_old)
+        _seed_version_bundle(asset_root, aid, v_new, tex_marker=b"PIN_NEW")
+        assert old_bundle.is_dir(), "pinned version must survive GC while another process reads"
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
+def test_migrate_legacy_flat_survives_failed_current_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "migrate_fail"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    gltf = asset_root / f"{aid}_2k.gltf"
+    gltf.write_bytes(_gltf_doc("textures/albedo.png"))
+    (asset_root / "textures").mkdir()
+    (asset_root / "textures/albedo.png").write_bytes(b"MIGRATE_ME")
+    manifest = asset_root / photoreal_assets._POLYHAVEN_MANIFEST_NAME
+    manifest.write_text('["textures/albedo.png"]', encoding="utf-8")
+
+    original = polyhaven_cache._atomic_write_current
+
+    def boom(root: Path, version: str) -> None:
+        if root.name == aid:
+            raise OSError("simulated current write failure")
+        original(root, version)
+
+    monkeypatch.setattr(polyhaven_cache, "_atomic_write_current", boom)
+    ok = photoreal_assets._polyhaven_adopt_legacy_cache(asset_root, gltf)
+    assert ok is False
+    assert gltf.is_file(), "legacy flat glTF must remain when current write fails"
+    assert not (asset_root / "current").is_file()
+    versions = list((asset_root / "versions").iterdir()) if (asset_root / "versions").is_dir() else []
+    assert versions, "version payload should remain on disk for retry"
+    assert (versions[0] / "textures/albedo.png").read_bytes() == b"MIGRATE_ME"
 
 
 def test_windows_style_ref_suffix_normalizes(tmp_path: Path):

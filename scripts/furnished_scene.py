@@ -7,6 +7,18 @@ import os
 ASSET_REF_PREFIX = 'assets://'
 
 
+def _ensure_fox3d_on_path() -> None:
+    """Blender jobs only inherit env + cwd; make ``fox3d`` importable without a separate install."""
+    import sys
+    from pathlib import Path
+
+    src = os.environ.get('FOX3D_SRC', '').strip()
+    if not src:
+        src = str(Path(__file__).resolve().parents[1] / 'src')
+    if src and src not in sys.path:
+        sys.path.insert(0, src)
+
+
 def _assets_root():
     """Asset root shared by every machine: FOX3D_ASSETS_ROOT (GPU nodes) or <repo>/assets (workbench)."""
     from pathlib import Path
@@ -33,6 +45,7 @@ def resolve_asset_ref(value, root=None):
     base = Path(root) if root is not None else _assets_root()
     if parts[:2] == ['models', 'polyhaven']:
         try:
+            _ensure_fox3d_on_path()
             from fox3d.polyhaven_cache import resolve_polyhaven_ref_path
             pinned = resolve_polyhaven_ref_path(text, base)
             if pinned is not None:
@@ -590,6 +603,7 @@ def build(created, definition, device, expected_hash):
                 pass
         observations.append({'componentId': src['recipeComponentId'], 'linkedMesh': clone.data == src.data,
                              'matrixWorld': [list(row) for row in clone.matrix_world]})
+    _ensure_fox3d_on_path()
     from fox3d.polyhaven_cache import polyhaven_read_session
     ph_ctx = polyhaven_read_session(_assets_root() / 'models' / 'polyhaven')
     ph_ctx.__enter__()
