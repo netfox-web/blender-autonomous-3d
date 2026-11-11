@@ -1253,6 +1253,7 @@ class EcommerceSceneStore:
         props = []
         tenant_dir = self._tenant_dir(tenant_id).resolve()
         upload_root = tenant_dir / "glb-props"
+        plat_root = Path(self.platform.root).resolve()
         assets_root = Path(__file__).resolve().parents[2] / "assets"
         poly_root = assets_root / "models" / "polyhaven"
         for index, original in enumerate(scene.get("props") or [], 1):
@@ -1265,9 +1266,13 @@ class EcommerceSceneStore:
                     is_asset = raw.startswith("assets://")
                     if "\\" in raw and (is_asset or os.name != "nt"):
                         raise ValueError("路徑格式無效")
-                    candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
-                    if not candidate.is_absolute():
-                        raise ValueError("必須使用絕對路徑或 assets:// 路徑")
+                    if ".." in path_segments(raw):
+                        raise ValueError("路徑格式無效")
+                    if is_asset:
+                        candidate = assets_root / raw[len("assets://"):]
+                    else:
+                        raw_path = Path(raw)
+                        candidate = raw_path if raw_path.is_absolute() else plat_root / raw
                     resolved = candidate.resolve()
                     if resolved.suffix.lower() not in (".glb", ".gltf"):
                         raise ValueError("只允許 GLB 或 glTF 模型")
@@ -1276,7 +1281,14 @@ class EcommerceSceneStore:
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
                     if not (poly_safe or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
-                    prop["glbPath"] = raw if is_asset else str(resolved)
+                    if upload_safe and not resolved.is_file():
+                        raise ValueError("找不到上傳的 GLB")
+                    if is_asset:
+                        prop["glbPath"] = raw
+                    elif not Path(raw).is_absolute() and upload_safe:
+                        prop["glbPath"] = raw
+                    else:
+                        prop["glbPath"] = str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)
                     warnings.append(f"道具 {index} 的 glbPath 已移除：{exc}；改用程序式模型")
