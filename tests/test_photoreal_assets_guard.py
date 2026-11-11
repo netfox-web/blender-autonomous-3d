@@ -14,7 +14,12 @@ from fastapi.testclient import TestClient
 from fox3d.api import create_app
 from fox3d import photoreal_assets
 from fox3d.platform import Platform
-from fox3d.polyhaven_paths import POLYHAVEN_CATALOG_NAME, resolve_polyhaven_bundle_paths, resolve_polyhaven_asset_ref_path
+from fox3d.polyhaven_paths import (
+    POLYHAVEN_CATALOG_NAME,
+    POLYHAVEN_VERSIONS_DIR,
+    resolve_polyhaven_bundle_paths,
+    resolve_polyhaven_asset_ref_path,
+)
 
 
 @pytest.fixture
