@@ -1104,6 +1104,35 @@ def _tenant_glb_props_root(platform_root: Path, tenant_id: str) -> Path:
     return Path(platform_root).resolve() / "ecommerce-scene-studio" / _tenant_slug(tenant_id) / "glb-props"
 
 
+def _bundled_assets_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "assets"
+
+
+def _polyhaven_glb_to_asset_ref(path: Path) -> str | None:
+    """Map a filesystem path under ``assets/models/polyhaven`` to a machine-independent ``assets://`` ref."""
+    ph_root = (_bundled_assets_root() / "models" / "polyhaven").resolve()
+    try:
+        rel = path.resolve().relative_to(ph_root)
+    except ValueError:
+        return None
+    if not rel.parts or ".." in path_segments(rel.as_posix()):
+        return None
+    return f"{ASSET_REF_PREFIX}models/polyhaven/{rel.as_posix()}"
+
+
+def _coerce_polyhaven_glb_ref(text: str, *, platform_root: Path) -> str | None:
+    """Return an ``assets://`` ref when ``text`` names a bundled Poly Haven glTF (legacy absolute or repo-relative)."""
+    stripped = text.strip()
+    candidate = Path(stripped)
+    if candidate.is_absolute():
+        return _polyhaven_glb_to_asset_ref(candidate)
+    if stripped.startswith("assets/") and ".." not in path_segments(stripped):
+        repo_rel = Path(__file__).resolve().parents[2] / stripped
+        if repo_rel.is_file():
+            return _polyhaven_glb_to_asset_ref(repo_rel)
+    return None
+
+
 def resolve_scene_glb_paths_for_blender(
     scene_definition: dict[str, Any],
     *,
@@ -1126,6 +1155,11 @@ def resolve_scene_glb_paths_for_blender(
             continue
         text = str(glb).strip()
         if text.startswith(ASSET_REF_PREFIX):
+            resolved_boxes.append(item)
+            continue
+        ph_ref = _coerce_polyhaven_glb_ref(text, platform_root=root)
+        if ph_ref:
+            item["glbPath"] = ph_ref
             resolved_boxes.append(item)
             continue
         if ".." in path_segments(text):
@@ -1246,14 +1280,14 @@ class EcommerceSceneStore:
             and getattr(self.platform, "runtime", None)
             and self.platform.runtime.available()
         )
-        ph_root = Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven"
+        ph_root = _bundled_assets_root() / "models" / "polyhaven"
         ph_list = []
         for aid, cfg in POLYHAVEN_CURATED_MODELS.items():
             res = cfg.get("resolution", "2k")
             gpath = ph_root / aid / f"{aid}_{res}.gltf"
             ph_list.append({
                 **cfg,
-                "glbPath": str(gpath.resolve()),
+                "glbPath": _ph_glb(aid),
                 "thumbUrl": f"/api/ecommerce-scenes/polyhaven-thumb/{aid}",
                 "installed": gpath.exists(),
             })

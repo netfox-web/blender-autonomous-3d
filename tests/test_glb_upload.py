@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from fox3d.api import create_app
 from fox3d.ecommerce_scene_studio import (
     CABINET_PRESETS,
+    _ph_glb,
     resolve_scene_glb_paths_for_blender,
     validate_glb_binary,
 )
@@ -185,6 +186,95 @@ def test_resolve_scene_glb_paths_rejects_other_tenant_relative_path(tmp_path: Pa
     scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": rel}]}
     with pytest.raises(ValueError, match="超出租戶允許範圍"):
         resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant-alpha")
+
+
+def test_overview_polyhaven_models_use_asset_refs(tmp_path: Path):
+    client, _ = _client(tmp_path)
+    models = client.get("/api/ecommerce-scenes/overview", headers={"X-Tenant-Id": "t1"}).json()["polyhavenModels"]
+    assert models
+    for m in models:
+        glb = m["glbPath"]
+        assert glb.startswith("assets://models/polyhaven/")
+        assert not Path(glb).is_absolute()
+        assert glb == _ph_glb(m["assetId"])
+
+
+def test_resolve_scene_glb_paths_passes_through_polyhaven_asset_ref(tmp_path: Path):
+    plat = Platform(tmp_path / "data", mock_blender=True)
+    root = Path(plat.root).resolve()
+    ref = _ph_glb("Ottoman_01")
+    scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": ref}]}
+    resolved = resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant-alpha")
+    assert resolved["boxes"][0]["glbPath"] == ref
+
+
+def test_resolve_scene_glb_paths_upgrades_legacy_polyhaven_absolute_path(tmp_path: Path):
+    plat = Platform(tmp_path / "data", mock_blender=True)
+    root = Path(plat.root).resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+    legacy_abs = repo_root / "assets" / "models" / "polyhaven" / "Ottoman_01" / "Ottoman_01_2k.gltf"
+    if not legacy_abs.is_file():
+        pytest.skip("Poly Haven Ottoman_01 glTF not installed in workspace assets")
+    scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": str(legacy_abs.resolve())}]}
+    resolved = resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant-alpha")
+    assert resolved["boxes"][0]["glbPath"] == _ph_glb("Ottoman_01")
+
+
+def test_saved_polyhaven_gallery_scene_renders_with_asset_ref(tmp_path: Path):
+    runtime = _JobCapturingRuntime()
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    ph_ref = client.get("/api/ecommerce-scenes/overview", headers=headers).json()["polyhavenModels"][0]["glbPath"]
+    assert ph_ref.startswith("assets://")
+    scene_id = "SCENE_PH_GALLERY"
+    save = client.post(
+        "/api/ecommerce-scenes/scenes",
+        headers=headers,
+        json={
+            "id": scene_id,
+            "name": "Poly Haven gallery e2e",
+            "props": [
+                {
+                    "type": "CUSTOM_BOX",
+                    "label": "ottoman",
+                    "x": 1.0,
+                    "y": 0.5,
+                    "z": 0.0,
+                    "widthM": 0.4,
+                    "depthM": 0.4,
+                    "heightM": 0.5,
+                    "glbPath": ph_ref,
+                }
+            ],
+        },
+    )
+    assert save.status_code == 201
+    batch = client.post(
+        "/api/ecommerce-scenes/batches",
+        headers=headers,
+        json={
+            "cabinet": CABINET_PRESETS[0],
+            "sceneIds": [scene_id],
+            "themeIds": ["THEME_NORDIC_OAK"],
+            "views": ["FRONT"],
+            "aiEngine": "builtin",
+            "blenderEngine": "local",
+        },
+    )
+    assert batch.status_code == 202
+    batch_id = batch.json()["batchId"]
+    deadline = time.time() + 30.0
+    while time.time() < deadline:
+        doc = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
+        if doc.get("state") in ("completed", "failed", "interrupted"):
+            break
+        time.sleep(0.05)
+    assert doc["state"] == "completed", doc
+    boxes = runtime.jobs[0]["engineering"]["sceneDefinition"]["boxes"]
+    glb_paths = [b["glbPath"] for b in boxes if b.get("glbPath")]
+    assert any(p.startswith("assets://models/polyhaven/") for p in glb_paths)
 
 
 def test_resolve_scene_glb_paths_maps_upload_ref_to_absolute(tmp_path: Path):
