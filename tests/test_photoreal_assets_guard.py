@@ -26,6 +26,14 @@ def tenant_headers() -> dict[str, str]:
     return {"X-Tenant-Id": "sonaqueen-home"}
 
 
+def _gltf_body_with_buffer(uri: str, byte_length: int) -> bytes:
+    doc = {"asset": {"version": "2.0"}, "buffers": [{"uri": uri, "byteLength": byte_length}]}
+    raw = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    if len(raw) <= photoreal_assets._POLYHAVEN_MIN_GLTF_BYTES:
+        raw += b" " * (photoreal_assets._POLYHAVEN_MIN_GLTF_BYTES - len(raw) + 1)
+    return raw
+
+
 def _gltf_body_with_uris(*external_uris: str) -> bytes:
     images: list[dict[str, str]] = []
     buffers: list[dict[str, str]] = []
@@ -636,3 +644,87 @@ def test_parallel_download_waits_beyond_default_lock_timeout(tmp_path: Path, mon
     assert aid in results[0] or aid in results[1]
     gltf_file = model_root / aid / f"{aid}_2k.gltf"
     assert photoreal_assets._polyhaven_cache_complete(model_root / aid, gltf_file)
+
+
+def test_reserved_asset_id_thumbs_preserves_shared_thumbnails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    thumbs_dir = model_root / "thumbs"
+    thumbs_dir.mkdir(parents=True)
+    keeper = thumbs_dir / "other_asset.png"
+    keeper.write_bytes(b"KEEP_THUMB")
+
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"TEX"}),
+    )
+    for reserved in ("thumbs", "THUMBS", "Thumbs"):
+        with pytest.raises(ValueError):
+            photoreal_assets.download_custom_polyhaven_asset(reserved, root_dir=tmp_path)
+    paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=["thumbs"])
+    assert "thumbs" not in paths
+    assert keeper.read_bytes() == b"KEEP_THUMB"
+    assert not (thumbs_dir / "thumbs_2k.gltf").exists()
+
+
+def test_short_buffer_rejected_until_byte_length_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_short_buffer"
+    gltf_body = _gltf_body_with_buffer("meshes/data.bin", 100)
+    include_map = {"meshes/data.bin": b"x"}
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    model_dir.mkdir(parents=True)
+    gltf_file.write_bytes(gltf_body)
+    (model_dir / "meshes").mkdir(parents=True)
+    (model_dir / "meshes" / "data.bin").write_bytes(b"x")
+    assert photoreal_assets._polyhaven_gltf_bundle_ready(model_dir, gltf_file) is None
+
+    with pytest.raises(ValueError):
+        photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"meshes/data.bin": b"x" * 100}),
+    )
+    try:
+        out = photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+        assert out["ready"] is True
+        assert (model_dir / "meshes" / "data.bin").stat().st_size == 100
+        assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    finally:
+        photoreal_assets.POLYHAVEN_CURATED_MODELS.pop(aid, None)
+
+
+def test_legacy_migration_rejects_reserved_manifest_dependency(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_legacy_manifest_dep"
+    manifest_name = photoreal_assets._POLYHAVEN_MANIFEST_NAME
+    gltf_body = _gltf_body_with_uris(manifest_name)
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    model_dir.mkdir(parents=True)
+    gltf_file.write_bytes(gltf_body)
+    dep_path = model_dir / manifest_name
+    dep_path.write_bytes(b"dependency-payload")
+    assert photoreal_assets._polyhaven_gltf_bundle_ready(model_dir, gltf_file) is None
+    assert not photoreal_assets._polyhaven_adopt_legacy_cache(model_dir, gltf_file)
+    assert dep_path.read_bytes() == b"dependency-payload"
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+    def fail_network(req, timeout=0):
+        url = req.full_url if hasattr(req, "full_url") else req.get_full_url()
+        raise HTTPError(url, 503, "offline", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", fail_network)
+    paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    assert aid not in paths
+    assert dep_path.read_bytes() == b"dependency-payload"

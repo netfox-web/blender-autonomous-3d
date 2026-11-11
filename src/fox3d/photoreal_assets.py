@@ -265,6 +265,8 @@ logger = logging.getLogger(__name__)
 
 _POLYHAVEN_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _POLYHAVEN_ALLOWED_HOSTS = frozenset({"polyhaven.com", "www.polyhaven.com"})
+# Case-insensitive names that collide with shared dirs under assets/models/polyhaven/.
+_POLYHAVEN_RESERVED_ASSET_DIR_NAMES = frozenset({"thumbs"})
 
 
 def _parse_polyhaven_asset_id(raw: str) -> str:
@@ -290,7 +292,14 @@ def _parse_polyhaven_asset_id(raw: str) -> str:
 
     if not aid or not _POLYHAVEN_ASSET_ID_RE.fullmatch(aid):
         raise ValueError("Poly Haven 代號格式不正確（僅允許英數、底線與連字號，最長 64 字元）")
+    if _polyhaven_asset_id_reserved(aid):
+        raise ValueError("Poly Haven 代號與共用目錄保留名稱衝突（例如 thumbs）")
     return aid
+
+
+def _polyhaven_asset_id_reserved(aid: str) -> bool:
+    folded = aid.casefold()
+    return any(folded == name.casefold() for name in _POLYHAVEN_RESERVED_ASSET_DIR_NAMES)
 
 
 def _polyhaven_include_dest(model_dir: Path, rel_path: str) -> Path | None:
@@ -403,9 +412,46 @@ def _polyhaven_gltf_external_uris(doc: dict[str, Any]) -> list[str]:
     return ordered
 
 
-def _polyhaven_bundle_file_ready(model_dir: Path, rel_path: str) -> bool:
+def _polyhaven_gltf_buffer_expected_sizes(doc: dict[str, Any]) -> dict[str, int]:
+    """Map case-folded bundle-relative buffer URIs to declared byteLength values."""
+    expected: dict[str, int] = {}
+    buffers = doc.get("buffers")
+    if not isinstance(buffers, list):
+        return expected
+    for entry in buffers:
+        if not isinstance(entry, dict):
+            continue
+        uri = entry.get("uri")
+        byte_length = entry.get("byteLength")
+        if not isinstance(uri, str) or not uri.strip():
+            continue
+        if not isinstance(byte_length, int) or byte_length <= 0:
+            continue
+        norm = _polyhaven_normalize_bundle_rel(uri.replace("\\", "/"))
+        if norm is not None:
+            expected[norm.casefold()] = byte_length
+    return expected
+
+
+def _polyhaven_bundle_file_ready(
+    model_dir: Path,
+    rel_path: str,
+    *,
+    buffer_expected: dict[str, int] | None = None,
+) -> bool:
     dest = _polyhaven_include_dest(model_dir, rel_path)
-    return dest is not None and dest.exists() and dest.stat().st_size > 0
+    if dest is None or not dest.exists():
+        return False
+    size = dest.stat().st_size
+    if size <= 0:
+        return False
+    if buffer_expected is not None:
+        norm = _polyhaven_normalize_bundle_rel(rel_path.replace("\\", "/"))
+        if norm is not None:
+            declared = buffer_expected.get(norm.casefold())
+            if declared is not None and size != declared:
+                return False
+    return True
 
 
 def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, Any] | None:
@@ -418,8 +464,11 @@ def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, 
         return None
     if gltf_doc is None:
         return None
+    buffer_expected = _polyhaven_gltf_buffer_expected_sizes(gltf_doc)
     for rel in _polyhaven_gltf_external_uris(gltf_doc):
-        if not _polyhaven_bundle_file_ready(model_dir, rel):
+        if _polyhaven_include_reserved_collision(gltf_file, rel):
+            return None
+        if not _polyhaven_bundle_file_ready(model_dir, rel, buffer_expected=buffer_expected):
             return None
     return gltf_doc
 
@@ -459,10 +508,13 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     required = {rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc)}
     if required != manifest_set:
         return False
+    buffer_expected = _polyhaven_gltf_buffer_expected_sizes(gltf_doc)
     for rel in includes:
         if not isinstance(rel, str):
             return False
-        if not _polyhaven_bundle_file_ready(model_dir, rel):
+        if _polyhaven_include_reserved_collision(gltf_file, rel):
+            return False
+        if not _polyhaven_bundle_file_ready(model_dir, rel, buffer_expected=buffer_expected):
             return False
     return True
 
@@ -524,6 +576,7 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
             logger.warning("Invalid glTF payload for %s", model_dir.name)
             return False
 
+        buffer_expected = _polyhaven_gltf_buffer_expected_sizes(gltf_doc)
         api_includes: dict[str, dict] = gltf_entry.get("include") or {}
         required_uris = _polyhaven_gltf_external_uris(gltf_doc)
         include_rels: list[str] = []
@@ -555,12 +608,13 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
             dest.parent.mkdir(parents=True, exist_ok=True)
             inc_req = urllib.request.Request(inc_url, headers=headers)
             dest.write_bytes(urllib.request.urlopen(inc_req, timeout=45).read())
-            if dest.stat().st_size == 0:
+            if not _polyhaven_bundle_file_ready(staging, rel_path, buffer_expected=buffer_expected):
+                logger.warning("Incomplete or invalid glTF dependency for %s: %r", model_dir.name, rel_path)
                 return False
             include_rels.append(rel_path.replace("\\", "/"))
 
         for rel_path in required_uris:
-            if not _polyhaven_bundle_file_ready(staging, rel_path):
+            if not _polyhaven_bundle_file_ready(staging, rel_path, buffer_expected=buffer_expected):
                 logger.warning("Missing glTF dependency on disk for %s: %r", model_dir.name, rel_path)
                 return False
 
@@ -591,6 +645,9 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
 
     headers = {"User-Agent": "Fox3D-Studio/1.0 (https://github.com/netfox-web/blender-autonomous-3d)"}
     for aid in target_ids:
+        if _polyhaven_asset_id_reserved(aid):
+            logger.warning("Skipping Poly Haven asset id that collides with a shared dir: %s", aid)
+            continue
         cfg = POLYHAVEN_CURATED_MODELS.get(aid, {"assetId": aid, "resolution": "2k"})
         res = cfg.get("resolution", "2k")
         model_dir = base / aid
