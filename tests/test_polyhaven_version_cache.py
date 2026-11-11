@@ -187,6 +187,100 @@ def test_migrate_legacy_flat_survives_failed_current_write(tmp_path: Path, monke
     assert (versions[0] / "textures/albedo.png").read_bytes() == b"MIGRATE_ME"
 
 
+def test_reader_session_survives_two_current_switches(tmp_path: Path):
+    """Pinned reader keeps v1 on disk while current advances twice (issue #161)."""
+    aid = "double_switch"
+    root = tmp_path / "assets" / "models" / "polyhaven"
+    asset_root = root / aid
+    asset_root.mkdir(parents=True)
+    v1 = "1" * 64
+    v2 = "2" * 64
+    v3 = "3" * 64
+    _seed_version_bundle(asset_root, aid, v1, tex_marker=b"TEX_V1")
+
+    reader_ready = threading.Event()
+    reader_done = threading.Event()
+    held: dict[str, bytes] = {}
+
+    def reader():
+        with polyhaven_cache.polyhaven_read_session(root) as session:
+            assert session.pin_asset(aid) == v1
+            main = session.resolve_ref_suffix(f"models/polyhaven/{aid}/{aid}_2k.gltf")
+            assert main is not None
+            held["tex"] = (main.parent / "textures/albedo.png").read_bytes()
+            reader_ready.set()
+            time.sleep(0.25)
+            assert (main.parent / "textures/albedo.png").read_bytes() == b"TEX_V1"
+        reader_done.set()
+
+    t = threading.Thread(target=reader)
+    t.start()
+    assert reader_ready.wait(timeout=3)
+    _seed_version_bundle(asset_root, aid, v2, tex_marker=b"TEX_V2")
+    _seed_version_bundle(asset_root, aid, v3, tex_marker=b"TEX_V3")
+    t.join(timeout=5)
+    assert reader_done.is_set()
+    assert held["tex"] == b"TEX_V1"
+    v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+    assert v1_bundle.is_dir()
+    assert (v1_bundle / "textures/albedo.png").read_bytes() == b"TEX_V1"
+    ref = f"assets://models/polyhaven/{aid}/{aid}_2k.gltf"
+    after = polyhaven_cache.resolve_polyhaven_ref_path(ref, tmp_path / "assets")
+    assert after is not None
+    assert (after.parent / "textures/albedo.png").read_bytes() == b"TEX_V3"
+
+
+def test_cross_process_reader_survives_double_switch_before_retain(tmp_path: Path):
+    """Subprocess pins v1, parent switches twice before child finishes resolve (issue #161)."""
+    aid = "race_double"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    v1 = "f" * 64
+    v2 = "0" * 64
+    v3 = "9" * 64
+    _seed_version_bundle(asset_root, aid, v1, tex_marker=b"RACE_V1")
+
+    repo_src = Path(__file__).resolve().parents[1] / "src"
+    ph_root = tmp_path / "assets" / "models" / "polyhaven"
+    ready = tmp_path / "reader_pinned"
+    hold_script = tmp_path / "hold_double_switch.py"
+    hold_script.write_text(
+        "\n".join(
+            [
+                "import sys, time",
+                "from pathlib import Path",
+                f"sys.path.insert(0, {str(repo_src)!r})",
+                "from fox3d import polyhaven_cache",
+                f"root = Path({str(ph_root)!r})",
+                f"ready = Path({str(ready)!r})",
+                "with polyhaven_cache.polyhaven_read_session(root) as session:",
+                f"    main = session.resolve_ref_suffix('models/polyhaven/{aid}/{aid}_2k.gltf')",
+                "    assert main is not None",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_V1'",
+                "    ready.write_text('1', encoding='utf-8')",
+                "    time.sleep(0.6)",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_V1'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.Popen([sys.executable, str(hold_script)])
+    try:
+        deadline = time.time() + 5.0
+        while not ready.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert ready.is_file(), "child must pin v1 before parent switches"
+        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
+        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
+        v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+        assert v1_bundle.is_dir(), "pinned v1 must survive two switches"
+        assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_V1"
+        assert proc.wait(timeout=5) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
 def test_windows_style_ref_suffix_normalizes(tmp_path: Path):
     aid = "win_paths"
     asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid

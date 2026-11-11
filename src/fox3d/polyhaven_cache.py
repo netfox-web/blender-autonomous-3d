@@ -29,6 +29,7 @@ _LEGACY_MANIFEST_NAME = ".polyhaven_complete.json"
 # Test hooks (threading.Event): publisher waits before/after switching current.
 publish_pause_before_switch: threading.Event | None = None
 publish_pause_after_switch: threading.Event | None = None
+_ASSET_COORD_LOCK = ".polyhaven.coord.lock"
 
 _retained_lock = threading.Lock()
 _version_refcounts: dict[tuple[str, str], int] = defaultdict(int)
@@ -193,6 +194,16 @@ def _materialize_version_from_bundle(
         shutil.copy2(manifest_src, dest_dir / _LEGACY_MANIFEST_NAME)
 
 
+@contextmanager
+def _asset_versions_coordination(asset_root: Path) -> Iterator[None]:
+    """Cross-process mutex shared by readers, publishers, and version GC."""
+    from fox3d.storelock import FileLock
+
+    lock_path = asset_root / _ASSET_COORD_LOCK
+    with FileLock(lock_path, timeout=30.0):
+        yield
+
+
 def _maybe_gc_asset_versions(asset_root: Path) -> None:
     asset_id = asset_root.name
     current = read_current_version(asset_root)
@@ -201,18 +212,19 @@ def _maybe_gc_asset_versions(asset_root: Path) -> None:
     versions_root = asset_root / _VERSIONS_DIRNAME
     if not versions_root.is_dir():
         return
-    with _retained_lock:
-        for child in versions_root.iterdir():
-            if not child.is_dir():
-                continue
-            ver = child.name
-            if ver in keep:
-                continue
-            if _version_refcounts.get((asset_id, ver), 0) > 0:
-                continue
-            if _version_dir_has_retain_pins(child):
-                continue
-            shutil.rmtree(child, ignore_errors=True)
+    with _asset_versions_coordination(asset_root):
+        with _retained_lock:
+            for child in versions_root.iterdir():
+                if not child.is_dir():
+                    continue
+                ver = child.name
+                if ver in keep:
+                    continue
+                if _version_refcounts.get((asset_id, ver), 0) > 0:
+                    continue
+                if _version_dir_has_retain_pins(child):
+                    continue
+                shutil.rmtree(child, ignore_errors=True)
 
 
 def publish_version(asset_root: Path, staging_bundle: Path, version: str) -> None:
@@ -325,13 +337,17 @@ class PolyhavenReadSession:
         if asset_id in self._pins:
             return self._pins[asset_id]
         asset_root = polyhaven_asset_root(self._root, asset_id)
-        version = read_current_version(asset_root)
-        if not version:
-            return None
-        _retain_version(asset_id, version)
-        if asset_id not in self._retain_files:
-            self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
-        self._pins[asset_id] = version
+        with _asset_versions_coordination(asset_root):
+            version = read_current_version(asset_root)
+            if not version:
+                return None
+            bundle = version_directory(asset_root, version)
+            if not bundle.is_dir():
+                return None
+            _retain_version(asset_id, version)
+            if asset_id not in self._retain_files:
+                self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
+            self._pins[asset_id] = version
         return version
 
     def resolve_ref_suffix(self, ref_suffix: str) -> Path | None:
