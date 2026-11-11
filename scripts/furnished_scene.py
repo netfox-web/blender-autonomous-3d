@@ -31,6 +31,14 @@ def resolve_asset_ref(value, root=None):
     if any(seg == '..' for seg in parts):
         raise ValueError('asset ref escapes the asset root: ' + text)
     base = Path(root) if root is not None else _assets_root()
+    try:
+        from fox3d.polyhaven_paths import resolve_polyhaven_asset_ref_path
+
+        resolved = resolve_polyhaven_asset_ref_path(base, "/".join(parts))
+        if resolved is not None:
+            return resolved
+    except ImportError:
+        pass
     return base.joinpath(*parts)
 
 

@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import logging
 import math
 import os
 import re
-import secrets
 import shutil
 import tempfile
 import urllib.request
@@ -19,6 +19,13 @@ from urllib.parse import urlparse
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
+from fox3d.polyhaven_paths import (
+    POLYHAVEN_CATALOG_NAME,
+    POLYHAVEN_VERSIONS_DIR,
+    read_polyhaven_catalog,
+    resolve_polyhaven_bundle_paths,
+)
+from fox3d.recipe_3d import atomic_json
 from fox3d.storelock import FileLock
 
 AI_STYLE_PRESETS: dict[str, dict[str, Any]] = {
@@ -263,6 +270,11 @@ for _aid, _ptype, _label, _short in _MODERN_EXTRA:
 
 logger = logging.getLogger(__name__)
 
+
+def _polyhaven_resolved_gltf_path(model_dir: Path, gltf_file: Path) -> Path:
+    _bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    return resolved_gltf
+
 _POLYHAVEN_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _POLYHAVEN_ALLOWED_HOSTS = frozenset({"polyhaven.com", "www.polyhaven.com"})
 # Case-insensitive names that collide with shared dirs under assets/models/polyhaven/.
@@ -341,7 +353,7 @@ def _polyhaven_normalize_bundle_rel(rel_path: str) -> str | None:
 def _polyhaven_reserved_bundle_rels(gltf_file: Path) -> set[str]:
     """Case-folded bundle-relative paths that external includes must not target."""
     reserved: set[str] = set()
-    for raw in (gltf_file.name, _POLYHAVEN_MANIFEST_NAME):
+    for raw in (gltf_file.name, _POLYHAVEN_MANIFEST_NAME, POLYHAVEN_CATALOG_NAME):
         norm = _polyhaven_normalize_bundle_rel(raw)
         if norm is not None:
             reserved.add(norm.casefold())
@@ -475,29 +487,13 @@ def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, 
     return gltf_doc
 
 
-def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
-    """While holding the download lock: migrate a complete pre-manifest cache by writing the manifest."""
-    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
-    if gltf_doc is None:
-        return False
-    if _polyhaven_cache_complete(model_dir, gltf_file):
-        return True
-    include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
-    manifest_path = _polyhaven_manifest_path(model_dir)
-    try:
-        manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        logger.warning("Failed to write Poly Haven manifest for %s", model_dir.name)
-        return False
-    return _polyhaven_cache_complete(model_dir, gltf_file)
-
-
 def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     """True only when the cached main glTF and every external URI it references are present."""
-    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
+    bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_root, resolved_gltf)
     if gltf_doc is None:
         return False
-    manifest_path = _polyhaven_manifest_path(model_dir)
+    manifest_path = _polyhaven_manifest_path(bundle_root)
     if not manifest_path.exists():
         return False
     try:
@@ -514,52 +510,124 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     for rel in includes:
         if not isinstance(rel, str):
             return False
-        if _polyhaven_include_reserved_collision(gltf_file, rel):
+        if _polyhaven_include_reserved_collision(resolved_gltf, rel):
             return False
-        if not _polyhaven_bundle_file_ready(model_dir, rel, buffer_expected=buffer_expected):
+        if not _polyhaven_bundle_file_ready(bundle_root, rel, buffer_expected=buffer_expected):
             return False
     return True
 
 
+def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
+    """While holding the download lock: migrate a complete pre-manifest cache by writing the manifest."""
+    bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_root, resolved_gltf)
+    if gltf_doc is None:
+        return False
+    if _polyhaven_cache_complete(model_dir, gltf_file):
+        return True
+    include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+    manifest_path = _polyhaven_manifest_path(bundle_root)
+    try:
+        manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        logger.warning("Failed to write Poly Haven manifest for %s", model_dir.name)
+        return False
+    return _polyhaven_cache_complete(model_dir, gltf_file)
+
+
+def _polyhaven_bundle_version_id(bundle_root: Path, gltf_path: Path, include_rels: list[str]) -> str:
+    digest = hashlib.sha256()
+    digest.update(gltf_path.name.encode("utf-8"))
+    digest.update(gltf_path.read_bytes())
+    manifest_path = _polyhaven_manifest_path(bundle_root)
+    digest.update(manifest_path.read_bytes())
+    for rel in sorted(include_rels):
+        digest.update(rel.encode("utf-8"))
+        dependency = bundle_root / rel.replace("\\", "/")
+        if dependency.is_file():
+            digest.update(dependency.read_bytes())
+    return digest.hexdigest()[:32]
+
+
+def _polyhaven_clear_slot_bundle_artifacts(slot: Path) -> None:
+    """Remove legacy flat bundle files from the catalog slot (keep only catalog + immutable versions/)."""
+    if not slot.is_dir():
+        return
+    for child in list(slot.iterdir()):
+        if child.name in (POLYHAVEN_CATALOG_NAME, POLYHAVEN_VERSIONS_DIR):
+            continue
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        elif child.is_file():
+            child.unlink(missing_ok=True)
+
+
+def _polyhaven_prune_retired_versions(slot: Path, *, keep_versions: set[str]) -> None:
+    versions_root = slot / POLYHAVEN_VERSIONS_DIR
+    if not versions_root.is_dir():
+        return
+    for entry in versions_root.iterdir():
+        if not entry.is_dir() or entry.name in keep_versions:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+
+
+def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> None:
+    """Move staging into an immutable version directory and atomically switch the catalog pointer."""
+    staging_gltf = staging / gltf_name
+    manifest_path = staging / _POLYHAVEN_MANIFEST_NAME
+    includes = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(includes, list):
+        raise OSError("Poly Haven staging manifest is invalid")
+    version_id = _polyhaven_bundle_version_id(staging, staging_gltf, includes)
+    slot.mkdir(parents=True, exist_ok=True)
+    versions_root = slot / POLYHAVEN_VERSIONS_DIR
+    versions_root.mkdir(parents=True, exist_ok=True)
+    version_dir = versions_root / version_id
+    if version_dir.exists():
+        if not _polyhaven_cache_complete(version_dir, staging_gltf):
+            raise OSError(f"Poly Haven version directory collision for {slot.name}")
+        shutil.rmtree(staging, ignore_errors=True)
+    else:
+        staging.rename(version_dir)
+    previous = read_polyhaven_catalog(slot)
+    keep_versions = {version_id}
+    if previous and isinstance(previous.get("versionId"), str):
+        keep_versions.add(previous["versionId"])
+    try:
+        atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version_id, "gltfName": gltf_name})
+        _polyhaven_clear_slot_bundle_artifacts(slot)
+        _polyhaven_prune_retired_versions(slot, keep_versions=keep_versions)
+    except Exception:
+        if previous is not None:
+            try:
+                atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
+            except OSError:
+                logger.warning("Poly Haven catalog rollback failed for %s", slot.name, exc_info=True)
+        raise
+
+
 def _polyhaven_lock_path(model_dir: Path) -> Path:
-    """Lock beside model_dir, not inside it — publish renames model_dir on disk (Windows cannot rename dirs with open files)."""
+    """Lock beside the catalog slot; version directories under the slot are never renamed in place."""
     return model_dir.parent / f".{model_dir.name}.polyhaven.lock"
 
 
 def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
-    """Swap a complete staging tree into model_dir so readers never see a mixed bundle."""
-    token = secrets.token_hex(8)
-    incoming = model_dir.parent / f".ph-incoming-{model_dir.name}-{token}"
-    old_dir: Path | None = None
-    published = False
-    staging.rename(incoming)
-    try:
-        model_dir.parent.mkdir(parents=True, exist_ok=True)
-        if model_dir.exists():
-            old_dir = model_dir.parent / f".ph-old-{model_dir.name}-{token}"
-            model_dir.rename(old_dir)
-        incoming.rename(model_dir)
-        published = True
-    except Exception:
-        restored = False
-        if old_dir is not None and old_dir.exists() and not model_dir.exists():
-            try:
-                old_dir.rename(model_dir)
-                restored = True
-            except OSError:
-                logger.warning("Poly Haven publish rollback failed for %s", model_dir.name, exc_info=True)
-        if not restored and incoming.exists() and not model_dir.exists():
-            try:
-                incoming.rename(model_dir)
-                restored = True
-            except OSError:
-                logger.warning("Poly Haven publish fallback rename failed for %s", model_dir.name, exc_info=True)
-        raise
-    finally:
-        if incoming.exists():
-            shutil.rmtree(incoming, ignore_errors=True)
-        if published and old_dir is not None and old_dir.exists():
-            shutil.rmtree(old_dir, ignore_errors=True)
+    """Publish staging into an immutable version directory and switch the catalog pointer."""
+    gltf_candidates = [path for path in staging.iterdir() if path.is_file() and path.suffix.lower() == ".gltf"]
+    if len(gltf_candidates) != 1:
+        raise OSError("Poly Haven staging must contain exactly one glTF main file")
+    _polyhaven_publish_version(model_dir, staging, gltf_candidates[0].name)
+
+
+def pin_polyhaven_bundle(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, str | None]:
+    """Pin the active immutable bundle root and glTF path for consistent reads across catalog switches."""
+    bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
+    catalog = read_polyhaven_catalog(slot)
+    version_id = catalog.get("versionId") if catalog else None
+    if not isinstance(version_id, str):
+        version_id = None
+    return bundle_root, gltf_path, version_id
 
 
 def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
@@ -665,11 +733,11 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
         try:
             with FileLock(_polyhaven_lock_path(model_dir), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
                 if _polyhaven_cache_complete(model_dir, gltf_file):
-                    resolved_paths[aid] = str(gltf_file.resolve())
+                    resolved_paths[aid] = str(_polyhaven_resolved_gltf_path(model_dir, gltf_file).resolve())
                     continue
 
                 if _polyhaven_adopt_legacy_cache(model_dir, gltf_file):
-                    resolved_paths[aid] = str(gltf_file.resolve())
+                    resolved_paths[aid] = str(_polyhaven_resolved_gltf_path(model_dir, gltf_file).resolve())
                     continue
 
                 try:
@@ -680,7 +748,7 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                         continue
 
                     if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
-                        resolved_paths[aid] = str(gltf_file.resolve())
+                        resolved_paths[aid] = str(_polyhaven_resolved_gltf_path(model_dir, gltf_file).resolve())
                 except Exception:
                     logger.exception("Poly Haven metadata fetch failed for %s", aid)
         except TimeoutError:

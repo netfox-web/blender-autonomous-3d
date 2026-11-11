@@ -36,7 +36,16 @@ def resolve_asset_ref(value: object) -> Path | None:
     parts = [seg for seg in rel.split("/") if seg not in ("", ".")]
     if any(seg == ".." for seg in parts):
         raise ValueError("asset ref escapes the asset root: " + text)
-    return _assets_root().joinpath(*parts)
+    base = _assets_root()
+    try:
+        from fox3d.polyhaven_paths import resolve_polyhaven_asset_ref_path
+
+        resolved = resolve_polyhaven_asset_ref_path(base, "/".join(parts))
+        if resolved is not None:
+            return resolved
+    except ImportError:
+        pass
+    return base.joinpath(*parts)
 
 
 def _argv_after_double_dash(argv: list[str]) -> list[str]:
