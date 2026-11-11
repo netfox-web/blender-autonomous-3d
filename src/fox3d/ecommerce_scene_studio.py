@@ -1265,9 +1265,11 @@ class EcommerceSceneStore:
                     is_asset = raw.startswith("assets://")
                     if "\\" in raw and (is_asset or os.name != "nt"):
                         raise ValueError("路徑格式無效")
+                    if ".." in path_segments(raw):
+                        raise ValueError("路徑不可包含上層目錄")
                     candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
                     if not candidate.is_absolute():
-                        raise ValueError("必須使用絕對路徑或 assets:// 路徑")
+                        candidate = Path(self.platform.root).resolve() / candidate
                     resolved = candidate.resolve()
                     if resolved.suffix.lower() not in (".glb", ".gltf"):
                         raise ValueError("只允許 GLB 或 glTF 模型")
@@ -1276,7 +1278,7 @@ class EcommerceSceneStore:
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
                     if not (poly_safe or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
-                    prop["glbPath"] = raw if is_asset else str(resolved)
+                    prop["glbPath"] = raw if is_asset or not Path(raw).is_absolute() else str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)
                     warnings.append(f"道具 {index} 的 glbPath 已移除：{exc}；改用程序式模型")
