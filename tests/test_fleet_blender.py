@@ -16,7 +16,7 @@ from PIL import Image
 
 from fox3d import fleet_blender as fb
 from fox3d.api import create_app
-from fox3d.ecommerce_scene_studio import BUILTIN_SCENES, CABINET_PRESETS, EcommerceSceneStore, _ph_glb
+from fox3d.ecommerce_scene_studio import BUILTIN_SCENES, CABINET_PRESETS, EcommerceSceneStore, _ph_glb, _tenant_slug
 from fox3d.fleet_image_client import FleetError, FleetImageClient
 from fox3d.platform import Platform
 
@@ -459,7 +459,9 @@ def test_fleet_render_hides_glb_download_until_file_exists(tmp_path: Path, monke
     assert item["blenderEngine"] == "fleet" and item["state"] == "succeeded"
     assert item["hasGlb"] is False
     saved = json.loads(
-        (tmp_path / "data" / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / done["batchId"] / "batch.json").read_text(
+        (
+            tmp_path / "data" / "ecommerce-scene-studio" / _tenant_slug("sonaqueen-home") / "batches" / done["batchId"] / "batch.json"
+        ).read_text(
             encoding="utf-8"
         )
     )

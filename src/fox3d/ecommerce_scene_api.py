@@ -10,7 +10,11 @@ import os
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
 
-from fox3d.ecommerce_scene_studio import EcommerceSceneStore
+from fox3d.ecommerce_scene_studio import (
+    EcommerceSceneStore,
+    glb_upload_max_base64_chars,
+    glb_upload_max_bytes,
+)
 
 STATIC = Path(__file__).with_name("static")
 CSP = "default-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
@@ -70,15 +74,25 @@ def ecommerce_scene_router(provider) -> APIRouter:
     @router.post("/api/ecommerce-scenes/props/upload-glb", status_code=201)
     def upload_glb_prop(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         import base64
+        import binascii
 
+        max_bytes = glb_upload_max_bytes()
         try:
             raw_b64 = str(payload.get("dataBase64") or "").strip()
+            if not raw_b64:
+                raise ValueError("請提供 GLB 檔案的 base64 資料")
             if "," in raw_b64:
                 raw_b64 = raw_b64.split(",", 1)[1]
-            raw_bytes = base64.b64decode(raw_b64) if raw_b64 else b""
+            if len(raw_b64) > glb_upload_max_base64_chars(max_bytes):
+                mb = max_bytes // (1024 * 1024)
+                raise ValueError(f"GLB 檔案超過大小上限（{mb} MB）")
+            try:
+                raw_bytes = base64.b64decode(raw_b64, validate=True)
+            except binascii.Error as exc:
+                raise ValueError("GLB 內容不是有效的 base64 編碼") from exc
             return store().upload_glb_prop(tenant(x_tenant_id), str(payload.get("filename") or "model.glb"), raw_bytes)
-        except Exception as exc:
-            raise HTTPException(422, f"GLB 檔案解析失敗：{exc}") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @router.get("/api/ecommerce-scenes/polyhaven-thumb/{asset_id}")
     def polyhaven_thumb(asset_id: str) -> FileResponse:

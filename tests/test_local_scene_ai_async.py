@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from fox3d.api import create_app
-from fox3d.ecommerce_scene_studio import BUILTIN_SCENES, CABINET_PRESETS
+from fox3d.ecommerce_scene_studio import BUILTIN_SCENES, CABINET_PRESETS, _tenant_slug
 from fox3d.fleet_image_client import FleetImageClient
 from fox3d.platform import Platform
 
@@ -133,7 +133,7 @@ def test_stale_running_batch_is_reported_as_interrupted(tmp_path: Path):
     plat = Platform(tmp_path / "data", mock_blender=True)
     client = TestClient(create_app(plat))
     headers = {"X-Tenant-Id": "sonaqueen-home"}
-    bdir = Path(plat.root) / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / "deadbeef"
+    bdir = Path(plat.root) / "ecommerce-scene-studio" / _tenant_slug("sonaqueen-home") / "batches" / "deadbeef"
     bdir.mkdir(parents=True)
     doc = {
         "batchId": "deadbeef", "tenantId": "sonaqueen-home", "state": "running", "total": 2, "completed": 1, "succeeded": 1, "failed": 0,
@@ -163,7 +163,7 @@ def test_fresh_running_batch_is_left_alone(tmp_path: Path):
     plat = Platform(tmp_path / "data", mock_blender=True)
     client = TestClient(create_app(plat))
     headers = {"X-Tenant-Id": "sonaqueen-home"}
-    bdir = Path(plat.root) / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / "fresh001"
+    bdir = Path(plat.root) / "ecommerce-scene-studio" / _tenant_slug("sonaqueen-home") / "batches" / "fresh001"
     bdir.mkdir(parents=True)
     (bdir / "batch.json").write_text(json.dumps({"batchId": "fresh001", "state": "running", "total": 1, "completed": 0, "succeeded": 0, "failed": 0, "items": [{"itemId": "item_01", "index": 1, "state": "running", "stage": "blender"}]}), encoding="utf-8")
     got = client.get("/api/ecommerce-scenes/batches/fresh001", headers=headers).json()
@@ -187,7 +187,7 @@ def test_batch_owned_by_this_process_is_never_marked_stale(tmp_path: Path, monke
     batch_id = r.json()["batchId"]
     try:
         _poll(client, batch_id, headers, lambda b: b["items"][0]["stage"] == "ai")
-        bpath = Path(plat.root) / "ecommerce-scene-studio" / "sonaqueen-home" / "batches" / batch_id / "batch.json"
+        bpath = Path(plat.root) / "ecommerce-scene-studio" / _tenant_slug("sonaqueen-home") / "batches" / batch_id / "batch.json"
         old = time.time() - 3600
         _os.utime(bpath, (old, old))  # pretend nothing was written for an hour while the fleet holds the task
         got = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()

@@ -6,12 +6,14 @@ the canonical `FURNISHED_SCENE_V1` contract consumed by `scripts/blender_job.py`
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
 import math
 import os
 import random
+import struct
 import shutil
 import time
 import urllib.parse
@@ -25,6 +27,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from fox3d.fleet_blender import (
+    ASSET_REF_PREFIX,
     BLENDER_ENGINES,
     blender_fleet_status,
     fleet_eligible,
@@ -33,6 +36,7 @@ from fox3d.fleet_blender import (
     render_on_fleet,
     submit_blender_job,
 )
+from fox3d.ops import path_segments
 from fox3d.fleet_image_client import FleetError, FleetImageClient, task_status
 from fox3d.ids import new_id, stable_hash
 from fox3d.local_scene_ai import (
@@ -1038,6 +1042,185 @@ def compile_custom_scene(
     return definition, scene_hash
 
 
+DEFAULT_GLB_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+
+
+def glb_upload_max_bytes() -> int:
+    raw = os.environ.get("FOX3D_ECOMMERCE_GLB_MAX_BYTES", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return DEFAULT_GLB_UPLOAD_MAX_BYTES
+
+
+def glb_upload_max_base64_chars(max_bytes: int | None = None) -> int:
+    limit = max_bytes if max_bytes is not None else glb_upload_max_bytes()
+    return ((limit + 2) // 3) * 4
+
+
+def validate_glb_binary(raw_bytes: bytes, *, max_bytes: int | None = None) -> None:
+    """Reject empty, oversized, or structurally invalid GLB 2.0 containers."""
+    limit = max_bytes if max_bytes is not None else glb_upload_max_bytes()
+    if not raw_bytes:
+        raise ValueError("上傳的 .glb 檔案內容為空")
+    if len(raw_bytes) > limit:
+        mb = limit // (1024 * 1024)
+        raise ValueError(f"GLB 檔案超過大小上限（{mb} MB）")
+    if len(raw_bytes) < 12:
+        raise ValueError("GLB 檔案過短，無法讀取檔頭")
+    magic, version, declared_len = struct.unpack("<4sII", raw_bytes[:12])
+    if magic != b"glTF":
+        raise ValueError("GLB 檔頭 magic 必須為 glTF")
+    if version != 2:
+        raise ValueError("GLB 版本必須為 2")
+    if declared_len != len(raw_bytes):
+        raise ValueError("GLB 檔頭宣告的長度與實際檔案長度不符")
+    if len(raw_bytes) < 20:
+        raise ValueError("GLB 缺少 JSON chunk 檔頭")
+    chunk_len, chunk_type = struct.unpack("<II", raw_bytes[12:20])
+    if chunk_type != 0x4E4F534A:
+        raise ValueError("GLB 第一個 chunk 必須為 JSON")
+    if chunk_len < 2:
+        raise ValueError("GLB JSON chunk 過短")
+    if chunk_len % 4:
+        raise ValueError("GLB JSON chunk 長度必須為 4 的倍數")
+    json_end = 20 + chunk_len
+    if json_end > len(raw_bytes):
+        raise ValueError("GLB JSON chunk 超出檔案範圍")
+    if json_end > declared_len:
+        raise ValueError("GLB JSON chunk 長度與檔頭宣告不符")
+    try:
+        gltf = json.loads(raw_bytes[20:json_end].rstrip(b" \x00"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("GLB JSON chunk 不是合法的 JSON") from exc
+    if not isinstance(gltf, dict):
+        raise ValueError("GLB JSON 必須為 glTF 根物件")
+    asset = gltf.get("asset")
+    if not isinstance(asset, dict):
+        raise ValueError("GLB 缺少 asset 物件")
+    version = str(asset.get("version", "")).strip()
+    if version not in ("2.0", "2"):
+        raise ValueError("glTF asset.version 必須為 2.0")
+    has_scene_graph = bool(gltf.get("scenes")) or bool(gltf.get("nodes")) or bool(gltf.get("meshes"))
+    if not has_scene_graph:
+        raise ValueError("GLB 缺少有效的 glTF 場景結構（scenes、nodes 或 meshes）")
+    offset = json_end
+    while offset < declared_len:
+        if offset + 8 > declared_len:
+            raise ValueError("GLB chunk 檔頭不完整")
+        chunk_len, chunk_type = struct.unpack("<II", raw_bytes[offset : offset + 8])
+        if chunk_len < 0 or chunk_len % 4:
+            raise ValueError("GLB chunk 長度必須為 4 的倍數")
+        data_end = offset + 8 + chunk_len
+        if data_end > declared_len:
+            raise ValueError("GLB chunk 超出檔案範圍")
+        offset = data_end
+
+
+def _tenant_slug_legacy(tenant_id: str) -> str:
+    return "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
+
+
+def _tenant_slug(tenant_id: str) -> str:
+    """Collision-safe tenant storage directory name (legacy sanitizer is not injective)."""
+    safe = _tenant_slug_legacy(tenant_id)
+    digest = hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()[:16]
+    return f"{safe}__{digest}"
+
+
+def _migrate_legacy_tenant_dir(root: Path, tenant_id: str) -> None:
+    """Move pre-hash tenant data into the collision-safe directory when unambiguous."""
+    new_dir = root / _tenant_slug(tenant_id)
+    if new_dir.exists():
+        return
+    legacy = root / _tenant_slug_legacy(tenant_id)
+    if legacy.is_dir():
+        legacy.rename(new_dir)
+
+
+def _tenant_glb_props_root(platform_root: Path, tenant_id: str) -> Path:
+    return Path(platform_root).resolve() / "ecommerce-scene-studio" / _tenant_slug(tenant_id) / "glb-props"
+
+
+def _bundled_assets_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "assets"
+
+
+def _polyhaven_glb_to_asset_ref(path: Path) -> str | None:
+    """Map a filesystem path under ``assets/models/polyhaven`` to a machine-independent ``assets://`` ref."""
+    ph_root = (_bundled_assets_root() / "models" / "polyhaven").resolve()
+    try:
+        rel = path.resolve().relative_to(ph_root)
+    except ValueError:
+        return None
+    if not rel.parts or ".." in path_segments(rel.as_posix()):
+        return None
+    return f"{ASSET_REF_PREFIX}models/polyhaven/{rel.as_posix()}"
+
+
+def _coerce_polyhaven_glb_ref(text: str, *, platform_root: Path) -> str | None:
+    """Return an ``assets://`` ref when ``text`` names a bundled Poly Haven glTF (legacy absolute or repo-relative)."""
+    stripped = text.strip()
+    candidate = Path(stripped)
+    if candidate.is_absolute():
+        return _polyhaven_glb_to_asset_ref(candidate)
+    if stripped.startswith("assets/") and ".." not in path_segments(stripped):
+        repo_rel = Path(__file__).resolve().parents[2] / stripped
+        if repo_rel.is_file():
+            return _polyhaven_glb_to_asset_ref(repo_rel)
+    return None
+
+
+def resolve_scene_glb_paths_for_blender(
+    scene_definition: dict[str, Any],
+    *,
+    platform_root: Path,
+    tenant_id: str,
+) -> dict[str, Any]:
+    """Resolve tenant upload refs (relative to ``platform.root``) to absolute paths for Blender subprocesses."""
+    root = Path(platform_root).resolve()
+    tenant_props = _tenant_glb_props_root(root, tenant_id)
+    out = dict(scene_definition)
+    resolved_boxes: list[Any] = []
+    for box in scene_definition.get("boxes") or []:
+        if not isinstance(box, dict):
+            resolved_boxes.append(box)
+            continue
+        item = dict(box)
+        glb = item.get("glbPath")
+        if not glb:
+            resolved_boxes.append(item)
+            continue
+        text = str(glb).strip()
+        if text.startswith(ASSET_REF_PREFIX):
+            resolved_boxes.append(item)
+            continue
+        ph_ref = _coerce_polyhaven_glb_ref(text, platform_root=root)
+        if ph_ref:
+            item["glbPath"] = ph_ref
+            resolved_boxes.append(item)
+            continue
+        if ".." in path_segments(text):
+            raise ValueError(f"道具「{item.get('name') or '?'}」的 GLB 路徑不合法")
+        candidate = Path(text)
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+        else:
+            resolved = (root / text).resolve()
+        try:
+            resolved.relative_to(tenant_props)
+        except ValueError as exc:
+            raise ValueError(f"道具「{item.get('name') or '?'}」的 GLB 路徑超出租戶允許範圍") from exc
+        if not resolved.is_file():
+            raise ValueError(f"找不到上傳的 GLB：{text}")
+        item["glbPath"] = str(resolved)
+        resolved_boxes.append(item)
+    out["boxes"] = resolved_boxes
+    return out
+
+
 class EcommerceSceneStore:
     """Persistent store for user-created 3D room scenes and matrix render batches."""
 
@@ -1058,8 +1241,8 @@ class EcommerceSceneStore:
             pass
 
     def _tenant_dir(self, tenant_id: str) -> Path:
-        safe = "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
-        d = self.root / safe
+        _migrate_legacy_tenant_dir(self.root, tenant_id)
+        d = self.root / _tenant_slug(tenant_id)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
@@ -1102,19 +1285,20 @@ class EcommerceSceneStore:
         return result, warnings
 
     def upload_glb_prop(self, tenant_id: str, filename: str, raw_bytes: bytes) -> dict[str, Any]:
-        if not raw_bytes or len(raw_bytes) < 16:
-            raise ValueError("上傳的 .glb 檔案內容為空")
+        validate_glb_binary(raw_bytes)
         safe_name = "".join(c for c in Path(filename or "custom_prop.glb").stem if c.isalnum() or c in ("-", "_")) or "custom_prop"
         prop_id = f"glb_{safe_name}_{new_id().split('-')[0]}"
         gdir = self._tenant_dir(tenant_id) / "glb-props"
         gdir.mkdir(parents=True, exist_ok=True)
         target = gdir / f"{prop_id}.glb"
         target.write_bytes(raw_bytes)
+        plat_root = Path(self.platform.root).resolve()
+        glb_ref = target.resolve().relative_to(plat_root).as_posix()
         return {
             "propId": prop_id,
             "filename": f"{prop_id}.glb",
             "label": f"📦 3D 模型：{safe_name}",
-            "glbPath": str(target.resolve()),
+            "glbPath": glb_ref,
             "sizeBytes": len(raw_bytes),
         }
 
@@ -1175,14 +1359,14 @@ class EcommerceSceneStore:
             and getattr(self.platform, "runtime", None)
             and self.platform.runtime.available()
         )
-        ph_root = Path(__file__).resolve().parents[2] / "assets" / "models" / "polyhaven"
+        ph_root = _bundled_assets_root() / "models" / "polyhaven"
         ph_list = []
         for aid, cfg in POLYHAVEN_CURATED_MODELS.items():
             res = cfg.get("resolution", "2k")
             gpath = ph_root / aid / f"{aid}_{res}.gltf"
             ph_list.append({
                 **cfg,
-                "glbPath": str(gpath.resolve()),
+                "glbPath": _ph_glb(aid),
                 "thumbUrl": f"/api/ecommerce-scenes/polyhaven-thumb/{aid}",
                 "installed": gpath.exists(),
             })
@@ -1610,6 +1794,11 @@ class EcommerceSceneStore:
                 cab_spec = build_modular_cabinet_spec(cab_copy, tenant_id=tenant_id)
                 scfg = scenes_by_id.get(item["sceneId"]) or BUILTIN_SCENES[0]
                 scene_def, scene_hash = compile_custom_scene(scfg, cab_spec, view=item["view"])
+                plat_root = Path(self.platform.root).resolve()
+                scene_def = resolve_scene_glb_paths_for_blender(
+                    scene_def, platform_root=plat_root, tenant_id=tenant_id,
+                )
+                scene_hash = stable_hash(scene_def)
                 cab_spec["sceneDefinition"] = scene_def
                 cab_spec["sceneHash"] = scene_hash
                 cab_spec["nasScene"] = "STUDIO"
