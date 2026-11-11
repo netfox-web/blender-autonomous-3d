@@ -8,7 +8,6 @@ import logging
 import math
 import os
 import re
-import secrets
 import shutil
 import tempfile
 import urllib.request
