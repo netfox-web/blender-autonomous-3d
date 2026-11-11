@@ -1255,6 +1255,7 @@ class EcommerceSceneStore:
         upload_root = tenant_dir / "glb-props"
         assets_root = Path(__file__).resolve().parents[2] / "assets"
         poly_root = assets_root / "models" / "polyhaven"
+        plat_root = Path(self.platform.root).resolve()
         for index, original in enumerate(scene.get("props") or [], 1):
             prop = dict(original)
             if "glbPath" in prop:
@@ -1265,7 +1266,16 @@ class EcommerceSceneStore:
                     is_asset = raw.startswith("assets://")
                     if "\\" in raw and (is_asset or os.name != "nt"):
                         raise ValueError("路徑格式無效")
-                    candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
+                    was_relative_upload = False
+                    if is_asset:
+                        candidate = assets_root / raw[len("assets://") :]
+                    else:
+                        candidate = Path(raw)
+                        if not candidate.is_absolute():
+                            if ".." in path_segments(raw):
+                                raise ValueError("路徑格式無效")
+                            was_relative_upload = True
+                            candidate = plat_root / raw
                     if not candidate.is_absolute():
                         raise ValueError("必須使用絕對路徑或 assets:// 路徑")
                     resolved = candidate.resolve()
@@ -1276,7 +1286,7 @@ class EcommerceSceneStore:
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
                     if not (poly_safe or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
-                    prop["glbPath"] = raw if is_asset else str(resolved)
+                    prop["glbPath"] = raw if (is_asset or was_relative_upload) else str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)
                     warnings.append(f"道具 {index} 的 glbPath 已移除：{exc}；改用程序式模型")
