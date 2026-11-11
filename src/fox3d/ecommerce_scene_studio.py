@@ -1267,7 +1267,7 @@ class EcommerceSceneStore:
                     if "\\" in raw and (is_asset or os.name != "nt"):
                         raise ValueError("路徑格式無效")
                     if ".." in path_segments(raw):
-                        raise ValueError("路徑格式無效")
+                        raise ValueError("路徑不可包含上層目錄")
                     candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
                     is_relative_upload = not is_asset and not candidate.is_absolute()
                     if is_relative_upload:
