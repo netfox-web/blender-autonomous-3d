@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 from typing import Any
 
@@ -69,14 +70,17 @@ def build_traveler_packet(pilot: Any, *, tenant_id: str, work_order_id: str) -> 
 
 
 def traveler_html(packet: dict[str, Any]) -> str:
-    ops = "".join(f"<li>{row['seq']}. {row['operation']} — {row['status']}</li>" for row in packet.get("operations") or [])
+    ops = "".join(
+        f"<li>{html.escape(str(row['seq']))}. {html.escape(str(row['operation']))} — {html.escape(str(row['status']))}</li>"
+        for row in packet.get("operations") or []
+    )
     return (
         "<html><body>"
         f"<h1>Manual Traveler</h1>"
-        f"<p>WO {packet.get('workOrderId')}</p>"
-        f"<p>releaseHash {packet.get('releaseHash')}</p>"
-        f"<p>scan {packet.get('scanToken')}</p>"
-        f"<p>stale={packet.get('stale')} valid={packet.get('valid')}</p>"
+        f"<p>WO {html.escape(str(packet.get('workOrderId') or ''))}</p>"
+        f"<p>releaseHash {html.escape(str(packet.get('releaseHash') or ''))}</p>"
+        f"<p>scan {html.escape(str(packet.get('scanToken') or ''))}</p>"
+        f"<p>stale={html.escape(str(packet.get('stale')))} valid={html.escape(str(packet.get('valid')))}</p>"
         f"<ol>{ops}</ol>"
         "<p>LIVE_CNC=BLOCKED LIVE_LASER=BLOCKED</p>"
         "</body></html>"
