@@ -47,6 +47,17 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, "body tenantId does not match X-Tenant-Id")
         return header
 
+    def bounded_count(raw: Any, default: int) -> int:
+        if raw is None:
+            n = default
+        elif isinstance(raw, bool) or not isinstance(raw, int):
+            raise HTTPException(422, "count 須為 1 至 100 的整數")
+        else:
+            n = raw
+        if not 1 <= n <= 100:
+            raise HTTPException(422, "count 須為 1 至 100 的整數")
+        return n
+
     @app.get("/health")
     def health() -> dict[str, Any]:
         plat = get_platform()
@@ -66,7 +77,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/3d/jobs")
     def create_job(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
         return get_platform().submit_job(payload)
 
@@ -106,7 +117,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/digital-twins")
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        payload["tenantId"] = tid
         return get_platform().create_twin(payload)
 
     @app.post("/api/digital-twins/upload")
@@ -134,11 +146,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/digital-twins/{twin_id}/360")
     def twin_360(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        return get_platform().product_360_e2e(tenant_id=tenant(x_tenant_id), twin_id=twin_id, frames=36)
+        try:
+            return get_platform().product_360_e2e(tenant_id=tenant(x_tenant_id), twin_id=twin_id, frames=36)
+        except (KeyError, PermissionError):
+            raise HTTPException(404, "找不到數位分身") from None
 
     @app.post("/api/parametric/products")
     def create_parametric(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        payload["tenantId"] = tid
         plat = get_platform()
         created = plat.create_parametric(payload)
         if payload.get("render"):
@@ -149,7 +165,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/parametric/products/{product_id}/resize")
     def resize_parametric(product_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         plat = get_platform()
-        resized = plat.resize_parametric(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k in {"width", "height", "depth"}})
+        try:
+            resized = plat.resize_parametric(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k in {"width", "height", "depth"}})
+        except (KeyError, PermissionError):
+            raise HTTPException(404, "找不到參數化商品") from None
         if payload.get("render", True):
             r_out = plat.render_parametric(resized["spec"]["productId"], tenant_id=resized["spec"]["tenantId"])
             resized["render"] = {"job": r_out.get("job"), "preview": (r_out.get("job") or {}).get("output")}
@@ -158,25 +177,28 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/parametric/products/{product_id}/variants")
     def variants(product_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
         return get_platform().rd.run(
-            tenant_id=body.get("tenantId") or tenant(x_tenant_id),
+            tenant_id=tid,
             text=body.get("text") or f"variants for {product_id}",
-            variant_count=int(body.get("count") or 12),
+            variant_count=bounded_count(body.get("count"), 12),
         )
 
     @app.post("/api/render/preview")
     def preview(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        payload["tenantId"] = tid
         return get_platform().preview(payload)
 
     @app.post("/api/render/final")
     def final_render(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        payload["tenantId"] = tid
         return get_platform().final_render(payload)
 
     @app.post("/api/product-rd/generate")
     def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         plat = get_platform()
         rd = plat.product_rd(tenant_id=tid, text=payload.get("text") or "", variant_count=int(payload.get("variantCount") or 12))
         if rd.get("baseSpec") and not plat._production_gate():
@@ -194,7 +216,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/factory/spaces")
     def factory_space(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        payload["tenantId"] = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        payload["tenantId"] = tid
         return get_platform().factory.create_space(payload).model_dump(mode="json")
 
     @app.post("/api/factory/run")
@@ -253,13 +276,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/kd/skus")
     def kd_sku(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         return get_platform().kd.build_sku(tenant_id=tid, kind=str(payload.get("kind") or "BEDSIDE_CABINET"), render=bool(payload.get("render")), **{k: v for k, v in payload.items() if k not in {"tenantId", "kind", "render"}})
 
     @app.post("/api/kd/catalog")
     def kd_catalog(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
-        return get_platform().kd.generate_candidates(tenant_id=body.get("tenantId") or tenant(x_tenant_id), count=int(body.get("count") or 24), render=bool(body.get("render")))
+        tid = require_tenant(x_tenant_id, body)
+        return get_platform().kd.generate_candidates(tenant_id=tid, count=bounded_count(body.get("count"), 24), render=bool(body.get("render")))
 
     @app.get("/api/kd/readiness")
     def kd_readiness() -> dict[str, Any]:
@@ -320,18 +344,20 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
         body = payload or {}
         plat = get_platform()
-        result = run_benchmark(plat, tenant_id=body.get("tenantId") or tenant(x_tenant_id))
+        tid = require_tenant(x_tenant_id, body)
+        result = run_benchmark(plat, tenant_id=tid)
         plat.physical.benchmarks.append(result)
         return result
 
     @app.post("/api/kd/candidates")
     def kd_candidates(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
-        return get_platform().physical.kd_optimized_board(tenant_id=body.get("tenantId") or tenant(x_tenant_id), count=int(body.get("count") or 10))
+        tid = require_tenant(x_tenant_id, body)
+        return get_platform().physical.kd_optimized_board(tenant_id=tid, count=bounded_count(body.get("count"), 10))
 
     @app.post("/api/retail/fixtures")
     def retail_fixtures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         return get_platform().physical.retail.build(
             tenant_id=tid,
             family=str(payload.get("family") or "COUNTER_DISPLAY"),
@@ -342,7 +368,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/packaging/structures")
     def packaging_structures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         dims = payload.get("productDims") or payload.get("dimensions") or {"width": 120, "height": 80, "depth": 40}
         return get_platform().physical.packaging.build(
             tenant_id=tid,
@@ -353,7 +379,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/acrylic/products")
     def acrylic_products(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = payload.get("tenantId") or tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
         return get_platform().physical.acrylic.build(
             tenant_id=tid,
             kind=str(payload.get("kind") or "MENU_STAND"),
