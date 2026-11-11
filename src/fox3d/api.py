@@ -43,7 +43,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def require_tenant(x_tenant_id: str | None, payload: dict[str, Any] | None = None) -> str:
         header = tenant(x_tenant_id)
         body_tid = (payload or {}).get("tenantId")
-        if body_tid not in {None, "", header}:
+        if body_tid is None or body_tid == "":
+            return header
+        if not isinstance(body_tid, str):
+            raise HTTPException(422, "body tenantId must be a string")
+        if body_tid != header:
             raise HTTPException(403, "body tenantId does not match X-Tenant-Id")
         return header
 

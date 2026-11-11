@@ -143,6 +143,17 @@ def route_cases(platform):  # noqa: ANN001
     return _cases(platform)
 
 
+@pytest.mark.parametrize("bad_tid", [[], {}, 1, True])
+@pytest.mark.parametrize("idx", range(15))
+def test_post_body_non_string_tenant_returns_422(route_cases, platform, idx: int, bad_tid: object) -> None:  # noqa: ANN001
+    _name, path, body, _tenant_of = route_cases[idx]
+    client = TestClient(create_app(platform), raise_server_exceptions=False)
+    payload = {**(body or {}), "tenantId": bad_tid}
+    res = client.post(path, json=payload, headers=HEADERS)
+    assert res.status_code == 422, res.text
+    assert res.json()["detail"] == "body tenantId must be a string"
+
+
 @pytest.mark.parametrize("idx", range(15))
 def test_post_body_other_tenant_forbidden(route_cases, platform, idx: int) -> None:  # noqa: ANN001
     _name, path, body, _tenant_of = route_cases[idx]
