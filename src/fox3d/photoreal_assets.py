@@ -440,7 +440,9 @@ def _polyhaven_bundle_file_ready(
     buffer_expected: dict[str, int] | None = None,
 ) -> bool:
     dest = _polyhaven_include_dest(model_dir, rel_path)
-    if dest is None or not dest.exists():
+    # Dependencies must be regular files: a directory (or a symlink resolving to one)
+    # would pass an existence/size check but the loader cannot read it as a texture/buffer.
+    if dest is None or not dest.is_file():
         return False
     size = dest.stat().st_size
     if size <= 0:
