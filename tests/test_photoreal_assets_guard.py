@@ -395,6 +395,57 @@ def test_invalid_gltf_payload_does_not_publish(tmp_path: Path, monkeypatch: pyte
         photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
 
 
+def test_legacy_complete_cache_offline_adopts_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_legacy_ok"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    model_dir.mkdir(parents=True)
+    (model_dir / "textures").mkdir()
+    gltf_file.write_bytes(gltf_body)
+    (model_dir / "textures" / "albedo.png").write_bytes(b"TEX")
+    manifest = model_dir / photoreal_assets._POLYHAVEN_MANIFEST_NAME
+    assert not manifest.exists()
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    assert photoreal_assets._polyhaven_gltf_bundle_ready(model_dir, gltf_file) is not None
+
+    def fail_network(req, timeout=0):
+        url = req.full_url if hasattr(req, "full_url") else req.get_full_url()
+        raise HTTPError(url, 503, "offline", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", fail_network)
+    paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    assert aid in paths
+    assert manifest.exists()
+    assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    includes = json.loads(manifest.read_text(encoding="utf-8"))
+    assert includes == ["textures/albedo.png"]
+
+
+def test_legacy_incomplete_cache_offline_still_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_legacy_partial"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png", "textures/normal.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    model_dir.mkdir(parents=True)
+    (model_dir / "textures").mkdir()
+    gltf_file.write_bytes(gltf_body)
+    (model_dir / "textures" / "albedo.png").write_bytes(b"TEX")
+    assert not (model_dir / photoreal_assets._POLYHAVEN_MANIFEST_NAME).exists()
+    assert photoreal_assets._polyhaven_gltf_bundle_ready(model_dir, gltf_file) is None
+
+    def fail_network(req, timeout=0):
+        url = req.full_url if hasattr(req, "full_url") else req.get_full_url()
+        raise HTTPError(url, 503, "offline", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", fail_network)
+    paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    assert aid not in paths
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+
 def test_cache_complete_false_when_manifest_omits_gltf_dependency(tmp_path: Path):
     aid = "guard_stale_manifest"
     model_root = tmp_path / "assets" / "models" / "polyhaven" / aid
@@ -419,7 +470,8 @@ def test_publish_rename_failure_keeps_old_cache(tmp_path: Path, monkeypatch: pyt
     model_root = tmp_path / "assets" / "models" / "polyhaven"
     model_dir = model_root / aid
     gltf_file = model_dir / f"{aid}_2k.gltf"
-    old_gltf = _gltf_body_with_uris("textures/albedo.png")
+    # Incomplete legacy bundle (missing normal map) so ensure still attempts a download.
+    old_gltf = _gltf_body_with_uris("textures/albedo.png", "textures/normal.png")
     old_gltf = json.loads(old_gltf.decode().strip())
     old_gltf["marker"] = "old"
     old_bytes = json.dumps(old_gltf).encode() + b" " * 80
@@ -427,6 +479,7 @@ def test_publish_rename_failure_keeps_old_cache(tmp_path: Path, monkeypatch: pyt
     (model_dir / "textures").mkdir()
     gltf_file.write_bytes(old_bytes)
     (model_dir / "textures" / "albedo.png").write_bytes(b"OLD")
+    assert photoreal_assets._polyhaven_gltf_bundle_ready(model_dir, gltf_file) is None
 
     real_rename = Path.rename
     calls = {"incoming_to_target": 0}

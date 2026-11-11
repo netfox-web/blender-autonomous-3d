@@ -372,19 +372,44 @@ def _polyhaven_bundle_file_ready(model_dir: Path, rel_path: str) -> bool:
     return dest is not None and dest.exists() and dest.stat().st_size > 0
 
 
-def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
-    """True only when the cached main glTF and every external URI it references are present."""
+def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, Any] | None:
+    """Return the glTF document when the main file and every safe external URI are on disk."""
     if not gltf_file.exists() or gltf_file.stat().st_size <= _POLYHAVEN_MIN_GLTF_BYTES:
-        return False
+        return None
     try:
         gltf_doc = _polyhaven_parse_gltf_bytes(gltf_file.read_bytes())
     except OSError:
-        return False
+        return None
     if gltf_doc is None:
-        return False
+        return None
     for rel in _polyhaven_gltf_external_uris(gltf_doc):
         if not _polyhaven_bundle_file_ready(model_dir, rel):
-            return False
+            return None
+    return gltf_doc
+
+
+def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
+    """While holding the download lock: migrate a complete pre-manifest cache by writing the manifest."""
+    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
+    if gltf_doc is None:
+        return False
+    if _polyhaven_cache_complete(model_dir, gltf_file):
+        return True
+    include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+    manifest_path = _polyhaven_manifest_path(model_dir)
+    try:
+        manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        logger.warning("Failed to write Poly Haven manifest for %s", model_dir.name)
+        return False
+    return _polyhaven_cache_complete(model_dir, gltf_file)
+
+
+def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
+    """True only when the cached main glTF and every external URI it references are present."""
+    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
+    if gltf_doc is None:
+        return False
     manifest_path = _polyhaven_manifest_path(model_dir)
     if not manifest_path.exists():
         return False
@@ -395,7 +420,7 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     if not isinstance(includes, list):
         return False
     manifest_set = {rel.replace("\\", "/") for rel in includes if isinstance(rel, str)}
-    required = set(_polyhaven_gltf_external_uris(gltf_doc))
+    required = {rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc)}
     if required != manifest_set:
         return False
     for rel in includes:
@@ -534,6 +559,10 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
         try:
             with FileLock(_polyhaven_lock_path(model_dir), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
                 if _polyhaven_cache_complete(model_dir, gltf_file):
+                    resolved_paths[aid] = str(gltf_file.resolve())
+                    continue
+
+                if _polyhaven_adopt_legacy_cache(model_dir, gltf_file):
                     resolved_paths[aid] = str(gltf_file.resolve())
                     continue
 
