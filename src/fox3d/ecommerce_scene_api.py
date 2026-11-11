@@ -5,7 +5,10 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+import json
+import logging
 import os
+import urllib.error
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, Response
@@ -18,6 +21,41 @@ from fox3d.ecommerce_scene_studio import (
 
 STATIC = Path(__file__).with_name("static")
 CSP = "default-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'"
+
+log = logging.getLogger(__name__)
+_AI_LOCAL_MODELS_MAX_BYTES = 1024 * 1024
+
+
+def _local_model_ids_from_payload(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return []
+    items = data.get("data")
+    if not isinstance(items, list):
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for m in items:
+        if not isinstance(m, dict):
+            continue
+        mid = m.get("id")
+        if not isinstance(mid, str) or not mid:
+            continue
+        if mid in seen:
+            continue
+        seen.add(mid)
+        out.append(mid)
+    return out
+
+
+def _ai_local_models_public_error(exc: BaseException) -> str:
+    kind = type(exc).__name__
+    if isinstance(exc, urllib.error.URLError):
+        return f"連不到本機模型伺服器（{kind}）"
+    if isinstance(exc, json.JSONDecodeError):
+        return f"本機模型伺服器回傳不是有效的 JSON（{kind}）"
+    if isinstance(exc, ValueError):
+        return f"本機模型伺服器回應過大（{kind}）"
+    return f"無法取得本機模型清單（{kind}）"
 
 
 def ecommerce_scene_router(provider) -> APIRouter:
@@ -196,7 +234,8 @@ def ecommerce_scene_router(provider) -> APIRouter:
         try:
             spec = build_modular_cabinet_spec(cabinet, tenant_id=tid)
         except Exception as exc:
-            raise HTTPException(422, f"櫃體設定無效：{exc}") from exc
+            log.warning("ai-prompt cabinet invalid: %s", exc, exc_info=True)
+            raise HTTPException(422, "櫃體設定無效") from None
         style = AI_STYLE_PRESETS.get(str(payload.get("aiStyleId") or "")) or {}
         built = build_scene_prompt(
             scene,
@@ -288,7 +327,6 @@ def ecommerce_scene_router(provider) -> APIRouter:
 
     @router.get("/api/ecommerce-scenes/ai-local-models")
     def ai_local_models() -> dict[str, Any]:
-        import json as _json
         import urllib.request as _ur
 
         from fox3d.ai_scene_layout import load_settings
@@ -296,10 +334,14 @@ def ecommerce_scene_router(provider) -> APIRouter:
         base = load_settings(store().root)["localBaseUrl"]
         try:
             with _ur.urlopen(f"{base}/models", timeout=5) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-            return {"ok": True, "models": [m.get("id") for m in data.get("data", []) if m.get("id")]}
+                raw = resp.read(_AI_LOCAL_MODELS_MAX_BYTES + 1)
+            if len(raw) > _AI_LOCAL_MODELS_MAX_BYTES:
+                raise ValueError("local models response exceeds 1 MiB")
+            models = _local_model_ids_from_payload(json.loads(raw.decode("utf-8")))
+            return {"ok": True, "models": models}
         except Exception as exc:
-            return {"ok": False, "models": [], "error": f"連不到 {base}：{exc}"}
+            log.warning("ai-local-models failed for %s/models: %s", base, exc, exc_info=True)
+            return {"ok": False, "models": [], "error": _ai_local_models_public_error(exc)}
 
     @router.post("/api/ecommerce-scenes/ai-layout")
     def ai_layout(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

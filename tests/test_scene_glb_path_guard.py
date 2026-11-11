@@ -96,6 +96,8 @@ def test_ai_layout_endpoint_guards_generated_paths(store):
     assert response.status_code == 200
     assert response.json()['warnings']
     assert 'glbPath' not in response.json()['props'][0]
+
+
 def test_relative_upload_path_is_preserved(store, tmp_path):
     fixture = tmp_path / 'fixture.glb'
     write_glb_stub(fixture, name='Prop')
