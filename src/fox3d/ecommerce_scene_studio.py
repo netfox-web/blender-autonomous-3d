@@ -1282,6 +1282,8 @@ class EcommerceSceneStore:
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
                     if not ((not is_relative_upload and poly_safe) or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
+                    if upload_safe and not resolved.is_file():
+                        raise ValueError("找不到上傳的 GLB")
                     prop["glbPath"] = raw if is_asset or is_relative_upload else str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)

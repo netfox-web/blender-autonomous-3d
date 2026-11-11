@@ -137,3 +137,11 @@ def test_relative_unsafe_upload_paths_are_rejected(store, tmp_path):
         guarded, warnings = store.guard_scene_paths('alice', scene(path))
         assert 'glbPath' not in guarded['props'][0]
         assert warnings
+
+
+def test_missing_upload_is_rejected_for_relative_and_absolute_paths(store, tmp_path):
+    missing = store._tenant_dir('alice') / 'glb-props' / 'missing.glb'
+    for path in (str(missing), missing.relative_to(tmp_path).as_posix()):
+        guarded, warnings = store.guard_scene_paths('alice', scene(path))
+        assert 'glbPath' not in guarded['props'][0]
+        assert warnings
