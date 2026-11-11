@@ -31,6 +31,14 @@ def resolve_asset_ref(value, root=None):
     if any(seg == '..' for seg in parts):
         raise ValueError('asset ref escapes the asset root: ' + text)
     base = Path(root) if root is not None else _assets_root()
+    if parts[:2] == ['models', 'polyhaven']:
+        try:
+            from fox3d.polyhaven_cache import resolve_polyhaven_ref_path
+            pinned = resolve_polyhaven_ref_path(text, base)
+            if pinned is not None:
+                return pinned
+        except Exception:
+            pass
     return base.joinpath(*parts)
 
 
@@ -582,6 +590,9 @@ def build(created, definition, device, expected_hash):
                 pass
         observations.append({'componentId': src['recipeComponentId'], 'linkedMesh': clone.data == src.data,
                              'matrixWorld': [list(row) for row in clone.matrix_world]})
+    from fox3d.polyhaven_cache import polyhaven_read_session
+    ph_ctx = polyhaven_read_session(_assets_root() / 'models' / 'polyhaven')
+    ph_ctx.__enter__()
     try:
         bpy.context.window.scene = scene
         root_assets = _assets_root()
@@ -859,6 +870,7 @@ def build(created, definition, device, expected_hash):
         scene.view_layers[0].update()
     finally:
         bpy.context.window.scene = original
+        ph_ctx.__exit__(None, None, None)
     return scene, {'sceneHash': expected_hash, 'templateId': definition['templateId'], 'version': definition['version'],
                    'slot': definition['slot'], 'view': definition['view'], 'productScale': 1.,
                    'productMatrix': definition['productMatrix'], 'products': observations,

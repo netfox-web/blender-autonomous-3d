@@ -52,6 +52,7 @@ from fox3d.photoreal_assets import (
     build_ai_photoreal_composite,
     ensure_pbr_texture_assets,
     ensure_polyhaven_models,
+    _polyhaven_locate_bundle,
 )
 from fox3d.recipe_3d import atomic_json, read_json
 from fox3d.recipe_workbench import timestamp
@@ -1363,7 +1364,8 @@ class EcommerceSceneStore:
         ph_list = []
         for aid, cfg in POLYHAVEN_CURATED_MODELS.items():
             res = cfg.get("resolution", "2k")
-            gpath = ph_root / aid / f"{aid}_{res}.gltf"
+            gltf_name = f"{aid}_{res}.gltf"
+            _, gpath = _polyhaven_locate_bundle(ph_root / aid, gltf_name)
             ph_list.append({
                 **cfg,
                 "glbPath": _ph_glb(aid),
