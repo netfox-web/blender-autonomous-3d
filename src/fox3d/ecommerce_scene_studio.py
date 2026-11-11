@@ -1253,7 +1253,6 @@ class EcommerceSceneStore:
         props = []
         tenant_dir = self._tenant_dir(tenant_id).resolve()
         upload_root = tenant_dir / "glb-props"
-        plat_root = Path(self.platform.root).resolve()
         assets_root = Path(__file__).resolve().parents[2] / "assets"
         poly_root = assets_root / "models" / "polyhaven"
         for index, original in enumerate(scene.get("props") or [], 1):
@@ -1266,29 +1265,23 @@ class EcommerceSceneStore:
                     is_asset = raw.startswith("assets://")
                     if "\\" in raw and (is_asset or os.name != "nt"):
                         raise ValueError("路徑格式無效")
-                    if is_asset:
-                        if ".." in path_segments(raw[len("assets://"):]):
+                    if ".." in path_segments(raw):
+                        raise ValueError("路徑格式無效")
+                    candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
+                    is_relative_upload = not is_asset and not candidate.is_absolute()
+                    if is_relative_upload:
+                        if "\\" in raw:
                             raise ValueError("路徑格式無效")
-                        candidate = assets_root / raw[len("assets://"):]
-                    else:
-                        if ".." in path_segments(raw):
-                            raise ValueError("路徑格式無效")
-                        raw_path = Path(raw)
-                        candidate = raw_path if raw_path.is_absolute() else plat_root / raw
+                        candidate = Path(self.platform.root).resolve() / candidate
                     resolved = candidate.resolve()
                     if resolved.suffix.lower() not in (".glb", ".gltf"):
                         raise ValueError("只允許 GLB 或 glTF 模型")
                     # A redirected whitelist directory must not authorize an external tree.
                     upload_safe = upload_root.resolve() == upload_root and resolved.is_relative_to(upload_root)
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
-                    if not (poly_safe or (not is_asset and upload_safe)):
+                    if not ((not is_relative_upload and poly_safe) or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
-                    if is_asset:
-                        prop["glbPath"] = raw
-                    elif not Path(raw).is_absolute() and upload_safe:
-                        prop["glbPath"] = raw
-                    else:
-                        prop["glbPath"] = str(resolved)
+                    prop["glbPath"] = raw if is_asset or is_relative_upload else str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)
                     warnings.append(f"道具 {index} 的 glbPath 已移除：{exc}；改用程序式模型")
