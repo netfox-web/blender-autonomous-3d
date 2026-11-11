@@ -17,7 +17,10 @@ from fox3d.studio import LIGHTING_RECIPES, MATERIALS
 
 class VisionProvider(Protocol):
     name: str
-    status: str  # MOCK | REAL
+
+    @property
+    def status(self) -> str:  # MOCK | REAL
+        ...
 
     def score_image(self, *, preview: dict[str, Any]) -> dict[str, float]:
         ...
