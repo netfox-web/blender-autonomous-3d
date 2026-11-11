@@ -27,14 +27,17 @@ def test_content_hash_ignores_dam_asset_id_and_version():
 
 
 def test_content_hash_changes_when_sku_changes():
-    a = _twin(sku="ALPHA")
-    b = _twin(sku="BETA")
+    a = _twin(sku="ALPHA", twinId="fixed-id-for-content-hash-sku")
+    b = a.model_copy(update={"sku": "BETA"})
     assert a.compute_hash() != b.compute_hash()
 
 
 def test_content_hash_changes_when_dimensions_change():
-    a = _twin(dimensions={"width": 1, "depth": 2, "height": 3})
-    b = _twin(dimensions={"width": 9, "depth": 2, "height": 3})
+    a = _twin(
+        dimensions={"width": 1, "depth": 2, "height": 3},
+        twinId="fixed-id-for-content-hash-dimensions",
+    )
+    b = a.model_copy(update={"dimensions": {"width": 9, "depth": 2, "height": 3}})
     assert a.compute_hash() != b.compute_hash()
 
 
