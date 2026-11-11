@@ -1255,6 +1255,7 @@ class EcommerceSceneStore:
         upload_root = tenant_dir / "glb-props"
         assets_root = Path(__file__).resolve().parents[2] / "assets"
         poly_root = assets_root / "models" / "polyhaven"
+        plat_root = Path(self.platform.root).resolve()
         for index, original in enumerate(scene.get("props") or [], 1):
             prop = dict(original)
             if "glbPath" in prop:
@@ -1272,7 +1273,7 @@ class EcommerceSceneStore:
                     if is_relative_upload:
                         if "\\" in raw:
                             raise ValueError("路徑格式無效")
-                        candidate = Path(self.platform.root).resolve() / candidate
+                        candidate = plat_root / candidate
                     resolved = candidate.resolve()
                     if resolved.suffix.lower() not in (".glb", ".gltf"):
                         raise ValueError("只允許 GLB 或 glTF 模型")
