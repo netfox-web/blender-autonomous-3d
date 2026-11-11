@@ -9,14 +9,16 @@ ASSET_REF_PREFIX = 'assets://'
 
 def _ensure_fox3d_on_path() -> None:
     """Blender jobs only inherit env + cwd; make ``fox3d`` importable without a separate install."""
-    import sys
+    import importlib.util
     from pathlib import Path
 
-    src = os.environ.get('FOX3D_SRC', '').strip()
-    if not src:
-        src = str(Path(__file__).resolve().parents[1] / 'src')
-    if src and src not in sys.path:
-        sys.path.insert(0, src)
+    bootstrap_py = Path(__file__).resolve().parent / 'fox3d_bootstrap.py'
+    spec = importlib.util.spec_from_file_location('fox3d_bootstrap', bootstrap_py)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'fox3d bootstrap missing: {bootstrap_py}')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.ensure_fox3d_on_path(Path(__file__))
 
 
 def _assets_root():

@@ -543,8 +543,8 @@ def test_furnished_scene_bootstraps_fox3d_without_src_on_path(monkeypatch: pytes
     scrubbed = [p for p in sys.path if os.path.normcase(str(repo_src)) != os.path.normcase(p)]
     monkeypatch.setattr(sys, "path", scrubbed)
     for key in list(sys.modules):
-        if key == "fox3d" or key.startswith("fox3d."):
-            sys.modules.pop(key, None)
+        if key == "fox3d" or key.startswith("fox3d.") or key in ("fox3d_bootstrap", "furnished_scene_test"):
+            monkeypatch.delitem(sys.modules, key, raising=False)
     fs = _load_furnished_scene()
     fs._ensure_fox3d_on_path()
     from fox3d.polyhaven_cache import polyhaven_read_session  # noqa: F401

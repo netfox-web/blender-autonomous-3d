@@ -79,6 +79,7 @@ result = {
     "blenderVersion": "5.2.2 LTS",
     "outputs": outputs,
     "assetsRoot": os.environ.get("FOX3D_ASSETS_ROOT"),
+    "fox3dSrc": os.environ.get("FOX3D_SRC"),
     "argv": sys.argv,
     "cwd": os.getcwd(),
     "exportBlend": job.get("exportBlend"),
@@ -255,6 +256,8 @@ def test_success_shape_artifact_order_urls_and_cleanup(
 
     seen = harness.mirrored()
     assert seen["assetsRoot"] == str(harness.assets_root.resolve()), "FOX3D_ASSETS_ROOT must reach blender"
+    repo_src = str((ROOT / "src").resolve())
+    assert seen["fox3dSrc"] == repo_src, "FOX3D_SRC must reach blender with deployable fox3d package"
     assert seen["exportBlend"] is True and seen["exportGlb"] is True
     assert os.path.normcase(seen["cwd"]) == os.path.normcase(str(harness.work_root.resolve() / JOB_ID))
     argv = seen["argv"]
@@ -597,6 +600,37 @@ def test_blender_command_hook_and_timeout_policy(fbt: ModuleType, tmp_path: Path
         fbt.effective_timeout(None, 0.0)
     assert fbt.output_subfolder("j1", "nested") == "fox3d/j1"
     assert fbt.output_subfolder("j1", "flat") == "fox3d_j1"
+
+
+def test_blender_scene_render_executor_lists_fox3d_package() -> None:
+    fragment = json.loads((ROOT / "docs" / "fleet" / "blender_scene_render.executor.json").read_text(encoding="utf-8"))
+    requires = fragment["blender_scene_render"]["requires"]
+    bootstrap = ROOT / "scripts" / "fox3d_bootstrap.py"
+    spec = importlib.util.spec_from_file_location("fox3d_bootstrap_test", bootstrap)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for entry in mod.fleet_executor_fox3d_requires("/data-fast/fox3d"):
+        assert entry in requires, f"missing fleet requires entry: {entry}"
+
+
+def test_missing_fox3d_deploy_fails_before_blender(
+    fbt: ModuleType, harness: Harness, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stub = type(
+        "StubBootstrap",
+        (),
+        {
+            "resolve_fox3d_src": staticmethod(lambda _anchor: None),
+            "fox3d_src_candidates": staticmethod(lambda _anchor: []),
+            "verify_fox3d_polyhaven_importable_subprocess": staticmethod(lambda _anchor: (_ for _ in ()).throw(ImportError("missing"))),
+        },
+    )()
+    monkeypatch.setattr(fbt, "_load_fox3d_bootstrap", lambda: stub)
+    code, line = run_main(fbt, harness.argv("--json", json.dumps(make_payload(harness))), capsys)
+    assert code == 1
+    assert line["status"] == "failed"
+    assert "fox3d package not deployed" in line["error"]
 
 
 def test_prepare_work_dir_prefers_scene_definition_json(fbt: ModuleType, tmp_path: Path) -> None:
