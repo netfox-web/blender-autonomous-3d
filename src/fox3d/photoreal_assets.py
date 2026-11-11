@@ -4,14 +4,23 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import math
 import os
+import re
+import secrets
+import shutil
+import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+
+from fox3d import polyhaven_cache
+from fox3d.storelock import FileLock
 
 AI_STYLE_PRESETS: dict[str, dict[str, Any]] = {
     "AI_NORDIC_SUNLIT_LOFT": {
@@ -253,6 +262,318 @@ _MODERN_EXTRA = [
 for _aid, _ptype, _label, _short in _MODERN_EXTRA:
     POLYHAVEN_CURATED_MODELS[_aid] = {"assetId": _aid, "propType": _ptype, "label": _label + " (2K PBR)", "shortLabel": _short, "resolution": "2k"}
 
+logger = logging.getLogger(__name__)
+
+_POLYHAVEN_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_POLYHAVEN_ALLOWED_HOSTS = frozenset({"polyhaven.com", "www.polyhaven.com"})
+
+
+def _parse_polyhaven_asset_id(raw: str) -> str:
+    """Parse and validate a Poly Haven asset ID or an approved polyhaven.com/a/<id> URL."""
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError("請輸入 Poly Haven 模型網址或代號（例如 Sofa_01 或 https://polyhaven.com/a/steel_frame_shelves_01）")
+    if "\\" in text:
+        raise ValueError("Poly Haven 代號格式不正確（僅允許英數、底線與連字號）")
+
+    if "://" in text or text.startswith("//"):
+        url = text if "://" in text else f"https:{text}"
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").lower()
+        if host not in _POLYHAVEN_ALLOWED_HOSTS:
+            raise ValueError("僅接受 polyhaven.com/a/<id> 網址")
+        segments = [p for p in parsed.path.split("/") if p]
+        if len(segments) < 2 or segments[0] != "a":
+            raise ValueError("僅接受 polyhaven.com/a/<id> 網址")
+        aid = segments[1].split("?")[0].strip()
+    else:
+        aid = text.rstrip("/")
+
+    if not aid or not _POLYHAVEN_ASSET_ID_RE.fullmatch(aid):
+        raise ValueError("Poly Haven 代號格式不正確（僅允許英數、底線與連字號，最長 64 字元）")
+    return aid
+
+
+def _polyhaven_include_dest(model_dir: Path, rel_path: str) -> Path | None:
+    """Return a resolved destination path only when it stays inside model_dir."""
+    if not rel_path or rel_path.startswith(("/", "\\")):
+        logger.warning("Skipping Poly Haven include with absolute path: %r", rel_path)
+        return None
+    normalized = rel_path.replace("\\", "/")
+    if ".." in Path(normalized).parts:
+        logger.warning("Skipping Poly Haven include outside model dir: %r", rel_path)
+        return None
+    dest = (model_dir / normalized).resolve()
+    model_root = model_dir.resolve()
+    if not dest.is_relative_to(model_root):
+        logger.warning("Skipping Poly Haven include outside model dir: %r", rel_path)
+        return None
+    return dest
+
+
+def _polyhaven_normalize_bundle_rel(rel_path: str) -> str | None:
+    """Normalize a bundle-relative URI for reserved-path and manifest equality checks."""
+    if not isinstance(rel_path, str) or not rel_path.strip():
+        return None
+    if rel_path.startswith(("/", "\\")):
+        return None
+    normalized = rel_path.replace("\\", "/")
+    parts: list[str] = []
+    for part in normalized.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            return None
+        parts.append(part)
+    if not parts:
+        return None
+    return "/".join(parts)
+
+
+def _polyhaven_reserved_bundle_rels(gltf_file: Path) -> set[str]:
+    """Case-folded bundle-relative paths that external includes must not target."""
+    reserved: set[str] = set()
+    for raw in (gltf_file.name, _POLYHAVEN_MANIFEST_NAME):
+        norm = _polyhaven_normalize_bundle_rel(raw)
+        if norm is not None:
+            reserved.add(norm.casefold())
+    return reserved
+
+
+def _polyhaven_include_reserved_collision(gltf_file: Path, rel_path: str) -> bool:
+    norm = _polyhaven_normalize_bundle_rel(rel_path)
+    if norm is None:
+        return True
+    return norm.casefold() in _polyhaven_reserved_bundle_rels(gltf_file)
+
+
+_POLYHAVEN_MANIFEST_NAME = ".polyhaven_complete.json"
+_POLYHAVEN_MIN_GLTF_BYTES = 128
+# Metadata (20s) + main glTF (30s) + up to 12 include fetches (45s each) + publish headroom.
+_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT = 20.0 + 30.0 + 12 * 45.0 + 30.0
+
+
+def _polyhaven_manifest_path(model_dir: Path) -> Path:
+    return model_dir / _POLYHAVEN_MANIFEST_NAME
+
+
+def _polyhaven_is_data_uri(uri: str) -> bool:
+    return uri.startswith("data:")
+
+
+def _polyhaven_parse_gltf_bytes(gltf_bytes: bytes) -> dict[str, Any] | None:
+    """Parse glTF JSON; return None when the payload is not a valid glTF document."""
+    try:
+        doc = json.loads(gltf_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    asset = doc.get("asset")
+    if not isinstance(asset, dict):
+        return None
+    version = asset.get("version")
+    if not isinstance(version, str) or not version.strip():
+        return None
+    return doc
+
+
+def _polyhaven_gltf_external_uris(doc: dict[str, Any]) -> list[str]:
+    """Collect relative external URIs referenced by buffers and images."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def add_uri(raw: object) -> None:
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        uri = raw.replace("\\", "/")
+        if _polyhaven_is_data_uri(uri):
+            return
+        if uri not in seen:
+            seen.add(uri)
+            ordered.append(uri)
+
+    for block_name in ("buffers", "images"):
+        entries = doc.get(block_name)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                add_uri(entry.get("uri"))
+
+    return ordered
+
+
+def _polyhaven_bundle_file_ready(model_dir: Path, rel_path: str) -> bool:
+    dest = _polyhaven_include_dest(model_dir, rel_path)
+    return dest is not None and dest.exists() and dest.stat().st_size > 0
+
+
+def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, Any] | None:
+    """Return the glTF document when the main file and every safe external URI are on disk."""
+    if not gltf_file.exists() or gltf_file.stat().st_size <= _POLYHAVEN_MIN_GLTF_BYTES:
+        return None
+    try:
+        gltf_doc = _polyhaven_parse_gltf_bytes(gltf_file.read_bytes())
+    except OSError:
+        return None
+    if gltf_doc is None:
+        return None
+    for rel in _polyhaven_gltf_external_uris(gltf_doc):
+        if not _polyhaven_bundle_file_ready(model_dir, rel):
+            return None
+    return gltf_doc
+
+
+def _polyhaven_locate_bundle(asset_root: Path, gltf_name: str) -> tuple[Path, Path]:
+    located = polyhaven_cache.active_bundle_dir(asset_root, gltf_name)
+    if located is not None:
+        return located
+    return asset_root, asset_root / gltf_name
+
+
+def _polyhaven_adopt_legacy_cache(asset_root: Path, gltf_file: Path) -> bool:
+    """While holding the download lock: manifest + migrate flat cache into versions/<hash>/."""
+    bundle_dir, resolved_gltf = _polyhaven_locate_bundle(asset_root, gltf_file.name)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_dir, resolved_gltf)
+    if gltf_doc is None:
+        return False
+    if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+        return polyhaven_cache.migrate_legacy_flat_bundle(
+            asset_root,
+            resolved_gltf,
+            cache_complete_fn=_polyhaven_cache_complete,
+            include_rels=include_rels,
+        )
+    include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+    manifest_path = _polyhaven_manifest_path(bundle_dir)
+    try:
+        manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        logger.warning("Failed to write Poly Haven manifest for %s", asset_root.name)
+        return False
+    if not _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        return False
+    return polyhaven_cache.migrate_legacy_flat_bundle(
+        asset_root,
+        resolved_gltf,
+        cache_complete_fn=_polyhaven_cache_complete,
+        include_rels=include_rels,
+    )
+
+
+def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
+    """True only when the cached main glTF and every external URI it references are present."""
+    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
+    if gltf_doc is None:
+        return False
+    manifest_path = _polyhaven_manifest_path(model_dir)
+    if not manifest_path.exists():
+        return False
+    try:
+        includes = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+    if not isinstance(includes, list):
+        return False
+    manifest_set = {rel.replace("\\", "/") for rel in includes if isinstance(rel, str)}
+    required = {rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc)}
+    if required != manifest_set:
+        return False
+    for rel in includes:
+        if not isinstance(rel, str):
+            return False
+        if not _polyhaven_bundle_file_ready(model_dir, rel):
+            return False
+    return True
+
+
+def _polyhaven_lock_path(asset_root: Path) -> Path:
+    """Lock beside the asset root; version dirs are immutable so readers never traverse partial trees."""
+    return asset_root.parent / f".{asset_root.name}.polyhaven.lock"
+
+
+def _polyhaven_atomic_publish(asset_root: Path, staging: Path, version: str) -> None:
+    """Install staging into versions/<version>/ and atomically switch the current pointer."""
+    polyhaven_cache.publish_version(asset_root, staging, version)
+
+
+def _polyhaven_download_bundle(asset_root: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
+    """Download glTF + includes into a staging dir, then publish as a new immutable version."""
+    asset_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".ph-staging-", dir=asset_root.parent))
+    published = False
+    try:
+        main_req = urllib.request.Request(gltf_entry["url"], headers=headers)
+        staging_gltf = staging / gltf_file.name
+        staging_gltf.write_bytes(urllib.request.urlopen(main_req, timeout=30).read())
+        if staging_gltf.stat().st_size <= _POLYHAVEN_MIN_GLTF_BYTES:
+            return False
+
+        gltf_doc = _polyhaven_parse_gltf_bytes(staging_gltf.read_bytes())
+        if gltf_doc is None:
+            logger.warning("Invalid glTF payload for %s", asset_root.name)
+            return False
+
+        api_includes: dict[str, dict] = gltf_entry.get("include") or {}
+        required_uris = _polyhaven_gltf_external_uris(gltf_doc)
+        include_rels: list[str] = []
+
+        for rel_path in required_uris:
+            inc_meta = api_includes.get(rel_path)
+            if not isinstance(inc_meta, dict):
+                logger.warning(
+                    "glTF references %r but Poly Haven include map has no entry for %s",
+                    rel_path,
+                    asset_root.name,
+                )
+                return False
+            inc_url = inc_meta.get("url")
+            if not inc_url:
+                logger.warning("Missing Poly Haven include URL for %s: %r", asset_root.name, rel_path)
+                return False
+            if _polyhaven_include_reserved_collision(gltf_file, rel_path):
+                logger.warning(
+                    "Rejecting Poly Haven include targeting reserved path for %s: %r",
+                    asset_root.name,
+                    rel_path,
+                )
+                return False
+            dest = _polyhaven_include_dest(staging, rel_path)
+            if dest is None:
+                logger.warning("Rejecting Poly Haven include for %s: %r", asset_root.name, rel_path)
+                return False
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            inc_req = urllib.request.Request(inc_url, headers=headers)
+            dest.write_bytes(urllib.request.urlopen(inc_req, timeout=45).read())
+            if dest.stat().st_size == 0:
+                return False
+            include_rels.append(rel_path.replace("\\", "/"))
+
+        for rel_path in required_uris:
+            if not _polyhaven_bundle_file_ready(staging, rel_path):
+                logger.warning("Missing glTF dependency on disk for %s: %r", asset_root.name, rel_path)
+                return False
+
+        manifest = staging / _POLYHAVEN_MANIFEST_NAME
+        manifest.write_text(json.dumps(sorted(include_rels), ensure_ascii=False), encoding="utf-8")
+
+        if not _polyhaven_cache_complete(staging, staging_gltf):
+            logger.warning("Poly Haven staging bundle failed integrity check for %s", asset_root.name)
+            return False
+
+        version = polyhaven_cache.bundle_content_hash(staging, staging_gltf, include_rels)
+        _polyhaven_atomic_publish(asset_root, staging, version)
+        published = True
+        return True
+    except Exception:
+        logger.exception("Poly Haven bundle download failed for %s", asset_root.name)
+        return False
+    finally:
+        if not published and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+
 
 def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] | None = None) -> dict[str, str]:
     """Download and cache curated CC0 2K glTF 3D furniture models + PBR textures + thumbnails from Poly Haven."""
@@ -266,8 +587,9 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
     for aid in target_ids:
         cfg = POLYHAVEN_CURATED_MODELS.get(aid, {"assetId": aid, "resolution": "2k"})
         res = cfg.get("resolution", "2k")
-        model_dir = base / aid
-        gltf_file = model_dir / f"{aid}_{res}.gltf"
+        asset_root = base / aid
+        gltf_name = f"{aid}_{res}.gltf"
+        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
         thumb_file = thumbs_dir / f"{aid}.png"
         if not thumb_file.exists():
             try:
@@ -276,35 +598,36 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
             except Exception:
                 pass
 
-        if gltf_file.exists() and gltf_file.stat().st_size > 128:
-            resolved_paths[aid] = str(gltf_file.resolve())
-            continue
-
         try:
-            req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
-            data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
-            gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
-            if not gltf_entry or not gltf_entry.get("url"):
-                continue
-
-            model_dir.mkdir(parents=True, exist_ok=True)
-            main_req = urllib.request.Request(gltf_entry["url"], headers=headers)
-            gltf_file.write_bytes(urllib.request.urlopen(main_req, timeout=30).read())
-
-            for rel_path, inc_meta in (gltf_entry.get("include") or {}).items():
-                inc_url = inc_meta.get("url")
-                if not inc_url:
+            with FileLock(_polyhaven_lock_path(asset_root), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
+                bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
+                if _polyhaven_cache_complete(bundle_dir, gltf_file):
+                    if polyhaven_cache.read_current_version(asset_root) is None:
+                        _polyhaven_adopt_legacy_cache(asset_root, asset_root / gltf_name)
+                        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
+                    resolved_paths[aid] = str(gltf_file.resolve())
                     continue
-                dest = model_dir / rel_path
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                if not dest.exists() or dest.stat().st_size == 0:
-                    inc_req = urllib.request.Request(inc_url, headers=headers)
-                    dest.write_bytes(urllib.request.urlopen(inc_req, timeout=45).read())
 
-            resolved_paths[aid] = str(gltf_file.resolve())
-        except Exception:
-            if gltf_file.exists():
-                resolved_paths[aid] = str(gltf_file.resolve())
+                if _polyhaven_adopt_legacy_cache(asset_root, asset_root / gltf_name):
+                    bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
+                    resolved_paths[aid] = str(gltf_file.resolve())
+                    continue
+
+                try:
+                    req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
+                    data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
+                    gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
+                    if not gltf_entry or not gltf_entry.get("url"):
+                        continue
+
+                    gltf_ref = asset_root / gltf_name
+                    if _polyhaven_download_bundle(asset_root, gltf_ref, gltf_entry, headers):
+                        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
+                        resolved_paths[aid] = str(gltf_file.resolve())
+                except Exception:
+                    logger.exception("Poly Haven metadata fetch failed for %s", aid)
+        except TimeoutError:
+            logger.warning("Poly Haven lock wait timed out for %s", aid)
 
     return resolved_paths
 
@@ -316,17 +639,13 @@ def download_custom_polyhaven_asset(
     root_dir: Path | None = None,
 ) -> dict[str, str]:
     """Parse a Poly Haven URL or asset ID, download its 2K glTF + PBR textures + thumbnail, and register it."""
-    raw = (asset_id_or_url or "").strip().rstrip("/")
-    if not raw:
-        raise ValueError("請輸入 Poly Haven 模型網址或代號（例如 Sofa_01 或 https://polyhaven.com/a/steel_frame_shelves_01）")
-    if "/" in raw:
-        aid = raw.split("/")[-1].split("?")[0].strip()
-    else:
-        aid = raw
-    if not aid:
-        raise ValueError("無法解析 Poly Haven 代號")
+    aid = _parse_polyhaven_asset_id(asset_id_or_url)
 
     clean_label = (label or "").strip() or f"Poly Haven {aid} (2K PBR)"
+    paths = ensure_polyhaven_models(root_dir=root_dir, asset_ids=[aid])
+    gltf_path = paths.get(aid, "")
+    if not gltf_path or not Path(gltf_path).exists():
+        raise ValueError(f"從 Poly Haven 找不到模型「{aid}」（請確認代號是否為 3D Model，例如 Sofa_01、sofa_03、vintage_cabinet_01）")
     POLYHAVEN_CURATED_MODELS[aid] = {
         "assetId": aid,
         "propType": (prop_type or "SOFA").strip().upper(),
@@ -334,10 +653,6 @@ def download_custom_polyhaven_asset(
         "shortLabel": clean_label[:14],
         "resolution": "2k",
     }
-    paths = ensure_polyhaven_models(root_dir=root_dir, asset_ids=[aid])
-    gltf_path = paths.get(aid, "")
-    if not gltf_path or not Path(gltf_path).exists():
-        raise ValueError(f"從 Poly Haven 找不到模型「{aid}」（請確認代號是否為 3D Model，例如 Sofa_01、sofa_03、vintage_cabinet_01）")
     return {
         **POLYHAVEN_CURATED_MODELS[aid],
         "gltfPath": gltf_path,
