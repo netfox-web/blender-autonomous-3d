@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import base64
+import importlib.util
+import json
 import struct
 import time
 from pathlib import Path
@@ -13,6 +15,7 @@ from fox3d.api import create_app
 from fox3d.ecommerce_scene_studio import (
     CABINET_PRESETS,
     _ph_glb,
+    _tenant_slug,
     resolve_scene_glb_paths_for_blender,
     validate_glb_binary,
 )
@@ -31,6 +34,26 @@ def _minimal_glb_bytes() -> bytes:
 
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
+
+
+def _glb_from_gltf_json(gltf: object, *, total_pad: int = 0) -> bytes:
+    json_chunk = json.dumps(gltf, separators=(",", ":")).encode("utf-8")
+    while len(json_chunk) % 4:
+        json_chunk += b" "
+    total = 12 + 8 + len(json_chunk) + total_pad
+    header = struct.pack("<4sII", b"glTF", 2, total)
+    json_header = struct.pack("<II", len(json_chunk), 0x4E4F534A)
+    tail = b"\x00" * total_pad
+    return header + json_header + json_chunk + tail
+
+
+def _load_furnished_scene():
+    path = Path(__file__).resolve().parents[1] / "scripts" / "furnished_scene.py"
+    spec = importlib.util.spec_from_file_location("furnished_scene_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, Path]:
@@ -168,7 +191,7 @@ def test_validate_glb_rejects_invalid_json_payload():
 def test_resolve_scene_glb_paths_rejects_other_tenant_absolute_path(tmp_path: Path):
     plat = Platform(tmp_path / "data", mock_blender=True)
     root = Path(plat.root).resolve()
-    victim = root / "ecommerce-scene-studio/tenant-beta/glb-props/glb_chair_x.glb"
+    victim = root / "ecommerce-scene-studio" / _tenant_slug("tenant-beta") / "glb-props/glb_chair_x.glb"
     victim.parent.mkdir(parents=True, exist_ok=True)
     victim.write_bytes(_minimal_glb_bytes())
     scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": str(victim.resolve())}]}
@@ -179,7 +202,7 @@ def test_resolve_scene_glb_paths_rejects_other_tenant_absolute_path(tmp_path: Pa
 def test_resolve_scene_glb_paths_rejects_other_tenant_relative_path(tmp_path: Path):
     plat = Platform(tmp_path / "data", mock_blender=True)
     root = Path(plat.root).resolve()
-    rel = "ecommerce-scene-studio/tenant-beta/glb-props/glb_chair_x.glb"
+    rel = f"ecommerce-scene-studio/{_tenant_slug('tenant-beta')}/glb-props/glb_chair_x.glb"
     glb_file = root / rel
     glb_file.parent.mkdir(parents=True, exist_ok=True)
     glb_file.write_bytes(_minimal_glb_bytes())
@@ -280,7 +303,7 @@ def test_saved_polyhaven_gallery_scene_renders_with_asset_ref(tmp_path: Path):
 def test_resolve_scene_glb_paths_maps_upload_ref_to_absolute(tmp_path: Path):
     plat = Platform(tmp_path / "data", mock_blender=True)
     root = Path(plat.root).resolve()
-    rel = "ecommerce-scene-studio/tenant-alpha/glb-props/glb_chair_x.glb"
+    rel = f"ecommerce-scene-studio/{_tenant_slug('tenant-alpha')}/glb-props/glb_chair_x.glb"
     glb_file = root / rel
     glb_file.parent.mkdir(parents=True, exist_ok=True)
     glb_file.write_bytes(_minimal_glb_bytes())
@@ -374,3 +397,72 @@ def test_uploaded_glb_path_reaches_blender_job_as_absolute(tmp_path: Path):
         p = Path(path)
         assert p.is_absolute() and p.is_file()
         assert "glb-props" in p.as_posix()
+
+
+def test_tenant_slug_avoids_dot_collision():
+    assert _tenant_slug("tenant.alpha") != _tenant_slug("tenantalpha")
+
+
+def test_collision_tenants_upload_to_distinct_dirs(tmp_path: Path):
+    client, root = _client(tmp_path)
+    raw = _minimal_glb_bytes()
+    a = client.post(
+        "/api/ecommerce-scenes/props/upload-glb",
+        headers={"X-Tenant-Id": "tenant.alpha"},
+        json={"filename": "chair.glb", "dataBase64": _b64(raw)},
+    )
+    b = client.post(
+        "/api/ecommerce-scenes/props/upload-glb",
+        headers={"X-Tenant-Id": "tenantalpha"},
+        json={"filename": "chair.glb", "dataBase64": _b64(raw)},
+    )
+    assert a.status_code == 201 and b.status_code == 201
+    path_a = root / a.json()["glbPath"]
+    path_b = root / b.json()["glbPath"]
+    assert path_a.parent != path_b.parent
+    assert path_a != path_b
+
+
+def test_resolve_rejects_cross_collision_tenant_glb(tmp_path: Path):
+    plat = Platform(tmp_path / "data", mock_blender=True)
+    root = Path(plat.root).resolve()
+    victim = root / "ecommerce-scene-studio" / _tenant_slug("tenantalpha") / "glb-props/glb_chair_x.glb"
+    victim.parent.mkdir(parents=True, exist_ok=True)
+    victim.write_bytes(_minimal_glb_bytes())
+    scene = {"boxes": [{"name": "Prop1_Custom_Box", "glbPath": victim.relative_to(root).as_posix()}]}
+    with pytest.raises(ValueError, match="超出租戶允許範圍"):
+        resolve_scene_glb_paths_for_blender(scene, platform_root=root, tenant_id="tenant.alpha")
+
+
+def test_validate_glb_rejects_json_null():
+    with pytest.raises(ValueError, match="根物件"):
+        validate_glb_binary(_glb_from_gltf_json(None))
+
+
+def test_validate_glb_rejects_empty_gltf_object():
+    with pytest.raises(ValueError, match="asset"):
+        validate_glb_binary(_glb_from_gltf_json({}))
+
+
+def test_validate_glb_rejects_truncated_bin_chunk():
+    raw = bytearray(_glb_from_gltf_json({"asset": {"version": "2.0"}, "scenes": [{"nodes": [0]}], "nodes": [{"name": "n"}]}))
+    raw += struct.pack("<II", 16, 0x004E4942) + b"\x00" * 8
+    raw[8:12] = struct.pack("<I", len(raw))
+    with pytest.raises(ValueError, match="chunk"):
+        validate_glb_binary(bytes(raw))
+
+
+def test_upload_rejects_json_null_glb(tmp_path: Path):
+    client, _ = _client(tmp_path)
+    res = client.post(
+        "/api/ecommerce-scenes/props/upload-glb",
+        headers={"X-Tenant-Id": "sonaqueen-home"},
+        json={"filename": "x.glb", "dataBase64": _b64(_glb_from_gltf_json(None))},
+    )
+    assert res.status_code == 422
+
+
+def test_furnished_scene_detects_tenant_uploaded_glb_path():
+    fs = _load_furnished_scene()
+    assert fs._is_tenant_uploaded_glb("/data/ecommerce-scene-studio/foo/glb-props/glb_x.glb")
+    assert not fs._is_tenant_uploaded_glb("assets://models/polyhaven/x.gltf")

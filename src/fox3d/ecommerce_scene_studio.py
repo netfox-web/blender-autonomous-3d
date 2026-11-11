@@ -6,6 +6,7 @@ the canonical `FURNISHED_SCENE_V1` contract consumed by `scripts/blender_job.py`
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -1091,13 +1092,52 @@ def validate_glb_binary(raw_bytes: bytes, *, max_bytes: int | None = None) -> No
     if json_end > declared_len:
         raise ValueError("GLB JSON chunk 長度與檔頭宣告不符")
     try:
-        json.loads(raw_bytes[20:json_end].rstrip(b" \x00"))
+        gltf = json.loads(raw_bytes[20:json_end].rstrip(b" \x00"))
     except json.JSONDecodeError as exc:
         raise ValueError("GLB JSON chunk 不是合法的 JSON") from exc
+    if not isinstance(gltf, dict):
+        raise ValueError("GLB JSON 必須為 glTF 根物件")
+    asset = gltf.get("asset")
+    if not isinstance(asset, dict):
+        raise ValueError("GLB 缺少 asset 物件")
+    version = str(asset.get("version", "")).strip()
+    if version not in ("2.0", "2"):
+        raise ValueError("glTF asset.version 必須為 2.0")
+    has_scene_graph = bool(gltf.get("scenes")) or bool(gltf.get("nodes")) or bool(gltf.get("meshes"))
+    if not has_scene_graph:
+        raise ValueError("GLB 缺少有效的 glTF 場景結構（scenes、nodes 或 meshes）")
+    offset = json_end
+    while offset < declared_len:
+        if offset + 8 > declared_len:
+            raise ValueError("GLB chunk 檔頭不完整")
+        chunk_len, chunk_type = struct.unpack("<II", raw_bytes[offset : offset + 8])
+        if chunk_len < 0 or chunk_len % 4:
+            raise ValueError("GLB chunk 長度必須為 4 的倍數")
+        data_end = offset + 8 + chunk_len
+        if data_end > declared_len:
+            raise ValueError("GLB chunk 超出檔案範圍")
+        offset = data_end
+
+
+def _tenant_slug_legacy(tenant_id: str) -> str:
+    return "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
 
 
 def _tenant_slug(tenant_id: str) -> str:
-    return "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
+    """Collision-safe tenant storage directory name (legacy sanitizer is not injective)."""
+    safe = _tenant_slug_legacy(tenant_id)
+    digest = hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()[:16]
+    return f"{safe}__{digest}"
+
+
+def _migrate_legacy_tenant_dir(root: Path, tenant_id: str) -> None:
+    """Move pre-hash tenant data into the collision-safe directory when unambiguous."""
+    new_dir = root / _tenant_slug(tenant_id)
+    if new_dir.exists():
+        return
+    legacy = root / _tenant_slug_legacy(tenant_id)
+    if legacy.is_dir():
+        legacy.rename(new_dir)
 
 
 def _tenant_glb_props_root(platform_root: Path, tenant_id: str) -> Path:
@@ -1201,8 +1241,8 @@ class EcommerceSceneStore:
             pass
 
     def _tenant_dir(self, tenant_id: str) -> Path:
-        safe = "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")) or "default"
-        d = self.root / safe
+        _migrate_legacy_tenant_dir(self.root, tenant_id)
+        d = self.root / _tenant_slug(tenant_id)
         d.mkdir(parents=True, exist_ok=True)
         return d
 

@@ -297,6 +297,11 @@ def _smooth_polygons(obj):
         pass
 
 
+def _is_tenant_uploaded_glb(glb_path) -> bool:
+    text = str(glb_path).replace('\\', '/')
+    return '/glb-props/' in text
+
+
 def _import_and_fit_gltf(scene, gltf_path, group_name, px, py, pz, w, d, h, uniform_scale=False):
     """Import a Poly Haven 2K glTF or custom GLB model and fit it to (px, py, pz) with target dimensions (w, d, h)."""
     import bpy
@@ -704,6 +709,15 @@ def build(created, definition, device, expected_hash):
 
             glb_path = resolve_asset_ref(item.get('glbPath'), root_assets)
             if photoreal and glb_path and Path(str(glb_path)).exists():
+                if _is_tenant_uploaded_glb(glb_path):
+                    try:
+                        if not _import_and_fit_gltf(
+                            scene, glb_path, iname, lx, ly, max(0.0, lz - sz * 0.5), sx, sy, sz
+                        ):
+                            raise RuntimeError('tenant GLB import produced no mesh: ' + iname)
+                    except Exception as exc:
+                        raise RuntimeError('tenant GLB import failed for ' + iname) from exc
+                    continue
                 try:
                     if _import_and_fit_gltf(scene, glb_path, iname, lx, ly, max(0.0, lz - sz * 0.5), sx, sy, sz):
                         continue
