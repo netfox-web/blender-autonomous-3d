@@ -312,16 +312,79 @@ def _polyhaven_include_dest(model_dir: Path, rel_path: str) -> Path | None:
 
 _POLYHAVEN_MANIFEST_NAME = ".polyhaven_complete.json"
 _POLYHAVEN_MIN_GLTF_BYTES = 128
+# Metadata (20s) + main glTF (30s) + up to 12 include fetches (45s each) + publish headroom.
+_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT = 20.0 + 30.0 + 12 * 45.0 + 30.0
 
 
 def _polyhaven_manifest_path(model_dir: Path) -> Path:
     return model_dir / _POLYHAVEN_MANIFEST_NAME
 
 
+def _polyhaven_is_data_uri(uri: str) -> bool:
+    return uri.startswith("data:")
+
+
+def _polyhaven_parse_gltf_bytes(gltf_bytes: bytes) -> dict[str, Any] | None:
+    """Parse glTF JSON; return None when the payload is not a valid glTF document."""
+    try:
+        doc = json.loads(gltf_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(doc, dict):
+        return None
+    asset = doc.get("asset")
+    if not isinstance(asset, dict):
+        return None
+    version = asset.get("version")
+    if not isinstance(version, str) or not version.strip():
+        return None
+    return doc
+
+
+def _polyhaven_gltf_external_uris(doc: dict[str, Any]) -> list[str]:
+    """Collect relative external URIs referenced by buffers and images."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    def add_uri(raw: object) -> None:
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        uri = raw.replace("\\", "/")
+        if _polyhaven_is_data_uri(uri):
+            return
+        if uri not in seen:
+            seen.add(uri)
+            ordered.append(uri)
+
+    for block_name in ("buffers", "images"):
+        entries = doc.get(block_name)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                add_uri(entry.get("uri"))
+
+    return ordered
+
+
+def _polyhaven_bundle_file_ready(model_dir: Path, rel_path: str) -> bool:
+    dest = _polyhaven_include_dest(model_dir, rel_path)
+    return dest is not None and dest.exists() and dest.stat().st_size > 0
+
+
 def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
-    """True only when the cached main glTF and every recorded include are present."""
+    """True only when the cached main glTF and every external URI it references are present."""
     if not gltf_file.exists() or gltf_file.stat().st_size <= _POLYHAVEN_MIN_GLTF_BYTES:
         return False
+    try:
+        gltf_doc = _polyhaven_parse_gltf_bytes(gltf_file.read_bytes())
+    except OSError:
+        return False
+    if gltf_doc is None:
+        return False
+    for rel in _polyhaven_gltf_external_uris(gltf_doc):
+        if not _polyhaven_bundle_file_ready(model_dir, rel):
+            return False
     manifest_path = _polyhaven_manifest_path(model_dir)
     if not manifest_path.exists():
         return False
@@ -331,11 +394,14 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
         return False
     if not isinstance(includes, list):
         return False
+    manifest_set = {rel.replace("\\", "/") for rel in includes if isinstance(rel, str)}
+    required = set(_polyhaven_gltf_external_uris(gltf_doc))
+    if required != manifest_set:
+        return False
     for rel in includes:
         if not isinstance(rel, str):
             return False
-        dest = _polyhaven_include_dest(model_dir, rel)
-        if dest is None or not dest.exists() or dest.stat().st_size == 0:
+        if not _polyhaven_bundle_file_ready(model_dir, rel):
             return False
     return True
 
@@ -350,6 +416,7 @@ def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
     token = secrets.token_hex(8)
     incoming = model_dir.parent / f".ph-incoming-{model_dir.name}-{token}"
     old_dir: Path | None = None
+    published = False
     staging.rename(incoming)
     try:
         model_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -357,15 +424,26 @@ def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
             old_dir = model_dir.parent / f".ph-old-{model_dir.name}-{token}"
             model_dir.rename(old_dir)
         incoming.rename(model_dir)
+        published = True
     except Exception:
+        restored = False
         if old_dir is not None and old_dir.exists() and not model_dir.exists():
-            old_dir.rename(model_dir)
-        elif incoming.exists() and not model_dir.exists():
-            incoming.rename(model_dir)
+            try:
+                old_dir.rename(model_dir)
+                restored = True
+            except OSError:
+                logger.warning("Poly Haven publish rollback failed for %s", model_dir.name, exc_info=True)
+        if not restored and incoming.exists() and not model_dir.exists():
+            try:
+                incoming.rename(model_dir)
+                restored = True
+            except OSError:
+                logger.warning("Poly Haven publish fallback rename failed for %s", model_dir.name, exc_info=True)
         raise
     finally:
-        shutil.rmtree(incoming, ignore_errors=True)
-        if old_dir is not None:
+        if incoming.exists():
+            shutil.rmtree(incoming, ignore_errors=True)
+        if published and old_dir is not None and old_dir.exists():
             shutil.rmtree(old_dir, ignore_errors=True)
 
 
@@ -380,8 +458,24 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
         if staging_gltf.stat().st_size <= _POLYHAVEN_MIN_GLTF_BYTES:
             return False
 
+        gltf_doc = _polyhaven_parse_gltf_bytes(staging_gltf.read_bytes())
+        if gltf_doc is None:
+            logger.warning("Invalid glTF payload for %s", model_dir.name)
+            return False
+
+        api_includes: dict[str, dict] = gltf_entry.get("include") or {}
+        required_uris = _polyhaven_gltf_external_uris(gltf_doc)
         include_rels: list[str] = []
-        for rel_path, inc_meta in (gltf_entry.get("include") or {}).items():
+
+        for rel_path in required_uris:
+            inc_meta = api_includes.get(rel_path)
+            if not isinstance(inc_meta, dict):
+                logger.warning(
+                    "glTF references %r but Poly Haven include map has no entry for %s",
+                    rel_path,
+                    model_dir.name,
+                )
+                return False
             inc_url = inc_meta.get("url")
             if not inc_url:
                 logger.warning("Missing Poly Haven include URL for %s: %r", model_dir.name, rel_path)
@@ -397,8 +491,13 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
                 return False
             include_rels.append(rel_path.replace("\\", "/"))
 
+        for rel_path in required_uris:
+            if not _polyhaven_bundle_file_ready(staging, rel_path):
+                logger.warning("Missing glTF dependency on disk for %s: %r", model_dir.name, rel_path)
+                return False
+
         manifest = staging / _POLYHAVEN_MANIFEST_NAME
-        manifest.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
+        manifest.write_text(json.dumps(sorted(include_rels), ensure_ascii=False), encoding="utf-8")
 
         _polyhaven_atomic_publish(model_dir, staging)
         return True
@@ -432,22 +531,25 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
             except Exception:
                 pass
 
-        with FileLock(_polyhaven_lock_path(model_dir)):
-            if _polyhaven_cache_complete(model_dir, gltf_file):
-                resolved_paths[aid] = str(gltf_file.resolve())
-                continue
-
-            try:
-                req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
-                data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
-                gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
-                if not gltf_entry or not gltf_entry.get("url"):
+        try:
+            with FileLock(_polyhaven_lock_path(model_dir), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
+                if _polyhaven_cache_complete(model_dir, gltf_file):
+                    resolved_paths[aid] = str(gltf_file.resolve())
                     continue
 
-                if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
-                    resolved_paths[aid] = str(gltf_file.resolve())
-            except Exception:
-                logger.exception("Poly Haven metadata fetch failed for %s", aid)
+                try:
+                    req = urllib.request.Request(f"https://api.polyhaven.com/files/{aid}", headers=headers)
+                    data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
+                    gltf_entry = data.get("gltf", {}).get(res, {}).get("gltf") or data.get("gltf", {}).get("1k", {}).get("gltf")
+                    if not gltf_entry or not gltf_entry.get("url"):
+                        continue
+
+                    if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
+                        resolved_paths[aid] = str(gltf_file.resolve())
+                except Exception:
+                    logger.exception("Poly Haven metadata fetch failed for %s", aid)
+        except TimeoutError:
+            logger.warning("Poly Haven lock wait timed out for %s", aid)
 
     return resolved_paths
 

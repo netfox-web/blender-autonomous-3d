@@ -26,6 +26,21 @@ def tenant_headers() -> dict[str, str]:
     return {"X-Tenant-Id": "sonaqueen-home"}
 
 
+def _gltf_body_with_uris(*external_uris: str) -> bytes:
+    images: list[dict[str, str]] = []
+    buffers: list[dict[str, str]] = []
+    for uri in external_uris:
+        if uri.lower().endswith((".png", ".jpg", ".jpeg", ".ktx2", ".webp")):
+            images.append({"uri": uri})
+        else:
+            buffers.append({"uri": uri})
+    doc = {"asset": {"version": "2.0"}, "buffers": buffers, "images": images}
+    raw = json.dumps(doc, separators=(",", ":")).encode("utf-8")
+    if len(raw) <= photoreal_assets._POLYHAVEN_MIN_GLTF_BYTES:
+        raw += b" " * (photoreal_assets._POLYHAVEN_MIN_GLTF_BYTES - len(raw) + 1)
+    return raw
+
+
 def _fake_urlopen_factory(
     files_payload: dict | None,
     gltf_body: bytes,
@@ -97,7 +112,7 @@ def test_download_failure_does_not_pollute_catalog(tmp_path: Path, monkeypatch: 
 
 def test_malicious_includes_stay_inside_model_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_safe_asset"
-    gltf_body = b'{"asset": {"version": "2.0"}, "buffers": []}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/ok.png", "../../outside.png", "/etc/passwd")
     include_map = {
         "textures/ok.png": b"OKBYTES",
         "../../outside.png": b"EVIL",
@@ -136,7 +151,7 @@ def test_malicious_includes_stay_inside_model_dir(tmp_path: Path, monkeypatch: p
 
 def test_include_download_failure_does_not_register(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_include_fail"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
     include_map = {"textures/albedo.png": b"TEX"}
     fail_url = "https://mock-cdn.test/include/0"
     monkeypatch.setattr(
@@ -162,7 +177,7 @@ def test_include_download_failure_does_not_register(tmp_path: Path, monkeypatch:
 
 def test_retry_after_include_failure_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_retry_asset"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
     include_map = {"textures/albedo.png": b"TEX"}
     fail_url = "https://mock-cdn.test/include/0"
     state = {"fail_once": True}
@@ -197,7 +212,7 @@ def test_retry_after_include_failure_completes(tmp_path: Path, monkeypatch: pyte
 
 def test_valid_asset_id_completes_and_registers_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_ok_asset"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
         "urlopen",
@@ -215,7 +230,7 @@ def test_valid_asset_id_completes_and_registers_catalog(tmp_path: Path, monkeypa
 
 def test_missing_include_url_fails_without_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_missing_url"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
     include_map = {"textures/albedo.png": b"UNUSED"}
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
@@ -238,7 +253,7 @@ def test_missing_include_url_fails_without_manifest(tmp_path: Path, monkeypatch:
 
 def test_parallel_downloads_same_asset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_parallel"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png", "textures/normal.png")
     include_map = {"textures/albedo.png": b"TEX", "textures/normal.png": b"NORM"}
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
@@ -270,7 +285,7 @@ def test_parallel_downloads_same_asset(tmp_path: Path, monkeypatch: pytest.Monke
 
 def test_publish_failure_does_not_mark_complete(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_publish_fail"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
     include_map = {"textures/albedo.png": b"TEX"}
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
@@ -306,7 +321,7 @@ def test_publish_failure_does_not_mark_complete(tmp_path: Path, monkeypatch: pyt
 
 def test_concurrent_read_during_publish_never_sees_mixed_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_concurrent_read"
-    gltf_body = b'{"asset": {"version": "2.0"}}' + b" " * 200
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
     include_map = {"textures/albedo.png": b"TEX"}
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
@@ -349,3 +364,141 @@ def test_concurrent_read_during_publish_never_sees_mixed_bundle(tmp_path: Path, 
     finally:
         allow_publish.set()
         reader_thread.join(timeout=2)
+
+
+def test_gltf_external_ref_missing_from_include_map_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_missing_bin"
+    gltf_body = _gltf_body_with_uris("missing.bin")
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {}),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    with pytest.raises(ValueError):
+        photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    assert not (model_dir / photoreal_assets._POLYHAVEN_MANIFEST_NAME).exists()
+
+
+def test_invalid_gltf_payload_does_not_publish(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_bad_gltf"
+    gltf_body = b"not-json-at-all" + b" " * 200
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/x.png": b"X"}),
+    )
+    with pytest.raises(ValueError):
+        photoreal_assets.download_custom_polyhaven_asset(aid, root_dir=tmp_path)
+
+
+def test_cache_complete_false_when_manifest_omits_gltf_dependency(tmp_path: Path):
+    aid = "guard_stale_manifest"
+    model_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    gltf_file = model_root / f"{aid}_2k.gltf"
+    gltf_file.parent.mkdir(parents=True)
+    gltf_file.write_bytes(_gltf_body_with_uris("textures/albedo.png", "missing.bin"))
+    (model_root / ".polyhaven_complete.json").write_text('["textures/albedo.png"]', encoding="utf-8")
+    (model_root / "textures").mkdir()
+    (model_root / "textures" / "albedo.png").write_bytes(b"TEX")
+    assert not photoreal_assets._polyhaven_cache_complete(model_root, gltf_file)
+
+
+def test_publish_rename_failure_keeps_old_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_rename_fail"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    include_map = {"textures/albedo.png": b"NEW"}
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    old_gltf = _gltf_body_with_uris("textures/albedo.png")
+    old_gltf = json.loads(old_gltf.decode().strip())
+    old_gltf["marker"] = "old"
+    old_bytes = json.dumps(old_gltf).encode() + b" " * 80
+    model_dir.mkdir(parents=True)
+    (model_dir / "textures").mkdir()
+    gltf_file.write_bytes(old_bytes)
+    (model_dir / "textures" / "albedo.png").write_bytes(b"OLD")
+
+    real_rename = Path.rename
+    calls = {"incoming_to_target": 0}
+
+    def flaky_rename(self: Path, target: Path) -> None:
+        name = self.name
+        if name.startswith(".ph-incoming-") and target == model_dir:
+            calls["incoming_to_target"] += 1
+            raise OSError("simulated incoming rename failure")
+        if name.startswith(".ph-old-") and target == model_dir:
+            raise OSError("simulated rollback rename failure")
+        real_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", flaky_rename)
+    paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    assert aid not in paths
+    leftover_old = list(model_root.glob(".ph-old-guard_rename_fail-*"))
+    assert leftover_old, "expected preserved old-dir backup after failed rollback"
+    backup_root = leftover_old[0]
+    assert (backup_root / gltf_file.name).read_bytes() == old_bytes
+    assert (backup_root / "textures" / "albedo.png").read_bytes() == b"OLD"
+    assert not model_dir.exists() or gltf_file.read_bytes() == old_bytes
+    assert calls["incoming_to_target"] >= 1
+
+
+def test_polyhaven_download_lock_timeout_exceeds_default_wait_budget():
+    assert photoreal_assets._POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT > 30.0 + 45.0 + 20.0
+
+
+def test_parallel_download_waits_beyond_default_lock_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_slow_lock"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    include_map = {"textures/albedo.png": b"TEX"}
+    base_urlopen = _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map)
+  # default FileLock timeout is 30s; hold the lock ~1s while the first worker fetches include
+    hold_seconds = 1.0
+    download_started = threading.Event()
+    release_download = threading.Event()
+
+    def slow_urlopen(req, timeout=0):
+        url = req.full_url if hasattr(req, "full_url") else req.get_full_url()
+        if "mock-cdn.test/include/" in url:
+            download_started.set()
+            assert release_download.wait(timeout=hold_seconds + 5)
+            import time
+
+            time.sleep(hold_seconds)
+        return base_urlopen(req, timeout=timeout)
+
+    monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", slow_urlopen)
+    monkeypatch.setattr(photoreal_assets, "_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT", hold_seconds + 2.0)
+
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    errors: list[BaseException] = []
+    results: list[dict[str, str]] = []
+
+    def worker():
+        try:
+            results.append(photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid]))
+        except BaseException as exc:
+            errors.append(exc)
+
+    t1 = threading.Thread(target=worker)
+    t2 = threading.Thread(target=worker)
+    t1.start()
+    assert download_started.wait(timeout=5)
+    release_download.set()
+    t2.start()
+    t1.join(timeout=hold_seconds + 10)
+    t2.join(timeout=hold_seconds + 10)
+    assert not errors
+    assert len(results) == 2
+    assert aid in results[0] or aid in results[1]
+    gltf_file = model_root / aid / f"{aid}_2k.gltf"
+    assert photoreal_assets._polyhaven_cache_complete(model_root / aid, gltf_file)
