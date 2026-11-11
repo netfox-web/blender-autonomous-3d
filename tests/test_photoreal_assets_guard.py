@@ -509,6 +509,87 @@ def test_polyhaven_download_lock_timeout_exceeds_default_wait_budget():
     assert photoreal_assets._POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT > 30.0 + 45.0 + 20.0
 
 
+@pytest.mark.parametrize(
+    "malicious_uri",
+    [
+        "guard_main_overwrite_2k.gltf",
+        "./guard_main_overwrite_2k.gltf",
+        "GUARD_MAIN_OVERWRITE_2K.GLTF",
+        ".polyhaven_complete.json",
+        "./.polyhaven_complete.json",
+    ],
+)
+def test_include_cannot_target_reserved_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, malicious_uri: str
+):
+    aid = "guard_main_overwrite"
+    gltf_body = _gltf_body_with_uris(malicious_uri)
+    corrupt_main = b"corrupt" + b" " * 200
+    include_map = {malicious_uri: corrupt_main}
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    model_dir.mkdir(parents=True)
+    gltf_file.write_bytes(b'{"kept": true}' + b" " * 200)
+    gltf_entry = {
+        "url": "https://mock-cdn.test/models/guard_test_2k.gltf",
+        "include": {malicious_uri: {"url": "https://mock-cdn.test/include/0"}},
+    }
+    headers = {"User-Agent": "test"}
+
+    assert not photoreal_assets._polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers)
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    assert gltf_file.read_bytes().startswith(b'{"kept": true}')
+    assert not (model_dir / photoreal_assets._POLYHAVEN_MANIFEST_NAME).exists()
+
+
+def test_staging_integrity_failure_blocks_publish(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_staging_integrity"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    include_map = {"textures/albedo.png": b"TEX"}
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    publish_called = threading.Event()
+    real_publish = photoreal_assets._polyhaven_atomic_publish
+
+    def track_publish(target: Path, staging: Path) -> None:
+        publish_called.set()
+        real_publish(target, staging)
+
+    monkeypatch.setattr(photoreal_assets, "_polyhaven_atomic_publish", track_publish)
+    real_cache_complete = photoreal_assets._polyhaven_cache_complete
+    staging_checks = {"n": 0}
+
+    def staging_gate(model_dir_arg: Path, gltf_arg: Path) -> bool:
+        staging_checks["n"] += 1
+        if model_dir_arg.name.startswith(".ph-staging-"):
+            return False
+        return real_cache_complete(model_dir_arg, gltf_arg)
+
+    monkeypatch.setattr(photoreal_assets, "_polyhaven_cache_complete", staging_gate)
+
+    req = photoreal_assets.urllib.request.Request(f"https://api.polyhaven.com/files/{aid}")
+    # Reuse fake API via ensure_polyhaven_models path: call download_bundle with fetched entry
+    api_urlopen = photoreal_assets.urllib.request.urlopen
+    raw_api = api_urlopen(req).read()
+    gltf_entry = json.loads(raw_api.decode())["gltf"]["2k"]["gltf"]
+    assert photoreal_assets._polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, {}) is False
+    assert staging_checks["n"] >= 1
+    assert not publish_called.is_set()
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+
 def test_parallel_download_waits_beyond_default_lock_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     aid = "guard_slow_lock"
     gltf_body = _gltf_body_with_uris("textures/albedo.png")

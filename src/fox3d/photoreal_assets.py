@@ -310,6 +310,42 @@ def _polyhaven_include_dest(model_dir: Path, rel_path: str) -> Path | None:
     return dest
 
 
+def _polyhaven_normalize_bundle_rel(rel_path: str) -> str | None:
+    """Normalize a bundle-relative URI for reserved-path and manifest equality checks."""
+    if not isinstance(rel_path, str) or not rel_path.strip():
+        return None
+    if rel_path.startswith(("/", "\\")):
+        return None
+    normalized = rel_path.replace("\\", "/")
+    parts: list[str] = []
+    for part in normalized.split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            return None
+        parts.append(part)
+    if not parts:
+        return None
+    return "/".join(parts)
+
+
+def _polyhaven_reserved_bundle_rels(gltf_file: Path) -> set[str]:
+    """Case-folded bundle-relative paths that external includes must not target."""
+    reserved: set[str] = set()
+    for raw in (gltf_file.name, _POLYHAVEN_MANIFEST_NAME):
+        norm = _polyhaven_normalize_bundle_rel(raw)
+        if norm is not None:
+            reserved.add(norm.casefold())
+    return reserved
+
+
+def _polyhaven_include_reserved_collision(gltf_file: Path, rel_path: str) -> bool:
+    norm = _polyhaven_normalize_bundle_rel(rel_path)
+    if norm is None:
+        return True
+    return norm.casefold() in _polyhaven_reserved_bundle_rels(gltf_file)
+
+
 _POLYHAVEN_MANIFEST_NAME = ".polyhaven_complete.json"
 _POLYHAVEN_MIN_GLTF_BYTES = 128
 # Metadata (20s) + main glTF (30s) + up to 12 include fetches (45s each) + publish headroom.
@@ -505,6 +541,13 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
             if not inc_url:
                 logger.warning("Missing Poly Haven include URL for %s: %r", model_dir.name, rel_path)
                 return False
+            if _polyhaven_include_reserved_collision(gltf_file, rel_path):
+                logger.warning(
+                    "Rejecting Poly Haven include targeting reserved path for %s: %r",
+                    model_dir.name,
+                    rel_path,
+                )
+                return False
             dest = _polyhaven_include_dest(staging, rel_path)
             if dest is None:
                 logger.warning("Rejecting Poly Haven include for %s: %r", model_dir.name, rel_path)
@@ -523,6 +566,10 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
 
         manifest = staging / _POLYHAVEN_MANIFEST_NAME
         manifest.write_text(json.dumps(sorted(include_rels), ensure_ascii=False), encoding="utf-8")
+
+        if not _polyhaven_cache_complete(staging, staging_gltf):
+            logger.warning("Poly Haven staging bundle failed integrity check for %s", model_dir.name)
+            return False
 
         _polyhaven_atomic_publish(model_dir, staging)
         return True
