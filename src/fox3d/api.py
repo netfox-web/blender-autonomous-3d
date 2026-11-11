@@ -88,8 +88,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.get("/api/3d/jobs")
     def list_jobs(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         plat = get_platform()
-        tid = x_tenant_id
-        return {"items": plat.queue.list(tenant_id=tid) if tid else plat.queue.list()}
+        tid = tenant(x_tenant_id)
+        return {"items": plat.queue.list(tenant_id=tid)}
 
     @app.get("/api/3d/jobs/{job_id}")
     def read_job(job_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
