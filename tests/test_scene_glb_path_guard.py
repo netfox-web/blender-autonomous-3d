@@ -96,3 +96,44 @@ def test_ai_layout_endpoint_guards_generated_paths(store):
     assert response.status_code == 200
     assert response.json()['warnings']
     assert 'glbPath' not in response.json()['props'][0]
+
+
+def test_relative_upload_path_is_preserved(store, tmp_path):
+    fixture = tmp_path / 'fixture.glb'
+    write_glb_stub(fixture, name='Prop')
+    uploaded = store.upload_glb_prop('alice', 'chair.glb', fixture.read_bytes())['glbPath']
+    guarded, warnings = store.guard_scene_paths('alice', scene(uploaded))
+    assert guarded['props'][0]['glbPath'] == uploaded
+    assert not warnings
+
+
+def test_relative_other_tenant_upload_is_rejected(store, tmp_path):
+    fixture = tmp_path / 'fixture.glb'
+    write_glb_stub(fixture, name='Prop')
+    uploaded = store.upload_glb_prop('bob', 'chair.glb', fixture.read_bytes())['glbPath']
+    guarded, warnings = store.guard_scene_paths('alice', scene(uploaded))
+    assert 'glbPath' not in guarded['props'][0]
+    assert warnings
+
+
+def test_relative_unsafe_upload_paths_are_rejected(store, tmp_path):
+    upload = store._tenant_dir('alice') / 'glb-props'
+    upload.mkdir()
+    outside = tmp_path / 'outside.glb'
+    outside.write_bytes(b'x')
+    link = upload / 'escape.glb'
+    paths = [
+        (upload / '..' / 'glb-props' / 'model.glb').relative_to(tmp_path).as_posix(),
+        (upload / 'bad.txt').relative_to(tmp_path).as_posix(),
+        r'ecommerce-scene-studio\alice\glb-props\model.glb',
+    ]
+    try:
+        link.symlink_to(outside)
+    except OSError:
+        pass
+    else:
+        paths.append(link.relative_to(tmp_path).as_posix())
+    for path in paths:
+        guarded, warnings = store.guard_scene_paths('alice', scene(path))
+        assert 'glbPath' not in guarded['props'][0]
+        assert warnings

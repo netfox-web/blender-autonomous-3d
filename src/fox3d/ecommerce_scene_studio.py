@@ -1268,7 +1268,10 @@ class EcommerceSceneStore:
                     if ".." in path_segments(raw):
                         raise ValueError("路徑不可包含上層目錄")
                     candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
-                    if not candidate.is_absolute():
+                    is_relative_upload = not is_asset and not candidate.is_absolute()
+                    if is_relative_upload:
+                        if "\\" in raw:
+                            raise ValueError("路徑格式無效")
                         candidate = Path(self.platform.root).resolve() / candidate
                     resolved = candidate.resolve()
                     if resolved.suffix.lower() not in (".glb", ".gltf"):
@@ -1276,9 +1279,9 @@ class EcommerceSceneStore:
                     # A redirected whitelist directory must not authorize an external tree.
                     upload_safe = upload_root.resolve() == upload_root and resolved.is_relative_to(upload_root)
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
-                    if not (poly_safe or (not is_asset and upload_safe)):
+                    if not ((not is_relative_upload and poly_safe) or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
-                    prop["glbPath"] = raw if is_asset or not Path(raw).is_absolute() else str(resolved)
+                    prop["glbPath"] = raw if is_asset or is_relative_upload else str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)
                     warnings.append(f"道具 {index} 的 glbPath 已移除：{exc}；改用程序式模型")
