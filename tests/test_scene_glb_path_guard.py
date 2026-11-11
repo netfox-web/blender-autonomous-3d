@@ -8,6 +8,12 @@ from fox3d.ecommerce_scene_studio import EcommerceSceneStore
 from fox3d.pngutil import write_glb_stub
 
 
+def _minimal_glb_bytes(tmp_path: Path) -> bytes:
+    path = tmp_path / "fixture.glb"
+    write_glb_stub(path, name="Prop")
+    return path.read_bytes()
+
+
 @pytest.fixture
 def store(tmp_path):
     with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'):
@@ -19,9 +25,7 @@ def scene(path):
 
 
 def test_allowed_upload_and_polyhaven(store, tmp_path):
-    fixture = tmp_path / 'fixture.glb'
-    write_glb_stub(fixture, name='Prop')
-    uploaded = store.upload_glb_prop('alice', 'chair.glb', fixture.read_bytes())['glbPath']
+    uploaded = store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes(tmp_path))['glbPath']
     poly = Path(__file__).resolve().parents[1] / 'assets/models/polyhaven/test/model.gltf'
     for path in (uploaded, str(poly), 'assets://models/polyhaven/test/model.gltf'):
         guarded, warnings = store.guard_scene_paths('alice', scene(path))
@@ -53,9 +57,7 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
 
 
 def test_native_upload_path_and_traversal(store, tmp_path):
-    fixture = tmp_path / 'fixture.glb'
-    write_glb_stub(fixture, name='Prop')
-    uploaded = tmp_path / store.upload_glb_prop('alice', 'chair.glb', fixture.read_bytes())['glbPath']
+    uploaded = tmp_path / store.upload_glb_prop('alice', 'chair.glb', _minimal_glb_bytes(tmp_path))['glbPath']
     guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
     assert guarded['props'][0]['glbPath'] == str(uploaded)
     assert not warnings
@@ -91,8 +93,6 @@ def test_ai_layout_endpoint_guards_generated_paths(store):
     assert response.status_code == 200
     assert response.json()['warnings']
     assert 'glbPath' not in response.json()['props'][0]
-
-
 def test_relative_upload_path_is_preserved(store, tmp_path):
     fixture = tmp_path / 'fixture.glb'
     write_glb_stub(fixture, name='Prop')
