@@ -347,6 +347,43 @@ def test_cross_process_legacy_flat_survives_migration_while_reading(tmp_path: Pa
             proc.kill()
 
 
+def test_gc_defers_while_coordination_lock_held(tmp_path: Path):
+    """Publishers must not block on GC when a reader holds the asset coordination lock."""
+    aid = "gc_defer"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    v1 = "1" * 64
+    v2 = "2" * 64
+    v3 = "3" * 64
+    _seed_version_bundle(asset_root, aid, v1, tex_marker=b"KEEP_UNTIL_UNLOCK")
+
+    release = threading.Event()
+    acquired = threading.Event()
+
+    def hold_coord_lock():
+        with polyhaven_cache._asset_versions_coordination(asset_root):
+            acquired.set()
+            release.wait(timeout=5.0)
+
+    holder = threading.Thread(target=hold_coord_lock, daemon=True)
+    holder.start()
+    assert acquired.wait(timeout=3.0)
+    try:
+        switch_started = time.time()
+        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"NEW_CURRENT")
+        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"NEW_CURRENT")
+        assert time.time() - switch_started < 3.0, "publish must not wait on a held coordination lock"
+        v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+        assert v1_bundle.is_dir(), "GC must defer while the lock is held"
+        release.set()
+        holder.join(timeout=5.0)
+        polyhaven_cache._maybe_gc_asset_versions(asset_root)
+        assert not v1_bundle.exists(), "GC must reclaim deferred versions after the lock is free"
+    finally:
+        release.set()
+        holder.join(timeout=2.0)
+
+
 def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path: Path):
     """Publisher switches twice while reader paused after current read, before on-disk retain pin."""
     aid = "pre_retain_race"

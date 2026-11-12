@@ -266,12 +266,16 @@ def _materialize_version_from_bundle(
 
 
 @contextmanager
-def _asset_versions_coordination(asset_root: Path) -> Iterator[None]:
+def _asset_versions_coordination(
+    asset_root: Path,
+    *,
+    timeout: float = 30.0,
+) -> Iterator[None]:
     """Cross-process mutex shared by readers, publishers, and version GC."""
     from fox3d.storelock import FileLock
 
     lock_path = asset_root / _ASSET_COORD_LOCK
-    with FileLock(lock_path, timeout=30.0):
+    with FileLock(lock_path, timeout=timeout):
         yield
 
 
@@ -283,19 +287,22 @@ def _maybe_gc_asset_versions(asset_root: Path) -> None:
     versions_root = asset_root / _VERSIONS_DIRNAME
     if not versions_root.is_dir():
         return
-    with _asset_versions_coordination(asset_root):
-        with _retained_lock:
-            for child in versions_root.iterdir():
-                if not child.is_dir():
-                    continue
-                ver = child.name
-                if ver in keep:
-                    continue
-                if _version_refcounts.get((asset_id, ver), 0) > 0:
-                    continue
-                if _version_dir_has_retain_pins(child):
-                    continue
-                shutil.rmtree(child, ignore_errors=True)
+    try:
+        with _asset_versions_coordination(asset_root, timeout=0.0):
+            with _retained_lock:
+                for child in versions_root.iterdir():
+                    if not child.is_dir():
+                        continue
+                    ver = child.name
+                    if ver in keep:
+                        continue
+                    if _version_refcounts.get((asset_id, ver), 0) > 0:
+                        continue
+                    if _version_dir_has_retain_pins(child):
+                        continue
+                    shutil.rmtree(child, ignore_errors=True)
+    except TimeoutError:
+        pass
 
 
 def publish_version(asset_root: Path, staging_bundle: Path, version: str) -> None:
