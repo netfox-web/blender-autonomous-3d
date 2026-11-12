@@ -360,6 +360,7 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
     repo_src = Path(__file__).resolve().parents[1] / "src"
     ph_root = tmp_path / "assets" / "models" / "polyhaven"
     pause_dir = tmp_path / "pause_coord"
+    pause_dir.mkdir(parents=True, exist_ok=True)
     hold_script = tmp_path / "race_before_retain.py"
     hold_script.write_text(
         "\n".join(
@@ -381,6 +382,22 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
         encoding="utf-8",
     )
     proc = subprocess.Popen([sys.executable, str(hold_script)], env={**os.environ, "PYTHONPATH": ""})
+    publisher_errors: list[BaseException] = []
+    publisher_done = threading.Event()
+    lock_wait_dir = tmp_path / "publish_lock_wait"
+    lock_wait_dir.mkdir(parents=True, exist_ok=True)
+    os.environ[polyhaven_cache._PUBLISH_LOCK_WAIT_DIR_ENV] = str(lock_wait_dir)
+    publisher_blocked = lock_wait_dir / "publisher_blocked_on_lock.json"
+
+    def publisher_switches() -> None:
+        try:
+            _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
+            _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
+        except BaseException as exc:
+            publisher_errors.append(exc)
+        finally:
+            publisher_done.set()
+
     try:
         deadline = time.time() + 8.0
         paused_payload = None
@@ -392,14 +409,22 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
             time.sleep(0.02)
         assert paused_payload == {"asset": aid, "version": v1}, "reader must pause before retain pin"
         assert proc.poll() is None, "child must still be blocked before retain pin exists"
-        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
-        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
+
+        pub = threading.Thread(target=publisher_switches, daemon=True)
+        pub.start()
+        blocked_deadline = time.time() + 8.0
+        while time.time() < blocked_deadline and not publisher_blocked.is_file():
+            time.sleep(0.02)
+        assert publisher_blocked.is_file(), "publisher must be blocked on coord lock while reader paused"
         v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
-        assert v1_bundle.is_dir(), "v1 must survive switches before cross-process retain pin"
+        assert v1_bundle.is_dir(), "v1 must remain before reader creates cross-process retain pin"
         (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
+        assert publisher_done.wait(timeout=8), "publisher must finish both switches after reader retain pin"
+        assert not publisher_errors, publisher_errors
         assert proc.wait(timeout=8) == 0
         assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_KEEP"
     finally:
+        os.environ.pop(polyhaven_cache._PUBLISH_LOCK_WAIT_DIR_ENV, None)
         if proc.poll() is None:
             proc.kill()
             (pause_dir / "resume_reader").write_text("go", encoding="utf-8")

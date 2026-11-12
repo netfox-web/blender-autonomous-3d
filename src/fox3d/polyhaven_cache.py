@@ -34,6 +34,7 @@ publish_pause_after_switch: threading.Event | None = None
 read_pause_after_current_before_retain: threading.Event | None = None
 
 _PAUSE_AFTER_CURRENT_ENV = "FOX3D_POLYHAVEN_PAUSE_AFTER_CURRENT_DIR"
+_PUBLISH_LOCK_WAIT_DIR_ENV = "FOX3D_POLYHAVEN_PUBLISH_LOCK_WAIT_DIR"
 _ASSET_COORD_LOCK = ".polyhaven.coord.lock"
 
 _retained_lock = threading.Lock()
@@ -271,7 +272,11 @@ def _asset_versions_coordination(asset_root: Path) -> Iterator[None]:
     from fox3d.storelock import FileLock
 
     lock_path = asset_root / _ASSET_COORD_LOCK
-    with FileLock(lock_path, timeout=30.0):
+    wait_dir = os.environ.get(_PUBLISH_LOCK_WAIT_DIR_ENV, "").strip()
+    blocked_marker = None
+    if wait_dir:
+        blocked_marker = Path(wait_dir) / "publisher_blocked_on_lock.json"
+    with FileLock(lock_path, timeout=30.0, blocked_marker=blocked_marker):
         yield
 
 
