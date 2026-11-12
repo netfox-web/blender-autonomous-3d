@@ -173,10 +173,16 @@ def _is_flat_retain_pin(pin_path: Path) -> bool:
 
 def _flat_bundle_has_retain_pins(asset_root: Path) -> bool:
     pin_dir = asset_root / _RETAIN_DIRNAME
-    if not pin_dir.is_dir():
-        return False
+    if pin_dir.is_dir():
+        try:
+            if any(pin_dir.iterdir()):
+                return True
+        except OSError:
+            return True
+    from fox3d.polyhaven_paths import _POLYHAVEN_LEGACY_PIN, listed_polyhaven_reader_pins
+
     try:
-        return any(pin_dir.iterdir())
+        return _POLYHAVEN_LEGACY_PIN in listed_polyhaven_reader_pins(asset_root)
     except OSError:
         return True
 
@@ -440,7 +446,9 @@ class PolyhavenReadSession:
                 return None
             _retain_version(asset_id, _LEGACY_FLAT_VERSION)
             if asset_id not in self._retain_files:
-                self._retain_files[asset_id] = _acquire_cross_process_retain_flat(asset_root)
+                from fox3d.polyhaven_paths import acquire_polyhaven_reader_pin
+
+                self._retain_files[asset_id] = acquire_polyhaven_reader_pin(asset_root, None)
             self._pins[asset_id] = _LEGACY_FLAT_VERSION
         return _LEGACY_FLAT_VERSION
 
@@ -466,7 +474,12 @@ class PolyhavenReadSession:
         for aid, version in self._pins.items():
             _release_version(aid, version)
         for pin in self._retain_files.values():
-            _release_cross_process_retain(pin)
+            from fox3d.polyhaven_paths import _POLYHAVEN_PINS_DIR, release_polyhaven_reader_pin
+
+            if _POLYHAVEN_PINS_DIR in pin.parts:
+                release_polyhaven_reader_pin(pin)
+            else:
+                _release_cross_process_retain(pin)
         self._pins.clear()
         self._retain_files.clear()
         self._closed = True

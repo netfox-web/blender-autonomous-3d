@@ -441,3 +441,27 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
             proc.kill()
             (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
             proc.wait(timeout=3)
+
+
+def test_worker_legacy_pin_blocks_flat_migration_cleanup(tmp_path: Path):
+    """Fleet worker ``.polyhaven_pins/__legacy_flat__`` must defer legacy-flat cleanup during migration."""
+    from fox3d.polyhaven_paths import acquire_polyhaven_reader_pin, release_polyhaven_reader_pin
+
+    aid = "worker_legacy_pin"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    gltf = asset_root / f"{aid}_2k.gltf"
+    gltf.write_bytes(_gltf_doc("textures/albedo.png"))
+    (asset_root / "textures").mkdir()
+    (asset_root / "textures/albedo.png").write_bytes(b"KEEP_UNTIL_READ")
+    (asset_root / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text(
+        '["textures/albedo.png"]',
+        encoding="utf-8",
+    )
+    pin_file = acquire_polyhaven_reader_pin(asset_root, None)
+    try:
+        assert photoreal_assets._polyhaven_adopt_legacy_cache(asset_root, gltf)
+        assert gltf.is_file()
+        assert (asset_root / "textures/albedo.png").read_bytes() == b"KEEP_UNTIL_READ"
+    finally:
+        release_polyhaven_reader_pin(pin_file)

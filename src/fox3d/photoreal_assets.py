@@ -25,11 +25,13 @@ from fox3d import polyhaven_cache
 from fox3d.polyhaven_paths import (
     POLYHAVEN_CATALOG_NAME,
     POLYHAVEN_VERSIONS_DIR,
+    _POLYHAVEN_PINS_DIR,
     acquire_polyhaven_reader_pin,
     listed_polyhaven_reader_pins,
     read_polyhaven_catalog,
     release_polyhaven_reader_pin,
     resolve_polyhaven_bundle_paths,
+    version_id_for_resolved_bundle,
 )
 from fox3d.recipe_3d import atomic_json
 from fox3d.storelock import FileLock
@@ -643,8 +645,16 @@ def _polyhaven_clear_slot_bundle_artifacts(slot: Path) -> None:
         return
     if _POLYHAVEN_LEGACY_PIN in _polyhaven_pinned_versions(slot):
         return
+    skip_dirs = {
+        POLYHAVEN_CATALOG_NAME,
+        POLYHAVEN_VERSIONS_DIR,
+        _POLYHAVEN_PINS_DIR,
+        polyhaven_cache._RETAIN_DIRNAME,
+    }
     for child in list(slot.iterdir()):
-        if child.name in (POLYHAVEN_CATALOG_NAME, POLYHAVEN_VERSIONS_DIR):
+        if child.name in skip_dirs:
+            continue
+        if child.name.endswith(".polyhaven.lock") or child.name.startswith("."):
             continue
         if child.is_dir():
             shutil.rmtree(child, ignore_errors=True)
@@ -693,6 +703,25 @@ def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> Non
         existing_gltf = version_dir / gltf_name
         if _polyhaven_cache_complete(version_dir, existing_gltf):
             shutil.rmtree(staging, ignore_errors=True)
+            previous = read_polyhaven_catalog(slot)
+            if previous and previous.get("versionId") == version_id:
+                return
+            keep_versions = {version_id}
+            if previous and isinstance(previous.get("versionId"), str):
+                keep_versions.add(previous["versionId"])
+            keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
+            try:
+                atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version_id, "gltfName": gltf_name})
+                _polyhaven_reclaim_slot(slot, keep_versions=keep_versions)
+            except Exception:
+                if previous is not None:
+                    try:
+                        atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
+                    except OSError:
+                        logger.warning(
+                            "Poly Haven catalog rollback failed for %s", slot.name, exc_info=True
+                        )
+                raise
             return
         published_id = f"{version_id}.repair-{uuid.uuid4().hex[:8]}"
         staging.rename(versions_root / published_id)
@@ -733,13 +762,8 @@ def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
 def pin_polyhaven_bundle(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, str | None]:
     """Pin the active immutable bundle root and glTF path for consistent reads across catalog switches."""
     bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
-    catalog = read_polyhaven_catalog(slot)
-    version_id = catalog.get("versionId") if catalog else None
-    if not isinstance(version_id, str):
-        version_id = None
-        _polyhaven_pin_version(slot, None)
-    else:
-        _polyhaven_pin_version(slot, version_id)
+    version_id = version_id_for_resolved_bundle(slot, bundle_root)
+    _polyhaven_pin_version(slot, version_id)
     pin_file = acquire_polyhaven_reader_pin(slot, version_id)
     pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
     with _POLYHAVEN_PIN_LOCK:

@@ -99,6 +99,22 @@ def resolve_polyhaven_bundle_paths(slot: Path, nominal_gltf: Path) -> tuple[Path
     return version_dir, gltf_path
 
 
+def version_id_for_resolved_bundle(slot: Path, bundle_root: Path) -> str | None:
+    """Map a resolved bundle directory to its immutable version id (``None`` = legacy flat slot)."""
+    slot_resolved = slot.resolve()
+    bundle_resolved = bundle_root.resolve()
+    if bundle_resolved == slot_resolved:
+        return None
+    versions_root = (slot_resolved / POLYHAVEN_VERSIONS_DIR).resolve()
+    try:
+        rel = bundle_resolved.relative_to(versions_root)
+    except ValueError:
+        return None
+    if rel.parts and rel.parts[0]:
+        return rel.parts[0]
+    return None
+
+
 def resolve_polyhaven_asset_ref_path(assets_root: Path, asset_ref_rel: str) -> Path | None:
     """Resolve ``models/polyhaven/<id>/<file>.gltf`` through the active catalog pointer when present."""
     rel = asset_ref_rel.replace("\\", "/").lstrip("/")
@@ -114,10 +130,7 @@ def resolve_polyhaven_asset_ref_path(assets_root: Path, asset_ref_rel: str) -> P
 def pin_polyhaven_bundle_paths(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, Path]:
     """Pin an immutable bundle for the duration of a worker read (register :func:`release_all_polyhaven_worker_pins`)."""
     bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
-    catalog = read_polyhaven_catalog(slot)
-    version_id = catalog.get("versionId") if catalog else None
-    if not isinstance(version_id, str) or not version_id:
-        version_id = read_polyhaven_current_version(slot)
+    version_id = version_id_for_resolved_bundle(slot, bundle_root)
     pin_file = acquire_polyhaven_reader_pin(slot, version_id)
     _WORKER_PIN_REGISTRY.append(pin_file)
     return bundle_root, gltf_path, pin_file

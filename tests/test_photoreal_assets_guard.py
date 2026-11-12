@@ -1345,3 +1345,84 @@ def test_worker_pin_blocks_prune_until_publish_finishes(tmp_path: Path, monkeypa
     finally:
         (tmp_path / "worker_release").write_text("1", encoding="utf-8")
         proc.wait(timeout=10)
+
+
+def test_worker_pinned_bundle_survives_double_catalog_publish(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Worker disk pin must match resolved bundle and block reclaim across B/C publishes (issue #205)."""
+    import importlib.util
+
+    aid = "guard_worker_bc_publish"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V1"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    first_bundle = _bundle_root(model_root, aid)
+
+    worker_path = ROOT / "scripts" / "worker_polyhaven.py"
+    spec = importlib.util.spec_from_file_location("worker_ph_bc", worker_path)
+    assert spec is not None and spec.loader is not None
+    worker_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker_mod)
+    ph = worker_mod.load_polyhaven_paths()
+    ref = ph.resolve_polyhaven_asset_ref_path_pinned(
+        tmp_path / "assets",
+        f"models/polyhaven/{aid}/{aid}_2k.gltf",
+    )
+    assert ref is not None and ref.parent == first_bundle
+    try:
+        monkeypatch.setattr(
+            photoreal_assets.urllib.request,
+            "urlopen",
+            _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V2"}),
+        )
+        (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+        photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+        monkeypatch.setattr(
+            photoreal_assets.urllib.request,
+            "urlopen",
+            _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V3"}),
+        )
+        (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+        photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+        assert first_bundle.is_dir()
+        assert (first_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
+        assert ref.read_bytes()
+        assert (ref.parent / "textures" / "albedo.png").read_bytes() == b"V1"
+    finally:
+        ph.release_all_polyhaven_worker_pins()
+
+
+def test_redownload_reuses_intact_version_and_fixes_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """When staging matches an existing complete version, atomically switch catalog away from corrupt current."""
+    from fox3d.recipe_3d import atomic_json
+
+    aid = "guard_reuse_catalog"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"GOOD"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    good_id = json.loads((model_dir / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))["versionId"]
+    broken_id = "c" * 32
+    broken_dir = model_dir / POLYHAVEN_VERSIONS_DIR / broken_id
+    broken_dir.mkdir(parents=True)
+    (broken_dir / gltf_file.name).write_bytes(b"{}" + b" " * 200)
+    atomic_json(
+        model_dir / POLYHAVEN_CATALOG_NAME,
+        {"versionId": broken_id, "gltfName": gltf_file.name},
+    )
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+    catalog = json.loads((model_dir / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))
+    assert catalog["versionId"] == good_id
+    assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
