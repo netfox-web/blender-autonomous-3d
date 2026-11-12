@@ -32,7 +32,7 @@ class Product360Engine:
             paths.append(str(path))
         mp4 = work_dir / "turntable.mp4"
         mp4.write_bytes(b"ftypisom")  # container hint; muxer is a later adapter
-        return {**plan, "images": paths, "mp4": str(mp4), "viewerAssets": paths}
+        return {**plan, "images": paths, "mp4": str(mp4), "viewerAssets": paths, "truthLabel": "MOCK"}
 
 
 class ARExporter:
@@ -40,16 +40,31 @@ class ARExporter:
         glb = dest / f"{twin.get('sku') or 'product'}.glb"
         write_glb_stub(glb, twin.get("sku") or "product")
         lods = []
+        planned_compression = "basis-uastc"
         for level, scale in (("lod0", 1.0), ("lod1", 0.5), ("lod2", 0.25)):
             p = dest / f"{level}.glb"
             write_glb_stub(p, f"{twin.get('sku')}-{level}")
-            lods.append({"level": level, "scale": scale, "path": str(p), "textureCompression": "basis-uastc", "meshOptimization": True})
+            lods.append(
+                {
+                    "level": level,
+                    "scale": scale,
+                    "path": str(p),
+                    "textureCompression": None,
+                    "meshOptimization": False,
+                }
+            )
         return {
             "glb": str(glb),
             "gltf": str(glb).replace(".glb", ".gltf"),
             "usdzReserved": True,
             "lod": lods,
-            "webFriendly": True,
+            "webFriendly": False,
+            "truthLabel": "STUB",
+            "planned": {
+                "textureCompression": planned_compression,
+                "meshOptimization": True,
+                "webFriendly": True,
+            },
         }
 
 
@@ -62,6 +77,7 @@ class SyntheticFactory:
             "frames": frames,
             "passes": ["RGB", "mask", "depth", "normal", "segmentation", "bounding_box", "camera_pose", "object_id"],
             "uses": ["YOLO", "product_recognition", "warehouse", "defect_detection", "computer_vision"],
+            "truthLabel": "MOCK",
         }
 
     def generate(self, work_dir, *, job_id: str, twin_id: str, frames: int = 8) -> dict[str, Any]:
@@ -103,6 +119,7 @@ class AssemblyAnimator:
             "assembly": list(reversed(explode)),
             "disassembly": explode,
             "uses": ["product_explain", "furniture_install", "retail_display", "after_sales"],
+            "truthLabel": "PLAN",
         }
 
 
@@ -125,6 +142,7 @@ class BlenderToVideo:
             "blenderOwns": ["product_position", "camera", "composition", "lighting", "depth", "normal", "mask"],
             "aiVideoOwns": ["people", "background", "fx", "motion", "creative_transformation"],
             "keyframes": refs,
+            "truthLabel": "PLAN",
         }
 
     def run(self, *, twin: dict[str, Any], scene_graph: dict[str, Any], gateway, adapter: str | None = None) -> dict[str, Any]:
@@ -163,4 +181,5 @@ class RetailEngine:
             "space": {"width": width, "depth": depth},
             "sceneGraph": graph,
             "proposal": True,
+            "truthLabel": "PLAN",
         }
