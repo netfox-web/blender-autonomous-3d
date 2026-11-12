@@ -89,7 +89,7 @@ def verify_fox3d_polyhaven_importable_subprocess(anchor: Path | None = None, *, 
         "from fox3d.polyhaven_cache import polyhaven_read_session\n"
     )
     completed = subprocess.run(
-        [interpreter, "-c", probe],
+        [interpreter, "-S", "-c", probe],
         capture_output=True,
         text=True,
         check=False,

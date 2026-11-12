@@ -10,6 +10,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -612,6 +614,57 @@ def test_blender_scene_render_executor_lists_fox3d_package() -> None:
     spec.loader.exec_module(mod)
     for entry in mod.fleet_executor_fox3d_requires("/data-fast/fox3d"):
         assert entry in requires, f"missing fleet requires entry: {entry}"
+
+
+def test_polyhaven_cache_imports_with_fleet_deploy_files_only(tmp_path: Path) -> None:
+    """Blender nodes ship only fleet ``requires`` fox3d modules — import must not pull the full app."""
+    deploy_names = (
+        "__init__.py",
+        "polyhaven_cache.py",
+        "durability.py",
+        "storelock.py",
+    )
+    src_root = tmp_path / "src"
+    pkg = src_root / "fox3d"
+    pkg.mkdir(parents=True)
+    repo_pkg = ROOT / "src" / "fox3d"
+    for name in deploy_names:
+        shutil.copy2(repo_pkg / name, pkg / name)
+    probe = (
+        "import sys\n"
+        f"sys.path.insert(0, {str(src_root)!r})\n"
+        "from fox3d.polyhaven_cache import polyhaven_read_session\n"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-I", "-S", "-c", probe],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, (completed.stderr or completed.stdout)
+
+
+def test_bootstrap_polyhaven_probe_uses_isolated_interpreter(tmp_path: Path) -> None:
+    bootstrap = ROOT / "scripts" / "fox3d_bootstrap.py"
+    spec = importlib.util.spec_from_file_location("fox3d_bootstrap_isolated", bootstrap)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    deploy_names = ("__init__.py", "polyhaven_cache.py", "durability.py", "storelock.py")
+    src_root = tmp_path / "src"
+    pkg = src_root / "fox3d"
+    pkg.mkdir(parents=True)
+    repo_pkg = ROOT / "src" / "fox3d"
+    for name in deploy_names:
+        shutil.copy2(repo_pkg / name, pkg / name)
+    monkey_bootstrap = tmp_path / "scripts"
+    monkey_bootstrap.mkdir()
+    shutil.copy2(bootstrap, monkey_bootstrap / "fox3d_bootstrap.py")
+    os.environ["FOX3D_SRC"] = str(src_root)
+    try:
+        mod.verify_fox3d_polyhaven_importable_subprocess(monkey_bootstrap / "fox3d_bootstrap.py")
+    finally:
+        os.environ.pop("FOX3D_SRC", None)
 
 
 def test_missing_fox3d_deploy_fails_before_blender(
