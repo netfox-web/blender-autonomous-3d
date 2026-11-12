@@ -71,6 +71,63 @@ def read_current_version(asset_root: Path) -> str | None:
     return line or None
 
 
+def _atomic_replace_file(target: Path, payload: bytes, *, namespace: str | None = None) -> None:
+    """Write payload via temp file + os.replace so readers never see partial content."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    token = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+    temporary = target.with_name(f".{target.name}.{token}.tmp")
+    owned = False
+    try:
+        with temporary.open("xb") as stream:
+            owned = True
+            stream.write(payload)
+            durability.flush_file(stream)
+        os.replace(temporary, target)
+        owned = False
+        if namespace is not None:
+            durability.namespace_committed(target, namespace)
+    except BaseException:
+        if owned and temporary.exists():
+            try:
+                durability.unlink_owned(temporary, missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def _atomic_write_coord_signal(path: Path, payload: dict[str, Any]) -> None:
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    _atomic_replace_file(path, data)
+
+
+def read_coord_json_signal(path: Path) -> dict[str, Any] | None:
+    """Return parsed coordination JSON, or None if missing / not yet valid."""
+    if not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not raw.strip():
+        return None
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def poll_coord_json_signal(path: Path, *, deadline: float | None = None, timeout: float = 30.0) -> dict[str, Any] | None:
+    """Poll until coordination JSON is present and parseable (retries transient partial reads)."""
+    end = deadline if deadline is not None else time.time() + timeout
+    while time.time() < end:
+        doc = read_coord_json_signal(path)
+        if doc is not None:
+            return doc
+        time.sleep(0.02)
+    return None
+
+
 def _atomic_write_current(asset_root: Path, version: str) -> None:
     asset_root.mkdir(parents=True, exist_ok=True)
     target = _current_path(asset_root)
@@ -83,24 +140,7 @@ def _atomic_write_current(asset_root: Path, version: str) -> None:
     if prev and prev != version:
         _previous_current[asset_root.name] = prev
 
-    token = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
-    temporary = target.with_name(f".{target.name}.{token}.tmp")
-    owned = False
-    try:
-        with temporary.open("xb") as stream:
-            owned = True
-            stream.write(payload)
-            durability.flush_file(stream)
-        os.replace(temporary, target)
-        owned = False
-        durability.namespace_committed(target, "polyhaven-current")
-    except BaseException:
-        if owned and temporary.exists():
-            try:
-                durability.unlink_owned(temporary, missing_ok=True)
-            except OSError:
-                pass
-        raise
+    _atomic_replace_file(target, payload, namespace="polyhaven-current")
 
     _maybe_gc_asset_versions(asset_root)
 
@@ -224,9 +264,9 @@ def _maybe_pause_after_current_read(asset_root: Path, version: str) -> None:
         return
     coord = Path(pause_dir)
     coord.mkdir(parents=True, exist_ok=True)
-    (coord / "read_current.json").write_text(
-        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
-        encoding="utf-8",
+    _atomic_write_coord_signal(
+        coord / "read_current.json",
+        {"asset": asset_root.name, "version": version},
     )
     resume = coord / "resume_reader"
     deadline = time.time() + 30.0
@@ -240,9 +280,9 @@ def _maybe_wait_retain_pin_test_release(asset_root: Path, version: str) -> None:
     if not pause_dir:
         return
     coord = Path(pause_dir)
-    (coord / "retain_pin.json").write_text(
-        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
-        encoding="utf-8",
+    _atomic_write_coord_signal(
+        coord / "retain_pin.json",
+        {"asset": asset_root.name, "version": version},
     )
     release = coord / "release_reader"
     deadline = time.time() + 30.0

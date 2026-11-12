@@ -23,6 +23,10 @@ def _gltf_doc(*uris: str) -> bytes:
     return body
 
 
+def _poll_coord_json(marker: Path, deadline: float) -> dict | None:
+    return polyhaven_cache.poll_coord_json_signal(marker, deadline=deadline)
+
+
 def _version_cross_process_retain_empty(version_dir: Path) -> bool:
     pin_dir = version_dir / ".fox3d-retain"
     if not pin_dir.is_dir():
@@ -412,14 +416,7 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
 
     pub = threading.Thread(target=publisher_switches, daemon=True, name="pre_retain_publisher")
     try:
-        deadline = time.time() + 8.0
-        paused_payload = None
-        while time.time() < deadline:
-            marker = pause_dir / "read_current.json"
-            if marker.is_file():
-                paused_payload = json.loads(marker.read_text(encoding="utf-8"))
-                break
-            time.sleep(0.02)
+        paused_payload = _poll_coord_json(pause_dir / "read_current.json", time.time() + 8.0)
         assert paused_payload == {"asset": aid, "version": v1}, "reader must pause before retain pin"
         assert proc.poll() is None, "child must still be blocked before retain pin exists"
 
@@ -438,14 +435,7 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
         assert not publisher_done.is_set(), "publisher must remain blocked before reader resumes"
 
         (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
-        retain_deadline = time.time() + 8.0
-        retain_payload = None
-        while time.time() < retain_deadline:
-            marker = pause_dir / "retain_pin.json"
-            if marker.is_file():
-                retain_payload = json.loads(marker.read_text(encoding="utf-8"))
-                break
-            time.sleep(0.02)
+        retain_payload = _poll_coord_json(pause_dir / "retain_pin.json", time.time() + 8.0)
         assert retain_payload == {"asset": aid, "version": v1}, "reader must create retain pin before publisher runs"
         assert proc.poll() is None, "reader must stay alive while cross-process retain pin is held"
         assert publisher_done.wait(timeout=8), "publisher must finish both switches while reader retain pin is held"
@@ -463,3 +453,49 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
             (pause_dir / "release_reader").write_text("go", encoding="utf-8")
             proc.wait(timeout=3)
         pub.join(timeout=2)
+
+
+def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path):
+    """Issue #209: signal files must not expose partial JSON while publishing."""
+    path = tmp_path / "read_current.json"
+    decode_errors: list[json.JSONDecodeError] = []
+    writer_done = threading.Event()
+
+    def writer() -> None:
+        for i in range(250):
+            polyhaven_cache._atomic_write_coord_signal(
+                path,
+                {"asset": "race", "version": f"{i:03d}"},
+            )
+        writer_done.set()
+
+    def aggressive_reader() -> None:
+        while not writer_done.is_set():
+            if path.is_file():
+                try:
+                    json.loads(path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    decode_errors.append(exc)
+            time.sleep(0.001)
+        if path.is_file():
+            try:
+                json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                decode_errors.append(exc)
+
+    wt = threading.Thread(target=writer, name="coord_signal_writer")
+    rt = threading.Thread(target=aggressive_reader, name="coord_signal_reader")
+    wt.start()
+    rt.start()
+    wt.join(timeout=10)
+    rt.join(timeout=10)
+    assert writer_done.is_set()
+    assert not decode_errors, decode_errors
+    final = polyhaven_cache.read_coord_json_signal(path)
+    assert final == {"asset": "race", "version": "249"}
+
+
+@pytest.mark.parametrize("run_index", range(3))
+def test_cross_process_race_before_retain_marker_repeated(tmp_path: Path, run_index: int):
+    """Stress cross-process coordination signals across repeated runs (issue #209)."""
+    test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path)
