@@ -1,6 +1,7 @@
 """Issue #96: immutable Poly Haven version dirs + pinned readers during scene assembly."""
 from __future__ import annotations
 
+import errno
 import json
 import os
 import subprocess
@@ -8,6 +9,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -455,19 +457,25 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
         pub.join(timeout=2)
 
 
-def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path):
+@pytest.mark.parametrize("run_index", range(3))
+def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path, run_index: int):
     """Issue #209: signal files must not expose partial JSON while publishing."""
     path = tmp_path / "read_current.json"
     decode_errors: list[json.JSONDecodeError] = []
     writer_done = threading.Event()
+    writer_errors: list[BaseException] = []
 
     def writer() -> None:
-        for i in range(250):
-            polyhaven_cache._atomic_write_coord_signal(
-                path,
-                {"asset": "race", "version": f"{i:03d}"},
-            )
-        writer_done.set()
+        try:
+            for i in range(250):
+                polyhaven_cache._atomic_write_coord_signal(
+                    path,
+                    {"asset": "race", "version": f"{i:03d}"},
+                )
+        except BaseException as exc:
+            writer_errors.append(exc)
+        finally:
+            writer_done.set()
 
     def aggressive_reader() -> None:
         while not writer_done.is_set():
@@ -484,15 +492,46 @@ def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path):
                 decode_errors.append(exc)
 
     wt = threading.Thread(target=writer, name="coord_signal_writer")
-    rt = threading.Thread(target=aggressive_reader, name="coord_signal_reader")
-    wt.start()
-    rt.start()
-    wt.join(timeout=10)
-    rt.join(timeout=10)
-    assert writer_done.is_set()
-    assert not decode_errors, decode_errors
-    final = polyhaven_cache.read_coord_json_signal(path)
-    assert final == {"asset": "race", "version": "249"}
+    rt = threading.Thread(target=aggressive_reader, name="coord_signal_reader", daemon=True)
+    try:
+        wt.start()
+        rt.start()
+        wt.join(timeout=10)
+        assert writer_done.is_set(), "writer must always signal completion (even after replace errors)"
+        assert not writer_errors, writer_errors
+        rt.join(timeout=2)
+        assert not decode_errors, decode_errors
+        final = polyhaven_cache.read_coord_json_signal(path)
+        assert final == {"asset": "race", "version": "249"}
+    finally:
+        writer_done.set()
+        wt.join(timeout=1)
+        rt.join(timeout=1)
+
+
+def test_coord_signal_atomic_replace_retries_transient_windows_contention(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Bounded Windows sharing retries must not leave coordination signal partial."""
+    path = tmp_path / "read_current.json"
+    payload = b'{"asset":"race","version":"001"}'
+    monkeypatch.setattr(polyhaven_cache, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(polyhaven_cache, "_delete_sharing_error", lambda p: 32)
+    real_replace = os.replace
+    calls: list[tuple[str, str]] = []
+
+    def flaky_replace(src, dst) -> None:
+        calls.append((str(src), str(dst)))
+        if len(calls) == 1:
+            err = PermissionError(errno.EACCES, "sharing violation")
+            err.winerror = 32
+            raise err
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", flaky_replace)
+    polyhaven_cache._atomic_replace_file(path, payload)
+    assert polyhaven_cache.read_coord_json_signal(path) == {"asset": "race", "version": "001"}
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("run_index", range(3))

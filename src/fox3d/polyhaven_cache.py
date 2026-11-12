@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -16,6 +17,43 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from fox3d import durability
+
+_ATOMIC_REPLACE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2, 0.2, 0.2, 0.2)
+
+
+def _delete_sharing_error(path: Path) -> int:
+    """Probe DELETE sharing without deleting or changing the destination."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path.resolve()), 0x10000, 0x1 | 0x2 | 0x4, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        return ctypes.get_last_error()
+    if not kernel.CloseHandle(handle):
+        raise ctypes.WinError(ctypes.get_last_error())
+    return 0
+
+
+def _windows_replace_contention(error: OSError, path: Path) -> bool:
+    if sys.platform != "win32":
+        return False
+    code = getattr(error, "winerror", None)
+    if code in (32, 33):  # ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION
+        return True
+    return code == 5 and _delete_sharing_error(path) in (32, 33)
 
 _POLYHAVEN_REF_RE = re.compile(
     r"^models/polyhaven/(?P<aid>[A-Za-z0-9_-]{1,64})/(?P<rel>.+\.(?:gltf|glb))$",
@@ -82,7 +120,14 @@ def _atomic_replace_file(target: Path, payload: bytes, *, namespace: str | None 
             owned = True
             stream.write(payload)
             durability.flush_file(stream)
-        os.replace(temporary, target)
+        for attempt in range(len(_ATOMIC_REPLACE_RETRY_DELAYS) + 1):
+            try:
+                os.replace(temporary, target)
+                break
+            except OSError as error:
+                if attempt == len(_ATOMIC_REPLACE_RETRY_DELAYS) or not _windows_replace_contention(error, target):
+                    raise
+                time.sleep(_ATOMIC_REPLACE_RETRY_DELAYS[attempt])
         owned = False
         if namespace is not None:
             durability.namespace_committed(target, namespace)
