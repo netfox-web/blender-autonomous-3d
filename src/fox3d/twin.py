@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from fox3d.ids import new_id, stable_hash
-from fox3d.infra import DAM, validate_tenant_id
+from fox3d.infra import DAM, safe_path_component, validate_tenant_id
 from fox3d.pngutil import write_glb_stub
 
 
@@ -56,7 +56,7 @@ class TwinStore:
             obj = self.dam.put(
                 tenant_id=twin.tenantId,
                 kind="digital_twin",
-                name=f"{twin.sku}.glb",
+                name=f"{safe_path_component(twin.sku)}.glb",
                 data=glb_bytes,
                 metadata={"sku": twin.sku, "twinId": twin.twinId},
                 asset_id=twin.twinId,

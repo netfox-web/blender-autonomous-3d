@@ -112,7 +112,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         plat = get_platform()
         try:
             if x_tenant_id:
-                obj = plat.dam.get(asset_id, tenant_id=x_tenant_id)
+                obj = plat.dam.get(asset_id, tenant_id=tenant(x_tenant_id))
             else:
                 obj = plat.dam.get_unchecked(asset_id)
         except (KeyError, PermissionError) as exc:

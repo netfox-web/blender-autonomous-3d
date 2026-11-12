@@ -59,6 +59,41 @@ def test_symlink_escape_rejected(tmp_path: Path) -> None:
     assert not list(outside.iterdir())
 
 
+@pytest.mark.parametrize("sku", ["ABC/123", "A\\B", "a/b/c"])
+def test_twin_store_accepts_sku_with_path_separators(tmp_path: Path, sku: str) -> None:
+    dam = DAM(tmp_path / "dam")
+    store = TwinStore(dam)
+    twin = store.create(ProductDigitalTwin(tenantId="t1", sku=sku), glb_bytes=b"glb")
+    assert twin.sku == sku
+    obj = dam.get(twin.damAssetId or twin.twinId, tenant_id="t1")
+    assert obj.metadata["sku"] == sku
+    assert "/" not in Path(obj.path).name.replace("\\", "/")
+
+
+def test_api_create_twin_and_upload_accept_sku_with_slashes(tmp_path: Path) -> None:
+    platform = Platform(root=tmp_path / "data", mock_blender=True)
+    client = TestClient(create_app(platform), raise_server_exceptions=False)
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    created = client.post("/api/digital-twins", json={"sku": "ABC/123"}, headers=headers)
+    assert created.status_code == 200, created.text
+    assert created.json()["sku"] == "ABC/123"
+    uploaded = client.post(
+        "/api/digital-twins/upload",
+        headers=headers,
+        data={"sku": "DEF/456"},
+        files={"file": ("a.glb", b"glb")},
+    )
+    assert uploaded.status_code == 200, uploaded.text
+    assert uploaded.json()["twin"]["sku"] == "DEF/456"
+
+
+def test_api_read_asset_rejects_invalid_tenant_header(tmp_path: Path) -> None:
+    platform = Platform(root=tmp_path / "data", mock_blender=True)
+    client = TestClient(create_app(platform), raise_server_exceptions=False)
+    response = client.get("/api/assets/missing", headers={"X-Tenant-Id": "../x"})
+    assert response.status_code == 400
+
+
 def test_api_rejects_escape_and_accepts_upload(tmp_path: Path) -> None:
     platform = Platform(root=tmp_path / "data", mock_blender=True)
     client = TestClient(create_app(platform))

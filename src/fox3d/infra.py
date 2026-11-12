@@ -7,6 +7,7 @@ scheduler — it *calls* these ports.
 
 from __future__ import annotations
 
+import base64
 import threading
 import time
 import unicodedata
@@ -296,6 +297,18 @@ def _validate_path_component(value: str) -> None:
         c in "/\\" or unicodedata.category(c) == "Cc" for c in value
     ):
         raise ValueError("invalid path component")
+
+
+def safe_path_component(value: str) -> str:
+    """Encode arbitrary user text as one filesystem path component."""
+    try:
+        _validate_path_component(value)
+        return value
+    except ValueError:
+        encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+        stem = f"enc~{encoded}"
+        _validate_path_component(stem)
+        return stem
 
 
 def validate_tenant_id(tenant_id: str) -> str:
