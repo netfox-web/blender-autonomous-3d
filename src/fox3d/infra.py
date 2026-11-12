@@ -7,6 +7,7 @@ scheduler — it *calls* these ports.
 
 from __future__ import annotations
 
+import builtins
 import base64
 import threading
 import time
@@ -623,10 +624,10 @@ class JobQueue:
             job["completedAt"] = utcnow().isoformat()
         return job
 
-    def recover_stale_leases(self, *, max_age_seconds: float = 30.0) -> list[str]:
+    def recover_stale_leases(self, *, max_age_seconds: float = 30.0) -> builtins.list[str]:
         """Failed-job / worker-offline recovery: expired lease returns to queued."""
         now = utcnow()
-        recovered: list[str] = []
+        recovered: builtins.list[str] = []
         for job in self._jobs.values():
             if job["status"] not in {"leased", "reserved", "dispatched", "running", "rendering"}:
                 continue

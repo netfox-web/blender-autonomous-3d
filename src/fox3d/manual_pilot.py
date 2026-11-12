@@ -443,7 +443,7 @@ def run_manual_factory_scenario(
             "semantic_key": f"{b}::seed-tx",
         }
     )
-    live_event_ids = {e.get("eventId") for e in plat.pilot.journal.list(a) if e.get("eventId")}
+    live_event_ids = {str(e["eventId"]) for e in plat.pilot.journal.list(a) if e.get("eventId")}
 
     backup_dir = Path(backup_dir or (plat.root.parent / "backup-export"))
     restore_root = Path(restore_root or (plat.root.parent / "restore-root"))

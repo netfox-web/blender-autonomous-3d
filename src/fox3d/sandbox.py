@@ -65,11 +65,14 @@ def job_policy_manifest(job: dict[str, Any], *, work_dir: str) -> dict[str, Any]
 
 class SandboxRegistry:
     def __init__(self) -> None:
-        self.backends = {
+        self.backends: dict[str, SandboxBackend] = {
             "PATH_GUARD_ONLY": PathGuardBackend(),
             "CONTAINER": ContainerBackend(),
             "JOB_OBJECT": ContainerBackend(),
         }
 
     def get(self, name: str = "PATH_GUARD_ONLY") -> SandboxBackend:
-        return self.backends.get(name) or self.backends["PATH_GUARD_ONLY"]
+        backend = self.backends.get(name)
+        if backend is None:
+            return self.backends["PATH_GUARD_ONLY"]
+        return backend

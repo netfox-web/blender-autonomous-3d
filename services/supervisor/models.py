@@ -239,6 +239,15 @@ class ReviewContext(BaseModel):
 
 
 
+def _default_truth_matrix() -> Dict[str, List[str]]:
+    return {
+        "REAL": [],
+        "MOCK": [],
+        "PARTIAL": [],
+        "BLOCKED": [],
+    }
+
+
 class SupervisorReviewOutput(BaseModel):
     decision: ReviewDecision
     reviewed_code_sha: str
@@ -247,14 +256,7 @@ class SupervisorReviewOutput(BaseModel):
     reviewed_evidence_generation_id: str
     accepted_claims: List[str] = Field(default_factory=list)
     rejected_claims: List[str] = Field(default_factory=list)
-    truth_matrix: Dict[str, List[str]] = Field(
-        default_factory=lambda: {
-            "REAL": [],
-            "MOCK": [],
-            "PARTIAL": [],
-            "BLOCKED": [],
-        }
-    )
+    truth_matrix: Dict[str, List[str]] = Field(default_factory=_default_truth_matrix)
     blockers: List[str] = Field(default_factory=list)
     next_instruction_markdown: str
     issue_comment_markdown: str
