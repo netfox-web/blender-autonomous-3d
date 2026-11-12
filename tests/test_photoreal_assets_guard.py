@@ -1587,7 +1587,10 @@ def test_worker_legacy_flat_catalog_lock_blocks_migration_cleanup(tmp_path: Path
         deadline = time.time() + 30.0
         while not verify.is_file() and time.time() < deadline:
             time.sleep(0.02)
-        assert ref.is_file()
+        import json as _json
+        gltf_doc = _json.loads(ref.read_bytes().decode("utf-8"))
+        assert gltf_doc.get("asset", {{}}).get("version") == "2.0"
+        assert any(img.get("uri") == "textures/albedo.png" for img in gltf_doc.get("images", []))
         assert (ref.parent / "textures" / "albedo.png").read_bytes() == b"KEEP_FLAT_LOCK"
         while not Path({json.dumps(str(tmp_path / "flat_release"))}).exists():
             time.sleep(0.02)
@@ -1632,9 +1635,49 @@ def test_worker_legacy_flat_catalog_lock_blocks_migration_cleanup(tmp_path: Path
         proc.wait(timeout=10)
 
 
-def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Cross-process worker pin must block workbench _maybe_gc_asset_versions (issue #229)."""
+def test_workbench_current_survives_catalog_reclaim(tmp_path: Path):
+    """Reclaim must keep workbench ``current`` and the version it points at (issue #232)."""
     from fox3d import polyhaven_cache
+    from fox3d.polyhaven_paths import catalog_lock
+
+    aid = "guard_current_reclaim"
+    gltf_name = f"{aid}_2k.gltf"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    keep = "d" * 64
+    retire = "e" * 64
+    for version, marker in ((keep, b"KEEP_ME"), (retire, b"DROP_ME")):
+        bundle = polyhaven_cache.version_directory(asset_root, version)
+        bundle.mkdir(parents=True, exist_ok=True)
+        (bundle / gltf_name).write_bytes(gltf_body)
+        (bundle / "textures").mkdir(parents=True, exist_ok=True)
+        (bundle / "textures" / "albedo.png").write_bytes(marker)
+        (bundle / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text(
+            '["textures/albedo.png"]',
+            encoding="utf-8",
+        )
+    polyhaven_cache._atomic_write_current(asset_root, keep)
+    polyhaven_cache._previous_current.pop(aid, None)
+
+    with catalog_lock(asset_root):
+        photoreal_assets._polyhaven_reclaim_slot_unlocked(asset_root)
+
+    assert polyhaven_cache.read_current_version(asset_root) == keep
+    keep_bundle = polyhaven_cache.version_directory(asset_root, keep)
+    retire_bundle = polyhaven_cache.version_directory(asset_root, retire)
+    assert keep_bundle.is_dir()
+    assert (keep_bundle / "textures" / "albedo.png").read_bytes() == b"KEEP_ME"
+    assert not retire_bundle.exists()
+    gltf_doc = json.loads((keep_bundle / gltf_name).read_bytes().decode("utf-8"))
+    assert gltf_doc.get("asset", {}).get("version") == "2.0"
+
+
+def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Cross-process worker pin must block workbench GC when catalog/current no longer reference A."""
+    from fox3d import polyhaven_cache
+    from fox3d.polyhaven_paths import catalog_lock
+    from fox3d.recipe_3d import atomic_json
 
     aid = "guard_workbench_gc_worker_pin"
     gltf_body = _gltf_body_with_uris("textures/albedo.png")
@@ -1647,9 +1690,14 @@ def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: p
     photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
     catalog_v1 = json.loads((asset_root / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))["versionId"]
     v1_bundle = asset_root / POLYHAVEN_VERSIONS_DIR / catalog_v1
+    gltf_expected = json.dumps(
+        json.loads(gltf_body.decode("utf-8").strip()),
+        separators=(",", ":"),
+    )
 
     hold_script = textwrap.dedent(
         f"""
+        import json
         import os
         import sys
         import time
@@ -1665,10 +1713,23 @@ def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: p
         ref = bj.resolve_asset_ref("assets://models/polyhaven/{aid}/{aid}_2k.gltf")
         assert ref is not None and ref.parent.name == {json.dumps(catalog_v1)}
         Path({json.dumps(str(tmp_path / "wb_gc_pinned"))}).write_text("1", encoding="utf-8")
+        verify = Path({json.dumps(str(tmp_path / "wb_gc_verify"))})
+        deadline = time.time() + 30.0
+        while not verify.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert ref.is_file()
+        assert json.dumps(json.loads(ref.read_bytes().decode("utf-8").strip()), separators=(",", ":")) == {json.dumps(gltf_expected)}
+        assert (ref.parent / "textures" / "albedo.png").read_bytes() == b"V1"
         while not Path({json.dumps(str(tmp_path / "wb_gc_release"))}).exists():
             time.sleep(0.02)
         from worker_polyhaven import load_polyhaven_paths
         load_polyhaven_paths().release_all_polyhaven_worker_pins()
+        Path({json.dumps(str(tmp_path / "wb_gc_unpinned"))}).write_text("1", encoding="utf-8")
+        gone = Path({json.dumps(str(tmp_path / "wb_gc_gone"))})
+        deadline = time.time() + 30.0
+        while not gone.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert not ref.is_file(), "pinned version must be reclaimed after pin release"
         """
     )
     env = os.environ.copy()
@@ -1695,11 +1756,32 @@ def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: p
                 '["textures/albedo.png"]',
                 encoding="utf-8",
             )
-            polyhaven_cache._atomic_write_current(asset_root, ver)
-        assert v1_bundle.is_dir(), "workbench GC must retain worker-pinned version"
-        assert (v1_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
-    finally:
+        polyhaven_cache._atomic_write_current(asset_root, v3)
+        polyhaven_cache._previous_current.pop(aid, None)
+        with catalog_lock(asset_root):
+            atomic_json(asset_root / POLYHAVEN_CATALOG_NAME, {"versionId": v3, "gltfName": gltf_name})
+            photoreal_assets._polyhaven_reclaim_slot_unlocked(asset_root)
+        assert json.loads((asset_root / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))["versionId"] == v3
+        assert polyhaven_cache.read_current_version(asset_root) == v3
+        (tmp_path / "wb_gc_verify").write_text("1", encoding="utf-8")
+        assert proc.poll() is None, "worker must still be pinned while parent waits for post-reclaim read"
+        assert v1_bundle.is_dir(), "only worker pin may retain catalog-unreferenced version"
         (tmp_path / "wb_gc_release").write_text("1", encoding="utf-8")
+        for _ in range(250):
+            if (tmp_path / "wb_gc_unpinned").is_file():
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("worker did not release pin")
+        polyhaven_cache._maybe_gc_asset_versions(asset_root)
+        assert not v1_bundle.exists(), "retired version must be reclaimed after pin release"
+        (tmp_path / "wb_gc_gone").write_text("1", encoding="utf-8")
+        assert proc.wait(timeout=15) == 0
+    finally:
+        (tmp_path / "wb_gc_verify").write_text("1", encoding="utf-8")
+        (tmp_path / "wb_gc_release").write_text("1", encoding="utf-8")
+        (tmp_path / "wb_gc_unpinned").write_text("1", encoding="utf-8")
+        (tmp_path / "wb_gc_gone").write_text("1", encoding="utf-8")
         proc.wait(timeout=10)
 
 

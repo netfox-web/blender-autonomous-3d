@@ -655,6 +655,7 @@ def _polyhaven_clear_slot_bundle_artifacts(slot: Path) -> None:
         POLYHAVEN_VERSIONS_DIR,
         _POLYHAVEN_PINS_DIR,
         polyhaven_cache._RETAIN_DIRNAME,
+        polyhaven_cache._CURRENT_FILENAME,
     }
     for child in list(slot.iterdir()):
         if child.name in skip_dirs:
@@ -673,11 +674,9 @@ def _polyhaven_prune_retired_versions(slot: Path, *, keep_versions: set[str]) ->
 
 def _polyhaven_reclaim_slot_unlocked(slot: Path, *, keep_versions: set[str] | None = None) -> None:
     """Reclaim retired versions and legacy flat artifacts (caller must hold :func:`catalog_lock`)."""
-    if keep_versions is None:
-        catalog = read_polyhaven_catalog(slot)
-        keep_versions = set()
-        if catalog and isinstance(catalog.get("versionId"), str):
-            keep_versions.add(catalog["versionId"])
+    keep_versions = polyhaven_cache.polyhaven_versions_protected_from_reclaim(
+        slot, extra_keep=keep_versions
+    )
     _polyhaven_clear_slot_bundle_artifacts(slot)
     _polyhaven_prune_retired_versions(slot, keep_versions=keep_versions)
 
