@@ -20,9 +20,17 @@ class StaleGeneration(PermissionError):
 
 
 class FileLock:
-    def __init__(self, path: Path, timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        path: Path,
+        timeout: float = 30.0,
+        *,
+        blocked_marker: Path | None = None,
+    ) -> None:
         self.path = Path(path)
         self.timeout = timeout
+        self._blocked_marker = blocked_marker
+        self._blocked_marked = False
         self._fh: IO[bytes] | None = None
         self._acquired = False
 
@@ -48,6 +56,16 @@ class FileLock:
                 self._acquired = True
                 return
             except OSError:
+                if (
+                    not self._blocked_marked
+                    and self._blocked_marker is not None
+                ):
+                    try:
+                        self._blocked_marker.parent.mkdir(parents=True, exist_ok=True)
+                        self._blocked_marker.write_text("waiting", encoding="utf-8")
+                    except OSError:
+                        pass
+                    self._blocked_marked = True
                 if time.time() >= deadline:
                     raise TimeoutError(f"lock timeout: {self.path}")
                 time.sleep(0.02)
