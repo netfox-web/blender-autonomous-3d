@@ -337,9 +337,13 @@ def test_generate_without_tenant_uses_demo_and_loads_result(legacy_admin_browser
         page.route("**/api/parametric/products", lambda route: route.fulfill(json={
             "render": {"job": {"outputAsset": asset_id}}
         }))
+        def on_dialog(dialog) -> None:  # noqa: ANN001
+            errors.append(dialog.message)
+            dialog.dismiss()
+
         page.on("request", lambda req: requests.append((req.url, req.headers.get("x-tenant-id", ""))))
         page.on("pageerror", lambda error: errors.append(str(error)))
-        page.on("dialog", lambda dialog: (errors.append(dialog.message), dialog.dismiss()))
+        page.on("dialog", on_dialog)
         page.goto(f"{base}/admin", wait_until="networkidle")
         requests.clear()
         page.locator("#gen-btn").click()
