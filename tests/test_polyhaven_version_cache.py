@@ -407,6 +407,7 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
     repo_src = Path(__file__).resolve().parents[1] / "src"
     ph_root = tmp_path / "assets" / "models" / "polyhaven"
     pause_dir = tmp_path / "pause_coord"
+    pause_dir.mkdir(parents=True, exist_ok=True)
     hold_script = tmp_path / "race_before_retain.py"
     hold_script.write_text(
         "\n".join(
@@ -452,12 +453,23 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
         assert v1_bundle.is_dir(), "v1 must survive switches before cross-process retain pin"
         assert (v1_bundle / f"{aid}_2k.gltf").is_file(), "reader's pinned glTF must not be GC'd yet"
         (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
-        assert proc.wait(timeout=8) == 0
+        retain_deadline = time.time() + 8.0
+        retain_payload = None
+        while time.time() < retain_deadline:
+            marker = pause_dir / "retain_pin.json"
+            if marker.is_file():
+                retain_payload = json.loads(marker.read_text(encoding="utf-8"))
+                break
+            time.sleep(0.02)
+        assert retain_payload == {"asset": aid, "version": v1}, "reader must create retain pin after resume"
         assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_KEEP"
+        (pause_dir / "release_reader").write_text("go", encoding="utf-8")
+        assert proc.wait(timeout=8) == 0
     finally:
         if proc.poll() is None:
             proc.kill()
             (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
+            (pause_dir / "release_reader").write_text("go", encoding="utf-8")
             proc.wait(timeout=3)
 
 

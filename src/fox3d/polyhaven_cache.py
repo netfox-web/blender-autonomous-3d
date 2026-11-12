@@ -34,6 +34,7 @@ publish_pause_after_switch: threading.Event | None = None
 read_pause_after_current_before_retain: threading.Event | None = None
 
 _PAUSE_AFTER_CURRENT_ENV = "FOX3D_POLYHAVEN_PAUSE_AFTER_CURRENT_DIR"
+_PUBLISH_LOCK_WAIT_DIR_ENV = "FOX3D_POLYHAVEN_PUBLISH_LOCK_WAIT_DIR"
 _ASSET_COORD_LOCK = ".polyhaven.coord.lock"
 
 _retained_lock = threading.Lock()
@@ -239,6 +240,22 @@ def _maybe_pause_after_current_read(asset_root: Path, version: str) -> None:
         time.sleep(0.02)
 
 
+def _maybe_wait_retain_pin_test_release(asset_root: Path, version: str) -> None:
+    """Test hook: after cross-process retain pin, wait for parent to release the reader."""
+    pause_dir = os.environ.get(_PAUSE_AFTER_CURRENT_ENV, "").strip()
+    if not pause_dir:
+        return
+    coord = Path(pause_dir)
+    (coord / "retain_pin.json").write_text(
+        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    release = coord / "release_reader"
+    deadline = time.time() + 30.0
+    while not release.is_file() and time.time() < deadline:
+        time.sleep(0.02)
+
+
 def _version_dir_has_retain_pins(version_dir: Path) -> bool:
     pin_dir = version_dir / _RETAIN_DIRNAME
     if not pin_dir.is_dir():
@@ -281,7 +298,11 @@ def _asset_versions_coordination(
     from fox3d.storelock import FileLock
 
     lock_path = asset_root / _ASSET_COORD_LOCK
-    with FileLock(lock_path, timeout=timeout):
+    wait_dir = os.environ.get(_PUBLISH_LOCK_WAIT_DIR_ENV, "").strip()
+    blocked_marker = None
+    if wait_dir:
+        blocked_marker = Path(wait_dir) / "publisher_blocked_on_lock.json"
+    with FileLock(lock_path, timeout=timeout, blocked_marker=blocked_marker):
         yield
 
 
@@ -430,6 +451,7 @@ class PolyhavenReadSession:
         if asset_id in self._pins:
             return self._pins[asset_id]
         asset_root = polyhaven_asset_root(self._root, asset_id)
+        pinned: str | None = None
         with _asset_versions_coordination(asset_root):
             version = read_current_version(asset_root)
             if version:
@@ -441,16 +463,20 @@ class PolyhavenReadSession:
                 if asset_id not in self._retain_files:
                     self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
                 self._pins[asset_id] = version
-                return version
-            if not _legacy_flat_bundle_present(asset_root):
+                pinned = version
+            elif not _legacy_flat_bundle_present(asset_root):
                 return None
-            _retain_version(asset_id, _LEGACY_FLAT_VERSION)
-            if asset_id not in self._retain_files:
-                from fox3d.polyhaven_paths import acquire_polyhaven_reader_pin
+            else:
+                _retain_version(asset_id, _LEGACY_FLAT_VERSION)
+                if asset_id not in self._retain_files:
+                    from fox3d.polyhaven_paths import acquire_polyhaven_reader_pin
 
-                self._retain_files[asset_id] = acquire_polyhaven_reader_pin(asset_root, None)
-            self._pins[asset_id] = _LEGACY_FLAT_VERSION
-        return _LEGACY_FLAT_VERSION
+                    self._retain_files[asset_id] = acquire_polyhaven_reader_pin(asset_root, None)
+                self._pins[asset_id] = _LEGACY_FLAT_VERSION
+                pinned = _LEGACY_FLAT_VERSION
+        if pinned is not None and pinned != _LEGACY_FLAT_VERSION:
+            _maybe_wait_retain_pin_test_release(asset_root, pinned)
+        return pinned
 
     def resolve_ref_suffix(self, ref_suffix: str) -> Path | None:
         parsed = parse_polyhaven_asset_ref(ref_suffix)

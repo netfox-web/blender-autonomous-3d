@@ -46,10 +46,12 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
         link = None
     paths = ['/etc/passwd', r'C:\Windows\secret.glb', str(upload / '../../escape.glb'),
              str(store._tenant_dir('bob') / 'glb-props/model.glb'),
-             'assets://models/polyhaven/../../../secret.glb',
-             r'assets://models/polyhaven/..\..\..\secret.glb', str(upload / 'bad.txt'),
+             'ecommerce-scene-studio/../../outside.glb',
              'ecommerce-scene-studio/../outside.glb',
-             (store._tenant_dir('bob') / 'glb-props/model.glb').relative_to(tmp_path).as_posix()]
+             str((store._tenant_dir('bob') / 'glb-props/model.glb').relative_to(tmp_path)),
+             (store._tenant_dir('bob') / 'glb-props/model.glb').relative_to(tmp_path).as_posix(),
+             'assets://models/polyhaven/../../../secret.glb',
+             r'assets://models/polyhaven/..\..\..\secret.glb', str(upload / 'bad.txt')]
     if link:
         paths.append(str(link))
     for path in paths:
@@ -60,7 +62,7 @@ def test_rejects_unsafe_paths_and_falls_back(store, tmp_path):
 
 
 def test_native_upload_path_and_traversal(store, glb_bytes):
-    uploaded = Path(store.platform.root) / store.upload_glb_prop('alice', 'chair.glb', glb_bytes)['glbPath']
+    uploaded = (Path(store.platform.root) / store.upload_glb_prop('alice', 'chair.glb', glb_bytes)['glbPath']).resolve()
     guarded, warnings = store.guard_scene_paths('alice', scene(str(uploaded)))
     assert guarded['props'][0]['glbPath'] == str(uploaded)
     assert not warnings
