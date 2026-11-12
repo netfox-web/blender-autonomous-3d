@@ -9,6 +9,7 @@ import subprocess
 import sys
 import textwrap
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.error import HTTPError
@@ -967,6 +968,9 @@ _EXECUTOR_JSON = ROOT / "docs" / "fleet" / "blender_scene_render.executor.json"
 _POLYHAVEN_PUBLIC_NAMES = (
     "POLYHAVEN_CATALOG_NAME",
     "POLYHAVEN_VERSIONS_DIR",
+    "POLYHAVEN_CATALOG_LOCK_NAME",
+    "catalog_lock",
+    "catalog_lock_path",
     "read_polyhaven_catalog",
     "resolve_polyhaven_bundle_paths",
     "resolve_polyhaven_asset_ref_path",
@@ -1426,3 +1430,209 @@ def test_redownload_reuses_intact_version_and_fixes_catalog(tmp_path: Path, monk
     catalog = json.loads((model_dir / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))
     assert catalog["versionId"] == good_id
     assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+
+def test_worker_catalog_lock_blocks_publish_until_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Worker resolve+pin under catalog lock blocks publish/reclaim until pin exists (issue #223)."""
+    import importlib.util
+
+    from fox3d.polyhaven_paths import _CATALOG_LOCK_PAUSE_ENV
+
+    aid = "guard_catalog_lock_race"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V1"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    first_bundle = _bundle_root(model_root, aid)
+    version_a = json.loads((model_dir / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))["versionId"]
+    pause_dir = tmp_path / "catalog_pause"
+    pause_dir.mkdir()
+
+    pin_script = textwrap.dedent(
+        f"""
+        import json
+        import os
+        import sys
+        import time
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
+        os.chdir({json.dumps(str(ROOT / "scripts"))})
+        os.environ[{json.dumps(_CATALOG_LOCK_PAUSE_ENV)}] = {json.dumps(str(pause_dir))}
+        import polyhaven_paths as ph
+        assets = Path({json.dumps(str(tmp_path / "assets"))})
+        _root, ref, _pin = ph.pin_polyhaven_bundle_paths(assets / "models/polyhaven/{aid}", assets / "models/polyhaven/{aid}/{aid}_2k.gltf")
+        assert ref.is_file()
+        assert (ref.parent / "textures/albedo.png").read_bytes() == b"V1"
+        Path({json.dumps(str(tmp_path / "worker_done"))}).write_text("1", encoding="utf-8")
+        while not Path({json.dumps(str(tmp_path / "worker_release"))}).exists():
+            time.sleep(0.02)
+        ph.release_all_polyhaven_worker_pins()
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.Popen([sys.executable, "-I", "-c", pin_script], env=env)
+    try:
+        deadline = time.time() + 8.0
+        while time.time() < deadline:
+            marker = pause_dir / "resolved.json"
+            if marker.is_file():
+                resolved = json.loads(marker.read_text(encoding="utf-8"))
+                assert resolved["versionId"] == version_a
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("worker did not reach pre-pin pause")
+        from fox3d.polyhaven_paths import listed_polyhaven_reader_pins
+
+        assert version_a not in listed_polyhaven_reader_pins(model_dir)
+        published = threading.Event()
+
+        def publish_bc():
+            from unittest.mock import patch
+
+            with patch.object(
+                photoreal_assets.urllib.request,
+                "urlopen",
+                _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V2"}),
+            ):
+                (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+                photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+            with patch.object(
+                photoreal_assets.urllib.request,
+                "urlopen",
+                _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V3"}),
+            ):
+                (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+                photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+            published.set()
+
+        publisher = threading.Thread(target=publish_bc, daemon=True)
+        publisher.start()
+        time.sleep(0.2)
+        assert not published.is_set(), "publish must wait on worker catalog lock"
+        assert first_bundle.is_dir()
+        (pause_dir / "resume_pin").write_text("go", encoding="utf-8")
+        for _ in range(200):
+            if version_a in listed_polyhaven_reader_pins(model_dir):
+                break
+            time.sleep(0.02)
+        assert version_a in listed_polyhaven_reader_pins(model_dir)
+        assert published.wait(timeout=10.0)
+        publisher.join(timeout=5.0)
+        assert first_bundle.is_dir()
+        assert (first_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
+    finally:
+        (tmp_path / "worker_release").write_text("1", encoding="utf-8")
+        proc.wait(timeout=10)
+
+
+def test_worker_legacy_flat_catalog_lock_blocks_migration_cleanup(tmp_path: Path):
+    """Legacy flat resolve+pin under catalog lock keeps files during migration cleanup."""
+    from fox3d.polyhaven_paths import _CATALOG_LOCK_PAUSE_ENV
+
+    aid = "guard_flat_catalog_lock"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    gltf = asset_root / f"{aid}_2k.gltf"
+    gltf.write_bytes(_gltf_body_with_uris("textures/albedo.png"))
+    (asset_root / "textures").mkdir()
+    (asset_root / "textures/albedo.png").write_bytes(b"KEEP_FLAT_LOCK")
+    (asset_root / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text(
+        '["textures/albedo.png"]',
+        encoding="utf-8",
+    )
+    pause_dir = tmp_path / "flat_pause"
+    pause_dir.mkdir()
+
+    hold_script = textwrap.dedent(
+        f"""
+        import os
+        import sys
+        import time
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
+        os.chdir({json.dumps(str(ROOT / "scripts"))})
+        os.environ[{json.dumps(_CATALOG_LOCK_PAUSE_ENV)}] = {json.dumps(str(pause_dir))}
+        import polyhaven_paths as ph
+        slot = Path({json.dumps(str(asset_root))})
+        _root, ref, _pin = ph.pin_polyhaven_bundle_paths(slot, slot / "{aid}_2k.gltf")
+        assert ref.is_file()
+        assert (slot / "textures/albedo.png").read_bytes() == b"KEEP_FLAT_LOCK"
+        Path({json.dumps(str(tmp_path / "flat_ready"))}).write_text("1", encoding="utf-8")
+        while not Path({json.dumps(str(tmp_path / "flat_release"))}).exists():
+            time.sleep(0.02)
+        ph.release_all_polyhaven_worker_pins()
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.Popen([sys.executable, "-I", "-c", hold_script], env=env)
+    try:
+        deadline = time.time() + 8.0
+        while not (pause_dir / "resolved.json").is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert (pause_dir / "resolved.json").is_file()
+        assert gltf.is_file()
+        migrated = threading.Event()
+
+        def migrate():
+            assert photoreal_assets._polyhaven_adopt_legacy_cache(asset_root, gltf)
+            migrated.set()
+
+        migrator = threading.Thread(target=migrate, daemon=True)
+        migrator.start()
+        time.sleep(0.2)
+        assert not migrated.is_set(), "migration cleanup must wait on catalog lock"
+        assert gltf.is_file()
+        assert (asset_root / "textures/albedo.png").read_bytes() == b"KEEP_FLAT_LOCK"
+        (pause_dir / "resume_pin").write_text("go", encoding="utf-8")
+        ready_deadline = time.time() + 8.0
+        while not (tmp_path / "flat_ready").is_file() and time.time() < ready_deadline:
+            time.sleep(0.02)
+        assert migrated.wait(timeout=10.0)
+        migrator.join(timeout=5.0)
+        assert gltf.is_file()
+    finally:
+        (tmp_path / "flat_release").write_text("1", encoding="utf-8")
+        proc.wait(timeout=10)
+
+
+def test_catalog_lock_timeout_cross_process(tmp_path: Path):
+    """Second process gets CatalogLockTimeout when the lock is held past the deadline."""
+    from fox3d.polyhaven_paths import CatalogLockTimeout, catalog_lock
+
+    slot = tmp_path / "slot"
+    slot.mkdir()
+    hold_script = textwrap.dedent(
+        f"""
+        import os
+        import sys
+        import time
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(ROOT / "src"))})
+        from fox3d.polyhaven_paths import catalog_lock
+        slot = Path({json.dumps(str(slot))})
+        with catalog_lock(slot, timeout=30.0):
+            Path({json.dumps(str(tmp_path / "lock_held"))}).write_text("1", encoding="utf-8")
+            while not Path({json.dumps(str(tmp_path / "lock_release"))}).exists():
+                time.sleep(0.02)
+        """
+    )
+    proc = subprocess.Popen([sys.executable, "-I", "-c", hold_script], env={**os.environ, "PYTHONPATH": ""})
+    try:
+        for _ in range(200):
+            if (tmp_path / "lock_held").is_file():
+                break
+            time.sleep(0.02)
+        with pytest.raises(CatalogLockTimeout):
+            with catalog_lock(slot, timeout=0.25):
+                pass
+    finally:
+        (tmp_path / "lock_release").write_text("1", encoding="utf-8")
+        assert proc.wait(timeout=10) == 0

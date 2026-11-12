@@ -27,6 +27,7 @@ from fox3d.polyhaven_paths import (
     POLYHAVEN_VERSIONS_DIR,
     _POLYHAVEN_PINS_DIR,
     acquire_polyhaven_reader_pin,
+    catalog_lock,
     listed_polyhaven_reader_pins,
     read_polyhaven_catalog,
     release_polyhaven_reader_pin,
@@ -541,7 +542,10 @@ def _polyhaven_ensure_fleet_catalog_pointer(slot: Path, gltf_name: str) -> None:
     version = polyhaven_cache.read_current_version(slot)
     if not version:
         return
-    atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version, "gltfName": gltf_name})
+    with catalog_lock(slot):
+        if read_polyhaven_catalog(slot) is not None:
+            return
+        atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version, "gltfName": gltf_name})
 
 
 def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
@@ -628,7 +632,8 @@ def unpin_polyhaven_bundle(slot: Path, version_id: str | None) -> None:
         pin_file = _POLYHAVEN_DISK_PINS.pop((key, pin), None)
     if pin_file is not None:
         release_polyhaven_reader_pin(pin_file)
-    _polyhaven_reclaim_slot(slot)
+    with catalog_lock(slot):
+        _polyhaven_reclaim_slot_unlocked(slot)
 
 
 def _polyhaven_pinned_versions(slot: Path) -> set[str]:
@@ -675,8 +680,8 @@ def _polyhaven_prune_retired_versions(slot: Path, *, keep_versions: set[str]) ->
         shutil.rmtree(entry, ignore_errors=True)
 
 
-def _polyhaven_reclaim_slot(slot: Path, *, keep_versions: set[str] | None = None) -> None:
-    """Reclaim retired versions and legacy flat artifacts when no reader pins block removal."""
+def _polyhaven_reclaim_slot_unlocked(slot: Path, *, keep_versions: set[str] | None = None) -> None:
+    """Reclaim retired versions and legacy flat artifacts (caller must hold :func:`catalog_lock`)."""
     if keep_versions is None:
         catalog = read_polyhaven_catalog(slot)
         keep_versions = set()
@@ -684,6 +689,12 @@ def _polyhaven_reclaim_slot(slot: Path, *, keep_versions: set[str] | None = None
             keep_versions.add(catalog["versionId"])
     _polyhaven_clear_slot_bundle_artifacts(slot)
     _polyhaven_prune_retired_versions(slot, keep_versions=keep_versions)
+
+
+def _polyhaven_reclaim_slot(slot: Path, *, keep_versions: set[str] | None = None) -> None:
+    """Reclaim retired versions and legacy flat artifacts when no reader pins block removal."""
+    with catalog_lock(slot):
+        _polyhaven_reclaim_slot_unlocked(slot, keep_versions=keep_versions)
 
 
 def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> None:
@@ -703,47 +714,49 @@ def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> Non
         existing_gltf = version_dir / gltf_name
         if _polyhaven_cache_complete(version_dir, existing_gltf):
             shutil.rmtree(staging, ignore_errors=True)
-            previous = read_polyhaven_catalog(slot)
-            if previous and previous.get("versionId") == version_id:
-                return
-            keep_versions = {version_id}
-            if previous and isinstance(previous.get("versionId"), str):
-                keep_versions.add(previous["versionId"])
-            keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
-            try:
-                atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version_id, "gltfName": gltf_name})
-                _polyhaven_reclaim_slot(slot, keep_versions=keep_versions)
-            except Exception:
-                if previous is not None:
-                    try:
-                        atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
-                    except OSError:
-                        logger.warning(
-                            "Poly Haven catalog rollback failed for %s", slot.name, exc_info=True
-                        )
-                raise
+            with catalog_lock(slot):
+                previous = read_polyhaven_catalog(slot)
+                if previous and previous.get("versionId") == version_id:
+                    return
+                keep_versions = {version_id}
+                if previous and isinstance(previous.get("versionId"), str):
+                    keep_versions.add(previous["versionId"])
+                keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
+                try:
+                    atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version_id, "gltfName": gltf_name})
+                    _polyhaven_reclaim_slot_unlocked(slot, keep_versions=keep_versions)
+                except Exception:
+                    if previous is not None:
+                        try:
+                            atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
+                        except OSError:
+                            logger.warning(
+                                "Poly Haven catalog rollback failed for %s", slot.name, exc_info=True
+                            )
+                    raise
             return
         published_id = f"{version_id}.repair-{uuid.uuid4().hex[:8]}"
         staging.rename(versions_root / published_id)
     else:
         staging.rename(version_dir)
-    previous = read_polyhaven_catalog(slot)
-    keep_versions = {published_id}
-    if previous and isinstance(previous.get("versionId"), str):
-        keep_versions.add(previous["versionId"])
-    if published_id != version_id and version_dir.is_dir():
-        keep_versions.add(version_id)
-    keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
-    try:
-        atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": published_id, "gltfName": gltf_name})
-        _polyhaven_reclaim_slot(slot, keep_versions=keep_versions)
-    except Exception:
-        if previous is not None:
-            try:
-                atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
-            except OSError:
-                logger.warning("Poly Haven catalog rollback failed for %s", slot.name, exc_info=True)
-        raise
+    with catalog_lock(slot):
+        previous = read_polyhaven_catalog(slot)
+        keep_versions = {published_id}
+        if previous and isinstance(previous.get("versionId"), str):
+            keep_versions.add(previous["versionId"])
+        if published_id != version_id and version_dir.is_dir():
+            keep_versions.add(version_id)
+        keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
+        try:
+            atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": published_id, "gltfName": gltf_name})
+            _polyhaven_reclaim_slot_unlocked(slot, keep_versions=keep_versions)
+        except Exception:
+            if previous is not None:
+                try:
+                    atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
+                except OSError:
+                    logger.warning("Poly Haven catalog rollback failed for %s", slot.name, exc_info=True)
+            raise
 
 
 def _polyhaven_lock_path(model_dir: Path) -> Path:
@@ -761,13 +774,14 @@ def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
 
 def pin_polyhaven_bundle(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, str | None]:
     """Pin the active immutable bundle root and glTF path for consistent reads across catalog switches."""
-    bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
-    version_id = version_id_for_resolved_bundle(slot, bundle_root)
-    _polyhaven_pin_version(slot, version_id)
-    pin_file = acquire_polyhaven_reader_pin(slot, version_id)
-    pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
-    with _POLYHAVEN_PIN_LOCK:
-        _POLYHAVEN_DISK_PINS[(_polyhaven_slot_key(slot), pin)] = pin_file
+    with catalog_lock(slot):
+        bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
+        version_id = version_id_for_resolved_bundle(slot, bundle_root)
+        _polyhaven_pin_version(slot, version_id)
+        pin_file = acquire_polyhaven_reader_pin(slot, version_id)
+        pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
+        with _POLYHAVEN_PIN_LOCK:
+            _POLYHAVEN_DISK_PINS[(_polyhaven_slot_key(slot), pin)] = pin_file
     return bundle_root, gltf_path, version_id
 
 

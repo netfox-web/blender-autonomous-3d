@@ -358,7 +358,7 @@ def test_cross_process_legacy_flat_survives_migration_while_reading(tmp_path: Pa
 
 
 def test_gc_defers_while_coordination_lock_held(tmp_path: Path):
-    """Publishers must not block on GC when a reader holds the asset coordination lock."""
+    """Publish and reclaim wait while the shared catalog lock is held, then complete after release."""
     aid = "gc_defer"
     asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
     asset_root.mkdir(parents=True)
@@ -369,24 +369,33 @@ def test_gc_defers_while_coordination_lock_held(tmp_path: Path):
 
     release = threading.Event()
     acquired = threading.Event()
+    published = threading.Event()
 
     def hold_coord_lock():
         with polyhaven_cache._asset_versions_coordination(asset_root):
             acquired.set()
             release.wait(timeout=5.0)
 
+    def run_publish():
+        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"NEW_CURRENT")
+        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"NEW_CURRENT")
+        published.set()
+
     holder = threading.Thread(target=hold_coord_lock, daemon=True)
     holder.start()
     assert acquired.wait(timeout=3.0)
     try:
-        switch_started = time.time()
-        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"NEW_CURRENT")
-        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"NEW_CURRENT")
-        assert time.time() - switch_started < 3.0, "publish must not wait on a held coordination lock"
+        publisher = threading.Thread(target=run_publish, daemon=True)
+        publisher.start()
+        time.sleep(0.15)
+        assert not published.is_set(), "publish must wait on held catalog lock"
         v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
-        assert v1_bundle.is_dir(), "GC must defer while the lock is held"
+        assert v1_bundle.is_dir(), "GC must not run while the lock is held"
+        assert polyhaven_cache.read_current_version(asset_root) == v1
         release.set()
         holder.join(timeout=5.0)
+        assert published.wait(timeout=5.0)
+        publisher.join(timeout=5.0)
         polyhaven_cache._maybe_gc_asset_versions(asset_root)
         assert not v1_bundle.exists(), "GC must reclaim deferred versions after the lock is free"
     finally:
@@ -395,7 +404,7 @@ def test_gc_defers_while_coordination_lock_held(tmp_path: Path):
 
 
 def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path: Path):
-    """Issue #168: pause after current read, before on-disk retain; v1 survives double switch (GC defers)."""
+    """Pause after current read, before retain pin; publish waits; v1 survives once retain pin exists."""
     aid = "pre_retain_race"
     asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
     asset_root.mkdir(parents=True)
@@ -445,13 +454,19 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
         v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
         assert _version_cross_process_retain_empty(v1_bundle), "cross-process retain pin must not exist yet"
         assert polyhaven_cache.read_current_version(asset_root) == v1
-        switch_started = time.time()
-        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
-        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
-        assert time.time() - switch_started < 3.0, "publish must not block on held reader coord lock"
-        assert polyhaven_cache.read_current_version(asset_root) == v3
-        assert v1_bundle.is_dir(), "v1 must survive switches before cross-process retain pin"
-        assert (v1_bundle / f"{aid}_2k.gltf").is_file(), "reader's pinned glTF must not be GC'd yet"
+        published = threading.Event()
+
+        def run_publish():
+            _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
+            _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
+            published.set()
+
+        publisher = threading.Thread(target=run_publish, daemon=True)
+        publisher.start()
+        time.sleep(0.15)
+        assert not published.is_set(), "publish must wait while reader holds catalog lock"
+        assert polyhaven_cache.read_current_version(asset_root) == v1
+        assert v1_bundle.is_dir(), "v1 must not be GC'd before cross-process retain pin"
         (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
         retain_deadline = time.time() + 8.0
         retain_payload = None
@@ -462,6 +477,11 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
                 break
             time.sleep(0.02)
         assert retain_payload == {"asset": aid, "version": v1}, "reader must create retain pin after resume"
+        assert published.wait(timeout=8.0)
+        publisher.join(timeout=5.0)
+        assert polyhaven_cache.read_current_version(asset_root) == v3
+        assert v1_bundle.is_dir(), "retain pin must keep v1 across publishes"
+        assert (v1_bundle / f"{aid}_2k.gltf").is_file(), "reader's pinned glTF must not be GC'd"
         assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_KEEP"
         (pause_dir / "release_reader").write_text("go", encoding="utf-8")
         assert proc.wait(timeout=8) == 0

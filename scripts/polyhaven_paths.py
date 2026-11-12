@@ -8,15 +8,122 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import IO, Any, Iterator
+
+_catalog_lock_depth = threading.local()
 
 POLYHAVEN_CATALOG_NAME = ".polyhaven_catalog.json"
 POLYHAVEN_VERSIONS_DIR = "versions"
+POLYHAVEN_CATALOG_LOCK_NAME = ".catalog.lock"
 _POLYHAVEN_CURRENT_FILENAME = "current"
 _POLYHAVEN_PINS_DIR = ".polyhaven_pins"
 _POLYHAVEN_LEGACY_PIN = "__legacy_flat__"
+_CATALOG_LOCK_PAUSE_ENV = "FOX3D_POLYHAVEN_CATALOG_LOCK_PAUSE_DIR"
+
+
+class CatalogLockTimeout(TimeoutError):
+    """Timed out waiting for the Poly Haven catalog cross-process lock."""
+
+
+def catalog_lock_path(cache_root: Path) -> Path:
+    return cache_root / POLYHAVEN_CATALOG_LOCK_NAME
+
+
+def _catalog_lock_depths() -> dict[str, int]:
+    depths = getattr(_catalog_lock_depth, "depths", None)
+    if depths is None:
+        depths = {}
+        _catalog_lock_depth.depths = depths
+    return depths
+
+
+@contextmanager
+def catalog_lock(cache_root: Path, *, timeout: float = 30.0) -> Iterator[None]:
+    """Cross-process mutex for catalog read/pin, publish, and reclaim on one cache slot."""
+    path = catalog_lock_path(cache_root)
+    key = str(path.resolve())
+    depths = _catalog_lock_depths()
+    if depths.get(key, 0) > 0:
+        depths[key] += 1
+        try:
+            yield
+        finally:
+            depths[key] -= 1
+            if depths[key] <= 0:
+                depths.pop(key, None)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh: IO[bytes] | None = None
+    acquired = False
+    deadline = time.time() + timeout
+    try:
+        fh = open(path, "a+b")
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+
+                    fh.seek(0)
+                    if fh.read(1) == b"":
+                        fh.write(b"\0")
+                        fh.flush()
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+                break
+            except OSError:
+                if time.time() >= deadline:
+                    raise CatalogLockTimeout(f"catalog lock timeout: {path}")
+                time.sleep(0.02)
+        depths[key] = 1
+        try:
+            yield
+        finally:
+            depths.pop(key, None)
+    finally:
+        if fh is not None:
+            try:
+                if acquired:
+                    if os.name == "nt":
+                        import msvcrt
+
+                        fh.seek(0)
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            finally:
+                try:
+                    fh.close()
+                except OSError:
+                    pass
+
+
+def _maybe_pause_catalog_pin_before_acquire(slot: Path, version_id: str | None) -> None:
+    """Test hook: pause after resolve, before pin, while still holding :func:`catalog_lock`."""
+    pause_dir = os.environ.get(_CATALOG_LOCK_PAUSE_ENV, "").strip()
+    if not pause_dir:
+        return
+    coord = Path(pause_dir)
+    coord.mkdir(parents=True, exist_ok=True)
+    (coord / "resolved.json").write_text(
+        json.dumps({"slot": slot.name, "versionId": version_id}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    resume = coord / "resume_pin"
+    deadline = time.time() + 30.0
+    while not resume.is_file() and time.time() < deadline:
+        time.sleep(0.02)
 _WORKER_PIN_REGISTRY: list[Path] = []
 _POLYHAVEN_GLTF_REF_RE = re.compile(
     r"^models/polyhaven/([A-Za-z0-9_-]{1,64})/([A-Za-z0-9_.-]+\.gltf)$"
@@ -130,9 +237,11 @@ def resolve_polyhaven_asset_ref_path(assets_root: Path, asset_ref_rel: str) -> P
 
 def pin_polyhaven_bundle_paths(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, Path]:
     """Pin an immutable bundle for the duration of a worker read (register :func:`release_all_polyhaven_worker_pins`)."""
-    bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
-    version_id = version_id_for_resolved_bundle(slot, bundle_root)
-    pin_file = acquire_polyhaven_reader_pin(slot, version_id)
+    with catalog_lock(slot):
+        bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
+        version_id = version_id_for_resolved_bundle(slot, bundle_root)
+        _maybe_pause_catalog_pin_before_acquire(slot, version_id)
+        pin_file = acquire_polyhaven_reader_pin(slot, version_id)
     _WORKER_PIN_REGISTRY.append(pin_file)
     return bundle_root, gltf_path, pin_file
 

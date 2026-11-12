@@ -79,30 +79,31 @@ def _atomic_write_current(asset_root: Path, version: str) -> None:
     if publish_pause_before_switch is not None:
         publish_pause_before_switch.wait()
 
-    prev = read_current_version(asset_root)
-    if prev and prev != version:
-        _previous_current[asset_root.name] = prev
+    with _asset_versions_coordination(asset_root):
+        prev = read_current_version(asset_root)
+        if prev and prev != version:
+            _previous_current[asset_root.name] = prev
 
-    token = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
-    temporary = target.with_name(f".{target.name}.{token}.tmp")
-    owned = False
-    try:
-        with temporary.open("xb") as stream:
-            owned = True
-            stream.write(payload)
-            durability.flush_file(stream)
-        os.replace(temporary, target)
+        token = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+        temporary = target.with_name(f".{target.name}.{token}.tmp")
         owned = False
-        durability.namespace_committed(target, "polyhaven-current")
-    except BaseException:
-        if owned and temporary.exists():
-            try:
-                durability.unlink_owned(temporary, missing_ok=True)
-            except OSError:
-                pass
-        raise
+        try:
+            with temporary.open("xb") as stream:
+                owned = True
+                stream.write(payload)
+                durability.flush_file(stream)
+            os.replace(temporary, target)
+            owned = False
+            durability.namespace_committed(target, "polyhaven-current")
+        except BaseException:
+            if owned and temporary.exists():
+                try:
+                    durability.unlink_owned(temporary, missing_ok=True)
+                except OSError:
+                    pass
+            raise
 
-    _maybe_gc_asset_versions(asset_root)
+        _maybe_gc_asset_versions_unlocked(asset_root)
 
     if publish_pause_after_switch is not None:
         publish_pause_after_switch.set()
@@ -295,18 +296,22 @@ def _asset_versions_coordination(
     timeout: float = 30.0,
 ) -> Iterator[None]:
     """Cross-process mutex shared by readers, publishers, and version GC."""
-    from fox3d.storelock import FileLock
+    from fox3d.polyhaven_paths import catalog_lock
 
-    lock_path = asset_root / _ASSET_COORD_LOCK
     wait_dir = os.environ.get(_PUBLISH_LOCK_WAIT_DIR_ENV, "").strip()
-    blocked_marker = None
     if wait_dir:
         blocked_marker = Path(wait_dir) / "publisher_blocked_on_lock.json"
-    with FileLock(lock_path, timeout=timeout, blocked_marker=blocked_marker):
+        try:
+            blocked_marker.parent.mkdir(parents=True, exist_ok=True)
+            blocked_marker.write_text("waiting", encoding="utf-8")
+        except OSError:
+            pass
+    with catalog_lock(asset_root, timeout=timeout):
         yield
 
 
-def _maybe_gc_asset_versions(asset_root: Path) -> None:
+def _maybe_gc_asset_versions_unlocked(asset_root: Path) -> None:
+    """Reclaim version dirs (caller must hold catalog coordination lock)."""
     asset_id = asset_root.name
     current = read_current_version(asset_root)
     keep = {current, _previous_current.get(asset_id)}
@@ -314,20 +319,27 @@ def _maybe_gc_asset_versions(asset_root: Path) -> None:
     versions_root = asset_root / _VERSIONS_DIRNAME
     if not versions_root.is_dir():
         return
+    with _retained_lock:
+        for child in versions_root.iterdir():
+            if not child.is_dir():
+                continue
+            ver = child.name
+            if ver in keep:
+                continue
+            if _version_refcounts.get((asset_id, ver), 0) > 0:
+                continue
+            if _version_dir_has_retain_pins(child):
+                continue
+            shutil.rmtree(child, ignore_errors=True)
+
+
+def _maybe_gc_asset_versions(asset_root: Path) -> None:
+    versions_root = asset_root / _VERSIONS_DIRNAME
+    if not versions_root.is_dir():
+        return
     try:
         with _asset_versions_coordination(asset_root, timeout=0.0):
-            with _retained_lock:
-                for child in versions_root.iterdir():
-                    if not child.is_dir():
-                        continue
-                    ver = child.name
-                    if ver in keep:
-                        continue
-                    if _version_refcounts.get((asset_id, ver), 0) > 0:
-                        continue
-                    if _version_dir_has_retain_pins(child):
-                        continue
-                    shutil.rmtree(child, ignore_errors=True)
+            _maybe_gc_asset_versions_unlocked(asset_root)
     except TimeoutError:
         pass
 
