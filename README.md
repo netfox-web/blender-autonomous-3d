@@ -13,7 +13,7 @@ framework, DAM, or recipe registry.
 
 ## 商品 Recipe 3D 工作台
 
-在此電腦雙擊桌面「收納王妃 Recipe 3D 工作台」，即可從中文畫面選商品、確認預覽設定、生成並下載 PNG / GLB / Blender 專案。入口為 [本機工作台](http://127.0.0.1:8790/admin/recipes)，詳見 [操作與程式盤點](docs/SONAQUEEN_RECIPE_STUDIO.md)。預覽模型不構成製造依據。
+在此電腦雙擊桌面「收納王妃 Recipe 3D 工作台」，即可從中文畫面選商品、確認預覽設定、生成並下載 PNG / GLB / Blender 專案。桌面啟動器預設入口為 [本機工作台](http://127.0.0.1:8790/admin/recipes)；它會先依 8790、8791、8788、8792 的順序尋找並重用已執行的工作台，找不到時再依相同順序選擇可用連接埠。實際入口以啟動器開啟的瀏覽器網址為準；下方連結也須使用該網址的連接埠。詳見 [操作與程式盤點](docs/SONAQUEEN_RECIPE_STUDIO.md)。預覽模型不構成製造依據。
 
 [組合櫃 3D 場景電商工坊](http://127.0.0.1:8790/admin/recipes/scenes)：拼裝組合櫃 → AI 排景／拖拉家具 → Blender 光追＋**地端 AI 實景**（公司 GPU 艦隊 FLUX 3，櫃體像素鎖定、每組多張變化）。詳見 [docs/LOCAL_AI_SCENE_STUDIO.md](docs/LOCAL_AI_SCENE_STUDIO.md)；工作台須以 0.0.0.0 啟動讓節點抓得到參考圖。
 
@@ -36,6 +36,8 @@ pytest
 $env:PYTHONPATH = (Resolve-Path .\src)
 python -m fox3d.api
 ```
+
+`python -m fox3d.api` 的預設連接埠是 8788（可用 `FOX3D_PORT` 覆寫），與上述桌面啟動器預設的 8790 不同。
 
 - 首頁 / 管理台：`http://127.0.0.1:8788/admin`
 - Health：`http://127.0.0.1:8788/health`
