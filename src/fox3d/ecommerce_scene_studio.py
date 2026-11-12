@@ -1255,6 +1255,7 @@ class EcommerceSceneStore:
         upload_root = tenant_dir / "glb-props"
         assets_root = Path(__file__).resolve().parents[2] / "assets"
         poly_root = assets_root / "models" / "polyhaven"
+        plat_root = Path(self.platform.root).resolve()
         for index, original in enumerate(scene.get("props") or [], 1):
             prop = dict(original)
             if "glbPath" in prop:
@@ -1266,13 +1267,13 @@ class EcommerceSceneStore:
                     if "\\" in raw and (is_asset or os.name != "nt"):
                         raise ValueError("路徑格式無效")
                     if ".." in path_segments(raw):
-                        raise ValueError("路徑格式無效")
+                        raise ValueError("路徑不可包含上層目錄")
                     candidate = assets_root / raw[len("assets://"):] if is_asset else Path(raw)
                     is_relative_upload = not is_asset and not candidate.is_absolute()
                     if is_relative_upload:
                         if "\\" in raw:
                             raise ValueError("路徑格式無效")
-                        candidate = Path(self.platform.root).resolve() / candidate
+                        candidate = plat_root / candidate
                     resolved = candidate.resolve()
                     if resolved.suffix.lower() not in (".glb", ".gltf"):
                         raise ValueError("只允許 GLB 或 glTF 模型")
@@ -1281,6 +1282,8 @@ class EcommerceSceneStore:
                     poly_safe = poly_root.resolve() == poly_root and resolved.is_relative_to(poly_root)
                     if not ((not is_relative_upload and poly_safe) or (not is_asset and upload_safe)):
                         raise ValueError("路徑不在允許的模型目錄內")
+                    if upload_safe and not resolved.is_file():
+                        raise ValueError("找不到上傳的 GLB")
                     prop["glbPath"] = raw if is_asset or is_relative_upload else str(resolved)
                 except (ValueError, OSError, RuntimeError) as exc:
                     prop.pop("glbPath", None)
