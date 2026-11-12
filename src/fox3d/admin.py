@@ -59,14 +59,16 @@ def render_admin(platform: Any) -> str:
             "</tr>"
         )
 
-    def _asset_thumb(asset: str, img_class: str, *, title: str = "") -> str:
+    def _asset_thumb(asset: str, img_class: str, *, tenant_id: str, title: str = "") -> str:
         if not asset:
             return ""
         aid = escape(str(asset))
+        tid = escape(str(tenant_id or "demo"))
         title_attr = f' title="{title}"' if title else ""
         return (
-            f'<a href="#" class="asset-open"{title_attr} data-asset-id="{aid}" rel="noopener">'
-            f'<img data-asset-id="{aid}" class="{img_class} asset-img" alt=""/></a>'
+            f'<a href="#" class="asset-open"{title_attr} data-asset-id="{aid}"'
+            f' data-tenant-id="{tid}" rel="noopener">'
+            f'<img data-asset-id="{aid}" data-tenant-id="{tid}" class="{img_class} asset-img" alt=""/></a>'
         )
 
     rows_nodes = "".join(_worker_row(n) for n in nodes)
@@ -74,7 +76,8 @@ def render_admin(platform: Any) -> str:
     for j in jobs:
         files = ((j.get("output") or {}).get("files") or {})
         asset = j.get("outputAsset") or files.get("beauty.png") or ""
-        img = _asset_thumb(asset, "thumb", title="點擊在新分頁開啟 512x512 高清大圖")
+        job_tenant = str(j.get("tenantId") or "demo")
+        img = _asset_thumb(asset, "thumb", tenant_id=job_tenant, title="點擊在新分頁開啟 512x512 高清大圖")
         log = escape((j.get("logs") or "")[-400:])
         rows_jobs.append(
             "<tr>"
@@ -94,7 +97,7 @@ def render_admin(platform: Any) -> str:
     twin_cards = []
     for t in twins:
         preview = t.previewAssetId
-        img = _asset_thumb(preview, "preview") if preview else "<em>no preview</em>"
+        img = _asset_thumb(preview, "preview", tenant_id=t.tenantId) if preview else "<em>no preview</em>"
         twin_cards.append(
             f"<div class='card'><h3>{escape(t.sku)}</h3>"
             f"<p class='note'>{escape(t.twinId)}</p>{img}"
@@ -297,15 +300,15 @@ def render_admin(platform: Any) -> str:
     <div class="gallery-grid">
       {''.join(
         (
-            lambda _j, _aid: f'''<div class="gallery-card">
-          <a href="#" class="asset-open" data-asset-id="{_aid}" rel="noopener">
-            <img data-asset-id="{_aid}" class="gallery-thumb asset-img" loading="lazy" alt=""/>
+            lambda _j, _aid, _tid: f'''<div class="gallery-card">
+          <a href="#" class="asset-open" data-asset-id="{_aid}" data-tenant-id="{_tid}" rel="noopener">
+            <img data-asset-id="{_aid}" data-tenant-id="{_tid}" class="gallery-thumb asset-img" loading="lazy" alt=""/>
           </a>
           <div class="gallery-meta">
             <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(_j.get("jobId")))}</div>
             <div style="color: var(--text-muted);">引擎: {escape(str(_j.get("renderEngine") or (_j.get("output") or {{}}).get("engine") or "CYCLES"))} ({escape(str(_j.get("samples") or (_j.get("output") or {{}}).get("samples") or 32))} 採樣)</div>
             <div style="color: var(--text-muted);">耗時: {escape(str(_j.get("renderTimeSec") or (_j.get("output") or {{}}).get("renderTimeSec") or "0.8"))} 秒</div>
-            <a href="#" class="asset-open" data-asset-id="{_aid}" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
+            <a href="#" class="asset-open" data-asset-id="{_aid}" data-tenant-id="{_tid}" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
           </div>
         </div>'''
         )(
@@ -317,6 +320,7 @@ def render_admin(platform: Any) -> str:
                     or ""
                 )
             ),
+            escape(str(j.get("tenantId") or "demo")),
         )
         for j in jobs
         if j.get("outputAsset") or ((j.get("output") or {}).get("files") or {}).get("beauty.png")
@@ -394,25 +398,32 @@ def render_admin(platform: Any) -> str:
 
   <script>
   (function () {{
-  const ADMIN_TENANT = 'demo';
+  const DEFAULT_TENANT = 'demo';
   const assetBlobUrls = new Map();
 
-  async function fetchAssetBlobUrl(assetId) {{
+  function assetCacheKey(assetId, tenantId) {{
+    const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    return tenant + '::' + String(assetId || '');
+  }}
+
+  async function fetchAssetBlobUrl(assetId, tenantId) {{
     const key = String(assetId || '');
     if (!key) throw new Error('missing asset');
-    if (assetBlobUrls.has(key)) return assetBlobUrls.get(key);
+    const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    const cacheKey = assetCacheKey(key, tenant);
+    if (assetBlobUrls.has(cacheKey)) return assetBlobUrls.get(cacheKey);
     const res = await fetch('/api/assets/' + encodeURIComponent(key), {{
-      headers: {{ 'X-Tenant-Id': ADMIN_TENANT }}
+      headers: {{ 'X-Tenant-Id': tenant }}
     }});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
-    assetBlobUrls.set(key, url);
+    assetBlobUrls.set(cacheKey, url);
     return url;
   }}
 
-  function openAssetInNewTab(assetId) {{
-    fetchAssetBlobUrl(assetId)
+  function openAssetInNewTab(assetId, tenantId) {{
+    fetchAssetBlobUrl(assetId, tenantId)
       .then((url) => window.open(url, '_blank', 'noopener'))
       .catch((err) => alert('無法開啟資產：' + err.message));
   }}
@@ -422,8 +433,9 @@ def render_admin(platform: Any) -> str:
     await Promise.all(Array.from(pending).map(async (img) => {{
       const assetId = img.getAttribute('data-asset-id');
       if (!assetId) return;
+      const tenantId = img.getAttribute('data-tenant-id') || DEFAULT_TENANT;
       try {{
-        img.src = await fetchAssetBlobUrl(assetId);
+        img.src = await fetchAssetBlobUrl(assetId, tenantId);
       }} catch (err) {{
         img.alt = '載入失敗';
       }}
@@ -434,15 +446,19 @@ def render_admin(platform: Any) -> str:
     document.querySelectorAll('a.asset-open[data-asset-id]').forEach((anchor) => {{
       anchor.addEventListener('click', (ev) => {{
         ev.preventDefault();
-        openAssetInNewTab(anchor.getAttribute('data-asset-id'));
+        openAssetInNewTab(
+          anchor.getAttribute('data-asset-id'),
+          anchor.getAttribute('data-tenant-id') || DEFAULT_TENANT
+        );
       }});
     }});
   }}
 
-  function bindResultAsset(assetId) {{
+  function bindResultAsset(assetId, tenantId) {{
     const img = document.getElementById('res-img');
     const link = document.getElementById('res-link');
-    fetchAssetBlobUrl(assetId).then((url) => {{
+    const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    fetchAssetBlobUrl(assetId, tenant).then((url) => {{
       img.src = url;
       img.onclick = () => window.open(url, '_blank', 'noopener');
       link.onclick = (ev) => {{
@@ -535,7 +551,10 @@ def render_admin(platform: Any) -> str:
         btn.disabled = false;
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
-          bindResultAsset(data.render.job.outputAsset);
+          bindResultAsset(
+            data.render.job.outputAsset,
+            data.render.job.tenantId || payload.tenantId || DEFAULT_TENANT
+          );
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
           box.style.display = 'block';
