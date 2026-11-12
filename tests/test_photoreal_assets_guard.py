@@ -918,8 +918,8 @@ def test_blender_worker_resolves_versioned_polyhaven_ref(tmp_path: Path, monkeyp
     photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
     job_path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
     spec = importlib.util.spec_from_file_location("blender_job_polyhaven", job_path)
+    assert spec is not None and spec.loader is not None
     bj = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     spec.loader.exec_module(bj)
     monkeypatch.setenv("FOX3D_ASSETS_ROOT", str(tmp_path / "assets"))
     ref = bj.resolve_asset_ref(f"assets://models/polyhaven/{aid}/{aid}_2k.gltf")
@@ -940,8 +940,8 @@ def test_furnished_scene_auto_models_use_catalog(tmp_path: Path, monkeypatch: py
         photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
     fs_path = Path(__file__).resolve().parents[1] / "scripts" / "furnished_scene.py"
     spec = importlib.util.spec_from_file_location("furnished_scene_polyhaven", fs_path)
+    assert spec is not None and spec.loader is not None
     fs = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     spec.loader.exec_module(fs)
     assets_root = tmp_path / "assets"
     resolved = [
