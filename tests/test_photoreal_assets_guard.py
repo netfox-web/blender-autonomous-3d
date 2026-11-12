@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import shutil
+import subprocess
+import sys
+import textwrap
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -953,3 +958,231 @@ def test_furnished_scene_auto_models_use_catalog(tmp_path: Path, monkeypatch: py
     for path in resolved:
         assert path.is_file()
         assert POLYHAVEN_VERSIONS_DIR in path.parts
+
+
+ROOT = Path(__file__).resolve().parents[1]
+_EXECUTOR_JSON = ROOT / "docs" / "fleet" / "blender_scene_render.executor.json"
+_POLYHAVEN_PUBLIC_NAMES = (
+    "POLYHAVEN_CATALOG_NAME",
+    "POLYHAVEN_VERSIONS_DIR",
+    "read_polyhaven_catalog",
+    "resolve_polyhaven_bundle_paths",
+    "resolve_polyhaven_asset_ref_path",
+    "acquire_polyhaven_reader_pin",
+    "release_polyhaven_reader_pin",
+    "listed_polyhaven_reader_pins",
+)
+
+
+def test_polyhaven_paths_worker_module_matches_package():
+    import fox3d.polyhaven_paths as pkg
+
+    worker_path = ROOT / "scripts" / "polyhaven_paths.py"
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("worker_polyhaven_paths", worker_path)
+    assert spec is not None and spec.loader is not None
+    worker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker)
+    for name in _POLYHAVEN_PUBLIC_NAMES:
+        assert getattr(pkg, name) is not None
+        assert getattr(worker, name) is not None
+
+
+def test_fleet_executor_lists_polyhaven_worker_helpers():
+    from fox3d.fleet_blender import BLENDER_SCENE_RENDER_WORKER_SCRIPTS
+
+    doc = json.loads(_EXECUTOR_JSON.read_text(encoding="utf-8"))
+    requires = doc["blender_scene_render"]["requires"]
+    for script in BLENDER_SCENE_RENDER_WORKER_SCRIPTS:
+        needle = f"/scripts/{script}"
+        assert any(needle in entry for entry in requires), script
+
+
+def test_installed_wheel_imports_polyhaven_paths(tmp_path: Path):
+    uv = shutil.which("uv")
+    if not uv:
+        pytest.skip("uv is required to build and install the wheel offline")
+    wheel_dir = tmp_path / "wheel"
+    subprocess.run(
+        [uv, "build", "--wheel", "--offline", "--out-dir", str(wheel_dir), str(ROOT)],
+        check=True,
+        timeout=120,
+    )
+    wheel = next(wheel_dir.glob("*.whl"))
+    target = tmp_path / "installed"
+    subprocess.run(
+        [uv, "pip", "install", "--offline", "--no-deps", "--target", str(target), str(wheel)],
+        check=True,
+        timeout=120,
+    )
+  # Do not rely on the image's site-packages snapshot (if any) under -I.
+    script = textwrap.dedent(
+        """
+        import sys
+        from pathlib import Path
+        for entry in sys.argv[1:]:
+            sys.path.insert(0, entry)
+        import fox3d.polyhaven_paths as ph
+        from fox3d import photoreal_assets
+        assert ph.POLYHAVEN_CATALOG_NAME
+        assert callable(ph.resolve_polyhaven_asset_ref_path)
+        assert callable(photoreal_assets.ensure_polyhaven_models)
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    subprocess.run(
+        [sys.executable, "-I", "-c", script, str(ROOT / "src"), str(target)],
+        cwd=tmp_path,
+        env=env,
+        check=True,
+        timeout=30,
+    )
+
+
+def test_isolated_worker_scripts_resolve_polyhaven(tmp_path: Path):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    for name in (
+        "blender_job.py",
+        "worker_polyhaven.py",
+        "polyhaven_paths.py",
+        "furnished_scene.py",
+    ):
+        shutil.copy2(ROOT / "scripts" / name, bundle / name)
+    aid = "isolated_worker_asset"
+    slot = tmp_path / "assets" / "models" / "polyhaven" / aid
+    slot.mkdir(parents=True)
+    body = _gltf_body_with_uris("textures/albedo.png")
+    from unittest.mock import patch
+
+    with patch.object(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, body, {"textures/albedo.png": b"T"}),
+    ):
+        photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    script = textwrap.dedent(
+        f"""
+        import os
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(bundle))})
+        os.environ["FOX3D_ASSETS_ROOT"] = {json.dumps(str(tmp_path / "assets"))}
+        from worker_polyhaven import load_polyhaven_paths
+        ph = load_polyhaven_paths()
+        ref = ph.resolve_polyhaven_asset_ref_path(
+            Path(os.environ["FOX3D_ASSETS_ROOT"]),
+            "models/polyhaven/{aid}/{aid}_2k.gltf",
+        )
+        assert ref is not None and ref.is_file(), ref
+        assert "{POLYHAVEN_VERSIONS_DIR}" in ref.parts
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    subprocess.run([sys.executable, "-I", "-c", script], cwd=bundle, env=env, check=True, timeout=30)
+
+
+def test_cross_process_reader_pin_blocks_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_cross_proc_pin"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V1"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    catalog = json.loads((model_dir / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))
+    version_id = catalog["versionId"]
+    pin_script = textwrap.dedent(
+        f"""
+        import json
+        import os
+        import sys
+        import time
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
+        os.chdir({json.dumps(str(model_dir))})
+        import polyhaven_paths as ph
+        slot = Path({json.dumps(str(model_dir))})
+        pin = ph.acquire_polyhaven_reader_pin(slot, {json.dumps(version_id)})
+        Path({json.dumps(str(tmp_path / "pin_ready"))}).write_text("1", encoding="utf-8")
+        while not Path({json.dumps(str(tmp_path / "pin_release"))}).exists():
+            time.sleep(0.02)
+        ph.release_polyhaven_reader_pin(pin)
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.Popen([sys.executable, "-I", "-c", pin_script], env=env)
+    try:
+        for _ in range(250):
+            if (tmp_path / "pin_ready").exists():
+                break
+            threading.Event().wait(0.02)
+        else:
+            pytest.fail("subprocess reader pin did not start")
+        first_bundle = _bundle_root(model_root, aid)
+        monkeypatch.setattr(
+            photoreal_assets.urllib.request,
+            "urlopen",
+            _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V2"}),
+        )
+        (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+        photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+        assert first_bundle.exists()
+        assert (first_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
+    finally:
+        (tmp_path / "pin_release").write_text("1", encoding="utf-8")
+        proc.wait(timeout=10)
+
+
+def test_redownload_repairs_corrupt_main_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_corrupt_main"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    include_map = {"textures/albedo.png": b"FIXED_TEX"}
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    _, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    resolved_gltf.write_bytes(b"{}" + b" " * 200)
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+    bundle = _bundle_root(model_root, aid)
+    _, resolved_after = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    assert b"buffers" in resolved_after.read_bytes()
+    assert (bundle / "textures" / "albedo.png").read_bytes() == b"FIXED_TEX"
+    assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+
+def test_redownload_repairs_corrupt_dependency_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_corrupt_dep"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    include_map = {"textures/albedo.png": b"FIXED_TEX"}
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, include_map),
+    )
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    bundle = _bundle_root(model_root, aid)
+    (bundle / "textures" / "albedo.png").unlink(missing_ok=True)
+    assert not photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+    assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+    bundle = _bundle_root(model_root, aid)
+    assert (bundle / "textures" / "albedo.png").read_bytes() == b"FIXED_TEX"
+    assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)

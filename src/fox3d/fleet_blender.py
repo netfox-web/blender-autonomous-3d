@@ -19,6 +19,13 @@ from typing import Any, Callable
 from fox3d.fleet_image_client import TERMINAL_BAD, TERMINAL_OK, FleetError, FleetImageClient, task_error, task_status
 
 BLENDER_TASK_TYPE = "blender_scene_render"
+BLENDER_SCENE_RENDER_WORKER_SCRIPTS = (
+    "blender_job.py",
+    "furnished_scene.py",
+    "fleet_blender_task.py",
+    "worker_polyhaven.py",
+    "polyhaven_paths.py",
+)
 ASSET_REF_PREFIX = "assets://"
 BLENDER_ENGINES: dict[str, dict[str, str]] = {
     "auto": {"id": "auto", "label": "自動（艦隊可用就送艦隊，否則本機）"},
