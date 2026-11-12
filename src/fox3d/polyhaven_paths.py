@@ -7,12 +7,30 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import IO, Any, Iterator
+
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _unlock(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 _catalog_lock_depth = threading.local()
 
@@ -64,19 +82,13 @@ def catalog_lock(cache_root: Path, *, timeout: float = 30.0) -> Iterator[None]:
         fh = open(path, "a+b")
         while True:
             try:
-                if os.name == "nt":
-                    import msvcrt
-
+                if sys.platform == "win32":
                     fh.seek(0)
                     if fh.read(1) == b"":
                         fh.write(b"\0")
                         fh.flush()
                     fh.seek(0)
-                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
-                else:
-                    import fcntl
-
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _lock(fh.fileno())
                 acquired = True
                 break
             except OSError:
@@ -92,15 +104,9 @@ def catalog_lock(cache_root: Path, *, timeout: float = 30.0) -> Iterator[None]:
         if fh is not None:
             try:
                 if acquired:
-                    if os.name == "nt":
-                        import msvcrt
-
+                    if sys.platform == "win32":
                         fh.seek(0)
-                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                    else:
-                        import fcntl
-
-                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                    _unlock(fh.fileno())
             finally:
                 try:
                     fh.close()
