@@ -14,6 +14,10 @@ import sys
 import time
 from pathlib import Path
 
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 ASSET_REF_PREFIX = "assets://"
 
 
@@ -37,14 +41,11 @@ def resolve_asset_ref(value: object) -> Path | None:
     if any(seg == ".." for seg in parts):
         raise ValueError("asset ref escapes the asset root: " + text)
     base = _assets_root()
-    try:
-        from fox3d.polyhaven_paths import resolve_polyhaven_asset_ref_path
+    from worker_polyhaven import load_polyhaven_paths
 
-        resolved = resolve_polyhaven_asset_ref_path(base, "/".join(parts))
-        if resolved is not None:
-            return resolved
-    except ImportError:
-        pass
+    resolved = load_polyhaven_paths().resolve_polyhaven_asset_ref_path(base, "/".join(parts))
+    if resolved is not None:
+        return resolved
     return base.joinpath(*parts)
 
 

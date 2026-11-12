@@ -3,6 +3,12 @@ import json
 import hashlib
 import math
 import os
+import sys
+from pathlib import Path
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 ASSET_REF_PREFIX = 'assets://'
 
@@ -31,15 +37,24 @@ def resolve_asset_ref(value, root=None):
     if any(seg == '..' for seg in parts):
         raise ValueError('asset ref escapes the asset root: ' + text)
     base = Path(root) if root is not None else _assets_root()
-    try:
-        from fox3d.polyhaven_paths import resolve_polyhaven_asset_ref_path
+    from worker_polyhaven import load_polyhaven_paths
 
-        resolved = resolve_polyhaven_asset_ref_path(base, "/".join(parts))
-        if resolved is not None:
-            return resolved
-    except ImportError:
-        pass
+    resolved = load_polyhaven_paths().resolve_polyhaven_asset_ref_path(base, "/".join(parts))
+    if resolved is not None:
+        return resolved
     return base.joinpath(*parts)
+
+
+def _polyhaven_slot_gltf(assets_root, asset_id, gltf_name):
+    """Resolve a curated Poly Haven glTF through the catalog pointer when present."""
+    from pathlib import Path
+    from worker_polyhaven import load_polyhaven_paths
+
+    ph = load_polyhaven_paths()
+    slot = Path(assets_root) / 'models' / 'polyhaven' / asset_id
+    nominal = slot / gltf_name
+    _bundle_root, gltf_path = ph.resolve_polyhaven_bundle_paths(slot, nominal)
+    return gltf_path
 
 
 def _srgb_to_lin(c: float) -> float:
@@ -648,9 +663,9 @@ def build(created, definition, device, expected_hash):
                 # Method 1 automatic Poly Haven 2K upgrade for PLANT and COFFEE_TABLE
                 if g_upper.endswith('_PLANT'):
                     ph_plant = (
-                        ph_dir / 'potted_plant_01' / 'potted_plant_01_2k.gltf'
+                        _polyhaven_slot_gltf(root_assets, 'potted_plant_01', 'potted_plant_01_2k.gltf')
                         if gh >= 1.02
-                        else ph_dir / 'potted_plant_02' / 'potted_plant_02_2k.gltf'
+                        else _polyhaven_slot_gltf(root_assets, 'potted_plant_02', 'potted_plant_02_2k.gltf')
                     )
                     if ph_plant.exists():
                         try:
@@ -685,9 +700,9 @@ def build(created, definition, device, expected_hash):
                     Path(str(explicit_glb))
                     if explicit_glb and Path(str(explicit_glb)).exists()
                     else (
-                        ph_dir / 'coffee_table_round_01' / 'coffee_table_round_01_2k.gltf'
+                        _polyhaven_slot_gltf(root_assets, 'coffee_table_round_01', 'coffee_table_round_01_2k.gltf')
                         if abs(gw - gd) < 0.14
-                        else ph_dir / 'modern_coffee_table_01' / 'modern_coffee_table_01_2k.gltf'
+                        else _polyhaven_slot_gltf(root_assets, 'modern_coffee_table_01', 'modern_coffee_table_01_2k.gltf')
                     )
                 )
                 if ph_table.exists():
