@@ -529,6 +529,24 @@ def test_windows_replace_contention_errno_without_winerror(
     assert polyhaven_cache._windows_replace_contention(error, Path("unused")) is expected
 
 
+@pytest.mark.parametrize(
+    "probe,expected",
+    [
+        (32, True),
+        (0, True),
+        (5, False),
+    ],
+)
+def test_windows_replace_contention_access_denied_probe_race(
+    monkeypatch: pytest.MonkeyPatch, probe: int, expected: bool
+) -> None:
+    err = PermissionError(13, "Access is denied")
+    err.winerror = 5
+    monkeypatch.setattr(polyhaven_cache, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(polyhaven_cache, "_delete_sharing_error", lambda p: probe)
+    assert polyhaven_cache._windows_replace_contention(err, Path("unused")) is expected
+
+
 def test_coord_signal_atomic_replace_retries_transient_windows_contention(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

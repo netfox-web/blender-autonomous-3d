@@ -54,7 +54,16 @@ def _windows_replace_contention(error: OSError, path: Path) -> bool:
     code = getattr(error, "winerror", None)
     if code in (32, 33):  # ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION
         return True
-    if code == 5 or (code is None and error.errno in (errno.EACCES, 13)):
+    # MoveFileEx may report access denied while a reader handle is active; the
+    # sharing probe can momentarily miss an open handle between reader polls.
+    if code == 5:
+        probe = _delete_sharing_error(path)
+        if probe in (32, 33):
+            return True
+        if probe == 0:
+            return True
+        return False
+    if code is None and error.errno in (errno.EACCES, 13):
         return _delete_sharing_error(path) in (32, 33)
     return False
 
