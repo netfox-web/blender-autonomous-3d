@@ -668,16 +668,7 @@ def _polyhaven_clear_slot_bundle_artifacts(slot: Path) -> None:
 
 
 def _polyhaven_prune_retired_versions(slot: Path, *, keep_versions: set[str]) -> None:
-    versions_root = slot / POLYHAVEN_VERSIONS_DIR
-    if not versions_root.is_dir():
-        return
-    pinned = _polyhaven_pinned_versions(slot)
-    for entry in versions_root.iterdir():
-        if not entry.is_dir() or entry.name in keep_versions:
-            continue
-        if entry.name in pinned:
-            continue
-        shutil.rmtree(entry, ignore_errors=True)
+    polyhaven_cache.reclaim_polyhaven_version_directories_unlocked(slot, extra_keep=keep_versions)
 
 
 def _polyhaven_reclaim_slot_unlocked(slot: Path, *, keep_versions: set[str] | None = None) -> None:

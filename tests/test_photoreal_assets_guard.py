@@ -1462,16 +1462,27 @@ def test_worker_catalog_lock_blocks_publish_until_pin(tmp_path: Path, monkeypatc
         from pathlib import Path
         sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
         os.chdir({json.dumps(str(ROOT / "scripts"))})
+        os.environ["FOX3D_ASSETS_ROOT"] = {json.dumps(str(tmp_path / "assets"))}
         os.environ[{json.dumps(_CATALOG_LOCK_PAUSE_ENV)}] = {json.dumps(str(pause_dir))}
-        import polyhaven_paths as ph
-        assets = Path({json.dumps(str(tmp_path / "assets"))})
-        _root, ref, _pin = ph.pin_polyhaven_bundle_paths(assets / "models/polyhaven/{aid}", assets / "models/polyhaven/{aid}/{aid}_2k.gltf")
-        assert ref.is_file()
-        assert (ref.parent / "textures/albedo.png").read_bytes() == b"V1"
+        import importlib.util
+        job_path = Path({json.dumps(str(ROOT / "scripts" / "blender_job.py"))})
+        spec = importlib.util.spec_from_file_location("blender_job_catalog_lock", job_path)
+        bj = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bj)
+        ref = bj.resolve_asset_ref("assets://models/polyhaven/{aid}/{aid}_2k.gltf")
+        assert ref is not None
         Path({json.dumps(str(tmp_path / "worker_done"))}).write_text("1", encoding="utf-8")
+        verify = Path({json.dumps(str(tmp_path / "worker_verify_go"))})
+        deadline = time.time() + 30.0
+        while not verify.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert ref.is_file()
+        assert (ref.parent / "textures" / "albedo.png").read_bytes() == b"V1"
+        assert ref.read_bytes()
         while not Path({json.dumps(str(tmp_path / "worker_release"))}).exists():
             time.sleep(0.02)
-        ph.release_all_polyhaven_worker_pins()
+        from worker_polyhaven import load_polyhaven_paths
+        load_polyhaven_paths().release_all_polyhaven_worker_pins()
         """
     )
     env = os.environ.copy()
@@ -1525,9 +1536,13 @@ def test_worker_catalog_lock_blocks_publish_until_pin(tmp_path: Path, monkeypatc
         assert version_a in listed_polyhaven_reader_pins(model_dir)
         assert published.wait(timeout=10.0)
         publisher.join(timeout=5.0)
+        (tmp_path / "worker_verify_go").write_text("1", encoding="utf-8")
+        (tmp_path / "worker_release").write_text("1", encoding="utf-8")
+        assert proc.wait(timeout=15) == 0
         assert first_bundle.is_dir()
         assert (first_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
     finally:
+        (tmp_path / "worker_verify_go").write_text("1", encoding="utf-8")
         (tmp_path / "worker_release").write_text("1", encoding="utf-8")
         proc.wait(timeout=10)
 
@@ -1558,16 +1573,26 @@ def test_worker_legacy_flat_catalog_lock_blocks_migration_cleanup(tmp_path: Path
         from pathlib import Path
         sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
         os.chdir({json.dumps(str(ROOT / "scripts"))})
+        os.environ["FOX3D_ASSETS_ROOT"] = {json.dumps(str(tmp_path / "assets"))}
         os.environ[{json.dumps(_CATALOG_LOCK_PAUSE_ENV)}] = {json.dumps(str(pause_dir))}
-        import polyhaven_paths as ph
-        slot = Path({json.dumps(str(asset_root))})
-        _root, ref, _pin = ph.pin_polyhaven_bundle_paths(slot, slot / "{aid}_2k.gltf")
-        assert ref.is_file()
-        assert (slot / "textures/albedo.png").read_bytes() == b"KEEP_FLAT_LOCK"
+        import importlib.util
+        job_path = Path({json.dumps(str(ROOT / "scripts" / "blender_job.py"))})
+        spec = importlib.util.spec_from_file_location("blender_job_flat_lock", job_path)
+        bj = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bj)
+        ref = bj.resolve_asset_ref("assets://models/polyhaven/{aid}/{aid}_2k.gltf")
+        assert ref is not None
         Path({json.dumps(str(tmp_path / "flat_ready"))}).write_text("1", encoding="utf-8")
+        verify = Path({json.dumps(str(tmp_path / "flat_verify_go"))})
+        deadline = time.time() + 30.0
+        while not verify.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert ref.is_file()
+        assert (ref.parent / "textures" / "albedo.png").read_bytes() == b"KEEP_FLAT_LOCK"
         while not Path({json.dumps(str(tmp_path / "flat_release"))}).exists():
             time.sleep(0.02)
-        ph.release_all_polyhaven_worker_pins()
+        from worker_polyhaven import load_polyhaven_paths
+        load_polyhaven_paths().release_all_polyhaven_worker_pins()
         """
     )
     env = os.environ.copy()
@@ -1597,9 +1622,84 @@ def test_worker_legacy_flat_catalog_lock_blocks_migration_cleanup(tmp_path: Path
             time.sleep(0.02)
         assert migrated.wait(timeout=10.0)
         migrator.join(timeout=5.0)
+        (tmp_path / "flat_verify_go").write_text("1", encoding="utf-8")
+        (tmp_path / "flat_release").write_text("1", encoding="utf-8")
+        assert proc.wait(timeout=15) == 0
         assert gltf.is_file()
     finally:
+        (tmp_path / "flat_verify_go").write_text("1", encoding="utf-8")
         (tmp_path / "flat_release").write_text("1", encoding="utf-8")
+        proc.wait(timeout=10)
+
+
+def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Cross-process worker pin must block workbench _maybe_gc_asset_versions (issue #229)."""
+    from fox3d import polyhaven_cache
+
+    aid = "guard_workbench_gc_worker_pin"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V1"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    catalog_v1 = json.loads((asset_root / POLYHAVEN_CATALOG_NAME).read_text(encoding="utf-8"))["versionId"]
+    v1_bundle = asset_root / POLYHAVEN_VERSIONS_DIR / catalog_v1
+
+    hold_script = textwrap.dedent(
+        f"""
+        import os
+        import sys
+        import time
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
+        os.chdir({json.dumps(str(ROOT / "scripts"))})
+        os.environ["FOX3D_ASSETS_ROOT"] = {json.dumps(str(tmp_path / "assets"))}
+        import importlib.util
+        job_path = Path({json.dumps(str(ROOT / "scripts" / "blender_job.py"))})
+        spec = importlib.util.spec_from_file_location("blender_job_wb_gc", job_path)
+        bj = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bj)
+        ref = bj.resolve_asset_ref("assets://models/polyhaven/{aid}/{aid}_2k.gltf")
+        assert ref is not None and ref.parent.name == {json.dumps(catalog_v1)}
+        Path({json.dumps(str(tmp_path / "wb_gc_pinned"))}).write_text("1", encoding="utf-8")
+        while not Path({json.dumps(str(tmp_path / "wb_gc_release"))}).exists():
+            time.sleep(0.02)
+        from worker_polyhaven import load_polyhaven_paths
+        load_polyhaven_paths().release_all_polyhaven_worker_pins()
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.Popen([sys.executable, "-I", "-c", hold_script], env=env)
+    try:
+        for _ in range(250):
+            if (tmp_path / "wb_gc_pinned").is_file():
+                break
+            time.sleep(0.02)
+        else:
+            pytest.fail("worker did not pin version")
+        gltf_name = f"{aid}_2k.gltf"
+        v2 = "b" * 64
+        v3 = "c" * 64
+        for ver, marker in ((v2, b"V2"), (v3, b"V3")):
+            bundle = polyhaven_cache.version_directory(asset_root, ver)
+            bundle.mkdir(parents=True, exist_ok=True)
+            bundle_gltf = bundle / gltf_name
+            bundle_gltf.write_bytes(gltf_body)
+            (bundle / "textures").mkdir(parents=True, exist_ok=True)
+            (bundle / "textures" / "albedo.png").write_bytes(marker)
+            (bundle / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text(
+                '["textures/albedo.png"]',
+                encoding="utf-8",
+            )
+            polyhaven_cache._atomic_write_current(asset_root, ver)
+        assert v1_bundle.is_dir(), "workbench GC must retain worker-pinned version"
+        assert (v1_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
+    finally:
+        (tmp_path / "wb_gc_release").write_text("1", encoding="utf-8")
         proc.wait(timeout=10)
 
 

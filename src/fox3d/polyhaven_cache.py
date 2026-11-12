@@ -310,27 +310,62 @@ def _asset_versions_coordination(
         yield
 
 
-def _maybe_gc_asset_versions_unlocked(asset_root: Path) -> None:
-    """Reclaim version dirs (caller must hold catalog coordination lock)."""
+def polyhaven_versions_protected_from_reclaim(
+    asset_root: Path,
+    *,
+    extra_keep: set[str] | None = None,
+) -> set[str]:
+    """Version ids that must not be removed during reclaim (caller should hold catalog lock)."""
+    from fox3d.polyhaven_paths import listed_polyhaven_reader_pins, read_polyhaven_catalog
+
     asset_id = asset_root.name
+    keep: set[str] = set(extra_keep or ())
+    catalog = read_polyhaven_catalog(asset_root)
+    if catalog and isinstance(catalog.get("versionId"), str):
+        keep.add(catalog["versionId"])
     current = read_current_version(asset_root)
-    keep = {current, _previous_current.get(asset_id)}
-    keep.discard(None)
+    if current:
+        keep.add(current)
+    prev = _previous_current.get(asset_id)
+    if prev:
+        keep.add(prev)
+    keep.update(listed_polyhaven_reader_pins(asset_root))
+    with _retained_lock:
+        for (aid, ver), count in _version_refcounts.items():
+            if aid == asset_id and count > 0:
+                keep.add(ver)
+    from fox3d import photoreal_assets
+
+    slot_key = photoreal_assets._polyhaven_slot_key(asset_root)
+    with photoreal_assets._POLYHAVEN_PIN_LOCK:
+        keep.update(photoreal_assets._POLYHAVEN_PINNED_VERSIONS.get(slot_key, ()))
+    versions_root = asset_root / _VERSIONS_DIRNAME
+    if versions_root.is_dir():
+        for child in versions_root.iterdir():
+            if child.is_dir() and _version_dir_has_retain_pins(child):
+                keep.add(child.name)
+    return keep
+
+
+def reclaim_polyhaven_version_directories_unlocked(
+    asset_root: Path,
+    *,
+    extra_keep: set[str] | None = None,
+) -> None:
+    """Delete unreferenced version dirs (caller must hold catalog coordination lock)."""
+    keep = polyhaven_versions_protected_from_reclaim(asset_root, extra_keep=extra_keep)
     versions_root = asset_root / _VERSIONS_DIRNAME
     if not versions_root.is_dir():
         return
-    with _retained_lock:
-        for child in versions_root.iterdir():
-            if not child.is_dir():
-                continue
-            ver = child.name
-            if ver in keep:
-                continue
-            if _version_refcounts.get((asset_id, ver), 0) > 0:
-                continue
-            if _version_dir_has_retain_pins(child):
-                continue
-            shutil.rmtree(child, ignore_errors=True)
+    for child in versions_root.iterdir():
+        if not child.is_dir() or child.name in keep:
+            continue
+        shutil.rmtree(child, ignore_errors=True)
+
+
+def _maybe_gc_asset_versions_unlocked(asset_root: Path) -> None:
+    """Reclaim version dirs (caller must hold catalog coordination lock)."""
+    reclaim_polyhaven_version_directories_unlocked(asset_root)
 
 
 def _maybe_gc_asset_versions(asset_root: Path) -> None:
