@@ -464,6 +464,8 @@ def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path, run_inde
     decode_errors: list[json.JSONDecodeError] = []
     writer_done = threading.Event()
     writer_errors: list[BaseException] = []
+    reader_done = threading.Event()
+    reader_errors: list[BaseException] = []
 
     def writer() -> None:
         try:
@@ -488,12 +490,17 @@ def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path, run_inde
             decode_errors.append(exc)
 
     def aggressive_reader() -> None:
-        while not writer_done.is_set():
+        try:
+            while not writer_done.is_set():
+                if path.is_file():
+                    _try_parse_signal()
+                time.sleep(0.001)
             if path.is_file():
                 _try_parse_signal()
-            time.sleep(0.001)
-        if path.is_file():
-            _try_parse_signal()
+        except BaseException as exc:
+            reader_errors.append(exc)
+        finally:
+            reader_done.set()
 
     wt = threading.Thread(target=writer, name="coord_signal_writer")
     rt = threading.Thread(target=aggressive_reader, name="coord_signal_reader", daemon=True)
@@ -504,6 +511,9 @@ def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path, run_inde
         assert writer_done.is_set(), "writer must always signal completion (even after replace errors)"
         assert not writer_errors, writer_errors
         rt.join(timeout=2)
+        assert reader_done.is_set(), "reader must always signal completion"
+        assert not rt.is_alive(), "reader thread must finish after writer completes"
+        assert not reader_errors, reader_errors
         assert not decode_errors, decode_errors
         final = polyhaven_cache.read_coord_json_signal(path)
         assert final == {"asset": "race", "version": "249"}
