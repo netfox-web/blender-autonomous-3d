@@ -48,7 +48,7 @@ class CommitOutbox:
         rec["txHash"] = stable_hash({k: rec[k] for k in rec if k != "txHash"})
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
-                atomic_write_json(self._path(rec["txId"]), rec)
+                atomic_write_json(self._path(str(rec["txId"])), rec)
         return rec
 
     def mark_business_committed(self, tx_id: str, *, observed_generation: int | None = None) -> dict[str, Any]:

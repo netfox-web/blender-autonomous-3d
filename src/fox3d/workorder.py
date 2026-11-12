@@ -994,7 +994,7 @@ class WorkOrderService:
 
     def _transition(self, rec: dict[str, Any], to: str, *, actor: str, reason: str, key: str | None = None) -> None:
         frm = rec.get("state")
-        allowed = TRANSITIONS.get(frm, frozenset())
+        allowed = TRANSITIONS.get(str(frm) if frm is not None else "", frozenset())
         if to not in allowed and frm != to:
             raise PermissionError(f"illegal transition {frm}->{to}")
         rec["state"] = to

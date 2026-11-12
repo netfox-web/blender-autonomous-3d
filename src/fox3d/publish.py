@@ -23,7 +23,7 @@ class CatalogRelease:
             "status": "active",
             "immutable": True,
         }
-        self.skus[sku["skuId"]] = sku
+        self.skus[str(sku["skuId"])] = sku
         return sku
 
     def release(self, *, name: str, sku_ids: list[str]) -> dict[str, Any]:
@@ -36,7 +36,7 @@ class CatalogRelease:
             "supersededBy": None,
         }
         rec["releaseHash"] = stable_hash({k: rec[k] for k in rec if k != "releaseHash"})
-        self.releases[rec["releaseId"]] = rec
+        self.releases[str(rec["releaseId"])] = rec
         return rec
 
     def supersede(self, release_id: str, *, successor: str) -> dict[str, Any]:

@@ -84,17 +84,18 @@ class ReleaseGate:
         if target == "APPROVED_FOR_EXPORT":
             if current not in {"WAITING_APPROVAL", "EVIDENCE_VERIFIED"}:
                 raise PermissionError("export requires WAITING_APPROVAL")
+        hashes = self.hashes_of(entity)
         rec = {
             "entityId": entity_id,
             "state": target,
             "actor": actor,
-            "hashes": self.hashes_of(entity),
+            "hashes": hashes,
             "stale": False,
             "liveMachineControl": False,
             "equalsLiveCnc": False,
             "note": "APPROVED_FOR_EXPORT is not LIVE_CNC/LASER",
         }
-        rec["audit"] = self.audit(actor=actor, entity_id=entity_id, entity=entity, decision=target, reason="release-gate", evidence_hash=rec["hashes"].get("evidenceHash"))
+        rec["audit"] = self.audit(actor=actor, entity_id=entity_id, entity=entity, decision=target, reason="release-gate", evidence_hash=hashes.get("evidenceHash"))
         self.approvals[entity_id] = rec
         return rec
 

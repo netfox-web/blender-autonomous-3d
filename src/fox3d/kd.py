@@ -627,7 +627,7 @@ def misassembly_risk(spec: Any, bom: dict[str, Any]) -> dict[str, Any]:
     doors = [ln for ln in panels if str(ln.get("partType") or "") in {"door", "drawer_front"}]
     if doors:
         warnings.append({"code": "FACE_HANDEDNESS", "message": "front/back identification required for drilled faces", "severity": "warning"})
-    sym = {}
+    sym: dict[tuple[float, float, float], list[Any]] = {}
     for ln in panels:
         key = (round(float(ln.get("length") or 0), 1), round(float(ln.get("width") or 0), 1), round(float(ln.get("thickness") or 0), 1))
         sym.setdefault(key, []).append(ln.get("partId"))
