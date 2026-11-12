@@ -234,6 +234,22 @@ def _maybe_pause_after_current_read(asset_root: Path, version: str) -> None:
         time.sleep(0.02)
 
 
+def _maybe_wait_retain_pin_test_release(asset_root: Path, version: str) -> None:
+    """Test hook: after cross-process retain pin, wait for parent to release the reader."""
+    pause_dir = os.environ.get(_PAUSE_AFTER_CURRENT_ENV, "").strip()
+    if not pause_dir:
+        return
+    coord = Path(pause_dir)
+    (coord / "retain_pin.json").write_text(
+        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    release = coord / "release_reader"
+    deadline = time.time() + 30.0
+    while not release.is_file() and time.time() < deadline:
+        time.sleep(0.02)
+
+
 def _version_dir_has_retain_pins(version_dir: Path) -> bool:
     pin_dir = version_dir / _RETAIN_DIRNAME
     if not pin_dir.is_dir():
@@ -422,6 +438,7 @@ class PolyhavenReadSession:
         if asset_id in self._pins:
             return self._pins[asset_id]
         asset_root = polyhaven_asset_root(self._root, asset_id)
+        pinned: str | None = None
         with _asset_versions_coordination(asset_root):
             version = read_current_version(asset_root)
             if version:
@@ -433,14 +450,18 @@ class PolyhavenReadSession:
                 if asset_id not in self._retain_files:
                     self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
                 self._pins[asset_id] = version
-                return version
-            if not _legacy_flat_bundle_present(asset_root):
+                pinned = version
+            elif not _legacy_flat_bundle_present(asset_root):
                 return None
-            _retain_version(asset_id, _LEGACY_FLAT_VERSION)
-            if asset_id not in self._retain_files:
-                self._retain_files[asset_id] = _acquire_cross_process_retain_flat(asset_root)
-            self._pins[asset_id] = _LEGACY_FLAT_VERSION
-        return _LEGACY_FLAT_VERSION
+            else:
+                _retain_version(asset_id, _LEGACY_FLAT_VERSION)
+                if asset_id not in self._retain_files:
+                    self._retain_files[asset_id] = _acquire_cross_process_retain_flat(asset_root)
+                self._pins[asset_id] = _LEGACY_FLAT_VERSION
+                pinned = _LEGACY_FLAT_VERSION
+        if pinned is not None and pinned != _LEGACY_FLAT_VERSION:
+            _maybe_wait_retain_pin_test_release(asset_root, pinned)
+        return pinned
 
     def resolve_ref_suffix(self, ref_suffix: str) -> Path | None:
         parsed = parse_polyhaven_asset_ref(ref_suffix)

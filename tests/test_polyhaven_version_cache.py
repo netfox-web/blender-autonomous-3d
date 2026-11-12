@@ -375,7 +375,6 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
                 f"    main = session.resolve_ref_suffix('models/polyhaven/{aid}/{aid}_2k.gltf')",
                 "    assert main is not None",
                 "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_KEEP'",
-                "    time.sleep(0.1)",
                 "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_KEEP'",
             ]
         ),
@@ -419,13 +418,26 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
         v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
         assert v1_bundle.is_dir(), "v1 must remain before reader creates cross-process retain pin"
         (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
-        assert publisher_done.wait(timeout=8), "publisher must finish both switches after reader retain pin"
+        retain_deadline = time.time() + 8.0
+        retain_payload = None
+        while time.time() < retain_deadline:
+            marker = pause_dir / "retain_pin.json"
+            if marker.is_file():
+                retain_payload = json.loads(marker.read_text(encoding="utf-8"))
+                break
+            time.sleep(0.02)
+        assert retain_payload == {"asset": aid, "version": v1}, "reader must create retain pin before publisher runs"
+        assert proc.poll() is None, "reader must stay alive while cross-process retain pin is held"
+        assert publisher_done.wait(timeout=8), "publisher must finish both switches while reader retain pin is held"
         assert not publisher_errors, publisher_errors
-        assert proc.wait(timeout=8) == 0
+        assert v1_bundle.is_dir(), "pinned v1 must survive two switches"
         assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_KEEP"
+        (pause_dir / "release_reader").write_text("go", encoding="utf-8")
+        assert proc.wait(timeout=8) == 0
     finally:
         os.environ.pop(polyhaven_cache._PUBLISH_LOCK_WAIT_DIR_ENV, None)
         if proc.poll() is None:
             proc.kill()
             (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
+            (pause_dir / "release_reader").write_text("go", encoding="utf-8")
             proc.wait(timeout=3)
