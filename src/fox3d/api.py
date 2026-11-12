@@ -113,7 +113,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         try:
             obj = get_platform().dam.get(asset_id, tenant_id=tid)
         except (KeyError, PermissionError) as exc:
-            raise HTTPException(404, str(exc)) from exc
+            raise HTTPException(404, "Asset not found") from exc
         path = Path(obj.path)
         media = "image/png" if path.suffix.lower() == ".png" else "application/octet-stream"
         return FileResponse(path, media_type=media)
@@ -296,22 +296,23 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def kd_readiness() -> dict[str, Any]:
         return get_platform().kd.readiness()
 
-    @app.get("/api/materials")
-    def materials(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = require_tenant(x_tenant_id)
-        plat = get_platform()
+    @app.get("/api/materials/catalog")
+    def materials_catalog() -> dict[str, Any]:
         from fox3d.acrylic import ACRYLIC_SHEETS
         from fox3d.manufacturing import SheetMaterialRegistry
         from fox3d.packaging import PAPERBOARD_SHEETS
 
-        lots = plat.lots.list(tenant_id=tid)
         return {
             "sheets": SheetMaterialRegistry().list(),
             "acrylic": list(ACRYLIC_SHEETS),
             "paperboard": list(PAPERBOARD_SHEETS),
-            "lots": lots,
             "costSource": "CONFIG",
         }
+
+    @app.get("/api/materials")
+    def materials(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        return {**materials_catalog(), "lots": get_platform().lots.list(tenant_id=tid)}
 
     @app.post("/api/materials/lots")
     def create_lot(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
