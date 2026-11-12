@@ -253,7 +253,8 @@ class EngineeringRuleEngine:
         try:
             from fox3d.manufacturing import HardwareRegistry
 
-            for issue in HardwareRegistry().compatibility(spec):
+            issues: list[dict[str, Any]] = HardwareRegistry().compatibility(spec)
+            for issue in issues:
                 v.append(RuleViolation(code=str(issue["code"]), message=str(issue["message"]), severity=issue.get("severity") or "error"))
         except Exception:
             pass

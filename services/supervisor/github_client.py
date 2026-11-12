@@ -360,7 +360,7 @@ class GitHubClient(GitHubClientInterface):
             resp = httpx.get(url, headers=headers, timeout=15.0)
             if resp.status_code == 200:
                 data = resp.json()
-                items: List[ChangedFileItem] = []
+                api_items: List[ChangedFileItem] = []
                 for f in data.get("files", []):
                     gh_status = f.get("status", "modified")
                     filename = f.get("filename", "")
@@ -376,8 +376,8 @@ class GitHubClient(GitHubClientInterface):
                     else:
                         status = "M"
                         old_path = None
-                    items.append(ChangedFileItem(status=status, path=filename, old_path=old_path))
-                return items
+                    api_items.append(ChangedFileItem(status=status, path=filename, old_path=old_path))
+                return api_items
         except Exception:
             pass
         return []

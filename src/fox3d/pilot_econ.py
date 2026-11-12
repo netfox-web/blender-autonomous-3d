@@ -55,7 +55,7 @@ class PilotEconomics:
             "liveProvider": False,
         }
         rec["actualHash"] = stable_hash({k: rec[k] for k in rec if k not in {"actualId", "actualHash"}})
-        self.actuals[rec["actualId"]] = rec
+        self.actuals[str(rec["actualId"])] = rec
         return rec
 
     def variance(self, *, frozen: dict[str, Any], actual: dict[str, Any]) -> dict[str, Any]:
