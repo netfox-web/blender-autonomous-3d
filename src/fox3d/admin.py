@@ -403,7 +403,7 @@ def render_admin(platform: Any) -> str:
 
   function assetCacheKey(assetId, tenantId) {{
     const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
-    return tenant + '::' + String(assetId || '');
+    return JSON.stringify([tenant, String(assetId || '')]);
   }}
 
   async function fetchAssetBlobUrl(assetId, tenantId) {{
@@ -454,11 +454,18 @@ def render_admin(platform: Any) -> str:
     }});
   }}
 
+  let resultAssetRequest = 0;
   function bindResultAsset(assetId, tenantId) {{
     const img = document.getElementById('res-img');
     const link = document.getElementById('res-link');
     const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    const request = ++resultAssetRequest;
+    img.removeAttribute('src');
+    img.alt = '';
+    img.onclick = null;
+    link.onclick = (ev) => ev.preventDefault();
     fetchAssetBlobUrl(assetId, tenant).then((url) => {{
+      if (request !== resultAssetRequest) return;
       img.src = url;
       img.onclick = () => window.open(url, '_blank', 'noopener');
       link.onclick = (ev) => {{
@@ -466,6 +473,7 @@ def render_admin(platform: Any) -> str:
         window.open(url, '_blank', 'noopener');
       }};
     }}).catch((err) => {{
+      if (request !== resultAssetRequest) return;
       img.alt = '載入失敗';
       link.onclick = (ev) => {{
         ev.preventDefault();
@@ -553,7 +561,7 @@ def render_admin(platform: Any) -> str:
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           bindResultAsset(
             data.render.job.outputAsset,
-            data.render.job.tenantId || payload.tenantId || DEFAULT_TENANT
+            data.render.job.tenantId || payload.tenantId
           );
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
