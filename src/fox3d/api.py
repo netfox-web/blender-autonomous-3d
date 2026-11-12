@@ -109,12 +109,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/assets/{asset_id}")
     def read_asset(asset_id: str, x_tenant_id: str | None = Header(default=None)) -> FileResponse:
-        plat = get_platform()
+        tid = require_tenant(x_tenant_id)
         try:
-            if x_tenant_id:
-                obj = plat.dam.get(asset_id, tenant_id=tenant(x_tenant_id))
-            else:
-                obj = plat.dam.get_unchecked(asset_id)
+            obj = get_platform().dam.get(asset_id, tenant_id=tid)
         except (KeyError, PermissionError) as exc:
             raise HTTPException(404, str(exc)) from exc
         path = Path(obj.path)

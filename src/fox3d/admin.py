@@ -59,12 +59,25 @@ def render_admin(platform: Any) -> str:
             "</tr>"
         )
 
+    def _asset_thumb(asset: str, img_class: str, *, tenant_id: str, title: str = "") -> str:
+        if not asset:
+            return ""
+        aid = escape(str(asset))
+        tid = escape(str(tenant_id or "demo"))
+        title_attr = f' title="{title}"' if title else ""
+        return (
+            f'<a href="#" class="asset-open"{title_attr} data-asset-id="{aid}"'
+            f' data-tenant-id="{tid}" rel="noopener">'
+            f'<img data-asset-id="{aid}" data-tenant-id="{tid}" class="{img_class} asset-img" alt=""/></a>'
+        )
+
     rows_nodes = "".join(_worker_row(n) for n in nodes)
     rows_jobs = []
     for j in jobs:
         files = ((j.get("output") or {}).get("files") or {})
         asset = j.get("outputAsset") or files.get("beauty.png") or ""
-        img = f'<a href="/api/assets/{escape(str(asset))}" target="_blank" title="點擊在新分頁開啟 512x512 高清大圖"><img src="/api/assets/{escape(str(asset))}?x=" class="thumb"/></a>' if asset else ""
+        job_tenant = str(j.get("tenantId") or "demo")
+        img = _asset_thumb(asset, "thumb", tenant_id=job_tenant, title="點擊在新分頁開啟 512x512 高清大圖")
         log = escape((j.get("logs") or "")[-400:])
         rows_jobs.append(
             "<tr>"
@@ -84,7 +97,7 @@ def render_admin(platform: Any) -> str:
     twin_cards = []
     for t in twins:
         preview = t.previewAssetId
-        img = f'<a href="/api/assets/{escape(str(preview))}" target="_blank"><img src="/api/assets/{escape(str(preview))}" class="preview"/></a>' if preview else "<em>no preview</em>"
+        img = _asset_thumb(preview, "preview", tenant_id=t.tenantId) if preview else "<em>no preview</em>"
         twin_cards.append(
             f"<div class='card'><h3>{escape(t.sku)}</h3>"
             f"<p class='note'>{escape(t.twinId)}</p>{img}"
@@ -270,7 +283,7 @@ def render_admin(platform: Any) -> str:
       <div id="result-box" style="display: none; margin-top: 20px; padding: 16px; background: #1c2638; border: 1px solid var(--accent); border-radius: 8px;">
         <h4 style="margin: 0 0 10px 0; color: #79c0ff;">🎉 3D 渲染出圖成功！</h4>
         <div style="display: flex; gap: 16px; align-items: center;">
-          <img id="res-img" src="" style="width: 160px; height: 160px; object-fit: contain; background: #000; border-radius: 6px; border: 1px solid #30363d; cursor: pointer;" onclick="window.open(this.src)"/>
+          <img id="res-img" src="" style="width: 160px; height: 160px; object-fit: contain; background: #000; border-radius: 6px; border: 1px solid #30363d; cursor: pointer;"/>
           <div style="font-size: 13px;">
             <p id="res-spec" style="margin: 0 0 8px 0; font-weight: 600;"></p>
             <p id="res-time" style="margin: 0 0 12px 0; color: var(--text-muted);"></p>
@@ -286,18 +299,31 @@ def render_admin(platform: Any) -> str:
     <h2 style="margin: 0 0 16px 0; font-size: 20px;">3D 渲染成果相簿</h2>
     <div class="gallery-grid">
       {''.join(
-        f'''<div class="gallery-card">
-          <a href="/api/assets/{escape(str(j.get("outputAsset") or (j.get("output") or {{}}).get("files", {{}}).get("beauty.png") or ""))}" target="_blank">
-            <img src="/api/assets/{escape(str(j.get("outputAsset") or (j.get("output") or {{}}).get("files", {{}}).get("beauty.png") or ""))}" class="gallery-thumb" loading="lazy"/>
+        (
+            lambda _j, _aid, _tid: f'''<div class="gallery-card">
+          <a href="#" class="asset-open" data-asset-id="{_aid}" data-tenant-id="{_tid}" rel="noopener">
+            <img data-asset-id="{_aid}" data-tenant-id="{_tid}" class="gallery-thumb asset-img" loading="lazy" alt=""/>
           </a>
           <div class="gallery-meta">
-            <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(j.get("jobId")))}</div>
-            <div style="color: var(--text-muted);">引擎: {escape(str(j.get("renderEngine") or (j.get("output") or {{}}).get("engine") or "CYCLES"))} ({escape(str(j.get("samples") or (j.get("output") or {{}}).get("samples") or 32))} 採樣)</div>
-            <div style="color: var(--text-muted);">耗時: {escape(str(j.get("renderTimeSec") or (j.get("output") or {{}}).get("renderTimeSec") or "0.8"))} 秒</div>
-            <a href="/api/assets/{escape(str(j.get("outputAsset") or (j.get("output") or {{}}).get("files", {{}}).get("beauty.png") or ""))}" target="_blank" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
+            <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(_j.get("jobId")))}</div>
+            <div style="color: var(--text-muted);">引擎: {escape(str(_j.get("renderEngine") or (_j.get("output") or {{}}).get("engine") or "CYCLES"))} ({escape(str(_j.get("samples") or (_j.get("output") or {{}}).get("samples") or 32))} 採樣)</div>
+            <div style="color: var(--text-muted);">耗時: {escape(str(_j.get("renderTimeSec") or (_j.get("output") or {{}}).get("renderTimeSec") or "0.8"))} 秒</div>
+            <a href="#" class="asset-open" data-asset-id="{_aid}" data-tenant-id="{_tid}" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
           </div>
         </div>'''
-        for j in jobs if j.get("outputAsset") or ((j.get("output") or {}).get("files") or {}).get("beauty.png")
+        )(
+            j,
+            escape(
+                str(
+                    j.get("outputAsset")
+                    or ((j.get("output") or {}).get("files") or {}).get("beauty.png")
+                    or ""
+                )
+            ),
+            escape(str(j.get("tenantId") or "demo")),
+        )
+        for j in jobs
+        if j.get("outputAsset") or ((j.get("output") or {}).get("files") or {}).get("beauty.png")
       ) or '<p class="note">尚無已渲染圖片，請至「一鍵 3D 櫃體設計」產生您的第一座櫃子！</p>'}
     </div>
   </section>
@@ -371,6 +397,90 @@ def render_admin(platform: Any) -> str:
   </section>
 
   <script>
+  (function () {{
+  const DEFAULT_TENANT = 'demo';
+  const assetBlobUrls = new Map();
+
+  function assetCacheKey(assetId, tenantId) {{
+    const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    return tenant + '::' + String(assetId || '');
+  }}
+
+  async function fetchAssetBlobUrl(assetId, tenantId) {{
+    const key = String(assetId || '');
+    if (!key) throw new Error('missing asset');
+    const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    const cacheKey = assetCacheKey(key, tenant);
+    if (assetBlobUrls.has(cacheKey)) return assetBlobUrls.get(cacheKey);
+    const res = await fetch('/api/assets/' + encodeURIComponent(key), {{
+      headers: {{ 'X-Tenant-Id': tenant }}
+    }});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    assetBlobUrls.set(cacheKey, url);
+    return url;
+  }}
+
+  function openAssetInNewTab(assetId, tenantId) {{
+    fetchAssetBlobUrl(assetId, tenantId)
+      .then((url) => window.open(url, '_blank', 'noopener'))
+      .catch((err) => alert('無法開啟資產：' + err.message));
+  }}
+
+  async function hydrateAssetImages() {{
+    const pending = document.querySelectorAll('img.asset-img[data-asset-id]');
+    await Promise.all(Array.from(pending).map(async (img) => {{
+      const assetId = img.getAttribute('data-asset-id');
+      if (!assetId) return;
+      const tenantId = img.getAttribute('data-tenant-id') || DEFAULT_TENANT;
+      try {{
+        img.src = await fetchAssetBlobUrl(assetId, tenantId);
+      }} catch (err) {{
+        img.alt = '載入失敗';
+      }}
+    }}));
+  }}
+
+  function wireAssetOpenLinks() {{
+    document.querySelectorAll('a.asset-open[data-asset-id]').forEach((anchor) => {{
+      anchor.addEventListener('click', (ev) => {{
+        ev.preventDefault();
+        openAssetInNewTab(
+          anchor.getAttribute('data-asset-id'),
+          anchor.getAttribute('data-tenant-id') || DEFAULT_TENANT
+        );
+      }});
+    }});
+  }}
+
+  function bindResultAsset(assetId, tenantId) {{
+    const img = document.getElementById('res-img');
+    const link = document.getElementById('res-link');
+    const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    fetchAssetBlobUrl(assetId, tenant).then((url) => {{
+      img.src = url;
+      img.onclick = () => window.open(url, '_blank', 'noopener');
+      link.onclick = (ev) => {{
+        ev.preventDefault();
+        window.open(url, '_blank', 'noopener');
+      }};
+    }}).catch((err) => {{
+      img.alt = '載入失敗';
+      link.onclick = (ev) => {{
+        ev.preventDefault();
+        alert('無法開啟資產：' + err.message);
+      }};
+    }});
+  }}
+
+  document.addEventListener('DOMContentLoaded', () => {{
+    hydrateAssetImages();
+    wireAssetOpenLinks();
+  }});
+  window.bindResultAsset = bindResultAsset;
+  }})();
+
     function switchTab(tabId) {{
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
@@ -441,9 +551,10 @@ def render_admin(platform: Any) -> str:
         btn.disabled = false;
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
-          const assetUrl = '/api/assets/' + data.render.job.outputAsset;
-          document.getElementById('res-img').src = assetUrl + '?t=' + Date.now();
-          document.getElementById('res-link').href = assetUrl;
+          bindResultAsset(
+            data.render.job.outputAsset,
+            data.render.job.tenantId || payload.tenantId || DEFAULT_TENANT
+          );
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
           box.style.display = 'block';
