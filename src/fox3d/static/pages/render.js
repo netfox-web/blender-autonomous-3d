@@ -229,8 +229,8 @@
     }
   }
 
-  // <img src="/api/assets/..."> cannot carry X-Tenant-Id (the server then skips the
-  // tenant check), so fetch the asset with the header and show it as a blob URL.
+  // <img> cannot carry X-Tenant-Id, so fetch the asset with the required
+  // header and show it as a blob URL.
   async function loadPreviewImage(twinId, assetId) {
     const tenant = activeTenant;
     try {

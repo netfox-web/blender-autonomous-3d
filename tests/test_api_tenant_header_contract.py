@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from fox3d.api import create_app
 
 # Each listed endpoint returns 400 / "X-Tenant-Id 無效" for missing,
-# empty, whitespace-only, or malformed headers, except OPTIONAL below.
+# empty, whitespace-only, or malformed headers.
 ROUTES = [
     ('POST', '/api/3d/jobs'),
     ('GET', '/api/3d/jobs'),
@@ -72,7 +72,6 @@ ROUTES = [
     ('POST', '/api/pilot/work-orders/{work_order_id}/complete'),
     ('GET', '/api/pilot/scan-token/{kind}/{object_id}'),
 ]
-OPTIONAL = {("GET", "/api/assets/{asset_id}")}
 
 
 @pytest.fixture
@@ -105,9 +104,5 @@ def test_tenant_header_contract(client, method, path, header):
         else:
             kwargs = {"json": {}}
     response = client.request(method, url, headers=headers, **kwargs)
-    if (method, path) in OPTIONAL and header in (None, ""):
-        assert response.status_code == 404
-        assert response.json() == {"detail": "'missing'"}
-    else:
-        assert response.status_code == 400
-        assert response.json() == {"detail": "X-Tenant-Id 無效"}
+    assert response.status_code == 400
+    assert response.json() == {"detail": "X-Tenant-Id 無效"}

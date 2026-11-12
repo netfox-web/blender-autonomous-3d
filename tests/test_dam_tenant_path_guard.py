@@ -94,6 +94,22 @@ def test_api_read_asset_rejects_invalid_tenant_header(tmp_path: Path) -> None:
     assert response.status_code == 400
 
 
+def test_api_read_asset_enforces_tenant_isolation(tmp_path: Path) -> None:
+    platform = Platform(root=tmp_path / "data", mock_blender=True)
+    asset = platform.dam.put(tenant_id="owner", kind="test", name="asset.png", data=b"private image")
+    client = TestClient(create_app(platform))
+    url = f"/api/assets/{asset.asset_id}"
+
+    for headers in ({}, {"X-Tenant-Id": ""}, {"X-Tenant-Id": " "}, {"X-Tenant-Id": "../x"}):
+        assert client.get(url, headers=headers).status_code == 400
+    assert client.get(url, headers={"X-Tenant-Id": "other"}).status_code == 404
+    assert client.get("/api/assets/missing", headers={"X-Tenant-Id": "owner"}).status_code == 404
+    response = client.get(url, headers={"X-Tenant-Id": "owner"})
+    assert response.status_code == 200
+    assert response.content == b"private image"
+    assert response.headers["content-type"] == "image/png"
+
+
 def test_api_rejects_escape_and_accepts_upload(tmp_path: Path) -> None:
     platform = Platform(root=tmp_path / "data", mock_blender=True)
     client = TestClient(create_app(platform))
