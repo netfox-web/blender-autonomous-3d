@@ -14,17 +14,17 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str):
     if name == "BLENDER_CAPABILITIES":
-        from fox3d.capabilities import BLENDER_CAPABILITIES as value
+        from fox3d.capabilities import BLENDER_CAPABILITIES
 
-        return value
+        return BLENDER_CAPABILITIES
     if name == "Platform":
-        from fox3d.platform import Platform as value
+        from fox3d.platform import Platform
 
-        return value
+        return Platform
     if name == "foxstudio_operations":
-        from fox3d.capabilities import foxstudio_operations as value
+        from fox3d.capabilities import foxstudio_operations
 
-        return value
+        return foxstudio_operations
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
