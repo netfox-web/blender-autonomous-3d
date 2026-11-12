@@ -193,13 +193,14 @@ def _atomic_write_current(asset_root: Path, version: str) -> None:
     if publish_pause_before_switch is not None:
         publish_pause_before_switch.wait()
 
-    prev = read_current_version(asset_root)
-    if prev and prev != version:
-        _previous_current[asset_root.name] = prev
+    with _asset_versions_coordination(asset_root):
+        prev = read_current_version(asset_root)
+        if prev and prev != version:
+            _previous_current[asset_root.name] = prev
 
-    _atomic_replace_file(target, payload, namespace="polyhaven-current")
+        _atomic_replace_file(target, payload, namespace="polyhaven-current")
 
-    _maybe_gc_asset_versions(asset_root)
+        _maybe_gc_asset_versions_unlocked(asset_root)
 
     if publish_pause_after_switch is not None:
         publish_pause_after_switch.set()
@@ -271,10 +272,16 @@ def _is_flat_retain_pin(pin_path: Path) -> bool:
 
 def _flat_bundle_has_retain_pins(asset_root: Path) -> bool:
     pin_dir = asset_root / _RETAIN_DIRNAME
-    if not pin_dir.is_dir():
-        return False
+    if pin_dir.is_dir():
+        try:
+            if any(pin_dir.iterdir()):
+                return True
+        except OSError:
+            return True
+    from fox3d.polyhaven_paths import _POLYHAVEN_LEGACY_PIN, listed_polyhaven_reader_pins
+
     try:
-        return any(pin_dir.iterdir())
+        return _POLYHAVEN_LEGACY_PIN in listed_polyhaven_reader_pins(asset_root)
     except OSError:
         return True
 
@@ -380,40 +387,93 @@ def _materialize_version_from_bundle(
 
 
 @contextmanager
-def _asset_versions_coordination(asset_root: Path) -> Iterator[None]:
+def _asset_versions_coordination(
+    asset_root: Path,
+    *,
+    timeout: float = 30.0,
+) -> Iterator[None]:
     """Cross-process mutex shared by readers, publishers, and version GC."""
-    from fox3d.storelock import FileLock
+    from fox3d.polyhaven_paths import catalog_lock
 
-    lock_path = asset_root / _ASSET_COORD_LOCK
     wait_dir = os.environ.get(_PUBLISH_LOCK_WAIT_DIR_ENV, "").strip()
-    blocked_marker = None
     if wait_dir:
         blocked_marker = Path(wait_dir) / "publisher_blocked_on_lock.json"
-    with FileLock(lock_path, timeout=30.0, blocked_marker=blocked_marker):
+        try:
+            blocked_marker.parent.mkdir(parents=True, exist_ok=True)
+            blocked_marker.write_text("waiting", encoding="utf-8")
+        except OSError:
+            pass
+    with catalog_lock(asset_root, timeout=timeout):
         yield
 
 
-def _maybe_gc_asset_versions(asset_root: Path) -> None:
+def polyhaven_versions_protected_from_reclaim(
+    asset_root: Path,
+    *,
+    extra_keep: set[str] | None = None,
+) -> set[str]:
+    """Version ids that must not be removed during reclaim (caller should hold catalog lock)."""
+    from fox3d.polyhaven_paths import listed_polyhaven_reader_pins, read_polyhaven_catalog
+
     asset_id = asset_root.name
+    keep: set[str] = set(extra_keep or ())
+    catalog = read_polyhaven_catalog(asset_root)
+    if catalog and isinstance(catalog.get("versionId"), str):
+        keep.add(catalog["versionId"])
     current = read_current_version(asset_root)
-    keep = {current, _previous_current.get(asset_id)}
-    keep.discard(None)
+    if current:
+        keep.add(current)
+    prev = _previous_current.get(asset_id)
+    if prev:
+        keep.add(prev)
+    keep.update(listed_polyhaven_reader_pins(asset_root))
+    with _retained_lock:
+        for (aid, ver), count in _version_refcounts.items():
+            if aid == asset_id and count > 0:
+                keep.add(ver)
+    from fox3d import photoreal_assets
+
+    slot_key = photoreal_assets._polyhaven_slot_key(asset_root)
+    with photoreal_assets._POLYHAVEN_PIN_LOCK:
+        keep.update(photoreal_assets._POLYHAVEN_PINNED_VERSIONS.get(slot_key, ()))
+    versions_root = asset_root / _VERSIONS_DIRNAME
+    if versions_root.is_dir():
+        for child in versions_root.iterdir():
+            if child.is_dir() and _version_dir_has_retain_pins(child):
+                keep.add(child.name)
+    return keep
+
+
+def reclaim_polyhaven_version_directories_unlocked(
+    asset_root: Path,
+    *,
+    extra_keep: set[str] | None = None,
+) -> None:
+    """Delete unreferenced version dirs (caller must hold catalog coordination lock)."""
+    keep = polyhaven_versions_protected_from_reclaim(asset_root, extra_keep=extra_keep)
     versions_root = asset_root / _VERSIONS_DIRNAME
     if not versions_root.is_dir():
         return
-    with _asset_versions_coordination(asset_root):
-        with _retained_lock:
-            for child in versions_root.iterdir():
-                if not child.is_dir():
-                    continue
-                ver = child.name
-                if ver in keep:
-                    continue
-                if _version_refcounts.get((asset_id, ver), 0) > 0:
-                    continue
-                if _version_dir_has_retain_pins(child):
-                    continue
-                shutil.rmtree(child, ignore_errors=True)
+    for child in versions_root.iterdir():
+        if not child.is_dir() or child.name in keep:
+            continue
+        shutil.rmtree(child, ignore_errors=True)
+
+
+def _maybe_gc_asset_versions_unlocked(asset_root: Path) -> None:
+    """Reclaim version dirs (caller must hold catalog coordination lock)."""
+    reclaim_polyhaven_version_directories_unlocked(asset_root)
+
+
+def _maybe_gc_asset_versions(asset_root: Path) -> None:
+    versions_root = asset_root / _VERSIONS_DIRNAME
+    if not versions_root.is_dir():
+        return
+    try:
+        with _asset_versions_coordination(asset_root, timeout=0.0):
+            _maybe_gc_asset_versions_unlocked(asset_root)
+    except TimeoutError:
+        pass
 
 
 def publish_version(asset_root: Path, staging_bundle: Path, version: str) -> None:
@@ -553,7 +613,9 @@ class PolyhavenReadSession:
             else:
                 _retain_version(asset_id, _LEGACY_FLAT_VERSION)
                 if asset_id not in self._retain_files:
-                    self._retain_files[asset_id] = _acquire_cross_process_retain_flat(asset_root)
+                    from fox3d.polyhaven_paths import acquire_polyhaven_reader_pin
+
+                    self._retain_files[asset_id] = acquire_polyhaven_reader_pin(asset_root, None)
                 self._pins[asset_id] = _LEGACY_FLAT_VERSION
                 pinned = _LEGACY_FLAT_VERSION
         if pinned is not None and pinned != _LEGACY_FLAT_VERSION:
@@ -582,7 +644,12 @@ class PolyhavenReadSession:
         for aid, version in self._pins.items():
             _release_version(aid, version)
         for pin in self._retain_files.values():
-            _release_cross_process_retain(pin)
+            from fox3d.polyhaven_paths import _POLYHAVEN_PINS_DIR, release_polyhaven_reader_pin
+
+            if _POLYHAVEN_PINS_DIR in pin.parts:
+                release_polyhaven_reader_pin(pin)
+            else:
+                _release_cross_process_retain(pin)
         self._pins.clear()
         self._retain_files.clear()
         self._closed = True

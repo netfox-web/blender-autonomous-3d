@@ -363,6 +363,52 @@ def test_cross_process_legacy_flat_survives_migration_while_reading(tmp_path: Pa
             proc.kill()
 
 
+def test_gc_defers_while_coordination_lock_held(tmp_path: Path):
+    """Publish and reclaim wait while the shared catalog lock is held, then complete after release."""
+    aid = "gc_defer"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    v1 = "1" * 64
+    v2 = "2" * 64
+    v3 = "3" * 64
+    _seed_version_bundle(asset_root, aid, v1, tex_marker=b"KEEP_UNTIL_UNLOCK")
+
+    release = threading.Event()
+    acquired = threading.Event()
+    published = threading.Event()
+
+    def hold_coord_lock():
+        with polyhaven_cache._asset_versions_coordination(asset_root):
+            acquired.set()
+            release.wait(timeout=5.0)
+
+    def run_publish():
+        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"NEW_CURRENT")
+        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"NEW_CURRENT")
+        published.set()
+
+    holder = threading.Thread(target=hold_coord_lock, daemon=True)
+    holder.start()
+    assert acquired.wait(timeout=3.0)
+    try:
+        publisher = threading.Thread(target=run_publish, daemon=True)
+        publisher.start()
+        time.sleep(0.15)
+        assert not published.is_set(), "publish must wait on held catalog lock"
+        v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+        assert v1_bundle.is_dir(), "GC must not run while the lock is held"
+        assert polyhaven_cache.read_current_version(asset_root) == v1
+        release.set()
+        holder.join(timeout=5.0)
+        assert published.wait(timeout=5.0)
+        publisher.join(timeout=5.0)
+        polyhaven_cache._maybe_gc_asset_versions(asset_root)
+        assert not v1_bundle.exists(), "GC must reclaim deferred versions after the lock is free"
+    finally:
+        release.set()
+        holder.join(timeout=2.0)
+
+
 def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path: Path):
     """Issue #168: pause after current read, before on-disk retain; publisher GC must wait on coord lock."""
     aid = "pre_retain_race"
@@ -586,3 +632,27 @@ def test_coord_signal_atomic_replace_retries_transient_windows_contention(
 def test_cross_process_race_before_retain_marker_repeated(tmp_path: Path, run_index: int):
     """Stress cross-process coordination signals across repeated runs (issue #209)."""
     test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path)
+
+
+def test_worker_legacy_pin_blocks_flat_migration_cleanup(tmp_path: Path):
+    """Fleet worker ``.polyhaven_pins/__legacy_flat__`` must defer legacy-flat cleanup during migration."""
+    from fox3d.polyhaven_paths import acquire_polyhaven_reader_pin, release_polyhaven_reader_pin
+
+    aid = "worker_legacy_pin"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    gltf = asset_root / f"{aid}_2k.gltf"
+    gltf.write_bytes(_gltf_doc("textures/albedo.png"))
+    (asset_root / "textures").mkdir()
+    (asset_root / "textures/albedo.png").write_bytes(b"KEEP_UNTIL_READ")
+    (asset_root / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text(
+        '["textures/albedo.png"]',
+        encoding="utf-8",
+    )
+    pin_file = acquire_polyhaven_reader_pin(asset_root, None)
+    try:
+        assert photoreal_assets._polyhaven_adopt_legacy_cache(asset_root, gltf)
+        assert gltf.is_file()
+        assert (asset_root / "textures/albedo.png").read_bytes() == b"KEEP_UNTIL_READ"
+    finally:
+        release_polyhaven_reader_pin(pin_file)

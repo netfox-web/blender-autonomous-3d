@@ -14,6 +14,10 @@ import sys
 import time
 from pathlib import Path
 
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 ASSET_REF_PREFIX = "assets://"
 
 
@@ -36,7 +40,14 @@ def resolve_asset_ref(value: object) -> Path | None:
     parts = [seg for seg in rel.split("/") if seg not in ("", ".")]
     if any(seg == ".." for seg in parts):
         raise ValueError("asset ref escapes the asset root: " + text)
-    return _assets_root().joinpath(*parts)
+    base = _assets_root()
+    from worker_polyhaven import load_polyhaven_paths
+
+    ph = load_polyhaven_paths()
+    resolved = ph.resolve_polyhaven_asset_ref_path_pinned(base, "/".join(parts))
+    if resolved is not None:
+        return resolved
+    return base.joinpath(*parts)
 
 
 def _argv_after_double_dash(argv: list[str]) -> list[str]:
@@ -1958,7 +1969,15 @@ def main() -> int:
         print(json.dumps(payload))
         return 0
     job = _load_job(args[0])
-    result = build_and_render(job)
+    try:
+        result = build_and_render(job)
+    finally:
+        try:
+            from worker_polyhaven import load_polyhaven_paths
+
+            load_polyhaven_paths().release_all_polyhaven_worker_pins()
+        except Exception:
+            pass
     out = Path(job.get("workDir") or ".") / "result.json"
     _write_json(out, result)
     if result.get("status") == "blocked":

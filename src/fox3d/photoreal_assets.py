@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -10,7 +11,9 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -19,6 +22,19 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 from fox3d import polyhaven_cache
+from fox3d.polyhaven_paths import (
+    POLYHAVEN_CATALOG_NAME,
+    POLYHAVEN_VERSIONS_DIR,
+    _POLYHAVEN_PINS_DIR,
+    acquire_polyhaven_reader_pin,
+    catalog_lock,
+    listed_polyhaven_reader_pins,
+    read_polyhaven_catalog,
+    release_polyhaven_reader_pin,
+    resolve_polyhaven_bundle_paths,
+    version_id_for_resolved_bundle,
+)
+from fox3d.recipe_3d import atomic_json
 from fox3d.storelock import FileLock
 
 AI_STYLE_PRESETS: dict[str, dict[str, Any]] = {
@@ -263,6 +279,20 @@ for _aid, _ptype, _label, _short in _MODERN_EXTRA:
 
 logger = logging.getLogger(__name__)
 
+
+def _polyhaven_resolved_gltf_path(model_dir: Path, gltf_file: Path) -> Path:
+    _bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    return resolved_gltf
+
+
+def _polyhaven_locate_bundle(asset_root: Path, gltf_name: str) -> tuple[Path, Path]:
+    """Resolve active bundle via ``current`` pointer (workbench) or catalog pointer (fleet)."""
+    located = polyhaven_cache.active_bundle_dir(asset_root, gltf_name)
+    if located is not None:
+        return located
+    nominal = asset_root / gltf_name
+    return resolve_polyhaven_bundle_paths(asset_root, nominal)
+
 _POLYHAVEN_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _POLYHAVEN_ALLOWED_HOSTS = frozenset({"polyhaven.com", "www.polyhaven.com"})
 # Case-insensitive names that collide with shared dirs under assets/models/polyhaven/.
@@ -341,7 +371,7 @@ def _polyhaven_normalize_bundle_rel(rel_path: str) -> str | None:
 def _polyhaven_reserved_bundle_rels(gltf_file: Path) -> set[str]:
     """Case-folded bundle-relative paths that external includes must not target."""
     reserved: set[str] = set()
-    for raw in (gltf_file.name, _POLYHAVEN_MANIFEST_NAME):
+    for raw in (gltf_file.name, _POLYHAVEN_MANIFEST_NAME, POLYHAVEN_CATALOG_NAME):
         norm = _polyhaven_normalize_bundle_rel(raw)
         if norm is not None:
             reserved.add(norm.casefold())
@@ -475,50 +505,13 @@ def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, 
     return gltf_doc
 
 
-def _polyhaven_locate_bundle(asset_root: Path, gltf_name: str) -> tuple[Path, Path]:
-    located = polyhaven_cache.active_bundle_dir(asset_root, gltf_name)
-    if located is not None:
-        return located
-    return asset_root, asset_root / gltf_name
-
-
-def _polyhaven_adopt_legacy_cache(asset_root: Path, gltf_file: Path) -> bool:
-    """While holding the download lock: manifest + migrate flat cache into versions/<hash>/."""
-    bundle_dir, resolved_gltf = _polyhaven_locate_bundle(asset_root, gltf_file.name)
-    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_dir, resolved_gltf)
-    if gltf_doc is None:
-        return False
-    if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
-        include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
-        return polyhaven_cache.migrate_legacy_flat_bundle(
-            asset_root,
-            resolved_gltf,
-            cache_complete_fn=_polyhaven_cache_complete,
-            include_rels=include_rels,
-        )
-    include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
-    manifest_path = _polyhaven_manifest_path(bundle_dir)
-    try:
-        manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
-    except OSError:
-        logger.warning("Failed to write Poly Haven manifest for %s", asset_root.name)
-        return False
-    if not _polyhaven_cache_complete(bundle_dir, resolved_gltf):
-        return False
-    return polyhaven_cache.migrate_legacy_flat_bundle(
-        asset_root,
-        resolved_gltf,
-        cache_complete_fn=_polyhaven_cache_complete,
-        include_rels=include_rels,
-    )
-
-
 def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     """True only when the cached main glTF and every external URI it references are present."""
-    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
+    bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_root, resolved_gltf)
     if gltf_doc is None:
         return False
-    manifest_path = _polyhaven_manifest_path(model_dir)
+    manifest_path = _polyhaven_manifest_path(bundle_root)
     if not manifest_path.exists():
         return False
     try:
@@ -535,28 +528,257 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     for rel in includes:
         if not isinstance(rel, str):
             return False
-        if _polyhaven_include_reserved_collision(gltf_file, rel):
+        if _polyhaven_include_reserved_collision(resolved_gltf, rel):
             return False
-        if not _polyhaven_bundle_file_ready(model_dir, rel, buffer_expected=buffer_expected):
+        if not _polyhaven_bundle_file_ready(bundle_root, rel, buffer_expected=buffer_expected):
             return False
     return True
 
 
-def _polyhaven_lock_path(asset_root: Path) -> Path:
-    """Lock beside the asset root; version dirs are immutable so readers never traverse partial trees."""
-    return asset_root.parent / f".{asset_root.name}.polyhaven.lock"
+def _polyhaven_ensure_fleet_catalog_pointer(slot: Path, gltf_name: str) -> None:
+    """Mirror workbench ``current`` into fleet catalog pointer when only ``current`` exists."""
+    if read_polyhaven_catalog(slot) is not None:
+        return
+    version = polyhaven_cache.read_current_version(slot)
+    if not version:
+        return
+    with catalog_lock(slot):
+        if read_polyhaven_catalog(slot) is not None:
+            return
+        atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version, "gltfName": gltf_name})
 
 
-def _polyhaven_atomic_publish(asset_root: Path, staging: Path, version: str) -> None:
-    """Install staging into versions/<version>/ and atomically switch the current pointer."""
-    polyhaven_cache.publish_version(asset_root, staging, version)
+def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
+    """While holding the download lock: manifest + migrate flat cache into versions/<hash>/."""
+    bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_dir, resolved_gltf)
+    if gltf_doc is None:
+        return False
+    include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+
+    def _finish(ok: bool) -> bool:
+        if ok:
+            _polyhaven_ensure_fleet_catalog_pointer(model_dir, gltf_file.name)
+        return ok
+
+    if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        return _finish(
+            polyhaven_cache.migrate_legacy_flat_bundle(
+                model_dir,
+                resolved_gltf,
+                cache_complete_fn=_polyhaven_cache_complete,
+                include_rels=include_rels,
+            )
+        )
+    manifest_path = _polyhaven_manifest_path(bundle_dir)
+    try:
+        manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        logger.warning("Failed to write Poly Haven manifest for %s", model_dir.name)
+        return False
+    if not _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        return False
+    return _finish(
+        polyhaven_cache.migrate_legacy_flat_bundle(
+            model_dir,
+            resolved_gltf,
+            cache_complete_fn=_polyhaven_cache_complete,
+            include_rels=include_rels,
+        )
+    )
 
 
-def _polyhaven_download_bundle(asset_root: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
-    """Download glTF + includes into a staging dir, then publish as a new immutable version."""
-    asset_root.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".ph-staging-", dir=asset_root.parent))
-    published = False
+def _polyhaven_bundle_version_id(bundle_root: Path, gltf_path: Path, include_rels: list[str]) -> str:
+    digest = hashlib.sha256()
+    digest.update(gltf_path.name.encode("utf-8"))
+    digest.update(gltf_path.read_bytes())
+    manifest_path = _polyhaven_manifest_path(bundle_root)
+    digest.update(manifest_path.read_bytes())
+    for rel in sorted(include_rels):
+        digest.update(rel.encode("utf-8"))
+        dependency = bundle_root / rel.replace("\\", "/")
+        if dependency.is_file():
+            digest.update(dependency.read_bytes())
+    return digest.hexdigest()[:32]
+
+
+_POLYHAVEN_PIN_LOCK = threading.Lock()
+_POLYHAVEN_PINNED_VERSIONS: dict[str, set[str]] = {}
+_POLYHAVEN_DISK_PINS: dict[tuple[str, str], Path] = {}
+_POLYHAVEN_LEGACY_PIN = "__legacy_flat__"
+
+
+def _polyhaven_slot_key(slot: Path) -> str:
+    return str(slot.resolve())
+
+
+def _polyhaven_pin_version(slot: Path, version_id: str | None) -> None:
+    pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
+    key = _polyhaven_slot_key(slot)
+    with _POLYHAVEN_PIN_LOCK:
+        _POLYHAVEN_PINNED_VERSIONS.setdefault(key, set()).add(pin)
+
+
+def unpin_polyhaven_bundle(slot: Path, version_id: str | None) -> None:
+    """Release a pin acquired via :func:`pin_polyhaven_bundle` and reclaim space when safe."""
+    pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
+    key = _polyhaven_slot_key(slot)
+    with _POLYHAVEN_PIN_LOCK:
+        pins = _POLYHAVEN_PINNED_VERSIONS.get(key)
+        if pins is not None:
+            pins.discard(pin)
+            if not pins:
+                _POLYHAVEN_PINNED_VERSIONS.pop(key, None)
+        pin_file = _POLYHAVEN_DISK_PINS.pop((key, pin), None)
+    if pin_file is not None:
+        release_polyhaven_reader_pin(pin_file)
+    with catalog_lock(slot):
+        _polyhaven_reclaim_slot_unlocked(slot)
+
+
+def _polyhaven_pinned_versions(slot: Path) -> set[str]:
+    key = _polyhaven_slot_key(slot)
+    with _POLYHAVEN_PIN_LOCK:
+        in_process = set(_POLYHAVEN_PINNED_VERSIONS.get(key, ()))
+    cross_process = listed_polyhaven_reader_pins(slot)
+    return in_process | cross_process
+
+
+def _polyhaven_clear_slot_bundle_artifacts(slot: Path) -> None:
+    """Remove legacy flat bundle files from the catalog slot (keep only catalog + immutable versions/)."""
+    if not slot.is_dir():
+        return
+    if _POLYHAVEN_LEGACY_PIN in _polyhaven_pinned_versions(slot):
+        return
+    skip_dirs = {
+        POLYHAVEN_CATALOG_NAME,
+        POLYHAVEN_VERSIONS_DIR,
+        _POLYHAVEN_PINS_DIR,
+        polyhaven_cache._RETAIN_DIRNAME,
+        polyhaven_cache._CURRENT_FILENAME,
+    }
+    for child in list(slot.iterdir()):
+        if child.name in skip_dirs:
+            continue
+        if child.name.endswith(".polyhaven.lock") or child.name.startswith("."):
+            continue
+        if child.is_dir():
+            shutil.rmtree(child, ignore_errors=True)
+        elif child.is_file():
+            child.unlink(missing_ok=True)
+
+
+def _polyhaven_prune_retired_versions(slot: Path, *, keep_versions: set[str]) -> None:
+    polyhaven_cache.reclaim_polyhaven_version_directories_unlocked(slot, extra_keep=keep_versions)
+
+
+def _polyhaven_reclaim_slot_unlocked(slot: Path, *, keep_versions: set[str] | None = None) -> None:
+    """Reclaim retired versions and legacy flat artifacts (caller must hold :func:`catalog_lock`)."""
+    keep_versions = polyhaven_cache.polyhaven_versions_protected_from_reclaim(
+        slot, extra_keep=keep_versions
+    )
+    _polyhaven_clear_slot_bundle_artifacts(slot)
+    _polyhaven_prune_retired_versions(slot, keep_versions=keep_versions)
+
+
+def _polyhaven_reclaim_slot(slot: Path, *, keep_versions: set[str] | None = None) -> None:
+    """Reclaim retired versions and legacy flat artifacts when no reader pins block removal."""
+    with catalog_lock(slot):
+        _polyhaven_reclaim_slot_unlocked(slot, keep_versions=keep_versions)
+
+
+def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> None:
+    """Move staging into an immutable version directory and atomically switch the catalog pointer."""
+    staging_gltf = staging / gltf_name
+    manifest_path = staging / _POLYHAVEN_MANIFEST_NAME
+    includes = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(includes, list):
+        raise OSError("Poly Haven staging manifest is invalid")
+    version_id = _polyhaven_bundle_version_id(staging, staging_gltf, includes)
+    slot.mkdir(parents=True, exist_ok=True)
+    versions_root = slot / POLYHAVEN_VERSIONS_DIR
+    versions_root.mkdir(parents=True, exist_ok=True)
+    version_dir = versions_root / version_id
+    published_id = version_id
+    if version_dir.exists():
+        existing_gltf = version_dir / gltf_name
+        if _polyhaven_cache_complete(version_dir, existing_gltf):
+            shutil.rmtree(staging, ignore_errors=True)
+            with catalog_lock(slot):
+                previous = read_polyhaven_catalog(slot)
+                if previous and previous.get("versionId") == version_id:
+                    return
+                keep_versions = {version_id}
+                if previous and isinstance(previous.get("versionId"), str):
+                    keep_versions.add(previous["versionId"])
+                keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
+                try:
+                    atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version_id, "gltfName": gltf_name})
+                    _polyhaven_reclaim_slot_unlocked(slot, keep_versions=keep_versions)
+                except Exception:
+                    if previous is not None:
+                        try:
+                            atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
+                        except OSError:
+                            logger.warning(
+                                "Poly Haven catalog rollback failed for %s", slot.name, exc_info=True
+                            )
+                    raise
+            return
+        published_id = f"{version_id}.repair-{uuid.uuid4().hex[:8]}"
+        staging.rename(versions_root / published_id)
+    else:
+        staging.rename(version_dir)
+    with catalog_lock(slot):
+        previous = read_polyhaven_catalog(slot)
+        keep_versions = {published_id}
+        if previous and isinstance(previous.get("versionId"), str):
+            keep_versions.add(previous["versionId"])
+        if published_id != version_id and version_dir.is_dir():
+            keep_versions.add(version_id)
+        keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
+        try:
+            atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": published_id, "gltfName": gltf_name})
+            _polyhaven_reclaim_slot_unlocked(slot, keep_versions=keep_versions)
+        except Exception:
+            if previous is not None:
+                try:
+                    atomic_json(slot / POLYHAVEN_CATALOG_NAME, previous)
+                except OSError:
+                    logger.warning("Poly Haven catalog rollback failed for %s", slot.name, exc_info=True)
+            raise
+
+
+def _polyhaven_lock_path(model_dir: Path) -> Path:
+    """Lock beside the catalog slot; version directories under the slot are never renamed in place."""
+    return model_dir.parent / f".{model_dir.name}.polyhaven.lock"
+
+
+def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
+    """Publish staging into an immutable version directory and switch the catalog pointer."""
+    gltf_candidates = [path for path in staging.iterdir() if path.is_file() and path.suffix.lower() == ".gltf"]
+    if len(gltf_candidates) != 1:
+        raise OSError("Poly Haven staging must contain exactly one glTF main file")
+    _polyhaven_publish_version(model_dir, staging, gltf_candidates[0].name)
+
+
+def pin_polyhaven_bundle(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, str | None]:
+    """Pin the active immutable bundle root and glTF path for consistent reads across catalog switches."""
+    with catalog_lock(slot):
+        bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
+        version_id = version_id_for_resolved_bundle(slot, bundle_root)
+        _polyhaven_pin_version(slot, version_id)
+        pin_file = acquire_polyhaven_reader_pin(slot, version_id)
+        pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
+        with _POLYHAVEN_PIN_LOCK:
+            _POLYHAVEN_DISK_PINS[(_polyhaven_slot_key(slot), pin)] = pin_file
+    return bundle_root, gltf_path, version_id
+
+
+def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
+    """Download glTF + all required includes into a unique staging dir, then publish atomically."""
+    model_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".ph-staging-", dir=model_dir.parent))
     try:
         main_req = urllib.request.Request(gltf_entry["url"], headers=headers)
         staging_gltf = staging / gltf_file.name
@@ -566,7 +788,7 @@ def _polyhaven_download_bundle(asset_root: Path, gltf_file: Path, gltf_entry: di
 
         gltf_doc = _polyhaven_parse_gltf_bytes(staging_gltf.read_bytes())
         if gltf_doc is None:
-            logger.warning("Invalid glTF payload for %s", asset_root.name)
+            logger.warning("Invalid glTF payload for %s", model_dir.name)
             return False
 
         buffer_expected = _polyhaven_gltf_buffer_expected_sizes(gltf_doc)
@@ -580,53 +802,51 @@ def _polyhaven_download_bundle(asset_root: Path, gltf_file: Path, gltf_entry: di
                 logger.warning(
                     "glTF references %r but Poly Haven include map has no entry for %s",
                     rel_path,
-                    asset_root.name,
+                    model_dir.name,
                 )
                 return False
             inc_url = inc_meta.get("url")
             if not inc_url:
-                logger.warning("Missing Poly Haven include URL for %s: %r", asset_root.name, rel_path)
+                logger.warning("Missing Poly Haven include URL for %s: %r", model_dir.name, rel_path)
                 return False
             if _polyhaven_include_reserved_collision(gltf_file, rel_path):
                 logger.warning(
                     "Rejecting Poly Haven include targeting reserved path for %s: %r",
-                    asset_root.name,
+                    model_dir.name,
                     rel_path,
                 )
                 return False
             dest = _polyhaven_include_dest(staging, rel_path)
             if dest is None:
-                logger.warning("Rejecting Poly Haven include for %s: %r", asset_root.name, rel_path)
+                logger.warning("Rejecting Poly Haven include for %s: %r", model_dir.name, rel_path)
                 return False
             dest.parent.mkdir(parents=True, exist_ok=True)
             inc_req = urllib.request.Request(inc_url, headers=headers)
             dest.write_bytes(urllib.request.urlopen(inc_req, timeout=45).read())
             if not _polyhaven_bundle_file_ready(staging, rel_path, buffer_expected=buffer_expected):
-                logger.warning("Incomplete or invalid glTF dependency for %s: %r", asset_root.name, rel_path)
+                logger.warning("Incomplete or invalid glTF dependency for %s: %r", model_dir.name, rel_path)
                 return False
             include_rels.append(rel_path.replace("\\", "/"))
 
         for rel_path in required_uris:
             if not _polyhaven_bundle_file_ready(staging, rel_path, buffer_expected=buffer_expected):
-                logger.warning("Missing glTF dependency on disk for %s: %r", asset_root.name, rel_path)
+                logger.warning("Missing glTF dependency on disk for %s: %r", model_dir.name, rel_path)
                 return False
 
         manifest = staging / _POLYHAVEN_MANIFEST_NAME
         manifest.write_text(json.dumps(sorted(include_rels), ensure_ascii=False), encoding="utf-8")
 
         if not _polyhaven_cache_complete(staging, staging_gltf):
-            logger.warning("Poly Haven staging bundle failed integrity check for %s", asset_root.name)
+            logger.warning("Poly Haven staging bundle failed integrity check for %s", model_dir.name)
             return False
 
-        version = polyhaven_cache.bundle_content_hash(staging, staging_gltf, include_rels)
-        _polyhaven_atomic_publish(asset_root, staging, version)
-        published = True
+        _polyhaven_atomic_publish(model_dir, staging)
         return True
     except Exception:
-        logger.exception("Poly Haven bundle download failed for %s", asset_root.name)
+        logger.exception("Poly Haven bundle download failed for %s", model_dir.name)
         return False
     finally:
-        if not published and staging.exists():
+        if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
 
 
@@ -645,9 +865,8 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
             continue
         cfg = POLYHAVEN_CURATED_MODELS.get(aid, {"assetId": aid, "resolution": "2k"})
         res = cfg.get("resolution", "2k")
-        asset_root = base / aid
-        gltf_name = f"{aid}_{res}.gltf"
-        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
+        model_dir = base / aid
+        gltf_file = model_dir / f"{aid}_{res}.gltf"
         thumb_file = thumbs_dir / f"{aid}.png"
         if not thumb_file.exists():
             try:
@@ -657,18 +876,19 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                 pass
 
         try:
-            with FileLock(_polyhaven_lock_path(asset_root), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
-                bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
-                if _polyhaven_cache_complete(bundle_dir, gltf_file):
-                    if polyhaven_cache.read_current_version(asset_root) is None:
-                        _polyhaven_adopt_legacy_cache(asset_root, asset_root / gltf_name)
-                        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
-                    resolved_paths[aid] = str(gltf_file.resolve())
+            with FileLock(_polyhaven_lock_path(model_dir), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
+                bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+                if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+                    if polyhaven_cache.read_current_version(model_dir) is None and read_polyhaven_catalog(model_dir) is None:
+                        _polyhaven_adopt_legacy_cache(model_dir, gltf_file)
+                        bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+                    else:
+                        _polyhaven_ensure_fleet_catalog_pointer(model_dir, gltf_file.name)
+                    resolved_paths[aid] = str(resolved_gltf.resolve())
                     continue
 
-                if _polyhaven_adopt_legacy_cache(asset_root, asset_root / gltf_name):
-                    bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
-                    resolved_paths[aid] = str(gltf_file.resolve())
+                if _polyhaven_adopt_legacy_cache(model_dir, gltf_file):
+                    resolved_paths[aid] = str(_polyhaven_resolved_gltf_path(model_dir, gltf_file).resolve())
                     continue
 
                 try:
@@ -678,10 +898,8 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                     if not gltf_entry or not gltf_entry.get("url"):
                         continue
 
-                    gltf_ref = asset_root / gltf_name
-                    if _polyhaven_download_bundle(asset_root, gltf_ref, gltf_entry, headers):
-                        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
-                        resolved_paths[aid] = str(gltf_file.resolve())
+                    if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
+                        resolved_paths[aid] = str(_polyhaven_resolved_gltf_path(model_dir, gltf_file).resolve())
                 except Exception:
                     logger.exception("Poly Haven metadata fetch failed for %s", aid)
         except TimeoutError:

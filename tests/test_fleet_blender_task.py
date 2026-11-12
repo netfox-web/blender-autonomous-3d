@@ -423,6 +423,20 @@ def test_missing_blender_or_script_fails_cleanly(
     assert code == 1 and "script not found" in line["error"]
 
 
+def test_missing_polyhaven_worker_helpers_fails_cleanly(
+    fbt: ModuleType, harness: Harness, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    lone_script = tmp_path / "blender_job.py"
+    lone_script.write_text("# stub\n", encoding="utf-8")
+    payload_json = json.dumps(make_payload(harness))
+    argv = harness.argv("--json", payload_json)
+    argv[argv.index("--script") + 1] = str(lone_script)
+    code, line = run_main(fbt, argv, capsys)
+    assert code == 1
+    assert "Poly Haven worker helpers missing" in line["error"]
+    assert "worker_polyhaven.py" in line["error"]
+
+
 # --------------------------------------------------------------------------- pure helpers
 
 

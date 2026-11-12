@@ -43,6 +43,7 @@ from typing import Any, NoReturn
 JsonDict = dict[str, Any]
 
 TASK_TYPE = "blender_scene_render"
+_POLYHAVEN_WORKER_HELPERS = ("worker_polyhaven.py", "polyhaven_paths.py")
 USER_AGENT = "fox3d-fleet-blender-task/1.0"
 DEFAULT_TIMEOUT_SEC = 600.0
 PRUNE_AGE_SEC = 3 * 24 * 3600.0
@@ -572,6 +573,12 @@ def main(argv: list[str] | None = None) -> int:
         script = Path(args.script)
         if not script.is_file():
             raise TaskError(f"script not found: {script}")
+        scripts_dir = script.parent
+        missing_helpers = [name for name in _POLYHAVEN_WORKER_HELPERS if not (scripts_dir / name).is_file()]
+        if missing_helpers:
+            raise TaskError(
+                f"Poly Haven worker helpers missing beside {script}: {', '.join(missing_helpers)}"
+            )
         blender = str(args.blender)
         if not (Path(blender).is_file() or shutil.which(blender)):
             raise TaskError(f"blender not found: {blender}")

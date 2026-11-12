@@ -3,6 +3,12 @@ import json
 import hashlib
 import math
 import os
+import sys
+from pathlib import Path
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
 
 ASSET_REF_PREFIX = 'assets://'
 
@@ -49,12 +55,34 @@ def resolve_asset_ref(value, root=None):
         try:
             _ensure_fox3d_on_path()
             from fox3d.polyhaven_cache import resolve_polyhaven_ref_path
-            pinned = resolve_polyhaven_ref_path(text, base)
+
+            pinned = resolve_polyhaven_ref_path(ASSET_REF_PREFIX + "/".join(parts), base)
             if pinned is not None:
                 return pinned
         except Exception:
             pass
+        try:
+            from worker_polyhaven import load_polyhaven_paths
+
+            ph = load_polyhaven_paths()
+            resolved = ph.resolve_polyhaven_asset_ref_path_pinned(base, "/".join(parts))
+            if resolved is not None:
+                return resolved
+        except Exception:
+            pass
     return base.joinpath(*parts)
+
+
+def _polyhaven_slot_gltf(assets_root, asset_id, gltf_name):
+    """Resolve a curated Poly Haven glTF through the catalog pointer when present."""
+    from pathlib import Path
+    from worker_polyhaven import load_polyhaven_paths
+
+    ph = load_polyhaven_paths()
+    slot = Path(assets_root) / 'models' / 'polyhaven' / asset_id
+    nominal = slot / gltf_name
+    _bundle_root, gltf_path, _pin = ph.pin_polyhaven_bundle_paths(slot, nominal)
+    return gltf_path
 
 
 def _srgb_to_lin(c: float) -> float:
@@ -607,6 +635,7 @@ def build(created, definition, device, expected_hash):
                              'matrixWorld': [list(row) for row in clone.matrix_world]})
     _ensure_fox3d_on_path()
     from fox3d.polyhaven_cache import polyhaven_read_session
+
     ph_ctx = polyhaven_read_session(_assets_root() / 'models' / 'polyhaven')
     ph_ctx.__enter__()
     try:
@@ -667,9 +696,9 @@ def build(created, definition, device, expected_hash):
                 # Method 1 automatic Poly Haven 2K upgrade for PLANT and COFFEE_TABLE
                 if g_upper.endswith('_PLANT'):
                     ph_plant = (
-                        ph_dir / 'potted_plant_01' / 'potted_plant_01_2k.gltf'
+                        _polyhaven_slot_gltf(root_assets, 'potted_plant_01', 'potted_plant_01_2k.gltf')
                         if gh >= 1.02
-                        else ph_dir / 'potted_plant_02' / 'potted_plant_02_2k.gltf'
+                        else _polyhaven_slot_gltf(root_assets, 'potted_plant_02', 'potted_plant_02_2k.gltf')
                     )
                     if ph_plant.exists():
                         try:
@@ -704,9 +733,9 @@ def build(created, definition, device, expected_hash):
                     Path(str(explicit_glb))
                     if explicit_glb and Path(str(explicit_glb)).exists()
                     else (
-                        ph_dir / 'coffee_table_round_01' / 'coffee_table_round_01_2k.gltf'
+                        _polyhaven_slot_gltf(root_assets, 'coffee_table_round_01', 'coffee_table_round_01_2k.gltf')
                         if abs(gw - gd) < 0.14
-                        else ph_dir / 'modern_coffee_table_01' / 'modern_coffee_table_01_2k.gltf'
+                        else _polyhaven_slot_gltf(root_assets, 'modern_coffee_table_01', 'modern_coffee_table_01_2k.gltf')
                     )
                 )
                 if ph_table.exists():
@@ -887,6 +916,12 @@ def build(created, definition, device, expected_hash):
     finally:
         bpy.context.window.scene = original
         ph_ctx.__exit__(None, None, None)
+        try:
+            from worker_polyhaven import load_polyhaven_paths
+
+            load_polyhaven_paths().release_all_polyhaven_worker_pins()
+        except Exception:
+            pass
     return scene, {'sceneHash': expected_hash, 'templateId': definition['templateId'], 'version': definition['version'],
                    'slot': definition['slot'], 'view': definition['view'], 'productScale': 1.,
                    'productMatrix': definition['productMatrix'], 'products': observations,
