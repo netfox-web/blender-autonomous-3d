@@ -7,8 +7,10 @@ scheduler — it *calls* these ports.
 
 from __future__ import annotations
 
+import base64
 import threading
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -290,6 +292,32 @@ class DamObject:
     version: int = 1
 
 
+def _validate_path_component(value: str) -> None:
+    if not value or value in {".", ".."} or any(
+        c in "/\\" or unicodedata.category(c) == "Cc" for c in value
+    ):
+        raise ValueError("invalid path component")
+
+
+def safe_path_component(value: str) -> str:
+    """Encode arbitrary user text as one filesystem path component."""
+    try:
+        _validate_path_component(value)
+        return value
+    except ValueError:
+        encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+        stem = f"enc~{encoded}"
+        _validate_path_component(stem)
+        return stem
+
+
+def validate_tenant_id(tenant_id: str) -> str:
+    _validate_path_component(tenant_id)
+    if tenant_id != tenant_id.strip() or len(tenant_id) > 120 or tenant_id == "system":
+        raise ValueError("invalid tenant ID")
+    return tenant_id
+
+
 class DAM:
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -306,10 +334,18 @@ class DAM:
         metadata: dict[str, Any] | None = None,
         asset_id: str | None = None,
     ) -> DamObject:
+        validate_tenant_id(tenant_id)
+        _validate_path_component(kind)
+        _validate_path_component(name)
         asset_id = asset_id or new_id()
+        _validate_path_component(asset_id)
         rel = Path(tenant_id) / kind / f"{asset_id}_{name}"
         dest = self.root / rel
+        if not dest.resolve().is_relative_to(self.root.resolve()):
+            raise ValueError("DAM path escapes root")
         dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.resolve().is_relative_to(self.root.resolve()):
+            raise ValueError("DAM path escapes root")
         dest.write_bytes(data)
         obj = DamObject(
             asset_id=asset_id,
@@ -323,6 +359,7 @@ class DAM:
         return obj
 
     def get(self, asset_id: str, *, tenant_id: str) -> DamObject:
+        validate_tenant_id(tenant_id)
         obj = self._index[asset_id]
         if obj.tenant_id != tenant_id:
             raise PermissionError("tenant isolation: asset leakage blocked")
@@ -332,6 +369,9 @@ class DAM:
         return self._index[asset_id]
 
     def list(self, *, tenant_id: str, kind: str | None = None) -> list[DamObject]:
+        validate_tenant_id(tenant_id)
+        if kind is not None:
+            _validate_path_component(kind)
         return [
             obj
             for obj in self._index.values()

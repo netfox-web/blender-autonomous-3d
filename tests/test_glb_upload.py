@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 import struct
 import time
 from pathlib import Path
@@ -331,6 +332,72 @@ class _JobCapturingRuntime:
         return {"status": "succeeded", "outputs": {}, "renderTimeSec": 0.01, "device": "CPU", "blenderVersion": "local"}
 
 
+def test_uploaded_glb_absolute_path_also_reaches_blender_job(tmp_path: Path):
+    runtime = _JobCapturingRuntime()
+    plat = Platform(tmp_path / "data", mock_blender=False)
+    plat.runtime = runtime  # type: ignore[assignment]
+    client = TestClient(create_app(plat))
+    headers = {"X-Tenant-Id": "sonaqueen-home"}
+    raw = _minimal_glb_bytes()
+    upload = client.post(
+        "/api/ecommerce-scenes/props/upload-glb",
+        headers=headers,
+        json={"filename": "stool2.glb", "dataBase64": _b64(raw)},
+    )
+    assert upload.status_code == 201
+    abs_glb = str((Path(plat.root).resolve() / upload.json()["glbPath"]).resolve())
+    scene_id = "SCENE_GLB_E2E_ABS"
+    save = client.post(
+        "/api/ecommerce-scenes/scenes",
+        headers=headers,
+        json={
+            "id": scene_id,
+            "name": "GLB e2e abs",
+            "props": [
+                {
+                    "type": "CUSTOM_BOX",
+                    "label": "stool",
+                    "x": 1.0,
+                    "y": 0.5,
+                    "z": 0.0,
+                    "widthM": 0.4,
+                    "depthM": 0.4,
+                    "heightM": 0.5,
+                    "glbPath": abs_glb,
+                }
+            ],
+        },
+    )
+    assert save.status_code == 201
+    batch = client.post(
+        "/api/ecommerce-scenes/batches",
+        headers=headers,
+        json={
+            "cabinet": CABINET_PRESETS[0],
+            "sceneIds": [scene_id],
+            "themeIds": ["THEME_NORDIC_OAK"],
+            "views": ["FRONT"],
+            "aiEngine": "builtin",
+            "blenderEngine": "local",
+        },
+    )
+    assert batch.status_code == 202
+    batch_id = batch.json()["batchId"]
+    deadline = time.time() + 30.0
+    while time.time() < deadline:
+        doc = client.get(f"/api/ecommerce-scenes/batches/{batch_id}", headers=headers).json()
+        if doc.get("state") in ("completed", "failed", "interrupted"):
+            break
+        time.sleep(0.05)
+    assert doc["state"] == "completed", doc
+    glb_paths = [
+        b["glbPath"]
+        for b in runtime.jobs[0]["engineering"]["sceneDefinition"]["boxes"]
+        if b.get("glbPath")
+    ]
+    assert all(Path(p).is_absolute() and Path(p).is_file() for p in glb_paths)
+
+
 def test_uploaded_glb_path_reaches_blender_job_as_absolute(tmp_path: Path):
     runtime = _JobCapturingRuntime()
     plat = Platform(tmp_path / "data", mock_blender=False)
@@ -466,3 +533,18 @@ def test_furnished_scene_detects_tenant_uploaded_glb_path():
     fs = _load_furnished_scene()
     assert fs._is_tenant_uploaded_glb("/data/ecommerce-scene-studio/foo/glb-props/glb_x.glb")
     assert not fs._is_tenant_uploaded_glb("assets://models/polyhaven/x.gltf")
+
+
+def test_furnished_scene_bootstraps_fox3d_without_src_on_path(monkeypatch: pytest.MonkeyPatch):
+    import sys
+
+    repo_src = Path(__file__).resolve().parents[1] / "src"
+    monkeypatch.delenv("FOX3D_SRC", raising=False)
+    scrubbed = [p for p in sys.path if os.path.normcase(str(repo_src)) != os.path.normcase(p)]
+    monkeypatch.setattr(sys, "path", scrubbed)
+    for key in list(sys.modules):
+        if key == "fox3d" or key.startswith("fox3d.") or key in ("fox3d_bootstrap", "furnished_scene_test"):
+            monkeypatch.delitem(sys.modules, key, raising=False)
+    fs = _load_furnished_scene()
+    fs._ensure_fox3d_on_path()
+    from fox3d.polyhaven_cache import polyhaven_read_session  # noqa: F401

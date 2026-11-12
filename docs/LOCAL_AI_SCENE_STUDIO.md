@@ -94,8 +94,8 @@ GPU 節點要連回工作台抓參考圖。`scripts/open_recipe_studio.py`（桌
    `blender_scene_render`（type shell）把 payload 交給它；它建立 `<work-root>/<jobId>/`、補 `workDir/progressFile/cancelFile`、
    以 `FOX3D_ASSETS_ROOT=/data-fast/fox3d/assets` 跑 `blender -b --factory-startup -P blender_job.py -- job.json`，
    再把 `beauty.png`（artifact 0）、`product_cutout.png`（artifact 1）、選配 `model.glb`／`model.blend` 複製到 ComfyUI output
-   目錄並回 `/view` 網址（與 image_flux3 同一種 artifact 形狀）。節點上的素材與腳本：`/data-fast/fox3d/{scripts,assets}`，
-   `assets` 與 repo 的 `assets/` 同一份、rsync 同步。
+   目錄並回 `/view` 網址（與 image_flux3 同一種 artifact 形狀）。節點上同步 **`/data-fast/fox3d/{scripts,src,assets}`**
+   （`src/fox3d` 供 `furnished_scene` 無條件載入 Poly Haven 快取；`assets` 與 repo 的 `assets/` 同一份、rsync 同步）。
 2. **路徑與雜湊**：場景定義裡的模型路徑一律是機器無關的 `assets://models/polyhaven/<id>/<id>_2k.gltf`
    （`ecommerce_scene_studio._ph_glb`）；`scripts/furnished_scene.py` 與 `blender_job.py` 用 `resolve_asset_ref()` 對
    `FOX3D_ASSETS_ROOT`（沒設就是 `<repo>/assets`）解析，所以 `sceneHash` 在工作台與節點完全一致，節點不必重算。

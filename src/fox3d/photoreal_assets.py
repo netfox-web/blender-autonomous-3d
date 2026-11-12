@@ -8,7 +8,6 @@ import logging
 import math
 import os
 import re
-import secrets
 import shutil
 import tempfile
 import urllib.request
@@ -19,6 +18,7 @@ from urllib.parse import urlparse
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
+from fox3d import polyhaven_cache
 from fox3d.storelock import FileLock
 
 AI_STYLE_PRESETS: dict[str, dict[str, Any]] = {
@@ -475,21 +475,42 @@ def _polyhaven_gltf_bundle_ready(model_dir: Path, gltf_file: Path) -> dict[str, 
     return gltf_doc
 
 
-def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
-    """While holding the download lock: migrate a complete pre-manifest cache by writing the manifest."""
-    gltf_doc = _polyhaven_gltf_bundle_ready(model_dir, gltf_file)
+def _polyhaven_locate_bundle(asset_root: Path, gltf_name: str) -> tuple[Path, Path]:
+    located = polyhaven_cache.active_bundle_dir(asset_root, gltf_name)
+    if located is not None:
+        return located
+    return asset_root, asset_root / gltf_name
+
+
+def _polyhaven_adopt_legacy_cache(asset_root: Path, gltf_file: Path) -> bool:
+    """While holding the download lock: manifest + migrate flat cache into versions/<hash>/."""
+    bundle_dir, resolved_gltf = _polyhaven_locate_bundle(asset_root, gltf_file.name)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_dir, resolved_gltf)
     if gltf_doc is None:
         return False
-    if _polyhaven_cache_complete(model_dir, gltf_file):
-        return True
+    if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+        return polyhaven_cache.migrate_legacy_flat_bundle(
+            asset_root,
+            resolved_gltf,
+            cache_complete_fn=_polyhaven_cache_complete,
+            include_rels=include_rels,
+        )
     include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
-    manifest_path = _polyhaven_manifest_path(model_dir)
+    manifest_path = _polyhaven_manifest_path(bundle_dir)
     try:
         manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
     except OSError:
-        logger.warning("Failed to write Poly Haven manifest for %s", model_dir.name)
+        logger.warning("Failed to write Poly Haven manifest for %s", asset_root.name)
         return False
-    return _polyhaven_cache_complete(model_dir, gltf_file)
+    if not _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        return False
+    return polyhaven_cache.migrate_legacy_flat_bundle(
+        asset_root,
+        resolved_gltf,
+        cache_complete_fn=_polyhaven_cache_complete,
+        include_rels=include_rels,
+    )
 
 
 def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
@@ -521,51 +542,21 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     return True
 
 
-def _polyhaven_lock_path(model_dir: Path) -> Path:
-    """Lock beside model_dir, not inside it — publish renames model_dir on disk (Windows cannot rename dirs with open files)."""
-    return model_dir.parent / f".{model_dir.name}.polyhaven.lock"
+def _polyhaven_lock_path(asset_root: Path) -> Path:
+    """Lock beside the asset root; version dirs are immutable so readers never traverse partial trees."""
+    return asset_root.parent / f".{asset_root.name}.polyhaven.lock"
 
 
-def _polyhaven_atomic_publish(model_dir: Path, staging: Path) -> None:
-    """Swap a complete staging tree into model_dir so readers never see a mixed bundle."""
-    token = secrets.token_hex(8)
-    incoming = model_dir.parent / f".ph-incoming-{model_dir.name}-{token}"
-    old_dir: Path | None = None
+def _polyhaven_atomic_publish(asset_root: Path, staging: Path, version: str) -> None:
+    """Install staging into versions/<version>/ and atomically switch the current pointer."""
+    polyhaven_cache.publish_version(asset_root, staging, version)
+
+
+def _polyhaven_download_bundle(asset_root: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
+    """Download glTF + includes into a staging dir, then publish as a new immutable version."""
+    asset_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=".ph-staging-", dir=asset_root.parent))
     published = False
-    staging.rename(incoming)
-    try:
-        model_dir.parent.mkdir(parents=True, exist_ok=True)
-        if model_dir.exists():
-            old_dir = model_dir.parent / f".ph-old-{model_dir.name}-{token}"
-            model_dir.rename(old_dir)
-        incoming.rename(model_dir)
-        published = True
-    except Exception:
-        restored = False
-        if old_dir is not None and old_dir.exists() and not model_dir.exists():
-            try:
-                old_dir.rename(model_dir)
-                restored = True
-            except OSError:
-                logger.warning("Poly Haven publish rollback failed for %s", model_dir.name, exc_info=True)
-        if not restored and incoming.exists() and not model_dir.exists():
-            try:
-                incoming.rename(model_dir)
-                restored = True
-            except OSError:
-                logger.warning("Poly Haven publish fallback rename failed for %s", model_dir.name, exc_info=True)
-        raise
-    finally:
-        if incoming.exists():
-            shutil.rmtree(incoming, ignore_errors=True)
-        if published and old_dir is not None and old_dir.exists():
-            shutil.rmtree(old_dir, ignore_errors=True)
-
-
-def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dict, headers: dict[str, str]) -> bool:
-    """Download glTF + all required includes into a unique staging dir, then publish atomically."""
-    model_dir.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".ph-staging-", dir=model_dir.parent))
     try:
         main_req = urllib.request.Request(gltf_entry["url"], headers=headers)
         staging_gltf = staging / gltf_file.name
@@ -575,7 +566,7 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
 
         gltf_doc = _polyhaven_parse_gltf_bytes(staging_gltf.read_bytes())
         if gltf_doc is None:
-            logger.warning("Invalid glTF payload for %s", model_dir.name)
+            logger.warning("Invalid glTF payload for %s", asset_root.name)
             return False
 
         buffer_expected = _polyhaven_gltf_buffer_expected_sizes(gltf_doc)
@@ -589,51 +580,53 @@ def _polyhaven_download_bundle(model_dir: Path, gltf_file: Path, gltf_entry: dic
                 logger.warning(
                     "glTF references %r but Poly Haven include map has no entry for %s",
                     rel_path,
-                    model_dir.name,
+                    asset_root.name,
                 )
                 return False
             inc_url = inc_meta.get("url")
             if not inc_url:
-                logger.warning("Missing Poly Haven include URL for %s: %r", model_dir.name, rel_path)
+                logger.warning("Missing Poly Haven include URL for %s: %r", asset_root.name, rel_path)
                 return False
             if _polyhaven_include_reserved_collision(gltf_file, rel_path):
                 logger.warning(
                     "Rejecting Poly Haven include targeting reserved path for %s: %r",
-                    model_dir.name,
+                    asset_root.name,
                     rel_path,
                 )
                 return False
             dest = _polyhaven_include_dest(staging, rel_path)
             if dest is None:
-                logger.warning("Rejecting Poly Haven include for %s: %r", model_dir.name, rel_path)
+                logger.warning("Rejecting Poly Haven include for %s: %r", asset_root.name, rel_path)
                 return False
             dest.parent.mkdir(parents=True, exist_ok=True)
             inc_req = urllib.request.Request(inc_url, headers=headers)
             dest.write_bytes(urllib.request.urlopen(inc_req, timeout=45).read())
             if not _polyhaven_bundle_file_ready(staging, rel_path, buffer_expected=buffer_expected):
-                logger.warning("Incomplete or invalid glTF dependency for %s: %r", model_dir.name, rel_path)
+                logger.warning("Incomplete or invalid glTF dependency for %s: %r", asset_root.name, rel_path)
                 return False
             include_rels.append(rel_path.replace("\\", "/"))
 
         for rel_path in required_uris:
             if not _polyhaven_bundle_file_ready(staging, rel_path, buffer_expected=buffer_expected):
-                logger.warning("Missing glTF dependency on disk for %s: %r", model_dir.name, rel_path)
+                logger.warning("Missing glTF dependency on disk for %s: %r", asset_root.name, rel_path)
                 return False
 
         manifest = staging / _POLYHAVEN_MANIFEST_NAME
         manifest.write_text(json.dumps(sorted(include_rels), ensure_ascii=False), encoding="utf-8")
 
         if not _polyhaven_cache_complete(staging, staging_gltf):
-            logger.warning("Poly Haven staging bundle failed integrity check for %s", model_dir.name)
+            logger.warning("Poly Haven staging bundle failed integrity check for %s", asset_root.name)
             return False
 
-        _polyhaven_atomic_publish(model_dir, staging)
+        version = polyhaven_cache.bundle_content_hash(staging, staging_gltf, include_rels)
+        _polyhaven_atomic_publish(asset_root, staging, version)
+        published = True
         return True
     except Exception:
-        logger.exception("Poly Haven bundle download failed for %s", model_dir.name)
+        logger.exception("Poly Haven bundle download failed for %s", asset_root.name)
         return False
     finally:
-        if staging.exists():
+        if not published and staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
 
 
@@ -652,8 +645,9 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
             continue
         cfg = POLYHAVEN_CURATED_MODELS.get(aid, {"assetId": aid, "resolution": "2k"})
         res = cfg.get("resolution", "2k")
-        model_dir = base / aid
-        gltf_file = model_dir / f"{aid}_{res}.gltf"
+        asset_root = base / aid
+        gltf_name = f"{aid}_{res}.gltf"
+        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
         thumb_file = thumbs_dir / f"{aid}.png"
         if not thumb_file.exists():
             try:
@@ -663,12 +657,17 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                 pass
 
         try:
-            with FileLock(_polyhaven_lock_path(model_dir), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
-                if _polyhaven_cache_complete(model_dir, gltf_file):
+            with FileLock(_polyhaven_lock_path(asset_root), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
+                bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
+                if _polyhaven_cache_complete(bundle_dir, gltf_file):
+                    if polyhaven_cache.read_current_version(asset_root) is None:
+                        _polyhaven_adopt_legacy_cache(asset_root, asset_root / gltf_name)
+                        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
                     resolved_paths[aid] = str(gltf_file.resolve())
                     continue
 
-                if _polyhaven_adopt_legacy_cache(model_dir, gltf_file):
+                if _polyhaven_adopt_legacy_cache(asset_root, asset_root / gltf_name):
+                    bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
                     resolved_paths[aid] = str(gltf_file.resolve())
                     continue
 
@@ -679,7 +678,9 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                     if not gltf_entry or not gltf_entry.get("url"):
                         continue
 
-                    if _polyhaven_download_bundle(model_dir, gltf_file, gltf_entry, headers):
+                    gltf_ref = asset_root / gltf_name
+                    if _polyhaven_download_bundle(asset_root, gltf_ref, gltf_entry, headers):
+                        bundle_dir, gltf_file = _polyhaven_locate_bundle(asset_root, gltf_name)
                         resolved_paths[aid] = str(gltf_file.resolve())
                 except Exception:
                     logger.exception("Poly Haven metadata fetch failed for %s", aid)

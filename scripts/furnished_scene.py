@@ -7,6 +7,20 @@ import os
 ASSET_REF_PREFIX = 'assets://'
 
 
+def _ensure_fox3d_on_path() -> None:
+    """Blender jobs only inherit env + cwd; make ``fox3d`` importable without a separate install."""
+    import importlib.util
+    from pathlib import Path
+
+    bootstrap_py = Path(__file__).resolve().parent / 'fox3d_bootstrap.py'
+    spec = importlib.util.spec_from_file_location('fox3d_bootstrap', bootstrap_py)
+    if spec is None or spec.loader is None:
+        raise ImportError(f'fox3d bootstrap missing: {bootstrap_py}')
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    mod.ensure_fox3d_on_path(Path(__file__))
+
+
 def _assets_root():
     """Asset root shared by every machine: FOX3D_ASSETS_ROOT (GPU nodes) or <repo>/assets (workbench)."""
     from pathlib import Path
@@ -31,6 +45,15 @@ def resolve_asset_ref(value, root=None):
     if any(seg == '..' for seg in parts):
         raise ValueError('asset ref escapes the asset root: ' + text)
     base = Path(root) if root is not None else _assets_root()
+    if parts[:2] == ['models', 'polyhaven']:
+        try:
+            _ensure_fox3d_on_path()
+            from fox3d.polyhaven_cache import resolve_polyhaven_ref_path
+            pinned = resolve_polyhaven_ref_path(text, base)
+            if pinned is not None:
+                return pinned
+        except Exception:
+            pass
     return base.joinpath(*parts)
 
 
@@ -582,6 +605,10 @@ def build(created, definition, device, expected_hash):
                 pass
         observations.append({'componentId': src['recipeComponentId'], 'linkedMesh': clone.data == src.data,
                              'matrixWorld': [list(row) for row in clone.matrix_world]})
+    _ensure_fox3d_on_path()
+    from fox3d.polyhaven_cache import polyhaven_read_session
+    ph_ctx = polyhaven_read_session(_assets_root() / 'models' / 'polyhaven')
+    ph_ctx.__enter__()
     try:
         bpy.context.window.scene = scene
         root_assets = _assets_root()
@@ -859,6 +886,7 @@ def build(created, definition, device, expected_hash):
         scene.view_layers[0].update()
     finally:
         bpy.context.window.scene = original
+        ph_ctx.__exit__(None, None, None)
     return scene, {'sceneHash': expected_hash, 'templateId': definition['templateId'], 'version': definition['version'],
                    'slot': definition['slot'], 'view': definition['view'], 'productScale': 1.,
                    'productMatrix': definition['productMatrix'], 'products': observations,
