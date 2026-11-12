@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import socket
 import threading
@@ -178,7 +179,9 @@ def _chromium_usable() -> bool:
             browser = playwright.chromium.launch(headless=True)
             browser.close()
         return True
-    except Exception:
+    except Exception as exc:
+        if os.environ.get("FOX3D_REQUIRE_LEGACY_BROWSER") == "1":
+            pytest.fail(f"Chromium is required for legacy admin browser tests: {exc}")
         return False
 
 
@@ -255,17 +258,19 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
         )
         assert blob_count >= 4
 
-        opened = page.evaluate(
-            """() => {
-              const anchor = document.querySelector(
-                'a.asset-open[data-tenant-id="tenant-a"]'
-              );
-              if (!anchor) return false;
-              anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-              return true;
-            }"""
-        )
-        assert opened is True
+        # Use a real user click and observe the new page, rather than merely
+        # dispatching an event (which can pass even if window.open is broken).
+        page.get_by_role("button", name=re.compile("算力節點與工作佇列")).click()
+        anchor = page.locator(
+            f'#tab-system a.asset-open[data-asset-id="{ids["tenant_a_job_asset"]}"]'
+            '[data-tenant-id="tenant-a"]'
+        ).first
+        with page.expect_popup() as popup_info:
+            anchor.click()
+        popup = popup_info.value
+        popup.wait_for_url("blob:**")
+        assert popup.url.startswith(f"blob:{base}/")
+        assert popup.url == anchor.locator("img").get_attribute("src")
 
         for asset_key in ("tenant_a_job_asset", "demo_job_asset", "tenant_a_twin_asset", "demo_twin_asset"):
             asset_id = ids[asset_key]
@@ -278,43 +283,25 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
 
 
 @pytest.mark.browser
-def test_legacy_admin_wrong_tenant_thumbnail_shows_failure(legacy_admin_browser_server: dict[str, Any]) -> None:
-    """Simulate stale markup: wrong data-tenant-id must not hydrate as success."""
+def test_legacy_admin_failed_asset_response_shows_failure(legacy_admin_browser_server: dict[str, Any]) -> None:
+    """A 400 response must leave the actual thumbnail in a failed state."""
     if not _chromium_usable():
         pytest.skip("Chromium not available")
 
     base = legacy_admin_browser_server["base_url"]
-    ids = legacy_admin_browser_server["ids"]
-    ta_asset = ids["tenant_a_job_asset"]
-
+    asset_id = legacy_admin_browser_server["ids"]["tenant_a_job_asset"]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
+        page.route(f"**/api/assets/{asset_id}", lambda route: route.fulfill(status=400, body="missing tenant"))
         page.goto(f"{base}/admin", wait_until="domcontentloaded")
-        state = page.evaluate(
-            """async (assetId) => {
-              const img = document.querySelector(
-                `img.asset-img[data-asset-id="${assetId}"][data-tenant-id="tenant-a"]`
-              );
-              if (!img) throw new Error('missing img');
-              img.setAttribute('data-tenant-id', 'demo');
-              const tenantId = img.getAttribute('data-tenant-id') || 'demo';
-              try {
-                const res = await fetch('/api/assets/' + encodeURIComponent(assetId), {
-                  headers: { 'X-Tenant-Id': tenantId },
-                });
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                img.src = URL.createObjectURL(await res.blob());
-              } catch (err) {
-                img.alt = '載入失敗';
-                img.removeAttribute('src');
-              }
-              return { alt: img.alt || '', src: img.getAttribute('src') || '' };
-            }""",
-            ta_asset,
+        img = page.locator(f'img.asset-img[data-asset-id="{asset_id}"]').first
+        img.wait_for(state="attached")
+        page.wait_for_function(
+            "assetId => document.querySelector(`img.asset-img[data-asset-id=\"${assetId}\"]`).alt === '載入失敗'",
+            arg=asset_id,
         )
-        assert state["alt"] == "載入失敗"
-        assert not state["src"].startswith("blob:")
+        assert not img.get_attribute("src")
         browser.close()
 
 

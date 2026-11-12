@@ -59,6 +59,22 @@ def render_admin(platform: Any) -> str:
             "</tr>"
         )
 
+    def _job_output_dict(job: dict[str, Any]) -> dict[str, Any]:
+        raw = job.get("output")
+        return raw if isinstance(raw, dict) else {}
+
+    def _job_output_asset(job: dict[str, Any]) -> str:
+        files = (_job_output_dict(job).get("files") or {})
+        return str(job.get("outputAsset") or files.get("beauty.png") or "")
+
+    def _job_tenant(job: dict[str, Any]) -> str:
+        tenant = job.get("tenantId")
+        return str(tenant) if tenant else "demo"
+
+    def _twin_tenant(twin: Any) -> str:
+        tenant = getattr(twin, "tenantId", None)
+        return str(tenant) if tenant else "demo"
+
     def _asset_thumb(asset: str, img_class: str, *, tenant_id: str, title: str = "") -> str:
         if not asset:
             return ""
@@ -71,13 +87,34 @@ def render_admin(platform: Any) -> str:
             f'<img data-asset-id="{aid}" data-tenant-id="{tid}" class="{img_class} asset-img" alt=""/></a>'
         )
 
+    def _gallery_card(job: dict[str, Any]) -> str:
+        aid = escape(_job_output_asset(job))
+        tenant = escape(_job_tenant(job))
+        out = _job_output_dict(job)
+        engine = job.get("renderEngine") or out.get("engine") or "CYCLES"
+        samples = job.get("samples") or out.get("samples") or 32
+        render_sec = job.get("renderTimeSec") or out.get("renderTimeSec") or "0.8"
+        return f'''<div class="gallery-card">
+          <a href="#" class="asset-open" data-asset-id="{aid}" data-tenant-id="{tenant}" rel="noopener">
+            <img data-asset-id="{aid}" data-tenant-id="{tenant}" class="gallery-thumb asset-img" loading="lazy" alt=""/>
+          </a>
+          <div class="gallery-meta">
+            <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(job.get("jobId")))}</div>
+            <div style="color: var(--text-muted);">引擎: {escape(str(engine))} ({escape(str(samples))} 採樣)</div>
+            <div style="color: var(--text-muted);">耗時: {escape(str(render_sec))} 秒</div>
+            <a href="#" class="asset-open" data-asset-id="{aid}" data-tenant-id="{tenant}" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
+          </div>
+        </div>'''
+
     rows_nodes = "".join(_worker_row(n) for n in nodes)
     rows_jobs = []
     for j in jobs:
-        files = ((j.get("output") or {}).get("files") or {})
-        asset = j.get("outputAsset") or files.get("beauty.png") or ""
-        job_tenant = str(j.get("tenantId") or "demo")
-        img = _asset_thumb(asset, "thumb", tenant_id=job_tenant, title="點擊在新分頁開啟 512x512 高清大圖")
+        asset = _job_output_asset(j)
+        img = (
+            _asset_thumb(asset, "thumb", tenant_id=_job_tenant(j), title="點擊在新分頁開啟 512x512 高清大圖")
+            if asset
+            else ""
+        )
         log = escape((j.get("logs") or "")[-400:])
         rows_jobs.append(
             "<tr>"
@@ -97,7 +134,11 @@ def render_admin(platform: Any) -> str:
     twin_cards = []
     for t in twins:
         preview = t.previewAssetId
-        img = _asset_thumb(preview, "preview", tenant_id=t.tenantId) if preview else "<em>no preview</em>"
+        img = (
+            _asset_thumb(str(preview), "preview", tenant_id=_twin_tenant(t))
+            if preview
+            else "<em>no preview</em>"
+        )
         twin_cards.append(
             f"<div class='card'><h3>{escape(t.sku)}</h3>"
             f"<p class='note'>{escape(t.twinId)}</p>{img}"
@@ -298,33 +339,7 @@ def render_admin(platform: Any) -> str:
   <section id="tab-gallery" class="tab-content">
     <h2 style="margin: 0 0 16px 0; font-size: 20px;">3D 渲染成果相簿</h2>
     <div class="gallery-grid">
-      {''.join(
-        (
-            lambda _j, _aid, _tid: f'''<div class="gallery-card">
-          <a href="#" class="asset-open" data-asset-id="{_aid}" data-tenant-id="{_tid}" rel="noopener">
-            <img data-asset-id="{_aid}" data-tenant-id="{_tid}" class="gallery-thumb asset-img" loading="lazy" alt=""/>
-          </a>
-          <div class="gallery-meta">
-            <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(_j.get("jobId")))}</div>
-            <div style="color: var(--text-muted);">引擎: {escape(str(_j.get("renderEngine") or (_j.get("output") or {{}}).get("engine") or "CYCLES"))} ({escape(str(_j.get("samples") or (_j.get("output") or {{}}).get("samples") or 32))} 採樣)</div>
-            <div style="color: var(--text-muted);">耗時: {escape(str(_j.get("renderTimeSec") or (_j.get("output") or {{}}).get("renderTimeSec") or "0.8"))} 秒</div>
-            <a href="#" class="asset-open" data-asset-id="{_aid}" data-tenant-id="{_tid}" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
-          </div>
-        </div>'''
-        )(
-            j,
-            escape(
-                str(
-                    j.get("outputAsset")
-                    or ((j.get("output") or {}).get("files") or {}).get("beauty.png")
-                    or ""
-                )
-            ),
-            escape(str(j.get("tenantId") or "demo")),
-        )
-        for j in jobs
-        if j.get("outputAsset") or ((j.get("output") or {}).get("files") or {}).get("beauty.png")
-      ) or '<p class="note">尚無已渲染圖片，請至「一鍵 3D 櫃體設計」產生您的第一座櫃子！</p>'}
+      {''.join(_gallery_card(j) for j in jobs if _job_output_asset(j)) or '<p class="note">尚無已渲染圖片，請至「一鍵 3D 櫃體設計」產生您的第一座櫃子！</p>'}
     </div>
   </section>
 
@@ -399,6 +414,7 @@ def render_admin(platform: Any) -> str:
   <script>
   (function () {{
   const DEFAULT_TENANT = 'demo';
+  const ADMIN_DEFAULT_TENANT = DEFAULT_TENANT;
   const assetBlobUrls = new Map();
   const pendingAssetUrls = new Map();
   let unloading = false;
@@ -448,6 +464,8 @@ def render_admin(platform: Any) -> str:
     }}, 0);
   }}
 
+  const fetchAdminAssetBlob = fetchAssetBlobUrl;
+
   function openAssetInNewTab(assetId, tenantId) {{
     fetchAssetBlobUrl(assetId, tenantId)
       .then((url) => window.open(url, '_blank', 'noopener'))
@@ -480,6 +498,11 @@ def render_admin(platform: Any) -> str:
         );
       }});
     }});
+  }}
+
+  async function wireAdminAssetImages() {{
+    await hydrateAssetImages();
+    wireAssetOpenLinks();
   }}
 
   let resultAssetRequest = 0;
@@ -515,8 +538,7 @@ def render_admin(platform: Any) -> str:
   }}
 
   document.addEventListener('DOMContentLoaded', () => {{
-    hydrateAssetImages();
-    wireAssetOpenLinks();
+    wireAdminAssetImages();
     new MutationObserver(releaseUnusedAssetUrls).observe(document.body, {{ childList: true, subtree: true }});
   }});
   window.addEventListener('pagehide', (event) => {{
@@ -598,9 +620,11 @@ def render_admin(platform: Any) -> str:
         btn.disabled = false;
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
+          const assetId = data.render.job.outputAsset;
+          // Legacy alias: fetchAdminAssetBlob(assetId, ADMIN_DEFAULT_TENANT) uses per-job tenant below.
           bindResultAsset(
-            data.render.job.outputAsset,
-            data.render.job.tenantId || payload.tenantId
+            assetId,
+            data.render.job.tenantId || payload.tenantId || ADMIN_DEFAULT_TENANT
           );
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
