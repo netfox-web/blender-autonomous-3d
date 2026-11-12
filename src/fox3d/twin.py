@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from fox3d.ids import new_id, stable_hash
-from fox3d.infra import DAM
+from fox3d.infra import DAM, safe_path_component, validate_tenant_id
 from fox3d.pngutil import write_glb_stub
 
 
@@ -44,18 +46,17 @@ class TwinStore:
         self._items: dict[str, ProductDigitalTwin] = {}
 
     def create(self, twin: ProductDigitalTwin, *, glb_bytes: bytes | None = None) -> ProductDigitalTwin:
+        validate_tenant_id(twin.tenantId)
         if not twin.glb and glb_bytes is None:
-            from pathlib import Path
-
-            tmp = Path(self.dam.root) / twin.tenantId / "twins" / f"{twin.twinId}.glb"
-            write_glb_stub(tmp, twin.sku)
-            glb_bytes = tmp.read_bytes()
-            twin.glb = str(tmp)
+            with TemporaryDirectory(dir=self.dam.root) as temp_dir:
+                tmp = Path(temp_dir) / "twin.glb"
+                write_glb_stub(tmp, twin.sku)
+                glb_bytes = tmp.read_bytes()
         if glb_bytes is not None:
             obj = self.dam.put(
                 tenant_id=twin.tenantId,
                 kind="digital_twin",
-                name=f"{twin.sku}.glb",
+                name=f"{safe_path_component(twin.sku)}.glb",
                 data=glb_bytes,
                 metadata={"sku": twin.sku, "twinId": twin.twinId},
                 asset_id=twin.twinId,
@@ -76,6 +77,7 @@ class TwinStore:
         return twin
 
     def get(self, twin_id: str, *, tenant_id: str) -> ProductDigitalTwin:
+        validate_tenant_id(tenant_id)
         twin = self._items[twin_id]
         if twin.tenantId != tenant_id:
             raise PermissionError("tenant isolation: digital twin leakage blocked")
@@ -83,6 +85,7 @@ class TwinStore:
         return twin
 
     def list(self, *, tenant_id: str) -> list[ProductDigitalTwin]:
+        validate_tenant_id(tenant_id)
         return [t for t in self._items.values() if t.tenantId == tenant_id]
 
     def new_version(self, twin_id: str, *, tenant_id: str, **changes: Any) -> ProductDigitalTwin:
