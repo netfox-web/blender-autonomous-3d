@@ -80,6 +80,18 @@ ARTIFACT_KIND = {BEAUTY: "image", CUTOUT: "image", MODEL_GLB: "file", MODEL_BLEN
 _JOB_ID_BAD_CHARS = re.compile(r"[^A-Za-z0-9_.-]")
 
 
+def _load_fox3d_bootstrap() -> Any:
+    import importlib.util
+
+    bootstrap_py = Path(__file__).resolve().parent / "fox3d_bootstrap.py"
+    spec = importlib.util.spec_from_file_location("fox3d_bootstrap", bootstrap_py)
+    if spec is None or spec.loader is None:
+        raise TaskError(f"fox3d bootstrap missing: {bootstrap_py}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 class TaskError(Exception):
     """Failure with a short operator-facing reason; becomes the ``error`` field."""
 
@@ -568,6 +580,16 @@ def main(argv: list[str] | None = None) -> int:
         log_path = work_dir / LOG_FILE
         env = dict(os.environ)
         env["FOX3D_ASSETS_ROOT"] = str(assets_root)
+        bootstrap = _load_fox3d_bootstrap()
+        fox3d_src = bootstrap.resolve_fox3d_src(script)
+        if fox3d_src is None:
+            checked = ", ".join(str(p) for p in bootstrap.fox3d_src_candidates(script))
+            raise TaskError(f"fox3d package not deployed for Blender (checked: {checked})")
+        env["FOX3D_SRC"] = str(fox3d_src)
+        try:
+            bootstrap.verify_fox3d_polyhaven_importable_subprocess(script)
+        except ImportError as exc:
+            raise TaskError(f"fox3d import preflight failed: {exc}") from exc
         cmd = blender_command(blender, str(script), work_dir / JOB_FILE)
         log(f"[{TASK_TYPE}] job={job_id} timeout={timeout_sec:g}s exportModels={export_models}")
         log(f"[{TASK_TYPE}] cmd: {' '.join(cmd)}")
