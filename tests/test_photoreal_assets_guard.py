@@ -448,9 +448,11 @@ def test_legacy_complete_cache_offline_adopts_manifest(tmp_path: Path, monkeypat
     monkeypatch.setattr(photoreal_assets.urllib.request, "urlopen", fail_network)
     paths = photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
     assert aid in paths
-    assert manifest.exists()
-    assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
-    includes = json.loads(manifest.read_text(encoding="utf-8"))
+    bundle_dir, resolved_gltf = photoreal_assets._polyhaven_locate_bundle(model_dir, gltf_file.name)
+    version_manifest = bundle_dir / photoreal_assets._POLYHAVEN_MANIFEST_NAME
+    assert version_manifest.exists()
+    assert photoreal_assets._polyhaven_cache_complete(bundle_dir, resolved_gltf)
+    includes = json.loads(version_manifest.read_text(encoding="utf-8"))
     assert includes == ["textures/albedo.png"]
 
 

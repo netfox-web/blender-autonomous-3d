@@ -9,6 +9,11 @@
       "file:/data-fast/fox3d/scripts/fleet_blender_task.py",
       "file:/data-fast/fox3d/scripts/worker_polyhaven.py",
       "file:/data-fast/fox3d/scripts/polyhaven_paths.py",
+      "file:/data-fast/fox3d/scripts/fox3d_bootstrap.py",
+      "file:/data-fast/fox3d/src/fox3d/__init__.py",
+      "file:/data-fast/fox3d/src/fox3d/polyhaven_cache.py",
+      "file:/data-fast/fox3d/src/fox3d/durability.py",
+      "file:/data-fast/fox3d/src/fox3d/storelock.py",
       "dir:/data-fast/fox3d/assets/models/polyhaven"
     ],
     "command": [

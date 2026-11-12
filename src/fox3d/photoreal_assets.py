@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 import numpy as np
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
+from fox3d import polyhaven_cache
 from fox3d.polyhaven_paths import (
     POLYHAVEN_CATALOG_NAME,
     POLYHAVEN_VERSIONS_DIR,
@@ -280,6 +281,15 @@ def _polyhaven_resolved_gltf_path(model_dir: Path, gltf_file: Path) -> Path:
     _bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
     return resolved_gltf
 
+
+def _polyhaven_locate_bundle(asset_root: Path, gltf_name: str) -> tuple[Path, Path]:
+    """Resolve active bundle via ``current`` pointer (workbench) or catalog pointer (fleet)."""
+    located = polyhaven_cache.active_bundle_dir(asset_root, gltf_name)
+    if located is not None:
+        return located
+    nominal = asset_root / gltf_name
+    return resolve_polyhaven_bundle_paths(asset_root, nominal)
+
 _POLYHAVEN_ASSET_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _POLYHAVEN_ALLOWED_HOSTS = frozenset({"polyhaven.com", "www.polyhaven.com"})
 # Case-insensitive names that collide with shared dirs under assets/models/polyhaven/.
@@ -523,21 +533,33 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
 
 
 def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
-    """While holding the download lock: migrate a complete pre-manifest cache by writing the manifest."""
-    bundle_root, resolved_gltf = resolve_polyhaven_bundle_paths(model_dir, gltf_file)
-    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_root, resolved_gltf)
+    """While holding the download lock: manifest + migrate flat cache into versions/<hash>/."""
+    bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+    gltf_doc = _polyhaven_gltf_bundle_ready(bundle_dir, resolved_gltf)
     if gltf_doc is None:
         return False
-    if _polyhaven_cache_complete(model_dir, gltf_file):
-        return True
     include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
-    manifest_path = _polyhaven_manifest_path(bundle_root)
+    if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        return polyhaven_cache.migrate_legacy_flat_bundle(
+            model_dir,
+            resolved_gltf,
+            cache_complete_fn=_polyhaven_cache_complete,
+            include_rels=include_rels,
+        )
+    manifest_path = _polyhaven_manifest_path(bundle_dir)
     try:
         manifest_path.write_text(json.dumps(include_rels, ensure_ascii=False), encoding="utf-8")
     except OSError:
         logger.warning("Failed to write Poly Haven manifest for %s", model_dir.name)
         return False
-    return _polyhaven_cache_complete(model_dir, gltf_file)
+    if not _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+        return False
+    return polyhaven_cache.migrate_legacy_flat_bundle(
+        model_dir,
+        resolved_gltf,
+        cache_complete_fn=_polyhaven_cache_complete,
+        include_rels=include_rels,
+    )
 
 
 def _polyhaven_bundle_version_id(bundle_root: Path, gltf_path: Path, include_rels: list[str]) -> str:
@@ -813,8 +835,12 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
 
         try:
             with FileLock(_polyhaven_lock_path(model_dir), timeout=_POLYHAVEN_DOWNLOAD_LOCK_TIMEOUT):
-                if _polyhaven_cache_complete(model_dir, gltf_file):
-                    resolved_paths[aid] = str(_polyhaven_resolved_gltf_path(model_dir, gltf_file).resolve())
+                bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+                if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
+                    if polyhaven_cache.read_current_version(model_dir) is None and read_polyhaven_catalog(model_dir) is None:
+                        _polyhaven_adopt_legacy_cache(model_dir, gltf_file)
+                        bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+                    resolved_paths[aid] = str(resolved_gltf.resolve())
                     continue
 
                 if _polyhaven_adopt_legacy_cache(model_dir, gltf_file):
