@@ -419,7 +419,7 @@ def render_admin(platform: Any) -> str:
 
   function assetCacheKey(assetId, tenantId) {{
     const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
-    return tenant + '::' + String(assetId || '');
+    return JSON.stringify([tenant, String(assetId || '')]);
   }}
 
   async function fetchAssetBlobUrl(assetId, tenantId) {{
@@ -477,11 +477,18 @@ def render_admin(platform: Any) -> str:
     wireAssetOpenLinks();
   }}
 
+  let resultAssetRequest = 0;
   function bindResultAsset(assetId, tenantId) {{
     const img = document.getElementById('res-img');
     const link = document.getElementById('res-link');
     const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
+    const request = ++resultAssetRequest;
+    img.removeAttribute('src');
+    img.alt = '';
+    img.onclick = null;
+    link.onclick = (ev) => ev.preventDefault();
     fetchAssetBlobUrl(assetId, tenant).then((url) => {{
+      if (request !== resultAssetRequest) return;
       img.src = url;
       img.onclick = () => window.open(url, '_blank', 'noopener');
       link.onclick = (ev) => {{
@@ -489,6 +496,7 @@ def render_admin(platform: Any) -> str:
         window.open(url, '_blank', 'noopener');
       }};
     }}).catch((err) => {{
+      if (request !== resultAssetRequest) return;
       img.alt = '載入失敗';
       link.onclick = (ev) => {{
         ev.preventDefault();
