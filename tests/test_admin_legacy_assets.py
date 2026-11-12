@@ -357,3 +357,29 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
         page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide'))")
         assert page.evaluate("url => window.revokedUrls.includes(url)", current)
         browser.close()
+
+
+@pytest.mark.browser
+def test_parametric_result_loads_and_clears_failed_preview(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+
+    base = legacy_admin_browser_server["base_url"]
+    asset_id = legacy_admin_browser_server["ids"]["tenant_a_job_asset"]
+    requests: list[tuple[str, str]] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.on("request", lambda req: requests.append((req.url, req.headers.get("x-tenant-id", ""))))
+        page.route("**/api/parametric/products", lambda route: route.fulfill(json={
+            "render": {"job": {"outputAsset": asset_id, "tenantId": "tenant-a"}}
+        }))
+        page.goto(f"{base}/admin", wait_until="networkidle")
+        page.locator("#gen-btn").click()
+        page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
+        assert page.locator("#result-box").is_visible()
+        assert any(url.endswith('/api/assets/' + asset_id) and tenant == 'tenant-a' for url, tenant in requests)
+        page.evaluate("assetId => window.bindResultAsset(assetId, 'demo')", asset_id)
+        page.wait_for_function("document.querySelector('#res-img').alt === '載入失敗'")
+        assert page.locator("#res-img").get_attribute("src") is None
+        browser.close()
