@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextvars
+import errno
 import hashlib
 import json
 import os
@@ -26,7 +27,7 @@ def _delete_sharing_error(path: Path) -> int:
     import ctypes
     from ctypes import wintypes
 
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
     kernel.CreateFileW.argtypes = [
         wintypes.LPCWSTR,
         wintypes.DWORD,
@@ -41,9 +42,9 @@ def _delete_sharing_error(path: Path) -> int:
     kernel.CloseHandle.restype = wintypes.BOOL
     handle = kernel.CreateFileW(str(path.resolve()), 0x10000, 0x1 | 0x2 | 0x4, None, 3, 0x80, None)
     if handle == wintypes.HANDLE(-1).value:
-        return ctypes.get_last_error()
+        return ctypes.get_last_error()  # type: ignore[attr-defined]
     if not kernel.CloseHandle(handle):
-        raise ctypes.WinError(ctypes.get_last_error())
+        raise ctypes.WinError(ctypes.get_last_error())  # type: ignore[attr-defined]
     return 0
 
 
@@ -53,7 +54,9 @@ def _windows_replace_contention(error: OSError, path: Path) -> bool:
     code = getattr(error, "winerror", None)
     if code in (32, 33):  # ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION
         return True
-    return code == 5 and _delete_sharing_error(path) in (32, 33)
+    if code == 5 or (code is None and error.errno in (errno.EACCES, 13)):
+        return _delete_sharing_error(path) in (32, 33)
+    return False
 
 _POLYHAVEN_REF_RE = re.compile(
     r"^models/polyhaven/(?P<aid>[A-Za-z0-9_-]{1,64})/(?P<rel>.+\.(?:gltf|glb))$",

@@ -477,19 +477,23 @@ def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path, run_inde
         finally:
             writer_done.set()
 
+    def _try_parse_signal() -> None:
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        try:
+            json.loads(raw)
+        except json.JSONDecodeError as exc:
+            decode_errors.append(exc)
+
     def aggressive_reader() -> None:
         while not writer_done.is_set():
             if path.is_file():
-                try:
-                    json.loads(path.read_text(encoding="utf-8"))
-                except json.JSONDecodeError as exc:
-                    decode_errors.append(exc)
+                _try_parse_signal()
             time.sleep(0.001)
         if path.is_file():
-            try:
-                json.loads(path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                decode_errors.append(exc)
+            _try_parse_signal()
 
     wt = threading.Thread(target=writer, name="coord_signal_writer")
     rt = threading.Thread(target=aggressive_reader, name="coord_signal_reader", daemon=True)
@@ -509,6 +513,22 @@ def test_coord_json_signal_atomic_under_concurrent_poll(tmp_path: Path, run_inde
         rt.join(timeout=1)
 
 
+@pytest.mark.parametrize(
+    "error,probe,expected",
+    [
+        (PermissionError(errno.EACCES, "denied"), 32, True),
+        (PermissionError(13, "Access is denied"), 32, True),
+        (PermissionError(errno.EACCES, "denied"), 0, False),
+    ],
+)
+def test_windows_replace_contention_errno_without_winerror(
+    monkeypatch: pytest.MonkeyPatch, error: OSError, probe: int, expected: bool
+) -> None:
+    monkeypatch.setattr(polyhaven_cache, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(polyhaven_cache, "_delete_sharing_error", lambda p: probe)
+    assert polyhaven_cache._windows_replace_contention(error, Path("unused")) is expected
+
+
 def test_coord_signal_atomic_replace_retries_transient_windows_contention(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -524,7 +544,7 @@ def test_coord_signal_atomic_replace_retries_transient_windows_contention(
         calls.append((str(src), str(dst)))
         if len(calls) == 1:
             err = PermissionError(errno.EACCES, "sharing violation")
-            err.winerror = 32
+            setattr(err, "winerror", 32)
             raise err
         real_replace(src, dst)
 
