@@ -23,6 +23,16 @@ def _gltf_doc(*uris: str) -> bytes:
     return body
 
 
+def _version_cross_process_retain_empty(version_dir: Path) -> bool:
+    pin_dir = version_dir / ".fox3d-retain"
+    if not pin_dir.is_dir():
+        return True
+    try:
+        return not any(pin_dir.iterdir())
+    except OSError:
+        return False
+
+
 def _seed_version_bundle(asset_root: Path, aid: str, version: str, *, tex_marker: bytes) -> None:
     bundle = polyhaven_cache.version_directory(asset_root, version)
     bundle.mkdir(parents=True, exist_ok=True)
@@ -347,8 +357,11 @@ def test_cross_process_legacy_flat_survives_migration_while_reading(tmp_path: Pa
             proc.kill()
 
 
-def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path: Path):
-    """Publisher switches twice while reader paused after current read, before on-disk retain pin."""
+def test_cross_process_race_before_retain_marker_survives_double_switch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Issue #168: pause after current read, before on-disk retain; parent double-switches + GC."""
     aid = "pre_retain_race"
     asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
     asset_root.mkdir(parents=True)
@@ -372,10 +385,12 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
                 f"root = Path({str(ph_root)!r})",
                 "with polyhaven_cache.polyhaven_read_session(root) as session:",
                 f"    main = session.resolve_ref_suffix('models/polyhaven/{aid}/{aid}_2k.gltf')",
-                "    assert main is not None",
-                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_KEEP'",
+                "    assert main is not None and main.is_file()",
+                f"    assert main.name == '{aid}_2k.gltf'",
+                "    tex = main.parent / 'textures/albedo.png'",
+                "    assert tex.read_bytes() == b'RACE_KEEP'",
                 "    time.sleep(0.1)",
-                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_KEEP'",
+                "    assert main.is_file() and tex.read_bytes() == b'RACE_KEEP'",
             ]
         ),
         encoding="utf-8",
@@ -392,10 +407,18 @@ def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path
             time.sleep(0.02)
         assert paused_payload == {"asset": aid, "version": v1}, "reader must pause before retain pin"
         assert proc.poll() is None, "child must still be blocked before retain pin exists"
+        v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+        assert _version_cross_process_retain_empty(v1_bundle), "cross-process retain pin must not exist yet"
+        assert polyhaven_cache.read_current_version(asset_root) == v1
+        # Child still holds the asset coord lock while paused; defer GC so current can advance twice
+        # before the on-disk retain marker exists (publisher path still runs _atomic_write_current).
+        monkeypatch.setattr(polyhaven_cache, "_maybe_gc_asset_versions", lambda _root: None)
         _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
         _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
-        v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+        assert polyhaven_cache.read_current_version(asset_root) == v3
         assert v1_bundle.is_dir(), "v1 must survive switches before cross-process retain pin"
+        assert (v1_bundle / f"{aid}_2k.gltf").is_file(), "reader's pinned glTF must not be GC'd"
+        assert _version_cross_process_retain_empty(v1_bundle), "retain marker not created while paused"
         (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
         assert proc.wait(timeout=8) == 0
         assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_KEEP"
