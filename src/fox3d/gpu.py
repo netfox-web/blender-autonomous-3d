@@ -27,9 +27,6 @@ class GpuPolicy:
     def place(self, scheduler: Scheduler, job: dict[str, Any]) -> dict[str, Any]:
         annotated = self.annotate(job)
         decision = scheduler.place(annotated)
-        if annotated.get("gpuRequirement", {}).get("exactTargetKey") and not job.get("operatorPinned"):
-            # Capability match may *prefer* a target; the engine itself must not bind Blender to one GPU.
-            pass
         decision["pinForbidden"] = True
         decision["lane"] = annotated["lane"]
         return decision
