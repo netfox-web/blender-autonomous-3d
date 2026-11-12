@@ -57,6 +57,28 @@ def test_materials_apis_with_tenant(client: TestClient) -> None:
     assert "items" in snap
 
 
+def test_materials_lots_are_tenant_scoped(client: TestClient) -> None:
+    lots = {}
+    for tenant in ("tenant-a", "tenant-b"):
+        response = client.post(
+            "/api/materials/lots",
+            headers={"X-Tenant-Id": tenant},
+            json={"material": "WOOD_WHITE", "thickness": 18, "sheetCount": 1},
+        )
+        assert response.status_code == 200
+        lots[tenant] = response.json()["lotId"]
+
+    for headers in ({}, {"X-Tenant-Id": ""}):
+        response = client.get("/api/materials", headers=headers)
+        assert response.status_code == 400
+        assert response.json() == {"detail": "X-Tenant-Id 無效"}
+
+    for tenant, lot_id in lots.items():
+        response = client.get("/api/materials", headers={"X-Tenant-Id": tenant})
+        assert response.status_code == 200
+        assert {lot["lotId"] for lot in response.json()["lots"]} == {lot_id}
+
+
 def test_remnant_reserve_round_trip(client: TestClient, platform) -> None:  # noqa: ANN001
     created = platform.remnants.add_from_nesting(
         {"candidateRemnants": [{"w": 600, "h": 400, "sheetIndex": 0}]},

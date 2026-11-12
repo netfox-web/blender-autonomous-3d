@@ -72,7 +72,7 @@ ROUTES = [
     ('POST', '/api/pilot/work-orders/{work_order_id}/complete'),
     ('GET', '/api/pilot/scan-token/{kind}/{object_id}'),
 ]
-OPTIONAL = {("GET", "/api/assets/{asset_id}"), ("GET", "/api/materials")}
+OPTIONAL = {("GET", "/api/assets/{asset_id}")}
 
 
 @pytest.fixture
@@ -106,12 +106,8 @@ def test_tenant_header_contract(client, method, path, header):
             kwargs = {"json": {}}
     response = client.request(method, url, headers=headers, **kwargs)
     if (method, path) in OPTIONAL and header in (None, ""):
-        if path == "/api/materials":
-            assert response.status_code == 200
-            assert "detail" not in response.json()
-        else:
-            assert response.status_code == 404
-            assert response.json() == {"detail": "'missing'"}
+        assert response.status_code == 404
+        assert response.json() == {"detail": "'missing'"}
     else:
         assert response.status_code == 400
         assert response.json() == {"detail": "X-Tenant-Id 無效"}

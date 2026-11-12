@@ -301,12 +301,13 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/materials")
     def materials(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
         plat = get_platform()
         from fox3d.acrylic import ACRYLIC_SHEETS
         from fox3d.manufacturing import SheetMaterialRegistry
         from fox3d.packaging import PAPERBOARD_SHEETS
 
-        lots = plat.lots.list(tenant_id=tenant(x_tenant_id)) if x_tenant_id else list(plat.lots.lots.values())
+        lots = plat.lots.list(tenant_id=tid)
         return {
             "sheets": SheetMaterialRegistry().list(),
             "acrylic": list(ACRYLIC_SHEETS),
