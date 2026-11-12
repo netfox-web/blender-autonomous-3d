@@ -1,17 +1,21 @@
 """Poly Haven on-disk layout helpers (immutable version dirs + catalog pointer).
 
 Shipped beside Blender worker scripts so fleet nodes can resolve versioned bundles
-without the full application ``src`` tree on ``PYTHONPATH``.
+without the full application ``src`` tree on ``PYTHONPATH``. API matches ``fox3d.polyhaven_paths``.
 """
 from __future__ import annotations
 
 import json
+import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
 POLYHAVEN_CATALOG_NAME = ".polyhaven_catalog.json"
 POLYHAVEN_VERSIONS_DIR = "versions"
+_POLYHAVEN_PINS_DIR = ".polyhaven_pins"
+_POLYHAVEN_LEGACY_PIN = "__legacy_flat__"
 _POLYHAVEN_GLTF_REF_RE = re.compile(
     r"^models/polyhaven/([A-Za-z0-9_-]{1,64})/([A-Za-z0-9_.-]+\.gltf)$"
 )
@@ -68,3 +72,49 @@ def resolve_polyhaven_asset_ref_path(assets_root: Path, asset_ref_rel: str) -> P
     slot = assets_root / "models" / "polyhaven" / aid
     _bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, slot / gltf_name)
     return gltf_path
+
+
+def polyhaven_pins_root(slot: Path) -> Path:
+    return slot / _POLYHAVEN_PINS_DIR
+
+
+def acquire_polyhaven_reader_pin(slot: Path, version_id: str | None) -> Path:
+    """Create a cross-process reader pin; unlink the returned path (or call :func:`release_polyhaven_reader_pin`)."""
+    pin_key = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
+    pin_dir = polyhaven_pins_root(slot) / pin_key
+    pin_dir.mkdir(parents=True, exist_ok=True)
+    token = f"{os.getpid()}-{uuid.uuid4().hex}"
+    pin_file = pin_dir / token
+    pin_file.write_text("", encoding="utf-8")
+    return pin_file
+
+
+def release_polyhaven_reader_pin(pin_file: Path) -> None:
+    pin_file.unlink(missing_ok=True)
+    try:
+        parent = pin_file.parent
+        if parent.is_dir() and not any(parent.iterdir()):
+            parent.rmdir()
+    except OSError:
+        pass
+    pins_root = pin_file.parents[1] if len(pin_file.parents) >= 2 else None
+    if pins_root is not None and pins_root.name == _POLYHAVEN_PINS_DIR:
+        try:
+            if pins_root.is_dir() and not any(pins_root.iterdir()):
+                pins_root.rmdir()
+        except OSError:
+            pass
+
+
+def listed_polyhaven_reader_pins(slot: Path) -> set[str]:
+    """Version ids (and legacy sentinel) that currently have at least one on-disk reader pin."""
+    pins_root = polyhaven_pins_root(slot)
+    if not pins_root.is_dir():
+        return set()
+    pinned: set[str] = set()
+    for entry in pins_root.iterdir():
+        if not entry.is_dir():
+            continue
+        if any(entry.iterdir()):
+            pinned.add(entry.name)
+    return pinned

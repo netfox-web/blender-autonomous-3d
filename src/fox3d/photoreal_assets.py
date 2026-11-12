@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import threading
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -23,7 +24,10 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 from fox3d.polyhaven_paths import (
     POLYHAVEN_CATALOG_NAME,
     POLYHAVEN_VERSIONS_DIR,
+    acquire_polyhaven_reader_pin,
+    listed_polyhaven_reader_pins,
     read_polyhaven_catalog,
+    release_polyhaven_reader_pin,
     resolve_polyhaven_bundle_paths,
 )
 from fox3d.recipe_3d import atomic_json
@@ -552,6 +556,7 @@ def _polyhaven_bundle_version_id(bundle_root: Path, gltf_path: Path, include_rel
 
 _POLYHAVEN_PIN_LOCK = threading.Lock()
 _POLYHAVEN_PINNED_VERSIONS: dict[str, set[str]] = {}
+_POLYHAVEN_DISK_PINS: dict[tuple[str, str], Path] = {}
 _POLYHAVEN_LEGACY_PIN = "__legacy_flat__"
 
 
@@ -576,13 +581,18 @@ def unpin_polyhaven_bundle(slot: Path, version_id: str | None) -> None:
             pins.discard(pin)
             if not pins:
                 _POLYHAVEN_PINNED_VERSIONS.pop(key, None)
+        pin_file = _POLYHAVEN_DISK_PINS.pop((key, pin), None)
+    if pin_file is not None:
+        release_polyhaven_reader_pin(pin_file)
     _polyhaven_reclaim_slot(slot)
 
 
 def _polyhaven_pinned_versions(slot: Path) -> set[str]:
     key = _polyhaven_slot_key(slot)
     with _POLYHAVEN_PIN_LOCK:
-        return set(_POLYHAVEN_PINNED_VERSIONS.get(key, ()))
+        in_process = set(_POLYHAVEN_PINNED_VERSIONS.get(key, ()))
+    cross_process = listed_polyhaven_reader_pins(slot)
+    return in_process | cross_process
 
 
 def _polyhaven_clear_slot_bundle_artifacts(slot: Path) -> None:
@@ -641,7 +651,16 @@ def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> Non
         if _polyhaven_cache_complete(version_dir, existing_gltf):
             shutil.rmtree(staging, ignore_errors=True)
         else:
-            shutil.rmtree(version_dir, ignore_errors=True)
+            retired = versions_root / f"{version_id}.retired-{uuid.uuid4().hex[:8]}"
+            try:
+                version_dir.rename(retired)
+            except OSError:
+                logger.warning(
+                    "Poly Haven could not retire corrupt version %s for %s; keeping both dirs until reclaim",
+                    version_id,
+                    slot.name,
+                    exc_info=True,
+                )
             staging.rename(version_dir)
     else:
         staging.rename(version_dir)
@@ -685,6 +704,10 @@ def pin_polyhaven_bundle(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, st
         _polyhaven_pin_version(slot, None)
     else:
         _polyhaven_pin_version(slot, version_id)
+    pin_file = acquire_polyhaven_reader_pin(slot, version_id)
+    pin = version_id if isinstance(version_id, str) and version_id else _POLYHAVEN_LEGACY_PIN
+    with _POLYHAVEN_PIN_LOCK:
+        _POLYHAVEN_DISK_PINS[(_polyhaven_slot_key(slot), pin)] = pin_file
     return bundle_root, gltf_path, version_id
 
 
