@@ -13,8 +13,10 @@ from typing import Any
 
 POLYHAVEN_CATALOG_NAME = ".polyhaven_catalog.json"
 POLYHAVEN_VERSIONS_DIR = "versions"
+_POLYHAVEN_CURRENT_FILENAME = "current"
 _POLYHAVEN_PINS_DIR = ".polyhaven_pins"
 _POLYHAVEN_LEGACY_PIN = "__legacy_flat__"
+_WORKER_PIN_REGISTRY: list[Path] = []
 _POLYHAVEN_GLTF_REF_RE = re.compile(
     r"^models/polyhaven/([A-Za-z0-9_-]{1,64})/([A-Za-z0-9_.-]+\.gltf)$"
 )
@@ -43,10 +45,46 @@ def read_polyhaven_catalog(slot: Path) -> dict[str, Any] | None:
     return doc
 
 
+def read_polyhaven_current_version(slot: Path) -> str | None:
+    """Workbench-style ``current`` pointer (JSON or plain version id)."""
+    path = slot / _POLYHAVEN_CURRENT_FILENAME
+    if not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    if raw.startswith("{"):
+        try:
+            doc = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        version = doc.get("version") if isinstance(doc, dict) else None
+        return version if isinstance(version, str) and version else None
+    line = raw.splitlines()[0].strip()
+    return line or None
+
+
 def resolve_polyhaven_bundle_paths(slot: Path, nominal_gltf: Path) -> tuple[Path, Path]:
     """Return ``(bundle_root, gltf_path)`` for integrity checks, downloads, and pins."""
     catalog = read_polyhaven_catalog(slot)
     if catalog is None:
+        version = read_polyhaven_current_version(slot)
+        if version:
+            version_dir = (slot / POLYHAVEN_VERSIONS_DIR / version).resolve()
+            try:
+                version_dir.relative_to(slot.resolve())
+            except ValueError:
+                return slot, nominal_gltf
+            gltf_path = (version_dir / nominal_gltf.name).resolve()
+            if gltf_path.is_file():
+                try:
+                    gltf_path.relative_to(version_dir)
+                except ValueError:
+                    return slot, nominal_gltf
+                return version_dir, gltf_path
         return slot, nominal_gltf
     version_dir = (slot / POLYHAVEN_VERSIONS_DIR / catalog["versionId"]).resolve()
     try:
@@ -70,7 +108,37 @@ def resolve_polyhaven_asset_ref_path(assets_root: Path, asset_ref_rel: str) -> P
     aid, gltf_name = match.group(1), match.group(2)
     slot = assets_root / "models" / "polyhaven" / aid
     _bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, slot / gltf_name)
-    return gltf_path
+    return gltf_path if gltf_path.is_file() else None
+
+
+def pin_polyhaven_bundle_paths(slot: Path, nominal_gltf: Path) -> tuple[Path, Path, Path]:
+    """Pin an immutable bundle for the duration of a worker read (register :func:`release_all_polyhaven_worker_pins`)."""
+    bundle_root, gltf_path = resolve_polyhaven_bundle_paths(slot, nominal_gltf)
+    catalog = read_polyhaven_catalog(slot)
+    version_id = catalog.get("versionId") if catalog else None
+    if not isinstance(version_id, str) or not version_id:
+        version_id = read_polyhaven_current_version(slot)
+    pin_file = acquire_polyhaven_reader_pin(slot, version_id)
+    _WORKER_PIN_REGISTRY.append(pin_file)
+    return bundle_root, gltf_path, pin_file
+
+
+def resolve_polyhaven_asset_ref_path_pinned(assets_root: Path, asset_ref_rel: str) -> Path | None:
+    """Like :func:`resolve_polyhaven_asset_ref_path` but retains the resolved version until pins are released."""
+    rel = asset_ref_rel.replace("\\", "/").lstrip("/")
+    match = _POLYHAVEN_GLTF_REF_RE.match(rel)
+    if not match:
+        return None
+    aid, gltf_name = match.group(1), match.group(2)
+    slot = assets_root / "models" / "polyhaven" / aid
+    _bundle_root, gltf_path, _pin = pin_polyhaven_bundle_paths(slot, slot / gltf_name)
+    return gltf_path if gltf_path.is_file() else None
+
+
+def release_all_polyhaven_worker_pins() -> None:
+    for pin_file in _WORKER_PIN_REGISTRY:
+        release_polyhaven_reader_pin(pin_file)
+    _WORKER_PIN_REGISTRY.clear()
 
 
 def polyhaven_pins_root(slot: Path) -> Path:

@@ -1188,3 +1188,160 @@ def test_redownload_repairs_corrupt_dependency_only(tmp_path: Path, monkeypatch:
     bundle = _bundle_root(model_root, aid)
     assert (bundle / "textures" / "albedo.png").read_bytes() == b"FIXED_TEX"
     assert photoreal_assets._polyhaven_cache_complete(model_dir, gltf_file)
+
+
+def test_pinned_read_spans_corrupt_main_repair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_span_repair_main"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"OLD_TEX"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    bundle_root, pinned_gltf, version = photoreal_assets.pin_polyhaven_bundle(model_dir, gltf_file)
+    try:
+        _ = pinned_gltf.read_bytes()
+        pinned_gltf.write_bytes(b"{}" + b" " * 200)
+        assert not photoreal_assets._polyhaven_cache_complete(bundle_root, pinned_gltf)
+        monkeypatch.setattr(
+            photoreal_assets.urllib.request,
+            "urlopen",
+            _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"NEW_TEX"}),
+        )
+        assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+        assert bundle_root.is_dir()
+        assert (bundle_root / "textures" / "albedo.png").read_bytes() == b"OLD_TEX"
+        new_bundle = _bundle_root(model_root, aid)
+        assert new_bundle != bundle_root
+        assert (new_bundle / "textures" / "albedo.png").read_bytes() == b"NEW_TEX"
+    finally:
+        photoreal_assets.unpin_polyhaven_bundle(model_dir, version)
+
+
+def test_pinned_read_spans_corrupt_dependency_repair(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_span_repair_dep"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"OLD_TEX"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    bundle_root, pinned_gltf, version = photoreal_assets.pin_polyhaven_bundle(model_dir, gltf_file)
+    try:
+        _ = pinned_gltf.read_bytes()
+        (bundle_root / "textures" / "albedo.png").unlink(missing_ok=True)
+        assert not photoreal_assets._polyhaven_cache_complete(bundle_root, pinned_gltf)
+        monkeypatch.setattr(
+            photoreal_assets.urllib.request,
+            "urlopen",
+            _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"NEW_TEX"}),
+        )
+        assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+        assert bundle_root.is_dir()
+        assert pinned_gltf.is_file()
+        assert not (bundle_root / "textures" / "albedo.png").exists()
+        assert (_bundle_root(model_root, aid) / "textures" / "albedo.png").read_bytes() == b"NEW_TEX"
+    finally:
+        photoreal_assets.unpin_polyhaven_bundle(model_dir, version)
+
+
+def test_legacy_migration_syncs_catalog_for_worker_resolve(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from fox3d.polyhaven_cache import read_current_version
+
+    aid = "guard_legacy_catalog"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    gltf = asset_root / f"{aid}_2k.gltf"
+    gltf.write_bytes(_gltf_body_with_uris("textures/albedo.png"))
+    (asset_root / "textures").mkdir()
+    (asset_root / "textures" / "albedo.png").write_bytes(b"LEGACY")
+    (asset_root / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text('["textures/albedo.png"]', encoding="utf-8")
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("offline")),
+    )
+    assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+    assert read_current_version(asset_root)
+    catalog_path = asset_root / POLYHAVEN_CATALOG_NAME
+    assert catalog_path.is_file()
+    assert not gltf.is_file()
+    import importlib.util
+
+    worker_path = Path(__file__).resolve().parents[1] / "scripts" / "polyhaven_paths.py"
+    spec = importlib.util.spec_from_file_location("worker_ph_catalog", worker_path)
+    assert spec is not None and spec.loader is not None
+    worker = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(worker)
+    ref = worker.resolve_polyhaven_asset_ref_path(tmp_path / "assets", f"models/polyhaven/{aid}/{aid}_2k.gltf")
+    assert ref is not None and ref.is_file()
+    assert POLYHAVEN_VERSIONS_DIR in ref.parts
+
+
+def test_worker_pin_blocks_prune_until_publish_finishes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "guard_worker_pin_publish"
+    gltf_body = _gltf_body_with_uris("textures/albedo.png")
+    model_root = tmp_path / "assets" / "models" / "polyhaven"
+    model_dir = model_root / aid
+    gltf_file = model_dir / f"{aid}_2k.gltf"
+    monkeypatch.setattr(
+        photoreal_assets.urllib.request,
+        "urlopen",
+        _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V1"}),
+    )
+    photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])
+    first_bundle = _bundle_root(model_root, aid)
+    pin_script = textwrap.dedent(
+        f"""
+        import json
+        import os
+        import sys
+        import time
+        from pathlib import Path
+        sys.path.insert(0, {json.dumps(str(ROOT / "scripts"))})
+        os.chdir({json.dumps(str(ROOT / "scripts"))})
+        from worker_polyhaven import load_polyhaven_paths
+        ph = load_polyhaven_paths()
+        assets = Path({json.dumps(str(tmp_path / "assets"))})
+        ref = ph.resolve_polyhaven_asset_ref_path_pinned(assets, "models/polyhaven/{aid}/{aid}_2k.gltf")
+        assert ref is not None and ref.is_file()
+        ready = Path({json.dumps(str(tmp_path / "worker_pinned"))})
+        ready.write_text(str(ref.parent), encoding="utf-8")
+        while not Path({json.dumps(str(tmp_path / "worker_release"))}).exists():
+            time.sleep(0.02)
+        ph.release_all_polyhaven_worker_pins()
+        """
+    )
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.Popen([sys.executable, "-I", "-c", pin_script], env=env)
+    try:
+        pinned_root: Path | None = None
+        for _ in range(250):
+            if (tmp_path / "worker_pinned").exists():
+                pinned_root = Path((tmp_path / "worker_pinned").read_text(encoding="utf-8"))
+                break
+            threading.Event().wait(0.02)
+        else:
+            pytest.fail("worker pin subprocess did not start")
+        assert pinned_root == first_bundle
+        monkeypatch.setattr(
+            photoreal_assets.urllib.request,
+            "urlopen",
+            _fake_urlopen_factory({"gltf": {}}, gltf_body, {"textures/albedo.png": b"V2"}),
+        )
+        (model_dir / POLYHAVEN_CATALOG_NAME).unlink(missing_ok=True)
+        assert photoreal_assets.ensure_polyhaven_models(root_dir=tmp_path, asset_ids=[aid])[aid]
+        assert first_bundle.exists()
+        assert (first_bundle / "textures" / "albedo.png").read_bytes() == b"V1"
+    finally:
+        (tmp_path / "worker_release").write_text("1", encoding="utf-8")
+        proc.wait(timeout=10)

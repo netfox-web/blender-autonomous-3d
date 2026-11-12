@@ -532,6 +532,16 @@ def _polyhaven_cache_complete(model_dir: Path, gltf_file: Path) -> bool:
     return True
 
 
+def _polyhaven_ensure_fleet_catalog_pointer(slot: Path, gltf_name: str) -> None:
+    """Mirror workbench ``current`` into fleet catalog pointer when only ``current`` exists."""
+    if read_polyhaven_catalog(slot) is not None:
+        return
+    version = polyhaven_cache.read_current_version(slot)
+    if not version:
+        return
+    atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version, "gltfName": gltf_name})
+
+
 def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
     """While holding the download lock: manifest + migrate flat cache into versions/<hash>/."""
     bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
@@ -539,12 +549,20 @@ def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
     if gltf_doc is None:
         return False
     include_rels = sorted(rel.replace("\\", "/") for rel in _polyhaven_gltf_external_uris(gltf_doc))
+
+    def _finish(ok: bool) -> bool:
+        if ok:
+            _polyhaven_ensure_fleet_catalog_pointer(model_dir, gltf_file.name)
+        return ok
+
     if _polyhaven_cache_complete(bundle_dir, resolved_gltf):
-        return polyhaven_cache.migrate_legacy_flat_bundle(
-            model_dir,
-            resolved_gltf,
-            cache_complete_fn=_polyhaven_cache_complete,
-            include_rels=include_rels,
+        return _finish(
+            polyhaven_cache.migrate_legacy_flat_bundle(
+                model_dir,
+                resolved_gltf,
+                cache_complete_fn=_polyhaven_cache_complete,
+                include_rels=include_rels,
+            )
         )
     manifest_path = _polyhaven_manifest_path(bundle_dir)
     try:
@@ -554,11 +572,13 @@ def _polyhaven_adopt_legacy_cache(model_dir: Path, gltf_file: Path) -> bool:
         return False
     if not _polyhaven_cache_complete(bundle_dir, resolved_gltf):
         return False
-    return polyhaven_cache.migrate_legacy_flat_bundle(
-        model_dir,
-        resolved_gltf,
-        cache_complete_fn=_polyhaven_cache_complete,
-        include_rels=include_rels,
+    return _finish(
+        polyhaven_cache.migrate_legacy_flat_bundle(
+            model_dir,
+            resolved_gltf,
+            cache_complete_fn=_polyhaven_cache_complete,
+            include_rels=include_rels,
+        )
     )
 
 
@@ -668,31 +688,25 @@ def _polyhaven_publish_version(slot: Path, staging: Path, gltf_name: str) -> Non
     versions_root = slot / POLYHAVEN_VERSIONS_DIR
     versions_root.mkdir(parents=True, exist_ok=True)
     version_dir = versions_root / version_id
+    published_id = version_id
     if version_dir.exists():
         existing_gltf = version_dir / gltf_name
         if _polyhaven_cache_complete(version_dir, existing_gltf):
             shutil.rmtree(staging, ignore_errors=True)
-        else:
-            retired = versions_root / f"{version_id}.retired-{uuid.uuid4().hex[:8]}"
-            try:
-                version_dir.rename(retired)
-            except OSError:
-                logger.warning(
-                    "Poly Haven could not retire corrupt version %s for %s; keeping both dirs until reclaim",
-                    version_id,
-                    slot.name,
-                    exc_info=True,
-                )
-            staging.rename(version_dir)
+            return
+        published_id = f"{version_id}.repair-{uuid.uuid4().hex[:8]}"
+        staging.rename(versions_root / published_id)
     else:
         staging.rename(version_dir)
     previous = read_polyhaven_catalog(slot)
-    keep_versions = {version_id}
+    keep_versions = {published_id}
     if previous and isinstance(previous.get("versionId"), str):
         keep_versions.add(previous["versionId"])
+    if published_id != version_id and version_dir.is_dir():
+        keep_versions.add(version_id)
     keep_versions.update(_polyhaven_pinned_versions(slot) - {_POLYHAVEN_LEGACY_PIN})
     try:
-        atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": version_id, "gltfName": gltf_name})
+        atomic_json(slot / POLYHAVEN_CATALOG_NAME, {"versionId": published_id, "gltfName": gltf_name})
         _polyhaven_reclaim_slot(slot, keep_versions=keep_versions)
     except Exception:
         if previous is not None:
@@ -840,6 +854,8 @@ def ensure_polyhaven_models(root_dir: Path | None = None, asset_ids: list[str] |
                     if polyhaven_cache.read_current_version(model_dir) is None and read_polyhaven_catalog(model_dir) is None:
                         _polyhaven_adopt_legacy_cache(model_dir, gltf_file)
                         bundle_dir, resolved_gltf = _polyhaven_locate_bundle(model_dir, gltf_file.name)
+                    else:
+                        _polyhaven_ensure_fleet_catalog_pointer(model_dir, gltf_file.name)
                     resolved_paths[aid] = str(resolved_gltf.resolve())
                     continue
 

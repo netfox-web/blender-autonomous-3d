@@ -53,20 +53,21 @@ def resolve_asset_ref(value, root=None):
     base = Path(root) if root is not None else _assets_root()
     if parts[:2] == ['models', 'polyhaven']:
         try:
-            from worker_polyhaven import load_polyhaven_paths
-
-            resolved = load_polyhaven_paths().resolve_polyhaven_asset_ref_path(base, "/".join(parts))
-            if resolved is not None:
-                return resolved
-        except Exception:
-            pass
-        try:
             _ensure_fox3d_on_path()
             from fox3d.polyhaven_cache import resolve_polyhaven_ref_path
 
             pinned = resolve_polyhaven_ref_path(ASSET_REF_PREFIX + "/".join(parts), base)
             if pinned is not None:
                 return pinned
+        except Exception:
+            pass
+        try:
+            from worker_polyhaven import load_polyhaven_paths
+
+            ph = load_polyhaven_paths()
+            resolved = ph.resolve_polyhaven_asset_ref_path_pinned(base, "/".join(parts))
+            if resolved is not None:
+                return resolved
         except Exception:
             pass
     return base.joinpath(*parts)
@@ -80,7 +81,7 @@ def _polyhaven_slot_gltf(assets_root, asset_id, gltf_name):
     ph = load_polyhaven_paths()
     slot = Path(assets_root) / 'models' / 'polyhaven' / asset_id
     nominal = slot / gltf_name
-    _bundle_root, gltf_path = ph.resolve_polyhaven_bundle_paths(slot, nominal)
+    _bundle_root, gltf_path, _pin = ph.pin_polyhaven_bundle_paths(slot, nominal)
     return gltf_path
 
 
@@ -915,6 +916,12 @@ def build(created, definition, device, expected_hash):
     finally:
         bpy.context.window.scene = original
         ph_ctx.__exit__(None, None, None)
+        try:
+            from worker_polyhaven import load_polyhaven_paths
+
+            load_polyhaven_paths().release_all_polyhaven_worker_pins()
+        except Exception:
+            pass
     return scene, {'sceneHash': expected_hash, 'templateId': definition['templateId'], 'version': definition['version'],
                    'slot': definition['slot'], 'view': definition['view'], 'productScale': 1.,
                    'productMatrix': definition['productMatrix'], 'products': observations,
