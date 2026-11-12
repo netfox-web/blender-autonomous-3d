@@ -292,6 +292,61 @@ def test_windows_style_ref_suffix_normalizes(tmp_path: Path):
     assert path is not None and path.is_file()
 
 
+def test_cross_process_legacy_flat_survives_migration_while_reading(tmp_path: Path):
+    """Reader on flat cache (no current) keeps paths readable while another process migrates."""
+    aid = "legacy_race"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    gltf = asset_root / f"{aid}_2k.gltf"
+    gltf.write_bytes(_gltf_doc("textures/albedo.png"))
+    (asset_root / "textures").mkdir()
+    (asset_root / "textures/albedo.png").write_bytes(b"KEEP_FLAT")
+    (asset_root / photoreal_assets._POLYHAVEN_MANIFEST_NAME).write_text(
+        '["textures/albedo.png"]',
+        encoding="utf-8",
+    )
+
+    repo_src = Path(__file__).resolve().parents[1] / "src"
+    ph_root = tmp_path / "assets" / "models" / "polyhaven"
+    ready = tmp_path / "legacy_reader_ready"
+    hold_script = tmp_path / "legacy_hold.py"
+    hold_script.write_text(
+        "\n".join(
+            [
+                "import sys, time",
+                "from pathlib import Path",
+                f"sys.path.insert(0, {str(repo_src)!r})",
+                "from fox3d import polyhaven_cache",
+                f"root = Path({str(ph_root)!r})",
+                f"ready = Path({str(ready)!r})",
+                "with polyhaven_cache.polyhaven_read_session(root) as session:",
+                f"    main = session.resolve_ref_suffix('models/polyhaven/{aid}/{aid}_2k.gltf')",
+                "    assert main is not None",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'KEEP_FLAT'",
+                "    ready.write_text('1', encoding='utf-8')",
+                "    time.sleep(0.8)",
+                "    assert main.is_file(), 'legacy glTF must survive concurrent migration'",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'KEEP_FLAT'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.Popen([sys.executable, str(hold_script)])
+    try:
+        deadline = time.time() + 5.0
+        while not ready.is_file() and time.time() < deadline:
+            time.sleep(0.02)
+        assert ready.is_file(), "reader must resolve legacy path before migration"
+        assert proc.poll() is None
+        migrated = photoreal_assets._polyhaven_adopt_legacy_cache(asset_root, gltf)
+        assert migrated is True
+        assert polyhaven_cache.read_current_version(asset_root) is not None
+        assert proc.wait(timeout=8) == 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+
+
 def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path: Path):
     """Publisher switches twice while reader paused after current read, before on-disk retain pin."""
     aid = "pre_retain_race"

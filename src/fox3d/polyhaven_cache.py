@@ -26,6 +26,7 @@ _CURRENT_FILENAME = "current"
 _VERSIONS_DIRNAME = "versions"
 _RETAIN_DIRNAME = ".fox3d-retain"
 _LEGACY_MANIFEST_NAME = ".polyhaven_complete.json"
+_LEGACY_FLAT_VERSION = "__legacy_flat__"
 
 # Test hooks (threading.Event): publisher waits before/after switching current.
 publish_pause_before_switch: threading.Event | None = None
@@ -146,6 +147,16 @@ def _release_version(asset_id: str, version: str) -> None:
 def _acquire_cross_process_retain(asset_root: Path, version: str) -> Path:
     """Pin a version for other OS processes (e.g. Blender) via on-disk markers."""
     pin_dir = version_directory(asset_root, version) / _RETAIN_DIRNAME
+    return _acquire_cross_process_retain_at(pin_dir)
+
+
+def _acquire_cross_process_retain_flat(asset_root: Path) -> Path:
+    """Pin a legacy flat bundle at ``asset_root`` until readers finish."""
+    pin_dir = asset_root / _RETAIN_DIRNAME
+    return _acquire_cross_process_retain_at(pin_dir)
+
+
+def _acquire_cross_process_retain_at(pin_dir: Path) -> Path:
     pin_dir.mkdir(parents=True, exist_ok=True)
     token = hashlib.sha256(os.urandom(8)).hexdigest()[:12]
     pin = pin_dir / f"{os.getpid()}.{token}"
@@ -153,7 +164,38 @@ def _acquire_cross_process_retain(asset_root: Path, version: str) -> Path:
     return pin
 
 
+def _is_flat_retain_pin(pin_path: Path) -> bool:
+    retain_dir = pin_path.parent
+    if retain_dir.name != _RETAIN_DIRNAME:
+        return False
+    return retain_dir.parent.parent.name != _VERSIONS_DIRNAME
+
+
+def _flat_bundle_has_retain_pins(asset_root: Path) -> bool:
+    pin_dir = asset_root / _RETAIN_DIRNAME
+    if not pin_dir.is_dir():
+        return False
+    try:
+        return any(pin_dir.iterdir())
+    except OSError:
+        return True
+
+
+def _legacy_flat_bundle_present(asset_root: Path) -> bool:
+    if read_current_version(asset_root) is not None:
+        return False
+    try:
+        for child in asset_root.iterdir():
+            if child.is_file() and child.suffix.lower() in (".gltf", ".glb"):
+                return True
+    except OSError:
+        return False
+    return False
+
+
 def _release_cross_process_retain(pin_path: Path) -> None:
+    flat = _is_flat_retain_pin(pin_path)
+    asset_root = pin_path.parent.parent if flat else None
     try:
         pin_path.unlink(missing_ok=True)
     except OSError:
@@ -164,6 +206,11 @@ def _release_cross_process_retain(pin_path: Path) -> None:
             pin_dir.rmdir()
     except OSError:
         pass
+    if flat and asset_root is not None:
+        if not _flat_bundle_has_retain_pins(asset_root) and read_current_version(asset_root):
+            with _asset_versions_coordination(asset_root):
+                if not _flat_bundle_has_retain_pins(asset_root):
+                    _cleanup_asset_root_after_migration_unlocked(asset_root)
 
 
 def _maybe_pause_after_current_read(asset_root: Path, version: str) -> None:
@@ -317,6 +364,15 @@ def migrate_legacy_flat_bundle(
 
 
 def _cleanup_asset_root_after_migration(asset_root: Path) -> None:
+    if _flat_bundle_has_retain_pins(asset_root):
+        return
+    with _asset_versions_coordination(asset_root):
+        if _flat_bundle_has_retain_pins(asset_root):
+            return
+        _cleanup_asset_root_after_migration_unlocked(asset_root)
+
+
+def _cleanup_asset_root_after_migration_unlocked(asset_root: Path) -> None:
     for stray in list(asset_root.iterdir()):
         if stray.name in (_CURRENT_FILENAME, _VERSIONS_DIRNAME):
             continue
@@ -363,17 +419,23 @@ class PolyhavenReadSession:
         asset_root = polyhaven_asset_root(self._root, asset_id)
         with _asset_versions_coordination(asset_root):
             version = read_current_version(asset_root)
-            if not version:
+            if version:
+                bundle = version_directory(asset_root, version)
+                if not bundle.is_dir():
+                    return None
+                _maybe_pause_after_current_read(asset_root, version)
+                _retain_version(asset_id, version)
+                if asset_id not in self._retain_files:
+                    self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
+                self._pins[asset_id] = version
+                return version
+            if not _legacy_flat_bundle_present(asset_root):
                 return None
-            bundle = version_directory(asset_root, version)
-            if not bundle.is_dir():
-                return None
-            _maybe_pause_after_current_read(asset_root, version)
-            _retain_version(asset_id, version)
+            _retain_version(asset_id, _LEGACY_FLAT_VERSION)
             if asset_id not in self._retain_files:
-                self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)
-            self._pins[asset_id] = version
-        return version
+                self._retain_files[asset_id] = _acquire_cross_process_retain_flat(asset_root)
+            self._pins[asset_id] = _LEGACY_FLAT_VERSION
+        return _LEGACY_FLAT_VERSION
 
     def resolve_ref_suffix(self, ref_suffix: str) -> Path | None:
         parsed = parse_polyhaven_asset_ref(ref_suffix)
@@ -382,7 +444,7 @@ class PolyhavenReadSession:
         aid, rel = parsed
         version = self.pin_asset(aid)
         asset_root = polyhaven_asset_root(self._root, aid)
-        if version:
+        if version and version != _LEGACY_FLAT_VERSION:
             path = version_directory(asset_root, version) / rel
             if path.is_file():
                 return path.resolve()
