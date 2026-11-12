@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
@@ -29,6 +30,9 @@ _LEGACY_MANIFEST_NAME = ".polyhaven_complete.json"
 # Test hooks (threading.Event): publisher waits before/after switching current.
 publish_pause_before_switch: threading.Event | None = None
 publish_pause_after_switch: threading.Event | None = None
+read_pause_after_current_before_retain: threading.Event | None = None
+
+_PAUSE_AFTER_CURRENT_ENV = "FOX3D_POLYHAVEN_PAUSE_AFTER_CURRENT_DIR"
 _ASSET_COORD_LOCK = ".polyhaven.coord.lock"
 
 _retained_lock = threading.Lock()
@@ -160,6 +164,26 @@ def _release_cross_process_retain(pin_path: Path) -> None:
             pin_dir.rmdir()
     except OSError:
         pass
+
+
+def _maybe_pause_after_current_read(asset_root: Path, version: str) -> None:
+    """Test hook: pause after reading current, before creating cross-process retain pin."""
+    if read_pause_after_current_before_retain is not None:
+        read_pause_after_current_before_retain.wait()
+        return
+    pause_dir = os.environ.get(_PAUSE_AFTER_CURRENT_ENV, "").strip()
+    if not pause_dir:
+        return
+    coord = Path(pause_dir)
+    coord.mkdir(parents=True, exist_ok=True)
+    (coord / "read_current.json").write_text(
+        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    resume = coord / "resume_reader"
+    deadline = time.time() + 30.0
+    while not resume.is_file() and time.time() < deadline:
+        time.sleep(0.02)
 
 
 def _version_dir_has_retain_pins(version_dir: Path) -> bool:
@@ -344,6 +368,7 @@ class PolyhavenReadSession:
             bundle = version_directory(asset_root, version)
             if not bundle.is_dir():
                 return None
+            _maybe_pause_after_current_read(asset_root, version)
             _retain_version(asset_id, version)
             if asset_id not in self._retain_files:
                 self._retain_files[asset_id] = _acquire_cross_process_retain(asset_root, version)

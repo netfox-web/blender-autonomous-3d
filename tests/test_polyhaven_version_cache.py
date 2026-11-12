@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -289,3 +290,62 @@ def test_windows_style_ref_suffix_normalizes(tmp_path: Path):
     ref = f"assets://models\\polyhaven\\{aid}\\{aid}_2k.gltf"
     path = polyhaven_cache.resolve_polyhaven_ref_path(ref, tmp_path / "assets")
     assert path is not None and path.is_file()
+
+
+def test_cross_process_race_before_retain_marker_survives_double_switch(tmp_path: Path):
+    """Publisher switches twice while reader paused after current read, before on-disk retain pin."""
+    aid = "pre_retain_race"
+    asset_root = tmp_path / "assets" / "models" / "polyhaven" / aid
+    asset_root.mkdir(parents=True)
+    v1 = "7" * 64
+    v2 = "8" * 64
+    v3 = "4" * 64
+    _seed_version_bundle(asset_root, aid, v1, tex_marker=b"RACE_KEEP")
+
+    repo_src = Path(__file__).resolve().parents[1] / "src"
+    ph_root = tmp_path / "assets" / "models" / "polyhaven"
+    pause_dir = tmp_path / "pause_coord"
+    hold_script = tmp_path / "race_before_retain.py"
+    hold_script.write_text(
+        "\n".join(
+            [
+                "import json, os, sys, time",
+                "from pathlib import Path",
+                f"os.environ[{polyhaven_cache._PAUSE_AFTER_CURRENT_ENV!r}] = {str(pause_dir)!r}",
+                f"sys.path.insert(0, {str(repo_src)!r})",
+                "from fox3d import polyhaven_cache",
+                f"root = Path({str(ph_root)!r})",
+                "with polyhaven_cache.polyhaven_read_session(root) as session:",
+                f"    main = session.resolve_ref_suffix('models/polyhaven/{aid}/{aid}_2k.gltf')",
+                "    assert main is not None",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_KEEP'",
+                "    time.sleep(0.1)",
+                "    assert (main.parent / 'textures/albedo.png').read_bytes() == b'RACE_KEEP'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.Popen([sys.executable, str(hold_script)], env={**os.environ, "PYTHONPATH": ""})
+    try:
+        deadline = time.time() + 8.0
+        paused_payload = None
+        while time.time() < deadline:
+            marker = pause_dir / "read_current.json"
+            if marker.is_file():
+                paused_payload = json.loads(marker.read_text(encoding="utf-8"))
+                break
+            time.sleep(0.02)
+        assert paused_payload == {"asset": aid, "version": v1}, "reader must pause before retain pin"
+        assert proc.poll() is None, "child must still be blocked before retain pin exists"
+        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"RACE_V2")
+        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"RACE_V3")
+        v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+        assert v1_bundle.is_dir(), "v1 must survive switches before cross-process retain pin"
+        (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
+        assert proc.wait(timeout=8) == 0
+        assert (v1_bundle / "textures/albedo.png").read_bytes() == b"RACE_KEEP"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            (pause_dir / "resume_reader").write_text("go", encoding="utf-8")
+            proc.wait(timeout=3)
