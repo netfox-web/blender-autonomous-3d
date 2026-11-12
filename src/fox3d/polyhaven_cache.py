@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import contextvars
+import errno
 import hashlib
 import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -16,6 +18,54 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from fox3d import durability
+
+_ATOMIC_REPLACE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2, 0.2, 0.2, 0.2)
+
+
+def _delete_sharing_error(path: Path) -> int:
+    """Probe DELETE sharing without deleting or changing the destination."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(str(path.resolve()), 0x10000, 0x1 | 0x2 | 0x4, None, 3, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        return ctypes.get_last_error()  # type: ignore[attr-defined]
+    if not kernel.CloseHandle(handle):
+        raise ctypes.WinError(ctypes.get_last_error())  # type: ignore[attr-defined]
+    return 0
+
+
+def _windows_replace_contention(error: OSError, path: Path) -> bool:
+    if sys.platform != "win32":
+        return False
+    code = getattr(error, "winerror", None)
+    if code in (32, 33):  # ERROR_SHARING_VIOLATION / ERROR_LOCK_VIOLATION
+        return True
+    # MoveFileEx may report access denied while a reader handle is active; the
+    # sharing probe can momentarily miss an open handle between reader polls.
+    if code == 5:
+        probe = _delete_sharing_error(path)
+        if probe in (32, 33):
+            return True
+        if probe == 0:
+            return True
+        return False
+    if code is None and error.errno in (errno.EACCES, 13):
+        return _delete_sharing_error(path) in (32, 33)
+    return False
 
 _POLYHAVEN_REF_RE = re.compile(
     r"^models/polyhaven/(?P<aid>[A-Za-z0-9_-]{1,64})/(?P<rel>.+\.(?:gltf|glb))$",
@@ -71,6 +121,70 @@ def read_current_version(asset_root: Path) -> str | None:
     return line or None
 
 
+def _atomic_replace_file(target: Path, payload: bytes, *, namespace: str | None = None) -> None:
+    """Write payload via temp file + os.replace so readers never see partial content."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    token = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+    temporary = target.with_name(f".{target.name}.{token}.tmp")
+    owned = False
+    try:
+        with temporary.open("xb") as stream:
+            owned = True
+            stream.write(payload)
+            durability.flush_file(stream)
+        for attempt in range(len(_ATOMIC_REPLACE_RETRY_DELAYS) + 1):
+            try:
+                os.replace(temporary, target)
+                break
+            except OSError as error:
+                if attempt == len(_ATOMIC_REPLACE_RETRY_DELAYS) or not _windows_replace_contention(error, target):
+                    raise
+                time.sleep(_ATOMIC_REPLACE_RETRY_DELAYS[attempt])
+        owned = False
+        if namespace is not None:
+            durability.namespace_committed(target, namespace)
+    except BaseException:
+        if owned and temporary.exists():
+            try:
+                durability.unlink_owned(temporary, missing_ok=True)
+            except OSError:
+                pass
+        raise
+
+
+def _atomic_write_coord_signal(path: Path, payload: dict[str, Any]) -> None:
+    data = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    _atomic_replace_file(path, data)
+
+
+def read_coord_json_signal(path: Path) -> dict[str, Any] | None:
+    """Return parsed coordination JSON, or None if missing / not yet valid."""
+    if not path.is_file():
+        return None
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if not raw.strip():
+        return None
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def poll_coord_json_signal(path: Path, *, deadline: float | None = None, timeout: float = 30.0) -> dict[str, Any] | None:
+    """Poll until coordination JSON is present and parseable (retries transient partial reads)."""
+    end = deadline if deadline is not None else time.time() + timeout
+    while time.time() < end:
+        doc = read_coord_json_signal(path)
+        if doc is not None:
+            return doc
+        time.sleep(0.02)
+    return None
+
+
 def _atomic_write_current(asset_root: Path, version: str) -> None:
     asset_root.mkdir(parents=True, exist_ok=True)
     target = _current_path(asset_root)
@@ -83,24 +197,7 @@ def _atomic_write_current(asset_root: Path, version: str) -> None:
     if prev and prev != version:
         _previous_current[asset_root.name] = prev
 
-    token = hashlib.sha256(os.urandom(16)).hexdigest()[:16]
-    temporary = target.with_name(f".{target.name}.{token}.tmp")
-    owned = False
-    try:
-        with temporary.open("xb") as stream:
-            owned = True
-            stream.write(payload)
-            durability.flush_file(stream)
-        os.replace(temporary, target)
-        owned = False
-        durability.namespace_committed(target, "polyhaven-current")
-    except BaseException:
-        if owned and temporary.exists():
-            try:
-                durability.unlink_owned(temporary, missing_ok=True)
-            except OSError:
-                pass
-        raise
+    _atomic_replace_file(target, payload, namespace="polyhaven-current")
 
     _maybe_gc_asset_versions(asset_root)
 
@@ -224,9 +321,9 @@ def _maybe_pause_after_current_read(asset_root: Path, version: str) -> None:
         return
     coord = Path(pause_dir)
     coord.mkdir(parents=True, exist_ok=True)
-    (coord / "read_current.json").write_text(
-        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
-        encoding="utf-8",
+    _atomic_write_coord_signal(
+        coord / "read_current.json",
+        {"asset": asset_root.name, "version": version},
     )
     resume = coord / "resume_reader"
     deadline = time.time() + 30.0
@@ -240,9 +337,9 @@ def _maybe_wait_retain_pin_test_release(asset_root: Path, version: str) -> None:
     if not pause_dir:
         return
     coord = Path(pause_dir)
-    (coord / "retain_pin.json").write_text(
-        json.dumps({"asset": asset_root.name, "version": version}, ensure_ascii=False),
-        encoding="utf-8",
+    _atomic_write_coord_signal(
+        coord / "retain_pin.json",
+        {"asset": asset_root.name, "version": version},
     )
     release = coord / "release_reader"
     deadline = time.time() + 30.0
