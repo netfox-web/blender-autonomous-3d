@@ -295,7 +295,7 @@ class Platform:
                 job_id=job["jobId"],
             )
             job["reservationId"] = res.reservation_id
-        else:
+        elif not (self.mock_blender and not self.compute.all()):
             # Leave queued — existing scheduler behaviour, do not burn an attempt.
             if job.get("status") == "leased":
                 job["status"] = "queued"
@@ -323,6 +323,10 @@ class Platform:
                     encoding="utf-8",
                 )
             return job
+
+        # An explicit mock runtime can execute locally without claiming a GPU.
+        if not placement.get("targetKey"):
+            placement["gpuName"] = "MOCK"
 
         try:
             assert_job_paths_safe(job)
