@@ -60,23 +60,36 @@ def render_admin(platform: Any) -> str:
         )
 
     rows_nodes = "".join(_worker_row(n) for n in nodes)
+    def _job_output_dict(job: dict[str, Any]) -> dict[str, Any]:
+        raw = job.get("output")
+        return raw if isinstance(raw, dict) else {}
+
     def _job_output_asset(job: dict[str, Any]) -> str:
-        files = ((job.get("output") or {}).get("files") or {})
+        files = (_job_output_dict(job).get("files") or {})
         return str(job.get("outputAsset") or files.get("beauty.png") or "")
 
-    def _asset_thumb(asset: str, css: str, *, title: str = "") -> str:
+    def _job_tenant(job: dict[str, Any]) -> str:
+        tenant = job.get("tenantId")
+        return str(tenant) if tenant else "demo"
+
+    def _twin_tenant(twin: Any) -> str:
+        tenant = getattr(twin, "tenantId", None)
+        return str(tenant) if tenant else "demo"
+
+    def _asset_thumb(asset: str, css: str, *, tenant: str, title: str = "") -> str:
         aid = escape(asset)
+        tid = escape(tenant)
         extra = f' title="{escape(title)}"' if title else ""
         return (
-            f'<a class="asset-open" data-asset-id="{aid}" href="#" target="_blank" rel="noopener"{extra}>'
-            f'<img data-asset-id="{aid}" class="{css}" alt=""/></a>'
+            f'<a class="asset-open" data-asset-id="{aid}" data-tenant-id="{tid}" href="#" target="_blank" rel="noopener"{extra}>'
+            f'<img data-asset-id="{aid}" data-tenant-id="{tid}" class="{css}" alt=""/></a>'
         )
 
     rows_jobs = []
     for j in jobs:
         asset = _job_output_asset(j)
         img = (
-            _asset_thumb(asset, "thumb", title="點擊在新分頁開啟 512x512 高清大圖")
+            _asset_thumb(asset, "thumb", tenant=_job_tenant(j), title="點擊在新分頁開啟 512x512 高清大圖")
             if asset
             else ""
         )
@@ -96,10 +109,33 @@ def render_admin(platform: Any) -> str:
             f"<td class='log'>{log}</td>"
             "</tr>"
         )
+    def _gallery_card(job: dict[str, Any]) -> str:
+        aid = escape(_job_output_asset(job))
+        tenant = escape(_job_tenant(job))
+        out = _job_output_dict(job)
+        engine = job.get("renderEngine") or out.get("engine") or "CYCLES"
+        samples = job.get("samples") or out.get("samples") or 32
+        render_sec = job.get("renderTimeSec") or out.get("renderTimeSec") or "0.8"
+        return f'''<div class="gallery-card">
+          <a class="asset-open" data-asset-id="{aid}" data-tenant-id="{tenant}" href="#" target="_blank" rel="noopener">
+            <img data-asset-id="{aid}" data-tenant-id="{tenant}" class="gallery-thumb" loading="lazy" alt=""/>
+          </a>
+          <div class="gallery-meta">
+            <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(job.get("jobId")))}</div>
+            <div style="color: var(--text-muted);">引擎: {escape(str(engine))} ({escape(str(samples))} 採樣)</div>
+            <div style="color: var(--text-muted);">耗時: {escape(str(render_sec))} 秒</div>
+            <a class="asset-open" data-asset-id="{aid}" data-tenant-id="{tenant}" href="#" target="_blank" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
+          </div>
+        </div>'''
+
     twin_cards = []
     for t in twins:
         preview = t.previewAssetId
-        img = _asset_thumb(str(preview), "preview") if preview else "<em>no preview</em>"
+        img = (
+            _asset_thumb(str(preview), "preview", tenant=_twin_tenant(t))
+            if preview
+            else "<em>no preview</em>"
+        )
         twin_cards.append(
             f"<div class='card'><h3>{escape(t.sku)}</h3>"
             f"<p class='note'>{escape(t.twinId)}</p>{img}"
@@ -300,23 +336,7 @@ def render_admin(platform: Any) -> str:
   <section id="tab-gallery" class="tab-content">
     <h2 style="margin: 0 0 16px 0; font-size: 20px;">3D 渲染成果相簿</h2>
     <div class="gallery-grid">
-      {''.join(
-        (
-            lambda aid: f'''<div class="gallery-card">
-          <a class="asset-open" data-asset-id="{aid}" href="#" target="_blank" rel="noopener">
-            <img data-asset-id="{aid}" class="gallery-thumb" loading="lazy" alt=""/>
-          </a>
-          <div class="gallery-meta">
-            <div style="font-weight: 600; margin-bottom: 4px;">任務: {escape(str(j.get("jobId")))}</div>
-            <div style="color: var(--text-muted);">引擎: {escape(str(j.get("renderEngine") or (j.get("output") or {{}}).get("engine") or "CYCLES"))} ({escape(str(j.get("samples") or (j.get("output") or {{}}).get("samples") or 32))} 採樣)</div>
-            <div style="color: var(--text-muted);">耗時: {escape(str(j.get("renderTimeSec") or (j.get("output") or {{}}).get("renderTimeSec") or "0.8"))} 秒</div>
-            <a class="asset-open" data-asset-id="{aid}" href="#" target="_blank" rel="noopener" style="display:inline-block; margin-top:8px; color:var(--accent); text-decoration:none; font-weight:600;">在新分頁打開 ↗</a>
-          </div>
-        </div>'''
-        )(escape(_job_output_asset(j)))
-        for j in jobs
-        if _job_output_asset(j)
-      ) or '<p class="note">尚無已渲染圖片，請至「一鍵 3D 櫃體設計」產生您的第一座櫃子！</p>'}
+      {''.join(_gallery_card(j) for j in jobs if _job_output_asset(j)) or '<p class="note">尚無已渲染圖片，請至「一鍵 3D 櫃體設計」產生您的第一座櫃子！</p>'}
     </div>
   </section>
 
@@ -389,40 +409,49 @@ def render_admin(platform: Any) -> str:
   </section>
 
   <script>
-    const ADMIN_TENANT = 'demo';
+    const ADMIN_DEFAULT_TENANT = 'demo';
     const adminAssetBlobUrls = new Map();
 
-    async function fetchAdminAssetBlob(assetId) {{
-      if (adminAssetBlobUrls.has(assetId)) return adminAssetBlobUrls.get(assetId);
+    function adminAssetCacheKey(tenantId, assetId) {{
+      return tenantId + '\\0' + assetId;
+    }}
+
+    async function fetchAdminAssetBlob(assetId, tenantId) {{
+      const tenant = tenantId || ADMIN_DEFAULT_TENANT;
+      const cacheKey = adminAssetCacheKey(tenant, assetId);
+      if (adminAssetBlobUrls.has(cacheKey)) return adminAssetBlobUrls.get(cacheKey);
       const res = await fetch('/api/assets/' + encodeURIComponent(assetId), {{
-        headers: {{ 'X-Tenant-Id': ADMIN_TENANT }},
+        headers: {{ 'X-Tenant-Id': tenant }},
       }});
       if (!res.ok) throw new Error('素材載入失敗（HTTP ' + res.status + '）');
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      adminAssetBlobUrls.set(assetId, url);
+      adminAssetBlobUrls.set(cacheKey, url);
       return url;
     }}
 
   async function wireAdminAssetImages() {{
-    const byId = new Map();
+    const byKey = new Map();
     document.querySelectorAll('img[data-asset-id]').forEach(function (img) {{
       const id = img.getAttribute('data-asset-id');
       if (!id) return;
-      if (!byId.has(id)) byId.set(id, []);
-      byId.get(id).push(img);
+      const tenant = img.getAttribute('data-tenant-id') || ADMIN_DEFAULT_TENANT;
+      const cacheKey = adminAssetCacheKey(tenant, id);
+      if (!byKey.has(cacheKey)) byKey.set(cacheKey, {{ tenant: tenant, id: id, imgs: [] }});
+      byKey.get(cacheKey).imgs.push(img);
     }});
-    byId.forEach(function (imgs, id) {{
-      fetchAdminAssetBlob(id)
-        .then(function (url) {{ imgs.forEach(function (img) {{ img.src = url; }}); }})
-        .catch(function () {{ imgs.forEach(function (img) {{ img.alt = '素材載入失敗'; }}); }});
+    byKey.forEach(function (entry) {{
+      fetchAdminAssetBlob(entry.id, entry.tenant)
+        .then(function (url) {{ entry.imgs.forEach(function (img) {{ img.src = url; }}); }})
+        .catch(function () {{ entry.imgs.forEach(function (img) {{ img.alt = '素材載入失敗'; }}); }});
     }});
     document.querySelectorAll('a.asset-open[data-asset-id]').forEach(function (anchor) {{
       anchor.addEventListener('click', function (ev) {{
         ev.preventDefault();
         const id = anchor.getAttribute('data-asset-id');
         if (!id) return;
-        fetchAdminAssetBlob(id)
+        const tenant = anchor.getAttribute('data-tenant-id') || ADMIN_DEFAULT_TENANT;
+        fetchAdminAssetBlob(id, tenant)
           .then(function (url) {{ window.open(url, '_blank', 'noopener'); }})
           .catch(function () {{ alert('無法開啟素材'); }});
       }});
@@ -502,7 +531,7 @@ def render_admin(platform: Any) -> str:
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           const assetId = data.render.job.outputAsset;
-          fetchAdminAssetBlob(assetId)
+          fetchAdminAssetBlob(assetId, ADMIN_DEFAULT_TENANT)
             .then(function (url) {{
               const img = document.getElementById('res-img');
               img.src = url;
