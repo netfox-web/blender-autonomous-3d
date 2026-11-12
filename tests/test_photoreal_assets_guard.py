@@ -1664,13 +1664,17 @@ def test_workbench_current_survives_catalog_reclaim(tmp_path: Path):
         photoreal_assets._polyhaven_reclaim_slot_unlocked(asset_root)
 
     assert polyhaven_cache.read_current_version(asset_root) == keep
-    keep_bundle = polyhaven_cache.version_directory(asset_root, keep)
     retire_bundle = polyhaven_cache.version_directory(asset_root, retire)
-    assert keep_bundle.is_dir()
-    assert (keep_bundle / "textures" / "albedo.png").read_bytes() == b"KEEP_ME"
     assert not retire_bundle.exists()
-    gltf_doc = json.loads((keep_bundle / gltf_name).read_bytes().decode("utf-8"))
-    assert gltf_doc.get("asset", {}).get("version") == "2.0"
+
+    ph_root = tmp_path / "assets" / "models" / "polyhaven"
+    with polyhaven_cache.polyhaven_read_session(ph_root) as session:
+        main = session.resolve_ref_suffix(f"models/polyhaven/{aid}/{gltf_name}")
+        assert main is not None
+        assert main.parent.name == keep
+        gltf_doc = json.loads(main.read_bytes().decode("utf-8"))
+        assert gltf_doc.get("asset", {}).get("version") == "2.0"
+        assert (main.parent / "textures" / "albedo.png").read_bytes() == b"KEEP_ME"
 
 
 def test_worker_pin_survives_workbench_version_gc(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
