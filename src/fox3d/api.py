@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
 from fox3d.features import feature_index
+from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
@@ -36,9 +37,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         _PLATFORM = platform
 
     def tenant(x_tenant_id: str | None) -> str:
-        if not x_tenant_id:
-            raise HTTPException(400, "X-Tenant-Id required")
-        return x_tenant_id
+        try:
+            return validate_tenant_id(x_tenant_id or "")
+        except ValueError as exc:
+            raise HTTPException(400, "X-Tenant-Id 無效") from exc
 
     def require_tenant(x_tenant_id: str | None, payload: dict[str, Any] | None = None) -> str:
         header = tenant(x_tenant_id)
