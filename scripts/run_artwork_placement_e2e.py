@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     mock = bool(getattr(plat, "mock_blender", True))
     if mock and result.get("realArtworkPreviewReady") is True:
         missing.append("mock_claimed_real_preview")
-    rows = [
+    rows: list[dict] = [
         {"check": "4-door master 2400mm", "status": "REAL_LOGIC", "evidence": json.dumps(result.get("scenarios", {}).get("cabinet4", {}).get("widthMm"))},
         {"check": "surfaceDecorationLogicReady", "status": "REAL_LOGIC" if result.get("surfaceDecorationLogicReady") else "MISSING", "evidence": result.get("surfaceDecorationLogicReady")},
         {"check": "productionArtworkFileReady", "status": "REAL_LOGIC" if result.get("productionArtworkFileReady") else "MISSING", "evidence": result.get("productionArtworkFileReady")},

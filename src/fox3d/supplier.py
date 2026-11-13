@@ -28,7 +28,7 @@ class SupplierCapabilityRegistry:
         self.profiles: dict[str, dict[str, Any]] = {}
 
     def add(self, profile: dict[str, Any]) -> dict[str, Any]:
-        rec = {
+        rec: dict[str, Any] = {
             "profileId": profile.get("profileId") or new_id(),
             "supplierId": profile.get("supplierId") or profile.get("name") or new_id(),
             "name": profile.get("name") or "supplier",
@@ -66,7 +66,7 @@ class SupplierQuoteService:
 
     def rfq_from_release(self, release: dict[str, Any], *, quantity: int = 1) -> dict[str, Any]:
         snap = release.get("snapshot") or {}
-        rfq = {
+        rfq: dict[str, Any] = {
             "rfqId": new_id(),
             "releaseId": release.get("releaseId"),
             "releaseHash": release.get("releaseHash"),
@@ -96,7 +96,7 @@ class SupplierQuoteService:
                 raise PermissionError("LIVE_PROVIDER quotes require a connected provider; none registered")
             raise ValueError(source)
         raw_text = raw if raw is not None else json.dumps(row, sort_keys=True, default=str)
-        rec = {
+        rec: dict[str, Any] = {
             "quoteId": row.get("quoteId") or new_id(),
             "supplierId": row.get("supplierId") or row.get("supplier") or "unknown",
             "source": source,
@@ -202,7 +202,7 @@ class SupplierQuoteService:
             fx = self.providers.fx.items.get(fx_snapshot_id)
             if fx and fx.get("source") == "LIVE_PROVIDER" and not self.providers.live.get("FxRateProvider"):
                 raise PermissionError("static FX fixture cannot be labelled LIVE_PROVIDER")
-        cmp = {
+        cmp: dict[str, Any] = {
             "comparisonId": new_id(),
             "releaseHash": release_hash,
             "quantity": int(quantity),

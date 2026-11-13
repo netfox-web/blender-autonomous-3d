@@ -151,8 +151,8 @@ class ExceptionInbox:
         detail: str | None = None,
         payload: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        spec = catalog_entry(code) if code in CATALOG else {"errorCode": code, "retrySafe": False, "humanRequired": True, "eventType": f"exception.{code}", "lineageValid": True, "allowedNextStates": []}
-        rec = {
+        spec: dict[str, Any] = catalog_entry(code) if code in CATALOG else {"errorCode": code, "retrySafe": False, "humanRequired": True, "eventType": f"exception.{code}", "lineageValid": True, "allowedNextStates": []}
+        rec: dict[str, Any] = {
             "exceptionId": new_id(),
             "tenantId": tenant_id,
             "errorCode": spec["errorCode"],

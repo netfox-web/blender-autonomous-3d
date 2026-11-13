@@ -14,7 +14,7 @@ import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+from typing import Any, Iterator, Protocol, cast
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
@@ -347,7 +347,7 @@ class MaterialLotRegistry:
         cost_per_sheet: float = 850.0,
         sheet_count: int = 1,
     ) -> dict[str, Any]:
-        rec = {
+        rec: dict[str, Any] = {
             "lotId": new_id(),
             "tenantId": tenant_id,
             "supplierLot": supplier_lot or "CONFIG-LOT",
@@ -439,12 +439,12 @@ class MaterialLotRegistry:
         if length is not None:
             if lot.get("length") is None:
                 return False
-            if abs(float(lot.get("length")) - float(length)) > 1e-3:
+            if abs(float(cast(Any, lot.get("length"))) - float(length)) > 1e-3:
                 return False
         if width is not None:
             if lot.get("width") is None:
                 return False
-            if abs(float(lot.get("width")) - float(width)) > 1e-3:
+            if abs(float(cast(Any, lot.get("width"))) - float(width)) > 1e-3:
                 return False
         return True
 

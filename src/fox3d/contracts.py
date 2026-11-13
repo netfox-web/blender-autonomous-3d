@@ -201,7 +201,7 @@ class ContractService:
                     "files": sorted(pkt.keys()),
                 }
             )
-        bundle = {
+        bundle: dict[str, Any] = {
             "schemaVersion": SCHEMA_EXPORT,
             "tenantId": tenant_id,
             "exportedAt": _now(),

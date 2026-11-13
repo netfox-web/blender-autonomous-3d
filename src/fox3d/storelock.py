@@ -6,6 +6,7 @@ Not a database. Compatible with GitHub Actions Windows and Linux.
 from __future__ import annotations
 
 import os
+import sys
 import time
 from pathlib import Path
 from typing import IO
@@ -40,7 +41,7 @@ class FileLock:
         deadline = time.time() + self.timeout
         while True:
             try:
-                if os.name == "nt":
+                if sys.platform == "win32":
                     import msvcrt
 
                     self._fh.seek(0)
@@ -75,7 +76,7 @@ class FileLock:
             return
         try:
             if self._acquired:
-                if os.name == "nt":
+                if sys.platform == "win32":
                     import msvcrt
 
                     self._fh.seek(0)

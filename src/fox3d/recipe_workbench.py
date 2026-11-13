@@ -11,7 +11,7 @@ import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 from urllib.parse import urlparse
 
 from pydantic import Field, model_validator
@@ -69,9 +69,9 @@ class ProductDraft(StrictRecord):
                 continue
             unit = field_unit(key)
             if unit in {"mm", "count"}:
-                if type(value) not in {int, float} or not math.isfinite(value):
+                if type(value) not in {int, float} or not math.isfinite(cast(float, value)):
                     raise ValueError(f"{FIELD_LABELS[key]}須填有限數值")
-                if value < 0 or (key != "doorCount" and value == 0):
+                if cast(float, value) < 0 or (key != "doorCount" and value == 0):
                     raise ValueError(f"{FIELD_LABELS[key]}須大於零（門片數可為零）")
                 if unit == "count" and type(value) is not int:
                     raise ValueError(f"{FIELD_LABELS[key]}須填整數")
