@@ -9,6 +9,8 @@ from fox3d.infra import RECIPE_LIFECYCLE, Recipe, RecipeRegistry
 from fox3d.rd import VisionJudge
 from fox3d.studio import CAMERA_RECIPES, LIGHTING_RECIPES
 
+_RESEARCH_PROMOTE_TARGETS = frozenset({"CANDIDATE", "APPROVED"})
+
 
 class RecipeIntelligence:
     def __init__(self, registry: RecipeRegistry) -> None:
@@ -77,4 +79,8 @@ class BlenderRecipeResearchAgent:
             raise KeyError(recipe_id)
         if recipe.status == "PRODUCTION":
             raise ValueError("research must not overwrite PRODUCTION")
+        if to not in _RESEARCH_PROMOTE_TARGETS:
+            raise ValueError(
+                f"research agent may only promote to CANDIDATE or APPROVED, not {to!r}"
+            )
         return self.registry.promote(recipe_id, to)

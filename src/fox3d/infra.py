@@ -262,6 +262,10 @@ class RecipeRegistry:
 
     def promote(self, recipe_id: str, to_status: str) -> Recipe:
         recipe = self._items[recipe_id]
+        if recipe.status not in RECIPE_LIFECYCLE:
+            raise ValueError(f"unknown recipe status: {recipe.status}")
+        if to_status not in RECIPE_LIFECYCLE:
+            raise ValueError(f"unknown recipe status: {to_status}")
         idx = RECIPE_LIFECYCLE.index(recipe.status)
         target = RECIPE_LIFECYCLE.index(to_status)
         if target < idx:
