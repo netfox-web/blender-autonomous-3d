@@ -120,6 +120,49 @@ def _admin_html(client: TestClient) -> str:
     return res.text
 
 
+
+@pytest.mark.parametrize(
+    ("missing_field", "expected"),
+    [
+        ("renderEngine", "引擎: CYCLES (16 採樣)"),
+        ("samples", "引擎: BLENDER_EEVEE (32 採樣)"),
+        ("renderTimeSec", "耗時: 0.8 秒"),
+    ],
+)
+def test_legacy_gallery_renders_missing_metadata_without_output(
+    client: TestClient, legacy_admin_platform: Platform, missing_field: str, expected: str
+) -> None:
+    job = {
+        "jobId": "missing-metadata",
+        "outputAsset": "gallery-asset",
+        "renderEngine": "BLENDER_EEVEE",
+        "samples": 16,
+        "renderTimeSec": 1.5,
+    }
+    del job[missing_field]
+    legacy_admin_platform.queue.enqueue(job)
+
+    html = _admin_html(client)
+    card = html.split('任務: missing-metadata', 1)[1].split('</div>\n        </div>', 1)[0]
+    assert expected in card
+    assert 'data-asset-id="gallery-asset"' in html
+
+
+def test_legacy_gallery_uses_output_metadata_when_top_level_missing(
+    client: TestClient, legacy_admin_platform: Platform
+) -> None:
+    legacy_admin_platform.queue.enqueue({
+        "jobId": "output-metadata",
+        "outputAsset": "gallery-asset",
+        "output": {"engine": "EEVEE", "samples": 8, "renderTimeSec": 2.5},
+    })
+
+    html = _admin_html(client)
+    card = html.split('任務: output-metadata', 1)[1].split('</div>\n        </div>', 1)[0]
+    assert "引擎: EEVEE (8 採樣)" in card
+    assert "耗時: 2.5 秒" in card
+
+
 def test_legacy_admin_html_has_no_direct_asset_urls(client: TestClient) -> None:
     html = _admin_html(client)
     assert 'src="/api/assets/' not in html

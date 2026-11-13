@@ -125,7 +125,7 @@ def test_admin_control_handle_generate_uses_blob_loader() -> None:
     # The result preview goes through the blob loader (bindResultAsset); handleGenerate is
     # outside the loader IIFE, so it must not reference IIFE-scoped constants (#267).
     # bindResultAsset itself falls back to DEFAULT_TENANT inside the IIFE (#301).
-    assert "bindResultAsset(" in segment
+    assert "bindResultAsset(assetId, resultTenant)" in segment
     assert "data.render.job.tenantId || payload.tenantId" in segment
     assert "ADMIN_DEFAULT_TENANT" not in segment
     assert "DEFAULT_TENANT" not in segment
