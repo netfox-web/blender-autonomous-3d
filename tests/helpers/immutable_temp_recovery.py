@@ -1,6 +1,5 @@
 """Actual hard-kill/link/lock evidence; artifact fixtures remain MOCK only."""
 import argparse
-import json
 import os
 from pathlib import Path
 import stat

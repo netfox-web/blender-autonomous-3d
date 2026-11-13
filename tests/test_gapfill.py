@@ -13,7 +13,7 @@ def test_gpu_discovery_uuid_and_vram():
 
 
 def test_queue_dispatched(platform):
-    job = platform.submit_job(
+    platform.submit_job(
         {
             "tenantId": "t1",
             "jobType": "BLENDER_PREVIEW",

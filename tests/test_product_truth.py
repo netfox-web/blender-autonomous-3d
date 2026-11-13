@@ -345,7 +345,6 @@ def test_independent_canonical_expected_authority_negatives(tmp_path):
 
 def test_worker_uv_hash_recompute_and_tamper_fails(tmp_path):
     import importlib.util
-    from fox3d.artwork import ArtworkError
 
     path = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"
     spec = importlib.util.spec_from_file_location("bj_apply_tamper", path)

@@ -9,11 +9,11 @@ from fastapi.testclient import TestClient
 
 from fox3d.acrylic import ACRYLIC_FAMILIES
 from fox3d.api import create_app
-from fox3d.inventory import DurableRemnantStore, remnant_value
-from fox3d.kd import assembly_instruction_v2, carton_contents_manifest, connector_recipe_for, misassembly_risk, part_label_manifest
-from fox3d.manufacturing import NestingEngine, RemnantInventory
+from fox3d.inventory import remnant_value
+from fox3d.kd import connector_recipe_for
+from fox3d.manufacturing import NestingEngine
 from fox3d.nesting_v3 import NestingStrategyRegistry, NestingV3, run_benchmark
-from fox3d.packaging import BOX_FAMILIES, PAPERBOARD_SHEETS
+from fox3d.packaging import BOX_FAMILIES
 from fox3d.physical_os import PHYSICAL_FAMILIES
 from fox3d.platform import Platform
 from fox3d.retail_fixture import FIXTURE_FAMILIES, planogram_solve

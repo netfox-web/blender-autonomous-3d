@@ -1,6 +1,5 @@
 from fox3d.parametric import parse_design_intent, tv_width_mm
 from fox3d.scene import SceneDSL, compile_scene_graph
-from fox3d.space import SpacePipeline
 from fox3d.studio import MaterialEngine
 
 

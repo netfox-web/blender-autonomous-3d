@@ -6,7 +6,6 @@ import json
 import time
 import urllib.error
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient

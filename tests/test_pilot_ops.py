@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from fox3d.logistics import LogisticsService
-from fox3d.mfg_release import FORBIDDEN_STATES, ManufacturingReleaseService, product_snapshot
+from fox3d.mfg_release import FORBIDDEN_STATES, product_snapshot
 from fox3d.pilot_econ import PilotEconomics
 from fox3d.qc import QcService
 from fox3d.readiness import scoped_readiness
@@ -127,7 +127,7 @@ def test_workorder_idempotent_reserve_cancel_and_tenant(platform):
 
 
 def test_qc_blocks_and_rework_and_trace(platform):
-    row = _open(platform, tenant="qc1")
+    _open(platform, tenant="qc1")
     qc: QcService = platform.pilot.qc
     wo_svc = platform.pilot.workorders
     rel = platform.pilot.open_release(platform.kd.build_sku(tenant_id="qc1", kind="OPEN_SHELF"), tenant_id="qc1", family="KD_FURNITURE")

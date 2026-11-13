@@ -4,7 +4,6 @@ CI uses MOCK artifacts/validation. --real uses the unchanged Blender/publication
 path. Signals, forced stale callbacks and delayed finally re-entry are test-only.
 """
 import argparse
-import hashlib
 import io
 import json
 import os
