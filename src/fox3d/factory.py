@@ -81,7 +81,6 @@ class FurnitureFactory:
         payload["tenantId"] = tenant_id
         # Acceptance wall: 3600mm clear N wall; put door/window/column on other walls so N can host multi-cabinet.
         if not space:
-            n_len = float(payload["width"])
             payload["doors"] = [{"kind": "door", "width": 900, "height": 2100, "startMm": 400, "position": [400.0, 0.0]}]
             payload["windows"] = [{"kind": "window", "width": 1000, "height": 1200, "sill": 900, "startMm": 800, "position": [800.0, 0.0]}]
             payload["columns"] = [{"width": 180, "depth": 180, "startMm": 200}]

@@ -227,7 +227,7 @@ def carton_optimize(product: dict[str, float], *, grade: dict[str, Any], weight_
     for fam in BOX_FAMILIES:
         fit = product_fit(product, family=fam)
         eng = PackagingEngineeringDefinition()
-        defined = eng.define(family=fam, product_dims=product, sheet=PAPERBOARD_SHEETS["KRAFT_RSC_B"])
+        eng.define(family=fam, product_dims=product, sheet=PAPERBOARD_SHEETS["KRAFT_RSC_B"])
         panels = eng.dieline["panels"]
         area = sum(float(p["w"]) * float(p["h"]) for p in panels)
         outer = fit["outer"]

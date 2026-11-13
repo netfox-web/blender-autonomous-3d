@@ -611,8 +611,6 @@ def validate_pilot_batch_acceptance_result(result: dict[str, Any]) -> list[str]:
         failures.append("cartons_missing")
     if len(batches) >= 4 and not board_rows:
         failures.append("board_rows_missing")
-    batch_by = _index_rows(batches, "batchId")
-    unit_by = _index_rows(units, "unitExecutionId")
     auth_batch_by = _index_rows(auth_batches, "batchId")
     auth_unit_by = _index_rows(auth_units, "unitExecutionId")
     auth_carton_by = _index_rows(auth_cartons, "cartonId")

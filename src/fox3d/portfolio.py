@@ -570,7 +570,7 @@ class PortfolioFactory:
         return bool(commercial.get("stale"))
 
     def plan_material(self, portfolio_id: str, *, tenant_id: str, candidate_ids: list[str] | None = None) -> dict[str, Any]:
-        intent = self.get_intent(portfolio_id, tenant_id=tenant_id)
+        self.get_intent(portfolio_id, tenant_id=tenant_id)
         rows = [
             self.candidates[cid]
             for cid in (candidate_ids or list(self.candidates))
