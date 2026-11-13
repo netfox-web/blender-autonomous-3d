@@ -2230,7 +2230,7 @@ class ArtworkFactory:
                         continue
                     raise ArtworkError("BLOCKED", "preview/production hash mismatch")
             rec["productionArtworkFileReady"] = True
-        art = self.require_artwork(live["artworkId"], tenant_id=tenant_id)
+        self.require_artwork(live["artworkId"], tenant_id=tenant_id)
         eng = self.engineering.get((tenant_id, live.get("productId"), live.get("engineeringHash")))
         payload = self.blender_job_payload(
             tenant_id=tenant_id,
@@ -3022,7 +3022,7 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
     except ArtworkError as exc:
         negatives["keepout"] = exc.code
     tiny = factory.register_artwork(tenant_id=tenant_a, data=_tiny_png(), name="tiny.png", source="GENERATED")
-    low = factory.place(
+    factory.place(
         tenant_id=tenant_a,
         surface_id=doors2[1]["surfaceId"],
         artwork_id=tiny["artworkId"],
@@ -3433,7 +3433,6 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
 
 def _tiny_png() -> bytes:
     rgb = bytes([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0])
-    dest = Path("/tmp")
     # write via helper into bytes using a temp in-memory path through write_png
     from tempfile import TemporaryDirectory
 
