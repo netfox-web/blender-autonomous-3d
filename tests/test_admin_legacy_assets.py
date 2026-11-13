@@ -527,7 +527,7 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
 
 @pytest.mark.browser
 def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser_server: dict[str, Any]) -> None:
-    """A real popup can reload its image after the opener releases the preview."""
+    """Asset-viewer popup stays loadable after the opener releases the preview blob."""
     if not _chromium_usable():
         pytest.skip("Chromium not available")
 
@@ -567,15 +567,16 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
             "url => document.querySelector('#res-img').src.startsWith('blob:') && "
             "document.querySelector('#res-img').src !== url", arg=url
         )
-        # The viewer must not depend on the opener's object URL.
-        page.evaluate("url => URL.revokeObjectURL(url)", url)
-        assert page.evaluate("url => window.revokedUrls.includes(url)", url)
+        # The viewer keeps its own blob while the opener preview blob is reclaimed.
+        page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
+        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
         assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         popup.reload()
         assert urlparse(popup.url) == parsed_url
         popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
                                 "document.querySelector('#asset').naturalWidth > 0")
+        assert popup.evaluate("window.opener === null")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()
