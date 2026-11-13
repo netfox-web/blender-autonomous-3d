@@ -95,7 +95,7 @@ def run_real_acceptance(root: Path | None = None) -> dict[str, Any]:
         rows.append(
             _row(
                 "PRODUCT_360_E2E 36 frames",
-                "REAL" if j360.get("status") in {"completed", "succeeded"} and not j360.get("usedMock") else (
+                "REAL" if _is_real_pass(j360) else (
                     "BLOCKED" if j360.get("status") == "blocked" else "FAIL"
                 ),
                 f"status={j360.get('status')} frames={(j360.get('output') or {}).get('files')}",
@@ -128,18 +128,28 @@ def run_real_acceptance(root: Path | None = None) -> dict[str, Any]:
         )
     )
     resized = plat.resize_parametric(pid, tenant_id="ops", width=1200)
-    assert resized["engineeringHash"] != cab["engineeringHash"]
-    top_800 = next(p for p in cab["spec"]["components"] if p["partName"] == "TOP")
-    top_1200 = next(p for p in resized["spec"]["components"] if p["partName"] == "TOP")
-    bom_sync = top_800["length"] != top_1200["length"] or top_800.get("width") != top_1200.get("width")
-    rows.append(
-        _row(
-            "Cabinet resize 800→1200 geometry+BOM sync",
-            "REAL" if bom_sync else "FAIL",
-            f"top800={top_800} top1200={top_1200} bomHashChanged={resized['engineeringHash'] != cab['engineeringHash']}",
+    hash_changed = resized["engineeringHash"] != cab["engineeringHash"]
+    if not hash_changed:
+        rows.append(
+            _row(
+                "Cabinet resize 800→1200 geometry+BOM sync",
+                "FAIL",
+                f"engineeringHash unchanged after resize hash={cab['engineeringHash']}",
+            )
         )
-    )
-    resize_render = plat.render_parametric(resized["spec"]["productId"], tenant_id="ops")
+        resize_render = {"job": {"status": "failed", "error": "resize hash unchanged"}}
+    else:
+        top_800 = next(p for p in cab["spec"]["components"] if p["partName"] == "TOP")
+        top_1200 = next(p for p in resized["spec"]["components"] if p["partName"] == "TOP")
+        bom_sync = top_800["length"] != top_1200["length"] or top_800.get("width") != top_1200.get("width")
+        rows.append(
+            _row(
+                "Cabinet resize 800→1200 geometry+BOM sync",
+                "REAL" if bom_sync else "FAIL",
+                f"top800={top_800} top1200={top_1200} bomHashChanged={resized['engineeringHash'] != cab['engineeringHash']}",
+            )
+        )
+        resize_render = plat.render_parametric(resized["spec"]["productId"], tenant_id="ops")
     rows.append(
         _row(
             "Cabinet resize rebuild render",
@@ -150,7 +160,8 @@ def run_real_acceptance(root: Path | None = None) -> dict[str, Any]:
         )
     )
 
-    explode = plat.render_parametric(resized["spec"]["productId"], tenant_id="ops", explode=True)
+    explode_pid = resized["spec"]["productId"] if hash_changed else pid
+    explode = plat.render_parametric(explode_pid, tenant_id="ops", explode=True)
     rows.append(
         _row(
             "Exploded view / assembly placeholders",
@@ -183,8 +194,10 @@ def run_real_acceptance(root: Path | None = None) -> dict[str, Any]:
         "PRODUCT_E2E WHITE_STUDIO",
     )
     by_name = {r["check"]: r["status"] for r in rows}
-    production_ready = all(by_name.get(name) == "REAL" for name in required) and not any(
-        r["status"] == "FAIL" for r in rows
+    production_ready = (
+        all(by_name.get(name) == "REAL" for name in required)
+        and not any(r["status"] == "FAIL" for r in rows)
+        and not any(r["status"] == "MOCK" for r in rows)
     )
     report = {
         "productionReady": production_ready,
