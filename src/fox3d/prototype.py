@@ -1506,7 +1506,6 @@ class PrototypeFactory:
         hardware = self._authoritative_hardware_qty(unit)
         packaging = self._authoritative_packaging_qty(unit)
         pack_lineage = self._packaging_lineage(unit)
-        pack = self.checklists.get(unit.get("packagingChecklistId") or "")
         sources = {
             "materialQty": "MATERIAL_LOT" if material is not None else "MISSING",
             "laborMinutes": "LABOR_RECORD" if labor is not None else "MISSING",

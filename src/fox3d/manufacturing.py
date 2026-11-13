@@ -466,9 +466,6 @@ class NestingEngine:
         used_total = sum(s["usedAreaMm2"] for s in sheets) + sum(r["usedAreaMm2"] for r in remnant_used)
         sheet_area = sheet_w * sheet_h
         n_sheets = len(sheets)
-        total_area = sheet_area * max(n_sheets, 1 if not remnant_used else 0) if n_sheets else (0.0 if remnant_used else sheet_area)
-        if n_sheets == 0:
-            total_area = 0.0
         waste_v2 = self._waste_v2(sheets, sheet_w, sheet_h, usable_w, usable_h, kerf_mm, trim_mm, policy)
         result = {
             "sheetSku": sheetspec.get("sku") or "PB_18_WHITE",
@@ -1074,7 +1071,6 @@ class RemnantInventory:
         return recovered
 
     def snapshot(self, *, tenant_id: str | None = None) -> dict[str, Any]:
-        items = self.available(tenant_id=tenant_id) if tenant_id else list(self.items.values())
         return {
             "source": "CONFIG",
             "label": "REAL" if self._durable else "MOCK",
