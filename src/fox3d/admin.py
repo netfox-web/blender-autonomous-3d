@@ -5,6 +5,8 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+ADMIN_DEFAULT_TENANT = "demo"
+
 
 def render_admin(platform: Any) -> str:
     jobs = list(reversed(platform.queue.list()))
@@ -69,17 +71,17 @@ def render_admin(platform: Any) -> str:
 
     def _job_tenant(job: dict[str, Any]) -> str:
         tenant = job.get("tenantId")
-        return str(tenant) if tenant else "demo"
+        return str(tenant) if tenant else ADMIN_DEFAULT_TENANT
 
     def _twin_tenant(twin: Any) -> str:
         tenant = getattr(twin, "tenantId", None)
-        return str(tenant) if tenant else "demo"
+        return str(tenant) if tenant else ADMIN_DEFAULT_TENANT
 
     def _asset_thumb(asset: str, img_class: str, *, tenant_id: str, title: str = "") -> str:
         if not asset:
             return ""
         aid = escape(str(asset))
-        tid = escape(str(tenant_id or "demo"))
+        tid = escape(str(tenant_id or ADMIN_DEFAULT_TENANT))
         title_attr = f' title="{title}"' if title else ""
         return (
             f'<a href="#" class="asset-open"{title_attr} data-asset-id="{aid}"'
@@ -411,10 +413,10 @@ def render_admin(platform: Any) -> str:
     </p>
   </section>
 
+  <script>window.__FOX3D_DEFAULT_TENANT = '{escape(ADMIN_DEFAULT_TENANT)}';</script>
   <script>
   (function () {{
-  const DEFAULT_TENANT = 'demo';
-  const ADMIN_DEFAULT_TENANT = DEFAULT_TENANT;
+  const DEFAULT_TENANT = window.__FOX3D_DEFAULT_TENANT;
   const assetBlobUrls = new Map();
   const pendingAssetUrls = new Map();
   // noopener prevents observing when a new tab closes; retain its URL until pagehide.
@@ -555,7 +557,6 @@ def render_admin(platform: Any) -> str:
   }});
   window.bindResultAsset = bindResultAsset;
   // handleGenerate lives outside this IIFE; expose the fallback tenant explicitly.
-  window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT;
   }})();
 
     function switchTab(tabId) {{
@@ -607,7 +608,7 @@ def render_admin(platform: Any) -> str:
       btn.innerHTML = '<span>⏳ Blender 光追渲染中，完成後會自動顯示…</span>';
 
       const payload = {{
-        tenantId: 'demo',
+        tenantId: window.__FOX3D_DEFAULT_TENANT,
         kind: document.getElementById('c-kind').value,
         width: parseFloat(document.getElementById('c-w').value),
         height: parseFloat(document.getElementById('c-h').value),
@@ -620,7 +621,7 @@ def render_admin(platform: Any) -> str:
 
       fetch('/api/parametric/products', {{
         method: 'POST',
-        headers: {{'Content-Type': 'application/json', 'X-Tenant-Id': 'demo'}},
+        headers: {{'Content-Type': 'application/json', 'X-Tenant-Id': window.__FOX3D_DEFAULT_TENANT}},
         body: JSON.stringify(payload)
       }})
       .then(r => r.json())
@@ -630,7 +631,7 @@ def render_admin(platform: Any) -> str:
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           const assetId = data.render.job.outputAsset;
           const resultTenant =
-            data.render.job.tenantId || payload.tenantId || 'demo';
+            data.render.job.tenantId || payload.tenantId || window.__FOX3D_DEFAULT_TENANT;
           bindResultAsset(assetId, resultTenant);
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
