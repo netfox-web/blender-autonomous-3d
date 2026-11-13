@@ -558,10 +558,8 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         assert parsed_url.path == "/admin/asset-viewer"
         assert parse_qs(parsed_url.query) == {"asset": [ids["tenant_a_job_asset"]], "tenant": ["tenant-a"]}
         popup_image = popup.locator("#asset")
-        popup.wait_for_function(
-            "() => document.querySelector('#asset').src.startsWith('blob:') && "
-            "document.querySelector('#asset').naturalWidth > 0"
-        )
+        popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
+                                "document.querySelector('#asset').naturalWidth > 0")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
 
         page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
@@ -569,17 +567,15 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
             "url => document.querySelector('#res-img').src.startsWith('blob:') && "
             "document.querySelector('#res-img').src !== url", arg=url
         )
-        # The viewer fetches its own copy, so it must survive revocation of the opener blob.
+        # The viewer must not depend on the opener's object URL.
         page.evaluate("url => URL.revokeObjectURL(url)", url)
         assert page.evaluate("url => window.revokedUrls.includes(url)", url)
         assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         popup.reload()
         assert urlparse(popup.url) == parsed_url
-        popup.wait_for_function(
-            "() => document.querySelector('#asset').src.startsWith('blob:') && "
-            "document.querySelector('#asset').naturalWidth > 0"
-        )
+        popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
+                                "document.querySelector('#asset').naturalWidth > 0")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()
