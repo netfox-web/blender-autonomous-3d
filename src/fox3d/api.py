@@ -116,7 +116,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(404, "Asset not found") from exc
         path = Path(obj.path)
         media = "image/png" if path.suffix.lower() == ".png" else "application/octet-stream"
-        return FileResponse(path, media_type=media)
+        # Tenant-scoped bytes keyed only by URL: without these headers a browser
+        # may heuristically cache the response (ETag/Last-Modified) and serve it
+        # to a later fetch that sends a different X-Tenant-Id (issue #292).
+        return FileResponse(
+            path,
+            media_type=media,
+            headers={"Cache-Control": "private, no-store", "Vary": "X-Tenant-Id", "X-Content-Type-Options": "nosniff"},
+        )
 
     @app.post("/api/digital-twins")
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
