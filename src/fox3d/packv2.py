@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fox3d.ids import stable_hash
 from fox3d.packaging import BOX_FAMILIES, PAPERBOARD_SHEETS, PackagingEngineeringDefinition, product_fit
 
 BOARD_GRADES: dict[str, dict[str, Any]] = {

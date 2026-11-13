@@ -8,7 +8,6 @@ REAL_LOGIC / REAL Blender execution.
 
 from __future__ import annotations
 
-import copy
 import json
 import math
 from pathlib import Path
@@ -21,7 +20,6 @@ from fox3d.pngutil import is_png, write_png
 from fox3d.product_truth import (
     _is_strict_float,
     _is_strict_int,
-    _occupancy,
     _png_meta,
     camera_recipe,
     scene_recipe,

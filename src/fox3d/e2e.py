@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fox3d.blender import BLOCKED_NO_BLENDER, BLOCKED_NO_OPTIX, probe_host, valid_frame_paths
+from fox3d.blender import BLOCKED_NO_BLENDER, BLOCKED_NO_OPTIX, valid_frame_paths
 from fox3d.platform import Platform
 
 

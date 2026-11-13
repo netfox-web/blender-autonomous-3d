@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id
-from fox3d.inventory import StockShortage
 from fox3d.journal import EventJournal
 from fox3d.operator import make_token, resolve_scan
 from fox3d.recovery import PilotException

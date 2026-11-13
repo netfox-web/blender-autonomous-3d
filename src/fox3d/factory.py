@@ -19,7 +19,6 @@ from fox3d.manufacturing import (
     ManufacturingCandidateGate,
     NestingEngine,
     QuoteEngine,
-    build_drilling_manifest,
     build_manufacturing_pack,
 )
 from fox3d.parametric import BOMEngine, CabinetSpec

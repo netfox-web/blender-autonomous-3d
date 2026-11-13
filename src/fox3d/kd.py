@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
-from fox3d.manufacturing import CONNECTOR_RECIPES, DEFAULT_REMNANT_POLICY, NestingEngine
+from fox3d.manufacturing import CONNECTOR_RECIPES
 from fox3d.parametric import BOMEngine, CabinetEngine, TYPE_DEFAULTS, map_cabinet_material
 
 FLATPACK_PRODUCT_TYPES = (

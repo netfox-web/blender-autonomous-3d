@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from fox3d.ids import new_id
-from fox3d.infra import RECIPE_LIFECYCLE, Recipe, RecipeRegistry
+from fox3d.infra import Recipe, RecipeRegistry
 from fox3d.rd import VisionJudge
-from fox3d.studio import CAMERA_RECIPES, LIGHTING_RECIPES
+from fox3d.studio import LIGHTING_RECIPES
 
 _RESEARCH_PROMOTE_TARGETS = frozenset({"CANDIDATE", "APPROVED"})
 

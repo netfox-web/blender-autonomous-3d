@@ -14,7 +14,6 @@ from services.supervisor.config import SupervisorConfig
 from services.supervisor.github_client import GitHubClientInterface, GitHubVerificationError
 from services.supervisor.models import (
     ChangedFileItem,
-    EvidenceSectionCompleteness,
     ReadyForReGateContract,
     ReviewContext,
     ReviewDecision,

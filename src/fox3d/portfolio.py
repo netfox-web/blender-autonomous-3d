@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from fox3d.ids import new_id, sha256_bytes, stable_hash
+from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.kd import FLATPACK_PRODUCT_TYPES, FlatPackProductTypeRegistry

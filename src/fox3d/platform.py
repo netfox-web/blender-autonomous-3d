@@ -34,7 +34,6 @@ from fox3d.infra import (
     Scheduler,
     TenantRegistry,
     retry_delay_seconds,
-    utcnow,
 )
 from fox3d.jobs import BlenderJob
 from fox3d.media import ARExporter, AssemblyAnimator, BlenderToVideo, Product360Engine, RetailEngine, SyntheticFactory

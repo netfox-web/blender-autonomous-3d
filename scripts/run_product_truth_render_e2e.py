@@ -18,7 +18,6 @@ from fox3d.evidence import DirtyTreeError, inspect_repo_lineage  # noqa: E402
 from fox3d.ids import new_id  # noqa: E402
 from fox3d.platform import Platform  # noqa: E402
 from fox3d.product_truth import (  # noqa: E402
-    REQUIRED_VIEWS,
     derive_canonical_expected_identity,
     run_phase_841_scenario,
     validate_frozen_authority_semantics,
