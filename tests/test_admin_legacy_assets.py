@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 import socket
@@ -200,7 +201,12 @@ def test_legacy_admin_js_uses_per_element_tenant_for_assets() -> None:
 def test_generate_does_not_reference_asset_loader_private_default(client: TestClient) -> None:
     html = _admin_html(client)
     generate = html.split("function handleGenerate(e)", 1)[1].split("function ", 1)[0]
-    assert "DEFAULT_TENANT" not in generate
+    # ADMIN_DEFAULT_TENANT fallback is intentional; bare DEFAULT_TENANT must not leak into handleGenerate.
+    assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", generate)
+    # The IIFE-private const is not in handleGenerate's scope; only the window export is reachable.
+    code = "\n".join(line for line in generate.splitlines() if not line.strip().startswith("//"))
+    assert not re.search(r"(?<!window\.)\bADMIN_DEFAULT_TENANT", code)
+    assert "window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT" in html
 
 
 def test_legacy_admin_asset_endpoint_still_requires_tenant(client: TestClient) -> None:
@@ -216,22 +222,75 @@ def test_legacy_admin_cross_tenant_asset_fetch_rejected(client: TestClient, lega
     assert client.get(url, headers={"X-Tenant-Id": "tenant-a"}).status_code == 200
 
 
+def test_legacy_admin_asset_response_is_not_cacheable_across_tenants(
+    client: TestClient, legacy_admin_platform: Platform
+) -> None:
+    """Issue #292: the URL alone does not identify the tenant, so caches must not reuse it."""
+    asset_id = legacy_admin_platform.dam.put(
+        tenant_id="tenant-a", kind="preview", name="cache.png", data=_TINY_PNG
+    ).asset_id
+    res = client.get(f"/api/assets/{asset_id}", headers={"X-Tenant-Id": "tenant-a"})
+    assert res.status_code == 200
+    cache_control = {part.strip() for part in res.headers["cache-control"].lower().split(",")}
+    assert {"no-store", "private"} <= cache_control
+    assert "x-tenant-id" in {part.strip() for part in res.headers["vary"].lower().split(",")}
+    assert res.headers["x-content-type-options"] == "nosniff"
+
+
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
 
+@functools.cache
 def _chromium_usable() -> bool:
+    require = os.environ.get("FOX3D_REQUIRE_LEGACY_BROWSER") == "1"
+    if os.environ.get("FOX3D_SKIP_BROWSER") == "1" and not require:
+        return False
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             browser.close()
         return True
     except Exception as exc:
-        if os.environ.get("FOX3D_REQUIRE_LEGACY_BROWSER") == "1":
+        if require:
             pytest.fail(f"Chromium is required for legacy admin browser tests: {exc}")
         return False
+
+
+class _AssetFetchLog:
+    """Record /api/assets fetches so a failed wait reports asset id, tenant and status."""
+
+    def __init__(self, page: Any) -> None:
+        self.entries: list[str] = []
+        page.on("response", self._on_response)
+        page.on("requestfailed", self._on_failed)
+
+    @staticmethod
+    def _asset_id(url: str) -> str:
+        return url.rsplit("/", 1)[-1].split("?", 1)[0]
+
+    def _on_response(self, response: Any) -> None:
+        if "/api/assets/" not in response.url:
+            return
+        tenant = response.request.headers.get("x-tenant-id", "")
+        self.entries.append(f"asset={self._asset_id(response.url)} tenant={tenant!r} status={response.status}")
+
+    def _on_failed(self, request: Any) -> None:
+        if "/api/assets/" not in request.url:
+            return
+        tenant = request.headers.get("x-tenant-id", "")
+        self.entries.append(f"asset={self._asset_id(request.url)} tenant={tenant!r} failed={request.failure}")
+
+    def wait(self, page: Any, expression: str, *, arg: Any = None, timeout: float = 20_000) -> None:
+        try:
+            page.wait_for_function(expression, arg=arg, timeout=timeout)
+        except Exception as exc:
+            raise AssertionError(f"{exc}\nasset fetches: {self.describe()}") from exc
+
+    def describe(self) -> str:
+        return "; ".join(self.entries) or "(none)"
 
 
 @pytest.fixture(scope="module")
@@ -286,10 +345,12 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
             asset_tenants.setdefault(asset_id, set()).add(tenant)
 
         page.on("request", on_request)
+        fetch_log = _AssetFetchLog(page)
         response = page.goto(f"{base}/admin", wait_until="domcontentloaded")
         assert response is not None and response.status == 200
 
-        page.wait_for_function(
+        fetch_log.wait(
+            page,
             """() => {
               const imgs = Array.from(document.querySelectorAll('img.asset-img[data-asset-id]'));
               if (!imgs.length) return false;
@@ -305,7 +366,7 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
         blob_count = page.evaluate(
             "() => document.querySelectorAll('img.asset-img[src^=\"blob:\"]').length"
         )
-        assert blob_count >= 4
+        assert blob_count >= 4, fetch_log.describe()
 
         # Use a real user click and observe the new page, rather than merely
         # dispatching an event (which can pass even if window.open is broken).
@@ -327,8 +388,8 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
         for asset_key in ("tenant_a_job_asset", "demo_job_asset", "tenant_a_twin_asset", "demo_twin_asset"):
             asset_id = ids[asset_key]
             expected = "tenant-a" if "tenant_a" in asset_key else "demo"
-            assert asset_id in asset_tenants, f"no fetch for {asset_id}"
-            assert asset_tenants[asset_id] == {expected}, asset_tenants[asset_id]
+            assert asset_id in asset_tenants, f"no fetch for {asset_id}: {fetch_log.describe()}"
+            assert asset_tenants[asset_id] == {expected}, fetch_log.describe()
 
         context.close()
         browser.close()
@@ -346,14 +407,123 @@ def test_legacy_admin_failed_asset_response_shows_failure(legacy_admin_browser_s
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
         page.route(f"**/api/assets/{asset_id}", lambda route: route.fulfill(status=400, body="missing tenant"))
+        fetch_log = _AssetFetchLog(page)
         page.goto(f"{base}/admin", wait_until="domcontentloaded")
         img = page.locator(f'img.asset-img[data-asset-id="{asset_id}"]').first
         img.wait_for(state="attached")
-        page.wait_for_function(
+        fetch_log.wait(
+            page,
             "assetId => document.querySelector(`img.asset-img[data-asset-id=\"${assetId}\"]`).alt === '載入失敗'",
             arg=asset_id,
         )
-        assert not img.get_attribute("src")
+        assert not img.get_attribute("src"), fetch_log.describe()
+        browser.close()
+
+
+@pytest.mark.browser
+def test_legacy_admin_wrong_tenant_fetch_not_served_from_browser_cache(
+    legacy_admin_browser_server: dict[str, Any],
+) -> None:
+    """Issue #292: a wrong-tenant fetch after hydration must reach the server and fail.
+
+    The original ``test_legacy_admin_wrong_tenant_thumbnail_shows_failure`` flaked under
+    full-suite load with ``alt == ''``: once the page had loaded the tenant-a asset, Chromium
+    served the same URL from its heuristic HTTP cache (ETag/Last-Modified, no Cache-Control)
+    to a fetch carrying ``X-Tenant-Id: demo``. Ageing the file makes that cache window
+    deterministic instead of depending on how long the module server has been running.
+    """
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+
+    base = legacy_admin_browser_server["base_url"]
+    platform: Platform = legacy_admin_browser_server["platform"]
+    asset_id = legacy_admin_browser_server["ids"]["tenant_a_job_asset"]
+    asset_path = Path(platform.dam.get(asset_id, tenant_id="tenant-a").path)
+    week_ago = time.time() - 7 * 24 * 3600
+    os.utime(asset_path, (week_ago, week_ago))
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        fetch_log = _AssetFetchLog(page)
+        page.goto(f"{base}/admin", wait_until="domcontentloaded")
+        fetch_log.wait(
+            page,
+            """assetId => {
+              const img = document.querySelector(
+                `img.asset-img[data-asset-id="${assetId}"][data-tenant-id="tenant-a"]`);
+              return !!img && !!img.src && img.src.startsWith('blob:');
+            }""",
+            arg=asset_id,
+        )
+        state = page.evaluate(
+            """async (assetId) => {
+              const img = document.querySelector(
+                `img.asset-img[data-asset-id="${assetId}"][data-tenant-id="tenant-a"]`);
+              img.setAttribute('data-tenant-id', 'demo');
+              img.removeAttribute('src');
+              img.alt = '';
+              let status = 0;
+              try {
+                const res = await fetch('/api/assets/' + encodeURIComponent(assetId), {
+                  headers: { 'X-Tenant-Id': img.getAttribute('data-tenant-id') },
+                });
+                status = res.status;
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                img.src = URL.createObjectURL(await res.blob());
+              } catch (err) {
+                img.alt = '載入失敗';
+              }
+              return { status, alt: img.alt || '', src: img.getAttribute('src') || '' };
+            }""",
+            asset_id,
+        )
+        detail = f"state={state} asset fetches: {fetch_log.describe()}"
+        assert state["status"] == 404, detail
+        assert state["alt"] == "載入失敗", detail
+        assert not state["src"].startswith("blob:"), detail
+        assert f"asset={asset_id} tenant='demo' status=404" in fetch_log.entries, detail
+        browser.close()
+
+
+@pytest.mark.browser
+def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+    base = legacy_admin_browser_server["base_url"]
+    ids = legacy_admin_browser_server["ids"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.add_init_script("""(() => {
+          window.revokedUrls = [];
+          window.openedUrls = [];
+          const revoke = URL.revokeObjectURL.bind(URL);
+          URL.revokeObjectURL = (url) => { window.revokedUrls.push(url); revoke(url); };
+          window.open = (url) => { window.openedUrls.push(url); };
+        })();""")
+        page.goto(f"{base}/admin")
+        page.wait_for_function("() => [...document.querySelectorAll('img.asset-img')].every(i => i.src.startsWith('blob:') || i.alt === '載入失敗')")
+        first = ids["tenant_a_job_asset"]
+        second = ids["demo_job_asset"]
+        page.evaluate("([a, b]) => { bindResultAsset(a, 'tenant-a'); bindResultAsset(b, 'demo'); }", [first, second])
+        page.wait_for_function("() => document.getElementById('res-img').src.startsWith('blob:')")
+        url = page.locator("#res-img").get_attribute("src")
+        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
+        page.locator("#res-link").evaluate("a => a.click()")
+        page.wait_for_function("url => window.openedUrls.includes(url)", arg=url)
+        # A second image using the same URL keeps it alive when the result changes.
+        page.evaluate("url => { const img = document.createElement('img'); img.id = 'shared-test'; img.src = url; document.body.appendChild(img); }", url)
+        page.evaluate("a => bindResultAsset(a, 'tenant-a')", first)
+        page.wait_for_function("url => document.getElementById('res-img').src !== url", arg=url)
+        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
+        # Remove every remaining image that references this URL.
+        page.evaluate("url => document.querySelectorAll('img').forEach(i => { if (i.src === url) i.remove(); })", url)
+        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
+        current = page.locator("#res-img").get_attribute("src")
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide'))")
+        assert page.evaluate("url => window.revokedUrls.includes(url)", current)
         browser.close()
 
 

@@ -123,6 +123,13 @@ def test_admin_control_handle_generate_uses_blob_loader() -> None:
     html = render_admin(Platform(Path("/tmp/fox3d-admin-gen-check")))
     segment = html[html.index("function handleGenerate") : html.index("</script>", html.index("function handleGenerate"))]
     assert "fetchAdminAssetBlob" in html
+    # The result preview goes through the blob loader (bindResultAsset); handleGenerate is
+    # outside the loader IIFE, so it must not reference IIFE-scoped constants (#267).
+    # bindResultAsset itself falls back to DEFAULT_TENANT inside the IIFE (#301).
     assert "bindResultAsset(assetId, resultTenant)" in segment
     assert "data.render.job.tenantId || payload.tenantId" in segment
+    assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", segment)
+    code = "\n".join(line for line in segment.splitlines() if not line.strip().startswith("//"))
+    assert not re.search(r"(?<!window\.)\bADMIN_DEFAULT_TENANT", code)
+    assert "window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT" in html
     assert "'/api/assets/' + data.render.job.outputAsset" not in segment
