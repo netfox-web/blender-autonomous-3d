@@ -526,7 +526,7 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
 
 @pytest.mark.browser
 def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser_server: dict[str, Any]) -> None:
-    """A real popup can reload its image after the opener releases the preview."""
+    """Asset-viewer popups stay readable after the opener switches its in-page preview."""
     if not _chromium_usable():
         pytest.skip("Chromium not available")
 
@@ -547,28 +547,34 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         page.goto(f"{base}/admin", wait_until="networkidle")
         page.locator("#gen-btn").click()
         page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
-        url = page.locator("#res-img").get_attribute("src")
-        assert url is not None
+        preview_url = page.locator("#res-img").get_attribute("src")
+        assert preview_url is not None
         with page.expect_popup() as popup_info:
             page.locator("#res-link").click()
         popup = popup_info.value
-        popup.wait_for_url("blob:**")
-        assert popup.url == url
-        popup_image = popup.locator("img")
-        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        popup_asset = popup.locator("#asset")
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        viewer_blob = popup_asset.get_attribute("src")
+        assert viewer_blob is not None and viewer_blob.startswith("blob:")
+        assert popup_asset.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
 
         page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
         page.wait_for_function(
             "url => document.querySelector('#res-img').src.startsWith('blob:') && "
-            "document.querySelector('#res-img').src !== url", arg=url
+            "document.querySelector('#res-img').src !== url", arg=preview_url
         )
-        # Remove other references to the old URL, triggering the deferred cleanup.
-        page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
+        # Drop opener references to the old preview blob; the viewer keeps its own copy.
+        page.evaluate(
+            "url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })",
+            preview_url,
+        )
         page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
-        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
+        assert not page.evaluate("vUrl => window.revokedUrls.includes(vUrl)", viewer_blob)
+        assert popup_asset.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         popup.reload()
-        assert popup.url == url
-        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        assert popup_asset.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()
 
