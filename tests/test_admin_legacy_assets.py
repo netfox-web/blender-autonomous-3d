@@ -11,6 +11,7 @@ import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -553,22 +554,30 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
             page.locator("#res-link").click()
         popup = popup_info.value
         popup.wait_for_url("**/admin/asset-viewer?*")
-        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
-        viewer_url = popup.locator("#asset").get_attribute("src")
-        assert viewer_url is not None and viewer_url.startswith("blob:")
+        parsed_url = urlparse(popup.url)
+        assert parsed_url.path == "/admin/asset-viewer"
+        assert parse_qs(parsed_url.query) == {"asset": [ids["tenant_a_job_asset"]], "tenant": ["tenant-a"]}
+        popup_image = popup.locator("#asset")
+        popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
+                                "document.querySelector('#asset').naturalWidth > 0")
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
 
         page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
         page.wait_for_function(
             "url => document.querySelector('#res-img').src.startsWith('blob:') && "
             "document.querySelector('#res-img').src !== url", arg=url
         )
-        # The viewer keeps its own blob; the opener preview blob can be reclaimed.
+        # The viewer keeps its own blob while the opener preview blob is reclaimed.
         page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
         page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         popup.reload()
-        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        assert urlparse(popup.url) == parsed_url
+        popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
+                                "document.querySelector('#asset').naturalWidth > 0")
         assert popup.evaluate("window.opener === null")
-        assert popup.evaluate("() => document.querySelector('#asset').decode().then(() => true)")
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()
 
