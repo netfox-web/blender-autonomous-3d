@@ -28,7 +28,7 @@ def test_foxstudio_handler_forwards_job_to_platform_execute_job():
     assert out == {"status": "succeeded", "echo": job}
 
 
-def test_fleet_task_types_is_copy_of_capability_map():
+def test_fleet_task_types_is_copy_of_capability_map(monkeypatch):
     assert FLEET_TASK_TYPES == FLEET_TASK_TYPE_BY_CAPABILITY
-    FLEET_TASK_TYPES["BLENDER_PREVIEW"] = "mutated"
+    monkeypatch.setitem(FLEET_TASK_TYPES, "BLENDER_PREVIEW", "mutated")
     assert FLEET_TASK_TYPE_BY_CAPABILITY["BLENDER_PREVIEW"] == "blender_preview"
