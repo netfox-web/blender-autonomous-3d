@@ -159,6 +159,10 @@ def test_generate_does_not_reference_asset_loader_private_default(client: TestCl
     generate = html.split("function handleGenerate(e)", 1)[1].split("function ", 1)[0]
     # ADMIN_DEFAULT_TENANT fallback is intentional; bare DEFAULT_TENANT must not leak into handleGenerate.
     assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", generate)
+    # The IIFE-private const is not in handleGenerate's scope; only the window export is reachable.
+    code = "\n".join(line for line in generate.splitlines() if not line.strip().startswith("//"))
+    assert not re.search(r"(?<!window\.)\bADMIN_DEFAULT_TENANT", code)
+    assert "window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT" in html
 
 
 def test_legacy_admin_asset_endpoint_still_requires_tenant(client: TestClient) -> None:

@@ -548,6 +548,8 @@ def render_admin(platform: Any) -> str:
     assetBlobUrls.clear();
   }});
   window.bindResultAsset = bindResultAsset;
+  // handleGenerate lives outside this IIFE; expose the fallback tenant explicitly.
+  window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT;
   }})();
 
     function switchTab(tabId) {{
@@ -624,7 +626,7 @@ def render_admin(platform: Any) -> str:
           // Legacy alias: fetchAdminAssetBlob(assetId, ADMIN_DEFAULT_TENANT) uses per-job tenant below.
           bindResultAsset(
             assetId,
-            data.render.job.tenantId || payload.tenantId || ADMIN_DEFAULT_TENANT
+            data.render.job.tenantId || payload.tenantId || window.ADMIN_DEFAULT_TENANT || 'demo'
           );
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
