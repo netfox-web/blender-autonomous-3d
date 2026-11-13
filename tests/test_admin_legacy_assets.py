@@ -532,6 +532,7 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
 
     base = legacy_admin_browser_server["base_url"]
     ids = legacy_admin_browser_server["ids"]
+    asset_id = ids["tenant_a_job_asset"]
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context()
@@ -542,7 +543,7 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
           URL.revokeObjectURL = url => { window.revokedUrls.push(url); revoke(url); };
         })();""")
         page.route("**/api/parametric/products", lambda route: route.fulfill(json={
-            "render": {"job": {"outputAsset": ids["tenant_a_job_asset"], "tenantId": "tenant-a"}}
+            "render": {"job": {"outputAsset": asset_id, "tenantId": "tenant-a"}}
         }))
         page.goto(f"{base}/admin", wait_until="networkidle")
         page.locator("#gen-btn").click()
@@ -552,23 +553,43 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         with page.expect_popup() as popup_info:
             page.locator("#res-link").click()
         popup = popup_info.value
-        popup.wait_for_url("blob:**")
-        assert popup.url == url
-        popup_image = popup.locator("img")
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        assert popup.evaluate(
+            """([asset, tenant]) => {
+              const params = new URLSearchParams(location.search);
+              return params.get('asset') === asset && params.get('tenant') === tenant;
+            }""",
+            [asset_id, "tenant-a"],
+        )
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        assert popup.evaluate("() => window.opener === null")
+        popup_image = popup.locator("#asset")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+        viewer_blob = popup_image.get_attribute("src")
+        assert viewer_blob is not None and viewer_blob.startswith("blob:") and viewer_blob != url
 
         page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
         page.wait_for_function(
             "url => document.querySelector('#res-img').src.startsWith('blob:') && "
             "document.querySelector('#res-img').src !== url", arg=url
         )
-        # Remove other references to the old URL, triggering the deferred cleanup.
+        # The viewer fetched its own copy, so the opener may release the preview blob.
         page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
-        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
-        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
-        popup.reload()
-        assert popup.url == url
+        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+        assert popup_image.get_attribute("src") == viewer_blob
+
+        popup.reload()
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        assert popup.evaluate(
+            """([asset, tenant]) => {
+              const params = new URLSearchParams(location.search);
+              return params.get('asset') === asset && params.get('tenant') === tenant;
+            }""",
+            [asset_id, "tenant-a"],
+        )
+        assert popup.locator("#asset").evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()
 
