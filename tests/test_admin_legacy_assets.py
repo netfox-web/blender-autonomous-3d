@@ -271,6 +271,9 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
             f'#tab-system a.asset-open[data-asset-id="{ids["tenant_a_job_asset"]}"]'
             '[data-tenant-id="tenant-a"]'
         ).first
+        # A blob URL alone does not prove that the browser can display the image.
+        thumb = anchor.locator("img")
+        assert thumb.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         with page.expect_popup() as popup_info:
             anchor.click()
         popup = popup_info.value
