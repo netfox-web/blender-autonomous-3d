@@ -536,11 +536,6 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         browser = playwright.chromium.launch(headless=True)
         context = browser.new_context()
         page = context.new_page()
-        page.add_init_script("""(() => {
-          window.revokedUrls = [];
-          const revoke = URL.revokeObjectURL.bind(URL);
-          URL.revokeObjectURL = url => { window.revokedUrls.push(url); revoke(url); };
-        })();""")
         page.route("**/api/parametric/products", lambda route: route.fulfill(json={
             "render": {"job": {"outputAsset": ids["tenant_a_job_asset"], "tenantId": "tenant-a"}}
         }))
@@ -552,10 +547,9 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         with page.expect_popup() as popup_info:
             page.locator("#res-link").click()
         popup = popup_info.value
-        popup.wait_for_url("blob:**")
-        assert popup.url == url
-        popup_image = popup.locator("img")
-        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        popup_image = popup.locator("#asset")
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
 
         page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
         page.wait_for_function(
@@ -565,9 +559,11 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         # Remove other references to the old URL, triggering the deferred cleanup.
         page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
         page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
-        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
+        # The viewer keeps its own blob URL; releasing the opener preview must not blank the popup.
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         popup.reload()
-        assert popup.url == url
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()

@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from types import SimpleNamespace
 
-from test_model_batches import setup
+from test_model_batches import completed_batch, setup  # noqa: F401
 from fox3d import model_batches as b, model_compositions as c
 from fox3d.ids import new_id, sha256_bytes
 from fox3d.product_models_api import product_models_router
