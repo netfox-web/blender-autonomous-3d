@@ -414,7 +414,6 @@ def render_admin(platform: Any) -> str:
   <script>
   (function () {{
   const DEFAULT_TENANT = 'demo';
-  const ADMIN_DEFAULT_TENANT = DEFAULT_TENANT;
   const assetBlobUrls = new Map();
 
   function assetCacheKey(assetId, tenantId) {{
