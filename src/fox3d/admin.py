@@ -419,6 +419,8 @@ def render_admin(platform: Any) -> str:
   const DEFAULT_TENANT = window.__FOX3D_DEFAULT_TENANT;
   const assetBlobUrls = new Map();
   const pendingAssetUrls = new Map();
+  // noopener prevents observing when a new tab closes; retain its URL until pagehide.
+  const openedAssetUrls = new Set();
   let unloading = false;
 
   function assetCacheKey(assetId, tenantId) {{
@@ -458,7 +460,7 @@ def render_admin(platform: Any) -> str:
     cleanupTimer = setTimeout(() => {{
       const used = new Set(Array.from(document.querySelectorAll('img')).map((img) => img.src));
       for (const [key, url] of assetBlobUrls) {{
-        if (!used.has(url)) {{
+        if (!used.has(url) && !openedAssetUrls.has(url)) {{
           URL.revokeObjectURL(url);
           assetBlobUrls.delete(key);
         }}
@@ -470,7 +472,10 @@ def render_admin(platform: Any) -> str:
 
   function openAssetInNewTab(assetId, tenantId) {{
     fetchAssetBlobUrl(assetId, tenantId)
-      .then((url) => window.open(url, '_blank', 'noopener'))
+      .then((url) => {{
+        openedAssetUrls.add(url);
+        window.open(url, '_blank', 'noopener');
+      }})
       .catch((err) => alert('無法開啟資產：' + err.message));
   }}
 
@@ -548,6 +553,7 @@ def render_admin(platform: Any) -> str:
     unloading = true;
     for (const url of assetBlobUrls.values()) URL.revokeObjectURL(url);
     assetBlobUrls.clear();
+    openedAssetUrls.clear();
   }});
   window.bindResultAsset = bindResultAsset;
   // handleGenerate lives outside this IIFE; expose the fallback tenant explicitly.
