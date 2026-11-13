@@ -414,7 +414,6 @@ def render_admin(platform: Any) -> str:
   <script>
   (function () {{
   const DEFAULT_TENANT = 'demo';
-  const ADMIN_DEFAULT_TENANT = DEFAULT_TENANT;
   const assetBlobUrls = new Map();
 
   function assetCacheKey(assetId, tenantId) {{
@@ -582,8 +581,10 @@ def render_admin(platform: Any) -> str:
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           const assetId = data.render.job.outputAsset;
-          // handleGenerate lives outside the asset-loader IIFE: use a literal fallback.
-          bindResultAsset(assetId, data.render.job.tenantId || payload.tenantId || 'demo');
+          bindResultAsset(
+            assetId,
+            data.render.job.tenantId || payload.tenantId
+          );
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
           box.style.display = 'block';
