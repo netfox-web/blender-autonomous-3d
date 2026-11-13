@@ -154,14 +154,17 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def _chromium_usable() -> bool:
-    if os.environ.get("FOX3D_SKIP_BROWSER") == "1":
+    require = os.environ.get("FOX3D_REQUIRE_LEGACY_BROWSER") == "1"
+    if os.environ.get("FOX3D_SKIP_BROWSER") == "1" and not require:
         return False
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             browser.close()
         return True
-    except Exception:
+    except Exception as exc:
+        if require:
+            pytest.fail(f"Chromium is required for browser tests: {exc}")
         return False
 
 
@@ -202,6 +205,8 @@ def admin_server(tmp_path_factory: pytest.TempPathFactory) -> Generator[dict[str
 @pytest.fixture(scope="module")
 def browser_instance(browser_available: bool) -> Generator[Browser, None, None]:
     if not browser_available:
+        if os.environ.get("FOX3D_REQUIRE_LEGACY_BROWSER") == "1":
+            pytest.fail("Chromium is required for browser tests (FOX3D_REQUIRE_LEGACY_BROWSER=1)")
         pytest.skip("Chromium not available (set FOX3D_SKIP_BROWSER=1 to skip explicitly)")
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
