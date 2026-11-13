@@ -624,8 +624,7 @@ def render_admin(platform: Any) -> str:
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           const assetId = data.render.job.outputAsset;
-          const resultTenant =
-            data.render.job.tenantId || payload.tenantId || window.ADMIN_DEFAULT_TENANT || 'demo';
+          const resultTenant = data.render.job.tenantId || payload.tenantId;
           bindResultAsset(assetId, resultTenant);
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
