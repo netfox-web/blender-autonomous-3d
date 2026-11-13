@@ -439,62 +439,45 @@ def test_legacy_admin_failed_asset_response_shows_failure(legacy_admin_browser_s
 def test_legacy_admin_wrong_tenant_thumbnail_shows_failure(
     legacy_admin_browser_server: dict[str, Any],
 ) -> None:
-    """Issue #293: wrong-tenant reload must fail without showing a preview image.
+    """Issue #293: wrong per-thumbnail tenant during initial hydration must fail without a preview.
 
-    Waits for the page's initial hydration to finish before retargeting a thumbnail, then
-    reloads through ``window.fetchAdminAssetBlob`` (same path as ``hydrateAssetImages``) so
-    the test does not race in-flight loaders or duplicate fetch logic.
+    The served HTML marks the target asset with a cross-tenant id before ``hydrateAssetImages`` runs
+    so the test asserts DOM failure state and a 404 without calling fetch helpers itself.
     """
     if not _chromium_usable():
         pytest.skip("Chromium not available")
 
     base = legacy_admin_browser_server["base_url"]
-    platform: Platform = legacy_admin_browser_server["platform"]
     asset_id = legacy_admin_browser_server["ids"]["tenant_a_job_asset"]
-    asset_path = Path(platform.dam.get(asset_id, tenant_id="tenant-a").path)
-    week_ago = time.time() - 7 * 24 * 3600
-    os.utime(asset_path, (week_ago, week_ago))
+    wrong_tenant_attr = f'data-asset-id="{asset_id}" data-tenant-id="demo"'
+    correct_tenant_attr = f'data-asset-id="{asset_id}" data-tenant-id="tenant-a"'
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
         fetch_log = _AssetFetchLog(page)
-        page.goto(f"{base}/admin", wait_until="domcontentloaded")
-        fetch_log.wait_all_thumbnails_settled(page)
-        prior_fetches = len(fetch_log.entries)
 
-        state = page.evaluate(
-            """async (assetId) => {
-              const img = document.querySelector(
-                `img.asset-img[data-asset-id="${assetId}"][data-tenant-id="tenant-a"]`);
-              if (!img) return { missing: true };
-              const prior = img.src;
-              if (prior && prior.startsWith('blob:')) URL.revokeObjectURL(prior);
-              img.setAttribute('data-tenant-id', 'demo');
-              img.removeAttribute('src');
-              img.alt = '';
-              try {
-                const url = await window.fetchAdminAssetBlob(assetId, 'demo');
-                if (img.isConnected) img.src = url;
-              } catch {
-                img.alt = '載入失敗';
-              }
-              const width = img.src ? await img.decode().then(() => img.naturalWidth, () => 0) : 0;
-              return {
-                alt: img.alt || '',
-                src: img.getAttribute('src') || '',
-                naturalWidth: width,
-              };
-            }""",
-            asset_id,
+        def serve_admin_with_wrong_tenant(route: Any) -> None:
+            response = route.fetch()
+            html = response.text()
+            patched, count = re.subn(re.escape(correct_tenant_attr), wrong_tenant_attr, html)
+            assert count >= 1, "expected at least one tenant-a thumbnail for target asset in /admin HTML"
+            route.fulfill(response=response, body=patched)
+
+        page.route("**/admin", serve_admin_with_wrong_tenant)
+        page.goto(f"{base}/admin", wait_until="domcontentloaded")
+        img = page.locator(f'img.asset-img[data-asset-id="{asset_id}"]').first
+        img.wait_for(state="attached")
+        fetch_log.wait(
+            page,
+            'assetId => document.querySelector(`img.asset-img[data-asset-id="${assetId}"]`).alt === "載入失敗"',
+            arg=asset_id,
         )
-        wrong_tenant_fetches = fetch_log.entries[prior_fetches:]
-        detail = f"state={state} new fetches: {'; '.join(wrong_tenant_fetches) or '(none)'}"
-        assert not state.get("missing"), detail
-        assert state["alt"] == "載入失敗", detail
-        assert not state["src"], detail
-        assert state["naturalWidth"] == 0, detail
-        assert f"asset={asset_id} tenant='demo' status=404" in wrong_tenant_fetches, detail
+        detail = fetch_log.describe()
+        assert not img.get_attribute("src"), detail
+        assert img.get_attribute("alt") == "載入失敗", detail
+        assert img.evaluate("el => el.naturalWidth") == 0, detail
+        assert f"asset={asset_id} tenant='demo' status=404" in fetch_log.entries, detail
         browser.close()
 
 
