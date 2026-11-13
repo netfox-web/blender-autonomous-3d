@@ -45,7 +45,7 @@ jobs:
           pip install -e ".[dev]"
           python -m playwright install --with-deps chromium
       - name: Legacy admin browser regression tests
-        run: python -m pytest tests/test_admin_legacy_assets.py -q
+        run: python -m pytest tests/test_admin_legacy_assets.py -m browser -q
         env:
           FOX3D_MOCK_BLENDER: "1"
           FOX3D_REQUIRE_LEGACY_BROWSER: "1"
