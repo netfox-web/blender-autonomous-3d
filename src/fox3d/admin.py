@@ -556,7 +556,7 @@ def render_admin(platform: Any) -> str:
     openedAssetUrls.clear();
   }});
   window.bindResultAsset = bindResultAsset;
-  // handleGenerate lives outside this IIFE; expose the fallback tenant explicitly.
+  window.fetchAdminAssetBlob = fetchAdminAssetBlob;
   }})();
 
     function switchTab(tabId) {{
