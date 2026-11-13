@@ -577,6 +577,32 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
 
 
 @pytest.mark.browser
+def test_open_popup_keeps_result_blob_after_asset_change(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+    base = legacy_admin_browser_server["base_url"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(f"{base}/admin", wait_until="networkidle")
+        first, second = "popup-result-first", "popup-result-second"
+        page.route("**/api/assets/popup-result-*", lambda route: route.fulfill(content_type="image/png", body=_TINY_PNG))
+        page.evaluate("asset => bindResultAsset(asset, 'demo')", first)
+        page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
+        url = page.locator("#res-img").get_attribute("src")
+        with page.expect_popup() as popup_info:
+            page.locator("#res-link").evaluate("a => a.click()")
+        popup = popup_info.value
+        popup.wait_for_load_state()
+        page.evaluate("asset => bindResultAsset(asset, 'demo')", second)
+        page.wait_for_function("url => document.querySelector('#res-img').src.startsWith('blob:') && document.querySelector('#res-img').src !== url", arg=url)
+        # Allow the deferred cleanup to run before fetching from the actual popup.
+        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 50))")
+        assert popup.evaluate("url => fetch(url).then(response => response.ok)", url)
+        browser.close()
+
+
+@pytest.mark.browser
 def test_generate_without_tenant_uses_demo_and_loads_result(legacy_admin_browser_server: dict[str, Any]) -> None:
     if not _chromium_usable():
         pytest.skip("Chromium not available")
