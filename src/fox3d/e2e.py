@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fox3d.blender import BLOCKED_NO_BLENDER, BLOCKED_NO_OPTIX, probe_host
+from fox3d.blender import BLOCKED_NO_BLENDER, BLOCKED_NO_OPTIX, probe_host, valid_frame_paths
 from fox3d.platform import Platform
 
 
@@ -23,6 +23,20 @@ def _is_real_pass(job: dict[str, Any]) -> bool:
         and (job.get("realRenderOutput") or out.get("realRenderOutput"))
         and not (job.get("usedMock") or out.get("usedMock"))
     )
+
+
+def _valid_stored_frames(plat: Platform, job: dict[str, Any], expected: int) -> bool:
+    files = (job.get("output") or {}).get("files") or {}
+    frames = files.get("frames") if isinstance(files, dict) else None
+    if (not isinstance(frames, list) or len(frames) != expected
+            or any(not isinstance(asset, str) or not asset for asset in frames)
+            or len(set(frames)) != expected):
+        return False
+    try:
+        paths = [plat.dam.get(asset, tenant_id="ops").path for asset in frames]
+    except (KeyError, PermissionError, ValueError, TypeError):
+        return False
+    return valid_frame_paths(paths, expected)
 
 
 def run_real_acceptance(root: Path | None = None) -> dict[str, Any]:
@@ -95,7 +109,7 @@ def run_real_acceptance(root: Path | None = None) -> dict[str, Any]:
         rows.append(
             _row(
                 "PRODUCT_360_E2E 36 frames",
-                "REAL" if _is_real_pass(j360) else (
+                "REAL" if _is_real_pass(j360) and _valid_stored_frames(plat, j360, 36) else (
                     "BLOCKED" if j360.get("status") == "blocked" else "FAIL"
                 ),
                 f"status={j360.get('status')} frames={(j360.get('output') or {}).get('files')}",
