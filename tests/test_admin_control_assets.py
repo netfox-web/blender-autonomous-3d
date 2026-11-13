@@ -122,5 +122,5 @@ def test_admin_control_handle_generate_uses_blob_loader() -> None:
 
     html = render_admin(Platform(Path("/tmp/fox3d-admin-gen-check")))
     segment = html[html.index("function handleGenerate") : html.index("</script>", html.index("function handleGenerate"))]
-    assert "fetchAdminAssetBlob(assetId, ADMIN_DEFAULT_TENANT)" in segment
+    assert "bindResultAsset(assetId, resultTenant)" in segment
     assert "'/api/assets/' + data.render.job.outputAsset" not in segment
