@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>資產預覽</title>
+  <style>body { margin: 0; background: #222; color: white; text-align: center; } img { max-width: 100%; height: auto; }</style>
+</head>
+<body>
+  <p id="status">載入中…</p>
+  <img id="asset" alt="資產預覽" hidden>
+  <script>
+    (async () => {
+      const params = new URLSearchParams(location.search);
+      const status = document.getElementById('status');
+      const image = document.getElementById('asset');
+      let url;
+      let unloading = false;
+      addEventListener('pagehide', event => {
+        if (event.persisted) return;
+        unloading = true;
+        if (url) URL.revokeObjectURL(url);
+      });
+      try {
+        const asset = params.get('asset');
+        if (!asset) throw new Error('缺少資產');
+        const response = await fetch('/api/assets/' + encodeURIComponent(asset), {
+          headers: { 'X-Tenant-Id': (params.get('tenant') || 'demo').trim() || 'demo' }
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const blob = await response.blob();
+        if (unloading) return;
+        url = URL.createObjectURL(blob);
+        image.onload = () => { status.hidden = true; image.hidden = false; };
+        image.onerror = () => { status.textContent = '無法顯示資產'; URL.revokeObjectURL(url); url = undefined; };
+        image.src = url;
+      } catch (err) {
+        status.textContent = '無法載入資產：' + err.message;
+      }
+    })();
+  </script>
+</body>
+</html>

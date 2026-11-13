@@ -661,6 +661,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def admin() -> str:
         return render_admin(get_platform())
 
+    @app.get("/admin/asset-viewer", response_class=HTMLResponse)
+    def admin_asset_viewer() -> HTMLResponse:
+        return HTMLResponse(
+            (Path(__file__).with_name("static") / "asset-viewer.html").read_text(encoding="utf-8"),
+            headers={"Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src blob:; base-uri 'none'; frame-ancestors 'none'",
+                     "Referrer-Policy": "no-referrer"},
+        )
+
     @app.get("/admin/features", response_class=HTMLResponse)
     def admin_features() -> HTMLResponse:
         # One searchable directory of every page and API group (fox3d/features.py).

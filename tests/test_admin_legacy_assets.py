@@ -392,9 +392,9 @@ def test_legacy_admin_page_hydrates_thumbnails_with_correct_tenant_headers(
         with page.expect_popup() as popup_info:
             anchor.click()
         popup = popup_info.value
-        popup.wait_for_url("blob:**")
-        assert popup.url.startswith(f"blob:{base}/")
-        assert popup.url == anchor.locator("img").get_attribute("src")
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        assert popup.evaluate("() => window.opener === null")
 
         for asset_key in ("tenant_a_job_asset", "demo_job_asset", "tenant_a_twin_asset", "demo_twin_asset"):
             asset_id = ids[asset_key]
@@ -502,15 +502,14 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
         url = page.locator("#res-img").get_attribute("src")
         assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
         page.locator("#res-link").evaluate("a => a.click()")
-        page.wait_for_function("url => window.openedUrls.includes(url)", arg=url)
-        # Switching the preview and removing all other images must not revoke a URL
-        # handed to a new tab, even after the deferred cleanup has run.
+        page.wait_for_function("() => window.openedUrls.length === 1")
+        assert page.evaluate("() => window.openedUrls[0].startsWith('/admin/asset-viewer?')")
+        # The viewer fetches its own copy, so the preview URL can be reclaimed.
         page.evaluate("a => bindResultAsset(a, 'tenant-a')", first)
         page.wait_for_function("url => document.getElementById('res-img').src.startsWith('blob:') && document.getElementById('res-img').src !== url", arg=url)
         page.evaluate("url => document.querySelectorAll('img').forEach(i => { if (i.src === url) i.remove(); })", url)
-        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
-        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
-        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
+        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
 
         # An unopened URL remains eligible for cleanup after its final image disappears.
         current = page.locator("#res-img").get_attribute("src")
@@ -522,8 +521,6 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
         page.wait_for_function("url => window.revokedUrls.includes(url)", arg=current)
         assert not page.evaluate("url => fetch(url).then(() => true, () => false)", current)
         page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide'))")
-        assert page.evaluate("url => window.revokedUrls.includes(url)", url)
-        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
         browser.close()
 
 
@@ -537,7 +534,7 @@ def test_open_popup_keeps_result_blob_after_asset_change(legacy_admin_browser_se
         page = browser.new_page()
         page.goto(f"{base}/admin", wait_until="networkidle")
         first, second = "popup-result-first", "popup-result-second"
-        page.route("**/api/assets/popup-result-*", lambda route: route.fulfill(content_type="image/png", body=_TINY_PNG))
+        page.context.route("**/api/assets/popup-result-*", lambda route: route.fulfill(content_type="image/png", body=_TINY_PNG))
         page.evaluate("asset => bindResultAsset(asset, 'demo')", first)
         page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
         url = page.locator("#res-img").get_attribute("src")
@@ -547,9 +544,52 @@ def test_open_popup_keeps_result_blob_after_asset_change(legacy_admin_browser_se
         popup.wait_for_load_state()
         page.evaluate("asset => bindResultAsset(asset, 'demo')", second)
         page.wait_for_function("url => document.querySelector('#res-img').src.startsWith('blob:') && document.querySelector('#res-img').src !== url", arg=url)
-        # Allow the deferred cleanup to run before fetching from the actual popup.
-        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 50))")
-        assert popup.evaluate("url => fetch(url).then(response => response.ok)", url)
+        popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+        assert popup.evaluate("window.opener === null")
+        assert popup.evaluate("document.querySelector('#asset').src !== ''")
+        assert popup.evaluate("() => document.querySelector('#asset').decode().then(() => true)")
+        browser.close()
+
+
+@pytest.mark.browser
+def test_many_viewers_release_blobs_on_close(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+    base = legacy_admin_browser_server["base_url"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context()
+        events: list[tuple[str, str]] = []
+        context.expose_binding("recordBlob", lambda _source, action, url: events.append((action, url)))
+        context.add_init_script("""(() => {
+          const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+          URL.createObjectURL = blob => { const url = create(blob); window.recordBlob('create', url); return url; };
+          URL.revokeObjectURL = url => { window.recordBlob('revoke', url); revoke(url); };
+        })();""")
+        context.route("**/api/assets/stress-*", lambda route: route.fulfill(content_type="image/png", body=_TINY_PNG))
+        page = context.new_page()
+        page.goto(f"{base}/admin", wait_until="networkidle")
+        viewers = []
+        urls = []
+        for index in range(12):
+            page.evaluate("asset => bindResultAsset(asset, 'tenant-a')", f"stress-{index}")
+            page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
+            with page.expect_popup() as popup_info:
+                page.locator("#res-link").evaluate("a => a.click()")
+            popup = popup_info.value
+            popup.wait_for_function("() => document.querySelector('#asset').naturalWidth > 0")
+            assert popup.evaluate("window.opener === null")
+            urls.append(popup.locator("#asset").get_attribute("src"))
+            viewers.append(popup)
+        for popup in viewers[:-1]:
+            popup.close(run_before_unload=True)
+        page.wait_for_function("() => true")
+        assert all(("revoke", url) in events for url in urls[:-1])
+        assert ("revoke", urls[-1]) not in events
+        assert viewers[-1].evaluate("() => document.querySelector('#asset').decode().then(() => true)")
+        viewers[-1].close(run_before_unload=True)
+        page.wait_for_timeout(100)
+        assert ("revoke", urls[-1]) in events
         browser.close()
 
 
@@ -619,4 +659,18 @@ def test_parametric_result_loads_and_clears_failed_preview(legacy_admin_browser_
         page.evaluate("assetId => window.bindResultAsset(assetId, 'demo')", asset_id)
         page.wait_for_function("document.querySelector('#res-img').alt === '載入失敗'")
         assert page.locator("#res-img").get_attribute("src") is None
+        browser.close()
+
+
+@pytest.mark.browser
+def test_asset_viewer_shows_fetch_failure(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.route("**/api/assets/missing-test", lambda route: route.fulfill(status=404))
+        page.goto(f"{legacy_admin_browser_server['base_url']}/admin/asset-viewer?asset=missing-test&tenant=tenant-a")
+        page.wait_for_function("() => document.querySelector('#status').textContent.includes('HTTP 404')")
+        assert page.locator('#asset').is_hidden()
         browser.close()
