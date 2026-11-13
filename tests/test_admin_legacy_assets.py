@@ -512,18 +512,27 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
         assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
         page.locator("#res-link").evaluate("a => a.click()")
         page.wait_for_function("url => window.openedUrls.includes(url)", arg=url)
-        # A second image using the same URL keeps it alive when the result changes.
-        page.evaluate("url => { const img = document.createElement('img'); img.id = 'shared-test'; img.src = url; document.body.appendChild(img); }", url)
+        # Switching the preview and removing all other images must not revoke a URL
+        # handed to a new tab, even after the deferred cleanup has run.
         page.evaluate("a => bindResultAsset(a, 'tenant-a')", first)
-        page.wait_for_function("url => document.getElementById('res-img').src !== url", arg=url)
-        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
-        # Remove every remaining image that references this URL.
+        page.wait_for_function("url => document.getElementById('res-img').src.startsWith('blob:') && document.getElementById('res-img').src !== url", arg=url)
         page.evaluate("url => document.querySelectorAll('img').forEach(i => { if (i.src === url) i.remove(); })", url)
-        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
-        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
+        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
+        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
+        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
+
+        # An unopened URL remains eligible for cleanup after its final image disappears.
         current = page.locator("#res-img").get_attribute("src")
+        page.evaluate("url => { const img = document.createElement('img'); img.id = 'shared-test'; img.src = url; document.body.appendChild(img); }", current)
+        page.evaluate("url => document.querySelectorAll('img:not(#shared-test)').forEach(i => { if (i.src === url) i.remove(); })", current)
+        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
+        assert page.evaluate("url => fetch(url).then(r => r.ok)", current)
+        page.locator("#shared-test").evaluate("img => img.remove()")
+        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=current)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", current)
         page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide'))")
-        assert page.evaluate("url => window.revokedUrls.includes(url)", current)
+        assert page.evaluate("url => window.revokedUrls.includes(url)", url)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
         browser.close()
 
 
