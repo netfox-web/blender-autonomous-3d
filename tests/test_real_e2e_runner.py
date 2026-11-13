@@ -279,3 +279,39 @@ def test_markdown_escapes_pipe_in_evidence(tmp_path: Path, monkeypatch: pytest.M
     saved = json.loads((tmp_path / "docs" / "REAL_E2E_ACCEPTANCE.json").read_text(encoding="utf-8"))
     gpu_row = next(r for r in saved["rows"] if r["check"] == "NVIDIA GPU / VRAM")
     assert "|" in gpu_row["evidence"]
+
+@pytest.mark.parametrize("case,expected_status", [
+    ("complete", "REAL"), ("short", "FAIL"), ("empty", "FAIL"),
+    ("duplicate", "FAIL"), ("invalid", "FAIL"), ("missing", "FAIL"),
+    ("extra", "FAIL"), ("blocked", "BLOCKED"),
+])
+def test_product_360_acceptance_checks_stored_frames(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str, expected_status: str) -> None:
+    from fox3d.pngutil import write_solid_png
+
+    _patch_probe(monkeypatch, _real_probe())
+    monkeypatch.setattr(Platform, "real_smoke_test", lambda self, **kw: _real_job())
+    monkeypatch.setattr(Platform, "product_e2e", lambda self, **kw: {"job": _real_job(), "twin": {"twinId": "twin"}})
+    monkeypatch.setattr(Platform, "render_parametric", lambda self, *a, **kw: {"job": _real_job()})
+
+    def p360(self: Platform, **kw: Any) -> dict[str, Any]:
+        assert kw["frames"] == 36
+        if case == "blocked":
+            return {"job": _blocked_job()}
+        image = tmp_path / "frame.png"
+        write_solid_png(image, "123456", 2, 2)
+        data = image.read_bytes()
+        ids = [self.dam.put(tenant_id="ops", kind="render", name=f"{i}.png", data=data).asset_id for i in range(36)]
+        if case == "short": ids.pop()
+        if case == "empty": ids.clear()
+        if case == "duplicate": ids[-1] = ids[0]
+        if case == "missing": ids[-1] = "missing"
+        if case == "extra": ids.append("extra")
+        if case == "invalid": Path(self.dam.get(ids[-1], tenant_id="ops").path).write_bytes(b"not a PNG")
+        return {"job": _real_job(output={"files": {"frames": ids}})}
+
+    monkeypatch.setattr(Platform, "product_360_e2e", p360)
+    report = run_real_acceptance(tmp_path)
+    row = next(r for r in report["rows"] if r["check"] == "PRODUCT_360_E2E 36 frames")
+    assert row["status"] == expected_status
+    if expected_status == "FAIL":
+        assert report["productionReady"] is False

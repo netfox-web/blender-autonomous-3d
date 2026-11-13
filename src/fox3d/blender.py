@@ -15,12 +15,34 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from PIL import Image
+
 from fox3d.ids import stable_hash
 from fox3d.pngutil import is_png, write_exr_stub, write_png, write_solid_png, write_webp_stub
 
 ProbeFn = Callable[[list[str]], str]
 BLOCKED_NO_BLENDER = "BLOCKED_NO_BLENDER"
 BLOCKED_NO_OPTIX = "BLOCKED_NO_OPTIX"
+
+
+def valid_frame_paths(frames: Any, expected: int) -> bool:
+    """Require the requested number of distinct, decodable PNG files."""
+    if not isinstance(frames, list) or len(frames) != expected or expected < 1:
+        return False
+    try:
+        if any(not isinstance(path, (str, Path)) or not str(path) for path in frames):
+            return False
+        paths = [Path(path).resolve() for path in frames]
+        if len(set(paths)) != expected:
+            return False
+        for path in paths:
+            with Image.open(path) as image:
+                if image.format != "PNG":
+                    return False
+                image.load()
+        return True
+    except (OSError, ValueError, TypeError, SyntaxError):
+        return False
 
 
 def _run(cmd: list[str], timeout: float = 15.0) -> tuple[int, str]:
@@ -466,6 +488,17 @@ class BlenderRuntime:
                                 outputs[name] = str(candidate)
                     png = outputs.get("beauty.png")
                     real_png = bool(png and Path(str(png)).exists() and is_png(Path(str(png))))
+                    animation = job.get("animation") or {}
+                    is_turntable = (str(animation.get("type") or "").upper() == "TURNTABLE"
+                                    or str(job.get("mode") or "").upper() in {"PRODUCT_360", "PRODUCT_360_E2E"})
+                    if is_turntable:
+                        try:
+                            expected = int(animation.get("frames") or 36)
+                        except (TypeError, ValueError):
+                            expected = 0
+                        real_output = valid_frame_paths(outputs.get("frames"), expected)
+                    else:
+                        real_output = real_png
                     if rc != 0 and payload.get("status") != "succeeded":
                         return RuntimeResult(
                             status="failed",
@@ -475,7 +508,7 @@ class BlenderRuntime:
                             real_blender=True,
                         )
                     return RuntimeResult(
-                        status="succeeded" if real_png or outputs.get("frames") else "failed",
+                        status="succeeded" if real_output else "failed",
                         outputs=outputs,
                         progress=1.0,
                         engine=str(payload.get("engine") or "CYCLES"),
@@ -487,8 +520,8 @@ class BlenderRuntime:
                         real_blender=True,
                         real_cycles=True,
                         real_optix=bool(payload.get("realOptix")),
-                        real_render_output=real_png or bool(outputs.get("frames")),
-                        error=None if real_png or outputs.get("frames") else "no real PNG",
+                        real_render_output=real_output,
+                        error=None if real_output else ("invalid or incomplete turntable frames" if is_turntable else "no real PNG"),
                         artwork_applied=payload.get("artworkApplied"),
                         applied_placements=list(payload.get("appliedPlacements") or []),
                         worker_identity=dict(payload.get("workerIdentity") or {}),
