@@ -84,7 +84,7 @@ def print_router(provider):
 
     @r.get('/api/print-workspace/assets')
     def listing(x_tenant_id:str|None=Header(None)):
-        t=tid(x_tenant_id);folder=assets.workspace(root(),t)/'assets'
+        t=tid(x_tenant_id);assets.workspace(root(),t)
         return {'items':call(asset_usage.listing,root(),t)}
 
     @r.get('/api/print-workspace/assets/{aid}/preview')
