@@ -201,12 +201,8 @@ def test_legacy_admin_js_uses_per_element_tenant_for_assets() -> None:
 def test_generate_does_not_reference_asset_loader_private_default(client: TestClient) -> None:
     html = _admin_html(client)
     generate = html.split("function handleGenerate(e)", 1)[1].split("function ", 1)[0]
-    # ADMIN_DEFAULT_TENANT fallback is intentional; bare DEFAULT_TENANT must not leak into handleGenerate.
-    assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", generate)
-    # The IIFE-private const is not in handleGenerate's scope; only the window export is reachable.
-    code = "\n".join(line for line in generate.splitlines() if not line.strip().startswith("//"))
-    assert not re.search(r"(?<!window\.)\bADMIN_DEFAULT_TENANT", code)
-    assert "window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT" in html
+    assert "DEFAULT_TENANT" not in generate.replace("window.__FOX3D_DEFAULT_TENANT", "")
+    assert "window.__FOX3D_DEFAULT_TENANT" in generate
 
 
 def test_legacy_admin_asset_endpoint_still_requires_tenant(client: TestClient) -> None:
@@ -544,8 +540,8 @@ def test_generate_without_tenant_uses_demo_and_loads_result(legacy_admin_browser
             response = route.fetch()
             html = response.text()
             before, generate = html.split("function handleGenerate(e)", 1)
-            assert "tenantId: 'demo'," in generate
-            generate = generate.replace("tenantId: 'demo',", "", 1)
+            assert "tenantId: window.__FOX3D_DEFAULT_TENANT," in generate
+            generate = generate.replace("tenantId: window.__FOX3D_DEFAULT_TENANT,", "", 1)
             route.fulfill(response=response, body=before + "function handleGenerate(e)" + generate)
 
         page.route("**/admin", omit_payload_tenant)

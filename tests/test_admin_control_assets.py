@@ -128,8 +128,22 @@ def test_admin_control_handle_generate_uses_blob_loader() -> None:
     # bindResultAsset itself falls back to DEFAULT_TENANT inside the IIFE (#301).
     assert "bindResultAsset(assetId, resultTenant)" in segment
     assert "data.render.job.tenantId || payload.tenantId" in segment
-    assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", segment)
-    code = "\n".join(line for line in segment.splitlines() if not line.strip().startswith("//"))
-    assert not re.search(r"(?<!window\.)\bADMIN_DEFAULT_TENANT", code)
-    assert "window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT" in html
+    assert "ADMIN_DEFAULT_TENANT" not in segment
+    assert "DEFAULT_TENANT" not in segment.replace("window.__FOX3D_DEFAULT_TENANT", "")
+    assert "window.__FOX3D_DEFAULT_TENANT" in segment
     assert "'/api/assets/' + data.render.job.outputAsset" not in segment
+
+
+def test_admin_default_tenant_injected_for_global_scripts() -> None:
+    from pathlib import Path
+
+    from fox3d.admin import ADMIN_DEFAULT_TENANT
+    from fox3d.platform import Platform
+
+    html = render_admin(Platform(Path("/tmp/fox3d-admin-tenant-ssot")))
+    assert f"window.__FOX3D_DEFAULT_TENANT = '{ADMIN_DEFAULT_TENANT}'" in html
+    iife_start = html.index("(function () {")
+    iife_end = html.index("})();", iife_start)
+    iife = html[iife_start:iife_end]
+    assert "const DEFAULT_TENANT = window.__FOX3D_DEFAULT_TENANT" in iife
+    assert "const DEFAULT_TENANT = 'demo'" not in iife
