@@ -59,7 +59,7 @@ class CycleCountService:
                 raise PermissionError("tenant isolation: cycle count")
             return existing
         q = self.lots.quantities(lot_id, tenant_id=tenant_id)
-        rec = {
+        rec: dict[str, Any] = {
             "cycleCountId": new_id(),
             "tenantId": tenant_id,
             "lotId": lot_id,

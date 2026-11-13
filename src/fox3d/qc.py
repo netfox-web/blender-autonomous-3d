@@ -119,7 +119,7 @@ class QcService:
         if source not in {"TEST_DATA", "IMPORTED", "MANUAL", "DEVICE"}:
             source = "TEST_DATA"
         ok = in_tolerance(measured=measured, nominal=nominal, tol=tol)
-        rec = {
+        rec: dict[str, Any] = {
             "qcId": new_id(),
             "tenantId": tenant_id,
             "workOrderId": work_order_id,
@@ -197,7 +197,7 @@ class QcService:
             raise ValueError(code)
         if disposition not in DISPOSITIONS:
             raise ValueError(disposition)
-        rec = {
+        rec: dict[str, Any] = {
             "defectId": new_id(),
             "tenantId": tenant_id,
             "workOrderId": work_order_id,

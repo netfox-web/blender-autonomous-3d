@@ -93,7 +93,7 @@ class StationRegistry:
         caps = [c for c in capabilities if c in STATION_CAPS]
         if not caps:
             raise PermissionError("station requires a MANUAL capability")
-        rec = {
+        rec: dict[str, Any] = {
             "stationId": station_id or new_id(),
             "tenantId": tenant_id,
             "capabilities": caps,

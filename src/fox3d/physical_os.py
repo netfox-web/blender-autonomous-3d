@@ -26,7 +26,7 @@ class PhysicalProductFamilyRegistry:
         return list(PHYSICAL_FAMILIES)
 
     def get(self, family: str) -> dict[str, Any]:
-        rec = dict(PHYSICAL_FAMILIES[family])
+        rec: dict[str, Any] = dict(PHYSICAL_FAMILIES[family])
         rec["family"] = family
         rec["reuses"] = ["TwinStore", "JobQueue", "DAM", "EngineeringRuleEngine", "NestingStrategyRegistry"]
         rec["rewritesCabinetSpec"] = False
@@ -79,7 +79,7 @@ class PhysicalProductOS:
         }
 
     def approve(self, *, entity_id: str, actor: str, kind: str = "product", entity: dict[str, Any] | None = None) -> dict[str, Any]:
-        rec = {
+        rec: dict[str, Any] = {
             "entityId": entity_id,
             "kind": kind,
             "actor": actor,

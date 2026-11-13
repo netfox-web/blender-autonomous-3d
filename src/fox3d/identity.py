@@ -52,7 +52,7 @@ class OperatorShiftService:
         operator_id: str | None = None,
         enabled: bool = True,
     ) -> dict[str, Any]:
-        rec = {
+        rec: dict[str, Any] = {
             "operatorId": operator_id or new_id(),
             "tenantId": tenant_id,
             "displayName": display_name,
@@ -95,7 +95,7 @@ class OperatorShiftService:
         op = self.get_operator(operator_id, tenant_id=tenant_id)
         if not op.get("enabled"):
             raise PermissionError("disabled operator")
-        rec = {
+        rec: dict[str, Any] = {
             "shiftId": new_id(),
             "tenantId": tenant_id,
             "operatorId": operator_id,

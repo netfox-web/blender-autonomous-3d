@@ -121,7 +121,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         if r not in views:
             missing.append(f"missing_view_{r}")
 
-    rows = [
+    rows: list[dict] = [
         {"check": "productContentFactoryLogicReady", "status": "REAL_LOGIC" if result.get("productContentFactoryLogicReady") else "MISSING", "evidence": result.get("productContentFactoryLogicReady")},
         {"check": "realCommerceRenderPackReady", "status": "MOCK" if mock else ("REAL" if result.get("realCommerceRenderPackReady") else "BLOCKED_ENVIRONMENT"), "evidence": result.get("realCommerceRenderPackReady")},
         {"check": "liveGenerativeCommerceReady", "status": "BLOCKED", "evidence": False},

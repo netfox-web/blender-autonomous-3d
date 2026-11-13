@@ -7,7 +7,7 @@ Both maps live here so Blender is never a special-cased machine.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final, cast
 
 BLENDER_SCENE: Final = "BLENDER_SCENE"
 BLENDER_PREVIEW: Final = "BLENDER_PREVIEW"
@@ -97,7 +97,7 @@ def capability_flags(detected: dict[str, object]) -> dict[str, object]:
         "cuda": bool(detected.get("cuda")),
         "optix": bool(detected.get("optix")),
         "gpu": detected.get("gpuName"),
-        "gpuCount": int(detected.get("gpuCount") or 0),
+        "gpuCount": int(cast(Any, detected.get("gpuCount") or 0)),
         "vramGb": detected.get("vramGb"),
         "driver": detected.get("driver"),
         "acceptsCpuJobs": True,
