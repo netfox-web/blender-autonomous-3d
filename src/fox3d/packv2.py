@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fox3d.ids import stable_hash
 from fox3d.packaging import BOX_FAMILIES, PAPERBOARD_SHEETS, PackagingEngineeringDefinition, product_fit
@@ -209,10 +209,10 @@ def fit_regression() -> dict[str, Any]:
         ok_input = all(float(prod.get(k) or 0) > 0 for k in ("width", "height", "depth") if k in prod) and float(prod.get("width") or prod.get("height") or 0) > 0
         if not ok_input:
             fit_ok = False
-            fit = {"error": "invalid_product_dims"}
         else:
-            fit = product_fit(prod, family=case["family"])
-            inner = fit["inner"]
+            # Separate name so this result is not joined with the error dict (dict[str, str]).
+            fitted = product_fit(prod, family=case["family"])
+            inner = fitted["inner"]
             fit_ok = inner["length"] > 0 and inner["width"] > 0 and inner["height"] > 0
         passed = fit_ok == case["expect"] if case["expect"] is False else fit_ok
         # impossible cases expect False
@@ -228,13 +228,14 @@ def carton_optimize(product: dict[str, float], *, grade: dict[str, Any], weight_
         fit = product_fit(product, family=fam)
         eng = PackagingEngineeringDefinition()
         eng.define(family=fam, product_dims=product, sheet=PAPERBOARD_SHEETS["KRAFT_RSC_B"])
-        panels = eng.dieline["panels"]
+        dieline = cast(dict[str, Any], eng.dieline)
+        panels = dieline["panels"]
         area = sum(float(p["w"]) * float(p["h"]) for p in panels)
         outer = fit["outer"]
         cbm = (outer["length"] * outer["width"] * outer["height"]) / 1e9
         comp = box_compression_estimate(inner=fit["inner"], grade=grade)
         load = shipping_load_scenario(product_weight_kg=weight_kg, stack_count=5, compression=comp)
-        geo = validate_dieline(eng.dieline)
+        geo = validate_dieline(dieline)
         veto = not geo["ok"]
         cands.append(
             {

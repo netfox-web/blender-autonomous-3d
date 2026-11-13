@@ -13,7 +13,7 @@ import json
 import math
 import re
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import unquote, urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -58,9 +58,12 @@ class Fact(StrictRecord):
     @model_validator(mode="after")
     def validate_value(self) -> Fact:
         if self.unit in {"mm", "count"}:
-            if type(self.value) not in {int, float} or not math.isfinite(self.value):
+            value = self.value
+            # cast is erased at runtime; the type() check still skips isfinite for non-numbers.
+            if type(value) not in {int, float} or not math.isfinite(cast(float, value)):
                 raise ValueError("measurement must be finite and numeric")
-            if self.value < 0 or (self.unit == "mm" and self.value == 0):
+            numeric = cast(float, value)
+            if numeric < 0 or (self.unit == "mm" and numeric == 0):
                 raise ValueError("invalid measurement")
             if self.unit == "count" and type(self.value) is not int:
                 raise ValueError("count must be integer")
@@ -118,7 +121,9 @@ class ProductSeed(StrictRecord):
         for name in ("widthMm", "depthMm", "heightMm", "doorCount", "compartmentCount", "rowCount", "material"):
             if name not in self.facts:
                 raise ValueError(f"missing required supplier fact: {name}")
-        doors, compartments, rows = [self.facts[k].value for k in ("doorCount", "compartmentCount", "rowCount")]
+        doors = cast(int, self.facts["doorCount"].value)
+        compartments = cast(int, self.facts["compartmentCount"].value)
+        rows = cast(int, self.facts["rowCount"].value)
         if rows <= 0 or compartments <= 0:
             raise ValueError("row and compartment counts must be positive")
         if self.family == "STAGGERED_OPEN_CUBBY" and doors != 0:
