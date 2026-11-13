@@ -623,7 +623,6 @@ def render_admin(platform: Any) -> str:
         btn.innerHTML = '<span>🚀 立即生成 3D 渲染並出圖</span>';
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           const assetId = data.render.job.outputAsset;
-          // Legacy alias: fetchAdminAssetBlob(assetId, ADMIN_DEFAULT_TENANT) uses per-job tenant below.
           bindResultAsset(
             assetId,
             data.render.job.tenantId || payload.tenantId || window.ADMIN_DEFAULT_TENANT || 'demo'
