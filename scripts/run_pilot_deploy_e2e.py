@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     dest = docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json"
     if not gate_ok:
         return _refuse_overwrite(docs, missing + list(chaos.get("gateFailures") or []))
-    (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.json").write_text(json.dumps(deploy, indent=2, default=str), encoding="utf-8")
+    dest.write_text(json.dumps(deploy, indent=2, default=str), encoding="utf-8")
     (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.md").write_text(_md("PILOT_DEPLOYMENT_ACCEPTANCE", rows, generated), encoding="utf-8")
     (docs / "OPERATOR_CONTROL_ACCEPTANCE.json").write_text(json.dumps(operator, indent=2, default=str), encoding="utf-8")
     (docs / "OPERATOR_CONTROL_ACCEPTANCE.md").write_text(_md("OPERATOR_CONTROL_ACCEPTANCE", operator["rows"], generated), encoding="utf-8")
