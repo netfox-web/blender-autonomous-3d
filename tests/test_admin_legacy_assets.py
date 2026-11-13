@@ -528,6 +528,55 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
 
 
 @pytest.mark.browser
+def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser_server: dict[str, Any]) -> None:
+    """A real popup can reload its image after the opener releases the preview."""
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+
+    base = legacy_admin_browser_server["base_url"]
+    ids = legacy_admin_browser_server["ids"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        context = browser.new_context()
+        page = context.new_page()
+        page.add_init_script("""(() => {
+          window.revokedUrls = [];
+          const revoke = URL.revokeObjectURL.bind(URL);
+          URL.revokeObjectURL = url => { window.revokedUrls.push(url); revoke(url); };
+        })();""")
+        page.route("**/api/parametric/products", lambda route: route.fulfill(json={
+            "render": {"job": {"outputAsset": ids["tenant_a_job_asset"], "tenantId": "tenant-a"}}
+        }))
+        page.goto(f"{base}/admin", wait_until="networkidle")
+        page.locator("#gen-btn").click()
+        page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
+        url = page.locator("#res-img").get_attribute("src")
+        assert url is not None
+        with page.expect_popup() as popup_info:
+            page.locator("#res-link").click()
+        popup = popup_info.value
+        popup.wait_for_url("blob:**")
+        assert popup.url == url
+        popup_image = popup.locator("img")
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+
+        page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
+        page.wait_for_function(
+            "url => document.querySelector('#res-img').src.startsWith('blob:') && "
+            "document.querySelector('#res-img').src !== url", arg=url
+        )
+        # Remove other references to the old URL, triggering the deferred cleanup.
+        page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
+        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
+        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
+        popup.reload()
+        assert popup.url == url
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
+        context.close()
+        browser.close()
+
+
+@pytest.mark.browser
 def test_open_popup_keeps_result_blob_after_asset_change(legacy_admin_browser_server: dict[str, Any]) -> None:
     if not _chromium_usable():
         pytest.skip("Chromium not available")
