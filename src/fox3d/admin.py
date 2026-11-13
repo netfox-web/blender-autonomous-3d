@@ -419,8 +419,6 @@ def render_admin(platform: Any) -> str:
   const DEFAULT_TENANT = window.__FOX3D_DEFAULT_TENANT;
   const assetBlobUrls = new Map();
   const pendingAssetUrls = new Map();
-  // noopener prevents observing when a new tab closes; retain its URL until pagehide.
-  const openedAssetUrls = new Set();
   let unloading = false;
 
   function assetCacheKey(assetId, tenantId) {{
@@ -460,7 +458,7 @@ def render_admin(platform: Any) -> str:
     cleanupTimer = setTimeout(() => {{
       const used = new Set(Array.from(document.querySelectorAll('img')).map((img) => img.src));
       for (const [key, url] of assetBlobUrls) {{
-        if (!used.has(url) && !openedAssetUrls.has(url)) {{
+        if (!used.has(url)) {{
           URL.revokeObjectURL(url);
           assetBlobUrls.delete(key);
         }}
@@ -471,12 +469,11 @@ def render_admin(platform: Any) -> str:
   const fetchAdminAssetBlob = fetchAssetBlobUrl;
 
   function openAssetInNewTab(assetId, tenantId) {{
-    fetchAssetBlobUrl(assetId, tenantId)
-      .then((url) => {{
-        openedAssetUrls.add(url);
-        window.open(url, '_blank', 'noopener');
-      }})
-      .catch((err) => alert('無法開啟資產：' + err.message));
+    const params = new URLSearchParams({{
+      asset: String(assetId || ''),
+      tenant: String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT
+    }});
+    window.open('/admin/asset-viewer?' + params.toString(), '_blank', 'noopener');
   }}
 
   async function hydrateAssetImages() {{
@@ -553,7 +550,6 @@ def render_admin(platform: Any) -> str:
     unloading = true;
     for (const url of assetBlobUrls.values()) URL.revokeObjectURL(url);
     assetBlobUrls.clear();
-    openedAssetUrls.clear();
   }});
   window.bindResultAsset = bindResultAsset;
   window.fetchAdminAssetBlob = fetchAdminAssetBlob;

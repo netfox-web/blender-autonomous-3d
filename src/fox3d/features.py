@@ -33,7 +33,7 @@ FEATURES: list[dict[str, Any]] = [
     {"id": "control", "group": "home", "kind": "page", "icon": "◎", "title": "系統與算力總控台",
      "href": "/admin", "summary": "Blender／OptiX 狀態、一鍵櫃體設計、算圖成品、數位分身、算圖機與工作列表。",
      "keywords": "總控台 算力 worker 工作 gpu blender optix smoke",
-     "prefixes": ["/admin", "/api/e2e/smoke", "/api/parametric/products", "/api/assets"]},
+     "prefixes": ["/admin", "/admin/asset-viewer", "/api/e2e/smoke", "/api/parametric/products", "/api/assets"]},
     {"id": "scenes", "group": "ecommerce", "kind": "page", "icon": "▦", "title": "組合櫃 3D 場景工坊",
      "href": "/admin/recipes/scenes", "summary": "拼櫃體 → 擺 3D 房間 → Blender 光追或 GPU 艦隊 AI 實景，批次出多場景、多配色電商圖。",
      "keywords": "場景 電商圖 組合櫃 光追 flux ai 實景 批次 zip 配色",
