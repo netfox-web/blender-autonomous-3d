@@ -201,7 +201,12 @@ def test_legacy_admin_js_uses_per_element_tenant_for_assets() -> None:
 def test_generate_does_not_reference_asset_loader_private_default(client: TestClient) -> None:
     html = _admin_html(client)
     generate = html.split("function handleGenerate(e)", 1)[1].split("function ", 1)[0]
-    assert "DEFAULT_TENANT" not in generate
+    # ADMIN_DEFAULT_TENANT fallback is intentional; bare DEFAULT_TENANT must not leak into handleGenerate.
+    assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", generate)
+    # The IIFE-private const is not in handleGenerate's scope; only the window export is reachable.
+    code = "\n".join(line for line in generate.splitlines() if not line.strip().startswith("//"))
+    assert not re.search(r"(?<!window\.)\bADMIN_DEFAULT_TENANT", code)
+    assert "window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT" in html
 
 
 def test_legacy_admin_asset_endpoint_still_requires_tenant(client: TestClient) -> None:
@@ -478,6 +483,47 @@ def test_legacy_admin_wrong_tenant_fetch_not_served_from_browser_cache(
         assert state["alt"] == "載入失敗", detail
         assert not state["src"].startswith("blob:"), detail
         assert f"asset={asset_id} tenant='demo' status=404" in fetch_log.entries, detail
+        browser.close()
+
+
+@pytest.mark.browser
+def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+    base = legacy_admin_browser_server["base_url"]
+    ids = legacy_admin_browser_server["ids"]
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.add_init_script("""(() => {
+          window.revokedUrls = [];
+          window.openedUrls = [];
+          const revoke = URL.revokeObjectURL.bind(URL);
+          URL.revokeObjectURL = (url) => { window.revokedUrls.push(url); revoke(url); };
+          window.open = (url) => { window.openedUrls.push(url); };
+        })();""")
+        page.goto(f"{base}/admin")
+        page.wait_for_function("() => [...document.querySelectorAll('img.asset-img')].every(i => i.src.startsWith('blob:') || i.alt === '載入失敗')")
+        first = ids["tenant_a_job_asset"]
+        second = ids["demo_job_asset"]
+        page.evaluate("([a, b]) => { bindResultAsset(a, 'tenant-a'); bindResultAsset(b, 'demo'); }", [first, second])
+        page.wait_for_function("() => document.getElementById('res-img').src.startsWith('blob:')")
+        url = page.locator("#res-img").get_attribute("src")
+        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
+        page.locator("#res-link").evaluate("a => a.click()")
+        page.wait_for_function("url => window.openedUrls.includes(url)", arg=url)
+        # A second image using the same URL keeps it alive when the result changes.
+        page.evaluate("url => { const img = document.createElement('img'); img.id = 'shared-test'; img.src = url; document.body.appendChild(img); }", url)
+        page.evaluate("a => bindResultAsset(a, 'tenant-a')", first)
+        page.wait_for_function("url => document.getElementById('res-img').src !== url", arg=url)
+        assert page.evaluate("url => fetch(url).then(r => r.ok)", url)
+        # Remove every remaining image that references this URL.
+        page.evaluate("url => document.querySelectorAll('img').forEach(i => { if (i.src === url) i.remove(); })", url)
+        page.wait_for_function("url => window.revokedUrls.includes(url)", arg=url)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
+        current = page.locator("#res-img").get_attribute("src")
+        page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide'))")
+        assert page.evaluate("url => window.revokedUrls.includes(url)", current)
         browser.close()
 
 

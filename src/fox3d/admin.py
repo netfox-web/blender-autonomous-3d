@@ -414,7 +414,10 @@ def render_admin(platform: Any) -> str:
   <script>
   (function () {{
   const DEFAULT_TENANT = 'demo';
+  const ADMIN_DEFAULT_TENANT = DEFAULT_TENANT;
   const assetBlobUrls = new Map();
+  const pendingAssetUrls = new Map();
+  let unloading = false;
 
   function assetCacheKey(assetId, tenantId) {{
     const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
@@ -427,14 +430,38 @@ def render_admin(platform: Any) -> str:
     const tenant = String(tenantId || DEFAULT_TENANT).trim() || DEFAULT_TENANT;
     const cacheKey = assetCacheKey(key, tenant);
     if (assetBlobUrls.has(cacheKey)) return assetBlobUrls.get(cacheKey);
-    const res = await fetch('/api/assets/' + encodeURIComponent(key), {{
-      headers: {{ 'X-Tenant-Id': tenant }}
-    }});
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    assetBlobUrls.set(cacheKey, url);
-    return url;
+    if (pendingAssetUrls.has(cacheKey)) return pendingAssetUrls.get(cacheKey);
+    const request = (async () => {{
+      const res = await fetch('/api/assets/' + encodeURIComponent(key), {{
+        headers: {{ 'X-Tenant-Id': tenant }}
+      }});
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      if (unloading) throw new Error('page unloaded');
+      const url = URL.createObjectURL(blob);
+      assetBlobUrls.set(cacheKey, url);
+      return url;
+    }})();
+    pendingAssetUrls.set(cacheKey, request);
+    try {{
+      return await request;
+    }} finally {{
+      pendingAssetUrls.delete(cacheKey);
+    }}
+  }}
+
+  let cleanupTimer;
+  function releaseUnusedAssetUrls() {{
+    clearTimeout(cleanupTimer);
+    cleanupTimer = setTimeout(() => {{
+      const used = new Set(Array.from(document.querySelectorAll('img')).map((img) => img.src));
+      for (const [key, url] of assetBlobUrls) {{
+        if (!used.has(url)) {{
+          URL.revokeObjectURL(url);
+          assetBlobUrls.delete(key);
+        }}
+      }}
+    }}, 0);
   }}
 
   const fetchAdminAssetBlob = fetchAssetBlobUrl;
@@ -452,7 +479,9 @@ def render_admin(platform: Any) -> str:
       if (!assetId) return;
       const tenantId = img.getAttribute('data-tenant-id') || DEFAULT_TENANT;
       try {{
-        img.src = await fetchAssetBlobUrl(assetId, tenantId);
+        const url = await fetchAssetBlobUrl(assetId, tenantId);
+        if (img.isConnected) img.src = url;
+        else releaseUnusedAssetUrls();
       }} catch (err) {{
         img.alt = '載入失敗';
       }}
@@ -487,12 +516,16 @@ def render_admin(platform: Any) -> str:
     img.onclick = null;
     link.onclick = (ev) => ev.preventDefault();
     fetchAssetBlobUrl(assetId, tenant).then((url) => {{
-      if (request !== resultAssetRequest) return;
+      if (request !== resultAssetRequest || !img.isConnected) {{
+        releaseUnusedAssetUrls();
+        return;
+      }}
       img.src = url;
-      img.onclick = () => window.open(url, '_blank', 'noopener');
+      releaseUnusedAssetUrls();
+      img.onclick = () => openAssetInNewTab(assetId, tenant);
       link.onclick = (ev) => {{
         ev.preventDefault();
-        window.open(url, '_blank', 'noopener');
+        openAssetInNewTab(assetId, tenant);
       }};
     }}).catch((err) => {{
       if (request !== resultAssetRequest) return;
@@ -506,8 +539,17 @@ def render_admin(platform: Any) -> str:
 
   document.addEventListener('DOMContentLoaded', () => {{
     wireAdminAssetImages();
+    new MutationObserver(releaseUnusedAssetUrls).observe(document.body, {{ childList: true, subtree: true }});
+  }});
+  window.addEventListener('pagehide', (event) => {{
+    if (event.persisted) return;
+    unloading = true;
+    for (const url of assetBlobUrls.values()) URL.revokeObjectURL(url);
+    assetBlobUrls.clear();
   }});
   window.bindResultAsset = bindResultAsset;
+  // handleGenerate lives outside this IIFE; expose the fallback tenant explicitly.
+  window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT;
   }})();
 
     function switchTab(tabId) {{
@@ -582,7 +624,7 @@ def render_admin(platform: Any) -> str:
         if (data.render && data.render.job && data.render.job.outputAsset) {{
           const assetId = data.render.job.outputAsset;
           const resultTenant =
-            data.render.job.tenantId || payload.tenantId || 'demo';
+            data.render.job.tenantId || payload.tenantId || window.ADMIN_DEFAULT_TENANT || 'demo';
           bindResultAsset(assetId, resultTenant);
           document.getElementById('res-spec').innerText = payload.kind + ' · ' + (payload.width/10) + '×' + (payload.height/10) + '×' + (payload.depth/10) + ' cm · ' + (payload.shelfCount + 1) + '格';
           document.getElementById('res-time').innerText = '渲染耗時: ' + (data.render.job.renderTimeSec || '0.8') + 's (Blender Cycles OptiX)';
