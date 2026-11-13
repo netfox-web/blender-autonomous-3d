@@ -548,6 +548,7 @@ def render_admin(platform: Any) -> str:
     assetBlobUrls.clear();
   }});
   window.bindResultAsset = bindResultAsset;
+  window.fetchAdminAssetBlob = fetchAdminAssetBlob;
   // handleGenerate lives outside this IIFE; expose the fallback tenant explicitly.
   window.ADMIN_DEFAULT_TENANT = ADMIN_DEFAULT_TENANT;
   }})();
