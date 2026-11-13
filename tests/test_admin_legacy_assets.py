@@ -11,6 +11,7 @@ import time
 from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
@@ -552,9 +553,13 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
         with page.expect_popup() as popup_info:
             page.locator("#res-link").click()
         popup = popup_info.value
-        popup.wait_for_url("blob:**")
-        assert popup.url == url
-        popup_image = popup.locator("img")
+        popup.wait_for_url("**/admin/asset-viewer?*")
+        parsed_url = urlparse(popup.url)
+        assert parsed_url.path == "/admin/asset-viewer"
+        assert parse_qs(parsed_url.query) == {"asset": [ids["tenant_a_job_asset"]], "tenant": ["tenant-a"]}
+        popup_image = popup.locator("#asset")
+        popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
+                                "document.querySelector('#asset').naturalWidth > 0")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
 
         page.evaluate("asset => bindResultAsset(asset, 'demo')", ids["demo_job_asset"])
@@ -562,12 +567,15 @@ def test_result_popup_remains_loadable_after_preview_switch(legacy_admin_browser
             "url => document.querySelector('#res-img').src.startsWith('blob:') && "
             "document.querySelector('#res-img').src !== url", arg=url
         )
-        # Remove other references to the old URL, triggering the deferred cleanup.
-        page.evaluate("url => document.querySelectorAll('img').forEach(img => { if (img.src === url) img.remove(); })", url)
-        page.evaluate("() => new Promise(resolve => setTimeout(resolve, 100))")
-        assert not page.evaluate("url => window.revokedUrls.includes(url)", url)
+        # The viewer must not depend on the opener's object URL.
+        page.evaluate("url => URL.revokeObjectURL(url)", url)
+        assert page.evaluate("url => window.revokedUrls.includes(url)", url)
+        assert not page.evaluate("url => fetch(url).then(() => true, () => false)", url)
+        assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         popup.reload()
-        assert popup.url == url
+        assert urlparse(popup.url) == parsed_url
+        popup.wait_for_function("() => document.querySelector('#asset').src.startsWith('blob:') && "
+                                "document.querySelector('#asset').naturalWidth > 0")
         assert popup_image.evaluate("async img => { await img.decode(); return img.naturalWidth > 0; }")
         context.close()
         browser.close()
