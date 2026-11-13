@@ -154,6 +154,13 @@ def test_legacy_admin_js_uses_per_element_tenant_for_assets() -> None:
     assert "document.getElementById('res-img').src = assetUrl" not in src
 
 
+def test_generate_does_not_reference_asset_loader_private_default(client: TestClient) -> None:
+    html = _admin_html(client)
+    generate = html.split("function handleGenerate(e)", 1)[1].split("function ", 1)[0]
+    # ADMIN_DEFAULT_TENANT fallback is intentional; bare DEFAULT_TENANT must not leak into handleGenerate.
+    assert not re.search(r"(?<!ADMIN_)DEFAULT_TENANT", generate)
+
+
 def test_legacy_admin_asset_endpoint_still_requires_tenant(client: TestClient) -> None:
     assert client.get("/api/assets/any-id").status_code == 400
 
@@ -343,6 +350,49 @@ def test_legacy_admin_blob_url_lifecycle(legacy_admin_browser_server: dict[str, 
         current = page.locator("#res-img").get_attribute("src")
         page.evaluate("() => window.dispatchEvent(new PageTransitionEvent('pagehide'))")
         assert page.evaluate("url => window.revokedUrls.includes(url)", current)
+        browser.close()
+
+
+@pytest.mark.browser
+def test_generate_without_tenant_uses_demo_and_loads_result(legacy_admin_browser_server: dict[str, Any]) -> None:
+    if not _chromium_usable():
+        pytest.skip("Chromium not available")
+
+    base = legacy_admin_browser_server["base_url"]
+    asset_id = "generated-demo-asset"
+    requests: list[tuple[str, str]] = []
+    errors: list[str] = []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        def omit_payload_tenant(route) -> None:  # noqa: ANN001
+            response = route.fetch()
+            html = response.text()
+            before, generate = html.split("function handleGenerate(e)", 1)
+            assert "tenantId: 'demo'," in generate
+            generate = generate.replace("tenantId: 'demo',", "", 1)
+            route.fulfill(response=response, body=before + "function handleGenerate(e)" + generate)
+
+        page.route("**/admin", omit_payload_tenant)
+        page.route(f"**/api/assets/{asset_id}", lambda route: route.fulfill(content_type="image/png", body=_TINY_PNG))
+        page.route("**/api/parametric/products", lambda route: route.fulfill(json={
+            "render": {"job": {"outputAsset": asset_id}}
+        }))
+        def on_dialog(dialog) -> None:  # noqa: ANN001
+            errors.append(dialog.message)
+            dialog.dismiss()
+
+        page.on("request", lambda req: requests.append((req.url, req.headers.get("x-tenant-id", ""))))
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        page.on("dialog", on_dialog)
+        page.goto(f"{base}/admin", wait_until="networkidle")
+        requests.clear()
+        page.locator("#gen-btn").click()
+        page.wait_for_function("document.querySelector('#res-img').src.startsWith('blob:')")
+        assert page.locator("#result-box").is_visible()
+        assert any(url.endswith('/api/assets/' + asset_id) and tenant == 'demo' for url, tenant in requests)
+        assert not errors
         browser.close()
 
 
