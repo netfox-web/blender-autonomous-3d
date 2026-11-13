@@ -195,6 +195,7 @@ def test_legacy_admin_js_uses_per_element_tenant_for_assets() -> None:
     assert "hydrateAssetImages" in src
     assert "wireAssetOpenLinks" in src
     assert "window.bindResultAsset" in src
+    assert "window.fetchAdminAssetBlob" in src
     assert "document.getElementById('res-img').src = assetUrl" not in src
 
 
@@ -291,6 +292,20 @@ class _AssetFetchLog:
 
     def describe(self) -> str:
         return "; ".join(self.entries) or "(none)"
+
+    def wait_all_thumbnails_settled(self, page: Any, *, timeout: float = 20_000) -> None:
+        """Wait until every legacy thumbnail has blob src or 載入失敗 (hydration finished)."""
+        self.wait(
+            page,
+            """() => {
+              const imgs = Array.from(document.querySelectorAll('img.asset-img[data-asset-id]'));
+              if (!imgs.length) return false;
+              const loaded = imgs.filter((img) => img.src && img.src.startsWith('blob:'));
+              const failed = imgs.filter((img) => img.alt === '載入失敗');
+              return loaded.length + failed.length >= imgs.length;
+            }""",
+            timeout=timeout,
+        )
 
 
 @pytest.fixture(scope="module")
@@ -421,16 +436,14 @@ def test_legacy_admin_failed_asset_response_shows_failure(legacy_admin_browser_s
 
 
 @pytest.mark.browser
-def test_legacy_admin_wrong_tenant_fetch_not_served_from_browser_cache(
+def test_legacy_admin_wrong_tenant_thumbnail_shows_failure(
     legacy_admin_browser_server: dict[str, Any],
 ) -> None:
-    """Issue #292: a wrong-tenant fetch after hydration must reach the server and fail.
+    """Issue #293: wrong-tenant reload must fail without showing a preview image.
 
-    The original ``test_legacy_admin_wrong_tenant_thumbnail_shows_failure`` flaked under
-    full-suite load with ``alt == ''``: once the page had loaded the tenant-a asset, Chromium
-    served the same URL from its heuristic HTTP cache (ETag/Last-Modified, no Cache-Control)
-    to a fetch carrying ``X-Tenant-Id: demo``. Ageing the file makes that cache window
-    deterministic instead of depending on how long the module server has been running.
+    Waits for the page's initial hydration to finish before retargeting a thumbnail, then
+    reloads through ``window.fetchAdminAssetBlob`` (same path as ``hydrateAssetImages``) so
+    the test does not race in-flight loaders or duplicate fetch logic.
     """
     if not _chromium_usable():
         pytest.skip("Chromium not available")
@@ -447,42 +460,41 @@ def test_legacy_admin_wrong_tenant_fetch_not_served_from_browser_cache(
         page = browser.new_page()
         fetch_log = _AssetFetchLog(page)
         page.goto(f"{base}/admin", wait_until="domcontentloaded")
-        fetch_log.wait(
-            page,
-            """assetId => {
-              const img = document.querySelector(
-                `img.asset-img[data-asset-id="${assetId}"][data-tenant-id="tenant-a"]`);
-              return !!img && !!img.src && img.src.startsWith('blob:');
-            }""",
-            arg=asset_id,
-        )
+        fetch_log.wait_all_thumbnails_settled(page)
+        prior_fetches = len(fetch_log.entries)
+
         state = page.evaluate(
             """async (assetId) => {
               const img = document.querySelector(
                 `img.asset-img[data-asset-id="${assetId}"][data-tenant-id="tenant-a"]`);
+              if (!img) return { missing: true };
+              const prior = img.src;
+              if (prior && prior.startsWith('blob:')) URL.revokeObjectURL(prior);
               img.setAttribute('data-tenant-id', 'demo');
               img.removeAttribute('src');
               img.alt = '';
-              let status = 0;
               try {
-                const res = await fetch('/api/assets/' + encodeURIComponent(assetId), {
-                  headers: { 'X-Tenant-Id': img.getAttribute('data-tenant-id') },
-                });
-                status = res.status;
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                img.src = URL.createObjectURL(await res.blob());
-              } catch (err) {
+                const url = await window.fetchAdminAssetBlob(assetId, 'demo');
+                if (img.isConnected) img.src = url;
+              } catch {
                 img.alt = '載入失敗';
               }
-              return { status, alt: img.alt || '', src: img.getAttribute('src') || '' };
+              const width = img.src ? await img.decode().then(() => img.naturalWidth, () => 0) : 0;
+              return {
+                alt: img.alt || '',
+                src: img.getAttribute('src') || '',
+                naturalWidth: width,
+              };
             }""",
             asset_id,
         )
-        detail = f"state={state} asset fetches: {fetch_log.describe()}"
-        assert state["status"] == 404, detail
+        wrong_tenant_fetches = fetch_log.entries[prior_fetches:]
+        detail = f"state={state} new fetches: {'; '.join(wrong_tenant_fetches) or '(none)'}"
+        assert not state.get("missing"), detail
         assert state["alt"] == "載入失敗", detail
-        assert not state["src"].startswith("blob:"), detail
-        assert f"asset={asset_id} tenant='demo' status=404" in fetch_log.entries, detail
+        assert not state["src"], detail
+        assert state["naturalWidth"] == 0, detail
+        assert f"asset={asset_id} tenant='demo' status=404" in wrong_tenant_fetches, detail
         browser.close()
 
 
