@@ -132,9 +132,9 @@ class PilotEconomics:
         fixed = float(setup) + float(tooling)
         qty = None if contrib <= 0 else max(int(moq), int((fixed / contrib) + 0.9999))
         curve = []
-        for q in (1, 5, 10, 20, 50, 100, moq):
-            unit = unit_variable + (fixed / max(int(q), 1))
-            curve.append({"qty": int(q), "unitCost": round(unit, 2), "unitMargin": round(float(price) - unit, 2)})
+        for q in sorted({1, 5, 10, 20, 50, 100, max(int(moq), 1)}):
+            unit = float(unit_variable) + (fixed / q)
+            curve.append({"qty": q, "unitCost": round(unit, 2), "unitMargin": round(float(price) - unit, 2)})
         return {
             "breakEvenQty": qty,
             "fixed": round(fixed, 2),
