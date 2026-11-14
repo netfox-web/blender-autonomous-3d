@@ -115,23 +115,25 @@ def run_live_pipeline(*, plat, probe, lineage, sha, real_ok) -> dict:
 
     gate = plat.release
     adv: dict = {}
+    rel_tid = "ops"
+    pid = kd["spec"]["productId"]
     ev_ok = bool(previews) and all(p.get("verify", {}).get("ok") for p in previews)
     try:
-        adv = gate.advance(kd["spec"]["productId"], target="ENGINEERING_VALID", actor="ops", entity=kd)
-        adv = gate.advance(kd["spec"]["productId"], target="EVIDENCE_VERIFIED", actor="ops", entity=kd, evidence_ok=ev_ok)
-        adv = gate.advance(kd["spec"]["productId"], target="WAITING_APPROVAL", actor="ops", entity=kd)
-        adv = gate.advance(kd["spec"]["productId"], target="APPROVED_FOR_EXPORT", actor="ops", entity=kd)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="ENGINEERING_VALID", actor="ops", entity=kd)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="EVIDENCE_VERIFIED", actor="ops", entity=kd, evidence_ok=ev_ok)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="WAITING_APPROVAL", actor="ops", entity=kd)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="APPROVED_FOR_EXPORT", actor="ops", entity=kd)
         add("release gate APPROVED_FOR_EXPORT", "REAL", adv["state"])
     except Exception as exc:
         add("release gate APPROVED_FOR_EXPORT", "PARTIAL", str(exc))
     live_cnc_blocked = False
     live_laser_blocked = False
     try:
-        gate.advance("nope", target="LIVE_CNC", actor="ops", entity=kd)
+        gate.advance("nope", tenant_id=rel_tid, target="LIVE_CNC", actor="ops", entity=kd)
     except PermissionError:
         live_cnc_blocked = True
     try:
-        gate.advance("nope2", target="LIVE_LASER", actor="ops", entity=kd)
+        gate.advance("nope2", tenant_id=rel_tid, target="LIVE_LASER", actor="ops", entity=kd)
     except PermissionError:
         live_laser_blocked = True
     add("forbidden LIVE_CNC transition", "REAL" if live_cnc_blocked else "FAIL", "blocked")
@@ -139,7 +141,7 @@ def run_live_pipeline(*, plat, probe, lineage, sha, real_ok) -> dict:
 
     kd_changed = dict(kd)
     kd_changed["engineeringHash"] = "mutated"
-    stale = gate.refresh_stale(kd["spec"]["productId"], kd_changed)
+    stale = gate.refresh_stale(pid, tenant_id=rel_tid, entity=kd_changed)
     add("approval stale on hash change", "REAL" if stale.get("stale") else "FAIL", str(stale.get("stale")))
 
     plat.providers.import_rows(plat.providers.material, [{"supplier": "LOCAL", "materialCode": "WOOD_WHITE", "thickness": 18, "price": 880, "currency": "TWD", "effectiveAt": "2026-01-01"}], source="MANUAL")

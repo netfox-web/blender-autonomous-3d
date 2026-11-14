@@ -1,4 +1,10 @@
-"""Approval audit trail, staleness, and release-candidate states. Not LIVE_CNC."""
+"""Approval audit trail, staleness, and release-candidate states. Not LIVE_CNC.
+
+Release states advance strictly one step at a time along ``RC_STATES`` (no skipping).
+``WAITING_APPROVAL`` and ``APPROVED_FOR_EXPORT`` require having reached ``EVIDENCE_VERIFIED``
+because sequential advancement enforces that path. Approval records are keyed by
+``(tenantId, entityId)`` so tenants cannot collide on the same entity id.
+"""
 
 from __future__ import annotations
 
@@ -20,7 +26,10 @@ FORBIDDEN = frozenset({"LIVE_CNC", "LIVE_LASER", "APPROVED_FOR_PRODUCTION", "APP
 class ReleaseGate:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
-        self.approvals: dict[str, dict[str, Any]] = {}
+        self.approvals: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def _key(self, tenant_id: str, entity_id: str) -> tuple[str, str]:
+        return (tenant_id, entity_id)
 
     def hashes_of(self, entity: dict[str, Any]) -> dict[str, str | None]:
         lin = entity.get("lineage") or {}
@@ -42,11 +51,13 @@ class ReleaseGate:
         decision: str,
         reason: str,
         evidence_hash: str | None = None,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         hashes = self.hashes_of(entity)
         rec = {
             "eventId": new_id(),
             "actor": actor,
+            "tenantId": tenant_id,
             "entityId": entity_id,
             "entityVersion": entity.get("spec", {}).get("revision") if isinstance(entity.get("spec"), dict) else entity.get("version") or 1,
             "engineeringHash": hashes["engineeringHash"],
@@ -70,22 +81,36 @@ class ReleaseGate:
                 return True
         return False
 
-    def advance(self, entity_id: str, *, target: str, actor: str, entity: dict[str, Any], evidence_ok: bool = False) -> dict[str, Any]:
+    def advance(
+        self,
+        entity_id: str,
+        *,
+        tenant_id: str,
+        target: str,
+        actor: str,
+        entity: dict[str, Any],
+        evidence_ok: bool = False,
+    ) -> dict[str, Any]:
         if target in FORBIDDEN or target in {"LIVE_CNC", "LIVE_LASER"}:
             raise PermissionError("LIVE machine states forbidden; liveMachineControl=false")
         if target not in RC_STATES:
             raise ValueError(target)
-        current = (self.approvals.get(entity_id) or {}).get("state") or "PROTOTYPE"
+        key = self._key(tenant_id, entity_id)
+        current = (self.approvals.get(key) or {}).get("state") or "PROTOTYPE"
         order = list(RC_STATES)
-        if order.index(target) < order.index(current):
+        cur_idx = order.index(current)
+        tgt_idx = order.index(target)
+        if tgt_idx < cur_idx:
             raise ValueError(f"cannot regress {current} -> {target}")
+        if tgt_idx > cur_idx + 1:
+            raise ValueError(f"cannot skip from {current} to {target}; advance one state at a time")
         if target == "EVIDENCE_VERIFIED" and not evidence_ok:
             raise PermissionError("evidence verifier must PASS")
-        if target == "APPROVED_FOR_EXPORT":
-            if current not in {"WAITING_APPROVAL", "EVIDENCE_VERIFIED"}:
-                raise PermissionError("export requires WAITING_APPROVAL")
+        if target == "APPROVED_FOR_EXPORT" and current != "WAITING_APPROVAL":
+            raise PermissionError("export requires WAITING_APPROVAL")
         hashes = self.hashes_of(entity)
         rec = {
+            "tenantId": tenant_id,
             "entityId": entity_id,
             "state": target,
             "actor": actor,
@@ -95,12 +120,21 @@ class ReleaseGate:
             "equalsLiveCnc": False,
             "note": "APPROVED_FOR_EXPORT is not LIVE_CNC/LASER",
         }
-        rec["audit"] = self.audit(actor=actor, entity_id=entity_id, entity=entity, decision=target, reason="release-gate", evidence_hash=hashes.get("evidenceHash"))
-        self.approvals[entity_id] = rec
+        rec["audit"] = self.audit(
+            actor=actor,
+            entity_id=entity_id,
+            entity=entity,
+            decision=target,
+            reason="release-gate",
+            evidence_hash=hashes.get("evidenceHash"),
+            tenant_id=tenant_id,
+        )
+        self.approvals[key] = rec
         return rec
 
-    def refresh_stale(self, entity_id: str, entity: dict[str, Any]) -> dict[str, Any]:
-        rec = self.approvals.get(entity_id)
+    def refresh_stale(self, entity_id: str, *, tenant_id: str, entity: dict[str, Any]) -> dict[str, Any]:
+        key = self._key(tenant_id, entity_id)
+        rec = self.approvals.get(key)
         if not rec:
             raise KeyError(entity_id)
         if self.is_stale(rec, entity):
@@ -108,6 +142,13 @@ class ReleaseGate:
             rec["stale"] = True
             rec["state"] = "PROTOTYPE"
             rec["reason"] = "upstream hash changed; previous approval void"
-            self.approvals[entity_id] = rec
-            self.audit(actor="system", entity_id=entity_id, entity=entity, decision="STALE", reason="hash-change")
+            self.approvals[key] = rec
+            self.audit(
+                actor="system",
+                entity_id=entity_id,
+                entity=entity,
+                decision="STALE",
+                reason="hash-change",
+                tenant_id=tenant_id,
+            )
         return rec

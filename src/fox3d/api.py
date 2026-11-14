@@ -431,11 +431,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/release/advance")
     def release_advance(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        _ = tenant(x_tenant_id)
+        tid = tenant(x_tenant_id)
         plat = get_platform()
         try:
             return plat.release.advance(
                 str(payload.get("entityId")),
+                tenant_id=tid,
                 target=str(payload.get("target") or "WAITING_APPROVAL"),
                 actor=str(payload.get("actor") or "human"),
                 entity=payload.get("entity") or {},
@@ -443,6 +444,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             )
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/commerce/import")
     def commerce_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
