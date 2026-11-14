@@ -50,11 +50,6 @@ extend-exclude = [".fox3d-work", "build", "dist"]
 # without a reformat, so they are not selected here.
 select = ["E9", "F401", "F821", "F822", "F823", "F841"]
 
-[tool.ruff.lint.per-file-ignores]
-# Issue #137 / parallel lane: unused imports cleaned in other PRs.
-"src/fox3d/rd.py" = ["F401"]
-"src/fox3d/rdloop.py" = ["F401"]
-
 [tool.mypy]
 python_version = "3.12"
 mypy_path = "src"
