@@ -714,7 +714,7 @@ class PilotOps:
         return resolve_traveler_token(self, token, tenant_id=tenant_id)
 
     def backup_state(self, dest, *, tenant_ids: list[str] | None = None) -> dict[str, Any]:
-        if tenant_ids is None:
+        if not tenant_ids:
             found: set[Any] = set()
             for wo in self.workorders.orders.values():
                 tenant = wo.get("tenantId")
