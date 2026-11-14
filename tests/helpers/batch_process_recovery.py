@@ -58,7 +58,7 @@ def read(path):
             if time.monotonic() >= deadline:
                 raise
             time.sleep(_READ_RETRY_INTERVAL)
-        except json.JSONDecodeError as error:
+        except json.JSONDecodeError:
             if sys.platform != 'win32':
                 raise
             if time.monotonic() >= deadline:
