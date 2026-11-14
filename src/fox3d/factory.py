@@ -266,6 +266,9 @@ class FurnitureFactory:
         return self.platform.execute_job(job)
 
     def revise_cabinet(self, product_id: str, *, tenant_id: str, **changes: Any) -> dict[str, Any]:
+        return self.revise_cabinet_changes(product_id, tenant_id, changes)
+
+    def revise_cabinet_changes(self, product_id: str, tenant_id: str, changes: dict[str, Any]) -> dict[str, Any]:
         current = self.platform.parametrics.get(product_id)
         if not current:
             raise KeyError(product_id)
