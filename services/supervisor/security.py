@@ -89,7 +89,10 @@ def verify_admin_auth(
     if not is_live and (client_host in ("127.0.0.1", "localhost", "::1")):
         return True
 
-    if not admin_key:
+    # A whitespace-only key is unset. Comparing stripped empties would accept
+    # "Authorization: Bearer " (and the same bypass in live mode).
+    normalized_key = admin_key.strip()
+    if not normalized_key:
         # In live mode, missing admin_key must fail closed
         if is_live:
             return False
@@ -102,4 +105,4 @@ def verify_admin_auth(
     if auth_header.lower().startswith("bearer "):
         token = auth_header[7:].strip()
 
-    return hmac.compare_digest(token.strip(), admin_key.strip())
+    return hmac.compare_digest(token.strip(), normalized_key)
