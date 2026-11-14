@@ -15,16 +15,45 @@ import threading
 import time
 from types import SimpleNamespace
 
+_PUBLISH_RETRY_DELAYS = (.005, .01, .025, .05, .1, .1, .2)
+_READ_RETRY_DELAYS = (.005, .01, .025, .05, .1, .1, .2)
+
+
+def _windows_io_contention(error, path):
+    if sys.platform != 'win32':
+        return False
+    code = getattr(error, 'winerror', None)
+    if code in (32, 33):
+        return True
+    # MoveFileEx / readers may surface access denied while the prior handle closes.
+    if code == 5:
+        from fox3d.recipe_3d import _delete_sharing_error
+        return _delete_sharing_error(path) in (32, 33)
+    return isinstance(error, PermissionError)
+
 
 def save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     signal=path.with_name(path.name+'.signal')
     signal.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
-    signal.replace(path)  # publish test checkpoints whole before parent kills
+    for attempt in range(len(_PUBLISH_RETRY_DELAYS) + 1):
+        try:
+            signal.replace(path)  # publish test checkpoints whole before parent kills
+            break
+        except OSError as error:
+            if attempt == len(_PUBLISH_RETRY_DELAYS) or not _windows_io_contention(error, path):
+                raise
+            time.sleep(_PUBLISH_RETRY_DELAYS[attempt])
 
 
 def read(path):
-    return json.loads(path.read_text(encoding='utf-8'))
+    for attempt in range(len(_READ_RETRY_DELAYS) + 1):
+        try:
+            return json.loads(path.read_text(encoding='utf-8'))
+        except OSError as error:
+            if attempt == len(_READ_RETRY_DELAYS) or not _windows_io_contention(error, path):
+                raise
+            time.sleep(_READ_RETRY_DELAYS[attempt])
 
 
 def digest(path):
