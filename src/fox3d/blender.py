@@ -440,8 +440,8 @@ class BlenderRuntime:
                 rc = proc.poll()
                 if progress_path.exists() and on_progress:
                     try:
-                        payload = json.loads(progress_path.read_text(encoding="utf-8"))
-                        value = float(payload.get("progress") or 0)
+                        progress_payload = json.loads(progress_path.read_text(encoding="utf-8"))
+                        value = float(progress_payload.get("progress") or 0)
                         on_progress(value)
                         if value != last_progress_val:
                             last_progress_val = value
@@ -573,7 +573,7 @@ class BlenderRuntime:
             write_png(job_dir / "beauty.png", width, height, bytes(rgb))
         write_webp_stub(job_dir / "beauty.webp")
         write_exr_stub(job_dir / "beauty.exr", seed)
-        outputs = {
+        outputs: dict[str, Any] = {
             "beauty.png": str(job_dir / "beauty.png"),
             "beauty.webp": str(job_dir / "beauty.webp"),
             "beauty.exr": str(job_dir / "beauty.exr"),

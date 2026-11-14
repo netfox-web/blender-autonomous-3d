@@ -6,7 +6,7 @@ Not live factory execution. LIVE_CNC / LIVE_LASER remain BLOCKED.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from fox3d.backup import backup_pilot, restore_pilot, restart_after_restore, verify_backup
 from fox3d.contracts import ContractService
@@ -110,7 +110,8 @@ class PilotOps:
             if svc is None:
                 continue
             svc.journal = self.journal
-            svc.outbox = self.outbox
+            # StationRegistry and ContractService gain outbox at runtime; they do not declare it.
+            setattr(svc, "outbox", self.outbox)
         self._reconcile_startup()
 
     def _business_committed(self, tx: dict[str, Any]) -> bool:
@@ -713,7 +714,15 @@ class PilotOps:
         return resolve_traveler_token(self, token, tenant_id=tenant_id)
 
     def backup_state(self, dest, *, tenant_ids: list[str] | None = None) -> dict[str, Any]:
-        tenants = tenant_ids or sorted({wo.get("tenantId") for wo in self.workorders.orders.values() if wo.get("tenantId")})
+        if not tenant_ids:
+            found: set[Any] = set()
+            for wo in self.workorders.orders.values():
+                tenant = wo.get("tenantId")
+                if tenant:
+                    found.add(tenant)
+            tenants = sorted(cast(set[str], found))
+        else:
+            tenants = tenant_ids
         return backup_pilot(self.platform.root, dest, tenant_ids=list(tenants))
 
     def restore_state(self, backup_dir, dest_root, *, tenant_id: str | None = None) -> dict[str, Any]:
