@@ -11,6 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from fox3d.acceptance_gate import CANONICAL_REAL_FILES, read_canonical_truth_set
+from fox3d.blender import HostProbe
 from fox3d.evidence import evidence_bundle, prepare_evidence_lineage, verify_bundle
 from fox3d.ids import sha256_bytes
 
@@ -95,6 +96,83 @@ def _seed_old(docs: Path) -> None:
 
 def _all_keep(docs: Path) -> bool:
     return all((docs / name).read_text(encoding="utf-8") == "KEEP-OLD" for name in CANON)
+
+
+def _real_probe() -> HostProbe:
+    return HostProbe(
+        blender=True,
+        blenderBinary="blender",
+        blenderVersion="5.2.1",
+        blenderVersionRaw="5.2.1",
+        cycles=True,
+        cuda=True,
+        optix=True,
+        gpuName="NVIDIA GeForce RTX 5080",
+        realBlender=True,
+        realOptix=True,
+        realGPU=True,
+        realCycles=True,
+    )
+
+
+def _patch_execute_job_verified_fixture(plat) -> None:
+    """Mock Blender jobs still produce artifacts; mark them REAL for verify_bundle."""
+    original = plat.execute_job
+
+    def patched(job, *args, **kwargs):
+        job = original(job, *args, **kwargs)
+        files = (job.get("output") or {}).get("files") or {}
+        asset = job.get("outputAsset") or files.get("beauty.png")
+        if asset:
+            try:
+                artifact_path = plat.dam.get_unchecked(str(asset)).path
+            except Exception:
+                artifact_path = None
+        else:
+            artifact_path = None
+        if artifact_path:
+            data = Path(artifact_path).read_bytes()
+            job["outputHash"] = sha256_bytes(data)
+            job["outputSize"] = len(data)
+        job["usedMock"] = False
+        job["realBlender"] = True
+        job["status"] = "completed"
+        return job
+
+    plat.execute_job = patched  # type: ignore[method-assign]
+
+
+def test_run_live_pipeline_preview_product_ids_and_kd_approved(platform):
+    """run_live_pipeline wires preview productId → evidence bundle → release gate."""
+    mod = _load_runner()
+    lineage = prepare_evidence_lineage(head_sha=SHA, porcelain="", allow_dirty=False)
+    platform.probe = _real_probe()
+    _patch_execute_job_verified_fixture(platform)
+    data = mod.run_live_pipeline(
+        plat=platform,
+        probe=platform.probe,
+        lineage=lineage,
+        sha=SHA,
+        real_ok=True,
+    )
+    previews = data["previews"]
+    assert len(previews) == 5
+    by_pid = {p["productId"]: p for p in previews if p.get("productId")}
+    for family, rec, _mode, _eng in data["families"]:
+        pid = (rec.get("spec") or {}).get("productId")
+        if not pid:
+            continue
+        assert by_pid[pid]["productId"] == pid
+        assert by_pid[pid]["family"] == family
+        assert by_pid[pid]["verify"]["ok"] is True
+        assert by_pid[pid]["bundle"]["evidenceHash"]
+
+    kd_rec = data["families"][0][1]
+    kd_pid = kd_rec["spec"]["productId"]
+    kd_preview = by_pid[kd_pid]
+    assert data["adv"]["state"] == "APPROVED_FOR_EXPORT"
+    assert data["adv"]["entityId"] == kd_pid
+    assert data["adv"]["hashes"]["evidenceHash"] == kd_preview["bundle"]["evidenceHash"]
 
 
 def test_runner_success_exit_0(tmp_path):
