@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from fox3d.acceptance_gate import CANONICAL_REAL_FILES, read_canonical_truth_set
 from fox3d.evidence import evidence_bundle, prepare_evidence_lineage, verify_bundle
 from fox3d.ids import sha256_bytes
@@ -190,6 +192,54 @@ def test_runner_live_machine_not_blocked_nonzero(tmp_path):
     assert _all_keep(docs)
     assert mod.main(["--docs-root", str(docs)], hooks={"inspect": _inspect(True), "pipeline": _pipeline(tmp_path, previews, live_laser=False)}) != 0
     assert _all_keep(docs)
+
+
+def test_gate_entity_for_release_binds_before_evidence_verified(platform, tmp_path):
+    mod = _load_runner()
+    rec = platform.kd.build_sku(tenant_id="ops", kind="OPEN_SHELF")
+    pid = rec["spec"]["productId"]
+    art = tmp_path / "beauty.png"
+    art.write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 64)
+    job = {
+        "jobId": "gate-j",
+        "usedMock": False,
+        "realBlender": True,
+        "status": "completed",
+        "outputHash": sha256_bytes(art.read_bytes()),
+        "outputSize": art.stat().st_size,
+        "blenderVersion": "5.2.1",
+    }
+    bun = evidence_bundle(
+        commit_sha=SHA,
+        job=job,
+        artifact_path=art,
+        engineering_hash=rec.get("engineeringHash"),
+        bom_hash=(rec.get("bom") or {}).get("bomHash"),
+    )
+    ver = verify_bundle(bun, require_real=True, expected_commit_sha=SHA)
+    assert ver["ok"] is True
+    previews = [{"family": "KD_FURNITURE", "productId": pid, "verify": ver, "bundle": bun}]
+    bound = mod.gate_entity_for_release(rec, previews)
+    assert bound["evidenceHash"] == bun["evidenceHash"]
+    assert bound["lineage"]["evidenceHash"] == bun["evidenceHash"]
+    gate = platform.release
+    tid = "ops"
+    gate.advance(pid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=bound)
+    gate.advance(pid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=bound, evidence_ok=True)
+    gate.advance(pid, tenant_id=tid, target="WAITING_APPROVAL", actor="ops", entity=bound)
+    done = gate.advance(pid, tenant_id=tid, target="APPROVED_FOR_EXPORT", actor="ops", entity=bound)
+    assert done["state"] == "APPROVED_FOR_EXPORT"
+
+
+def test_gate_entity_for_release_unbound_fails_at_evidence_verified(platform):
+    mod = _load_runner()
+    rec = platform.kd.build_sku(tenant_id="ops", kind="OPEN_SHELF")
+    pid = rec["spec"]["productId"]
+    unbound = mod.gate_entity_for_release(rec, [])
+    gate = platform.release
+    gate.advance(pid, tenant_id="ops", target="ENGINEERING_VALID", actor="ops", entity=unbound)
+    with pytest.raises(PermissionError, match="evidenceHash required"):
+        gate.advance(pid, tenant_id="ops", target="EVIDENCE_VERIFIED", actor="ops", entity=unbound, evidence_ok=True)
 
 
 def test_runner_atomic_publish_failure_rolls_back(tmp_path):

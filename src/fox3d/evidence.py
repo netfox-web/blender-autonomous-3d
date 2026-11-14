@@ -60,6 +60,24 @@ def evidence_bundle(
     return rec
 
 
+def bind_entity_evidence_hash(
+    entity: dict[str, Any],
+    *,
+    evidence_hash: str | None = None,
+    bundle: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Copy entity with evidenceHash set; must be applied before ENGINEERING_VALID."""
+    ev_hash = evidence_hash or (bundle or {}).get("evidenceHash")
+    if not ev_hash:
+        raise ValueError("verified evidence hash required")
+    out = dict(entity)
+    lin = dict(out.get("lineage") or {})
+    lin["evidenceHash"] = ev_hash
+    out["lineage"] = lin
+    out["evidenceHash"] = ev_hash
+    return out
+
+
 def working_tree_clean(porcelain: str) -> bool:
     return not str(porcelain or "").strip()
 
