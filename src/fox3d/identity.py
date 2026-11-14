@@ -80,10 +80,19 @@ class OperatorShiftService:
         return rec
 
     def set_enabled(self, operator_id: str, *, tenant_id: str, enabled: bool) -> dict[str, Any]:
-        rec = self.get_operator(operator_id, tenant_id=tenant_id)
-        rec["enabled"] = bool(enabled)
-        self.persist()
-        return rec
+        with self._lock:
+            rec = self.get_operator(operator_id, tenant_id=tenant_id)
+            rec["enabled"] = bool(enabled)
+            emit(
+                self,
+                "identity.operator_enabled",
+                tenant_id=tenant_id,
+                aggregate_type="Operator",
+                aggregate_id=operator_id,
+                actor=operator_id,
+                payload={"enabled": rec["enabled"]},
+            )
+            return rec
 
     def get_operator(self, operator_id: str, *, tenant_id: str) -> dict[str, Any]:
         rec = self.operators[operator_id]
