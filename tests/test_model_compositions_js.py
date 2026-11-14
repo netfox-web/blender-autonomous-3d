@@ -1,12 +1,29 @@
-"""Static guards on model-compositions.js — API strings must not bypass esc()."""
+"""Static guards: model-compositions.js / print-workspace.js keep API strings out of HTML parsing (#502)."""
 from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 
-def test_model_compositions_escapes_asset_ids_in_artwork_options() -> None:
-    js = (
-        Path(__file__).resolve().parents[1] / "src" / "fox3d" / "static" / "model-compositions.js"
-    ).read_text(encoding="utf-8")
+STATIC = Path(__file__).resolve().parents[1] / "src" / "fox3d" / "static"
+
+
+@pytest.mark.parametrize("name", ["model-compositions.js", "print-workspace.js"])
+def test_no_html_string_sinks(name: str) -> None:
+    js = (STATIC / name).read_text(encoding="utf-8")
+    for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write"):
+        assert sink not in js, f"{name} uses {sink}"
+
+
+def test_model_compositions_artwork_options_are_dom_nodes() -> None:
+    js = (STATIC / "model-compositions.js").read_text(encoding="utf-8")
     assert 'value="${a.id}"' not in js
-    assert 'value="${esc(a.id)}"' in js
+    assert "new Option(" in js
+    assert "option(a.name??'',a.id)" in js
+
+
+def test_preview_urls_encode_api_ids() -> None:
+    pw = (STATIC / "print-workspace.js").read_text(encoding="utf-8")
+    assert "encodeURIComponent(s.generationId)" in pw
+    mc = (STATIC / "model-compositions.js").read_text(encoding="utf-8")
+    assert "encodeURIComponent(assetId)" in mc

@@ -15,7 +15,17 @@
   let renderTask = null;
   let sourceMoreBtn = null;
 
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Build DOM nodes from API data; API values never go through HTML string parsing.
+  const h = (tag, props = {}, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === 'dataset') Object.assign(e.dataset, v);
+      else e[k] = v;
+    }
+    e.append(...kids);
+    return e;
+  };
+  const option = (text, value, selected = false) => new Option(String(text), String(value), selected, selected);
   const message = (s, error = false) => {
     $('notice').textContent = s;
     $('notice').className = error ? 'error' : '';
@@ -90,23 +100,55 @@
     }
   }
 
-  const assetOptions = chosen =>
-    '<option value="">請選擇已匯入原稿</option>' +
-    (chosen && assets.find(a => a.id === chosen)?.usage?.canUseForPrint === false
-      ? `<option value="${esc(chosen)}" selected disabled>素材用途已停用，請重新選擇</option>`
-      : '') +
-    assets
-      .filter(a => a.usage?.canUseForPrint !== false)
-      .map(a => `<option value="${esc(a.id)}" ${a.id === chosen ? 'selected' : ''}>${esc(a.name)} · ${a.info.pages.length} 頁</option>`)
-      .join('');
+  function assetOptions(chosen) {
+    const opts = [option('請選擇已匯入原稿', '')];
+    if (chosen && assets.find(a => a.id === chosen)?.usage?.canUseForPrint === false) {
+      const stale = option('素材用途已停用，請重新選擇', chosen, true);
+      stale.disabled = true;
+      opts.push(stale);
+    }
+    for (const a of assets.filter(a => a.usage?.canUseForPrint !== false)) {
+      opts.push(option(`${a.name} · ${a.info.pages.length} 頁`, a.id, a.id === chosen));
+    }
+    return opts;
+  }
+
+  function panelRow(p, i) {
+    const field = (text, control) => h('label', {}, text, control);
+    const input = props => h('input', props);
+    const rotation = h(
+      'select',
+      { dataset: { key: 'rotation' } },
+      ...[0, 90, 180, 270].map(n => option(n, n, n === (p.rotation || 0)))
+    );
+    const fields = h(
+      'div',
+      { className: 'fields' },
+      field('印刷面名稱', input({ dataset: { key: 'label' }, value: String(p.label || ['上門', '中門', '下門'][i] || ''), required: true })),
+      field('原稿', h('select', { dataset: { key: 'assetId' }, required: true }, ...assetOptions(p.assetId))),
+      field('原稿頁碼（由 1 開始）', input({ dataset: { key: 'page' }, type: 'number', min: '1', value: String((p.page || 0) + 1), required: true })),
+      field('順時針旋轉', rotation),
+      field('數量', input({ dataset: { key: 'quantity' }, type: 'number', min: '1', max: '5000', value: String(p.quantity || 1), required: true }))
+    );
+    const size = (key, text, min, max, value) =>
+      field(text, input({ dataset: { key }, type: 'number', min, max, step: 'any', value: String(value) }));
+    const imageSize = h(
+      'div',
+      { className: 'image-size fields' },
+      size('imageWidthMm', '旋轉後完整版面寬 mm', '1.01', '3000', p.imageWidthMm || ''),
+      size('imageHeightMm', '旋轉後完整版面高 mm', '1.01', '3000', p.imageHeightMm || ''),
+      size('imageBleedMm', '各邊出血 mm', '0', '20', p.imageBleedMm || 0)
+    );
+    return h(
+      'div',
+      { className: 'panel' },
+      h('img', { alt: `第 ${i + 1} 面原稿預覽` }),
+      h('div', {}, fields, imageSize, h('small', { className: 'asset-info' }))
+    );
+  }
 
   function panelRows(rows) {
-    $('panels').innerHTML = rows
-      .map(
-        (p, i) =>
-          `<div class="panel"><img alt="第 ${i + 1} 面原稿預覽"><div><div class="fields"><label>印刷面名稱<input data-key="label" value="${esc(p.label || ['上門', '中門', '下門'][i])}" required></label><label>原稿<select data-key="assetId" required>${assetOptions(p.assetId)}</select></label><label>原稿頁碼（由 1 開始）<input data-key="page" type="number" min="1" value="${(p.page || 0) + 1}" required></label><label>順時針旋轉<select data-key="rotation">${[0, 90, 180, 270].map(n => `<option ${n === (p.rotation || 0) ? 'selected' : ''}>${n}</option>`).join('')}</select></label><label>數量<input data-key="quantity" type="number" min="1" max="5000" value="${p.quantity || 1}" required></label></div><div class="image-size fields"><label>旋轉後完整版面寬 mm<input data-key="imageWidthMm" type="number" min="1.01" max="3000" step="any" value="${p.imageWidthMm || ''}"></label><label>旋轉後完整版面高 mm<input data-key="imageHeightMm" type="number" min="1.01" max="3000" step="any" value="${p.imageHeightMm || ''}"></label><label>各邊出血 mm<input data-key="imageBleedMm" type="number" min="0" max="20" step="any" value="${p.imageBleedMm || 0}"></label></div><small class="asset-info"></small></div></div>`
-      )
-      .join('');
+    $('panels').replaceChildren(...rows.map(panelRow));
     document.querySelectorAll('.panel').forEach(row => {
       updatePanel(row);
       row.addEventListener('change', () => {
@@ -128,7 +170,7 @@
     page.max = a?.info.pages.length || 1;
     const im = row.querySelector('img');
     if (a) {
-      im.src = url('/assets/' + a.id + '/preview') + '&page=' + (Number(page.value) - 1);
+      im.src = url('/assets/' + encodeURIComponent(a.id) + '/preview') + '&page=' + (Number(page.value) - 1);
       im.hidden = false;
     } else {
       im.removeAttribute('src');
@@ -189,11 +231,18 @@
   async function loadJobs() {
     const js = (await api('/jobs')).items;
     $('job-count').textContent = js.length ? `${js.length} 個商品` : '尚無商品';
-    $('jobs').innerHTML =
-      js.map(
-        j =>
-          `<button type="button" data-id="${esc(j.id)}">${esc(j.draft.sku)}<small>${esc(j.draft.name)} · 版本 ${j.revision}</small></button>`
-      ).join('') || '<p>尚無商品，先匯入原稿再建立。</p>';
+    $('jobs').replaceChildren(
+      ...(js.length
+        ? js.map(j =>
+            h(
+              'button',
+              { type: 'button', dataset: { id: String(j.id) } },
+              String(j.draft.sku ?? ''),
+              h('small', { textContent: `${j.draft.name ?? ''} · 版本 ${j.revision}` })
+            )
+          )
+        : [h('p', { textContent: '尚無商品，先匯入原稿再建立。' })])
+    );
     $('jobs').querySelectorAll('button[data-id]').forEach(b => (b.onclick = () => action(() => select(b.dataset.id))));
   }
 
@@ -206,18 +255,25 @@
   }
 
   function renderSheet(plan) {
-    $('sheet').innerHTML = plan.panels
-      .map(
-        p =>
-          `<div class="dimension"><strong>${esc(p.label)}</strong> · 原稿第 ${p.page + 1} 頁 · 旋轉 ${p.rotation}°<br>完整版面 ${p.widthMm.toFixed(2)} × ${p.heightMm.toFixed(2)} mm ／裁切後 ${p.trimWidthMm.toFixed(2)} × ${p.trimHeightMm.toFixed(2)} mm · ${p.quantity} 件</div>`
+    const mm = v => Number(v).toFixed(2);
+    $('sheet').replaceChildren(
+      ...plan.panels.map(p =>
+        h(
+          'div',
+          { className: 'dimension' },
+          h('strong', { textContent: String(p.label ?? '') }),
+          ` · 原稿第 ${Number(p.page) + 1} 頁 · 旋轉 ${p.rotation}°`,
+          h('br'),
+          `完整版面 ${mm(p.widthMm)} × ${mm(p.heightMm)} mm ／裁切後 ${mm(p.trimWidthMm)} × ${mm(p.trimHeightMm)} mm · ${p.quantity} 件`
+        )
       )
-      .join('');
+    );
   }
 
   function renderWarnings(plan) {
-    const warnings = (plan?.warnings || []).map(w => esc(w)).join('<br>');
-    $('warnings').innerHTML = warnings;
-    $('warnings').hidden = !warnings;
+    const warnings = (plan?.warnings || []).map(w => String(w ?? ''));
+    $('warnings').replaceChildren(...warnings.flatMap((w, i) => (i ? [h('br'), w] : [w])));
+    $('warnings').hidden = !warnings.join('');
   }
 
   function setProofLinks(enabled) {
@@ -286,11 +342,15 @@
       $('preview-state').textContent = label + (s.error ? ' · ' + s.error : '') + (s.stale ? ' · 預覽為舊版，請重新生成' : '');
       $('preview-stale').hidden = !s.stale;
       if (s.generated) {
-        const prefix = '/jobs/' + id + '/preview/' + s.generationId + '/';
-        $('preview-images').innerHTML =
-          `<img alt="真實 Blender 正面套圖預覽" src="${url(prefix + 'front-closed.png')}">` +
-          `<a href="${url(prefix + 'beauty.png')}" target="_blank" rel="noopener">透視效果圖</a> · ` +
-          `<a href="${url(prefix + 'model.glb')}">下載 GLB</a> · <a href="${url(prefix + 'model.blend')}">下載 Blender 檔</a>`;
+        const prefix = '/jobs/' + encodeURIComponent(id) + '/preview/' + encodeURIComponent(s.generationId) + '/';
+        $('preview-images').replaceChildren(
+          h('img', { alt: '真實 Blender 正面套圖預覽', src: url(prefix + 'front-closed.png') }),
+          h('a', { href: url(prefix + 'beauty.png'), target: '_blank', rel: 'noopener', textContent: '透視效果圖' }),
+          ' · ',
+          h('a', { href: url(prefix + 'model.glb'), textContent: '下載 GLB' }),
+          ' · ',
+          h('a', { href: url(prefix + 'model.blend'), textContent: '下載 Blender 檔' })
+        );
         $('preview-lineage').textContent = s.generationId ? `世代 ${s.generationId}` : '';
       }
       buttons();
