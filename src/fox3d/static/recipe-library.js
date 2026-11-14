@@ -171,11 +171,19 @@ function render3dStage(status, plan) {
   $('threed-stage').innerHTML=`<div class="job-status" role="status"><strong>${esc(labels[status.state]||status.state)}</strong>${running?'<p>可以切換商品或關閉頁面；工作台服務需保持執行。</p><progress aria-label="生成進行中"></progress><button id="cancel-preview" class="secondary" type="button">取消這次生成</button>':''}${status.error?`<p class="form-error">${esc(status.error)}</p>`:''}</div>${status.stale?'<p class="stale-banner">規格已變更：下方渲染圖與下載檔是上一版，請重新生成以更新。</p>':''}<div class="studio-grid"><section><h4>互動結構預覽 · 目前設定</h4><div id="structure-view"></div></section><section><h4>Blender 光影成圖${status.stale?' · 上一版':''}</h4>${status.generated?`<a href="${base}/render${query}" target="_blank" rel="noopener"><img class="preview-img" src="${base}/render${query}" alt="${esc(selected.draft.name)} Blender 渲染圖"></a><p>來源版本 ${esc(status.sourceRevision)} · ${esc(status.renderInfo.device||'Cycles')} · 800 × 800</p><div class="download-links">${[['blend','Blender 專案'],['glb','3D 模型'],['png','渲染圖片']].map(([fmt,label])=>`<a class="download-btn active" href="${base}/download/${fmt}${query}" download>${label}（.${fmt}） ↓</a>`).join('')}</div>`:'<div class="empty-threed"><h3>準備好了就按「使用以上設定生成預覽」</h3><p>完成後可下載圖片、3D 模型與 Blender 專案。</p></div>'}</section></div>`;
   if(plan.spec) disposeViewer=window.mountRecipeViewer($('structure-view'),plan.spec);
   else $('structure-view').textContent='請先補齊上方提示的規格。';
-  if(running) $('cancel-preview').onclick=async()=>{
-    $('cancel-preview').disabled=true;
-    try {await json(`/products/${urlSku(sku)}/3d/cancel`,{method:'POST',body:JSON.stringify({taskId:status.taskId})});message('已送出取消要求，正在停止 Blender。');}
-    catch(err){message(err.message,true); $('cancel-preview').disabled=false;}
-  };
+  if(running) {
+    const cancelBtn = $('cancel-preview'), boundSku = sku, boundTaskId = status.taskId;
+    cancelBtn.onclick = async () => {
+      cancelBtn.disabled = true;
+      try {
+        await json(`/products/${urlSku(boundSku)}/3d/cancel`, {method: 'POST', body: JSON.stringify({taskId: boundTaskId})});
+        message('已送出取消要求，正在停止 Blender。');
+      } catch (err) {
+        message(err.message, true);
+        if (selected?.draft.sku === boundSku && cancelBtn.isConnected) cancelBtn.disabled = false;
+      }
+    };
+  }
   const lines=status.bom?.lines||[];
   $('bom-container').innerHTML=lines.length?`<h3>預覽板件表（非裁切單）${status.stale?' · 上一版':''}</h3><div class="bom-table-wrap"><table class="bom-table"><thead><tr><th>板件</th><th>長 mm</th><th>寬 mm</th><th>厚 mm</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.partName)}</td><td>${Number(l.lengthMm).toFixed(1)}</td><td>${Number(l.widthMm).toFixed(1)}</td><td>${Number(l.thicknessMm).toFixed(1)}</td></tr>`).join('')}</tbody></table></div>`:'';
 }
