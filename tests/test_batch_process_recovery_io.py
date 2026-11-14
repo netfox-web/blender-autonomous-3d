@@ -8,7 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tests/helpers'))
 import batch_process_recovery
-from batch_process_recovery import read
+from batch_process_recovery import read, save
 
 
 @pytest.fixture
@@ -59,6 +59,35 @@ def test_read_raises_after_retry_budget_exhausted(tmp_path, win32, monkeypatch):
     monkeypatch.setattr(Path, 'read_text', read_text)
     with pytest.raises(PermissionError):
         read(path)
+
+
+def test_save_retries_transient_permission_error_then_succeeds(tmp_path, win32, monkeypatch):
+    target = tmp_path / 'checkpoint.json'
+    calls = {'n': 0}
+    original_replace = Path.replace
+
+    def replace(self, other):
+        calls['n'] += 1
+        if calls['n'] < 3:
+            raise PermissionError(13, 'Permission denied')
+        return original_replace(self, other)
+
+    monkeypatch.setattr(Path, 'replace', replace)
+    save(target, {'ok': True})
+    assert target.read_text(encoding='utf-8') == json.dumps({'ok': True}, ensure_ascii=False, indent=2)
+    assert calls['n'] == 3
+
+
+def test_save_raises_after_retry_budget_exhausted(tmp_path, win32, monkeypatch):
+    target = tmp_path / 'checkpoint.json'
+    monkeypatch.setattr(batch_process_recovery, '_PUBLISH_RETRY_SECONDS', 0.0)
+
+    def replace(self, other):
+        raise PermissionError(13, 'Permission denied')
+
+    monkeypatch.setattr(Path, 'replace', replace)
+    with pytest.raises(PermissionError):
+        save(target, {'ok': True})
 
 
 def test_read_does_not_retry_json_error_off_windows(tmp_path, monkeypatch):
