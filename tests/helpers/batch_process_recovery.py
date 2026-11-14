@@ -16,7 +16,8 @@ import time
 from types import SimpleNamespace
 
 _PUBLISH_RETRY_DELAYS = (.005, .01, .025, .05, .1, .1, .2)
-_READ_RETRY_DELAYS = (.005, .01, .025, .05, .1, .1, .2)
+_READ_RETRY_INTERVAL = 0.02
+_READ_RETRY_SECONDS = 2.0
 
 
 def _windows_io_contention(error, path):
@@ -47,13 +48,22 @@ def save(path, value):
 
 
 def read(path):
-    for attempt in range(len(_READ_RETRY_DELAYS) + 1):
+    deadline = time.monotonic() + _READ_RETRY_SECONDS
+    while True:
         try:
             return json.loads(path.read_text(encoding='utf-8'))
         except OSError as error:
-            if attempt == len(_READ_RETRY_DELAYS) or not _windows_io_contention(error, path):
+            if not _windows_io_contention(error, path):
                 raise
-            time.sleep(_READ_RETRY_DELAYS[attempt])
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_READ_RETRY_INTERVAL)
+        except json.JSONDecodeError as error:
+            if sys.platform != 'win32':
+                raise
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_READ_RETRY_INTERVAL)
 
 
 def digest(path):
