@@ -20,8 +20,35 @@ def _now() -> str:
     return utcnow().isoformat()
 
 
+# Required names per import schema. List/object values are rejected before any write:
+# set membership cannot hash them and used to raise TypeError mid-batch.
+_REQUIRED_FIELDS: dict[str, tuple[str, ...]] = {
+    SCHEMA_RECEIPT: ("material", "quantity"),
+    SCHEMA_SUPPLIER: ("supplierId",),
+    SCHEMA_CARRIER: ("carrier", "charge"),
+    SCHEMA_ADJUST: ("lotId", "quantity", "reason"),
+}
+
+
+def _blank(value: Any) -> bool:
+    # Equality, not set membership. A list or object is unhashable and would raise TypeError.
+    return value is None or value == ""
+
+
 def _require(row: dict[str, Any], fields: tuple[str, ...]) -> list[str]:
-    return [f for f in fields if row.get(f) in {None, ""}]
+    return [field for field in fields if _blank(row.get(field))]
+
+
+def _reject_container_required(schema: str, rows: list[Any]) -> None:
+    fields = _REQUIRED_FIELDS.get(schema)
+    if not fields:
+        return
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            continue
+        for field in fields:
+            if isinstance(row.get(field), (list, dict)):
+                raise PermissionError(f"rows[{index}] {field} 格式錯誤")
 
 
 class ContractService:
@@ -52,6 +79,8 @@ class ContractService:
                 raise PermissionError("tenant isolation: import")
             return existing
         rows = list(payload.get("rows") or [])
+        # Type errors abort the whole bundle before the first receipt, quote, or adjustment.
+        _reject_container_required(schema, rows)
         accepted: list[dict[str, Any]] = []
         rejected: list[dict[str, Any]] = []
         if schema == SCHEMA_RECEIPT:
