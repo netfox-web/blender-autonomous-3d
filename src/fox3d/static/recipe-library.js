@@ -35,7 +35,7 @@ window.addEventListener('beforeunload', event => { if (dirty) { event.preventDef
 
 function imageUrl(item) {
   const sku = urlSku(item.draft.sku);
-  if (item.uploads.length) return `${API}/products/${sku}/images/${item.uploads[0].digest}?workspace=${encodeURIComponent(workspace)}`;
+  if (item.uploads.length) return `${API}/products/${sku}/images/${encodeURIComponent(item.uploads[0].digest)}?workspace=${encodeURIComponent(workspace)}`;
   return item.previewSourceId ? `${API}/sources/${sku}/${encodeURIComponent(item.previewSourceId)}` : '';
 }
 function imageMarkup(item, className) {
@@ -58,9 +58,9 @@ async function load(preferredSku) {
   const data = await json();
   items = data.items; families = data.families; fields = data.fields;
   const previousFilter = $('family-filter').value;
-  $('family-filter').innerHTML = '<option value="">所有結構配方</option>' + Object.entries(families).map(([key,value]) => `<option value="${key}">${esc(value.name)}</option>`).join('');
+  $('family-filter').replaceChildren(new Option('所有結構配方', ''), ...Object.entries(families).map(([key,value]) => new Option(value.name, key)));
   $('family-filter').value = previousFilter;
-  $('new-family').innerHTML = Object.entries(families).map(([key,value]) => `<option value="${key}">${esc(value.name)}</option>`).join('');
+  $('new-family').replaceChildren(...Object.entries(families).map(([key,value]) => new Option(value.name, key)));
   selected = items.find(i => i.draft.sku === (preferredSku || selected?.draft.sku)) || items[0] || null;
   dirty = false; renderList(); renderDetail();
 }
@@ -68,11 +68,11 @@ function fieldMarkup(key) {
   const definition = fields[key], entry = selected.draft.values[key] || {value:null,evidence:''};
   const id = `field-${key}`, value = entry.value;
   let input;
-  if (definition.unit === 'boolean') input = `<select id="${id}" data-field="${key}"><option value="">尚未提供</option><option value="true" ${value === true ? 'selected' : ''}>是</option><option value="false" ${value === false ? 'selected' : ''}>否</option></select>`;
-  else if (definition.unit === 'mm' || definition.unit === 'count') input = `<input id="${id}" data-field="${key}" type="number" step="${definition.unit === 'count' ? '1' : 'any'}" min="${key === 'doorCount' ? '0' : definition.unit === 'count' ? '1' : '0.000001'}" value="${esc(value)}" placeholder="尚未提供">`;
-  else input = `<input id="${id}" data-field="${key}" type="text" maxlength="4000" value="${esc(value)}" placeholder="尚未提供">`;
+  if (definition.unit === 'boolean') input = `<select id="${esc(id)}" data-field="${esc(key)}"><option value="">尚未提供</option><option value="true" ${value === true ? 'selected' : ''}>是</option><option value="false" ${value === false ? 'selected' : ''}>否</option></select>`;
+  else if (definition.unit === 'mm' || definition.unit === 'count') input = `<input id="${esc(id)}" data-field="${esc(key)}" type="number" step="${definition.unit === 'count' ? '1' : 'any'}" min="${key === 'doorCount' ? '0' : definition.unit === 'count' ? '1' : '0.000001'}" value="${esc(value)}" placeholder="尚未提供">`;
+  else input = `<input id="${esc(id)}" data-field="${esc(key)}" type="text" maxlength="4000" value="${esc(value)}" placeholder="尚未提供">`;
   const modified = selected.validation.changedFields.includes(key);
-  return `<div class="field"><label for="${id}" class="field-title"><span class="field-label">${esc(definition.label)}</span><span class="field-unit">${definition.unit === 'mm' ? 'mm' : definition.unit === 'count' ? '個' : ''}</span></label>${input}<details><summary class="${modified ? 'changed' : ''}">${modified ? '草稿修改 · ' : ''}${entry.evidence ? '查看／編輯資料依據' : '補充資料依據'}</summary><label class="sr-only" for="evidence-${key}">${esc(definition.label)}的資料依據</label><input id="evidence-${key}" data-evidence="${key}" value="${esc(entry.evidence)}" placeholder="填寫圖面、規格書或量測依據" maxlength="2000"></details></div>`;
+  return `<div class="field"><label for="${esc(id)}" class="field-title"><span class="field-label">${esc(definition.label)}</span><span class="field-unit">${definition.unit === 'mm' ? 'mm' : definition.unit === 'count' ? '個' : ''}</span></label>${input}<details><summary class="${modified ? 'changed' : ''}">${modified ? '草稿修改 · ' : ''}${entry.evidence ? '查看／編輯資料依據' : '補充資料依據'}</summary><label class="sr-only" for="evidence-${esc(key)}">${esc(definition.label)}的資料依據</label><input id="evidence-${esc(key)}" data-evidence="${esc(key)}" value="${esc(entry.evidence)}" placeholder="填寫圖面、規格書或量測依據" maxlength="2000"></details></div>`;
 }
 function validationMarkup(v, expanded = false) {
   const labels = keys => keys.map(k => fields[k]?.label || k).join('、');
@@ -82,11 +82,12 @@ function renderDetail() {
   if (!selected) { $('detail').innerHTML = '<div class="empty"><h2>尚無商品</h2><p>點擊「新增商品」建立第一份草稿。</p></div>'; return; }
   const d = selected.draft, pending = families[d.family].missing;
   const extras = Object.keys(d.values).filter(k => !core.includes(k) && !pending.includes(k));
-  $('detail').innerHTML = `<div class="detail-header"><div class="detail-top">${imageMarkup(selected,'hero-image')}<div class="product-identity"><div class="sku-line">${esc(d.sku)} · ${esc(families[d.family].name)}</div><h2>${esc(d.name)}</h2><div class="badges"><span class="badge green">${selected.status === 'DRAFT' ? '草稿 v' + selected.revision : '供應商參考'}</span><span class="badge amber">待補 ${selected.validation.missingFields.length} 項</span><span class="badge neutral" id="badge-3d">3D 模型狀態查詢中…</span></div></div></div></div>
+  $('detail').innerHTML = `<div class="detail-header"><div class="detail-top">${imageMarkup(selected,'hero-image')}<div class="product-identity"><div class="sku-line">${esc(d.sku)} · ${esc(families[d.family].name)}</div><h2>${esc(d.name)}</h2><div class="badges"><span class="badge green" id="revision-badge"></span><span class="badge amber">待補 ${selected.validation.missingFields.length} 項</span><span class="badge neutral" id="badge-3d">3D 模型狀態查詢中…</span></div></div></div></div>
   <div class="tabs" role="tablist" aria-label="商品資訊"><button class="tab" id="specs-tab" role="tab" aria-controls="specs-panel">規格與缺漏</button><button class="tab" id="sources-tab" role="tab" aria-controls="sources-panel">圖片與來源</button><button class="tab" id="threed-tab" role="tab" aria-controls="threed-panel">3D 預覽與下載</button></div>
   <div id="specs-panel" role="tabpanel" aria-labelledby="specs-tab"><form id="edit-form"><div class="panel"><div id="validation-result">${validationMarkup(selected.validation)}</div><div class="section-title"><h3>基本資料</h3><span class="muted">尺寸單位：毫米</span></div><div class="form-grid"><label>商品名稱<input id="edit-name" value="${esc(d.name)}" required maxlength="240"></label><label>商品來源網址<input id="edit-url" type="url" value="${esc(d.pageUrl)}" placeholder="https://…"></label></div><div class="form-grid three extra-section">${['widthMm','depthMm','heightMm'].map(fieldMarkup).join('')}</div><div class="form-grid extra-section">${core.filter(k => !['widthMm','depthMm','heightMm'].includes(k)).map(fieldMarkup).join('')}</div><div class="gap-section"><div class="section-title"><h3>工程與機構資料</h3><span>依商品圖面逐項補齊</span></div><div class="form-grid">${pending.map(fieldMarkup).join('')}</div></div>${extras.length ? `<div class="extra-section"><div class="section-title"><h3>供應商補充規格</h3></div><div class="form-grid">${extras.map(fieldMarkup).join('')}</div></div>` : ''}<label class="notes-label">備註<textarea id="edit-notes" rows="4" maxlength="10000">${esc(d.notes)}</textarea></label></div><div class="form-actions"><span id="save-state" class="save-state">${selected.updatedAt ? '上次儲存 ' + esc(new Date(selected.updatedAt).toLocaleString('zh-TW')) : '原始供應商參考資料'}</span><button id="validate-button" type="button" class="secondary">驗證資料</button><button id="export-one" type="button" class="secondary">匯出此商品</button><button id="save-button" type="submit" class="primary">儲存草稿</button></div></form></div>
   <div id="sources-panel" class="panel" role="tabpanel" aria-labelledby="sources-tab" hidden><div class="upload-row"><div><h3>商品圖片與原始來源</h3><p class="muted">上傳圖片作為參考，保留供應商來源供核對。</p></div><button id="upload-button" class="secondary">上傳圖片</button><input id="upload-file" type="file" accept="image/png,image/jpeg" hidden></div><div class="source-grid">${sourceCards()}</div></div>
   <div id="threed-panel" class="panel" role="tabpanel" aria-labelledby="threed-tab" hidden><div class="threed-header"><div><h3>確認設定，生成你的商品 3D</h3><p class="muted">① 選商品　② 確認下方設定　③ 生成並下載。板件、材質與五金簡化僅供預覽，不能直接製造。</p></div><div class="threed-header-actions"><button id="generate-3d-btn" type="button" class="primary">⚡ 生成 3D 預覽</button></div></div><div id="assumptions-card" class="assumptions-box"></div><div id="threed-stage" class="threed-stage"></div><div id="bom-container" class="bom-section"></div></div>`;
+  $('revision-badge').textContent = selected.status === 'DRAFT' ? '草稿 v' + selected.revision : '供應商參考';
   $('edit-form').addEventListener('input', markDirty);
   $('edit-form').addEventListener('change', markDirty);
   $('edit-form').addEventListener('submit', save);
@@ -173,7 +174,7 @@ function render3dStage(status, plan) {
   if(running) $('cancel-preview').onclick=async()=>{
     $('cancel-preview').disabled=true;
     try {await json(`/products/${urlSku(sku)}/3d/cancel`,{method:'POST',body:JSON.stringify({taskId:status.taskId})});message('已送出取消要求，正在停止 Blender。');}
-    catch(err){message(err.message,true);}
+    catch(err){message(err.message,true); $('cancel-preview').disabled=false;}
   };
   const lines=status.bom?.lines||[];
   $('bom-container').innerHTML=lines.length?`<h3>預覽板件表（非裁切單）${status.stale?' · 上一版':''}</h3><div class="bom-table-wrap"><table class="bom-table"><thead><tr><th>板件</th><th>長 mm</th><th>寬 mm</th><th>厚 mm</th></tr></thead><tbody>${lines.map(l=>`<tr><td>${esc(l.partName)}</td><td>${Number(l.lengthMm).toFixed(1)}</td><td>${Number(l.widthMm).toFixed(1)}</td><td>${Number(l.thicknessMm).toFixed(1)}</td></tr>`).join('')}</tbody></table></div>`:'';
@@ -192,7 +193,7 @@ async function generate3d() {
 function sourceCards() {
   const sku = urlSku(selected.draft.sku);
   const cards = selected.sources.map(s => `<article class="source-card">${s.mediaType === 'image/jpeg' ? `<a href="${API}/sources/${sku}/${encodeURIComponent(s.sourceId)}" target="_blank" rel="noopener"><img src="${API}/sources/${sku}/${encodeURIComponent(s.sourceId)}" alt="${esc(selected.draft.name)} · ${esc(s.sourceId)}" loading="lazy"></a>` : ''}<div class="source-info"><strong>${s.mediaType === 'image/jpeg' ? '供應商圖片 · ' + esc(s.sourceId) : '商品頁快照'}</strong><a href="${esc(s.url)}" target="_blank" rel="noopener">查看官網來源 ↗</a><div>擷取：${esc(new Date(s.capturedAt).toLocaleDateString('zh-TW'))}</div><code>SHA-256 ${esc(s.sha256)}</code></div></article>`);
-  for (const u of selected.uploads) cards.unshift(`<article class="source-card"><a href="${API}/products/${sku}/images/${u.digest}?workspace=${encodeURIComponent(workspace)}" target="_blank" rel="noopener"><img src="${API}/products/${sku}/images/${u.digest}?workspace=${encodeURIComponent(workspace)}" alt="${esc(u.name)}" loading="lazy"></a><div class="source-info"><strong>${esc(u.name)}</strong><span>自行上傳 · 參考圖片</span><code>SHA-256 ${esc(u.digest)}</code></div></article>`);
+  for (const u of selected.uploads) cards.unshift(`<article class="source-card"><a href="${API}/products/${sku}/images/${encodeURIComponent(u.digest)}?workspace=${encodeURIComponent(workspace)}" target="_blank" rel="noopener"><img src="${API}/products/${sku}/images/${encodeURIComponent(u.digest)}?workspace=${encodeURIComponent(workspace)}" alt="${esc(u.name)}" loading="lazy"></a><div class="source-info"><strong>${esc(u.name)}</strong><span>自行上傳 · 參考圖片</span><code>SHA-256 ${esc(u.digest)}</code></div></article>`);
   return cards.join('') || '<p class="muted">尚無圖片。可上傳商品照片或尺寸圖，或在規格頁補上商品來源網址。</p>';
 }
 function collect() {
@@ -222,12 +223,14 @@ async function save(event) {
 }
 async function validate() {
   if (dirty) { message('請先儲存修改，再驗證最新草稿。', true); return; }
+  const button = $('validate-button'); button.disabled = true;
   try {
     const result = await json(`/products/${urlSku(selected.draft.sku)}/validate`, {method:'POST'});
     $('validation-result').innerHTML = validationMarkup(result, true);
     message(`資料檢查完成：待補 ${result.missingFields.length} 項，待補依據 ${result.unreferencedFields.length} 項，結構問題 ${result.issues.length} 項。`);
     $('validation-result').scrollIntoView({behavior:'smooth',block:'center'});
   } catch (error) { message(error.message, true); }
+  finally { button.disabled = false; }
 }
 async function download(sku) {
   if (dirty) { message('請先儲存修改，匯出內容才會包含最新草稿。', true); return; }
@@ -243,14 +246,16 @@ async function uploadImage(event) {
   if (dirty) { message('請先儲存規格修改，再上傳圖片。', true); event.target.value = ''; return; }
   if (file.size > 8 * 1024 * 1024) { message('圖片大小不可超過 8 MB。', true); return; }
   const sku = selected.draft.sku, form = new FormData(); form.append('file', file);
+  const button = $('upload-button'); button.disabled = true;
   try { await json(`/products/${urlSku(sku)}/images`, {method:'POST',body:form}); await load(sku); message('參考圖片已上傳。'); }
   catch (error) { message(error.message, true); }
+  finally { button.disabled = false; event.target.value = ''; }
 }
 $('search').addEventListener('input', renderList);
 $('family-filter').addEventListener('change', renderList);
 $('reload').addEventListener('click', () => { if (allowLeave()) load().then(() => message('商品資料已重新載入。')).catch(error => message(error.message,true)); });
 $('export-all').addEventListener('click', () => download());
-$('new-button').addEventListener('click', () => { if (!allowLeave()) return; $('new-form').reset(); $('new-error').textContent = ''; $('new-dialog').showModal(); });
+$('new-button').addEventListener('click', () => { if (!allowLeave()) return; $('new-form').reset(); $('new-error').textContent = ''; $('new-dialog').returnValue = ''; $('new-dialog').showModal(); });
 for (const id of ['close-new','cancel-new']) $(id).addEventListener('click', () => $('new-dialog').close());
 $('new-form').addEventListener('submit', async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget), submit = event.currentTarget.querySelector('[type=submit]');
@@ -264,12 +269,13 @@ $('new-form').addEventListener('submit', async event => {
 $('import-button').addEventListener('click', () => { if (allowLeave()) $('import-file').click(); });
 $('import-file').addEventListener('change', async event => {
   const file = event.target.files[0]; if (!file) return;
+  $('import-button').disabled = true;
   try {
     if (file.size > 8 * 1024 * 1024) throw new Error('匯入檔不可超過 8 MB。');
     const payload = JSON.parse(await file.text());
     const result = await json('/import',{method:'POST',body:JSON.stringify(payload)});
     dirty = false; $('search').value=''; $('family-filter').value=''; await load(result.items[0]?.draft.sku); message(`已匯入 ${result.items.length} 款草稿。圖片檔需另外上傳；現有草稿不會被覆寫。`);
   } catch(error) { message(error instanceof SyntaxError ? '檔案不是有效的 JSON，請選擇由本後台匯出的檔案。' : error.message, true); }
-  finally { event.target.value=''; }
+  finally { event.target.value=''; $('import-button').disabled = false; }
 });
 load().catch(error => { $('product-list').innerHTML = '<p class="muted loading">讀取失敗，請按「重新載入」。</p>'; message(error.message,true); });
