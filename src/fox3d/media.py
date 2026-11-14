@@ -6,6 +6,7 @@ import math
 from typing import Any
 
 from fox3d.ids import stable_hash
+from fox3d.infra import safe_path_component
 from fox3d.pngutil import write_glb_stub, write_solid_png
 from fox3d.scene import CameraDSL, LightingDSL, SceneDSL, compile_scene_graph
 
@@ -37,7 +38,7 @@ class Product360Engine:
 
 class ARExporter:
     def export(self, twin: dict[str, Any], dest) -> dict[str, Any]:
-        glb = dest / f"{twin.get('sku') or 'product'}.glb"
+        glb = dest / f"{safe_path_component(twin.get('sku') or 'product')}.glb"
         write_glb_stub(glb, twin.get("sku") or "product")
         lods = []
         planned_compression = "basis-uastc"
