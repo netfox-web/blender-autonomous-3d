@@ -4,7 +4,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const form=$('master-form');
   let usageRoles={}, reviewAsset=null, usageLimit=20, draftSourceGroupId='', draftRecipeReference=null, recipeReferences=[];
-  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, assets=[], dispose=null, viewId='', busy=false;
+  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], dispose=null, viewId='', busy=false, cancelPending=null;
   let masterInventory=[], categoryTree=[], categoryNodes=new Map(), categoryFilter='all', classification=null, classificationDirty=false, pendingNewCategory=null;
   const numeric=['widthMm','depthMm','heightMm','panelMm','backMm','doorMm','gapMm','rows'];
   const labels={idle:'尚未生成',queued:'排隊中',running:'Blender 生成中',succeeded:'生成完成',failed:'生成失敗',cancelled:'已取消'};
@@ -25,7 +25,7 @@
     const p=new URLSearchParams({q:$('query').value,family:$('family').value,subtype:$('subtype').value,offset:String(offset)});
     const data=await api('/catalog?'+p);
     if(!append)$('groups').replaceChildren();
-    for(const g of data.items){const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(g.name)}<small>${esc(data.families[g.family])} · ${g.fileCount} 個檔案 · ${esc(data.subtypes[g.subtype])}</small>`;
+    for(const g of data.items){const b=document.createElement('button');b.type='button';b.append(document.createTextNode(g.name));const detail=document.createElement('small');detail.textContent=`${data.families[g.family] ?? ''} · ${g.fileCount} 個檔案 · ${data.subtypes[g.subtype] ?? ''}`;b.append(detail);
       b.onclick=run(async()=>{group=g;$('source-preview').hidden=true;await loadFiles();notice('已開啟素材資料夾；不會自動建立或修改模板。');});$('groups').append(b);}
     offset+=data.items.length;$('more').hidden=offset>=data.total;
     $('catalog-note').textContent=`${data.total} 個待確認資料夾群組。${data.scannedAt?'掃描時間 '+new Date(data.scannedAt).toLocaleString():'尚未掃描'}。`;
@@ -39,7 +39,7 @@
     const data=await api(`/catalog/${gid}/files?`+new URLSearchParams({q:$('file-query').value,offset:String(fileOffset)}));
     if(group?.id!==gid)return;
     $('sources-panel').hidden=false;$('source-folder').textContent=data.group.folder;$('file-note').textContent=`${data.total} 個檔案；檔名不作為尺寸依據。`;
-    for(const f of data.items){const row=document.createElement('div');row.className='file';row.innerHTML=`<strong>${esc(f.name)}</strong><small>${esc(f.path)}</small>`;
+    for(const f of data.items){const row=document.createElement('div');row.className='file';const name=document.createElement('strong');name.textContent=f.name;const path=document.createElement('small');path.textContent=f.path;row.append(name,path);
       if(['.ai','.pdf','.jpg','.jpeg','.png','.tif','.tiff'].includes(f.extension)){
         const b=document.createElement('button');b.className='secondary';b.type='button';b.textContent='預覽並分類素材';
         b.onclick=run(async()=>{b.disabled=true;try{const a=await api(`/files/${f.id}/import`,{method:'POST'});await loadAssets();
@@ -69,7 +69,7 @@
     $('masters').replaceChildren();$('generated-masters').replaceChildren();
     if(!generated)$('generated-masters').textContent='此篩選尚無已生成模型。';
     if(found.length===generated)$('masters').textContent='此篩選沒有待完成草稿。可選分類後建立新草稿，未知尺寸留白。';
-    for(const item of found){const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(selected?.id===item.id));b.innerHTML=`${esc(item.draft.name)}<small>${esc(item.classification.path.join(' › '))}</small><small>${item.templateState==='PREVIEW_AVAILABLE'?'已生成外形，待實物核對':item.readiness.previewReady?'草稿：待生成或重新核對':'草稿：待補尺寸／結構'} · 第 ${item.revision} 版</small>`;
+    for(const item of found){const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(selected?.id===item.id));b.append(document.createTextNode(item.draft.name));const path=document.createElement('small');path.textContent=item.classification.path.join(' › ');const info=document.createElement('small');info.textContent=`${item.templateState==='PREVIEW_AVAILABLE'?'已生成外形，待實物核對':item.readiness.previewReady?'草稿：待生成或重新核對':'草稿：待補尺寸／結構'} · 第 ${item.revision} 版`;b.append(path,info);
       b.onclick=run(async()=>{if(!canLeave())return;pendingNewCategory=null;selected=await api('/'+item.id);fill(selected.draft);group=null;$('sources-panel').hidden=true;$('source-preview').hidden=true;
         if(selected.draft.sourceGroupId){const info=await api(`/catalog/${selected.draft.sourceGroupId}/files`);group=info.group;await loadFiles();}
         renderInventory();switchView('models');await showStatus();});$(item.templateState==='PREVIEW_AVAILABLE'?'generated-masters':'masters').append(b);}
@@ -113,7 +113,7 @@
   function removeButton(row){const b=document.createElement('button');b.type='button';b.className='secondary';b.textContent='移除此筆';b.onclick=()=>{row.remove();staleForm();};row.append(b);}
   function fill(d={}){draftRecipeReference=d.recipeReference||null;draftSourceGroupId=d.sourceGroupId||'';form.reset();for(const [key,value] of Object.entries(d)){const input=form.elements.namedItem(key);if(input)input.value=value??'';}
     $('variants').replaceChildren();(d.variants||[]).forEach(addVariant);$('faces').replaceChildren();(d.printFaces||[]).forEach(addFace);
-    dirty=false;task=null;showClassification().catch(err=>notice(err.message,true));$('accept').checked=false;$('cancel').disabled=true;$('status').disabled=!selected;$('revision').textContent=selected?`第 ${selected.revision} 版`:'新模型資料';
+    dirty=false;task=null;previewBinding=null;showClassification().catch(err=>notice(err.message,true));$('accept').checked=false;$('cancel').disabled=true;$('status').disabled=!selected;$('revision').textContent=selected?`第 ${selected.revision} 版`:'新模型資料';
     $('render-image').hidden=true;$('downloads').replaceChildren();$('render-state').textContent='';if(dispose){dispose();dispose=null;}$('viewer').replaceChildren();viewId='';readiness();toggleCabinet();window.dispatchEvent(new CustomEvent('product-master-selected',{detail:selected}));}
   function newMaster(g=null){selected=null;const category=!g?categoryNodes.get(categoryFilter):null;pendingNewCategory=category?.draftDefaults?.family?category.id:null;$('file-query').value='';$('source-preview').hidden=true;$('sources-panel').hidden=!g;
     fill({name:g?.name||category?.draftDefaults?.family&&category.label||'',family:g?.family||category?.draftDefaults?.family||'coaster',subtype:g?.subtype||category?.draftDefaults?.subtype||'other',rows:category?.draftDefaults?.rows??null,geometry:'PENDING',sourceGroupId:g?.id||''});notice(g?'已選來源群組；請確認名稱、結構與實際尺寸，再儲存。':'請填模型資料；尺寸未知可以先留白儲存。');}
@@ -124,8 +124,12 @@
     for(const k of numeric){const v=form.elements.namedItem(k).value;d[k]=v===''?null:Number(v);}d.sourceGroupId=draftSourceGroupId;d.recipeReference=draftRecipeReference;
     d.variants=Array.from(document.querySelectorAll('.variant')).map(r=>({sku:r.querySelector('.variant-sku').value,artworkAssetId:r.querySelector('.variant-art').value,note:r.querySelector('.variant-note').value}));
     d.printFaces=Array.from(document.querySelectorAll('.face')).map(r=>{const f={};r.querySelectorAll('[data-key]').forEach(e=>f[e.dataset.key]=e.type==='number'?Number(e.value):e.value);return f;});return d;}
-  async function showStatus(){if(!selected)return;const id=selected.id;const s=await api('/'+id+'/preview');if(selected?.id!==id)return;task=['queued','running'].includes(s.state)?s.taskId:null;
-    const active=['queued','running'].includes(s.state);$('cancel').disabled=!active;$('render-state').textContent=`${labels[s.state]||s.state}${s.error?' · '+s.error:''}${s.stale?' · 模型已修改，需重新生成':''}`;
+  async function showStatus(){if(!selected)return;const id=selected.id;const s=await api('/'+id+'/preview');if(selected?.id!==id)return;
+    const taskId=['queued','running'].includes(s.state)?s.taskId:null;
+    task=taskId;previewBinding=taskId?{modelId:id,taskId}:previewBinding?.modelId===id?null:previewBinding;
+    const active=['queued','running'].includes(s.state);
+    const cancelLocked=cancelPending&&cancelPending.modelId===id&&(!cancelPending.taskId||cancelPending.taskId===taskId);
+    $('cancel').disabled=cancelLocked||!active||!taskId;$('render-state').textContent=`${labels[s.state]||s.state}${s.error?' · '+s.error:''}${s.stale?' · 模型已修改，需重新生成':''}`;
     $('generate').disabled=active||dirty||!selected.readiness.previewReady||!$('accept').checked||busy;
     if(s.generated&&!s.stale&&!dirty){const url=fmt=>`${base}/${id}/files/${fmt}?`+new URLSearchParams({workspace:tenant,generation:s.generationId});
       if(viewId!==s.generationId){if(dispose)dispose();dispose=window.mountRecipeViewer($('viewer'),s.spec);viewId=s.generationId;
@@ -146,7 +150,7 @@
   form.onsubmit=run(async()=>{if(busy)return;busy=true;form.inert=true;$('save').disabled=true;try{selected=await api(selected?'/'+selected.id:'',{method:selected?'PUT':'POST',body:body({draft:draft(),expectedRevision:selected?.revision||0})});if(pendingNewCategory){try{const c=await api('/'+selected.id+'/classification');await api('/'+selected.id+'/classification',{method:'PUT',body:body({categoryId:pendingNewCategory,expectedRevision:c.revision})});pendingNewCategory=null;}catch(err){fill(selected.draft);await loadMasters();throw new Error('模型已儲存；分類尚未完成，請使用「儲存分類」重試：'+err.message);}}fill(selected.draft);await loadMasters();await showStatus();notice('模型資料已儲存。'+(selected.readiness.missing||'可確認簡化說明後生成 3D。'));}finally{busy=false;form.inert=false;$('save').disabled=false;readiness();}});
   $('accept').onchange=readiness;
   $('generate').onclick=run(async()=>{if(!selected||dirty)return;busy=true;readiness();try{await api('/'+selected.id+'/preview',{method:'POST',body:body({expectedRevision:selected.revision,inputHash:selected.inputHash,assumptionsAccepted:$('accept').checked})});notice('已送出真實 Blender 生成工作，畫面會更新進度。');}finally{busy=false;await showStatus();}});
-  $('status').onclick=run(showStatus);$('cancel').onclick=run(async()=>{await api('/'+selected.id+'/cancel',{method:'POST',body:body({taskId:task})});notice('已送出取消要求。');await showStatus();});
+  $('status').onclick=run(showStatus);$('cancel').onclick=run(async()=>{if(!selected)return;const modelId=selected.id,taskId=previewBinding?.modelId===modelId?previewBinding.taskId:task;if(!taskId)return;const button=$('cancel');cancelPending={modelId,taskId};button.disabled=true;try{await api('/'+modelId+'/cancel',{method:'POST',body:body({taskId})});notice('已送出取消要求。');await showStatus();}catch(err){if(selected?.id===modelId&&cancelPending?.modelId===modelId&&cancelPending?.taskId===taskId)button.disabled=false;throw err;}finally{if(cancelPending?.modelId===modelId&&cancelPending?.taskId===taskId)cancelPending=null;if(selected?.id===modelId)await showStatus();}});
   window.addEventListener('beforeunload',e=>{if(dirty||classificationDirty){e.preventDefault();e.returnValue='';}});
   setInterval(()=>{if(task)showStatus().catch(err=>notice(err.message,true));},5000);
   run(async()=>{const data=await api('/catalog');$('family').insertAdjacentHTML('beforeend',options(data.families));$('subtype').insertAdjacentHTML('beforeend',options(data.subtypes));$('edit-family').innerHTML=options({...data.families,mat:'地墊／洗漱墊'});$('edit-subtype').innerHTML=options(data.subtypes,'other');
