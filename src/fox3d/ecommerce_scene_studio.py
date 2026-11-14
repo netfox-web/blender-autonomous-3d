@@ -51,7 +51,6 @@ from fox3d.photoreal_assets import (
     POLYHAVEN_CURATED_MODELS,
     build_ai_photoreal_composite,
     ensure_pbr_texture_assets,
-    ensure_polyhaven_models,
 )
 from fox3d.polyhaven_paths import resolve_polyhaven_bundle_paths
 from fox3d.recipe_3d import atomic_json, read_json

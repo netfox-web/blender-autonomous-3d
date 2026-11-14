@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from fox3d.ids import new_id, stable_hash
+from fox3d.ids import stable_hash
 from fox3d.pngutil import write_glb_stub, write_solid_png
 from fox3d.scene import CameraDSL, LightingDSL, SceneDSL, compile_scene_graph
 

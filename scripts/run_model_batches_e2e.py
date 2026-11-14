@@ -171,7 +171,7 @@ def round2_tamper_checks(client,path,data,tenant,item,state):
     """REAL_LOGIC corruption trials against actual REAL published fixture outputs."""
     import copy
     from fox3d import model_compositions as c
-    from fox3d.recipe_3d import atomic_json,read_json
+    from fox3d.recipe_3d import atomic_json
     bid=state['taskId'];base=c.folder_for(data,tenant,item['id']);batch=base/'batches'/(bid+'.json')
     anchor=base/'batches'/bid;original=batch.read_bytes();service=(base/'state.json').read_bytes()
     terminal=(anchor/'terminal.json').read_bytes();results={}
@@ -265,7 +265,7 @@ def round3_authority_checks(client,path,data,tenant,item,state):
     """REAL_LOGIC authority corruption trials using this run's real artifacts."""
     from fox3d import model_compositions as c, variant_authority as a, model_categories, product_models, asset_usage
     from fox3d.recipe_3d import atomic_json,read_json
-    from fox3d.ids import stable_hash,sha256_bytes
+    from fox3d.ids import sha256_bytes
     base=c.folder_for(data,tenant,item['id']);bid=state['taskId']
     request=read_json(base/'batches'/bid/'request.json');selection=request['draft']['selections'][0]
     binding=selection['inputAuthority'];authority_base=a.folder(data,tenant,item['id'])

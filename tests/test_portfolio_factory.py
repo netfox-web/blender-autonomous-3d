@@ -53,7 +53,7 @@ def test_invalid_cannot_enter_top10(tmp_path):
 
 def test_stale_cost_snapshot(tmp_path):
     plat = Platform(root=tmp_path / "live", mock_blender=True)
-    result = run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
     cid = plat.portfolio.rankings[next(iter(plat.portfolio.rankings))]["top10"][0]["candidateId"]
     rec = plat.portfolio.candidates[cid]
     rec["engineeringHash"] = "mutated-hash"
@@ -104,7 +104,7 @@ def test_mock_demand_cannot_be_real_and_cross_tenant(tmp_path):
 
 def test_approval_required_and_superseded_pack(tmp_path):
     plat = Platform(root=tmp_path / "live", mock_blender=True)
-    result = run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
+    run_portfolio_scenario(plat, tenant_a="pa", tenant_b="pb")
     cid = next(c["candidateId"] for c in plat.portfolio.candidates.values() if c["state"] == "CANDIDATE")
     with pytest.raises(PortfolioError, match="shortlisted"):
         plat.portfolio.submit_approval(cid, tenant_id="pa", actor="pm")
@@ -134,7 +134,6 @@ def test_portfolio_tenant_backup_semantic_digest(tmp_path):
     (omitted / "data" / "portfolio" / "portfolio.json").write_text(json.dumps(data), encoding="utf-8")
     # mutate dest files without updating digest — restore then compare
     restore_pilot.__wrapped__ if False else None
-    bad_root = tmp_path / "r-omit"
     # Direct copy of mutated backup would fail checksum. Mutate restored instead:
     restored.portfolio.candidates.pop(next(iter(restored.portfolio.candidates)))
     bad = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="pa", tenant_b="pb")

@@ -167,7 +167,6 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         loaded_ph_tex = False
         try:
             import bpy
-            from pathlib import Path
             pbr_dir = _assets_root() / 'textures' / 'pbr'
             if 'RUG' in name_u or 'PILLOWTHROWL' in name_u:
                 nor_file = pbr_dir / 'curly_teddy_nor_gl.jpg'
@@ -310,7 +309,6 @@ def _apply_pbr_shader(mat, obj_name, base_color, photoreal=False):
         shader.inputs['Roughness'].default_value = 0.68
         try:
             import bpy
-            from pathlib import Path
             art_path = _assets_root() / 'textures' / 'pbr' / 'nordic_canvas_art.png'
             if art_path.exists():
                 sep = nodes.new('ShaderNodeSeparateXYZ')
@@ -661,7 +659,6 @@ def build(created, definition, device, expected_hash):
                     gkey = f'{parts[0]}_{parts[1]}'
                     prop_groups.setdefault(gkey, []).append(item)
 
-            ph_dir = root_assets / 'models' / 'polyhaven'
             for gkey, gitems in prop_groups.items():
                 g_upper = gkey.upper()
                 explicit_glb = resolve_asset_ref(next((it.get('glbPath') for it in gitems if it.get('glbPath')), None), root_assets)

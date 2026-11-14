@@ -4,7 +4,6 @@ Screen previews only. Scene and artwork identities never certify physical dimens
 """
 import io
 import re
-import shutil
 from pathlib import Path
 from typing import Literal
 

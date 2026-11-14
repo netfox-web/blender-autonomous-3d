@@ -26,9 +26,8 @@ from fox3d.packv2 import (
 from fox3d.publish import CatalogRelease, ar_export_boundary, publication_package, web3d_manifest
 from fox3d.rdloop import DemandRegistryV2, evidence_weighted_rank, import_outcomes, kpi_read_model, substitution_candidates
 from fox3d.readiness import scoped_readiness, validate_truth_labels
-from fox3d.release import ReleaseGate
 from fox3d.safety import SafetyRuleRegistry, acrylic_risk, evaluate_product, furniture_stability, wall_anchor_warning
-from fox3d.sandbox import SandboxRegistry, job_policy_manifest
+from fox3d.sandbox import job_policy_manifest
 
 
 def test_scoped_readiness_not_global(platform):

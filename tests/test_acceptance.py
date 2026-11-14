@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from fox3d.blender import detect_blender, detect_gpu, detect_node
+from fox3d.blender import detect_gpu, detect_node
 from fox3d.capabilities import BLENDER_PREVIEW, BLENDER_RENDER, BLENDER_TO_VIDEO, foxstudio_operations
 from fox3d.infra import Recipe
 from fox3d.pngutil import is_glb, is_png
@@ -211,7 +211,6 @@ def test_15_cabinet_resize(platform):
 
 def test_16_bom_consistency(platform):
     created = platform.create_parametric({"tenantId": "t1", "kind": "BOOKCASE", "width": 800, "height": 1800, "depth": 300, "shelfCount": 5, "doorCount": 0})
-    spec_hash = created["spec"]  # dumped
     from fox3d.parametric import CabinetSpec
 
     spec = CabinetSpec.model_validate(created["spec"])
@@ -376,7 +375,7 @@ def test_30_security_sandbox(platform):
     evil = b"import os; os.system('rm -rf /')"
     with pytest.raises(PermissionError):
         platform.scripts.authorize(evil, production=True)
-    experimental = platform.scripts.register(name="agent.py", source=evil, signature="unsigned", allow_production=False)
+    platform.scripts.register(name="agent.py", source=evil, signature="unsigned", allow_production=False)
     with pytest.raises(PermissionError):
         platform.scripts.authorize(evil, production=True)
     script = Path(__file__).resolve().parents[1] / "scripts" / "blender_job.py"

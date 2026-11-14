@@ -7,13 +7,12 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
 from services.supervisor.config import ConfigValidationError
 from services.supervisor.models import (
-    ChangedFileItem,
     EvidenceSectionCompleteness,
     ProviderReviewResponseSchema,
     ReviewContext,

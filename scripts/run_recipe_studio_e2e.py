@@ -1,6 +1,5 @@
 """Real HTTP + Blender acceptance, bound to the current clean CODE commit."""
 import argparse
-import hashlib
 import json
 import socket
 import subprocess

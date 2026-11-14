@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, ConfigDict
 
 from fox3d import golden_preview as preview
-from fox3d.golden_product import SKUS, VERSIONS, RECIPE_ID
+from fox3d.golden_product import SKUS, RECIPE_ID
 from fox3d.recipe_preview_service import RecipePreviewService
 from fox3d.recipe_3d import read_json
 from fox3d.ids import sha256_bytes

@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from fox3d.api import create_app
 from fox3d.deploy_chaos import ChaosHarness, isolated_journal_tamper
 from fox3d.evidence import prepare_evidence_lineage
-from fox3d.inventory import MaterialLotRegistry, StockShortage
+from fox3d.inventory import MaterialLotRegistry
 from fox3d.journal import EventJournal, JournalCommitError
 from fox3d.operator import make_token, require_confirm, resolve_scan
 from fox3d.recovery import CATALOG, PilotException
@@ -376,8 +376,6 @@ def test_lots_prepare_then_business_fail_no_ghost(tmp_path):
 
 
 def test_lots_journal_finalize_fail_then_reconcile(tmp_path):
-    from fox3d.journal import EventJournal
-    from fox3d.outbox import CommitOutbox
     from fox3d.platform import Platform
 
     data = tmp_path / "data"

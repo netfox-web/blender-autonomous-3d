@@ -14,7 +14,6 @@ from pypdf.generic import RectangleObject, DecodedStreamObject, NameObject
 from fox3d import print_assets as assets, print_workspace as jobs, print_preview as preview, asset_usage
 from fox3d.print_api import print_router
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.ids import sha256_bytes
 
 
 def pdf_bytes(*, offset=0, rotation=0, crop=False):

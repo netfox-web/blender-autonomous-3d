@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from fox3d.catalog_recipes import Fact, SeedLibrary, catalog_summary, import_library, load_library
+from fox3d.catalog_recipes import Fact, catalog_summary, import_library, load_library
 from fox3d.infra import RecipeRegistry
 
 ROOT = Path(__file__).resolve().parents[1]
