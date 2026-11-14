@@ -268,7 +268,7 @@ class LogisticsService:
             weight += ck
             _ = layers
         flush()
-        rec = {
+        rec: dict[str, Any] = {
             "palletPlanId": new_id(),
             "tenantId": next(iter(tenants)),
             "cartonIds": list(carton_ids),
@@ -295,7 +295,7 @@ class LogisticsService:
         tenants = {c.get("tenantId") for c in cartons}
         if len(tenants) != 1 or None in tenants:
             raise PermissionError("cross-tenant carton mix")
-        rec = {
+        rec: dict[str, Any] = {
             "shipmentId": new_id(),
             "tenantId": next(iter(tenants)),
             "origin": origin,
@@ -349,7 +349,7 @@ class LogisticsService:
     def import_carrier_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
         if source not in ALLOWED_SOURCES:
             raise PermissionError("carrier quotes are MANUAL/IMPORTED unless a live carrier is connected")
-        rec = {
+        rec: dict[str, Any] = {
             "quoteId": row.get("quoteId") or new_id(),
             "carrier": row.get("carrier") or "carrier",
             "service": row.get("service") or "ground",
@@ -399,7 +399,7 @@ class LogisticsService:
         if any(c.get("tenantId") != tenant_id for c in cartons):
             raise PermissionError("tenant isolation: packing")
         pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
-        rec = {
+        rec: dict[str, Any] = {
             "checklistId": new_id(),
             "tenantId": tenant_id,
             "workOrderId": work_order_id,
@@ -455,7 +455,7 @@ class LogisticsService:
             if existing.get("tenantId") != tenant_id:
                 raise PermissionError("tenant isolation: handoff")
             return rec
-        handoff = {
+        handoff: dict[str, Any] = {
             "handoffId": new_id(),
             "shipmentId": shipment_id,
             "tenantId": tenant_id,

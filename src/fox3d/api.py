@@ -2,22 +2,261 @@
 
 from __future__ import annotations
 
+import math
 import os
 
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
+from fox3d.contracts import (
+    ALLOWED_SOURCES,
+    SCHEMA_ADJUST,
+    SCHEMA_CARRIER,
+    SCHEMA_RECEIPT,
+    SCHEMA_SUPPLIER,
+)
 from fox3d.features import feature_index
 from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
 from fox3d.recipe_admin_api import recipe_router
+from fox3d.station import STATION_CAPS
+
+# These services raise PermissionError for bad input. Handlers check fields first.
+# A leftover PermissionError is 422 unless it is tenant isolation (403).
+# PilotException subclasses PermissionError and is re-raised unchanged.
+_IMPORT_SCHEMAS = frozenset({SCHEMA_RECEIPT, SCHEMA_SUPPLIER, SCHEMA_CARRIER, SCHEMA_ADJUST})
+_DISPATCH_FIELDS = ("workOrderId", "operation", "stationId")
+# import_receipt uses `value or default` for these, so "", 0, and other falsy values are absent.
+_RECEIPT_OR_FLOATS = (
+    ("thickness",),
+    ("unitCost", "costPerSheet"),
+)
+# import_receipt converts these whenever they are not None, including "".
+_RECEIPT_STRICT_FLOATS = (
+    "length",
+    "width",
+    "expectedThickness",
+    "expectedLength",
+    "expectedWidth",
+)
+
+
+def _validation_detail(exc: ValidationError) -> str:
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(part) for part in err.get("loc") or ()) or "body"
+        if err.get("type") == "missing":
+            parts.append(f"缺少 {loc}")
+        else:
+            parts.append(f"{loc} 格式錯誤")
+    return "；".join(parts) or "輸入格式錯誤"
+
+
+def _raise_permission(exc: PermissionError) -> NoReturn:
+    message = str(exc)
+    if message.startswith("tenant isolation"):
+        raise HTTPException(403, message) from exc
+    raise HTTPException(422, message) from exc
+
+
+def _require_text_fields(payload: dict[str, Any], names: tuple[str, ...]) -> None:
+    missing = [name for name in names if payload.get(name) in (None, "")]
+    if missing:
+        raise HTTPException(422, "缺少欄位：" + "、".join(missing))
+    bad = [name for name in names if not isinstance(payload.get(name), str)]
+    if bad:
+        raise HTTPException(422, "欄位格式錯誤：" + "、".join(bad))
+
+
+def _unprocessable(message: str, row_index: int | None = None) -> NoReturn:
+    if row_index is not None:
+        message = f"rows[{row_index}] {message}"
+    raise HTTPException(422, message)
+
+
+def _absent_quantity(raw: Any) -> bool:
+    # False == 0, so exclude bool before the zero check. 0 / "" still fall through to sheetCount.
+    return not isinstance(raw, bool) and raw in (None, "", 0, 0.0)
+
+
+def _require_receipt_quantity(payload: dict[str, Any], row_index: int | None = None) -> None:
+    # import_receipt treats 0 / "" as absent and falls through to sheetCount.
+    # int() would truncate 1.9 to 1 and accept True as 1; both are refused here.
+    raw = payload.get("quantity")
+    if isinstance(raw, bool):
+        _unprocessable("quantity 須為正整數", row_index)
+    if _absent_quantity(raw):
+        raw = payload.get("sheetCount")
+        if isinstance(raw, bool):
+            _unprocessable("quantity 須為正整數", row_index)
+    if _absent_quantity(raw):
+        _unprocessable("缺少 quantity", row_index)
+    if isinstance(raw, float):
+        _unprocessable("quantity 須為正整數", row_index)
+    if isinstance(raw, int):
+        qty = raw
+    elif isinstance(raw, str):
+        try:
+            qty = int(raw)
+        except ValueError:
+            _unprocessable("quantity 格式錯誤", row_index)
+    else:
+        _unprocessable("quantity 格式錯誤", row_index)
+    if qty <= 0:
+        _unprocessable("quantity 須為正整數", row_index)
+
+
+def _require_manual_source(payload: dict[str, Any]) -> None:
+    source = payload.get("source")
+    if source in (None, ""):
+        return
+    if not isinstance(source, str) or source not in ALLOWED_SOURCES:
+        raise HTTPException(422, "source 須為 MANUAL 或 IMPORTED")
+
+
+def _check_finite_float(raw: Any, field: str, row_index: int | None = None) -> None:
+    if isinstance(raw, bool) or isinstance(raw, (list, dict)):
+        _unprocessable(f"{field} 格式錯誤", row_index)
+    try:
+        number = float(raw)
+    except (TypeError, ValueError):
+        _unprocessable(f"{field} 格式錯誤", row_index)
+    if not math.isfinite(number):
+        _unprocessable(f"{field} 格式錯誤", row_index)
+
+
+def _check_service_int(raw: Any, field: str, row_index: int | None = None) -> None:
+    # Matches int(value) without truncating floats or accepting bool (bool is an int subclass).
+    if isinstance(raw, bool) or isinstance(raw, float):
+        _unprocessable(f"{field} 格式錯誤", row_index)
+    if isinstance(raw, int):
+        return
+    if isinstance(raw, str):
+        try:
+            int(raw)
+        except ValueError:
+            _unprocessable(f"{field} 格式錯誤", row_index)
+        return
+    _unprocessable(f"{field} 格式錯誤", row_index)
+
+
+def _first_or_value(payload: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, Any] | None:
+    # Same short-circuit as `a or b or default`: falsy values are not converted.
+    for key in keys:
+        raw = payload.get(key)
+        if not raw:
+            continue
+        return key, raw
+    return None
+
+
+def _validate_receipt_numbers(payload: dict[str, Any], row_index: int | None = None) -> None:
+    for key in _RECEIPT_STRICT_FLOATS:
+        if key not in payload or payload[key] is None:
+            continue
+        _check_finite_float(payload[key], key, row_index)
+    for keys in _RECEIPT_OR_FLOATS:
+        found = _first_or_value(payload, keys)
+        if found is not None:
+            _check_finite_float(found[1], found[0], row_index)
+    if "expectedQuantity" in payload and payload["expectedQuantity"] is not None:
+        _check_service_int(payload["expectedQuantity"], "expectedQuantity", row_index)
+
+
+def _require_station_capabilities(payload: dict[str, Any]) -> None:
+    raw = payload.get("capabilities")
+    if not isinstance(raw, list) or not any(item in STATION_CAPS for item in raw):
+        raise HTTPException(422, "capabilities 須包含至少一個 MANUAL 站別能力")
+
+
+def _validate_supplier_row(row: dict[str, Any], row_index: int) -> None:
+    # normalize() converts the first truthy field of each `or` chain.
+    for keys in (
+        ("material", "materialCost"),
+        ("processing", "labor"),
+        ("setup", "setupCost", "tooling", "toolingCost"),
+        ("packaging", "packagingCost"),
+        ("freight", "shipping"),
+        ("leadTimeDays", "leadTime"),
+    ):
+        found = _first_or_value(row, keys)
+        if found is not None:
+            _check_finite_float(found[1], found[0], row_index)
+    quantity = _first_or_value(row, ("quantity", "moq"))
+    if quantity is not None:
+        _check_service_int(quantity[1], quantity[0], row_index)
+    # normalize() also does int(moq or 1), even when quantity was the value used above.
+    moq = row.get("moq")
+    if moq:
+        _check_service_int(moq, "moq", row_index)
+
+
+def _validate_carrier_row(row: dict[str, Any], row_index: int) -> None:
+    for keys in (("charge", "amount"), ("dimDivisor",)):
+        found = _first_or_value(row, keys)
+        if found is not None:
+            _check_finite_float(found[1], found[0], row_index)
+
+
+def _reject_container_fields(row: dict[str, Any], names: tuple[str, ...], row_index: int) -> None:
+    # Tuple membership treats a list or object as present. ContractService then hashes the
+    # same value and raises TypeError after earlier rows have already been written.
+    for name in names:
+        if isinstance(row.get(name), (list, dict)):
+            _unprocessable(f"{name} 格式錯誤", row_index)
+
+
+def _validate_import_row(schema: str, row: dict[str, Any], row_index: int) -> None:
+    # Rows missing required fields are rejected by ContractService before conversion.
+    # Rows it would convert, and required fields that are lists or objects, are checked
+    # here so a later bad row cannot 500 after earlier writes.
+    if schema == SCHEMA_RECEIPT:
+        _reject_container_fields(row, ("material", "quantity"), row_index)
+        if row.get("material") in (None, "") or row.get("quantity") in (None, ""):
+            return
+        _require_receipt_quantity(row, row_index)
+        _validate_receipt_numbers(row, row_index)
+    elif schema == SCHEMA_SUPPLIER:
+        _reject_container_fields(row, ("supplierId",), row_index)
+        if row.get("supplierId") in (None, ""):
+            return
+        _validate_supplier_row(row, row_index)
+    elif schema == SCHEMA_CARRIER:
+        _reject_container_fields(row, ("carrier", "charge"), row_index)
+        if row.get("carrier") in (None, "") or row.get("charge") in (None, ""):
+            return
+        _validate_carrier_row(row, row_index)
+    elif schema == SCHEMA_ADJUST:
+        _reject_container_fields(row, ("lotId", "quantity", "reason"), row_index)
+        if any(row.get(name) in (None, "") for name in ("lotId", "quantity", "reason")):
+            return
+        _check_service_int(row.get("quantity"), "quantity", row_index)
+
+
+def _require_import_contract(payload: dict[str, Any]) -> None:
+    schema = payload.get("schemaVersion")
+    # Membership against a set hashes the value; a list or object would raise TypeError.
+    if not isinstance(schema, str) or schema not in _IMPORT_SCHEMAS:
+        raise HTTPException(422, "schemaVersion 無效或缺少")
+    _require_manual_source(payload)
+    rows = payload.get("rows", [])
+    if rows is None:
+        return
+    if not isinstance(rows, list):
+        raise HTTPException(422, "rows 須為陣列")
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise HTTPException(422, "rows 的每一列須為物件")
+        _validate_import_row(schema, row, index)
+
 
 _PLATFORM: Platform | None = None
 
@@ -129,7 +368,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        return get_platform().create_twin(payload)
+        if payload.get("sku") is None:
+            raise HTTPException(422, "缺少 sku")
+        try:
+            return get_platform().create_twin(payload)
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from exc
 
     @app.post("/api/digital-twins/upload")
     async def upload_twin(
@@ -507,13 +751,21 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/receipts")
     def pilot_receipt(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().pilot.receiving.import_receipt(
-            payload,
-            tenant_id=tid,
-            actor=str(payload.get("actor") or "api"),
-            source=str(payload.get("source") or "IMPORTED"),
-            idempotency_key=payload.get("idempotencyKey"),
-        )
+        _require_receipt_quantity(payload)
+        _require_manual_source(payload)
+        _validate_receipt_numbers(payload)
+        try:
+            return get_platform().pilot.receiving.import_receipt(
+                payload,
+                tenant_id=tid,
+                actor=str(payload.get("actor") or "api"),
+                source=str(payload.get("source") or "IMPORTED"),
+                idempotency_key=payload.get("idempotencyKey"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.post("/api/pilot/purchase-requests")
     def pilot_pr(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -546,13 +798,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/stations")
     def pilot_station(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().pilot.stations.register(
-            tenant_id=tid,
-            capabilities=list(payload.get("capabilities") or []),
-            station_id=payload.get("stationId"),
-            actor=str(payload.get("actor") or "api"),
-            status=str(payload.get("status") or "ONLINE"),
-        )
+        _require_station_capabilities(payload)
+        try:
+            return get_platform().pilot.stations.register(
+                tenant_id=tid,
+                capabilities=list(payload.get("capabilities") or []),
+                station_id=payload.get("stationId"),
+                actor=str(payload.get("actor") or "api"),
+                status=str(payload.get("status") or "ONLINE"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.post("/api/pilot/stations/{station_id}/heartbeat")
     def pilot_station_hb(station_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -566,6 +824,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/dispatch")
     def pilot_dispatch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
+        _require_text_fields(payload, _DISPATCH_FIELDS)
         try:
             return get_platform().pilot.dispatcher.dispatch(
                 tenant_id=tid,
@@ -609,13 +868,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/import")
     def pilot_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().pilot.contracts.import_bundle(
-            payload,
-            tenant_id=tid,
-            actor=str(payload.get("actor") or "api"),
-            source=str(payload.get("source") or "IMPORTED"),
-            idempotency_key=payload.get("idempotencyKey"),
-        )
+        _require_import_contract(payload)
+        try:
+            return get_platform().pilot.contracts.import_bundle(
+                payload,
+                tenant_id=tid,
+                actor=str(payload.get("actor") or "api"),
+                source=str(payload.get("source") or "IMPORTED"),
+                idempotency_key=payload.get("idempotencyKey"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.get("/api/pilot/export")
     def pilot_export(releaseHash: str | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

@@ -50,7 +50,9 @@ def validate_generative_result(result: dict[str, Any], *, pack: dict[str, Any]) 
     if result.get("inputRenderPackId") != pack.get("renderPackId"):
         failures.append("wrong_render_pack")
     if result.get("usedMock") is False:
-        evidence = result.get("liveProviderEvidence") if isinstance(result.get("liveProviderEvidence"), dict) else {}
+        evidence = result.get("liveProviderEvidence")
+        if not isinstance(evidence, dict):
+            evidence = {}
         if not evidence.get("providerRequestId") or not evidence.get("runtime"):
             failures.append("mock_claimed_live_provider")
     if result.get("liveH3MaxProviderReady") is True or result.get("liveLtx25ProviderReady") is True:
@@ -73,7 +75,9 @@ def qa_product_consistency(*, pack: dict[str, Any], generated: dict[str, Any] | 
     }
     if not vision_live:
         categories["COLOR"] = "MOCK"
-    aovs = pack.get("aovs") if isinstance(pack.get("aovs"), dict) else {}
+    aovs = pack.get("aovs")
+    if not isinstance(aovs, dict):
+        aovs = {}
     if not generated:
         return {
             "decision": "REJECT_MISSING_EVIDENCE",
@@ -91,7 +95,9 @@ def qa_product_consistency(*, pack: dict[str, Any], generated: dict[str, Any] | 
             "visionLabel": "MOCK",
             "humanReviewRequired": True,
         }
-    gen_masks = generated.get("masks") if isinstance(generated.get("masks"), dict) else {}
+    gen_masks = generated.get("masks")
+    if not isinstance(gen_masks, dict):
+        gen_masks = {}
     product = aovs.get("product_mask") or {}
     artwork = aovs.get("artwork_mask") or {}
     if gen_masks.get("productOccupancy") is not None:

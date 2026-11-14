@@ -229,7 +229,11 @@ class SpaceConstraintEngine:
             if wall is None:
                 violations.append({"code": "UNKNOWN_WALL", "message": f"wall {p.get('wallId')} not in space", "severity": "error"})
                 continue
-            start = float(p.get("startMm") or p.get("originX") or 0)
+            # 0 mm is a real start. `or` would treat it as missing and use originX.
+            raw_start = p.get("startMm")
+            if raw_start is None:
+                raw_start = p.get("originX")
+            start = float(0 if raw_start is None else raw_start)
             width = float(p.get("width") or 0)
             end = start + width
             if start < -0.5 or end > wall.length + 0.5:

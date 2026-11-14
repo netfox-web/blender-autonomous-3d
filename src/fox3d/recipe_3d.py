@@ -10,7 +10,7 @@ import struct
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fox3d.ids import new_id, stable_hash, sha256_bytes
 from fox3d.infra import utcnow
@@ -105,7 +105,7 @@ def resolve_recipe_preview_assumptions(draft_data: dict[str, Any]) -> dict[str, 
     if missing:
         raise ValueError("生成前請先填寫：" + "、".join(missing))
     w, d, h = [float(values[k]) for k in required[:3]]
-    rows, cells, doors = [values[k] for k in required[3:]]
+    rows, cells, doors = [cast(int, values[k]) for k in required[3:]]
     if not all(50 <= n <= 5000 for n in (w, d, h)) or not 1 <= rows <= 24:
         raise ValueError("預覽支援 50–5000 mm 外尺寸及 1–24 行")
     family = draft.family
@@ -137,7 +137,7 @@ def resolve_recipe_preview_assumptions(draft_data: dict[str, Any]) -> dict[str, 
         raise ValueError("板件厚度與外尺寸不相容，請確認厚度或行數")
     dividers = []
     if family == "STAGGERED_OPEN_CUBBY":
-        raw = values.get("rowDividerCoordinates", "")
+        raw = cast(str, values.get("rowDividerCoordinates", ""))
         if raw:
             try:
                 dividers = [float(v) for v in re.split(r"[,，;；\s]+", raw.strip()) if v]

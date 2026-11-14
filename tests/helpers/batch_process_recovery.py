@@ -15,8 +15,10 @@ import threading
 import time
 from types import SimpleNamespace
 
-_PUBLISH_RETRY_DELAYS = (.005, .01, .025, .05, .1, .1, .2)
-_READ_RETRY_DELAYS = (.005, .01, .025, .05, .1, .1, .2)
+_PUBLISH_RETRY_INTERVAL = 0.02
+_PUBLISH_RETRY_SECONDS = 2.0
+_READ_RETRY_INTERVAL = 0.02
+_READ_RETRY_SECONDS = 2.0
 
 
 def _windows_io_contention(error, path):
@@ -36,24 +38,36 @@ def save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     signal=path.with_name(path.name+'.signal')
     signal.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
-    for attempt in range(len(_PUBLISH_RETRY_DELAYS) + 1):
+    deadline = time.monotonic() + _PUBLISH_RETRY_SECONDS
+    while True:
         try:
             signal.replace(path)  # publish test checkpoints whole before parent kills
             break
         except OSError as error:
-            if attempt == len(_PUBLISH_RETRY_DELAYS) or not _windows_io_contention(error, path):
+            if not _windows_io_contention(error, path):
                 raise
-            time.sleep(_PUBLISH_RETRY_DELAYS[attempt])
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_PUBLISH_RETRY_INTERVAL)
 
 
 def read(path):
-    for attempt in range(len(_READ_RETRY_DELAYS) + 1):
+    deadline = time.monotonic() + _READ_RETRY_SECONDS
+    while True:
         try:
             return json.loads(path.read_text(encoding='utf-8'))
         except OSError as error:
-            if attempt == len(_READ_RETRY_DELAYS) or not _windows_io_contention(error, path):
+            if not _windows_io_contention(error, path):
                 raise
-            time.sleep(_READ_RETRY_DELAYS[attempt])
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_READ_RETRY_INTERVAL)
+        except json.JSONDecodeError:
+            if sys.platform != 'win32':
+                raise
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_READ_RETRY_INTERVAL)
 
 
 def digest(path):

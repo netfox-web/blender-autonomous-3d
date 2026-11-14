@@ -56,7 +56,7 @@ class ReceivingService:
         shortage: dict[str, Any] | None = None,
         release_hash: str | None = None,
     ) -> dict[str, Any]:
-        rec = {
+        rec: dict[str, Any] = {
             "requestId": new_id(),
             "tenantId": tenant_id,
             "material": material,
@@ -127,7 +127,7 @@ class ReceivingService:
         if expected_grain is not None and str(grain or "") != str(expected_grain):
             mismatch = True
             reasons.append("grain")
-        rec = {
+        rec: dict[str, Any] = {
             "receiptId": new_id(),
             "tenantId": tenant_id,
             "supplierId": row.get("supplierId"),

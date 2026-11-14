@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 import fox3d.contracts as contracts_mod
@@ -12,6 +14,7 @@ from fox3d.contracts import (
     SCHEMA_RECEIPT,
     SCHEMA_SUPPLIER,
 )
+from tests.test_api_bad_input import CONTAINER_IMPORT_CASES
 from tests.test_pilot_deploy import _ready_wo
 
 
@@ -176,6 +179,61 @@ def test_approve_adjustment_idempotent_does_not_double_apply(platform):
     assert second["adjustmentId"] == first["adjustmentId"]
     after = lots.quantities(lot_id, tenant_id="adjy")["sheetCount"]
     assert after == before + 3
+
+
+def _bundle_stores(platform, tenant_id: str) -> dict[str, set[str]]:
+    return {
+        "receipts": set(platform.pilot.receiving.receipts),
+        "imports": set(platform.pilot.contracts.imports),
+        "quotes": set(platform.pilot.suppliers.quotes),
+        "carrier_quotes": set(platform.pilot.logistics.carrier_quotes),
+        "adjustments": set(platform.pilot.contracts.adjustments),
+        "lots": {lot["lotId"] for lot in platform.lots.list(tenant_id=tenant_id)},
+    }
+
+
+@pytest.mark.parametrize(
+    "schema,rows,field",
+    [(schema, rows, field) for schema, rows, field, _label in CONTAINER_IMPORT_CASES],
+    ids=[f"{schema} {label}" for schema, _rows, _field, label in CONTAINER_IMPORT_CASES],
+)
+def test_import_container_required_field_writes_nothing(platform, schema: str, rows: list, field: str) -> None:
+    tenant = "ctype"
+    cs = _contracts(platform)
+    before = _bundle_stores(platform, tenant)
+    with pytest.raises(PermissionError, match=re.escape(f"rows[1] {field} 格式錯誤")):
+        cs.import_bundle({"schemaVersion": schema, "rows": rows}, tenant_id=tenant, actor="ops")
+    assert _bundle_stores(platform, tenant) == before
+
+
+def test_container_required_field_does_not_poison_idempotency(platform):
+    tenant = "idemc"
+    cs = _contracts(platform)
+    before = _bundle_stores(platform, tenant)
+    payload = {
+        "schemaVersion": SCHEMA_RECEIPT,
+        "rows": [
+            {"material": "PB_18_WHITE", "quantity": 1, "supplierLot": "good"},
+            {"material": [], "quantity": 1},
+        ],
+    }
+    with pytest.raises(PermissionError, match=re.escape("rows[1] material 格式錯誤")):
+        cs.import_bundle(payload, tenant_id=tenant, actor="ops", idempotency_key="same-key")
+    assert _bundle_stores(platform, tenant) == before
+    bundle = cs.import_bundle(
+        {
+            "schemaVersion": SCHEMA_RECEIPT,
+            "rows": [{"material": "PB_18_WHITE", "quantity": 1, "supplierLot": "good"}],
+        },
+        tenant_id=tenant,
+        actor="ops",
+        idempotency_key="same-key",
+    )
+    assert bundle["acceptedCount"] == 1
+    assert bundle["rejectedCount"] == 0
+    assert bundle["importId"] in cs.imports
+    assert len(platform.pilot.receiving.receipts) == len(before["receipts"]) + 1
+    assert len(_bundle_stores(platform, tenant)["lots"]) == len(before["lots"]) + 1
 
 
 def test_approve_unknown_adjustment_raises_keyerror(platform):

@@ -6,7 +6,8 @@ Live CNC is never enabled. Manufacturing stops at WAITING_APPROVAL.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
+from builtins import list as builtin_list
 
 from pydantic import BaseModel, Field
 
@@ -120,7 +121,7 @@ class HardwareRegistry:
     def get(self, sku: str) -> dict[str, Any]:
         return dict(HARDWARE_REGISTRY[sku])
 
-    def assign(self, spec: Any) -> list[dict[str, Any]]:
+    def assign(self, spec: Any) -> builtin_list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         if spec.doorCount:
             items.append({"sku": "HW_HINGE_CLIP_110", "quantity": spec.doorCount * 2, **HARDWARE_REGISTRY["HW_HINGE_CLIP_110"]})
@@ -136,7 +137,7 @@ class HardwareRegistry:
             items.append({"sku": "HW_LEG_100", "quantity": 4, **HARDWARE_REGISTRY["HW_LEG_100"]})
         return items
 
-    def compatibility(self, spec: Any) -> list[dict[str, Any]]:
+    def compatibility(self, spec: Any) -> builtin_list[dict[str, Any]]:
         issues: list[dict[str, Any]] = []
         t = float(spec.boardThickness)
         hinge = HARDWARE_REGISTRY["HW_HINGE_CLIP_110"]
@@ -438,14 +439,14 @@ class NestingEngine:
             if lot_id:
                 lot_ids.add(str(lot_id))
             for part in remaining:
-                placed = self._place(part, free, kerf_mm, grain_axis, defects=sheet_defects, mode=place_mode)
-                if placed:
-                    placed["skuId"] = part.get("skuId")
-                    placed["productVersion"] = part.get("productVersion")
-                    placed["bomLineId"] = part.get("bomLineId")
-                    placed["materialLotId"] = lot_id or part.get("materialLotId")
-                    placed["sourceKind"] = "sheet"
-                    placements.append(placed)
+                placement = self._place(part, free, kerf_mm, grain_axis, defects=sheet_defects, mode=place_mode)
+                if placement:
+                    placement["skuId"] = part.get("skuId")
+                    placement["productVersion"] = part.get("productVersion")
+                    placement["bomLineId"] = part.get("bomLineId")
+                    placement["materialLotId"] = lot_id or part.get("materialLotId")
+                    placement["sourceKind"] = "sheet"
+                    placements.append(placement)
                 else:
                     leftover_parts.append(part)
             if not placements:
@@ -1040,7 +1041,7 @@ class RemnantInventory:
 
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
-        stamp = now.isoformat() if hasattr(now, "isoformat") else (now or None)
+        stamp = cast(Any, now).isoformat() if hasattr(now, "isoformat") else (now or None)
         recovered: list[dict[str, Any]] = []
         for rec in list(self.items.values()):
             if normalize_status(rec.get("status")) != "reserved":
@@ -1052,7 +1053,7 @@ class RemnantInventory:
                 deadline = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
             except ValueError:
                 continue
-            current = now if hasattr(now, "isoformat") else datetime.fromisoformat((stamp or datetime.now().isoformat()).replace("Z", "+00:00"))
+            current = cast(Any, now) if hasattr(now, "isoformat") else datetime.fromisoformat((stamp or datetime.now().isoformat()).replace("Z", "+00:00"))
             if current.tzinfo is None and deadline.tzinfo is not None:
                 from datetime import timezone
 
