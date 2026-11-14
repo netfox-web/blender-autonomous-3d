@@ -8,6 +8,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -25,7 +26,7 @@ from fox3d.product_truth import (  # noqa: E402
 )
 
 
-def _md(title: str, rows: list[dict], generated: str) -> str:
+def _md(title: str, rows: list[dict[str, Any]], generated: str) -> str:
     lines = [
         f"# {title}",
         "",
@@ -104,7 +105,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     if not f_tenant_id or not isinstance(f_tenant_id, str):
         frozen_failures.append("missing_frozen_tenant_id")
 
-    f_placement = frozen_authority.get("placement") if isinstance(frozen_authority.get("placement"), dict) else {}
+    raw_placement = frozen_authority.get("placement")
+    f_placement = raw_placement if isinstance(raw_placement, dict) else {}
     place_id = frozen_authority.get("placementId") or f_placement.get("placementId")
     if not place_id or not isinstance(place_id, str):
         frozen_failures.append("missing_frozen_placement_id")
@@ -154,7 +156,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     for f in independent_failures:
         if f not in missing:
             missing.append(f)
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"check": "realArtworkPreviewReady", "status": "MOCK" if mock else ("REAL" if result.get("realArtworkPreviewReady") else "BLOCKED_ENVIRONMENT"), "evidence": result.get("realArtworkPreviewReady")},
         {"check": "productTruthRenderPackReady", "status": "REAL" if result.get("productTruthRenderPackReady") else ("FIXTURE" if result.get("productTruthAovPackReady") else "MISSING"), "evidence": result.get("productTruthRenderPackReady")},
         {"check": "productTruthAovPackReady", "status": "REAL_LOGIC" if result.get("productTruthAovPackReady") else "MISSING", "evidence": result.get("productTruthAovPackReady")},

@@ -5,6 +5,8 @@ import pytest
 
 PATH = Path(__file__).resolve().parents[1] / "scripts/run_recipe_admin_e2e.py"
 spec = importlib.util.spec_from_file_location("recipe_admin_e2e", PATH)
+if spec is None or spec.loader is None:
+    raise ImportError(f"cannot load {PATH}")
 runner = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(runner)
 

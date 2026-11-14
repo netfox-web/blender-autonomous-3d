@@ -39,7 +39,7 @@ REQUIRED_GATES = (
 )
 
 
-def _md(title: str, rows: list[dict], generated: str) -> str:
+def _md(title: str, rows: list[dict[str, Any]], generated: str) -> str:
     lines = [
         f"# {title}",
         "",
@@ -142,7 +142,8 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     acc_root = Path(hooks["acceptance_root"]) if hooks.get("acceptance_root") else ROOT / ".fox3d-data" / "acceptance" / generation_id
     acc_root.mkdir(parents=True, exist_ok=True)
     if hooks.get("chaos"):
-        plat = hooks.get("platform")(acc_root) if hooks.get("platform") else None
+        platform_hook = hooks.get("platform")
+        plat = platform_hook(acc_root) if platform_hook else None
         chaos = hooks["chaos"](plat)
     else:
         factory = hooks.get("platform") or (lambda root: Platform(root=root, mock_blender=True))
@@ -169,7 +170,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         missing.append("sharedHealthJournal")
     if (health.get("journalIntegrity") or {}).get("status") == "BLOCKED_EVIDENCE":
         missing.append("sharedHealthBlocked")
-    rows = [
+    rows: list[dict[str, Any]] = [
         {"check": "FIXTURE/CHAOS workOrders", "status": "FIXTURE", "evidence": f"n={chaos.get('workOrderCount')}"},
         {"check": "no oversell", "status": _logic(bool(chaos.get("noOversell"))), "evidence": f"subprocess/persistence scope={chaos.get('noOversell')}"},
         {"check": "material conservation", "status": _logic(bool(chaos.get("materialConserved"))), "evidence": str(chaos.get("materialConserved"))},
@@ -212,6 +213,14 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         "integrityGates": required,
         "ok": gate_ok,
     }
+    operator_rows: list[dict[str, Any]] = [
+        {"check": "operator view tenant scoped", "status": "FIXTURE", "evidence": op_view.get("tenantId")},
+        {"check": "barcode hardware", "status": "PARTIAL", "evidence": "scan token only"},
+        {"check": "LIVE_CNC badge", "status": "BLOCKED", "evidence": health.get("liveCnc")},
+        {"check": "LIVE_LASER badge", "status": "BLOCKED", "evidence": health.get("liveLaser")},
+        {"check": "health notFactorySla", "status": "FIXTURE", "evidence": str(health.get("notFactorySla"))},
+        {"check": "shared journal health", "status": "REAL_LOGIC" if (health.get("journalIntegrity") or {}).get("ok") else "BLOCKED_EVIDENCE", "evidence": json.dumps(health.get("journalIntegrity"))},
+    ]
     operator = {
         "domain": "operator-control",
         "generatedAt": generated,
@@ -227,14 +236,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
             "liveMachineControl": False,
         },
         "health": health,
-        "rows": [
-            {"check": "operator view tenant scoped", "status": "FIXTURE", "evidence": op_view.get("tenantId")},
-            {"check": "barcode hardware", "status": "PARTIAL", "evidence": "scan token only"},
-            {"check": "LIVE_CNC badge", "status": "BLOCKED", "evidence": health.get("liveCnc")},
-            {"check": "LIVE_LASER badge", "status": "BLOCKED", "evidence": health.get("liveLaser")},
-            {"check": "health notFactorySla", "status": "FIXTURE", "evidence": str(health.get("notFactorySla"))},
-            {"check": "shared journal health", "status": "REAL_LOGIC" if (health.get("journalIntegrity") or {}).get("ok") else "BLOCKED_EVIDENCE", "evidence": json.dumps(health.get("journalIntegrity"))},
-        ],
+        "rows": operator_rows,
         "fullAutonomousFactoryReady": False,
         "liveFactoryExecutionReady": False,
         "globalProductionReady": False,
@@ -248,7 +250,7 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
     dest.write_text(json.dumps(deploy, indent=2, default=str), encoding="utf-8")
     (docs / "PILOT_DEPLOYMENT_ACCEPTANCE.md").write_text(_md("PILOT_DEPLOYMENT_ACCEPTANCE", rows, generated), encoding="utf-8")
     (docs / "OPERATOR_CONTROL_ACCEPTANCE.json").write_text(json.dumps(operator, indent=2, default=str), encoding="utf-8")
-    (docs / "OPERATOR_CONTROL_ACCEPTANCE.md").write_text(_md("OPERATOR_CONTROL_ACCEPTANCE", operator["rows"], generated), encoding="utf-8")
+    (docs / "OPERATOR_CONTROL_ACCEPTANCE.md").write_text(_md("OPERATOR_CONTROL_ACCEPTANCE", operator_rows, generated), encoding="utf-8")
     payload = {
         "ok": gate_ok,
         "label": "FIXTURE/CHAOS",

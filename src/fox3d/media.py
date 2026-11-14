@@ -125,8 +125,8 @@ class AssemblyAnimator:
 
 class BlenderToVideo:
     def keyframes(self, scene_graph: dict[str, Any], *, frames: tuple[str, ...] = ("START_FRAME", "MIDDLE_FRAME", "END_FRAME")) -> dict[str, Any]:
-        cam = next((o for o in scene_graph.get("objects") or [] if o.get("type") == "camera"), {})
-        product = next((o for o in scene_graph.get("objects") or [] if o.get("name") == "Product"), {})
+        cam: dict[str, Any] = next((o for o in scene_graph.get("objects") or [] if o.get("type") == "camera"), {})
+        product: dict[str, Any] = next((o for o in scene_graph.get("objects") or [] if o.get("name") == "Product"), {})
         refs = []
         for name in frames:
             refs.append(

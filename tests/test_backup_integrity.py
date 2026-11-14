@@ -75,6 +75,25 @@ def test_tenant_scoped_backup_excludes_other_tenant(tmp_path):
         restore_pilot(dest, tmp_path / "r-b", tenant_id="tb")
 
 
+@pytest.mark.parametrize("tenant_ids", [None, []])
+def test_pilot_backup_empty_tenants_falls_back_to_work_orders(tmp_path, tenant_ids):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    for tenant in ("ta", "tb"):
+        plat.pilot.journal.append(
+            "fixture", tenant_id=tenant, aggregate_type="fixture", aggregate_id=tenant, actor="ops"
+        )
+    plat.pilot.workorders.orders["wo-a"] = {"tenantId": "ta"}
+
+    dest = tmp_path / "bak"
+    manifest = plat.pilot.backup_state(dest, tenant_ids=tenant_ids)
+
+    assert manifest["scope"] == "TENANT_SCOPED"
+    assert manifest["tenantIds"] == ["ta"]
+    assert (dest / "data" / "journal" / "ta.json").is_file()
+    assert not (dest / "data" / "journal" / "tb.json").exists()
+    assert verify_backup(dest)["exactSet"] is True
+
+
 def test_verify_rejects_extra_missing_duplicate_traversal(tmp_path):
     plat = Platform(root=tmp_path / "live", mock_blender=True)
     plat.lots.receive(tenant_id="ta", material="PB_18_WHITE", thickness=18, quantity=2, actor="ops", source="MANUAL")

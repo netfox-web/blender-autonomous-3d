@@ -26,6 +26,8 @@ import sys
 
 _runner_path = Path(__file__).resolve().parents[1] / "scripts" / "run_product_content_e2e.py"
 _runner_spec = importlib.util.spec_from_file_location("run_product_content_e2e", _runner_path)
+if _runner_spec is None or _runner_spec.loader is None:
+    raise ImportError(f"cannot load {_runner_path}")
 _runner_mod = importlib.util.module_from_spec(_runner_spec)
 sys.modules["run_product_content_e2e"] = _runner_mod
 _runner_spec.loader.exec_module(_runner_mod)
