@@ -99,6 +99,14 @@ def test_approval_audit_and_stale(platform):
 
 def test_release_export_not_live(platform):
     rec = platform.kd.build_sku(tenant_id="t1", kind="PET_FURNITURE")
+    rec = {
+        **rec,
+        "evidenceHash": "FAKE_EVIDENCE_HASH_FOR_TEST",
+        "lineage": {
+            **(rec.get("lineage") or {}),
+            "evidenceHash": "FAKE_EVIDENCE_HASH_FOR_TEST",
+        },
+    }
     g = platform.release
     eid = rec["spec"]["productId"]
     tid = "t1"

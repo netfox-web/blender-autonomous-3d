@@ -96,7 +96,11 @@ class ReleaseGate:
         current = self.hashes_of(entity)
         bound = approval.get("hashes") or {}
         for key in BOUND_HASH_KEYS:
-            if bound.get(key) and current.get(key) and str(bound[key]) != str(current[key]):
+            bound_val = bound.get(key)
+            if not bound_val:
+                continue
+            current_val = current.get(key)
+            if not current_val or str(bound_val) != str(current_val):
                 return True
         return False
 
@@ -123,6 +127,8 @@ class ReleaseGate:
         hashes = self.hashes_of(entity)
         if not hashes.get("engineeringHash"):
             raise PermissionError("engineeringHash required before evidence verification")
+        if not hashes.get("evidenceHash"):
+            raise PermissionError("evidenceHash required before evidence verification")
 
     def advance(
         self,

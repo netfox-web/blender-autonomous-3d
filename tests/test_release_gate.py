@@ -17,7 +17,8 @@ def _entity(product_id: str = "ent-1") -> dict:
     return {
         "spec": {"productId": product_id, "revision": 1},
         "engineeringHash": "eng-a",
-        "lineage": {"engineeringHash": "eng-a", "bomHash": "bom-a"},
+        "evidenceHash": "ev-a",
+        "lineage": {"engineeringHash": "eng-a", "bomHash": "bom-a", "evidenceHash": "ev-a"},
         "bom": {"bomHash": "bom-a"},
     }
 
@@ -197,8 +198,61 @@ def test_empty_entity_cannot_verify_evidence_or_backfill_to_export():
     with pytest.raises(PermissionError, match="engineeringHash required"):
         gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent, evidence_ok=True)
     ent_b = {**ent, "engineeringHash": "eng-b", "lineage": {"engineeringHash": "eng-b"}}
-    with pytest.raises(PermissionError, match="cannot bind new hashes"):
+    with pytest.raises(PermissionError, match="evidenceHash required"):
         gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent_b, evidence_ok=True)
+    ent_c = {
+        **ent,
+        "engineeringHash": "eng-b",
+        "evidenceHash": "ev-b",
+        "lineage": {"engineeringHash": "eng-b", "evidenceHash": "ev-b"},
+    }
+    with pytest.raises(PermissionError, match="cannot bind new hashes"):
+        gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent_c, evidence_ok=True)
+
+
+def test_evidence_hash_required_before_evidence_verified():
+    gate = ReleaseGate()
+    ent = {
+        "spec": {"productId": "ent-no-ev", "revision": 1},
+        "engineeringHash": "eng-a",
+        "lineage": {"engineeringHash": "eng-a"},
+    }
+    eid = "ent-no-ev"
+    tid = "t1"
+    gate.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=ent)
+    with pytest.raises(PermissionError, match="evidenceHash required"):
+        gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent, evidence_ok=True)
+
+
+def test_cannot_export_without_evidence_hash_bound():
+    gate = ReleaseGate()
+    ent = {
+        "spec": {"productId": "ent-skip-ev", "revision": 1},
+        "engineeringHash": "eng-a",
+        "lineage": {"engineeringHash": "eng-a", "bomHash": "bom-a"},
+        "bom": {"bomHash": "bom-a"},
+    }
+    eid = "ent-skip-ev"
+    tid = "t1"
+    gate.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=ent)
+    with pytest.raises(PermissionError, match="evidenceHash required"):
+        gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent, evidence_ok=True)
+    assert gate.approvals[(tid, eid)]["state"] == "ENGINEERING_VALID"
+
+
+def test_refresh_stale_when_bound_hash_removed_after_export():
+    gate = ReleaseGate()
+    ent = _entity("ent-rm-hash")
+    eid = "ent-rm-hash"
+    tid = "t1"
+    _advance_chain(gate, eid, tid, ent, to="APPROVED_FOR_EXPORT")
+    stripped = dict(ent)
+    stripped.pop("engineeringHash", None)
+    stripped["lineage"] = {k: v for k, v in (ent.get("lineage") or {}).items() if k != "engineeringHash"}
+    ref = gate.refresh_stale(eid, tenant_id=tid, entity=stripped)
+    assert ref["stale"] is True
+    assert ref["state"] == "PROTOTYPE"
+    assert ref["hashes"] == {}
 
 
 def test_evidence_hash_change_rejected_after_verified():
