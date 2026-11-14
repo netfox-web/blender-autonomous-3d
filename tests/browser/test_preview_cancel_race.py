@@ -171,6 +171,46 @@ def test_product_models_cancel_stays_locked_during_poll(admin_page, admin_server
     assert _console_errors(page) == []
 
 
+def test_product_models_tracks_multiple_pending_cancellations(admin_page, admin_server: dict[str, Any]) -> None:
+    base = admin_server["base_url"]
+    model_a, model_b, name_a, name_b = _create_models(base, "cancel-multiple")
+    pending: dict[str, Any] = {}
+    posts: list[str] = []
+
+    def intercept(route):
+        path = urlparse(route.request.url).path
+        mid = path.split("/")[-2]
+        if mid in (model_a, model_b) and path.endswith("/preview") and route.request.method == "GET":
+            return route.fulfill(json=_running_preview(TASK_A if mid == model_a else TASK_B))
+        if mid in (model_a, model_b) and path.endswith("/cancel") and route.request.method == "POST":
+            posts.append(mid)
+            pending[mid] = route
+            return
+        return route.fallback()
+
+    page = admin_page
+    page.add_init_script("window.mountRecipeViewer = () => () => {};")
+    page.route("**/api/product-models/**", intercept)
+    page.goto(f"{base}/admin/recipes/models", wait_until="domcontentloaded")
+    page.wait_for_selector("#masters button")
+    for name in (name_a, name_b):
+        page.locator("#masters button").filter(has_text=name).first.click()
+        expect(page.locator("#cancel")).to_be_enabled(timeout=10_000)
+        _click_cancel(page)
+        expect(page.locator("#cancel")).to_be_disabled()
+    page.locator("#masters button").filter(has_text=name_a).first.click()
+    expect(page.locator("#render-state")).to_contain_text("Blender 生成中")
+    expect(page.locator("#cancel")).to_be_disabled()
+    _click_cancel(page)
+    assert posts == [model_a, model_b]
+    pending[model_b].fulfill(json={"taskId": TASK_B, "cancelRequested": True})
+    page.wait_for_timeout(300)
+    expect(page.locator("#cancel")).to_be_disabled()
+    pending[model_a].fulfill(json={"taskId": TASK_A, "cancelRequested": True})
+    expect(page.locator("#cancel")).to_be_enabled(timeout=10_000)
+    assert _console_errors(page) == []
+
+
 def test_product_models_failed_cancel_does_not_enable_other_model(admin_page, admin_server: dict[str, Any]) -> None:
     base = admin_server["base_url"]
     model_a, model_b, name_a, name_b = _create_models(base, "cancel-race")
