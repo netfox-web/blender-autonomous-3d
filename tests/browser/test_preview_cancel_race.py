@@ -58,16 +58,59 @@ def _running_preview(task_id: str) -> dict[str, Any]:
     }
 
 
-def _running_recipe_status(task_id: str) -> dict[str, Any]:
+def _idle_preview() -> dict[str, Any]:
+    return {
+        "state": "idle",
+        "taskId": None,
+        "generated": False,
+        "stale": False,
+        "error": None,
+        "generationId": None,
+    }
+
+
+def _running_recipe_status(task_id: str, *, progress: float = 0.0) -> dict[str, Any]:
     return {
         "state": "running",
         "taskId": task_id,
         "generated": False,
         "stale": False,
         "error": None,
+        "progress": progress,
         "generationId": "gen-fixture",
         "sourceRevision": 1,
         "renderInfo": {"device": "Cycles"},
+        "bom": {"lines": []},
+    }
+
+
+def _idle_recipe_status() -> dict[str, Any]:
+    return {
+        "state": "idle",
+        "taskId": None,
+        "generated": False,
+        "stale": False,
+        "error": None,
+        "progress": 0,
+        "generationId": None,
+        "sourceRevision": 1,
+        "renderInfo": None,
+        "bom": {"lines": []},
+    }
+
+
+def _terminal_recipe_status(state: str) -> dict[str, Any]:
+    generated = state == "succeeded"
+    return {
+        "state": state,
+        "taskId": None,
+        "generated": generated,
+        "stale": False,
+        "error": None,
+        "progress": 1.0 if generated else 0.0,
+        "generationId": "gen-fixture" if generated else None,
+        "sourceRevision": 1,
+        "renderInfo": {"device": "Cycles"} if generated else None,
         "bom": {"lines": []},
     }
 
@@ -137,8 +180,10 @@ def test_product_models_failed_cancel_does_not_enable_other_model(admin_page, ad
         path = urlparse(route.request.url).path
         if path.endswith("/preview") and route.request.method == "GET":
             mid = path.split("/")[-2]
-            task = TASK_A if mid == model_a else TASK_B
-            return route.fulfill(json=_running_preview(task))
+            if mid == model_a:
+                return route.fulfill(json=_running_preview(TASK_A))
+            if mid == model_b:
+                return route.fulfill(json=_idle_preview())
         if model_a in path and path.endswith("/cancel") and route.request.method == "POST":
             pending.append(route)
             return
@@ -154,11 +199,10 @@ def test_product_models_failed_cancel_does_not_enable_other_model(admin_page, ad
     _click_cancel(page)
     expect(page.locator("#cancel")).to_be_disabled()
     page.locator("#masters button").filter(has_text=name_b).first.click()
-    expect(page.locator("#cancel")).to_be_enabled(timeout=10_000)
-    expect(page.locator("#cancel")).to_be_enabled()
+    expect(page.locator("#cancel")).to_be_disabled(timeout=10_000)
     pending[0].fulfill(status=400, json={"detail": "取消失敗（測試）"})
     page.wait_for_timeout(400)
-    expect(page.locator("#cancel")).to_be_enabled()
+    expect(page.locator("#cancel")).to_be_disabled()
     assert _console_errors(page) == []
 
 
@@ -172,7 +216,9 @@ def test_recipe_library_failed_cancel_after_product_switch(admin_page, admin_ser
         path = urlparse(route.request.url).path
         if path.endswith("/3d/status") and route.request.method == "GET":
             sku = path.split("/")[-3]
-            return route.fulfill(json=_running_recipe_status(TASK_A if sku == primary_sku else TASK_B))
+            if sku == primary_sku:
+                return route.fulfill(json=_running_recipe_status(TASK_A))
+            return route.fulfill(json=_idle_recipe_status())
         if path.endswith("/3d/plan") and route.request.method == "GET":
             return route.fulfill(json=_recipe_plan())
         if path.endswith("/3d/cancel") and route.request.method == "POST" and primary_sku in path:
@@ -191,10 +237,10 @@ def test_recipe_library_failed_cancel_after_product_switch(admin_page, admin_ser
     expect(page.locator("#cancel-preview")).to_be_disabled()
     page.locator(f'[data-sku="{other_sku}"]').click()
     page.locator("#threed-tab").click()
-    expect(page.locator("#cancel-preview")).to_be_enabled()
+    expect(page.locator("#cancel-preview")).to_have_count(0)
     pending[0].fulfill(status=400, json={"detail": "取消失敗（測試）"})
     page.wait_for_timeout(400)
-    expect(page.locator("#cancel-preview")).to_be_enabled()
+    expect(page.locator("#cancel-preview")).to_have_count(0)
     assert _console_errors(page) == []
 
 
@@ -206,7 +252,9 @@ def test_recipe_library_failed_cancel_after_poll_rerender(admin_page, admin_serv
     def intercept(route):
         path = urlparse(route.request.url).path
         if path.endswith("/3d/status") and route.request.method == "GET":
-            return route.fulfill(json=_running_recipe_status(TASK_A))
+            if pending:
+                return route.fulfill(json=_terminal_recipe_status("succeeded"))
+            return route.fulfill(json=_running_recipe_status(TASK_A, progress=0.15))
         if path.endswith("/3d/plan") and route.request.method == "GET":
             return route.fulfill(json=_recipe_plan())
         if path.endswith("/3d/cancel") and route.request.method == "POST":
@@ -223,7 +271,11 @@ def test_recipe_library_failed_cancel_after_poll_rerender(admin_page, admin_serv
     expect(page.locator("#cancel-preview")).to_be_enabled(timeout=10_000)
     _click_cancel(page, "#cancel-preview")
     expect(page.locator("#cancel-preview")).to_be_disabled()
+    page.wait_for_timeout(100)
+    assert pending, "cancel POST was not intercepted"
     page.wait_for_timeout(2800)
+    expect(page.locator("#cancel-preview")).to_have_count(0)
     pending[0].fulfill(status=400, json={"detail": "取消失敗（測試）"})
     page.wait_for_timeout(400)
+    expect(page.locator("#cancel-preview")).to_have_count(0)
     assert _console_errors(page) == []
