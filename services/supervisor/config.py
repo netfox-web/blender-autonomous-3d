@@ -79,7 +79,9 @@ def validate_live_config(config: SupervisorConfig) -> None:
         elif config.ai_provider == "gemini" and not model_str.startswith("gemini-"):
             raise ConfigValidationError(f"Invalid model '{config.ai_model}' for provider 'gemini' in live mode.")
 
-    if not config.admin_key or len(config.admin_key) < 16:
+    # Strip first so a key of only spaces cannot satisfy the minimum length.
+    normalized_admin_key = config.admin_key.strip()
+    if not normalized_admin_key or len(normalized_admin_key) < 16:
         raise ConfigValidationError("Live mode requires non-empty SUPERVISOR_ADMIN_KEY (minimum 16 characters).")
 
     # Ensure storage paths are genuinely writable via canary file test
