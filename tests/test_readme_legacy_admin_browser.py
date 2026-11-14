@@ -10,7 +10,7 @@ README = ROOT / "README.md"
 JOB = "legacy-admin-browser:"
 
 
-def _legacy_admin_browser_pytest_run() -> str:
+def _legacy_admin_browser_pytest_runs() -> list[str]:
     lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
     start = next(i for i, line in enumerate(lines) if line.strip() == JOB)
     job_indent = len(lines[start]) - len(lines[start].lstrip())
@@ -20,13 +20,15 @@ def _legacy_admin_browser_pytest_run() -> str:
             break
         body.append(line)
     runs = [line.split("run:", 1)[1].strip() for line in body if line.strip().startswith("run:") and "pytest" in line]
-    assert len(runs) == 1, runs
-    return runs[0]
+    assert len(runs) == 2, runs
+    return runs
 
 
 def test_readme_legacy_admin_browser_command_matches_workflow() -> None:
-    command = _legacy_admin_browser_pytest_run()
+    commands = _legacy_admin_browser_pytest_runs()
     readme = README.read_text(encoding="utf-8")
-    # Local copy (env prefix + command) and the sentence that quotes the workflow run line.
-    assert readme.count(command) >= 2
-    assert command in readme.split("**`legacy-admin-browser` job**", 1)[1]
+    section = readme.split("**`legacy-admin-browser` job**", 1)[1]
+    for command in commands:
+        # Local copy (env prefix + command) and the sentence that quotes the workflow run line.
+        assert readme.count(command) >= 2
+        assert command in section
