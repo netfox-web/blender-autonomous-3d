@@ -4,7 +4,8 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const form=$('master-form');
   let usageRoles={}, reviewAsset=null, usageLimit=20, draftSourceGroupId='', draftRecipeReference=null, recipeReferences=[];
-  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], dispose=null, viewId='', busy=false, cancelPending=null;
+  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], dispose=null, viewId='', busy=false;
+  const cancelPending=new Map();
   let masterInventory=[], categoryTree=[], categoryNodes=new Map(), categoryFilter='all', classification=null, classificationDirty=false, pendingNewCategory=null;
   const numeric=['widthMm','depthMm','heightMm','panelMm','backMm','doorMm','gapMm','rows'];
   const labels={idle:'尚未生成',queued:'排隊中',running:'Blender 生成中',succeeded:'生成完成',failed:'生成失敗',cancelled:'已取消'};
@@ -128,7 +129,7 @@
     const taskId=['queued','running'].includes(s.state)?s.taskId:null;
     task=taskId;previewBinding=taskId?{modelId:id,taskId}:previewBinding?.modelId===id?null:previewBinding;
     const active=['queued','running'].includes(s.state);
-    const cancelLocked=cancelPending&&cancelPending.modelId===id&&(!cancelPending.taskId||cancelPending.taskId===taskId);
+    const cancelLocked=cancelPending.get(id)?.has(taskId);
     $('cancel').disabled=cancelLocked||!active||!taskId;$('render-state').textContent=`${labels[s.state]||s.state}${s.error?' · '+s.error:''}${s.stale?' · 模型已修改，需重新生成':''}`;
     $('generate').disabled=active||dirty||!selected.readiness.previewReady||!$('accept').checked||busy;
     if(s.generated&&!s.stale&&!dirty){const url=fmt=>`${base}/${id}/files/${fmt}?`+new URLSearchParams({workspace:tenant,generation:s.generationId});
@@ -150,7 +151,7 @@
   form.onsubmit=run(async()=>{if(busy)return;busy=true;form.inert=true;$('save').disabled=true;try{selected=await api(selected?'/'+selected.id:'',{method:selected?'PUT':'POST',body:body({draft:draft(),expectedRevision:selected?.revision||0})});if(pendingNewCategory){try{const c=await api('/'+selected.id+'/classification');await api('/'+selected.id+'/classification',{method:'PUT',body:body({categoryId:pendingNewCategory,expectedRevision:c.revision})});pendingNewCategory=null;}catch(err){fill(selected.draft);await loadMasters();throw new Error('模型已儲存；分類尚未完成，請使用「儲存分類」重試：'+err.message);}}fill(selected.draft);await loadMasters();await showStatus();notice('模型資料已儲存。'+(selected.readiness.missing||'可確認簡化說明後生成 3D。'));}finally{busy=false;form.inert=false;$('save').disabled=false;readiness();}});
   $('accept').onchange=readiness;
   $('generate').onclick=run(async()=>{if(!selected||dirty)return;busy=true;readiness();try{await api('/'+selected.id+'/preview',{method:'POST',body:body({expectedRevision:selected.revision,inputHash:selected.inputHash,assumptionsAccepted:$('accept').checked})});notice('已送出真實 Blender 生成工作，畫面會更新進度。');}finally{busy=false;await showStatus();}});
-  $('status').onclick=run(showStatus);$('cancel').onclick=run(async()=>{if(!selected)return;const modelId=selected.id,taskId=previewBinding?.modelId===modelId?previewBinding.taskId:task;if(!taskId)return;const button=$('cancel');cancelPending={modelId,taskId};button.disabled=true;try{await api('/'+modelId+'/cancel',{method:'POST',body:body({taskId})});notice('已送出取消要求。');await showStatus();}catch(err){if(selected?.id===modelId&&cancelPending?.modelId===modelId&&cancelPending?.taskId===taskId)button.disabled=false;throw err;}finally{if(cancelPending?.modelId===modelId&&cancelPending?.taskId===taskId)cancelPending=null;if(selected?.id===modelId)await showStatus();}});
+  $('status').onclick=run(showStatus);$('cancel').onclick=run(async()=>{if(!selected)return;const modelId=selected.id,taskId=previewBinding?.modelId===modelId?previewBinding.taskId:task;if(!taskId)return;const pending=cancelPending.get(modelId)||new Set();if(pending.has(taskId))return;pending.add(taskId);cancelPending.set(modelId,pending);$('cancel').disabled=true;try{await api('/'+modelId+'/cancel',{method:'POST',body:body({taskId})});notice('已送出取消要求。');}finally{pending.delete(taskId);if(!pending.size)cancelPending.delete(modelId);if(selected?.id===modelId)await showStatus();}});
   window.addEventListener('beforeunload',e=>{if(dirty||classificationDirty){e.preventDefault();e.returnValue='';}});
   setInterval(()=>{if(task)showStatus().catch(err=>notice(err.message,true));},5000);
   run(async()=>{const data=await api('/catalog');$('family').insertAdjacentHTML('beforeend',options(data.families));$('subtype').insertAdjacentHTML('beforeend',options(data.subtypes));$('edit-family').innerHTML=options({...data.families,mat:'地墊／洗漱墊'});$('edit-subtype').innerHTML=options(data.subtypes,'other');
