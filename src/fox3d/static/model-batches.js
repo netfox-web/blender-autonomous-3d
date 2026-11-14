@@ -7,7 +7,6 @@
   const authorities = {SYNTHETIC_FIXTURE:'合成測試模型',REFERENCE_RECIPE:'Recipe 參考，未實測',OPERATOR_DECLARED_UNMEASURED:'人員填寫，未實測'};
   const drafts = new Map();
   let master=null, dirty=false, task=null, busy=false, pending=[], offset=0, epoch=0, lastGeneration=null;
-  const esc = v => String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const message = (v, error=false) => {const el=$('batch-message');el.textContent=v;el.classList.toggle('error',!!error);};
   function known(map,key){return Object.prototype.hasOwnProperty.call(map,key)?map[key]:'';}
   async function api(path,options={}) {
@@ -56,11 +55,40 @@
     const d=await api(`/${id}/compositions?offset=${offset}`);if(token!==epoch)return;
     $('batch-history-count').textContent=d.total?`共 ${d.total} 款；目前第 ${offset+1}～${offset+d.items.length} 款`:'尚無已保存成果';
     $('batch-history-prev').disabled=offset===0;$('batch-history-next').disabled=offset+d.items.length>=d.total;
-    $('batch-history').innerHTML=d.items.map(row=>{
-      const url=n=>`${base}/${id}/composition/files/${n}?`+new URLSearchParams({workspace:tenant,generation:row.generationId});
-      return `<article class="variant-card"><h4>${esc(row.sku)}</h4><p>${esc(scenes[row.scene]||row.scene)} · ${esc(views[row.view||"THREE_QUARTER"])} · 母版第 ${esc(row.sourceRevision)} 版</p>`+
-        (row.available?`<img loading="lazy" src="${esc(url('beauty.png'))}" alt="${esc(row.sku)}套圖預覽"><div>${Object.entries({'beauty.png':'情境圖','front-closed.png':'正面核對','model.glb':'3D 模型','model.blend':'Blender 母版'}).map(([n,l])=>`<a href="${esc(url(n))}" download>${l}</a>`).join('')}</div>`:`<p>${esc(row.error||'此成果目前不可下載')}</p>`)+`<p class="muted">展示預覽 · 尺寸待實物核對</p></article>`;
-    }).join('');
+    const host=$('batch-history');
+    const fragment=document.createDocumentFragment();
+    for(const row of d.items){
+      const url=name=>`${base}/${id}/composition/files/${name}?`+new URLSearchParams({workspace:tenant,generation:row.generationId});
+      const viewKey=row.view||'THREE_QUARTER';
+      const article=document.createElement('article');
+      article.className='variant-card';
+      const title=document.createElement('h4');
+      title.textContent=row.sku??'';
+      const summary=document.createElement('p');
+      summary.textContent=`${known(scenes,row.scene)||row.scene||''} · ${known(views,viewKey)||''} · 母版第 ${row.sourceRevision??''} 版`;
+      article.append(title,summary);
+      if(row.available){
+        const img=document.createElement('img');
+        img.loading='lazy';img.src=url('beauty.png');img.alt=`${row.sku??''}套圖預覽`;
+        const links=document.createElement('div');
+        for(const [name,label] of Object.entries({'beauty.png':'情境圖','front-closed.png':'正面核對','model.glb':'3D 模型','model.blend':'Blender 母版'})){
+          const a=document.createElement('a');
+          a.href=url(name);a.download='';a.textContent=label;
+          links.append(a);
+        }
+        article.append(img,links);
+      }else{
+        const err=document.createElement('p');
+        err.textContent=row.error||'此成果目前不可下載';
+        article.append(err);
+      }
+      const note=document.createElement('p');
+      note.className='muted';
+      note.textContent='展示預覽 · 尺寸待實物核對';
+      article.append(note);
+      fragment.append(article);
+    }
+    host.replaceChildren(fragment);
   }
   async function status() {
     if(!master)return;const token=epoch,id=master.id;
@@ -71,7 +99,21 @@
     }
     if(token!==epoch)return;
     const before=task;task=['queued','running'].includes(s.state)?s.taskId:null;
-    $('batch-progress').innerHTML=(s.batch?.rows||[]).map(r=>`<li>${esc(r.sku)} · ${esc(scenes[r.scene])} · ${esc(views[r.view||"THREE_QUARTER"])}：${esc(states[r.state]||r.state)} · ${esc(authorities[r.geometryAuthorityKind]||'來源待核對')} · ${r.visualAssetReady?'可下載展示素材':'展示素材未就緒'} · 製造／印刷尚未驗證${r.error?' — '+esc(r.error):''}</li>`).join('');
+    const host=$('batch-progress');
+    const fragment=document.createDocumentFragment();
+    for(const r of (s.batch?.rows||[])){
+      const li=document.createElement('li');
+      const viewKey=r.view||'THREE_QUARTER';
+      const sceneLabel=known(scenes,r.scene)||'';
+      const viewLabel=known(views,viewKey)||'';
+      const stateLabel=known(states,r.state)||r.state||'';
+      const authorityLabel=known(authorities,r.geometryAuthorityKind)||'來源待核對';
+      const ready=r.visualAssetReady?'可下載展示素材':'展示素材未就緒';
+      const detail=r.error?' — '+r.error:'';
+      li.textContent=`${r.sku??''} · ${sceneLabel} · ${viewLabel}：${stateLabel} · ${authorityLabel} · ${ready} · 製造／印刷尚未驗證${detail}`;
+      fragment.append(li);
+    }
+    host.replaceChildren(fragment);
     if(s.batch){
       const rows=s.batch.rows||[];
       const failed=Boolean(s.error)||['failed','cancelled','interrupted'].includes(s.state)||rows.some(r=>['failed','cancelled','interrupted'].includes(r.state));
