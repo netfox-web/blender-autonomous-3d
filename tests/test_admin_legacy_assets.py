@@ -649,15 +649,20 @@ def test_many_viewers_release_blobs_on_close(legacy_admin_browser_server: dict[s
             assert popup.evaluate("window.opener === null")
             urls.append(popup.locator("#asset").get_attribute("src"))
             viewers.append(popup)
+        def wait_for_revokes(expected_urls: list[str]) -> None:
+            deadline = time.monotonic() + 10
+            while not all(("revoke", url) in events for url in expected_urls) and time.monotonic() < deadline:
+                # Playwright must process binding callbacks while waiting.
+                page.wait_for_timeout(50)
+            assert all(("revoke", url) in events for url in expected_urls)
+
         for popup in viewers[:-1]:
             popup.close(run_before_unload=True)
-        page.wait_for_function("() => true")
-        assert all(("revoke", url) in events for url in urls[:-1])
+        wait_for_revokes(urls[:-1])
         assert ("revoke", urls[-1]) not in events
         assert viewers[-1].evaluate("() => document.querySelector('#asset').decode().then(() => true)")
         viewers[-1].close(run_before_unload=True)
-        page.wait_for_timeout(100)
-        assert ("revoke", urls[-1]) in events
+        wait_for_revokes(urls[-1:])
         browser.close()
 
 
