@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -67,6 +68,8 @@ from fox3d.scene import SceneDSL, compile_scene_graph
 from fox3d.space import SpacePipeline
 from fox3d.studio import MaterialEngine, ProductStudio, seed_system_recipes
 from fox3d.twin import ProductDigitalTwin, TwinStore
+
+logger = logging.getLogger(__name__)
 
 
 class Platform:
@@ -781,11 +784,9 @@ class Platform:
 
     @staticmethod
     def _ai_video_status_label(video: dict[str, Any]) -> str:
-        if video.get("kind") == "mock_video" or video.get("provider") == "mock":
-            return "MOCK"
         status = str(video.get("status") or "").lower()
         if status in ("succeeded", "completed"):
-            return "REAL"
+            return "MOCK" if video.get("kind") == "mock_video" or video.get("provider") == "mock" else "REAL"
         if status == "blocked" or status.startswith("blocked"):
             return "BLOCKED"
         return "FAILED"
@@ -930,7 +931,8 @@ class Platform:
                 },
             )
         except Exception as exc:
-            video = {"status": "failed", "error": str(exc)}
+            logger.warning("Video adapter failed (%s)", type(exc).__name__)
+            video = {"status": "failed", "error": "VIDEO_ADAPTER_ERROR"}
         return {
             "blender": blender_job,
             "aiVideo": video,

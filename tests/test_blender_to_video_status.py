@@ -44,13 +44,26 @@ def test_failed_adapter_not_real(platform, twin):
 
 
 def test_adapter_exception_marked_failed(platform, twin):
+    sensitive_message = "transport failed: https://example.invalid/?credential=PRIVATE_TEST_VALUE"
+
     def boom(_req):
-        raise RuntimeError("adapter transport down")
+        raise RuntimeError(sensitive_message)
 
     platform.gateway.register_video_adapter("live-boom", boom)
     out = platform.blender_to_video(tenant_id="t1", twin_id=twin["twinId"], adapter="live-boom")
     assert out["aiVideoStatus"] == "FAILED"
-    assert "adapter transport down" in out["aiVideo"]["error"]
+    assert out["aiVideo"]["error"] == "VIDEO_ADAPTER_ERROR"
+    assert sensitive_message not in str(out)
+    assert "PRIVATE_TEST_VALUE" not in str(out)
+
+
+@pytest.mark.parametrize("identity", [{"provider": "mock"}, {"kind": "mock_video"}])
+@pytest.mark.parametrize("status, expected", [("failed", "FAILED"), ("blocked", "BLOCKED"), ("blocked_policy", "BLOCKED"), ("pending", "FAILED")])
+def test_unsuccessful_mock_adapter_preserves_status(platform, twin, identity, status, expected):
+    platform.gateway.register_video_adapter("mock-unsuccessful", lambda _req: {**identity, "status": status})
+    out = platform.blender_to_video(tenant_id="t1", twin_id=twin["twinId"], adapter="mock-unsuccessful")
+    assert out["aiVideoStatus"] == expected
+    assert out["aiVideo"]["status"] == status
 
 
 def test_unregistered_adapter_name_is_mock(platform, twin):
