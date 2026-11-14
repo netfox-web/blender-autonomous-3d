@@ -521,7 +521,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def factory_revise(product_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         try:
-            return get_platform().factory.revise_cabinet(product_id, tenant_id=tid, **{k: v for k, v in payload.items() if k != "tenantId"})
+            return get_platform().factory.revise_cabinet_changes(product_id, tid, {k: v for k, v in payload.items() if k != "tenantId"})
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from exc
         except (KeyError, PermissionError) as exc:
             # unknown product or another tenant's product: same 404, no cross-tenant probing
             raise HTTPException(404, product_id) from exc

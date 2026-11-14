@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.parametric import TYPE_DEFAULTS
@@ -361,7 +361,26 @@ def validate_assembly(assembly: MultiCabinetAssembly, *, space: Any | None = Non
     return violations
 
 
-def customer_revision(engine: Any, spec: Any, **changes: Any) -> tuple[Any, Any, dict[str, Any]]:
+class CabinetRevisionInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    depth: float = Field(gt=0)
+    material: str
+    shelfCount: int = Field(ge=0)
+    doorCount: int = Field(ge=0)
+    drawerCount: int = Field(ge=0)
+    openingStyle: str
+    topFillerHeight: float = Field(ge=0)
+    sideFillerWidth: float = Field(ge=0)
+
+
+def customer_revision(engine: Any, spec: Any, /, **changes: Any) -> tuple[Any, Any, dict[str, Any]]:
+    values = {key: getattr(spec, key) for key in CabinetRevisionInput.model_fields}
+    values.update(changes)
+    validated = CabinetRevisionInput.model_validate(values)
+    changes = {key: getattr(validated, key) for key in changes}
     dim_keys = {k: v for k, v in changes.items() if k in {"width", "height", "depth"} and v is not None}
     nxt, report = engine.resize(spec, **dim_keys) if dim_keys else engine.resize(spec)
     for key in ("material", "shelfCount", "doorCount", "drawerCount", "openingStyle", "topFillerHeight", "sideFillerWidth"):
