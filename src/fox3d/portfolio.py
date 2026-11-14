@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from fox3d.ids import new_id, sha256_bytes, stable_hash
+from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.kd import FLATPACK_PRODUCT_TYPES, FlatPackProductTypeRegistry
@@ -277,7 +277,7 @@ class PortfolioFactory:
         if demand_source == "REAL":
             raise PortfolioError("BLOCKED", "MOCK demand cannot be labeled REAL")
         env = validate_envelope(envelope)
-        rec = {
+        rec: dict[str, Any] = {
             "portfolioId": new_id(),
             "tenantId": tenant_id,
             "targetSegment": segment,
@@ -667,7 +667,7 @@ class PortfolioFactory:
         cross_scrap = 0.0
         cross_reuse = 0.0
         for (mat_code, thickness, grain), group in groups.items():
-            lines: list[dict[str, Any]] = []
+            lines = []
             for rec in group:
                 spec = CabinetSpec.model_validate(rec["spec"])
                 for ln in rec["bom"]["lines"]:
@@ -683,7 +683,7 @@ class PortfolioFactory:
             cross_scrap += float(nest.get("trueScrapArea") or 0)
             cross_reuse += float(nest.get("reusableRemnantArea") or 0)
         cross = {"sheetCount": cross_sheets, "trueScrapArea": cross_scrap, "reusableRemnantArea": cross_reuse}
-        plan = {
+        plan: dict[str, Any] = {
             "planId": new_id(),
             "tenantId": tenant_id,
             "portfolioId": portfolio_id,

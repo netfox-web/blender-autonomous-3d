@@ -3,28 +3,22 @@
 from __future__ import annotations
 
 import copy
-import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from fox3d.content_factory import (
-    COMMERCE_DAM_ROLES,
     LIFESTYLE_PRESETS,
     REQUIRED_COMMERCE_VIEW_ROLES,
     build_articulated_state,
-    build_commerce_asset_pack,
     canonical_commerce_recipes,
     canonical_lifestyle_briefs,
     content_view_recipe,
     generate_dimension_overlay,
-    qa_commerce_pack,
     run_product_content_scenario,
     validate_dimension_asset_authority,
     validate_strict_content_view_recipe,
 )
-from fox3d.ids import sha256_bytes, stable_hash
 from fox3d.parametric import CabinetEngine
 from fox3d.platform import Platform
 import importlib.util
@@ -32,6 +26,8 @@ import sys
 
 _runner_path = Path(__file__).resolve().parents[1] / "scripts" / "run_product_content_e2e.py"
 _runner_spec = importlib.util.spec_from_file_location("run_product_content_e2e", _runner_path)
+if _runner_spec is None or _runner_spec.loader is None:
+    raise ImportError(f"cannot load {_runner_path}")
 _runner_mod = importlib.util.module_from_spec(_runner_spec)
 sys.modules["run_product_content_e2e"] = _runner_mod
 _runner_spec.loader.exec_module(_runner_mod)

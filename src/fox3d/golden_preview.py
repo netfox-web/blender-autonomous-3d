@@ -1,12 +1,11 @@
 """Golden product adapter to the existing Recipe lifecycle, Blender and DAM."""
 from __future__ import annotations
 
-import json
 import re
 import shutil
 from pathlib import Path
 
-from fox3d.golden_product import (SKUS, VERSIONS, build_golden, package_plan,
+from fox3d.golden_product import (build_golden, package_plan,
     validate_package, materialize_package, validate_worker_observation)
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow

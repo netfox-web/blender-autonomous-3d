@@ -1,7 +1,6 @@
 """Real flush/kill/restart harness. Rendered artifacts are MOCK in this harness."""
 import argparse
 import hashlib
-import json
 import os
 from pathlib import Path
 import platform

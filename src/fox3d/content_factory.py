@@ -8,11 +8,10 @@ REAL_LOGIC / REAL Blender execution.
 
 from __future__ import annotations
 
-import copy
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fox3d.artwork import decode_png_rgb
 from fox3d.ids import new_id, sha256_bytes, stable_hash
@@ -21,7 +20,6 @@ from fox3d.pngutil import is_png, write_png
 from fox3d.product_truth import (
     _is_strict_float,
     _is_strict_int,
-    _occupancy,
     _png_meta,
     camera_recipe,
     scene_recipe,
@@ -663,8 +661,8 @@ def compute_camera_recipe_hash(
     from fox3d.product_truth import camera_recipe
     cam = camera_recipe(
         camera_id=camera_id,
-        location=tuple(location[:3]),
-        look_at=tuple(look_at[:3]),
+        location=cast(tuple[float, float, float], tuple(location[:3])),
+        look_at=cast(tuple[float, float, float], tuple(look_at[:3])),
         focal_length_mm=focal_length_mm,
         sensor_width_mm=sensor_width_mm,
         width=width,
@@ -1517,7 +1515,8 @@ def run_product_content_scenario(
     if pt_auth:
         upstream_pack = pt_auth.get("pack") or {}
         truth_gen_id = pt_auth.get("acceptanceGenerationId")
-        if not eng:  # noqa: F821  # pre-existing name; behavior unchanged by the lint gate
+        # eng is unbound on this path and raises NameError, matching the existing runtime.
+        if not eng:  # type: ignore[used-before-def, has-type]  # noqa: F821
             from fox3d.parametric import CabinetEngine
             engine = CabinetEngine()
             cab, _ = engine.create("STORAGE_CABINET", tenant_id=tenant_id, width=2400, height=1800, doorCount=4)

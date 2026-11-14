@@ -19,7 +19,7 @@ def main():
     parser.add_argument('--artwork-review-note',required=True,help='Operator purpose review for the supplied source; no print calibration claim')
     args=parser.parse_args()
     import httpx
-    from fox3d import print_assets, print_workspace, print_preview, asset_usage
+    from fox3d import print_assets, print_preview, asset_usage
     from fox3d.blender import find_blender
     from fox3d.ids import sha256_bytes
     from fox3d.recipe_3d import atomic_json, read_json

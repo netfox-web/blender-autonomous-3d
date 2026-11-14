@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from fox3d.kd import FLATPACK_PRODUCT_TYPES, DemandSignalProvider, assembly_graph, pack_flatpack
-from fox3d.manufacturing import NestingEngine, RemnantInventory
 from fox3d.parametric import CabinetSpec, parse_design_intent
 
 
@@ -76,8 +75,6 @@ def test_waste_v2_conservation(platform):
     rec = platform.kd.build_sku(tenant_id="t1", kind="OPEN_SHELF")
     nest = rec["nesting"]
     assert nest["areaConservationError"] < 1.0
-    used = nest["partUsedArea"] + nest["kerfLossArea"] + nest["trimLossArea"]
-    leftover = nest["reusableRemnantArea"] + (nest["trueScrapArea"] - nest["kerfLossArea"] - nest["trimLossArea"])
     # leftover scrap is unqualified free; conservation on sheets:
     assert nest["trueWasteRatio"] >= 0
     assert nest["reusableRemnantRatio"] >= 0
@@ -242,7 +239,6 @@ def test_kd_kinds_have_distinct_structure(platform):
         rec = platform.kd.build_sku(tenant_id="t1", kind=kind)
         present = {ln["partName"] for ln in rec["bom"]["lines"]}
         assert names <= present, (kind, present)
-        joints = {c.get("to") for c in rec["spec"]["connections"]}
         if kind == "GARMENT_RACK":
             assert any(ln.get("partName") == "hanging_rail" for ln in rec["bom"]["lines"] if ln.get("hardware"))
 

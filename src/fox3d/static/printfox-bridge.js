@@ -10,7 +10,6 @@
   let timer = null;
   let moreBtn = null;
 
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const say = (text, error = false) => {
     $('pf-message').textContent = text;
     $('pf-message').className = error ? 'error' : '';
@@ -27,24 +26,37 @@
   };
 
   async function api(path, options = {}) {
-    const response = await fetch(base + path, { ...options, headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenant } });
-    let data;
+    const writing = options.method && options.method !== 'GET';
+    let response;
+    try {
+      response = await fetch(base + path, { ...options, headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenant } });
+    } catch {
+      throw Error('連線失敗：網路錯誤，請確認後再試。');
+    }
+    let data = null;
     try {
       data = await response.json();
     } catch {
-      throw Error('服務回應無法讀取，請更新狀態核對。');
+      data = null;
     }
-    if (!response.ok) throw Error(typeof data.detail === 'string' ? data.detail : '請檢查輸入設定。');
+    if (!response.ok) {
+      const detail = data && typeof data.detail === 'string' ? data.detail : '';
+      throw Error(detail || (writing ? '送出失敗，請檢查輸入設定。' : '讀取失敗，請檢查輸入設定。'));
+    }
+    if (data == null) throw Error('讀取失敗：服務回應無法讀取，請更新狀態核對。');
     return data;
   }
 
   function controls() {
+    const locked = busy || !connected;
     $('pf-save-config').disabled = busy;
-    $('pf-clear-token').disabled = busy || !connected;
+    $('pf-clear-token').disabled = locked;
     $('pf-clear-token').hidden = !connected;
-    $('pf-generate-btn').disabled = busy || !connected;
-    $('pf-refresh-btn').disabled = busy || !connected;
-    $('pf-search-btn').disabled = busy || !connected;
+    $('pf-generate-btn').disabled = locked;
+    $('pf-refresh-btn').disabled = locked;
+    $('pf-search-btn').disabled = locked;
+    for (const button of document.querySelectorAll('#pf-tasks button, #pf-designs button')) button.disabled = locked;
+    if (moreBtn) moreBtn.disabled = locked;
   }
 
   async function action(fn) {
@@ -81,6 +93,7 @@
     moreBtn.className = 'secondary';
     moreBtn.textContent = '載入更多';
     moreBtn.hidden = true;
+    moreBtn.disabled = busy || !connected;
     moreBtn.onclick = () => action(() => designs(false));
     return moreBtn;
   }
@@ -110,6 +123,7 @@
       const button = document.createElement('button');
       button.type = 'button';
       button.textContent = '匯入原圖';
+      button.disabled = busy || !connected;
       button.onclick = () =>
         action(async () => {
           say('下載並核對原圖中…');
@@ -127,30 +141,59 @@
   }
 
   function renderTasks(items) {
-    $('pf-tasks').innerHTML =
-      items
-        .map(
-          task =>
-            `<div class="pf-task"><strong>${esc(labels[task.state] || task.state)} · ${esc(task.progress ?? 0)}%</strong><small>${esc(task.params?.styles?.[0]?.desc || '')}<br>${esc(task.remoteJobId || task.requestId)}</small>${task.message ? `<p>${esc(task.message)}</p>` : ''}<button type="button" data-refresh="${task.requestId}">更新狀態</button>${['pending', 'claimed', 'running'].includes(task.state) ? `<button class="secondary" type="button" data-cancel="${task.requestId}">取消這筆生圖</button>` : ''}</div>`
-        )
-        .join('') || '<p>尚未從此工作台送出生圖。</p>';
-    $('pf-tasks').querySelectorAll('[data-refresh]').forEach(button => {
-      button.onclick = () =>
+    const host = $('pf-tasks');
+    host.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement('p');
+      empty.textContent = '尚未從此工作台送出生圖。';
+      host.append(empty);
+      return;
+    }
+    const locked = busy || !connected;
+    for (const task of items) {
+      const card = document.createElement('div');
+      card.className = 'pf-task';
+      const title = document.createElement('strong');
+      title.textContent = `${labels[task.state] || task.state || ''} · ${task.progress ?? 0}%`;
+      const meta = document.createElement('small');
+      meta.append(document.createTextNode(task.params?.styles?.[0]?.desc || ''), document.createElement('br'), document.createTextNode(String(task.remoteJobId || task.requestId || '')));
+      card.append(title, meta);
+      if (task.message) {
+        const note = document.createElement('p');
+        note.textContent = String(task.message);
+        card.append(note);
+      }
+      const requestId = String(task.requestId ?? '');
+      const refresh = document.createElement('button');
+      refresh.type = 'button';
+      refresh.textContent = '更新狀態';
+      refresh.dataset.refresh = requestId;
+      refresh.disabled = locked;
+      refresh.onclick = () =>
         action(async () => {
-          const t = await api('/tasks/' + button.dataset.refresh);
+          const t = await api('/tasks/' + encodeURIComponent(refresh.dataset.refresh));
           if (t.remoteJobId && sessionStorage.getItem('fox3d-printfox-pending') === t.requestId)
             sessionStorage.removeItem('fox3d-printfox-pending');
           await tasks();
           if (t.state === 'done') await designs();
         });
-    });
-    $('pf-tasks').querySelectorAll('[data-cancel]').forEach(button => {
-      button.onclick = () =>
-        action(async () => {
-          await api('/tasks/' + button.dataset.cancel + '/cancel', { method: 'POST' });
-          await tasks();
-        });
-    });
+      card.append(refresh);
+      if (['pending', 'claimed', 'running'].includes(task.state)) {
+        const cancel = document.createElement('button');
+        cancel.className = 'secondary';
+        cancel.type = 'button';
+        cancel.textContent = '取消這筆生圖';
+        cancel.dataset.cancel = requestId;
+        cancel.disabled = locked;
+        cancel.onclick = () =>
+          action(async () => {
+            await api('/tasks/' + encodeURIComponent(cancel.dataset.cancel) + '/cancel', { method: 'POST' });
+            await tasks();
+          });
+        card.append(cancel);
+      }
+      host.append(card);
+    }
   }
 
   async function tasks() {
@@ -167,7 +210,7 @@
         try {
           let finished = false;
           for (const t of r.items.filter(t => ['pending', 'claimed', 'running'].includes(t.state)).slice(0, 10)) {
-            const next = await api('/tasks/' + t.requestId);
+            const next = await api('/tasks/' + encodeURIComponent(t.requestId));
             if (next.state === 'done') finished = true;
           }
           await tasks();
@@ -250,10 +293,8 @@
       });
       if (task.remoteJobId || task.state === 'rejected') sessionStorage.removeItem('fox3d-printfox-pending');
       await tasks();
-      say(
-        task.message || '已送出單次生圖。完成後可從圖庫匯入，尺寸仍需核對。',
-        ['submission_unknown', 'rejected'].includes(task.state)
-      );
+      const failed = ['submission_unknown', 'rejected', 'failed'].includes(task.state);
+      say(task.message || (failed ? '生圖失敗，請更新狀態核對。' : '已送出單次生圖。完成後可從圖庫匯入，尺寸仍需核對。'), failed);
     });
   };
 

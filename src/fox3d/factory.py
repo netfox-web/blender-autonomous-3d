@@ -19,7 +19,6 @@ from fox3d.manufacturing import (
     ManufacturingCandidateGate,
     NestingEngine,
     QuoteEngine,
-    build_drilling_manifest,
     build_manufacturing_pack,
 )
 from fox3d.parametric import BOMEngine, CabinetSpec
@@ -178,7 +177,7 @@ class FurnitureFactory:
         gate = ManufacturingCandidateGate()
         gate.advance("COSTED")
         preview = None
-        preview_label = "SKIPPED"
+        preview_label: Any = "SKIPPED"
         if render:
             preview = self.render_space_preview(tenant_id=tenant_id, space=space_twin, assembly=assembly)
             if preview.get("status") in {"completed", "succeeded"}:
@@ -190,7 +189,7 @@ class FurnitureFactory:
                 preview_label = "PARTIAL"
         gate.advance("WAITING_APPROVAL")
 
-        run = {
+        run: dict[str, Any] = {
             "runId": new_id(),
             "tenantId": tenant_id,
             "pipeline": [

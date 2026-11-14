@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import copy
-import math
 from pathlib import Path
 
 import pytest
@@ -35,7 +34,6 @@ from fox3d.artwork import (
     probe_near_tolerance_oracle_tampers,
     probe_serialized_orientation_tampers,
     probe_strict_type_tampers,
-    quarter_turn_local_corners,
     roundtrip_ok,
     run_artwork_scenario,
     split_master,
@@ -1166,7 +1164,6 @@ def test_cover_wrong_transform_is_caught(tmp_path):
     mismatch = dict(center0)
     mismatch["observed"] = center90["observed"]
     mismatch["status"] = "PASS"
-    fake = {"CONTAIN": {"CENTER": {"0": center0, "90": center0, "180": center0, "270": center0, "mirror": center0, "mirror90": center0}}, "COVER": {"LEFT": {"0": left0, "90": left0, "180": left0, "270": left0, "mirror": left0, "mirror90": left0}, "CENTER": {"0": mismatch, "90": mismatch, "180": mismatch, "270": mismatch, "mirror": mismatch, "mirror90": mismatch}, "RIGHT": {"0": right0, "90": right0, "180": right0, "270": right0, "mirror": right0, "mirror90": right0}}}
     # validator on a full result is heavy; check quality helper + signature inequality above
     assert oracle_quality(center0["expected"])["oracleDiscriminating"] is True
 

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from tests.browser.conftest import TENANT, XSS_PROBE, XSS_STRING
+from tests.browser.conftest import XSS_PROBE, XSS_STRING
 
 pytestmark = pytest.mark.browser
 

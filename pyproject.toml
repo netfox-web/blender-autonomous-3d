@@ -48,7 +48,7 @@ extend-exclude = [".fox3d-work", "build", "dist"]
 [tool.ruff.lint]
 # Light gate for current main. Broader style/pyflakes rules already fail
 # without a reformat, so they are not selected here.
-select = ["E9", "F821", "F822", "F823"]
+select = ["E9", "F401", "F821", "F822", "F823", "F841"]
 
 [tool.mypy]
 python_version = "3.12"
@@ -67,33 +67,19 @@ disable_error_code = ["annotation-unchecked"]
 
 [[tool.mypy.overrides]]
 module = [
-  "fox3d.admin",
   "fox3d.artwork",
-  "fox3d.blender",
-  "fox3d.catalog_recipes",
-  "fox3d.content_factory",
-  "fox3d.factory",
   "fox3d.generative_gateway",
   "fox3d.logistics",
   "fox3d.manufacturing",
-  "fox3d.media",
   "fox3d.mfg_release",
-  "fox3d.packaging",
-  "fox3d.packv2",
-  "fox3d.pilot",
   "fox3d.pilot_batch",
   "fox3d.platform",
-  "fox3d.portfolio",
   "fox3d.product_truth",
   "fox3d.prototype",
   "fox3d.receipt",
   "fox3d.recipe_3d",
   "scripts.blender_job",
-  "scripts.run_pilot_deploy_e2e",
-  "scripts.run_product_truth_render_e2e",
-  "tests.test_content_factory",
   "tests.test_prototype_runner",
-  "tests.test_recipe_admin_runner",
   "tests.test_supervisor",
 ]
 ignore_errors = true

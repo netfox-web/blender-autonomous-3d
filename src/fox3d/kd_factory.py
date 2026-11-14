@@ -4,22 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from fox3d.ids import new_id, stable_hash
+from fox3d.ids import new_id
 from fox3d.kd import (
-    DEFAULT_LOGISTICS_POLICY,
     DemandSignalProvider,
     FLATPACK_PRODUCT_TYPES,
     SMALL_SPACE_PROFILE,
     assembly_instruction_manifest,
     build_flatpack_spec,
     kd_logistics_gate,
-    pack_flatpack,
-    packed_weight,
     rd_score_v2,
-    shipping_metrics,
 )
 from fox3d.manufacturing import NestingEngine, QuoteEngine, RemnantInventory, SheetMaterialRegistry
-from fox3d.parametric import BOMEngine, CabinetSpec, map_cabinet_material
+from fox3d.parametric import CabinetSpec, map_cabinet_material
 
 PRODUCT_STATES = (
     "IDEA",

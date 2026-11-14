@@ -4,7 +4,6 @@ Only processes/files/locks are real here. Any normal completed batch uses MOCK
 publication artifacts; no cleanup case is claimed as REAL_RENDER.
 """
 import argparse
-import hashlib
 import json
 import logging
 import os

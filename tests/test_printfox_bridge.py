@@ -1,4 +1,3 @@
-import copy
 import io
 import json
 import time
@@ -12,7 +11,7 @@ from PIL import Image
 
 from fox3d import printfox_bridge as b
 from fox3d.printfox_api import printfox_router
-from fox3d.recipe_3d import atomic_json, read_json
+from fox3d.recipe_3d import atomic_json
 from fox3d.ids import sha256_bytes
 
 TOKEN = 'SYNTHETIC-TEST-ONLY-TOKEN'

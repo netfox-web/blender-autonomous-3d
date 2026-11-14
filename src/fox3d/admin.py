@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from html import escape
-from typing import Any
+from typing import Any, cast
 
 ADMIN_DEFAULT_TENANT = "demo"
 
@@ -148,6 +148,10 @@ def render_admin(platform: Any) -> str:
             f"<p>尺寸: {escape(str(t.dimensions))}</p>"
             f"<p>資產 ID: {escape(str(t.damAssetId or t.glb or ''))}</p></div>"
         )
+    physical = getattr(platform, "physical", None)
+    families = getattr(physical, "families", None)
+    # Same crash as before when physical exists but families is missing.
+    family_count = len(cast(Any, families).list()) if physical else 0
     return f"""<!doctype html>
 <html lang="zh-Hant">
 <head>
@@ -384,7 +388,7 @@ def render_admin(platform: Any) -> str:
     <p class="note">Production acceptance 必須 realBlender / realGPU / realCycles / realOptix / realRenderOutput。Mock 僅限 automated tests。</p>
 
     <h2>Physical Product OS</h2>
-    <p class="note">Families {len(getattr(getattr(platform, "physical", None), "families", None).list()) if getattr(platform, "physical", None) else 0}
+    <p class="note">Families {family_count}
     · Remnants {len(getattr(getattr(platform, "remnants", None), "items", {}) or {})}
     · Retail fixtures {len(getattr(getattr(getattr(platform, "physical", None), "retail", None), "items", {}) or {})}
     · Packaging {len(getattr(getattr(getattr(platform, "physical", None), "packaging", None), "items", {}) or {})}

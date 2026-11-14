@@ -2,7 +2,6 @@
 import io
 import json
 import re
-import shutil
 import stat
 from pathlib import Path
 
@@ -11,7 +10,7 @@ from PIL import Image
 from fox3d.artwork import final_uv_identity
 from fox3d.golden_product import build_golden, GoldenRecipe, Measurement, validate_worker_observation
 from fox3d.ids import stable_hash, sha256_bytes, new_id
-from fox3d.recipe_3d import read_json, atomic_json, input_hash, validate_outputs
+from fox3d.recipe_3d import read_json, atomic_json, validate_outputs
 from fox3d.durability import publish_binary, publish_bytes, dam_identity, verify_receipt, verify_receipt_set, verify_manifest_meta
 from fox3d.print_workspace import folder_for as job_folder, plan
 from fox3d.print_assets import thumbnail

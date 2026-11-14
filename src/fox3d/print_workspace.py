@@ -8,7 +8,6 @@ import io
 import math
 import re
 import zipfile
-from pathlib import Path
 from threading import RLock
 from typing import Literal
 
@@ -21,7 +20,7 @@ from pypdf.generic import (NameObject, DictionaryObject, NumberObject, DecodedSt
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.print_assets import workspace, asset, thumbnail
+from fox3d.print_assets import workspace, asset
 from fox3d.asset_usage import require_artwork
 
 LOCK=RLock()

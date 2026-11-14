@@ -1,5 +1,4 @@
 """Preview geometry, truthful asset boundaries and background lifecycle."""
-import copy
 import threading
 import time
 from types import SimpleNamespace

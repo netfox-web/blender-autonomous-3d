@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from fox3d.ids import new_id, sha256_bytes, stable_hash
+from fox3d.ids import new_id, sha256_bytes
 from fox3d.infra import ComputeRegistry, JobQueue, Operations, job_cache_key
-from fox3d.pngutil import EXR_MAGIC, is_png
+from fox3d.pngutil import EXR_MAGIC
 
 
 def path_segments(raw: str) -> list[str]:

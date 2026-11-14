@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from fox3d.ids import new_id, stable_hash
+from fox3d.ids import stable_hash
 from fox3d.kd import pack_flatpack, packed_weight, shipping_metrics
 from fox3d.manufacturing import QuoteEngine
 from fox3d.nesting_v3 import NestingV3
-from fox3d.parametric import BOMEngine, CabinetSpec
+from fox3d.parametric import BOMEngine
 
 FIXTURE_FAMILIES = (
     "COUNTER_DISPLAY",
