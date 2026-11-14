@@ -41,14 +41,23 @@ class DemandRegistryV2:
 
 def import_outcomes(text: str, *, fmt: str = "json", source: str) -> list[dict[str, Any]]:
     if source not in {"IMPORTED", "MANUAL", "FIXTURE"}:
-        raise ValueError(source)
+        raise ValueError(f"Invalid outcome source: {source!r}")
+    parsed: Any
     if fmt == "csv":
-        rows = [dict(r) for r in csv.DictReader(io.StringIO(text))]
+        parsed = [dict(r) for r in csv.DictReader(io.StringIO(text))]
     else:
-        payload = json.loads(text)
-        rows = payload if isinstance(payload, list) else payload.get("items") or []
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Invalid outcomes JSON: {exc.msg}") from exc
+        parsed = payload.get("items") if isinstance(payload, dict) else payload
+    if not isinstance(parsed, list):
+        raise ValueError("Outcomes must be a list or an object with an items list")
+    rows: list[Any] = parsed
     out = []
-    for r in rows:
+    for index, r in enumerate(rows):
+        if not isinstance(r, dict):
+            raise ValueError(f"Outcome row {index} must be an object")
         rec = {k: r.get(k) for k in OUTCOME_FIELDS}
         rec["source"] = source
         rec["realMarketData"] = source in {"IMPORTED", "MANUAL"} and source != "FIXTURE"
