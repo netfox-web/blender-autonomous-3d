@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 
 from pathlib import Path
@@ -33,12 +34,15 @@ from fox3d.station import STATION_CAPS
 # PilotException subclasses PermissionError and is re-raised unchanged.
 _IMPORT_SCHEMAS = frozenset({SCHEMA_RECEIPT, SCHEMA_SUPPLIER, SCHEMA_CARRIER, SCHEMA_ADJUST})
 _DISPATCH_FIELDS = ("workOrderId", "operation", "stationId")
-_RECEIPT_FLOATS = (
-    "thickness",
+# import_receipt uses `value or default` for these, so "", 0, and other falsy values are absent.
+_RECEIPT_OR_FLOATS = (
+    ("thickness",),
+    ("unitCost", "costPerSheet"),
+)
+# import_receipt converts these whenever they are not None, including "".
+_RECEIPT_STRICT_FLOATS = (
     "length",
     "width",
-    "unitCost",
-    "costPerSheet",
     "expectedThickness",
     "expectedLength",
     "expectedWidth",
@@ -72,36 +76,99 @@ def _require_text_fields(payload: dict[str, Any], names: tuple[str, ...]) -> Non
         raise HTTPException(422, "欄位格式錯誤：" + "、".join(bad))
 
 
-def _require_receipt_quantity(payload: dict[str, Any]) -> None:
+def _unprocessable(message: str, row_index: int | None = None) -> NoReturn:
+    if row_index is not None:
+        message = f"rows[{row_index}] {message}"
+    raise HTTPException(422, message)
+
+
+def _absent_quantity(raw: Any) -> bool:
+    # False == 0, so exclude bool before the zero check. 0 / "" still fall through to sheetCount.
+    return not isinstance(raw, bool) and raw in (None, "", 0, 0.0)
+
+
+def _require_receipt_quantity(payload: dict[str, Any], row_index: int | None = None) -> None:
     # import_receipt treats 0 / "" as absent and falls through to sheetCount.
+    # int() would truncate 1.9 to 1 and accept True as 1; both are refused here.
     raw = payload.get("quantity")
-    if raw in (None, "", 0, 0.0):
+    if isinstance(raw, bool):
+        _unprocessable("quantity 須為正整數", row_index)
+    if _absent_quantity(raw):
         raw = payload.get("sheetCount")
-    if raw in (None, "", 0, 0.0):
-        raise HTTPException(422, "缺少 quantity")
-    try:
-        qty = int(raw)
-    except (TypeError, ValueError):
-        raise HTTPException(422, "quantity 格式錯誤") from None
+        if isinstance(raw, bool):
+            _unprocessable("quantity 須為正整數", row_index)
+    if _absent_quantity(raw):
+        _unprocessable("缺少 quantity", row_index)
+    if isinstance(raw, float):
+        _unprocessable("quantity 須為正整數", row_index)
+    if isinstance(raw, int):
+        qty = raw
+    elif isinstance(raw, str):
+        try:
+            qty = int(raw)
+        except ValueError:
+            _unprocessable("quantity 格式錯誤", row_index)
+    else:
+        _unprocessable("quantity 格式錯誤", row_index)
     if qty <= 0:
-        raise HTTPException(422, "quantity 須為正整數")
+        _unprocessable("quantity 須為正整數", row_index)
 
 
 def _require_manual_source(payload: dict[str, Any]) -> None:
     source = payload.get("source")
     if source in (None, ""):
         return
-    if str(source) not in ALLOWED_SOURCES:
+    if not isinstance(source, str) or source not in ALLOWED_SOURCES:
         raise HTTPException(422, "source 須為 MANUAL 或 IMPORTED")
 
 
-def _optional_number(payload: dict[str, Any], key: str) -> None:
-    if key not in payload or payload[key] in (None, ""):
-        return
+def _check_finite_float(raw: Any, field: str, row_index: int | None = None) -> None:
+    if isinstance(raw, bool) or isinstance(raw, (list, dict)):
+        _unprocessable(f"{field} 格式錯誤", row_index)
     try:
-        float(payload[key])
+        number = float(raw)
     except (TypeError, ValueError):
-        raise HTTPException(422, f"{key} 格式錯誤") from None
+        _unprocessable(f"{field} 格式錯誤", row_index)
+    if not math.isfinite(number):
+        _unprocessable(f"{field} 格式錯誤", row_index)
+
+
+def _check_service_int(raw: Any, field: str, row_index: int | None = None) -> None:
+    # Matches int(value) without truncating floats or accepting bool (bool is an int subclass).
+    if isinstance(raw, bool) or isinstance(raw, float):
+        _unprocessable(f"{field} 格式錯誤", row_index)
+    if isinstance(raw, int):
+        return
+    if isinstance(raw, str):
+        try:
+            int(raw)
+        except ValueError:
+            _unprocessable(f"{field} 格式錯誤", row_index)
+        return
+    _unprocessable(f"{field} 格式錯誤", row_index)
+
+
+def _first_or_value(payload: dict[str, Any], keys: tuple[str, ...]) -> tuple[str, Any] | None:
+    # Same short-circuit as `a or b or default`: falsy values are not converted.
+    for key in keys:
+        raw = payload.get(key)
+        if not raw:
+            continue
+        return key, raw
+    return None
+
+
+def _validate_receipt_numbers(payload: dict[str, Any], row_index: int | None = None) -> None:
+    for key in _RECEIPT_STRICT_FLOATS:
+        if key not in payload or payload[key] is None:
+            continue
+        _check_finite_float(payload[key], key, row_index)
+    for keys in _RECEIPT_OR_FLOATS:
+        found = _first_or_value(payload, keys)
+        if found is not None:
+            _check_finite_float(found[1], found[0], row_index)
+    if "expectedQuantity" in payload and payload["expectedQuantity"] is not None:
+        _check_service_int(payload["expectedQuantity"], "expectedQuantity", row_index)
 
 
 def _require_station_capabilities(payload: dict[str, Any]) -> None:
@@ -110,8 +177,61 @@ def _require_station_capabilities(payload: dict[str, Any]) -> None:
         raise HTTPException(422, "capabilities 須包含至少一個 MANUAL 站別能力")
 
 
+def _validate_supplier_row(row: dict[str, Any], row_index: int) -> None:
+    # normalize() converts the first truthy field of each `or` chain.
+    for keys in (
+        ("material", "materialCost"),
+        ("processing", "labor"),
+        ("setup", "setupCost", "tooling", "toolingCost"),
+        ("packaging", "packagingCost"),
+        ("freight", "shipping"),
+        ("leadTimeDays", "leadTime"),
+    ):
+        found = _first_or_value(row, keys)
+        if found is not None:
+            _check_finite_float(found[1], found[0], row_index)
+    quantity = _first_or_value(row, ("quantity", "moq"))
+    if quantity is not None:
+        _check_service_int(quantity[1], quantity[0], row_index)
+    # normalize() also does int(moq or 1), even when quantity was the value used above.
+    moq = row.get("moq")
+    if moq:
+        _check_service_int(moq, "moq", row_index)
+
+
+def _validate_carrier_row(row: dict[str, Any], row_index: int) -> None:
+    for keys in (("charge", "amount"), ("dimDivisor",)):
+        found = _first_or_value(row, keys)
+        if found is not None:
+            _check_finite_float(found[1], found[0], row_index)
+
+
+def _validate_import_row(schema: str, row: dict[str, Any], row_index: int) -> None:
+    # Rows missing required fields are rejected by ContractService before conversion.
+    # Rows it would convert are checked here so a later bad row cannot 500 after earlier writes.
+    if schema == SCHEMA_RECEIPT:
+        if row.get("material") in (None, "") or row.get("quantity") in (None, ""):
+            return
+        _require_receipt_quantity(row, row_index)
+        _validate_receipt_numbers(row, row_index)
+    elif schema == SCHEMA_SUPPLIER:
+        if row.get("supplierId") in (None, ""):
+            return
+        _validate_supplier_row(row, row_index)
+    elif schema == SCHEMA_CARRIER:
+        if row.get("carrier") in (None, "") or row.get("charge") in (None, ""):
+            return
+        _validate_carrier_row(row, row_index)
+    elif schema == SCHEMA_ADJUST:
+        if any(row.get(name) in (None, "") for name in ("lotId", "quantity", "reason")):
+            return
+        _check_service_int(row.get("quantity"), "quantity", row_index)
+
+
 def _require_import_contract(payload: dict[str, Any]) -> None:
-    if payload.get("schemaVersion") not in _IMPORT_SCHEMAS:
+    schema = payload.get("schemaVersion")
+    # Membership against a set hashes the value; a list or object would raise TypeError.
+    if not isinstance(schema, str) or schema not in _IMPORT_SCHEMAS:
         raise HTTPException(422, "schemaVersion 無效或缺少")
     _require_manual_source(payload)
     rows = payload.get("rows", [])
@@ -119,8 +239,10 @@ def _require_import_contract(payload: dict[str, Any]) -> None:
         return
     if not isinstance(rows, list):
         raise HTTPException(422, "rows 須為陣列")
-    if any(not isinstance(row, dict) for row in rows):
-        raise HTTPException(422, "rows 的每一列須為物件")
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise HTTPException(422, "rows 的每一列須為物件")
+        _validate_import_row(schema, row, index)
 
 
 _PLATFORM: Platform | None = None
@@ -618,8 +740,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         _require_receipt_quantity(payload)
         _require_manual_source(payload)
-        for key in _RECEIPT_FLOATS:
-            _optional_number(payload, key)
+        _validate_receipt_numbers(payload)
         try:
             return get_platform().pilot.receiving.import_receipt(
                 payload,
