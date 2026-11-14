@@ -1096,6 +1096,7 @@ def test_35_provider_factory_and_stale_lineage(tmp_path: Path):
     adapter = SemanticEvidenceSupervisorAdapter()
     c_text = valid_contract_text(code_sha="c0de999", instruction_sha="instr_888", evidence_id="gen_stale")
     contract = ReadyForReGateContract.parse_from_text(c_text)
+    assert contract is not None
     context_stale = ReviewContext(
         contract=contract,
         diffs="clean diff",
@@ -1164,6 +1165,7 @@ def test_36_openai_provider_real_http_request(tmp_path: Path):
 
     c_text = valid_contract_text(code_sha="c0de111", instruction_sha="instr_000", evidence_id="gen_001")
     contract = ReadyForReGateContract.parse_from_text(c_text)
+    assert contract is not None
     context = ReviewContext(
         contract=contract,
         diffs="clean diff",
@@ -2799,6 +2801,7 @@ def test_65_real_github_client_commits_since_trailers(tmp_path: Path):
     contract = ReadyForReGateContract.parse_from_text(
         valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id="gen_001")
     )
+    assert contract is not None
     intended_digest = hashlib.sha256(full_content.encode("utf-8")).hexdigest()
 
     assert engine._verify_instruction_candidate(
@@ -3058,6 +3061,7 @@ def test_71_staged_sha_remote_compare_fallback_adopted(tmp_path: Path):
     contract = ReadyForReGateContract.parse_from_text(
         valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id=evidence_id)
     )
+    assert contract is not None
 
     staged_sha = "staged_candidate_sha_77"
     state_mgr.start_review(review_id, contract.code_sha, contract.evidence_generation_id)
@@ -3180,6 +3184,7 @@ def test_72_window_b2_rest_fallback_exactly_once_decisions(tmp_path: Path):
         contract = ReadyForReGateContract.parse_from_text(
             valid_contract_text(code_sha="c0de111", docs_sha="d0c5111", instruction_sha="instr_000", evidence_id=evidence_id)
         )
+        assert contract is not None
 
         with mock.patch("subprocess.run", side_effect=mock_run):
             with mock.patch("httpx.get", side_effect=lambda url, **kw: httpx.MockTransport(transport_handler).handle_request(httpx.Request("GET", url, headers=kw.get("headers")))):
