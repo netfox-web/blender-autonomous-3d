@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -187,6 +188,59 @@ def test_advance_first_step_with_missing_hashes_allowed():
     assert gate.approvals[("t1", "bare")]["state"] == "ENGINEERING_VALID"
 
 
+def test_empty_entity_cannot_verify_evidence_or_backfill_to_export():
+    gate = ReleaseGate()
+    ent = {"spec": {"productId": "bare2", "revision": 1}}
+    eid = "bare2"
+    tid = "t1"
+    gate.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=ent)
+    with pytest.raises(PermissionError, match="engineeringHash required"):
+        gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent, evidence_ok=True)
+    ent_b = {**ent, "engineeringHash": "eng-b", "lineage": {"engineeringHash": "eng-b"}}
+    with pytest.raises(PermissionError, match="cannot bind new hashes"):
+        gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent_b, evidence_ok=True)
+
+
+def test_evidence_hash_change_rejected_after_verified():
+    gate = ReleaseGate()
+    ent = {
+        **_entity("ent-ev"),
+        "evidenceHash": "ev-a",
+        "lineage": {"engineeringHash": "eng-a", "bomHash": "bom-a", "evidenceHash": "ev-a"},
+    }
+    eid = "ent-ev"
+    tid = "t1"
+    gate.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=ent)
+    gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent, evidence_ok=True)
+    ent_changed = dict(ent)
+    ent_changed["evidenceHash"] = "ev-b"
+    ent_changed["lineage"] = {**ent["lineage"], "evidenceHash": "ev-b"}
+    with pytest.raises(PermissionError, match="hashes changed"):
+        gate.advance(eid, tenant_id=tid, target="WAITING_APPROVAL", actor="ops", entity=ent_changed)
+
+
+def test_refresh_stale_clears_hashes_allows_full_reverify_to_export():
+    gate = ReleaseGate()
+    ent = _entity("ent-re")
+    eid = "ent-re"
+    tid = "t1"
+    gate.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=ent)
+    gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=ent, evidence_ok=True)
+    gate.advance(eid, tenant_id=tid, target="WAITING_APPROVAL", actor="ops", entity=ent)
+    mutated = dict(ent)
+    mutated["engineeringHash"] = "eng-new"
+    mutated["lineage"] = {**(ent.get("lineage") or {}), "engineeringHash": "eng-new"}
+    stale = gate.refresh_stale(eid, tenant_id=tid, entity=mutated)
+    assert stale["state"] == "PROTOTYPE"
+    assert stale["hashes"] == {}
+    gate.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=mutated)
+    gate.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=mutated, evidence_ok=True)
+    gate.advance(eid, tenant_id=tid, target="WAITING_APPROVAL", actor="ops", entity=mutated)
+    done = gate.advance(eid, tenant_id=tid, target="APPROVED_FOR_EXPORT", actor="ops", entity=mutated)
+    assert done["state"] == "APPROVED_FOR_EXPORT"
+    assert done["hashes"]["engineeringHash"] == "eng-new"
+
+
 class _GateWithAuditPause(ReleaseGate):
     """Hold entity lock through a controllable pause inside audit (concurrency regression)."""
 
@@ -194,16 +248,19 @@ class _GateWithAuditPause(ReleaseGate):
         super().__init__()
         self._hold = threading.Event()
         self._proceed = threading.Event()
+        self.at_audit = threading.Event()
 
     def arm_slow_audit(self) -> None:
         self._hold.clear()
         self._proceed.clear()
+        self.at_audit.clear()
 
     def release_slow_audit(self) -> None:
         self._proceed.set()
 
     def audit(self, **kwargs):  # type: ignore[override]
         if self._hold.is_set():
+            self.at_audit.set()
             self._proceed.wait(timeout=5)
         return super().audit(**kwargs)
 
@@ -231,14 +288,20 @@ def test_concurrent_advance_does_not_regress_state():
 
     with ThreadPoolExecutor(max_workers=2) as pool:
         f_slow = pool.submit(slow_engineering)
-        f_slow.result(timeout=10)
+        assert gate.at_audit.wait(timeout=5), "slow advance did not reach audit while holding lock"
         f_fast = pool.submit(fast_to_export)
+        time.sleep(0.2)
+        assert not f_fast.done(), "fast advance should block on entity lock while slow holds audit"
         gate.release_slow_audit()
+        f_slow.result(timeout=10)
         f_fast.result(timeout=10)
 
     assert not errors
     final = gate.approvals[(tid, eid)]["state"]
     assert final == "APPROVED_FOR_EXPORT"
+    decisions = [e["decision"] for e in gate.events if e.get("entityId") == eid]
+    assert decisions[0] == "ENGINEERING_VALID"
+    assert decisions[-1] == "APPROVED_FOR_EXPORT"
 
 
 def test_concurrent_advance_from_prototype_one_wins_cleanly():

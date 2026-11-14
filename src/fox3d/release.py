@@ -22,6 +22,14 @@ RC_STATES = (
     "APPROVED_FOR_EXPORT",
 )
 FORBIDDEN = frozenset({"LIVE_CNC", "LIVE_LASER", "APPROVED_FOR_PRODUCTION", "APPROVED_FOR_MACHINE"})
+BOUND_HASH_KEYS = (
+    "engineeringHash",
+    "bomHash",
+    "nestingHash",
+    "costHash",
+    "packagingHash",
+    "evidenceHash",
+)
 
 
 class ReleaseGate:
@@ -87,18 +95,34 @@ class ReleaseGate:
     def is_stale(self, approval: dict[str, Any], entity: dict[str, Any]) -> bool:
         current = self.hashes_of(entity)
         bound = approval.get("hashes") or {}
-        for key in ("engineeringHash", "bomHash", "nestingHash", "costHash", "packagingHash"):
+        for key in BOUND_HASH_KEYS:
             if bound.get(key) and current.get(key) and str(bound[key]) != str(current[key]):
                 return True
         return False
 
     def _require_bound_hashes(self, approval: dict[str, Any] | None, entity: dict[str, Any]) -> None:
-        if not approval or not approval.get("hashes"):
+        if not approval:
             return
-        if self.is_stale(approval, entity):
-            raise PermissionError(
-                "entity hashes changed since last gate state; re-verify from ENGINEERING_VALID"
-            )
+        bound = approval.get("hashes") or {}
+        if not bound and approval.get("state", "PROTOTYPE") == "PROTOTYPE":
+            return
+        current = self.hashes_of(entity)
+        for key in BOUND_HASH_KEYS:
+            bound_val = bound.get(key)
+            current_val = current.get(key)
+            if bound_val and current_val and str(bound_val) != str(current_val):
+                raise PermissionError(
+                    "entity hashes changed since last gate state; re-verify from ENGINEERING_VALID"
+                )
+            if bound_val and not current_val:
+                raise PermissionError("entity hash removed since last gate state")
+            if not bound_val and current_val:
+                raise PermissionError("cannot bind new hashes after prior gate step without full re-verify")
+
+    def _require_hashes_for_evidence(self, entity: dict[str, Any]) -> None:
+        hashes = self.hashes_of(entity)
+        if not hashes.get("engineeringHash"):
+            raise PermissionError("engineeringHash required before evidence verification")
 
     def advance(
         self,
@@ -125,15 +149,14 @@ class ReleaseGate:
                 raise ValueError(f"cannot regress {current} -> {target}")
             if tgt_idx > cur_idx + 1:
                 raise ValueError(f"cannot skip from {current} to {target}; advance one state at a time")
-            if target == "EVIDENCE_VERIFIED" and not evidence_ok:
-                raise PermissionError("evidence verifier must PASS")
+            if target == "EVIDENCE_VERIFIED":
+                if not evidence_ok:
+                    raise PermissionError("evidence verifier must PASS")
+                self._require_hashes_for_evidence(entity)
             if target == "APPROVED_FOR_EXPORT" and current != "WAITING_APPROVAL":
                 raise PermissionError("export requires WAITING_APPROVAL")
             self._require_bound_hashes(approval, entity)
             hashes = self.hashes_of(entity)
-            bound = (approval or {}).get("hashes") or {}
-            if bound:
-                hashes = {**bound, **{k: v for k, v in hashes.items() if v and not bound.get(k)}}
             rec = {
                 "tenantId": tenant_id,
                 "entityId": entity_id,
@@ -167,6 +190,7 @@ class ReleaseGate:
                 rec = dict(rec)
                 rec["stale"] = True
                 rec["state"] = "PROTOTYPE"
+                rec["hashes"] = {}
                 rec["reason"] = "upstream hash changed; previous approval void"
                 self.approvals[key] = rec
                 self.audit(
