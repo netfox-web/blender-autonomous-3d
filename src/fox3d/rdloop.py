@@ -9,7 +9,6 @@ from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
-from fox3d.safety import evaluate_product
 
 
 OUTCOME_FIELDS = ("skuId", "productVersion", "timeWindow", "source", "sales", "traffic", "margin", "returns", "feedback")
