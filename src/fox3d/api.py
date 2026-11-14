@@ -206,23 +206,36 @@ def _validate_carrier_row(row: dict[str, Any], row_index: int) -> None:
             _check_finite_float(found[1], found[0], row_index)
 
 
+def _reject_container_fields(row: dict[str, Any], names: tuple[str, ...], row_index: int) -> None:
+    # Tuple membership treats a list or object as present. ContractService then hashes the
+    # same value and raises TypeError after earlier rows have already been written.
+    for name in names:
+        if isinstance(row.get(name), (list, dict)):
+            _unprocessable(f"{name} 格式錯誤", row_index)
+
+
 def _validate_import_row(schema: str, row: dict[str, Any], row_index: int) -> None:
     # Rows missing required fields are rejected by ContractService before conversion.
-    # Rows it would convert are checked here so a later bad row cannot 500 after earlier writes.
+    # Rows it would convert, and required fields that are lists or objects, are checked
+    # here so a later bad row cannot 500 after earlier writes.
     if schema == SCHEMA_RECEIPT:
+        _reject_container_fields(row, ("material", "quantity"), row_index)
         if row.get("material") in (None, "") or row.get("quantity") in (None, ""):
             return
         _require_receipt_quantity(row, row_index)
         _validate_receipt_numbers(row, row_index)
     elif schema == SCHEMA_SUPPLIER:
+        _reject_container_fields(row, ("supplierId",), row_index)
         if row.get("supplierId") in (None, ""):
             return
         _validate_supplier_row(row, row_index)
     elif schema == SCHEMA_CARRIER:
+        _reject_container_fields(row, ("carrier", "charge"), row_index)
         if row.get("carrier") in (None, "") or row.get("charge") in (None, ""):
             return
         _validate_carrier_row(row, row_index)
     elif schema == SCHEMA_ADJUST:
+        _reject_container_fields(row, ("lotId", "quantity", "reason"), row_index)
         if any(row.get(name) in (None, "") for name in ("lotId", "quantity", "reason")):
             return
         _check_service_int(row.get("quantity"), "quantity", row_index)
