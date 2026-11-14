@@ -72,7 +72,5 @@ module = [
   "fox3d.product_truth",
   "fox3d.prototype",
   "scripts.blender_job",
-  "tests.test_prototype_runner",
-  "tests.test_supervisor",
 ]
 ignore_errors = true

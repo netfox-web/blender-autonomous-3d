@@ -88,7 +88,7 @@ def _board_row(i: int, **over) -> dict:
 
 
 def _matrix_row(i: int, **over) -> dict:
-    row = {k: None for k in REQUIRED_MATRIX_KEYS}
+    row: dict[str, object] = {k: None for k in REQUIRED_MATRIX_KEYS}
     row.update(
         {
             "selectionId": f"s{i}",
