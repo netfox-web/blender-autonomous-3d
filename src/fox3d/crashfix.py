@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 from fox3d.platform import Platform
-from fox3d.workorder import STRICT_STOCK
 
 
 def _plat(root: Path) -> Platform:

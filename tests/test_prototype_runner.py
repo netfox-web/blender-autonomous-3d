@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from fox3d.evidence import prepare_evidence_lineage
-from fox3d.prototype import PACKAGING_POLICY_HASH, PRIOR_REAL_BLENDER, REQUIRED_BOARD_FIELDS, REQUIRED_MATRIX_KEYS
+from fox3d.prototype import PACKAGING_POLICY_HASH, PRIOR_REAL_BLENDER, REQUIRED_MATRIX_KEYS
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "c" * 40

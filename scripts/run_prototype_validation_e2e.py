@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from fox3d.acceptance_gate import (  # noqa: E402
-    PROTOTYPE_ACCEPTANCE_FILES,
     atomic_publish_canonical,
     read_prototype_truth_set,
 )

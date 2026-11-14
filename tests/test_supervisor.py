@@ -13,9 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from services.supervisor.ai_adapter import (
-    ExternalProviderSupervisorAdapter,
     MockSupervisorAdapter,
-    OpenAISupervisorAdapter,
     RuleBasedSupervisorAdapter,
     SemanticEvidenceSupervisorAdapter,
     SupervisorProviderAdapter,
@@ -27,8 +25,6 @@ from services.supervisor.github_client import GitHubClient, GitHubClientInterfac
 from services.supervisor.main import create_app
 from services.supervisor.models import (
     ChangedFileItem,
-    EvidenceSectionCompleteness,
-    HEX40_PATTERN,
     ReadyForReGateContract,
     ReviewContext,
     ReviewDecision,
@@ -36,7 +32,6 @@ from services.supervisor.models import (
     SupervisorStatus,
 )
 from services.supervisor.policy import PolicyEngine
-from services.supervisor.security import verify_github_signature
 from services.supervisor.state import StateManager
 from scripts.antigravity_watcher import format_ready_contract
 
@@ -1587,7 +1582,6 @@ def test_46_provider_prompt_includes_exact_instruction_text_and_completeness_met
 # 47. Blocker C: Engine independent mismatch verification handles errors and logs without NameError
 def test_47_engine_independent_mismatch_verification_safe_logging(env_setup):
     engine: SupervisorEngine = env_setup["engine"]
-    gh: MockGitHubClient = env_setup["github_client"]
 
     # 1. Adapter returns wrong CODE SHA -> Engine catches it independently
     bad_code_adapter = MockSupervisorAdapter(

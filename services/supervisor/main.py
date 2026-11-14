@@ -9,8 +9,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, Header, HTTPException, Request, status
 
 from services.supervisor.ai_adapter import (
     SupervisorProviderAdapter,
@@ -24,7 +23,6 @@ from services.supervisor.policy import PolicyEngine
 from services.supervisor.security import (
     SecurityError,
     authorize_sender,
-    validate_repo_and_branch,
     verify_admin_auth,
     verify_github_signature,
 )

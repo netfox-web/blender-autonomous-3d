@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
-from fox3d.furniture import FurnitureProductTypeRegistry, validate_assembly
+from fox3d.furniture import FurnitureProductTypeRegistry
 from fox3d.manufacturing import ManufacturingCandidateGate, NestingEngine, QuoteEngine
 from fox3d.parametric import CabinetSpec, parse_design_intent
 

@@ -12,7 +12,7 @@ from fox3d.parametric import (
     EngineeringRuleEngine,
     parse_design_intent,
 )
-from fox3d.studio import LIGHTING_RECIPES, MATERIALS
+from fox3d.studio import LIGHTING_RECIPES
 
 
 class VisionProvider(Protocol):

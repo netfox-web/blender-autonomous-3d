@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.scene import CameraDSL, LightingDSL, SceneDSL, compile_scene_graph
@@ -120,7 +120,7 @@ def product_fit(product_dims: dict[str, float], *, family: str, clearance: dict[
 def dieline_primitives(family: str, inner: dict[str, float], *, caliper: float = 3.0) -> dict[str, Any]:
     L, W, H = inner["length"], inner["width"], inner["height"]
     # Simple net: panels with cut/crease semantics. Not a die-maker CAD.
-    panels = []
+    panels: list[dict[str, Any]] = []
     if family == "RSC_CARTON":
         panels = [
             {"id": "bottom", "w": L, "h": W, "kind": "panel"},
@@ -255,7 +255,8 @@ class StructuralPackagingFactory:
         eng = PackagingEngineeringDefinition(twin)
         defined = eng.define(family=family, product_dims=product_dims, sheet=sheet)
         panels = []
-        for p in eng.dieline["panels"]:
+        dieline = cast(dict[str, Any], eng.dieline)
+        for p in dieline["panels"]:
             panels.append(
                 {
                     "partId": p["id"],
@@ -320,7 +321,7 @@ class StructuralPackagingFactory:
             if preview.get("status") in {"queued", "retry_scheduled"}:
                 preview = self.platform.execute_job(preview)
             rec["preview"] = preview
-            rec["previewLabel"] = "REAL" if rec["preview"].get("realBlender") and not rec["preview"].get("usedMock") else "MOCK"
+            rec["previewLabel"] = "REAL" if preview.get("realBlender") and not preview.get("usedMock") else "MOCK"
         self.items[product_id] = rec
         return rec
 

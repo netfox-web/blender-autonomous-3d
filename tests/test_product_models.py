@@ -1,4 +1,3 @@
-import copy
 import io
 from types import SimpleNamespace
 

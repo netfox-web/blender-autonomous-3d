@@ -8,7 +8,6 @@ from __future__ import annotations
 from typing import Any
 
 from fox3d.acrylic import ACRYLIC_FAMILIES, AcrylicFactory
-from fox3d.ids import stable_hash
 from fox3d.kd import FLATPACK_PRODUCT_TYPES, auto_redesign_candidates, common_hardware_optimizer, common_panel_optimizer
 from fox3d.packaging import BOX_FAMILIES, StructuralPackagingFactory
 from fox3d.retail_fixture import FIXTURE_FAMILIES, RetailFixtureFactory

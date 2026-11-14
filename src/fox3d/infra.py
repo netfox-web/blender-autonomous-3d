@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.jobs import JobStatus

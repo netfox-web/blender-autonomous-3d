@@ -1096,7 +1096,6 @@ def test_cross_process_reader_pin_blocks_prune(tmp_path: Path, monkeypatch: pyte
     gltf_body = _gltf_body_with_uris("textures/albedo.png")
     model_root = tmp_path / "assets" / "models" / "polyhaven"
     model_dir = model_root / aid
-    gltf_file = model_dir / f"{aid}_2k.gltf"
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
         "urlopen",
@@ -1295,7 +1294,6 @@ def test_worker_pin_blocks_prune_until_publish_finishes(tmp_path: Path, monkeypa
     gltf_body = _gltf_body_with_uris("textures/albedo.png")
     model_root = tmp_path / "assets" / "models" / "polyhaven"
     model_dir = model_root / aid
-    gltf_file = model_dir / f"{aid}_2k.gltf"
     monkeypatch.setattr(
         photoreal_assets.urllib.request,
         "urlopen",
@@ -1434,7 +1432,6 @@ def test_redownload_reuses_intact_version_and_fixes_catalog(tmp_path: Path, monk
 
 def test_worker_catalog_lock_blocks_publish_until_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Worker resolve+pin under catalog lock blocks publish/reclaim until pin exists (issue #223)."""
-    import importlib.util
 
     from fox3d.polyhaven_paths import _CATALOG_LOCK_PAUSE_ENV
 

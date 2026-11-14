@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from tests.browser.conftest import TENANT, admin_page_features
+from tests.browser.conftest import admin_page_features
 
 pytestmark = pytest.mark.browser
 
@@ -91,7 +91,6 @@ def test_admin_page_smoke(
 ) -> None:
     base = admin_server["base_url"]
     href = feature["href"]
-    path = _path(href)
     page = admin_page
     response = page.goto(base + href, wait_until="domcontentloaded")
     assert response is not None and response.status == 200, feature["id"]
