@@ -145,6 +145,8 @@ def cut_sequence_manifest(result: dict[str, Any]) -> dict[str, Any]:
                     "liveMachineControl": False,
                 }
             )
+    for step in steps:
+        step["notCamDriver"] = True
     man = {
         "kind": "saw-friendly-cut-sequence",
         "sheetCount": result.get("sheetCount"),

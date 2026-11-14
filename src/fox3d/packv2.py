@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -80,17 +81,46 @@ def _seg_intersect(a, b, c, d) -> bool:
     return ccw(a, c, d) != ccw(b, c, d) and ccw(a, b, c) != ccw(a, b, d)
 
 
+def _finite_float(value: Any) -> float | None:
+    """Parse ``value`` as a finite float; return ``None`` when missing or non-numeric."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(out):
+        return None
+    return out
+
+
 def validate_dieline(dieline: dict[str, Any]) -> dict[str, Any]:
+    """Geometry sanity checks for a dieline net. Never raises on malformed panels.
+
+    Panels with missing / non-numeric / non-positive ``w`` or ``h`` are reported as
+    ``bounds:<id>`` instead of raising.
+
+    Overlap: only panels that supply numeric ``x`` and ``y`` (placed coordinates)
+    take part in the interior-overlap check. Panels without coordinates are an
+    abstract sequential net (laid out side by side), which cannot overlap, so they
+    are not checked.
+    """
     errors: list[str] = []
     panels = dieline.get("panels") or []
     if not panels:
         errors.append("no_panels")
+    placed: list[dict[str, Any]] = []
     for p in panels:
-        w, h = float(p.get("w") or 0), float(p.get("h") or 0)
+        pid = p.get("id")
+        w, h = _finite_float(p.get("w")), _finite_float(p.get("h"))
+        if w is None or h is None or w <= 0 or h <= 0:
+            errors.append(f"bounds:{pid}")
+            continue
         if w < 8 or h < 8:
-            errors.append(f"short_flap:{p.get('id')}")
-        if w <= 0 or h <= 0:
-            errors.append(f"bounds:{p.get('id')}")
+            errors.append(f"short_flap:{pid}")
+        x, y = _finite_float(p.get("x")), _finite_float(p.get("y"))
+        if x is not None and y is not None:
+            placed.append({"id": pid, "x": x, "y": y, "w": w, "h": h})
     ids = [p.get("id") for p in panels]
     if len(ids) != len(set(ids)):
         errors.append("duplicate_panel")
@@ -100,16 +130,16 @@ def validate_dieline(dieline: dict[str, Any]) -> dict[str, Any]:
         errors.append("missing_crease")
     if panels and not glue and str(dieline.get("family") or "") in {"RSC_CARTON", "SLEEVE"}:
         errors.append("missing_glue")
-    # naive self-intersection: sequential net rectangles sharing edges is OK; overlapping interiors is not
-    x = 0.0
-    boxes = []
-    for p in panels:
-        box = {"id": p.get("id"), "x": x, "y": 0.0, "w": float(p["w"]), "h": float(p["h"])}
-        boxes.append(box)
-        x += float(p["w"]) + 8
-    for i, a in enumerate(boxes):
-        for b in boxes[i + 1 :]:
-            if a["x"] + a["w"] > b["x"] + 1e-6 and b["x"] + b["w"] > a["x"] + 1e-6 and a["y"] + a["h"] > b["y"] + 1e-6 and b["y"] + b["h"] > a["y"] + 1e-6:
+    # Interior overlap between placed panels; sharing an edge (touching) is OK.
+    eps = 1e-6
+    for i, a in enumerate(placed):
+        for b in placed[i + 1 :]:
+            if (
+                a["x"] + a["w"] > b["x"] + eps
+                and b["x"] + b["w"] > a["x"] + eps
+                and a["y"] + a["h"] > b["y"] + eps
+                and b["y"] + b["h"] > a["y"] + eps
+            ):
                 errors.append(f"overlap:{a['id']}:{b['id']}")
     return {"ok": not errors, "errors": errors, "foldConsistent": "missing_crease" not in errors, "source": "geometry"}
 
