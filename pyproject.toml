@@ -68,16 +68,9 @@ disable_error_code = ["annotation-unchecked"]
 [[tool.mypy.overrides]]
 module = [
   "fox3d.artwork",
-  "fox3d.generative_gateway",
-  "fox3d.logistics",
-  "fox3d.manufacturing",
-  "fox3d.mfg_release",
   "fox3d.pilot_batch",
-  "fox3d.platform",
   "fox3d.product_truth",
   "fox3d.prototype",
-  "fox3d.receipt",
-  "fox3d.recipe_3d",
   "scripts.blender_job",
   "tests.test_prototype_runner",
   "tests.test_supervisor",

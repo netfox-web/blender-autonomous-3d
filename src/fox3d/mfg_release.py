@@ -58,14 +58,18 @@ def _digest(text: str) -> dict[str, Any]:
 
 def product_snapshot(rec: dict[str, Any], *, family: str | None = None) -> dict[str, Any]:
     """Normalize KD / retail / packaging / acrylic SoT into a release input."""
-    spec = rec.get("spec") if isinstance(rec.get("spec"), dict) else {}
-    eng = rec.get("engineering") if isinstance(rec.get("engineering"), dict) else {}
+    spec = rec.get("spec")
+    if not isinstance(spec, dict):
+        spec = {}
+    eng = rec.get("engineering")
+    if not isinstance(eng, dict):
+        eng = {}
     packing = rec.get("packing") or rec.get("packaging") or {}
     nesting = rec.get("nesting") or {}
     bom = rec.get("bom") or {}
     fam = family or rec.get("family") or rec.get("productFamily") or spec.get("physicalProductFamily") or "KD_FURNITURE"
     product_id = rec.get("productId") or rec.get("fixtureId") or rec.get("packageId") or spec.get("productId") or new_id()
-    snap = {
+    snap: dict[str, Any] = {
         "productId": product_id,
         "productVersion": rec.get("productVersion") or spec.get("revision") or bom.get("revision") or 1,
         "productFamily": fam,

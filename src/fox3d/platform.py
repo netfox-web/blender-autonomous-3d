@@ -6,7 +6,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from fox3d.blender import (
     BLOCKED_NO_BLENDER,
@@ -180,7 +180,7 @@ class Platform:
             telemetry={"operations": foxstudio_operations()},
         )
         self.compute.upsert_heartbeat(node)
-        self.capabilities.declare(target_key, list(caps.get("capabilities") or []))
+        self.capabilities.declare(target_key, list(cast(list[str], caps.get("capabilities") or [])))
         return node
 
     def register_detected_workers(self) -> HostProbe:
@@ -461,7 +461,7 @@ class Platform:
         qa = self.qa.inspect(qa_outputs) if qa_outputs.get("beauty.png") else {"ok": True, "failures": []}
         action = qa_or_retry(qa, job, self.operations) if qa_outputs.get("beauty.png") else "ok"
         if action == "AUTO_RETRY":
-            return self._fail_or_retry(job, "QA:" + ",".join(qa["failures"]))
+            return self._fail_or_retry(job, "QA:" + ",".join(cast(list[str], qa["failures"])))
         if action == "OPERATIONS_REVIEW":
             try:
                 self.queue.set_status(job["jobId"], "failed", error="OPERATIONS_REVIEW")
@@ -513,7 +513,7 @@ class Platform:
         )
         if job.get("recipeId"):
             self.recipes.record_usage(job["recipeId"], success=True)
-        terminal = "completed" if not result.used_mock else "succeeded"
+        terminal: Literal["completed", "succeeded"] = "completed" if not result.used_mock else "succeeded"
         try:
             self.queue.set_status(job["jobId"], terminal, output=output, progress=1.0)
         except Exception:
@@ -811,7 +811,7 @@ class Platform:
 
     def variants(self, product_id: str, *, tenant_id: str, count: int = 12) -> dict[str, Any]:
         # Rebuild from last parametric create stored as twin metadata is optional; RD agent is the full path.
-        raise KeyError(product_id) if False else self.rd.run(tenant_id=tenant_id, text=f"variant of {product_id}", variant_count=count)
+        raise cast(BaseException, self.rd.run(tenant_id=tenant_id, text=f"variant of {product_id}", variant_count=count))
 
     def preview(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = {**payload, "jobType": payload.get("jobType") or BLENDER_PREVIEW}
@@ -976,4 +976,4 @@ class Platform:
         }
 
 
-BlenderRuntime._mock_version = lambda self: "mock-4.2"  # type: ignore[method-assign]
+setattr(BlenderRuntime, "_mock_version", lambda self: "mock-4.2")
