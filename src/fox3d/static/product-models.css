@@ -422,6 +422,12 @@ h3 {
   display: none;
 }
 
+#batch-message.error {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
 /* Collapsible Classification Section */
 .collapsible-section {
   padding: 0;
