@@ -811,7 +811,7 @@ class Platform:
 
     def variants(self, product_id: str, *, tenant_id: str, count: int = 12) -> dict[str, Any]:
         # Rebuild from last parametric create stored as twin metadata is optional; RD agent is the full path.
-        raise cast(BaseException, self.rd.run(tenant_id=tenant_id, text=f"variant of {product_id}", variant_count=count))
+        return self.rd.run(tenant_id=tenant_id, text=f"variant of {product_id}", variant_count=count)
 
     def preview(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = {**payload, "jobType": payload.get("jobType") or BLENDER_PREVIEW}
