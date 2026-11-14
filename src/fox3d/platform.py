@@ -779,6 +779,17 @@ class Platform:
         result = self.execute_job(job)
         return {"twin": twin.model_dump(mode="json"), "job": result, "plan": self.p360.render_plan(twin.model_dump(), frames=frames)}
 
+    @staticmethod
+    def _ai_video_status_label(video: dict[str, Any]) -> str:
+        if video.get("kind") == "mock_video" or video.get("provider") == "mock":
+            return "MOCK"
+        status = str(video.get("status") or "").lower()
+        if status in ("succeeded", "completed"):
+            return "REAL"
+        if status == "blocked" or status.startswith("blocked"):
+            return "BLOCKED"
+        return "FAILED"
+
     def _production_gate(self) -> dict[str, Any] | None:
         if self.mock_blender:
             return None
@@ -898,22 +909,32 @@ class Platform:
         blender_job = job if gate else self.execute_job(job)
         if gate:
             blender_job = {**gate, "jobId": job["jobId"]}
+            return {
+                "blender": blender_job,
+                "aiVideo": {"status": "blocked", "error": gate.get("error")},
+                "aiVideoStatus": "BLOCKED",
+                "adapterHardcoded": False,
+                "principle": {"blender": "deterministic control", "aiVideo": "generative creativity"},
+            }
         refs = (blender_job.get("output") or {}).get("files") or {}
-        video = self.gateway.generate_video(
-            adapter=adapter,
-            request={
-                "twinId": twin.twinId,
-                "start": refs.get("START_FRAME"),
-                "middle": refs.get("MIDDLE_FRAME"),
-                "end": refs.get("END_FRAME"),
-                "mask": refs.get("mask.png"),
-                "duration": 6,
-            },
-        )
+        try:
+            video = self.gateway.generate_video(
+                adapter=adapter,
+                request={
+                    "twinId": twin.twinId,
+                    "start": refs.get("START_FRAME"),
+                    "middle": refs.get("MIDDLE_FRAME"),
+                    "end": refs.get("END_FRAME"),
+                    "mask": refs.get("mask.png"),
+                    "duration": 6,
+                },
+            )
+        except Exception as exc:
+            video = {"status": "failed", "error": str(exc)}
         return {
             "blender": blender_job,
             "aiVideo": video,
-            "aiVideoStatus": "MOCK" if video.get("kind") == "mock_video" or video.get("provider") == "mock" else "REAL",
+            "aiVideoStatus": self._ai_video_status_label(video),
             "adapterHardcoded": False,
             "principle": {"blender": "deterministic control", "aiVideo": "generative creativity"},
         }
