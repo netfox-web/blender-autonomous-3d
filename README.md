@@ -98,9 +98,10 @@ python -m playwright install --with-deps chromium
 
 ```bash
 FOX3D_MOCK_BLENDER=1 FOX3D_REQUIRE_LEGACY_BROWSER=1 python -m pytest tests/test_admin_legacy_assets.py -m browser -q
+FOX3D_MOCK_BLENDER=1 FOX3D_REQUIRE_LEGACY_BROWSER=1 python -m pytest tests/browser -m browser -q
 ```
 
-Workflow 的測試指令是 `python -m pytest tests/test_admin_legacy_assets.py -m browser -q`，環境變數是 `FOX3D_MOCK_BLENDER=1` 與 `FOX3D_REQUIRE_LEGACY_BROWSER=1`。後者在 Chromium 無法啟動時讓該 job 失敗，而不是略過。
+Workflow 的測試指令是 `python -m pytest tests/test_admin_legacy_assets.py -m browser -q` 與 `python -m pytest tests/browser -m browser -q`，環境變數是 `FOX3D_MOCK_BLENDER=1` 與 `FOX3D_REQUIRE_LEGACY_BROWSER=1`。後者在 Chromium 無法啟動時讓該 job 失敗，而不是略過。
 
 Headless worker (when Blender is installed):
 
