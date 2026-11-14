@@ -5,19 +5,123 @@ from __future__ import annotations
 import os
 
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
+from fox3d.contracts import (
+    ALLOWED_SOURCES,
+    SCHEMA_ADJUST,
+    SCHEMA_CARRIER,
+    SCHEMA_RECEIPT,
+    SCHEMA_SUPPLIER,
+)
 from fox3d.features import feature_index
 from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
 from fox3d.recipe_admin_api import recipe_router
+from fox3d.station import STATION_CAPS
+
+# These services raise PermissionError for bad input. Handlers check fields first.
+# A leftover PermissionError is 422 unless it is tenant isolation (403).
+# PilotException subclasses PermissionError and is re-raised unchanged.
+_IMPORT_SCHEMAS = frozenset({SCHEMA_RECEIPT, SCHEMA_SUPPLIER, SCHEMA_CARRIER, SCHEMA_ADJUST})
+_DISPATCH_FIELDS = ("workOrderId", "operation", "stationId")
+_RECEIPT_FLOATS = (
+    "thickness",
+    "length",
+    "width",
+    "unitCost",
+    "costPerSheet",
+    "expectedThickness",
+    "expectedLength",
+    "expectedWidth",
+)
+
+
+def _validation_detail(exc: ValidationError) -> str:
+    parts: list[str] = []
+    for err in exc.errors():
+        loc = ".".join(str(part) for part in err.get("loc") or ()) or "body"
+        if err.get("type") == "missing":
+            parts.append(f"缺少 {loc}")
+        else:
+            parts.append(f"{loc} 格式錯誤")
+    return "；".join(parts) or "輸入格式錯誤"
+
+
+def _raise_permission(exc: PermissionError) -> NoReturn:
+    message = str(exc)
+    if message.startswith("tenant isolation"):
+        raise HTTPException(403, message) from exc
+    raise HTTPException(422, message) from exc
+
+
+def _require_text_fields(payload: dict[str, Any], names: tuple[str, ...]) -> None:
+    missing = [name for name in names if payload.get(name) in (None, "")]
+    if missing:
+        raise HTTPException(422, "缺少欄位：" + "、".join(missing))
+    bad = [name for name in names if not isinstance(payload.get(name), str)]
+    if bad:
+        raise HTTPException(422, "欄位格式錯誤：" + "、".join(bad))
+
+
+def _require_receipt_quantity(payload: dict[str, Any]) -> None:
+    # import_receipt treats 0 / "" as absent and falls through to sheetCount.
+    raw = payload.get("quantity")
+    if raw in (None, "", 0, 0.0):
+        raw = payload.get("sheetCount")
+    if raw in (None, "", 0, 0.0):
+        raise HTTPException(422, "缺少 quantity")
+    try:
+        qty = int(raw)
+    except (TypeError, ValueError):
+        raise HTTPException(422, "quantity 格式錯誤") from None
+    if qty <= 0:
+        raise HTTPException(422, "quantity 須為正整數")
+
+
+def _require_manual_source(payload: dict[str, Any]) -> None:
+    source = payload.get("source")
+    if source in (None, ""):
+        return
+    if str(source) not in ALLOWED_SOURCES:
+        raise HTTPException(422, "source 須為 MANUAL 或 IMPORTED")
+
+
+def _optional_number(payload: dict[str, Any], key: str) -> None:
+    if key not in payload or payload[key] in (None, ""):
+        return
+    try:
+        float(payload[key])
+    except (TypeError, ValueError):
+        raise HTTPException(422, f"{key} 格式錯誤") from None
+
+
+def _require_station_capabilities(payload: dict[str, Any]) -> None:
+    raw = payload.get("capabilities")
+    if not isinstance(raw, list) or not any(item in STATION_CAPS for item in raw):
+        raise HTTPException(422, "capabilities 須包含至少一個 MANUAL 站別能力")
+
+
+def _require_import_contract(payload: dict[str, Any]) -> None:
+    if payload.get("schemaVersion") not in _IMPORT_SCHEMAS:
+        raise HTTPException(422, "schemaVersion 無效或缺少")
+    _require_manual_source(payload)
+    rows = payload.get("rows", [])
+    if rows is None:
+        return
+    if not isinstance(rows, list):
+        raise HTTPException(422, "rows 須為陣列")
+    if any(not isinstance(row, dict) for row in rows):
+        raise HTTPException(422, "rows 的每一列須為物件")
+
 
 _PLATFORM: Platform | None = None
 
@@ -129,7 +233,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        return get_platform().create_twin(payload)
+        if payload.get("sku") is None:
+            raise HTTPException(422, "缺少 sku")
+        try:
+            return get_platform().create_twin(payload)
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from exc
 
     @app.post("/api/digital-twins/upload")
     async def upload_twin(
@@ -507,13 +616,22 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/receipts")
     def pilot_receipt(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().pilot.receiving.import_receipt(
-            payload,
-            tenant_id=tid,
-            actor=str(payload.get("actor") or "api"),
-            source=str(payload.get("source") or "IMPORTED"),
-            idempotency_key=payload.get("idempotencyKey"),
-        )
+        _require_receipt_quantity(payload)
+        _require_manual_source(payload)
+        for key in _RECEIPT_FLOATS:
+            _optional_number(payload, key)
+        try:
+            return get_platform().pilot.receiving.import_receipt(
+                payload,
+                tenant_id=tid,
+                actor=str(payload.get("actor") or "api"),
+                source=str(payload.get("source") or "IMPORTED"),
+                idempotency_key=payload.get("idempotencyKey"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.post("/api/pilot/purchase-requests")
     def pilot_pr(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -546,13 +664,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/stations")
     def pilot_station(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().pilot.stations.register(
-            tenant_id=tid,
-            capabilities=list(payload.get("capabilities") or []),
-            station_id=payload.get("stationId"),
-            actor=str(payload.get("actor") or "api"),
-            status=str(payload.get("status") or "ONLINE"),
-        )
+        _require_station_capabilities(payload)
+        try:
+            return get_platform().pilot.stations.register(
+                tenant_id=tid,
+                capabilities=list(payload.get("capabilities") or []),
+                station_id=payload.get("stationId"),
+                actor=str(payload.get("actor") or "api"),
+                status=str(payload.get("status") or "ONLINE"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.post("/api/pilot/stations/{station_id}/heartbeat")
     def pilot_station_hb(station_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -566,6 +690,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/dispatch")
     def pilot_dispatch(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
+        _require_text_fields(payload, _DISPATCH_FIELDS)
         try:
             return get_platform().pilot.dispatcher.dispatch(
                 tenant_id=tid,
@@ -609,13 +734,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/import")
     def pilot_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().pilot.contracts.import_bundle(
-            payload,
-            tenant_id=tid,
-            actor=str(payload.get("actor") or "api"),
-            source=str(payload.get("source") or "IMPORTED"),
-            idempotency_key=payload.get("idempotencyKey"),
-        )
+        _require_import_contract(payload)
+        try:
+            return get_platform().pilot.contracts.import_bundle(
+                payload,
+                tenant_id=tid,
+                actor=str(payload.get("actor") or "api"),
+                source=str(payload.get("source") or "IMPORTED"),
+                idempotency_key=payload.get("idempotencyKey"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.get("/api/pilot/export")
     def pilot_export(releaseHash: str | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
