@@ -16,6 +16,7 @@ from fox3d.commerce import mixed_landed_cost  # noqa: E402
 from fox3d.evidence import (  # noqa: E402
     ACCEPTANCE_RUNNER_VERSION,
     DirtyTreeError,
+    bind_entity_evidence_hash,
     evidence_bundle,
     inspect_repo_lineage,
     verify_bundle,
@@ -33,6 +34,20 @@ def _ok(job: dict) -> bool:
     real = job.get("realBlender") if job.get("realBlender") is not None else out.get("realBlender")
     used = job.get("usedMock") if job.get("usedMock") is not None else out.get("usedMock")
     return job.get("status") in {"completed", "succeeded"} and bool(real) and not used
+
+
+def gate_entity_for_release(entity: dict, previews: list[dict]) -> dict:
+    """Bind the verified evidence bundle for this product before release-gate advance."""
+    product_id = (entity.get("spec") or {}).get("productId")
+    for preview in previews:
+        if preview.get("productId") != product_id:
+            continue
+        verify = preview.get("verify") or {}
+        bundle = preview.get("bundle") or {}
+        if not verify.get("ok") or not bundle.get("evidenceHash"):
+            continue
+        return bind_entity_evidence_hash(entity, bundle=bundle)
+    return entity
 
 
 def _md(title: str, extra_rows: list[dict], generated: str) -> str:
@@ -107,7 +122,22 @@ def run_live_pipeline(*, plat, probe, lineage, sha, real_ok) -> dict:
             label = "REAL" if real_ok and ver["ok"] and _ok(job) else "PARTIAL"
             if not real_ok:
                 label = "UNVERIFIED"
-            previews.append({"family": family, "jobId": job.get("jobId"), "usedMock": job.get("usedMock"), "realBlender": job.get("realBlender"), "outputHash": job.get("outputHash"), "gpuUuid": job.get("gpuUuid"), "blenderVersion": job.get("blenderVersion"), "workerId": job.get("worker"), "verify": ver, "bundle": bun, "label": label})
+            previews.append(
+                {
+                    "family": family,
+                    "productId": (rec.get("spec") or {}).get("productId"),
+                    "jobId": job.get("jobId"),
+                    "usedMock": job.get("usedMock"),
+                    "realBlender": job.get("realBlender"),
+                    "outputHash": job.get("outputHash"),
+                    "gpuUuid": job.get("gpuUuid"),
+                    "blenderVersion": job.get("blenderVersion"),
+                    "workerId": job.get("worker"),
+                    "verify": ver,
+                    "bundle": bun,
+                    "label": label,
+                }
+            )
         n_real = sum(1 for p in previews if p["label"] == "REAL")
         add("publication 5-family Blender+EvidenceBundle", "REAL" if n_real >= 5 and real_ok else "PARTIAL", f"real={n_real}/5 clean={lineage['workingTreeClean']}")
     else:
@@ -115,31 +145,35 @@ def run_live_pipeline(*, plat, probe, lineage, sha, real_ok) -> dict:
 
     gate = plat.release
     adv: dict = {}
+    rel_tid = "ops"
+    pid = kd["spec"]["productId"]
+    kd_gate = gate_entity_for_release(kd, previews)
     ev_ok = bool(previews) and all(p.get("verify", {}).get("ok") for p in previews)
     try:
-        adv = gate.advance(kd["spec"]["productId"], target="ENGINEERING_VALID", actor="ops", entity=kd)
-        adv = gate.advance(kd["spec"]["productId"], target="EVIDENCE_VERIFIED", actor="ops", entity=kd, evidence_ok=ev_ok)
-        adv = gate.advance(kd["spec"]["productId"], target="WAITING_APPROVAL", actor="ops", entity=kd)
-        adv = gate.advance(kd["spec"]["productId"], target="APPROVED_FOR_EXPORT", actor="ops", entity=kd)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="ENGINEERING_VALID", actor="ops", entity=kd_gate)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="EVIDENCE_VERIFIED", actor="ops", entity=kd_gate, evidence_ok=ev_ok)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="WAITING_APPROVAL", actor="ops", entity=kd_gate)
+        adv = gate.advance(pid, tenant_id=rel_tid, target="APPROVED_FOR_EXPORT", actor="ops", entity=kd_gate)
         add("release gate APPROVED_FOR_EXPORT", "REAL", adv["state"])
     except Exception as exc:
         add("release gate APPROVED_FOR_EXPORT", "PARTIAL", str(exc))
     live_cnc_blocked = False
     live_laser_blocked = False
     try:
-        gate.advance("nope", target="LIVE_CNC", actor="ops", entity=kd)
+        gate.advance("nope", tenant_id=rel_tid, target="LIVE_CNC", actor="ops", entity=kd_gate)
     except PermissionError:
         live_cnc_blocked = True
     try:
-        gate.advance("nope2", target="LIVE_LASER", actor="ops", entity=kd)
+        gate.advance("nope2", tenant_id=rel_tid, target="LIVE_LASER", actor="ops", entity=kd_gate)
     except PermissionError:
         live_laser_blocked = True
     add("forbidden LIVE_CNC transition", "REAL" if live_cnc_blocked else "FAIL", "blocked")
     add("forbidden LIVE_LASER transition", "REAL" if live_laser_blocked else "FAIL", "blocked")
 
-    kd_changed = dict(kd)
+    kd_changed = dict(kd_gate)
     kd_changed["engineeringHash"] = "mutated"
-    stale = gate.refresh_stale(kd["spec"]["productId"], kd_changed)
+    kd_changed["lineage"] = {**(kd_gate.get("lineage") or {}), "engineeringHash": "mutated"}
+    stale = gate.refresh_stale(pid, tenant_id=rel_tid, entity=kd_changed)
     add("approval stale on hash change", "REAL" if stale.get("stale") else "FAIL", str(stale.get("stale")))
 
     plat.providers.import_rows(plat.providers.material, [{"supplier": "LOCAL", "materialCode": "WOOD_WHITE", "thickness": 18, "price": 880, "currency": "TWD", "effectiveAt": "2026-01-01"}], source="MANUAL")
