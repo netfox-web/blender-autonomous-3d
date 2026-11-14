@@ -85,27 +85,29 @@ def test_dirty_tree_rejects_real_acceptance():
 def test_approval_audit_and_stale(platform):
     rec = platform.kd.build_sku(tenant_id="t1", kind="BEDSIDE_CABINET")
     gate = platform.release
-    ap = gate.advance(rec["spec"]["productId"], target="ENGINEERING_VALID", actor="ops", entity=rec, evidence_ok=True)
+    ap = gate.advance(rec["spec"]["productId"], tenant_id="t1", target="ENGINEERING_VALID", actor="ops", entity=rec, evidence_ok=True)
     assert ap["audit"]["immutable"] is True
     assert ap["audit"]["engineeringHash"] == rec["engineeringHash"]
     rec2 = dict(rec)
     rec2["engineeringHash"] = "changed"
     rec2["lineage"] = {**(rec.get("lineage") or {}), "engineeringHash": "changed"}
-    stale = gate.refresh_stale(rec["spec"]["productId"], rec2)
+    stale = gate.refresh_stale(rec["spec"]["productId"], tenant_id="t1", entity=rec2)
     assert stale["stale"] is True
     with pytest.raises(PermissionError):
-        gate.advance("x", target="LIVE_CNC", actor="ops", entity=rec)
+        gate.advance("x", tenant_id="t1", target="LIVE_CNC", actor="ops", entity=rec)
 
 
 def test_release_export_not_live(platform):
     rec = platform.kd.build_sku(tenant_id="t1", kind="PET_FURNITURE")
     g = platform.release
-    g.advance(rec["spec"]["productId"], target="ENGINEERING_VALID", actor="ops", entity=rec)
+    eid = rec["spec"]["productId"]
+    tid = "t1"
+    g.advance(eid, tenant_id=tid, target="ENGINEERING_VALID", actor="ops", entity=rec)
     with pytest.raises(PermissionError):
-        g.advance(rec["spec"]["productId"], target="EVIDENCE_VERIFIED", actor="ops", entity=rec, evidence_ok=False)
-    g.advance(rec["spec"]["productId"], target="EVIDENCE_VERIFIED", actor="ops", entity=rec, evidence_ok=True)
-    g.advance(rec["spec"]["productId"], target="WAITING_APPROVAL", actor="ops", entity=rec, evidence_ok=True)
-    done = g.advance(rec["spec"]["productId"], target="APPROVED_FOR_EXPORT", actor="ops", entity=rec, evidence_ok=True)
+        g.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=rec, evidence_ok=False)
+    g.advance(eid, tenant_id=tid, target="EVIDENCE_VERIFIED", actor="ops", entity=rec, evidence_ok=True)
+    g.advance(eid, tenant_id=tid, target="WAITING_APPROVAL", actor="ops", entity=rec, evidence_ok=True)
+    done = g.advance(eid, tenant_id=tid, target="APPROVED_FOR_EXPORT", actor="ops", entity=rec, evidence_ok=True)
     assert done["state"] == "APPROVED_FOR_EXPORT"
     assert done["equalsLiveCnc"] is False
     assert done["liveMachineControl"] is False
