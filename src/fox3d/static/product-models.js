@@ -25,7 +25,7 @@
     const p=new URLSearchParams({q:$('query').value,family:$('family').value,subtype:$('subtype').value,offset:String(offset)});
     const data=await api('/catalog?'+p);
     if(!append)$('groups').replaceChildren();
-    for(const g of data.items){const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(g.name)}<small>${esc(data.families[g.family])} · ${g.fileCount} 個檔案 · ${esc(data.subtypes[g.subtype])}</small>`;
+    for(const g of data.items){const b=document.createElement('button');b.type='button';b.append(document.createTextNode(g.name));const detail=document.createElement('small');detail.textContent=`${data.families[g.family] ?? ''} · ${g.fileCount} 個檔案 · ${data.subtypes[g.subtype] ?? ''}`;b.append(detail);
       b.onclick=run(async()=>{group=g;$('source-preview').hidden=true;await loadFiles();notice('已開啟素材資料夾；不會自動建立或修改模板。');});$('groups').append(b);}
     offset+=data.items.length;$('more').hidden=offset>=data.total;
     $('catalog-note').textContent=`${data.total} 個待確認資料夾群組。${data.scannedAt?'掃描時間 '+new Date(data.scannedAt).toLocaleString():'尚未掃描'}。`;
@@ -39,7 +39,7 @@
     const data=await api(`/catalog/${gid}/files?`+new URLSearchParams({q:$('file-query').value,offset:String(fileOffset)}));
     if(group?.id!==gid)return;
     $('sources-panel').hidden=false;$('source-folder').textContent=data.group.folder;$('file-note').textContent=`${data.total} 個檔案；檔名不作為尺寸依據。`;
-    for(const f of data.items){const row=document.createElement('div');row.className='file';row.innerHTML=`<strong>${esc(f.name)}</strong><small>${esc(f.path)}</small>`;
+    for(const f of data.items){const row=document.createElement('div');row.className='file';const name=document.createElement('strong');name.textContent=f.name;const path=document.createElement('small');path.textContent=f.path;row.append(name,path);
       if(['.ai','.pdf','.jpg','.jpeg','.png','.tif','.tiff'].includes(f.extension)){
         const b=document.createElement('button');b.className='secondary';b.type='button';b.textContent='預覽並分類素材';
         b.onclick=run(async()=>{b.disabled=true;try{const a=await api(`/files/${f.id}/import`,{method:'POST'});await loadAssets();
@@ -69,7 +69,7 @@
     $('masters').replaceChildren();$('generated-masters').replaceChildren();
     if(!generated)$('generated-masters').textContent='此篩選尚無已生成模型。';
     if(found.length===generated)$('masters').textContent='此篩選沒有待完成草稿。可選分類後建立新草稿，未知尺寸留白。';
-    for(const item of found){const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(selected?.id===item.id));b.innerHTML=`${esc(item.draft.name)}<small>${esc(item.classification.path.join(' › '))}</small><small>${item.templateState==='PREVIEW_AVAILABLE'?'已生成外形，待實物核對':item.readiness.previewReady?'草稿：待生成或重新核對':'草稿：待補尺寸／結構'} · 第 ${item.revision} 版</small>`;
+    for(const item of found){const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(selected?.id===item.id));b.append(document.createTextNode(item.draft.name));const path=document.createElement('small');path.textContent=item.classification.path.join(' › ');const info=document.createElement('small');info.textContent=`${item.templateState==='PREVIEW_AVAILABLE'?'已生成外形，待實物核對':item.readiness.previewReady?'草稿：待生成或重新核對':'草稿：待補尺寸／結構'} · 第 ${item.revision} 版`;b.append(path,info);
       b.onclick=run(async()=>{if(!canLeave())return;pendingNewCategory=null;selected=await api('/'+item.id);fill(selected.draft);group=null;$('sources-panel').hidden=true;$('source-preview').hidden=true;
         if(selected.draft.sourceGroupId){const info=await api(`/catalog/${selected.draft.sourceGroupId}/files`);group=info.group;await loadFiles();}
         renderInventory();switchView('models');await showStatus();});$(item.templateState==='PREVIEW_AVAILABLE'?'generated-masters':'masters').append(b);}
@@ -146,7 +146,7 @@
   form.onsubmit=run(async()=>{if(busy)return;busy=true;form.inert=true;$('save').disabled=true;try{selected=await api(selected?'/'+selected.id:'',{method:selected?'PUT':'POST',body:body({draft:draft(),expectedRevision:selected?.revision||0})});if(pendingNewCategory){try{const c=await api('/'+selected.id+'/classification');await api('/'+selected.id+'/classification',{method:'PUT',body:body({categoryId:pendingNewCategory,expectedRevision:c.revision})});pendingNewCategory=null;}catch(err){fill(selected.draft);await loadMasters();throw new Error('模型已儲存；分類尚未完成，請使用「儲存分類」重試：'+err.message);}}fill(selected.draft);await loadMasters();await showStatus();notice('模型資料已儲存。'+(selected.readiness.missing||'可確認簡化說明後生成 3D。'));}finally{busy=false;form.inert=false;$('save').disabled=false;readiness();}});
   $('accept').onchange=readiness;
   $('generate').onclick=run(async()=>{if(!selected||dirty)return;busy=true;readiness();try{await api('/'+selected.id+'/preview',{method:'POST',body:body({expectedRevision:selected.revision,inputHash:selected.inputHash,assumptionsAccepted:$('accept').checked})});notice('已送出真實 Blender 生成工作，畫面會更新進度。');}finally{busy=false;await showStatus();}});
-  $('status').onclick=run(showStatus);$('cancel').onclick=run(async()=>{await api('/'+selected.id+'/cancel',{method:'POST',body:body({taskId:task})});notice('已送出取消要求。');await showStatus();});
+  $('status').onclick=run(showStatus);$('cancel').onclick=run(async()=>{const button=$('cancel');button.disabled=true;try{await api('/'+selected.id+'/cancel',{method:'POST',body:body({taskId:task})});notice('已送出取消要求。');await showStatus();}catch(err){button.disabled=false;throw err;}});
   window.addEventListener('beforeunload',e=>{if(dirty||classificationDirty){e.preventDefault();e.returnValue='';}});
   setInterval(()=>{if(task)showStatus().catch(err=>notice(err.message,true));},5000);
   run(async()=>{const data=await api('/catalog');$('family').insertAdjacentHTML('beforeend',options(data.families));$('subtype').insertAdjacentHTML('beforeend',options(data.subtypes));$('edit-family').innerHTML=options({...data.families,mat:'地墊／洗漱墊'});$('edit-subtype').innerHTML=options(data.subtypes,'other');

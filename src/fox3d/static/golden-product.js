@@ -49,7 +49,7 @@
     if(s.generated && lastRendered!==s.generationId){
       lastRendered=s.generationId;
       const views=[['png','HERO_45 · 立體視角'],['front','FRONT_CLOSED · 正面'],['detail','DOOR_DETAIL · 門片細節']];
-      $('results').innerHTML='<div class="golden-views">'+views.map(([fmt,label])=>`<figure><img src="${download(sku,s.generationId,fmt,true)}" alt="${label}"><figcaption>${label}</figcaption></figure>`).join('')+'</div><div class="golden-downloads">'+[['png','PNG 圖片'],['glb','GLB 模型'],['blend','Blender 原檔'],['manifest','驗證紀錄 JSON']].map(([fmt,label])=>`<a href="${download(sku,s.generationId,fmt)}">下載 ${label} ↓</a>`).join('')+'</div>';
+      $('results').innerHTML='<div class="golden-views">'+views.map(([fmt,label])=>`<figure><img src="${download(sku,s.generationId,fmt,true)}" alt="${esc(label)}"><figcaption>${esc(label)}</figcaption></figure>`).join('')+'</div><div class="golden-downloads">'+[['png','PNG 圖片'],['glb','GLB 模型'],['blend','Blender 原檔'],['manifest','驗證紀錄 JSON']].map(([fmt,label])=>`<a href="${download(sku,s.generationId,fmt)}">下載 ${label} ↓</a>`).join('')+'</div>';
       $('lineage').innerHTML=`<p>Blender ${esc(s.renderInfo.blenderVersion)} · ${esc(s.renderInfo.device)} · 圖稿 FIXTURE</p><p class="hash">EngineeringHash：${esc(s.manifest.engineeringHash)}</p><p class="hash">ArtworkHash：${esc(s.manifest.package.artworkHash)}</p><p>三門均已核對實際 UV、原圖 SHA-256 與獨立裁圖。印刷出血與五金避讓仍待驗證。</p>`;
       $('results').insertAdjacentHTML('beforeend','<p>門片裁圖（校驗用，尚非正式印刷稿）： '+[1,2,3].map(i=>`<a href="${download(sku,s.generationId,'trim'+i)}">門片 ${i} ↓</a>`).join(' · ')+'</p>');
     }else if(!s.generated){
@@ -86,16 +86,18 @@
   });
   $('cancel').addEventListener('click',async()=>{
     if(!generation?.taskId)return;const token=serial,sku=$('sku').value;
-    try{await api(base(sku)+'/cancel',{method:'POST',body:JSON.stringify({taskId:generation.taskId})});if(token===serial)$('notice').textContent='已提出取消，等待 Blender 停止。';}catch(e){if(token===serial)$('notice').textContent=e.message;}
+    $('cancel').disabled=true;
+    try{await api(base(sku)+'/cancel',{method:'POST',body:JSON.stringify({taskId:generation.taskId})});if(token===serial)$('notice').textContent='已提出取消，等待 Blender 停止。';}catch(e){if(token===serial)$('notice').textContent=e.message;}finally{$('cancel').disabled=false;}
   });
   if($('dna-refresh'))$('dna-refresh').addEventListener('click',()=>loadDna());
   if($('dna-export-btn'))$('dna-export-btn').addEventListener('click',async()=>{
     const version=['FIXTURE_MASTER_V1','FIXTURE_SINGLE_V1'].includes($('version').value)?$('version').value:'FIXTURE_MASTER_V1';
+    $('dna-export-btn').disabled=true;
     try{
       const exported=await api('/api/product-dna/v1/exports',{method:'POST',body:JSON.stringify({version,seal:true})});
       renderDna(exported, `已封存匯出包 (${exported.exportId.slice(0,8)})`);
       $('notice').textContent=`已建立並封存 Product DNA 匯出包（編號：${exported.exportId}）。`;
-    }catch(e){$('notice').textContent=e.message;}
+    }catch(e){$('notice').textContent=e.message;}finally{$('dna-export-btn').disabled=false;}
   });
   if($('dna-download-btn'))$('dna-download-btn').addEventListener('click',()=>{
     if(!latestDnaPayload)return;
@@ -106,7 +108,7 @@
     a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
   api('/api/recipe-library/golden').then(c=>{
-    $('sku').innerHTML=c.skus.map(s=>`<option>${esc(s)}</option>`).join('');
-    $('version').innerHTML=c.versions.map(v=>`<option value="${esc(v.id)}">${esc(v.label)}</option>`).join('');select();
+    $('sku').replaceChildren(...c.skus.map(s=>new Option(s,s)));
+    $('version').replaceChildren(...c.versions.map(v=>new Option(v.label,v.id)));select();
   }).catch(e=>$('notice').textContent=e.message);
 })();
