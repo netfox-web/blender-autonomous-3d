@@ -346,6 +346,108 @@ def test_import_missing_receipt_field_records_only_accepted_row(client: TestClie
     assert data["importId"] in platform.pilot.contracts.imports
 
 
+def _import_stores(platform) -> dict[str, set[str]]:
+    return {
+        "receipts": set(platform.pilot.receiving.receipts),
+        "imports": set(platform.pilot.contracts.imports),
+        "lots": _acme_lot_ids(platform),
+        "quotes": set(platform.pilot.suppliers.quotes),
+        "carrier_quotes": set(platform.pilot.logistics.carrier_quotes),
+        "adjustments": set(platform.pilot.contracts.adjustments),
+    }
+
+
+# A valid row followed by a list or object in a required field. Includes the sparse
+# shape, where a sibling required field is absent and the old tuple check returned
+# early before the service hashed the container.
+_CONTAINER_SAMPLES: tuple[tuple[str, Any], ...] = (
+    ("array", []),
+    ("object", {}),
+    ("array-values", ["x"]),
+    ("object-values", {"a": 1}),
+)
+_IMPORT_GOOD_ROWS: tuple[tuple[str, dict[str, Any], tuple[str, ...]], ...] = (
+    (
+        "fox3d.receipt.v1",
+        {"material": "TEST", "quantity": 1, "supplierLot": "good"},
+        ("material", "quantity"),
+    ),
+    (
+        "fox3d.supplier_quote.v1",
+        {"supplierId": "S-A", "material": 100},
+        ("supplierId",),
+    ),
+    (
+        "fox3d.carrier_quote.v1",
+        {"carrier": "DHL", "charge": 120},
+        ("carrier", "charge"),
+    ),
+    (
+        "fox3d.inventory_adjustment.v1",
+        {"lotId": "lot-1", "quantity": 1, "reason": "cycle"},
+        ("lotId", "quantity", "reason"),
+    ),
+)
+
+
+def _container_import_cases() -> list[tuple[str, list[dict[str, Any]], str, str]]:
+    cases: list[tuple[str, list[dict[str, Any]], str, str]] = []
+    for schema, good, fields in _IMPORT_GOOD_ROWS:
+        for field in fields:
+            for label, value in _CONTAINER_SAMPLES:
+                replaced = dict(good)
+                replaced[field] = value
+                cases.append((schema, [dict(good), replaced], field, f"{field}-{label}"))
+                cases.append((schema, [dict(good), {field: value}], field, f"{field}-{label}-sparse"))
+    return cases
+
+
+CONTAINER_IMPORT_CASES = _container_import_cases()
+
+
+def test_import_receipt_array_material_after_valid_row_writes_nothing(client: TestClient, platform) -> None:
+    before = _import_stores(platform)
+    response = client.post(
+        "/api/pilot/import",
+        headers=HEADERS,
+        json={
+            "schemaVersion": "fox3d.receipt.v1",
+            "rows": [
+                {"material": "TEST", "quantity": 1, "supplierLot": "good"},
+                {"material": [], "quantity": 1},
+            ],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == "rows[1] material 格式錯誤"
+    assert "traceback" not in response.text.lower()
+    assert _import_stores(platform) == before
+
+
+@pytest.mark.parametrize(
+    "schema,rows,field",
+    [(schema, rows, field) for schema, rows, field, _label in CONTAINER_IMPORT_CASES],
+    ids=[f"{schema} {label}" for schema, _rows, _field, label in CONTAINER_IMPORT_CASES],
+)
+def test_import_container_required_field_after_valid_row_writes_nothing(
+    client: TestClient,
+    platform,
+    schema: str,
+    rows: list[dict[str, Any]],
+    field: str,
+) -> None:
+    before = _import_stores(platform)
+    response = client.post(
+        "/api/pilot/import",
+        headers=HEADERS,
+        json={"schemaVersion": schema, "rows": rows},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == f"rows[1] {field} 格式錯誤"
+    assert "traceback" not in response.text.lower()
+    assert _import_stores(platform) == before
+
+
 @pytest.mark.parametrize(
     "schema,rows,store",
     [
