@@ -317,3 +317,36 @@ def test_commerce_import_rejects_unknown_kind(platform, kind):
     )
     assert response.status_code == 422
     assert all(not getattr(platform.providers, name).items for name in ("material", "hardware", "packaging", "logistics", "fx"))
+
+
+@pytest.mark.parametrize("rows", [[{"price": 42}, "bad"], [{"price": 42}, {"snapshotId": []}], None, {}, "bad"])
+def test_commerce_import_invalid_batch_is_atomic_and_retryable(platform, rows):
+    client = TestClient(create_app(platform), headers={"X-Tenant-Id": "acme"})
+    store = platform.providers.material
+    response = client.post("/api/commerce/import", json={"rows": rows})
+    assert response.status_code == 422
+    assert not store.items
+    store.load()
+    assert not store.items
+    retry = client.post("/api/commerce/import", json={"rows": [{"price": 42}]})
+    assert retry.status_code == 200
+    store.load()
+    assert len(store.items) == 1
+
+
+def test_commerce_import_storage_permission_failure_is_private_and_atomic(platform, monkeypatch):
+    client = TestClient(create_app(platform), raise_server_exceptions=False, headers={"X-Tenant-Id": "acme"})
+    store = platform.providers.material
+    def fail():
+        raise PermissionError("/private/internal/path")
+    monkeypatch.setattr(store, "persist", fail)
+    response = client.post("/api/commerce/import", json={"rows": [{"price": 42}, {"price": 43}]})
+    assert response.status_code == 500
+    assert "/private/internal/path" not in response.text
+    assert not store.items
+    store.load()
+    assert not store.items
+    monkeypatch.undo()
+    assert client.post("/api/commerce/import", json={"rows": [{"price": 42}, {"price": 43}]}).status_code == 200
+    store.load()
+    assert len(store.items) == 2

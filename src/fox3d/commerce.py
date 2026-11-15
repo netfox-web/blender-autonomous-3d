@@ -23,6 +23,14 @@ def _row_hash(row: dict[str, Any]) -> str:
     return stable_hash({k: row[k] for k in row if k not in {"snapshotId", "snapshotHash"}})
 
 
+class ImportValidationError(ValueError):
+    """Invalid provider import input."""
+
+
+class ProviderDisconnectedError(PermissionError):
+    """The requested live provider is not connected."""
+
+
 class SnapshotStore:
     def __init__(self, root: Path | None = None, *, kind: str) -> None:
         self.kind = kind
@@ -44,16 +52,33 @@ class SnapshotStore:
         atomic_write_json(self.root / f"{self.kind}.json", {"kind": self.kind, "items": list(self.items.values())})
 
     def add(self, row: dict[str, Any], *, source: str) -> dict[str, Any]:
-        rec = dict(row)
-        rec["snapshotId"] = rec.get("snapshotId") or new_id()
-        rec["kind"] = self.kind
-        rec["source"] = source
-        rec["importedAt"] = utcnow().isoformat()
-        rec["liveProvider"] = source == "LIVE_PROVIDER"
-        rec["snapshotHash"] = _row_hash(rec)
-        self.items[rec["snapshotId"]] = rec
-        self.persist()
-        return rec
+        return self.add_many([row], source=source)[0]
+
+    def add_many(self, rows: list[dict[str, Any]], *, source: str) -> list[dict[str, Any]]:
+        if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+            raise ImportValidationError("rows must be a list of objects")
+        if any(row.get("snapshotId") is not None and not isinstance(row["snapshotId"], str) for row in rows):
+            raise ImportValidationError("snapshotId must be a string")
+        if not rows:
+            return []
+        records = []
+        for row in rows:
+            rec = dict(row)
+            rec["snapshotId"] = rec.get("snapshotId") or new_id()
+            rec["kind"] = self.kind
+            rec["source"] = source
+            rec["importedAt"] = utcnow().isoformat()
+            rec["liveProvider"] = source == "LIVE_PROVIDER"
+            rec["snapshotHash"] = _row_hash(rec)
+            records.append(rec)
+        previous = self.items
+        self.items = {**previous, **{rec["snapshotId"]: rec for rec in records}}
+        try:
+            self.persist()
+        except Exception:
+            self.items = previous
+            raise
+        return records
 
     def active(self, *, at: str | None = None) -> list[dict[str, Any]]:
         rows = list(self.items.values())
@@ -80,7 +105,7 @@ class ProviderRegistry:
 
     def import_rows(self, store: SnapshotStore, rows: list[dict[str, Any]], *, source: str) -> list[dict[str, Any]]:
         if source not in {"IMPORTED", "MANUAL", "LIVE_PROVIDER", "CONFIG_ESTIMATE"}:
-            raise ValueError(source)
+            raise ImportValidationError("Unknown import source")
         if source == "LIVE_PROVIDER":
             provider = {
                 "material": "SupplierPriceProvider",
@@ -90,8 +115,8 @@ class ProviderRegistry:
                 "fx": "FxRateProvider",
             }.get(store.kind)
             if provider is None or not self.live.get(provider, False):
-                raise PermissionError(f"Live provider is not connected for {store.kind}")
-        return [store.add(r, source=source) for r in rows]
+                raise ProviderDisconnectedError(f"Live provider is not connected for {store.kind}")
+        return store.add_many(rows, source=source)
 
     def import_csv(self, store: SnapshotStore, text: str, *, source: str) -> list[dict[str, Any]]:
         reader = csv.DictReader(io.StringIO(text))

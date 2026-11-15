@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
+from fox3d.commerce import ImportValidationError, ProviderDisconnectedError
 from fox3d.contracts import (
     ALLOWED_SOURCES,
     SCHEMA_ADJUST,
@@ -704,12 +705,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(422, "未知的 provider kind")
         store = getattr(plat.providers, kind)
         source = str(payload.get("source") or "MANUAL")
-        rows = payload.get("rows") or []
+        rows = payload.get("rows", [])
         try:
             return {"items": plat.providers.import_rows(store, rows, source=source), "liveProviderReady": False}
-        except PermissionError as exc:
-            _raise_permission(exc)
-        except ValueError as exc:
+        except (ProviderDisconnectedError, ImportValidationError) as exc:
             raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/safety/evaluate")
