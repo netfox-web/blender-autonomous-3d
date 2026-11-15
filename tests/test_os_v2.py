@@ -278,3 +278,42 @@ def test_api_v2_routes(platform):
     admin = client.get("/admin")
     assert "Physical Product OS" in admin.text
     assert "/api/kpi" in admin.text
+
+
+@pytest.mark.parametrize("kind", ["material", "hardware", "packaging", "logistics", "fx"])
+def test_commerce_import_rejects_disconnected_live_provider(platform, kind):
+    client = TestClient(create_app(platform))
+    store = getattr(platform.providers, kind)
+    before = dict(store.items)
+    response = client.post(
+        "/api/commerce/import",
+        json={"kind": kind, "source": "LIVE_PROVIDER", "rows": [{"price": 42}]},
+        headers={"X-Tenant-Id": "acme"},
+    )
+    assert response.status_code == 422
+    assert store.items == before
+    store.load()
+    assert store.items == before
+
+
+def test_commerce_import_rejects_unknown_source(platform):
+    client = TestClient(create_app(platform))
+    response = client.post(
+        "/api/commerce/import",
+        json={"kind": "material", "source": "UNKNOWN", "rows": [{"price": 42}]},
+        headers={"X-Tenant-Id": "acme"},
+    )
+    assert response.status_code == 422
+    assert not platform.providers.material.items
+
+
+@pytest.mark.parametrize("kind", ["unknown", "live", "__class__"])
+def test_commerce_import_rejects_unknown_kind(platform, kind):
+    client = TestClient(create_app(platform))
+    response = client.post(
+        "/api/commerce/import",
+        json={"kind": kind, "source": "MANUAL", "rows": [{"price": 42}]},
+        headers={"X-Tenant-Id": "acme"},
+    )
+    assert response.status_code == 422
+    assert all(not getattr(platform.providers, name).items for name in ("material", "hardware", "packaging", "logistics", "fx"))
