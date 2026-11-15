@@ -11,30 +11,19 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
+from fox3d.operator import make_token, parse_token
 from fox3d.station import OP_CAPABILITY
 from fox3d.workorder import STRICT_STOCK
 
 HEADERS = {"X-Tenant-Id": "acme"}
 
-# Empty JSON starts a Blender / fleet render. Twin preview also KeyErrors on a
-# placeholder id before it would call Blender; that KeyError is outside this issue.
+# Empty JSON starts a Blender / fleet render.
 SKIP_BLENDER_OR_EXTERNAL = frozenset(
     {
-        "/api/digital-twins/{twin_id}/preview",
         "/api/ecommerce-scenes/batches",
     }
 )
-# A placeholder path id is not a stored resource. These handlers raise KeyError.
-# This issue forbids a global KeyError handler, and these routes are not the five
-# body-field endpoints.
-SKIP_UNKNOWN_PATH_ID = frozenset(
-    {
-        "/api/pilot/work-orders/{work_order_id}/reserve",
-        "/api/pilot/stations/{station_id}/heartbeat",
-        "/api/pilot/leases/{lease_id}/ack",
-        "/api/pilot/leases/{lease_id}/start",
-    }
-)
+SKIP_UNKNOWN_PATH_ID: frozenset[str] = frozenset()
 SKIP_EMPTY_BODY_POSTS = SKIP_BLENDER_OR_EXTERNAL | SKIP_UNKNOWN_PATH_ID
 
 
@@ -76,6 +65,29 @@ BAD_BODIES = [
     ("/api/pilot/receipts", {"quantity": 1, "thickness": "bad"}, "bad-thickness"),
     ("/api/pilot/receipts", {"quantity": 1, "unitCost": "bad"}, "bad-unit-cost"),
     ("/api/pilot/receipts", {"quantity": 1, "source": "LIVE"}, "bad-source"),
+    ("/api/materials/lots", {}, "empty"),
+    ("/api/materials/lots", {"quantity": "abc"}, "bad-quantity"),
+    ("/api/materials/lots", {"quantity": -5}, "negative-quantity"),
+    ("/api/materials/lots", {"quantity": 0}, "zero-quantity"),
+    ("/api/materials/lots", {"quantity": 1.5}, "fractional-quantity"),
+    ("/api/materials/lots", {"quantity": True}, "bool-quantity"),
+    ("/api/materials/lots", {"quantity": False}, "bool-false-quantity"),
+    ("/api/materials/lots", {"sheetCount": "abc"}, "bad-sheet-count"),
+    ("/api/materials/lots", {"sheetCount": -5}, "negative-sheet-count"),
+    ("/api/materials/lots", {"sheetCount": 0}, "zero-sheet-count"),
+    ("/api/materials/lots", {"sheetCount": 1.5}, "fractional-sheet-count"),
+    ("/api/materials/lots", {"sheetCount": True}, "bool-sheet-count"),
+    ("/api/materials/lots", {"quantity": 1, "thickness": "bad"}, "bad-thickness"),
+    ("/api/materials/lots", {"quantity": 1, "unitCost": "bad"}, "bad-unit-cost"),
+    ("/api/materials/lots", {"quantity": 1, "costPerSheet": "bad"}, "bad-cost-per-sheet"),
+    ("/api/materials/lots", {"quantity": 1, "source": "LIVE"}, "bad-source"),
+    ("/api/pilot/purchase-requests", {}, "empty"),
+    ("/api/pilot/purchase-requests", {"quantity": "abc"}, "bad-quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": -5}, "negative-quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": 0}, "zero-quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": 1.5}, "fractional-quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": True}, "bool-quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": False}, "bool-false-quantity"),
     ("/api/pilot/stations", {}, "empty"),
     ("/api/pilot/stations", {"actor": "api"}, "missing-capabilities"),
     ("/api/pilot/stations", {"capabilities": ["NOT_A_CAP"]}, "bad-capabilities"),
@@ -91,6 +103,9 @@ BAD_BODIES = [
 
 VALID_BODIES = [
     ("/api/digital-twins", {"sku": "A-1"}, "sku"),
+    ("/api/materials/lots", {"quantity": 1}, "quantity"),
+    ("/api/materials/lots", {"quantity": "2"}, "string-quantity"),
+    ("/api/materials/lots", {"sheetCount": 2}, "sheet-count"),
     ("/api/pilot/receipts", {"quantity": 1}, "quantity"),
     ("/api/pilot/receipts", {"quantity": "2"}, "string-quantity"),
     ("/api/pilot/receipts", {"sheetCount": 2}, "sheet-count"),
@@ -100,6 +115,8 @@ VALID_BODIES = [
     ("/api/pilot/receipts", {"quantity": 1, "unitCost": 10, "costPerSheet": "ignored"}, "unit-cost-wins"),
     ("/api/pilot/receipts", {"quantity": 1, "length": 0}, "zero-length"),
     ("/api/pilot/receipts", {"quantity": 1, "length": 2440, "expectedQuantity": 1}, "matching-expected-quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": 1}, "quantity"),
+    ("/api/pilot/purchase-requests", {"quantity": "2"}, "string-quantity"),
     ("/api/pilot/stations", {"capabilities": ["PANEL_CUTTING_MANUAL"]}, "capability"),
     ("/api/pilot/import", {"schemaVersion": "fox3d.receipt.v1", "rows": [{"material": "TEST", "quantity": 1}]}, "receipt-row"),
     ("/api/pilot/dispatch", None, "work-order"),
@@ -205,8 +222,16 @@ def test_post_routes_reject_empty_body_without_5xx(client: TestClient) -> None:
     assert not failures, "\n".join(failures)
     assert {
         "/api/digital-twins",
+        "/api/digital-twins/{twin_id}/preview",
+        "/api/materials/lots",
+        "/api/pilot/work-orders/{work_order_id}/reserve",
         "/api/pilot/receipts",
+        "/api/pilot/purchase-requests",
         "/api/pilot/stations",
+        "/api/pilot/stations/{station_id}/heartbeat",
+        "/api/pilot/leases/{lease_id}/ack",
+        "/api/pilot/leases/{lease_id}/start",
+        "/api/pilot/leases/{lease_id}/complete",
         "/api/pilot/import",
         "/api/pilot/dispatch",
     } <= seen
@@ -498,3 +523,152 @@ def test_import_bad_row_of_each_schema_writes_nothing(client: TestClient, platfo
         assert set(platform.pilot.logistics.carrier_quotes) == before
     else:
         assert set(platform.pilot.contracts.adjustments) == before
+
+
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        ("/api/pilot/work-orders/missing/reserve", {}),
+        ("/api/pilot/stations/missing/heartbeat", {}),
+        ("/api/pilot/leases/missing/ack", {}),
+        ("/api/pilot/leases/missing/start", {}),
+        ("/api/pilot/leases/missing/complete", {}),
+        ("/api/pilot/leases/missing/complete", {"confirm": True}),
+        ("/api/digital-twins/missing/preview", {}),
+    ],
+)
+def test_unknown_path_id_returns_404(client: TestClient, path: str, body: dict[str, Any]) -> None:
+    response = client.post(path, headers=HEADERS, json=body)
+    assert response.status_code == 404, response.text
+    assert "traceback" not in response.text.lower()
+
+
+def test_cross_tenant_twin_preview_and_station_heartbeat(client: TestClient, platform) -> None:
+    twin = client.post("/api/digital-twins", headers=HEADERS, json={"sku": "ACME-TWIN-1"})
+    assert twin.status_code == 200, twin.text
+    twin_id = twin.json()["twinId"]
+
+    other_headers = {"X-Tenant-Id": "other"}
+    foreign_preview = client.post(f"/api/digital-twins/{twin_id}/preview", headers=other_headers, json={})
+    missing_preview = client.post("/api/digital-twins/no-such-twin/preview", headers=other_headers, json={})
+    assert foreign_preview.status_code == 404, foreign_preview.text
+    assert foreign_preview.json() == missing_preview.json() == {"detail": "找不到數位分身"}
+
+    dispatch_payload = _ready_dispatch(client, platform)
+    station_id = dispatch_payload["stationId"]
+    foreign_hb = client.post(f"/api/pilot/stations/{station_id}/heartbeat", headers=other_headers, json={})
+    assert foreign_hb.status_code == 403, foreign_hb.text
+
+    foreign_reserve = client.post(
+        f"/api/pilot/work-orders/{dispatch_payload['workOrderId']}/reserve",
+        headers=other_headers,
+        json={},
+    )
+    assert foreign_reserve.status_code == 403, foreign_reserve.text
+
+    lease = client.post("/api/pilot/dispatch", headers=HEADERS, json=dispatch_payload)
+    assert lease.status_code == 200, lease.text
+    lease_id = lease.json()["leaseId"]
+    for suffix, body in (("ack", {}), ("start", {}), ("complete", {"confirm": True})):
+        foreign_lease = client.post(f"/api/pilot/leases/{lease_id}/{suffix}", headers=other_headers, json=body)
+        assert foreign_lease.status_code == 403, foreign_lease.text
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"quantity": "abc"},
+        {"quantity": -5},
+        {"quantity": 0},
+        {"quantity": 1.5},
+        {"quantity": True},
+        {"quantity": False},
+        {"sheetCount": "abc"},
+        {"sheetCount": -5},
+        {"sheetCount": 0},
+        {"sheetCount": 1.5},
+        {"quantity": 1, "thickness": "bad"},
+        {"quantity": 1, "unitCost": "bad"},
+        {"quantity": 1, "costPerSheet": "bad"},
+    ],
+)
+def test_materials_lots_bad_numbers_return_422_and_do_not_write(
+    client: TestClient, platform, body: dict[str, Any]
+) -> None:
+    receipts = set(platform.pilot.receiving.receipts)
+    lots = _acme_lot_ids(platform)
+    response = client.post("/api/materials/lots", headers=HEADERS, json=body)
+    assert response.status_code == 422, response.text
+    assert "traceback" not in response.text.lower()
+    assert set(platform.pilot.receiving.receipts) == receipts
+    assert _acme_lot_ids(platform) == lots
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"material": "PB_18_WHITE"},
+        {"quantity": ""},
+        {"quantity": "abc"},
+        {"quantity": -5},
+        {"quantity": 0},
+        {"quantity": "0"},
+        {"quantity": 1.5},
+        {"quantity": True},
+        {"quantity": False},
+        {"quantity": []},
+        {"quantity": {}},
+    ],
+)
+def test_purchase_requests_bad_quantity_returns_422_and_does_not_write(
+    client: TestClient, platform, body: dict[str, Any]
+) -> None:
+    before = set(platform.pilot.receiving.requests)
+    response = client.post("/api/pilot/purchase-requests", headers=HEADERS, json=body)
+    assert response.status_code == 422, response.text
+    assert "traceback" not in response.text.lower()
+    assert set(platform.pilot.receiving.requests) == before
+
+
+@pytest.mark.parametrize(
+    "kind,object_id",
+    [
+        ("BAD", "wo-1"),
+        ("UNKNOWN", "lot-1"),
+        ("station", "st-1"),
+        ("WO", "wo:1"),
+        ("LOT", "a:b:c"),
+        ("REL", "rel 1"),
+        ("CTN", "ctn.1"),
+        ("WO", "..wo"),
+        ("WO", "wo$1"),
+    ],
+)
+def test_scan_token_rejects_unknown_kind_and_unsafe_object_id(
+    client: TestClient, kind: str, object_id: str
+) -> None:
+    response = client.get(f"/api/pilot/scan-token/{kind}/{object_id}", headers=HEADERS)
+    assert response.status_code == 422, response.text
+    assert "traceback" not in response.text.lower()
+    with pytest.raises(PermissionError):
+        make_token(kind, object_id)
+
+
+@pytest.mark.parametrize(
+    "kind,object_id,expected_kind",
+    [
+        ("WO", "wo-1", "WO"),
+        ("wo", "wo_2", "WO"),
+        ("LOT", "lot-10", "LOT"),
+        ("REL", "550e8400-e29b-41d4-a716-446655440000", "REL"),
+        ("CTN", "CTN_01", "CTN"),
+    ],
+)
+def test_scan_token_valid_kind_and_object_id_round_trips(
+    client: TestClient, kind: str, object_id: str, expected_kind: str
+) -> None:
+    response = client.get(f"/api/pilot/scan-token/{kind}/{object_id}", headers=HEADERS)
+    assert response.status_code == 200, response.text
+    token = response.json()["token"]
+    assert parse_token(token) == (expected_kind, object_id)
