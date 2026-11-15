@@ -221,3 +221,47 @@ def test_recovery_deduplicates_and_preserves_distinct_toggles(durable_identity, 
     assert [e["payload"]["enabled"] for e in events] == [False, True, False]
     assert len({e["semanticKey"] for e in events}) == 3
     assert journal.verify("tenant-a")["ok"]
+
+
+def test_cleanup_preserves_pending_snapshot_evidence_across_toggles(durable_identity, tmp_path, monkeypatch):
+    identity, op = durable_identity
+    mark = identity.outbox.mark_business_committed
+
+    def fail_marker(*args, **kwargs):
+        raise RuntimeError("marker failure")
+
+    monkeypatch.setattr(identity.outbox, "mark_business_committed", fail_marker)
+    with pytest.raises(RuntimeError, match="marker failure"):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    pending_id = identity.outbox.list_open()[0]["event"]["payload"]["changeId"]
+    monkeypatch.setattr(identity.outbox, "mark_business_committed", mark)
+    for i in range(30):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=bool(i % 2))
+    saved = OperatorShiftService(identity.root).get_operator(op["operatorId"], tenant_id="tenant-a")
+    assert pending_id in saved["enablementChangeIds"]
+    assert len(saved["enablementChangeIds"]) <= 2
+    restored, journal, outbox, result = _reconcile_identity(tmp_path)
+    assert result["finalized"] == 1
+    assert not outbox.list_open()
+    restored.journal, restored.outbox = journal, outbox
+    restored.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=True)
+    assert len(restored.get_operator(op["operatorId"], tenant_id="tenant-a")["enablementChangeIds"]) == 1
+    _, journal, _, _ = _reconcile_identity(tmp_path)
+    events = [e for e in journal.list("tenant-a") if e["eventType"] == "identity.operator_enabled"]
+    assert len(events) == 32
+    assert len({e["semanticKey"] for e in events}) == 32
+    assert sum(e["payload"]["changeId"] == pending_id for e in events) == 1
+    assert journal.verify("tenant-a")["ok"]
+
+
+def test_cleanup_legacy_ids_and_preserve_without_outbox(durable_identity):
+    identity, op = durable_identity
+    op["enablementChangeIds"] = ["old-1", "old-2"]
+    identity.persist()
+    identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    assert len(op["enablementChangeIds"]) == 1
+    identity.outbox = None
+    identity.journal = None
+    identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=True)
+    assert len(op["enablementChangeIds"]) == 1
+    assert OperatorShiftService(identity.root).get_operator(op["operatorId"], tenant_id="tenant-a") == op

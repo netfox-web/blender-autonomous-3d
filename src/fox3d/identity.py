@@ -95,8 +95,27 @@ class OperatorShiftService:
                 _maybe_crash(self, "after-outbox-prepare")
             old_enabled = rec["enabled"]
             old_changes = rec.get("enablementChangeIds")
+            # A PREPARED transaction may have persisted its business change before
+            # its outbox marker was written. Keep its evidence until it is closed.
+            # With no outbox available, preserve legacy evidence conservatively.
+            if outbox is not None:
+                open_ids = {
+                    (row.get("event") or {}).get("payload", {}).get("changeId")
+                    for row in outbox.list_open(tenant_id=tenant_id)
+                    if row.get("aggregateType") == "Operator"
+                    and row.get("aggregateId") == operator_id
+                    and (row.get("event") or {}).get("event_type") == "identity.operator_enabled"
+                }
+                changes = [item for item in (old_changes or []) if item in open_ids]
+            else:
+                changes = list(old_changes or [])
+            if tx:
+                changes.append(change_id)
             rec["enabled"] = bool(enabled)
-            rec["enablementChangeIds"] = [*(old_changes or []), change_id]
+            if changes:
+                rec["enablementChangeIds"] = changes
+            else:
+                rec.pop("enablementChangeIds", None)
             try:
                 self.persist()
             except Exception:
