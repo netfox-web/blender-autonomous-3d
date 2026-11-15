@@ -6,11 +6,19 @@ import csv
 import io
 import json
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Mapping, Protocol
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
+
+PROVIDER_BY_KIND = {
+    "material": "SupplierPriceProvider",
+    "hardware": "HardwarePriceProvider",
+    "packaging": "PackagingPriceProvider",
+    "logistics": "LogisticsRateProvider",
+    "fx": "FxRateProvider",
+}
 
 
 class PriceProvider(Protocol):
@@ -82,13 +90,7 @@ class ProviderRegistry:
         if source not in {"IMPORTED", "MANUAL", "LIVE_PROVIDER", "CONFIG_ESTIMATE"}:
             raise ValueError(source)
         if source == "LIVE_PROVIDER":
-            provider = {
-                "material": "SupplierPriceProvider",
-                "hardware": "HardwarePriceProvider",
-                "packaging": "PackagingPriceProvider",
-                "logistics": "LogisticsRateProvider",
-                "fx": "FxRateProvider",
-            }.get(store.kind)
+            provider = PROVIDER_BY_KIND.get(store.kind)
             if provider is None or not self.live.get(provider, False):
                 raise PermissionError(f"Live provider is not connected for {store.kind}")
         return [store.add(r, source=source) for r in rows]
@@ -103,7 +105,10 @@ class ProviderRegistry:
         return self.import_rows(store, rows, source=source)
 
 
-def mixed_landed_cost(components: list[dict[str, Any]], *, live_connected: bool = False) -> dict[str, Any]:
+def mixed_landed_cost(
+    components: list[dict[str, Any]], *, live: Mapping[str, bool] | None = None
+) -> dict[str, Any]:
+    """Label live components only when their kind's provider is connected."""
     total = 0.0
     labeled = []
     for c in components:
@@ -111,8 +116,11 @@ def mixed_landed_cost(components: list[dict[str, Any]], *, live_connected: bool 
         src = str(c.get("source") or "CONFIG_ESTIMATE")
         if src not in {"REAL_IMPORTED", "MANUAL", "CONFIG_ESTIMATE", "LIVE_PROVIDER", "IMPORTED"}:
             src = "CONFIG_ESTIMATE"
-        if src == "LIVE_PROVIDER" and not live_connected:
-            src = "CONFIG_ESTIMATE"
+        if src == "LIVE_PROVIDER":
+            kind = c.get("kind")
+            provider = PROVIDER_BY_KIND.get(kind) if isinstance(kind, str) else None
+            if provider is None or live is None or live.get(provider) is not True:
+                src = "CONFIG_ESTIMATE"
         labeled.append({**c, "source": src, "amount": round(amt, 2)})
         total += amt
     sources = sorted({c["source"] for c in labeled})
