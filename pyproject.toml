@@ -67,9 +67,6 @@ disable_error_code = ["annotation-unchecked"]
 
 [[tool.mypy.overrides]]
 module = [
-  "fox3d.artwork",
-  "fox3d.pilot_batch",
-  "fox3d.product_truth",
   "scripts.blender_job",
 ]
 ignore_errors = true

@@ -13,7 +13,7 @@ import math
 import struct
 import zlib
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
@@ -65,6 +65,18 @@ def _finite(value: Any, name: str, *, positive: bool = False) -> float:
 
 def _present(value: Any) -> bool:
     return value is not None and value != ""
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _as_dict_or_none(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    return None
 
 
 def png_size(data: bytes) -> tuple[int | None, int | None]:
@@ -943,7 +955,7 @@ def _strict_finite_mm(mapping: Any, key: str) -> float | None:
 
 
 def _canonical_fixture_crops_bound(scenarios: dict[str, Any]) -> bool:
-    cab4 = scenarios.get("cabinet4") if isinstance(scenarios.get("cabinet4"), dict) else {}
+    cab4 = _as_dict(scenarios.get("cabinet4"))
     crops = cab4.get("panelCrops")
     if not isinstance(crops, list) or len(crops) != CANONICAL_CABINET4_DOOR_COUNT:
         return False
@@ -984,8 +996,8 @@ def _canonical_surface_mm(scenarios: dict[str, Any], rotp: dict[str, Any], fit_n
         return None
     if not _canonical_fixture_crops_bound(scenarios):
         return None
-    surfaces = rotp.get("canonicalSurfaces") if isinstance(rotp.get("canonicalSurfaces"), dict) else {}
-    block = surfaces.get(fit_name) if isinstance(surfaces.get(fit_name), dict) else None
+    surfaces = _as_dict(rotp.get("canonicalSurfaces"))
+    block = _as_dict_or_none(surfaces.get(fit_name))
     if not isinstance(block, dict):
         return None
     idx = block.get("panelIndex") if "panelIndex" in block else None
@@ -1002,7 +1014,7 @@ def _canonical_surface_mm(scenarios: dict[str, Any], rotp: dict[str, Any], fit_n
 
 def _canonical_source_bound(rotp: dict[str, Any]) -> bool:
     live = canonical_landmark_source()
-    meta = rotp.get("canonicalSource") if isinstance(rotp.get("canonicalSource"), dict) else {}
+    meta = _as_dict(rotp.get("canonicalSource"))
     try:
         width = int(meta.get("width") or 0)
         height = int(meta.get("height") or 0)
@@ -1046,7 +1058,7 @@ def _rgb_exact(a: tuple[int, int, int], b: tuple[int, int, int]) -> bool:
     return (int(a[0]), int(a[1]), int(a[2])) == (int(b[0]), int(b[1]), int(b[2]))
 
 
-def _valid_rgb(value: Any) -> bool:
+def _valid_rgb(value: Any) -> TypeGuard[list[int] | tuple[int, ...]]:
     if not isinstance(value, (list, tuple)) or len(value) != 3:
         return False
     for ch in value:
@@ -1188,7 +1200,10 @@ def measure_orientation_parity(
     observed = {k: list(v) for k, v in observed_t.items()}
     bounds_ok = uv_corners_in_rect(sampling, uv_rect)
     quality = oracle_quality(expected)
-    match = bounds_ok and all(_rgb_close(tuple(expected[k]), tuple(observed[k])) for k in labels)
+    match = bounds_ok and all(
+        _rgb_close((expected[k][0], expected[k][1], expected[k][2]), (observed[k][0], observed[k][1], observed[k][2]))
+        for k in labels
+    )
     if not match:
         prod["productionArtworkFileReady"] = False
     if not quality["oracleDiscriminating"]:
@@ -1260,9 +1275,9 @@ def _source_crop_matches(stored: dict[str, Any] | None, expected: dict[str, Any]
 
 
 def _job_artifact_meta(done: dict[str, Any]) -> tuple[str | None, int | None]:
-    output = done.get("output") if isinstance(done.get("output"), dict) else {}
-    files = output.get("files") if isinstance(output.get("files"), dict) else {}
-    artifact = done.get("artifact") if isinstance(done.get("artifact"), dict) else {}
+    output = _as_dict(done.get("output"))
+    files = _as_dict(output.get("files"))
+    artifact = _as_dict(done.get("artifact"))
     sha = done.get("outputHash") or files.get("beautyHash") or artifact.get("sha256")
     size = done.get("outputSize")
     if size is None:
@@ -1786,7 +1801,7 @@ class ArtworkFactory:
             }
         if rec.get("fit") == FIT_COVER:
             art = self.require_artwork(rec["artworkId"], tenant_id=rec["tenantId"])
-            crop = rec.get("crop") if isinstance(rec.get("crop"), dict) else {}
+            crop = _as_dict(rec.get("crop"))
             if art.get("pixelWidth") and art.get("pixelHeight"):
                 return uv_from_source_crop(crop, int(art["pixelWidth"]), int(art["pixelHeight"]))
         u0, v0 = mm_to_uv(rec.get("xMm") or 0.0, rec.get("yMm") or 0.0, surface)
@@ -1827,7 +1842,7 @@ class ArtworkFactory:
         if stored_obj not in {None, "", live_obj, live_comp}:
             raise ArtworkError("BLOCKED", "forged objectName")
         derived_uv = self._derive_uv(rec, live)
-        stored_uv = rec.get("uv") if isinstance(rec.get("uv"), dict) else {}
+        stored_uv = _as_dict(rec.get("uv"))
         for key in ("u0", "v0", "u1", "v1"):
             if stored_uv.get(key) is not None and abs(float(stored_uv[key]) - float(derived_uv[key])) > 1e-6:
                 raise ArtworkError("BLOCKED", "forged uv")
@@ -1947,7 +1962,8 @@ class ArtworkFactory:
                 raise ArtworkError("BLOCKED", "forged master")
             box = auth_crop["cropMm"]
             if crop is not None:
-                caller_box = crop.get("cropMm") if isinstance(crop.get("cropMm"), dict) else crop
+                crop_mm = crop.get("cropMm")
+                caller_box = crop_mm if isinstance(crop_mm, dict) else crop
                 for key in ("xMm", "yMm", "widthMm", "heightMm"):
                     if caller_box.get(key) is not None and abs(float(caller_box[key]) - float(box[key])) > MM_EPS:
                         raise ArtworkError("BLOCKED", "forged crop")
@@ -1964,7 +1980,8 @@ class ArtworkFactory:
                 raise ArtworkError("BLOCKED", "single-surface cannot use master")
             box = {"xMm": 0.0, "yMm": 0.0, "widthMm": surface["widthMm"], "heightMm": surface["heightMm"]}
             if crop is not None:
-                caller_box = crop.get("cropMm") if isinstance(crop.get("cropMm"), dict) else crop
+                crop_mm = crop.get("cropMm")
+                caller_box = crop_mm if isinstance(crop_mm, dict) else crop
                 for key in ("xMm", "yMm", "widthMm", "heightMm"):
                     if caller_box.get(key) is not None and abs(float(caller_box[key]) - float(box[key])) > MM_EPS:
                         raise ArtworkError("BLOCKED", "forged crop")
@@ -1995,7 +2012,7 @@ class ArtworkFactory:
                 fit=fit,
                 anchor=str(rec.get("anchor") or "BOTTOM_LEFT"),
             )
-            stored_crop = rec.get("crop") if isinstance(rec.get("crop"), dict) else None
+            stored_crop = _as_dict_or_none(rec.get("crop"))
             if not _source_crop_matches(stored_crop, expected_crop):
                 raise ArtworkError("BLOCKED", "forged source crop")
             x0 = int(expected_crop.get("sourceXPx") or 0)
@@ -2030,7 +2047,9 @@ class ArtworkFactory:
                 panel_rgb = bytes(canvas)
             out_w, out_h = canvas_w, canvas_h
             ident = self.applied_identity(rec)
-            xform = production_transform(rec=rec, surface=surface, source_crop=expected_crop, final_uv_hash=ident["finalUvHash"])
+            xform: dict[str, Any] | None = production_transform(
+                rec=rec, surface=surface, source_crop=expected_crop, final_uv_hash=ident["finalUvHash"]
+            )
         else:
             raise ArtworkError("BLOCKED", "unknown placement relation")
         if relation == "MASTER_SPLIT":
@@ -2264,8 +2283,9 @@ class ArtworkFactory:
             rec["blenderVersion"] = (done.get("blenderVersion") if isinstance(done, dict) else None)
             rec["device"] = (done.get("device") if isinstance(done, dict) else None) or ((done or {}).get("output") or {}).get("device")
             rec["artifact"] = artifact
-            out = (done.get("output") if isinstance(done, dict) else None) or {}
-            files = out.get("files") if isinstance(out, dict) and isinstance(out.get("files"), dict) else {}
+            output_raw = done.get("output") if isinstance(done, dict) else None
+            out = output_raw if isinstance(output_raw, dict) else {}
+            files = _as_dict(out.get("files"))
             rec["outputHash"] = (done.get("outputHash") if isinstance(done, dict) else None) or files.get("beautyHash")
             rec["outputSize"] = (done.get("outputSize") if isinstance(done, dict) else None) or files.get("beautySize")
             rec["artworkApplied"] = done.get("artworkApplied") if isinstance(done, dict) else None
@@ -2299,7 +2319,7 @@ def preview_ready_from_job(done: dict[str, Any] | None, requested: dict[str, Any
         return False
     if not done.get("blenderVersion") or not done.get("jobId"):
         return False
-    device = done.get("device") or (done.get("output") if isinstance(done.get("output"), dict) else {}).get("device")
+    device = done.get("device") or (_as_dict(done.get("output"))).get("device")
     if not device:
         return False
     sha, size = _job_artifact_meta(done)
@@ -2307,7 +2327,7 @@ def preview_ready_from_job(done: dict[str, Any] | None, requested: dict[str, Any
         return False
     applied = done.get("appliedPlacements")
     if not isinstance(applied, list) or not applied:
-        output = done.get("output") if isinstance(done.get("output"), dict) else {}
+        output = _as_dict(done.get("output"))
         applied = output.get("appliedPlacements")
     if not isinstance(applied, list) or not applied:
         return False
@@ -2371,7 +2391,7 @@ def _tripled(value: Any, want: tuple[float, float, float]) -> bool:
 
 
 def _shader_identity(row: dict[str, Any]) -> bool:
-    sm = row.get("shaderMapping") if isinstance(row.get("shaderMapping"), dict) else {}
+    sm = _as_dict(row.get("shaderMapping"))
     return (
         _tripled(sm.get("location"), (0.0, 0.0, 0.0))
         and _tripled(sm.get("scale"), (1.0, 1.0, 1.0))
@@ -2382,7 +2402,7 @@ def _shader_identity(row: dict[str, Any]) -> bool:
 
 def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
     failures: list[str] = []
-    rotp = scenarios.get("orientationParity") if isinstance(scenarios.get("orientationParity"), dict) else {}
+    rotp = _as_dict(scenarios.get("orientationParity"))
     if not rotp:
         return ["missing_orientationParity"]
     if not _canonical_source_bound(rotp):
@@ -2403,8 +2423,8 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
             return
         if not row.get("boundsOk") or not isinstance(row.get("expected"), dict) or not isinstance(row.get("observed"), dict):
             failures.append(f"{prefix}_oracle")
-        expected = row.get("expected") if isinstance(row.get("expected"), dict) else {}
-        observed = row.get("observed") if isinstance(row.get("observed"), dict) else {}
+        expected = _as_dict(row.get("expected"))
+        observed = _as_dict(row.get("observed"))
         for corner in ("BL", "BR", "TR", "TL"):
             exp = expected.get(corner)
             obs = observed.get(corner)
@@ -2472,8 +2492,8 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
         failures.append("orientation_CONTAIN_canonical_geometry")
     if cover_mm is None:
         failures.append("orientation_COVER_canonical_geometry")
-    contain_m = rotp.get("CONTAIN") if isinstance(rotp.get("CONTAIN"), dict) else {}
-    center = contain_m.get("CENTER") if isinstance(contain_m.get("CENTER"), dict) else None
+    contain_m = _as_dict(rotp.get("CONTAIN"))
+    center = _as_dict_or_none(contain_m.get("CENTER"))
     if not center:
         failures.append("orientation_CONTAIN_CENTER")
     else:
@@ -2491,9 +2511,9 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
         contain_sigs = [str((center.get(k) or {}).get("signature") or "") for k, _d, _m in _ORIENTATION_CASES]
         if len(set(s for s in contain_sigs if s)) < 4:
             failures.append("orientation_CONTAIN_CENTER_not_discriminating")
-    cover_m = rotp.get("COVER") if isinstance(rotp.get("COVER"), dict) else {}
+    cover_m = _as_dict(rotp.get("COVER"))
     for anchor in ("LEFT", "CENTER", "RIGHT"):
-        block = cover_m.get(anchor) if isinstance(cover_m.get(anchor), dict) else None
+        block = _as_dict_or_none(cover_m.get(anchor))
         if not block:
             failures.append(f"orientation_COVER_{anchor}")
             continue
@@ -2509,7 +2529,7 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
                 mirrored=mir,
                 surface_mm=cover_mm,
             )
-            row = block.get(key) if isinstance(block.get(key), dict) else {}
+            row = _as_dict(block.get(key))
             sigs.append(str(row.get("signature") or ""))
         if len(set(s for s in sigs if s)) < 4:
             failures.append(f"orientation_COVER_{anchor}_not_discriminating")
@@ -2517,20 +2537,20 @@ def orientation_matrix_failures(scenarios: dict[str, Any]) -> list[str]:
 
 
 def _cover_oracle_rows(result: dict[str, Any]) -> dict[str, Any] | None:
-    scenarios = result.get("scenarios") if isinstance(result.get("scenarios"), dict) else {}
-    op = scenarios.get("orientationParity") if isinstance(scenarios.get("orientationParity"), dict) else {}
-    cover = op.get("COVER") if isinstance(op.get("COVER"), dict) else {}
-    center = cover.get("CENTER") if isinstance(cover.get("CENTER"), dict) else {}
-    left = cover.get("LEFT") if isinstance(cover.get("LEFT"), dict) else {}
-    right = cover.get("RIGHT") if isinstance(cover.get("RIGHT"), dict) else {}
+    scenarios = _as_dict(result.get("scenarios"))
+    op = _as_dict(scenarios.get("orientationParity"))
+    cover = _as_dict(op.get("COVER"))
+    center = _as_dict(cover.get("CENTER"))
+    left = _as_dict(cover.get("LEFT"))
+    right = _as_dict(cover.get("RIGHT"))
     rows = {
-        "c0": center.get("0") if isinstance(center.get("0"), dict) else None,
-        "c90": center.get("90") if isinstance(center.get("90"), dict) else None,
-        "cm": center.get("mirror") if isinstance(center.get("mirror"), dict) else None,
-        "l0": left.get("0") if isinstance(left.get("0"), dict) else None,
-        "l90": left.get("90") if isinstance(left.get("90"), dict) else None,
-        "r0": right.get("0") if isinstance(right.get("0"), dict) else None,
-        "rm": right.get("mirror") if isinstance(right.get("mirror"), dict) else None,
+        "c0": _as_dict_or_none(center.get("0")),
+        "c90": _as_dict_or_none(center.get("90")),
+        "cm": _as_dict_or_none(center.get("mirror")),
+        "l0": _as_dict_or_none(left.get("0")),
+        "l90": _as_dict_or_none(left.get("90")),
+        "r0": _as_dict_or_none(right.get("0")),
+        "rm": _as_dict_or_none(right.get("mirror")),
     }
     if not all(rows.values()):
         return None
@@ -2540,7 +2560,7 @@ def _cover_oracle_rows(result: dict[str, Any]) -> dict[str, Any] | None:
 def _acceptance_failures_after(result: dict[str, Any], mutate) -> list[str]:
     rec = {"scenarios": copy.deepcopy(result.get("scenarios"))}
     mutate(rec)
-    scen = rec.get("scenarios") if isinstance(rec.get("scenarios"), dict) else {}
+    scen = _as_dict(rec.get("scenarios"))
     return orientation_matrix_failures(scen)
 
 
@@ -2783,16 +2803,16 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append(flag)
     if result.get("mockBlender") and result.get("realArtworkPreviewReady") is True:
         failures.append("mock_claimed_real_preview")
-    scenarios = result.get("scenarios") if isinstance(result.get("scenarios"), dict) else {}
+    scenarios = _as_dict(result.get("scenarios"))
     if not scenarios:
         failures.append("scenarios_missing")
-    negatives = result.get("negatives") if isinstance(result.get("negatives"), dict) else {}
+    negatives = _as_dict(result.get("negatives"))
     for key, want in _REQUIRED_NEGATIVES.items():
         got = negatives.get(key)
         if got != want:
             failures.append(f"negative_{key}")
     for n, name in ((2, "cabinet2"), (3, "cabinet3"), (4, "cabinet4")):
-        row = scenarios.get(name) if isinstance(scenarios.get(name), dict) else {}
+        row = _as_dict(scenarios.get(name))
         crops = row.get("panelCrops") or []
         ids = row.get("surfaceIds") or []
         comps = row.get("componentIds") or []
@@ -2809,9 +2829,9 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
                 cur = crops[i]
                 if abs(float(cur.get("xMm") or 0) - (float(prev.get("xMm") or 0) + float(prev.get("widthMm") or 0))) > MM_EPS:
                     failures.append(f"continuity_{name}")
-    cab4 = scenarios.get("cabinet4") if isinstance(scenarios.get("cabinet4"), dict) else {}
-    preview = result.get("preview") if isinstance(result.get("preview"), dict) else {}
-    lineage = result.get("lineage") if isinstance(result.get("lineage"), dict) else {}
+    cab4 = _as_dict(scenarios.get("cabinet4"))
+    preview = _as_dict(result.get("preview"))
+    lineage = _as_dict(result.get("lineage"))
     for key in ("engineeringHash", "surfaceHash", "artworkHash", "placementHash"):
         if not lineage.get(key):
             failures.append(f"lineage_{key}")
@@ -2834,9 +2854,9 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
             key=lambda a: float(((a.get("uvRect") or {}).get("u0") if isinstance(a.get("uvRect"), dict) else 0) or 0),
         )
         if len(ordered) == 4:
-            got_u = []
+            got_u: list[tuple[float, float] | None] = []
             for row in ordered:
-                rect = row.get("uvRect") if isinstance(row.get("uvRect"), dict) else {}
+                rect = _as_dict(row.get("uvRect"))
                 try:
                     got_u.append((round(float(rect["u0"]), 6), round(float(rect["u1"]), 6)))
                 except (KeyError, TypeError, ValueError):
@@ -2862,16 +2882,16 @@ def validate_artwork_acceptance_result(result: dict[str, Any]) -> list[str]:
             failures.append("single_relation")
         if single.get("masterHash") not in {None, ""}:
             failures.append("single_master")
-        crop = single.get("cropPx") if isinstance(single.get("cropPx"), dict) else {}
+        crop = _as_dict(single.get("cropPx"))
         if int(crop.get("x") or 0) != 0:
             failures.append("single_quarter")
-        out_mm = single.get("outputPhysicalMm") if isinstance(single.get("outputPhysicalMm"), dict) else {}
+        out_mm = _as_dict(single.get("outputPhysicalMm"))
         if float(out_mm.get("widthMm") or 0) <= 0:
             failures.append("single_physical")
     contain = _need("containCenter")
     if contain is not None:
-        placed = contain.get("placedMm") if isinstance(contain.get("placedMm"), dict) else {}
-        canvas = contain.get("outputPhysicalMm") if isinstance(contain.get("outputPhysicalMm"), dict) else {}
+        placed = _as_dict(contain.get("placedMm"))
+        canvas = _as_dict(contain.get("outputPhysicalMm"))
         if not placed or not canvas:
             failures.append("contain_letterbox")
         elif float(placed.get("heightMm") or 0) <= 0 or float(canvas.get("heightMm") or 0) <= float(placed.get("heightMm") or 0):
@@ -3268,8 +3288,8 @@ def run_artwork_scenario(plat: Any, *, tenant_a: str = "aw-a", tenant_b: str = "
     )
     bj_path = Path(__file__).resolve().parents[2] / "scripts" / "blender_job.py"
     spec = importlib.util.spec_from_file_location("fox3d_blender_job_art", bj_path)
+    assert spec is not None and spec.loader is not None
     bj = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     spec.loader.exec_module(bj)
     door_layout = bj.door_layout_from_engineering(cab4.model_dump(mode="json"))
     payload = factory.blender_job_payload(
