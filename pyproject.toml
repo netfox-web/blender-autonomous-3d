@@ -70,7 +70,6 @@ module = [
   "fox3d.artwork",
   "fox3d.pilot_batch",
   "fox3d.product_truth",
-  "fox3d.prototype",
   "scripts.blender_job",
 ]
 ignore_errors = true
