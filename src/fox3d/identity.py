@@ -9,7 +9,7 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.journal import emit
+from fox3d.journal import _maybe_crash, emit
 
 
 def _now() -> str:
@@ -82,16 +82,38 @@ class OperatorShiftService:
     def set_enabled(self, operator_id: str, *, tenant_id: str, enabled: bool) -> dict[str, Any]:
         with self._lock:
             rec = self.get_operator(operator_id, tenant_id=tenant_id)
+            change_id = new_id()
+            event = {
+                "event_type": "identity.operator_enabled", "tenant_id": tenant_id,
+                "aggregate_type": "Operator", "aggregate_id": operator_id,
+                "actor": operator_id, "payload": {"enabled": bool(enabled), "changeId": change_id},
+                "semantic_key": f"{tenant_id}::operator-enabled::{change_id}",
+            }
+            outbox = self.outbox or getattr(self.journal, "outbox", None)
+            tx = outbox.prepare(event) if self.journal is not None and outbox is not None else None
+            if tx:
+                _maybe_crash(self, "after-outbox-prepare")
+            old_enabled = rec["enabled"]
+            old_changes = rec.get("enablementChangeIds")
             rec["enabled"] = bool(enabled)
-            emit(
-                self,
-                "identity.operator_enabled",
-                tenant_id=tenant_id,
-                aggregate_type="Operator",
-                aggregate_id=operator_id,
-                actor=operator_id,
-                payload={"enabled": rec["enabled"]},
-            )
+            rec["enablementChangeIds"] = [*(old_changes or []), change_id]
+            try:
+                self.persist()
+            except Exception:
+                rec["enabled"] = old_enabled
+                if old_changes is None:
+                    rec.pop("enablementChangeIds", None)
+                else:
+                    rec["enablementChangeIds"] = old_changes
+                raise
+            if tx:
+                outbox.mark_business_committed(tx["txId"])
+                _maybe_crash(self, "after-business-persist")
+            if self.journal is not None:
+                self.journal.append(**event)
+            if tx:
+                outbox.complete(tx["txId"])
+                _maybe_crash(self, "after-outbox-complete")
             return rec
 
     def get_operator(self, operator_id: str, *, tenant_id: str) -> dict[str, Any]:

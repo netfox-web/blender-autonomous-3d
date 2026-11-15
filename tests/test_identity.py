@@ -4,6 +4,9 @@ import pytest
 
 from fox3d.identity import OperatorShiftService
 from fox3d.journal import EventJournal
+from fox3d.outbox import CommitOutbox
+from fox3d.pilot import PilotOps
+from fox3d.storelock import CrashInjected
 
 
 @pytest.fixture
@@ -124,3 +127,97 @@ def test_state_survives_restart(service, operator, shift):
     assert restored.get_shift(open_shift["shiftId"], tenant_id="tenant-a")["status"] == "OPEN"
     restored.set_enabled(operator["operatorId"], tenant_id="tenant-a", enabled=True)
     assert OperatorShiftService(service.root).get_operator(operator["operatorId"], tenant_id="tenant-a")["enabled"] is True
+
+
+def _reconcile_identity(root):
+    identity = OperatorShiftService(root / "identity")
+    journal = EventJournal(root / "journal")
+    outbox = CommitOutbox(root / "tx")
+    pilot = PilotOps.__new__(PilotOps)
+    pilot.identity = identity
+    result = outbox.reconcile(journal=journal, business_committed=pilot._business_committed)
+    return identity, journal, outbox, result
+
+
+@pytest.fixture
+def durable_identity(tmp_path):
+    identity = OperatorShiftService(tmp_path / "identity")
+    identity.journal = EventJournal(tmp_path / "journal")
+    identity.outbox = CommitOutbox(tmp_path / "tx")
+    op = identity.register_operator(tenant_id="tenant-a", display_name="A")
+    return identity, op
+
+
+def test_prepare_failure_does_not_change_memory_or_later_persistence(durable_identity, tmp_path):
+    identity, op = durable_identity
+    identity.outbox._fail_prepare = True
+    with pytest.raises(RuntimeError, match="prepare failure"):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    assert identity.get_operator(op["operatorId"], tenant_id="tenant-a")["enabled"] is True
+    identity.register_operator(tenant_id="tenant-a", display_name="B")
+    restored, journal, _, _ = _reconcile_identity(tmp_path)
+    assert restored.get_operator(op["operatorId"], tenant_id="tenant-a")["enabled"] is True
+    assert not [e for e in journal.list("tenant-a") if e["eventType"] == "identity.operator_enabled"]
+
+
+def test_snapshot_failure_rolls_back_memory(durable_identity, tmp_path, monkeypatch):
+    identity, op = durable_identity
+    persist = identity.persist
+    def fail_persist():
+        raise OSError("snapshot failure")
+    monkeypatch.setattr(identity, "persist", fail_persist)
+    with pytest.raises(OSError, match="snapshot failure"):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    assert identity.get_operator(op["operatorId"], tenant_id="tenant-a")["enabled"] is True
+    monkeypatch.setattr(identity, "persist", persist)
+    identity.register_operator(tenant_id="tenant-a", display_name="B")
+    restored, journal, _, result = _reconcile_identity(tmp_path)
+    assert restored.get_operator(op["operatorId"], tenant_id="tenant-a")["enabled"] is True
+    assert result["aborted"] == 1
+    assert not [e for e in journal.list("tenant-a") if e["eventType"] == "identity.operator_enabled"]
+
+
+@pytest.mark.parametrize("point,committed", [("after-outbox-prepare", False), ("after-business-persist", True)])
+def test_enablement_recovery_at_commit_boundaries(durable_identity, tmp_path, point, committed):
+    identity, op = durable_identity
+    identity._crash_mode = point
+    with pytest.raises(CrashInjected):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    restored, journal, outbox, result = _reconcile_identity(tmp_path)
+    assert restored.get_operator(op["operatorId"], tenant_id="tenant-a")["enabled"] is (not committed)
+    events = [e for e in journal.list("tenant-a") if e["eventType"] == "identity.operator_enabled"]
+    assert len(events) == int(committed)
+    assert result["finalized"] == int(committed)
+    assert result["aborted"] == int(not committed)
+    assert not outbox.list_open()
+
+
+def test_recovery_between_snapshot_and_outbox_marker(durable_identity, tmp_path, monkeypatch):
+    identity, op = durable_identity
+    def fail_marker(*args, **kwargs):
+        raise RuntimeError("marker failure")
+    monkeypatch.setattr(identity.outbox, "mark_business_committed", fail_marker)
+    with pytest.raises(RuntimeError, match="marker failure"):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    restored, journal, _, result = _reconcile_identity(tmp_path)
+    assert not restored.get_operator(op["operatorId"], tenant_id="tenant-a")["enabled"]
+    assert result["finalized"] == 1
+    assert len([e for e in journal.list("tenant-a") if e["eventType"] == "identity.operator_enabled"]) == 1
+
+
+def test_recovery_deduplicates_and_preserves_distinct_toggles(durable_identity, tmp_path, monkeypatch):
+    identity, op = durable_identity
+    def fail_complete(*args):
+        raise RuntimeError("complete failure")
+    monkeypatch.setattr(identity.outbox, "complete", fail_complete)
+    with pytest.raises(RuntimeError, match="complete failure"):
+        identity.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    restored, journal, outbox, _ = _reconcile_identity(tmp_path)
+    restored.journal, restored.outbox = journal, outbox
+    restored.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=True)
+    restored.set_enabled(op["operatorId"], tenant_id="tenant-a", enabled=False)
+    _, journal, _, _ = _reconcile_identity(tmp_path)
+    events = [e for e in journal.list("tenant-a") if e["eventType"] == "identity.operator_enabled"]
+    assert [e["payload"]["enabled"] for e in events] == [False, True, False]
+    assert len({e["semanticKey"] for e in events}) == 3
+    assert journal.verify("tenant-a")["ok"]
