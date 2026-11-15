@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from pathlib import Path
@@ -67,6 +68,8 @@ from fox3d.scene import SceneDSL, compile_scene_graph
 from fox3d.space import SpacePipeline
 from fox3d.studio import MaterialEngine, ProductStudio, seed_system_recipes
 from fox3d.twin import ProductDigitalTwin, TwinStore
+
+logger = logging.getLogger(__name__)
 
 
 class Platform:
@@ -779,6 +782,15 @@ class Platform:
         result = self.execute_job(job)
         return {"twin": twin.model_dump(mode="json"), "job": result, "plan": self.p360.render_plan(twin.model_dump(), frames=frames)}
 
+    @staticmethod
+    def _ai_video_status_label(video: dict[str, Any]) -> str:
+        status = str(video.get("status") or "").lower()
+        if status in ("succeeded", "completed"):
+            return "MOCK" if video.get("kind") == "mock_video" or video.get("provider") == "mock" else "REAL"
+        if status == "blocked" or status.startswith("blocked"):
+            return "BLOCKED"
+        return "FAILED"
+
     def _production_gate(self) -> dict[str, Any] | None:
         if self.mock_blender:
             return None
@@ -898,22 +910,33 @@ class Platform:
         blender_job = job if gate else self.execute_job(job)
         if gate:
             blender_job = {**gate, "jobId": job["jobId"]}
+            return {
+                "blender": blender_job,
+                "aiVideo": {"status": "blocked", "error": gate.get("error")},
+                "aiVideoStatus": "BLOCKED",
+                "adapterHardcoded": False,
+                "principle": {"blender": "deterministic control", "aiVideo": "generative creativity"},
+            }
         refs = (blender_job.get("output") or {}).get("files") or {}
-        video = self.gateway.generate_video(
-            adapter=adapter,
-            request={
-                "twinId": twin.twinId,
-                "start": refs.get("START_FRAME"),
-                "middle": refs.get("MIDDLE_FRAME"),
-                "end": refs.get("END_FRAME"),
-                "mask": refs.get("mask.png"),
-                "duration": 6,
-            },
-        )
+        try:
+            video = self.gateway.generate_video(
+                adapter=adapter,
+                request={
+                    "twinId": twin.twinId,
+                    "start": refs.get("START_FRAME"),
+                    "middle": refs.get("MIDDLE_FRAME"),
+                    "end": refs.get("END_FRAME"),
+                    "mask": refs.get("mask.png"),
+                    "duration": 6,
+                },
+            )
+        except Exception as exc:
+            logger.warning("Video adapter failed (%s)", type(exc).__name__)
+            video = {"status": "failed", "error": "VIDEO_ADAPTER_ERROR"}
         return {
             "blender": blender_job,
             "aiVideo": video,
-            "aiVideoStatus": "MOCK" if video.get("kind") == "mock_video" or video.get("provider") == "mock" else "REAL",
+            "aiVideoStatus": self._ai_video_status_label(video),
             "adapterHardcoded": False,
             "principle": {"blender": "deterministic control", "aiVideo": "generative creativity"},
         }
