@@ -308,6 +308,15 @@ def safe_path_component(value: str) -> str:
     """Encode arbitrary user text as one filesystem path component."""
     try:
         _validate_path_component(value)
+        # Windows treats colons as drive/stream syntax and reserves device names
+        # even when a filename extension is appended.
+        device = value.split(".", 1)[0].rstrip(" .").upper()
+        reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+        reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT")
+                        for number in "123456789¹²³")
+        if (any(c in '<>:"|?*' for c in value)
+                or value.endswith((" ", ".")) or device in reserved):
+            raise ValueError("invalid Windows path component")
         return value
     except ValueError:
         encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")

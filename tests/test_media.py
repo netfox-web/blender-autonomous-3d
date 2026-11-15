@@ -1,5 +1,5 @@
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
@@ -44,7 +44,9 @@ def test_render_mock_writes_frames(tmp_path, frames, expected):
     assert Path(result["mp4"]).is_file()
 
 
-@pytest.mark.parametrize("sku", ["../x", "a/b", "normal-sku", "..", "a\\b"])
+@pytest.mark.parametrize("sku", ["../x", "a/b", "normal-sku", "..", "a\\b",
+                                 "D:escape", "C:escape", "CON", "NUL.txt",
+                                 "name:stream", "name?", "trailing.", "trailing "])
 def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
     dest = tmp_path / "destination"
     dest.mkdir()
@@ -57,6 +59,17 @@ def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
         glb.relative_to(tmp_path), *(Path(lod["path"]).relative_to(tmp_path) for lod in result["lod"])
     }
     assert all(is_glb(lod["path"]) for lod in result["lod"])
+
+
+@pytest.mark.parametrize("sku", ["D:escape", "C:escape", "D:/escape", r"\\server\share",
+                                 r"\\?\C:\escape", "name:stream", "CON", "LPT¹.txt"])
+def test_sku_filename_is_relative_under_windows_semantics(sku):
+    dest = PureWindowsPath("C:/exports")
+    filename = f"{safe_path_component(sku)}.glb"
+    path = dest / filename
+    assert path.parent == dest
+    assert not PureWindowsPath(filename).drive
+    assert not PureWindowsPath(filename).root
 
 
 def test_ar_export_defaults_missing_sku(tmp_path):
