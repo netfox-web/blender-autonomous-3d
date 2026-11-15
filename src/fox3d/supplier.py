@@ -49,14 +49,29 @@ def _cost_component(raw: dict[str, Any], keys: tuple[str, ...]) -> float:
 
 
 def _moq_value(raw: dict[str, Any]) -> int:
+    # Decimal strings used to fail int(); float() then int() truncated "1.9" to 1.
     candidate = raw.get("moq")
     if candidate is None or candidate == "":
-        number = 1.0
-    else:
-        number = _float_value(candidate, code="invalid_moq")
-    if not math.isfinite(number) or number < 1:
+        return 1
+    if isinstance(candidate, str):
+        try:
+            number = int(candidate.strip(), 10)
+        except ValueError as exc:
+            raise ValueError("invalid_moq") from exc
+    elif isinstance(candidate, bool):
+        # bool subclasses int, so True would otherwise be stored as MOQ 1.
         raise ValueError("invalid_moq")
-    return int(number)
+    elif isinstance(candidate, int):
+        number = candidate
+    elif isinstance(candidate, float):
+        if not math.isfinite(candidate) or not candidate.is_integer():
+            raise ValueError("invalid_moq")
+        number = int(candidate)
+    else:
+        raise ValueError("invalid_moq")
+    if number < 1:
+        raise ValueError("invalid_moq")
+    return number
 
 
 def _lead_time_days(raw: dict[str, Any]) -> float:
@@ -144,14 +159,21 @@ class SupplierQuoteService:
         self.rfqs[rfq["rfqId"]] = rfq
         return rfq
 
-    def import_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
+    def _build_quote(
+        self,
+        row: dict[str, Any],
+        *,
+        source: str,
+        raw: str | None,
+        seen: set[Any],
+    ) -> dict[str, Any]:
         if source not in ALLOWED_SOURCES:
             if source == LIVE_FORBIDDEN_UNLESS_CONNECTED:
                 raise PermissionError("LIVE_PROVIDER quotes require a connected provider; none registered")
             raise ValueError(source)
         raw_text = raw if raw is not None else json.dumps(row, sort_keys=True, default=str)
         quote_id = row.get("quoteId") or new_id()
-        if quote_id in self.quotes:
+        if quote_id in self.quotes or quote_id in seen:
             raise ValueError("duplicate_quote_id")
         rec: dict[str, Any] = {
             "quoteId": quote_id,
@@ -168,17 +190,40 @@ class SupplierQuoteService:
         }
         rec["normalized"] = self.normalize(rec)
         rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
+        return rec
+
+    def import_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
+        rec = self._build_quote(row, source=source, raw=raw, seen=set())
         self.quotes[rec["quoteId"]] = rec
         return rec
+
+    def _import_batch(self, rows: list[tuple[dict[str, Any], str]], *, source: str) -> list[dict[str, Any]]:
+        # Validate the whole batch, including ids already stored and repeated in this batch,
+        # before any quote is inserted. A later duplicate or field error leaves quotes unchanged.
+        pending: list[dict[str, Any]] = []
+        seen: set[Any] = set()
+        for row, raw in rows:
+            rec = self._build_quote(row, source=source, raw=raw, seen=seen)
+            seen.add(rec["quoteId"])
+            pending.append(rec)
+        if not pending:
+            return []
+        staged = dict(self.quotes)
+        for rec in pending:
+            staged[rec["quoteId"]] = rec
+        self.quotes = staged
+        return pending
 
     def import_json(self, text: str, *, source: str) -> list[dict[str, Any]]:
         payload = json.loads(text)
         rows = payload if isinstance(payload, list) else payload.get("items") or payload.get("quotes") or []
-        return [self.import_quote(dict(r), source=source, raw=json.dumps(r, sort_keys=True, default=str)) for r in rows]
+        prepared = [(dict(r), json.dumps(r, sort_keys=True, default=str)) for r in rows]
+        return self._import_batch(prepared, source=source)
 
     def import_csv(self, text: str, *, source: str) -> list[dict[str, Any]]:
         rows = [dict(r) for r in csv.DictReader(io.StringIO(text))]
-        return [self.import_quote(r, source=source, raw=csv.writer.__doc__ and ",".join(r.values()) or str(r)) for r in rows]
+        prepared = [(row, csv.writer.__doc__ and ",".join(row.values()) or str(row)) for row in rows]
+        return self._import_batch(prepared, source=source)
 
     def import_fx(self, row: dict[str, Any], *, source: str) -> dict[str, Any]:
         if source not in ALLOWED_SOURCES:
