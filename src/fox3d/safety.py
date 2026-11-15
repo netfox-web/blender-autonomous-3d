@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, cast
 
 from fox3d.ids import stable_hash
 
@@ -266,7 +266,8 @@ def compliance_boundary(checked: list[dict[str, Any]]) -> dict[str, Any]:
 def evaluate_product(kind: str, rec: dict[str, Any]) -> dict[str, Any]:
     checks = []
     veto = False
-    spec = rec.get("spec") if isinstance(rec.get("spec"), dict) else {}
+    raw_spec = rec.get("spec")
+    spec: dict[str, Any] = cast(dict[str, Any], raw_spec) if isinstance(raw_spec, dict) else {}
     run_kd = kind in KD_PRODUCT_KINDS or bool(spec)
     if run_kd:
         st = furniture_stability(spec)
