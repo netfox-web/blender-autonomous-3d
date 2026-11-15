@@ -199,7 +199,7 @@ class SupplierQuoteService:
         rows.sort(key=lambda r: (r["score"], r["landed"], r["leadTimeDays"]))
         fx = None
         if fx_snapshot_id:
-            fx = self.providers.fx.items.get(fx_snapshot_id)
+            fx = next((row for row in self.providers.fx.active() if row["snapshotId"] == fx_snapshot_id), None)
             if fx and fx.get("source") == "LIVE_PROVIDER" and not self.providers.live.get("FxRateProvider"):
                 raise PermissionError("static FX fixture cannot be labelled LIVE_PROVIDER")
         cmp: dict[str, Any] = {

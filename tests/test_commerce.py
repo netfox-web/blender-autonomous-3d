@@ -75,3 +75,81 @@ def test_quote_binding_hash_stable_for_same_content():
     assert first["quoteId"] != second["quoteId"]
     assert first["quoteBindingHash"] == second["quoteBindingHash"]
     assert first["quoteBindingHash"] != quote_binding(entity, **{**args, "snapshot_ids": ["other"]})["quoteBindingHash"]
+
+
+def test_failed_concurrent_import_cannot_erase_success(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+
+    store = SnapshotStore(tmp_path, kind="fx")
+    entered = Event()
+    release = Event()
+    second_started = Event()
+    original_persist = store.persist
+
+    def fail_first():
+        if "failed" in store.items:
+            entered.set()
+            assert release.wait(5)
+            raise PermissionError("write failed")
+        original_persist()
+
+    def add_second():
+        second_started.set()
+        return store.add({"snapshotId": "success"}, source="MANUAL")
+
+    monkeypatch.setattr(store, "persist", fail_first)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        failed = pool.submit(store.add, {"snapshotId": "failed"}, source="MANUAL")
+        try:
+            assert entered.wait(5)
+            succeeded = pool.submit(add_second)
+            assert second_started.wait(5)
+            with pytest.raises(TimeoutError):
+                succeeded.result(timeout=0.2)
+        finally:
+            release.set()
+        with pytest.raises(PermissionError):
+            failed.result(timeout=5)
+        succeeded.result(timeout=5)
+    store.add({"snapshotId": "later"}, source="MANUAL")
+    assert set(store.items) == {"success", "later"}
+    assert set(SnapshotStore(tmp_path, kind="fx").items) == {"success", "later"}
+
+
+def test_independent_stores_merge_writes_and_refresh_reads(tmp_path):
+    first = SnapshotStore(tmp_path, kind="fx")
+    second = SnapshotStore(tmp_path, kind="fx")
+    first.add({"snapshotId": "first"}, source="MANUAL")
+    second.add({"snapshotId": "second"}, source="MANUAL")
+    assert {row["snapshotId"] for row in first.active()} == {"first", "second"}
+    assert set(SnapshotStore(tmp_path, kind="fx").items) == {"first", "second"}
+
+
+def test_supplier_comparison_refreshes_fx_from_other_store(tmp_path):
+    from fox3d.supplier import SupplierQuoteService
+
+    service = SupplierQuoteService(ProviderRegistry(tmp_path))
+    other = ProviderRegistry(tmp_path)
+    fx = other.fx.add({"snapshotId": "shared-fx"}, source="IMPORTED")
+    comparison = service.compare([], release_hash="release", quantity=1, fx_snapshot_id=fx["snapshotId"])
+    assert comparison["fxSource"] == "IMPORTED"
+
+
+def test_independent_stores_serialize_concurrent_writes(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    first = SnapshotStore(tmp_path, kind="fx")
+    second = SnapshotStore(tmp_path, kind="fx")
+    start = Barrier(2)
+
+    def add(store, snapshot_id):
+        start.wait(timeout=5)
+        return store.add({"snapshotId": snapshot_id}, source="MANUAL")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(add, store, name) for store, name in ((first, "first"), (second, "second"))]
+        for future in futures:
+            future.result(timeout=5)
+    assert set(SnapshotStore(tmp_path, kind="fx").items) == {"first", "second"}

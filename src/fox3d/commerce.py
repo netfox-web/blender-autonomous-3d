@@ -5,8 +5,12 @@ from __future__ import annotations
 import csv
 import io
 import json
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Protocol
+from threading import RLock
+from typing import Any, Iterator, Protocol
+
+from filelock import FileLock
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
@@ -38,9 +42,24 @@ class SnapshotStore:
         if self.root:
             self.root.mkdir(parents=True, exist_ok=True)
         self.items: dict[str, dict[str, Any]] = {}
+        self._lock = RLock()
+        self._file_lock = FileLock(str((self.root / f"{self.kind}.lock").resolve())) if self.root else None
         self.load()
 
+    @contextmanager
+    def _locked(self) -> Iterator[None]:
+        with self._lock:
+            if self._file_lock is None:
+                yield
+            else:
+                with self._file_lock:
+                    yield
+
     def load(self) -> None:
+        with self._locked():
+            self._load()
+
+    def _load(self) -> None:
         if not self.root:
             return
         payload = read_json(self.root / f"{self.kind}.json") or {}
@@ -71,17 +90,21 @@ class SnapshotStore:
             rec["liveProvider"] = source == "LIVE_PROVIDER"
             rec["snapshotHash"] = _row_hash(rec)
             records.append(rec)
-        previous = self.items
-        self.items = {**previous, **{rec["snapshotId"]: rec for rec in records}}
-        try:
-            self.persist()
-        except Exception:
-            self.items = previous
-            raise
+        with self._locked():
+            self._load()
+            previous = self.items
+            self.items = {**previous, **{rec["snapshotId"]: rec for rec in records}}
+            try:
+                self.persist()
+            except Exception:
+                self.items = previous
+                raise
         return records
 
     def active(self, *, at: str | None = None) -> list[dict[str, Any]]:
-        rows = list(self.items.values())
+        with self._locked():
+            self._load()
+            rows = list(self.items.values())
         if at:
             rows = [r for r in rows if str(r.get("effectiveAt") or "") <= at and (not r.get("expiresAt") or str(r["expiresAt"]) >= at)]
         return rows
