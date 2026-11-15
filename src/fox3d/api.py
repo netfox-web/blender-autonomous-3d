@@ -325,7 +325,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def create_job(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        return get_platform().submit_job(payload)
+        try:
+            return get_platform().submit_job(payload)
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from exc
 
     @app.get("/api/3d/jobs")
     def list_jobs(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -443,13 +446,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def preview(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        return get_platform().preview(payload)
+        try:
+            return get_platform().preview(payload)
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from exc
 
     @app.post("/api/render/final")
     def final_render(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        return get_platform().final_render(payload)
+        try:
+            return get_platform().final_render(payload)
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from exc
 
     @app.post("/api/product-rd/generate")
     def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

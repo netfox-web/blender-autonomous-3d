@@ -54,17 +54,43 @@ def test_active_includes_effective_and_expiry_boundaries():
         assert store.active(at=at) == expected
 
 
-def test_mixed_landed_cost_requires_explicit_live_connection():
-    components = [{"amount": 31, "source": "LIVE_PROVIDER"}, {"amount": 2, "source": "MANUAL"}]
+def test_mixed_landed_cost_requires_matching_live_connection():
+    components = [
+        {"kind": "fx", "amount": 31, "source": "LIVE_PROVIDER"},
+        {"kind": "material", "amount": 2, "source": "LIVE_PROVIDER"},
+    ]
     disconnected = mixed_landed_cost(components)
     assert disconnected["components"][0]["source"] == "CONFIG_ESTIMATE"
-    assert disconnected["sources"] == ["CONFIG_ESTIMATE", "MANUAL"]
+    assert disconnected["sources"] == ["CONFIG_ESTIMATE"]
     assert disconnected["liveProviderReady"] is False
-    connected = mixed_landed_cost(components, live_connected=True)
+    registry = ProviderRegistry()
+    registry.live["FxRateProvider"] = True
+    connected = mixed_landed_cost(components, live=registry.live)
     assert connected["components"][0]["source"] == "LIVE_PROVIDER"
+    assert connected["components"][1]["source"] == "CONFIG_ESTIMATE"
+    assert connected["sources"] == ["CONFIG_ESTIMATE", "LIVE_PROVIDER"]
+    assert connected["truthLabel"] == "MIXED"
     assert connected["liveProviderReady"] is True
     assert connected["total"] == disconnected["total"] == 33
     assert components[0]["source"] == "LIVE_PROVIDER"
+
+
+@pytest.mark.parametrize("kind,provider", [
+    ("material", "SupplierPriceProvider"), ("hardware", "HardwarePriceProvider"),
+    ("packaging", "PackagingPriceProvider"), ("logistics", "LogisticsRateProvider"),
+    ("fx", "FxRateProvider"),
+])
+def test_mixed_landed_cost_matches_each_provider(kind, provider):
+    component = {"kind": kind, "source": "LIVE_PROVIDER", "amount": 1}
+    assert mixed_landed_cost([component], live={provider: True})["truthLabel"] == "LIVE_PROVIDER"
+    assert mixed_landed_cost([component], live={provider: False})["truthLabel"] == "CONFIG_ESTIMATE"
+
+
+@pytest.mark.parametrize("kind", [None, "unknown", "", [], {}])
+def test_mixed_landed_cost_rejects_missing_or_invalid_kind(kind):
+    result = mixed_landed_cost([{"kind": kind, "source": "LIVE_PROVIDER"}], live={"FxRateProvider": True})
+    assert result["truthLabel"] == "CONFIG_ESTIMATE"
+    assert result["liveProviderReady"] is False
 
 
 def test_quote_binding_hash_stable_for_same_content():

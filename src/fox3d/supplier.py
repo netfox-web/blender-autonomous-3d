@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 from typing import Any
 
 from fox3d.commerce import ProviderRegistry
@@ -21,6 +22,74 @@ LIVE_FORBIDDEN_UNLESS_CONNECTED = "LIVE_PROVIDER"
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _float_value(value: Any, *, code: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(code) from exc
+    return number
+
+
+def _first_present(raw: dict[str, Any], keys: tuple[str, ...], default: Any = 0) -> Any:
+    # Historical `or` chain: 0 and "" fall through to the next alias.
+    for key in keys:
+        candidate = raw.get(key)
+        if candidate:
+            return candidate
+    return default
+
+
+def _cost_component(raw: dict[str, Any], keys: tuple[str, ...]) -> float:
+    number = _float_value(_first_present(raw, keys, 0), code="invalid_cost")
+    if number < 0 or not math.isfinite(number):
+        raise ValueError("invalid_cost")
+    return number
+
+
+def _moq_value(raw: dict[str, Any]) -> int:
+    # Decimal strings used to fail int(); float() then int() truncated "1.9" to 1.
+    candidate = raw.get("moq")
+    if candidate is None or candidate == "":
+        return 1
+    if isinstance(candidate, str):
+        try:
+            number = int(candidate.strip(), 10)
+        except ValueError as exc:
+            raise ValueError("invalid_moq") from exc
+    elif isinstance(candidate, bool):
+        # bool subclasses int, so True would otherwise be stored as MOQ 1.
+        raise ValueError("invalid_moq")
+    elif isinstance(candidate, int):
+        number = candidate
+    elif isinstance(candidate, float):
+        if not math.isfinite(candidate) or not candidate.is_integer():
+            raise ValueError("invalid_moq")
+        number = int(candidate)
+    else:
+        raise ValueError("invalid_moq")
+    if number < 1:
+        raise ValueError("invalid_moq")
+    return number
+
+
+def _lead_time_days(raw: dict[str, Any]) -> float:
+    candidate = raw.get("leadTimeDays")
+    if candidate is None or candidate == "":
+        candidate = raw.get("leadTime")
+    if candidate is None or candidate == "":
+        candidate = 0
+    number = _float_value(candidate, code="invalid_lead_time")
+    if number < 0 or not math.isfinite(number):
+        raise ValueError("invalid_lead_time")
+    return number
+
+
+def _currency_code(quote: dict[str, Any]) -> str:
+    normalized = quote.get("normalized") or {}
+    raw = str(normalized.get("currency") or quote.get("currency") or "TWD")
+    return raw.strip().upper() or "TWD"
 
 
 class SupplierCapabilityRegistry:
@@ -90,14 +159,24 @@ class SupplierQuoteService:
         self.rfqs[rfq["rfqId"]] = rfq
         return rfq
 
-    def import_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
+    def _build_quote(
+        self,
+        row: dict[str, Any],
+        *,
+        source: str,
+        raw: str | None,
+        seen: set[Any],
+    ) -> dict[str, Any]:
         if source not in ALLOWED_SOURCES:
             if source == LIVE_FORBIDDEN_UNLESS_CONNECTED:
                 raise PermissionError("LIVE_PROVIDER quotes require a connected provider; none registered")
             raise ValueError(source)
         raw_text = raw if raw is not None else json.dumps(row, sort_keys=True, default=str)
+        quote_id = row.get("quoteId") or new_id()
+        if quote_id in self.quotes or quote_id in seen:
+            raise ValueError("duplicate_quote_id")
         rec: dict[str, Any] = {
-            "quoteId": row.get("quoteId") or new_id(),
+            "quoteId": quote_id,
             "supplierId": row.get("supplierId") or row.get("supplier") or "unknown",
             "source": source,
             "importedAt": _now(),
@@ -111,17 +190,40 @@ class SupplierQuoteService:
         }
         rec["normalized"] = self.normalize(rec)
         rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
+        return rec
+
+    def import_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
+        rec = self._build_quote(row, source=source, raw=raw, seen=set())
         self.quotes[rec["quoteId"]] = rec
         return rec
+
+    def _import_batch(self, rows: list[tuple[dict[str, Any], str]], *, source: str) -> list[dict[str, Any]]:
+        # Validate the whole batch, including ids already stored and repeated in this batch,
+        # before any quote is inserted. A later duplicate or field error leaves quotes unchanged.
+        pending: list[dict[str, Any]] = []
+        seen: set[Any] = set()
+        for row, raw in rows:
+            rec = self._build_quote(row, source=source, raw=raw, seen=seen)
+            seen.add(rec["quoteId"])
+            pending.append(rec)
+        if not pending:
+            return []
+        staged = dict(self.quotes)
+        for rec in pending:
+            staged[rec["quoteId"]] = rec
+        self.quotes = staged
+        return pending
 
     def import_json(self, text: str, *, source: str) -> list[dict[str, Any]]:
         payload = json.loads(text)
         rows = payload if isinstance(payload, list) else payload.get("items") or payload.get("quotes") or []
-        return [self.import_quote(dict(r), source=source, raw=json.dumps(r, sort_keys=True, default=str)) for r in rows]
+        prepared = [(dict(r), json.dumps(r, sort_keys=True, default=str)) for r in rows]
+        return self._import_batch(prepared, source=source)
 
     def import_csv(self, text: str, *, source: str) -> list[dict[str, Any]]:
         rows = [dict(r) for r in csv.DictReader(io.StringIO(text))]
-        return [self.import_quote(r, source=source, raw=csv.writer.__doc__ and ",".join(r.values()) or str(r)) for r in rows]
+        prepared = [(row, csv.writer.__doc__ and ",".join(row.values()) or str(row)) for row in rows]
+        return self._import_batch(prepared, source=source)
 
     def import_fx(self, row: dict[str, Any], *, source: str) -> dict[str, Any]:
         if source not in ALLOWED_SOURCES:
@@ -130,21 +232,25 @@ class SupplierQuoteService:
 
     def normalize(self, quote: dict[str, Any]) -> dict[str, Any]:
         raw = quote.get("raw") or quote
-        material = float(raw.get("material") or raw.get("materialCost") or 0)
-        processing = float(raw.get("processing") or raw.get("labor") or 0)
-        setup = float(raw.get("setup") or raw.get("setupCost") or raw.get("tooling") or raw.get("toolingCost") or 0)
-        packaging = float(raw.get("packaging") or raw.get("packagingCost") or 0)
-        freight = float(raw.get("freight") or raw.get("shipping") or 0)
-        qty = max(int(raw.get("quantity") or raw.get("moq") or 1), 1)
+        material = _cost_component(raw, ("material", "materialCost"))
+        processing = _cost_component(raw, ("processing", "labor"))
+        setup = _cost_component(raw, ("setup", "setupCost", "tooling", "toolingCost"))
+        packaging = _cost_component(raw, ("packaging", "packagingCost"))
+        freight = _cost_component(raw, ("freight", "shipping"))
+        moq = _moq_value(raw)
+        lead = _lead_time_days(raw)
+        qty = max(int(raw.get("quantity") or moq or 1), 1)
         unit = (material + processing + packaging) + (setup / qty) + freight
+        if unit < 0 or not math.isfinite(unit):
+            raise ValueError("invalid_cost")
         return {
             "material": round(material, 2),
             "processing": round(processing, 2),
             "setupTooling": round(setup, 2),
             "packaging": round(packaging, 2),
             "freight": round(freight, 2),
-            "moq": int(raw.get("moq") or 1),
-            "leadTimeDays": float(raw.get("leadTimeDays") or raw.get("leadTime") or 0),
+            "moq": moq,
+            "leadTimeDays": lead,
             "currency": quote.get("currency") or raw.get("currency") or "TWD",
             "landed": round(unit, 2),
             "source": quote.get("source") or "MANUAL",
@@ -162,10 +268,13 @@ class SupplierQuoteService:
         fx_snapshot_id: str | None = None,
         weights: dict[str, float] | None = None,
     ) -> dict[str, Any]:
+        selected = [(qid, self.quotes[qid]) for qid in quote_ids]
+        # Record fx_snapshot_id only. Do not convert; mixed currencies are refused.
+        if len({_currency_code(q) for _, q in selected}) > 1:
+            raise ValueError("currency_mismatch")
         w = {"landed": 0.5, "lead": 0.25, "moq": 0.15, "risk": 0.1, **(weights or {})}
         rows = []
-        for qid in quote_ids:
-            q = self.quotes[qid]
+        for qid, q in selected:
             n = q["normalized"]
             landed = float(n["landed"])
             lead = float(n["leadTimeDays"])

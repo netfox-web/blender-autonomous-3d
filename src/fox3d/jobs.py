@@ -11,6 +11,7 @@ from fox3d.capabilities import BLENDER_RENDER
 from fox3d.ids import new_id
 
 JobType = str
+MAX_TIMEOUT_SECONDS = 86400.0
 JobStatus = Literal[
     "blocked",
     "queued",
@@ -37,7 +38,7 @@ def utcnow() -> datetime:
 
 
 class GpuRequirement(BaseModel):
-    minVramGb: float | None = None
+    minVramGb: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     preferGpuClass: Literal["discrete", "any"] = "discrete"
     allowCpu: bool = True
     preferTargetKeys: list[str] = Field(default_factory=list)
@@ -53,7 +54,7 @@ class BlenderJob(BaseModel):
     projectId: str = "default"
     assetId: str | None = None
     recipeId: str | None = None
-    priority: int = 50
+    priority: int = Field(default=50, ge=0, le=100)
     jobType: JobType = BLENDER_RENDER
     inputAssets: list[str] = Field(default_factory=list)
     scene: dict[str, Any] = Field(default_factory=dict)
@@ -65,19 +66,19 @@ class BlenderJob(BaseModel):
     output: dict[str, Any] = Field(default_factory=dict)
     gpuRequirement: GpuRequirement = Field(default_factory=GpuRequirement)
     status: JobStatus = "queued"
-    progress: float = 0.0
+    progress: float = Field(default=0.0, ge=0.0, le=1.0, allow_inf_nan=False)
     createdAt: datetime = Field(default_factory=utcnow)
     startedAt: datetime | None = None
     completedAt: datetime | None = None
     error: str | None = None
-    attemptCount: int = 0
-    maxAttempts: int = 3
+    attemptCount: int = Field(default=0, ge=0)
+    maxAttempts: int = Field(default=3, ge=1, le=20)
     leaseOwner: str | None = None
     assignedComputeTargetKey: str | None = None
     heartbeatAt: datetime | None = None
     cancelRequested: bool = False
     checkpoint: dict[str, Any] = Field(default_factory=dict)
-    timeoutSeconds: float = 300.0
+    timeoutSeconds: float = Field(default=300.0, gt=0, le=MAX_TIMEOUT_SECONDS, allow_inf_nan=False)
 
     @field_validator("scene", mode="before")
     @classmethod
