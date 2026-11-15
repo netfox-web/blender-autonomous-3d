@@ -72,7 +72,4 @@ class SandboxRegistry:
         }
 
     def get(self, name: str = "PATH_GUARD_ONLY") -> SandboxBackend:
-        backend = self.backends.get(name)
-        if backend is None:
-            return self.backends["PATH_GUARD_ONLY"]
-        return backend
+        return self.backends[name]
