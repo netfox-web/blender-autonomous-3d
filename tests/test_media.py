@@ -1,5 +1,9 @@
+import base64
 import hashlib
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path, PureWindowsPath
 
 import pytest
@@ -65,7 +69,8 @@ def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
 
 @pytest.mark.parametrize("sku", ["D:escape", "C:escape", "D:/escape", r"\\server\share",
                                  r"\\?\C:\escape", "name:stream", "CON", "LPT¹.txt",
-                                 "../x", "enc~Li4veA", "ENC~Li4veA"])
+                                 "../x", "a/a", "a/G", "a/B", "a/\\",
+                                 "enc~Li4veA", "ENC~Li4veA", "enc~+612f61"])
 @pytest.mark.parametrize("dest", [PureWindowsPath("C:/exports"), PureWindowsPath("D:/other")])
 def test_sku_filename_is_relative_under_windows_semantics(sku, dest):
     filename = f"{safe_path_component(sku)}.glb"
@@ -80,19 +85,23 @@ def test_sku_filename_is_relative_under_windows_semantics(sku, dest):
 @pytest.mark.parametrize("sku,expected", [
     ("normal-sku", "normal-sku"),
     ("product", "product"),
-    ("../x", "enc~Li4veA"),
-    ("..", "enc~Li4"),
-    ("a/b", "enc~YS9i"),
-    ("D:escape", "enc~RDplc2NhcGU"),
-    ("CON", "enc~Q09O"),
-    ("NUL.txt", "enc~TlVMLnR4dA"),
-    ("name:stream", "enc~bmFtZTpzdHJlYW0"),
-    ("trailing.", "enc~dHJhaWxpbmcu"),
-    ("trailing ", "enc~dHJhaWxpbmcg"),
+    ("../x", "enc~+2e2e2f78"),
+    ("..", "enc~+2e2e"),
+    ("a/b", "enc~+612f62"),
+    ("a/a", "enc~+612f61"),
+    ("a/G", "enc~+612f47"),
+    ("D:escape", "enc~+443a657363617065"),
+    ("CON", "enc~+434f4e"),
+    ("NUL.txt", "enc~+4e554c2e747874"),
+    ("name:stream", "enc~+6e616d653a73747265616d"),
+    ("trailing.", "enc~+747261696c696e672e"),
+    ("trailing ", "enc~+747261696c696e6720"),
     ("enc~Li4veA", "enc~~Li4veA"),
     ("ENC~Li4veA", "ENC~~Li4veA"),
     ("Enc~Li4veA", "Enc~~Li4veA"),
     ("enc~", "enc~~"),
+    ("enc~+612f61", "enc~~+612f61"),
+    ("enc~YS9h", "enc~~YS9h"),
 ])
 def test_safe_path_component_preserves_existing_filenames(sku, expected):
     assert safe_path_component(sku) == expected
@@ -100,8 +109,9 @@ def test_safe_path_component_preserves_existing_filenames(sku, expected):
 
 def test_literal_encoding_prefix_does_not_match_encoded_name():
     encoded = safe_path_component("../x")
-    assert encoded == "enc~Li4veA"
-    for literal in ("enc~Li4veA", "ENC~Li4veA", "Enc~li4vea", "enc~", "ENC~"):
+    assert encoded == "enc~+2e2e2f78"
+    for literal in ("enc~Li4veA", "ENC~Li4veA", "Enc~li4vea", "enc~", "ENC~",
+                    "enc~+2e2e2f78", "ENC~+2E2E2F78"):
         assert safe_path_component(literal).casefold() != encoded.casefold()
 
 
@@ -113,6 +123,9 @@ def _sku_glb_sha256(path: Path) -> str:
     ("../x", "enc~Li4veA"),
     ("enc~Li4veA", "../x"),
     ("../x", "enc~Li4veA", "normal-sku", "a/b"),
+    ("a/a", "a/G"),
+    ("a/B", "a/\\"),
+    ("a/a", "a/G", "enc~YS9h", "enc~+612f61"),
 ])
 def test_distinct_skus_keep_their_own_glb_in_one_directory(tmp_path, skus):
     dest = tmp_path / "destination"
@@ -123,15 +136,150 @@ def test_distinct_skus_keep_their_own_glb_in_one_directory(tmp_path, skus):
         glb = Path(result["glb"])
         assert glb == dest / f"{safe_path_component(sku)}.glb"
         assert glb.resolve().parent == dest.resolve()
+        assert glb.resolve().is_relative_to(dest.resolve())
         assert sku.encode("utf-8") in glb.read_bytes()
         exported.append((sku, glb, _sku_glb_sha256(glb)))
 
     paths = [glb for _, glb, _ in exported]
+    names = [glb.name for glb in paths]
     assert len(set(paths)) == len(skus)
+    assert len({name.casefold() for name in names}) == len(skus)
+    if os.name == "nt":
+        assert len({os.path.normcase(name) for name in names}) == len(skus)
+        assert {glb.resolve().drive for glb in paths} == {dest.resolve().drive}
     for sku, glb, digest in exported:
         assert glb.is_file()
         assert _sku_glb_sha256(glb) == digest
         assert sku.encode("utf-8") in glb.read_bytes()
+    if _directory_is_case_insensitive(dest):
+        resolved = [glb.resolve() for glb in paths]
+        for index, left in enumerate(resolved):
+            for right in resolved[index + 1:]:
+                assert not left.samefile(right)
+        for sku, glb, digest in exported:
+            alias = glb.with_name(glb.name.swapcase())
+            assert alias.name.casefold() == glb.name.casefold()
+            assert alias.samefile(glb)
+            assert _sku_glb_sha256(alias) == digest
+            assert sku.encode("utf-8") in alias.read_bytes()
+
+
+def _legacy_base64_component(value: str) -> str:
+    encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
+    return f"enc~{encoded}"
+
+
+def _directory_is_case_insensitive(directory: Path) -> bool:
+    probe = directory / "FoxCaseProbe"
+    probe.write_bytes(b"probe")
+    try:
+        alias = directory / "foxcaseprobe"
+        return alias.exists() and alias.samefile(probe)
+    except OSError:
+        return False
+    finally:
+        probe.unlink(missing_ok=True)
+
+
+def test_case_confusable_skus_encode_outside_legacy_base64_names():
+    """``a/a`` and ``a/G`` used to share ``enc~YS9h`` after case folding."""
+    pairs = (("a/a", "a/G"), ("a/B", "a/\\"))
+    for left, right in pairs:
+        assert _legacy_base64_component(left).casefold() == _legacy_base64_component(right).casefold()
+        assert safe_path_component(left).casefold() != safe_path_component(right).casefold()
+    samples = ["a/a", "a/G", "a/B", "a/\\", "../x", "..", "D:escape", "CON", "NUL.txt",
+               "name:stream", "trailing.", "trailing ", "a\\b", "中/文"]
+    folded = []
+    for sku in samples:
+        name = safe_path_component(sku)
+        assert name == f"enc~+{sku.encode('utf-8').hex()}"
+        assert name == name.casefold()
+        assert name.casefold() != _legacy_base64_component(sku).casefold()
+        assert safe_path_component(name).casefold() != name.casefold()
+        folded.append(name.casefold())
+    assert len(set(folded)) == len(samples)
+
+
+def test_export_write_stays_on_destination_volume(tmp_path):
+    dest = tmp_path / "destination"
+    dest.mkdir()
+    skus = ["a/a", "a/G", "D:escape", "C:escape", "D:/escape", r"\\server\share",
+            r"\\?\C:\escape", "../x"]
+    for sku in skus:
+        result = ARExporter().export({"sku": sku}, dest)
+        glb = Path(result["glb"])
+        resolved = glb.resolve()
+        assert resolved.is_relative_to(dest.resolve())
+        assert resolved.parent == dest.resolve()
+        assert sku.encode("utf-8") in glb.read_bytes()
+        if os.name == "nt":
+            assert resolved.drive == dest.resolve().drive
+            assert resolved.anchor == dest.resolve().anchor
+    for drive in (PureWindowsPath("C:/exports"), PureWindowsPath("D:/other")):
+        for sku in skus:
+            filename = f"{safe_path_component(sku)}.glb"
+            path = drive / filename
+            assert path.parent == drive
+            assert path.drive == drive.drive
+            assert ".." not in path.parts
+            assert not PureWindowsPath(filename).drive
+            assert not PureWindowsPath(filename).root
+
+
+def _free_windows_drive_letter() -> str | None:
+    for letter in "ZYXWVUTSRQPONMLKJIHGFED":
+        if not Path(f"{letter}:\\").exists():
+            return letter
+    return None
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="subst creates a second Windows volume")
+def test_export_on_subst_drive_does_not_cross_volumes(tmp_path):
+    letter = _free_windows_drive_letter()
+    if letter is None:
+        pytest.skip("no free drive letter")
+    volume = tmp_path / "subst-volume"
+    volume.mkdir()
+    created = subprocess.run(["subst", f"{letter}:", str(volume)], capture_output=True, text=True)
+    if created.returncode != 0:
+        pytest.skip(created.stderr.strip() or created.stdout.strip() or "subst failed")
+    try:
+        primary = tmp_path / "primary"
+        primary.mkdir()
+        other = Path(f"{letter}:/") / "exports"
+        other.mkdir()
+        skus = ("a/a", "a/G", "D:escape", "C:escape", r"\\server\share")
+        primary_bytes: dict[str, bytes] = {}
+        for sku in skus:
+            # Compare drives before resolve: resolve() expands a subst drive
+            # back to the host path, which would hide the volume boundary.
+            raw = Path(ARExporter().export({"sku": sku}, primary)["glb"])
+            assert raw.parent == primary
+            assert raw.drive == primary.drive
+            assert raw.drive != other.drive
+            assert not PureWindowsPath(raw.name).drive
+            assert raw.resolve().is_relative_to(primary.resolve())
+            primary_bytes[raw.name] = raw.read_bytes()
+        assert not any(other.rglob("*.glb"))
+        other_bytes: dict[str, bytes] = {}
+        for sku in skus:
+            raw = Path(ARExporter().export({"sku": sku}, other)["glb"])
+            assert raw.parent == other
+            assert raw.drive == other.drive
+            assert raw.drive != primary.drive
+            assert not PureWindowsPath(raw.name).drive
+            assert raw.resolve().is_relative_to(other.resolve())
+            other_bytes[sku] = raw.read_bytes()
+            assert sku.encode("utf-8") in other_bytes[sku]
+        assert other_bytes["a/a"] != other_bytes["a/G"]
+        for name, data in primary_bytes.items():
+            assert (primary / name).read_bytes() == data
+        left = Path(ARExporter().export({"sku": "a/a"}, other)["glb"])
+        right = Path(ARExporter().export({"sku": "a/G"}, other)["glb"])
+        assert not left.resolve().samefile(right.resolve())
+        assert b"a/a" in left.read_bytes() and b"a/G" in right.read_bytes()
+    finally:
+        subprocess.run(["subst", f"{letter}:", "/d"], capture_output=True, text=True)
 
 
 def test_ar_export_defaults_missing_sku(tmp_path):

@@ -8,7 +8,6 @@ scheduler — it *calls* these ports.
 from __future__ import annotations
 
 import builtins
-import base64
 import threading
 import time
 import unicodedata
@@ -297,10 +296,14 @@ class DamObject:
     version: int = 1
 
 
-# Reserved namespace for base64url-encoded path components. Safe names that
-# already use this prefix are escaped so they cannot share a filename with
-# an encoded value (``../x`` encodes as ``enc~Li4veA``).
+# Reserved namespace for encoded path components. Safe names that already use
+# this prefix are escaped so they cannot share a filename with an encoded
+# value (``../x`` encodes as ``enc~+2e2e2f78``).
 _PATH_ENCODING_PREFIX = "enc~"
+# Sits outside the base64url alphabet and is not "~". Legacy files are
+# ``enc~`` plus base64url, and escaped literals are ``enc~~...``; neither
+# case-folds onto ``enc~+`` plus lowercase hex.
+_CASE_STABLE_MARK = "+"
 
 
 def _validate_path_component(value: str) -> None:
@@ -329,9 +332,9 @@ def _escape_encoding_prefix(value: str) -> str | None:
     """Escape a literal ``enc~`` prefix, in any case, by doubling the tilde.
 
     ``enc~Li4veA`` becomes ``enc~~Li4veA`` and ``ENC~Li4veA`` becomes
-    ``ENC~~Li4veA``. Encoded names stay ``enc~`` plus base64url, whose alphabet
-    has no ``~``, so the escaped form cannot match an encoded name even on a
-    case-insensitive volume. Names outside the namespace are left unchanged.
+    ``ENC~~Li4veA``. Encoded names stay ``enc~+`` plus lowercase hex, which
+    contains no ``~``, so the escaped form cannot match an encoded name even
+    on a case-insensitive volume. Names outside the namespace are left unchanged.
     """
     prefix = _PATH_ENCODING_PREFIX
     if value[:len(prefix)].lower() != prefix:
@@ -342,13 +345,28 @@ def _escape_encoding_prefix(value: str) -> str | None:
     return escaped
 
 
+def _encode_unsafe_path_component(value: str) -> str:
+    """Hex-encode ``value`` so distinct strings stay distinct after case folding.
+
+    Base64url keeps case, so ``a/a`` (``enc~YS9h``) and ``a/G`` (``enc~YS9H``)
+    are one filename on a case-insensitive volume. Lowercase hex uses only
+    ``0-9a-f``. The ``+`` marker keeps that name off legacy base64url files
+    and off the escaped ``enc~~`` form.
+    """
+    stem = f"{_PATH_ENCODING_PREFIX}{_CASE_STABLE_MARK}{value.encode('utf-8').hex()}"
+    _validate_path_component(stem)
+    _reject_windows_path_component(stem)
+    return stem
+
+
 def safe_path_component(value: str) -> str:
     """Encode arbitrary user text as one filesystem path component.
 
     Names that are already one safe component are preserved, so existing
-    export filenames stay valid. Unsafe text is base64url-encoded under the
-    ``enc~`` prefix. A safe name that already begins with that prefix is
-    escaped instead of passed through, which keeps the mapping one-to-one.
+    export filenames stay valid. Unsafe text is lowercase-hex encoded under
+    the ``enc~+`` prefix, which stays unique when the volume ignores case.
+    A safe name that already begins with ``enc~`` is escaped instead of
+    passed through, which keeps the mapping one-to-one.
     """
     try:
         _validate_path_component(value)
@@ -358,10 +376,7 @@ def safe_path_component(value: str) -> str:
             return escaped
         return value
     except ValueError:
-        encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
-        stem = f"{_PATH_ENCODING_PREFIX}{encoded}"
-        _validate_path_component(stem)
-        return stem
+        return _encode_unsafe_path_component(value)
 
 
 def validate_tenant_id(tenant_id: str) -> str:
