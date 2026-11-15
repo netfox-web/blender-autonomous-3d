@@ -827,21 +827,23 @@ class Platform:
 
     def preview(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = {**payload, "jobType": payload.get("jobType") or BLENDER_PREVIEW}
-        payload.setdefault("render", {})
-        payload["render"] = {**payload["render"], "width": payload["render"].get("width") or 64, "height": payload["render"].get("height") or 64, "engine": "EEVEE"}
+        render = _render_settings(payload)
+        if render is not None:
+            payload["render"] = {**render, "width": render.get("width") or 64, "height": render.get("height") or 64, "engine": "EEVEE"}
         job = self.submit_job(payload)
         return self.execute_job(job)
 
     def final_render(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = {**payload, "jobType": payload.get("jobType") or BLENDER_RENDER}
-        payload.setdefault("render", {})
-        payload["render"] = {
-            **payload["render"],
-            "width": payload["render"].get("width") or 64,
-            "height": payload["render"].get("height") or 64,
-            "engine": "CYCLES",
-            "device": "OPTIX",
-        }
+        render = _render_settings(payload)
+        if render is not None:
+            payload["render"] = {
+                **render,
+                "width": render.get("width") or 64,
+                "height": render.get("height") or 64,
+                "engine": "CYCLES",
+                "device": "OPTIX",
+            }
         job = self.submit_job(payload)
         return self.execute_job(job)
 
@@ -1000,3 +1002,15 @@ class Platform:
 
 
 setattr(BlenderRuntime, "_mock_version", lambda self: "mock-4.2")
+
+
+def _render_settings(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the caller's render dict (missing/null -> {}).
+
+    A non-dict value returns None and is left untouched so BlenderJob
+    validation rejects it (ValidationError -> 422) instead of crashing here.
+    """
+    render = payload.get("render")
+    if render is None:
+        return {}
+    return render if isinstance(render, dict) else None
