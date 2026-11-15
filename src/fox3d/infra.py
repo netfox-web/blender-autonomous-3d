@@ -8,7 +8,6 @@ scheduler — it *calls* these ports.
 from __future__ import annotations
 
 import builtins
-import base64
 import threading
 import time
 import unicodedata
@@ -297,6 +296,35 @@ class DamObject:
     version: int = 1
 
 
+# Reserved namespace for encoded path components. Safe names that already use
+# this prefix are escaped so they cannot share a filename with an encoded
+# value (``../x`` encodes as ``enc~+2e2e2f78``; a long unsafe SKU encodes as
+# ``enc~=`` plus a lowercase SHA-256 digest).
+_PATH_ENCODING_PREFIX = "enc~"
+# Sits outside the base64url alphabet and is not "~". Legacy files are
+# ``enc~`` plus base64url, and escaped literals are ``enc~~...``; neither
+# case-folds onto ``enc~+`` plus lowercase hex.
+_CASE_STABLE_MARK = "+"
+# Outside base64url, "~", and "+". Digest names are ``enc~=`` plus lowercase
+# SHA-256, so they cannot case-fold onto reversible hex, legacy base64url,
+# or an escaped ``enc~~`` literal.
+_DIGEST_MARK = "="
+# Common single-component limit (Linux NAME_MAX / Windows filename component).
+_FILENAME_MAX_BYTES = 255
+# ``new_id()`` is a 36-character UUID. The 32-character asset id that already
+# overflows under hex is shorter, so the UUID is the tighter budget. DAM stores
+# ``{asset_id}_{component}.glb``.
+_DAM_ASSET_ID_BUDGET = 36
+_DAM_SEPARATOR_BUDGET = 1
+_DAM_EXTENSION_BUDGET = len(".glb")
+_MAX_ENCODED_COMPONENT_BYTES = (
+    _FILENAME_MAX_BYTES
+    - _DAM_ASSET_ID_BUDGET
+    - _DAM_SEPARATOR_BUDGET
+    - _DAM_EXTENSION_BUDGET
+)
+
+
 def _validate_path_component(value: str) -> None:
     if not value or value in {".", ".."} or any(
         c in "/\\" or unicodedata.category(c) == "Cc" for c in value
@@ -304,16 +332,84 @@ def _validate_path_component(value: str) -> None:
         raise ValueError("invalid path component")
 
 
+def _reject_windows_path_component(value: str) -> None:
+    """Raise when ``value`` is unsafe as a Windows filename, even with an extension.
+
+    Colons are drive or alternate-data-stream syntax, and reserved device names
+    stay reserved after a suffix such as ``.glb`` or ``.txt`` is appended.
+    """
+    device = value.split(".", 1)[0].rstrip(" .").upper()
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT")
+                    for number in "123456789¹²³")
+    if (any(c in '<>:"|?*' for c in value)
+            or value.endswith((" ", ".")) or device in reserved):
+        raise ValueError("invalid Windows path component")
+
+
+def _escape_encoding_prefix(value: str) -> str | None:
+    """Escape a literal ``enc~`` prefix, in any case, by doubling the tilde.
+
+    ``enc~Li4veA`` becomes ``enc~~Li4veA`` and ``ENC~Li4veA`` becomes
+    ``ENC~~Li4veA``. Encoded names stay ``enc~+`` plus lowercase hex, or
+    ``enc~=`` plus a lowercase digest. Neither form contains ``~``, so the
+    escaped form cannot match an encoded name even on a case-insensitive
+    volume. Names outside the namespace are left unchanged.
+    """
+    prefix = _PATH_ENCODING_PREFIX
+    if value[:len(prefix)].lower() != prefix:
+        return None
+    escaped = f"{value[:len(prefix)]}~{value[len(prefix):]}"
+    _validate_path_component(escaped)
+    _reject_windows_path_component(escaped)
+    return escaped
+
+
+def _encode_unsafe_path_component(value: str) -> str:
+    """Encode ``value`` so distinct strings stay distinct after case folding.
+
+    Base64url keeps case, so ``a/a`` (``enc~YS9h``) and ``a/G`` (``enc~YS9H``)
+    are one filename on a case-insensitive volume. Lowercase hex uses only
+    ``0-9a-f``. The ``+`` marker keeps that name off legacy base64url files
+    and off the escaped ``enc~~`` form.
+
+    Hex doubles the UTF-8 length. DAM stores ``{asset_id}_{component}.glb``,
+    so a long SKU would pass 255 bytes and ``TwinStore.create`` would raise
+    ``ENAMETOOLONG``. Those values use ``enc~=`` plus a lowercase SHA-256
+    digest, which stays inside the budget and still has no case pair.
+    """
+    raw = value.encode("utf-8")
+    prefix = _PATH_ENCODING_PREFIX
+    reversible_len = len(prefix) + len(_CASE_STABLE_MARK) + 2 * len(raw)
+    if reversible_len <= _MAX_ENCODED_COMPONENT_BYTES:
+        stem = f"{prefix}{_CASE_STABLE_MARK}{raw.hex()}"
+    else:
+        stem = f"{prefix}{_DIGEST_MARK}{sha256_bytes(raw)}"
+    _validate_path_component(stem)
+    _reject_windows_path_component(stem)
+    return stem
+
+
 def safe_path_component(value: str) -> str:
-    """Encode arbitrary user text as one filesystem path component."""
+    """Encode arbitrary user text as one filesystem path component.
+
+    Names that are already one safe component are preserved, so existing
+    export filenames stay valid. Unsafe text is lowercase-hex encoded under
+    the ``enc~+`` prefix when that still leaves room for DAM's asset id and
+    ``.glb``. Longer unsafe text uses ``enc~=`` plus a lowercase SHA-256
+    digest. Both forms stay unique when the volume ignores case. A safe name
+    that already begins with ``enc~`` is escaped instead of passed through,
+    which keeps the mapping one-to-one.
+    """
     try:
         _validate_path_component(value)
+        _reject_windows_path_component(value)
+        escaped = _escape_encoding_prefix(value)
+        if escaped is not None:
+            return escaped
         return value
     except ValueError:
-        encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
-        stem = f"enc~{encoded}"
-        _validate_path_component(stem)
-        return stem
+        return _encode_unsafe_path_component(value)
 
 
 def validate_tenant_id(tenant_id: str) -> str:

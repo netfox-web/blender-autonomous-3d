@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import errno
+import os
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
 from fox3d.ids import new_id
-from fox3d.infra import DAM
+from fox3d.infra import DAM, safe_path_component
 from fox3d.twin import ProductDigitalTwin, TwinStore
 
 
@@ -120,6 +124,96 @@ def test_create_sets_content_hash_from_compute_hash(tmp_path):
     twin = _twin(glb="/preset.glb")
     created = store.create(twin)
     assert created.contentHash == created.compute_hash()
+
+
+def test_long_sku_twin_create_writes_dam_file(tmp_path):
+    """119 ``a``s plus ``/`` must be stored, not rejected as ENAMETOOLONG.
+
+    A 32-character asset id plus the old base64url name is 201 bytes. The
+    lowercase-hex name is 282 bytes and cannot be created when NAME_MAX is 255.
+    """
+    sku = "a" * 119 + "/"
+    asset_id = "0123456789abcdef" * 2
+    assert len(asset_id) == 32
+    store = _store(tmp_path)
+    payload = b"FAKE_GLB_BYTES_FOR_TEST"
+    created = store.create(
+        ProductDigitalTwin(tenantId="tenant-a", sku=sku, twinId=asset_id),
+        glb_bytes=payload,
+    )
+    path = Path(created.glb)
+    assert created.damAssetId == asset_id
+    assert path.is_file()
+    assert path.read_bytes() == payload
+    assert path.name == f"{asset_id}_{safe_path_component(sku)}.glb"
+    assert len(path.name.encode("utf-8")) <= 255
+    assert store.dam.get(asset_id, tenant_id="tenant-a").metadata["sku"] == sku
+
+    hex_name = f"{asset_id}_enc~+{sku.encode('utf-8').hex()}.glb"
+    assert len(hex_name.encode("utf-8")) > 255
+    assert path.name != hex_name
+    if os.name == "posix":
+        name_max = os.pathconf(path.parent, "PC_NAME_MAX")
+        assert len(path.name.encode("utf-8")) <= name_max
+        assert len(hex_name.encode("utf-8")) > name_max
+        with pytest.raises(OSError) as exc:
+            (path.parent / hex_name).write_bytes(payload)
+        assert exc.value.errno == errno.ENAMETOOLONG
+
+    other_id = "fedcba9876543210" * 2
+    other_sku = "A" * 119 + "/"
+    other = store.create(
+        ProductDigitalTwin(tenantId="tenant-a", sku=other_sku, twinId=other_id),
+        glb_bytes=b"OTHER_FAKE_GLB",
+    )
+    other_path = Path(other.glb)
+    assert other_path.is_file()
+    assert other_path.name.casefold() != path.name.casefold()
+    assert other_path.read_bytes() == b"OTHER_FAKE_GLB"
+    assert path.read_bytes() == payload
+    assert store.dam.get(other_id, tenant_id="tenant-a").metadata["sku"] == other_sku
+
+    uuid_twin = store.create(
+        ProductDigitalTwin(tenantId="tenant-a", sku=sku),
+        glb_bytes=payload,
+    )
+    assert len(uuid_twin.twinId) == 36
+    uuid_path = Path(uuid_twin.glb)
+    assert uuid_path.is_file()
+    assert uuid_path.name == f"{uuid_twin.twinId}_{safe_path_component(sku)}.glb"
+    assert len(uuid_path.name.encode("utf-8")) <= 255
+    assert uuid_path.read_bytes() == payload
+    assert path.read_bytes() == payload
+
+
+def test_long_utf8_sku_twin_create_writes_dam_file(tmp_path):
+    sku = "測" * 40 + "/"
+    asset_id = "3" * 36
+    store = _store(tmp_path)
+    payload = b"FAKE_GLB_BYTES_FOR_TEST"
+    created = store.create(
+        ProductDigitalTwin(tenantId="tenant-a", sku=sku, twinId=asset_id),
+        glb_bytes=payload,
+    )
+    path = Path(created.glb)
+    assert path.is_file()
+    assert path.read_bytes() == payload
+    assert len(path.name.encode("utf-8")) <= 255
+    assert path.name == f"{asset_id}_{safe_path_component(sku)}.glb"
+    assert "測" not in path.name
+    assert "/" not in path.name
+    direct = store.dam.put(
+        tenant_id="tenant-a",
+        kind="digital_twin",
+        name=f"{safe_path_component(sku)}.glb",
+        data=payload,
+        asset_id="4" * 32,
+        metadata={"sku": sku},
+    )
+    direct_path = Path(direct.path)
+    assert direct_path.is_file()
+    assert direct_path.read_bytes() == payload
+    assert len(direct_path.name.encode("utf-8")) <= 255
 
 
 def test_list_returns_only_matching_tenant(tmp_path):

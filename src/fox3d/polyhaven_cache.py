@@ -90,6 +90,9 @@ _ASSET_COORD_LOCK = ".polyhaven.coord.lock"
 _retained_lock = threading.Lock()
 _version_refcounts: dict[tuple[str, str], int] = defaultdict(int)
 _previous_current: dict[str, str] = {}
+# In-process pins released while another publish switch is still in flight must
+# not be reclaimed until that switch finishes (Windows CI timing; issue #161).
+_recently_unpinned_versions: dict[str, set[str]] = defaultdict(set)
 
 
 def polyhaven_asset_root(polyhaven_root: Path, asset_id: str) -> Path:
@@ -200,7 +203,7 @@ def _atomic_write_current(asset_root: Path, version: str) -> None:
 
         _atomic_replace_file(target, payload, namespace="polyhaven-current")
 
-        _maybe_gc_asset_versions_unlocked(asset_root)
+        _maybe_gc_asset_versions_unlocked(asset_root, during_publish=True)
 
     if publish_pause_after_switch is not None:
         publish_pause_after_switch.set()
@@ -241,6 +244,8 @@ def _release_version(asset_id: str, version: str) -> None:
         _version_refcounts[key] -= 1
         if _version_refcounts[key] <= 0:
             del _version_refcounts[key]
+            if version != _LEGACY_FLAT_VERSION:
+                _recently_unpinned_versions[asset_id].add(version)
 
 
 def _acquire_cross_process_retain(asset_root: Path, version: str) -> Path:
@@ -411,12 +416,15 @@ def polyhaven_versions_protected_from_reclaim(
     asset_root: Path,
     *,
     extra_keep: set[str] | None = None,
+    during_publish: bool = False,
 ) -> set[str]:
     """Version ids that must not be removed during reclaim (caller should hold catalog lock)."""
     from fox3d.polyhaven_paths import listed_polyhaven_reader_pins, read_polyhaven_catalog
 
     asset_id = asset_root.name
     keep: set[str] = set(extra_keep or ())
+    if during_publish:
+        keep.update(_recently_unpinned_versions.get(asset_id, ()))
     catalog = read_polyhaven_catalog(asset_root)
     if catalog and isinstance(catalog.get("versionId"), str):
         keep.add(catalog["versionId"])
@@ -448,21 +456,34 @@ def reclaim_polyhaven_version_directories_unlocked(
     asset_root: Path,
     *,
     extra_keep: set[str] | None = None,
+    during_publish: bool = False,
 ) -> None:
     """Delete unreferenced version dirs (caller must hold catalog coordination lock)."""
-    keep = polyhaven_versions_protected_from_reclaim(asset_root, extra_keep=extra_keep)
+    asset_id = asset_root.name
+    keep = polyhaven_versions_protected_from_reclaim(
+        asset_root,
+        extra_keep=extra_keep,
+        during_publish=during_publish,
+    )
     versions_root = asset_root / _VERSIONS_DIRNAME
     if not versions_root.is_dir():
         return
     for child in versions_root.iterdir():
         if not child.is_dir() or child.name in keep:
             continue
+        with _retained_lock:
+            if _version_refcounts.get((asset_id, child.name), 0) > 0:
+                continue
+        if _version_dir_has_retain_pins(child):
+            continue
         shutil.rmtree(child, ignore_errors=True)
+        if not child.exists():
+            _recently_unpinned_versions[asset_id].discard(child.name)
 
 
-def _maybe_gc_asset_versions_unlocked(asset_root: Path) -> None:
+def _maybe_gc_asset_versions_unlocked(asset_root: Path, *, during_publish: bool = False) -> None:
     """Reclaim version dirs (caller must hold catalog coordination lock)."""
-    reclaim_polyhaven_version_directories_unlocked(asset_root)
+    reclaim_polyhaven_version_directories_unlocked(asset_root, during_publish=during_publish)
 
 
 def _maybe_gc_asset_versions(asset_root: Path) -> None:

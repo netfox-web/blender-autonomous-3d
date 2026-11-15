@@ -247,6 +247,49 @@ def test_reader_session_survives_two_current_switches(tmp_path: Path):
     assert (after.parent / "textures/albedo.png").read_bytes() == b"TEX_V3"
 
 
+def test_reader_survives_publish_after_in_process_pin_release(tmp_path: Path):
+    """Publisher may finish switches after an in-process pin drops (Windows CI timing)."""
+    aid = "slow_publish"
+    root = tmp_path / "assets" / "models" / "polyhaven"
+    asset_root = root / aid
+    asset_root.mkdir(parents=True)
+    v1 = "1" * 64
+    v2 = "2" * 64
+    v3 = "3" * 64
+    _seed_version_bundle(asset_root, aid, v1, tex_marker=b"TEX_V1")
+
+    reader_ready = threading.Event()
+    reader_done = threading.Event()
+    publish_done = threading.Event()
+
+    def reader():
+        with polyhaven_cache.polyhaven_read_session(root) as session:
+            assert session.pin_asset(aid) == v1
+            session.resolve_ref_suffix(f"models/polyhaven/{aid}/{aid}_2k.gltf")
+            reader_ready.set()
+        reader_done.set()
+
+    def publisher():
+        assert reader_ready.wait(timeout=3.0)
+        time.sleep(0.05)
+        _seed_version_bundle(asset_root, aid, v2, tex_marker=b"TEX_V2")
+        time.sleep(0.05)
+        _seed_version_bundle(asset_root, aid, v3, tex_marker=b"TEX_V3")
+        publish_done.set()
+
+    reader_thread = threading.Thread(target=reader)
+    publish_thread = threading.Thread(target=publisher)
+    reader_thread.start()
+    publish_thread.start()
+    assert reader_done.wait(timeout=3.0), "reader must release pin before slow publish starts"
+    assert publish_done.wait(timeout=3.0)
+    reader_thread.join(timeout=5.0)
+    publish_thread.join(timeout=5.0)
+    v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
+    assert v1_bundle.is_dir()
+    assert (v1_bundle / "textures/albedo.png").read_bytes() == b"TEX_V1"
+
+
 def test_cross_process_reader_survives_double_switch_before_retain(tmp_path: Path):
     """Subprocess pins v1, parent switches twice before child finishes resolve (issue #161)."""
     aid = "race_double"
