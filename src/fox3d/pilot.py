@@ -142,7 +142,7 @@ class PilotOps:
         if atype == "Station":
             return aid in self.stations.stations
         if atype == "Operator":
-            rec = self.identity.operators.get(aid)
+            rec = self.identity.operators.get(aid) if isinstance(aid, str) else None
             event = tx.get("event") or {}
             if (event.get("event_type") or event.get("eventType")) == "identity.operator_enabled":
                 change_id = payload.get("changeId")

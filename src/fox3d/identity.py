@@ -106,12 +106,12 @@ class OperatorShiftService:
                 else:
                     rec["enablementChangeIds"] = old_changes
                 raise
-            if tx:
+            if tx and outbox is not None:
                 outbox.mark_business_committed(tx["txId"])
                 _maybe_crash(self, "after-business-persist")
             if self.journal is not None:
                 self.journal.append(**event)
-            if tx:
+            if tx and outbox is not None:
                 outbox.complete(tx["txId"])
                 _maybe_crash(self, "after-outbox-complete")
             return rec
