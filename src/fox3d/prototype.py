@@ -7,7 +7,7 @@ import math
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
@@ -96,11 +96,11 @@ DEFAULT_TOLERANCE = {
     "certification": False,
 }
 VOLUMETRIC_POLICY = {
-    "divisor": float(DEFAULT_LOGISTICS_POLICY.get("volumetricDivisor") or 6000.0),
+    "divisor": float(cast(Any, DEFAULT_LOGISTICS_POLICY.get("volumetricDivisor")) or 6000.0),
     "units": "cm3_per_kg",
     "source": "CONFIG",
-    "maxLongestSideMm": float(DEFAULT_LOGISTICS_POLICY.get("maxLongestSideMm") or 1500.0),
-    "maxPackedWeightKg": float(DEFAULT_LOGISTICS_POLICY.get("maxPackedWeightKg") or 30.0),
+    "maxLongestSideMm": float(cast(Any, DEFAULT_LOGISTICS_POLICY.get("maxLongestSideMm")) or 1500.0),
+    "maxPackedWeightKg": float(cast(Any, DEFAULT_LOGISTICS_POLICY.get("maxPackedWeightKg")) or 30.0),
 }
 PACKAGING_POLICY = {
     "tolerance": dict(DEFAULT_TOLERANCE),
@@ -233,7 +233,7 @@ def variance(target: float | None, actual: float | None) -> dict[str, Any]:
 
 
 def evaluate_tolerance(field: str, target: float | None, actual: float | None, policy: dict[str, Any] | None = None) -> dict[str, Any]:
-    pol = policy or DEFAULT_TOLERANCE
+    pol: dict[str, Any] = policy or DEFAULT_TOLERANCE
     base = variance(target, actual)
     if not base["complete"]:
         return {**base, "field": field, "ok": False, "reason": "missing"}
@@ -251,7 +251,7 @@ def evaluate_tolerance(field: str, target: float | None, actual: float | None, p
 
 
 def volumetric_weight_kg(length_mm: float, width_mm: float, height_mm: float, *, policy: dict[str, Any] | None = None) -> dict[str, Any]:
-    pol = policy or VOLUMETRIC_POLICY
+    pol: dict[str, Any] = policy or VOLUMETRIC_POLICY
     divisor = float(pol["divisor"])
     cm3 = (length_mm / 10.0) * (width_mm / 10.0) * (height_mm / 10.0)
     kg = cm3 / divisor
@@ -358,7 +358,7 @@ def labor_semantic_key(row: dict[str, Any] | None) -> str:
         return str(row["idempotencyKey"])
     qty = row.get("minutes")
     try:
-        qty_s = str(float(qty))
+        qty_s = str(float(cast(Any, qty)))
     except (TypeError, ValueError):
         qty_s = str(qty or "")
     return (
@@ -381,13 +381,13 @@ def compact_checklist_authority(pack: dict[str, Any] | None) -> dict[str, Any] |
     cid = pack.get("checklistId")
     if not cid:
         return None
-    observed = pack.get("observed") if isinstance(pack.get("observed"), dict) else {}
+    observed = cast(dict[str, Any], pack.get("observed") if isinstance(pack.get("observed"), dict) else {})
     raw = observed.get("packagingQty")
     if raw is None:
         raw = pack.get("packagingQty")
     qty: Any = raw
     try:
-        number = float(raw)
+        number = float(cast(Any, raw))
         if math.isfinite(number):
             qty = number
     except (TypeError, ValueError):
@@ -457,8 +457,8 @@ def _packaging_authority_failures(row: dict[str, Any], result: dict[str, Any] | 
         return []
     failures: list[str] = []
     result = result if isinstance(result, dict) else {}
-    lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
-    sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
+    lineage = cast(dict[str, Any], row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {})
+    sources = cast(dict[str, Any], lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {})
     pack = row.get("packagingLineage") if isinstance(row.get("packagingLineage"), dict) else {}
     if not pack:
         failures.append("packaging_lineage_missing")
@@ -541,8 +541,8 @@ def _labor_authority_failures(row: dict[str, Any], result: dict[str, Any] | None
         return []
     failures: list[str] = []
     result = result if isinstance(result, dict) else {}
-    lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
-    labor = lineage.get("laborLineage") if isinstance(lineage.get("laborLineage"), dict) else {}
+    lineage = cast(dict[str, Any], row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {})
+    labor = cast(dict[str, Any], lineage.get("laborLineage") if isinstance(lineage.get("laborLineage"), dict) else {})
     if not labor:
         failures.append("labor_lineage_missing")
         return failures
@@ -685,7 +685,7 @@ def project_published_prototype_truth(result: dict[str, Any]) -> dict[str, Any]:
     selected = [row for row in (result.get("selected") or []) if isinstance(row, dict)]
     units = [row for row in (result.get("units") or []) if isinstance(row, dict)]
     matrix = [row for row in (result.get("matrix") or []) if isinstance(row, dict)]
-    board = result.get("board") if isinstance(result.get("board"), dict) else {}
+    board = cast(dict[str, Any], result.get("board") if isinstance(result.get("board"), dict) else {})
     rows = [row for row in (board.get("rows") or []) if isinstance(row, dict)]
     units_by_cid = {row.get("candidateId"): row for row in units if row.get("candidateId")}
     board_by_cid = {row.get("candidateId"): row for row in rows if row.get("candidateId")}
@@ -758,9 +758,9 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
         if not isinstance(s, dict):
             continue
         cid = s.get("candidateId")
-        unit = units_by.get(cid)
-        mat = matrix_by.get(cid)
-        brd = selected_board_by.get(cid)
+        unit = units_by.get(cast(Any, cid))
+        mat = matrix_by.get(cast(Any, cid))
+        brd = selected_board_by.get(cast(Any, cid))
         if unit is None:
             failures.append("selected_unit_missing")
         if mat is None:
@@ -792,11 +792,11 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
             m_pack = (mat.get("packagingValidation") or {}).get("ok") if isinstance(mat.get("packagingValidation"), dict) else None
             if b_pack != m_pack:
                 failures.append("board_matrix_packaging_mismatch")
-            b_tol = brd.get("toleranceResult") if isinstance(brd.get("toleranceResult"), dict) else {}
+            b_tol = cast(dict[str, Any], brd.get("toleranceResult") if isinstance(brd.get("toleranceResult"), dict) else {})
             if mat.get("toleranceStatus") is True and b_tol.get("ok") is False:
                 failures.append("board_matrix_tolerance_mismatch")
-            b_qc = brd.get("qcStatus") if isinstance(brd.get("qcStatus"), dict) else {}
-            m_qc = mat.get("qcStatus") if isinstance(mat.get("qcStatus"), dict) else {}
+            b_qc = cast(dict[str, Any], brd.get("qcStatus") if isinstance(brd.get("qcStatus"), dict) else {})
+            m_qc = cast(dict[str, Any], mat.get("qcStatus") if isinstance(mat.get("qcStatus"), dict) else {})
             if b_qc.get("complete") != m_qc.get("complete"):
                 failures.append("board_matrix_qc_mismatch")
     for i, row in enumerate(matrix):
@@ -835,8 +835,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
         if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL"}:
             failures.append("cost_complete_incorrect")
         if row.get("costCompleteness") == "COMPLETE":
-            lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
-            sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
+            lineage = cast(dict[str, Any], row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {})
+            sources = cast(dict[str, Any], lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {})
             if lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}:
                 failures.append("packaging_qty_missing")
             if sources.get("laborMinutes") == "MISSING" and result.get("label") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"}:
@@ -889,14 +889,14 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
     for s in selected:
         if not isinstance(s, dict):
             continue
-        pkg = pkg_by.get(s.get("candidateId"))
+        pkg = pkg_by.get(cast(Any, s.get("candidateId")))
         if pkg is None:
             failures.append("selected_package_missing")
             continue
         for key in CANONICAL_PACKAGE_FIELDS:
             if not _lineage_present(pkg.get(key)) and key in LINEAGE_KEYS + ("evidencePackageId", "evidenceSource", "state"):
                 failures.append(f"package_{key}_missing")
-        unit = units_by.get(s.get("candidateId"))
+        unit = units_by.get(cast(Any, s.get("candidateId")))
         if unit is not None:
             for key in LINEAGE_KEYS:
                 if _lineage_present(pkg.get(key)) and _lineage_present(unit.get(key)) and pkg.get(key) != unit.get(key):
@@ -934,8 +934,8 @@ def validate_prototype_acceptance_result(result: dict[str, Any]) -> list[str]:
                 continue
             if row.get("costCompleteness") == "COMPLETE" and row.get("observedCostLabel") in {None, "PARTIAL", "FIXTURE"}:
                 failures.append("cost_complete_without_qty")
-            lineage = row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {}
-            sources = lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {}
+            lineage = cast(dict[str, Any], row.get("quantityLineage") if isinstance(row.get("quantityLineage"), dict) else {})
+            sources = cast(dict[str, Any], lineage.get("sources") if isinstance(lineage.get("sources"), dict) else {})
             if row.get("costCompleteness") == "COMPLETE" and (
                 lineage.get("packagingQty") is None or sources.get("packagingQty") in {None, "MISSING"}
             ):
@@ -1238,8 +1238,8 @@ class PrototypeFactory:
         hardware = sum(int(ln.get("quantity") or 1) for ln in lines if ln.get("hardware"))
         parts = sum(int(ln.get("quantity") or 1) for ln in lines if not ln.get("hardware"))
         return {
-            "hardwareQty": int(dfm.get("hardwareCount") if dfm.get("hardwareCount") is not None else hardware),
-            "partCount": int(dfm.get("partCount") if dfm.get("partCount") is not None else parts),
+            "hardwareQty": int(cast(Any, dfm.get("hardwareCount") if dfm.get("hardwareCount") is not None else hardware)),
+            "partCount": int(cast(Any, dfm.get("partCount") if dfm.get("partCount") is not None else parts)),
         }
 
     def _material_requirement(self, unit: dict[str, Any]) -> dict[str, Any]:
@@ -1470,7 +1470,7 @@ class PrototypeFactory:
             return None
         if pack.get("engineeringHash") != unit.get("engineeringHash"):
             return None
-        observed = pack.get("observed") if isinstance(pack.get("observed"), dict) else {}
+        observed = cast(dict[str, Any], pack.get("observed") if isinstance(pack.get("observed"), dict) else {})
         raw = observed.get("packagingQty")
         if raw is None:
             raw = pack.get("packagingQty")
@@ -2036,7 +2036,7 @@ class PrototypeFactory:
         if intent.get("idempotencyKey") != identity["idempotencyKey"]:
             return False
         try:
-            if int(intent.get("quantity")) != int(identity["quantity"]):
+            if int(cast(Any, intent.get("quantity"))) != int(identity["quantity"]):
                 return False
             if str(req.get("material")) != str(identity["material"]):
                 return False
@@ -2343,7 +2343,7 @@ class PrototypeFactory:
             "packedWeightKg": weight.get("grossKg"),
         }
         tol_rows = {
-            k: evaluate_tolerance(k, float(targets[k]) if targets.get(k) is not None else None, numeric.get(k))
+            k: evaluate_tolerance(k, float(cast(Any, targets[k])) if targets.get(k) is not None else None, numeric.get(k))
             for k in targets
         }
         required_tol = [tol_rows[k] for k in REQUIRED_MEASUREMENTS]
@@ -2364,7 +2364,7 @@ class PrototypeFactory:
             "truthLabel": label,
             "values": numeric,
             "targets": targets,
-            "variance": {k: variance(float(targets[k]) if targets.get(k) is not None else None, numeric.get(k)) for k in targets},
+            "variance": {k: variance(float(cast(Any, targets[k])) if targets.get(k) is not None else None, numeric.get(k)) for k in targets},
             "tolerance": {
                 "ok": tol_ok,
                 "policy": dict(DEFAULT_TOLERANCE),
@@ -2519,7 +2519,7 @@ class PrototypeFactory:
             monetary_variance = {
                 "estimate": est_landed,
                 "observed": monetary_total,
-                "abs": float(monetary_total) - float(est_landed),
+                "abs": float(cast(Any, monetary_total)) - float(est_landed),
             }
         if src == "FIXTURE":
             label = "FIXTURE"
@@ -2654,13 +2654,13 @@ class PrototypeFactory:
             "packedWeightKg": weight.get("grossKg"),
         }
         vars_ = {
-            k: evaluate_tolerance(k, float(predicted[k]) if predicted.get(k) is not None else None, numeric.get(k))
+            k: evaluate_tolerance(k, float(cast(Any, predicted[k])) if predicted.get(k) is not None else None, numeric.get(k))
             for k in PACK_MEASUREMENTS
         }
         vol = volumetric_weight_kg(numeric["cartonLengthMm"], numeric["cartonWidthMm"], numeric["cartonHeightMm"])
         longest = max(numeric["cartonLengthMm"], numeric["cartonWidthMm"], numeric["cartonHeightMm"])
-        oversize = longest > float(VOLUMETRIC_POLICY["maxLongestSideMm"])
-        overweight = numeric["packedWeightKg"] > float(VOLUMETRIC_POLICY["maxPackedWeightKg"])
+        oversize = longest > float(cast(Any, VOLUMETRIC_POLICY["maxLongestSideMm"]))
+        overweight = numeric["packedWeightKg"] > float(cast(Any, VOLUMETRIC_POLICY["maxPackedWeightKg"]))
         counts = self._bom_counts(cand)
         obs = observations or {}
         hardware_qty = observed.get("hardwareQty", obs.get("hardwareQty"))
@@ -3492,8 +3492,8 @@ class PrototypeFactory:
                 ("no_unit", not unit),
                 ("fixture_evidence", (meas or {}).get("source") == "FIXTURE"),
                 ("missing_measurements", bool((meas or {}).get("missingRequired"))),
-                ("tolerance", bool(meas) and not (meas.get("tolerance") or {}).get("ok")),
-                ("qc", bool(meas) and bool(meas.get("qcMissing"))),
+                ("tolerance", bool(meas) and not ((meas or {}).get("tolerance") or {}).get("ok")),
+                ("qc", bool(meas) and bool((meas or {}).get("qcMissing"))),
                 ("packaging", (not pack) or pack.get("ok") is False),
                 ("cost_partial", (not cost) or not self._launch_cost_complete(unit, cost) if unit else True),
                 ("dam_as_built", bool(unit) and (meas or {}).get("truthLabel") in {"MANUAL_EVIDENCE", "IMPORTED_EVIDENCE"} and not self._has_dam_role(self._package_dam(pkg, meas, pack), "AS_BUILT", engineering_hash=(unit or {}).get("engineeringHash"))),
