@@ -81,6 +81,16 @@ class ProviderRegistry:
     def import_rows(self, store: SnapshotStore, rows: list[dict[str, Any]], *, source: str) -> list[dict[str, Any]]:
         if source not in {"IMPORTED", "MANUAL", "LIVE_PROVIDER", "CONFIG_ESTIMATE"}:
             raise ValueError(source)
+        if source == "LIVE_PROVIDER":
+            provider = {
+                "material": "SupplierPriceProvider",
+                "hardware": "HardwarePriceProvider",
+                "packaging": "PackagingPriceProvider",
+                "logistics": "LogisticsRateProvider",
+                "fx": "FxRateProvider",
+            }.get(store.kind)
+            if provider is None or not self.live.get(provider, False):
+                raise PermissionError(f"Live provider is not connected for {store.kind}")
         return [store.add(r, source=source) for r in rows]
 
     def import_csv(self, store: SnapshotStore, text: str, *, source: str) -> list[dict[str, Any]]:
@@ -93,13 +103,15 @@ class ProviderRegistry:
         return self.import_rows(store, rows, source=source)
 
 
-def mixed_landed_cost(components: list[dict[str, Any]]) -> dict[str, Any]:
+def mixed_landed_cost(components: list[dict[str, Any]], *, live_connected: bool = False) -> dict[str, Any]:
     total = 0.0
     labeled = []
     for c in components:
         amt = float(c.get("amount") or 0)
         src = str(c.get("source") or "CONFIG_ESTIMATE")
         if src not in {"REAL_IMPORTED", "MANUAL", "CONFIG_ESTIMATE", "LIVE_PROVIDER", "IMPORTED"}:
+            src = "CONFIG_ESTIMATE"
+        if src == "LIVE_PROVIDER" and not live_connected:
             src = "CONFIG_ESTIMATE"
         labeled.append({**c, "source": src, "amount": round(amt, 2)})
         total += amt
@@ -127,7 +139,7 @@ def quote_binding(entity: dict[str, Any], *, snapshot_ids: list[str], valid_from
         "validTo": valid_to,
         "stale": False,
     }
-    rec["quoteBindingHash"] = stable_hash(rec)
+    rec["quoteBindingHash"] = stable_hash({k: v for k, v in rec.items() if k != "quoteId"})
     return rec
 
 
