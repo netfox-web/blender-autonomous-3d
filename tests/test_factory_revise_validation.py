@@ -55,3 +55,28 @@ def test_valid_revision_and_tenant_isolation(platform):
     assert response.json()["spec"]["revision"] == created["spec"]["revision"] + 1
     assert len(platform.parametrics) == len(before) + 1
     assert len(platform.factory.revisions) == len(revisions) + 1
+
+
+@pytest.mark.parametrize("payload", [{}, {"tenantId": "t1"}])
+def test_empty_revision_does_not_write(platform, payload):
+    created = platform.create_parametric({"tenantId": "t1", "kind": "STORAGE_CABINET"})
+    product_id = created["spec"]["productId"]
+    before = dict(platform.parametrics)
+    revisions = list(platform.factory.revisions)
+    response = TestClient(create_app(platform)).post(
+        f"/api/factory/products/{product_id}/revise", headers={"X-Tenant-Id": "t1"}, json=payload
+    )
+    assert response.status_code == 422
+    assert platform.parametrics == before
+    assert platform.factory.revisions == revisions
+
+
+def test_direct_empty_revision_does_not_write(platform):
+    created = platform.create_parametric({"tenantId": "t1", "kind": "STORAGE_CABINET"})
+    product_id = created["spec"]["productId"]
+    before = dict(platform.parametrics)
+    revisions = list(platform.factory.revisions)
+    with pytest.raises(ValueError, match="at least one revision change"):
+        platform.factory.revise_cabinet_changes(product_id, "t1", {})
+    assert platform.parametrics == before
+    assert platform.factory.revisions == revisions
