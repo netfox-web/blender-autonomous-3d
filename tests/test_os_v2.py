@@ -23,7 +23,8 @@ from fox3d.packv2 import (
     validate_bleed,
     validate_dieline,
 )
-from fox3d.publish import CatalogRelease, ar_export_boundary, publication_package, web3d_manifest
+from fox3d.pngutil import write_glb_stub
+from fox3d.publish import CatalogRelease, ar_export_boundary, glb_publication, publication_package, web3d_manifest
 from fox3d.rdloop import DemandRegistryV2, evidence_weighted_rank, import_outcomes, kpi_read_model, substitution_candidates
 from fox3d.readiness import scoped_readiness, validate_truth_labels
 from fox3d.safety import SafetyRuleRegistry, acrylic_risk, evaluate_product, furniture_stability, wall_anchor_warning
@@ -230,8 +231,7 @@ def test_publication_and_catalog(platform, tmp_path):
     assert pack["publicationHash"]
     assert pack["liveMachineControl"] is False
     glb = tmp_path / "p.glb"
-    glb.write_bytes(b"glTF" + b"\x00" * 20)
-    from fox3d.publish import glb_publication
+    write_glb_stub(glb, name="Shelf")
 
     pub = glb_publication({"dimensions": {"width": 1, "height": 1, "depth": 1}}, glb)
     assert pub["label"] == "REAL"
@@ -243,7 +243,8 @@ def test_publication_and_catalog(platform, tmp_path):
     cat = CatalogRelease()
     sku = cat.add_sku(rec, family="KD_FURNITURE")
     rel = cat.release(name="r1", sku_ids=[sku["skuId"]])
-    cat.supersede(rel["releaseId"], successor="r2")
+    successor = cat.release(name="r2", sku_ids=[sku["skuId"]])
+    cat.supersede(rel["releaseId"], successor=successor["releaseId"])
     assert cat.releases[rel["releaseId"]]["stale"] is True
 
 
