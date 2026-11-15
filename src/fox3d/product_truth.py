@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 from fox3d.artwork import ArtworkError, decode_png_rgb
 from fox3d.ids import new_id, sha256_bytes, stable_hash
@@ -138,7 +138,19 @@ def _exact_bool(value: Any) -> bool | None:
     return None
 
 
-def _is_strict_float(val: Any) -> bool:
+def _as_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _as_dict_or_none(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def _is_strict_float(val: Any) -> TypeGuard[int | float]:
     if type(val) is bool:
         return False
     if not isinstance(val, (int, float)):
@@ -150,7 +162,7 @@ def _is_strict_float(val: Any) -> bool:
         return False
 
 
-def _is_strict_int(val: Any) -> bool:
+def _is_strict_int(val: Any) -> TypeGuard[int]:
     if type(val) is bool:
         return False
     if not isinstance(val, int):
@@ -158,10 +170,16 @@ def _is_strict_int(val: Any) -> bool:
     return True
 
 
-def _is_strict_vec3(val: Any) -> bool:
+def _is_strict_vec3(val: Any) -> TypeGuard[list[int | float] | tuple[int | float, ...]]:
     if not isinstance(val, (list, tuple)) or len(val) != 3:
         return False
     return all(_is_strict_float(x) for x in val)
+
+
+def _vec3(value: Any) -> tuple[float, float, float] | None:
+    if not _is_strict_vec3(value):
+        return None
+    return (float(value[0]), float(value[1]), float(value[2]))
 
 
 def validate_strict_camera_recipe(
@@ -224,10 +242,22 @@ def validate_strict_camera_recipe(
     if failures:
         return failures
 
+    loc3 = _vec3(loc)
+    look3 = _vec3(look)
+    if (
+        loc3 is None
+        or look3 is None
+        or not _is_strict_float(focal)
+        or not _is_strict_float(sensor)
+        or not _is_strict_int(w)
+        or not _is_strict_int(h)
+        or not _is_strict_float(safe)
+    ):
+        return failures
     recomputed = camera_recipe(
         camera_id=str(cid),
-        location=tuple(float(x) for x in loc),
-        look_at=tuple(float(x) for x in look),
+        location=loc3,
+        look_at=look3,
         focal_length_mm=float(focal),
         sensor_width_mm=float(sensor),
         width=int(w),
@@ -270,6 +300,8 @@ def validate_strict_scene_recipe(scene: Any) -> list[str]:
         failures.append("missing_hash")
 
     if failures:
+        return failures
+    if not _is_strict_int(samples):
         return failures
 
     recomputed = scene_recipe(
@@ -408,7 +440,7 @@ def derive_canonical_expected_identity(
         file_sha = sha256_bytes(file_bytes)
         if art_rec.get("sha256") and art_rec.get("sha256") != file_sha:
             return {"canonicalAuthorityValid": False, "canonicalFailure": "canonical_artwork_tampered"}
-        art_sha = file_sha
+        art_sha: Any = file_sha
         art_hash = art_rec.get("artworkHash")
         if not art_hash:
             return {"canonicalAuthorityValid": False, "canonicalFailure": "missing_canonical_artwork_hash"}
@@ -609,7 +641,7 @@ def validate_product_truth_render_pack(
     if not isinstance(pack, dict):
         return ["pack_missing"]
     authoritative_expected = dict(expected_identity or {})
-    serialized_expected = pack.get("expectedIdentity") if isinstance(pack.get("expectedIdentity"), dict) else {}
+    serialized_expected = _as_dict(pack.get("expectedIdentity"))
 
     if authoritative_expected and authoritative_expected.get("canonicalAuthorityValid") is False:
         failures.append(f"canonical_authority_{authoritative_expected.get('canonicalFailure', 'invalid')}")
@@ -635,10 +667,10 @@ def validate_product_truth_render_pack(
     for key in lineage_keys:
         if not _strict_hash(pack.get(key)):
             failures.append(f"missing_{key}")
-    aovs = pack.get("aovs") if isinstance(pack.get("aovs"), dict) else {}
+    aovs = _as_dict(pack.get("aovs"))
     dims: tuple[int, int] | None = None
     for role in REQUIRED_AOV_ROLES:
-        row = aovs.get(role) if isinstance(aovs.get(role), dict) else None
+        row = _as_dict_or_none(aovs.get(role))
         if not row:
             failures.append(f"missing_aov_{role}")
             continue
@@ -685,7 +717,7 @@ def validate_product_truth_render_pack(
         if role == "product_mask" and not pack.get("objectManifest"):
             failures.append("object_manifest_missing")
         if role == "artwork_mask":
-            prod = aovs.get("product_mask") if isinstance(aovs.get("product_mask"), dict) else {}
+            prod = _as_dict(aovs.get("product_mask"))
             if prod.get("sha256") and row.get("sha256") == prod.get("sha256"):
                 failures.append("artwork_mask_alias")
             prod_path = Path(str(prod.get("path") or ""))
@@ -696,12 +728,12 @@ def validate_product_truth_render_pack(
                         failures.append("artwork_mask_not_subset")
                 except ArtworkError:
                     failures.append("artwork_mask_subset_decode")
-    manifest = pack.get("objectManifest") if isinstance(pack.get("objectManifest"), dict) else {}
+    manifest = _as_dict(pack.get("objectManifest"))
     comps = manifest.get("components") if isinstance(manifest.get("components"), list) else []
     if not comps or any(not isinstance(c, dict) or not c.get("componentId") for c in comps):
         failures.append("object_manifest_identity")
-    cam = pack.get("cameraRecipe") if isinstance(pack.get("cameraRecipe"), dict) else {}
-    scene = pack.get("sceneRecipe") if isinstance(pack.get("sceneRecipe"), dict) else {}
+    cam = _as_dict(pack.get("cameraRecipe"))
+    scene = _as_dict(pack.get("sceneRecipe"))
     if cam:
         cam_fails = validate_strict_camera_recipe(cam)
         if cam_fails:
@@ -722,10 +754,10 @@ def validate_product_truth_render_pack(
         "DOOR_DETAIL": "door_detail.png",
         "ASSEMBLED_FRONT": "assembled_front.png",
     }
-    views = pack.get("views") if isinstance(pack.get("views"), dict) else {}
-    worker_views_dict = pack.get("workerViews") if isinstance(pack.get("workerViews"), dict) else {}
+    views = _as_dict(pack.get("views"))
+    worker_views_dict = _as_dict(pack.get("workerViews"))
     for name in REQUIRED_VIEWS:
-        row = views.get(name) if isinstance(views.get(name), dict) else None
+        row = _as_dict_or_none(views.get(name))
         if not row:
             failures.append(f"missing_view_{name}")
             continue
@@ -749,7 +781,7 @@ def validate_product_truth_render_pack(
             continue
 
         top_worker_view = worker_views_dict.get(name) if isinstance(worker_views_dict, dict) else None
-        nested_worker_view = row.get("workerView") if isinstance(row.get("workerView"), dict) else None
+        nested_worker_view = _as_dict_or_none(row.get("workerView"))
         if not top_worker_view and not nested_worker_view:
             failures.append(f"missing_worker_view_{name}")
             continue
@@ -778,7 +810,8 @@ def validate_product_truth_render_pack(
 
         if worker_view.get("sha256") and str(worker_view.get("sha256")) != live_sha:
             failures.append(f"view_worker_hash_{name}")
-        if worker_view.get("size") and int(worker_view.get("size")) != live_size:
+        worker_size = worker_view.get("size")
+        if worker_size and int(worker_size) != live_size:
             failures.append(f"view_worker_size_{name}")
 
         norm_row = str(Path(str(row.get("path") or "")).resolve())
@@ -821,7 +854,7 @@ def validate_product_truth_render_pack(
             if not dam_obj:
                 failures.append(f"view_dam_asset_missing_{name}")
             else:
-                dam_meta = dam_obj.metadata if isinstance(dam_obj.metadata, dict) else {}
+                dam_meta = _as_dict(dam_obj.metadata)
                 if dam_obj.tenant_id != pack.get("tenantId"):
                     failures.append(f"view_dam_tenant_mismatch_{name}")
                 if dam_obj.sha256 != live_sha:
@@ -896,11 +929,23 @@ def validate_product_truth_render_pack(
             failures.append(f"view_worker_sha_invalid_{name}")
             camera_valid = False
 
-        if camera_valid:
+        loc3 = _vec3(loc)
+        look3 = _vec3(look)
+        observed_cam_hash: Any = None
+        if (
+            camera_valid
+            and loc3 is not None
+            and look3 is not None
+            and _is_strict_float(focal)
+            and _is_strict_float(sensor)
+            and _is_strict_float(margin)
+            and _is_strict_int(vw)
+            and _is_strict_int(vh)
+        ):
             observed_camera = camera_recipe(
                 camera_id=str(worker_view.get("viewId") or name),
-                location=tuple(float(x) for x in loc),
-                look_at=tuple(float(x) for x in look),
+                location=loc3,
+                look_at=look3,
                 focal_length_mm=float(focal),
                 sensor_width_mm=float(sensor),
                 width=int(vw),
@@ -922,7 +967,7 @@ def validate_product_truth_render_pack(
                 failures.append(f"view_camera_recipe_hash_{name}")
                 for vcf in view_cam_fails:
                     failures.append(f"view_camera_recipe_{name}_{vcf}")
-            if camera_valid and observed_cam_hash != row.get("cameraRecipeHash"):
+            if observed_cam_hash is not None and observed_cam_hash != row.get("cameraRecipeHash"):
                 failures.append(f"view_camera_recipe_mismatch_{name}")
 
         if authoritative_expected.get("viewRecipes") and isinstance(authoritative_expected["viewRecipes"], dict):
@@ -930,7 +975,7 @@ def validate_product_truth_render_pack(
             if exp_view_hash:
                 if row.get("cameraRecipeHash") != exp_view_hash:
                     failures.append(f"view_canonical_camera_mismatch_{name}")
-                if camera_valid and observed_cam_hash != exp_view_hash:
+                if observed_cam_hash is not None and observed_cam_hash != exp_view_hash:
                     failures.append(f"worker_view_canonical_camera_mismatch_{name}")
 
         if pack.get("realArtworkPreviewReady") is True or pack.get("productTruthRenderPackReady") is True or pack.get("usedMock") is False:
@@ -941,7 +986,7 @@ def validate_product_truth_render_pack(
             if _exact_bool(worker_view.get("realOptix")) is not True:
                 failures.append(f"real_worker_view_realOptix_{name}")
 
-    worker = pack.get("workerEvidence") if isinstance(pack.get("workerEvidence"), dict) else {}
+    worker = _as_dict(pack.get("workerEvidence"))
     for key in WORKER_IDENTITY_KEYS:
         if key not in worker:
             failures.append(f"worker_missing_{key}")
@@ -1008,7 +1053,7 @@ def validate_product_truth_render_pack(
         if pack.get("sceneRecipeHash") and pack.get("sceneRecipeHash") != serialized_expected.get("sceneRecipeHash"):
             failures.append("pack_mismatch_sceneRecipeHash")
 
-    aov_beauty = aovs.get("beauty") if isinstance(aovs.get("beauty"), dict) else {}
+    aov_beauty = _as_dict(aovs.get("beauty"))
     if worker and aov_beauty.get("placementHash") and worker.get("placementHash") and aov_beauty.get("placementHash") != worker.get("placementHash"):
         failures.append("aov_worker_inconsistent")
     for flag in ("usedMock", "realBlender", "realOptix"):
@@ -1200,7 +1245,7 @@ class ProductTruthFactory:
                 "workerView": worker_view,
                 **meta,
             }
-        components = []
+        components: list[dict[str, Any]] = []
         for name in object_names or []:
             components.append({"componentId": name, "objectName": name, "face": "FRONT"})
         if placement.get("componentId"):
@@ -1505,9 +1550,9 @@ def render_product_truth(
     )
     job = plat.submit_job(payload)
     done = plat.execute_job(job)
-    outputs = (done.get("output") if isinstance(done.get("output"), dict) else None) or {}
-    files = outputs.get("files") if isinstance(outputs.get("files"), dict) else {}
-    raw_outputs: dict[str, Any] = {}
+    outputs = (_as_dict_or_none(done.get("output"))) or {}
+    files = _as_dict(outputs.get("files"))
+    raw_outputs = {}
 
     def _resolve(val: Any) -> str | None:
         if not val:
@@ -1610,7 +1655,7 @@ def render_product_truth(
             },
         }
         done = {
-            **(done if isinstance(done, dict) else {}),
+            **(_as_dict(done)),
             "jobId": job_id,
             "status": "succeeded",
             "usedMock": True,
