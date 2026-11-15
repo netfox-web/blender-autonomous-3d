@@ -672,3 +672,72 @@ def test_scan_token_valid_kind_and_object_id_round_trips(
     assert response.status_code == 200, response.text
     token = response.json()["token"]
     assert parse_token(token) == (expected_kind, object_id)
+
+
+@pytest.mark.parametrize(
+    "body,expected_qty,expected_cost",
+    [
+        ({"sheetCount": 10, "quantity": 1}, 10, 850.0),
+        ({"quantity": 1, "costPerSheet": 100, "unitCost": 10}, 1, 100.0),
+        ({"sheetCount": 7, "quantity": 2, "costPerSheet": 120, "unitCost": 15}, 7, 120.0),
+        ({"sheetCount": 0, "quantity": 3, "costPerSheet": "", "unitCost": 40}, 3, 40.0),
+    ],
+)
+def test_materials_lots_keeps_sheet_count_and_cost_per_sheet_precedence(
+    client: TestClient, platform, body: dict[str, Any], expected_qty: int, expected_cost: float
+) -> None:
+    # /api/materials/lots has always preferred sheetCount over quantity and costPerSheet over
+    # unitCost (the reverse of /api/pilot/receipts). Existing callers rely on it.
+    response = client.post("/api/materials/lots", headers=HEADERS, json={"supplierLot": "PREC", **body})
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert receipt["quantity"] == expected_qty
+    assert receipt["unitCost"] == expected_cost
+    lots = {lot["lotId"]: lot for lot in platform.lots.list(tenant_id="acme")}
+    lot = lots[receipt["lotId"]]
+    assert lot["sheetCount"] == expected_qty
+    assert lot["configCostSnapshot"]["costPerSheet"] == expected_cost
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"sheetCount": "abc", "quantity": 1},
+        {"sheetCount": 1.5, "quantity": 1},
+        {"sheetCount": True, "quantity": 1},
+        {"quantity": 1, "costPerSheet": "bad", "unitCost": 10},
+    ],
+)
+def test_materials_lots_validates_the_alias_it_uses(client: TestClient, platform, body: dict[str, Any]) -> None:
+    receipts = set(platform.pilot.receiving.receipts)
+    lots = _acme_lot_ids(platform)
+    response = client.post("/api/materials/lots", headers=HEADERS, json=body)
+    assert response.status_code == 422, response.text
+    assert set(platform.pilot.receiving.receipts) == receipts
+    assert _acme_lot_ids(platform) == lots
+
+
+HUGE_INT = 10**400
+
+
+@pytest.mark.parametrize("path", ["/api/materials/lots", "/api/pilot/receipts"])
+@pytest.mark.parametrize(
+    "field", ["length", "width", "thickness", "unitCost", "expectedThickness", "expectedLength", "expectedWidth"]
+)
+def test_receipt_huge_integer_returns_422_and_does_not_write(
+    client: TestClient, platform, path: str, field: str
+) -> None:
+    receipts = set(platform.pilot.receiving.receipts)
+    lots = _acme_lot_ids(platform)
+    response = client.post(path, headers=HEADERS, json={"quantity": 1, field: HUGE_INT})
+    assert response.status_code == 422, response.text
+    assert "traceback" not in response.text.lower()
+    assert set(platform.pilot.receiving.receipts) == receipts
+    assert _acme_lot_ids(platform) == lots
+
+
+def test_materials_lots_huge_cost_per_sheet_returns_422(client: TestClient, platform) -> None:
+    lots = _acme_lot_ids(platform)
+    response = client.post("/api/materials/lots", headers=HEADERS, json={"quantity": 1, "costPerSheet": HUGE_INT})
+    assert response.status_code == 422, response.text
+    assert _acme_lot_ids(platform) == lots
