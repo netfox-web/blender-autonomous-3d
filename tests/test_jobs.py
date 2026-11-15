@@ -232,3 +232,62 @@ def test_api_valid_boundary_job_is_accepted(client: TestClient) -> None:
     assert job["scene"] == {"scene": "WHITE_STUDIO"}
     assert job["lighting"] == {"preset": "SOFTBOX"}
     assert job["routing_requirements"]["computeTargetKey"] == "5090-1"
+
+
+# ----- API: render endpoints share the same 422 contract (#573) ----------
+
+RENDER_ENDPOINTS = ("/api/render/preview", "/api/render/final")
+
+RENDER_INVALID: list[dict[str, Any]] = [
+    *API_INVALID,
+    {"render": "not-a-dict"},
+    {"render": ["x"]},
+]
+
+
+@pytest.mark.parametrize("endpoint", RENDER_ENDPOINTS)
+@pytest.mark.parametrize("body", RENDER_INVALID, ids=lambda b: repr(b))
+def test_render_endpoints_invalid_fields_return_422(client: TestClient, endpoint: str, body: dict[str, Any]) -> None:
+    res = client.post(endpoint, json=body, headers=HEADERS)
+    assert res.status_code == 422, res.text
+    detail = res.json()["detail"]
+    assert isinstance(detail, str)
+    assert "格式錯誤" in detail
+    for leak in ("/", "\\", "src", "fox3d", "pydantic", "Traceback", ".py"):
+        assert leak not in detail
+
+
+@pytest.mark.parametrize("endpoint", RENDER_ENDPOINTS)
+def test_render_endpoint_invalid_job_is_not_enqueued(client: TestClient, endpoint: str) -> None:
+    res = client.post(endpoint, json={"priority": 101}, headers=HEADERS)
+    assert res.status_code == 422
+    assert client.get("/api/3d/jobs", headers=HEADERS).json()["items"] == []
+
+
+@pytest.mark.parametrize("endpoint", RENDER_ENDPOINTS)
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"priority": 0},
+        {"priority": 100},
+        {"maxAttempts": 1},
+        {"maxAttempts": 20},
+        {"timeoutSeconds": MAX_TIMEOUT_SECONDS},
+        {"progress": 1},
+        {"gpuRequirement": {"minVramGb": 0}},
+        {"render": None},
+    ],
+    ids=lambda b: repr(b),
+)
+def test_render_endpoints_accept_boundary_values(client: TestClient, endpoint: str, body: dict[str, Any]) -> None:
+    res = client.post(endpoint, json=body, headers=HEADERS)
+    assert res.status_code == 200, res.text
+    job = res.json()
+    field, value = next(iter(body.items()))
+    if field == "render":
+        assert job["render"]["width"] == 64
+    elif field == "gpuRequirement":
+        assert job["gpuRequirement"]["minVramGb"] == 0
+    else:
+        assert job[field] == value
+    assert job["tenantId"] == "acme"
