@@ -2,24 +2,33 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fox3d.journal import emit
 from fox3d.recovery import ExceptionInbox, PilotException
 
 TOKEN_KINDS = {"WO": "WorkOrder", "LOT": "MaterialLot", "REL": "ManufacturingRelease", "CTN": "carton"}
+_OBJECT_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def make_token(kind: str, object_id: str) -> str:
     kind = kind.upper()
     if kind not in TOKEN_KINDS:
         raise PermissionError("unsupported scan kind")
+    if not isinstance(object_id, str) or not _OBJECT_ID_RE.fullmatch(object_id):
+        raise PermissionError("invalid scan object_id")
     return f"FOX3D:{kind}:{object_id}"
 
 
 def parse_token(token: str) -> tuple[str, str]:
     parts = str(token or "").split(":")
-    if len(parts) != 3 or parts[0] != "FOX3D" or parts[1] not in TOKEN_KINDS:
+    if (
+        len(parts) != 3
+        or parts[0] != "FOX3D"
+        or parts[1] not in TOKEN_KINDS
+        or not _OBJECT_ID_RE.fullmatch(parts[2])
+    ):
         raise PermissionError("invalid scan token")
     return parts[1], parts[2]
 
