@@ -133,7 +133,8 @@ def _check_finite_float(raw: Any, field: str, row_index: int | None = None) -> N
         _unprocessable(f"{field} 格式錯誤", row_index)
     try:
         number = float(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: a JSON integer such as 10**400 cannot become a float.
         _unprocessable(f"{field} 格式錯誤", row_index)
     if not math.isfinite(number):
         _unprocessable(f"{field} 格式錯誤", row_index)
