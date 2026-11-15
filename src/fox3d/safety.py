@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from fox3d.ids import stable_hash
@@ -25,8 +26,42 @@ class SafetyRuleRegistry:
         return rows
 
 
+def _positive_finite_dimension(value: Any) -> float | None:
+    if value is None or isinstance(value, bool) or isinstance(value, (list, dict)):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number <= 0:
+        return None
+    return number
+
+
+def _invalid_dimension(rule_id: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "veto": True,
+        "label": "BLOCKED",
+        "error": "invalid_dimension",
+        "ruleId": rule_id,
+    }
+
+
+def _spec_dimension(spec: dict[str, Any], key: str, *, default: float | None = None) -> float | None:
+    if key not in spec:
+        if default is not None:
+            return default
+        return None
+    return _positive_finite_dimension(spec.get(key))
+
+
 def furniture_stability(spec: dict[str, Any]) -> dict[str, Any]:
-    w, d, h = float(spec["width"]), float(spec["depth"]), float(spec["height"])
+    w = _positive_finite_dimension(spec.get("width"))
+    d = _positive_finite_dimension(spec.get("depth"))
+    h = _positive_finite_dimension(spec.get("height"))
+    if w is None or d is None or h is None:
+        return _invalid_dimension("FURN_STABILITY_V1")
     com_z = h * 0.45
     base = min(w, d)
     ratio = h / max(base, 1)
@@ -47,7 +82,10 @@ def furniture_stability(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def wall_anchor_warning(spec: dict[str, Any], *, max_ratio: float = 3.5, tall_mm: float = 1200) -> dict[str, Any]:
-    h, d = float(spec["height"]), float(spec["depth"])
+    h = _positive_finite_dimension(spec.get("height"))
+    d = _positive_finite_dimension(spec.get("depth"))
+    if h is None or d is None:
+        return _invalid_dimension("FURN_WALL_ANCHOR_V1")
     ratio = h / max(d, 1)
     need = h >= tall_mm or ratio >= max_ratio
     return {
@@ -70,8 +108,16 @@ def pinch_zones(spec: dict[str, Any]) -> dict[str, Any]:
 
 
 def shelf_load_warning(spec: dict[str, Any]) -> dict[str, Any]:
-    t = float(spec.get("boardThickness") or 18)
-    span = float(spec["width"]) - 2 * t
+    w = _positive_finite_dimension(spec.get("width"))
+    if w is None:
+        return _invalid_dimension("FURN_SHELF_LOAD_V1")
+    if "boardThickness" in spec:
+        t = _positive_finite_dimension(spec.get("boardThickness"))
+        if t is None:
+            return _invalid_dimension("FURN_SHELF_LOAD_V1")
+    else:
+        t = 18.0
+    span = w - 2 * t
     # conservative kg for PB: 12kg per 400mm span at 18mm, scale t^2 / span
     cap = 12.0 * (t / 18.0) ** 2 * (400.0 / max(span, 1))
     return {
@@ -88,8 +134,12 @@ def retail_fixture_risk(fixture: dict[str, Any]) -> dict[str, Any]:
     cap = fixture.get("capacity") or {}
     spec = fixture.get("spec") or {}
     kg = float(cap.get("estimatedTotalKg") or 0)
-    h = float(spec.get("height") or 800)
-    base = min(float(spec.get("width") or 600), float(spec.get("depth") or 400))
+    h = _spec_dimension(spec, "height", default=800.0)
+    w = _spec_dimension(spec, "width", default=600.0)
+    d = _spec_dimension(spec, "depth", default=400.0)
+    if h is None or w is None or d is None:
+        return _invalid_dimension("RETAIL_TIP_V1")
+    base = min(w, d)
     com_z = h * 0.55
     score = min(1.0, (kg / 40.0) * 0.5 + (com_z / max(base, 1)) * 0.2)
     return {
@@ -106,8 +156,26 @@ def retail_fixture_risk(fixture: dict[str, Any]) -> dict[str, Any]:
 
 def acrylic_risk(rec: dict[str, Any]) -> dict[str, Any]:
     dims = rec.get("dimensions") or {}
-    t = float((rec.get("sheet") or {}).get("thickness") or 5)
-    span = max(float(dims.get("width") or 0), float(dims.get("height") or 0))
+    sheet = rec.get("sheet") or {}
+    if "thickness" in sheet:
+        t = _positive_finite_dimension(sheet.get("thickness"))
+        if t is None:
+            return _invalid_dimension("ACR_SPAN_V1")
+    else:
+        t = 5.0
+
+    def _span_axis(key: str) -> float | None:
+        if key not in dims:
+            return 0.0
+        return _positive_finite_dimension(dims.get(key))
+
+    w = _span_axis("width")
+    h = _span_axis("height")
+    if w is None or h is None:
+        return _invalid_dimension("ACR_SPAN_V1")
+    span = max(w, h)
+    if span <= 0:
+        return _invalid_dimension("ACR_SPAN_V1")
     bend = rec.get("cutBend") or {}
     warnings = []
     if t < 4:
@@ -170,14 +238,13 @@ def evaluate_product(kind: str, rec: dict[str, Any]) -> dict[str, Any]:
             wa = wall_anchor_warning(spec)
             sh = shelf_load_warning(spec)
             checks.extend([st, wa, sh, pinch_zones(spec)])
-            veto = veto or bool(st.get("veto"))
     if rec.get("family") in {"COUNTER_DISPLAY", "FLOOR_DISPLAY", "PDQ_DISPLAY", "RISER_DISPLAY", "PEGBOARD_DISPLAY", "ENDCAP_MODULE"} or rec.get("planogram"):
         rt = retail_fixture_risk(rec)
         checks.append(rt)
-        veto = veto or bool(rt.get("veto"))
     if rec.get("sheet") and rec.get("cutBend"):
         ac = acrylic_risk(rec)
         checks.append(ac)
-        veto = veto or bool(ac.get("veto"))
+    for check in checks:
+        veto = veto or bool(check.get("veto"))
     boundary = compliance_boundary(checks)
     return {"checks": checks, "veto": veto, "boundary": boundary, "notCertified": True}
