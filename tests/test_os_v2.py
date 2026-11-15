@@ -243,7 +243,8 @@ def test_publication_and_catalog(platform, tmp_path):
     cat = CatalogRelease()
     sku = cat.add_sku(rec, family="KD_FURNITURE")
     rel = cat.release(name="r1", sku_ids=[sku["skuId"]])
-    cat.supersede(rel["releaseId"], successor="r2")
+    successor = cat.release(name="r2", sku_ids=[sku["skuId"]])
+    cat.supersede(rel["releaseId"], successor=successor["releaseId"])
     assert cat.releases[rel["releaseId"]]["stale"] is True
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
@@ -23,10 +24,18 @@ class CatalogRelease:
             "status": "active",
             "immutable": True,
         }
+        existing = self.skus.get(str(sku["skuId"]))
+        if existing is not None:
+            if existing["engineeringHash"] != sku["engineeringHash"]:
+                raise ValueError(f"SKU {sku['skuId']} already exists with a different engineering hash")
+            return existing
         self.skus[str(sku["skuId"])] = sku
         return sku
 
     def release(self, *, name: str, sku_ids: list[str]) -> dict[str, Any]:
+        for sku_id in sku_ids:
+            if sku_id not in self.skus:
+                raise KeyError(sku_id)
         rec = {
             "releaseId": new_id(),
             "name": name,
@@ -41,6 +50,10 @@ class CatalogRelease:
 
     def supersede(self, release_id: str, *, successor: str) -> dict[str, Any]:
         rec = self.releases[release_id]
+        if rec["status"] == "superseded":
+            raise ValueError(f"Release {release_id} is already superseded")
+        if successor not in self.releases:
+            raise KeyError(successor)
         rec["status"] = "superseded"
         rec["supersededBy"] = successor
         rec["stale"] = True
@@ -51,6 +64,8 @@ def glb_publication(twin: dict[str, Any], path: Path) -> dict[str, Any]:
     if not path.exists():
         return {"ok": False, "label": "BLOCKED", "error": "missing_glb"}
     data = path.read_bytes()
+    if len(data) < 12 or not data.startswith(b"glTF"):
+        return {"ok": False, "label": "BLOCKED", "error": "invalid_glb"}
     dims = twin.get("dimensions") or {}
     return {
         "ok": True,
@@ -58,7 +73,13 @@ def glb_publication(twin: dict[str, Any], path: Path) -> dict[str, Any]:
         "hash": sha256_bytes(data),
         "size": len(data),
         "dimensions": dims,
-        "dimsValid": all(float(dims.get(k) or 0) >= 0 for k in ("width", "height", "depth") if k in dims or True),
+        "dimsValid": all(
+            isinstance(dims.get(k), (int, float))
+            and not isinstance(dims[k], bool)
+            and (isinstance(dims[k], int) or math.isfinite(dims[k]))
+            and dims[k] > 0
+            for k in ("width", "height", "depth")
+        ),
         "label": "REAL",
         "store": "DAM",
     }
