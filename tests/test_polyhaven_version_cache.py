@@ -273,6 +273,7 @@ def test_reader_survives_publish_after_in_process_pin_release(tmp_path: Path):
         assert reader_ready.wait(timeout=3.0)
         time.sleep(0.05)
         _seed_version_bundle(asset_root, aid, v2, tex_marker=b"TEX_V2")
+        assert (polyhaven_cache.version_directory(asset_root, v1) / "textures/albedo.png").read_bytes() == b"TEX_V1"
         time.sleep(0.05)
         _seed_version_bundle(asset_root, aid, v3, tex_marker=b"TEX_V3")
         publish_done.set()
@@ -286,8 +287,7 @@ def test_reader_survives_publish_after_in_process_pin_release(tmp_path: Path):
     reader_thread.join(timeout=5.0)
     publish_thread.join(timeout=5.0)
     v1_bundle = polyhaven_cache.version_directory(asset_root, v1)
-    assert v1_bundle.is_dir()
-    assert (v1_bundle / "textures/albedo.png").read_bytes() == b"TEX_V1"
+    assert not v1_bundle.exists()
 
 
 def test_cross_process_reader_survives_double_switch_before_retain(tmp_path: Path):
@@ -699,3 +699,51 @@ def test_worker_legacy_pin_blocks_flat_migration_cleanup(tmp_path: Path):
         assert (asset_root / "textures/albedo.png").read_bytes() == b"KEEP_UNTIL_READ"
     finally:
         release_polyhaven_reader_pin(pin_file)
+
+
+def test_publish_reclaims_released_versions_and_preserves_active_reader(tmp_path: Path):
+    aid = "publish_reclaim_541"
+    root = tmp_path / "polyhaven"
+    asset_root = root / aid
+    versions = [str(i) * 64 for i in range(1, 7)]
+    _seed_version_bundle(asset_root, aid, versions[0], tex_marker=b"first")
+    reader = polyhaven_cache.PolyhavenReadSession(root)
+    assert reader.pin_asset(aid) == versions[0]
+    for version in versions[1:4]:
+        _seed_version_bundle(asset_root, aid, version, tex_marker=version.encode())
+        with polyhaven_cache.PolyhavenReadSession(root) as short_reader:
+            assert short_reader.pin_asset(aid) == version
+        assert (polyhaven_cache.version_directory(asset_root, versions[0]) / "textures/albedo.png").read_bytes() == b"first"
+    _seed_version_bundle(asset_root, aid, versions[4], tex_marker=b"fifth")
+    assert not polyhaven_cache.version_directory(asset_root, versions[1]).exists()
+    assert polyhaven_cache.version_directory(asset_root, versions[0]).exists()
+    reader.release()
+    _seed_version_bundle(asset_root, aid, versions[5], tex_marker=b"sixth")
+    assert polyhaven_cache.version_directory(asset_root, versions[0]).exists()
+    _seed_version_bundle(asset_root, aid, "7" * 64, tex_marker=b"seventh")
+    assert not polyhaven_cache.version_directory(asset_root, versions[0]).exists()
+
+
+def test_release_during_publish_reclaim_is_protected_on_next_pass(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    aid = "release_during_gc_541"
+    root = tmp_path / "polyhaven"
+    asset_root = root / aid
+    versions = [str(i) * 64 for i in range(1, 5)]
+    _seed_version_bundle(asset_root, aid, versions[0], tex_marker=b"old")
+    reader = polyhaven_cache.PolyhavenReadSession(root)
+    assert reader.pin_asset(aid) == versions[0]
+    _seed_version_bundle(asset_root, aid, versions[1], tex_marker=b"new")
+    original = polyhaven_cache.polyhaven_versions_protected_from_reclaim
+
+    def release_during_gc(*args, **kwargs):
+        reader.release()
+        return original(*args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(polyhaven_cache, "polyhaven_versions_protected_from_reclaim", release_during_gc)
+        _seed_version_bundle(asset_root, aid, versions[2], tex_marker=b"third")
+    assert polyhaven_cache.version_directory(asset_root, versions[0]).exists()
+    _seed_version_bundle(asset_root, aid, versions[3], tex_marker=b"fourth")
+    assert polyhaven_cache.version_directory(asset_root, versions[0]).exists()
+    _seed_version_bundle(asset_root, aid, "5" * 64, tex_marker=b"fifth")
+    assert not polyhaven_cache.version_directory(asset_root, versions[0]).exists()

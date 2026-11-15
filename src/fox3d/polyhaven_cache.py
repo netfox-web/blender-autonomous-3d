@@ -424,7 +424,8 @@ def polyhaven_versions_protected_from_reclaim(
     asset_id = asset_root.name
     keep: set[str] = set(extra_keep or ())
     if during_publish:
-        keep.update(_recently_unpinned_versions.get(asset_id, ()))
+        with _retained_lock:
+            keep.update(_recently_unpinned_versions.get(asset_id, ()))
     catalog = read_polyhaven_catalog(asset_root)
     if catalog and isinstance(catalog.get("versionId"), str):
         keep.add(catalog["versionId"])
@@ -460,9 +461,13 @@ def reclaim_polyhaven_version_directories_unlocked(
 ) -> None:
     """Delete unreferenced version dirs (caller must hold catalog coordination lock)."""
     asset_id = asset_root.name
+    # Protect releases observed before this publish once; releases during GC
+    # go into a fresh set and remain protected by the next publish.
+    with _retained_lock:
+        protected_this_pass = _recently_unpinned_versions.pop(asset_id, set()) if during_publish else set()
     keep = polyhaven_versions_protected_from_reclaim(
         asset_root,
-        extra_keep=extra_keep,
+        extra_keep=set(extra_keep or ()) | protected_this_pass,
         during_publish=during_publish,
     )
     versions_root = asset_root / _VERSIONS_DIRNAME
@@ -477,8 +482,6 @@ def reclaim_polyhaven_version_directories_unlocked(
         if _version_dir_has_retain_pins(child):
             continue
         shutil.rmtree(child, ignore_errors=True)
-        if not child.exists():
-            _recently_unpinned_versions[asset_id].discard(child.name)
 
 
 def _maybe_gc_asset_versions_unlocked(asset_root: Path, *, during_publish: bool = False) -> None:
