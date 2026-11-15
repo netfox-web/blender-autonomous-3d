@@ -9,9 +9,11 @@ import pytest
 from fox3d.safety import (
     SafetyRuleRegistry,
     acrylic_risk,
+    assembly_safety,
     compliance_boundary,
     evaluate_product,
     furniture_stability,
+    pinch_zones,
     retail_fixture_risk,
     shelf_load_warning,
     wall_anchor_warning,
@@ -149,6 +151,56 @@ def test_evaluate_product_nan_spec_veto():
     ev = evaluate_product("KD", rec)
     assert ev["veto"] is True
     assert any(c.get("error") == "invalid_dimension" for c in ev["checks"])
+
+
+def test_evaluate_product_kd_empty_spec_veto():
+    ev = evaluate_product("KD", {"spec": {}})
+    assert ev["veto"] is True
+    assert len(ev["checks"]) == 4
+    assert all(c.get("error") == "invalid_dimension" for c in ev["checks"][:3])
+    assert ev["checks"][3]["ruleId"] == "FURN_PINCH_V1"
+
+
+def test_evaluate_product_acrylic_empty_cut_bend_veto():
+    ev = evaluate_product(
+        "ACRYLIC",
+        {"dimensions": {"width": 0, "height": 100}, "sheet": {"thickness": 5}, "cutBend": {}},
+    )
+    assert ev["veto"] is True
+    assert any(c.get("ruleId") == "ACR_SPAN_V1" and c.get("error") == "invalid_dimension" for c in ev["checks"])
+
+
+def test_evaluate_product_invalid_width_with_door_veto():
+    ev = evaluate_product("KD", {"spec": {"width": "x", "depth": 180, "height": 900, "doorCount": 1}})
+    assert ev["veto"] is True
+    pinch = next(c for c in ev["checks"] if c.get("ruleId") == "FURN_PINCH_V1")
+    assert pinch.get("label") == "BLOCKED"
+
+
+def test_evaluate_product_missing_width_with_door_veto():
+    ev = evaluate_product("KD", {"spec": {"depth": 180, "height": 900, "doorCount": 1}})
+    assert ev["veto"] is True
+    pinch = next(c for c in ev["checks"] if c.get("ruleId") == "FURN_PINCH_V1")
+    _assert_blocked(pinch, "FURN_PINCH_V1")
+
+
+def test_pinch_zones_drawer_invalid_depth_blocked():
+    _assert_blocked(pinch_zones({"drawerCount": 1, "width": 400, "depth": 0}), "FURN_PINCH_V1")
+
+
+def test_assembly_safety_depth_zero_blocked_manifest():
+    man = assembly_safety({"spec": {"depth": 0, "height": 900}, "instructionsV2": {"steps": [{"id": "s1"}]}})
+    assert man["blocked"] is True
+    assert man["steps"][0]["wallAnchor"] is False
+    assert any(b.get("ruleId") == "FURN_WALL_ANCHOR_V1" for b in man["safetyBlocks"])
+
+
+def test_shelf_load_huge_thickness_veto():
+    _assert_blocked(shelf_load_warning({"width": 800, "boardThickness": 1e308}), "FURN_SHELF_LOAD_V1")
+
+
+def test_shelf_load_huge_integer_thickness_veto():
+    _assert_blocked(shelf_load_warning({"width": 800, "boardThickness": 10**400}), "FURN_SHELF_LOAD_V1")
 
 
 def test_evaluate_product_retail_invalid_veto():

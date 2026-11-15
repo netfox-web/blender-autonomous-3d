@@ -7,6 +7,15 @@ from typing import Any
 
 from fox3d.ids import stable_hash
 
+# Reject absurd magnitudes before span/load math can overflow.
+MAX_REASONABLE_DIMENSION_MM = 1_000_000.0
+
+KD_PRODUCT_KINDS = frozenset({"KD_FURNITURE", "KD"})
+ACRYLIC_PRODUCT_KINDS = frozenset({"ACRYLIC", "ACRYLIC_SHEET"})
+RETAIL_FAMILIES = frozenset(
+    {"COUNTER_DISPLAY", "FLOOR_DISPLAY", "PDQ_DISPLAY", "RISER_DISPLAY", "PEGBOARD_DISPLAY", "ENDCAP_MODULE"}
+)
+
 SAFETY_RULES: dict[str, dict[str, Any]] = {
     "FURN_STABILITY_V1": {"scope": ["KD_FURNITURE"], "severity": "warning", "version": 1, "assumption": "uniform density, geometric COM"},
     "FURN_WALL_ANCHOR_V1": {"scope": ["KD_FURNITURE"], "severity": "warning", "version": 1, "assumption": "height/depth ratio policy"},
@@ -31,9 +40,9 @@ def _positive_finite_dimension(value: Any) -> float | None:
         return None
     try:
         number = float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
-    if not math.isfinite(number) or number <= 0:
+    if not math.isfinite(number) or number <= 0 or number > MAX_REASONABLE_DIMENSION_MM:
         return None
     return number
 
@@ -98,12 +107,25 @@ def wall_anchor_warning(spec: dict[str, Any], *, max_ratio: float = 3.5, tall_mm
 
 
 def pinch_zones(spec: dict[str, Any]) -> dict[str, Any]:
+    door_count = int(spec.get("doorCount") or 0)
+    drawer_count = int(spec.get("drawerCount") or 0)
+    if door_count or drawer_count:
+        w = _positive_finite_dimension(spec.get("width")) if door_count else None
+        d = _positive_finite_dimension(spec.get("depth")) if drawer_count else None
+        if door_count and w is None:
+            return _invalid_dimension("FURN_PINCH_V1")
+        if drawer_count and d is None:
+            return _invalid_dimension("FURN_PINCH_V1")
+    else:
+        w = d = None
     zones = []
-    if int(spec.get("doorCount") or 0):
-        zones.append({"kind": "door_sweep", "radiusMm": float(spec["width"]) * 0.5, "pinch": True})
+    if door_count:
+        assert w is not None
+        zones.append({"kind": "door_sweep", "radiusMm": w * 0.5, "pinch": True})
         zones.append({"kind": "door_edge", "sharp": True})
-    if int(spec.get("drawerCount") or 0):
-        zones.append({"kind": "drawer_extension", "lengthMm": float(spec["depth"]) * 0.8, "pinch": True})
+    if drawer_count:
+        assert d is not None
+        zones.append({"kind": "drawer_extension", "lengthMm": d * 0.8, "pinch": True})
     return {"zones": zones, "ruleId": "FURN_PINCH_V1", "label": "ENGINEERING_ESTIMATE"}
 
 
@@ -118,11 +140,17 @@ def shelf_load_warning(spec: dict[str, Any]) -> dict[str, Any]:
     else:
         t = 18.0
     span = w - 2 * t
-    # conservative kg for PB: 12kg per 400mm span at 18mm, scale t^2 / span
-    cap = 12.0 * (t / 18.0) ** 2 * (400.0 / max(span, 1))
+    try:
+        # conservative kg for PB: 12kg per 400mm span at 18mm, scale t^2 / span
+        cap = 12.0 * (t / 18.0) ** 2 * (400.0 / max(span, 1))
+        cap_rounded = round(cap, 2)
+    except OverflowError:
+        return _invalid_dimension("FURN_SHELF_LOAD_V1")
+    if not math.isfinite(cap_rounded):
+        return _invalid_dimension("FURN_SHELF_LOAD_V1")
     return {
         "spanMm": span,
-        "conservativeKg": round(cap, 2),
+        "conservativeKg": cap_rounded,
         "label": "PARTIAL",
         "source": "ENGINEERING_ESTIMATE",
         "structuralAnalysis": False,
@@ -196,22 +224,29 @@ def acrylic_risk(rec: dict[str, Any]) -> dict[str, Any]:
 
 def assembly_safety(rec: dict[str, Any]) -> dict[str, Any]:
     spec = rec["spec"] if isinstance(rec.get("spec"), dict) else rec.get("spec") or rec
+    spec_dict = spec if isinstance(spec, dict) else {}
     tools = rec.get("tools") or {}
-    pinch = pinch_zones(spec if isinstance(spec, dict) else {})
-    wall = wall_anchor_warning(spec if isinstance(spec, dict) else rec.get("spec") or {})
+    pinch = pinch_zones(spec_dict)
+    wall = wall_anchor_warning(spec_dict)
+    safety_blocks = [r for r in (pinch, wall) if r.get("label") == "BLOCKED"]
     two = bool((rec.get("assemblyGraph") or {}).get("twoPerson"))
+    wall_anchor = wall.get("required", False) if wall.get("label") != "BLOCKED" else False
+    pinch_active = bool(pinch.get("zones")) if pinch.get("label") != "BLOCKED" else False
     steps = []
     for st in (rec.get("instructionsV2") or {}).get("steps") or []:
         steps.append(
             {
                 **st,
-                "pinch": bool(pinch["zones"]),
+                "pinch": pinch_active,
                 "twoPersonLift": two,
-                "wallAnchor": wall["required"],
+                "wallAnchor": wall_anchor,
                 "tools": st.get("tools") or tools.get("tools"),
             }
         )
-    man = {"steps": steps, "source": "assembly_v2+safety", "traceable": True}
+    man: dict[str, Any] = {"steps": steps, "source": "assembly_v2+safety", "traceable": True}
+    if safety_blocks:
+        man["blocked"] = True
+        man["safetyBlocks"] = safety_blocks
     man["manifestHash"] = stable_hash(man)
     return man
 
@@ -231,17 +266,18 @@ def compliance_boundary(checked: list[dict[str, Any]]) -> dict[str, Any]:
 def evaluate_product(kind: str, rec: dict[str, Any]) -> dict[str, Any]:
     checks = []
     veto = False
-    if kind in {"KD_FURNITURE", "KD"} or rec.get("spec"):
-        spec = rec["spec"] if isinstance(rec.get("spec"), dict) else rec.get("spec") or {}
-        if spec:
-            st = furniture_stability(spec)
-            wa = wall_anchor_warning(spec)
-            sh = shelf_load_warning(spec)
-            checks.extend([st, wa, sh, pinch_zones(spec)])
-    if rec.get("family") in {"COUNTER_DISPLAY", "FLOOR_DISPLAY", "PDQ_DISPLAY", "RISER_DISPLAY", "PEGBOARD_DISPLAY", "ENDCAP_MODULE"} or rec.get("planogram"):
+    spec = rec.get("spec") if isinstance(rec.get("spec"), dict) else {}
+    run_kd = kind in KD_PRODUCT_KINDS or bool(spec)
+    if run_kd:
+        st = furniture_stability(spec)
+        wa = wall_anchor_warning(spec)
+        sh = shelf_load_warning(spec)
+        pz = pinch_zones(spec)
+        checks.extend([st, wa, sh, pz])
+    if rec.get("family") in RETAIL_FAMILIES or rec.get("planogram"):
         rt = retail_fixture_risk(rec)
         checks.append(rt)
-    if rec.get("sheet") and rec.get("cutBend"):
+    if kind in ACRYLIC_PRODUCT_KINDS or "sheet" in rec:
         ac = acrylic_risk(rec)
         checks.append(ac)
     for check in checks:
