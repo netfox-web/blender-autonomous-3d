@@ -297,6 +297,12 @@ class DamObject:
     version: int = 1
 
 
+# Reserved namespace for base64url-encoded path components. Safe names that
+# already use this prefix are escaped so they cannot share a filename with
+# an encoded value (``../x`` encodes as ``enc~Li4veA``).
+_PATH_ENCODING_PREFIX = "enc~"
+
+
 def _validate_path_component(value: str) -> None:
     if not value or value in {".", ".."} or any(
         c in "/\\" or unicodedata.category(c) == "Cc" for c in value
@@ -304,23 +310,56 @@ def _validate_path_component(value: str) -> None:
         raise ValueError("invalid path component")
 
 
+def _reject_windows_path_component(value: str) -> None:
+    """Raise when ``value`` is unsafe as a Windows filename, even with an extension.
+
+    Colons are drive or alternate-data-stream syntax, and reserved device names
+    stay reserved after a suffix such as ``.glb`` or ``.txt`` is appended.
+    """
+    device = value.split(".", 1)[0].rstrip(" .").upper()
+    reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
+    reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT")
+                    for number in "123456789¹²³")
+    if (any(c in '<>:"|?*' for c in value)
+            or value.endswith((" ", ".")) or device in reserved):
+        raise ValueError("invalid Windows path component")
+
+
+def _escape_encoding_prefix(value: str) -> str | None:
+    """Escape a literal ``enc~`` prefix, in any case, by doubling the tilde.
+
+    ``enc~Li4veA`` becomes ``enc~~Li4veA`` and ``ENC~Li4veA`` becomes
+    ``ENC~~Li4veA``. Encoded names stay ``enc~`` plus base64url, whose alphabet
+    has no ``~``, so the escaped form cannot match an encoded name even on a
+    case-insensitive volume. Names outside the namespace are left unchanged.
+    """
+    prefix = _PATH_ENCODING_PREFIX
+    if value[:len(prefix)].lower() != prefix:
+        return None
+    escaped = f"{value[:len(prefix)]}~{value[len(prefix):]}"
+    _validate_path_component(escaped)
+    _reject_windows_path_component(escaped)
+    return escaped
+
+
 def safe_path_component(value: str) -> str:
-    """Encode arbitrary user text as one filesystem path component."""
+    """Encode arbitrary user text as one filesystem path component.
+
+    Names that are already one safe component are preserved, so existing
+    export filenames stay valid. Unsafe text is base64url-encoded under the
+    ``enc~`` prefix. A safe name that already begins with that prefix is
+    escaped instead of passed through, which keeps the mapping one-to-one.
+    """
     try:
         _validate_path_component(value)
-        # Windows treats colons as drive/stream syntax and reserves device names
-        # even when a filename extension is appended.
-        device = value.split(".", 1)[0].rstrip(" .").upper()
-        reserved = {"CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"}
-        reserved.update(f"{prefix}{number}" for prefix in ("COM", "LPT")
-                        for number in "123456789¹²³")
-        if (any(c in '<>:"|?*' for c in value)
-                or value.endswith((" ", ".")) or device in reserved):
-            raise ValueError("invalid Windows path component")
+        _reject_windows_path_component(value)
+        escaped = _escape_encoding_prefix(value)
+        if escaped is not None:
+            return escaped
         return value
     except ValueError:
         encoded = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii").rstrip("=")
-        stem = f"enc~{encoded}"
+        stem = f"{_PATH_ENCODING_PREFIX}{encoded}"
         _validate_path_component(stem)
         return stem
 

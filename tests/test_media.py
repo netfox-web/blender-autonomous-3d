@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path, PureWindowsPath
 
@@ -46,7 +47,8 @@ def test_render_mock_writes_frames(tmp_path, frames, expected):
 
 @pytest.mark.parametrize("sku", ["../x", "a/b", "normal-sku", "..", "a\\b",
                                  "D:escape", "C:escape", "CON", "NUL.txt",
-                                 "name:stream", "name?", "trailing.", "trailing "])
+                                 "name:stream", "name?", "trailing.", "trailing ",
+                                 "enc~Li4veA", "ENC~Li4veA"])
 def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
     dest = tmp_path / "destination"
     dest.mkdir()
@@ -62,14 +64,74 @@ def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
 
 
 @pytest.mark.parametrize("sku", ["D:escape", "C:escape", "D:/escape", r"\\server\share",
-                                 r"\\?\C:\escape", "name:stream", "CON", "LPT¹.txt"])
-def test_sku_filename_is_relative_under_windows_semantics(sku):
-    dest = PureWindowsPath("C:/exports")
+                                 r"\\?\C:\escape", "name:stream", "CON", "LPT¹.txt",
+                                 "../x", "enc~Li4veA", "ENC~Li4veA"])
+@pytest.mark.parametrize("dest", [PureWindowsPath("C:/exports"), PureWindowsPath("D:/other")])
+def test_sku_filename_is_relative_under_windows_semantics(sku, dest):
     filename = f"{safe_path_component(sku)}.glb"
     path = dest / filename
     assert path.parent == dest
+    assert path.drive == dest.drive
+    assert ".." not in path.parts
     assert not PureWindowsPath(filename).drive
     assert not PureWindowsPath(filename).root
+
+
+@pytest.mark.parametrize("sku,expected", [
+    ("normal-sku", "normal-sku"),
+    ("product", "product"),
+    ("../x", "enc~Li4veA"),
+    ("..", "enc~Li4"),
+    ("a/b", "enc~YS9i"),
+    ("D:escape", "enc~RDplc2NhcGU"),
+    ("CON", "enc~Q09O"),
+    ("NUL.txt", "enc~TlVMLnR4dA"),
+    ("name:stream", "enc~bmFtZTpzdHJlYW0"),
+    ("trailing.", "enc~dHJhaWxpbmcu"),
+    ("trailing ", "enc~dHJhaWxpbmcg"),
+    ("enc~Li4veA", "enc~~Li4veA"),
+    ("ENC~Li4veA", "ENC~~Li4veA"),
+    ("Enc~Li4veA", "Enc~~Li4veA"),
+    ("enc~", "enc~~"),
+])
+def test_safe_path_component_preserves_existing_filenames(sku, expected):
+    assert safe_path_component(sku) == expected
+
+
+def test_literal_encoding_prefix_does_not_match_encoded_name():
+    encoded = safe_path_component("../x")
+    assert encoded == "enc~Li4veA"
+    for literal in ("enc~Li4veA", "ENC~Li4veA", "Enc~li4vea", "enc~", "ENC~"):
+        assert safe_path_component(literal).casefold() != encoded.casefold()
+
+
+def _sku_glb_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("skus", [
+    ("../x", "enc~Li4veA"),
+    ("enc~Li4veA", "../x"),
+    ("../x", "enc~Li4veA", "normal-sku", "a/b"),
+])
+def test_distinct_skus_keep_their_own_glb_in_one_directory(tmp_path, skus):
+    dest = tmp_path / "destination"
+    dest.mkdir()
+    exported = []
+    for sku in skus:
+        result = ARExporter().export({"sku": sku}, dest)
+        glb = Path(result["glb"])
+        assert glb == dest / f"{safe_path_component(sku)}.glb"
+        assert glb.resolve().parent == dest.resolve()
+        assert sku.encode("utf-8") in glb.read_bytes()
+        exported.append((sku, glb, _sku_glb_sha256(glb)))
+
+    paths = [glb for _, glb, _ in exported]
+    assert len(set(paths)) == len(skus)
+    for sku, glb, digest in exported:
+        assert glb.is_file()
+        assert _sku_glb_sha256(glb) == digest
+        assert sku.encode("utf-8") in glb.read_bytes()
 
 
 def test_ar_export_defaults_missing_sku(tmp_path):
