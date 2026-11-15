@@ -524,6 +524,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().factory.revise_cabinet_changes(product_id, tid, {k: v for k, v in payload.items() if k != "tenantId"})
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
         except (KeyError, PermissionError) as exc:
             # unknown product or another tenant's product: same 404, no cross-tenant probing
             raise HTTPException(404, product_id) from exc

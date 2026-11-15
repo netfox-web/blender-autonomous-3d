@@ -275,6 +275,8 @@ class FurnitureFactory:
         spec = CabinetSpec.model_validate(current["spec"])
         if spec.tenantId != tenant_id:
             raise PermissionError("tenant isolation: parametric leakage blocked")
+        if not changes:
+            raise ValueError("at least one revision change is required")
         nxt, report, lineage = customer_revision(self.platform.cabinets, spec, **changes)
         bom = BOMEngine().build(nxt)
         pack = build_manufacturing_pack(nxt, bom)
