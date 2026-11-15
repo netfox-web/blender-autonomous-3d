@@ -8,7 +8,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from fox3d.infra import safe_path_component
+from fox3d.infra import _MAX_ENCODED_COMPONENT_BYTES, safe_path_component
 from fox3d.media import (
     ARExporter,
     AssemblyAnimator,
@@ -52,7 +52,8 @@ def test_render_mock_writes_frames(tmp_path, frames, expected):
 @pytest.mark.parametrize("sku", ["../x", "a/b", "normal-sku", "..", "a\\b",
                                  "D:escape", "C:escape", "CON", "NUL.txt",
                                  "name:stream", "name?", "trailing.", "trailing ",
-                                 "enc~Li4veA", "ENC~Li4veA"])
+                                 "enc~Li4veA", "ENC~Li4veA",
+                                 pytest.param("a" * 119 + "/", id="long-slash-sku")])
 def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
     dest = tmp_path / "destination"
     dest.mkdir()
@@ -70,7 +71,8 @@ def test_ar_export_keeps_sku_filename_inside_destination(tmp_path, sku):
 @pytest.mark.parametrize("sku", ["D:escape", "C:escape", "D:/escape", r"\\server\share",
                                  r"\\?\C:\escape", "name:stream", "CON", "LPT¹.txt",
                                  "../x", "a/a", "a/G", "a/B", "a/\\",
-                                 "enc~Li4veA", "ENC~Li4veA", "enc~+612f61"])
+                                 "enc~Li4veA", "ENC~Li4veA", "enc~+612f61",
+                                 pytest.param("a" * 119 + "/", id="long-slash-sku")])
 @pytest.mark.parametrize("dest", [PureWindowsPath("C:/exports"), PureWindowsPath("D:/other")])
 def test_sku_filename_is_relative_under_windows_semantics(sku, dest):
     filename = f"{safe_path_component(sku)}.glb"
@@ -126,6 +128,8 @@ def _sku_glb_sha256(path: Path) -> str:
     ("a/a", "a/G"),
     ("a/B", "a/\\"),
     ("a/a", "a/G", "enc~YS9h", "enc~+612f61"),
+    pytest.param(("a" * 119 + "/", "A" * 119 + "/"), id="long-review-case-pair"),
+    pytest.param(("a/a" + "bcd" * 39, "a/G" + "bcd" * 39), id="long-base64-casefold-pair"),
 ])
 def test_distinct_skus_keep_their_own_glb_in_one_directory(tmp_path, skus):
     dest = tmp_path / "destination"
@@ -200,17 +204,91 @@ def test_case_confusable_skus_encode_outside_legacy_base64_names():
     assert len(set(folded)) == len(samples)
 
 
+def test_long_safe_sku_keeps_its_filename():
+    sku = "a" * 119
+    assert "/" not in sku
+    assert safe_path_component(sku) == sku
+
+
+def test_reversible_hex_stops_at_the_dam_filename_budget():
+    """Hex stays while ``{uuid}_{component}.glb`` still fits in 255 bytes."""
+    prefix_len = len("enc~+")
+    max_payload = (_MAX_ENCODED_COMPONENT_BYTES - prefix_len) // 2
+    fitting = "a" * (max_payload - 1) + "/"
+    assert len(fitting.encode("utf-8")) == max_payload
+    fitting_name = safe_path_component(fitting)
+    assert fitting_name == "enc~+" + fitting.encode("utf-8").hex()
+    assert len(fitting_name.encode("utf-8")) <= _MAX_ENCODED_COMPONENT_BYTES
+
+    overflowing = "a" * max_payload + "/"
+    overflowing_name = safe_path_component(overflowing)
+    assert overflowing_name == "enc~=" + hashlib.sha256(overflowing.encode("utf-8")).hexdigest()
+    assert len(overflowing_name.encode("utf-8")) <= _MAX_ENCODED_COMPONENT_BYTES
+    assert len("enc~=") + 64 <= _MAX_ENCODED_COMPONENT_BYTES
+
+    asset_id = "3" * 36
+    for component in (fitting_name, overflowing_name):
+        filename = f"{asset_id}_{component}.glb"
+        assert len(filename.encode("utf-8")) <= 255
+
+
+def test_review_long_sku_digest_fits_where_hex_does_not():
+    """119 ``a``s plus ``/`` used to encode to 201 bytes and now must stay ≤ 255."""
+    sku = "a" * 119 + "/"
+    asset_id = "0123456789abcdef" * 2
+    assert len(asset_id) == 32
+    encoded = safe_path_component(sku)
+    assert encoded == "enc~=" + hashlib.sha256(sku.encode("utf-8")).hexdigest()
+    assert encoded == encoded.casefold()
+    assert encoded.casefold() != _legacy_base64_component(sku).casefold()
+    filename = f"{asset_id}_{encoded}.glb"
+    legacy = f"{asset_id}_{_legacy_base64_component(sku)}.glb"
+    hex_name = f"{asset_id}_enc~+{sku.encode('utf-8').hex()}.glb"
+    assert len(legacy.encode("utf-8")) == 201
+    assert len(hex_name.encode("utf-8")) > 255
+    assert len(filename.encode("utf-8")) <= 255
+    uuid_name = f"{'3' * 36}_{encoded}.glb"
+    assert len(uuid_name.encode("utf-8")) <= 255
+    assert len(f"{'3' * 36}_enc~+{sku.encode('utf-8').hex()}.glb".encode("utf-8")) > 255
+    escaped = safe_path_component(encoded)
+    assert escaped == encoded[:len("enc~")] + "~" + encoded[len("enc~"):]
+    assert escaped.casefold() != encoded.casefold()
+    upper = "ENC~=" + encoded[len("enc~="):]
+    assert safe_path_component(upper) == "ENC~~=" + encoded[len("enc~="):]
+    assert safe_path_component(upper).casefold() != encoded.casefold()
+
+
+def test_long_base64_casefold_pair_stays_distinct():
+    suffix = "bcd" * 39
+    left, right = "a/a" + suffix, "a/G" + suffix
+    assert len(left.encode("utf-8")) == len(right.encode("utf-8")) == 120
+    assert _legacy_base64_component(left).casefold() == _legacy_base64_component(right).casefold()
+    assert safe_path_component(left).startswith("enc~=")
+    assert safe_path_component(right).startswith("enc~=")
+    assert safe_path_component(left).casefold() != safe_path_component(right).casefold()
+
+
+def test_long_utf8_sku_is_bounded_by_bytes_not_characters():
+    sku = "測" * 40 + "/"
+    assert len(sku) < _MAX_ENCODED_COMPONENT_BYTES
+    assert len(sku.encode("utf-8")) > (_MAX_ENCODED_COMPONENT_BYTES - len("enc~+")) // 2
+    encoded = safe_path_component(sku)
+    assert encoded == "enc~=" + hashlib.sha256(sku.encode("utf-8")).hexdigest()
+    assert len(f"{'3' * 36}_{encoded}.glb".encode("utf-8")) <= 255
+
+
 def test_export_write_stays_on_destination_volume(tmp_path):
     dest = tmp_path / "destination"
     dest.mkdir()
     skus = ["a/a", "a/G", "D:escape", "C:escape", "D:/escape", r"\\server\share",
-            r"\\?\C:\escape", "../x"]
+            r"\\?\C:\escape", "../x", "a" * 119 + "/"]
     for sku in skus:
         result = ARExporter().export({"sku": sku}, dest)
         glb = Path(result["glb"])
         resolved = glb.resolve()
         assert resolved.is_relative_to(dest.resolve())
         assert resolved.parent == dest.resolve()
+        assert len(glb.name.encode("utf-8")) <= 255
         assert sku.encode("utf-8") in glb.read_bytes()
         if os.name == "nt":
             assert resolved.drive == dest.resolve().drive
@@ -248,7 +326,9 @@ def test_export_on_subst_drive_does_not_cross_volumes(tmp_path):
         primary.mkdir()
         other = Path(f"{letter}:/") / "exports"
         other.mkdir()
-        skus = ("a/a", "a/G", "D:escape", "C:escape", r"\\server\share")
+        long_left = "a" * 119 + "/"
+        long_right = "A" * 119 + "/"
+        skus = ("a/a", "a/G", "D:escape", "C:escape", r"\\server\share", long_left, long_right)
         primary_bytes: dict[str, bytes] = {}
         for sku in skus:
             # Compare drives before resolve: resolve() expands a subst drive
@@ -258,6 +338,7 @@ def test_export_on_subst_drive_does_not_cross_volumes(tmp_path):
             assert raw.drive == primary.drive
             assert raw.drive != other.drive
             assert not PureWindowsPath(raw.name).drive
+            assert len(raw.name.encode("utf-8")) <= 255
             assert raw.resolve().is_relative_to(primary.resolve())
             primary_bytes[raw.name] = raw.read_bytes()
         assert not any(other.rglob("*.glb"))
@@ -268,10 +349,13 @@ def test_export_on_subst_drive_does_not_cross_volumes(tmp_path):
             assert raw.drive == other.drive
             assert raw.drive != primary.drive
             assert not PureWindowsPath(raw.name).drive
+            assert len(raw.name.encode("utf-8")) <= 255
             assert raw.resolve().is_relative_to(other.resolve())
             other_bytes[sku] = raw.read_bytes()
             assert sku.encode("utf-8") in other_bytes[sku]
         assert other_bytes["a/a"] != other_bytes["a/G"]
+        assert other_bytes[long_left] != other_bytes[long_right]
+        assert safe_path_component(long_left).casefold() != safe_path_component(long_right).casefold()
         for name, data in primary_bytes.items():
             assert (primary / name).read_bytes() == data
         left = Path(ARExporter().export({"sku": "a/a"}, other)["glb"])
