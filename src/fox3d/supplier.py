@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 from typing import Any
 
 from fox3d.commerce import ProviderRegistry
@@ -21,6 +22,59 @@ LIVE_FORBIDDEN_UNLESS_CONNECTED = "LIVE_PROVIDER"
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _float_value(value: Any, *, code: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(code) from exc
+    return number
+
+
+def _first_present(raw: dict[str, Any], keys: tuple[str, ...], default: Any = 0) -> Any:
+    # Historical `or` chain: 0 and "" fall through to the next alias.
+    for key in keys:
+        candidate = raw.get(key)
+        if candidate:
+            return candidate
+    return default
+
+
+def _cost_component(raw: dict[str, Any], keys: tuple[str, ...]) -> float:
+    number = _float_value(_first_present(raw, keys, 0), code="invalid_cost")
+    if number < 0 or not math.isfinite(number):
+        raise ValueError("invalid_cost")
+    return number
+
+
+def _moq_value(raw: dict[str, Any]) -> int:
+    candidate = raw.get("moq")
+    if candidate is None or candidate == "":
+        number = 1.0
+    else:
+        number = _float_value(candidate, code="invalid_moq")
+    if not math.isfinite(number) or number < 1:
+        raise ValueError("invalid_moq")
+    return int(number)
+
+
+def _lead_time_days(raw: dict[str, Any]) -> float:
+    candidate = raw.get("leadTimeDays")
+    if candidate is None or candidate == "":
+        candidate = raw.get("leadTime")
+    if candidate is None or candidate == "":
+        candidate = 0
+    number = _float_value(candidate, code="invalid_lead_time")
+    if number < 0 or not math.isfinite(number):
+        raise ValueError("invalid_lead_time")
+    return number
+
+
+def _currency_code(quote: dict[str, Any]) -> str:
+    normalized = quote.get("normalized") or {}
+    raw = str(normalized.get("currency") or quote.get("currency") or "TWD")
+    return raw.strip().upper() or "TWD"
 
 
 class SupplierCapabilityRegistry:
@@ -96,8 +150,11 @@ class SupplierQuoteService:
                 raise PermissionError("LIVE_PROVIDER quotes require a connected provider; none registered")
             raise ValueError(source)
         raw_text = raw if raw is not None else json.dumps(row, sort_keys=True, default=str)
+        quote_id = row.get("quoteId") or new_id()
+        if quote_id in self.quotes:
+            raise ValueError("duplicate_quote_id")
         rec: dict[str, Any] = {
-            "quoteId": row.get("quoteId") or new_id(),
+            "quoteId": quote_id,
             "supplierId": row.get("supplierId") or row.get("supplier") or "unknown",
             "source": source,
             "importedAt": _now(),
@@ -130,21 +187,25 @@ class SupplierQuoteService:
 
     def normalize(self, quote: dict[str, Any]) -> dict[str, Any]:
         raw = quote.get("raw") or quote
-        material = float(raw.get("material") or raw.get("materialCost") or 0)
-        processing = float(raw.get("processing") or raw.get("labor") or 0)
-        setup = float(raw.get("setup") or raw.get("setupCost") or raw.get("tooling") or raw.get("toolingCost") or 0)
-        packaging = float(raw.get("packaging") or raw.get("packagingCost") or 0)
-        freight = float(raw.get("freight") or raw.get("shipping") or 0)
-        qty = max(int(raw.get("quantity") or raw.get("moq") or 1), 1)
+        material = _cost_component(raw, ("material", "materialCost"))
+        processing = _cost_component(raw, ("processing", "labor"))
+        setup = _cost_component(raw, ("setup", "setupCost", "tooling", "toolingCost"))
+        packaging = _cost_component(raw, ("packaging", "packagingCost"))
+        freight = _cost_component(raw, ("freight", "shipping"))
+        moq = _moq_value(raw)
+        lead = _lead_time_days(raw)
+        qty = max(int(raw.get("quantity") or moq or 1), 1)
         unit = (material + processing + packaging) + (setup / qty) + freight
+        if unit < 0 or not math.isfinite(unit):
+            raise ValueError("invalid_cost")
         return {
             "material": round(material, 2),
             "processing": round(processing, 2),
             "setupTooling": round(setup, 2),
             "packaging": round(packaging, 2),
             "freight": round(freight, 2),
-            "moq": int(raw.get("moq") or 1),
-            "leadTimeDays": float(raw.get("leadTimeDays") or raw.get("leadTime") or 0),
+            "moq": moq,
+            "leadTimeDays": lead,
             "currency": quote.get("currency") or raw.get("currency") or "TWD",
             "landed": round(unit, 2),
             "source": quote.get("source") or "MANUAL",
@@ -162,10 +223,13 @@ class SupplierQuoteService:
         fx_snapshot_id: str | None = None,
         weights: dict[str, float] | None = None,
     ) -> dict[str, Any]:
+        selected = [(qid, self.quotes[qid]) for qid in quote_ids]
+        # Record fx_snapshot_id only. Do not convert; mixed currencies are refused.
+        if len({_currency_code(q) for _, q in selected}) > 1:
+            raise ValueError("currency_mismatch")
         w = {"landed": 0.5, "lead": 0.25, "moq": 0.15, "risk": 0.1, **(weights or {})}
         rows = []
-        for qid in quote_ids:
-            q = self.quotes[qid]
+        for qid, q in selected:
             n = q["normalized"]
             landed = float(n["landed"])
             lead = float(n["leadTimeDays"])
