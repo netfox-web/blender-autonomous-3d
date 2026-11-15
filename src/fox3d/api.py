@@ -592,19 +592,29 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         if str(payload.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
             raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
-        qty = _require_receipt_quantity(payload)
-        _require_manual_source(payload)
-        _validate_receipt_numbers(payload)
+        # This endpoint has always preferred sheetCount over quantity and costPerSheet over
+        # unitCost, the reverse of import_receipt. Swap the aliases so the shared validators
+        # and import_receipt see this endpoint's precedence.
+        row = {
+            **payload,
+            "quantity": payload.get("sheetCount"),
+            "sheetCount": payload.get("quantity"),
+            "unitCost": payload.get("costPerSheet"),
+            "costPerSheet": payload.get("unitCost"),
+        }
+        qty = _require_receipt_quantity(row)
+        _require_manual_source(row)
+        _validate_receipt_numbers(row)
         try:
             return get_platform().pilot.receiving.import_receipt(
                 {
-                    **payload,
-                    "material": str(payload.get("material") or "WOOD_WHITE"),
-                    "thickness": float(payload.get("thickness") or 18),
+                    **row,
+                    "material": str(row.get("material") or "WOOD_WHITE"),
+                    "thickness": float(row.get("thickness") or 18),
                     "quantity": qty,
-                    "supplierLot": payload.get("supplierLot"),
-                    "supplierId": payload.get("supplierId"),
-                    "unitCost": payload.get("unitCost") or payload.get("costPerSheet"),
+                    "supplierLot": row.get("supplierLot"),
+                    "supplierId": row.get("supplierId"),
+                    "unitCost": row.get("unitCost") or row.get("costPerSheet"),
                 },
                 tenant_id=tid,
                 actor=str(payload.get("actor") or "api"),
