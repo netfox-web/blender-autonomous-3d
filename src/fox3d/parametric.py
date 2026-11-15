@@ -41,6 +41,8 @@ CabinetKind = Literal[
 # 4x8 sheet in mm — Taiwan/CN furniture panel standard.
 MAX_PANEL_W = 2440
 MAX_PANEL_H = 1220
+MAX_DIMENSION_MM = 5000
+MAX_COMPONENT_COUNT = 100
 ALLOWED_THICKNESS = (15, 16, 18, 25, 30)
 
 TYPE_DEFAULTS: dict[str, dict[str, Any]] = {
@@ -96,13 +98,15 @@ PACKAGING_BASE = 80.0
 
 
 class ParametricProduct(BaseModel):
+    """Product dimensions are positive, finite, and at most 5000 mm."""
+
     productId: str = Field(default_factory=new_id)
     tenantId: str
     kind: str = "CABINET"
-    width: float
-    height: float
-    depth: float
-    thickness: float = 18
+    width: float = Field(gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
+    height: float = Field(gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
+    depth: float = Field(gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
+    thickness: float = Field(default=18, gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
     material: str = "particle_board"
     components: list[dict[str, Any]] = Field(default_factory=list)
     constraints: dict[str, Any] = Field(default_factory=dict)
@@ -116,12 +120,12 @@ class ParametricProduct(BaseModel):
 
 class CabinetSpec(ParametricProduct):
     kind: CabinetKind = "CABINET"
-    boardThickness: float = 18
-    doorCount: int = 2
-    shelfCount: int = 2
-    drawerCount: int = 0
+    boardThickness: float = Field(default=18, gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
+    doorCount: int = Field(default=2, ge=0, le=MAX_COMPONENT_COUNT)
+    shelfCount: int = Field(default=2, ge=0, le=MAX_COMPONENT_COUNT)
+    drawerCount: int = Field(default=0, ge=0, le=MAX_COMPONENT_COUNT)
     backPanel: bool = True
-    backThickness: float = 3
+    backThickness: float = Field(default=3, gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
     legs: bool = False
     plinthHeight: float = 0
     handles: bool = True
@@ -268,6 +272,8 @@ class CabinetEngine:
 
     def create(self, kind: str, *, tenant_id: str, **params: Any) -> tuple[CabinetSpec, EngineeringReport]:
         defaults = dict(TYPE_DEFAULTS.get(kind, TYPE_DEFAULTS["CABINET"]))
+        # Validate raw inputs before coercion, defaults, or geometry generation.
+        CabinetSpec.model_validate({**defaults, **{k: v for k, v in params.items() if v is not None}, "tenantId": tenant_id, "kind": kind})
         defaults.update({k: v for k, v in params.items() if v is not None})
         defaults.setdefault("boardThickness", defaults.get("thickness", 18))
         door_count = int(defaults.get("doorCount") or 0)
@@ -316,7 +322,7 @@ class CabinetEngine:
 
     def resize(self, spec: CabinetSpec, **dims: float) -> tuple[CabinetSpec, EngineeringReport]:
         data = spec.model_dump()
-        data.update({k: v for k, v in dims.items() if v is not None})
+        data.update(dims)
         data["productId"] = new_id()
         data["modules"] = []
         data["parentProductId"] = spec.productId

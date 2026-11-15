@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from fox3d.blender import detect_gpu, detect_node
 from fox3d.capabilities import BLENDER_PREVIEW, BLENDER_RENDER, BLENDER_TO_VIDEO, foxstudio_operations
@@ -245,10 +246,8 @@ def test_18_engineering_collision(platform):
     assert report.ok is False
     assert "DOOR_SWING" in codes or "DRAWER_SLIDE" in codes or "DRAWER_COLLISION" in codes or "DOOR_WIDTH_MIN" in codes
     # LLM-sized fantasy rejected
-    huge, huge_report = platform.cabinets.create("WARDROBE", tenant_id="t1", width=6000, height=4000, depth=800, doorCount=1, boardThickness=12)
-    huge_codes = {v.code for v in huge_report.violations}
-    assert huge_report.ok is False
-    assert "BOARD_THICKNESS" in huge_codes or "MAX_PANEL" in huge_codes or "DOOR_WIDTH" in huge_codes
+    with pytest.raises(ValidationError, match="width"):
+        platform.cabinets.create("WARDROBE", tenant_id="t1", width=6000, height=4000, depth=800, doorCount=1, boardThickness=12)
 
 
 def test_19_360_render(platform, tmp_path):
