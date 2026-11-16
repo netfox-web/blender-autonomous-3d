@@ -768,11 +768,13 @@
 
     return Promise.all([
       apiFetch('/api/factory/product-types'),
-      apiFetch('/api/pages/factory/state')
+      apiFetch('/api/pages/factory/state'),
+      apiFetch('/api/factory/quotes?limit=100')
     ])
       .then(function (results) {
         var typesRes = results[0];
         var stateRes = results[1];
+        var quotesRes = results[2];
 
         if (typesRes.ok && typesRes.data && Array.isArray(typesRes.data.items)) {
           state.productTypeCodes = typesRes.data.items;
@@ -783,9 +785,14 @@
           state.productTypes = d.productTypes || [];
           state.spaces = d.spaces || [];
           state.runs = d.runs || [];
-          state.quotes = d.quotes || [];
           state.products = d.products || [];
           state.revisions = d.revisions || [];
+
+          if (quotesRes.ok && quotesRes.data && Array.isArray(quotesRes.data.items)) {
+            state.quotes = quotesRes.data.items;
+          } else {
+            state.quotes = d.quotes || [];
+          }
 
           var modeBadge = $('fc-mode-badge');
           var blocked = d.probeBlocked || [];
