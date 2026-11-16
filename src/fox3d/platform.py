@@ -101,6 +101,7 @@ class Platform:
         self.spaces = SpacePipeline()
         self.judge = VisionJudge(GatewayVisionProvider(self.gateway))
         self.rd = ProductRDAgent(self.cabinets, self.cost, self.judge, self.studio)
+        self.parametrics: dict[str, dict[str, Any]] = {}
         self.factory = FurnitureFactory(self)
         self.lots = MaterialLotRegistry(self.root / "lots")
         self.remnants = RemnantInventory(DurableRemnantStore(self.root / "remnants"), default_tenant="default")
@@ -142,7 +143,6 @@ class Platform:
         self.runtime = BlenderRuntime(work_dir=self.root / "work", force_mock=mock_blender)
         self.mock_blender = mock_blender
         self.probe: HostProbe | None = None
-        self.parametrics: dict[str, dict[str, Any]] = {}
         seed_system_recipes(self.recipes)
         self._register_builtin_script()
         self.worker_id = "fox3d-worker-local"

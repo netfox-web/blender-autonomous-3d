@@ -65,6 +65,91 @@ class FurnitureFactory:
                 index[str(qid)] = str(run_id)
         self._quote_run_index = index
 
+    def _read_state_file(self, path: Path) -> dict[str, Any]:
+        try:
+            raw = path.read_text(encoding="utf-8")
+            payload = json.loads(raw)
+            if not isinstance(payload, dict):
+                raise ValueError("factory state root must be an object")
+            return payload
+        except (json.JSONDecodeError, ValueError, TypeError, OSError):
+            return {}
+
+    def _snapshot_payload(self) -> dict[str, Any]:
+        return {
+            "spaces": {sid: twin.model_dump(mode="json") for sid, twin in self.spaces.items()},
+            "assemblies": dict(self.assemblies),
+            "quotes": dict(self.quotes),
+            "runs": dict(self.runs),
+            "revisions": list(self.revisions),
+            "quoteRunIndex": dict(self._quote_run_index),
+            "parametrics": {
+                str(k): v for k, v in getattr(self.platform, "parametrics", {}).items() if isinstance(v, dict)
+            },
+        }
+
+    @staticmethod
+    def _merge_state_payload(disk: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        for key in ("assemblies", "quotes", "runs", "spaces", "quoteRunIndex", "parametrics"):
+            raw_d = disk.get(key)
+            raw_loc = local.get(key)
+            d: dict[str, Any] = raw_d if isinstance(raw_d, dict) else {}
+            loc: dict[str, Any] = raw_loc if isinstance(raw_loc, dict) else {}
+            merged[key] = {**d, **loc}
+        disk_rev = [r for r in (disk.get("revisions") or []) if isinstance(r, dict)]
+        loc_rev = [r for r in (local.get("revisions") or []) if isinstance(r, dict)]
+        seen: set[str] = set()
+        revisions: list[dict[str, Any]] = []
+        for rec in disk_rev + loc_rev:
+            token = stable_hash(rec)
+            if token in seen:
+                continue
+            seen.add(token)
+            revisions.append(rec)
+        merged["revisions"] = revisions
+        return merged
+
+    def _apply_payload(self, payload: dict[str, Any]) -> None:
+        self.assemblies = {str(k): v for k, v in (payload.get("assemblies") or {}).items() if isinstance(v, dict)}
+        self.quotes = {str(k): v for k, v in (payload.get("quotes") or {}).items() if isinstance(v, dict)}
+        self.runs = {str(k): v for k, v in (payload.get("runs") or {}).items() if isinstance(v, dict)}
+        self.revisions = [r for r in (payload.get("revisions") or []) if isinstance(r, dict)]
+        self.spaces = {}
+        for sid, item in (payload.get("spaces") or {}).items():
+            if not isinstance(item, dict):
+                continue
+            try:
+                self.spaces[str(sid)] = SpaceDigitalTwin.model_validate(item)
+            except Exception:
+                logger.warning("skipped invalid space record %s", sid)
+        index = payload.get("quoteRunIndex")
+        if isinstance(index, dict):
+            self._quote_run_index = {str(k): str(v) for k, v in index.items()}
+        else:
+            self._rebuild_quote_index()
+        parametrics = payload.get("parametrics") or {}
+        if isinstance(parametrics, dict):
+            target = getattr(self.platform, "parametrics", None)
+            if isinstance(target, dict):
+                for pid, rec in parametrics.items():
+                    if isinstance(rec, dict):
+                        target[str(pid)] = rec
+
+    def _sync_from_disk(self) -> None:
+        path = self._state_path()
+        if not path or not path.exists():
+            return
+        lock = path.parent / "state.lock"
+        with FileLock(lock):
+            disk = self._read_state_file(path)
+        if not disk:
+            return
+        with self._lock:
+            local = self._snapshot_payload()
+            merged = self._merge_state_payload(disk, local)
+            self._apply_payload(merged)
+
     def load(self) -> None:
         path = self._state_path()
         if not path:
@@ -89,43 +174,25 @@ class FurnitureFactory:
             return
 
         with self._lock:
-            self.assemblies = {str(k): v for k, v in (payload.get("assemblies") or {}).items() if isinstance(v, dict)}
-            self.quotes = {str(k): v for k, v in (payload.get("quotes") or {}).items() if isinstance(v, dict)}
-            self.runs = {str(k): v for k, v in (payload.get("runs") or {}).items() if isinstance(v, dict)}
-            self.revisions = [r for r in (payload.get("revisions") or []) if isinstance(r, dict)]
-            self.spaces = {}
-            for sid, item in (payload.get("spaces") or {}).items():
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    self.spaces[str(sid)] = SpaceDigitalTwin.model_validate(item)
-                except Exception:
-                    logger.warning("skipped invalid space record %s", sid)
-            index = payload.get("quoteRunIndex")
-            if isinstance(index, dict):
-                self._quote_run_index = {str(k): str(v) for k, v in index.items()}
-            else:
-                self._rebuild_quote_index()
+            self._apply_payload(payload)
 
     def persist(self) -> None:
         path = self._state_path()
         if not path:
             return
+        lock = path.parent / "state.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
         with self._lock:
-            payload = {
-                "spaces": {sid: twin.model_dump(mode="json") for sid, twin in self.spaces.items()},
-                "assemblies": self.assemblies,
-                "quotes": self.quotes,
-                "runs": self.runs,
-                "revisions": self.revisions,
-                "quoteRunIndex": self._quote_run_index,
-            }
-            lock = path.parent / "state.lock"
-            lock.parent.mkdir(parents=True, exist_ok=True)
-            with FileLock(lock):
-                atomic_write_json(path, payload)
+            local = self._snapshot_payload()
+        with FileLock(lock):
+            disk = self._read_state_file(path) if path.exists() else {}
+            merged = self._merge_state_payload(disk, local)
+            atomic_write_json(path, merged)
+        with self._lock:
+            self._apply_payload(merged)
 
     def run_id_for_quote(self, quote_id: str, tenant_id: str) -> str:
+        self._sync_from_disk()
         run_id = self._quote_run_index.get(quote_id)
         if not run_id:
             raise KeyError(quote_id)
@@ -135,6 +202,7 @@ class FurnitureFactory:
         return run_id
 
     def list_quote_summaries(self, tenant_id: str, *, limit: int = 100) -> list[dict[str, Any]]:
+        self._sync_from_disk()
         lim = max(1, min(int(limit), 100))
         rows: list[tuple[str, dict[str, Any]]] = []
         for run in self.runs.values():
@@ -169,7 +237,7 @@ class FurnitureFactory:
                     },
                 )
             )
-        rows.sort(key=lambda pair: (pair[0], str((pair[1].get("quoteId") or ""))))
+        rows.sort(key=lambda pair: (pair[0], str((pair[1].get("quoteId") or ""))), reverse=True)
         return [item for _, item in rows[:lim]]
 
     def create_space(self, payload: dict[str, Any]) -> SpaceDigitalTwin:
@@ -208,6 +276,7 @@ class FurnitureFactory:
     ) -> dict[str, Any]:
         from fox3d.parametric import parse_design_intent
 
+        self._sync_from_disk()
         intent = parse_design_intent(text, tenant_id=tenant_id) if text else None
         types = product_types or (
             [intent["kind"]] if intent and intent.get("kind") in self.types.list() else ["STORAGE_CABINET", "WARDROBE", "BOOKCASE"]
@@ -409,6 +478,7 @@ class FurnitureFactory:
         return self.revise_cabinet_changes(product_id, tenant_id, changes)
 
     def revise_cabinet_changes(self, product_id: str, tenant_id: str, changes: dict[str, Any]) -> dict[str, Any]:
+        self._sync_from_disk()
         current = self.platform.parametrics.get(product_id)
         if not current:
             raise KeyError(product_id)
@@ -435,6 +505,7 @@ class FurnitureFactory:
         return record
 
     def approve(self, run_id: str, *, actor: str) -> dict[str, Any]:
+        self._sync_from_disk()
         run = self.runs.get(run_id)
         if not run:
             raise KeyError(run_id)
