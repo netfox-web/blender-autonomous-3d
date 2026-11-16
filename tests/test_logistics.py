@@ -29,7 +29,7 @@ def _carton(log: LogisticsService, tenant: str, wo: str = "wo", qty: int = 1) ->
     )
 
 
-@pytest.mark.parametrize("quantity", [0, -1])
+@pytest.mark.parametrize("quantity", [0, -1, 1.9, True])
 def test_instantiate_cartons_rejects_non_positive_quantity(quantity):
     log = LogisticsService()
     with pytest.raises(ValueError, match="quantity"):
@@ -39,6 +39,38 @@ def test_instantiate_cartons_rejects_non_positive_quantity(quantity):
             batch_id="b",
             plan={"length": 400, "width": 300, "height": 200},
             quantity=quantity,
+        )
+
+
+def test_instantiate_cartons_validates_quantity_before_idempotency_retry(tmp_path):
+    log = _wired_logistics(tmp_path)
+    key = "idem-key-1"
+    first = log.instantiate_cartons(
+        tenant_id="t",
+        work_order_id="wo",
+        batch_id="b",
+        plan={"length": 400, "width": 300, "height": 200},
+        quantity=1,
+        idempotency_key=key,
+    )
+    assert len(first) == 1
+    with pytest.raises(ValueError, match="quantity"):
+        log.instantiate_cartons(
+            tenant_id="t",
+            work_order_id="wo",
+            batch_id="b",
+            plan={"length": 400, "width": 300, "height": 200},
+            quantity=0,
+            idempotency_key=key,
+        )
+    with pytest.raises(ValueError, match="quantity"):
+        log.instantiate_cartons(
+            tenant_id="t",
+            work_order_id="wo",
+            batch_id="b",
+            plan={"length": 400, "width": 300, "height": 200},
+            quantity=1.9,
+            idempotency_key=key,
         )
 
 
@@ -52,6 +84,34 @@ def test_instantiate_cartons_rejects_non_integer_quantity():
             plan={"length": 400, "width": 300, "height": 200},
             quantity="abc",  # type: ignore[arg-type]
         )
+
+
+def test_record_measured_aba_audit_trail(tmp_path):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "acme")
+    cid = cartons[0]["cartonId"]
+    dims_a = {"length": 400.0, "width": 300.0, "height": 200.0, "weight_kg": 10.0}
+    dims_b = {"length": 401.0, "width": 300.0, "height": 200.0, "weight_kg": 10.0}
+    log.record_measured(cid, tenant_id="acme", **dims_a)
+    log.record_measured(cid, tenant_id="acme", **dims_b)
+    log.record_measured(cid, tenant_id="acme", **dims_a)
+    events = [e for e in log.journal.list("acme") if e.get("eventType") == "carton.measured"]
+    assert len(events) == 3
+    weights = [e["payload"]["measured"]["length"] for e in events]
+    assert weights == [400.0, 401.0, 400.0]
+
+
+def test_record_measured_idempotent_retry_single_audit(tmp_path):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "acme")
+    cid = cartons[0]["cartonId"]
+    op_id = "measure-op-retry-1"
+    kwargs = dict(tenant_id="acme", length=400, width=300, height=200, weight_kg=10, measure_op_id=op_id)
+    log.record_measured(cid, **kwargs)
+    log.record_measured(cid, **kwargs)
+    events = [e for e in log.journal.list("acme") if e.get("eventType") == "carton.measured"]
+    assert len(events) == 1
+    assert events[0]["payload"]["measureOpId"] == op_id
 
 
 def test_record_measured_two_audits_and_tenant_guard(tmp_path):
@@ -143,10 +203,39 @@ def test_packing_list_tenant_isolated(tmp_path):
     other = log.packing_list(tenant_id="other", work_order_id="shared")
     assert acme["cartonCount"] == 1
     assert other["cartonCount"] == 1
-    assert acme["contentsConserved"] is True
+    acme_expected = log.packing_list(
+        tenant_id="acme", work_order_id="shared", expected_batch={"product": 1.0}
+    )
+    assert acme_expected["contentsConserved"] is True
+    assert acme["contentsConserved"] is None
     acme_ids = {c["cartonId"] for c in acme["cartons"]}
     other_ids = {c["cartonId"] for c in other["cartons"]}
     assert acme_ids.isdisjoint(other_ids)
+
+
+def test_packing_list_contents_conserved_unknown_when_empty(tmp_path):
+    log = _wired_logistics(tmp_path)
+    lst = log.packing_list(tenant_id="t", work_order_id="missing-wo")
+    assert lst["cartonCount"] == 0
+    assert lst["contentsConserved"] is None
+
+
+def test_packing_list_contents_conserved_shortage_and_overage(tmp_path):
+    log = _wired_logistics(tmp_path)
+    log.instantiate_cartons(
+        tenant_id="t",
+        work_order_id="wo",
+        batch_id="b",
+        plan={"length": 400, "width": 300, "height": 200},
+        quantity=2,
+        contents=[{"sku": "product", "qty": 1}],
+    )
+    ok = log.packing_list(tenant_id="t", work_order_id="wo", expected_batch={"product": 2.0})
+    assert ok["contentsConserved"] is True
+    short = log.packing_list(tenant_id="t", work_order_id="wo", expected_batch={"product": 3.0})
+    assert short["contentsConserved"] is False
+    over = log.packing_list(tenant_id="t", work_order_id="wo", expected_batch={"product": 1.0})
+    assert over["contentsConserved"] is False
 
 
 def test_packing_list_contents_conserved_detects_zero_qty(tmp_path):

@@ -23,11 +23,17 @@ def _now() -> str:
     return utcnow().isoformat()
 
 
-def _require_quantity(quantity: int) -> int:
-    try:
-        n = int(quantity)
-    except (TypeError, ValueError) as exc:
-        raise ValueError("quantity must be a positive integer") from exc
+def _require_quantity(quantity: object) -> int:
+    if isinstance(quantity, bool):
+        raise ValueError("quantity must be a positive integer")
+    if isinstance(quantity, int):
+        n = quantity
+    elif isinstance(quantity, float):
+        if not math.isfinite(quantity) or abs(quantity - round(quantity)) > 1e-9:
+            raise ValueError("quantity must be a positive integer")
+        n = int(round(quantity))
+    else:
+        raise ValueError("quantity must be a positive integer")
     if n < 1:
         raise ValueError("quantity must be at least 1")
     return n
@@ -40,14 +46,34 @@ def _positive_finite(value: float, name: str) -> float:
     return v
 
 
-def _pack_contents_conserved(cartons: list[dict[str, Any]]) -> bool:
+def _batch_totals(cartons: list[dict[str, Any]]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for c in cartons:
+        for item in c.get("contents") or []:
+            sku = str(item.get("sku"))
+            totals[sku] = totals.get(sku, 0.0) + float(item.get("qty") or 0)
+    return totals
+
+
+def _pack_contents_conserved(
+    cartons: list[dict[str, Any]],
+    expected_batch: dict[str, float] | None = None,
+) -> bool | None:
     if not cartons:
-        return True
+        return None
     for c in cartons:
         for item in c.get("contents") or []:
             qty = float(item.get("qty") or 0)
             if not math.isfinite(qty) or qty <= 0:
                 return False
+    if expected_batch is None:
+        return None
+    recorded = _batch_totals(cartons)
+    if set(recorded) != set(expected_batch):
+        return False
+    for sku, exp in expected_batch.items():
+        if abs(recorded.get(sku, 0.0) - float(exp)) > 1e-6:
+            return False
     return True
 
 
@@ -118,6 +144,7 @@ class LogisticsService:
         product_version: Any = None,
         lot_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
+        n = _require_quantity(quantity)
         raw_key = idempotency_key or f"{work_order_id}:{batch_id}"
         key = f"{tenant_id}::carton::{raw_key}"
         if key in self._idem:
@@ -128,7 +155,6 @@ class LogisticsService:
             if any(r.get("tenantId") != tenant_id for r in rows):
                 raise PermissionError("tenant isolation: carton")
             return rows
-        n = _require_quantity(quantity)
         rows = []
         ids = []
         for i in range(n):
@@ -181,6 +207,7 @@ class LogisticsService:
         height: float,
         weight_kg: float,
         source: str = "IMPORTED",
+        measure_op_id: str | None = None,
     ) -> dict[str, Any]:
         rec = self.cartons[carton_id]
         if rec.get("tenantId") != tenant_id:
@@ -208,7 +235,7 @@ class LogisticsService:
         )
         rec["mismatch"] = mismatch
         rec["autoOverride"] = False
-        measure_hash = stable_hash(measured)
+        op_id = measure_op_id or new_id()
         emit(
             self,
             "carton.measured",
@@ -216,13 +243,19 @@ class LogisticsService:
             aggregate_type="Carton",
             aggregate_id=carton_id,
             actor="ops",
-            payload={"measured": rec["measured"]},
+            payload={"measured": rec["measured"], "measureOpId": op_id},
             release_hash=rec.get("releaseHash"),
-            semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{measure_hash}",
+            semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
         )
         return rec
 
-    def packing_list(self, *, tenant_id: str, work_order_id: str) -> dict[str, Any]:
+    def packing_list(
+        self,
+        *,
+        tenant_id: str,
+        work_order_id: str,
+        expected_batch: dict[str, float] | None = None,
+    ) -> dict[str, Any]:
         cartons = [
             c
             for c in self.cartons.values()
@@ -238,7 +271,7 @@ class LogisticsService:
             "cartons": [{"cartonId": c["cartonId"], "contents": c["contents"], "expected": c["expected"], "measured": c["measured"]} for c in cartons],
             "batchTotal": contents,
             "tenantId": tenant_id,
-            "contentsConserved": _pack_contents_conserved(cartons),
+            "contentsConserved": _pack_contents_conserved(cartons, expected_batch),
         }
 
     def contents_conserved(self, *, tenant_id: str, work_order_id: str, expected_qty: float, sku: str = "product") -> bool:
