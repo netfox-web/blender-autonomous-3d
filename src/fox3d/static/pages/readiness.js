@@ -232,6 +232,7 @@
 
   // Outcome helper shared with the render page: HTTP non-2xx, status/label/truthLabel
   // of BLOCKED or FAILED, a BLOCKED_ error, or any safety check veto=true is a failure.
+  // /api/evidence/verify stays HTTP 200 and puts a failed bundle in ok:false plus errors[].
   function tokenBad(v) {
     if (v == null || typeof v === 'boolean' || typeof v === 'object') return false;
     var s = String(v).trim().toUpperCase();
@@ -260,6 +261,7 @@
     }
     var job = out.job && typeof out.job === 'object' ? out.job : null;
     return (
+      out.ok === false ||
       out.status === 'blocked' ||
       tokenBad(out.status) ||
       tokenBad(out.label) ||
@@ -277,7 +279,23 @@
     );
   }
 
+  function validationReasons(out) {
+    var reasons = [];
+    var errs = out && out.errors;
+    if (!Array.isArray(errs)) return reasons;
+    for (var i = 0; i < errs.length; i++) {
+      if (errs[i] == null) continue;
+      var text = String(errs[i]).trim();
+      if (text) reasons.push(text);
+    }
+    return reasons;
+  }
+
   function blockedMessage(label, out) {
+    if (out && out.ok === false) {
+      var reasons = validationReasons(out);
+      return label + '：驗證失敗' + (reasons.length ? '（' + reasons.join('、') + '）' : '');
+    }
     var code = (out && (out.error || out.status || out.label || out.truthLabel)) || '';
     if (out && (out.veto === true || checksHaveVeto(out))) return label + '：已阻擋（安全檢查未通過）';
     var mark = String((out && (out.label || out.truthLabel || out.status)) || '');

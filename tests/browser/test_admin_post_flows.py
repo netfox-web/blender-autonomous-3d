@@ -284,6 +284,57 @@ def test_readiness_http_error_and_network_error_are_not_success(admin_page: Page
     )
 
 
+def test_readiness_evidence_invalid_bundle_shows_verify_failure(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    """Real /api/evidence/verify answers HTTP 200 with ok:false. That must not look done."""
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/readiness", "#rd-evidence-json")
+    page.locator("#rd-evidence-json").fill("{}")
+    page.locator("#rd-evidence-run").click()
+    page.wait_for_selector("#rd-evidence-confirm:not([hidden])")
+    page.locator("#rd-evidence-ok").click()
+    page.wait_for_function(
+        """() => {
+          const note = document.getElementById('rd-notice');
+          const text = note ? note.textContent || '' : '';
+          return text.includes('驗證失敗')
+            && text.includes('missing_artifact_path')
+            && text.includes('missing_lineage');
+        }"""
+    )
+    notice = page.locator("#rd-notice")
+    text = notice.inner_text()
+    assert "操作完成" not in text
+    assert text == "證據驗證：驗證失敗（missing_artifact_path、missing_lineage）"
+    assert "err" in (notice.get_attribute("class") or "")
+    body = page.locator("#rd-evidence-out").inner_text()
+    assert "HTTP 200" in body
+    assert '"ok": false' in body
+    assert "missing_artifact_path" in body
+    assert "missing_lineage" in body
+    assert page.locator("#rd-evidence-run").is_enabled()
+
+
+def test_readiness_evidence_real_file_ok_is_success(
+    admin_page: Page, admin_server: dict[str, Any], tmp_path: Any
+) -> None:
+    artifact = tmp_path / "evidence.bin"
+    artifact.write_bytes(b"bundle-bytes")
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/readiness", "#rd-evidence-json")
+    page.locator("#rd-evidence-json").fill(
+        json.dumps({"artifactPath": str(artifact), "engineeringHash": "eng-1"})
+    )
+    page.locator("#rd-evidence-run").click()
+    page.locator("#rd-evidence-ok").click()
+    page.wait_for_function("() => (document.getElementById('rd-notice').textContent || '').includes('操作完成')")
+    notice = page.locator("#rd-notice")
+    assert "驗證失敗" not in notice.inner_text()
+    assert "err" not in (notice.get_attribute("class") or "")
+    body = page.locator("#rd-evidence-out").inner_text()
+    assert '"ok": true' in body
+    assert page.locator("#rd-evidence-run").is_enabled()
+
+
 def test_pilot_receipt_disables_confirm_and_second_click_does_not_repost(
     admin_page: Page, admin_server: dict[str, Any]
 ) -> None:
