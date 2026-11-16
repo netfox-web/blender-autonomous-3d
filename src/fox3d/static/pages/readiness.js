@@ -8,8 +8,8 @@
     return v;
   }
 
-  function headers() {
-    return { 'X-Tenant-Id': tenant(), Accept: 'application/json', 'Content-Type': 'application/json' };
+  function headers(pinned) {
+    return { 'X-Tenant-Id': pinned || tenant(), Accept: 'application/json', 'Content-Type': 'application/json' };
   }
 
   function showNotice(msg, err) {
@@ -24,8 +24,8 @@
     try { return JSON.stringify(obj, null, 2); } catch (e) { return String(obj); }
   }
 
-  function api(method, path, body) {
-    var opts = { method: method, headers: headers() };
+  function api(method, path, body, pinnedTenant) {
+    var opts = { method: method, headers: headers(pinnedTenant) };
     if (body !== undefined) opts.body = JSON.stringify(body);
     var call = fetch(path, opts).then(function (r) {
       return r.text().then(function (t) {
@@ -230,42 +230,193 @@
   }
 
 
-  // While a confirm box is open, lock the inputs of its section so the request sent on 確認
-  // is exactly what the summary showed (the OK handlers read the fields when clicked).
-  function lockWhileConfirming(box) {
-    var area = box.closest('section') || box.parentElement;
-    new MutationObserver(function () {
-      var open = !box.hidden;
-      var fields = Array.prototype.slice.call(area.querySelectorAll('input, select, textarea'));
-      if ($('rd-tenant')) fields.push($('rd-tenant'));
-      fields.forEach(function (f) {
-        if (box.contains(f)) return;
-        if (open) { f.dataset.rdWasDisabled = f.disabled ? '1' : ''; f.disabled = true; }
-        else if (f.dataset.rdWasDisabled !== undefined) { f.disabled = f.dataset.rdWasDisabled === '1'; delete f.dataset.rdWasDisabled; }
-      });
-    }).observe(box, { attributes: true, attributeFilter: ['hidden'] });
+  // Outcome helper shared with the render page: HTTP non-2xx, status/label/truthLabel
+  // of BLOCKED or FAILED, a BLOCKED_ error, or any safety check veto=true is a failure.
+  // /api/evidence/verify stays HTTP 200 and puts a failed bundle in ok:false plus errors[].
+  function tokenBad(v) {
+    if (v == null || typeof v === 'boolean' || typeof v === 'object') return false;
+    var s = String(v).trim().toUpperCase();
+    return s === 'BLOCKED' || s === 'FAILED' || s.indexOf('BLOCKED_') === 0 || s.indexOf('FAILED_') === 0;
   }
 
-  function bindConfirm(runId, confirmId, okId, cancelId, onOk) {
-    var run = $(runId);
-    var box = $(confirmId);
-    var ok = $(okId);
-    var cancel = $(cancelId);
-    if (!run || !box || !ok || !cancel) return;
-    run.addEventListener('click', function () { box.hidden = false; });
-    cancel.addEventListener('click', function () { box.hidden = true; });
-    ok.addEventListener('click', function () {
-      box.hidden = true;
-      onOk();
+  function checksHaveVeto(out) {
+    if (!out || typeof out !== 'object') return false;
+    var lists = [];
+    if (Array.isArray(out.checks)) lists.push(out.checks);
+    if (out.safety && Array.isArray(out.safety.checks)) lists.push(out.safety.checks);
+    for (var i = 0; i < lists.length; i++) {
+      var list = lists[i];
+      for (var j = 0; j < list.length; j++) {
+        if (list[j] && list[j].veto === true) return true;
+      }
+    }
+    return false;
+  }
+
+  function isBlockedResult(out) {
+    if (!out || typeof out !== 'object') return false;
+    if (typeof out.status === 'number') {
+      if (out.status < 200 || out.status >= 300) return true;
+      return isBlockedResult(out.data);
+    }
+    var job = out.job && typeof out.job === 'object' ? out.job : null;
+    return (
+      out.ok === false ||
+      out.status === 'blocked' ||
+      tokenBad(out.status) ||
+      tokenBad(out.label) ||
+      tokenBad(out.truthLabel) ||
+      String(out.error || '').indexOf('BLOCKED_') === 0 ||
+      out.veto === true ||
+      checksHaveVeto(out) ||
+      Boolean(job && (
+        job.status === 'blocked' ||
+        tokenBad(job.status) ||
+        tokenBad(job.label) ||
+        tokenBad(job.truthLabel) ||
+        String(job.error || '').indexOf('BLOCKED_') === 0
+      ))
+    );
+  }
+
+  function validationReasons(out) {
+    var reasons = [];
+    var errs = out && out.errors;
+    if (!Array.isArray(errs)) return reasons;
+    for (var i = 0; i < errs.length; i++) {
+      if (errs[i] == null) continue;
+      var text = String(errs[i]).trim();
+      if (text) reasons.push(text);
+    }
+    return reasons;
+  }
+
+  function blockedMessage(label, out) {
+    if (out && out.ok === false) {
+      var reasons = validationReasons(out);
+      return label + '：驗證失敗' + (reasons.length ? '（' + reasons.join('、') + '）' : '');
+    }
+    var code = (out && (out.error || out.status || out.label || out.truthLabel)) || '';
+    if (out && (out.veto === true || checksHaveVeto(out))) return label + '：已阻擋（安全檢查未通過）';
+    var mark = String((out && (out.label || out.truthLabel || out.status)) || '');
+    var up = mark.toUpperCase();
+    if (up === 'FAILED' || up.indexOf('FAILED_') === 0) return label + '：失敗' + (code ? '（' + code + '）' : '');
+    return label + '：已阻擋' + (code ? '（' + code + '）' : '');
+  }
+
+  // Snapshot is taken when the confirm box opens. Inputs (including tenant) stay
+  // locked until confirm or cancel; the POST sends the snapshot, not a later read.
+  // Only one confirm box may be open. A second box used to unlock the shared tenant
+  // field on cancel while the first box still posted the tenant it snapshotted.
+  var postBusy = false;
+  var activeConfirm = null;
+
+  function readFields(ids) {
+    var raw = {};
+    ids.forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      raw[id] = el.type === 'checkbox' ? !!el.checked : el.value;
+    });
+    return raw;
+  }
+
+  function lockIds(ids, on) {
+    var els = [];
+    ids.forEach(function (id) {
+      var el = $(id);
+      if (el && els.indexOf(el) < 0) els.push(el);
+    });
+    var tenantEl = $('rd-tenant');
+    if (tenantEl && els.indexOf(tenantEl) < 0) els.push(tenantEl);
+    els.forEach(function (el) {
+      if (on) {
+        if (!el.hasAttribute('data-rd-lock')) el.setAttribute('data-rd-lock', el.disabled ? '1' : '0');
+        el.disabled = true;
+      } else if (el.hasAttribute('data-rd-lock')) {
+        el.disabled = el.getAttribute('data-rd-lock') === '1';
+        el.removeAttribute('data-rd-lock');
+      }
     });
   }
 
-  function showOut(id, r) {
+  function showOut(id, r, label) {
     var out = $(id);
-    if (!out) return;
+    if (!out || !r) return;
     out.hidden = false;
     out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
-    showNotice(r.ok ? '操作完成（HTTP ' + r.status + '）' : '操作失敗（HTTP ' + r.status + '）', !r.ok);
+    if (r.status === 0 || (r.data && r.data.error === '連線失敗')) {
+      showNotice('連線失敗，請稍後再試：' + ((r.data && r.data.detail) || ''), true);
+      return;
+    }
+    if (!r.ok || isBlockedResult(r) || isBlockedResult(r.data)) {
+      if (!r.ok) showNotice('操作失敗（HTTP ' + r.status + '）', true);
+      else showNotice(blockedMessage(label || '操作', r.data), true);
+      return;
+    }
+    showNotice('操作完成（HTTP ' + r.status + '）', false);
+  }
+
+  function bindPost(cfg) {
+    var run = $(cfg.run);
+    var box = $(cfg.box);
+    var ok = $(cfg.ok);
+    var cancel = $(cfg.cancel);
+    if (!run || !box || !ok || !cancel) return;
+    var snapEl = cfg.snap ? $(cfg.snap) : null;
+    var textEl = cfg.text ? $(cfg.text) : null;
+    var held = null;
+
+    run.addEventListener('click', function () {
+      if (postBusy || held || activeConfirm) return;
+      var raw = readFields(cfg.fields);
+      raw.tenant = tenant();
+      var body;
+      try { body = cfg.build(raw); } catch (e) { return; }
+      var summaryText = cfg.summary(body, raw);
+      var snapText = JSON.stringify({ tenant: raw.tenant, body: body }, null, 2);
+      held = { tenant: raw.tenant, body: body, raw: raw };
+      activeConfirm = box;
+      if (textEl) textEl.textContent = summaryText;
+      if (snapEl) snapEl.textContent = snapText;
+      lockIds(cfg.fields, true);
+      box.hidden = false;
+    });
+    cancel.addEventListener('click', function () {
+      if (postBusy || activeConfirm !== box) return;
+      held = null;
+      activeConfirm = null;
+      box.hidden = true;
+      lockIds(cfg.fields, false);
+    });
+    ok.addEventListener('click', function () {
+      if (!held || postBusy || activeConfirm !== box) return;
+      var shot = held;
+      held = null;
+      activeConfirm = null;
+      box.hidden = true;
+      lockIds(cfg.fields, false);
+      postBusy = true;
+      run.disabled = true;
+      ok.disabled = true;
+      var finish = function () {
+        postBusy = false;
+        run.disabled = false;
+        ok.disabled = false;
+      };
+      var request;
+      try {
+        request = api('POST', cfg.path, shot.body, shot.tenant);
+      } catch (e) {
+        showNotice('操作失敗：' + ((e && e.message) || e), true);
+        finish();
+        return;
+      }
+      request.then(function (r) {
+        showOut(cfg.out, r, cfg.label);
+        if (cfg.after && r && r.ok && !isBlockedResult(r) && !isBlockedResult(r.data)) cfg.after();
+      }).finally(finish);
+    });
   }
 
   function parseJson(text, fieldName) {
@@ -305,79 +456,76 @@
     loadKpi();
     loadPhysical();
 
-    bindConfirm('rd-evidence-run', 'rd-evidence-confirm', 'rd-evidence-ok', 'rd-evidence-cancel', function () {
-      var bundle;
-      try { bundle = parseJson($('rd-evidence-json').value, '證據'); } catch (e) { return; }
-      api('POST', '/api/evidence/verify', { bundle: bundle }).then(function (r) { showOut('rd-evidence-out', r); });
+    bindPost({
+      run: 'rd-evidence-run', box: 'rd-evidence-confirm', ok: 'rd-evidence-ok', cancel: 'rd-evidence-cancel',
+      out: 'rd-evidence-out', snap: 'rd-evidence-snap', text: 'rd-evidence-text', label: '證據驗證',
+      path: '/api/evidence/verify', fields: ['rd-evidence-json'],
+      summary: function (body, raw) {
+        return '確定送出證據驗證（租戶 ' + raw.tenant + '）？此操作僅查驗資料，不會改動後端狀態。';
+      },
+      build: function (raw) { return { bundle: parseJson(raw['rd-evidence-json'], '證據') }; },
     });
 
-    (function () {
-      var run = $('rd-rel-run');
-      var box = $('rd-rel-confirm');
-      $('rd-rel-cancel').addEventListener('click', function () { box.hidden = true; });
-      run.addEventListener('click', function () {
-        var txt = $('rd-rel-confirm-text');
-        if (txt) {
-          txt.textContent = '將「' + $('rd-rel-entity').value + '」推進至 ' + $('rd-rel-target').value + '？';
-        }
-        box.hidden = false;
-      });
-      $('rd-rel-ok').addEventListener('click', function () {
-        box.hidden = true;
-        var entity;
-        try { entity = parseJson($('rd-rel-entity-json').value, '實體'); } catch (e) { return; }
-        api('POST', '/api/release/advance', {
-          entityId: $('rd-rel-entity').value.trim(),
-          target: $('rd-rel-target').value,
+    bindPost({
+      run: 'rd-rel-run', box: 'rd-rel-confirm', ok: 'rd-rel-ok', cancel: 'rd-rel-cancel',
+      out: 'rd-rel-out', snap: 'rd-rel-snap', text: 'rd-rel-confirm-text', label: '放行推進',
+      path: '/api/release/advance', fields: ['rd-rel-entity', 'rd-rel-target', 'rd-rel-evidence', 'rd-rel-entity-json'],
+      summary: function (body, raw) {
+        return '將「' + body.entityId + '」推進至 ' + body.target + '（租戶 ' + raw.tenant + '）？';
+      },
+      build: function (raw) {
+        return {
+          entityId: String(raw['rd-rel-entity'] || '').trim(),
+          target: raw['rd-rel-target'],
           actor: 'readiness-page',
-          entity: entity,
-          evidenceOk: !!$('rd-rel-evidence').checked,
-        }).then(function (r) { showOut('rd-rel-out', r); });
-      });
-    })();
-
-    bindConfirm('rd-safe-run', 'rd-safe-confirm', 'rd-safe-ok', 'rd-safe-cancel', function () {
-      var rec;
-      try { rec = parseJson($('rd-safe-json').value, '紀錄'); } catch (e) { return; }
-      api('POST', '/api/safety/evaluate', { kind: $('rd-safe-kind').value, record: rec }).then(function (r) {
-        showOut('rd-safe-out', r);
-      });
+          entity: parseJson(raw['rd-rel-entity-json'], '實體'),
+          evidenceOk: !!raw['rd-rel-evidence'],
+        };
+      },
     });
 
-    bindConfirm('rd-phys-approve-run', 'rd-phys-confirm', 'rd-phys-approve-ok', 'rd-phys-approve-cancel', function () {
-      api('POST', '/api/physical-os/approve', {
-        entityId: $('rd-phys-entity').value.trim(),
-        kind: $('rd-phys-kind').value.trim(),
-        actor: 'readiness-page',
-      }).then(function (r) { showOut('rd-phys-out', r); });
+    bindPost({
+      run: 'rd-safe-run', box: 'rd-safe-confirm', ok: 'rd-safe-ok', cancel: 'rd-safe-cancel',
+      out: 'rd-safe-out', snap: 'rd-safe-snap', text: 'rd-safe-text', label: '安全評估',
+      path: '/api/safety/evaluate', fields: ['rd-safe-kind', 'rd-safe-json'],
+      summary: function (body, raw) {
+        return '確定執行安全評估（類型 ' + body.kind + '，租戶 ' + raw.tenant + '）？結果僅供參考，不代表已通過認證。';
+      },
+      build: function (raw) { return { kind: raw['rd-safe-kind'], record: parseJson(raw['rd-safe-json'], '紀錄') }; },
     });
 
-    var comRun = $('rd-com-run');
-    if (comRun) {
-      comRun.addEventListener('click', function () {
-        var txt = $('rd-com-confirm-text');
-        if (txt) {
-          txt.textContent = '將 ' + ($('rd-com-rows').value.match(/^\s*\[/) ? 'JSON 陣列' : '資料') + ' 匯入至 ' + $('rd-com-kind').value + '（來源 ' + $('rd-com-source').value + '）？';
+    bindPost({
+      run: 'rd-phys-approve-run', box: 'rd-phys-confirm', ok: 'rd-phys-approve-ok', cancel: 'rd-phys-approve-cancel',
+      out: 'rd-phys-out', snap: 'rd-phys-snap', text: 'rd-phys-text', label: '核准申請',
+      path: '/api/physical-os/approve', fields: ['rd-phys-entity', 'rd-phys-kind'],
+      summary: function (body, raw) {
+        return '確定送出核准申請（' + body.entityId + ' / ' + body.kind + '，租戶 ' + raw.tenant + '）？狀態為 WAITING_APPROVAL，不會啟動現場機台。';
+      },
+      build: function (raw) {
+        return {
+          entityId: String(raw['rd-phys-entity'] || '').trim(),
+          kind: String(raw['rd-phys-kind'] || '').trim(),
+          actor: 'readiness-page',
+        };
+      },
+    });
+
+    bindPost({
+      run: 'rd-com-run', box: 'rd-com-confirm', ok: 'rd-com-ok', cancel: 'rd-com-cancel',
+      out: 'rd-com-out', snap: 'rd-com-snap', text: 'rd-com-confirm-text', label: '匯入',
+      path: '/api/commerce/import', fields: ['rd-com-kind', 'rd-com-source', 'rd-com-rows'],
+      summary: function (body, raw) {
+        return '將 ' + body.rows.length + ' 列匯入至 ' + body.kind + '（來源 ' + body.source + '，租戶 ' + raw.tenant + '）？';
+      },
+      build: function (raw) {
+        var rows = parseJson(raw['rd-com-rows'], '資料列');
+        if (!Array.isArray(rows)) {
+          showNotice('資料列必須是 JSON 陣列', true);
+          throw new Error('rows');
         }
-        $('rd-com-confirm').hidden = false;
-      });
-    }
-    $('rd-com-cancel').addEventListener('click', function () { $('rd-com-confirm').hidden = true; });
-  Array.prototype.forEach.call(document.querySelectorAll('[id$="-confirm"]'), lockWhileConfirming);
-
-    $('rd-com-ok').addEventListener('click', function () {
-      $('rd-com-confirm').hidden = true;
-      var rows;
-      try { rows = parseJson($('rd-com-rows').value, '資料列'); } catch (e) { return; }
-      if (!Array.isArray(rows)) {
-        showNotice('資料列必須是 JSON 陣列', true);
-        return;
-      }
-      api('POST', '/api/commerce/import', {
-        kind: $('rd-com-kind').value,
-        source: $('rd-com-source').value,
-        rows: rows,
-      }).then(function (r) { showOut('rd-com-out', r); loadKpi(); });
+        return { kind: raw['rd-com-kind'], source: raw['rd-com-source'], rows: rows };
+      },
+      after: loadKpi,
     });
 
     window.addEventListener('hashchange', focusHash);

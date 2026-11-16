@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 
 from pathlib import Path
 from typing import Any, NoReturn
@@ -29,6 +30,37 @@ from fox3d.platform import Platform
 from fox3d.recovery import PilotException
 from fox3d.recipe_admin_api import recipe_router
 from fox3d.station import STATION_CAPS
+
+
+def _dimensions(value: Any) -> None:
+    from fox3d.safety import _positive_finite_dimension
+
+    if not isinstance(value, dict):
+        raise HTTPException(422, "尺寸欄位必須是物件")
+    for key, item in value.items():
+        if key in {"width", "height", "depth", "length", "thickness"}:
+            if _positive_finite_dimension(item) is None:
+                raise HTTPException(422, f"無效尺寸: {key}")
+        elif key == "dimensions":
+            _dimensions(item)
+        elif isinstance(item, dict):
+            _dimensions(item)
+        elif isinstance(item, list):
+            for child in item:
+                if isinstance(child, dict):
+                    _dimensions(child)
+
+
+def _choice(value: Any, choices: Any, field: str) -> None:
+    if not isinstance(value, str) or value not in choices:
+        raise HTTPException(422, f"{field} 可用值: {', '.join(sorted(choices))}")
+
+
+def _entity_id(value: Any) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+        raise HTTPException(422, "entityId 格式錯誤")
+    return value
+
 
 # These services raise PermissionError for bad input. Handlers check fields first.
 # A leftover PermissionError is 422 unless it is tenant isolation (403).
@@ -511,19 +543,34 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def factory_space(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        return get_platform().factory.create_space(payload).model_dump(mode="json")
+        _dimensions(payload)
+        try:
+            return get_platform().factory.create_space(payload).model_dump(mode="json")
+        except (ValidationError, ValueError, TypeError, KeyError):
+            raise HTTPException(422, "空間欄位格式錯誤") from None
 
     @app.post("/api/factory/run")
     def factory_run(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)  # body tenantId may not override the header
-        return get_platform().furniture_factory_run(
-            tenant_id=tid,
-            space=payload.get("space"),
-            wall_name=payload.get("wallName") or "N",
-            product_types=payload.get("productTypes"),
-            text=payload.get("text"),
-            render=bool(payload.get("render")),
-        )
+        space = payload.get("space")
+        if space is not None:
+            _dimensions(space)
+            if space and not space.get("walls") and not (space.get("width") and space.get("depth")):
+                raise HTTPException(422, "空間需要寬度與深度或牆面")
+        types = payload.get("productTypes")
+        choices = get_platform().factory.types.list()
+        if types is not None:
+            if not isinstance(types, list):
+                raise HTTPException(422, f"productTypes 可用值: {', '.join(sorted(choices))}")
+            for item in types:
+                _choice(item, choices, "productTypes")
+        try:
+            return get_platform().furniture_factory_run(
+                tenant_id=tid, space=space, wall_name=payload.get("wallName") or "N",
+                product_types=types, text=payload.get("text"), render=bool(payload.get("render")),
+            )
+        except (ValidationError, ValueError, TypeError, KeyError):
+            raise HTTPException(422, "工廠欄位格式錯誤") from None
 
     def _quote_run(quote_id: str, tid: str) -> str:
         """runId of the factory run that produced this quote for this tenant; 404 otherwise.
@@ -680,6 +727,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/retail/fixtures")
     def retail_fixtures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
+        from fox3d.retail_fixture import FIXTURE_FAMILIES
+
+        _choice(payload.get("family", "COUNTER_DISPLAY"), FIXTURE_FAMILIES, "family")
+        if "product" in payload:
+            _dimensions(payload["product"])
         try:
             return get_platform().physical.retail.build(
                 tenant_id=tid,
@@ -690,34 +742,48 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             )
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from None
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, KeyError):
             raise HTTPException(422, "展示架欄位格式錯誤") from None
 
     @app.post("/api/packaging/structures")
     def packaging_structures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        dims = payload.get("productDims") or payload.get("dimensions") or {"width": 120, "height": 80, "depth": 40}
-        return get_platform().physical.packaging.build(
-            tenant_id=tid,
-            family=str(payload.get("family") or "RSC_CARTON"),
-            product_dims=dims,
-            render=bool(payload.get("render")),
-        )
+        from fox3d.packaging import BOX_FAMILIES
+
+        family = payload.get("family", "RSC_CARTON")
+        _choice(family, BOX_FAMILIES, "family")
+        dims = payload.get("productDims", payload.get("dimensions", {"width": 120, "height": 80, "depth": 40}))
+        _dimensions(dims)
+        try:
+            return get_platform().physical.packaging.build(tenant_id=tid, family=family, product_dims=dims, render=bool(payload.get("render")))
+        except (ValidationError, ValueError, TypeError, KeyError):
+            raise HTTPException(422, "包裝欄位格式錯誤") from None
 
     @app.post("/api/acrylic/products")
     def acrylic_products(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        from fox3d.acrylic import ACRYLIC_FAMILIES, ACRYLIC_SHEETS
+
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().physical.acrylic.build(
-            tenant_id=tid,
-            kind=str(payload.get("kind") or "MENU_STAND"),
-            sheet_sku=str(payload.get("sheetSku") or "ACR_CLEAR_5"),
-            render=bool(payload.get("render")),
-        )
+        kind = payload.get("kind", "MENU_STAND")
+        sheet = payload.get("sheetSku", "ACR_CLEAR_5")
+        _choice(kind, ACRYLIC_FAMILIES, "kind")
+        _choice(sheet, ACRYLIC_SHEETS, "sheetSku")
+        _dimensions(payload)
+        try:
+            return get_platform().physical.acrylic.build(tenant_id=tid, kind=kind, sheet_sku=sheet, render=bool(payload.get("render")))
+        except (ValidationError, ValueError, TypeError, KeyError):
+            raise HTTPException(422, "壓克力欄位格式錯誤") from None
 
     @app.post("/api/physical-os/approve")
     def physical_approve(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        _ = tenant(x_tenant_id)
-        return get_platform().physical.approve(entity_id=str(payload.get("entityId") or payload.get("productId")), actor=str(payload.get("actor") or "human"), kind=str(payload.get("kind") or "product"))
+        tid = require_tenant(x_tenant_id, payload)
+        entity_id = _entity_id(payload.get("entityId", payload.get("productId")))
+        physical = get_platform().physical
+        for factory in (physical.acrylic, physical.packaging, physical.retail):
+            item = factory.items.get(entity_id)
+            if item is not None and item.get("tenantId") != tid:
+                raise HTTPException(404, "找不到商品")
+        return physical.approve(tenant_id=tid, entity_id=entity_id, actor=str(payload.get("actor") or "human"), kind=str(payload.get("kind") or "product"))
 
     @app.get("/api/physical-os/families")
     def physical_families() -> dict[str, Any]:
@@ -746,7 +812,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         plat = get_platform()
         try:
             return plat.release.advance(
-                str(payload.get("entityId")),
+                _entity_id(payload.get("entityId")),
                 tenant_id=tid,
                 target=str(payload.get("target") or "WAITING_APPROVAL"),
                 actor=str(payload.get("actor") or "human"),

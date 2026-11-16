@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -102,12 +104,56 @@ def test_readiness_confirm_boxes_start_hidden_and_lock_inputs() -> None:
     html = (base / "readiness.html").read_text(encoding="utf-8")
     boxes = re.findall(r'<[^>]*id="rd-[a-z-]+-confirm"[^>]*>', html)
     assert boxes and all(" hidden" in b for b in boxes)
-    assert "lockWhileConfirming" in (base / "readiness.js").read_text(encoding="utf-8")
+    js = (base / "readiness.js").read_text(encoding="utf-8")
+    assert "data-rd-lock" in js and "function lockIds" in js
+    for snap in ("rd-evidence-snap", "rd-rel-snap", "rd-safe-snap", "rd-phys-snap", "rd-com-snap"):
+        assert f'id="{snap}"' in html
+
+
+def test_evidence_verify_empty_bundle_is_not_ok_and_real_file_is(client: TestClient, tmp_path: Path) -> None:
+    """The page posts {bundle: ...}. HTTP stays 200; ok and errors carry the verdict."""
+    empty = client.post("/api/evidence/verify", json={"bundle": {}}, headers=HEADERS)
+    assert empty.status_code == 200
+    body = empty.json()
+    assert body["ok"] is False
+    assert body["errors"] == ["missing_artifact_path", "missing_lineage"]
+
+    artifact = tmp_path / "evidence.bin"
+    artifact.write_bytes(b"bundle-bytes")
+    ok = client.post(
+        "/api/evidence/verify",
+        json={"bundle": {"artifactPath": str(artifact), "engineeringHash": "eng-1"}},
+        headers=HEADERS,
+    )
+    assert ok.status_code == 200
+    passed = ok.json()
+    assert passed["ok"] is True
+    assert passed["errors"] == []
+
+
+def test_readiness_js_gates_evidence_ok_and_one_confirm() -> None:
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/readiness.js").read_text(encoding="utf-8")
+    assert "out.ok === false" in js
+    show = js[js.index("function blockedMessage") : js.index("function bindPost")]
+    assert "驗證失敗" in show
+    assert show.index("驗證失敗") < show.index("已阻擋")
+    bind = js[js.index("function bindPost") :]
+    assert "if (postBusy || held || activeConfirm) return;" in bind
+    assert "activeConfirm !== box" in bind
 
 
 def test_readiness_locks_tenant_and_handles_post_network_errors() -> None:
     from pathlib import Path
 
     js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/readiness.js").read_text(encoding="utf-8")
-    assert "fields.push($('rd-tenant'))" in js
+    assert "$('rd-tenant')" in js and "els.push(tenantEl)" in js
     assert "連線失敗" in js and "call.catch" in js
+    assert "shot.tenant" in js and "shot.body" in js
+    assert "postBusy" in js and "run.disabled = true" in js and "ok.disabled = true" in js
+    assert ".finally(" in js and "run.disabled = false" in js and "ok.disabled = false" in js
+    assert "function isBlockedResult" in js and "veto === true" in js and "truthLabel" in js
+    assert "out.status < 200 || out.status >= 300" in js
+    assert "操作失敗" in js and "已阻擋" in js
+    # Success text is not the branch taken for a blocked body.
+    show = js[js.index("function showOut") : js.index("function bindPost")]
+    assert show.index("操作完成") > show.index("isBlockedResult")

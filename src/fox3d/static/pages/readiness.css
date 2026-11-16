@@ -29,6 +29,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 "Noto Sans TC"
 .rd-btn-accent{background:var(--accent);border-color:var(--accent);color:var(--card);font-weight:600}
 .rd-confirm{margin:10px 0;padding:12px;border:1px solid var(--warn);border-radius:8px;background:var(--warn-soft)}
 .rd-confirm p{margin:0 0 10px;font-size:13px}
+.rd-snap{margin:0 0 10px;max-height:140px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px ui-monospace,Consolas,monospace}
 .rd-notice{margin:0 0 12px;padding:10px 12px;border-radius:8px;background:var(--accent-soft);border:1px solid var(--accent);font-size:13px}
 .rd-notice.err{background:var(--blocked-soft);border-color:var(--blocked)}
 .rd-table-wrap{overflow-x:auto;margin:8px 0;max-width:100%}

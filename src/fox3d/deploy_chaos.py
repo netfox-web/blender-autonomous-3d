@@ -509,7 +509,7 @@ class ChaosHarness:
             release_hash=wo.get("releaseHash"),
             idempotency_key=f"chaos-pack-{wo_id}",
         )
-        result = self.pilot.logistics.pack_completeness(work_order_id=wo_id, expected_qty=1)
+        result = self.pilot.logistics.pack_completeness(tenant_id=tenant, work_order_id=wo_id, expected_qty=1)
         if not result["ok"]:
             self.pilot.inbox.record(tenant_id=tenant, code="PACKING_MISMATCH", work_order_id=wo_id, release_hash=wo.get("releaseHash"), actor="pack")
         return (not result["ok"]) and bool(cartons)
