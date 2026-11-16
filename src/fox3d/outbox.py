@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import os
 import threading
 import time
 from pathlib import Path
@@ -27,13 +28,17 @@ _TX_FILE_GEN: dict[Path, int] = {}
 def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
     try:
         st = path.stat()
-    except OSError:
+    except FileNotFoundError:
         return None
     return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
 
 
+def _tx_key(path: Path) -> Path:
+    return Path(os.path.abspath(path))
+
+
 def _bump_tx_gen(path: Path) -> int:
-    resolved = path.resolve()
+    resolved = _tx_key(path)
     with _OUTBOX_GEN_LOCK:
         gen = _TX_FILE_GEN.get(resolved, 0) + 1
         _TX_FILE_GEN[resolved] = gen
@@ -41,7 +46,7 @@ def _bump_tx_gen(path: Path) -> int:
 
 
 def _get_tx_gen(path: Path) -> int:
-    resolved = path.resolve()
+    resolved = _tx_key(path)
     with _OUTBOX_GEN_LOCK:
         return _TX_FILE_GEN.get(resolved, 0)
 
@@ -85,7 +90,10 @@ class CommitOutbox:
     def _cache_put(self, path: Path, rec: dict[str, Any], *, bump: bool = False) -> None:
         if bump:
             gen = _bump_tx_gen(path)
-            sig = _file_sig(path)
+            try:
+                sig = _file_sig(path)
+            except OSError:
+                sig = None
             if sig is not None:
                 self._tx_cache[path] = (sig, gen, copy.deepcopy(rec))
             else:
@@ -116,12 +124,11 @@ class CommitOutbox:
             self._read_snapshot[path] = (sig_before, gen_before)
             try:
                 try:
-                    raw = read_json(path) or {}
+                    raw = read_json(path)
                 except FileNotFoundError:
-                    self._tx_cache.pop(path, None)
-                    return {}
+                    raw = None
                 if not isinstance(raw, dict) or not raw:
-                    if _file_sig(path) == sig_before and _get_tx_gen(path) == gen_before:
+                    if _file_sig(path) is None:
                         self._tx_cache.pop(path, None)
                         return {}
                     continue
@@ -139,6 +146,8 @@ class CommitOutbox:
             finally:
                 self._read_snapshot.pop(path, None)
         self._tx_cache.pop(path, None)
+        if not last_rec and _file_sig(path) is not None:
+            raise OSError(f"unable to load consistent outbox tx state for {path}")
         return copy.deepcopy(last_rec)
 
     def _scan_max_seq(self) -> int:
@@ -173,7 +182,7 @@ class CommitOutbox:
                 if disk_seq < 0:
                     raise ValueError("negative seq")
                 base_seq = max(self._seq or 0, disk_seq)
-            except (OSError, ValueError):
+            except (FileNotFoundError, ValueError):
                 base_seq = max(self._seq or 0, self._scan_max_seq())
         else:
             base_seq = max(self._seq or 0, self._scan_max_seq())
@@ -194,12 +203,18 @@ class CommitOutbox:
                 if attempt == 5:
                     raise
                 time.sleep(0.02 * (2 ** attempt))
-        sig = _file_sig(seq_path)
+        try:
+            sig = _file_sig(seq_path)
+        except OSError:
+            sig = None
         self._seq = seq
         self._seq_sig = sig
         if sig is not None:
             with _OUTBOX_GEN_LOCK:
                 _OUTBOX_STATE[self._resolved_root] = (sig, seq)
+        else:
+            with _OUTBOX_GEN_LOCK:
+                _OUTBOX_STATE.pop(self._resolved_root, None)
 
     def prepare(self, event: dict[str, Any], *, expected_generation: int | None = None) -> dict[str, Any]:
         if self._fail_prepare:
@@ -247,8 +262,7 @@ class CommitOutbox:
                 path = self._path(tx_id)
                 self._tx_cache.pop(path, None)
                 _bump_tx_gen(path)
-                if path.exists():
-                    path.unlink()
+                path.unlink(missing_ok=True)
 
     def abort(self, tx_id: str) -> bool:
         with self._lock:
@@ -259,8 +273,7 @@ class CommitOutbox:
                     return False
                 self._tx_cache.pop(path, None)
                 _bump_tx_gen(path)
-                if path.exists():
-                    path.unlink()
+                path.unlink(missing_ok=True)
                 return True
 
     def _read(self, tx_id: str) -> dict[str, Any]:
@@ -380,4 +393,8 @@ class CommitOutbox:
                     finalized += 1
             except Exception:
                 failed.append(tx_id)
-        return {"finalized": finalized, "aborted": aborted, "failed": failed, "open": len(self.list_open())}
+        try:
+            open_count = len(self.list_open())
+        except OSError:
+            open_count = max(len(failed), len(list(self.root.glob("*.json"))))
+        return {"finalized": finalized, "aborted": aborted, "failed": failed, "open": open_count}

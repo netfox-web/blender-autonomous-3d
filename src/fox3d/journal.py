@@ -23,23 +23,27 @@ _JOURNAL_GEN: dict[Path, int] = {}
 def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
     try:
         st = path.stat()
-    except OSError:
+    except FileNotFoundError:
         return None
     return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
 
 
+def _journal_key(path: Path) -> Path:
+    return Path(os.path.abspath(path))
+
+
 def _bump_journal_gen(path: Path) -> int:
-    resolved = path.resolve()
+    key = _journal_key(path)
     with _JOURNAL_GEN_LOCK:
-        gen = _JOURNAL_GEN.get(resolved, 0) + 1
-        _JOURNAL_GEN[resolved] = gen
+        gen = _JOURNAL_GEN.get(key, 0) + 1
+        _JOURNAL_GEN[key] = gen
         return gen
 
 
 def _get_journal_gen(path: Path) -> int:
-    resolved = path.resolve()
+    key = _journal_key(path)
     with _JOURNAL_GEN_LOCK:
-        return _JOURNAL_GEN.get(resolved, 0)
+        return _JOURNAL_GEN.get(key, 0)
 
 
 class JournalCommitError(RuntimeError):
@@ -198,7 +202,7 @@ class EventJournal:
         path = self._path(tenant_id)
         sig_before = _file_sig(path)
         gen_before = _get_journal_gen(path)
-        if not force_reload:
+        if not force_reload and sig_before is not None:
             cached = self._cache.get(tenant_id)
             if cached is not None and cached.get("sig") == sig_before and cached.get("gen") == gen_before:
                 return cached
@@ -208,10 +212,17 @@ class EventJournal:
             if attempt > 0:
                 sig_before = _file_sig(path)
                 gen_before = _get_journal_gen(path)
-            if sig_before is None and not force_reload:
+            if sig_before is None:
                 raw_payload: Any = None
             else:
-                raw_payload = read_json(path)
+                try:
+                    raw_payload = read_json(path)
+                except FileNotFoundError:
+                    raw_payload = None
+            sig_after = _file_sig(path)
+            gen_after = _get_journal_gen(path)
+            if raw_payload is None and sig_after is not None:
+                continue
             payload = copy.deepcopy(raw_payload) if isinstance(raw_payload, dict) and raw_payload else {}
             if not payload:
                 payload = {
@@ -229,18 +240,21 @@ class EventJournal:
                 payload.setdefault("sequence", 0)
                 payload.setdefault("schemaVersion", SCHEMA)
             by_semantic_key = self._build_semantic_index(payload["events"])
-            sig_after = _file_sig(path)
-            gen_after = _get_journal_gen(path)
             if sig_before == sig_after and gen_before == gen_after:
                 entry = {
-                    "sig": sig_before,
-                    "gen": gen_before,
+                    "sig": sig_after,
+                    "gen": gen_after,
                     "data": payload,
                     "by_semantic_key": by_semantic_key,
                 }
-                self._cache[tenant_id] = entry
+                if sig_after is not None:
+                    self._cache[tenant_id] = entry
+                else:
+                    self._cache.pop(tenant_id, None)
                 return entry
         self._cache.pop(tenant_id, None)
+        if not payload:
+            raise OSError(f"unable to load consistent journal state for {path}")
         return {
             "sig": None,
             "gen": -1,
@@ -385,8 +399,15 @@ class EventJournal:
                 if semantic_key and semantic_key not in semantic_index:
                     semantic_index[semantic_key] = rec
                 entry["gen"] = _bump_journal_gen(path)
-                entry["sig"] = _file_sig(path)
-                self._cache[tenant_id] = entry
+                try:
+                    post_sig = _file_sig(path)
+                except OSError:
+                    post_sig = None
+                if post_sig is not None:
+                    entry["sig"] = post_sig
+                    self._cache[tenant_id] = entry
+                else:
+                    self._cache.pop(tenant_id, None)
                 return copy.deepcopy(rec)
 
     def list(self, tenant_id: str) -> list[dict[str, Any]]:
