@@ -483,11 +483,13 @@ def test_shipment_draft_not_booked(platform):
         contents=[{"sku": "product", "qty": 1}],
         release_hash="rh",
     )
-    assert log.pack_completeness(work_order_id="wo", expected_qty=2)["ok"] is True
-    assert log.pack_completeness(work_order_id="wo", expected_qty=1)["code"] == "duplicate"
-    assert log.pack_completeness(work_order_id="wo", expected_qty=9)["code"] == "shortage"
+    assert log.pack_completeness(tenant_id="sh", work_order_id="wo", expected_qty=2)["ok"] is True
+    assert log.pack_completeness(tenant_id="sh", work_order_id="wo", expected_qty=1)["code"] == "duplicate"
+    assert log.pack_completeness(tenant_id="sh", work_order_id="wo", expected_qty=9)["code"] == "shortage"
     expected = dict(cartons[0]["expected"])
-    log.record_measured(cartons[0]["cartonId"], length=1, width=1, height=1, weight_kg=1, source="MANUAL")
+    log.record_measured(
+        cartons[0]["cartonId"], tenant_id="sh", length=1, width=1, height=1, weight_kg=1, source="MANUAL"
+    )
     assert cartons[0]["expected"] == expected
     ship = log.shipment_draft(origin="TW", destination="TPE", carton_ids=[c["cartonId"] for c in cartons])
     assert ship["submittedToCarrier"] is False

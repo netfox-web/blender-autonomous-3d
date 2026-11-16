@@ -208,9 +208,17 @@ def test_logistics_conservation_dimweight_pallet_label():
         contents=[{"sku": "product", "qty": 1}],
         expected_weight_kg=10,
     )
-    assert log.contents_conserved(work_order_id="wo1", expected_qty=4) is True
+    assert log.contents_conserved(tenant_id="t", work_order_id="wo1", expected_qty=4) is True
     expected = dict(cartons[0]["expected"])
-    log.record_measured(cartons[0]["cartonId"], length=402, width=298, height=201, weight_kg=10.4, source="IMPORTED")
+    log.record_measured(
+        cartons[0]["cartonId"],
+        tenant_id="t",
+        length=402,
+        width=298,
+        height=201,
+        weight_kg=10.4,
+        source="IMPORTED",
+    )
     assert log.cartons[cartons[0]["cartonId"]]["expected"] == expected
     dw = log.dim_weight(cartons[0]["expected"])
     assert "dimWeightKg" in dw

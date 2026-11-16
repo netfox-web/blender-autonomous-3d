@@ -112,7 +112,13 @@ def test_hold_rework_labor_and_packing(platform):
     )
     expected = dict(cartons[0]["expected"])
     measured = platform.pilot.logistics.record_measured(
-        cartons[0]["cartonId"], length=900, width=900, height=900, weight_kg=40, source="MANUAL"
+        cartons[0]["cartonId"],
+        tenant_id="hz",
+        length=900,
+        width=900,
+        height=900,
+        weight_kg=40,
+        source="MANUAL",
     )
     assert measured["mismatch"] is True
     assert measured["expected"] == expected

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,76 @@ DIM_DIVISOR = 6000.0
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _require_quantity(quantity: object) -> int:
+    if isinstance(quantity, bool):
+        raise ValueError("quantity must be a positive integer")
+    if isinstance(quantity, int):
+        n = quantity
+    elif isinstance(quantity, float):
+        if not math.isfinite(quantity) or not quantity.is_integer():
+            raise ValueError("quantity must be a positive integer")
+        n = int(quantity)
+    else:
+        raise ValueError("quantity must be a positive integer")
+    if n < 1:
+        raise ValueError("quantity must be at least 1")
+    return n
+
+
+def _positive_finite(value: float, name: str) -> float:
+    v = float(value)
+    if not math.isfinite(v) or v <= 0:
+        raise ValueError(f"{name} must be a finite positive number")
+    return v
+
+
+def _batch_totals(cartons: list[dict[str, Any]]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for c in cartons:
+        for item in c.get("contents") or []:
+            sku = str(item.get("sku"))
+            totals[sku] = totals.get(sku, 0.0) + float(item.get("qty") or 0)
+    return totals
+
+
+def _pack_contents_conserved(
+    cartons: list[dict[str, Any]],
+    expected_batch: dict[str, float] | None = None,
+) -> bool | None:
+    if not cartons:
+        return None
+    for c in cartons:
+        for item in c.get("contents") or []:
+            qty = float(item.get("qty") or 0)
+            if not math.isfinite(qty) or qty <= 0:
+                return False
+    if expected_batch is None:
+        return None
+    recorded = _batch_totals(cartons)
+    if set(recorded) != set(expected_batch):
+        return False
+    for sku, exp in expected_batch.items():
+        if abs(recorded.get(sku, 0.0) - float(exp)) > 1e-6:
+            return False
+    return True
+
+
+def _measured_snapshot_equal(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    keys = ("length", "width", "height", "weightKg", "source", "truthLabel")
+    for key in keys:
+        if left.get(key) != right.get(key):
+            return False
+    return True
+
+
+def _carton_physical_oversize(dims: dict[str, Any]) -> bool:
+    cl = float(dims["length"])
+    cw = float(dims["width"])
+    ch = float(dims["height"])
+    ck = float(dims.get("weightKg") or 0)
+    return cl > PALLET_MM[0] or cw > PALLET_MM[1] or ch > PALLET_MAX_H or ck > PALLET_MAX_KG
 
 
 class LogisticsService:
@@ -81,6 +152,7 @@ class LogisticsService:
         product_version: Any = None,
         lot_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
+        n = _require_quantity(quantity)
         raw_key = idempotency_key or f"{work_order_id}:{batch_id}"
         key = f"{tenant_id}::carton::{raw_key}"
         if key in self._idem:
@@ -91,7 +163,6 @@ class LogisticsService:
             if any(r.get("tenantId") != tenant_id for r in rows):
                 raise PermissionError("tenant isolation: carton")
             return rows
-        n = max(int(quantity), 1)
         rows = []
         ids = []
         for i in range(n):
@@ -138,46 +209,81 @@ class LogisticsService:
         self,
         carton_id: str,
         *,
+        tenant_id: str,
         length: float,
         width: float,
         height: float,
         weight_kg: float,
         source: str = "IMPORTED",
+        measure_op_id: str | None = None,
     ) -> dict[str, Any]:
         rec = self.cartons[carton_id]
+        if rec.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: carton measure")
         expected = dict(rec["expected"])
-        rec["measured"] = {
-            "length": float(length),
-            "width": float(width),
-            "height": float(height),
-            "weightKg": float(weight_kg),
+        m_len = _positive_finite(length, "length")
+        m_wid = _positive_finite(width, "width")
+        m_hgt = _positive_finite(height, "height")
+        m_wgt = _positive_finite(weight_kg, "weightKg")
+        measured = {
+            "length": m_len,
+            "width": m_wid,
+            "height": m_hgt,
+            "weightKg": m_wgt,
             "source": source if source in {"IMPORTED", "MANUAL", "MEASURED"} else "IMPORTED",
             "truthLabel": "MEASURED",
         }
-        rec["expected"] = expected
-        mismatch = (
-            abs(float(length) - float(expected["length"])) > 5
-            or abs(float(width) - float(expected["width"])) > 5
-            or abs(float(height) - float(expected["height"])) > 5
-            or abs(float(weight_kg) - float(expected.get("weightKg") or 0)) > 1.0
-        )
-        rec["mismatch"] = mismatch
-        rec["autoOverride"] = False
+        op_id = measure_op_id or new_id()
+        ops = rec.setdefault("measureOps", {})
+        latest_seq = int(rec.get("measureSeq") or 0)
+        prior = ops.get(op_id)
+        if prior is not None:
+            if not _measured_snapshot_equal(dict(prior["measured"]), measured):
+                raise ValueError("measure op payload mismatch on retry")
+            audit_measured = dict(prior["measured"])
+            stale_retry = int(prior["seq"]) < latest_seq
+        else:
+            audit_measured = measured
+            stale_retry = False
+            latest_seq += 1
+            ops[op_id] = {"measured": dict(measured), "seq": latest_seq}
+            rec["measureSeq"] = latest_seq
+        if not stale_retry:
+            rec["measured"] = measured
+            rec["expected"] = expected
+            mismatch = (
+                abs(m_len - float(expected["length"])) > 5
+                or abs(m_wid - float(expected["width"])) > 5
+                or abs(m_hgt - float(expected["height"])) > 5
+                or abs(m_wgt - float(expected.get("weightKg") or 0)) > 1.0
+            )
+            rec["mismatch"] = mismatch
+            rec["autoOverride"] = False
         emit(
             self,
             "carton.measured",
-            tenant_id=rec.get("tenantId") or "",
+            tenant_id=tenant_id,
             aggregate_type="Carton",
             aggregate_id=carton_id,
             actor="ops",
-            payload={"measured": rec["measured"]},
+            payload={"measured": audit_measured, "measureOpId": op_id},
             release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec.get('tenantId')}::carton-measured::{carton_id}",
+            semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
         )
         return rec
 
-    def packing_list(self, *, work_order_id: str) -> dict[str, Any]:
-        cartons = [c for c in self.cartons.values() if c["workOrderId"] == work_order_id]
+    def packing_list(
+        self,
+        *,
+        tenant_id: str,
+        work_order_id: str,
+        expected_batch: dict[str, float] | None = None,
+    ) -> dict[str, Any]:
+        cartons = [
+            c
+            for c in self.cartons.values()
+            if c["workOrderId"] == work_order_id and c.get("tenantId") == tenant_id
+        ]
         contents: dict[str, float] = {}
         for c in cartons:
             for item in c.get("contents") or []:
@@ -187,15 +293,16 @@ class LogisticsService:
             "cartonCount": len(cartons),
             "cartons": [{"cartonId": c["cartonId"], "contents": c["contents"], "expected": c["expected"], "measured": c["measured"]} for c in cartons],
             "batchTotal": contents,
-            "contentsConserved": True,
+            "tenantId": tenant_id,
+            "contentsConserved": _pack_contents_conserved(cartons, expected_batch),
         }
 
-    def contents_conserved(self, *, work_order_id: str, expected_qty: float, sku: str = "product") -> bool:
-        lst = self.packing_list(work_order_id=work_order_id)
+    def contents_conserved(self, *, tenant_id: str, work_order_id: str, expected_qty: float, sku: str = "product") -> bool:
+        lst = self.packing_list(tenant_id=tenant_id, work_order_id=work_order_id)
         return abs(float(lst["batchTotal"].get(sku) or 0) - float(expected_qty)) < 1e-6
 
-    def pack_completeness(self, *, work_order_id: str, expected_qty: float, sku: str = "product") -> dict[str, Any]:
-        lst = self.packing_list(work_order_id=work_order_id)
+    def pack_completeness(self, *, tenant_id: str, work_order_id: str, expected_qty: float, sku: str = "product") -> dict[str, Any]:
+        lst = self.packing_list(tenant_id=tenant_id, work_order_id=work_order_id)
         got = float(lst["batchTotal"].get(sku) or 0)
         delta = got - float(expected_qty)
         ok = abs(delta) < 1e-6
@@ -232,31 +339,51 @@ class LogisticsService:
         tenants = {c.get("tenantId") for c in cartons}
         if not cartons or len(tenants) != 1 or None in tenants:
             raise PermissionError("cross-tenant pallet mix")
-        layers: list[list[str]] = []
+        stackable: list[dict[str, Any]] = []
+        held: list[str] = []
+        plan_oversize = False
+        for c in cartons:
+            d = c.get("measured") or c["expected"]
+            if _carton_physical_oversize(d):
+                held.append(c["cartonId"])
+                plan_oversize = True
+            else:
+                stackable.append(c)
+
         current: list[str] = []
         used_w = 0.0
         used_d = 0.0
         height = 0.0
         weight = 0.0
-        pallets = []
+        pallets: list[dict[str, Any]] = []
 
         def flush() -> None:
-            nonlocal current, used_w, used_d, height, weight
+            nonlocal current, used_w, used_d, height, weight, plan_oversize
             if not current:
                 return
+            pallet_oversize = (
+                height > PALLET_MAX_H
+                or weight > PALLET_MAX_KG
+                or used_w > PALLET_MM[0]
+                or used_d > PALLET_MM[1]
+            )
+            if pallet_oversize:
+                plan_oversize = True
             pallets.append(
                 {
                     "cartonIds": list(current),
                     "footprintMm": [PALLET_MM[0], PALLET_MM[1]],
                     "heightMm": round(height, 1),
                     "weightKg": round(weight, 3),
+                    "usedFootprintMm": [round(used_w, 1), round(used_d, 1)],
                     "label": "PLANNING",
                     "carrierCertification": False,
+                    "oversize": pallet_oversize,
                 }
             )
             current, used_w, used_d, height, weight = [], 0.0, 0.0, 0.0, 0.0
 
-        for c in cartons:
+        for c in stackable:
             d = c.get("measured") or c["expected"]
             cl, cw, ch, ck = float(d["length"]), float(d["width"]), float(d["height"]), float(d.get("weightKg") or 0)
             if height + ch > PALLET_MAX_H or weight + ck > PALLET_MAX_KG:
@@ -266,17 +393,20 @@ class LogisticsService:
             used_d = max(used_d, cw)
             height += ch
             weight += ck
-            _ = layers
         flush()
+        status = "NEEDS_HUMAN" if plan_oversize else "PLANNING"
         rec: dict[str, Any] = {
             "palletPlanId": new_id(),
             "tenantId": next(iter(tenants)),
             "cartonIds": list(carton_ids),
             "pallets": pallets,
             "palletCount": len(pallets),
+            "heldCartonIds": held,
             "constraints": {"footprintMm": list(PALLET_MM), "maxHeightMm": PALLET_MAX_H, "maxWeightKg": PALLET_MAX_KG},
             "label": "PLANNING",
             "carrierCertification": False,
+            "oversize": plan_oversize,
+            "status": status,
         }
         rec["planHash"] = stable_hash({k: rec[k] for k in rec if k not in {"palletPlanId", "planHash"}})
         self.pallets[rec["palletPlanId"]] = rec
@@ -291,6 +421,10 @@ class LogisticsService:
         carton_ids: list[str],
         service: str = "ground",
     ) -> dict[str, Any]:
+        if not carton_ids:
+            raise ValueError("carton_ids must not be empty")
+        if len(carton_ids) != len(set(carton_ids)):
+            raise ValueError("duplicate carton_ids")
         cartons = [self.cartons[i] for i in carton_ids]
         tenants = {c.get("tenantId") for c in cartons}
         if len(tenants) != 1 or None in tenants:
@@ -312,7 +446,8 @@ class LogisticsService:
         }
         rec["requestHash"] = stable_hash({k: rec[k] for k in rec if k not in {"shipmentId", "requestHash"}})
         tenant = rec["tenantId"]
-        raw = f"{origin}:{destination}:{','.join(carton_ids)}:{service}"
+        ordered = sorted(carton_ids)
+        raw = f"{origin}:{destination}:{','.join(ordered)}:{service}"
         idem = f"{tenant}::shipment::{raw}"
         if idem in self._idem:
             stored = self._idem[idem]
@@ -395,9 +530,11 @@ class LogisticsService:
         work_order_id: str,
         release_hash: str,
     ) -> dict[str, Any]:
-        cartons = [c for c in self.cartons.values() if c["workOrderId"] == work_order_id]
-        if any(c.get("tenantId") != tenant_id for c in cartons):
-            raise PermissionError("tenant isolation: packing")
+        cartons = [
+            c
+            for c in self.cartons.values()
+            if c["workOrderId"] == work_order_id and c.get("tenantId") == tenant_id
+        ]
         pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
         rec: dict[str, Any] = {
             "checklistId": new_id(),

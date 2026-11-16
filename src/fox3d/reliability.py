@@ -171,8 +171,12 @@ class ReliabilityHarness:
             negatives.append("complete-open-ops-failed")
 
         # pack mismatch
-        pack_bad = self.pilot.logistics.pack_completeness(work_order_id=wo_ids[0], expected_qty=99)
-        pack_ok = self.pilot.logistics.pack_completeness(work_order_id=wo_ids[0], expected_qty=1)
+        pack_bad = self.pilot.logistics.pack_completeness(
+            tenant_id=tenant_id, work_order_id=wo_ids[0], expected_qty=99
+        )
+        pack_ok = self.pilot.logistics.pack_completeness(
+            tenant_id=tenant_id, work_order_id=wo_ids[0], expected_qty=1
+        )
 
         ship = self.pilot.logistics.shipment_draft(origin="TW", destination="TW-TPE", carton_ids=self.pilot.workorders.get(wo_ids[0]).get("cartonIds") or [])
         cons = self.pilot.workorders.lots.conservation_ok(tenant_id=tenant_id)
