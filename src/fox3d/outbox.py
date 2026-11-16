@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import copy
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,17 +18,141 @@ BUSINESS_COMMITTED = "BUSINESS_COMMITTED"
 ABORTED = "ABORTED"
 COMMITTED = "COMMITTED"
 
+_OUTBOX_GEN_LOCK = threading.Lock()
+_OUTBOX_STATE: dict[Path, tuple[tuple[int, int, int, int], int]] = {}
+_TX_FILE_GEN: dict[Path, int] = {}
+
+
+def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+
+
+def _bump_tx_gen(path: Path) -> int:
+    resolved = path.resolve()
+    with _OUTBOX_GEN_LOCK:
+        gen = _TX_FILE_GEN.get(resolved, 0) + 1
+        _TX_FILE_GEN[resolved] = gen
+        return gen
+
+
+def _get_tx_gen(path: Path) -> int:
+    resolved = path.resolve()
+    with _OUTBOX_GEN_LOCK:
+        return _TX_FILE_GEN.get(resolved, 0)
+
 
 class CommitOutbox:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self._resolved_root = self.root.resolve()
         self._lock = threading.RLock()
         self._fail_prepare = False
+        self._seq: int | None = None
+        self._seq_sig: tuple[int, int, int, int] | None = None
+        self._tx_cache: dict[Path, tuple[tuple[int, int, int, int], int, dict[str, Any]]] = {}
 
     def _path(self, tx_id: str) -> Path:
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tx_id)
         return self.root / f"{safe}.json"
+
+    def _seq_path(self) -> Path:
+        return self.root / "outbox.seq.staging"
+
+    def _cache_get(self, path: Path) -> dict[str, Any] | None:
+        sig = _file_sig(path)
+        if sig is None:
+            self._tx_cache.pop(path, None)
+            return None
+        gen = _get_tx_gen(path)
+        entry = self._tx_cache.get(path)
+        if entry is not None and entry[0] == sig and entry[1] == gen:
+            return copy.deepcopy(entry[2])
+        return None
+
+    def _cache_put(self, path: Path, rec: dict[str, Any], *, bump: bool = False) -> None:
+        gen = _bump_tx_gen(path) if bump else _get_tx_gen(path)
+        sig = _file_sig(path)
+        if sig is not None:
+            self._tx_cache[path] = (sig, gen, copy.deepcopy(rec))
+
+    def _load_tx_file(self, path: Path) -> dict[str, Any]:
+        cached = self._cache_get(path)
+        if cached is not None:
+            return cached
+        try:
+            rec = read_json(path) or {}
+        except FileNotFoundError:
+            self._tx_cache.pop(path, None)
+            return {}
+        if isinstance(rec, dict) and rec:
+            self._cache_put(path, rec, bump=False)
+            return copy.deepcopy(rec)
+        return {}
+
+    def _scan_max_seq(self) -> int:
+        max_seq = 0
+        for path in self.root.glob("*.json"):
+            existing = self._load_tx_file(path)
+            seq_val = existing.get("seq")
+            if isinstance(seq_val, int) and not isinstance(seq_val, bool) and seq_val > max_seq:
+                max_seq = seq_val
+        return max_seq
+
+    def _next_seq(self) -> int:
+        seq_path = self._seq_path()
+        cur_sig = _file_sig(seq_path)
+        with _OUTBOX_GEN_LOCK:
+            mem_state = _OUTBOX_STATE.get(self._resolved_root)
+        if (
+            self._seq is not None
+            and cur_sig is not None
+            and cur_sig == self._seq_sig
+            and mem_state is not None
+            and mem_state[0] == cur_sig
+            and mem_state[1] == self._seq
+        ):
+            base_seq = self._seq
+        elif cur_sig is not None and mem_state is not None and mem_state[0] == cur_sig:
+            base_seq = max(self._seq or 0, mem_state[1])
+        elif cur_sig is not None:
+            try:
+                raw = seq_path.read_text(encoding="utf-8").strip().split(":", 1)[0]
+                disk_seq = int(raw)
+                if disk_seq < 0:
+                    raise ValueError("negative seq")
+                base_seq = max(self._seq or 0, disk_seq)
+            except (OSError, ValueError):
+                base_seq = max(self._seq or 0, self._scan_max_seq())
+        else:
+            base_seq = max(self._seq or 0, self._scan_max_seq())
+        next_seq = base_seq + 1
+        self._persist_seq(next_seq)
+        return next_seq
+
+    def _persist_seq(self, seq: int) -> None:
+        seq_path = self._seq_path()
+        seq_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.root / "outbox.seq.tmp"
+        tmp.write_text(f"{seq}\n", encoding="utf-8")
+        for attempt in range(6):
+            try:
+                tmp.replace(seq_path)
+                break
+            except PermissionError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.02 * (2 ** attempt))
+        sig = _file_sig(seq_path)
+        self._seq = seq
+        self._seq_sig = sig
+        if sig is not None:
+            with _OUTBOX_GEN_LOCK:
+                _OUTBOX_STATE[self._resolved_root] = (sig, seq)
 
     def prepare(self, event: dict[str, Any], *, expected_generation: int | None = None) -> dict[str, Any]:
         if self._fail_prepare:
@@ -34,29 +160,27 @@ class CommitOutbox:
             from fox3d.journal import JournalCommitError
 
             raise JournalCommitError("injected outbox prepare failure")
+        stored_event = copy.deepcopy(event)
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
-                max_seq = 0
-                for path in self.root.glob("*.json"):
-                    existing = read_json(path) or {}
-                    seq_val = existing.get("seq")
-                    if isinstance(seq_val, int) and not isinstance(seq_val, bool) and seq_val > max_seq:
-                        max_seq = seq_val
+                seq = self._next_seq()
                 rec = {
                     "txId": new_id(),
-                    "seq": max_seq + 1,
+                    "seq": seq,
                     "status": PREPARED,
-                    "tenantId": event.get("tenant_id") or event.get("tenantId"),
-                    "semanticKey": event.get("semantic_key") or event.get("semanticKey"),
-                    "aggregateType": event.get("aggregate_type") or event.get("aggregateType"),
-                    "aggregateId": event.get("aggregate_id") or event.get("aggregateId"),
-                    "event": event,
+                    "tenantId": stored_event.get("tenant_id") or stored_event.get("tenantId"),
+                    "semanticKey": stored_event.get("semantic_key") or stored_event.get("semanticKey"),
+                    "aggregateType": stored_event.get("aggregate_type") or stored_event.get("aggregateType"),
+                    "aggregateId": stored_event.get("aggregate_id") or stored_event.get("aggregateId"),
+                    "event": stored_event,
                     "expectedGeneration": expected_generation,
                     "at": utcnow().isoformat(),
                 }
                 rec["txHash"] = stable_hash({k: rec[k] for k in rec if k != "txHash"})
-                atomic_write_json(self._path(str(rec["txId"])), rec)
-        return rec
+                path = self._path(str(rec["txId"]))
+                atomic_write_json(path, rec)
+                self._cache_put(path, rec, bump=True)
+        return copy.deepcopy(rec)
 
     def mark_business_committed(self, tx_id: str, *, observed_generation: int | None = None) -> dict[str, Any]:
         with self._lock:
@@ -65,13 +189,17 @@ class CommitOutbox:
                 rec["status"] = BUSINESS_COMMITTED
                 rec["observedGeneration"] = observed_generation
                 rec["businessCommittedAt"] = utcnow().isoformat()
-                atomic_write_json(self._path(tx_id), rec)
-                return rec
+                path = self._path(tx_id)
+                atomic_write_json(path, rec)
+                self._cache_put(path, rec, bump=True)
+                return copy.deepcopy(rec)
 
     def complete(self, tx_id: str) -> None:
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
                 path = self._path(tx_id)
+                self._tx_cache.pop(path, None)
+                _bump_tx_gen(path)
                 if path.exists():
                     path.unlink()
 
@@ -79,16 +207,26 @@ class CommitOutbox:
         self.complete(tx_id)
 
     def _read(self, tx_id: str) -> dict[str, Any]:
-        rec = read_json(self._path(tx_id)) or {}
+        path = self._path(tx_id)
+        cached = self._cache_get(path)
+        if cached is not None:
+            return cached
+        rec = read_json(path) or {}
         if not rec:
             raise KeyError(tx_id)
-        return rec
+        self._cache_put(path, rec, bump=False)
+        return copy.deepcopy(rec)
 
     def list_open(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
         rows = []
         with self._lock:
-            for path in sorted(self.root.glob("*.json")):
-                rec = read_json(path) or {}
+            paths = sorted(self.root.glob("*.json"))
+            active = set(paths)
+            for cached_path in list(self._tx_cache):
+                if cached_path not in active:
+                    self._tx_cache.pop(cached_path, None)
+            for path in paths:
+                rec = self._load_tx_file(path)
                 if rec.get("status") in {PREPARED, BUSINESS_COMMITTED}:
                     if tenant_id is None or rec.get("tenantId") == tenant_id:
                         rows.append(rec)
@@ -120,19 +258,35 @@ class CommitOutbox:
                 event_type = str(ev.get("event_type") or ev.get("eventType") or "reconcile")
                 payload = dict(ev.get("payload") or {})
                 if journal is not None and semantic:
-                    existing = [e for e in journal.list(tenant_id) if e.get("semanticKey") == semantic]
-                    if existing:
-                        payload_hash = stable_hash(payload)
-                        rel_hash = ev.get("release_hash") or ev.get("releaseHash")
-                        if any(
-                            e.get("eventType") == event_type
-                            and e.get("payloadHash") == payload_hash
-                            and e.get("releaseHash") == rel_hash
-                            for e in existing
-                        ):
+                    rel_hash = ev.get("release_hash") or ev.get("releaseHash")
+                    if hasattr(journal, "check_semantic_key"):
+                        try:
+                            found = journal.check_semantic_key(
+                                tenant_id=tenant_id,
+                                event_type=event_type,
+                                payload=payload,
+                                release_hash=rel_hash,
+                                semantic_key=semantic,
+                            )
+                        except Exception:
+                            found = None
+                        if found is not None:
                             self.complete(tx_id)
                             finalized += 1
                             continue
+                    else:
+                        existing = [e for e in journal.list(tenant_id) if e.get("semanticKey") == semantic]
+                        if existing:
+                            payload_hash = stable_hash(payload)
+                            if any(
+                                e.get("eventType") == event_type
+                                and e.get("payloadHash") == payload_hash
+                                and e.get("releaseHash") == rel_hash
+                                for e in existing
+                            ):
+                                self.complete(tx_id)
+                                finalized += 1
+                                continue
                 try:
                     committed = bool(business_committed(tx))
                 except Exception:
