@@ -734,8 +734,10 @@ class MaterialLotRegistry:
             rec["remainingSheets"] = qty
             rec["sheetCount"] = qty + reserved + consumed
             rec["version"] = int(rec.get("version") or 1) + 1
+            adj_id = new_id()
             rec.setdefault("adjustments", []).append(
                 {
+                    "adjustmentId": adj_id,
                     "actor": actor,
                     "reason": reason,
                     "source": "CYCLE_COUNT",
@@ -751,7 +753,7 @@ class MaterialLotRegistry:
                 aggregate_id=lot_id,
                 actor=actor,
                 payload={"counted": qty, "reserved": reserved, "consumed": consumed},
-                semantic_key=f"{tenant_id}::cyclecount::{lot_id}::{qty}:{reason}",
+                semantic_key=f"{tenant_id}::cyclecount::{lot_id}::{qty}:{reason}::{adj_id}",
             )
             return rec
 

@@ -123,8 +123,11 @@ class CommitOutbox:
                     existing = [e for e in journal.list(tenant_id) if e.get("semanticKey") == semantic]
                     if existing:
                         payload_hash = stable_hash(payload)
+                        rel_hash = ev.get("release_hash") or ev.get("releaseHash")
                         if any(
-                            e.get("eventType") == event_type and e.get("payloadHash") == payload_hash
+                            e.get("eventType") == event_type
+                            and e.get("payloadHash") == payload_hash
+                            and e.get("releaseHash") == rel_hash
                             for e in existing
                         ):
                             self.complete(tx_id)

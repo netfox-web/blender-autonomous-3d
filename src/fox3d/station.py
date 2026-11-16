@@ -93,23 +93,38 @@ class StationRegistry:
         caps = [c for c in capabilities if c in STATION_CAPS]
         if not caps:
             raise PermissionError("station requires a MANUAL capability")
-        rec: dict[str, Any] = {
-            "stationId": station_id or new_id(),
-            "tenantId": tenant_id,
-            "capabilities": caps,
-            "status": status if status in {"ONLINE", "OFFLINE", "PAUSED"} else "ONLINE",
-            "heartbeatAt": _now(),
-            "currentLease": None,
-            "operator": actor,
-            "actuatorEndpoint": None,
-            "machineCommand": False,
-            "liveCnc": False,
-            "liveLaser": False,
-        }
-        rec["stationHash"] = stable_hash({k: rec[k] for k in rec if k != "stationHash"})
+        resolved_status = status if status in {"ONLINE", "OFFLINE", "PAUSED"} else "ONLINE"
+        st_id = station_id or new_id()
         with self._lock:
-            self.stations[rec["stationId"]] = rec
-            self.persist()
+            existing = self.stations.get(st_id)
+            if existing is not None:
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: station")
+                if (
+                    existing.get("capabilities") != caps
+                    or existing.get("status") != resolved_status
+                ):
+                    from fox3d.journal import SemanticKeyConflictError
+
+                    raise SemanticKeyConflictError(f"stationId conflict for {st_id}")
+                rec = existing
+            else:
+                rec = {
+                    "stationId": st_id,
+                    "tenantId": tenant_id,
+                    "capabilities": caps,
+                    "status": resolved_status,
+                    "heartbeatAt": _now(),
+                    "currentLease": None,
+                    "operator": actor,
+                    "actuatorEndpoint": None,
+                    "machineCommand": False,
+                    "liveCnc": False,
+                    "liveLaser": False,
+                }
+                rec["stationHash"] = stable_hash({k: rec[k] for k in rec if k != "stationHash"})
+                self.stations[rec["stationId"]] = rec
+                self.persist()
         emit(
             self,
             "station.register",

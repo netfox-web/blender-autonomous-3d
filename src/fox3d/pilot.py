@@ -154,6 +154,35 @@ class PilotOps:
             return aid in self.cyclecounts.counts
         if atype == "PilotException":
             return aid in self.inbox.items
+        if atype == "Carton":
+            rec = self.logistics.cartons.get(str(aid)) if isinstance(aid, str) else None
+            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
+                return False
+            ev = tx.get("event") or {}
+            et = str(ev.get("event_type") or ev.get("eventType") or "")
+            if et == "carton.measured":
+                sem = str(tx.get("semanticKey") or "")
+                meas_id = sem.rsplit("::", 1)[-1] if sem.count("::") >= 3 else None
+                if meas_id and rec.get("measurementId"):
+                    return rec.get("measurementId") == meas_id
+                return rec.get("measured") == payload.get("measured")
+            return True
+        if atype == "Shipment":
+            rec = self.logistics.shipments.get(str(aid)) if isinstance(aid, str) else None
+            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
+                return False
+            ev = tx.get("event") or {}
+            et = str(ev.get("event_type") or ev.get("eventType") or "")
+            if et == "shipment.handoff":
+                handoff = rec.get("handoff") or {}
+                return handoff.get("tracking") == payload.get("tracking")
+            return True
+        if atype == "PackingChecklist":
+            rec = self.logistics.checklists.get(str(aid)) if isinstance(aid, str) else None
+            return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
+        if atype == "QC":
+            rec = self.qc.checks.get(str(aid)) if isinstance(aid, str) else None
+            return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         proto = getattr(self.platform, "prototype", None)
         ev = tx.get("event") or {}
         et = str(ev.get("event_type") or ev.get("eventType") or "")

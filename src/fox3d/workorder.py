@@ -747,9 +747,12 @@ class WorkOrderService:
         rec = self._require(work_order_id, tenant_id=None)
         op = next(o for o in rec["ops"] if o["opId"] == op_id)
         labor = op.setdefault("labor", {"segments": [], "corrections": [], "paused": False})
+        correction_id = new_id()
+        minutes_val = float(minutes)
         labor.setdefault("corrections", []).append(
             {
-                "minutes": float(minutes),
+                "correctionId": correction_id,
+                "minutes": minutes_val,
                 "reason": reason,
                 "actor": actor,
                 "at": _now(),
@@ -763,9 +766,9 @@ class WorkOrderService:
             aggregate_type="WorkOrder",
             aggregate_id=rec["workOrderId"],
             actor=actor,
-            payload={"opId": op_id, "minutes": minutes, "reason": reason},
+            payload={"opId": op_id, "minutes": minutes_val, "reason": reason},
             release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::labor-correct::{op_id}::{reason}::{minutes}",
+            semantic_key=f"{rec['tenantId']}::labor-correct::{op_id}::{reason}::{minutes_val}::{correction_id}",
         )
         return op
 
@@ -873,9 +876,10 @@ class WorkOrderService:
     ) -> dict[str, Any]:
         require_confirm(payload, action="rework")
         rec = self._require(work_order_id, tenant_id=None)
+        rework_id = new_id()
         rec.setdefault("reworkHistory", []).append(
             {
-                "reworkId": new_id(),
+                "reworkId": rework_id,
                 "reason": reason,
                 "actor": actor,
                 "operation": operation,
@@ -910,7 +914,7 @@ class WorkOrderService:
             actor=actor,
             payload={"reason": reason, "operation": op_name},
             release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::wo-rework-auth::{rec['workOrderId']}:{op_name}:{reason}",
+            semantic_key=f"{rec['tenantId']}::wo-rework-auth::{rec['workOrderId']}:{op_name}:{reason}:{rework_id}",
         )
         return rec
 
@@ -942,8 +946,10 @@ class WorkOrderService:
             rec.setdefault("remnantDispositions", []).append(
                 {"kind": "REMNANT", "ids": [r["remnantId"] for r in created], "at": _now(), "silentScrap": False}
             )
+        scrap_id = new_id()
         rec.setdefault("scrap", []).append(
             {
+                "scrapId": scrap_id,
                 "qty": qty,
                 "kind": "scrapWithRemnantSplit" if created else "trueScrap",
                 "source": "MANUAL",
@@ -962,7 +968,7 @@ class WorkOrderService:
             actor=actor,
             payload={"qty": qty, "remnants": [r["remnantId"] for r in created]},
             release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::wo-scrap::{rec['workOrderId']}:{qty}:{reason}",
+            semantic_key=f"{rec['tenantId']}::wo-scrap::{rec['workOrderId']}:{qty}:{reason}:{scrap_id}",
         )
         return {"workOrder": rec, "remnants": created, "silentScrap": False}
 

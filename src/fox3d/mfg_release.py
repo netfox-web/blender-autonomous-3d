@@ -410,7 +410,7 @@ class ManufacturingReleaseService:
             actor=actor,
             payload={"supersededBy": new["releaseId"]},
             release_hash=old.get("releaseHash"),
-            semantic_key=f"{tenant_id}::rel-supersede::{old['releaseId']}",
+            semantic_key=f"{tenant_id}::rel-supersede::{old['releaseId']}::{new['releaseId']}",
         )
         return {"old": old, "new": new, "diff": self.diff(old, new)}
 

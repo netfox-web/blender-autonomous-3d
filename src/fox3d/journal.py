@@ -90,6 +90,14 @@ def emit(
             persist()
         return None
     if outbox is not None and callable(persist) and getattr(owner, "_tx_depth", 0) == 0:
+        if semantic_key and hasattr(journal, "check_semantic_key"):
+            journal.check_semantic_key(
+                tenant_id=tenant_id,
+                event_type=event_type,
+                payload=payload or {},
+                release_hash=release_hash,
+                semantic_key=semantic_key,
+            )
         tx = outbox.prepare(event)
         _maybe_crash(owner, "after-outbox-prepare")
         persist()
@@ -110,6 +118,14 @@ def emit(
         outbox.complete(tx["txId"])
         _maybe_crash(owner, "after-outbox-complete")
         return rec
+    if semantic_key and hasattr(journal, "check_semantic_key"):
+        journal.check_semantic_key(
+            tenant_id=tenant_id,
+            event_type=event_type,
+            payload=payload or {},
+            release_hash=release_hash,
+            semantic_key=semantic_key,
+        )
     if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
         persist()
     return journal.append(
@@ -158,6 +174,55 @@ class EventJournal:
         body = {k: rec[k] for k in rec if k != "eventHash"}
         return stable_hash(body)
 
+    def _find_by_semantic_key(
+        self,
+        events: list[dict[str, Any]],
+        *,
+        tenant_id: str,
+        event_type: str,
+        payload_hash: str,
+        release_hash: str | None,
+        semantic_key: str,
+    ) -> dict[str, Any] | None:
+        for ev in events:
+            if ev.get("semanticKey") == semantic_key:
+                if ev.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: journal")
+                if (
+                    ev.get("eventType") != event_type
+                    or ev.get("payloadHash") != payload_hash
+                    or ev.get("releaseHash") != release_hash
+                ):
+                    raise SemanticKeyConflictError(
+                        f"semantic_key conflict for {semantic_key}: eventType, payloadHash, or releaseHash mismatch"
+                    )
+                return ev
+        return None
+
+    def check_semantic_key(
+        self,
+        *,
+        tenant_id: str,
+        event_type: str,
+        payload: dict[str, Any] | None = None,
+        release_hash: str | None = None,
+        semantic_key: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not semantic_key:
+            return None
+        payload_hash = stable_hash(payload or {})
+        with self._lock:
+            with FileLock(self._lock_path(tenant_id)):
+                data = self._load(tenant_id)
+                return self._find_by_semantic_key(
+                    data["events"],
+                    tenant_id=tenant_id,
+                    event_type=event_type,
+                    payload_hash=payload_hash,
+                    release_hash=release_hash,
+                    semantic_key=semantic_key,
+                )
+
     def append(
         self,
         event_type: str,
@@ -180,15 +245,16 @@ class EventJournal:
             with FileLock(self._lock_path(tenant_id)):
                 data = self._load(tenant_id)
                 if semantic_key:
-                    for ev in data["events"]:
-                        if ev.get("semanticKey") == semantic_key:
-                            if ev.get("tenantId") != tenant_id:
-                                raise PermissionError("tenant isolation: journal")
-                            if ev.get("eventType") != event_type or ev.get("payloadHash") != payload_hash:
-                                raise SemanticKeyConflictError(
-                                    f"semantic_key conflict for {semantic_key}: eventType or payloadHash mismatch"
-                                )
-                            return ev
+                    found = self._find_by_semantic_key(
+                        data["events"],
+                        tenant_id=tenant_id,
+                        event_type=event_type,
+                        payload_hash=payload_hash,
+                        release_hash=release_hash,
+                        semantic_key=semantic_key,
+                    )
+                    if found is not None:
+                        return found
                 seq = int(data.get("sequence") or 0) + 1
                 rec = {
                     "eventId": new_id(),
