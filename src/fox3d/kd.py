@@ -5,6 +5,8 @@ Extends CabinetSpec millimetre SoT. Not a second parametric engine.
 
 from __future__ import annotations
 
+import math
+
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
@@ -101,6 +103,12 @@ class FlatPackProductTypeRegistry:
         def nearest(value: float | None, choices: tuple[int, ...], fallback: float) -> float:
             if value is None:
                 return float(fallback)
+            try:
+                finite = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+            except OverflowError:
+                finite = False
+            if not finite:
+                raise ValueError("dimension must be a finite number")
             return float(min(choices, key=lambda c: abs(c - value)))
 
         return {

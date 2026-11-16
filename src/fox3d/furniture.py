@@ -11,7 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from fox3d.ids import new_id, stable_hash
-from fox3d.parametric import TYPE_DEFAULTS
+from fox3d.parametric import MAX_COMPONENT_COUNT, MAX_DIMENSION_MM, TYPE_DEFAULTS
 
 FURNITURE_PRODUCT_TYPE_CODES = (
     "WARDROBE",
@@ -364,13 +364,13 @@ def validate_assembly(assembly: MultiCabinetAssembly, *, space: Any | None = Non
 class CabinetRevisionInput(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
-    width: float = Field(gt=0)
-    height: float = Field(gt=0)
-    depth: float = Field(gt=0)
+    width: float = Field(gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
+    height: float = Field(gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
+    depth: float = Field(gt=0, le=MAX_DIMENSION_MM, allow_inf_nan=False)
     material: str
-    shelfCount: int = Field(ge=0)
-    doorCount: int = Field(ge=0)
-    drawerCount: int = Field(ge=0)
+    shelfCount: int = Field(ge=0, le=MAX_COMPONENT_COUNT)
+    doorCount: int = Field(ge=0, le=MAX_COMPONENT_COUNT)
+    drawerCount: int = Field(ge=0, le=MAX_COMPONENT_COUNT)
     openingStyle: str
     topFillerHeight: float = Field(ge=0)
     sideFillerWidth: float = Field(ge=0)

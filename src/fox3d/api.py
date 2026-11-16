@@ -298,15 +298,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, "body tenantId does not match X-Tenant-Id")
         return header
 
-    def bounded_count(raw: Any, default: int) -> int:
+    def bounded_count(raw: Any, default: int, field: str = "count") -> int:
         if raw is None:
             n = default
         elif isinstance(raw, bool) or not isinstance(raw, int):
-            raise HTTPException(422, "count 須為 1 至 100 的整數")
+            raise HTTPException(422, f"{field} 須為 1 至 100 的整數")
         else:
             n = raw
         if not 1 <= n <= 100:
-            raise HTTPException(422, "count 須為 1 至 100 的整數")
+            raise HTTPException(422, f"{field} 須為 1 至 100 的整數")
         return n
 
     @app.get("/health")
@@ -422,7 +422,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
         plat = get_platform()
-        created = plat.create_parametric(payload)
+        for field in ("width", "height", "depth", "thickness", "boardThickness", "backThickness", "doorCount", "shelfCount", "drawerCount"):
+            if field in payload and payload[field] is None:
+                raise HTTPException(422, f"{field} 格式錯誤")
+        try:
+            created = plat.create_parametric(payload)
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from None
+        except (ValueError, TypeError):
+            raise HTTPException(422, "商品欄位格式錯誤") from None
         if payload.get("render"):
             r_out = plat.render_parametric(created["spec"]["productId"], tenant_id=payload["tenantId"])
             created["render"] = {"job": r_out.get("job"), "preview": (r_out.get("job") or {}).get("output")}
@@ -432,9 +440,13 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def resize_parametric(product_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         plat = get_platform()
         try:
-            resized = plat.resize_parametric(product_id, tenant_id=tenant(x_tenant_id), **{k: v for k, v in payload.items() if k in {"width", "height", "depth"}})
+            resized = plat.resize_parametric(product_id, tenant_id=require_tenant(x_tenant_id, payload), **{k: v for k, v in payload.items() if k in {"width", "height", "depth"}})
         except (KeyError, PermissionError):
             raise HTTPException(404, "找不到參數化商品") from None
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from None
+        except (ValueError, TypeError):
+            raise HTTPException(422, "尺寸欄位格式錯誤") from None
         if payload.get("render", True):
             r_out = plat.render_parametric(resized["spec"]["productId"], tenant_id=resized["spec"]["tenantId"])
             resized["render"] = {"job": r_out.get("job"), "preview": (r_out.get("job") or {}).get("output")}
@@ -472,11 +484,16 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         plat = get_platform()
-        rd = plat.product_rd(tenant_id=tid, text=payload.get("text") or "", variant_count=int(payload.get("variantCount") or 12))
-        if rd.get("baseSpec") and not plat._production_gate():
-            stored = plat.create_parametric({**rd["baseSpec"], "tenantId": tid, "kind": rd["baseSpec"].get("kind")})
-            rd["parametricRender"] = plat.render_parametric(stored["spec"]["productId"], tenant_id=tid)
-        return rd
+        try:
+            rd = plat.product_rd(tenant_id=tid, text=payload.get("text") or "", variant_count=bounded_count(payload.get("variantCount"), 12, "variantCount"))
+            if rd.get("baseSpec") and not plat._production_gate():
+                stored = plat.create_parametric({**rd["baseSpec"], "tenantId": tid, "kind": rd["baseSpec"].get("kind")})
+                rd["parametricRender"] = plat.render_parametric(stored["spec"]["productId"], tenant_id=tid)
+            return rd
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from None
+        except (ValueError, TypeError):
+            raise HTTPException(422, "商品欄位格式錯誤") from None
 
     @app.post("/api/e2e/smoke")
     def e2e_smoke() -> dict[str, Any]:
@@ -557,7 +574,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/kd/skus")
     def kd_sku(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().kd.build_sku(tenant_id=tid, kind=str(payload.get("kind") or "BEDSIDE_CABINET"), render=bool(payload.get("render")), **{k: v for k, v in payload.items() if k not in {"tenantId", "kind", "render"}})
+        try:
+            return get_platform().kd.build_sku(tenant_id=tid, kind=str(payload.get("kind") or "BEDSIDE_CABINET"), render=bool(payload.get("render")), **{k: v for k, v in payload.items() if k not in {"tenantId", "kind", "render"}})
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from None
+        except (ValueError, TypeError):
+            raise HTTPException(422, "商品尺寸欄位格式錯誤") from None
 
     @app.post("/api/kd/catalog")
     def kd_catalog(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -658,13 +680,18 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/retail/fixtures")
     def retail_fixtures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
-        return get_platform().physical.retail.build(
-            tenant_id=tid,
-            family=str(payload.get("family") or "COUNTER_DISPLAY"),
-            product=payload.get("product"),
-            facing=int(payload.get("facing") or 2),
-            render=bool(payload.get("render")),
-        )
+        try:
+            return get_platform().physical.retail.build(
+                tenant_id=tid,
+                family=str(payload.get("family") or "COUNTER_DISPLAY"),
+                product=payload.get("product"),
+                facing=bounded_count(payload.get("facing"), 2, "facing"),
+                render=bool(payload.get("render")),
+            )
+        except ValidationError as exc:
+            raise HTTPException(422, _validation_detail(exc)) from None
+        except (ValueError, TypeError):
+            raise HTTPException(422, "展示架欄位格式錯誤") from None
 
     @app.post("/api/packaging/structures")
     def packaging_structures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
