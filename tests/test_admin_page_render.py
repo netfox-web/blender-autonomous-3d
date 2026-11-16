@@ -146,13 +146,17 @@ def test_render_js_handles_blocked_results() -> None:
         "blockedMessage(label, out)",
     ):
         assert call in js
-    assert js.count("isBlockedResult(out)") >= 5
+    assert "tokenBad" in js and "truthLabel" in js and "veto === true" in js
+    assert "out.status < 200 || out.status >= 300" in js
+    assert js.count("isBlockedResult(out)") >= 7
     # Job status "blocked" is labelled BLOCKED; MOCK is reserved for discoverySource.
     badge = js[js.index("function statusBadge") : js.index("const confirms")]
-    assert "st === 'blocked'" in badge and ">BLOCKED<" in badge
+    assert "st === 'blocked'" in badge and "textContent = 'BLOCKED'" in badge
     assert "src === 'MOCK'" in badge
     mock_branch = badge[badge.index("src === 'MOCK'") :]
     assert "st-mock" in mock_branch and "st === 'blocked'" not in mock_branch
+    assert "BLOCKED" not in mock_branch
+    assert ".innerHTML" not in js and "innerHTML =" not in js
 
 
 def test_render_js_never_sends_tenant_in_body() -> None:
@@ -183,6 +187,20 @@ def test_render_js_confirm_dialog_single_slot() -> None:
     opener = js[js.index("function openConfirm") : js.index("function wireConfirmDialogs")]
     assert "addEventListener" not in opener
     assert ".focus()" in opener
+
+
+def test_render_js_snapshots_inputs_and_locks_posts() -> None:
+    js = _render_js()
+    assert js.count("openConfirm(") >= 8  # definition + the seven POST actions
+    assert "withPostLock" in js and "postLock" in js
+    assert "data-rd-lock" in js
+    assert "連線失敗" in js
+    assert "snapshot.scene" in js and "snapshot.jobType" in js and "snapshot.file" in js
+    assert "rd-confirm-job-snap" in js and "rd-confirm-twin-snap" in js
+    # Buttons are disabled for the in-flight request and restored afterwards.
+    lock = js[js.index("async function withPostLock") : js.index("function openConfirm")]
+    assert "el.disabled = true" in lock and "el.disabled = false" in lock and "finally" in lock
+    assert "confirmBtn.disabled = true" in lock and "confirmBtn.disabled = false" in lock
 
 
 def test_render_page_has_tenant_hint(client: TestClient) -> None:

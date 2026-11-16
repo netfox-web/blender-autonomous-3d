@@ -79,7 +79,7 @@
               <option value="LIFESTYLE">LIFESTYLE（情境）</option>
             </select>
           </label>
-          <button type="submit" class="rd-btn rd-btn-primary">送出工作</button>
+          <button type="submit" id="rd-job-submit" class="rd-btn rd-btn-primary">送出工作</button>
         </form>
       </details>
 
@@ -105,6 +105,7 @@
         <div class="rd-confirm-card">
           <h3 id="rd-confirm-job-title">確認操作</h3>
           <p id="rd-confirm-job-text"></p>
+          <pre id="rd-confirm-job-snap" class="rd-snap"></pre>
           <div class="rd-actions">
             <button type="button" id="rd-confirm-job-yes" class="rd-btn rd-btn-warn">確認</button>
             <button type="button" id="rd-confirm-job-no" class="rd-btn">取消</button>
@@ -166,7 +167,7 @@
           <label>深度 mm
             <input id="rd-twin-d" name="depth" type="number" min="1" value="400">
           </label>
-          <button type="submit" class="rd-btn rd-btn-primary">建立分身</button>
+          <button type="submit" id="rd-twin-submit" class="rd-btn rd-btn-primary">建立分身</button>
         </form>
       </details>
 
@@ -179,7 +180,7 @@
           <label>GLB 檔案
             <input id="rd-upload-file" name="file" type="file" accept=".glb,model/gltf-binary" required>
           </label>
-          <button type="submit" class="rd-btn rd-btn-primary">上傳並建立</button>
+          <button type="submit" id="rd-upload-submit" class="rd-btn rd-btn-primary">上傳並建立</button>
         </form>
       </details>
 
@@ -189,6 +190,7 @@
         <div class="rd-confirm-card">
           <h3 id="rd-confirm-twin-title">確認操作</h3>
           <p id="rd-confirm-twin-text"></p>
+          <pre id="rd-confirm-twin-snap" class="rd-snap"></pre>
           <div class="rd-actions">
             <button type="button" id="rd-confirm-twin-yes" class="rd-btn rd-btn-primary">確認</button>
             <button type="button" id="rd-confirm-twin-no" class="rd-btn">取消</button>

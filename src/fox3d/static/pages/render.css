@@ -306,8 +306,19 @@ body {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 16px 18px;
-  max-width: 400px;
+  max-width: 480px;
   width: 100%;
+}
+.rd-snap {
+  margin: 0 0 14px;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--code);
+  border-radius: 8px;
+  padding: 8px;
+  font: 12px/1.45 ui-monospace, Consolas, monospace;
 }
 .rd-confirm-card h3 {
   margin: 0 0 8px;

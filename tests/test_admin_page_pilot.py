@@ -38,3 +38,19 @@ def test_work_order_actions_require_confirmation_and_respect_tenant(platform):  
         assert client.post(path, headers=headers, json={}).status_code == (403 if action == "consume" else 409)
     assert client.post(f"/api/pilot/work-orders/{order}/complete", headers=headers, json={"confirm": True}).status_code == 200
     assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 409
+
+
+def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/pilot.js").read_text(encoding="utf-8")
+    assert "options.tenant || tenant()" in js
+    assert "tenant: task.tenant" in js
+    assert "show('confirm-data', { tenant: tid, body: body })" in js
+    assert "$('confirm').disabled = true" in js and "$('confirm').disabled = false" in js
+    assert "task.trigger.disabled = true" in js and "task.trigger.disabled = false" in js
+    assert ".finally(" in js
+    assert "data-pilot-lock" in js
+    assert "function isBlockedResult" in js and "veto === true" in js and "truthLabel" in js
+    assert "連線失敗" in js and "已阻擋" in js
+    assert "if (posting || pending) return" in js
