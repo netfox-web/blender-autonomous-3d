@@ -20,6 +20,30 @@ class JournalCommitError(RuntimeError):
     """Required durable audit append could not be committed."""
 
 
+class SemanticKeyConflictError(JournalCommitError, ValueError):
+    """Same semantic_key reused with different eventType or payloadHash."""
+
+
+def _validate_since_seq(since_seq: Any) -> int:
+    if isinstance(since_seq, (bool, float)):
+        raise ValueError("since_seq must be a non-negative integer")
+    if isinstance(since_seq, int):
+        seq = since_seq
+    elif isinstance(since_seq, str):
+        raw = since_seq.strip()
+        if not raw:
+            raise ValueError("since_seq must be a non-negative integer")
+        try:
+            seq = int(raw)
+        except ValueError as exc:
+            raise ValueError("since_seq must be a non-negative integer") from exc
+    else:
+        raise ValueError("since_seq must be a non-negative integer")
+    if seq < 0:
+        raise ValueError("since_seq must be a non-negative integer")
+    return seq
+
+
 def _maybe_crash(owner: Any, point: str) -> None:
     if getattr(owner, "_crash_mode", "") != point:
         return
@@ -151,6 +175,7 @@ class EventJournal:
             self._fail_next = False
             raise JournalCommitError("injected journal failure")
         body = payload or {}
+        payload_hash = stable_hash(body)
         with self._lock:
             with FileLock(self._lock_path(tenant_id)):
                 data = self._load(tenant_id)
@@ -159,6 +184,10 @@ class EventJournal:
                         if ev.get("semanticKey") == semantic_key:
                             if ev.get("tenantId") != tenant_id:
                                 raise PermissionError("tenant isolation: journal")
+                            if ev.get("eventType") != event_type or ev.get("payloadHash") != payload_hash:
+                                raise SemanticKeyConflictError(
+                                    f"semantic_key conflict for {semantic_key}: eventType or payloadHash mismatch"
+                                )
                             return ev
                 seq = int(data.get("sequence") or 0) + 1
                 rec = {
@@ -173,7 +202,7 @@ class EventJournal:
                     "at": utcnow().isoformat(),
                     "releaseHash": release_hash,
                     "payload": body,
-                    "payloadHash": stable_hash(body),
+                    "payloadHash": payload_hash,
                     "previousEventHash": data.get("headHash") or GENESIS,
                     "semanticKey": semantic_key,
                     "schemaVersion": SCHEMA,
@@ -195,16 +224,29 @@ class EventJournal:
             return [dict(ev) for ev in self._load(tenant_id).get("events") or [] if ev.get("tenantId") == tenant_id]
 
     def verify(self, tenant_id: str) -> dict[str, Any]:
-        data = self._load(tenant_id)
+        with self._lock:
+            data = self._load(tenant_id)
+        events = data.get("events") or []
         prev = GENESIS
-        for ev in data.get("events") or []:
+        for idx, ev in enumerate(events, start=1):
             if ev.get("tenantId") != tenant_id:
                 return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "tenant-mix", "label": "BLOCKED_EVIDENCE"}
             if ev.get("previousEventHash") != prev:
                 return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "chain-break", "label": "BLOCKED_EVIDENCE"}
+            ev_seq = ev.get("sequence")
+            if isinstance(ev_seq, bool) or ev_seq != idx:
+                return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "sequence-gap", "label": "BLOCKED_EVIDENCE"}
             if self._event_hash(ev) != ev.get("eventHash"):
                 return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "payload-tamper", "label": "BLOCKED_EVIDENCE"}
             prev = ev.get("eventHash")
+        raw_seq = data.get("sequence", 0)
+        if isinstance(raw_seq, bool) or not isinstance(raw_seq, int) or raw_seq < 0:
+            return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "truncated", "label": "BLOCKED_EVIDENCE"}
+        header_seq = raw_seq
+        count = len(events)
+        last_seq = events[-1].get("sequence") if events else 0
+        if last_seq != header_seq or count != header_seq:
+            return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "truncated", "label": "BLOCKED_EVIDENCE"}
         if (data.get("headHash") or GENESIS) != prev:
             return {"ok": False, "status": "BLOCKED_EVIDENCE", "reason": "head-mismatch", "label": "BLOCKED_EVIDENCE"}
         open_tx = []
@@ -222,13 +264,14 @@ class EventJournal:
             "ok": True,
             "status": "REAL",
             "label": "REAL",
-            "count": len(data.get("events") or []),
+            "count": count,
             "headHash": prev,
-            "sequence": int(data.get("sequence") or 0),
+            "sequence": header_seq,
         }
 
     def export_slice(self, tenant_id: str, *, since_seq: int = 0) -> dict[str, Any]:
-        events = [e for e in self.list(tenant_id) if int(e.get("sequence") or 0) >= int(since_seq)]
+        min_seq = _validate_since_seq(since_seq)
+        events = [e for e in self.list(tenant_id) if int(e.get("sequence") or 0) >= min_seq]
         integrity = self.verify(tenant_id)
         bundle = {
             "tenantId": tenant_id,

@@ -152,6 +152,8 @@ class PilotOps:
             return aid in self.identity.shifts
         if atype == "CycleCount":
             return aid in self.cyclecounts.counts
+        if atype == "PilotException":
+            return aid in self.inbox.items
         proto = getattr(self.platform, "prototype", None)
         ev = tx.get("event") or {}
         et = str(ev.get("event_type") or ev.get("eventType") or "")

@@ -168,7 +168,7 @@ class QcService:
             actor=operator,
             payload={"result": rec["result"], "stage": stage, "workOrderId": work_order_id, "checkId": check_id},
             release_hash=release_hash,
-            semantic_key=f"{tenant_id}::qc::{work_order_id}::{stage}::{check_id}::{rec['at']}",
+            semantic_key=f"{tenant_id}::qc::{work_order_id}::{stage}::{check_id}::{rec['qcId']}",
         )
         return rec
 

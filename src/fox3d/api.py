@@ -979,9 +979,20 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             _raise_permission(exc)
 
     @app.get("/api/pilot/export")
-    def pilot_export(releaseHash: str | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def pilot_export(
+        releaseHash: str | None = None,
+        sinceSeq: str | None = None,
+        since_seq: str | None = None,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        return get_platform().pilot.contracts.export_bundle(tenant_id=tid, release_hash=releaseHash)
+        raw_seq: Any = since_seq if since_seq is not None else (sinceSeq if sinceSeq is not None else 0)
+        try:
+            return get_platform().pilot.contracts.export_bundle(
+                tenant_id=tid, release_hash=releaseHash, since_seq=raw_seq
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     @app.post("/api/pilot/work-orders/{work_order_id}/consume")
     def pilot_consume(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

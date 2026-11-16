@@ -353,7 +353,7 @@ class StationDispatcher:
             actor=actor,
             payload={"workOrderId": work_order_id, "operation": operation, "stationId": station_id},
             release_hash=wo.get("releaseHash"),
-            semantic_key=f"{tenant_id}::dispatch::{work_order_id}::{operation}",
+            semantic_key=f"{tenant_id}::dispatch::{work_order_id}::{operation}::{lease['leaseId']}",
         )
         return lease
 

@@ -150,28 +150,46 @@ class ExceptionInbox:
         actor: str = "system",
         detail: str | None = None,
         payload: dict[str, Any] | None = None,
+        exception_id: str | None = None,
     ) -> dict[str, Any]:
         spec: dict[str, Any] = catalog_entry(code) if code in CATALOG else {"errorCode": code, "retrySafe": False, "humanRequired": True, "eventType": f"exception.{code}", "lineageValid": True, "allowedNextStates": []}
-        rec: dict[str, Any] = {
-            "exceptionId": new_id(),
-            "tenantId": tenant_id,
-            "errorCode": spec["errorCode"],
-            "retrySafe": bool(spec.get("retrySafe")),
-            "humanRequired": bool(spec.get("humanRequired")),
-            "allowedNextStates": list(spec.get("allowedNextStates") or []),
-            "lineageValid": bool(spec.get("lineageValid")),
-            "workOrderId": work_order_id,
-            "releaseHash": release_hash,
-            "detail": detail or code,
-            "payload": payload or {},
-            "status": "OPEN",
-            "silentSuccess": False,
-            "actor": actor,
-            "at": utcnow().isoformat(),
-        }
-        rec["exceptionHash"] = stable_hash({k: rec[k] for k in rec if k != "exceptionHash"})
+        exc_id = str(exception_id or (payload or {}).get("exceptionId") or new_id())
+        resolved_detail = detail or code
         with self._lock:
-            self.items[rec["exceptionId"]] = rec
+            existing = self.items.get(exc_id)
+            if existing is not None:
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: exception")
+                if (
+                    existing.get("errorCode") != spec["errorCode"]
+                    or existing.get("workOrderId") != work_order_id
+                    or existing.get("detail") != resolved_detail
+                ):
+                    from fox3d.journal import SemanticKeyConflictError
+
+                    raise SemanticKeyConflictError(f"exceptionId conflict for {exc_id}")
+                rec = existing
+            else:
+                rec = {
+                    "exceptionId": exc_id,
+                    "tenantId": tenant_id,
+                    "errorCode": spec["errorCode"],
+                    "retrySafe": bool(spec.get("retrySafe")),
+                    "humanRequired": bool(spec.get("humanRequired")),
+                    "allowedNextStates": list(spec.get("allowedNextStates") or []),
+                    "lineageValid": bool(spec.get("lineageValid")),
+                    "workOrderId": work_order_id,
+                    "releaseHash": release_hash,
+                    "detail": resolved_detail,
+                    "payload": payload or {},
+                    "status": "OPEN",
+                    "silentSuccess": False,
+                    "actor": actor,
+                    "at": utcnow().isoformat(),
+                }
+                rec["exceptionHash"] = stable_hash({k: rec[k] for k in rec if k != "exceptionHash"})
+                self.items[rec["exceptionId"]] = rec
+        key_scope = f"{work_order_id}::{rec['exceptionId']}" if work_order_id else rec["exceptionId"]
         emit(
             self,
             str(spec.get("eventType") or "exception"),
@@ -181,7 +199,7 @@ class ExceptionInbox:
             actor=actor,
             payload={"errorCode": rec["errorCode"], "workOrderId": work_order_id, "detail": rec["detail"]},
             release_hash=release_hash,
-            semantic_key=f"{tenant_id}::exc::{code}::{work_order_id or rec['exceptionId']}",
+            semantic_key=f"{tenant_id}::exc::{code}::{key_scope}",
         )
         return rec
 
