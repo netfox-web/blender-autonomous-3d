@@ -156,17 +156,33 @@ class PilotOps:
             return aid in self.inbox.items
         if atype == "Carton":
             rec = self.logistics.cartons.get(str(aid)) if isinstance(aid, str) else None
-            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
-                return False
             ev = tx.get("event") or {}
+            ev_tenant = ev.get("tenant_id") or ev.get("tenantId")
+            if tenant_id and ev_tenant and tenant_id != ev_tenant:
+                return False
+            tx_tenant = tenant_id or ev_tenant
+            if not rec or (tx_tenant and rec.get("tenantId") != tx_tenant):
+                return False
             et = str(ev.get("event_type") or ev.get("eventType") or "")
             if et == "carton.measured":
-                sem = str(tx.get("semanticKey") or ev.get("semantic_key") or ev.get("semanticKey") or "")
-                sem_op_id = sem.rsplit("::", 1)[-1] if sem.count("::") >= 3 else None
-                payload_op_id = payload.get("measureOpId")
-                if payload_op_id is not None and sem_op_id is not None and str(payload_op_id) != sem_op_id:
+                prefix = f"{rec.get('tenantId')}::carton-measured::{aid}::"
+                tx_sem = tx.get("semanticKey")
+                ev_sem = ev.get("semantic_key") if ev.get("semantic_key") is not None else ev.get("semanticKey")
+                if tx_sem is not None and ev_sem is not None and str(tx_sem) != str(ev_sem):
                     return False
-                op_id = str(payload_op_id) if payload_op_id is not None else sem_op_id
+                raw_sem = tx_sem if tx_sem is not None else ev_sem
+                sem = str(raw_sem) if raw_sem is not None else ""
+                payload_op_id = payload.get("measureOpId")
+                if payload_op_id is not None:
+                    if not isinstance(payload_op_id, str) or not payload_op_id:
+                        return False
+                    op_id = payload_op_id
+                    if sem and sem != f"{prefix}{op_id}":
+                        return False
+                elif sem.startswith(prefix):
+                    op_id = sem[len(prefix) :]
+                else:
+                    return False
                 ops = rec.get("measureOps")
                 if not op_id or not isinstance(ops, dict):
                     return False

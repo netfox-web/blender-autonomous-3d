@@ -643,6 +643,166 @@ def test_carton_measured_same_value_recovery_before_and_after_persistence(
     assert plat_final.pilot.journal.verify("ta")["ok"] is True
 
 
+def test_carton_measured_delimiter_op_id_recovery_before_and_after_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "plat-delim-op"
+    plat = Platform(root=root, mock_blender=True)
+    log = plat.pilot.logistics
+
+    cartons = log.instantiate_cartons(
+        tenant_id="ta",
+        work_order_id="wo-1",
+        batch_id="b-1",
+        plan={"length": 400, "width": 300, "height": 200},
+        quantity=1,
+        release_hash="rel-1",
+    )
+    cid = cartons[0]["cartonId"]
+    dims: dict[str, Any] = {
+        "tenant_id": "ta",
+        "length": 400.0,
+        "width": 300.0,
+        "height": 200.0,
+        "weight_kg": 8.0,
+        "source": "MANUAL",
+    }
+
+    # 1. Interrupt measure_op_id="batch::123" AFTER outbox PREPARED, BEFORE business persistence.
+    log._crash_mode = "after-outbox-prepare"
+    with pytest.raises(CrashInjected):
+        log.record_measured(cid, **dims, measure_op_id="batch::123")
+    log._crash_mode = ""
+
+    open_before_abort = plat.pilot.outbox.list_open(tenant_id="ta")
+    assert len(open_before_abort) == 1
+    assert open_before_abort[0]["status"] == "PREPARED"
+    assert open_before_abort[0]["event"]["payload"]["measureOpId"] == "batch::123"
+    assert open_before_abort[0]["semanticKey"] == f"ta::carton-measured::{cid}::batch::123"
+    assert not (LogisticsService(root / "logistics").cartons[cid].get("measureOps") or {})
+    assert plat.pilot._business_committed(open_before_abort[0]) is False
+    assert plat.pilot.journal.verify("ta")["ok"] is False
+    assert plat.pilot.journal.verify("ta")["reason"] == "incomplete-tx"
+
+    # Restart Platform: unpersisted "batch::123" must be aborted cleanly.
+    plat_after_abort = Platform(root=root, mock_blender=True)
+    assert not (plat_after_abort.pilot.logistics.cartons[cid].get("measureOps") or {})
+    assert [
+        e["payload"]["measureOpId"]
+        for e in plat_after_abort.pilot.journal.list("ta")
+        if e["eventType"] == "carton.measured"
+    ] == []
+    assert plat_after_abort.pilot.outbox.list_open(tenant_id="ta") == []
+    assert plat_after_abort.pilot.journal.verify("ta")["ok"] is True
+
+    # 2. Interrupt measure_op_id="batch::123" AFTER business persistence, BEFORE mark_business_committed.
+    orig_mark = plat_after_abort.pilot.outbox.mark_business_committed
+
+    def fail_mark(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("interrupted after persist before mark_business_committed")
+
+    monkeypatch.setattr(plat_after_abort.pilot.outbox, "mark_business_committed", fail_mark)
+    with pytest.raises(RuntimeError, match="interrupted after persist"):
+        plat_after_abort.pilot.logistics.record_measured(cid, **dims, measure_op_id="batch::123")
+    monkeypatch.setattr(plat_after_abort.pilot.outbox, "mark_business_committed", orig_mark)
+
+    open_prepared_committed = plat_after_abort.pilot.outbox.list_open(tenant_id="ta")
+    assert len(open_prepared_committed) == 1
+    tx_committed = open_prepared_committed[0]
+    assert tx_committed["status"] == "PREPARED"
+    assert tx_committed["event"]["payload"]["measureOpId"] == "batch::123"
+    assert list(LogisticsService(root / "logistics").cartons[cid]["measureOps"]) == ["batch::123"]
+    assert plat_after_abort.pilot._business_committed(tx_committed) is True
+
+    # Fallback without payload["measureOpId"] also resolves full "batch::123" from semanticKey prefix.
+    tx_no_payload_op_id = {
+        **tx_committed,
+        "event": {
+            **tx_committed["event"],
+            "payload": {"measured": tx_committed["event"]["payload"]["measured"]},
+        },
+    }
+    assert plat_after_abort.pilot._business_committed(tx_no_payload_op_id) is True
+
+    # Mismatched semanticKey, tenantId, or payload is rejected.
+    tx_bad_sem = {
+        **tx_committed,
+        "semanticKey": f"ta::carton-measured::{cid}::batch::999",
+    }
+    assert plat_after_abort.pilot._business_committed(tx_bad_sem) is False
+
+    tx_bad_ev_sem = {
+        **tx_committed,
+        "event": {
+            **tx_committed["event"],
+            "semantic_key": f"ta::carton-measured::{cid}::batch::999",
+        },
+    }
+    assert plat_after_abort.pilot._business_committed(tx_bad_ev_sem) is False
+
+    tx_bad_ev_tenant = {
+        **tx_committed,
+        "event": {
+            **tx_committed["event"],
+            "tenant_id": "tb",
+        },
+    }
+    assert plat_after_abort.pilot._business_committed(tx_bad_ev_tenant) is False
+
+    tx_bad_measured = {
+        **tx_committed,
+        "event": {
+            **tx_committed["event"],
+            "payload": {
+                "measureOpId": "batch::123",
+                "measured": {
+                    **tx_committed["event"]["payload"]["measured"],
+                    "length": 999.0,
+                },
+            },
+        },
+    }
+    assert plat_after_abort.pilot._business_committed(tx_bad_measured) is False
+
+    # Restart Platform: persisted "batch::123" must be finalized into journal, NOT aborted.
+    plat_after_commit = Platform(root=root, mock_blender=True)
+    assert list(plat_after_commit.pilot.logistics.cartons[cid]["measureOps"]) == ["batch::123"]
+    measured_events = [
+        e for e in plat_after_commit.pilot.journal.list("ta") if e["eventType"] == "carton.measured"
+    ]
+    assert len(measured_events) == 1
+    assert measured_events[0]["payload"]["measureOpId"] == "batch::123"
+    assert measured_events[0]["semanticKey"] == f"ta::carton-measured::{cid}::batch::123"
+    assert plat_after_commit.pilot.outbox.list_open(tenant_id="ta") == []
+    assert plat_after_commit.pilot.journal.verify("ta")["ok"] is True
+
+    # 3. Interrupt a second delimiter op ID "batch::sub::456" with identical values at "after-business-persist".
+    plat_after_commit.pilot.logistics._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat_after_commit.pilot.logistics.record_measured(cid, **dims, measure_op_id="batch::sub::456")
+    plat_after_commit.pilot.logistics._crash_mode = ""
+
+    assert list(LogisticsService(root / "logistics").cartons[cid]["measureOps"]) == [
+        "batch::123",
+        "batch::sub::456",
+    ]
+    assert len(plat_after_commit.pilot.outbox.list_open(tenant_id="ta")) == 1
+    assert plat_after_commit.pilot.journal.verify("ta")["ok"] is False
+
+    plat_final = Platform(root=root, mock_blender=True)
+    assert list(plat_final.pilot.logistics.cartons[cid]["measureOps"]) == [
+        "batch::123",
+        "batch::sub::456",
+    ]
+    assert [
+        e["payload"]["measureOpId"]
+        for e in plat_final.pilot.journal.list("ta")
+        if e["eventType"] == "carton.measured"
+    ] == ["batch::123", "batch::sub::456"]
+    assert plat_final.pilot.outbox.list_open(tenant_id="ta") == []
+    assert plat_final.pilot.journal.verify("ta")["ok"] is True
+
+
 def test_repeatable_domain_events_produce_unique_semantic_keys_without_conflict(tmp_path: Path) -> None:
     plat = Platform(root=tmp_path / "plat", mock_blender=True)
     tid = "ta"
