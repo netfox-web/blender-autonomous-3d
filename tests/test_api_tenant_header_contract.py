@@ -31,6 +31,7 @@ ROUTES = [
     ('POST', '/api/product-rd/generate'),
     ('POST', '/api/factory/spaces'),
     ('POST', '/api/factory/run'),
+    ('GET', '/api/factory/quotes'),
     ('GET', '/api/factory/quotes/{quote_id}'),
     ('POST', '/api/factory/quotes/{quote_id}/approve'),
     ('POST', '/api/factory/products/{product_id}/revise'),

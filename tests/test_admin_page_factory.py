@@ -170,3 +170,12 @@ def test_factory_confirm_boxes_start_hidden() -> None:
     html = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.html").read_text(encoding="utf-8")
     boxes = re.findall(r'<div[^>]*class="fc-confirm"[^>]*>', html)
     assert boxes and all(" hidden" in b for b in boxes)
+
+
+def test_factory_js_loads_quote_list_api() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.js").read_text(encoding="utf-8")
+    assert "/api/factory/quotes" in js
+    assert "quotesRes" in js
+    assert "quotesRes.data.items" in js
