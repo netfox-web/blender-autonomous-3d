@@ -47,7 +47,7 @@ def test_kd_invalid_dimensions(client, field, value):
     assert response.status_code == 422, response.text
 
 
-@pytest.mark.parametrize("value", ["abc", float("inf"), float("nan"), True])
+@pytest.mark.parametrize("value", ["abc", float("inf"), float("nan"), True, 10**400])
 def test_snap_rejects_invalid_numbers(value):
     with pytest.raises(ValueError):
         FlatPackProductTypeRegistry().snap("BEDSIDE_CABINET", width=value)
@@ -87,4 +87,30 @@ def test_oversize_is_rejected_before_bay_generation(client, monkeypatch):
 
     monkeypatch.setattr("fox3d.parametric._bay_count", unexpected_bays)
     response = client.post("/api/parametric/products", headers=HEADERS, json={"width": 1e9})
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("path", ["/api/kd/skus", "/api/product-rd/generate", "/api/retail/fixtures"])
+def test_other_product_creation_defaults(client, path):
+    response = client.post(path, headers=HEADERS, json={})
+    assert response.status_code == 200, response.text
+
+
+def test_model_boundaries():
+    from pydantic import ValidationError
+
+    from fox3d.parametric import CabinetSpec, ParametricProduct
+
+    for model in (CabinetSpec, ParametricProduct):
+        values = {"tenantId": "acme", "width": 5000, "height": 5000, "depth": 5000}
+        assert model.model_validate(values).width == 5000
+        with pytest.raises(ValidationError):
+            model.model_validate({**values, "width": 5001})
+    assert CabinetSpec.model_validate({**values, "doorCount": 100, "shelfCount": 0}).doorCount == 100
+
+
+@pytest.mark.parametrize("field", ["verticalPartitions", "horizontalPartitions"])
+@pytest.mark.parametrize("value", [-1, 101, 100000, "abc", 1.5])
+def test_invalid_partitions(client, field, value):
+    response = client.post("/api/parametric/products", headers=HEADERS, json={field: value})
     assert response.status_code == 422, response.text

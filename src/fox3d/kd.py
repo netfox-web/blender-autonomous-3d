@@ -103,7 +103,11 @@ class FlatPackProductTypeRegistry:
         def nearest(value: float | None, choices: tuple[int, ...], fallback: float) -> float:
             if value is None:
                 return float(fallback)
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            try:
+                finite = not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+            except OverflowError:
+                finite = False
+            if not finite:
                 raise ValueError("dimension must be a finite number")
             return float(min(choices, key=lambda c: abs(c - value)))
 

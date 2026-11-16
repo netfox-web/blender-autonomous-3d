@@ -138,8 +138,8 @@ class CabinetSpec(ParametricProduct):
     openingStyle: str = "hinged"
     parentProductId: str | None = None
     revision: int = 1
-    verticalPartitions: int | None = None
-    horizontalPartitions: int = 0
+    verticalPartitions: int | None = Field(default=None, ge=0, le=MAX_COMPONENT_COUNT)
+    horizontalPartitions: int = Field(default=0, ge=0, le=MAX_COMPONENT_COUNT)
 
     def to_product(self) -> ParametricProduct:
         data = self.model_dump()
