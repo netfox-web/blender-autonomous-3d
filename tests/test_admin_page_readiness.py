@@ -131,12 +131,15 @@ def test_evidence_verify_empty_bundle_is_not_ok_and_real_file_is(client: TestCli
     assert passed["errors"] == []
 
 
-def test_readiness_js_treats_evidence_ok_false_as_failure() -> None:
+def test_readiness_js_gates_evidence_ok_and_one_confirm() -> None:
     js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/readiness.js").read_text(encoding="utf-8")
     assert "out.ok === false" in js
     show = js[js.index("function blockedMessage") : js.index("function bindPost")]
     assert "驗證失敗" in show
     assert show.index("驗證失敗") < show.index("已阻擋")
+    bind = js[js.index("function bindPost") :]
+    assert "if (postBusy || held || activeConfirm) return;" in bind
+    assert "activeConfirm !== box" in bind
 
 
 def test_readiness_locks_tenant_and_handles_post_network_errors() -> None:

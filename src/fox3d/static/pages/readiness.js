@@ -306,7 +306,10 @@
 
   // Snapshot is taken when the confirm box opens. Inputs (including tenant) stay
   // locked until confirm or cancel; the POST sends the snapshot, not a later read.
+  // Only one confirm box may be open. A second box used to unlock the shared tenant
+  // field on cancel while the first box still posted the tenant it snapshotted.
   var postBusy = false;
+  var activeConfirm = null;
 
   function readFields(ids) {
     var raw = {};
@@ -365,27 +368,32 @@
     var held = null;
 
     run.addEventListener('click', function () {
-      if (postBusy || held) return;
+      if (postBusy || held || activeConfirm) return;
       var raw = readFields(cfg.fields);
       raw.tenant = tenant();
       var body;
       try { body = cfg.build(raw); } catch (e) { return; }
+      var summaryText = cfg.summary(body, raw);
+      var snapText = JSON.stringify({ tenant: raw.tenant, body: body }, null, 2);
       held = { tenant: raw.tenant, body: body, raw: raw };
-      if (textEl) textEl.textContent = cfg.summary(body, raw);
-      if (snapEl) snapEl.textContent = JSON.stringify({ tenant: raw.tenant, body: body }, null, 2);
+      activeConfirm = box;
+      if (textEl) textEl.textContent = summaryText;
+      if (snapEl) snapEl.textContent = snapText;
       lockIds(cfg.fields, true);
       box.hidden = false;
     });
     cancel.addEventListener('click', function () {
-      if (postBusy) return;
+      if (postBusy || activeConfirm !== box) return;
       held = null;
+      activeConfirm = null;
       box.hidden = true;
       lockIds(cfg.fields, false);
     });
     ok.addEventListener('click', function () {
-      if (!held || postBusy) return;
+      if (!held || postBusy || activeConfirm !== box) return;
       var shot = held;
       held = null;
+      activeConfirm = null;
       box.hidden = true;
       lockIds(cfg.fields, false);
       postBusy = true;

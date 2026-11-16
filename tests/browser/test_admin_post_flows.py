@@ -335,6 +335,99 @@ def test_readiness_evidence_real_file_ok_is_success(
     assert page.locator("#rd-evidence-run").is_enabled()
 
 
+def _click_id(page: Page, element_id: str) -> None:
+    page.evaluate("(id) => { document.getElementById(id).click(); }", element_id)
+
+
+def test_readiness_second_confirm_cannot_unlock_tenant(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    page = admin_page
+    seen: dict[str, Any] = {"safety": 0}
+
+    def on_release(route: Route) -> None:
+        seen["body"] = json.loads(route.request.post_data or "{}")
+        seen["tenant"] = route.request.headers.get("x-tenant-id")
+        route.fulfill(json={"state": "ENGINEERING_VALID", "entityId": "gate-entity"})
+
+    def on_safety(route: Route) -> None:
+        seen["safety"] += 1
+        route.fulfill(json={"veto": False, "checks": []})
+
+    _install(page, "/api/release/advance", on_release)
+    _install(page, "/api/safety/evaluate", on_safety)
+    _goto(page, admin_server["base_url"], "/admin/readiness", "#rd-rel-entity")
+    page.locator("#rd-rel-entity").fill("gate-entity")
+    page.locator("#rd-rel-run").click()
+    page.wait_for_selector("#rd-rel-confirm:not([hidden])")
+    assert page.locator("#rd-tenant").is_disabled()
+    assert TENANT in page.locator("#rd-rel-snap").inner_text()
+
+    for run_id, box_id in (
+        ("rd-safe-run", "rd-safe-confirm"),
+        ("rd-evidence-run", "rd-evidence-confirm"),
+        ("rd-phys-approve-run", "rd-phys-confirm"),
+        ("rd-com-run", "rd-com-confirm"),
+    ):
+        page.locator(f"#{run_id}").click()
+        assert page.locator(f"#{box_id}").is_hidden()
+    assert page.locator("#rd-rel-confirm").is_visible()
+    assert page.locator("#rd-tenant").is_disabled()
+
+    for cancel_id in ("rd-safe-cancel", "rd-evidence-cancel", "rd-phys-approve-cancel", "rd-com-cancel"):
+        _click_id(page, cancel_id)
+    _click_id(page, "rd-safe-ok")
+    assert seen["safety"] == 0
+    assert page.locator("#rd-tenant").is_disabled()
+    assert page.locator("#rd-rel-confirm").is_visible()
+    assert page.locator("#rd-safe-confirm").is_hidden()
+
+    page.evaluate("() => { document.getElementById('rd-tenant').value = 'switched-tenant'; }")
+    assert "switched-tenant" not in page.locator("#rd-rel-snap").inner_text()
+    page.locator("#rd-rel-ok").click()
+    page.wait_for_function("() => (document.getElementById('rd-notice').textContent || '').includes('操作完成')")
+    assert seen["tenant"] == TENANT
+    assert seen["body"]["entityId"] == "gate-entity"
+    assert seen["body"]["target"] == "ENGINEERING_VALID"
+    assert seen["safety"] == 0
+
+
+def test_readiness_cancel_then_other_confirm_uses_switched_tenant(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    seen: dict[str, Any] = {"release": 0}
+
+    def on_release(route: Route) -> None:
+        seen["release"] += 1
+        route.fulfill(json={"state": "ENGINEERING_VALID"})
+
+    def on_safety(route: Route) -> None:
+        seen["tenant"] = route.request.headers.get("x-tenant-id")
+        seen["body"] = json.loads(route.request.post_data or "{}")
+        route.fulfill(json={"veto": False, "checks": [], "notCertified": True})
+
+    _install(page, "/api/release/advance", on_release)
+    _install(page, "/api/safety/evaluate", on_safety)
+    _goto(page, admin_server["base_url"], "/admin/readiness", "#rd-rel-run")
+    page.locator("#rd-rel-run").click()
+    page.wait_for_selector("#rd-rel-confirm:not([hidden])")
+    page.locator("#rd-rel-cancel").click()
+    page.wait_for_selector("#rd-rel-confirm", state="hidden")
+    assert page.locator("#rd-tenant").is_enabled()
+    assert page.locator("#rd-rel-entity").is_enabled()
+
+    page.locator("#rd-tenant").fill("switched-tenant")
+    page.locator("#rd-safe-run").click()
+    page.wait_for_selector("#rd-safe-confirm:not([hidden])")
+    assert page.locator("#rd-rel-confirm").is_hidden()
+    assert page.locator("#rd-tenant").is_disabled()
+    assert "switched-tenant" in page.locator("#rd-safe-snap").inner_text()
+    page.locator("#rd-safe-ok").click()
+    page.wait_for_function("() => (document.getElementById('rd-notice').textContent || '').includes('操作完成')")
+    assert seen["tenant"] == "switched-tenant"
+    assert seen["body"]["kind"] == "KD"
+    assert seen["release"] == 0
+
+
 def test_pilot_receipt_disables_confirm_and_second_click_does_not_repost(
     admin_page: Page, admin_server: dict[str, Any]
 ) -> None:
