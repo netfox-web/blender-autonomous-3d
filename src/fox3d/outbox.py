@@ -250,8 +250,18 @@ class CommitOutbox:
                 if path.exists():
                     path.unlink()
 
-    def abort(self, tx_id: str) -> None:
-        self.complete(tx_id)
+    def abort(self, tx_id: str) -> bool:
+        with self._lock:
+            with FileLock(self.root / "outbox.lock"):
+                path = self._path(tx_id)
+                rec = self._load_tx_file(path)
+                if rec.get("status") in {BUSINESS_COMMITTED, COMMITTED}:
+                    return False
+                self._tx_cache.pop(path, None)
+                _bump_tx_gen(path)
+                if path.exists():
+                    path.unlink()
+                return True
 
     def _read(self, tx_id: str) -> dict[str, Any]:
         path = self._path(tx_id)
@@ -338,8 +348,23 @@ class CommitOutbox:
                     latest = self._load_tx_file(self._path(tx_id))
                     if latest:
                         tx = latest
+                if not committed and tx.get("status") != BUSINESS_COMMITTED:
+                    aborted_ok = self.abort(tx_id)
+                    latest = self._load_tx_file(self._path(tx_id))
+                    if aborted_ok is False or latest.get("status") in {BUSINESS_COMMITTED, COMMITTED}:
+                        if latest:
+                            tx = latest
+                        committed = True
+                    else:
+                        aborted += 1
+                        continue
                 if committed or tx.get("status") == BUSINESS_COMMITTED:
                     if journal is not None:
+                        ev = dict(tx.get("event") or {})
+                        tenant_id = str(ev.get("tenant_id") or tx.get("tenantId") or "")
+                        semantic = tx.get("semanticKey")
+                        event_type = str(ev.get("event_type") or ev.get("eventType") or "reconcile")
+                        payload = dict(ev.get("payload") or {})
                         journal.append(
                             event_type,
                             tenant_id=tenant_id,
@@ -353,9 +378,6 @@ class CommitOutbox:
                         )
                     self.complete(tx_id)
                     finalized += 1
-                else:
-                    self.abort(tx_id)
-                    aborted += 1
             except Exception:
                 failed.append(tx_id)
         return {"finalized": finalized, "aborted": aborted, "failed": failed, "open": len(self.list_open())}
