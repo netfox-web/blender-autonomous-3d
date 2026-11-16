@@ -593,8 +593,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         if str(payload.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
             raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
         # This endpoint has always preferred sheetCount over quantity and costPerSheet over
-        # unitCost, the reverse of import_receipt. Swap the aliases so the shared validators
-        # and import_receipt see this endpoint's precedence.
+        # unitCost, the reverse of import_receipt. Swap the aliases for the shared validators,
+        # then forward only the fields this endpoint has always accepted.
         row = {
             **payload,
             "quantity": payload.get("sheetCount"),
@@ -608,7 +608,6 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         try:
             return get_platform().pilot.receiving.import_receipt(
                 {
-                    **row,
                     "material": str(row.get("material") or "WOOD_WHITE"),
                     "thickness": float(row.get("thickness") or 18),
                     "quantity": qty,
