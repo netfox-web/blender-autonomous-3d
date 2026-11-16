@@ -8,7 +8,8 @@ from typing import Any
 
 import pytest
 
-from fox3d.journal import EventJournal, JournalCommitError
+from fox3d.inventory import atomic_write_json, read_json
+from fox3d.journal import EventJournal, JournalCommitError, SemanticKeyConflictError
 from fox3d.outbox import BUSINESS_COMMITTED, PREPARED, CommitOutbox
 import fox3d.journal as journal_mod
 import fox3d.outbox as outbox_mod
@@ -365,4 +366,222 @@ def test_outbox_concurrent_prepare_and_restart_recovery_order(tmp_path: Path) ->
     committed_events = journal_after.list("ta")
     assert [e["aggregateId"] for e in committed_events] == expected_aggregate_ids
     assert journal_after.verify("ta")["ok"] is True
+
+
+def test_list_open_interleaved_with_mark_business_committed_does_not_abort_committed_tx(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_read_json = outbox_mod.read_json
+
+    for hook_mode in ("read_json_cross_proc", "cache_put_in_proc", "during_reconcile_callback"):
+        sub = tmp_path / hook_mode
+        outbox1 = CommitOutbox(sub / "tx")
+        outbox2 = CommitOutbox(sub / "tx")
+        journal = EventJournal(sub / "journal")
+        journal.outbox = outbox1
+
+        tx = outbox2.prepare(_make_event(1))
+        tx_id = tx["txId"]
+        tx_path = outbox1._path(tx_id)
+        triggered = {"done": False}
+
+        if hook_mode == "read_json_cross_proc":
+            def hooked_read_json(
+                path: Path,
+                _o2: CommitOutbox = outbox2,
+                _tx_id: str = tx_id,
+                _tx_path: Path = tx_path,
+                _trig: dict[str, bool] = triggered,
+            ) -> Any:
+                data = real_read_json(path)
+                if not _trig["done"] and path == _tx_path:
+                    _trig["done"] = True
+                    saved_gen = outbox_mod._get_tx_gen(path)
+                    _o2.mark_business_committed(_tx_id, observed_generation=1)
+                    # Also simulate cross-process update where in-process _TX_FILE_GEN did not advance.
+                    with outbox_mod._OUTBOX_GEN_LOCK:
+                        outbox_mod._TX_FILE_GEN[path.resolve()] = saved_gen
+                return data
+
+            monkeypatch.setattr(outbox_mod, "read_json", hooked_read_json)
+            open_rows = outbox1.list_open()
+            monkeypatch.setattr(outbox_mod, "read_json", real_read_json)
+            assert len(open_rows) == 1
+            assert open_rows[0]["status"] == BUSINESS_COMMITTED
+
+            res = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
+        elif hook_mode == "cache_put_in_proc":
+            orig_cache_put = outbox1._cache_put
+
+            def hooked_cache_put(
+                path: Path,
+                rec: dict[str, Any],
+                *,
+                bump: bool = False,
+                _orig: Any = orig_cache_put,
+                _o2: CommitOutbox = outbox2,
+                _tx_id: str = tx_id,
+                _tx_path: Path = tx_path,
+                _trig: dict[str, bool] = triggered,
+            ) -> None:
+                if not bump and not _trig["done"] and path == _tx_path:
+                    _trig["done"] = True
+                    _o2.mark_business_committed(_tx_id, observed_generation=2)
+                _orig(path, rec, bump=bump)
+
+            monkeypatch.setattr(outbox1, "_cache_put", hooked_cache_put)
+            open_rows = outbox1.list_open()
+            monkeypatch.setattr(outbox1, "_cache_put", orig_cache_put)
+            assert len(open_rows) == 1
+            assert open_rows[0]["status"] == BUSINESS_COMMITTED
+
+            res = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
+        else:
+            # Interleaving where list_open() genuinely observed PREPARED first, and another instance
+            # transitions the tx to BUSINESS_COMMITTED while business_committed() callback is running.
+            def late_commit_callback(
+                _tx: dict[str, Any],
+                _o2: CommitOutbox = outbox2,
+                _tx_id: str = tx_id,
+                _trig: dict[str, bool] = triggered,
+            ) -> bool:
+                if not _trig["done"]:
+                    _trig["done"] = True
+                    _o2.mark_business_committed(_tx_id, observed_generation=3)
+                return False
+
+            res = outbox1.reconcile(journal=journal, business_committed=late_commit_callback)
+
+        assert res == {
+            "finalized": 1,
+            "aborted": 0,
+            "failed": [],
+            "open": 0,
+        }
+        assert outbox1.list_open() == []
+        events = journal.list("ta")
+        assert len(events) == 1
+        assert events[0]["aggregateId"] == "wo-1"
+        assert events[0]["semanticKey"] == "ta::outbox::1"
+        assert journal.verify("ta")["ok"] is True
+
+
+def test_reconcile_preserves_tx_on_check_semantic_key_errors_and_handles_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = outbox
+
+    # Journal already has event 1 committed; tx1 is still PREPARED on disk (e.g. crash before complete).
+    journal.append(
+        "outbox.step.1",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"idx": 1},
+        semantic_key="ta::outbox::1",
+    )
+    tx1 = outbox.prepare(_make_event(1))
+
+    # 1. Transient OSError during real check_semantic_key read must NOT abort tx1 when business_committed is False.
+    real_journal_read = journal_mod.read_json
+    saved_journal_bytes = read_json(journal._path("ta"))
+
+    def fail_journal_read(_path: Path) -> Any:
+        raise OSError("simulated transient journal read failure")
+
+    journal_cold = EventJournal(tmp_path / "journal")
+    journal_cold.outbox = outbox
+    monkeypatch.setattr(journal_mod, "read_json", fail_journal_read)
+    res_io = outbox.reconcile(journal=journal_cold, business_committed=lambda _tx: False)
+    monkeypatch.setattr(journal_mod, "read_json", real_journal_read)
+    assert res_io == {
+        "finalized": 0,
+        "aborted": 0,
+        "failed": [tx1["txId"]],
+        "open": 1,
+    }
+    assert [t["txId"] for t in outbox.list_open()] == [tx1["txId"]]
+
+    # 2. Tenant isolation PermissionError from real check_semantic_key must ALSO preserve tx1 in failed.
+    tampered_tenant = {**saved_journal_bytes, "tenantId": "tb"}
+    atomic_write_json(journal._path("ta"), tampered_tenant)
+    journal_iso = EventJournal(tmp_path / "journal")
+    journal_iso.outbox = outbox
+    res_perm = outbox.reconcile(journal=journal_iso, business_committed=lambda _tx: False)
+    assert res_perm == {
+        "finalized": 0,
+        "aborted": 0,
+        "failed": [tx1["txId"]],
+        "open": 1,
+    }
+    assert [t["txId"] for t in outbox.list_open()] == [tx1["txId"]]
+
+    # Restore valid journal file: tx1 is now matched against the existing journal event and finalized.
+    atomic_write_json(journal._path("ta"), saved_journal_bytes)
+    journal_recovered = EventJournal(tmp_path / "journal")
+    journal_recovered.outbox = outbox
+    res_recovered = outbox.reconcile(journal=journal_recovered, business_committed=lambda _tx: False)
+    assert res_recovered == {
+        "finalized": 1,
+        "aborted": 0,
+        "failed": [],
+        "open": 0,
+    }
+    assert outbox.list_open() == []
+
+    # 3. SemanticKeyConflictError handling:
+    # Both PREPARED (business_committed=False) and BUSINESS_COMMITTED transactions whose semanticKey
+    # conflicts with an already-committed journal event must NOT be finalized or silently aborted;
+    # they must be recorded in failed and preserved in the outbox.
+    with pytest.raises(SemanticKeyConflictError):
+        journal.check_semantic_key(
+            tenant_id="ta",
+            event_type="outbox.step.1",
+            payload={"idx": 888},
+            semantic_key="ta::outbox::1",
+        )
+    bad_uncommitted = _make_event(1)
+    bad_uncommitted["payload"] = {"idx": 888}
+    tx_conflict_uncommitted = outbox.prepare(bad_uncommitted)
+
+    bad_committed = _make_event(1)
+    bad_committed["payload"] = {"idx": 999}
+    tx_conflict_committed = outbox.prepare(bad_committed)
+    outbox.mark_business_committed(tx_conflict_committed["txId"])
+
+    res_conflict = outbox.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res_conflict == {
+        "finalized": 0,
+        "aborted": 0,
+        "failed": [tx_conflict_uncommitted["txId"], tx_conflict_committed["txId"]],
+        "open": 2,
+    }
+    assert [t["txId"] for t in outbox.list_open()] == [
+        tx_conflict_uncommitted["txId"],
+        tx_conflict_committed["txId"],
+    ]
+    assert [e["payload"] for e in journal.list("ta")] == [{"idx": 1}]
+
+    # Fallback path when journal object does not expose check_semantic_key also preserves conflicting txs in failed.
+    class _ListOnlyJournal:
+        def list(self, tid: str) -> list[dict[str, Any]]:
+            return journal.list(tid)
+
+        def append(self, event_type: str, **kwargs: Any) -> dict[str, Any]:
+            return journal.append(event_type, **kwargs)
+
+    res_fallback_conflict = outbox.reconcile(
+        journal=_ListOnlyJournal(),
+        business_committed=lambda _tx: False,
+    )
+    assert res_fallback_conflict == {
+        "finalized": 0,
+        "aborted": 0,
+        "failed": [tx_conflict_uncommitted["txId"], tx_conflict_committed["txId"]],
+        "open": 2,
+    }
+
 

@@ -1140,3 +1140,80 @@ def test_journal_concurrent_appends_and_semantic_key_conflicts(tmp_path: Path) -
         )
 
 
+def test_journal_cross_process_read_interleaved_with_writer_preserves_all_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_read_json = journal_mod.read_json
+
+    for reader_op in ("list", "verify"):
+        sub = tmp_path / reader_op
+        j1 = EventJournal(sub / "journal")
+        j2 = EventJournal(sub / "journal")
+
+        # Writer j2 commits event 1 first so j1 has to read from disk on list() (and verify() forces reload).
+        j2.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-1",
+            actor="ops",
+            payload={"step": 1},
+            semantic_key="ta::evt::1",
+        )
+
+        interleaved = {"triggered": False}
+
+        def racing_read_json(path: Path, _j2: EventJournal = j2, _state: dict[str, bool] = interleaved) -> Any:
+            data = real_read_json(path)
+            if not _state["triggered"] and path.name == "ta.json":
+                _state["triggered"] = True
+                saved_gen = journal_mod._get_journal_gen(path)
+                # Another process writes event 2 after read_json read old content [1], before j1 caches sig.
+                _j2.append(
+                    "evt.step",
+                    tenant_id="ta",
+                    aggregate_type="WorkOrder",
+                    aggregate_id="wo-2",
+                    actor="ops",
+                    payload={"step": 2},
+                    semantic_key="ta::evt::2",
+                )
+                # Simulate separate OS process where in-process generation in j1's process was not bumped.
+                with journal_mod._JOURNAL_GEN_LOCK:
+                    journal_mod._JOURNAL_GEN[path.resolve()] = saved_gen
+            return data
+
+        monkeypatch.setattr(journal_mod, "read_json", racing_read_json)
+
+        if reader_op == "list":
+            observed = j1.list("ta")
+            assert [e["payload"]["step"] for e in observed] == [1, 2]
+        else:
+            ver = j1.verify("ta")
+            assert ver["ok"] is True
+            assert ver["count"] == 2
+
+        monkeypatch.setattr(journal_mod, "read_json", real_read_json)
+
+        # Subsequent append on j1 must NOT hit a poisoned cache with only [1] and overwrite event 2.
+        j1.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-3",
+            actor="ops",
+            payload={"step": 3},
+            semantic_key="ta::evt::3",
+        )
+
+        events = j1.list("ta")
+        assert [e["payload"]["step"] for e in events] == [1, 2, 3]
+        assert [e["sequence"] for e in events] == [1, 2, 3]
+        assert j1.verify("ta")["ok"] is True
+
+        cold_events = EventJournal(sub / "journal").list("ta")
+        assert [e["payload"]["step"] for e in cold_events] == [1, 2, 3]
+        assert [e["sequence"] for e in cold_events] == [1, 2, 3]
+
+
+
