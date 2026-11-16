@@ -345,7 +345,13 @@ def run_manual_factory_scenario(
         product_version=rel.get("productVersion"),
     )
     measured = plat.pilot.logistics.record_measured(
-        cartons[0]["cartonId"], length=900, width=900, height=900, weight_kg=40, source="MANUAL"
+        cartons[0]["cartonId"],
+        tenant_id=a,
+        length=900,
+        width=900,
+        height=900,
+        weight_kg=40,
+        source="MANUAL",
     )
     if measured.get("mismatch"):
         plat.pilot.workorders.hold(wo_id, actor=op_a["operatorId"], reason="PACKING_MISMATCH", blocking=True)
