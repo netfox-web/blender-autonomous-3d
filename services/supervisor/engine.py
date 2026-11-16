@@ -642,6 +642,7 @@ class SupervisorEngine:
                         f"EVIDENCE_GENERATION_ID={contract.evidence_generation_id}\n\n"
                         f"{output.issue_comment_markdown}"
                     )
+                    self.policy_engine.validate_action("add_issue_comment")
                     comment_id = self.github_client.add_issue_comment(contract.issue, comment_body)
                     self.state_mgr.record_comment_posted(review_id, comment_id)
 
@@ -670,6 +671,7 @@ class SupervisorEngine:
                         f"HUMAN_APPROVAL_REQUIRED\n\n"
                         f"{output.issue_comment_markdown}"
                     )
+                    self.policy_engine.validate_action("add_issue_comment")
                     comment_id = self.github_client.add_issue_comment(contract.issue, comment_body)
                     self.state_mgr.record_comment_posted(review_id, comment_id)
 
