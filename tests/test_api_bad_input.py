@@ -741,3 +741,72 @@ def test_materials_lots_huge_cost_per_sheet_returns_422(client: TestClient, plat
     response = client.post("/api/materials/lots", headers=HEADERS, json={"quantity": 1, "costPerSheet": HUGE_INT})
     assert response.status_code == 422, response.text
     assert _acme_lot_ids(platform) == lots
+
+
+@pytest.mark.parametrize(
+    "body,expected_qty",
+    [
+        ({"quantity": 10, "expectedQuantity": 11}, 10),
+        (
+            {
+                "sheetCount": 8,
+                "material": "WOOD_WHITE",
+                "expectedMaterial": "PB_18_WHITE",
+                "expectedThickness": 12,
+            },
+            8,
+        ),
+        (
+            {
+                "quantity": 6,
+                "length": 1800,
+                "width": 900,
+                "grain": "width",
+                "expectedLength": 2000,
+                "expectedWidth": 1000,
+                "expectedGrain": "length",
+                "coaAssetId": "coa-extra",
+            },
+            6,
+        ),
+        (
+            {
+                "quantity": 4,
+                "length": 1800,
+                "width": 900,
+                "grain": "width",
+                "coaAssetId": "coa-extra",
+            },
+            4,
+        ),
+    ],
+)
+def test_materials_lots_ignores_extra_receipt_fields(
+    client: TestClient, platform, body: dict[str, Any], expected_qty: int
+) -> None:
+    response = client.post("/api/materials/lots", headers=HEADERS, json={"supplierLot": "EXTRA", **body})
+    assert response.status_code == 200, response.text
+    receipt = response.json()
+    assert receipt["status"] == "ACCEPTED"
+    assert receipt["quarantined"] is False
+    assert receipt["mismatchReasons"] == []
+    assert receipt["quantity"] == expected_qty
+    assert receipt["acceptedQty"] == expected_qty
+    assert receipt["length"] is None
+    assert receipt["width"] is None
+    assert receipt["grain"] is None
+    assert receipt["coaAssetId"] is None
+
+    stored_receipt = platform.pilot.receiving.receipts[receipt["receiptId"]]
+    assert stored_receipt["status"] == "ACCEPTED"
+    assert stored_receipt["acceptedQty"] == expected_qty
+
+    lot = platform.lots.get(receipt["lotId"], tenant_id="acme")
+    assert lot["quarantined"] is False
+    assert lot["qualityState"] == "AVAILABLE"
+    assert lot["sheetCount"] == expected_qty
+    assert lot["remainingSheets"] == expected_qty
+    assert lot["length"] == 2440
+    assert lot["width"] == 1220
+    assert lot["grain"] == "length"
+    assert receipt["lotId"] in {item["lotId"] for item in platform.lots.list(tenant_id="acme", allocatable=True)}
