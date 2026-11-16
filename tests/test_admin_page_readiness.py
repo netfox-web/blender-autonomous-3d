@@ -102,12 +102,24 @@ def test_readiness_confirm_boxes_start_hidden_and_lock_inputs() -> None:
     html = (base / "readiness.html").read_text(encoding="utf-8")
     boxes = re.findall(r'<[^>]*id="rd-[a-z-]+-confirm"[^>]*>', html)
     assert boxes and all(" hidden" in b for b in boxes)
-    assert "lockWhileConfirming" in (base / "readiness.js").read_text(encoding="utf-8")
+    js = (base / "readiness.js").read_text(encoding="utf-8")
+    assert "data-rd-lock" in js and "function lockIds" in js
+    for snap in ("rd-evidence-snap", "rd-rel-snap", "rd-safe-snap", "rd-phys-snap", "rd-com-snap"):
+        assert f'id="{snap}"' in html
 
 
 def test_readiness_locks_tenant_and_handles_post_network_errors() -> None:
     from pathlib import Path
 
     js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/readiness.js").read_text(encoding="utf-8")
-    assert "fields.push($('rd-tenant'))" in js
+    assert "$('rd-tenant')" in js and "els.push(tenantEl)" in js
     assert "連線失敗" in js and "call.catch" in js
+    assert "shot.tenant" in js and "shot.body" in js
+    assert "postBusy" in js and "run.disabled = true" in js and "ok.disabled = true" in js
+    assert ".finally(" in js and "run.disabled = false" in js and "ok.disabled = false" in js
+    assert "function isBlockedResult" in js and "veto === true" in js and "truthLabel" in js
+    assert "out.status < 200 || out.status >= 300" in js
+    assert "操作失敗" in js and "已阻擋" in js
+    # Success text is not the branch taken for a blocked body.
+    show = js[js.index("function showOut") : js.index("function bindPost")]
+    assert show.index("操作完成") > show.index("isBlockedResult")

@@ -54,7 +54,8 @@
         <button type="button" class="rd-btn rd-btn-accent" id="rd-evidence-run">送出驗證</button>
       </div>
       <div id="rd-evidence-confirm" class="rd-confirm" hidden>
-        <p>確定要送出證據驗證嗎？此操作僅查驗資料，不會改動後端狀態。</p>
+        <p id="rd-evidence-text">確定要送出證據驗證嗎？此操作僅查驗資料，不會改動後端狀態。</p>
+        <pre id="rd-evidence-snap" class="rd-snap"></pre>
         <button type="button" class="rd-btn rd-btn-accent" id="rd-evidence-ok">確認驗證</button>
         <button type="button" class="rd-btn" id="rd-evidence-cancel">取消</button>
       </div>
@@ -82,6 +83,7 @@
       </div>
       <div id="rd-rel-confirm" class="rd-confirm" hidden>
         <p id="rd-rel-confirm-text"></p>
+        <pre id="rd-rel-snap" class="rd-snap"></pre>
         <button type="button" class="rd-btn rd-btn-accent" id="rd-rel-ok">確認推進</button>
         <button type="button" class="rd-btn" id="rd-rel-cancel">取消</button>
       </div>
@@ -104,7 +106,8 @@
         <button type="button" class="rd-btn rd-btn-accent" id="rd-safe-run">執行評估</button>
       </div>
       <div id="rd-safe-confirm" class="rd-confirm" hidden>
-        <p>確定要執行安全評估？結果僅供參考，不代表已通過認證。</p>
+        <p id="rd-safe-text">確定要執行安全評估？結果僅供參考，不代表已通過認證。</p>
+        <pre id="rd-safe-snap" class="rd-snap"></pre>
         <button type="button" class="rd-btn rd-btn-accent" id="rd-safe-ok">確認評估</button>
         <button type="button" class="rd-btn" id="rd-safe-cancel">取消</button>
       </div>
@@ -125,7 +128,8 @@
         <button type="button" class="rd-btn rd-btn-accent" id="rd-phys-approve-run">送出核准申請</button>
       </div>
       <div id="rd-phys-confirm" class="rd-confirm" hidden>
-        <p>確定要送出核准申請？狀態為 WAITING_APPROVAL，不會啟動現場機台。</p>
+        <p id="rd-phys-text">確定要送出核准申請？狀態為 WAITING_APPROVAL，不會啟動現場機台。</p>
+        <pre id="rd-phys-snap" class="rd-snap"></pre>
         <button type="button" class="rd-btn rd-btn-accent" id="rd-phys-approve-ok">確認送出</button>
         <button type="button" class="rd-btn" id="rd-phys-approve-cancel">取消</button>
       </div>
@@ -159,6 +163,7 @@
       </div>
       <div id="rd-com-confirm" class="rd-confirm" hidden>
         <p id="rd-com-confirm-text"></p>
+        <pre id="rd-com-snap" class="rd-snap"></pre>
         <button type="button" class="rd-btn rd-btn-accent" id="rd-com-ok">確認匯入</button>
         <button type="button" class="rd-btn" id="rd-com-cancel">取消</button>
       </div>
