@@ -577,10 +577,20 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
         Another tenant's quote answers 404 (not 403) so quote ids do not leak across tenants.
         """
-        for run_id, run in get_platform().factory.runs.items():
-            if (run.get("quote") or {}).get("quoteId") == quote_id and run.get("tenantId") == tid:
-                return run_id
-        raise HTTPException(404, quote_id)
+        try:
+            return get_platform().factory.run_id_for_quote(quote_id, tid)
+        except KeyError as exc:
+            raise HTTPException(404, quote_id) from exc
+
+    @app.get("/api/factory/quotes")
+    def factory_quotes_list(
+        x_tenant_id: str | None = Header(default=None),
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        lim = bounded_count(limit, 100, "limit") if limit is not None else 100
+        items = get_platform().factory.list_quote_summaries(tid, limit=lim)
+        return {"items": items}
 
     @app.get("/api/factory/quotes/{quote_id}")
     def factory_quote(quote_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
