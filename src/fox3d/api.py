@@ -88,7 +88,7 @@ def _absent_quantity(raw: Any) -> bool:
     return not isinstance(raw, bool) and raw in (None, "", 0, 0.0)
 
 
-def _require_receipt_quantity(payload: dict[str, Any], row_index: int | None = None) -> None:
+def _require_receipt_quantity(payload: dict[str, Any], row_index: int | None = None) -> int:
     # import_receipt treats 0 / "" as absent and falls through to sheetCount.
     # int() would truncate 1.9 to 1 and accept True as 1; both are refused here.
     raw = payload.get("quantity")
@@ -102,17 +102,22 @@ def _require_receipt_quantity(payload: dict[str, Any], row_index: int | None = N
         _unprocessable("缺少 quantity", row_index)
     if isinstance(raw, float):
         _unprocessable("quantity 須為正整數", row_index)
-    if isinstance(raw, int):
-        qty = raw
-    elif isinstance(raw, str):
-        try:
-            qty = int(raw)
-        except ValueError:
-            _unprocessable("quantity 格式錯誤", row_index)
-    else:
-        _unprocessable("quantity 格式錯誤", row_index)
+    qty = _check_service_int(raw, "quantity", row_index)
     if qty <= 0:
         _unprocessable("quantity 須為正整數", row_index)
+    return qty
+
+
+def _require_purchase_quantity(payload: dict[str, Any]) -> int:
+    raw = payload.get("quantity")
+    if not isinstance(raw, bool) and raw in (None, ""):
+        _unprocessable("缺少 quantity")
+    if isinstance(raw, (bool, float)):
+        _unprocessable("quantity 須為正整數")
+    qty = _check_service_int(raw, "quantity")
+    if qty < 1:
+        _unprocessable("quantity 須為正整數")
+    return qty
 
 
 def _require_manual_source(payload: dict[str, Any]) -> None:
@@ -128,24 +133,24 @@ def _check_finite_float(raw: Any, field: str, row_index: int | None = None) -> N
         _unprocessable(f"{field} 格式錯誤", row_index)
     try:
         number = float(raw)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: a JSON integer such as 10**400 cannot become a float.
         _unprocessable(f"{field} 格式錯誤", row_index)
     if not math.isfinite(number):
         _unprocessable(f"{field} 格式錯誤", row_index)
 
 
-def _check_service_int(raw: Any, field: str, row_index: int | None = None) -> None:
+def _check_service_int(raw: Any, field: str, row_index: int | None = None) -> int:
     # Matches int(value) without truncating floats or accepting bool (bool is an int subclass).
     if isinstance(raw, bool) or isinstance(raw, float):
         _unprocessable(f"{field} 格式錯誤", row_index)
     if isinstance(raw, int):
-        return
+        return raw
     if isinstance(raw, str):
         try:
-            int(raw)
+            return int(raw)
         except ValueError:
             _unprocessable(f"{field} 格式錯誤", row_index)
-        return
     _unprocessable(f"{field} 格式錯誤", row_index)
 
 
@@ -399,7 +404,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/digital-twins/{twin_id}/preview")
     def twin_preview(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         plat = get_platform()
-        twin = plat.get_twin(twin_id, tenant_id=tenant(x_tenant_id))
+        try:
+            twin = plat.get_twin(twin_id, tenant_id=tenant(x_tenant_id))
+        except (KeyError, PermissionError):
+            raise HTTPException(404, "找不到數位分身") from None
         return plat.product_e2e(tenant_id=twin["tenantId"], sku=twin["sku"], glb_path=twin.get("glb"))
 
     @app.post("/api/digital-twins/{twin_id}/360")
@@ -584,20 +592,38 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         if str(payload.get("allocationPolicy") or "") == "FIXTURE_AUTO_SEED":
             raise HTTPException(403, "FIXTURE_AUTO_SEED is not available on the production/manual API")
-        return get_platform().pilot.receiving.import_receipt(
-            {
-                "material": str(payload.get("material") or "WOOD_WHITE"),
-                "thickness": float(payload.get("thickness") or 18),
-                "quantity": int(payload.get("sheetCount") or payload.get("quantity") or 1),
-                "supplierLot": payload.get("supplierLot"),
-                "supplierId": payload.get("supplierId"),
-                "unitCost": payload.get("costPerSheet") or payload.get("unitCost"),
-            },
-            tenant_id=tid,
-            actor=str(payload.get("actor") or "api"),
-            source=str(payload.get("source") or "MANUAL"),
-            idempotency_key=payload.get("idempotencyKey"),
-        )
+        # This endpoint has always preferred sheetCount over quantity and costPerSheet over
+        # unitCost, the reverse of import_receipt. Swap the aliases for the shared validators,
+        # then forward only the fields this endpoint has always accepted.
+        row = {
+            **payload,
+            "quantity": payload.get("sheetCount"),
+            "sheetCount": payload.get("quantity"),
+            "unitCost": payload.get("costPerSheet"),
+            "costPerSheet": payload.get("unitCost"),
+        }
+        qty = _require_receipt_quantity(row)
+        _require_manual_source(row)
+        _validate_receipt_numbers(row)
+        try:
+            return get_platform().pilot.receiving.import_receipt(
+                {
+                    "material": str(row.get("material") or "WOOD_WHITE"),
+                    "thickness": float(row.get("thickness") or 18),
+                    "quantity": qty,
+                    "supplierLot": row.get("supplierLot"),
+                    "supplierId": row.get("supplierId"),
+                    "unitCost": row.get("unitCost") or row.get("costPerSheet"),
+                },
+                tenant_id=tid,
+                actor=str(payload.get("actor") or "api"),
+                source=str(payload.get("source") or "MANUAL"),
+                idempotency_key=payload.get("idempotencyKey"),
+            )
+        except PilotException:
+            raise
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.get("/api/remnants")
     def remnants(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -767,7 +793,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 tenant_id=tid,
                 allocation_policy="STRICT_STOCK",
             )
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
         except PermissionError as exc:
+            if str(exc).startswith("tenant isolation"):
+                raise HTTPException(403, str(exc)) from exc
             raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/pilot/receipts")
@@ -792,10 +822,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/purchase-requests")
     def pilot_pr(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
+        qty = _require_purchase_quantity(payload)
         return get_platform().pilot.receiving.draft_purchase_request(
             tenant_id=tid,
             material=str(payload.get("material") or "PB_18_WHITE"),
-            quantity=int(payload.get("quantity") or 1),
+            quantity=qty,
             actor=str(payload.get("actor") or "api"),
             shortage=payload.get("shortage"),
             release_hash=payload.get("releaseHash"),
@@ -840,6 +871,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, body)
         try:
             return get_platform().pilot.stations.heartbeat(station_id, tenant_id=tid, actor=body.get("actor"))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
 
@@ -864,21 +897,35 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def pilot_ack(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
-        return get_platform().pilot.dispatcher.ack(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"))
+        try:
+            return get_platform().pilot.dispatcher.ack(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
 
     @app.post("/api/pilot/leases/{lease_id}/start")
     def pilot_start(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
-        return get_platform().pilot.dispatcher.start(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"))
+        try:
+            return get_platform().pilot.dispatcher.start(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"))
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
 
     @app.post("/api/pilot/leases/{lease_id}/complete")
     def pilot_lease_complete(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
+        dispatcher = get_platform().pilot.dispatcher
         try:
+            dispatcher._lease(lease_id, tid)
             require_confirm(body, action="complete_operation")
-            return get_platform().pilot.dispatcher.complete(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"), confirm=True)
+            return dispatcher.complete(lease_id, tenant_id=tid, actor=str(body.get("actor") or "api"), confirm=True)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
 
@@ -942,7 +989,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.get("/api/pilot/scan-token/{kind}/{object_id}")
     def pilot_token(kind: str, object_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         _ = require_tenant(x_tenant_id)
-        return {"token": make_token(kind, object_id), "barcodeHardware": "PARTIAL"}
+        try:
+            return {"token": make_token(kind, object_id), "barcodeHardware": "PARTIAL"}
+        except PermissionError as exc:
+            _raise_permission(exc)
 
     @app.get("/admin", response_class=HTMLResponse)
     def admin() -> str:
