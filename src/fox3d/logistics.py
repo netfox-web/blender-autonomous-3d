@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from pathlib import Path
@@ -100,6 +101,7 @@ class LogisticsService:
             self.root.mkdir(parents=True, exist_ok=True)
         self.journal: Any | None = None
         self.outbox: Any | None = None
+        self._crash_mode = ""
         self.cartons: dict[str, dict[str, Any]] = {}
         self.pallets: dict[str, dict[str, Any]] = {}
         self.shipments: dict[str, dict[str, Any]] = {}
@@ -218,6 +220,7 @@ class LogisticsService:
         measure_op_id: str | None = None,
     ) -> dict[str, Any]:
         rec = self.cartons[carton_id]
+        prev_snapshot = copy.deepcopy(rec)
         if rec.get("tenantId") != tenant_id:
             raise PermissionError("tenant isolation: carton measure")
         expected = dict(rec["expected"])
@@ -259,17 +262,29 @@ class LogisticsService:
             )
             rec["mismatch"] = mismatch
             rec["autoOverride"] = False
-        emit(
-            self,
-            "carton.measured",
-            tenant_id=tenant_id,
-            aggregate_type="Carton",
-            aggregate_id=carton_id,
-            actor="ops",
-            payload={"measured": audit_measured, "measureOpId": op_id},
-            release_hash=rec.get("releaseHash"),
-            semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
-        )
+        try:
+            emit(
+                self,
+                "carton.measured",
+                tenant_id=tenant_id,
+                aggregate_type="Carton",
+                aggregate_id=carton_id,
+                actor="ops",
+                payload={"measured": audit_measured, "measureOpId": op_id},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
+            )
+        except Exception:
+            if self.root and (self.root / "logistics.json").exists():
+                disk = read_json(self.root / "logistics.json") or {}
+                disk_cartons = {r["cartonId"]: r for r in disk.get("cartons") or []}
+                if carton_id in disk_cartons:
+                    self.cartons[carton_id] = disk_cartons[carton_id]
+                else:
+                    self.cartons[carton_id] = prev_snapshot
+            else:
+                self.cartons[carton_id] = prev_snapshot
+            raise
         return rec
 
     def packing_list(
@@ -567,7 +582,7 @@ class LogisticsService:
             actor="ops",
             payload={"workOrderId": work_order_id, "pinned": pinned},
             release_hash=release_hash,
-            semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}",
+            semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}::{rec['checklistId']}",
         )
         return rec
 

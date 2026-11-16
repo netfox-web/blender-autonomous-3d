@@ -52,21 +52,37 @@ class OperatorShiftService:
         operator_id: str | None = None,
         enabled: bool = True,
     ) -> dict[str, Any]:
-        rec: dict[str, Any] = {
-            "operatorId": operator_id or new_id(),
-            "tenantId": tenant_id,
-            "displayName": display_name,
-            "enabled": bool(enabled),
-            "capabilities": list(capabilities or []),
-            "auth": "MANUAL_IDENTITY",
-            "passwordClaim": False,
-            "truthLabel": "REAL_LOGIC / MANUAL_IDENTITY",
-            "createdAt": _now(),
-        }
-        rec["operatorHash"] = stable_hash({k: rec[k] for k in rec if k != "operatorHash"})
+        op_id = operator_id or new_id()
+        caps = list(capabilities or [])
         with self._lock:
-            self.operators[rec["operatorId"]] = rec
-            self.persist()
+            existing = self.operators.get(op_id)
+            if existing is not None:
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: operator")
+                if (
+                    existing.get("displayName") != display_name
+                    or existing.get("enabled") != bool(enabled)
+                    or existing.get("capabilities") != caps
+                ):
+                    from fox3d.journal import SemanticKeyConflictError
+
+                    raise SemanticKeyConflictError(f"operatorId conflict for {op_id}")
+                rec = existing
+            else:
+                rec = {
+                    "operatorId": op_id,
+                    "tenantId": tenant_id,
+                    "displayName": display_name,
+                    "enabled": bool(enabled),
+                    "capabilities": caps,
+                    "auth": "MANUAL_IDENTITY",
+                    "passwordClaim": False,
+                    "truthLabel": "REAL_LOGIC / MANUAL_IDENTITY",
+                    "createdAt": _now(),
+                }
+                rec["operatorHash"] = stable_hash({k: rec[k] for k in rec if k != "operatorHash"})
+                self.operators[rec["operatorId"]] = rec
+                self.persist()
         emit(
             self,
             "identity.operator_register",

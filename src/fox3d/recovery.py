@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from pathlib import Path
 from typing import Any
@@ -140,6 +141,12 @@ class ExceptionInbox:
             return
         atomic_write_json(self.root / "exceptions.json", {"items": list(self.items.values())})
 
+    def _payload_identity(self, payload: dict[str, Any] | None, exc_id: str) -> dict[str, Any]:
+        raw = dict(payload or {})
+        if "exceptionId" in raw and str(raw.get("exceptionId")) == exc_id:
+            raw = {k: v for k, v in raw.items() if k != "exceptionId"}
+        return raw
+
     def record(
         self,
         *,
@@ -150,39 +157,87 @@ class ExceptionInbox:
         actor: str = "system",
         detail: str | None = None,
         payload: dict[str, Any] | None = None,
+        exception_id: str | None = None,
     ) -> dict[str, Any]:
         spec: dict[str, Any] = catalog_entry(code) if code in CATALOG else {"errorCode": code, "retrySafe": False, "humanRequired": True, "eventType": f"exception.{code}", "lineageValid": True, "allowedNextStates": []}
-        rec: dict[str, Any] = {
-            "exceptionId": new_id(),
-            "tenantId": tenant_id,
-            "errorCode": spec["errorCode"],
-            "retrySafe": bool(spec.get("retrySafe")),
-            "humanRequired": bool(spec.get("humanRequired")),
-            "allowedNextStates": list(spec.get("allowedNextStates") or []),
-            "lineageValid": bool(spec.get("lineageValid")),
-            "workOrderId": work_order_id,
-            "releaseHash": release_hash,
-            "detail": detail or code,
-            "payload": payload or {},
-            "status": "OPEN",
-            "silentSuccess": False,
-            "actor": actor,
-            "at": utcnow().isoformat(),
-        }
-        rec["exceptionHash"] = stable_hash({k: rec[k] for k in rec if k != "exceptionHash"})
+        raw_payload = copy.deepcopy(payload or {})
+        payload_exc_id = raw_payload.get("exceptionId")
+        if exception_id is not None and payload_exc_id is not None and str(exception_id) != str(payload_exc_id):
+            from fox3d.journal import SemanticKeyConflictError
+
+            raise SemanticKeyConflictError(f"exceptionId conflict for {exception_id}")
+        exc_id = str(exception_id or payload_exc_id or new_id())
+        resolved_detail = detail or code
+        incoming_payload_id = self._payload_identity(raw_payload, exc_id)
+        created_new = False
         with self._lock:
-            self.items[rec["exceptionId"]] = rec
-        emit(
-            self,
-            str(spec.get("eventType") or "exception"),
-            tenant_id=tenant_id,
-            aggregate_type="PilotException",
-            aggregate_id=rec["exceptionId"],
-            actor=actor,
-            payload={"errorCode": rec["errorCode"], "workOrderId": work_order_id, "detail": rec["detail"]},
-            release_hash=release_hash,
-            semantic_key=f"{tenant_id}::exc::{code}::{work_order_id or rec['exceptionId']}",
-        )
+            existing = self.items.get(exc_id)
+            if existing is not None:
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: exception")
+                existing_payload_id = self._payload_identity(existing.get("payload"), exc_id)
+                if (
+                    existing.get("errorCode") != spec["errorCode"]
+                    or existing.get("workOrderId") != work_order_id
+                    or existing.get("releaseHash") != release_hash
+                    or existing.get("detail") != resolved_detail
+                    or existing.get("actor") != actor
+                    or existing_payload_id != incoming_payload_id
+                    or stable_hash(existing_payload_id) != stable_hash(incoming_payload_id)
+                ):
+                    from fox3d.journal import SemanticKeyConflictError
+
+                    raise SemanticKeyConflictError(f"exceptionId conflict for {exc_id}")
+                rec = existing
+            else:
+                rec = {
+                    "exceptionId": exc_id,
+                    "tenantId": tenant_id,
+                    "errorCode": spec["errorCode"],
+                    "retrySafe": bool(spec.get("retrySafe")),
+                    "humanRequired": bool(spec.get("humanRequired")),
+                    "allowedNextStates": list(spec.get("allowedNextStates") or []),
+                    "lineageValid": bool(spec.get("lineageValid")),
+                    "workOrderId": work_order_id,
+                    "releaseHash": release_hash,
+                    "detail": resolved_detail,
+                    "payload": raw_payload,
+                    "status": "OPEN",
+                    "silentSuccess": False,
+                    "actor": actor,
+                    "at": utcnow().isoformat(),
+                }
+                rec["exceptionHash"] = stable_hash({k: rec[k] for k in rec if k != "exceptionHash"})
+                self.items[rec["exceptionId"]] = rec
+                created_new = True
+        key_scope = f"{work_order_id}::{rec['exceptionId']}" if work_order_id else rec["exceptionId"]
+        try:
+            emit(
+                self,
+                str(spec.get("eventType") or "exception"),
+                tenant_id=tenant_id,
+                aggregate_type="PilotException",
+                aggregate_id=rec["exceptionId"],
+                actor=actor,
+                payload={
+                    "errorCode": rec["errorCode"],
+                    "workOrderId": work_order_id,
+                    "releaseHash": release_hash,
+                    "detail": rec["detail"],
+                    "payload": incoming_payload_id,
+                    "actor": actor,
+                },
+                release_hash=release_hash,
+                semantic_key=f"{tenant_id}::exc::{code}::{key_scope}",
+            )
+        except Exception:
+            if created_new:
+                with self._lock:
+                    if self.root and (self.root / "exceptions.json").exists():
+                        self.load()
+                    else:
+                        self.items.pop(exc_id, None)
+            raise
         return rec
 
     def list(self, *, tenant_id: str) -> list[dict[str, Any]]:

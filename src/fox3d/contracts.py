@@ -209,7 +209,7 @@ class ContractService:
         )
         return rec
 
-    def export_bundle(self, *, tenant_id: str, release_hash: str | None = None) -> dict[str, Any]:
+    def export_bundle(self, *, tenant_id: str, release_hash: str | None = None, since_seq: int = 0) -> dict[str, Any]:
         wos = [wo for wo in self.pilot.workorders.orders.values() if wo.get("tenantId") == tenant_id and (not release_hash or wo.get("releaseHash") == release_hash)]
         releases = [r for r in self.pilot.releases.releases.values() if r.get("tenantId") == tenant_id and (not release_hash or r.get("releaseHash") == release_hash)]
         lots = self.pilot.platform.lots.list(tenant_id=tenant_id)
@@ -218,7 +218,7 @@ class ContractService:
         shipments = [s for s in self.pilot.logistics.shipments.values() if s.get("tenantId") == tenant_id]
         journal = None
         if getattr(self.pilot, "journal", None) is not None:
-            journal = self.pilot.journal.export_slice(tenant_id)
+            journal = self.pilot.journal.export_slice(tenant_id, since_seq=since_seq)
         packets = []
         for rel in releases:
             pkt = self.pilot.releases.packet(rel["releaseId"])
