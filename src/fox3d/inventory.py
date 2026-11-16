@@ -91,12 +91,12 @@ class InMemoryRemnantStore:
 
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
         rec = self._items[remnant_id]
-        if rec.get("tenantId") not in {None, tenant_id}:
+        if (rec.get("tenantId") or "default") != tenant_id:
             raise PermissionError(f"tenant isolation: remnant {remnant_id}")
         return rec
 
     def list(self, *, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
-        rows = [v for v in self._items.values() if v.get("tenantId") in {None, tenant_id}]
+        rows = [v for v in self._items.values() if (v.get("tenantId") or "default") == tenant_id]
         if status:
             want = normalize_status(status)
             rows = [r for r in rows if normalize_status(r.get("status")) == want]
@@ -159,12 +159,12 @@ class DurableRemnantStore:
 
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
         rec = self._items[remnant_id]
-        if rec.get("tenantId") not in {None, tenant_id}:
+        if (rec.get("tenantId") or "default") != tenant_id:
             raise PermissionError(f"tenant isolation: remnant {remnant_id}")
         return rec
 
     def list(self, *, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
-        rows = [v for v in self._items.values() if v.get("tenantId") in {None, tenant_id}]
+        rows = [v for v in self._items.values() if (v.get("tenantId") or "default") == tenant_id]
         if status:
             want = normalize_status(status)
             rows = [r for r in rows if normalize_status(r.get("status")) == want]

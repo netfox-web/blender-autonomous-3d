@@ -317,6 +317,7 @@ def run_benchmark(platform: Any, *, tenant_id: str = "bench") -> dict[str, Any]:
     wins = sum(1 for r in rows if r["v3BetterSheets"])
     losses = sum(1 for r in rows if r["v3WorseSheets"])
     return {
+        "tenantId": tenant_id,
         "cases": rows,
         "v3SheetWins": wins,
         "v3SheetLosses": losses,

@@ -940,13 +940,16 @@ class RemnantInventory:
             created.append(rec)
         return created
 
+    def _owner(self, rec: dict[str, Any]) -> str:
+        return str(rec.get("tenantId") or self.default_tenant)
+
     def available(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
         from fox3d.inventory import normalize_status
 
         tid = tenant_id
         rows = list(self.items.values())
         if tid is not None:
-            rows = [v for v in rows if v.get("tenantId") in {None, tid}]
+            rows = [v for v in rows if self._owner(v) == tid]
         return [v for v in rows if normalize_status(v.get("status")) == "available"]
 
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
@@ -956,7 +959,7 @@ class RemnantInventory:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
         rec = self.items[remnant_id]
-        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
+        if tenant_id is not None and self._owner(rec) != tenant_id:
             raise PermissionError("tenant isolation: remnant")
         st = normalize_status(status)
         if st not in QUALITY_UPPER:
@@ -976,6 +979,7 @@ class RemnantInventory:
         version: int | None = None,
         lease_seconds: float | None = None,
         tenant_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         from datetime import timedelta
 
@@ -983,11 +987,19 @@ class RemnantInventory:
         from fox3d.inventory import QUALITY_UPPER, lease_token, normalize_status
 
         rec = self.items[remnant_id]
-        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
+        if tenant_id is not None and self._owner(rec) != tenant_id:
             raise PermissionError("tenant isolation: remnant")
+        current_v = int(rec.get("version") or 1)
+        if (
+            idempotency_key
+            and normalize_status(rec.get("status")) == "reserved"
+            and rec.get("reservedBy") == by
+            and rec.get("idempotencyKey") == idempotency_key
+            and (version is None or int(version) in {current_v, current_v - 1})
+        ):
+            return rec
         if normalize_status(rec.get("status")) != "available":
             raise PermissionError(f"remnant {remnant_id} not available ({rec['status']})")
-        current_v = int(rec.get("version") or 1)
         if version is not None and int(version) != current_v:
             raise PermissionError(f"stale remnant version {version} != {current_v}")
         rec["status"] = "reserved"
@@ -995,6 +1007,8 @@ class RemnantInventory:
         rec["reservedBy"] = by
         rec["version"] = current_v + 1
         rec["leaseToken"] = lease_token(remnant_id, rec["version"], by)
+        if idempotency_key:
+            rec["idempotencyKey"] = idempotency_key
         if lease_seconds is not None:
             rec["reservedUntil"] = (utcnow() + timedelta(seconds=float(lease_seconds))).isoformat()
         rec["persistence"] = self._persist_label()
@@ -1013,7 +1027,7 @@ class RemnantInventory:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
         rec = self.items[remnant_id]
-        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
+        if tenant_id is not None and self._owner(rec) != tenant_id:
             raise PermissionError("tenant isolation: remnant")
         st = normalize_status(rec.get("status"))
         if st == "consumed":
@@ -1076,6 +1090,6 @@ class RemnantInventory:
             "source": "CONFIG",
             "label": "REAL" if self._durable else "MOCK",
             "persistence": self._persist_label(),
-            "items": list(self.items.values()) if tenant_id is None else [v for v in self.items.values() if v.get("tenantId") in {None, tenant_id}],
+            "items": list(self.items.values()) if tenant_id is None else [v for v in self.items.values() if self._owner(v) == tenant_id],
             "availableCount": len(self.available(tenant_id=tenant_id) if tenant_id else self.available()),
         }
