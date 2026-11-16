@@ -373,7 +373,14 @@ def test_list_open_interleaved_with_mark_business_committed_does_not_abort_commi
 ) -> None:
     real_read_json = outbox_mod.read_json
 
-    for hook_mode in ("read_json_cross_proc", "cache_put_in_proc", "during_reconcile_callback"):
+    for hook_mode in (
+        "read_json_cross_proc",
+        "cache_put_in_proc",
+        "during_reconcile_callback",
+        "after_post_callback_read_before_abort",
+        "before_abort_call",
+        "before_abort_lock_acquire_cross_proc",
+    ):
         sub = tmp_path / hook_mode
         outbox1 = CommitOutbox(sub / "tx")
         outbox2 = CommitOutbox(sub / "tx")
@@ -436,7 +443,7 @@ def test_list_open_interleaved_with_mark_business_committed_does_not_abort_commi
             assert open_rows[0]["status"] == BUSINESS_COMMITTED
 
             res = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
-        else:
+        elif hook_mode == "during_reconcile_callback":
             # Interleaving where list_open() genuinely observed PREPARED first, and another instance
             # transitions the tx to BUSINESS_COMMITTED while business_committed() callback is running.
             def late_commit_callback(
@@ -451,6 +458,112 @@ def test_list_open_interleaved_with_mark_business_committed_does_not_abort_commi
                 return False
 
             res = outbox1.reconcile(journal=journal, business_committed=late_commit_callback)
+        elif hook_mode == "after_post_callback_read_before_abort":
+            # Interleaving where business_committed() returns False, reconcile reads PREPARED, and
+            # another instance marks BUSINESS_COMMITTED after that read and before abort() acquires the lock.
+            orig_load = outbox1._load_tx_file
+            callback_returned_false = {"done": False}
+
+            def false_callback(
+                _tx: dict[str, Any],
+                _cb_done: dict[str, bool] = callback_returned_false,
+            ) -> bool:
+                _cb_done["done"] = True
+                return False
+
+            def hooked_load_after_callback(
+                path: Path,
+                _orig: Any = orig_load,
+                _o2: CommitOutbox = outbox2,
+                _tx_id: str = tx_id,
+                _tx_path: Path = tx_path,
+                _cb_done: dict[str, bool] = callback_returned_false,
+                _trig: dict[str, bool] = triggered,
+            ) -> dict[str, Any]:
+                rec = _orig(path)
+                if _cb_done["done"] and not _trig["done"] and path == _tx_path:
+                    assert rec.get("status") == PREPARED
+                    _trig["done"] = True
+                    _o2.mark_business_committed(_tx_id, observed_generation=4)
+                return rec
+
+            monkeypatch.setattr(outbox1, "_load_tx_file", hooked_load_after_callback)
+            res = outbox1.reconcile(journal=journal, business_committed=false_callback)
+            monkeypatch.setattr(outbox1, "_load_tx_file", orig_load)
+            assert triggered["done"] is True
+        elif hook_mode == "before_abort_call":
+            # Interleaving where business_committed() returns False while tx is still PREPARED, and
+            # another instance marks BUSINESS_COMMITTED right before abort() acquires the lock.
+            orig_abort = outbox1.abort
+
+            def hooked_abort(
+                tid: str,
+                _orig: Any = orig_abort,
+                _o2: CommitOutbox = outbox2,
+                _tx_id: str = tx_id,
+                _tx_path: Path = tx_path,
+                _trig: dict[str, bool] = triggered,
+            ) -> bool:
+                if not _trig["done"] and tid == _tx_id:
+                    assert read_json(_tx_path)["status"] == PREPARED
+                    _trig["done"] = True
+                    _o2.mark_business_committed(_tx_id, observed_generation=4)
+                return _orig(tid)
+
+            monkeypatch.setattr(outbox1, "abort", hooked_abort)
+            res = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
+            monkeypatch.setattr(outbox1, "abort", orig_abort)
+            assert triggered["done"] is True
+        else:
+            # Interleaving where mark_business_committed() races right before abort() acquires FileLock,
+            # including simulated cross-process update where _TX_FILE_GEN in outbox1's process did not advance.
+            real_file_lock = outbox_mod.FileLock
+            in_abort = {"active": False}
+            orig_abort = outbox1.abort
+
+            def tracking_abort(
+                tid: str,
+                _orig: Any = orig_abort,
+                _in_abort: dict[str, bool] = in_abort,
+            ) -> bool:
+                _in_abort["active"] = True
+                try:
+                    return _orig(tid)
+                finally:
+                    _in_abort["active"] = False
+
+            class PreAbortFileLock:
+                def __init__(
+                    self,
+                    lock_path: Path,
+                    _real: Any = real_file_lock,
+                    _in_abort: dict[str, bool] = in_abort,
+                    _trig: dict[str, bool] = triggered,
+                    _o2: CommitOutbox = outbox2,
+                    _tx_id: str = tx_id,
+                    _tx_path: Path = tx_path,
+                ) -> None:
+                    if _in_abort["active"] and not _trig["done"]:
+                        _trig["done"] = True
+                        _in_abort["active"] = False
+                        saved_gen = outbox_mod._get_tx_gen(_tx_path)
+                        _o2.mark_business_committed(_tx_id, observed_generation=5)
+                        with outbox_mod._OUTBOX_GEN_LOCK:
+                            outbox_mod._TX_FILE_GEN[_tx_path.resolve()] = saved_gen
+                    self._inner = _real(lock_path)
+
+                def __enter__(self) -> Any:
+                    return self._inner.__enter__()
+
+                def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+                    self._inner.__exit__(exc_type, exc, tb)
+
+            monkeypatch.setattr(outbox1, "abort", tracking_abort)
+            monkeypatch.setattr(outbox_mod, "FileLock", PreAbortFileLock)
+            res = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
+            monkeypatch.setattr(outbox_mod, "FileLock", real_file_lock)
+            monkeypatch.setattr(outbox1, "abort", orig_abort)
+            assert triggered["done"] is True
 
         assert res == {
             "finalized": 1,
@@ -464,6 +577,70 @@ def test_list_open_interleaved_with_mark_business_committed_does_not_abort_commi
         assert events[0]["aggregateId"] == "wo-1"
         assert events[0]["semanticKey"] == "ta::outbox::1"
         assert journal.verify("ta")["ok"] is True
+
+
+def test_abort_under_shared_lock_preserves_late_committed_tx_when_journal_append_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outbox1 = CommitOutbox(tmp_path / "tx")
+    outbox2 = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = outbox1
+
+    tx = outbox2.prepare(_make_event(1))
+    tx_id = tx["txId"]
+
+    # Direct abort() call after another instance committed the tx must refuse to delete it.
+    _ = outbox1.list_open()  # prime outbox1 cache with PREPARED
+    outbox2.mark_business_committed(tx_id, observed_generation=1)
+    assert outbox1.abort(tx_id) is False
+    open_after_direct_abort = outbox1.list_open()
+    assert len(open_after_direct_abort) == 1
+    assert open_after_direct_abort[0]["status"] == BUSINESS_COMMITTED
+
+    # Now test reconcile when mark_business_committed happens right before abort() AND journal.append fails:
+    # the tx must stay in the outbox as BUSINESS_COMMITTED (never lost) and finalize on the next reconcile.
+    tx2 = outbox2.prepare(_make_event(2))
+    tx2_id = tx2["txId"]
+    outbox1.complete(tx_id)
+
+    orig_abort = outbox1.abort
+    triggered = {"done": False}
+
+    def mark_before_abort(tid: str) -> bool:
+        if not triggered["done"] and tid == tx2_id:
+            triggered["done"] = True
+            outbox2.mark_business_committed(tx2_id, observed_generation=2)
+        return orig_abort(tid)
+
+    monkeypatch.setattr(outbox1, "abort", mark_before_abort)
+    journal._fail_next = True
+    res_fail = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
+    monkeypatch.setattr(outbox1, "abort", orig_abort)
+
+    assert res_fail == {
+        "finalized": 0,
+        "aborted": 0,
+        "failed": [tx2_id],
+        "open": 1,
+    }
+    remaining = outbox1.list_open()
+    assert len(remaining) == 1
+    assert remaining[0]["txId"] == tx2_id
+    assert remaining[0]["status"] == BUSINESS_COMMITTED
+    assert journal.list("ta") == []
+
+    res_ok = outbox1.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res_ok == {
+        "finalized": 1,
+        "aborted": 0,
+        "failed": [],
+        "open": 0,
+    }
+    assert outbox1.list_open() == []
+    events = journal.list("ta")
+    assert [e["aggregateId"] for e in events] == ["wo-2"]
+    assert journal.verify("ta")["ok"] is True
 
 
 def test_reconcile_preserves_tx_on_check_semantic_key_errors_and_handles_conflict(
