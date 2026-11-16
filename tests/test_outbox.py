@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -761,4 +762,80 @@ def test_reconcile_preserves_tx_on_check_semantic_key_errors_and_handles_conflic
         "open": 2,
     }
 
+
+def test_reconcile_and_abort_preserve_journal_and_tx_on_stat_eio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = outbox
+
+    first = journal.append(
+        "outbox.step.1",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"idx": 1},
+        semantic_key="ta::outbox::1",
+    )
+    journal_path = journal._path("ta")
+    original_journal_bytes = journal_path.read_bytes()
+
+    tx2 = outbox.prepare(_make_event(2))
+    outbox.mark_business_committed(tx2["txId"])
+    tx2_path = outbox._path(tx2["txId"])
+    orig_stat = Path.stat
+
+    # 1. Transient Path.stat EIO on the journal file during cold reconcile must NOT overwrite event 1
+    # and must keep tx2 open in failed.
+    def stat_journal_eio(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == journal_path:
+            raise OSError(errno.EIO, "simulated journal stat EIO")
+        return orig_stat(self, *args, **kwargs)
+
+    journal_cold = EventJournal(tmp_path / "journal")
+    journal_cold.outbox = outbox
+    monkeypatch.setattr(Path, "stat", stat_journal_eio)
+    res_journal_eio = outbox.reconcile(journal=journal_cold, business_committed=lambda _tx: True)
+    monkeypatch.setattr(Path, "stat", orig_stat)
+
+    assert res_journal_eio == {
+        "finalized": 0,
+        "aborted": 0,
+        "failed": [tx2["txId"]],
+        "open": 1,
+    }
+    assert journal_path.read_bytes() == original_journal_bytes
+
+    # 2. Transient Path.stat EIO on a BUSINESS_COMMITTED tx file during abort() must raise OSError
+    # instead of treating the tx as non-existent/uncommitted and unlinking it.
+    outbox_cold = CommitOutbox(tmp_path / "tx")
+
+    def stat_tx_eio(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == tx2_path:
+            raise OSError(errno.EIO, "simulated tx stat EIO")
+        return orig_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat_tx_eio)
+    with pytest.raises(OSError) as exc_abort:
+        outbox_cold.abort(tx2["txId"])
+    assert exc_abort.value.errno == errno.EIO
+    monkeypatch.setattr(Path, "stat", orig_stat)
+    assert tx2_path.exists()
+
+    # Once Path.stat recovers, reconcile finalizes tx2 alongside event 1 without losing any audit history.
+    res_ok = outbox_cold.reconcile(journal=EventJournal(tmp_path / "journal"), business_committed=lambda _tx: True)
+    assert res_ok == {
+        "finalized": 1,
+        "aborted": 0,
+        "failed": [],
+        "open": 0,
+    }
+    reloaded_journal = EventJournal(tmp_path / "journal")
+    reloaded_journal.outbox = outbox_cold
+    events = reloaded_journal.list("ta")
+    assert [e["aggregateId"] for e in events] == ["wo-1", "wo-2"]
+    assert events[0]["eventId"] == first["eventId"]
+    assert reloaded_journal.verify("ta")["ok"] is True
 

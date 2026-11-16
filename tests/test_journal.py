@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -1216,4 +1217,154 @@ def test_journal_cross_process_read_interleaved_with_writer_preserves_all_events
         assert [e["sequence"] for e in cold_events] == [1, 2, 3]
 
 
+def test_journal_stat_io_error_propagates_and_preserves_existing_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "journal"
+    j_warm = EventJournal(root)
+    first = j_warm.append(
+        "evt.step",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"step": "first"},
+        semantic_key="ta::evt::first",
+    )
+    journal_path = j_warm._path("ta")
+    original_bytes = journal_path.read_bytes()
+    original_json = read_json(journal_path)
+    orig_stat = Path.stat
+
+    # 1. Cold journal: persistent EIO on Path.stat for the existing journal file must propagate
+    # and forbid overwriting the existing file when appending "second".
+    def stat_eio(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == journal_path:
+            raise OSError(errno.EIO, "simulated transient stat EIO")
+        return orig_stat(self, *args, **kwargs)
+
+    j_cold = EventJournal(root)
+    monkeypatch.setattr(Path, "stat", stat_eio)
+    with pytest.raises(OSError) as exc_cold:
+        j_cold.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-2",
+            actor="ops",
+            payload={"step": "second"},
+            semantic_key="ta::evt::second",
+        )
+    assert exc_cold.value.errno == errno.EIO
+
+    # Warm journal and read/verify/check_semantic_key paths must also propagate EIO without poisoning cache.
+    with pytest.raises(OSError) as exc_warm:
+        j_warm.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-2",
+            actor="ops",
+            payload={"step": "second"},
+            semantic_key="ta::evt::second",
+        )
+    assert exc_warm.value.errno == errno.EIO
+
+    with pytest.raises(OSError):
+        j_cold.check_semantic_key(
+            tenant_id="ta",
+            event_type="evt.step",
+            payload={"step": "first"},
+            semantic_key="ta::evt::first",
+        )
+    with pytest.raises(OSError):
+        j_cold.list("ta")
+    with pytest.raises(OSError):
+        j_cold.verify("ta")
+
+    # 2. Single-shot transient EIO on the 1st, 2nd, or 3rd Path.stat call must also fail closed without writing.
+    for fail_on_call in (1, 2, 3):
+        calls = {"n": 0}
+
+        def stat_nth_eio(
+            self: Path,
+            *args: Any,
+            _calls: dict[str, int] = calls,
+            _target: int = fail_on_call,
+            **kwargs: Any,
+        ) -> Any:
+            if self == journal_path:
+                _calls["n"] += 1
+                if _calls["n"] == _target:
+                    raise OSError(errno.EIO, f"simulated stat EIO on call {_target}")
+            return orig_stat(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", stat_nth_eio)
+        j_transient = EventJournal(root)
+        with pytest.raises(OSError) as exc_nth:
+            j_transient.append(
+                "evt.step",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id="wo-2",
+                actor="ops",
+                payload={"step": "second"},
+                semantic_key="ta::evt::second",
+            )
+        assert exc_nth.value.errno == errno.EIO
+
+    # Restore Path.stat and confirm the original file bytes and "first" event are completely untouched.
+    monkeypatch.setattr(Path, "stat", orig_stat)
+    assert journal_path.read_bytes() == original_bytes
+    assert read_json(journal_path) == original_json
+    assert [e["payload"]["step"] for e in j_warm.list("ta")] == ["first"]
+    assert [e["payload"]["step"] for e in EventJournal(root).list("ta")] == ["first"]
+    assert j_warm.verify("ta")["ok"] is True
+
+    # Appending "second" after I/O recovery preserves "first" and chains "second" at sequence 2.
+    second = EventJournal(root).append(
+        "evt.step",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-2",
+        actor="ops",
+        payload={"step": "second"},
+        semantic_key="ta::evt::second",
+    )
+    assert second["sequence"] == 2
+    assert second["previousEventHash"] == first["eventHash"]
+
+    # Post-write stat EIO (4th stat call during cold append) invalidates cache while keeping all events on disk.
+    post_write_calls = {"n": 0}
+
+    def stat_4th_eio(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == journal_path:
+            post_write_calls["n"] += 1
+            if post_write_calls["n"] == 4:
+                raise OSError(errno.EIO, "simulated post-write stat EIO")
+        return orig_stat(self, *args, **kwargs)
+
+    j_post = EventJournal(root)
+    monkeypatch.setattr(Path, "stat", stat_4th_eio)
+    third = j_post.append(
+        "evt.step",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-3",
+        actor="ops",
+        payload={"step": "third"},
+        semantic_key="ta::evt::third",
+    )
+    monkeypatch.setattr(Path, "stat", orig_stat)
+    assert third["sequence"] == 3
+    assert third["previousEventHash"] == second["eventHash"]
+    assert "ta" not in j_post._cache
+
+    reloaded = EventJournal(root)
+    events = reloaded.list("ta")
+    assert [e["payload"]["step"] for e in events] == ["first", "second", "third"]
+    assert [e["sequence"] for e in events] == [1, 2, 3]
+    ver = reloaded.verify("ta")
+    assert ver["ok"] is True
+    assert ver["count"] == 3
 
