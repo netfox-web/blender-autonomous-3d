@@ -101,6 +101,7 @@ class LogisticsService:
             self.root.mkdir(parents=True, exist_ok=True)
         self.journal: Any | None = None
         self.outbox: Any | None = None
+        self._crash_mode = ""
         self.cartons: dict[str, dict[str, Any]] = {}
         self.pallets: dict[str, dict[str, Any]] = {}
         self.shipments: dict[str, dict[str, Any]] = {}

@@ -161,11 +161,22 @@ class PilotOps:
             ev = tx.get("event") or {}
             et = str(ev.get("event_type") or ev.get("eventType") or "")
             if et == "carton.measured":
-                sem = str(tx.get("semanticKey") or "")
-                meas_id = sem.rsplit("::", 1)[-1] if sem.count("::") >= 3 else None
-                if meas_id and rec.get("measurementId"):
-                    return rec.get("measurementId") == meas_id
-                return rec.get("measured") == payload.get("measured")
+                sem = str(tx.get("semanticKey") or ev.get("semantic_key") or ev.get("semanticKey") or "")
+                sem_op_id = sem.rsplit("::", 1)[-1] if sem.count("::") >= 3 else None
+                payload_op_id = payload.get("measureOpId")
+                if payload_op_id is not None and sem_op_id is not None and str(payload_op_id) != sem_op_id:
+                    return False
+                op_id = str(payload_op_id) if payload_op_id is not None else sem_op_id
+                ops = rec.get("measureOps")
+                if not op_id or not isinstance(ops, dict):
+                    return False
+                op_rec = ops.get(op_id)
+                if not isinstance(op_rec, dict):
+                    return False
+                expected_measured = payload.get("measured")
+                if not isinstance(expected_measured, dict) or not expected_measured:
+                    return False
+                return op_rec.get("measured") == expected_measured
             return True
         if atype == "Shipment":
             rec = self.logistics.shipments.get(str(aid)) if isinstance(aid, str) else None

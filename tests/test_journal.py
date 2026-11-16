@@ -17,6 +17,7 @@ from fox3d.observability import pilot_health
 from fox3d.outbox import CommitOutbox
 from fox3d.platform import Platform
 from fox3d.recovery import ExceptionInbox
+from fox3d.storelock import CrashInjected
 from fox3d.workorder import FIXTURE_AUTO_SEED
 
 
@@ -515,6 +516,131 @@ def test_logistics_repeated_carton_measured_persistence_and_recovery(tmp_path: P
     assert LogisticsService(tmp_path / "plat" / "logistics").cartons[cid]["measured"]["length"] == 12.0
     assert plat_recovered.pilot.outbox.list_open(tenant_id="ta") == []
     assert plat_recovered.pilot.journal.verify("ta")["ok"] is True
+
+
+def test_carton_measured_same_value_recovery_before_and_after_persistence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "plat-same-val"
+    plat = Platform(root=root, mock_blender=True)
+    log = plat.pilot.logistics
+
+    cartons = log.instantiate_cartons(
+        tenant_id="ta",
+        work_order_id="wo-1",
+        batch_id="b-1",
+        plan={"length": 400, "width": 300, "height": 200},
+        quantity=1,
+        release_hash="rel-1",
+    )
+    cid = cartons[0]["cartonId"]
+    dims: dict[str, Any] = {
+        "tenant_id": "ta",
+        "length": 400.0,
+        "width": 300.0,
+        "height": 200.0,
+        "weight_kg": 8.0,
+        "source": "MANUAL",
+    }
+
+    # 1. Record first measurement with measure_op_id="first".
+    log.record_measured(cid, **dims, measure_op_id="first")
+    assert list(log.cartons[cid]["measureOps"]) == ["first"]
+    assert [
+        e["payload"]["measureOpId"]
+        for e in plat.pilot.journal.list("ta")
+        if e["eventType"] == "carton.measured"
+    ] == ["first"]
+
+    # 2. Interrupt "second" with identical values AFTER outbox PREPARED, BEFORE business persistence.
+    log._crash_mode = "after-outbox-prepare"
+    with pytest.raises(CrashInjected):
+        log.record_measured(cid, **dims, measure_op_id="second")
+    log._crash_mode = ""
+
+    open_before_abort = plat.pilot.outbox.list_open(tenant_id="ta")
+    assert len(open_before_abort) == 1
+    assert open_before_abort[0]["status"] == "PREPARED"
+    assert open_before_abort[0]["event"]["payload"]["measureOpId"] == "second"
+    assert list(LogisticsService(root / "logistics").cartons[cid]["measureOps"]) == ["first"]
+    assert plat.pilot._business_committed(open_before_abort[0]) is False
+    assert plat.pilot.journal.verify("ta")["ok"] is False
+    assert plat.pilot.journal.verify("ta")["reason"] == "incomplete-tx"
+
+    # Restart Platform: "second" must be aborted (not committed to journal), keeping business and journal aligned.
+    plat_after_abort = Platform(root=root, mock_blender=True)
+    assert list(plat_after_abort.pilot.logistics.cartons[cid]["measureOps"]) == ["first"]
+    assert [
+        e["payload"]["measureOpId"]
+        for e in plat_after_abort.pilot.journal.list("ta")
+        if e["eventType"] == "carton.measured"
+    ] == ["first"]
+    assert plat_after_abort.pilot.outbox.list_open(tenant_id="ta") == []
+    assert plat_after_abort.pilot.journal.verify("ta")["ok"] is True
+
+    # 3. Interrupt "second" with identical values AFTER business persistence, BEFORE outbox marker (tx still PREPARED).
+    orig_mark = plat_after_abort.pilot.outbox.mark_business_committed
+
+    def fail_mark(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("interrupted after persist before mark_business_committed")
+
+    monkeypatch.setattr(plat_after_abort.pilot.outbox, "mark_business_committed", fail_mark)
+    with pytest.raises(RuntimeError, match="interrupted after persist"):
+        plat_after_abort.pilot.logistics.record_measured(cid, **dims, measure_op_id="second")
+    monkeypatch.setattr(plat_after_abort.pilot.outbox, "mark_business_committed", orig_mark)
+
+    open_prepared_committed = plat_after_abort.pilot.outbox.list_open(tenant_id="ta")
+    assert len(open_prepared_committed) == 1
+    assert open_prepared_committed[0]["status"] == "PREPARED"
+    assert list(LogisticsService(root / "logistics").cartons[cid]["measureOps"]) == ["first", "second"]
+    assert plat_after_abort.pilot._business_committed(open_prepared_committed[0]) is True
+
+    # Verify _business_committed rejects a mismatched payload for an existing measureOpId.
+    tampered_tx = {
+        **open_prepared_committed[0],
+        "event": {
+            **open_prepared_committed[0]["event"],
+            "payload": {
+                "measureOpId": "second",
+                "measured": {
+                    **open_prepared_committed[0]["event"]["payload"]["measured"],
+                    "length": 999.0,
+                },
+            },
+        },
+    }
+    assert plat_after_abort.pilot._business_committed(tampered_tx) is False
+
+    # Restart Platform: "second" must be finalized into the journal and outbox cleared.
+    plat_after_commit = Platform(root=root, mock_blender=True)
+    assert list(plat_after_commit.pilot.logistics.cartons[cid]["measureOps"]) == ["first", "second"]
+    assert [
+        e["payload"]["measureOpId"]
+        for e in plat_after_commit.pilot.journal.list("ta")
+        if e["eventType"] == "carton.measured"
+    ] == ["first", "second"]
+    assert plat_after_commit.pilot.outbox.list_open(tenant_id="ta") == []
+    assert plat_after_commit.pilot.journal.verify("ta")["ok"] is True
+
+    # 4. Interrupt "third" with identical values at "after-business-persist" crash point.
+    plat_after_commit.pilot.logistics._crash_mode = "after-business-persist"
+    with pytest.raises(CrashInjected):
+        plat_after_commit.pilot.logistics.record_measured(cid, **dims, measure_op_id="third")
+    plat_after_commit.pilot.logistics._crash_mode = ""
+
+    assert list(LogisticsService(root / "logistics").cartons[cid]["measureOps"]) == ["first", "second", "third"]
+    assert len(plat_after_commit.pilot.outbox.list_open(tenant_id="ta")) == 1
+    assert plat_after_commit.pilot.journal.verify("ta")["ok"] is False
+
+    plat_final = Platform(root=root, mock_blender=True)
+    assert list(plat_final.pilot.logistics.cartons[cid]["measureOps"]) == ["first", "second", "third"]
+    assert [
+        e["payload"]["measureOpId"]
+        for e in plat_final.pilot.journal.list("ta")
+        if e["eventType"] == "carton.measured"
+    ] == ["first", "second", "third"]
+    assert plat_final.pilot.outbox.list_open(tenant_id="ta") == []
+    assert plat_final.pilot.journal.verify("ta")["ok"] is True
 
 
 def test_repeatable_domain_events_produce_unique_semantic_keys_without_conflict(tmp_path: Path) -> None:
