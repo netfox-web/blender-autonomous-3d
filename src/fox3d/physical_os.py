@@ -39,7 +39,7 @@ class PhysicalProductOS:
         self.retail = RetailFixtureFactory(platform)
         self.packaging = StructuralPackagingFactory(platform)
         self.acrylic = AcrylicFactory(platform)
-        self.approvals: dict[str, dict[str, Any]] = {}
+        self.approvals: dict[tuple[str, str], dict[str, Any]] = {}
         self.benchmarks: list[dict[str, Any]] = []
 
     def reverse_rd(self, *, tenant_id: str, sheets: list[dict[str, Any]] | None = None, remnants: list[dict[str, Any]] | None = None, lots: list[dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -77,20 +77,22 @@ class PhysicalProductOS:
             "note": "Demand provider is MOCK — not claimed as bestselling.",
         }
 
-    def approve(self, *, entity_id: str, actor: str, kind: str = "product", entity: dict[str, Any] | None = None) -> dict[str, Any]:
+    def approve(self, *, entity_id: str, actor: str, tenant_id: str = "default", kind: str = "product", entity: dict[str, Any] | None = None) -> dict[str, Any]:
         rec: dict[str, Any] = {
             "entityId": entity_id,
+            "tenantId": tenant_id,
             "kind": kind,
             "actor": actor,
             "status": "WAITING_APPROVAL",
             "liveMachineControl": False,
             "forbidden": ["LIVE_CNC", "LIVE_LASER", "APPROVED_FOR_PRODUCTION"],
         }
-        self.approvals[entity_id] = rec
+        self.approvals[(tenant_id, entity_id)] = rec
         gate = getattr(self.platform, "release", None)
         if gate is not None:
             rec["audit"] = gate.audit(
                 actor=actor,
+                tenant_id=tenant_id,
                 entity_id=entity_id,
                 entity=entity or rec,
                 decision="WAITING_APPROVAL",
