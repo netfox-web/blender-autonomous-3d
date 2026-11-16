@@ -669,7 +669,19 @@
       b.addEventListener('click', function () { setTabs(b.getAttribute('data-panel')); });
     });
     $('mt-lot-form').addEventListener('submit', onLotSubmit);
+    $('mt-lot-form').addEventListener('input', function () {
+      if (!state.lotSubmitting) {
+        state.lastLotAttempt = null;
+        if ($('mt-lot-retry')) $('mt-lot-retry').hidden = true;
+      }
+    });
     $('mt-reserve-form').addEventListener('submit', onReserveSubmit);
+    $('mt-reserve-form').addEventListener('input', function () {
+      if (!state.reserveSubmitting) {
+        state.lastReserveAttempt = null;
+        if ($('mt-reserve-retry')) $('mt-reserve-retry').hidden = true;
+      }
+    });
     ensureRetryBtn('mt-lot-form', 'mt-lot-retry', function () { sendLotAttempt(state.lastLotAttempt); });
     ensureRetryBtn('mt-reserve-form', 'mt-reserve-retry', function () { sendReserveAttempt(state.lastReserveAttempt); });
     $('mt-bench-run').addEventListener('click', onBenchRun);

@@ -1007,8 +1007,7 @@ class RemnantInventory:
         rec["reservedBy"] = by
         rec["version"] = current_v + 1
         rec["leaseToken"] = lease_token(remnant_id, rec["version"], by)
-        if idempotency_key:
-            rec["idempotencyKey"] = idempotency_key
+        rec["idempotencyKey"] = idempotency_key
         if lease_seconds is not None:
             rec["reservedUntil"] = (utcnow() + timedelta(seconds=float(lease_seconds))).isoformat()
         rec["persistence"] = self._persist_label()
@@ -1078,6 +1077,7 @@ class RemnantInventory:
                 rec["reservedBy"] = None
                 rec["leaseToken"] = None
                 rec["reservedUntil"] = None
+                rec["idempotencyKey"] = None
                 rec["version"] = int(rec.get("version") or 1) + 1
                 rec["recoveredFrom"] = "expired-lease"
                 rec["persistence"] = self._persist_label()

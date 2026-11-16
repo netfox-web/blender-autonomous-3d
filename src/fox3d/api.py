@@ -710,6 +710,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         qty = _require_receipt_quantity(row)
         _require_manual_source(row)
         _validate_receipt_numbers(row)
+        raw_idem = payload.get("idempotencyKey")
+        if raw_idem is not None and (not isinstance(raw_idem, str) or len(raw_idem) > 200):
+            raise HTTPException(422, "idempotencyKey 格式錯誤")
+        idem = raw_idem.strip() if isinstance(raw_idem, str) and raw_idem.strip() else None
         try:
             return get_platform().pilot.receiving.import_receipt(
                 {
@@ -723,7 +727,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 tenant_id=tid,
                 actor=str(payload.get("actor") or "api"),
                 source=str(payload.get("source") or "MANUAL"),
-                idempotency_key=payload.get("idempotencyKey"),
+                idempotency_key=idem,
             )
         except PilotException:
             raise
