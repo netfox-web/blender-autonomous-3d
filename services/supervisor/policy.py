@@ -50,7 +50,7 @@ def normalize_policy_text(text: str) -> str:
 
 def _has_token(norm: str, token: str) -> bool:
     if token.isascii():
-        return re.search(rf"\b{re.escape(token)}\b", norm) is not None
+        return re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", norm) is not None
     return token in norm
 
 

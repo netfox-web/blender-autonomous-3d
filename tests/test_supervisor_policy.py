@@ -24,6 +24,10 @@ BYPASS_STRINGS = [
     "run live cnc",
     "啟動 LIVE_CNC",
     "connect to plc",
+    "connect plc控制器",
+    "execute plc控制器",
+    "連線PLC",
+    "請connect PLC控制器",
     "rm -rf  /",
     "DROP  TABLE x",
 ]
@@ -32,6 +36,10 @@ SAFE_STRINGS = [
     "live provider integration for mock tests",
     "CNC 報告文件",
     "plc_docs.md 文件更新",
+    "PLC控制器安全文件更新",
+    "disconnect plc documentation",
+    "execute plc2 documentation",
+    "connect xplc documentation",
     "review laser cutter documentation offline",
     "discuss production readiness in CI only",
     "table layout for acceptance matrix",
@@ -127,11 +135,17 @@ def _minimal_engine(tmp_path: Path) -> tuple[SupervisorEngine, MockGitHubClient,
     return engine, github_client, policy_engine
 
 
-def test_guardrail_blocked_writes_no_instruction_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize("instruction", [
+    "Run LIVE-CNC now on the factory line",
+    "connect plc控制器",
+    "execute plc控制器",
+    "連線PLC",
+])
+def test_guardrail_blocked_writes_no_instruction_file(tmp_path: Path, instruction: str) -> None:
     engine, gh, _ = _minimal_engine(tmp_path)
     engine.ai_adapter = MockSupervisorAdapter(
         forced_decision=ReviewDecision.ACCEPT_WITH_SCOPE,
-        forced_instruction_md="Run LIVE-CNC now on the factory line",
+        forced_instruction_md=instruction,
     )
     contract = ReadyForReGateContract.parse_from_text(
         valid_contract_text(evidence_id="ev_guardrail_block")
@@ -140,6 +154,7 @@ def test_guardrail_blocked_writes_no_instruction_file(tmp_path: Path) -> None:
     result = engine.handle_ready_contract(contract)
     assert result["decision"] == "BLOCKED"
     assert gh.committed_instructions == []
+    assert "HUMAN_APPROVAL_REQUIRED" in gh.posted_comments[0]["body"]
     # validate_action should not have been invoked for instruction update on BLOCKED path
     audit_lines = engine.policy_engine.audit_log_path.read_text(encoding="utf-8").splitlines()
     update_attempts = [
