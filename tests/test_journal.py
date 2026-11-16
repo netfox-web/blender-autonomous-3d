@@ -465,9 +465,13 @@ def test_logistics_repeated_carton_measured_persistence_and_recovery(tmp_path: P
     cid = cartons[0]["cartonId"]
 
     # First measurement followed by corrected second measurement with length=11.
-    m1 = log.record_measured(cid, length=400, width=300, height=200, weight_kg=8.0, source="MANUAL")
+    m1 = log.record_measured(
+        cid, tenant_id="ta", length=400, width=300, height=200, weight_kg=8.0, source="MANUAL"
+    )
     assert m1["measured"]["length"] == 400.0
-    m2 = log.record_measured(cid, length=11, width=300, height=200, weight_kg=8.0, source="MANUAL")
+    m2 = log.record_measured(
+        cid, tenant_id="ta", length=11, width=300, height=200, weight_kg=8.0, source="MANUAL"
+    )
     assert m2["measured"]["length"] == 11.0
     assert m2["mismatch"] is True
 
@@ -484,7 +488,9 @@ def test_logistics_repeated_carton_measured_persistence_and_recovery(tmp_path: P
     # Simulate journal append failure after business persistence on a third measurement (length=12).
     journal._fail_next = True
     with pytest.raises(JournalCommitError):
-        log.record_measured(cid, length=12, width=300, height=200, weight_kg=8.0, source="MANUAL")
+        log.record_measured(
+            cid, tenant_id="ta", length=12, width=300, height=200, weight_kg=8.0, source="MANUAL"
+        )
 
     assert LogisticsService(tmp_path / "plat" / "logistics").cartons[cid]["measured"]["length"] == 12.0
     assert len(outbox.list_open(tenant_id="ta")) == 1
@@ -503,7 +509,7 @@ def test_logistics_repeated_carton_measured_persistence_and_recovery(tmp_path: P
     plat_recovered.pilot.outbox._fail_prepare = True
     with pytest.raises(JournalCommitError):
         plat_recovered.pilot.logistics.record_measured(
-            cid, length=99, width=300, height=200, weight_kg=8.0, source="MANUAL"
+            cid, tenant_id="ta", length=99, width=300, height=200, weight_kg=8.0, source="MANUAL"
         )
     assert plat_recovered.pilot.logistics.cartons[cid]["measured"]["length"] == 12.0
     assert LogisticsService(tmp_path / "plat" / "logistics").cartons[cid]["measured"]["length"] == 12.0
