@@ -11,6 +11,7 @@ from typing import Any, Callable
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
+from fox3d.journal import SemanticKeyConflictError
 from fox3d.storelock import FileLock
 
 PREPARED = "PREPARED"
@@ -55,6 +56,7 @@ class CommitOutbox:
         self._seq: int | None = None
         self._seq_sig: tuple[int, int, int, int] | None = None
         self._tx_cache: dict[Path, tuple[tuple[int, int, int, int], int, dict[str, Any]]] = {}
+        self._read_snapshot: dict[Path, tuple[tuple[int, int, int, int] | None, int]] = {}
 
     def _path(self, tx_id: str) -> Path:
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tx_id)
@@ -63,36 +65,81 @@ class CommitOutbox:
     def _seq_path(self) -> Path:
         return self.root / "outbox.seq.staging"
 
-    def _cache_get(self, path: Path) -> dict[str, Any] | None:
-        sig = _file_sig(path)
-        if sig is None:
+    def _cache_get(
+        self,
+        path: Path,
+        *,
+        sig: tuple[int, int, int, int] | None = None,
+        gen: int | None = None,
+    ) -> dict[str, Any] | None:
+        cur_sig = _file_sig(path) if sig is None else sig
+        if cur_sig is None:
             self._tx_cache.pop(path, None)
             return None
-        gen = _get_tx_gen(path)
+        cur_gen = _get_tx_gen(path) if gen is None else gen
         entry = self._tx_cache.get(path)
-        if entry is not None and entry[0] == sig and entry[1] == gen:
+        if entry is not None and entry[0] == cur_sig and entry[1] == cur_gen:
             return copy.deepcopy(entry[2])
         return None
 
     def _cache_put(self, path: Path, rec: dict[str, Any], *, bump: bool = False) -> None:
-        gen = _bump_tx_gen(path) if bump else _get_tx_gen(path)
+        if bump:
+            gen = _bump_tx_gen(path)
+            sig = _file_sig(path)
+            if sig is not None:
+                self._tx_cache[path] = (sig, gen, copy.deepcopy(rec))
+            else:
+                self._tx_cache.pop(path, None)
+            return
         sig = _file_sig(path)
-        if sig is not None:
-            self._tx_cache[path] = (sig, gen, copy.deepcopy(rec))
+        gen = _get_tx_gen(path)
+        expected = self._read_snapshot.get(path)
+        if sig is None or (expected is not None and (sig != expected[0] or gen != expected[1])):
+            self._tx_cache.pop(path, None)
+            return
+        self._tx_cache[path] = (sig, gen, copy.deepcopy(rec))
 
     def _load_tx_file(self, path: Path) -> dict[str, Any]:
-        cached = self._cache_get(path)
+        sig_before = _file_sig(path)
+        gen_before = _get_tx_gen(path)
+        cached = self._cache_get(path, sig=sig_before, gen=gen_before)
         if cached is not None:
             return cached
-        try:
-            rec = read_json(path) or {}
-        except FileNotFoundError:
-            self._tx_cache.pop(path, None)
-            return {}
-        if isinstance(rec, dict) and rec:
-            self._cache_put(path, rec, bump=False)
-            return copy.deepcopy(rec)
-        return {}
+        last_rec: dict[str, Any] = {}
+        for attempt in range(8):
+            if attempt > 0:
+                sig_before = _file_sig(path)
+                gen_before = _get_tx_gen(path)
+            if sig_before is None:
+                self._tx_cache.pop(path, None)
+                return {}
+            self._read_snapshot[path] = (sig_before, gen_before)
+            try:
+                try:
+                    raw = read_json(path) or {}
+                except FileNotFoundError:
+                    self._tx_cache.pop(path, None)
+                    return {}
+                if not isinstance(raw, dict) or not raw:
+                    if _file_sig(path) == sig_before and _get_tx_gen(path) == gen_before:
+                        self._tx_cache.pop(path, None)
+                        return {}
+                    continue
+                last_rec = raw
+                self._cache_put(path, raw, bump=False)
+                entry = self._tx_cache.get(path)
+                if (
+                    entry is not None
+                    and entry[0] == sig_before
+                    and entry[1] == gen_before
+                    and _file_sig(path) == sig_before
+                    and _get_tx_gen(path) == gen_before
+                ):
+                    return copy.deepcopy(raw)
+            finally:
+                self._read_snapshot.pop(path, None)
+        self._tx_cache.pop(path, None)
+        return copy.deepcopy(last_rec)
 
     def _scan_max_seq(self) -> int:
         max_seq = 0
@@ -208,14 +255,10 @@ class CommitOutbox:
 
     def _read(self, tx_id: str) -> dict[str, Any]:
         path = self._path(tx_id)
-        cached = self._cache_get(path)
-        if cached is not None:
-            return cached
-        rec = read_json(path) or {}
+        rec = self._load_tx_file(path)
         if not rec:
             raise KeyError(tx_id)
-        self._cache_put(path, rec, bump=False)
-        return copy.deepcopy(rec)
+        return rec
 
     def list_open(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
         rows = []
@@ -260,16 +303,13 @@ class CommitOutbox:
                 if journal is not None and semantic:
                     rel_hash = ev.get("release_hash") or ev.get("releaseHash")
                     if hasattr(journal, "check_semantic_key"):
-                        try:
-                            found = journal.check_semantic_key(
-                                tenant_id=tenant_id,
-                                event_type=event_type,
-                                payload=payload,
-                                release_hash=rel_hash,
-                                semantic_key=semantic,
-                            )
-                        except Exception:
-                            found = None
+                        found = journal.check_semantic_key(
+                            tenant_id=tenant_id,
+                            event_type=event_type,
+                            payload=payload,
+                            release_hash=rel_hash,
+                            semantic_key=semantic,
+                        )
                         if found is not None:
                             self.complete(tx_id)
                             finalized += 1
@@ -287,10 +327,17 @@ class CommitOutbox:
                                 self.complete(tx_id)
                                 finalized += 1
                                 continue
+                            raise SemanticKeyConflictError(
+                                f"semantic_key conflict for {semantic}: eventType, payloadHash, or releaseHash mismatch"
+                            )
                 try:
                     committed = bool(business_committed(tx))
                 except Exception:
                     committed = False
+                if not committed and tx.get("status") != BUSINESS_COMMITTED:
+                    latest = self._load_tx_file(self._path(tx_id))
+                    if latest:
+                        tx = latest
                 if committed or tx.get("status") == BUSINESS_COMMITTED:
                     if journal is not None:
                         journal.append(

@@ -196,22 +196,23 @@ class EventJournal:
 
     def _load_entry(self, tenant_id: str, *, force_reload: bool = False) -> dict[str, Any]:
         path = self._path(tenant_id)
-        sig = _file_sig(path)
-        gen = _get_journal_gen(path)
+        sig_before = _file_sig(path)
+        gen_before = _get_journal_gen(path)
         if not force_reload:
             cached = self._cache.get(tenant_id)
-            if cached is not None and cached.get("sig") == sig and cached.get("gen") == gen:
+            if cached is not None and cached.get("sig") == sig_before and cached.get("gen") == gen_before:
                 return cached
-        if sig is None and not force_reload:
-            payload: dict[str, Any] = {
-                "tenantId": tenant_id,
-                "schemaVersion": SCHEMA,
-                "headHash": GENESIS,
-                "sequence": 0,
-                "events": [],
-            }
-        else:
-            payload = read_json(path) or {}
+        payload: dict[str, Any] = {}
+        by_semantic_key: dict[str, dict[str, Any]] = {}
+        for attempt in range(8):
+            if attempt > 0:
+                sig_before = _file_sig(path)
+                gen_before = _get_journal_gen(path)
+            if sig_before is None and not force_reload:
+                raw_payload: Any = None
+            else:
+                raw_payload = read_json(path)
+            payload = copy.deepcopy(raw_payload) if isinstance(raw_payload, dict) and raw_payload else {}
             if not payload:
                 payload = {
                     "tenantId": tenant_id,
@@ -227,15 +228,25 @@ class EventJournal:
                 payload.setdefault("headHash", GENESIS)
                 payload.setdefault("sequence", 0)
                 payload.setdefault("schemaVersion", SCHEMA)
-        sig = _file_sig(path)
-        entry = {
-            "sig": sig,
-            "gen": gen,
+            by_semantic_key = self._build_semantic_index(payload["events"])
+            sig_after = _file_sig(path)
+            gen_after = _get_journal_gen(path)
+            if sig_before == sig_after and gen_before == gen_after:
+                entry = {
+                    "sig": sig_before,
+                    "gen": gen_before,
+                    "data": payload,
+                    "by_semantic_key": by_semantic_key,
+                }
+                self._cache[tenant_id] = entry
+                return entry
+        self._cache.pop(tenant_id, None)
+        return {
+            "sig": None,
+            "gen": -1,
             "data": payload,
-            "by_semantic_key": self._build_semantic_index(payload["events"]),
+            "by_semantic_key": by_semantic_key,
         }
-        self._cache[tenant_id] = entry
-        return entry
 
     def _load(self, tenant_id: str, *, force_reload: bool = False) -> dict[str, Any]:
         return self._load_entry(tenant_id, force_reload=force_reload)["data"]
@@ -375,6 +386,7 @@ class EventJournal:
                     semantic_index[semantic_key] = rec
                 entry["gen"] = _bump_journal_gen(path)
                 entry["sig"] = _file_sig(path)
+                self._cache[tenant_id] = entry
                 return copy.deepcopy(rec)
 
     def list(self, tenant_id: str) -> list[dict[str, Any]]:
