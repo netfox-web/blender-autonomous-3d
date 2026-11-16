@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+import fox3d.journal as journal_mod
+import fox3d.outbox as outbox_mod
 from fox3d.api import create_app
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.journal import EventJournal, JournalCommitError, SemanticKeyConflictError
+from fox3d.journal import EventJournal, JournalCommitError, SemanticKeyConflictError, emit
 from fox3d.logistics import LogisticsService
 from fox3d.mfg_release import product_snapshot
 from fox3d.observability import pilot_health
@@ -916,4 +919,224 @@ def test_repeatable_domain_events_produce_unique_semantic_keys_without_conflict(
 
     assert plat.pilot.outbox.list_open(tenant_id=tid) == []
     assert plat.pilot.journal.verify(tid)["ok"] is True
+
+
+def test_emit_and_append_avoid_redundant_reads_at_scale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal_reads = {"count": 0}
+    outbox_reads = {"count": 0}
+    real_journal_read = journal_mod.read_json
+    real_outbox_read = outbox_mod.read_json
+
+    def counting_journal_read(path: Path) -> Any:
+        journal_reads["count"] += 1
+        return real_journal_read(path)
+
+    def counting_outbox_read(path: Path) -> Any:
+        outbox_reads["count"] += 1
+        return real_outbox_read(path)
+
+    monkeypatch.setattr(journal_mod, "read_json", counting_journal_read)
+    monkeypatch.setattr(outbox_mod, "read_json", counting_outbox_read)
+
+    class _Owner:
+        def __init__(self, journal: EventJournal, outbox: CommitOutbox) -> None:
+            self.journal = journal
+            self.outbox = outbox
+            self.persisted = 0
+
+        def persist(self) -> None:
+            self.persisted += 1
+
+    j1 = EventJournal(tmp_path / "journal")
+    o1 = CommitOutbox(tmp_path / "tx")
+    j1.outbox = o1
+    owner1 = _Owner(j1, o1)
+
+    n_initial = 250
+    for i in range(1, n_initial + 1):
+        rec = emit(
+            owner1,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id=f"wo-{i}",
+            actor="ops",
+            payload={"step": i},
+            release_hash="rel-1",
+            semantic_key=f"ta::wo-progress::{i}",
+        )
+        assert rec is not None
+        assert rec["sequence"] == i
+
+    # Warm instance: check_semantic_key + append + outbox prepare/mark/complete do 0 disk JSON reads.
+    assert journal_reads["count"] == 0
+    assert outbox_reads["count"] == 0
+    assert owner1.persisted == n_initial
+
+    # Cold restart on existing 250-event journal: 50 new emit() calls should read the journal file only ONCE
+    # (during the first check_semantic_key), NOT twice per emit (which would be 100 reads).
+    j2 = EventJournal(tmp_path / "journal")
+    o2 = CommitOutbox(tmp_path / "tx")
+    j2.outbox = o2
+    owner2 = _Owner(j2, o2)
+    journal_reads["count"] = 0
+    outbox_reads["count"] = 0
+
+    n_more = 50
+    for i in range(n_initial + 1, n_initial + n_more + 1):
+        rec = emit(
+            owner2,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id=f"wo-{i}",
+            actor="ops",
+            payload={"step": i},
+            release_hash="rel-1",
+            semantic_key=f"ta::wo-progress::{i}",
+        )
+        assert rec is not None
+        assert rec["sequence"] == i
+
+    assert journal_reads["count"] == 1
+    assert outbox_reads["count"] == 0
+    assert owner2.persisted == n_more
+
+    # Idempotent retry and conflict detection hit the in-memory semantic index with 0 extra disk reads.
+    reads_before_checks = journal_reads["count"]
+    dup = j2.append(
+        "wo.progress",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"step": 1},
+        release_hash="rel-1",
+        semantic_key="ta::wo-progress::1",
+    )
+    assert dup["sequence"] == 1
+    with pytest.raises(SemanticKeyConflictError):
+        emit(
+            owner2,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-1",
+            actor="ops",
+            payload={"step": 999},
+            release_hash="rel-1",
+            semantic_key="ta::wo-progress::1",
+        )
+    with pytest.raises(SemanticKeyConflictError):
+        emit(
+            owner2,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id=f"wo-{n_initial + n_more}",
+            actor="ops",
+            payload={"step": n_initial + n_more},
+            release_hash="rel-other",
+            semantic_key=f"ta::wo-progress::{n_initial + n_more}",
+        )
+    assert journal_reads["count"] == reads_before_checks
+    assert owner2.persisted == n_more
+
+    # Verify reads once from disk and confirms full hash-chain integrity across all 300 events.
+    ver = j2.verify("ta")
+    assert ver["ok"] is True
+    assert ver["count"] == n_initial + n_more
+    assert ver["sequence"] == n_initial + n_more
+
+
+def test_journal_concurrent_appends_and_semantic_key_conflicts(tmp_path: Path) -> None:
+    journal = EventJournal(tmp_path / "journal")
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal.outbox = outbox
+
+    distinct_count = 60
+
+    def _worker(idx: int) -> tuple[str, Any]:
+        if idx < distinct_count:
+            ev = journal.append(
+                "concurrent.evt",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id=f"wo-{idx}",
+                actor="ops",
+                payload={"idx": idx},
+                release_hash="rel-c",
+                semantic_key=f"ta::conc::{idx}",
+            )
+            return ("distinct", ev["eventId"])
+        if idx < distinct_count + 20:
+            # Idempotent retry of key 0
+            ev = journal.append(
+                "concurrent.evt",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id="wo-0",
+                actor="ops",
+                payload={"idx": 0},
+                release_hash="rel-c",
+                semantic_key="ta::conc::0",
+            )
+            return ("retry", ev["eventId"])
+        # Conflicting payload on key 0
+        try:
+            journal.append(
+                "concurrent.evt",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id="wo-0",
+                actor="ops",
+                payload={"idx": 9999 + idx},
+                release_hash="rel-c",
+                semantic_key="ta::conc::0",
+            )
+            return ("unexpected-ok", None)
+        except SemanticKeyConflictError:
+            return ("conflict", None)
+
+    # Seed key 0 first so retries and conflicts race against a deterministic baseline and other distinct appends.
+    first_zero = journal.append(
+        "concurrent.evt",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-0",
+        actor="ops",
+        payload={"idx": 0},
+        release_hash="rel-c",
+        semantic_key="ta::conc::0",
+    )
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(_worker, range(1, distinct_count + 40)))
+
+    retry_ids = {val for kind, val in results if kind == "retry"}
+    conflicts = [kind for kind, _ in results if kind == "conflict"]
+    unexpected = [kind for kind, _ in results if kind == "unexpected-ok"]
+    assert retry_ids == {first_zero["eventId"]}
+    assert len(conflicts) == 20
+    assert unexpected == []
+
+    events = journal.list("ta")
+    assert len(events) == distinct_count
+    assert [e["sequence"] for e in events] == list(range(1, distinct_count + 1))
+    assert journal.verify("ta")["ok"] is True
+
+    # Cross-tenant isolation check
+    assert journal.list("tb") == []
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        journal._find_by_semantic_key(
+            events,
+            tenant_id="tb",
+            event_type="concurrent.evt",
+            payload_hash=first_zero["payloadHash"],
+            release_hash="rel-c",
+            semantic_key="ta::conc::0",
+        )
+
 

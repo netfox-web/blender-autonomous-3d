@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,7 @@ import pytest
 
 from fox3d.journal import EventJournal, JournalCommitError
 from fox3d.outbox import BUSINESS_COMMITTED, PREPARED, CommitOutbox
+import fox3d.journal as journal_mod
 import fox3d.outbox as outbox_mod
 
 
@@ -222,3 +224,145 @@ def test_outbox_tenant_isolation_in_list_open(tmp_path: Path) -> None:
     assert journal.verify("ta")["ok"] is True
     assert journal.verify("tb")["ok"] is False
     assert journal.verify("tb")["reason"] == "incomplete-tx"
+
+
+def test_prepare_scales_without_scanning_open_transactions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    outbox_reads = {"count": 0}
+    journal_reads = {"count": 0}
+    real_outbox_read = outbox_mod.read_json
+    real_journal_read = journal_mod.read_json
+
+    def counting_outbox_read(path: Path) -> Any:
+        outbox_reads["count"] += 1
+        return real_outbox_read(path)
+
+    def counting_journal_read(path: Path) -> Any:
+        journal_reads["count"] += 1
+        return real_journal_read(path)
+
+    monkeypatch.setattr(outbox_mod, "read_json", counting_outbox_read)
+    monkeypatch.setattr(journal_mod, "read_json", counting_journal_read)
+
+    outbox = CommitOutbox(tmp_path / "tx")
+    n_open = 250
+    txs = [outbox.prepare(_make_event(i)) for i in range(1, n_open + 1)]
+    assert [t["seq"] for t in txs] == list(range(1, n_open + 1))
+    # Preparing 250 open transactions does 0 JSON reads (previously 249 * 250 / 2 = 31,125 reads).
+    assert outbox_reads["count"] == 0
+
+    # Mark even-indexed transactions as BUSINESS_COMMITTED; hit cache without disk JSON reads.
+    for tx in txs:
+        if tx["seq"] % 2 == 0:
+            outbox.mark_business_committed(tx["txId"], observed_generation=tx["seq"])
+    assert outbox_reads["count"] == 0
+
+    # Simulate cold OS process restart (clearing in-memory _OUTBOX_STATE) with 250 open transactions
+    # still on disk, then prepare 50 more.
+    outbox_mod._OUTBOX_STATE.clear()
+    outbox_restarted = CommitOutbox(tmp_path / "tx")
+    more_txs = [outbox_restarted.prepare(_make_event(i)) for i in range(n_open + 1, n_open + 51)]
+    assert [t["seq"] for t in more_txs] == list(range(n_open + 1, n_open + 51))
+    assert outbox_reads["count"] == 0
+
+    # If the volatile sequence file is missing (e.g. after backup restore), the first prepare scans
+    # existing *.json once to recover max_seq and all subsequent prepares do 0 JSON reads.
+    outbox_mod._OUTBOX_STATE.clear()
+    outbox_restarted._seq_path().unlink(missing_ok=True)
+    outbox_restored = CommitOutbox(tmp_path / "tx")
+    first_after_restore = outbox_restored.prepare(_make_event(n_open + 51))
+    assert first_after_restore["seq"] == n_open + 51
+    assert outbox_reads["count"] == n_open + 50
+    outbox_reads["count"] = 0
+    second_after_restore = outbox_restored.prepare(_make_event(n_open + 52))
+    assert second_after_restore["seq"] == n_open + 52
+    assert outbox_reads["count"] == 0
+    outbox_restored.complete(first_after_restore["txId"])
+    outbox_restored.complete(second_after_restore["txId"])
+
+    # Cold restart and reconcile all 300 open transactions in exact seq order.
+    outbox_recover = CommitOutbox(tmp_path / "tx")
+    journal_recover = EventJournal(tmp_path / "journal")
+    journal_recover.outbox = outbox_recover
+    outbox_reads["count"] = 0
+    journal_reads["count"] = 0
+
+    res = outbox_recover.reconcile(
+        journal=journal_recover,
+        business_committed=lambda tx: int(tx.get("seq") or 0) <= n_open,
+    )
+    assert res == {
+        "finalized": n_open,
+        "aborted": 50,
+        "failed": [],
+        "open": 0,
+    }
+    # Each open tx JSON on disk was read only once during cold list_open(), and journal was read 0 times.
+    assert outbox_reads["count"] == n_open + 50
+    assert journal_reads["count"] == 0
+
+    events = journal_recover.list("ta")
+    assert [e["aggregateId"] for e in events] == [f"wo-{i}" for i in range(1, n_open + 1)]
+    assert journal_recover.verify("ta")["ok"] is True
+
+
+def test_outbox_concurrent_prepare_and_restart_recovery_order(tmp_path: Path) -> None:
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = outbox
+
+    # Pre-commit one event into the journal to exercise semanticKey deduplication during reconcile.
+    journal.append(
+        "outbox.step.1",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"idx": 1},
+        semantic_key="ta::outbox::1",
+    )
+
+    n_tx = 120
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        prepared = list(pool.map(lambda idx: outbox.prepare(_make_event(idx)), range(1, n_tx + 1)))
+
+    seqs = [t["seq"] for t in prepared]
+    assert sorted(seqs) == list(range(1, n_tx + 1))
+
+    # Mark a subset as BUSINESS_COMMITTED concurrently.
+    to_mark = [t for t in prepared if t["seq"] % 3 == 0]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda t: outbox.mark_business_committed(t["txId"]), to_mark))
+
+    # Restart and reconcile: seq % 3 == 0 (BUSINESS_COMMITTED), seq % 3 == 1 (business_committed callback True),
+    # seq % 3 == 2 (uncommitted PREPARED -> abort, except idx==1 which is already in journal -> finalized).
+    outbox_after = CommitOutbox(tmp_path / "tx")
+    journal_after = EventJournal(tmp_path / "journal")
+    journal_after.outbox = outbox_after
+
+    expected_committed_seqs = [
+        t["seq"]
+        for t in sorted(prepared, key=lambda r: r["seq"])
+        if t["seq"] % 3 in {0, 1} and t["aggregateId"] != "wo-1"
+    ]
+    expected_aggregate_ids = ["wo-1"] + [
+        t["aggregateId"]
+        for t in sorted(prepared, key=lambda r: r["seq"])
+        if t["seq"] % 3 in {0, 1} and t["aggregateId"] != "wo-1"
+    ]
+
+    res = outbox_after.reconcile(
+        journal=journal_after,
+        business_committed=lambda tx: int(tx.get("seq") or 0) % 3 == 1,
+    )
+    assert res["failed"] == []
+    assert res["open"] == 0
+    assert res["finalized"] == len(expected_committed_seqs) + 1
+    assert res["aborted"] == n_tx - res["finalized"]
+    assert outbox_after.list_open() == []
+
+    committed_events = journal_after.list("ta")
+    assert [e["aggregateId"] for e in committed_events] == expected_aggregate_ids
+    assert journal_after.verify("ta")["ok"] is True
+
