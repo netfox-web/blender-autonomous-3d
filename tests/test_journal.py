@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import errno
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+import fox3d.journal as journal_mod
+import fox3d.outbox as outbox_mod
 from fox3d.api import create_app
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.journal import EventJournal, JournalCommitError, SemanticKeyConflictError
+from fox3d.journal import EventJournal, JournalCommitError, SemanticKeyConflictError, emit
 from fox3d.logistics import LogisticsService
 from fox3d.mfg_release import product_snapshot
 from fox3d.observability import pilot_health
@@ -916,4 +920,451 @@ def test_repeatable_domain_events_produce_unique_semantic_keys_without_conflict(
 
     assert plat.pilot.outbox.list_open(tenant_id=tid) == []
     assert plat.pilot.journal.verify(tid)["ok"] is True
+
+
+def test_emit_and_append_avoid_redundant_reads_at_scale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal_reads = {"count": 0}
+    outbox_reads = {"count": 0}
+    real_journal_read = journal_mod.read_json
+    real_outbox_read = outbox_mod.read_json
+
+    def counting_journal_read(path: Path) -> Any:
+        journal_reads["count"] += 1
+        return real_journal_read(path)
+
+    def counting_outbox_read(path: Path) -> Any:
+        outbox_reads["count"] += 1
+        return real_outbox_read(path)
+
+    monkeypatch.setattr(journal_mod, "read_json", counting_journal_read)
+    monkeypatch.setattr(outbox_mod, "read_json", counting_outbox_read)
+
+    class _Owner:
+        def __init__(self, journal: EventJournal, outbox: CommitOutbox) -> None:
+            self.journal = journal
+            self.outbox = outbox
+            self.persisted = 0
+
+        def persist(self) -> None:
+            self.persisted += 1
+
+    j1 = EventJournal(tmp_path / "journal")
+    o1 = CommitOutbox(tmp_path / "tx")
+    j1.outbox = o1
+    owner1 = _Owner(j1, o1)
+
+    n_initial = 250
+    for i in range(1, n_initial + 1):
+        rec = emit(
+            owner1,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id=f"wo-{i}",
+            actor="ops",
+            payload={"step": i},
+            release_hash="rel-1",
+            semantic_key=f"ta::wo-progress::{i}",
+        )
+        assert rec is not None
+        assert rec["sequence"] == i
+
+    # Warm instance: check_semantic_key + append + outbox prepare/mark/complete do 0 disk JSON reads.
+    assert journal_reads["count"] == 0
+    assert outbox_reads["count"] == 0
+    assert owner1.persisted == n_initial
+
+    # Cold restart on existing 250-event journal: 50 new emit() calls should read the journal file only ONCE
+    # (during the first check_semantic_key), NOT twice per emit (which would be 100 reads).
+    j2 = EventJournal(tmp_path / "journal")
+    o2 = CommitOutbox(tmp_path / "tx")
+    j2.outbox = o2
+    owner2 = _Owner(j2, o2)
+    journal_reads["count"] = 0
+    outbox_reads["count"] = 0
+
+    n_more = 50
+    for i in range(n_initial + 1, n_initial + n_more + 1):
+        rec = emit(
+            owner2,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id=f"wo-{i}",
+            actor="ops",
+            payload={"step": i},
+            release_hash="rel-1",
+            semantic_key=f"ta::wo-progress::{i}",
+        )
+        assert rec is not None
+        assert rec["sequence"] == i
+
+    assert journal_reads["count"] == 1
+    assert outbox_reads["count"] == 0
+    assert owner2.persisted == n_more
+
+    # Idempotent retry and conflict detection hit the in-memory semantic index with 0 extra disk reads.
+    reads_before_checks = journal_reads["count"]
+    dup = j2.append(
+        "wo.progress",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"step": 1},
+        release_hash="rel-1",
+        semantic_key="ta::wo-progress::1",
+    )
+    assert dup["sequence"] == 1
+    with pytest.raises(SemanticKeyConflictError):
+        emit(
+            owner2,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-1",
+            actor="ops",
+            payload={"step": 999},
+            release_hash="rel-1",
+            semantic_key="ta::wo-progress::1",
+        )
+    with pytest.raises(SemanticKeyConflictError):
+        emit(
+            owner2,
+            "wo.progress",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id=f"wo-{n_initial + n_more}",
+            actor="ops",
+            payload={"step": n_initial + n_more},
+            release_hash="rel-other",
+            semantic_key=f"ta::wo-progress::{n_initial + n_more}",
+        )
+    assert journal_reads["count"] == reads_before_checks
+    assert owner2.persisted == n_more
+
+    # Verify reads once from disk and confirms full hash-chain integrity across all 300 events.
+    ver = j2.verify("ta")
+    assert ver["ok"] is True
+    assert ver["count"] == n_initial + n_more
+    assert ver["sequence"] == n_initial + n_more
+
+
+def test_journal_concurrent_appends_and_semantic_key_conflicts(tmp_path: Path) -> None:
+    journal = EventJournal(tmp_path / "journal")
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal.outbox = outbox
+
+    distinct_count = 60
+
+    def _worker(idx: int) -> tuple[str, Any]:
+        if idx < distinct_count:
+            ev = journal.append(
+                "concurrent.evt",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id=f"wo-{idx}",
+                actor="ops",
+                payload={"idx": idx},
+                release_hash="rel-c",
+                semantic_key=f"ta::conc::{idx}",
+            )
+            return ("distinct", ev["eventId"])
+        if idx < distinct_count + 20:
+            # Idempotent retry of key 0
+            ev = journal.append(
+                "concurrent.evt",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id="wo-0",
+                actor="ops",
+                payload={"idx": 0},
+                release_hash="rel-c",
+                semantic_key="ta::conc::0",
+            )
+            return ("retry", ev["eventId"])
+        # Conflicting payload on key 0
+        try:
+            journal.append(
+                "concurrent.evt",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id="wo-0",
+                actor="ops",
+                payload={"idx": 9999 + idx},
+                release_hash="rel-c",
+                semantic_key="ta::conc::0",
+            )
+            return ("unexpected-ok", None)
+        except SemanticKeyConflictError:
+            return ("conflict", None)
+
+    # Seed key 0 first so retries and conflicts race against a deterministic baseline and other distinct appends.
+    first_zero = journal.append(
+        "concurrent.evt",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-0",
+        actor="ops",
+        payload={"idx": 0},
+        release_hash="rel-c",
+        semantic_key="ta::conc::0",
+    )
+
+    with ThreadPoolExecutor(max_workers=12) as pool:
+        results = list(pool.map(_worker, range(1, distinct_count + 40)))
+
+    retry_ids = {val for kind, val in results if kind == "retry"}
+    conflicts = [kind for kind, _ in results if kind == "conflict"]
+    unexpected = [kind for kind, _ in results if kind == "unexpected-ok"]
+    assert retry_ids == {first_zero["eventId"]}
+    assert len(conflicts) == 20
+    assert unexpected == []
+
+    events = journal.list("ta")
+    assert len(events) == distinct_count
+    assert [e["sequence"] for e in events] == list(range(1, distinct_count + 1))
+    assert journal.verify("ta")["ok"] is True
+
+    # Cross-tenant isolation check
+    assert journal.list("tb") == []
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        journal._find_by_semantic_key(
+            events,
+            tenant_id="tb",
+            event_type="concurrent.evt",
+            payload_hash=first_zero["payloadHash"],
+            release_hash="rel-c",
+            semantic_key="ta::conc::0",
+        )
+
+
+def test_journal_cross_process_read_interleaved_with_writer_preserves_all_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real_read_json = journal_mod.read_json
+
+    for reader_op in ("list", "verify"):
+        sub = tmp_path / reader_op
+        j1 = EventJournal(sub / "journal")
+        j2 = EventJournal(sub / "journal")
+
+        # Writer j2 commits event 1 first so j1 has to read from disk on list() (and verify() forces reload).
+        j2.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-1",
+            actor="ops",
+            payload={"step": 1},
+            semantic_key="ta::evt::1",
+        )
+
+        interleaved = {"triggered": False}
+
+        def racing_read_json(path: Path, _j2: EventJournal = j2, _state: dict[str, bool] = interleaved) -> Any:
+            data = real_read_json(path)
+            if not _state["triggered"] and path.name == "ta.json":
+                _state["triggered"] = True
+                saved_gen = journal_mod._get_journal_gen(path)
+                # Another process writes event 2 after read_json read old content [1], before j1 caches sig.
+                _j2.append(
+                    "evt.step",
+                    tenant_id="ta",
+                    aggregate_type="WorkOrder",
+                    aggregate_id="wo-2",
+                    actor="ops",
+                    payload={"step": 2},
+                    semantic_key="ta::evt::2",
+                )
+                # Simulate separate OS process where in-process generation in j1's process was not bumped.
+                with journal_mod._JOURNAL_GEN_LOCK:
+                    journal_mod._JOURNAL_GEN[path.resolve()] = saved_gen
+            return data
+
+        monkeypatch.setattr(journal_mod, "read_json", racing_read_json)
+
+        if reader_op == "list":
+            observed = j1.list("ta")
+            assert [e["payload"]["step"] for e in observed] == [1, 2]
+        else:
+            ver = j1.verify("ta")
+            assert ver["ok"] is True
+            assert ver["count"] == 2
+
+        monkeypatch.setattr(journal_mod, "read_json", real_read_json)
+
+        # Subsequent append on j1 must NOT hit a poisoned cache with only [1] and overwrite event 2.
+        j1.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-3",
+            actor="ops",
+            payload={"step": 3},
+            semantic_key="ta::evt::3",
+        )
+
+        events = j1.list("ta")
+        assert [e["payload"]["step"] for e in events] == [1, 2, 3]
+        assert [e["sequence"] for e in events] == [1, 2, 3]
+        assert j1.verify("ta")["ok"] is True
+
+        cold_events = EventJournal(sub / "journal").list("ta")
+        assert [e["payload"]["step"] for e in cold_events] == [1, 2, 3]
+        assert [e["sequence"] for e in cold_events] == [1, 2, 3]
+
+
+def test_journal_stat_io_error_propagates_and_preserves_existing_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "journal"
+    j_warm = EventJournal(root)
+    first = j_warm.append(
+        "evt.step",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-1",
+        actor="ops",
+        payload={"step": "first"},
+        semantic_key="ta::evt::first",
+    )
+    journal_path = j_warm._path("ta")
+    original_bytes = journal_path.read_bytes()
+    original_json = read_json(journal_path)
+    orig_stat = Path.stat
+
+    # 1. Cold journal: persistent EIO on Path.stat for the existing journal file must propagate
+    # and forbid overwriting the existing file when appending "second".
+    def stat_eio(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == journal_path:
+            raise OSError(errno.EIO, "simulated transient stat EIO")
+        return orig_stat(self, *args, **kwargs)
+
+    j_cold = EventJournal(root)
+    monkeypatch.setattr(Path, "stat", stat_eio)
+    with pytest.raises(OSError) as exc_cold:
+        j_cold.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-2",
+            actor="ops",
+            payload={"step": "second"},
+            semantic_key="ta::evt::second",
+        )
+    assert exc_cold.value.errno == errno.EIO
+
+    # Warm journal and read/verify/check_semantic_key paths must also propagate EIO without poisoning cache.
+    with pytest.raises(OSError) as exc_warm:
+        j_warm.append(
+            "evt.step",
+            tenant_id="ta",
+            aggregate_type="WorkOrder",
+            aggregate_id="wo-2",
+            actor="ops",
+            payload={"step": "second"},
+            semantic_key="ta::evt::second",
+        )
+    assert exc_warm.value.errno == errno.EIO
+
+    with pytest.raises(OSError):
+        j_cold.check_semantic_key(
+            tenant_id="ta",
+            event_type="evt.step",
+            payload={"step": "first"},
+            semantic_key="ta::evt::first",
+        )
+    with pytest.raises(OSError):
+        j_cold.list("ta")
+    with pytest.raises(OSError):
+        j_cold.verify("ta")
+
+    # 2. Single-shot transient EIO on the 1st, 2nd, or 3rd Path.stat call must also fail closed without writing.
+    for fail_on_call in (1, 2, 3):
+        calls = {"n": 0}
+
+        def stat_nth_eio(
+            self: Path,
+            *args: Any,
+            _calls: dict[str, int] = calls,
+            _target: int = fail_on_call,
+            **kwargs: Any,
+        ) -> Any:
+            if self == journal_path:
+                _calls["n"] += 1
+                if _calls["n"] == _target:
+                    raise OSError(errno.EIO, f"simulated stat EIO on call {_target}")
+            return orig_stat(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", stat_nth_eio)
+        j_transient = EventJournal(root)
+        with pytest.raises(OSError) as exc_nth:
+            j_transient.append(
+                "evt.step",
+                tenant_id="ta",
+                aggregate_type="WorkOrder",
+                aggregate_id="wo-2",
+                actor="ops",
+                payload={"step": "second"},
+                semantic_key="ta::evt::second",
+            )
+        assert exc_nth.value.errno == errno.EIO
+
+    # Restore Path.stat and confirm the original file bytes and "first" event are completely untouched.
+    monkeypatch.setattr(Path, "stat", orig_stat)
+    assert journal_path.read_bytes() == original_bytes
+    assert read_json(journal_path) == original_json
+    assert [e["payload"]["step"] for e in j_warm.list("ta")] == ["first"]
+    assert [e["payload"]["step"] for e in EventJournal(root).list("ta")] == ["first"]
+    assert j_warm.verify("ta")["ok"] is True
+
+    # Appending "second" after I/O recovery preserves "first" and chains "second" at sequence 2.
+    second = EventJournal(root).append(
+        "evt.step",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-2",
+        actor="ops",
+        payload={"step": "second"},
+        semantic_key="ta::evt::second",
+    )
+    assert second["sequence"] == 2
+    assert second["previousEventHash"] == first["eventHash"]
+
+    # Post-write stat EIO (4th stat call during cold append) invalidates cache while keeping all events on disk.
+    post_write_calls = {"n": 0}
+
+    def stat_4th_eio(self: Path, *args: Any, **kwargs: Any) -> Any:
+        if self == journal_path:
+            post_write_calls["n"] += 1
+            if post_write_calls["n"] == 4:
+                raise OSError(errno.EIO, "simulated post-write stat EIO")
+        return orig_stat(self, *args, **kwargs)
+
+    j_post = EventJournal(root)
+    monkeypatch.setattr(Path, "stat", stat_4th_eio)
+    third = j_post.append(
+        "evt.step",
+        tenant_id="ta",
+        aggregate_type="WorkOrder",
+        aggregate_id="wo-3",
+        actor="ops",
+        payload={"step": "third"},
+        semantic_key="ta::evt::third",
+    )
+    monkeypatch.setattr(Path, "stat", orig_stat)
+    assert third["sequence"] == 3
+    assert third["previousEventHash"] == second["eventHash"]
+    assert "ta" not in j_post._cache
+
+    reloaded = EventJournal(root)
+    events = reloaded.list("ta")
+    assert [e["payload"]["step"] for e in events] == ["first", "second", "third"]
+    assert [e["sequence"] for e in events] == [1, 2, 3]
+    ver = reloaded.verify("ta")
+    assert ver["ok"] is True
+    assert ver["count"] == 3
 

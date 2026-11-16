@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import threading
 from pathlib import Path
@@ -14,6 +15,35 @@ from fox3d.storelock import FileLock
 
 GENESIS = "GENESIS"
 SCHEMA = "fox3d.journal.v1"
+
+_JOURNAL_GEN_LOCK = threading.Lock()
+_JOURNAL_GEN: dict[Path, int] = {}
+
+
+def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+
+
+def _journal_key(path: Path) -> Path:
+    return Path(os.path.abspath(path))
+
+
+def _bump_journal_gen(path: Path) -> int:
+    key = _journal_key(path)
+    with _JOURNAL_GEN_LOCK:
+        gen = _JOURNAL_GEN.get(key, 0) + 1
+        _JOURNAL_GEN[key] = gen
+        return gen
+
+
+def _get_journal_gen(path: Path) -> int:
+    key = _journal_key(path)
+    with _JOURNAL_GEN_LOCK:
+        return _JOURNAL_GEN.get(key, 0)
 
 
 class JournalCommitError(RuntimeError):
@@ -118,15 +148,15 @@ def emit(
         outbox.complete(tx["txId"])
         _maybe_crash(owner, "after-outbox-complete")
         return rec
-    if semantic_key and hasattr(journal, "check_semantic_key"):
-        journal.check_semantic_key(
-            tenant_id=tenant_id,
-            event_type=event_type,
-            payload=payload or {},
-            release_hash=release_hash,
-            semantic_key=semantic_key,
-        )
     if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
+        if semantic_key and hasattr(journal, "check_semantic_key"):
+            journal.check_semantic_key(
+                tenant_id=tenant_id,
+                event_type=event_type,
+                payload=payload or {},
+                release_hash=release_hash,
+                semantic_key=semantic_key,
+            )
         persist()
     return journal.append(
         event_type,
@@ -148,6 +178,7 @@ class EventJournal:
         self._lock = threading.RLock()
         self._fail_next = False
         self.outbox: Any | None = None
+        self._cache: dict[str, dict[str, Any]] = {}
 
     def _safe(self, tenant_id: str) -> str:
         return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tenant_id)
@@ -158,17 +189,81 @@ class EventJournal:
     def _lock_path(self, tenant_id: str) -> Path:
         return self.root / f"{self._safe(tenant_id)}.lock"
 
-    def _load(self, tenant_id: str) -> dict[str, Any]:
-        payload = read_json(self._path(tenant_id)) or {}
+    def _build_semantic_index(self, events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        index: dict[str, dict[str, Any]] = {}
+        for ev in events:
+            if isinstance(ev, dict):
+                sk = ev.get("semanticKey")
+                if isinstance(sk, str) and sk and sk not in index:
+                    index[sk] = ev
+        return index
+
+    def _load_entry(self, tenant_id: str, *, force_reload: bool = False) -> dict[str, Any]:
+        path = self._path(tenant_id)
+        sig_before = _file_sig(path)
+        gen_before = _get_journal_gen(path)
+        if not force_reload and sig_before is not None:
+            cached = self._cache.get(tenant_id)
+            if cached is not None and cached.get("sig") == sig_before and cached.get("gen") == gen_before:
+                return cached
+        payload: dict[str, Any] = {}
+        by_semantic_key: dict[str, dict[str, Any]] = {}
+        for attempt in range(8):
+            if attempt > 0:
+                sig_before = _file_sig(path)
+                gen_before = _get_journal_gen(path)
+            if sig_before is None:
+                raw_payload: Any = None
+            else:
+                try:
+                    raw_payload = read_json(path)
+                except FileNotFoundError:
+                    raw_payload = None
+            sig_after = _file_sig(path)
+            gen_after = _get_journal_gen(path)
+            if raw_payload is None and sig_after is not None:
+                continue
+            payload = copy.deepcopy(raw_payload) if isinstance(raw_payload, dict) and raw_payload else {}
+            if not payload:
+                payload = {
+                    "tenantId": tenant_id,
+                    "schemaVersion": SCHEMA,
+                    "headHash": GENESIS,
+                    "sequence": 0,
+                    "events": [],
+                }
+            else:
+                if payload.get("tenantId") not in {None, tenant_id}:
+                    raise PermissionError("tenant isolation: journal")
+                payload.setdefault("events", [])
+                payload.setdefault("headHash", GENESIS)
+                payload.setdefault("sequence", 0)
+                payload.setdefault("schemaVersion", SCHEMA)
+            by_semantic_key = self._build_semantic_index(payload["events"])
+            if sig_before == sig_after and gen_before == gen_after:
+                entry = {
+                    "sig": sig_after,
+                    "gen": gen_after,
+                    "data": payload,
+                    "by_semantic_key": by_semantic_key,
+                }
+                if sig_after is not None:
+                    self._cache[tenant_id] = entry
+                else:
+                    self._cache.pop(tenant_id, None)
+                return entry
+        self._cache.pop(tenant_id, None)
         if not payload:
-            return {"tenantId": tenant_id, "schemaVersion": SCHEMA, "headHash": GENESIS, "sequence": 0, "events": []}
-        if payload.get("tenantId") not in {None, tenant_id}:
-            raise PermissionError("tenant isolation: journal")
-        payload.setdefault("events", [])
-        payload.setdefault("headHash", GENESIS)
-        payload.setdefault("sequence", 0)
-        payload.setdefault("schemaVersion", SCHEMA)
-        return payload
+            raise OSError(f"unable to load consistent journal state for {path}")
+        return {
+            "sig": None,
+            "gen": -1,
+            "data": payload,
+            "by_semantic_key": by_semantic_key,
+        }
+
+    def _load(self, tenant_id: str, *, force_reload: bool = False) -> dict[str, Any]:
+        return self._load_entry(tenant_id, force_reload=force_reload)["data"]
 
     def _event_hash(self, rec: dict[str, Any]) -> str:
         body = {k: rec[k] for k in rec if k != "eventHash"}
@@ -183,20 +278,25 @@ class EventJournal:
         payload_hash: str,
         release_hash: str | None,
         semantic_key: str,
+        semantic_index: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
-        for ev in events:
-            if ev.get("semanticKey") == semantic_key:
-                if ev.get("tenantId") != tenant_id:
-                    raise PermissionError("tenant isolation: journal")
-                if (
-                    ev.get("eventType") != event_type
-                    or ev.get("payloadHash") != payload_hash
-                    or ev.get("releaseHash") != release_hash
-                ):
-                    raise SemanticKeyConflictError(
-                        f"semantic_key conflict for {semantic_key}: eventType, payloadHash, or releaseHash mismatch"
-                    )
-                return ev
+        if semantic_index is not None:
+            ev = semantic_index.get(semantic_key)
+            candidates = [ev] if ev is not None else []
+        else:
+            candidates = [e for e in events if e.get("semanticKey") == semantic_key]
+        for ev in candidates:
+            if ev.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: journal")
+            if (
+                ev.get("eventType") != event_type
+                or ev.get("payloadHash") != payload_hash
+                or ev.get("releaseHash") != release_hash
+            ):
+                raise SemanticKeyConflictError(
+                    f"semantic_key conflict for {semantic_key}: eventType, payloadHash, or releaseHash mismatch"
+                )
+            return copy.deepcopy(ev)
         return None
 
     def check_semantic_key(
@@ -213,14 +313,15 @@ class EventJournal:
         payload_hash = stable_hash(payload or {})
         with self._lock:
             with FileLock(self._lock_path(tenant_id)):
-                data = self._load(tenant_id)
+                entry = self._load_entry(tenant_id)
                 return self._find_by_semantic_key(
-                    data["events"],
+                    entry["data"]["events"],
                     tenant_id=tenant_id,
                     event_type=event_type,
                     payload_hash=payload_hash,
                     release_hash=release_hash,
                     semantic_key=semantic_key,
+                    semantic_index=entry["by_semantic_key"],
                 )
 
     def append(
@@ -239,11 +340,13 @@ class EventJournal:
         if self._fail_next:
             self._fail_next = False
             raise JournalCommitError("injected journal failure")
-        body = payload or {}
+        body = copy.deepcopy(payload) if payload else {}
         payload_hash = stable_hash(body)
         with self._lock:
             with FileLock(self._lock_path(tenant_id)):
-                data = self._load(tenant_id)
+                entry = self._load_entry(tenant_id)
+                data = entry["data"]
+                semantic_index: dict[str, dict[str, Any]] = entry["by_semantic_key"]
                 if semantic_key:
                     found = self._find_by_semantic_key(
                         data["events"],
@@ -252,10 +355,14 @@ class EventJournal:
                         payload_hash=payload_hash,
                         release_hash=release_hash,
                         semantic_key=semantic_key,
+                        semantic_index=semantic_index,
                     )
                     if found is not None:
                         return found
-                seq = int(data.get("sequence") or 0) + 1
+                prev_seq = data.get("sequence")
+                prev_head = data.get("headHash")
+                prev_tenant = data.get("tenantId")
+                seq = int(prev_seq or 0) + 1
                 rec = {
                     "eventId": new_id(),
                     "eventType": event_type,
@@ -269,29 +376,51 @@ class EventJournal:
                     "releaseHash": release_hash,
                     "payload": body,
                     "payloadHash": payload_hash,
-                    "previousEventHash": data.get("headHash") or GENESIS,
+                    "previousEventHash": prev_head or GENESIS,
                     "semanticKey": semantic_key,
                     "schemaVersion": SCHEMA,
                     "commitStatus": "COMMITTED",
                 }
                 rec["eventHash"] = self._event_hash(rec)
+                path = self._path(tenant_id)
                 data["events"].append(rec)
                 data["sequence"] = seq
                 data["headHash"] = rec["eventHash"]
                 data["tenantId"] = tenant_id
                 try:
-                    atomic_write_json(self._path(tenant_id), data)
+                    atomic_write_json(path, data)
                 except Exception as exc:
+                    data["events"].pop()
+                    data["sequence"] = prev_seq
+                    data["headHash"] = prev_head
+                    data["tenantId"] = prev_tenant
+                    self._cache.pop(tenant_id, None)
                     raise JournalCommitError(str(exc)) from exc
-                return rec
+                if semantic_key and semantic_key not in semantic_index:
+                    semantic_index[semantic_key] = rec
+                entry["gen"] = _bump_journal_gen(path)
+                try:
+                    post_sig = _file_sig(path)
+                except OSError:
+                    post_sig = None
+                if post_sig is not None:
+                    entry["sig"] = post_sig
+                    self._cache[tenant_id] = entry
+                else:
+                    self._cache.pop(tenant_id, None)
+                return copy.deepcopy(rec)
 
     def list(self, tenant_id: str) -> list[dict[str, Any]]:
         with self._lock:
-            return [dict(ev) for ev in self._load(tenant_id).get("events") or [] if ev.get("tenantId") == tenant_id]
+            return [
+                copy.deepcopy(ev)
+                for ev in self._load(tenant_id).get("events") or []
+                if ev.get("tenantId") == tenant_id
+            ]
 
     def verify(self, tenant_id: str) -> dict[str, Any]:
         with self._lock:
-            data = self._load(tenant_id)
+            data = self._load(tenant_id, force_reload=True)
         events = data.get("events") or []
         prev = GENESIS
         for idx, ev in enumerate(events, start=1):
@@ -337,8 +466,8 @@ class EventJournal:
 
     def export_slice(self, tenant_id: str, *, since_seq: int = 0) -> dict[str, Any]:
         min_seq = _validate_since_seq(since_seq)
-        events = [e for e in self.list(tenant_id) if int(e.get("sequence") or 0) >= min_seq]
         integrity = self.verify(tenant_id)
+        events = [e for e in self.list(tenant_id) if int(e.get("sequence") or 0) >= min_seq]
         bundle = {
             "tenantId": tenant_id,
             "schemaVersion": SCHEMA,
@@ -355,6 +484,9 @@ class EventJournal:
         """Test helper: break the hash chain."""
         with self._lock:
             with FileLock(self._lock_path(tenant_id)):
-                data = self._load(tenant_id)
+                path = self._path(tenant_id)
+                data = self._load(tenant_id, force_reload=True)
                 data["events"][index].update(fields)
-                atomic_write_json(self._path(tenant_id), data)
+                atomic_write_json(path, data)
+                _bump_journal_gen(path)
+                self._cache.pop(tenant_id, None)
