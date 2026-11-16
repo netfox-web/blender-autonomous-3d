@@ -29,9 +29,9 @@ def _require_quantity(quantity: object) -> int:
     if isinstance(quantity, int):
         n = quantity
     elif isinstance(quantity, float):
-        if not math.isfinite(quantity) or abs(quantity - round(quantity)) > 1e-9:
+        if not math.isfinite(quantity) or not quantity.is_integer():
             raise ValueError("quantity must be a positive integer")
-        n = int(round(quantity))
+        n = int(quantity)
     else:
         raise ValueError("quantity must be a positive integer")
     if n < 1:
@@ -73,6 +73,14 @@ def _pack_contents_conserved(
         return False
     for sku, exp in expected_batch.items():
         if abs(recorded.get(sku, 0.0) - float(exp)) > 1e-6:
+            return False
+    return True
+
+
+def _measured_snapshot_equal(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    keys = ("length", "width", "height", "weightKg", "source", "truthLabel")
+    for key in keys:
+        if left.get(key) != right.get(key):
             return False
     return True
 
@@ -225,17 +233,32 @@ class LogisticsService:
             "source": source if source in {"IMPORTED", "MANUAL", "MEASURED"} else "IMPORTED",
             "truthLabel": "MEASURED",
         }
-        rec["measured"] = measured
-        rec["expected"] = expected
-        mismatch = (
-            abs(m_len - float(expected["length"])) > 5
-            or abs(m_wid - float(expected["width"])) > 5
-            or abs(m_hgt - float(expected["height"])) > 5
-            or abs(m_wgt - float(expected.get("weightKg") or 0)) > 1.0
-        )
-        rec["mismatch"] = mismatch
-        rec["autoOverride"] = False
         op_id = measure_op_id or new_id()
+        ops = rec.setdefault("measureOps", {})
+        latest_seq = int(rec.get("measureSeq") or 0)
+        prior = ops.get(op_id)
+        if prior is not None:
+            if not _measured_snapshot_equal(dict(prior["measured"]), measured):
+                raise ValueError("measure op payload mismatch on retry")
+            audit_measured = dict(prior["measured"])
+            stale_retry = int(prior["seq"]) < latest_seq
+        else:
+            audit_measured = measured
+            stale_retry = False
+            latest_seq += 1
+            ops[op_id] = {"measured": dict(measured), "seq": latest_seq}
+            rec["measureSeq"] = latest_seq
+        if not stale_retry:
+            rec["measured"] = measured
+            rec["expected"] = expected
+            mismatch = (
+                abs(m_len - float(expected["length"])) > 5
+                or abs(m_wid - float(expected["width"])) > 5
+                or abs(m_hgt - float(expected["height"])) > 5
+                or abs(m_wgt - float(expected.get("weightKg") or 0)) > 1.0
+            )
+            rec["mismatch"] = mismatch
+            rec["autoOverride"] = False
         emit(
             self,
             "carton.measured",
@@ -243,7 +266,7 @@ class LogisticsService:
             aggregate_type="Carton",
             aggregate_id=carton_id,
             actor="ops",
-            payload={"measured": rec["measured"], "measureOpId": op_id},
+            payload={"measured": audit_measured, "measureOpId": op_id},
             release_hash=rec.get("releaseHash"),
             semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
         )

@@ -29,7 +29,7 @@ def _carton(log: LogisticsService, tenant: str, wo: str = "wo", qty: int = 1) ->
     )
 
 
-@pytest.mark.parametrize("quantity", [0, -1, 1.9, True])
+@pytest.mark.parametrize("quantity", [0, -1, 1.9, 1.0000000001, True])
 def test_instantiate_cartons_rejects_non_positive_quantity(quantity):
     log = LogisticsService()
     with pytest.raises(ValueError, match="quantity"):
@@ -72,6 +72,15 @@ def test_instantiate_cartons_validates_quantity_before_idempotency_retry(tmp_pat
             quantity=1.9,
             idempotency_key=key,
         )
+    with pytest.raises(ValueError, match="quantity"):
+        log.instantiate_cartons(
+            tenant_id="t",
+            work_order_id="wo",
+            batch_id="b",
+            plan={"length": 400, "width": 300, "height": 200},
+            quantity=1.0000000001,
+            idempotency_key=key,
+        )
 
 
 def test_instantiate_cartons_rejects_non_integer_quantity():
@@ -99,6 +108,30 @@ def test_record_measured_aba_audit_trail(tmp_path):
     assert len(events) == 3
     weights = [e["payload"]["measured"]["length"] for e in events]
     assert weights == [400.0, 401.0, 400.0]
+
+
+def test_record_measured_interleaved_retry_keeps_latest_state(tmp_path):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "acme")
+    cid = cartons[0]["cartonId"]
+    base = dict(tenant_id="acme", width=300, height=200, weight_kg=10)
+    log.record_measured(cid, **base, length=400, measure_op_id="a")
+    log.record_measured(cid, **base, length=401, measure_op_id="b")
+    log.record_measured(cid, **base, length=400, measure_op_id="a")
+    assert log.cartons[cid]["measured"]["length"] == 401.0
+    events = [e for e in log.journal.list("acme") if e.get("eventType") == "carton.measured"]
+    assert len(events) == 2
+    assert [e["payload"]["measured"]["length"] for e in events] == [400.0, 401.0]
+
+
+def test_record_measured_retry_rejects_conflicting_op_payload(tmp_path):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "acme")
+    cid = cartons[0]["cartonId"]
+    base = dict(tenant_id="acme", width=300, height=200, weight_kg=10)
+    log.record_measured(cid, **base, length=400, measure_op_id="a")
+    with pytest.raises(ValueError, match="measure op payload mismatch"):
+        log.record_measured(cid, **base, length=402, measure_op_id="a")
 
 
 def test_record_measured_idempotent_retry_single_audit(tmp_path):
