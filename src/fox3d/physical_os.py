@@ -133,28 +133,52 @@ class PhysicalProductOS:
         if self.root is None:
             return
         with self._locked_store():
-            new_approvals: dict[tuple[str, str], dict[str, Any]] = {}
-            new_benchmarks: list[dict[str, Any]] = []
+            canonical_by_tenant: dict[
+                str, tuple[dict[tuple[str, str], dict[str, Any]], list[dict[str, Any]]]
+            ] = {}
+            legacy_approvals_by_tenant: dict[str, dict[tuple[str, str], dict[str, Any]]] = {}
+            legacy_benchmarks_by_tenant: dict[str, list[dict[str, Any]]] = {}
             new_sigs: dict[str, tuple[int, int, int, int] | None] = {}
-            legacy_to_migrate: list[tuple[Path, str]] = []
+            legacy_to_cleanup: list[tuple[Path, str]] = []
             for folder in self._candidate_dirs():
                 for path in sorted_tenant_json_paths(folder):
                     tid, approvals, benchmarks = self._parse_tenant_file(path)
+                    canonical = self._tenant_path(tid)
+                    if folder == self.root and canonical is not None and path == canonical:
+                        canonical_by_tenant[tid] = (approvals, benchmarks[-MAX_BENCHMARKS_PER_TENANT:])
+                        new_sigs[tid] = file_sig(path)
+                    else:
+                        legacy_approvals_by_tenant.setdefault(tid, {}).update(approvals)
+                        legacy_benchmarks_by_tenant.setdefault(tid, []).extend(benchmarks)
+                        if folder == self.root:
+                            legacy_to_cleanup.append((path, tid))
+            new_approvals: dict[tuple[str, str], dict[str, Any]] = {}
+            new_benchmarks: list[dict[str, Any]] = []
+            tenants_to_persist: set[str] = set()
+            all_tids = sorted(
+                set(canonical_by_tenant)
+                | set(legacy_approvals_by_tenant)
+                | set(legacy_benchmarks_by_tenant)
+            )
+            for tid in all_tids:
+                if tid in canonical_by_tenant:
+                    approvals, benchmarks = canonical_by_tenant[tid]
                     new_approvals.update(approvals)
                     new_benchmarks.extend(benchmarks)
-                    if folder == self.root:
-                        canonical = self._tenant_path(tid)
-                        if canonical is not None and path != canonical:
-                            legacy_to_migrate.append((path, tid))
-                        else:
-                            new_sigs[tid] = file_sig(path)
+                else:
+                    new_approvals.update(legacy_approvals_by_tenant.get(tid, {}))
+                    new_benchmarks.extend(
+                        legacy_benchmarks_by_tenant.get(tid, [])[-MAX_BENCHMARKS_PER_TENANT:]
+                    )
+                    tenants_to_persist.add(tid)
             self.approvals.clear()
             self.approvals.update(new_approvals)
             self.benchmarks[:] = new_benchmarks
             self._sigs.clear()
             self._sigs.update(new_sigs)
-            for legacy_path, tid in legacy_to_migrate:
+            for tid in sorted(tenants_to_persist):
                 self._persist_tenant_unlocked(tid)
+            for legacy_path, tid in legacy_to_cleanup:
                 if legacy_path.exists() and legacy_path != self._tenant_path(tid):
                     legacy_path.unlink(missing_ok=True)
 
@@ -170,7 +194,11 @@ class PhysicalProductOS:
             if sig is None:
                 legacy_path = find_legacy_tenant_file(self.root, tid)
                 if legacy_path is not None:
-                    _, approvals, benchmarks = self._parse_tenant_file(legacy_path)
+                    parsed_tid, approvals, benchmarks = self._parse_tenant_file(legacy_path)
+                    if parsed_tid != tid:
+                        raise ValueError(
+                            f"refusing to migrate {legacy_path} owned by {parsed_tid!r} for tenant {tid!r}"
+                        )
                     for key in [k for k in self.approvals if k[0] == tid]:
                         self.approvals.pop(key, None)
                     self.approvals.update(approvals)

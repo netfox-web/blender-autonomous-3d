@@ -187,15 +187,17 @@ class KdFactory:
     def _restore_parametric(self, product_id: str, rec: dict[str, Any]) -> None:
         parametrics = getattr(self.platform, "parametrics", None)
         if isinstance(parametrics, dict) and isinstance(rec.get("spec"), dict):
-            parametrics.setdefault(
-                product_id,
-                {
-                    "spec": rec["spec"],
-                    "report": rec.get("report"),
-                    "bom": rec.get("bom"),
-                    "engineeringHash": rec.get("engineeringHash"),
-                },
-            )
+            parametrics[product_id] = {
+                "spec": rec["spec"],
+                "report": rec.get("report"),
+                "bom": rec.get("bom"),
+                "engineeringHash": rec.get("engineeringHash"),
+            }
+
+    def _remove_parametric(self, product_id: str) -> None:
+        parametrics = getattr(self.platform, "parametrics", None)
+        if isinstance(parametrics, dict):
+            parametrics.pop(product_id, None)
 
     def _parse_tenant_file(
         self, path: Path
@@ -233,29 +235,54 @@ class KdFactory:
         if self.root is None:
             return
         with self._locked_store():
-            new_candidates: dict[str, dict[str, Any]] = {}
-            new_batches: dict[str, dict[str, Any]] = {}
+            canonical_by_tenant: dict[
+                str, tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]
+            ] = {}
+            legacy_cands_by_tenant: dict[str, dict[str, dict[str, Any]]] = {}
+            legacy_batches_by_tenant: dict[str, dict[str, dict[str, Any]]] = {}
             new_sigs: dict[str, tuple[int, int, int, int] | None] = {}
-            legacy_to_migrate: list[tuple[Path, str]] = []
+            legacy_to_cleanup: list[tuple[Path, str]] = []
             for folder in self._candidate_dirs():
                 for path in sorted_tenant_json_paths(folder):
                     tid, cands, batches = self._parse_tenant_file(path)
+                    canonical = self._tenant_path(tid)
+                    if folder == self.root and canonical is not None and path == canonical:
+                        canonical_by_tenant[tid] = (cands, batches)
+                        new_sigs[tid] = file_sig(path)
+                    else:
+                        legacy_cands_by_tenant.setdefault(tid, {}).update(cands)
+                        legacy_batches_by_tenant.setdefault(tid, {}).update(batches)
+                        if folder == self.root:
+                            legacy_to_cleanup.append((path, tid))
+            new_candidates: dict[str, dict[str, Any]] = {}
+            new_batches: dict[str, dict[str, Any]] = {}
+            tenants_to_persist: set[str] = set()
+            all_tids = sorted(
+                set(canonical_by_tenant)
+                | set(legacy_cands_by_tenant)
+                | set(legacy_batches_by_tenant)
+            )
+            for tid in all_tids:
+                if tid in canonical_by_tenant:
+                    cands, batches = canonical_by_tenant[tid]
                     new_candidates.update(cands)
                     new_batches.update(batches)
-                    if folder == self.root:
-                        canonical = self._tenant_path(tid)
-                        if canonical is not None and path != canonical:
-                            legacy_to_migrate.append((path, tid))
-                        else:
-                            new_sigs[tid] = file_sig(path)
+                else:
+                    new_candidates.update(legacy_cands_by_tenant.get(tid, {}))
+                    new_batches.update(legacy_batches_by_tenant.get(tid, {}))
+                    tenants_to_persist.add(tid)
+            removed_pids = set(self.candidates) - set(new_candidates)
             self.candidates.clear()
             self.candidates.update(new_candidates)
             self.batches.clear()
             self.batches.update(new_batches)
             self._sigs.clear()
             self._sigs.update(new_sigs)
-            for legacy_path, tid in legacy_to_migrate:
+            for pid in removed_pids:
+                self._remove_parametric(pid)
+            for tid in sorted(tenants_to_persist):
                 self._persist_tenant_unlocked(tid)
+            for legacy_path, tid in legacy_to_cleanup:
                 if legacy_path.exists() and legacy_path != self._tenant_path(tid):
                     legacy_path.unlink(missing_ok=True)
             for pid, rec in self.candidates.items():
@@ -273,11 +300,17 @@ class KdFactory:
             if sig is None:
                 legacy_path = find_legacy_tenant_file(self.root, tid)
                 if legacy_path is not None:
-                    _, cands, batches = self._parse_tenant_file(legacy_path)
+                    parsed_tid, cands, batches = self._parse_tenant_file(legacy_path)
+                    if parsed_tid != tid:
+                        raise ValueError(
+                            f"refusing to migrate {legacy_path} owned by {parsed_tid!r} for tenant {tid!r}"
+                        )
                     for pid in [
                         k for k, r in self.candidates.items() if self._candidate_tenant(r) == tid
                     ]:
                         self.candidates.pop(pid, None)
+                        if pid not in cands:
+                            self._remove_parametric(pid)
                     self.candidates.update(cands)
                     for pid, rec in cands.items():
                         self._restore_parametric(pid, rec)
@@ -299,6 +332,7 @@ class KdFactory:
                         if self._candidate_tenant(r) == tid
                     ]:
                         self.candidates.pop(pid, None)
+                        self._remove_parametric(pid)
                     for bid in [
                         k
                         for k, r in self.batches.items()
@@ -314,6 +348,8 @@ class KdFactory:
                 k for k, r in self.candidates.items() if self._candidate_tenant(r) == tid
             ]:
                 self.candidates.pop(pid, None)
+                if pid not in cands:
+                    self._remove_parametric(pid)
             self.candidates.update(cands)
             for pid, rec in cands.items():
                 self._restore_parametric(pid, rec)

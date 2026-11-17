@@ -958,3 +958,371 @@ def test_legacy_tenant_files_migrate_to_hashed_filenames(tmp_path: Path) -> None
     assert not stale_legacy.exists()
 
 
+def test_cross_process_hashed_stem_collision_does_not_clobber_victim(tmp_path: Path) -> None:
+    """Tenant 'victim-1bdd5b5b92e2' must never treat victim's canonical file as its own legacy file."""
+    import os
+    import subprocess
+    import sys
+    from fox3d.release import legacy_safe_tenant_filename
+
+    root = tmp_path / "data"
+    victim = "victim"
+    victim_stem = safe_tenant_filename(victim)
+    colliding_tenant = victim_stem
+    assert legacy_safe_tenant_filename(colliding_tenant) == victim_stem
+    colliding_canonical_stem = safe_tenant_filename(colliding_tenant)
+    assert colliding_canonical_stem != victim_stem
+
+    # 1. Resident process starts first on an empty root.
+    resident = Platform(root=root, mock_blender=True)
+    resident_client = TestClient(create_app(resident))
+
+    # 2. Separate process creates durable records for 'victim' across all per-tenant stores.
+    src_dir = str(Path(__file__).resolve().parents[1] / "src")
+    writer_script = (
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, os.environ['FOX3D_SRC'])\n"
+        "from fox3d.platform import Platform\n"
+        "root = Path(sys.argv[1])\n"
+        "tid = sys.argv[2]\n"
+        "plat = Platform(root=root, mock_blender=True)\n"
+        "pkg = plat.physical.packaging.build(tenant_id=tid, family='RSC_CARTON', product_dims={'width': 120, 'height': 80, 'depth': 50})\n"
+        "acr = plat.physical.acrylic.build(tenant_id=tid, kind='MENU_STAND')\n"
+        "ret = plat.physical.retail.build(tenant_id=tid, family='RISER_DISPLAY')\n"
+        "kd_sku = plat.kd.build_sku(tenant_id=tid, kind='OPEN_SHELF')\n"
+        "bat = plat.kd.production_batch([kd_sku], [1], tenant_id=tid)\n"
+        "plat.physical.approve(entity_id=acr['productId'], tenant_id=tid, actor='ops-v')\n"
+        "plat.physical.record_benchmark({'score': 99}, tenant_id=tid)\n"
+        "eng = pkg.get('engineeringHash') or (pkg.get('engineering') or {}).get('engineeringHash') or 'eh-v'\n"
+        "plat.release.advance(pkg['packageId'], tenant_id=tid, target='ENGINEERING_VALID', actor='ops-v', entity={**pkg, 'engineeringHash': eng, 'evidenceHash': 'ev-v'})\n"
+        "rems = plat.remnants.add_from_nesting({'candidateRemnants': [{'w': 500, 'h': 300, 'sheetIndex': 0}]}, material='WOOD_WHITE', thickness=18, source_run='run-v', tenant_id=tid)\n"
+        "jev = plat.pilot.journal.append('pilot.victim', tenant_id=tid, aggregate_type='Test', aggregate_id='v1', actor='ops-v')\n"
+        "print(json.dumps({\n"
+        "  'pkg': pkg['packageId'],\n"
+        "  'acr': acr['productId'],\n"
+        "  'ret': ret['fixtureId'],\n"
+        "  'kd': kd_sku['spec']['productId'],\n"
+        "  'bat': bat['batchId'],\n"
+        "  'rems': sorted(r['remnantId'] for r in plat.remnants.snapshot(tenant_id=tid)['items']),\n"
+        "  'jev': jev['eventId'],\n"
+        "}))\n"
+    )
+    env = {**os.environ, "FOX3D_SRC": src_dir, "FOX3D_MOCK_BLENDER": "1"}
+    proc = subprocess.run(
+        [sys.executable, "-c", writer_script, str(root), victim],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
+    created = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    store_dirs = (
+        "packaging",
+        "acrylic",
+        "retail_fixtures",
+        "kd",
+        "physical_os",
+        "release_gate",
+        "remnants",
+        "journal",
+    )
+    for sdir in store_dirs:
+        assert (root / sdir / f"{victim_stem}.json").is_file(), sdir
+
+    # 3. Resident process now queries as colliding_tenant ('victim-1bdd5b5b92e2').
+    hdr_collide = {"X-Tenant-Id": colliding_tenant}
+    for ep in (
+        "/api/packaging/structures",
+        "/api/acrylic/products",
+        "/api/retail/fixtures",
+        "/api/kd/candidates",
+        "/api/remnants",
+    ):
+        res = resident_client.get(ep, headers=hdr_collide)
+        assert res.status_code == 200
+        assert res.json()["items"] == []
+
+    assert resident.kd.list_batches(tenant_id=colliding_tenant) == []
+    resident.physical._sync_tenant(colliding_tenant)
+    resident.release._sync_tenant(colliding_tenant)
+    assert resident.pilot.journal.list(colliding_tenant) == []
+    assert resident.pilot.journal.verify(colliding_tenant)["ok"] is True
+
+    # Victim's canonical files must ALL still exist and retain victim's data!
+    for sdir in store_dirs:
+        victim_file = root / sdir / f"{victim_stem}.json"
+        assert victim_file.is_file(), f"victim file deleted in {sdir}"
+        disk_payload = json.loads(victim_file.read_text(encoding="utf-8"))
+        assert disk_payload["tenantId"] == victim
+        assert not (root / sdir / f"{colliding_canonical_stem}.json").exists(), sdir
+
+    # 4. Resident process can also write its own state for colliding_tenant without harming victim.
+    col_pkg = resident_client.post(
+        "/api/packaging/structures",
+        json={"family": "MAILER_BOX", "productDims": {"width": 140, "height": 90, "depth": 50}},
+        headers=hdr_collide,
+    )
+    assert col_pkg.status_code == 200
+    col_pkg_id = col_pkg.json()["packageId"]
+    assert (root / "packaging" / f"{victim_stem}.json").is_file()
+    assert (root / "packaging" / f"{colliding_canonical_stem}.json").is_file()
+
+    # 5. Restarting Platform keeps both tenants' data intact and isolated.
+    reloaded = Platform(root=root, mock_blender=True)
+    reloaded_client = TestClient(create_app(reloaded))
+    hdr_victim = {"X-Tenant-Id": victim}
+
+    assert [p["packageId"] for p in reloaded_client.get("/api/packaging/structures", headers=hdr_victim).json()["items"]] == [created["pkg"]]
+    assert [p["packageId"] for p in reloaded_client.get("/api/packaging/structures", headers=hdr_collide).json()["items"]] == [col_pkg_id]
+    assert [a["productId"] for a in reloaded_client.get("/api/acrylic/products", headers=hdr_victim).json()["items"]] == [created["acr"]]
+    assert [r["fixtureId"] for r in reloaded_client.get("/api/retail/fixtures", headers=hdr_victim).json()["items"]] == [created["ret"]]
+    assert [k["spec"]["productId"] for k in reloaded_client.get("/api/kd/candidates", headers=hdr_victim).json()["items"]] == [created["kd"]]
+    assert [b["batchId"] for b in reloaded.kd.list_batches(tenant_id=victim)] == [created["bat"]]
+    assert (victim, created["acr"]) in reloaded.physical.approvals
+    assert (victim, created["pkg"]) in reloaded.release.approvals
+    assert sorted(r["remnantId"] for r in reloaded_client.get("/api/remnants", headers=hdr_victim).json()["items"]) == created["rems"]
+    assert [e["eventId"] for e in reloaded.pilot.journal.list(victim)] == [created["jev"]]
+
+    # 6. Conversely, a genuine legacy file owned by colliding_tenant ('victim-1bdd5b5b92e2') migrates cleanly.
+    leg_root = tmp_path / "genuine-legacy"
+    (leg_root / "packaging").mkdir(parents=True, exist_ok=True)
+    (leg_root / "packaging" / f"{victim_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": colliding_tenant,
+                "items": [{"packageId": "pkg-col-leg", "tenantId": colliding_tenant, "family": "RSC_CARTON"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    j_col_seed = Platform(root=tmp_path / "seed-col", mock_blender=True)
+    ev_col = j_col_seed.pilot.journal.append(
+        "pilot.col", tenant_id=colliding_tenant, aggregate_type="Test", aggregate_id="c1", actor="ops"
+    )
+    col_j_payload = json.loads(j_col_seed.pilot.journal._path(colliding_tenant).read_text(encoding="utf-8"))
+    (leg_root / "journal").mkdir(parents=True, exist_ok=True)
+    (leg_root / "journal" / f"{victim_stem}.json").write_text(json.dumps(col_j_payload), encoding="utf-8")
+
+    migrated = Platform(root=leg_root, mock_blender=True)
+    assert (leg_root / "packaging" / f"{colliding_canonical_stem}.json").is_file()
+    assert not (leg_root / "packaging" / f"{victim_stem}.json").exists()
+    assert [p["packageId"] for p in migrated.physical.packaging.list(tenant_id=colliding_tenant)] == ["pkg-col-leg"]
+    assert [e["eventId"] for e in migrated.pilot.journal.list(colliding_tenant)] == [ev_col["eventId"]]
+    assert (leg_root / "journal" / f"{colliding_canonical_stem}.json").is_file()
+    assert not (leg_root / "journal" / f"{victim_stem}.json").exists()
+
+
+def test_coexisting_legacy_and_canonical_files_do_not_resurrect_deleted_items(tmp_path: Path) -> None:
+    """Interrupted migration leaving both legacy and canonical files must not resurrect deleted items."""
+    from fox3d.inventory import DurableRemnantStore
+    from fox3d.release import legacy_safe_tenant_filename
+
+    root = tmp_path / "data"
+    tid = "acme corp"
+    legacy_stem = legacy_safe_tenant_filename(tid)
+    canonical_stem = safe_tenant_filename(tid)
+
+    def _write_pair(store_dir: str, legacy_obj: dict[str, Any], canonical_obj: dict[str, Any]) -> tuple[Path, Path]:
+        d = root / store_dir
+        d.mkdir(parents=True, exist_ok=True)
+        leg = d / f"{legacy_stem}.json"
+        can = d / f"{canonical_stem}.json"
+        leg.write_text(json.dumps(legacy_obj), encoding="utf-8")
+        can.write_text(json.dumps(canonical_obj), encoding="utf-8")
+        return leg, can
+
+    leg_pkg, can_pkg = _write_pair(
+        "packaging",
+        {
+            "tenantId": tid,
+            "items": [
+                {"packageId": "pkg-keep", "tenantId": tid, "family": "RSC_CARTON"},
+                {"packageId": "pkg-deleted", "tenantId": tid, "family": "MAILER_BOX"},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "items": [
+                {"packageId": "pkg-keep", "tenantId": tid, "family": "RSC_CARTON"},
+            ],
+        },
+    )
+    leg_acr, can_acr = _write_pair(
+        "acrylic",
+        {
+            "tenantId": tid,
+            "items": [
+                {"productId": "acr-keep", "tenantId": tid, "kind": "MENU_STAND"},
+                {"productId": "acr-deleted", "tenantId": tid, "kind": "SIGN_HOLDER"},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "items": [
+                {"productId": "acr-keep", "tenantId": tid, "kind": "MENU_STAND"},
+            ],
+        },
+    )
+    leg_ret, can_ret = _write_pair(
+        "retail_fixtures",
+        {
+            "tenantId": tid,
+            "items": [
+                {"fixtureId": "ret-keep", "tenantId": tid, "family": "RISER_DISPLAY"},
+                {"fixtureId": "ret-deleted", "tenantId": tid, "family": "PDQ_DISPLAY"},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "items": [
+                {"fixtureId": "ret-keep", "tenantId": tid, "family": "RISER_DISPLAY"},
+            ],
+        },
+    )
+    leg_kd, can_kd = _write_pair(
+        "kd",
+        {
+            "tenantId": tid,
+            "candidates": [
+                {"productId": "kd-keep", "tenantId": tid, "spec": {"productId": "kd-keep", "tenantId": tid, "kind": "OPEN_SHELF"}},
+                {"productId": "kd-deleted", "tenantId": tid, "spec": {"productId": "kd-deleted", "tenantId": tid, "kind": "DESK_RISER"}},
+            ],
+            "batches": [
+                {"batchId": "bat-keep", "tenantId": tid, "items": []},
+                {"batchId": "bat-deleted", "tenantId": tid, "items": []},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "candidates": [
+                {"productId": "kd-keep", "tenantId": tid, "spec": {"productId": "kd-keep", "tenantId": tid, "kind": "OPEN_SHELF"}},
+            ],
+            "batches": [
+                {"batchId": "bat-keep", "tenantId": tid, "items": []},
+            ],
+        },
+    )
+    leg_phys, can_phys = _write_pair(
+        "physical_os",
+        {
+            "tenantId": tid,
+            "approvals": [
+                {"entityId": "acr-keep", "tenantId": tid, "actor": "ops", "approvedAt": "2026-11-18T00:00:00+00:00"},
+                {"entityId": "acr-deleted", "tenantId": tid, "actor": "ops", "approvedAt": "2026-11-18T00:00:00+00:00"},
+            ],
+            "benchmarks": [
+                {"tenantId": tid, "seq": 1},
+                {"tenantId": tid, "seq": 999},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "approvals": [
+                {"entityId": "acr-keep", "tenantId": tid, "actor": "ops", "approvedAt": "2026-11-18T00:00:00+00:00"},
+            ],
+            "benchmarks": [
+                {"tenantId": tid, "seq": 1},
+            ],
+        },
+    )
+    leg_rel, can_rel = _write_pair(
+        "release_gate",
+        {
+            "tenantId": tid,
+            "approvals": [
+                {"entityId": "pkg-keep", "tenantId": tid, "state": "ENGINEERING_VALID"},
+                {"entityId": "pkg-deleted", "tenantId": tid, "state": "ENGINEERING_VALID"},
+            ],
+            "events": [
+                {"eventId": "ev-keep", "entityId": "pkg-keep", "tenantId": tid, "decision": "ENGINEERING_VALID"},
+                {"eventId": "ev-deleted", "entityId": "pkg-deleted", "tenantId": tid, "decision": "ENGINEERING_VALID"},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "approvals": [
+                {"entityId": "pkg-keep", "tenantId": tid, "state": "ENGINEERING_VALID"},
+            ],
+            "events": [
+                {"eventId": "ev-keep", "entityId": "pkg-keep", "tenantId": tid, "decision": "ENGINEERING_VALID"},
+            ],
+        },
+    )
+    leg_rem, can_rem = _write_pair(
+        "remnants",
+        {
+            "tenantId": tid,
+            "kind": "remnant-store",
+            "count": 2,
+            "items": [
+                {"remnantId": "rem-keep", "tenantId": tid, "status": "available", "w": 500, "h": 300, "thickness": 18, "version": 1},
+                {"remnantId": "rem-deleted", "tenantId": tid, "status": "available", "w": 400, "h": 200, "thickness": 18, "version": 1},
+            ],
+        },
+        {
+            "tenantId": tid,
+            "kind": "remnant-store",
+            "count": 1,
+            "items": [
+                {"remnantId": "rem-keep", "tenantId": tid, "status": "available", "w": 500, "h": 300, "thickness": 18, "version": 1},
+            ],
+        },
+    )
+
+    plat = Platform(root=root, mock_blender=True)
+
+    for leg_path, can_path in (
+        (leg_pkg, can_pkg),
+        (leg_acr, can_acr),
+        (leg_ret, can_ret),
+        (leg_kd, can_kd),
+        (leg_phys, can_phys),
+        (leg_rel, can_rel),
+        (leg_rem, can_rem),
+    ):
+        assert not leg_path.exists(), leg_path
+        assert can_path.is_file(), can_path
+
+    assert [r["packageId"] for r in plat.physical.packaging.list(tenant_id=tid)] == ["pkg-keep"]
+    assert "pkg-deleted" not in plat.physical.packaging.items
+    assert [r["productId"] for r in plat.physical.acrylic.list(tenant_id=tid)] == ["acr-keep"]
+    assert "acr-deleted" not in plat.physical.acrylic.items
+    assert [r["fixtureId"] for r in plat.physical.retail.list(tenant_id=tid)] == ["ret-keep"]
+    assert "ret-deleted" not in plat.physical.retail.items
+    assert [r["productId"] for r in plat.kd.list_candidates(tenant_id=tid)] == ["kd-keep"]
+    assert "kd-deleted" not in plat.kd.candidates
+    assert "kd-deleted" not in plat.parametrics
+    assert [b["batchId"] for b in plat.kd.list_batches(tenant_id=tid)] == ["bat-keep"]
+    assert "bat-deleted" not in plat.kd.batches
+    assert list(plat.physical.approvals.keys()) == [(tid, "acr-keep")]
+    assert [b["seq"] for b in plat.physical.benchmarks if b.get("tenantId") == tid] == [1]
+    assert list(plat.release.approvals.keys()) == [(tid, "pkg-keep")]
+    assert [e["eventId"] for e in plat.release.events if e.get("tenantId") == tid] == ["ev-keep"]
+    assert [r["remnantId"] for r in DurableRemnantStore(root / "remnants").list(tenant_id=tid)] == ["rem-keep"]
+
+    # Second restart confirms canonical files on disk were NOT polluted with resurrected legacy records.
+    plat2 = Platform(root=root, mock_blender=True)
+    assert [r["packageId"] for r in plat2.physical.packaging.list(tenant_id=tid)] == ["pkg-keep"]
+    assert [r["productId"] for r in plat2.kd.list_candidates(tenant_id=tid)] == ["kd-keep"]
+    assert [e["eventId"] for e in plat2.release.events if e.get("tenantId") == tid] == ["ev-keep"]
+    assert [r["remnantId"] for r in DurableRemnantStore(root / "remnants").list(tenant_id=tid)] == ["rem-keep"]
+
+    # Empty canonical file + non-empty legacy file also keeps canonical empty state without resurrection.
+    empty_root = tmp_path / "empty-canonical"
+    (empty_root / "packaging").mkdir(parents=True, exist_ok=True)
+    (empty_root / "packaging" / f"{legacy_stem}.json").write_text(
+        json.dumps({"tenantId": tid, "items": [{"packageId": "pkg-ghost", "tenantId": tid, "family": "RSC_CARTON"}]}),
+        encoding="utf-8",
+    )
+    (empty_root / "packaging" / f"{canonical_stem}.json").write_text(
+        json.dumps({"tenantId": tid, "items": []}),
+        encoding="utf-8",
+    )
+    plat_empty = Platform(root=empty_root, mock_blender=True)
+    assert plat_empty.physical.packaging.list(tenant_id=tid) == []
+    assert not (empty_root / "packaging" / f"{legacy_stem}.json").exists()
+
+
+

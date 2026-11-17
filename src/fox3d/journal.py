@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import re
 import threading
@@ -12,7 +13,11 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.release import legacy_safe_tenant_filename, safe_tenant_filename
+from fox3d.release import (
+    is_matching_tenant_stem,
+    legacy_safe_tenant_filename,
+    safe_tenant_filename,
+)
 from fox3d.storelock import FileLock
 
 GENESIS = "GENESIS"
@@ -208,16 +213,22 @@ class EventJournal:
                     continue
                 try:
                     raw = read_json(path)
-                except Exception:
+                except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError):
                     continue
                 if not isinstance(raw, dict) or not raw:
                     continue
                 tid = raw.get("tenantId")
                 if not isinstance(tid, str) or not tid.strip():
-                    for ev in raw.get("events") or []:
-                        if isinstance(ev, dict) and isinstance(ev.get("tenantId"), str) and ev["tenantId"].strip():
-                            tid = ev["tenantId"]
-                            break
+                    events = raw.get("events") or []
+                    event_tids = {
+                        ev["tenantId"]
+                        for ev in events
+                        if isinstance(ev, dict)
+                        and isinstance(ev.get("tenantId"), str)
+                        and ev["tenantId"].strip()
+                    }
+                    if len(event_tids) == 1:
+                        tid = next(iter(event_tids))
                 if not isinstance(tid, str) or not tid.strip():
                     continue
                 canonical = self._path(tid)
@@ -237,44 +248,43 @@ class EventJournal:
                         old_lock.unlink(missing_ok=True)
 
     def _maybe_migrate_legacy_tenant(self, tenant_id: str) -> None:
-        canonical = self._path(tenant_id)
-        legacy = self._legacy_path(tenant_id)
+        tid = str(tenant_id or "default").strip() or "default"
+        canonical = self._path(tid)
+        legacy = self._legacy_path(tid)
         candidates: list[Path] = []
         if legacy != canonical and _file_sig(legacy) is not None:
             candidates.append(legacy)
-        want_lower = self._legacy_safe(tenant_id).lower()
+        want_lower = self._legacy_safe(tid).lower()
         for p in sorted(self.root.glob("*.json")):
-            if p == canonical or p in candidates or _CANONICAL_STEM_RE.match(p.stem):
+            if p == canonical or p in candidates:
                 continue
             if p.stem.lower() == want_lower:
                 candidates.append(p)
         for cand in candidates:
             try:
                 raw = read_json(cand)
-            except Exception:
+            except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError):
                 continue
             if not isinstance(raw, dict) or not raw:
                 continue
             file_tid = raw.get("tenantId")
-            if file_tid in {None, tenant_id}:
+            if file_tid is None:
+                events = raw.get("events") or []
+                if events and all(isinstance(ev, dict) and ev.get("tenantId") == tid for ev in events):
+                    file_tid = tid
+                else:
+                    continue
+            if file_tid == tid:
                 if _file_sig(canonical) is None:
-                    raw.setdefault("tenantId", tenant_id)
+                    raw.setdefault("tenantId", tid)
                     atomic_write_json(canonical, raw)
                     _bump_journal_gen(canonical)
-                cand.unlink(missing_ok=True)
+                if cand != canonical:
+                    cand.unlink(missing_ok=True)
                 return
-            if isinstance(file_tid, str) and file_tid.strip() and self._legacy_safe(file_tid).lower() == cand.stem.lower():
-                other_canonical = self._path(file_tid)
-                if _file_sig(other_canonical) is None:
-                    atomic_write_json(other_canonical, raw)
-                    _bump_journal_gen(other_canonical)
-                cand.unlink(missing_ok=True)
+            if isinstance(file_tid, str) and file_tid.strip() and is_matching_tenant_stem(file_tid, cand.stem):
                 continue
-            if _file_sig(canonical) is None:
-                atomic_write_json(canonical, raw)
-                _bump_journal_gen(canonical)
-            cand.unlink(missing_ok=True)
-            return
+            raise PermissionError("tenant isolation: journal")
 
     def _build_semantic_index(self, events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         index: dict[str, dict[str, Any]] = {}
