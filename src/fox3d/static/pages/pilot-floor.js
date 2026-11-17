@@ -360,13 +360,15 @@
 
   // While one POST is in flight, every other action path is disabled so nothing is dropped.
   function lockPeerActions(busy) {
-    var skip = {};
-    (busy || []).filter(Boolean).forEach(function (el) { skip[el] = 1; });
+    var skip = (busy || []).filter(Boolean);
+    function isBusy(el) {
+      return skip.indexOf(el) !== -1;
+    }
     Object.keys(formConfirms).forEach(function (k) {
       var ctl = formConfirms[k];
       if (!ctl) return;
-      if (!skip[ctl.btn]) ctl.btn.disabled = true;
-      if (!skip[ctl.box]) ctl.box.disabled = true;
+      if (!isBusy(ctl.btn)) ctl.btn.disabled = true;
+      if (!isBusy(ctl.box)) ctl.box.disabled = true;
     });
     document.querySelectorAll('.pf-tabs button').forEach(function (b) { b.disabled = true; });
     if ($('pf-refresh')) $('pf-refresh').disabled = true;
@@ -376,7 +378,7 @@
     var tf = $('pf-token-form');
     if (tf) {
       var tb = tf.querySelector('button[type="submit"]');
-      if (tb && !skip[tb]) tb.disabled = true;
+      if (tb && !isBusy(tb)) tb.disabled = true;
     }
   }
 

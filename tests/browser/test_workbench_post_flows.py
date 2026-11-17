@@ -269,6 +269,8 @@ def test_pilot_floor_second_form_blocked_while_station_inflight(admin_page: Page
     page.locator("#pf-station-form button[type=submit]").click()
     page.wait_for_function("() => document.querySelector('#pf-station-form .pf-confirm-box').disabled")
     assert len(pending) == 1
+    page.wait_for_function("() => document.querySelector('#pf-dispatch-form button[type=submit]').disabled")
+    page.wait_for_function("() => document.querySelector('#pf-dispatch-form .pf-confirm-box').disabled")
     page.locator("#tab-dispatch").click(force=True)
     assert page.locator("#panel-dispatch").is_hidden()
     page.evaluate(
@@ -282,6 +284,13 @@ def test_pilot_floor_second_form_blocked_while_station_inflight(admin_page: Page
     assert "仍在送出中" in page.locator("#pf-action-status").inner_text()
     _release(pending, {"stationId": "pf-browser-station", "status": "ONLINE"})
     page.wait_for_function("() => (document.getElementById('pf-action-status').textContent || '').includes('完成')")
+    page.wait_for_function(
+        """() => {
+          const box = document.querySelector('#pf-dispatch-form .pf-confirm-box');
+          const btn = document.querySelector('#pf-dispatch-form button[type=submit]');
+          return box && !box.disabled && box.checked && btn && !btn.disabled;
+        }"""
+    )
 
 
 def test_pilot_floor_confirm_snapshot_tenant_and_body(admin_page: Page, admin_server: dict[str, Any]) -> None:
