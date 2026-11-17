@@ -201,7 +201,7 @@
       api('GET', '/api/retail/fixtures', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
       api('GET', '/api/kd/candidates', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
     ]).then(function (res) {
-      if (tenant() !== curTenant) return;
+      if (tenant() !== curTenant || postBusy || activeConfirm) return;
       var entries = [];
       var pkgItems = (res[0] && res[0].ok && res[0].data && res[0].data.items) || [];
       pkgItems.forEach(function (it) {

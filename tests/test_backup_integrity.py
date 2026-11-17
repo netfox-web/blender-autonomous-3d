@@ -667,3 +667,9 @@ def test_backup_legacy_mixed_or_ambiguous_journal_and_remnants_handled_safely(tm
         backup_pilot(root_amb_rem, dest_amb_rem, tenant_ids=[t_space])
     _assert_no_manifest(dest_amb_rem)
 
+    for bad_tid in ("", "   "):
+        dest_bad_tid = tmp_path / f"bak-bad-{len(bad_tid)}"
+        with pytest.raises(BackupError):
+            backup_pilot(root_mix_rem, dest_bad_tid, tenant_ids=[bad_tid])
+        _assert_no_manifest(dest_bad_tid)
+

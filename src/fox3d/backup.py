@@ -615,6 +615,12 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
         raise BackupError("BLOCKED", "backup destination must be empty")
     dest.mkdir(parents=True, exist_ok=True)
     data_root = dest / "data"
+    if tenant_ids is not None:
+        for raw_t in tenant_ids:
+            if not isinstance(raw_t, str) or (raw_t != "" and not raw_t.strip()):
+                raise BackupError("BLOCKED", "invalid tenantId in tenant_ids")
+        if any(raw_t == "" for raw_t in tenant_ids):
+            raise BackupError("BLOCKED", "empty tenantId in tenant_ids")
     tids = set(tenant_ids or []) or None
     last_error = "inconsistent snapshot"
     for _ in range(SNAPSHOT_RETRIES):

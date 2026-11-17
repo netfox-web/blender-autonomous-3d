@@ -18,6 +18,7 @@ from typing import Any, Iterator, Protocol, cast
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.release import (
+    is_matching_tenant_stem,
     legacy_safe_tenant_filename,
     safe_tenant_filename,
     sorted_tenant_json_paths,
@@ -322,6 +323,8 @@ class DurableRemnantStore:
                     if isinstance(raw_tid, str) and raw_tid.strip()
                     else None
                 )
+                if header_tid is not None and not is_matching_tenant_stem(header_tid, path.stem):
+                    continue
                 is_canonical = header_tid is not None and self._tenant_path(header_tid) == path
                 default_tid = header_tid or "default"
                 if is_canonical and header_tid is not None:
