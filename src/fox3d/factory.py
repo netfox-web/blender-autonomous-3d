@@ -321,9 +321,12 @@ class FurnitureFactory:
 
     def create_space(self, payload: dict[str, Any]) -> SpaceDigitalTwin:
         twin = self.platform.spaces.ingest(payload)
+        self._store_space(twin)
+        return twin
+
+    def _store_space(self, twin: SpaceDigitalTwin) -> None:
         with self._transaction():
             self.spaces[twin.spaceId] = twin
-        return twin
 
     def default_room_3600(self, *, tenant_id: str) -> dict[str, Any]:
         return {
@@ -367,8 +370,10 @@ class FurnitureFactory:
             payload["doors"] = [{"kind": "door", "width": 900, "height": 2100, "startMm": 400, "position": [400.0, 0.0]}]
             payload["windows"] = [{"kind": "window", "width": 1000, "height": 1200, "sill": 900, "startMm": 800, "position": [800.0, 0.0]}]
             payload["columns"] = [{"width": 180, "depth": 180, "startMm": 200}]
-        space_twin = self.create_space(payload)
+        space_twin = self.platform.spaces.ingest(payload)
         # Assign door/window/column keep-outs to E/S/W so N stays a 3600mm furniture wall.
+        # Must happen before the space is persisted: the state merge keeps the on-disk
+        # space on conflict, so a later in-memory edit would never reach storage.
         if not space:
             by_name = {w.name: w for w in space_twin.walls}
             for zone in space_twin.keepOuts:
@@ -378,6 +383,7 @@ class FurnitureFactory:
                     zone.wallId = by_name["S"].wallId
                 elif zone.kind == "column" and "W" in by_name:
                     zone.wallId = by_name["W"].wallId
+        self._store_space(space_twin)
         wall = next((w for w in space_twin.walls if w.name == wall_name), space_twin.walls[0])
         layouts = self.solver.solve(
             space_twin,

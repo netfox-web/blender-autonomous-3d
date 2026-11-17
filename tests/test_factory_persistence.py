@@ -478,3 +478,23 @@ def test_quote_list_returns_newest_when_over_limit(tmp_path: Path) -> None:
     assert returned_ids[0] == "quote-104"
     assert "quote-000" not in returned_ids
     assert "quote-004" not in returned_ids
+
+def test_default_run_persists_keepout_wall_reassignment(tmp_path: Path) -> None:
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    run = plat.factory.run(tenant_id="tenant-a", render=False)
+    assert run.get("status") != "failed"
+    space_id = run["space"]["spaceId"]
+    run_hash = run["space"]["spaceHash"]
+
+    mem_twin = plat.factory.spaces[space_id]
+    assert mem_twin.space_hash() == run_hash
+
+    plat2 = Platform(root=root, mock_blender=True)
+    disk_twin = plat2.factory.spaces[space_id]
+    assert disk_twin.space_hash() == run_hash
+
+    for twin in (mem_twin, disk_twin):
+        wall_names = {w.wallId: w.name for w in twin.walls}
+        kinds = {z.kind: wall_names.get(z.wallId) for z in twin.keepOuts if z.kind in ("door", "window", "column")}
+        assert kinds == {"door": "E", "window": "S", "column": "W"}
