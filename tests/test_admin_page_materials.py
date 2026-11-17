@@ -601,6 +601,13 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
     monkeypatch.setattr(inv_mod, "read_json", counting_read_json)
     monkeypatch.setattr(inv_mod, "atomic_write_json", counting_write_json)
 
+    from fox3d.release import safe_tenant_filename
+
+    ta_file = f"{safe_tenant_filename('ta')}.json"
+    tb_file = f"{safe_tenant_filename('tb')}.json"
+    tc_file = f"{safe_tenant_filename('tc')}.json"
+    tg_file = f"{safe_tenant_filename('tg')}.json"
+
     # 1. Batch add_from_nesting for a new tenant writes once and reads zero other tenant files.
     plat.remnants.add_from_nesting(
         {"candidateRemnants": [{"w": 450 + i, "h": 250 + i, "sheetIndex": i} for i in range(10)]},
@@ -610,7 +617,7 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
         tenant_id="tg",
     )
     assert remnant_reads == []
-    assert remnant_writes == ["tg.json"]
+    assert remnant_writes == [tg_file]
 
     # 2. WorkOrder reserve_materials for "ta" (15 remnants, 7 tenants on disk) reads ta.json once and writes ta.json once.
     product_a = plat.kd.build_sku(tenant_id="ta", kind="OPEN_SHELF")
@@ -621,8 +628,8 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
     remnant_reads.clear()
     remnant_writes.clear()
     reserved_a = plat.pilot.workorders.reserve_materials(wo_a["workOrderId"], actor="ops", tenant_id="ta")
-    assert remnant_reads == ["ta.json"]
-    assert remnant_writes == ["ta.json"]
+    assert remnant_reads == [ta_file]
+    assert remnant_writes == [ta_file]
     assert set(reserved_a["lineage"]["remnants"]) == set(by_tenant_ids["ta"])
     assert len(reserved_a["lineage"]["remnants"]) == remnants_per_tenant
 
@@ -637,8 +644,8 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
     remnant_reads.clear()
     remnant_writes.clear()
     plat.pilot.workorders.consume_reserved(wo_a["workOrderId"], actor="ops")
-    assert remnant_reads == ["ta.json"]
-    assert remnant_writes == ["ta.json"]
+    assert remnant_reads == [ta_file]
+    assert remnant_writes == [ta_file]
 
     # 4. WorkOrder reserve + cancel for "tb" scopes all reads/writes to tb.json only.
     product_b = plat.kd.build_sku(tenant_id="tb", kind="OPEN_SHELF")
@@ -649,14 +656,14 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
     remnant_reads.clear()
     remnant_writes.clear()
     plat.pilot.workorders.reserve_materials(wo_b["workOrderId"], actor="ops", tenant_id="tb")
-    assert remnant_reads == ["tb.json"]
-    assert remnant_writes == ["tb.json"]
+    assert remnant_reads == [tb_file]
+    assert remnant_writes == [tb_file]
 
     remnant_reads.clear()
     remnant_writes.clear()
     plat.pilot.workorders.cancel(wo_b["workOrderId"], actor="ops")
-    assert remnant_reads == ["tb.json"]
-    assert remnant_writes == ["tb.json"]
+    assert remnant_reads == [tb_file]
+    assert remnant_writes == [tb_file]
 
     # 5. API snapshot and single-remnant reserve for "tb" also touch only tb.json once.
     app_client = TestClient(create_app(plat))
@@ -665,7 +672,7 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
     snap_resp = app_client.get("/api/remnants", headers={"X-Tenant-Id": "tb"})
     assert snap_resp.status_code == 200
     assert snap_resp.json()["availableCount"] == remnants_per_tenant
-    assert remnant_reads == ["tb.json"]
+    assert remnant_reads == [tb_file]
     assert remnant_writes == []
 
     remnant_reads.clear()
@@ -677,8 +684,8 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
         json={"by": "api-op", "version": 3},
     )
     assert res_resp.status_code == 200
-    assert remnant_reads == ["tb.json"]
-    assert remnant_writes == ["tb.json"]
+    assert remnant_reads == [tb_file]
+    assert remnant_writes == [tb_file]
 
     # 6. Fallback path (without reserve_available) and mid-batch stale-version skip for "tc" still do 1 read and 1 write.
     product_c = plat.kd.build_sku(tenant_id="tc", kind="OPEN_SHELF")
@@ -698,8 +705,8 @@ def test_workorder_remnant_reserve_avoids_multi_tenant_and_per_item_read_amplifi
     remnant_reads.clear()
     remnant_writes.clear()
     reserved_c = plat.pilot.workorders.reserve_materials(wo_c["workOrderId"], actor="ops", tenant_id="tc")
-    assert remnant_reads == ["tc.json"]
-    assert remnant_writes == ["tc.json"]
+    assert remnant_reads == [tc_file]
+    assert remnant_writes == [tc_file]
     assert set(reserved_c["lineage"]["remnants"]) == set(by_tenant_ids["tc"][1:])
 
     # Reload from disk and verify durable state across tenants.

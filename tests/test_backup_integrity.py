@@ -22,6 +22,7 @@ from fox3d.backup import (
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.manual_pilot import seed_tenant_backup_fixture
 from fox3d.platform import Platform
+from fox3d.release import safe_tenant_filename
 from fox3d.station import STATION_CAPS
 
 
@@ -89,8 +90,8 @@ def test_pilot_backup_empty_tenants_falls_back_to_work_orders(tmp_path, tenant_i
 
     assert manifest["scope"] == "TENANT_SCOPED"
     assert manifest["tenantIds"] == ["ta"]
-    assert (dest / "data" / "journal" / "ta.json").is_file()
-    assert not (dest / "data" / "journal" / "tb.json").exists()
+    assert (dest / "data" / "journal" / f"{safe_tenant_filename('ta')}.json").is_file()
+    assert not (dest / "data" / "journal" / f"{safe_tenant_filename('tb')}.json").exists()
     assert verify_backup(dest)["exactSet"] is True
 
 
@@ -292,7 +293,7 @@ def test_snapshot_detects_new_dam_and_remnant_files(tmp_path, monkeypatch):
     assert man["snapshotPathSetBound"] is True
     paths = {row["path"] for row in man["files"]}
     assert any(p.startswith("dam/ta/") and p.endswith("new.bin") for p in paths)
-    assert "remnants/ta.json" in paths
+    assert f"remnants/{safe_tenant_filename('ta')}.json" in paths
     restore_pilot(dest, tmp_path / "r", tenant_id="ta")
     assert (tmp_path / "r" / "dam" / "ta" / "race" / "new.bin").exists()
 
@@ -351,7 +352,7 @@ def test_snapshot_b_churn_does_not_leak_or_invalidate_a(tmp_path, monkeypatch):
     assert man["consistentSnapshot"] is True
     paths = {row["path"] for row in man["files"]}
     assert not any(p.startswith("dam/tb/") for p in paths)
-    assert "remnants/tb.json" not in paths
+    assert f"remnants/{safe_tenant_filename('tb')}.json" not in paths
     restore_pilot(dest, tmp_path / "r", tenant_id="ta")
     restored = Platform(root=tmp_path / "r", mock_blender=True)
     assert restored.lots.list(tenant_id="tb") == []
@@ -519,7 +520,7 @@ def test_semantic_preservation_rejects_journal_id_swap(tmp_path):
     dest = tmp_path / "bak"
     backup_pilot(plat.root, dest, tenant_ids=["ta"])
     restore_pilot(dest, tmp_path / "r", tenant_id="ta")
-    jpath = tmp_path / "r" / "journal" / "ta.json"
+    jpath = tmp_path / "r" / "journal" / f"{safe_tenant_filename('ta')}.json"
     payload = json.loads(jpath.read_text(encoding="utf-8"))
     payload["events"][0]["eventId"] = "mutated-event"
     jpath.write_text(json.dumps(payload), encoding="utf-8")
@@ -528,3 +529,226 @@ def test_semantic_preservation_rejects_journal_id_swap(tmp_path):
     assert bad["tenantRequiredStatePreserved"] is False
     assert "journal" in bad["identityMismatch"]
     assert tenant_domain_counts(plat, "ta")["journal"] == tenant_domain_counts(restored, "ta")["journal"]
+
+
+def test_backup_hashed_stem_collision_does_not_leak_victim_journal_or_remnants(tmp_path):
+    from fox3d.release import legacy_safe_tenant_filename
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    victim = "victim"
+    victim_stem = safe_tenant_filename(victim)
+    colliding = victim_stem  # e.g. "victim-1bdd5b5b92e2"
+    assert legacy_safe_tenant_filename(colliding) == victim_stem
+
+    seed_tenant_backup_fixture(plat, tenant_id=victim, actor="ops-v")
+    assert (plat.root / "journal" / f"{victim_stem}.json").is_file()
+    assert (plat.root / "remnants" / f"{victim_stem}.json").is_file()
+
+    # 1. Colliding tenant has no state yet: backing it up must NOT copy victim's canonical journal/remnants.
+    dest_empty_col = tmp_path / "bak-col-empty"
+    man_empty = backup_pilot(plat.root, dest_empty_col, tenant_ids=[colliding])
+    assert verify_backup(dest_empty_col)["exactSet"] is True
+    empty_paths = {row["path"] for row in man_empty["files"]}
+    assert not any(p.startswith("journal/") for p in empty_paths), empty_paths
+    assert not any(p.startswith("remnants/") for p in empty_paths), empty_paths
+    restore_pilot(dest_empty_col, tmp_path / "r-col-empty", tenant_id=colliding)
+    restored_empty = Platform(root=tmp_path / "r-col-empty", mock_blender=True)
+    assert restored_empty.pilot.journal.list(victim) == []
+    assert restored_empty.pilot.journal.list(colliding) == []
+    assert restored_empty.remnants.snapshot(tenant_id=victim)["items"] == []
+
+    # 2. Both victim and colliding tenant have full state: each tenant's backup preserves self and excludes peer.
+    seed_tenant_backup_fixture(plat, tenant_id=colliding, actor="ops-c")
+
+    dest_col = tmp_path / "bak-col"
+    man_col = backup_pilot(plat.root, dest_col, tenant_ids=[colliding])
+    col_paths = {row["path"] for row in man_col["files"]}
+    assert f"journal/{victim_stem}.json" not in col_paths
+    assert f"remnants/{victim_stem}.json" not in col_paths
+    assert f"journal/{safe_tenant_filename(colliding)}.json" in col_paths
+    assert f"remnants/{safe_tenant_filename(colliding)}.json" in col_paths
+    restore_pilot(dest_col, tmp_path / "r-col", tenant_id=colliding)
+    restored_col = Platform(root=tmp_path / "r-col", mock_blender=True)
+    matrix_col = evaluate_tenant_restore_matrix(
+        live=plat, restored=restored_col, tenant_a=colliding, tenant_b=victim
+    )
+    assert matrix_col["tenantLeakageAbsent"] is True
+    assert matrix_col["tenantRequiredStatePreserved"] is True, matrix_col["missing"]
+
+    dest_vic = tmp_path / "bak-vic"
+    backup_pilot(plat.root, dest_vic, tenant_ids=[victim])
+    restore_pilot(dest_vic, tmp_path / "r-vic", tenant_id=victim)
+    restored_vic = Platform(root=tmp_path / "r-vic", mock_blender=True)
+    matrix_vic = evaluate_tenant_restore_matrix(
+        live=plat, restored=restored_vic, tenant_a=victim, tenant_b=colliding
+    )
+    assert matrix_vic["tenantLeakageAbsent"] is True
+    assert matrix_vic["tenantRequiredStatePreserved"] is True, matrix_vic["missing"]
+
+
+def test_backup_legacy_mixed_or_ambiguous_journal_and_remnants_handled_safely(tmp_path):
+    from fox3d.journal import EventJournal
+    from fox3d.release import legacy_safe_tenant_filename
+
+    t_space = "acme corp"
+    t_under = "acme_corp"
+    leg_stem = legacy_safe_tenant_filename(t_space)
+    assert leg_stem == "acme_corp"
+
+    # 1. Mixed legacy remnants file safely filters to requested tenant and excludes peer.
+    root_mix_rem = tmp_path / "mix-rem"
+    (root_mix_rem / "remnants").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        root_mix_rem / "remnants" / f"{leg_stem}.json",
+        {
+            "tenantId": t_under,
+            "kind": "remnant-store",
+            "count": 2,
+            "items": [
+                {"remnantId": "rem-space-1", "tenantId": t_space, "status": "available", "w": 500, "h": 300, "thickness": 18, "version": 1},
+                {"remnantId": "rem-under-1", "tenantId": t_under, "status": "available", "w": 400, "h": 200, "thickness": 18, "version": 1},
+            ],
+        },
+    )
+    # Legacy journal owned purely by t_under must be excluded when backing up t_space.
+    j_seed = EventJournal(tmp_path / "seed-j")
+    j_seed.append("evt.under", tenant_id=t_under, aggregate_type="Test", aggregate_id="u1", actor="ops")
+    under_j_payload = read_json(j_seed._path(t_under))
+    (root_mix_rem / "journal").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(root_mix_rem / "journal" / f"{leg_stem}.json", under_j_payload)
+
+    dest_space = tmp_path / "bak-space"
+    man_space = backup_pilot(root_mix_rem, dest_space, tenant_ids=[t_space])
+    assert verify_backup(dest_space)["exactSet"] is True
+    space_paths = {row["path"] for row in man_space["files"]}
+    assert f"journal/{leg_stem}.json" not in space_paths
+    assert f"remnants/{leg_stem}.json" in space_paths
+    backed_rem = read_json(dest_space / "data" / "remnants" / f"{leg_stem}.json")
+    assert backed_rem["tenantId"] == t_space
+    assert [r["remnantId"] for r in backed_rem["items"]] == ["rem-space-1"]
+
+    restore_pilot(dest_space, tmp_path / "r-space", tenant_id=t_space)
+    restored_space = Platform(root=tmp_path / "r-space", mock_blender=True)
+    assert [r["remnantId"] for r in restored_space.remnants.snapshot(tenant_id=t_space)["items"]] == ["rem-space-1"]
+    assert restored_space.remnants.snapshot(tenant_id=t_under)["items"] == []
+    assert restored_space.pilot.journal.list(t_under) == []
+
+    # 2. Mixed-tenant journal file fails closed (cannot filter hash chain safely).
+    root_mix_j = tmp_path / "mix-j"
+    (root_mix_j / "journal").mkdir(parents=True, exist_ok=True)
+    mixed_j = dict(under_j_payload)
+    mixed_j["events"] = [*under_j_payload["events"], {**under_j_payload["events"][0], "tenantId": t_space}]
+    atomic_write_json(root_mix_j / "journal" / f"{leg_stem}.json", mixed_j)
+    dest_mix_j = tmp_path / "bak-mix-j"
+    with pytest.raises(BackupError, match="mixed tenant journal"):
+        backup_pilot(root_mix_j, dest_mix_j, tenant_ids=[t_space])
+    _assert_no_manifest(dest_mix_j)
+
+    # 3. Indeterminable ownership (missing tenantId in journal or remnants) fails closed.
+    root_amb_j = tmp_path / "amb-j"
+    (root_amb_j / "journal").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(root_amb_j / "journal" / f"{leg_stem}.json", {"events": []})
+    dest_amb_j = tmp_path / "bak-amb-j"
+    with pytest.raises(BackupError, match="ambiguous"):
+        backup_pilot(root_amb_j, dest_amb_j, tenant_ids=[t_space])
+    _assert_no_manifest(dest_amb_j)
+
+    root_amb_rem = tmp_path / "amb-rem"
+    (root_amb_rem / "remnants").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        root_amb_rem / "remnants" / f"{leg_stem}.json",
+        {
+            "tenantId": t_space,
+            "items": [{"remnantId": "rem-no-tid", "status": "available", "w": 500, "h": 300, "thickness": 18}],
+        },
+    )
+    dest_amb_rem = tmp_path / "bak-amb-rem"
+    with pytest.raises(BackupError, match="ambiguous"):
+        backup_pilot(root_amb_rem, dest_amb_rem, tenant_ids=[t_space])
+    _assert_no_manifest(dest_amb_rem)
+
+    for bad_tid in ("", "   "):
+        dest_bad_tid = tmp_path / f"bak-bad-{len(bad_tid)}"
+        with pytest.raises(BackupError):
+            backup_pilot(root_mix_rem, dest_bad_tid, tenant_ids=[bad_tid])
+        _assert_no_manifest(dest_bad_tid)
+
+    # 4. Coexisting unmigrated legacy files victim.json (owned by 'victim') and victim-1bdd5b5b92e2.json
+    # (owned by 'victim-1bdd5b5b92e2'): backing up 'victim' must NOT falsely exclude victim.json!
+    victim = "victim"
+    colliding = safe_tenant_filename(victim)
+    root_coexist = tmp_path / "coexist-leg"
+    (root_coexist / "remnants").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        root_coexist / "remnants" / "victim.json",
+        {
+            "tenantId": victim,
+            "kind": "remnant-store",
+            "count": 1,
+            "items": [
+                {
+                    "remnantId": "rem-vic-leg",
+                    "tenantId": victim,
+                    "status": "available",
+                    "w": 500,
+                    "h": 300,
+                    "thickness": 18,
+                    "version": 1,
+                }
+            ],
+        },
+    )
+    atomic_write_json(
+        root_coexist / "remnants" / f"{colliding}.json",
+        {
+            "tenantId": colliding,
+            "kind": "remnant-store",
+            "count": 1,
+            "items": [
+                {
+                    "remnantId": "rem-col-leg",
+                    "tenantId": colliding,
+                    "status": "available",
+                    "w": 600,
+                    "h": 400,
+                    "thickness": 18,
+                    "version": 1,
+                }
+            ],
+        },
+    )
+    j_vic_seed = EventJournal(tmp_path / "seed-j-vic")
+    ev_vic = j_vic_seed.append(
+        "evt.vic", tenant_id=victim, aggregate_type="Test", aggregate_id="v1", actor="ops"
+    )
+    j_col_seed = EventJournal(tmp_path / "seed-j-col")
+    j_col_seed.append(
+        "evt.col", tenant_id=colliding, aggregate_type="Test", aggregate_id="c1", actor="ops"
+    )
+    (root_coexist / "journal").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        root_coexist / "journal" / "victim.json", read_json(j_vic_seed._path(victim))
+    )
+    atomic_write_json(
+        root_coexist / "journal" / f"{colliding}.json",
+        read_json(j_col_seed._path(colliding)),
+    )
+
+    dest_coexist_vic = tmp_path / "bak-coexist-vic"
+    man_coexist_vic = backup_pilot(root_coexist, dest_coexist_vic, tenant_ids=[victim])
+    coexist_paths = {row["path"] for row in man_coexist_vic["files"]}
+    assert "remnants/victim.json" in coexist_paths
+    assert "journal/victim.json" in coexist_paths
+    assert f"remnants/{colliding}.json" not in coexist_paths
+    assert f"journal/{colliding}.json" not in coexist_paths
+    restore_pilot(dest_coexist_vic, tmp_path / "r-coexist-vic", tenant_id=victim)
+    restored_coexist_vic = Platform(root=tmp_path / "r-coexist-vic", mock_blender=True)
+    assert [
+        r["remnantId"]
+        for r in restored_coexist_vic.remnants.snapshot(tenant_id=victim)["items"]
+    ] == ["rem-vic-leg"]
+    assert [
+        e["eventId"] for e in restored_coexist_vic.pilot.journal.list(victim)
+    ] == [ev_vic["eventId"]]
+
+

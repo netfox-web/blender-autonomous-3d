@@ -189,10 +189,78 @@
     }).catch(function (e) { st.textContent = '載入失敗：' + e; });
   }
 
+  function loadPhysicalEntities() {
+    var sel = $('rd-phys-entity-select');
+    var inp = $('rd-phys-entity');
+    var hint = $('rd-phys-entity-hint');
+    if (!sel) return;
+    var curTenant = tenant();
+    Promise.all([
+      api('GET', '/api/packaging/structures', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+      api('GET', '/api/acrylic/products', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+      api('GET', '/api/retail/fixtures', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+      api('GET', '/api/kd/candidates', undefined, curTenant).catch(function () { return { ok: false, data: {} }; }),
+    ]).then(function (res) {
+      if (tenant() !== curTenant || postBusy || activeConfirm) return;
+      var entries = [];
+      var pkgItems = (res[0] && res[0].ok && res[0].data && res[0].data.items) || [];
+      pkgItems.forEach(function (it) {
+        var id = it && it.packageId;
+        if (id) entries.push({ id: String(id), kind: 'packaging', label: '[包裝] ' + id + ' (' + (it.family || it.template || 'PKG') + ')' });
+      });
+      var acrItems = (res[1] && res[1].ok && res[1].data && res[1].data.items) || [];
+      acrItems.forEach(function (it) {
+        var id = it && it.productId;
+        if (id) entries.push({ id: String(id), kind: 'acrylic', label: '[壓克力] ' + id + ' (' + (it.kind || 'ACRYLIC') + ')' });
+      });
+      var retItems = (res[2] && res[2].ok && res[2].data && res[2].data.items) || [];
+      retItems.forEach(function (it) {
+        var id = it && it.fixtureId;
+        if (id) entries.push({ id: String(id), kind: 'retail', label: '[陳列架] ' + id + ' (' + (it.family || 'RETAIL') + ')' });
+      });
+      var kdItems = (res[3] && res[3].ok && res[3].data && res[3].data.items) || [];
+      kdItems.forEach(function (it) {
+        var spec = (it && it.spec) || {};
+        var id = (it && it.productId) || spec.productId || (it && it.candidateId);
+        var kind = spec.kind || (it && it.kind) || 'KD';
+        if (id) entries.push({ id: String(id), kind: 'kd', label: '[KD] ' + id + ' (' + kind + ')' });
+      });
+      var prevVal = inp ? inp.value.trim() : '';
+      sel.textContent = '';
+      var placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = entries.length
+        ? '— 請選擇已建立之商品／實體（共 ' + entries.length + ' 筆）—'
+        : '— 此租戶尚無已建立商品（請先建立或手動輸入 ID）—';
+      sel.appendChild(placeholder);
+      var matched = false;
+      entries.forEach(function (row) {
+        var opt = document.createElement('option');
+        opt.value = row.id;
+        opt.setAttribute('data-kind', row.kind);
+        opt.textContent = row.label;
+        if (prevVal && row.id === prevVal) matched = true;
+        sel.appendChild(opt);
+      });
+      if (matched) {
+        sel.value = prevVal;
+      } else if (inp && inp.getAttribute('data-from-select') === '1') {
+        inp.value = '';
+        inp.removeAttribute('data-from-select');
+      }
+      if (hint) {
+        hint.textContent = entries.length
+          ? '已載入此租戶 ' + entries.length + ' 筆商品，可由下拉選單選擇或直接輸入實體 ID。'
+          : '目前租戶尚無已建立商品；請先至對應工作台建立包裝／壓克力／陳列架／KD 商品，或輸入有效實體 ID。';
+      }
+    });
+  }
+
   function loadPhysical() {
     var st = $('rd-phys-status');
     var fam = $('rd-families-table');
     var ready = $('rd-phys-ready-table');
+    loadPhysicalEntities();
     if (!st) return;
     st.textContent = '載入中…';
     if (fam) { fam.hidden = true; fam.textContent = ''; }
@@ -494,17 +562,47 @@
       build: function (raw) { return { kind: raw['rd-safe-kind'], record: parseJson(raw['rd-safe-json'], '紀錄') }; },
     });
 
+    var physSelect = $('rd-phys-entity-select');
+    var physInput = $('rd-phys-entity');
+    var physKind = $('rd-phys-kind');
+    if (physSelect && physInput) {
+      physSelect.addEventListener('change', function () {
+        if (postBusy || activeConfirm) return;
+        var val = physSelect.value;
+        if (val) {
+          physInput.value = val;
+          physInput.setAttribute('data-from-select', '1');
+          var selectedOpt = physSelect.options[physSelect.selectedIndex];
+          var optKind = selectedOpt && selectedOpt.getAttribute('data-kind');
+          if (optKind && physKind) physKind.value = optKind;
+        }
+      });
+      physInput.addEventListener('input', function () {
+        if (postBusy || activeConfirm) return;
+        physInput.removeAttribute('data-from-select');
+        var trimmed = physInput.value.trim();
+        var hasMatch = false;
+        for (var i = 0; i < physSelect.options.length; i++) {
+          if (physSelect.options[i].value === trimmed) {
+            hasMatch = true;
+            break;
+          }
+        }
+        physSelect.value = hasMatch ? trimmed : '';
+      });
+    }
+
     bindPost({
       run: 'rd-phys-approve-run', box: 'rd-phys-confirm', ok: 'rd-phys-approve-ok', cancel: 'rd-phys-approve-cancel',
       out: 'rd-phys-out', snap: 'rd-phys-snap', text: 'rd-phys-text', label: '核准申請',
-      path: '/api/physical-os/approve', fields: ['rd-phys-entity', 'rd-phys-kind'],
+      path: '/api/physical-os/approve', fields: ['rd-phys-entity-select', 'rd-phys-entity', 'rd-phys-kind'],
       summary: function (body, raw) {
         return '確定送出核准申請（' + body.entityId + ' / ' + body.kind + '，租戶 ' + raw.tenant + '）？狀態為 WAITING_APPROVAL，不會啟動現場機台。';
       },
       build: function (raw) {
         return {
-          entityId: String(raw['rd-phys-entity'] || '').trim(),
-          kind: String(raw['rd-phys-kind'] || '').trim(),
+          entityId: String(raw['rd-phys-entity'] || raw['rd-phys-entity-select'] || '').trim(),
+          kind: String(raw['rd-phys-kind'] || '').trim() || 'product',
           actor: 'readiness-page',
         };
       },

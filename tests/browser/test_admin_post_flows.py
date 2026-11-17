@@ -284,6 +284,38 @@ def test_readiness_http_error_and_network_error_are_not_success(admin_page: Page
     )
 
 
+def test_readiness_physical_entity_select_populates_and_approves(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    plat = admin_server["platform"]
+    acr = plat.physical.acrylic.build(tenant_id=TENANT, kind="SIGN_HOLDER")
+    acr_id = acr["productId"]
+
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/readiness", "#rd-phys-entity-select")
+    assert page.locator("#rd-phys-entity").input_value() == ""
+    page.wait_for_function(
+        "(id) => Array.from(document.querySelectorAll('#rd-phys-entity-select option')).some(o => o.value === id)",
+        arg=acr_id,
+    )
+    page.locator("#rd-phys-entity-select").select_option(acr_id)
+    assert page.locator("#rd-phys-entity").input_value() == acr_id
+    assert page.locator("#rd-phys-kind").input_value() == "acrylic"
+
+    page.locator("#rd-phys-approve-run").click()
+    page.wait_for_selector("#rd-phys-confirm:not([hidden])")
+    assert page.locator("#rd-phys-entity-select").is_disabled()
+    assert page.locator("#rd-phys-entity").is_disabled()
+    assert page.locator("#rd-phys-kind").is_disabled()
+    assert page.locator("#rd-tenant").is_disabled()
+    assert acr_id in page.locator("#rd-phys-snap").inner_text()
+
+    page.locator("#rd-phys-approve-ok").click()
+    page.wait_for_function("() => (document.getElementById('rd-notice').textContent || '').includes('操作完成')")
+    assert "HTTP 200" in page.locator("#rd-phys-out").inner_text()
+    assert acr_id in page.locator("#rd-phys-out").inner_text()
+
+
 def test_readiness_evidence_invalid_bundle_shows_verify_failure(admin_page: Page, admin_server: dict[str, Any]) -> None:
     """Real /api/evidence/verify answers HTTP 200 with ok:false. That must not look done."""
     page = admin_page

@@ -159,3 +159,25 @@ def test_readiness_locks_tenant_and_handles_post_network_errors() -> None:
     # Success text is not the branch taken for a blocked body.
     show = js[js.index("function showOut") : js.index("function bindPost")]
     assert show.index("操作完成") > show.index("isBlockedResult")
+
+
+def test_readiness_phys_entity_has_no_404_default_and_loads_select_list() -> None:
+    base = Path(__file__).resolve().parents[1] / "src/fox3d/static/pages"
+    html = (base / "readiness.html").read_text(encoding="utf-8")
+    js = (base / "readiness.js").read_text(encoding="utf-8")
+
+    assert "phys-demo-1" not in html
+    assert "phys-demo-1" not in js
+    assert 'id="rd-phys-entity" value=""' in html
+    assert 'placeholder="' in html
+    assert 'id="rd-phys-entity-select"' in html
+    assert 'id="rd-phys-entity-hint"' in html
+    assert "innerHTML" not in js
+    for endpoint in (
+        "/api/packaging/structures",
+        "/api/acrylic/products",
+        "/api/retail/fixtures",
+        "/api/kd/candidates",
+    ):
+        assert endpoint in js
+    assert "'rd-phys-entity-select'" in js

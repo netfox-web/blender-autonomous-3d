@@ -367,15 +367,17 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, "body tenantId does not match X-Tenant-Id")
         return header
 
-    def bounded_count(raw: Any, default: int, field: str = "count") -> int:
+    def bounded_count(
+        raw: Any, default: int, field: str = "count", *, max_value: int = 100
+    ) -> int:
         if raw is None:
             n = default
         elif isinstance(raw, bool) or not isinstance(raw, int):
-            raise HTTPException(422, f"{field} 須為 1 至 100 的整數")
+            raise HTTPException(422, f"{field} 須為 1 至 {max_value} 的整數")
         else:
             n = raw
-        if not 1 <= n <= 100:
-            raise HTTPException(422, f"{field} 須為 1 至 100 的整數")
+        if not 1 <= n <= max_value:
+            raise HTTPException(422, f"{field} 須為 1 至 {max_value} 的整數")
         return n
 
     @app.get("/health")
@@ -669,7 +671,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def kd_catalog(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
-        return get_platform().kd.generate_candidates(tenant_id=tid, count=bounded_count(body.get("count"), 24), render=bool(body.get("render")))
+        plat = get_platform()
+        max_count = int(plat.kd.max_unapproved_per_tenant)
+        if max_count < 1:
+            raise HTTPException(422, "目前未開放未核准 KD 候選保留上限")
+        count = bounded_count(body.get("count"), min(24, max_count), max_value=max_count)
+        try:
+            return plat.kd.generate_candidates(tenant_id=tid, count=count, render=bool(body.get("render")))
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @app.get("/api/kd/readiness")
     def kd_readiness() -> dict[str, Any]:
@@ -948,7 +958,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             else:
                 entity_obj = {}
         try:
-            return plat.release.advance(
+            advanced = plat.release.advance(
                 entity_id,
                 tenant_id=tid,
                 target=target,
@@ -960,6 +970,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if entity_id in plat.kd.candidates:
+            cand = plat.kd.candidates.get(entity_id)
+            if isinstance(cand, dict) and plat.kd._candidate_tenant(cand) == tid and not cand.get("physicalApproved"):
+                updated_cand = dict(cand)
+                updated_cand["physicalApproved"] = True
+                plat.kd.candidates[entity_id] = updated_cand
+                plat.kd._mark_or_persist(tid)
+        return advanced
 
     @app.post("/api/commerce/import")
     def commerce_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

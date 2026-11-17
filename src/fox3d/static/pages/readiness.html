@@ -120,8 +120,14 @@
       <div class="rd-table-wrap" id="rd-families-table" hidden></div>
       <div class="rd-table-wrap" id="rd-phys-ready-table" hidden></div>
       <h3 class="rd-sub">人工核准閘門</h3>
+      <p id="rd-phys-entity-hint" class="rd-muted">請從下方下拉選單選擇已建立之商品，或直接輸入該租戶已建立之實體 ID。</p>
       <div class="rd-form-grid">
-        <label class="rd-field">產品／實體 ID <input id="rd-phys-entity" value="phys-demo-1" spellcheck="false"></label>
+        <label class="rd-field">從已建立商品選擇
+          <select id="rd-phys-entity-select" aria-label="已建立商品清單">
+            <option value="">— 請選擇已建立之商品／實體 —</option>
+          </select>
+        </label>
+        <label class="rd-field">產品／實體 ID <input id="rd-phys-entity" value="" placeholder="請選擇商品或輸入已建立之實體 ID" spellcheck="false"></label>
         <label class="rd-field">種類 <input id="rd-phys-kind" value="product" spellcheck="false"></label>
       </div>
       <div class="rd-actions">

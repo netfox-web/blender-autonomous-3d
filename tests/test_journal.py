@@ -1166,7 +1166,7 @@ def test_journal_cross_process_read_interleaved_with_writer_preserves_all_events
 
         def racing_read_json(path: Path, _j2: EventJournal = j2, _state: dict[str, bool] = interleaved) -> Any:
             data = real_read_json(path)
-            if not _state["triggered"] and path.name == "ta.json":
+            if not _state["triggered"] and path.name == _j2._path("ta").name:
                 _state["triggered"] = True
                 saved_gen = journal_mod._get_journal_gen(path)
                 # Another process writes event 2 after read_json read old content [1], before j1 caches sig.
