@@ -5,6 +5,7 @@ Binds to ManufacturingRelease.releaseHash. Reuses MaterialLot / RemnantStore.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -32,8 +33,8 @@ TERMINAL = frozenset({"COMPLETED", "REJECTED", "CANCELLED"})
 STRICT_STOCK = "STRICT_STOCK"
 FIXTURE_AUTO_SEED = "FIXTURE_AUTO_SEED"
 TRANSITIONS = {
-    "DRAFT": frozenset({"RELEASED_FOR_MANUAL_EXECUTION", "CANCELLED"}),
-    "RELEASED_FOR_MANUAL_EXECUTION": frozenset({"MATERIAL_RESERVED", "CANCELLED"}),
+    "DRAFT": frozenset({"RELEASED_FOR_MANUAL_EXECUTION", "CANCELLED", "REJECTED"}),
+    "RELEASED_FOR_MANUAL_EXECUTION": frozenset({"MATERIAL_RESERVED", "CANCELLED", "REJECTED"}),
     "MATERIAL_RESERVED": frozenset({"IN_PROGRESS", "PACKING", "QC_HOLD", "CANCELLED", "REJECTED"}),
     "IN_PROGRESS": frozenset({"IN_PROGRESS", "PACKING", "QC_HOLD", "COMPLETED", "CANCELLED", "REJECTED"}),
     "QC_HOLD": frozenset({"IN_PROGRESS", "PACKING", "REJECTED", "CANCELLED", "QC_HOLD"}),
@@ -73,6 +74,7 @@ class WorkOrderService:
         self.root = Path(root) if root else None
         if self.root:
             self.root.mkdir(parents=True, exist_ok=True)
+        self.dispatcher: Any | None = None
         self.qc: Any | None = None
         self.journal: Any | None = None
         self.outbox: Any | None = None
@@ -618,55 +620,65 @@ class WorkOrderService:
 
     def reject(self, work_order_id: str, *, actor: str, reason: str) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
-        rec["state"] = "REJECTED"
+        if rec["state"] in TERMINAL:
+            raise PermissionError("cannot reject terminal work order")
+        self._transition(rec, "REJECTED", actor=actor, reason=reason)
         rec["rejectedBy"] = actor
         rec["rejectReason"] = reason
+        emit(
+            self, "workorder.reject", tenant_id=rec["tenantId"], aggregate_type="WorkOrder",
+            aggregate_id=work_order_id, actor=actor, payload={"state": "REJECTED", "reason": reason},
+            release_hash=rec.get("releaseHash"), semantic_key=f"{rec['tenantId']}::wo-reject::{work_order_id}",
+        )
         return rec
 
     def cancel(self, work_order_id: str, *, actor: str) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=None)
-        if rec["state"] == "CANCELLED":
+        with self.dispatcher._lock if self.dispatcher is not None else nullcontext():
+            rec = self._require(work_order_id, tenant_id=None)
+            if rec["state"] == "CANCELLED":
+                return rec
+            if rec["state"] in {"COMPLETED", "REJECTED"}:
+                raise PermissionError("cannot cancel completed")
+            if rec.get("consumedFlag"):
+                rec["consumedFrozen"] = True
+            for item in rec.get("reservations") or []:
+                if item.get("kind") == "lot" and item.get("state") == "RESERVED":
+                    try:
+                        self.lots.release_reservation(
+                            item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
+                        )
+                        item["state"] = "RELEASED"
+                    except (KeyError, PermissionError):
+                        continue
+                elif item.get("kind") == "remnant" and self.remnants is not None:
+                    try:
+                        rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
+                        if normalize_status(rem.get("status")) == "reserved" and rem.get("reservedBy") == rec["workOrderId"]:
+                            rem["status"] = "available"
+                            rem["reservedBy"] = None
+                            rem["leaseToken"] = None
+                            rem["version"] = int(rem.get("version") or 1) + 1
+                            self.remnants.store.put(rem)
+                    except (KeyError, PermissionError):
+                        continue
+            if self.dispatcher is not None:
+                self.dispatcher.cancel_workorder(work_order_id, tenant_id=rec["tenantId"], actor=actor)
+            rec["cancelledBy"] = actor
+            rec["cancelledAt"] = _now()
+            rec["materialReserved"] = False
+            self._transition(rec, "CANCELLED", actor=actor, reason="cancel")
+            emit(
+                self,
+                "workorder.cancel",
+                tenant_id=rec["tenantId"],
+                aggregate_type="WorkOrder",
+                aggregate_id=rec["workOrderId"],
+                actor=actor,
+                payload={"state": "CANCELLED"},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{rec['tenantId']}::wo-cancel::{rec['workOrderId']}",
+            )
             return rec
-        if rec["state"] in {"COMPLETED", "REJECTED"}:
-            raise PermissionError("cannot cancel completed")
-        if rec.get("consumedFlag"):
-            rec["consumedFrozen"] = True
-        for item in rec.get("reservations") or []:
-            if item.get("kind") == "lot" and item.get("state") == "RESERVED":
-                try:
-                    self.lots.release_reservation(
-                        item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
-                    )
-                    item["state"] = "RELEASED"
-                except (KeyError, PermissionError):
-                    continue
-            elif item.get("kind") == "remnant" and self.remnants is not None:
-                try:
-                    rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
-                    if normalize_status(rem.get("status")) == "reserved" and rem.get("reservedBy") == rec["workOrderId"]:
-                        rem["status"] = "available"
-                        rem["reservedBy"] = None
-                        rem["leaseToken"] = None
-                        rem["version"] = int(rem.get("version") or 1) + 1
-                        self.remnants.store.put(rem)
-                except (KeyError, PermissionError):
-                    continue
-        rec["cancelledBy"] = actor
-        rec["cancelledAt"] = _now()
-        rec["materialReserved"] = False
-        self._transition(rec, "CANCELLED", actor=actor, reason="cancel")
-        emit(
-            self,
-            "workorder.cancel",
-            tenant_id=rec["tenantId"],
-            aggregate_type="WorkOrder",
-            aggregate_id=rec["workOrderId"],
-            actor=actor,
-            payload={"state": "CANCELLED"},
-            release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::wo-cancel::{rec['workOrderId']}",
-        )
-        return rec
 
     def rework(self, work_order_id: str, *, actor: str, reason: str = "rework") -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)

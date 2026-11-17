@@ -13,6 +13,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
+from fox3d.journal import SemanticKeyConflictError
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
 from fox3d.commerce import ImportValidationError, ProviderDisconnectedError
@@ -893,6 +894,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 raise HTTPException(403, str(exc)) from exc
             raise HTTPException(409, str(exc)) from exc
 
+    @app.post("/api/pilot/workorders/{work_order_id}/reject")
+    def pilot_workorder_reject(work_order_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        _require_text_fields(payload, ("reason",))
+        service = get_platform().pilot.workorders
+        try:
+            service._require(work_order_id, tenant_id=tid)
+            return service.reject(work_order_id, actor=str(payload.get("actor") or "api"), reason=str(payload["reason"]))
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except PermissionError as exc:
+            raise HTTPException(403 if str(exc).startswith("tenant isolation") else 409, str(exc)) from exc
+
     @app.post("/api/pilot/receipts")
     def pilot_receipt(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
@@ -907,6 +921,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 source=str(payload.get("source") or "IMPORTED"),
                 idempotency_key=payload.get("idempotencyKey"),
             )
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
         except PilotException:
             raise
         except PermissionError as exc:
@@ -981,10 +997,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 station_id=str(payload["stationId"]),
                 actor=str(payload.get("actor") or "api"),
             )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, "invalid operation") from exc
         except PilotException as exc:
             raise HTTPException(409, exc.code) from exc
         except PermissionError as exc:
-            raise HTTPException(409, str(exc)) from exc
+            raise HTTPException(403 if str(exc).startswith("tenant isolation") else 409, str(exc)) from exc
 
     @app.post("/api/pilot/leases/{lease_id}/ack")
     def pilot_ack(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

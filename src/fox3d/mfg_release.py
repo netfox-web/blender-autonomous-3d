@@ -9,6 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -106,6 +107,7 @@ def _bound_hashes(snap: dict[str, Any]) -> dict[str, str | None]:
 
 class ManufacturingReleaseService:
     def __init__(self, dam: Any | None = None, root: Path | None = None) -> None:
+        self._lock = threading.RLock()
         self.dam = dam
         self.root = Path(root) if root else None
         if self.root:
@@ -144,66 +146,67 @@ class ManufacturingReleaseService:
         created_by: str,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        raw_key = idempotency_key or f"{snap['productId']}:{snap['productVersion']}:{snap.get('engineeringHash')}"
-        key = f"{tenant_id}::rel::{raw_key}"
-        if key in self._idem:
-            existing = self.releases[self._idem[key]]
-            if existing.get("tenantId") != tenant_id:
-                raise PermissionError("tenant isolation: manufacturing release")
-            return existing
-        bound = _bound_hashes(snap)
-        rec = {
-            "releaseId": new_id(),
-            "tenantId": tenant_id,
-            "productId": snap["productId"],
-            "productVersion": snap["productVersion"],
-            "productFamily": snap["productFamily"],
-            "kind": snap.get("kind"),
-            "createdBy": created_by,
-            "approvedBy": None,
-            "releasedAt": None,
-            "createdAt": _now(),
-            "status": "DRAFT",
-            "liveMachineControl": False,
-            "equalsLiveCnc": False,
-            "equalsLiveLaser": False,
-            "note": "APPROVED_FOR_MANUAL_RELEASE is not LIVE_CNC",
-            "hashes": bound,
-            "engineeringHash": bound["engineeringHash"],
-            "bomHash": bound["bomHash"],
-            "nestingHash": bound["nestingHash"],
-            "packagingHash": bound["packagingHash"],
-            "materialSnapshotHash": bound["materialSnapshotHash"],
-            "costPolicyHash": bound["costPolicyHash"],
-            "approvalAuditHash": None,
-            "frozenCost": None,
-            "stale": False,
-            "immutable": False,
-            "snapshot": snap,
-        }
-        rec["releaseHash"] = self._release_hash(rec)
-        self.releases[rec["releaseId"]] = rec
-        self._idem[key] = rec["releaseId"]
-        try:
-            emit(
-                self,
-                "release.create",
-                tenant_id=tenant_id,
-                aggregate_type="ManufacturingRelease",
-                aggregate_id=rec["releaseId"],
-                actor=created_by,
-                payload={"status": "DRAFT"},
-                release_hash=rec["releaseHash"],
-                semantic_key=key,
-            )
-        except Exception:
-            if self.root:
-                self.load()
-            else:
-                del self.releases[rec["releaseId"]]
-                del self._idem[key]
-            raise
-        return rec
+        with self._lock:
+            raw_key = idempotency_key or f"{snap['productId']}:{snap['productVersion']}:{snap.get('engineeringHash')}"
+            key = f"{tenant_id}::rel::{raw_key}"
+            if key in self._idem:
+                existing = self.releases[self._idem[key]]
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: manufacturing release")
+                return existing
+            bound = _bound_hashes(snap)
+            rec = {
+                "releaseId": new_id(),
+                "tenantId": tenant_id,
+                "productId": snap["productId"],
+                "productVersion": snap["productVersion"],
+                "productFamily": snap["productFamily"],
+                "kind": snap.get("kind"),
+                "createdBy": created_by,
+                "approvedBy": None,
+                "releasedAt": None,
+                "createdAt": _now(),
+                "status": "DRAFT",
+                "liveMachineControl": False,
+                "equalsLiveCnc": False,
+                "equalsLiveLaser": False,
+                "note": "APPROVED_FOR_MANUAL_RELEASE is not LIVE_CNC",
+                "hashes": bound,
+                "engineeringHash": bound["engineeringHash"],
+                "bomHash": bound["bomHash"],
+                "nestingHash": bound["nestingHash"],
+                "packagingHash": bound["packagingHash"],
+                "materialSnapshotHash": bound["materialSnapshotHash"],
+                "costPolicyHash": bound["costPolicyHash"],
+                "approvalAuditHash": None,
+                "frozenCost": None,
+                "stale": False,
+                "immutable": False,
+                "snapshot": snap,
+            }
+            rec["releaseHash"] = self._release_hash(rec)
+            self.releases[rec["releaseId"]] = rec
+            self._idem[key] = rec["releaseId"]
+            try:
+                emit(
+                    self,
+                    "release.create",
+                    tenant_id=tenant_id,
+                    aggregate_type="ManufacturingRelease",
+                    aggregate_id=rec["releaseId"],
+                    actor=created_by,
+                    payload={"status": "DRAFT"},
+                    release_hash=rec["releaseHash"],
+                    semantic_key=key,
+                )
+            except Exception:
+                if self.root:
+                    self.load()
+                else:
+                    del self.releases[rec["releaseId"]]
+                    del self._idem[key]
+                raise
+            return rec
 
     def _release_hash(self, rec: dict[str, Any]) -> str:
         return stable_hash(
