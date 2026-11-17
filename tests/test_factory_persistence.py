@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -241,6 +242,53 @@ def test_two_platform_instances_cross_process_approval_and_interleaved_run(tmp_p
     run_restored = plat_c.factory.runs[plat_c.factory.run_id_for_quote(quote_a, tenant)]
     assert run_restored["gate"]["status"] == "APPROVED"
     assert run_restored["gate"]["actor"] == "lead-a"
+
+
+def test_concurrent_approve_on_shared_root_persists_single_winner(tmp_path: Path) -> None:
+    import threading
+
+    root = tmp_path / "data"
+    tenant = "tenant-race"
+    plat_setup = Platform(root=root, mock_blender=True)
+    run_payload = plat_setup.factory.run(tenant_id=tenant, text="鞋櫃", render=False)
+    run_id = run_payload["runId"]
+    quote_id = run_payload["quote"]["quoteId"]
+
+    plat_a = Platform(root=root, mock_blender=True)
+    plat_b = Platform(root=root, mock_blender=True)
+    barrier = threading.Barrier(2)
+    results: list[dict[str, Any]] = []
+    errors: list[str] = []
+
+    def worker(plat: Platform, actor: str) -> None:
+        try:
+            barrier.wait(timeout=30)
+            results.append(plat.factory.approve(run_id, actor=actor))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{actor}: {exc}")
+
+    threads = [
+        threading.Thread(target=worker, args=(plat_a, "actor-a")),
+        threading.Thread(target=worker, args=(plat_b, "actor-b")),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=120)
+        assert not t.is_alive()
+    assert not errors
+    assert len(results) == 2
+
+    actors = {item["gate"]["actor"] for item in results}
+    assert len(actors) == 1
+
+    plat_check = Platform(root=root, mock_blender=True)
+    stored = plat_check.factory.runs[plat_check.factory.run_id_for_quote(quote_id, tenant)]
+    assert stored["gate"]["status"] == "APPROVED"
+    assert stored["gate"]["actor"] in actors
+    for item in results:
+        assert item["gate"]["actor"] == stored["gate"]["actor"]
+        assert item["gate"]["approvedAt"] == stored["gate"]["approvedAt"]
 
 
 def test_interleaved_platform_persist_does_not_rollback_approval(tmp_path: Path) -> None:

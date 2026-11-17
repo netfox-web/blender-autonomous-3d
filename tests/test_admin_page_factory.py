@@ -181,9 +181,20 @@ def test_factory_js_loads_quote_list_api() -> None:
     assert "quotesRes.data.items" in js
 
 
-def test_factory_js_defaults_detail_to_newest_quote() -> None:
-    from pathlib import Path
-
-    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.js").read_text(encoding="utf-8")
-    assert "loadQuoteDetail(state.quotes[0].quoteId)" in js
-    assert "loadQuoteDetail(state.quotes[state.quotes.length - 1].quoteId)" not in js
+def test_factory_quote_list_newest_first_for_page_default(client: TestClient) -> None:
+    """API contract: items[0] is newest so the admin page default detail matches the latest quote."""
+    headers = TENANT
+    quote_ids: list[str] = []
+    for _ in range(3):
+        run_res = client.post(
+            "/api/factory/run",
+            headers=headers,
+            json={"text": "鞋櫃", "render": False},
+        )
+        assert run_res.status_code == 200
+        quote_ids.append(run_res.json()["quote"]["quoteId"])
+    listed = client.get("/api/factory/quotes", headers=headers)
+    assert listed.status_code == 200
+    items = listed.json()["items"]
+    assert len(items) >= 3
+    assert items[0]["quoteId"] == quote_ids[-1]

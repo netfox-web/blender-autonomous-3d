@@ -570,29 +570,73 @@ class FurnitureFactory:
         return record
 
     def approve(self, run_id: str, *, actor: str) -> dict[str, Any]:
-        self._sync_from_disk()
-        run = self.runs.get(run_id)
-        if not run:
-            raise KeyError(run_id)
-        gate = run.get("gate") or {}
-        if gate.get("status") == "APPROVED":
+        path = self._state_path()
+        if not path:
+            run = self.runs.get(run_id)
+            if not run:
+                raise KeyError(run_id)
+            gate = run.get("gate") or {}
+            if gate.get("status") == "APPROVED":
+                return run
+            if gate.get("status") != "WAITING_APPROVAL":
+                raise PermissionError("candidate is not waiting approval")
+            approved_at = utcnow().isoformat()
+            run = dict(run)
+            run["gate"] = {
+                "status": "APPROVED",
+                "actor": actor,
+                "approvedAt": approved_at,
+                "liveMachineControl": False,
+                "HUMAN_APPROVAL_REQUIRED": True,
+                "autoLiveCnc": False,
+                "note": "Approval is for manufacturing candidate only; LIVE_CNC remains blocked.",
+            }
+            with self._lock:
+                self.runs[run_id] = run
             return run
-        if gate.get("status") != "WAITING_APPROVAL":
-            raise PermissionError("candidate is not waiting approval")
-        approved_at = utcnow().isoformat()
-        run = dict(run)
-        run["gate"] = {
-            "status": "APPROVED",
-            "actor": actor,
-            "approvedAt": approved_at,
-            "liveMachineControl": False,
-            "HUMAN_APPROVAL_REQUIRED": True,
-            "autoLiveCnc": False,
-            "note": "Approval is for manufacturing candidate only; LIVE_CNC remains blocked.",
-        }
-        self.runs[run_id] = run
-        self.persist()
-        return run
+
+        lock = path.parent / "state.lock"
+        lock.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(lock):
+            with self._lock:
+                local = self._snapshot_payload()
+            disk = self._read_state_file(path) if path.exists() else {}
+            merged = self._merge_state_payload(disk, local)
+            runs = merged.get("runs")
+            if not isinstance(runs, dict):
+                runs = {}
+                merged["runs"] = runs
+            run = runs.get(run_id)
+            if not isinstance(run, dict):
+                with self._lock:
+                    run = self.runs.get(run_id)
+                if not isinstance(run, dict):
+                    raise KeyError(run_id)
+                runs[run_id] = run
+            gate = run.get("gate") or {}
+            if gate.get("status") == "APPROVED":
+                result = run
+            elif gate.get("status") != "WAITING_APPROVAL":
+                raise PermissionError("candidate is not waiting approval")
+            else:
+                approved_at = utcnow().isoformat()
+                run = dict(run)
+                run["gate"] = {
+                    "status": "APPROVED",
+                    "actor": actor,
+                    "approvedAt": approved_at,
+                    "liveMachineControl": False,
+                    "HUMAN_APPROVAL_REQUIRED": True,
+                    "autoLiveCnc": False,
+                    "note": "Approval is for manufacturing candidate only; LIVE_CNC remains blocked.",
+                }
+                runs[run_id] = run
+                merged["quoteRunIndex"] = self._rebuild_quote_run_index(runs)
+                atomic_write_json(path, merged)
+                result = run
+            with self._lock:
+                self._apply_payload(merged)
+        return result
 
     def collision_fixture(self, *, tenant_id: str) -> dict[str, Any]:
         """Door / window / column rejection evidence (does not mutate factory happy-path)."""
