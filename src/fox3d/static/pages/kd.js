@@ -16,6 +16,22 @@
   var confirmResets = [];
   // Guards against an older overview response landing after a reload.
   var overviewSeq = 0;
+  // Active POST count: cancel / reload stay disabled until each request fully settles.
+  var kdWriteInFlight = 0;
+
+  function syncKdRefreshLock() {
+    if ($('kd-refresh')) $('kd-refresh').disabled = kdWriteInFlight > 0;
+  }
+
+  function trackKdWriteStart() {
+    kdWriteInFlight++;
+    syncKdRefreshLock();
+  }
+
+  function trackKdWriteEnd() {
+    kdWriteInFlight = Math.max(0, kdWriteInFlight - 1);
+    syncKdRefreshLock();
+  }
 
   function fieldTenant() {
     var v = ($('kd-tenant').value || '').trim();
@@ -251,22 +267,35 @@
     var form = $(formId);
     var confirm = $(confirmId);
     var go = $(goId);
+    var cancel = $(cancelId);
     var pending = null;
     var inFlight = false;
+    var postGen = 0;
+    var activePost = 0;
 
-    function reset() {
+    function dismissConfirm() {
       confirm.hidden = true;
       $(payloadId).textContent = '';
       pending = null;
+    }
+
+    function unlockFormIfIdle() {
+      if (activePost) return;
       inFlight = false;
       go.disabled = false;
+      cancel.disabled = false;
       lockFormControls(form, false);
+    }
+
+    function reset() {
+      dismissConfirm();
+      unlockFormIfIdle();
     }
     confirmResets.push(reset);
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      if (inFlight) return;
+      if (inFlight || activePost) return;
       pending = buildPayload();
       pending.tenant = activeTenant;
       $(payloadId).textContent = previewText(pending.tenant, pending._path, pending.body);
@@ -274,22 +303,34 @@
       lockFormControls(form, true, { 'kd-tenant': 1 });
     });
 
-    $(cancelId).addEventListener('click', reset);
+    cancel.addEventListener('click', function () {
+      if (activePost) return;
+      reset();
+    });
 
     go.addEventListener('click', function () {
-      if (!pending || inFlight) return;
+      if (!pending || inFlight || activePost) return;
       var req = pending;
+      var seq = ++postGen;
+      activePost = seq;
       inFlight = true;
       go.disabled = true;
+      cancel.disabled = true;
+      trackKdWriteStart();
       api('POST', req._path, req.body, req.tenant).then(function (r) {
-        if (pending === req) reset();
+        if (activePost !== seq) return;
+        dismissConfirm();
         onSuccess(r, req);
       }).catch(function (e) {
-        if (pending === req) reset();
+        if (activePost !== seq) return;
+        dismissConfirm();
         onSuccess({ ok: false, status: 0, json: { error: String(e) } }, req);
       }).then(function () {
-        inFlight = false;
-        go.disabled = false;
+        if (activePost === seq) {
+          activePost = 0;
+          trackKdWriteEnd();
+          unlockFormIfIdle();
+        }
       });
     });
   }
@@ -306,6 +347,8 @@
     var result = $(resultId);
     var pending = null;
     var inFlight = false;
+    var postGen = 0;
+    var activePost = 0;
 
     if (!confirm.querySelector('.kd-confirm-actions')) {
       confirm.textContent = '';
@@ -320,40 +363,62 @@
     var go = confirm.querySelector('.kd-go');
     var cancel = confirm.querySelector('.kd-cancel');
 
-    function reset() {
+    function dismissConfirm() {
       confirm.hidden = true;
       payloadPre.textContent = '';
       pending = null;
+    }
+
+    function unlockFormIfIdle() {
+      if (activePost) return;
       inFlight = false;
       go.disabled = false;
+      cancel.disabled = false;
       lockFormControls(form, false);
+    }
+
+    function reset() {
+      dismissConfirm();
+      unlockFormIfIdle();
     }
     confirmResets.push(reset);
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
-      if (inFlight) return;
+      if (inFlight || activePost) return;
       pending = { tenant: activeTenant, body: buildBody() };
       payloadPre.textContent = previewText(pending.tenant, path, pending.body);
       confirm.hidden = false;
       lockFormControls(form, true);
     });
-    cancel.addEventListener('click', reset);
+    cancel.addEventListener('click', function () {
+      if (activePost) return;
+      reset();
+    });
     go.addEventListener('click', function () {
-      if (!pending || inFlight) return;
+      if (!pending || inFlight || activePost) return;
       var req = pending;
+      var seq = ++postGen;
+      activePost = seq;
       inFlight = true;
       go.disabled = true;
+      cancel.disabled = true;
+      trackKdWriteStart();
       api('POST', path, req.body, req.tenant).then(function (r) {
-        if (pending === req) reset();
+        if (activePost !== seq) return;
+        dismissConfirm();
         showJson(result, r.json, r.status);
         result.classList.toggle('kd-err', responseFailed(r));
       }).catch(function (e) {
+        if (activePost !== seq) return;
         showJson(result, { error: String(e) }, null);
         result.classList.add('kd-err');
       }).then(function () {
-        inFlight = false;
-        go.disabled = false;
+        if (activePost === seq) {
+          activePost = 0;
+          trackKdWriteEnd();
+          unlockFormIfIdle();
+        }
       });
     });
   }

@@ -141,6 +141,8 @@ def test_pilot_floor_actions_handle_errors_and_disable_while_in_flight() -> None
     # in-flight lock, re-enable afterwards, visible failure notice for HTTP and network errors
     assert "el.disabled = true" in run and "el.disabled = false" in run
     assert "網路錯誤" in run and "notify(" in run and "responseFailed" in run and "actionInFlight" in run
+    assert "lockPeerActions" in run and "unlockPeerActions" in run
+    assert "上一個操作仍在送出中" in run
     # every action endpoint goes through runAction (no bare api(...).then(...) without a rejection path)
     for endpoint in ("/heartbeat", "/api/pilot/leases/", "/api/pilot/scan-token/"):
         idx = js.index(endpoint)
@@ -149,6 +151,9 @@ def test_pilot_floor_actions_handle_errors_and_disable_while_in_flight() -> None
         assert "request: function" in js[run_at:idx], endpoint
     wire = _js_function(js, "wireConfirmForm")
     assert "runAction({" in wire and "disable: [ctl.btn, ctl.box]" in wire
+    assert "上一個操作仍在送出中" in wire
+    assert "上一個操作仍在送出中" in _js_function(js, "onTabClick")
+    assert "上一個操作仍在送出中" in _js_function(js, "reloadAll")
     for key, path in (("station", "/api/pilot/stations'"), ("dispatch", "/api/pilot/dispatch"), ("scan", "/api/pilot/scan'")):
         assert f"wireConfirmForm('{key}'" in js and path in js
     html = _pilot_floor_asset("pilot-floor.html")

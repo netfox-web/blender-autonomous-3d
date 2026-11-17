@@ -122,6 +122,43 @@ def test_kd_sku_confirm_snapshot_and_tenant(admin_page: Page, admin_server: dict
     assert seen["tenant"] == TENANT
 
 
+def test_kd_sku_cancel_and_refresh_while_inflight_block_second_post(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    posts = {"n": 0}
+
+    def on_post(route: Route) -> None:
+        posts["n"] += 1
+        pending.append(route)
+
+    _install(page, "/api/kd/skus", on_post)
+    page.goto(admin_server["base_url"] + "/admin/kd", wait_until="domcontentloaded")
+    _wait_shell(page)
+    page.wait_for_function(
+        "() => document.querySelector('#kd-sku-kind') && document.querySelector('#kd-sku-kind').options.length > 0",
+        timeout=20_000,
+    )
+    page.locator("#kd-sku-form").evaluate("form => form.requestSubmit()")
+    page.wait_for_selector("#kd-sku-confirm:not([hidden])")
+    page.locator("#kd-sku-go").click()
+    page.wait_for_function("() => document.getElementById('kd-sku-go').disabled")
+    assert posts["n"] == 1
+    page.locator("#kd-sku-cancel").click(force=True)
+    assert posts["n"] == 1
+    page.locator("#kd-sku-form").evaluate("form => form.requestSubmit()")
+    assert posts["n"] == 1
+    assert page.locator("#kd-refresh").is_disabled()
+    _click_anyway(page, "kd-refresh")
+    assert posts["n"] == 1
+    _release(pending, {"productId": "kd-after-cancel", "status": "ok"})
+    page.wait_for_function(
+        "() => !document.getElementById('kd-sku-go').disabled && !document.getElementById('kd-refresh').disabled"
+    )
+    assert posts["n"] == 1
+
+
 def test_kd_sku_blocked_and_network_are_not_success(admin_page: Page, admin_server: dict[str, Any]) -> None:
     page = admin_page
 
@@ -195,6 +232,54 @@ def test_pilot_floor_station_inflight_single_post(admin_page: Page, admin_server
         }"""
     )
     assert len(pending) == 1
+    _release(pending, {"stationId": "pf-browser-station", "status": "ONLINE"})
+    page.wait_for_function("() => (document.getElementById('pf-action-status').textContent || '').includes('完成')")
+
+
+def test_pilot_floor_second_form_blocked_while_station_inflight(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    dispatch_posts = {"n": 0}
+
+    def on_station(route: Route) -> None:
+        pending.append(route)
+
+    def on_dispatch(route: Route) -> None:
+        dispatch_posts["n"] += 1
+        route.fulfill(json={"leaseId": "should-not-happen", "status": "ok"})
+
+    _install(page, "/api/pilot/stations", on_station)
+    _install(page, "/api/pilot/dispatch", on_dispatch)
+    _open_pilot_floor(page, admin_server["base_url"])
+    page.locator("#tab-dispatch").click()
+    page.wait_for_selector("#pf-dispatch-form")
+    page.evaluate(
+        """() => {
+          const f = document.getElementById('pf-dispatch-form');
+          f.elements.namedItem('workOrderId').value = 'WO-ghost';
+          f.elements.namedItem('operation').value = 'CUT';
+          f.elements.namedItem('stationId').value = 'ST-ghost';
+          const box = f.querySelector('.pf-confirm-box');
+          box.checked = true;
+          box.dispatchEvent(new Event('change', { bubbles: true }));
+        }"""
+    )
+    page.locator("#tab-stations").click()
+    _confirm_station_form(page)
+    page.locator("#pf-station-form button[type=submit]").click()
+    page.wait_for_function("() => document.querySelector('#pf-station-form .pf-confirm-box').disabled")
+    assert len(pending) == 1
+    page.locator("#tab-dispatch").click(force=True)
+    assert page.locator("#panel-dispatch").is_hidden()
+    page.evaluate(
+        """() => {
+          document.getElementById('pf-dispatch-form').dispatchEvent(
+            new Event('submit', { bubbles: true, cancelable: true })
+          );
+        }"""
+    )
+    assert dispatch_posts["n"] == 0
+    assert "仍在送出中" in page.locator("#pf-action-status").inner_text()
     _release(pending, {"stationId": "pf-browser-station", "status": "ONLINE"})
     page.wait_for_function("() => (document.getElementById('pf-action-status').textContent || '').includes('完成')")
 

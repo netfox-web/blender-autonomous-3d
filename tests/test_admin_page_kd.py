@@ -140,13 +140,17 @@ def test_kd_js_confirms_show_and_pin_tenant() -> None:
 def test_kd_js_post_guards_and_no_innerhtml() -> None:
     js = _js()
     assert "innerHTML" not in js
+    assert "kdWriteInFlight" in js and "syncKdRefreshLock" in js
     for fn in ("wireConfirmForm", "wireStructureForm"):
         start = js.index(f"function {fn}(")
         body = js[start : js.index("\n  function ", start + 1)]
         assert "inFlight" in body and "go.disabled = true;" in body
+        assert "activePost" in body and "if (activePost) return;" in body
+        assert "cancel.disabled = true;" in body
+        assert "if (activePost !== seq) return;" in body
         assert "if (!pending" in body
         assert ".catch(function (e)" in body
-        assert "go.disabled = false;" in body
+        assert "trackKdWriteStart" in body and "trackKdWriteEnd" in body
 
 
 def test_kd_js_readiness_fields_match_api(client: TestClient) -> None:
