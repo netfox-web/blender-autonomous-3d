@@ -88,9 +88,11 @@ def test_readiness_page_api_calls(client: TestClient) -> None:
     )
     assert imp.status_code == 200
     assert imp.json()["liveProviderReady"] is False
+    acr = client.post("/api/acrylic/products", json={"kind": "SIGN_HOLDER"}, headers=HEADERS)
+    assert acr.status_code == 200
     app = client.post(
         "/api/physical-os/approve",
-        json={"entityId": "phys-readiness-test", "actor": "pytest"},
+        json={"entityId": acr.json()["productId"], "actor": "pytest"},
         headers=HEADERS,
     )
     assert app.status_code == 200

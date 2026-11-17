@@ -72,10 +72,8 @@ def test_same_unknown_id_is_tenant_scoped(client_and_platform):
     client, platform = client_and_platform
     for tenant in ('a', 'b'):
         result = client.post('/api/physical-os/approve', json={"entityId": "shared", "actor": tenant}, headers={"X-Tenant-Id": tenant})
-        assert result.status_code == 200
-        assert result.json()['tenantId'] == tenant
-    assert platform.physical.approvals[('a', 'shared')]['actor'] == 'a'
-    assert platform.physical.approvals[('b', 'shared')]['actor'] == 'b'
+        assert result.status_code == 404
+    assert not platform.physical.approvals
 
 
 def test_valid_packaging_preserves_engineering_hash(client_and_platform):
