@@ -776,11 +776,23 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         result = run_benchmark(plat, tenant_id=tid)
         return plat.physical.record_benchmark(result, tenant_id=tid)
 
+    @app.get("/api/kd/candidates")
+    def list_kd_candidates(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().kd.list_candidates(tenant_id=tid)
+        return {"items": items, "candidates": items}
+
     @app.post("/api/kd/candidates")
     def kd_candidates(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
         return get_platform().physical.kd_optimized_board(tenant_id=tid, count=bounded_count(body.get("count"), 10))
+
+    @app.get("/api/retail/fixtures")
+    def list_retail_fixtures(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().physical.retail.list(tenant_id=tid)
+        return {"items": items, "fixtures": items}
 
     @app.post("/api/retail/fixtures")
     def retail_fixtures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -803,6 +815,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except (ValueError, TypeError, KeyError):
             raise HTTPException(422, "展示架欄位格式錯誤") from None
 
+    @app.get("/api/packaging/structures")
+    def list_packaging_structures(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().physical.packaging.list(tenant_id=tid)
+        return {"items": items, "structures": items}
+
     @app.post("/api/packaging/structures")
     def packaging_structures(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
@@ -816,6 +834,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().physical.packaging.build(tenant_id=tid, family=family, product_dims=dims, render=bool(payload.get("render")))
         except (ValidationError, ValueError, TypeError, KeyError):
             raise HTTPException(422, "包裝欄位格式錯誤") from None
+
+    @app.get("/api/acrylic/products")
+    def list_acrylic_products(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        items = get_platform().physical.acrylic.list(tenant_id=tid)
+        return {"items": items, "products": items}
 
     @app.post("/api/acrylic/products")
     def acrylic_products(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -836,12 +860,25 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def physical_approve(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         entity_id = _entity_id(payload.get("entityId", payload.get("productId")))
+        raw_actor = payload.get("actor")
+        if raw_actor is not None and (not isinstance(raw_actor, str) or not raw_actor.strip()):
+            raise HTTPException(422, "actor 格式錯誤")
+        actor = raw_actor.strip() if isinstance(raw_actor, str) and raw_actor.strip() else "human"
+        raw_kind = payload.get("kind")
+        if raw_kind is not None and not isinstance(raw_kind, str):
+            raise HTTPException(422, "kind 格式錯誤")
+        kind = raw_kind.strip() if isinstance(raw_kind, str) and raw_kind.strip() else "product"
         physical = get_platform().physical
-        for factory in (physical.acrylic, physical.packaging, physical.retail):
-            item = factory.items.get(entity_id)
-            if item is not None and item.get("tenantId") != tid:
-                raise HTTPException(404, "找不到商品")
-        return physical.approve(tenant_id=tid, entity_id=entity_id, actor=str(payload.get("actor") or "human"), kind=str(payload.get("kind") or "product"))
+        try:
+            return physical.approve(
+                tenant_id=tid,
+                entity_id=entity_id,
+                actor=actor,
+                kind=kind,
+                entity=payload.get("entity") if isinstance(payload.get("entity"), dict) else None,
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "找不到商品") from exc
 
     @app.get("/api/physical-os/families")
     def physical_families() -> dict[str, Any]:
@@ -866,15 +903,57 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.post("/api/release/advance")
     def release_advance(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = tenant(x_tenant_id)
+        tid = require_tenant(x_tenant_id, payload)
+        entity_id = _entity_id(payload.get("entityId"))
+        raw_actor = payload.get("actor")
+        if raw_actor is not None and (not isinstance(raw_actor, str) or not raw_actor.strip()):
+            raise HTTPException(422, "actor 格式錯誤")
+        actor = raw_actor.strip() if isinstance(raw_actor, str) and raw_actor.strip() else "human"
+        raw_target = payload.get("target")
+        if raw_target is not None and (not isinstance(raw_target, str) or not raw_target.strip()):
+            raise HTTPException(422, "target 格式錯誤")
+        target = raw_target.strip() if isinstance(raw_target, str) and raw_target.strip() else "WAITING_APPROVAL"
+        raw_entity = payload.get("entity")
+        if raw_entity is not None and not isinstance(raw_entity, dict):
+            raise HTTPException(422, "entity 必須是物件")
+        if isinstance(raw_entity, dict):
+            raw_spec = raw_entity.get("spec")
+            ent_tid = raw_entity.get("tenantId") or (raw_spec.get("tenantId") if isinstance(raw_spec, dict) else None)
+            if ent_tid not in (None, "", tid):
+                raise HTTPException(404, "找不到商品")
+        raw_ev_ok = payload.get("evidenceOk")
+        if raw_ev_ok is not None and not isinstance(raw_ev_ok, bool):
+            raise HTTPException(422, "evidenceOk 必須是布林值")
         plat = get_platform()
+        if plat.physical.is_foreign_entity(entity_id, tenant_id=tid):
+            raise HTTPException(404, "找不到商品")
+        if "entity" in payload and raw_entity is not None:
+            entity_obj = raw_entity
+        else:
+            found = plat.physical.find_entity(entity_id, tenant_id=tid)
+            plat.release._sync_tenant(tid)
+            prior = plat.release.approvals.get((tid, entity_id))
+            if found is not None:
+                entity_obj = dict(found)
+                if prior and (prior.get("hashes") or {}).get("evidenceHash") and not entity_obj.get("evidenceHash"):
+                    ev_hash = prior["hashes"]["evidenceHash"]
+                    entity_obj["evidenceHash"] = ev_hash
+                    entity_obj["lineage"] = {**(entity_obj.get("lineage") or {}), "evidenceHash": ev_hash}
+            elif prior and prior.get("hashes"):
+                entity_obj = {
+                    "engineeringHash": prior["hashes"].get("engineeringHash"),
+                    "evidenceHash": prior["hashes"].get("evidenceHash"),
+                    "lineage": dict(prior["hashes"]),
+                }
+            else:
+                entity_obj = {}
         try:
             return plat.release.advance(
-                _entity_id(payload.get("entityId")),
+                entity_id,
                 tenant_id=tid,
-                target=str(payload.get("target") or "WAITING_APPROVAL"),
-                actor=str(payload.get("actor") or "human"),
-                entity=payload.get("entity") or {},
+                target=target,
+                actor=actor,
+                entity=entity_obj,
                 evidence_ok=bool(payload.get("evidenceOk")),
             )
         except PermissionError as exc:

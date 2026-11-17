@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.manufacturing import NestingEngine
 from fox3d.nesting_v3 import NestingV3
+from fox3d.release import TenantItemsMixin
 
 ACRYLIC_SHEETS: dict[str, dict[str, Any]] = {
     "ACR_CLEAR_5": {
@@ -112,12 +114,14 @@ def cut_bend_manifest(kind: str, parts: list[dict[str, Any]], *, bend_radius_mm:
     return man
 
 
-class AcrylicFactory:
-    def __init__(self, platform: Any) -> None:
-        self.platform = platform
+class AcrylicFactory(TenantItemsMixin):
+    _store_dir_name = "acrylic"
+    _id_key = "productId"
+
+    def __init__(self, platform: Any = None, *, root: Path | None = None) -> None:
         self.nester = NestingV3()
         self.baseline = NestingEngine()
-        self.items: dict[str, dict[str, Any]] = {}
+        self._init_item_store(platform, root)
 
     def materials(self) -> list[dict[str, Any]]:
         return [dict(v) for v in ACRYLIC_SHEETS.values()]
@@ -205,5 +209,4 @@ class AcrylicFactory:
                 preview = self.platform.execute_job(preview)
             rec["preview"] = preview
         rec["approval"] = {"status": "WAITING_APPROVAL", "liveMachineControl": False, "forbidden": ["LIVE_LASER", "LIVE_CNC"]}
-        self.items[product_id] = rec
-        return rec
+        return self._store_item(product_id, rec, tenant_id=tenant_id)

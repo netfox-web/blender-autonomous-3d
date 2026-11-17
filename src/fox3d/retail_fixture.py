@@ -6,6 +6,7 @@ Not a second Digital Twin or nesting engine.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from fox3d.ids import stable_hash
@@ -13,6 +14,7 @@ from fox3d.kd import pack_flatpack, packed_weight, shipping_metrics
 from fox3d.manufacturing import QuoteEngine
 from fox3d.nesting_v3 import NestingV3
 from fox3d.parametric import BOMEngine
+from fox3d.release import TenantItemsMixin
 
 FIXTURE_FAMILIES = (
     "COUNTER_DISPLAY",
@@ -160,12 +162,28 @@ def lighting_metadata() -> dict[str, Any]:
     }
 
 
-class RetailFixtureFactory:
-    def __init__(self, platform: Any) -> None:
-        self.platform = platform
+class RetailFixtureFactory(TenantItemsMixin):
+    _store_dir_name = "retail_fixtures"
+    _alias_dir_names = ("retail_fixture", "retail")
+    _id_key = "fixtureId"
+
+    def __init__(self, platform: Any = None, *, root: Path | None = None) -> None:
         self.registry = RetailFixtureRegistry()
         self.nester = NestingV3()
-        self.items: dict[str, dict[str, Any]] = {}
+        self._init_item_store(platform, root)
+
+    def _on_item_loaded(self, item_id: str, rec: dict[str, Any]) -> None:
+        parametrics = getattr(self.platform, "parametrics", None)
+        if isinstance(parametrics, dict) and isinstance(rec.get("spec"), dict):
+            parametrics.setdefault(
+                item_id,
+                {
+                    "spec": rec["spec"],
+                    "report": rec.get("report"),
+                    "bom": rec.get("bom"),
+                    "engineeringHash": rec.get("engineeringHash"),
+                },
+            )
 
     def build(
         self,
@@ -247,5 +265,4 @@ class RetailFixtureFactory:
             "liveMachineControl": False,
             "forbidden": ["LIVE_CNC", "APPROVED_FOR_PRODUCTION"],
         }
-        self.items[spec.productId] = rec
-        return rec
+        return self._store_item(spec.productId, rec, tenant_id=tenant_id)

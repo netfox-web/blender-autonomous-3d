@@ -90,7 +90,8 @@ class Platform:
         self.twins = TwinStore(self.dam)
         self.studio = ProductStudio()
         self.materials = MaterialEngine(self.recipes, self.gateway)
-        self.packaging = PackagingEngine()
+        self.parametrics: dict[str, dict[str, Any]] = {}
+        self.packaging = PackagingEngine(self)
         self.rules = EngineeringRuleEngine()
         self.cabinets = CabinetEngine(self.rules)
         self.bom = BOMEngine()
@@ -104,8 +105,11 @@ class Platform:
         self.factory = FurnitureFactory(self)
         self.lots = MaterialLotRegistry(self.root / "lots")
         self.remnants = RemnantInventory(DurableRemnantStore(self.root / "remnants"), default_tenant="default")
+        self.release = ReleaseGate(self.root / "release_gate")
         self.kd = KdFactory(self)
         self.physical = PhysicalProductOS(self)
+        self.retail_fixtures = self.physical.retail
+        self.acrylic = self.physical.acrylic
         self.portfolio = PortfolioFactory(self)
         from fox3d.prototype import PrototypeFactory
         from fox3d.pilot_batch import PilotBatchFactory
@@ -120,9 +124,7 @@ class Platform:
         self.product_truth = ProductTruthFactory(self)
         self.generative = GenerativeRenderGateway(self)
         self.pilot = PilotOps(self)
-        self.retail_fixtures = self.physical.retail
         self.providers = ProviderRegistry(self.root / "providers")
-        self.release = ReleaseGate()
         self.sandbox = SandboxRegistry()
         self.catalog = CatalogRelease()
         self.p360 = Product360Engine()
@@ -142,7 +144,6 @@ class Platform:
         self.runtime = BlenderRuntime(work_dir=self.root / "work", force_mock=mock_blender)
         self.mock_blender = mock_blender
         self.probe: HostProbe | None = None
-        self.parametrics: dict[str, dict[str, Any]] = {}
         seed_system_recipes(self.recipes)
         self._register_builtin_script()
         self.worker_id = "fox3d-worker-local"
