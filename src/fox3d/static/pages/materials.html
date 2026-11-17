@@ -63,7 +63,8 @@
           <label>張數 <input id="mt-lot-qty" type="number" min="1" step="1" value="1" required></label>
           <label>供應商批號 <input id="mt-lot-supplier" type="text" placeholder="選填"></label>
           <label>操作者 <input id="mt-lot-actor" type="text" value="warehouse" required></label>
-          <button type="submit" class="mt-btn mt-btn-primary">送出（需確認）</button>
+          <button type="submit" id="mt-lot-submit" class="mt-btn mt-btn-primary">送出（需確認）</button>
+          <button type="button" id="mt-lot-retry" class="mt-btn" hidden>重送</button>
         </form>
         <pre id="mt-lot-result" class="mt-result" hidden></pre>
       </details>
@@ -85,6 +86,7 @@
               <label>預留給（工單或人員） <input id="mt-reserve-by" type="text" value="manual" required></label>
               <label>租約秒數（選填） <input id="mt-reserve-lease" type="number" min="0" step="1" placeholder="不填則用預設"></label>
               <button type="submit" class="mt-btn mt-btn-primary" id="mt-reserve-btn" disabled>預留餘料（需確認）</button>
+              <button type="button" class="mt-btn" id="mt-reserve-retry" hidden>重送</button>
             </form>
           </aside>
           <p class="mt-empty" id="mt-rem-pick">請在左側表格選擇一筆餘料。</p>

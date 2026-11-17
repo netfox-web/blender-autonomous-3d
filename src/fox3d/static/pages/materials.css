@@ -291,6 +291,11 @@ table.mt-table {
   max-height: 320px;
   overflow: auto;
 }
+.mt-result.err {
+  border-color: #d98282;
+  color: #8b1a1a;
+  background: #fde8e8;
+}
 .mt-dialog {
   border: 0;
   border-radius: 12px;
