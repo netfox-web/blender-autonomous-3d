@@ -673,3 +673,82 @@ def test_backup_legacy_mixed_or_ambiguous_journal_and_remnants_handled_safely(tm
             backup_pilot(root_mix_rem, dest_bad_tid, tenant_ids=[bad_tid])
         _assert_no_manifest(dest_bad_tid)
 
+    # 4. Coexisting unmigrated legacy files victim.json (owned by 'victim') and victim-1bdd5b5b92e2.json
+    # (owned by 'victim-1bdd5b5b92e2'): backing up 'victim' must NOT falsely exclude victim.json!
+    victim = "victim"
+    colliding = safe_tenant_filename(victim)
+    root_coexist = tmp_path / "coexist-leg"
+    (root_coexist / "remnants").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        root_coexist / "remnants" / "victim.json",
+        {
+            "tenantId": victim,
+            "kind": "remnant-store",
+            "count": 1,
+            "items": [
+                {
+                    "remnantId": "rem-vic-leg",
+                    "tenantId": victim,
+                    "status": "available",
+                    "w": 500,
+                    "h": 300,
+                    "thickness": 18,
+                    "version": 1,
+                }
+            ],
+        },
+    )
+    atomic_write_json(
+        root_coexist / "remnants" / f"{colliding}.json",
+        {
+            "tenantId": colliding,
+            "kind": "remnant-store",
+            "count": 1,
+            "items": [
+                {
+                    "remnantId": "rem-col-leg",
+                    "tenantId": colliding,
+                    "status": "available",
+                    "w": 600,
+                    "h": 400,
+                    "thickness": 18,
+                    "version": 1,
+                }
+            ],
+        },
+    )
+    j_vic_seed = EventJournal(tmp_path / "seed-j-vic")
+    ev_vic = j_vic_seed.append(
+        "evt.vic", tenant_id=victim, aggregate_type="Test", aggregate_id="v1", actor="ops"
+    )
+    j_col_seed = EventJournal(tmp_path / "seed-j-col")
+    j_col_seed.append(
+        "evt.col", tenant_id=colliding, aggregate_type="Test", aggregate_id="c1", actor="ops"
+    )
+    (root_coexist / "journal").mkdir(parents=True, exist_ok=True)
+    atomic_write_json(
+        root_coexist / "journal" / "victim.json", read_json(j_vic_seed._path(victim))
+    )
+    atomic_write_json(
+        root_coexist / "journal" / f"{colliding}.json",
+        read_json(j_col_seed._path(colliding)),
+    )
+
+    dest_coexist_vic = tmp_path / "bak-coexist-vic"
+    man_coexist_vic = backup_pilot(root_coexist, dest_coexist_vic, tenant_ids=[victim])
+    coexist_paths = {row["path"] for row in man_coexist_vic["files"]}
+    assert "remnants/victim.json" in coexist_paths
+    assert "journal/victim.json" in coexist_paths
+    assert f"remnants/{colliding}.json" not in coexist_paths
+    assert f"journal/{colliding}.json" not in coexist_paths
+    restore_pilot(dest_coexist_vic, tmp_path / "r-coexist-vic", tenant_id=victim)
+    restored_coexist_vic = Platform(root=tmp_path / "r-coexist-vic", mock_blender=True)
+    assert [
+        r["remnantId"]
+        for r in restored_coexist_vic.remnants.snapshot(tenant_id=victim)["items"]
+    ] == ["rem-vic-leg"]
+    assert [
+        e["eventId"] for e in restored_coexist_vic.pilot.journal.list(victim)
+    ] == [ev_vic["eventId"]]
+
+

@@ -733,6 +733,8 @@ def test_release_gate_events_50_calls_bounded_per_tenant(tmp_path: Path) -> None
     assert rel_file.is_file()
     payload = json.loads(rel_file.read_text(encoding="utf-8"))
     assert len(payload["events"]) == MAX_EVENTS_PER_TENANT
+    assert payload["archivedEventCount"] == 50 - MAX_EVENTS_PER_TENANT
+    assert payload["totalEventCount"] == 50
     assert [e["entityId"] for e in payload["events"]] == [
         f"ent-{i}" for i in range(50 - MAX_EVENTS_PER_TENANT, 50)
     ]
@@ -742,6 +744,12 @@ def test_release_gate_events_50_calls_bounded_per_tenant(tmp_path: Path) -> None
     events_b = [e for e in plat2.release.events if e.get("tenantId") == "tenant-b"]
     assert len(events_a) == MAX_EVENTS_PER_TENANT
     assert events_a[-1]["entityId"] == "ent-49"
+    assert [e["entityId"] for e in plat2.release.archived_events(tenant_id="tenant-a")] == [
+        f"ent-{i}" for i in range(50 - MAX_EVENTS_PER_TENANT)
+    ]
+    assert [e["entityId"] for e in plat2.release.list_events(tenant_id="tenant-a")] == [
+        f"ent-{i}" for i in range(50)
+    ]
     assert len(events_b) == 1
     assert events_b[0]["entityId"] == "other-ent"
 
@@ -1461,6 +1469,583 @@ def test_kd_catalog_count_aligned_with_retention_and_every_returned_id_usable_ac
     assert len(ok_custom.json()["catalog"]) == 6
     custom_ids = {row["productId"] for row in ok_custom.json()["catalog"]}
     assert {c["spec"]["productId"] for c in client2.get("/api/kd/candidates", headers=headers_b).json()["items"]} == custom_ids
+
+
+def _seed_legacy_stores_for_tenant(
+    root: Path,
+    tmp_path: Path,
+    tid: str,
+    tag: str,
+) -> dict[str, str]:
+    from fox3d.journal import EventJournal
+    from fox3d.release import legacy_safe_tenant_filename
+
+    legacy_stem = legacy_safe_tenant_filename(tid)
+    pkg_id = f"pkg-{tag}"
+    acr_id = f"acr-{tag}"
+    ret_id = f"ret-{tag}"
+    kd_id = f"kd-{tag}"
+    bat_id = f"bat-{tag}"
+    rel_ev_id = f"rel-ev-{tag}"
+    rem_id = f"rem-{tag}"
+
+    (root / "packaging").mkdir(parents=True, exist_ok=True)
+    (root / "packaging" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "items": [{"packageId": pkg_id, "tenantId": tid, "family": "RSC_CARTON"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "acrylic").mkdir(parents=True, exist_ok=True)
+    (root / "acrylic" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "items": [{"productId": acr_id, "tenantId": tid, "kind": "MENU_STAND"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "retail_fixtures").mkdir(parents=True, exist_ok=True)
+    (root / "retail_fixtures" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "items": [{"fixtureId": ret_id, "tenantId": tid, "family": "RISER_DISPLAY"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "kd").mkdir(parents=True, exist_ok=True)
+    (root / "kd" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "candidates": [
+                    {
+                        "productId": kd_id,
+                        "tenantId": tid,
+                        "spec": {"productId": kd_id, "tenantId": tid, "kind": "OPEN_SHELF"},
+                    }
+                ],
+                "batches": [{"batchId": bat_id, "tenantId": tid, "items": []}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "physical_os").mkdir(parents=True, exist_ok=True)
+    (root / "physical_os" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "approvals": [
+                    {
+                        "entityId": acr_id,
+                        "tenantId": tid,
+                        "actor": f"ops-{tag}",
+                        "approvedAt": "2026-11-18T00:00:00+00:00",
+                    }
+                ],
+                "benchmarks": [{"tenantId": tid, "tag": tag}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "release_gate").mkdir(parents=True, exist_ok=True)
+    (root / "release_gate" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "approvals": [
+                    {"entityId": pkg_id, "tenantId": tid, "state": "ENGINEERING_VALID"}
+                ],
+                "events": [
+                    {
+                        "eventId": rel_ev_id,
+                        "entityId": pkg_id,
+                        "tenantId": tid,
+                        "decision": "ENGINEERING_VALID",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "remnants").mkdir(parents=True, exist_ok=True)
+    (root / "remnants" / f"{legacy_stem}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid,
+                "kind": "remnant-store",
+                "count": 1,
+                "items": [
+                    {
+                        "remnantId": rem_id,
+                        "tenantId": tid,
+                        "status": "available",
+                        "w": 500,
+                        "h": 300,
+                        "thickness": 18,
+                        "version": 1,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    j_seed = EventJournal(tmp_path / f"seed_journal_{tag}")
+    jev = j_seed.append(
+        "pilot.legacy",
+        tenant_id=tid,
+        aggregate_type="Test",
+        aggregate_id=f"agg-{tag}",
+        actor=f"ops-{tag}",
+    )
+    seed_payload = json.loads(j_seed._path(tid).read_text(encoding="utf-8"))
+    (root / "journal").mkdir(parents=True, exist_ok=True)
+    (root / "journal" / f"{legacy_stem}.json").write_text(
+        json.dumps(seed_payload), encoding="utf-8"
+    )
+    return {
+        "pkg": pkg_id,
+        "acr": acr_id,
+        "ret": ret_id,
+        "kd": kd_id,
+        "bat": bat_id,
+        "rel_ev": rel_ev_id,
+        "rem": rem_id,
+        "jev": jev["eventId"],
+    }
+
+
+def test_coexisting_legacy_files_with_canonical_path_collision_survive_migration_and_restart(
+    tmp_path: Path,
+) -> None:
+    """Review #696 item 1: victim.json and victim-1bdd5b5b92e2.json coexisting at startup must not delete victim's canonical file."""
+    from fox3d.release import legacy_safe_tenant_filename
+
+    root = tmp_path / "data"
+    t1 = "victim"
+    t2 = safe_tenant_filename(t1)  # "victim-1bdd5b5b92e2"
+    t3 = safe_tenant_filename(t2)  # 3rd chained tenant whose legacy filename == t2's canonical filename
+
+    assert t2 == "victim-1bdd5b5b92e2"
+    assert legacy_safe_tenant_filename(t2) == safe_tenant_filename(t1)
+    assert legacy_safe_tenant_filename(t3) == safe_tenant_filename(t2)
+
+    expected = {
+        t1: _seed_legacy_stores_for_tenant(root, tmp_path, t1, "t1"),
+        t2: _seed_legacy_stores_for_tenant(root, tmp_path, t2, "t2"),
+        t3: _seed_legacy_stores_for_tenant(root, tmp_path, t3, "t3"),
+    }
+
+    store_dirs = (
+        "packaging",
+        "acrylic",
+        "retail_fixtures",
+        "kd",
+        "physical_os",
+        "release_gate",
+        "remnants",
+        "journal",
+    )
+
+    # First startup performs migration across all stores.
+    plat1 = Platform(root=root, mock_blender=True)
+    for tid in (t1, t2, t3):
+        assert [p["packageId"] for p in plat1.physical.packaging.list(tenant_id=tid)] == [
+            expected[tid]["pkg"]
+        ]
+
+    for sdir in store_dirs:
+        # t1's legacy file victim.json must be cleaned up, while t1/t2/t3 canonical files must all exist and match their owners!
+        assert not (root / sdir / f"{legacy_safe_tenant_filename(t1)}.json").exists(), sdir
+        for tid in (t1, t2, t3):
+            cpath = root / sdir / f"{safe_tenant_filename(tid)}.json"
+            assert cpath.is_file(), f"missing canonical file for {tid} in {sdir}"
+            disk_obj = json.loads(cpath.read_text(encoding="utf-8"))
+            assert disk_obj["tenantId"] == tid, (sdir, tid, disk_obj.get("tenantId"))
+
+    # Second startup (restart verification) confirms nothing was deleted by post-persist cleanup!
+    plat2 = Platform(root=root, mock_blender=True)
+    client2 = TestClient(create_app(plat2))
+
+    for tid in (t1, t2, t3):
+        exp = expected[tid]
+        hdr = {"X-Tenant-Id": tid}
+        assert [
+            p["packageId"]
+            for p in client2.get("/api/packaging/structures", headers=hdr).json()["items"]
+        ] == [exp["pkg"]]
+        assert [
+            a["productId"]
+            for a in client2.get("/api/acrylic/products", headers=hdr).json()["items"]
+        ] == [exp["acr"]]
+        assert [
+            r["fixtureId"]
+            for r in client2.get("/api/retail/fixtures", headers=hdr).json()["items"]
+        ] == [exp["ret"]]
+        assert [
+            k["spec"]["productId"]
+            for k in client2.get("/api/kd/candidates", headers=hdr).json()["items"]
+        ] == [exp["kd"]]
+        assert [b["batchId"] for b in plat2.kd.list_batches(tenant_id=tid)] == [exp["bat"]]
+        assert (tid, exp["acr"]) in plat2.physical.approvals
+        assert [b["tag"] for b in plat2.physical.benchmarks if b.get("tenantId") == tid] == [
+            "t1" if tid == t1 else ("t2" if tid == t2 else "t3")
+        ]
+        assert (tid, exp["pkg"]) in plat2.release.approvals
+        assert [e["eventId"] for e in plat2.release.list_events(tenant_id=tid)] == [
+            exp["rel_ev"]
+        ]
+        assert [
+            r["remnantId"]
+            for r in client2.get("/api/remnants", headers=hdr).json()["items"]
+        ] == [exp["rem"]]
+        assert [e["eventId"] for e in plat2.pilot.journal.list(tid)] == [exp["jev"]]
+        assert plat2.pilot.journal.verify(tid)["ok"] is True
+
+
+def test_cross_process_coexisting_legacy_collision_lazy_sync_and_write(
+    tmp_path: Path,
+) -> None:
+    """Review #696 item 1: cross-process lazy sync for 'victim' when 'victim-1bdd5b5b92e2.json' is occupied by the other tenant's legacy file."""
+    import os
+    import subprocess
+    import sys
+
+    root = tmp_path / "data"
+    victim = "victim"
+    colliding = safe_tenant_filename(victim)  # "victim-1bdd5b5b92e2"
+
+    # 1. Resident process starts on empty root.
+    resident = Platform(root=root, mock_blender=True)
+    resident_client = TestClient(create_app(resident))
+
+    # 2. External writer deposits legacy files victim.json and victim-1bdd5b5b92e2.json while resident is running.
+    exp_v = _seed_legacy_stores_for_tenant(root, tmp_path, victim, "v")
+    exp_c = _seed_legacy_stores_for_tenant(root, tmp_path, colliding, "c")
+
+    # 3. Resident process queries and writes as 'victim' FIRST (whose canonical path is occupied by colliding's legacy file).
+    hdr_v = {"X-Tenant-Id": victim}
+    hdr_c = {"X-Tenant-Id": colliding}
+
+    assert [
+        p["packageId"]
+        for p in resident_client.get("/api/packaging/structures", headers=hdr_v).json()["items"]
+    ] == [exp_v["pkg"]]
+    assert [
+        a["productId"]
+        for a in resident_client.get("/api/acrylic/products", headers=hdr_v).json()["items"]
+    ] == [exp_v["acr"]]
+    assert [
+        r["fixtureId"]
+        for r in resident_client.get("/api/retail/fixtures", headers=hdr_v).json()["items"]
+    ] == [exp_v["ret"]]
+    assert [
+        k["spec"]["productId"]
+        for k in resident_client.get("/api/kd/candidates", headers=hdr_v).json()["items"]
+    ] == [exp_v["kd"]]
+    assert [b["batchId"] for b in resident.kd.list_batches(tenant_id=victim)] == [exp_v["bat"]]
+    resident.physical._sync_tenant(victim)
+    assert (victim, exp_v["acr"]) in resident.physical.approvals
+    assert [e["eventId"] for e in resident.release.list_events(tenant_id=victim)] == [
+        exp_v["rel_ev"]
+    ]
+    assert [
+        r["remnantId"]
+        for r in resident_client.get("/api/remnants", headers=hdr_v).json()["items"]
+    ] == [exp_v["rem"]]
+    assert [e["eventId"] for e in resident.pilot.journal.list(victim)] == [exp_v["jev"]]
+
+    # Resident process also creates a new packaging item for victim.
+    new_v_pkg = resident_client.post(
+        "/api/packaging/structures",
+        json={"family": "MAILER_BOX", "productDims": {"width": 130, "height": 90, "depth": 45}},
+        headers=hdr_v,
+    ).json()["packageId"]
+
+    # 4. Separate subprocess and restarted Platform both see intact state for BOTH victim and colliding tenant!
+    src_dir = str(Path(__file__).resolve().parents[1] / "src")
+    reader_script = (
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, os.environ['FOX3D_SRC'])\n"
+        "from fox3d.platform import Platform\n"
+        "root = Path(sys.argv[1])\n"
+        "v, c = sys.argv[2], sys.argv[3]\n"
+        "plat = Platform(root=root, mock_blender=True)\n"
+        "print(json.dumps({\n"
+        "  'v_pkg': sorted(p['packageId'] for p in plat.physical.packaging.list(tenant_id=v)),\n"
+        "  'c_pkg': [p['packageId'] for p in plat.physical.packaging.list(tenant_id=c)],\n"
+        "  'v_acr': [a['productId'] for a in plat.physical.acrylic.list(tenant_id=v)],\n"
+        "  'c_acr': [a['productId'] for a in plat.physical.acrylic.list(tenant_id=c)],\n"
+        "  'v_ret': [r['fixtureId'] for r in plat.physical.retail.list(tenant_id=v)],\n"
+        "  'c_ret': [r['fixtureId'] for r in plat.physical.retail.list(tenant_id=c)],\n"
+        "  'v_kd': [k['productId'] for k in plat.kd.list_candidates(tenant_id=v)],\n"
+        "  'c_kd': [k['productId'] for k in plat.kd.list_candidates(tenant_id=c)],\n"
+        "  'v_rem': [r['remnantId'] for r in plat.remnants.snapshot(tenant_id=v)['items']],\n"
+        "  'c_rem': [r['remnantId'] for r in plat.remnants.snapshot(tenant_id=c)['items']],\n"
+        "  'v_jev': [e['eventId'] for e in plat.pilot.journal.list(v)],\n"
+        "  'c_jev': [e['eventId'] for e in plat.pilot.journal.list(c)],\n"
+        "  'v_rel': [e['eventId'] for e in plat.release.list_events(tenant_id=v)],\n"
+        "  'c_rel': [e['eventId'] for e in plat.release.list_events(tenant_id=c)],\n"
+        "}))\n"
+    )
+    env = {**os.environ, "FOX3D_SRC": src_dir, "FOX3D_MOCK_BLENDER": "1"}
+    proc = subprocess.run(
+        [sys.executable, "-c", reader_script, str(root), victim, colliding],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=env,
+    )
+    observed = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert observed["v_pkg"] == sorted([exp_v["pkg"], new_v_pkg])
+    assert observed["c_pkg"] == [exp_c["pkg"]]
+    assert observed["v_acr"] == [exp_v["acr"]]
+    assert observed["c_acr"] == [exp_c["acr"]]
+    assert observed["v_ret"] == [exp_v["ret"]]
+    assert observed["c_ret"] == [exp_c["ret"]]
+    assert observed["v_kd"] == [exp_v["kd"]]
+    assert observed["c_kd"] == [exp_c["kd"]]
+    assert observed["v_rem"] == [exp_v["rem"]]
+    assert observed["c_rem"] == [exp_c["rem"]]
+    assert observed["v_jev"] == [exp_v["jev"]]
+    assert observed["c_jev"] == [exp_c["jev"]]
+    assert observed["v_rel"] == [exp_v["rel_ev"]]
+    assert observed["c_rel"] == [exp_c["rel_ev"]]
+
+    # Resident process also sees colliding's data when queried afterwards.
+    assert [
+        p["packageId"]
+        for p in resident_client.get("/api/packaging/structures", headers=hdr_c).json()["items"]
+    ] == [exp_c["pkg"]]
+
+
+def test_release_gate_upgrade_with_21_events_and_21st_event_preserve_full_audit_history(
+    tmp_path: Path,
+) -> None:
+    """Review #696 item 2: upgrading a 21-event tenant file and recording a 21st/22nd event must never lose old audit records."""
+    from fox3d.release import MAX_EVENTS_PER_TENANT, legacy_safe_tenant_filename
+
+    root = tmp_path / "data"
+    rel_dir = root / "release_gate"
+    rel_dir.mkdir(parents=True, exist_ok=True)
+
+    tid_canon = "upgrade-canon"
+    tid_legacy = "upgrade legacy"
+    tid_fresh = "fresh-tenant"
+    tid_other = "other-tenant"
+
+    def _make_events(tid: str, prefix: str, count: int) -> list[dict[str, Any]]:
+        return [
+            {
+                "eventId": f"{prefix}-ev-{i}",
+                "actor": "ops",
+                "tenantId": tid,
+                "entityId": f"{prefix}-ent-{i}",
+                "entityVersion": 1,
+                "engineeringHash": f"eh-{i}",
+                "evidenceHash": f"evh-{i}",
+                "hashes": {"engineeringHash": f"eh-{i}", "evidenceHash": f"evh-{i}"},
+                "approvedAt": f"2026-11-18T00:00:{i:02d}+00:00",
+                "decision": "ENGINEERING_VALID",
+                "reason": "release-gate",
+                "immutable": True,
+                "liveMachineControl": False,
+                "auditHash": f"ah-{i}",
+            }
+            for i in range(count)
+        ]
+
+    # Seed 21 pre-existing valid events in both canonical and legacy files before startup.
+    canon_events_21 = _make_events(tid_canon, "canon", 21)
+    legacy_events_21 = _make_events(tid_legacy, "leg", 21)
+
+    (rel_dir / f"{safe_tenant_filename(tid_canon)}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid_canon,
+                "approvals": [
+                    {
+                        "entityId": "canon-ent-0",
+                        "tenantId": tid_canon,
+                        "state": "ENGINEERING_VALID",
+                    }
+                ],
+                "events": canon_events_21,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (rel_dir / f"{legacy_safe_tenant_filename(tid_legacy)}.json").write_text(
+        json.dumps(
+            {
+                "tenantId": tid_legacy,
+                "approvals": [
+                    {
+                        "entityId": "leg-ent-0",
+                        "tenantId": tid_legacy,
+                        "state": "ENGINEERING_VALID",
+                    }
+                ],
+                "events": legacy_events_21,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # 1. Upgrade load: in-memory active window has 20 events, while earliest event is archived and still readable!
+    plat1 = Platform(root=root, mock_blender=True)
+    client1 = TestClient(create_app(plat1))
+
+    active_canon = [e for e in plat1.release.events if e.get("tenantId") == tid_canon]
+    assert len(active_canon) == MAX_EVENTS_PER_TENANT
+    assert [e["eventId"] for e in plat1.release.archived_events(tenant_id=tid_canon)] == [
+        "canon-ev-0"
+    ]
+    assert [e["eventId"] for e in plat1.release.list_events(tenant_id=tid_canon)] == [
+        f"canon-ev-{i}" for i in range(21)
+    ]
+    assert [e["eventId"] for e in plat1.release.list_events(tenant_id=tid_legacy)] == [
+        f"leg-ev-{i}" for i in range(21)
+    ]
+
+    # 2. Next approval/audit write (22nd event) rotates out the 2nd event to archive without losing the 1st or 2nd event!
+    res_canon = client1.post(
+        "/api/release/advance",
+        json={
+            "entityId": "canon-ent-21",
+            "target": "ENGINEERING_VALID",
+            "actor": "ops",
+            "entity": {"skuId": "canon-ent-21", "engineeringHash": "eh-21"},
+        },
+        headers={"X-Tenant-Id": tid_canon},
+    )
+    assert res_canon.status_code == 200
+    ev21_canon_id = res_canon.json()["audit"]["eventId"]
+
+    res_leg = client1.post(
+        "/api/release/advance",
+        json={
+            "entityId": "leg-ent-21",
+            "target": "ENGINEERING_VALID",
+            "actor": "ops",
+            "entity": {"skuId": "leg-ent-21", "engineeringHash": "eh-21"},
+        },
+        headers={"X-Tenant-Id": tid_legacy},
+    )
+    assert res_leg.status_code == 200
+    ev21_leg_id = res_leg.json()["audit"]["eventId"]
+
+    assert [e["eventId"] for e in plat1.release.archived_events(tenant_id=tid_canon)] == [
+        "canon-ev-0",
+        "canon-ev-1",
+    ]
+    assert [e["eventId"] for e in plat1.release.list_events(tenant_id=tid_canon)] == [
+        *[f"canon-ev-{i}" for i in range(21)],
+        ev21_canon_id,
+    ]
+    assert [e["eventId"] for e in plat1.release.list_events(tenant_id=tid_legacy)] == [
+        *[f"leg-ev-{i}" for i in range(21)],
+        ev21_leg_id,
+    ]
+
+    # 3. Fresh tenant: test 21st event and pagination across archived + active events.
+    fresh_ev_ids: list[str] = []
+    for i in range(21):
+        adv = client1.post(
+            "/api/release/advance",
+            json={
+                "entityId": f"fresh-ent-{i}",
+                "target": "ENGINEERING_VALID",
+                "actor": "ops-f",
+                "entity": {"skuId": f"fresh-ent-{i}", "engineeringHash": f"fh-{i}"},
+            },
+            headers={"X-Tenant-Id": tid_fresh},
+        )
+        assert adv.status_code == 200
+        fresh_ev_ids.append(adv.json()["audit"]["eventId"])
+
+    assert [e["eventId"] for e in plat1.release.archived_events(tenant_id=tid_fresh)] == [
+        fresh_ev_ids[0]
+    ]
+    assert [e["eventId"] for e in plat1.release.list_events(tenant_id=tid_fresh)] == fresh_ev_ids
+    assert [
+        e["eventId"]
+        for e in plat1.release.list_events(tenant_id=tid_fresh, include_archived=False)
+    ] == fresh_ev_ids[1:]
+
+    # Pagination checks
+    p0 = plat1.release.events_page(tenant_id=tid_fresh, limit=8, offset=0)
+    assert p0["total"] == 21
+    assert p0["archivedCount"] == 1
+    assert p0["activeCount"] == 20
+    assert p0["hasMore"] is True
+    assert [e["eventId"] for e in p0["items"]] == fresh_ev_ids[:8]
+
+    p1 = plat1.release.events_page(tenant_id=tid_fresh, limit=8, offset=8)
+    assert p1["hasMore"] is True
+    assert [e["eventId"] for e in p1["items"]] == fresh_ev_ids[8:16]
+
+    p2 = plat1.release.events_page(tenant_id=tid_fresh, limit=8, offset=16)
+    assert p2["hasMore"] is False
+    assert [e["eventId"] for e in p2["items"]] == fresh_ev_ids[16:]
+
+    # Filter by entity_id works across archived events too (fresh-ent-0 is in archive!)
+    assert [
+        e["eventId"]
+        for e in plat1.release.list_events(tenant_id=tid_fresh, entity_id="fresh-ent-0")
+    ] == [fresh_ev_ids[0]]
+
+    # Tenant isolation: another tenant sees 0 events
+    assert plat1.release.list_events(tenant_id=tid_other) == []
+    assert plat1.release.archived_events(tenant_id=tid_other) == []
+    assert plat1.release.events_page(tenant_id=tid_other)["items"] == []
+
+    # Invalid pagination parameters fail closed with ValueError
+    for bad_tid in ("", "   "):
+        with pytest.raises(ValueError):
+            plat1.release.list_events(tenant_id=bad_tid)
+        with pytest.raises(ValueError):
+            plat1.release.archived_events(tenant_id=bad_tid)
+        with pytest.raises(ValueError):
+            plat1.release.events_page(tenant_id=bad_tid)
+    with pytest.raises(ValueError):
+        plat1.release.list_events(tenant_id=tid_fresh, entity_id="")
+    with pytest.raises(ValueError):
+        plat1.release.archived_events(tenant_id=tid_fresh, entity_id="   ")
+    with pytest.raises(ValueError):
+        plat1.release.events_page(tenant_id=tid_fresh, entity_id="")
+    with pytest.raises(ValueError):
+        plat1.release.list_events(tenant_id=tid_fresh, include_archived="no")  # type: ignore[arg-type]
+    with pytest.raises(ValueError):
+        plat1.release.list_events(tenant_id=tid_fresh, offset=-1)
+    with pytest.raises(ValueError):
+        plat1.release.list_events(tenant_id=tid_fresh, limit=-1)
+    with pytest.raises(ValueError):
+        plat1.release.list_events(tenant_id=tid_fresh, limit=True)
+    with pytest.raises(ValueError):
+        plat1.release.events_page(tenant_id=tid_fresh, limit=0)
+    with pytest.raises(ValueError):
+        plat1.release.events_page(tenant_id=tid_fresh, offset=-1)
+
+    # 4. Restart Platform and verify all 22 events for upgraded tenants and 21 events for fresh tenant survive on disk!
+    plat2 = Platform(root=root, mock_blender=True)
+    assert [e["eventId"] for e in plat2.release.list_events(tenant_id=tid_canon)] == [
+        *[f"canon-ev-{i}" for i in range(21)],
+        ev21_canon_id,
+    ]
+    assert [e["eventId"] for e in plat2.release.list_events(tenant_id=tid_legacy)] == [
+        *[f"leg-ev-{i}" for i in range(21)],
+        ev21_leg_id,
+    ]
+    assert [e["eventId"] for e in plat2.release.list_events(tenant_id=tid_fresh)] == fresh_ev_ids
+
 
 
 

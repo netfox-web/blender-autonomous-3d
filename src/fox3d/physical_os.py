@@ -17,8 +17,12 @@ from fox3d.kd import FLATPACK_PRODUCT_TYPES, auto_redesign_candidates, common_ha
 from fox3d.packaging import BOX_FAMILIES, StructuralPackagingFactory
 from fox3d.release import (
     atomic_write_tenant_json,
+    can_unlink_canonical_tenant_file,
+    can_unlink_migrated_legacy_file,
+    conflicting_legacy_owner_at_path,
     file_sig,
     find_legacy_tenant_file,
+    order_tenants_for_migration,
     read_validated_tenant_json,
     reentrant_store_lock,
     safe_tenant_filename,
@@ -176,21 +180,51 @@ class PhysicalProductOS:
             self.benchmarks[:] = new_benchmarks
             self._sigs.clear()
             self._sigs.update(new_sigs)
-            for tid in sorted(tenants_to_persist):
+            for tid in order_tenants_for_migration(
+                tenants_to_persist, legacy_to_cleanup, self._tenant_path
+            ):
                 self._persist_tenant_unlocked(tid)
+            protected_paths = {
+                p for t in all_tids if (p := self._tenant_path(t)) is not None
+            }
             for legacy_path, tid in legacy_to_cleanup:
-                if legacy_path.exists() and legacy_path != self._tenant_path(tid):
+                if can_unlink_migrated_legacy_file(
+                    legacy_path, tid, self._tenant_path, protected_paths
+                ):
                     legacy_path.unlink(missing_ok=True)
 
-    def _sync_tenant(self, tenant_id: str | None) -> None:
+    def _sync_tenant(
+        self, tenant_id: str | None, *, _visited: set[str] | None = None
+    ) -> None:
         if self.root is None:
             return
         tid = self._normalize_tenant(tenant_id)
+        if _visited is not None and tid in _visited:
+            return
+        seen = set(_visited) if _visited is not None else set()
+        seen.add(tid)
         path = self._tenant_path(tid)
         if path is None:
             return
         with self._locked_store():
             sig = file_sig(path)
+            if sig is not None and self._sigs.get(tid) != sig:
+                parsed_tid, approvals, benchmarks = self._parse_tenant_file(path)
+                if parsed_tid != tid:
+                    self._sync_tenant(parsed_tid, _visited=seen)
+                    if can_unlink_migrated_legacy_file(
+                        path, parsed_tid, self._tenant_path
+                    ):
+                        path.unlink(missing_ok=True)
+                    sig = file_sig(path)
+                else:
+                    for key in [k for k in self.approvals if k[0] == tid]:
+                        self.approvals.pop(key, None)
+                    self.approvals.update(approvals)
+                    other_bench = [b for b in self.benchmarks if b.get("tenantId") != tid]
+                    self.benchmarks[:] = [*other_bench, *benchmarks]
+                    self._sigs[tid] = file_sig(path)
+                    return
             if sig is None:
                 legacy_path = find_legacy_tenant_file(self.root, tid)
                 if legacy_path is not None:
@@ -205,7 +239,9 @@ class PhysicalProductOS:
                     other_bench = [b for b in self.benchmarks if b.get("tenantId") != tid]
                     self.benchmarks[:] = [*other_bench, *benchmarks]
                     self._persist_tenant_unlocked(tid)
-                    if legacy_path.exists() and legacy_path != path:
+                    if can_unlink_migrated_legacy_file(
+                        legacy_path, tid, self._tenant_path, {path}
+                    ):
                         legacy_path.unlink(missing_ok=True)
                     return
                 if tid in self._sigs:
@@ -214,15 +250,6 @@ class PhysicalProductOS:
                     self.benchmarks[:] = [b for b in self.benchmarks if b.get("tenantId") != tid]
                     self._sigs.pop(tid, None)
                 return
-            if self._sigs.get(tid) == sig:
-                return
-            _, approvals, benchmarks = self._parse_tenant_file(path)
-            for key in [k for k in self.approvals if k[0] == tid]:
-                self.approvals.pop(key, None)
-            self.approvals.update(approvals)
-            other_bench = [b for b in self.benchmarks if b.get("tenantId") != tid]
-            self.benchmarks[:] = [*other_bench, *benchmarks]
-            self._sigs[tid] = file_sig(path)
 
     def _persist_tenant_unlocked(self, tenant_id: str | None) -> None:
         if self.root is None:
@@ -231,6 +258,11 @@ class PhysicalProductOS:
         path = self._tenant_path(tid)
         if path is None:
             return
+        occ_tid = conflicting_legacy_owner_at_path(path, tid)
+        if occ_tid is not None:
+            occ_canon = self._tenant_path(occ_tid)
+            if occ_canon is not None and occ_canon != path and not occ_canon.exists():
+                self._sync_tenant(occ_tid)
         tenant_approvals = [rec for (t, _), rec in self.approvals.items() if t == tid]
         tenant_benchmarks = [b for b in self.benchmarks if b.get("tenantId") == tid]
         if tenant_approvals or tenant_benchmarks:
@@ -244,7 +276,8 @@ class PhysicalProductOS:
             )
             self._sigs[tid] = file_sig(path)
         else:
-            path.unlink(missing_ok=True)
+            if can_unlink_canonical_tenant_file(path, tid):
+                path.unlink(missing_ok=True)
             self._sigs.pop(tid, None)
 
     def persist(self, *, tenant_id: str | None = None) -> None:

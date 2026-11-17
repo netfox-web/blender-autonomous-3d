@@ -21,8 +21,12 @@ from fox3d.manufacturing import NestingEngine, QuoteEngine, RemnantInventory, Sh
 from fox3d.parametric import CabinetSpec, map_cabinet_material
 from fox3d.release import (
     atomic_write_tenant_json,
+    can_unlink_canonical_tenant_file,
+    can_unlink_migrated_legacy_file,
+    conflicting_legacy_owner_at_path,
     file_sig,
     find_legacy_tenant_file,
+    order_tenants_for_migration,
     read_validated_tenant_json,
     reentrant_store_lock,
     safe_tenant_filename,
@@ -280,23 +284,64 @@ class KdFactory:
             self._sigs.update(new_sigs)
             for pid in removed_pids:
                 self._remove_parametric(pid)
-            for tid in sorted(tenants_to_persist):
+            for tid in order_tenants_for_migration(
+                tenants_to_persist, legacy_to_cleanup, self._tenant_path
+            ):
                 self._persist_tenant_unlocked(tid)
+            protected_paths = {
+                p for t in all_tids if (p := self._tenant_path(t)) is not None
+            }
             for legacy_path, tid in legacy_to_cleanup:
-                if legacy_path.exists() and legacy_path != self._tenant_path(tid):
+                if can_unlink_migrated_legacy_file(
+                    legacy_path, tid, self._tenant_path, protected_paths
+                ):
                     legacy_path.unlink(missing_ok=True)
             for pid, rec in self.candidates.items():
                 self._restore_parametric(pid, rec)
 
-    def _sync_tenant(self, tenant_id: str | None) -> None:
+    def _sync_tenant(
+        self, tenant_id: str | None, *, _visited: set[str] | None = None
+    ) -> None:
         if self.root is None:
             return
         tid = self._normalize_tenant(tenant_id)
+        if _visited is not None and tid in _visited:
+            return
+        seen = set(_visited) if _visited is not None else set()
+        seen.add(tid)
         path = self._tenant_path(tid)
         if path is None:
             return
         with self._locked_store():
             sig = file_sig(path)
+            if sig is not None and self._sigs.get(tid) != sig:
+                parsed_tid, cands, batches = self._parse_tenant_file(path)
+                if parsed_tid != tid:
+                    self._sync_tenant(parsed_tid, _visited=seen)
+                    if can_unlink_migrated_legacy_file(
+                        path, parsed_tid, self._tenant_path
+                    ):
+                        path.unlink(missing_ok=True)
+                    sig = file_sig(path)
+                else:
+                    for pid in [
+                        k for k, r in self.candidates.items() if self._candidate_tenant(r) == tid
+                    ]:
+                        self.candidates.pop(pid, None)
+                        if pid not in cands:
+                            self._remove_parametric(pid)
+                    self.candidates.update(cands)
+                    for pid, rec in cands.items():
+                        self._restore_parametric(pid, rec)
+                    for bid in [
+                        k
+                        for k, r in self.batches.items()
+                        if self._normalize_tenant(r.get("tenantId")) == tid
+                    ]:
+                        self.batches.pop(bid, None)
+                    self.batches.update(batches)
+                    self._sigs[tid] = file_sig(path)
+                    return
             if sig is None:
                 legacy_path = find_legacy_tenant_file(self.root, tid)
                 if legacy_path is not None:
@@ -322,7 +367,9 @@ class KdFactory:
                         self.batches.pop(bid, None)
                     self.batches.update(batches)
                     self._persist_tenant_unlocked(tid)
-                    if legacy_path.exists() and legacy_path != path:
+                    if can_unlink_migrated_legacy_file(
+                        legacy_path, tid, self._tenant_path, {path}
+                    ):
                         legacy_path.unlink(missing_ok=True)
                     return
                 if tid in self._sigs:
@@ -341,26 +388,6 @@ class KdFactory:
                         self.batches.pop(bid, None)
                     self._sigs.pop(tid, None)
                 return
-            if self._sigs.get(tid) == sig:
-                return
-            _, cands, batches = self._parse_tenant_file(path)
-            for pid in [
-                k for k, r in self.candidates.items() if self._candidate_tenant(r) == tid
-            ]:
-                self.candidates.pop(pid, None)
-                if pid not in cands:
-                    self._remove_parametric(pid)
-            self.candidates.update(cands)
-            for pid, rec in cands.items():
-                self._restore_parametric(pid, rec)
-            for bid in [
-                k
-                for k, r in self.batches.items()
-                if self._normalize_tenant(r.get("tenantId")) == tid
-            ]:
-                self.batches.pop(bid, None)
-            self.batches.update(batches)
-            self._sigs[tid] = file_sig(path)
 
     def _persist_tenant_unlocked(self, tenant_id: str | None) -> None:
         if self.root is None:
@@ -369,6 +396,11 @@ class KdFactory:
         path = self._tenant_path(tid)
         if path is None:
             return
+        occ_tid = conflicting_legacy_owner_at_path(path, tid)
+        if occ_tid is not None:
+            occ_canon = self._tenant_path(occ_tid)
+            if occ_canon is not None and occ_canon != path and not occ_canon.exists():
+                self._sync_tenant(occ_tid)
         self._prune_tenant_candidates_unlocked(tid)
         tenant_cands = [
             rec for rec in self.candidates.values() if self._candidate_tenant(rec) == tid
@@ -389,7 +421,8 @@ class KdFactory:
             )
             self._sigs[tid] = file_sig(path)
         else:
-            path.unlink(missing_ok=True)
+            if can_unlink_canonical_tenant_file(path, tid):
+                path.unlink(missing_ok=True)
             self._sigs.pop(tid, None)
 
     def _mark_or_persist(self, tenant_id: str | None) -> None:

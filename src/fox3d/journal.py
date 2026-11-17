@@ -14,8 +14,11 @@ from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.release import (
+    can_unlink_migrated_legacy_file,
+    conflicting_legacy_owner_at_path,
     is_matching_tenant_stem,
     legacy_safe_tenant_filename,
+    order_tenants_for_migration,
     safe_tenant_filename,
 )
 from fox3d.storelock import FileLock
@@ -206,50 +209,96 @@ class EventJournal:
     def _lock_path(self, tenant_id: str) -> Path:
         return self.root / f"{self._safe(tenant_id)}.lock"
 
+    def _extract_journal_tid(self, raw: Any) -> str | None:
+        if not isinstance(raw, dict) or not raw:
+            return None
+        tid = raw.get("tenantId")
+        if isinstance(tid, str) and tid.strip():
+            return tid
+        events = raw.get("events") or []
+        event_tids = {
+            ev["tenantId"]
+            for ev in events
+            if isinstance(ev, dict)
+            and isinstance(ev.get("tenantId"), str)
+            and ev["tenantId"].strip()
+        }
+        if len(event_tids) == 1:
+            return next(iter(event_tids))
+        return None
+
+    def _is_canonical_journal_for(self, path: Path, tid: str) -> bool:
+        if path != self._path(tid):
+            return False
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+        return self._extract_journal_tid(raw) == tid
+
     def _migrate_legacy_files(self) -> None:
         with self._lock:
+            canonical_tids: set[str] = set()
+            legacy_by_tid: dict[str, tuple[Path, dict[str, Any]]] = {}
+            legacy_to_cleanup: list[tuple[Path, str]] = []
             for path in sorted(self.root.glob("*.json")):
-                if _CANONICAL_STEM_RE.match(path.stem):
-                    continue
                 try:
-                    raw = read_json(path)
-                except (FileNotFoundError, UnicodeDecodeError, json.JSONDecodeError):
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                     continue
                 if not isinstance(raw, dict) or not raw:
                     continue
-                tid = raw.get("tenantId")
-                if not isinstance(tid, str) or not tid.strip():
-                    events = raw.get("events") or []
-                    event_tids = {
-                        ev["tenantId"]
-                        for ev in events
-                        if isinstance(ev, dict)
-                        and isinstance(ev.get("tenantId"), str)
-                        and ev["tenantId"].strip()
-                    }
-                    if len(event_tids) == 1:
-                        tid = next(iter(event_tids))
+                tid = self._extract_journal_tid(raw)
                 if not isinstance(tid, str) or not tid.strip():
                     continue
                 canonical = self._path(tid)
                 if path == canonical:
+                    canonical_tids.add(tid)
                     continue
                 if self._legacy_safe(tid).lower() != path.stem.lower():
                     continue
+                legacy_by_tid[tid] = (path, raw)
+                legacy_to_cleanup.append((path, tid))
+            for tid in order_tenants_for_migration(
+                legacy_by_tid.keys(), legacy_to_cleanup, self._path
+            ):
+                path, raw = legacy_by_tid[tid]
+                canonical = self._path(tid)
                 with FileLock(self._lock_path(tid)):
-                    if not canonical.exists():
+                    if not self._is_canonical_journal_for(canonical, tid):
                         raw.setdefault("tenantId", tid)
                         atomic_write_json(canonical, raw)
                         _bump_journal_gen(canonical)
-                    if path.exists() and path != canonical:
+            protected_paths = {
+                self._path(t) for t in (canonical_tids | set(legacy_by_tid))
+            }
+            for path, tid in legacy_to_cleanup:
+                with FileLock(self._lock_path(tid)):
+                    if can_unlink_migrated_legacy_file(
+                        path, tid, self._path, protected_paths
+                    ):
                         path.unlink(missing_ok=True)
                     old_lock = self.root / f"{path.stem}.lock"
-                    if old_lock != self._lock_path(tid):
+                    if (
+                        old_lock != self._lock_path(tid)
+                        and old_lock.with_suffix(".json") not in protected_paths
+                    ):
                         old_lock.unlink(missing_ok=True)
 
-    def _maybe_migrate_legacy_tenant(self, tenant_id: str) -> None:
+    def _maybe_migrate_legacy_tenant(
+        self, tenant_id: str, *, _visited: set[str] | None = None
+    ) -> None:
         tid = str(tenant_id or "default").strip() or "default"
+        if _visited is not None and tid in _visited:
+            return
+        seen = set(_visited) if _visited is not None else set()
+        seen.add(tid)
         canonical = self._path(tid)
+        occ_tid = conflicting_legacy_owner_at_path(canonical, tid)
+        if occ_tid is not None and self._path(occ_tid) != canonical:
+            self._maybe_migrate_legacy_tenant(occ_tid, _visited=seen)
+            if can_unlink_migrated_legacy_file(canonical, occ_tid, self._path):
+                canonical.unlink(missing_ok=True)
         legacy = self._legacy_path(tid)
         candidates: list[Path] = []
         if legacy != canonical and _file_sig(legacy) is not None:
@@ -275,11 +324,13 @@ class EventJournal:
                 else:
                     continue
             if file_tid == tid:
-                if _file_sig(canonical) is None:
+                if not self._is_canonical_journal_for(canonical, tid):
                     raw.setdefault("tenantId", tid)
                     atomic_write_json(canonical, raw)
                     _bump_journal_gen(canonical)
-                if cand != canonical:
+                if can_unlink_migrated_legacy_file(
+                    cand, tid, self._path, {canonical}
+                ):
                     cand.unlink(missing_ok=True)
                 return
             if isinstance(file_tid, str) and file_tid.strip() and is_matching_tenant_stem(file_tid, cand.stem):
@@ -333,7 +384,17 @@ class EventJournal:
                     "events": [],
                 }
             else:
-                if payload.get("tenantId") not in {None, tenant_id}:
+                raw_file_tid = payload.get("tenantId")
+                if raw_file_tid not in {None, tenant_id}:
+                    if (
+                        isinstance(raw_file_tid, str)
+                        and raw_file_tid.strip()
+                        and self._path(raw_file_tid) != path
+                        and self._legacy_safe(raw_file_tid).lower() == path.stem.lower()
+                    ):
+                        self._maybe_migrate_legacy_tenant(tenant_id)
+                        payload = {}
+                        continue
                     raise PermissionError("tenant isolation: journal")
                 payload.setdefault("events", [])
                 payload.setdefault("headHash", GENESIS)

@@ -378,6 +378,19 @@ def _include_file(rel: str, tids: set[str] | None) -> bool:
     return True
 
 
+def _has_canonical_store_file(root: Path, store_dir: str, tid: str) -> bool:
+    canonical = root / store_dir / f"{_safe_tenant(tid)}.json"
+    if not canonical.exists():
+        return False
+    try:
+        raw = read_json(canonical)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(raw, dict):
+        return False
+    return raw.get("tenantId") == tid
+
+
 def _inspect_tenant_store_file(
     src: Path, root: Path, rel: str, tids: set[str]
 ) -> tuple[str, dict[str, Any] | None]:
@@ -417,7 +430,7 @@ def _inspect_tenant_store_file(
         if header_tid not in tids:
             return ("EXCLUDE", None)
         canonical = root / "journal" / f"{_safe_tenant(header_tid)}.json"
-        if src != canonical and canonical.exists():
+        if src != canonical and _has_canonical_store_file(root, "journal", header_tid):
             return ("EXCLUDE", None)
         return ("RAW", None)
 
@@ -454,7 +467,7 @@ def _inspect_tenant_store_file(
         if header_tid_opt not in tids:
             return ("EXCLUDE", None)
         canonical = root / "remnants" / f"{_safe_tenant(header_tid_opt)}.json"
-        if src != canonical and canonical.exists():
+        if src != canonical and _has_canonical_store_file(root, "remnants", header_tid_opt):
             return ("EXCLUDE", None)
         return ("RAW", None)
     if header_tid_opt is not None and src.stem == _safe_tenant(header_tid_opt):
@@ -469,11 +482,11 @@ def _inspect_tenant_store_file(
         if header_tid_opt not in tids:
             return ("EXCLUDE", None)
         canonical = root / "remnants" / f"{_safe_tenant(header_tid_opt)}.json"
-        if src != canonical and canonical.exists():
+        if src != canonical and _has_canonical_store_file(root, "remnants", header_tid_opt):
             return ("EXCLUDE", None)
         return ("RAW", None)
     active_legacy_tids = {
-        t for t in tids if not (root / "remnants" / f"{_safe_tenant(t)}.json").exists()
+        t for t in tids if not _has_canonical_store_file(root, "remnants", t)
     }
     kept = [rec for rec in rows if _tenant_of(rec) in active_legacy_tids]
     if not kept:

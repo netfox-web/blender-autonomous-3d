@@ -18,8 +18,12 @@ from typing import Any, Iterator, Protocol, cast
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.release import (
+    can_unlink_canonical_tenant_file,
+    can_unlink_migrated_legacy_file,
+    conflicting_legacy_owner_at_path,
     is_matching_tenant_stem,
     legacy_safe_tenant_filename,
+    order_tenants_for_migration,
     safe_tenant_filename,
     sorted_tenant_json_paths,
 )
@@ -175,6 +179,26 @@ class DurableRemnantStore:
                 candidates.append(p)
         return candidates
 
+    def _evacuate_occupying_legacy_at(
+        self, path: Path, expected_tid: str, *, _visited: set[str] | None = None
+    ) -> None:
+        occ_tid = conflicting_legacy_owner_at_path(path, expected_tid)
+        if occ_tid is None:
+            return
+        occ_canon = self._tenant_path(occ_tid)
+        if occ_canon == path:
+            return
+        if _visited is not None and occ_tid in _visited:
+            return
+        seen = set(_visited) if _visited is not None else set()
+        seen.add(expected_tid)
+        seen.add(occ_tid)
+        self._evacuate_occupying_legacy_at(occ_canon, occ_tid, _visited=seen)
+        if not occ_canon.exists():
+            self._migrate_legacy_file_for_tenant(path, occ_tid)
+        elif can_unlink_migrated_legacy_file(path, occ_tid, self._tenant_path):
+            path.unlink(missing_ok=True)
+
     def _migrate_legacy_file_for_tenant(self, legacy_path: Path, tenant_id: str) -> bool:
         if not legacy_path.exists():
             return False
@@ -234,7 +258,9 @@ class DurableRemnantStore:
                     "items": foreign_items,
                 },
             )
-        elif legacy_path.exists() and legacy_path != self._tenant_path(tid):
+        elif can_unlink_migrated_legacy_file(
+            legacy_path, tid, self._tenant_path, {self._tenant_path(tid)}
+        ):
             legacy_path.unlink(missing_ok=True)
         return True
 
@@ -259,6 +285,7 @@ class DurableRemnantStore:
                 if self._tx_depth > 0 and (self._tx_synced_all or tid in self._tx_synced_tenants):
                     return
                 path = self._tenant_path(tid)
+                self._evacuate_occupying_legacy_at(path, tid)
                 if not path.exists():
                     for legacy in self._find_legacy_paths(tid):
                         if self._migrate_legacy_file_for_tenant(legacy, tid):
@@ -312,7 +339,7 @@ class DurableRemnantStore:
             self._items.clear()
             canonical_by_tenant: dict[str, dict[str, dict[str, Any]]] = {}
             legacy_by_tenant: dict[str, dict[str, dict[str, Any]]] = {}
-            legacy_paths: list[Path] = []
+            legacy_to_cleanup: list[tuple[Path, str]] = []
             for path in sorted_tenant_json_paths(self.root):
                 payload = read_json(path) or {}
                 if not isinstance(payload, dict):
@@ -339,48 +366,66 @@ class DurableRemnantStore:
                         if existing is None or int(rec.get("version") or 1) >= int(existing.get("version") or 1):
                             slot[rid] = rec
                 else:
-                    legacy_paths.append(path)
+                    file_tids: set[str] = set()
+                    if header_tid is not None:
+                        file_tids.add(header_tid)
                     for rec in (payload.get("items") or []):
                         if not isinstance(rec, dict) or "remnantId" not in rec:
                             continue
                         rid = rec["remnantId"]
                         rec_tid = self._normalize_tenant(rec.get("tenantId") or default_tid)
                         rec.setdefault("tenantId", rec_tid)
+                        file_tids.add(rec_tid)
                         slot = legacy_by_tenant.setdefault(rec_tid, {})
                         existing = slot.get(rid)
                         if existing is None or int(rec.get("version") or 1) >= int(existing.get("version") or 1):
                             slot[rid] = rec
+                    for ftid in sorted(file_tids or {default_tid}):
+                        legacy_to_cleanup.append((path, ftid))
             tenants_to_persist: set[str] = set()
-            for tid in sorted(set(canonical_by_tenant) | set(legacy_by_tenant)):
+            all_tids = sorted(set(canonical_by_tenant) | set(legacy_by_tenant))
+            for tid in all_tids:
                 if tid in canonical_by_tenant:
                     self._items.update(canonical_by_tenant[tid])
                 else:
                     self._items.update(legacy_by_tenant[tid])
                     tenants_to_persist.add(tid)
-            for tid in sorted(tenants_to_persist):
+            for tid in order_tenants_for_migration(
+                tenants_to_persist, legacy_to_cleanup, self._tenant_path
+            ):
                 self._persist_tenant(tid)
             protected_paths = {
                 self._tenant_path(t) for t in (set(canonical_by_tenant) | tenants_to_persist)
             }
-            for legacy_path in legacy_paths:
-                if legacy_path.exists() and legacy_path not in protected_paths:
+            for legacy_path, tid in legacy_to_cleanup:
+                if can_unlink_migrated_legacy_file(
+                    legacy_path, tid, self._tenant_path, protected_paths
+                ):
                     legacy_path.unlink(missing_ok=True)
 
     def _persist_tenant(self, tenant_id: str) -> None:
         tid = self._normalize_tenant(tenant_id)
+        path = self._tenant_path(tid)
+        occ_tid = conflicting_legacy_owner_at_path(path, tid)
+        if (
+            occ_tid is not None
+            and self._tenant_path(occ_tid) != path
+            and not self._tenant_path(occ_tid).exists()
+        ):
+            self._evacuate_occupying_legacy_at(path, tid)
         items = [
             rec
             for rec in self._items.values()
             if self._normalize_tenant(rec.get("tenantId")) == tid
         ]
-        path = self._tenant_path(tid)
         if items:
             atomic_write_json(
                 path,
                 {"tenantId": tid, "kind": "remnant-store", "count": len(items), "items": items},
             )
         else:
-            path.unlink(missing_ok=True)
+            if can_unlink_canonical_tenant_file(path, tid):
+                path.unlink(missing_ok=True)
 
     def persist(self, *, tenant_id: str | None = None) -> None:
         with self._lock:
