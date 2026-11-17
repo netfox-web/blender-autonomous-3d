@@ -17,6 +17,11 @@ from typing import Any, Iterator, Protocol, cast
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
+from fox3d.release import (
+    legacy_safe_tenant_filename,
+    safe_tenant_filename,
+    sorted_tenant_json_paths,
+)
 from fox3d.storelock import CrashInjected, FileLock, StaleGeneration
 
 QUALITY_STATES = ("available", "reserved", "consumed", "quarantined", "damaged")
@@ -143,12 +148,48 @@ class DurableRemnantStore:
         return self.root / "remnants.lock"
 
     def _normalize_tenant(self, tenant_id: str | None) -> str:
-        return str(tenant_id or "default")
+        tid = str(tenant_id or "default").strip()
+        return tid or "default"
+
+    def _legacy_tenant_path(self, tenant_id: str) -> Path:
+        tid = self._normalize_tenant(tenant_id)
+        return self.root / f"{legacy_safe_tenant_filename(tid)}.json"
 
     def _tenant_path(self, tenant_id: str) -> Path:
         tid = self._normalize_tenant(tenant_id)
-        safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tid)
-        return self.root / f"{safe}.json"
+        return self.root / f"{safe_tenant_filename(tid)}.json"
+
+    def _migrate_legacy_file(self, legacy_path: Path) -> None:
+        if not legacy_path.exists():
+            return
+        payload = read_json(legacy_path) or {}
+        if not isinstance(payload, dict):
+            return
+        default_tid = self._normalize_tenant(payload.get("tenantId"))
+        touched_tenants: set[str] = set()
+        for rec in (payload.get("items") or []):
+            if not isinstance(rec, dict) or "remnantId" not in rec:
+                continue
+            rid = rec["remnantId"]
+            rec_tid = self._normalize_tenant(rec.get("tenantId") or default_tid)
+            rec.setdefault("tenantId", rec_tid)
+            touched_tenants.add(rec_tid)
+            mem = self._items.get(rid)
+            if mem is None or int(rec.get("version") or 1) >= int(mem.get("version") or 1):
+                if mem is not None:
+                    mem.clear()
+                    mem.update(rec)
+                else:
+                    self._items[rid] = rec
+        if not touched_tenants and payload.get("tenantId"):
+            touched_tenants.add(default_tid)
+        for tid in sorted(touched_tenants):
+            target = self._tenant_path(tid)
+            if target.exists() and target != legacy_path:
+                self._sync_file(target)
+            self._persist_tenant(tid)
+        if legacy_path.exists() and all(legacy_path != self._tenant_path(t) for t in touched_tenants):
+            legacy_path.unlink(missing_ok=True)
 
     def _sync_file(self, path: Path) -> None:
         if not path.exists():
@@ -170,7 +211,15 @@ class DurableRemnantStore:
                 tid = self._normalize_tenant(tenant_id)
                 if self._tx_depth > 0 and (self._tx_synced_all or tid in self._tx_synced_tenants):
                     return
-                self._sync_file(self._tenant_path(tid))
+                path = self._tenant_path(tid)
+                if not path.exists():
+                    legacy = self._legacy_tenant_path(tid)
+                    if legacy != path and legacy.exists():
+                        self._migrate_legacy_file(legacy)
+                        if self._tx_depth > 0:
+                            self._tx_synced_tenants.add(tid)
+                        return
+                self._sync_file(path)
                 if self._tx_depth > 0:
                     self._tx_synced_tenants.add(tid)
                 return
@@ -215,10 +264,34 @@ class DurableRemnantStore:
     def load(self) -> None:
         with self._lock:
             self._items.clear()
-            for path in sorted(self.root.glob("*.json")):
+            legacy_paths: list[Path] = []
+            touched_tenants: set[str] = set()
+            for path in sorted_tenant_json_paths(self.root):
                 payload = read_json(path) or {}
+                if not isinstance(payload, dict):
+                    continue
+                default_tid = self._normalize_tenant(payload.get("tenantId"))
+                file_tenants: set[str] = set()
                 for rec in (payload.get("items") or []):
-                    self._items[rec["remnantId"]] = rec
+                    if not isinstance(rec, dict) or "remnantId" not in rec:
+                        continue
+                    rid = rec["remnantId"]
+                    rec_tid = self._normalize_tenant(rec.get("tenantId") or default_tid)
+                    rec.setdefault("tenantId", rec_tid)
+                    file_tenants.add(rec_tid)
+                    existing = self._items.get(rid)
+                    if existing is None or int(rec.get("version") or 1) >= int(existing.get("version") or 1):
+                        self._items[rid] = rec
+                if not file_tenants and payload.get("tenantId"):
+                    file_tenants.add(default_tid)
+                if any(self._tenant_path(t) != path for t in file_tenants):
+                    legacy_paths.append(path)
+                    touched_tenants.update(file_tenants)
+            for tid in sorted(touched_tenants):
+                self._persist_tenant(tid)
+            for legacy_path in legacy_paths:
+                if legacy_path.exists() and all(legacy_path != self._tenant_path(t) for t in touched_tenants):
+                    legacy_path.unlink(missing_ok=True)
 
     def _persist_tenant(self, tenant_id: str) -> None:
         tid = self._normalize_tenant(tenant_id)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -11,10 +12,12 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
+from fox3d.release import legacy_safe_tenant_filename, safe_tenant_filename
 from fox3d.storelock import FileLock
 
 GENESIS = "GENESIS"
 SCHEMA = "fox3d.journal.v1"
+_CANONICAL_STEM_RE = re.compile(r"^[a-z0-9_-]+-[0-9a-f]{12}$")
 
 _JOURNAL_GEN_LOCK = threading.Lock()
 _JOURNAL_GEN: dict[Path, int] = {}
@@ -179,15 +182,99 @@ class EventJournal:
         self._fail_next = False
         self.outbox: Any | None = None
         self._cache: dict[str, dict[str, Any]] = {}
+        self._migrate_legacy_files()
 
     def _safe(self, tenant_id: str) -> str:
-        return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tenant_id)
+        tid = str(tenant_id or "default").strip() or "default"
+        return safe_tenant_filename(tid)
+
+    def _legacy_safe(self, tenant_id: str) -> str:
+        tid = str(tenant_id or "default").strip() or "default"
+        return legacy_safe_tenant_filename(tid)
 
     def _path(self, tenant_id: str) -> Path:
         return self.root / f"{self._safe(tenant_id)}.json"
 
+    def _legacy_path(self, tenant_id: str) -> Path:
+        return self.root / f"{self._legacy_safe(tenant_id)}.json"
+
     def _lock_path(self, tenant_id: str) -> Path:
         return self.root / f"{self._safe(tenant_id)}.lock"
+
+    def _migrate_legacy_files(self) -> None:
+        with self._lock:
+            for path in sorted(self.root.glob("*.json")):
+                if _CANONICAL_STEM_RE.match(path.stem):
+                    continue
+                try:
+                    raw = read_json(path)
+                except Exception:
+                    continue
+                if not isinstance(raw, dict) or not raw:
+                    continue
+                tid = raw.get("tenantId")
+                if not isinstance(tid, str) or not tid.strip():
+                    for ev in raw.get("events") or []:
+                        if isinstance(ev, dict) and isinstance(ev.get("tenantId"), str) and ev["tenantId"].strip():
+                            tid = ev["tenantId"]
+                            break
+                if not isinstance(tid, str) or not tid.strip():
+                    continue
+                canonical = self._path(tid)
+                if path == canonical:
+                    continue
+                if self._legacy_safe(tid).lower() != path.stem.lower():
+                    continue
+                with FileLock(self._lock_path(tid)):
+                    if not canonical.exists():
+                        raw.setdefault("tenantId", tid)
+                        atomic_write_json(canonical, raw)
+                        _bump_journal_gen(canonical)
+                    if path.exists() and path != canonical:
+                        path.unlink(missing_ok=True)
+                    old_lock = self.root / f"{path.stem}.lock"
+                    if old_lock != self._lock_path(tid):
+                        old_lock.unlink(missing_ok=True)
+
+    def _maybe_migrate_legacy_tenant(self, tenant_id: str) -> None:
+        canonical = self._path(tenant_id)
+        legacy = self._legacy_path(tenant_id)
+        candidates: list[Path] = []
+        if legacy != canonical and _file_sig(legacy) is not None:
+            candidates.append(legacy)
+        want_lower = self._legacy_safe(tenant_id).lower()
+        for p in sorted(self.root.glob("*.json")):
+            if p == canonical or p in candidates or _CANONICAL_STEM_RE.match(p.stem):
+                continue
+            if p.stem.lower() == want_lower:
+                candidates.append(p)
+        for cand in candidates:
+            try:
+                raw = read_json(cand)
+            except Exception:
+                continue
+            if not isinstance(raw, dict) or not raw:
+                continue
+            file_tid = raw.get("tenantId")
+            if file_tid in {None, tenant_id}:
+                if _file_sig(canonical) is None:
+                    raw.setdefault("tenantId", tenant_id)
+                    atomic_write_json(canonical, raw)
+                    _bump_journal_gen(canonical)
+                cand.unlink(missing_ok=True)
+                return
+            if isinstance(file_tid, str) and file_tid.strip() and self._legacy_safe(file_tid).lower() == cand.stem.lower():
+                other_canonical = self._path(file_tid)
+                if _file_sig(other_canonical) is None:
+                    atomic_write_json(other_canonical, raw)
+                    _bump_journal_gen(other_canonical)
+                cand.unlink(missing_ok=True)
+                continue
+            if _file_sig(canonical) is None:
+                atomic_write_json(canonical, raw)
+                _bump_journal_gen(canonical)
+            cand.unlink(missing_ok=True)
+            return
 
     def _build_semantic_index(self, events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         index: dict[str, dict[str, Any]] = {}
@@ -201,6 +288,9 @@ class EventJournal:
     def _load_entry(self, tenant_id: str, *, force_reload: bool = False) -> dict[str, Any]:
         path = self._path(tenant_id)
         sig_before = _file_sig(path)
+        if sig_before is None:
+            self._maybe_migrate_legacy_tenant(tenant_id)
+            sig_before = _file_sig(path)
         gen_before = _get_journal_gen(path)
         if not force_reload and sig_before is not None:
             cached = self._cache.get(tenant_id)

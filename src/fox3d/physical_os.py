@@ -18,9 +18,11 @@ from fox3d.packaging import BOX_FAMILIES, StructuralPackagingFactory
 from fox3d.release import (
     atomic_write_tenant_json,
     file_sig,
+    find_legacy_tenant_file,
     read_validated_tenant_json,
     reentrant_store_lock,
     safe_tenant_filename,
+    sorted_tenant_json_paths,
 )
 from fox3d.retail_fixture import FIXTURE_FAMILIES, RetailFixtureFactory
 
@@ -134,18 +136,27 @@ class PhysicalProductOS:
             new_approvals: dict[tuple[str, str], dict[str, Any]] = {}
             new_benchmarks: list[dict[str, Any]] = []
             new_sigs: dict[str, tuple[int, int, int, int] | None] = {}
+            legacy_to_migrate: list[tuple[Path, str]] = []
             for folder in self._candidate_dirs():
-                for path in sorted(folder.glob("*.json")):
+                for path in sorted_tenant_json_paths(folder):
                     tid, approvals, benchmarks = self._parse_tenant_file(path)
                     new_approvals.update(approvals)
                     new_benchmarks.extend(benchmarks)
                     if folder == self.root:
-                        new_sigs[tid] = file_sig(path)
+                        canonical = self._tenant_path(tid)
+                        if canonical is not None and path != canonical:
+                            legacy_to_migrate.append((path, tid))
+                        else:
+                            new_sigs[tid] = file_sig(path)
             self.approvals.clear()
             self.approvals.update(new_approvals)
             self.benchmarks[:] = new_benchmarks
             self._sigs.clear()
             self._sigs.update(new_sigs)
+            for legacy_path, tid in legacy_to_migrate:
+                self._persist_tenant_unlocked(tid)
+                if legacy_path.exists() and legacy_path != self._tenant_path(tid):
+                    legacy_path.unlink(missing_ok=True)
 
     def _sync_tenant(self, tenant_id: str | None) -> None:
         if self.root is None:
@@ -157,6 +168,18 @@ class PhysicalProductOS:
         with self._locked_store():
             sig = file_sig(path)
             if sig is None:
+                legacy_path = find_legacy_tenant_file(self.root, tid)
+                if legacy_path is not None:
+                    _, approvals, benchmarks = self._parse_tenant_file(legacy_path)
+                    for key in [k for k in self.approvals if k[0] == tid]:
+                        self.approvals.pop(key, None)
+                    self.approvals.update(approvals)
+                    other_bench = [b for b in self.benchmarks if b.get("tenantId") != tid]
+                    self.benchmarks[:] = [*other_bench, *benchmarks]
+                    self._persist_tenant_unlocked(tid)
+                    if legacy_path.exists() and legacy_path != path:
+                        legacy_path.unlink(missing_ok=True)
+                    return
                 if tid in self._sigs:
                     for key in [k for k in self.approvals if k[0] == tid]:
                         self.approvals.pop(key, None)
@@ -352,6 +375,14 @@ class PhysicalProductOS:
                 rec["approvedAt"] = rec["audit"]["approvedAt"]
                 rec["hashes"] = rec["audit"].get("hashes")
             self.approvals[key] = rec
+            kd = getattr(self.platform, "kd", None)
+            if kd is not None and entity_id in kd.candidates:
+                cand = kd.candidates.get(entity_id)
+                if isinstance(cand, dict) and kd._candidate_tenant(cand) == tid:
+                    updated_cand = dict(cand)
+                    updated_cand["physicalApproved"] = True
+                    kd.candidates[entity_id] = updated_cand
+                    kd._mark_or_persist(tid)
             self._persist_tenant_unlocked(tid)
             return copy.deepcopy(rec)
 

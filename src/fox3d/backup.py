@@ -13,6 +13,7 @@ from typing import Any
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
+from fox3d.release import legacy_safe_tenant_filename, safe_tenant_filename
 from fox3d.storelock import FileLock
 
 SCHEMA = "fox3d.backup.v1"
@@ -184,7 +185,11 @@ def _now() -> str:
 
 
 def _safe_tenant(tenant_id: str) -> str:
-    return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tenant_id)
+    return safe_tenant_filename(tenant_id)
+
+
+def _legacy_safe_tenant(tenant_id: str) -> str:
+    return legacy_safe_tenant_filename(tenant_id)
 
 
 def _is_volatile(path: Path) -> bool:
@@ -354,7 +359,8 @@ def _include_file(rel: str, tids: set[str] | None) -> bool:
     parts = rel.split("/")
     if parts[0] in {"journal", "remnants"} and len(parts) >= 2:
         stem = Path(parts[-1]).stem
-        return stem in {_safe_tenant(t) for t in tids}
+        allowed = {_safe_tenant(t) for t in tids} | {_legacy_safe_tenant(t) for t in tids}
+        return stem in allowed
     if parts[0] == "dam" and len(parts) >= 2:
         return parts[1] in tids
     if parts[0] == "tx":

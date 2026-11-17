@@ -9,8 +9,10 @@ because sequential advancement enforces that path. Approval records are keyed by
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -38,13 +40,73 @@ BOUND_HASH_KEYS = (
     "packagingHash",
     "evidenceHash",
 )
+MAX_EVENTS_PER_TENANT = 20
+MAX_RELEASE_EVENTS_PER_TENANT = MAX_EVENTS_PER_TENANT
+_CANONICAL_TENANT_STEM_RE = re.compile(r"^[a-z0-9_-]+-[0-9a-f]{12}$")
+
+
+def sorted_tenant_json_paths(folder: Path) -> list[Path]:
+    """Return ``*.json`` paths with legacy filenames before canonical hashed filenames."""
+    return sorted(
+        folder.glob("*.json"),
+        key=lambda p: (bool(_CANONICAL_TENANT_STEM_RE.match(p.stem)), p.name),
+    )
+
+
+def legacy_safe_tenant_filename(tenant_id: str) -> str:
+    tid = str(tenant_id or "").strip()
+    if not tid:
+        raise ValueError("tenantId must be a non-empty string")
+    return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tid)
 
 
 def safe_tenant_filename(tenant_id: str) -> str:
     tid = str(tenant_id or "").strip()
     if not tid:
         raise ValueError("tenantId must be a non-empty string")
-    return "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tid)
+    cleaned = "".join(
+        ch.lower() if (ch.isascii() and ch.isalnum()) or ch in "-_" else "_"
+        for ch in tid
+    ).strip("_")[:64] or "tenant"
+    digest = hashlib.sha256(tid.encode("utf-8")).hexdigest()[:12]
+    return f"{cleaned}-{digest}"
+
+
+def is_matching_tenant_stem(tenant_id: str, stem: str) -> bool:
+    if safe_tenant_filename(tenant_id) == stem:
+        return True
+    legacy = legacy_safe_tenant_filename(tenant_id)
+    return legacy == stem or legacy.lower() == stem.lower()
+
+
+def find_legacy_tenant_file(folder: Path, tenant_id: str) -> Path | None:
+    tid = str(tenant_id or "default").strip() or "default"
+    canonical = folder / f"{safe_tenant_filename(tid)}.json"
+    direct = folder / f"{legacy_safe_tenant_filename(tid)}.json"
+    candidates: list[Path] = []
+    if direct != canonical and direct.is_file():
+        candidates.append(direct)
+    want_lower = legacy_safe_tenant_filename(tid).lower()
+    for p in sorted(folder.glob("*.json")):
+        if p == canonical or p in candidates:
+            continue
+        if p.stem.lower() == want_lower:
+            candidates.append(p)
+    for cand in candidates:
+        try:
+            raw = json.loads(cand.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return cand
+        if not isinstance(raw, dict):
+            return cand
+        file_tid = raw.get("tenantId")
+        if not isinstance(file_tid, str) or not file_tid.strip():
+            return cand
+        if file_tid == tid:
+            return cand
+        if legacy_safe_tenant_filename(file_tid).lower() != cand.stem.lower():
+            return cand
+    return None
 
 
 def file_sig(path: Path) -> tuple[int, int, int, int] | None:
@@ -97,7 +159,7 @@ def read_validated_tenant_json(path: Path, *, required_lists: tuple[str, ...]) -
     tid = payload.get("tenantId")
     if not isinstance(tid, str) or not tid.strip():
         raise ValueError(f"corrupt state file {path}: missing or invalid tenantId")
-    if safe_tenant_filename(tid) != path.stem:
+    if not is_matching_tenant_stem(tid, path.stem):
         raise ValueError(
             f"corrupt state file {path}: tenantId {tid!r} does not match filename {path.name}"
         )
@@ -216,16 +278,25 @@ class TenantItemsMixin:
         with self._locked_store():
             new_items: dict[str, dict[str, Any]] = {}
             new_sigs: dict[str, tuple[int, int, int, int] | None] = {}
+            legacy_to_migrate: list[tuple[Path, str]] = []
             for folder in self._candidate_dirs():
-                for path in sorted(folder.glob("*.json")):
+                for path in sorted_tenant_json_paths(folder):
                     tid, parsed = self._parse_items_file(path)
                     new_items.update(parsed)
                     if folder == self.root:
-                        new_sigs[tid] = file_sig(path)
+                        canonical = self._tenant_path(tid)
+                        if canonical is not None and path != canonical:
+                            legacy_to_migrate.append((path, tid))
+                        else:
+                            new_sigs[tid] = file_sig(path)
             self.items.clear()
             self.items.update(new_items)
             self._sigs.clear()
             self._sigs.update(new_sigs)
+            for legacy_path, tid in legacy_to_migrate:
+                self._persist_tenant_unlocked(tid)
+                if legacy_path.exists() and legacy_path != self._tenant_path(tid):
+                    legacy_path.unlink(missing_ok=True)
             for item_id, rec in self.items.items():
                 self._on_item_loaded(item_id, rec)
 
@@ -239,6 +310,22 @@ class TenantItemsMixin:
         with self._locked_store():
             sig = file_sig(path)
             if sig is None:
+                legacy_path = find_legacy_tenant_file(self.root, tid)
+                if legacy_path is not None:
+                    _, parsed = self._parse_items_file(legacy_path)
+                    for k in [
+                        iid
+                        for iid, r in self.items.items()
+                        if self._normalize_tenant(r.get("tenantId")) == tid
+                    ]:
+                        self.items.pop(k, None)
+                    self.items.update(parsed)
+                    for item_id, rec in parsed.items():
+                        self._on_item_loaded(item_id, rec)
+                    self._persist_tenant_unlocked(tid)
+                    if legacy_path.exists() and legacy_path != path:
+                        legacy_path.unlink(missing_ok=True)
+                    return
                 if tid in self._sigs:
                     for k in [
                         iid
@@ -317,10 +404,16 @@ class TenantItemsMixin:
 
 
 class ReleaseGate:
-    def __init__(self, root: Path | None = None) -> None:
+    def __init__(
+        self,
+        root: Path | None = None,
+        *,
+        max_events_per_tenant: int = MAX_EVENTS_PER_TENANT,
+    ) -> None:
         self.root = Path(root) if root else None
         if self.root is not None:
             self.root.mkdir(parents=True, exist_ok=True)
+        self.max_events_per_tenant = max_events_per_tenant
         self.events: list[dict[str, Any]] = []
         self.approvals: dict[tuple[str, str], dict[str, Any]] = {}
         self._locks_guard = threading.Lock()
@@ -357,6 +450,18 @@ class ReleaseGate:
             dirs.append(alt)
         return dirs
 
+    def _cap_tenant_events(
+        self, events: list[dict[str, Any]], *, max_per_tenant: int | None = None
+    ) -> list[dict[str, Any]]:
+        limit = (
+            self.max_events_per_tenant
+            if max_per_tenant is None
+            else int(max_per_tenant)
+        )
+        if limit <= 0:
+            return []
+        return events[-limit:]
+
     def _parse_tenant_file(
         self, path: Path
     ) -> tuple[str, dict[tuple[str, str], dict[str, Any]], list[dict[str, Any]]]:
@@ -389,25 +494,35 @@ class ReleaseGate:
             if ev_tid != tid:
                 raise ValueError(f"corrupt state file {path}: event tenantId mismatch")
             events.append(ev)
-        return tid, approvals, events
+        return tid, approvals, self._cap_tenant_events(events)
 
     def load(self) -> None:
         if self.root is None:
             return
         with self._locked_store():
             new_approvals: dict[tuple[str, str], dict[str, Any]] = {}
-            new_events: list[dict[str, Any]] = []
+            by_tenant_events: dict[str, list[dict[str, Any]]] = {}
             new_sigs: dict[str, tuple[int, int, int, int] | None] = {}
+            legacy_to_migrate: list[tuple[Path, str]] = []
             for folder in self._candidate_dirs():
-                for path in sorted(folder.glob("*.json")):
+                for path in sorted_tenant_json_paths(folder):
                     tid, approvals, events = self._parse_tenant_file(path)
                     new_approvals.update(approvals)
-                    new_events.extend(events)
+                    combined = [*by_tenant_events.get(tid, []), *events]
+                    by_tenant_events[tid] = self._cap_tenant_events(combined)
                     if folder == self.root:
-                        new_sigs[tid] = file_sig(path)
+                        canonical = self._tenant_path(tid)
+                        if canonical is not None and path != canonical:
+                            legacy_to_migrate.append((path, tid))
+                        else:
+                            new_sigs[tid] = file_sig(path)
             self.approvals = new_approvals
-            self.events = new_events
+            self.events = [ev for tid_events in by_tenant_events.values() for ev in tid_events]
             self._sigs = new_sigs
+            for legacy_path, tid in legacy_to_migrate:
+                self._persist_tenant_unlocked(tid)
+                if legacy_path.exists() and legacy_path != self._tenant_path(tid):
+                    legacy_path.unlink(missing_ok=True)
 
     def _sync_tenant(self, tenant_id: str | None) -> None:
         if self.root is None:
@@ -419,6 +534,20 @@ class ReleaseGate:
         with self._locked_store():
             sig = file_sig(path)
             if sig is None:
+                legacy_path = find_legacy_tenant_file(self.root, tid)
+                if legacy_path is not None:
+                    _, approvals, events = self._parse_tenant_file(legacy_path)
+                    for key in [k for k in self.approvals if k[0] == tid]:
+                        self.approvals.pop(key, None)
+                    self.approvals.update(approvals)
+                    other_events = [
+                        e for e in self.events if self._normalize_tenant(e.get("tenantId")) != tid
+                    ]
+                    self.events = [*other_events, *events]
+                    self._persist_tenant_unlocked(tid)
+                    if legacy_path.exists() and legacy_path != path:
+                        legacy_path.unlink(missing_ok=True)
+                    return
                 if tid in self._sigs:
                     for key in [k for k in self.approvals if k[0] == tid]:
                         self.approvals.pop(key, None)
@@ -447,9 +576,13 @@ class ReleaseGate:
         if path is None:
             return
         tenant_approvals = [rec for (t, _), rec in self.approvals.items() if t == tid]
-        tenant_events = [
-            ev for ev in self.events if self._normalize_tenant(ev.get("tenantId")) == tid
+        tenant_events = self._cap_tenant_events(
+            [ev for ev in self.events if self._normalize_tenant(ev.get("tenantId")) == tid]
+        )
+        other_events = [
+            ev for ev in self.events if self._normalize_tenant(ev.get("tenantId")) != tid
         ]
+        self.events = [*other_events, *tenant_events]
         if tenant_approvals or tenant_events:
             atomic_write_tenant_json(
                 path,
@@ -509,7 +642,9 @@ class ReleaseGate:
         reason: str,
         evidence_hash: str | None = None,
         tenant_id: str | None = None,
+        max_per_tenant: int | None = None,
     ) -> dict[str, Any]:
+        tid = self._normalize_tenant(tenant_id)
         hashes = self.hashes_of(entity)
         rec = {
             "eventId": new_id(),
@@ -527,10 +662,21 @@ class ReleaseGate:
             "liveMachineControl": False,
         }
         rec["auditHash"] = stable_hash({k: rec[k] for k in rec if k not in {"eventId", "auditHash"}})
+        limit = (
+            self.max_events_per_tenant
+            if max_per_tenant is None
+            else int(max_per_tenant)
+        )
         with self._locked_store():
-            self._sync_tenant(tenant_id)
-            self.events.append(rec)
-            self._persist_tenant_unlocked(tenant_id)
+            self._sync_tenant(tid)
+            other = [e for e in self.events if self._normalize_tenant(e.get("tenantId")) != tid]
+            same = [e for e in self.events if self._normalize_tenant(e.get("tenantId")) == tid]
+            if limit <= 0:
+                self.events = other
+            else:
+                kept_same = same[-(limit - 1) :] if limit > 1 else []
+                self.events = [*other, *kept_same, rec]
+            self._persist_tenant_unlocked(tid)
         return rec
 
     def is_stale(self, approval: dict[str, Any], entity: dict[str, Any]) -> bool:

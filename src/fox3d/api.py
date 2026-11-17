@@ -948,7 +948,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             else:
                 entity_obj = {}
         try:
-            return plat.release.advance(
+            advanced = plat.release.advance(
                 entity_id,
                 tenant_id=tid,
                 target=target,
@@ -960,6 +960,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        if entity_id in plat.kd.candidates:
+            cand = plat.kd.candidates.get(entity_id)
+            if isinstance(cand, dict) and plat.kd._candidate_tenant(cand) == tid and not cand.get("physicalApproved"):
+                updated_cand = dict(cand)
+                updated_cand["physicalApproved"] = True
+                plat.kd.candidates[entity_id] = updated_cand
+                plat.kd._mark_or_persist(tid)
+        return advanced
 
     @app.post("/api/commerce/import")
     def commerce_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

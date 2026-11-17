@@ -22,6 +22,7 @@ from fox3d.backup import (
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.manual_pilot import seed_tenant_backup_fixture
 from fox3d.platform import Platform
+from fox3d.release import safe_tenant_filename
 from fox3d.station import STATION_CAPS
 
 
@@ -89,8 +90,8 @@ def test_pilot_backup_empty_tenants_falls_back_to_work_orders(tmp_path, tenant_i
 
     assert manifest["scope"] == "TENANT_SCOPED"
     assert manifest["tenantIds"] == ["ta"]
-    assert (dest / "data" / "journal" / "ta.json").is_file()
-    assert not (dest / "data" / "journal" / "tb.json").exists()
+    assert (dest / "data" / "journal" / f"{safe_tenant_filename('ta')}.json").is_file()
+    assert not (dest / "data" / "journal" / f"{safe_tenant_filename('tb')}.json").exists()
     assert verify_backup(dest)["exactSet"] is True
 
 
@@ -292,7 +293,7 @@ def test_snapshot_detects_new_dam_and_remnant_files(tmp_path, monkeypatch):
     assert man["snapshotPathSetBound"] is True
     paths = {row["path"] for row in man["files"]}
     assert any(p.startswith("dam/ta/") and p.endswith("new.bin") for p in paths)
-    assert "remnants/ta.json" in paths
+    assert f"remnants/{safe_tenant_filename('ta')}.json" in paths
     restore_pilot(dest, tmp_path / "r", tenant_id="ta")
     assert (tmp_path / "r" / "dam" / "ta" / "race" / "new.bin").exists()
 
@@ -351,7 +352,7 @@ def test_snapshot_b_churn_does_not_leak_or_invalidate_a(tmp_path, monkeypatch):
     assert man["consistentSnapshot"] is True
     paths = {row["path"] for row in man["files"]}
     assert not any(p.startswith("dam/tb/") for p in paths)
-    assert "remnants/tb.json" not in paths
+    assert f"remnants/{safe_tenant_filename('tb')}.json" not in paths
     restore_pilot(dest, tmp_path / "r", tenant_id="ta")
     restored = Platform(root=tmp_path / "r", mock_blender=True)
     assert restored.lots.list(tenant_id="tb") == []
@@ -519,7 +520,7 @@ def test_semantic_preservation_rejects_journal_id_swap(tmp_path):
     dest = tmp_path / "bak"
     backup_pilot(plat.root, dest, tenant_ids=["ta"])
     restore_pilot(dest, tmp_path / "r", tenant_id="ta")
-    jpath = tmp_path / "r" / "journal" / "ta.json"
+    jpath = tmp_path / "r" / "journal" / f"{safe_tenant_filename('ta')}.json"
     payload = json.loads(jpath.read_text(encoding="utf-8"))
     payload["events"][0]["eventId"] = "mutated-event"
     jpath.write_text(json.dumps(payload), encoding="utf-8")

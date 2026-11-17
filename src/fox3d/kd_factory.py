@@ -22,9 +22,11 @@ from fox3d.parametric import CabinetSpec, map_cabinet_material
 from fox3d.release import (
     atomic_write_tenant_json,
     file_sig,
+    find_legacy_tenant_file,
     read_validated_tenant_json,
     reentrant_store_lock,
     safe_tenant_filename,
+    sorted_tenant_json_paths,
 )
 
 PRODUCT_STATES = (
@@ -36,10 +38,18 @@ PRODUCT_STATES = (
     "APPROVED_FOR_PROTOTYPE",
 )
 FORBIDDEN_STATES = {"APPROVED_FOR_PRODUCTION", "LIVE_CNC"}
+MAX_UNAPPROVED_CANDIDATES_PER_TENANT = 24
+MAX_CANDIDATES_PER_TENANT = MAX_UNAPPROVED_CANDIDATES_PER_TENANT
 
 
 class KdFactory:
-    def __init__(self, platform: Any = None, *, root: Path | None = None) -> None:
+    def __init__(
+        self,
+        platform: Any = None,
+        *,
+        root: Path | None = None,
+        max_unapproved_per_tenant: int = MAX_UNAPPROVED_CANDIDATES_PER_TENANT,
+    ) -> None:
         self.platform = platform
         plat_root = getattr(platform, "root", None)
         base_root = Path(root) if root else (
@@ -48,6 +58,7 @@ class KdFactory:
         self.root = base_root
         if self.root is not None:
             self.root.mkdir(parents=True, exist_ok=True)
+        self.max_unapproved_per_tenant = max_unapproved_per_tenant
         self.remnants = getattr(platform, "remnants", None) or RemnantInventory()
         self.batches: dict[str, dict[str, Any]] = {}
         self.candidates: dict[str, dict[str, Any]] = {}
@@ -82,6 +93,7 @@ class KdFactory:
                     if self._batch_depth == 1 and self._dirty_tenants:
                         with self._locked_store():
                             for tid in sorted(self._dirty_tenants):
+                                self._prune_tenant_candidates_unlocked(tid)
                                 self._persist_tenant_unlocked(tid)
                         self._dirty_tenants.clear()
                 finally:
@@ -101,6 +113,62 @@ class KdFactory:
         spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
         pid = rec.get("productId") or spec.get("productId") or rec.get("candidateId")
         return pid if isinstance(pid, str) and pid.strip() else None
+
+    def _is_approved_candidate(self, tid: str, pid: str, rec: dict[str, Any]) -> bool:
+        if rec.get("approvalState") in {
+            "WAITING_PRODUCT_APPROVAL",
+            "APPROVED_FOR_PROTOTYPE",
+            "WAITING_APPROVAL",
+            "APPROVED_FOR_EXPORT",
+        }:
+            return True
+        if isinstance(rec.get("approval"), dict) and bool(rec.get("approval")):
+            return True
+        if bool(rec.get("physicalApproved")):
+            return True
+        physical = getattr(self.platform, "physical", None)
+        if physical is not None:
+            approvals = getattr(physical, "approvals", None)
+            if isinstance(approvals, dict) and (tid, pid) in approvals:
+                return True
+        release = getattr(self.platform, "release", None)
+        if release is not None:
+            rel_approvals = getattr(release, "approvals", None)
+            if isinstance(rel_approvals, dict) and (tid, pid) in rel_approvals:
+                return True
+        for batch in self.batches.values():
+            if self._normalize_tenant(batch.get("tenantId")) == tid:
+                for item in batch.get("items") or []:
+                    if isinstance(item, dict) and item.get("skuId") == pid:
+                        return True
+        return False
+
+    def _prune_tenant_candidates_unlocked(
+        self, tenant_id: str | None, *, max_unapproved: int | None = None
+    ) -> None:
+        tid = self._normalize_tenant(tenant_id)
+        limit = (
+            self.max_unapproved_per_tenant
+            if max_unapproved is None
+            else int(max_unapproved)
+        )
+        unapproved_pids: list[str] = []
+        for pid, rec in list(self.candidates.items()):
+            if self._candidate_tenant(rec) != tid:
+                continue
+            if not self._is_approved_candidate(tid, pid, rec):
+                unapproved_pids.append(pid)
+        if limit <= 0:
+            evict_pids = unapproved_pids
+        elif len(unapproved_pids) > limit:
+            evict_pids = unapproved_pids[: len(unapproved_pids) - limit]
+        else:
+            evict_pids = []
+        parametrics = getattr(self.platform, "parametrics", None)
+        for pid in evict_pids:
+            self.candidates.pop(pid, None)
+            if isinstance(parametrics, dict):
+                parametrics.pop(pid, None)
 
     def _tenant_path(self, tenant_id: str) -> Path | None:
         if self.root is None:
@@ -168,19 +236,28 @@ class KdFactory:
             new_candidates: dict[str, dict[str, Any]] = {}
             new_batches: dict[str, dict[str, Any]] = {}
             new_sigs: dict[str, tuple[int, int, int, int] | None] = {}
+            legacy_to_migrate: list[tuple[Path, str]] = []
             for folder in self._candidate_dirs():
-                for path in sorted(folder.glob("*.json")):
+                for path in sorted_tenant_json_paths(folder):
                     tid, cands, batches = self._parse_tenant_file(path)
                     new_candidates.update(cands)
                     new_batches.update(batches)
                     if folder == self.root:
-                        new_sigs[tid] = file_sig(path)
+                        canonical = self._tenant_path(tid)
+                        if canonical is not None and path != canonical:
+                            legacy_to_migrate.append((path, tid))
+                        else:
+                            new_sigs[tid] = file_sig(path)
             self.candidates.clear()
             self.candidates.update(new_candidates)
             self.batches.clear()
             self.batches.update(new_batches)
             self._sigs.clear()
             self._sigs.update(new_sigs)
+            for legacy_path, tid in legacy_to_migrate:
+                self._persist_tenant_unlocked(tid)
+                if legacy_path.exists() and legacy_path != self._tenant_path(tid):
+                    legacy_path.unlink(missing_ok=True)
             for pid, rec in self.candidates.items():
                 self._restore_parametric(pid, rec)
 
@@ -194,6 +271,27 @@ class KdFactory:
         with self._locked_store():
             sig = file_sig(path)
             if sig is None:
+                legacy_path = find_legacy_tenant_file(self.root, tid)
+                if legacy_path is not None:
+                    _, cands, batches = self._parse_tenant_file(legacy_path)
+                    for pid in [
+                        k for k, r in self.candidates.items() if self._candidate_tenant(r) == tid
+                    ]:
+                        self.candidates.pop(pid, None)
+                    self.candidates.update(cands)
+                    for pid, rec in cands.items():
+                        self._restore_parametric(pid, rec)
+                    for bid in [
+                        k
+                        for k, r in self.batches.items()
+                        if self._normalize_tenant(r.get("tenantId")) == tid
+                    ]:
+                        self.batches.pop(bid, None)
+                    self.batches.update(batches)
+                    self._persist_tenant_unlocked(tid)
+                    if legacy_path.exists() and legacy_path != path:
+                        legacy_path.unlink(missing_ok=True)
+                    return
                 if tid in self._sigs:
                     for pid in [
                         k
@@ -235,6 +333,7 @@ class KdFactory:
         path = self._tenant_path(tid)
         if path is None:
             return
+        self._prune_tenant_candidates_unlocked(tid)
         tenant_cands = [
             rec for rec in self.candidates.values() if self._candidate_tenant(rec) == tid
         ]
@@ -258,12 +357,13 @@ class KdFactory:
             self._sigs.pop(tid, None)
 
     def _mark_or_persist(self, tenant_id: str | None) -> None:
-        if self.root is None:
-            return
         tid = self._normalize_tenant(tenant_id)
         with self._lock:
             if self._batch_depth > 0:
                 self._dirty_tenants.add(tid)
+                return
+            if self.root is None:
+                self._prune_tenant_candidates_unlocked(tid)
                 return
             with self._locked_store():
                 self._persist_tenant_unlocked(tid)
@@ -619,6 +719,12 @@ class KdFactory:
                 for rec in top:
                     spec = CabinetSpec.model_validate(rec["spec"])
                     rec["preview"] = self.platform.render_parametric(spec.productId, tenant_id=tenant_id, explode=False)
+            for rec in reversed(ranked[:count]):
+                pid = self._candidate_id(rec)
+                if pid:
+                    self.candidates.pop(pid, None)
+                    self.candidates[pid] = rec
+                    self._restore_parametric(pid, rec)
         board = [self._board_row(r) for r in ranked[:count]]
         return {
             "generated": len(seeded),
