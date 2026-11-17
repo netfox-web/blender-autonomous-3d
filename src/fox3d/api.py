@@ -744,25 +744,26 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
         remnants_inv = get_platform().remnants
-        rec = remnants_inv.items.get(remnant_id)
-        if rec is None or remnants_inv._owner(rec) != tid:
-            raise HTTPException(404, "找不到餘料")
-        by, version, lease_seconds, idem = _validate_remnant_reserve(body)
-        try:
-            return remnants_inv.reserve(
-                remnant_id,
-                by=by,
-                version=version,
-                lease_seconds=lease_seconds,
-                tenant_id=tid,
-                idempotency_key=idem,
-            )
-        except KeyError as exc:
-            raise HTTPException(404, "找不到餘料") from exc
-        except PermissionError as exc:
-            if str(exc).startswith("tenant isolation"):
+        with remnants_inv._transaction():
+            rec = remnants_inv.items.get(remnant_id)
+            if rec is None or remnants_inv._owner(rec) != tid:
+                raise HTTPException(404, "找不到餘料")
+            by, version, lease_seconds, idem = _validate_remnant_reserve(body)
+            try:
+                return remnants_inv.reserve(
+                    remnant_id,
+                    by=by,
+                    version=version,
+                    lease_seconds=lease_seconds,
+                    tenant_id=tid,
+                    idempotency_key=idem,
+                )
+            except KeyError as exc:
                 raise HTTPException(404, "找不到餘料") from exc
-            raise HTTPException(409, str(exc)) from exc
+            except PermissionError as exc:
+                if str(exc).startswith("tenant isolation"):
+                    raise HTTPException(404, "找不到餘料") from exc
+                raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/nesting/benchmarks")
     def nesting_benchmarks(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

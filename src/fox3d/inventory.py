@@ -68,7 +68,7 @@ def nestable(rec: dict[str, Any]) -> bool:
 
 
 class RemnantStore(Protocol):
-    def put(self, rec: dict[str, Any]) -> dict[str, Any]: ...
+    def put(self, rec: dict[str, Any], *, expected_version: int | None = None) -> dict[str, Any]: ...
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]: ...
     def list(self, *, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]: ...
     def as_dict(self) -> dict[str, dict[str, Any]]: ...
@@ -84,23 +84,35 @@ class InMemoryRemnantStore:
     def as_dict(self) -> dict[str, dict[str, Any]]:
         return self._items
 
-    def put(self, rec: dict[str, Any]) -> dict[str, Any]:
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
         with self._lock:
+            yield
+
+    def put(self, rec: dict[str, Any], *, expected_version: int | None = None) -> dict[str, Any]:
+        with self._lock:
+            if expected_version is not None:
+                existing = self._items.get(rec["remnantId"])
+                actual_v = 0 if existing is None else int(existing.get("version") or 1)
+                if actual_v != int(expected_version):
+                    raise PermissionError(f"stale remnant version {expected_version} != {actual_v}")
             self._items[rec["remnantId"]] = rec
             return rec
 
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
-        rec = self._items[remnant_id]
-        if (rec.get("tenantId") or "default") != tenant_id:
-            raise PermissionError(f"tenant isolation: remnant {remnant_id}")
-        return rec
+        with self._lock:
+            rec = self._items[remnant_id]
+            if (rec.get("tenantId") or "default") != tenant_id:
+                raise PermissionError(f"tenant isolation: remnant {remnant_id}")
+            return rec
 
     def list(self, *, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
-        rows = [v for v in self._items.values() if (v.get("tenantId") or "default") == tenant_id]
-        if status:
-            want = normalize_status(status)
-            rows = [r for r in rows if normalize_status(r.get("status")) == want]
-        return rows
+        with self._lock:
+            rows = [v for v in self._items.values() if (v.get("tenantId") or "default") == tenant_id]
+            if status:
+                want = normalize_status(status)
+                rows = [r for r in rows if normalize_status(r.get("status")) == want]
+            return rows
 
     def persist(self) -> None:
         return None
@@ -117,14 +129,48 @@ class DurableRemnantStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self._items: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
+        self._tx_depth = 0
         self.load()
 
     def as_dict(self) -> dict[str, dict[str, Any]]:
         return self._items
 
+    def _lock_path(self) -> Path:
+        return self.root / "remnants.lock"
+
     def _tenant_path(self, tenant_id: str) -> Path:
         safe = "".join(ch if ch.isalnum() or ch in "-_." else "_" for ch in tenant_id)
         return self.root / f"{safe}.json"
+
+    def _sync_from_disk(self) -> None:
+        with self._lock:
+            for path in sorted(self.root.glob("*.json")):
+                payload = read_json(path) or {}
+                for rec in (payload.get("items") or []):
+                    rid = rec["remnantId"]
+                    mem = self._items.get(rid)
+                    if mem is None or int(rec.get("version") or 1) >= int(mem.get("version") or 1):
+                        if mem is not None:
+                            mem.clear()
+                            mem.update(rec)
+                        else:
+                            self._items[rid] = rec
+
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        with self._lock:
+            flock: FileLock | None = None
+            if self._tx_depth == 0:
+                flock = FileLock(self._lock_path())
+                flock.acquire()
+                self._sync_from_disk()
+            self._tx_depth += 1
+            try:
+                yield
+            finally:
+                self._tx_depth -= 1
+                if self._tx_depth == 0 and flock is not None:
+                    flock.release()
 
     def load(self) -> None:
         with self._lock:
@@ -151,24 +197,33 @@ class DurableRemnantStore:
                 if path not in written:
                     path.unlink(missing_ok=True)
 
-    def put(self, rec: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
+    def put(self, rec: dict[str, Any], *, expected_version: int | None = None) -> dict[str, Any]:
+        with self.transaction():
+            if expected_version is not None:
+                existing = self._items.get(rec["remnantId"])
+                actual_v = 0 if existing is None else int(existing.get("version") or 1)
+                if actual_v != int(expected_version):
+                    raise PermissionError(f"stale remnant version {expected_version} != {actual_v}")
             self._items[rec["remnantId"]] = rec
             self.persist()
             return rec
 
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
-        rec = self._items[remnant_id]
-        if (rec.get("tenantId") or "default") != tenant_id:
-            raise PermissionError(f"tenant isolation: remnant {remnant_id}")
-        return rec
+        with self._lock:
+            self._sync_from_disk()
+            rec = self._items[remnant_id]
+            if (rec.get("tenantId") or "default") != tenant_id:
+                raise PermissionError(f"tenant isolation: remnant {remnant_id}")
+            return rec
 
     def list(self, *, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
-        rows = [v for v in self._items.values() if (v.get("tenantId") or "default") == tenant_id]
-        if status:
-            want = normalize_status(status)
-            rows = [r for r in rows if normalize_status(r.get("status")) == want]
-        return rows
+        with self._lock:
+            self._sync_from_disk()
+            rows = [v for v in self._items.values() if (v.get("tenantId") or "default") == tenant_id]
+            if status:
+                want = normalize_status(status)
+                rows = [r for r in rows if normalize_status(r.get("status")) == want]
+            return rows
 
 
 class StockShortage(PermissionError):

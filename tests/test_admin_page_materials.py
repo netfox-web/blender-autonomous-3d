@@ -354,3 +354,198 @@ def test_confirm_dialog_resets_return_value_before_opening() -> None:
     assert js.index("dlg.returnValue = '';") < js.index("dlg.showModal();")
     assert "innerHTML" not in js
     assert "crypto.randomUUID" in js
+
+
+def test_remnant_reserve_concurrent_barrier_atomic_and_durable(tmp_path, monkeypatch) -> None:  # noqa: ANN001
+    import threading
+    from fox3d import inventory as inv_mod
+    from fox3d.inventory import DurableRemnantStore
+    from fox3d.manufacturing import RemnantInventory
+    from fox3d.platform import Platform
+
+    root = tmp_path / "durable-platform"
+    plat = Platform(root=root, mock_blender=True)
+    created = plat.remnants.add_from_nesting(
+        {"candidateRemnants": [{"w": 700, "h": 500, "sheetIndex": 0}]},
+        material="WOOD_WHITE",
+        thickness=18,
+        source_run="concurrent-reserve",
+        tenant_id=TENANT,
+    )
+    rid = created[0]["remnantId"]
+
+    orig_norm = inv_mod.normalize_status
+    first_in_check = threading.Event()
+    second_ready = threading.Event()
+    hook_state = {"calls": 0}
+    hook_lock = threading.Lock()
+
+    def hooked_norm(status: str | None) -> str:
+        res = orig_norm(status)
+        with hook_lock:
+            hook_state["calls"] += 1
+            call_no = hook_state["calls"]
+        if call_no == 1:
+            first_in_check.set()
+            second_ready.wait()
+        return res
+
+    monkeypatch.setattr(inv_mod, "normalize_status", hooked_norm)
+
+    outcomes: list[str] = []
+    reserved_by: list[str] = []
+    errors: list[str] = []
+
+    def worker_a() -> None:
+        try:
+            rec = plat.remnants.reserve(rid, by="worker-a", version=1, tenant_id=TENANT)
+            outcomes.append("success")
+            reserved_by.append(str(rec.get("reservedBy")))
+        except PermissionError as exc:
+            outcomes.append("error")
+            errors.append(str(exc))
+
+    def worker_b() -> None:
+        first_in_check.wait()
+        second_ready.set()
+        try:
+            rec = plat.remnants.reserve(rid, by="worker-b", version=1, tenant_id=TENANT)
+            outcomes.append("success")
+            reserved_by.append(str(rec.get("reservedBy")))
+        except PermissionError as exc:
+            outcomes.append("error")
+            errors.append(str(exc))
+
+    t1 = threading.Thread(target=worker_a)
+    t2 = threading.Thread(target=worker_b)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    assert sorted(outcomes) == ["error", "success"]
+    assert reserved_by == ["worker-a"]
+    assert errors
+
+    # Verify durable state on disk and cross-instance visibility
+    reloaded = RemnantInventory(DurableRemnantStore(root / "remnants"), default_tenant="default")
+    persisted = reloaded.get(rid, tenant_id=TENANT)
+    assert persisted["status"] == "reserved"
+    assert persisted["reservedBy"] == "worker-a"
+    assert persisted["version"] == 2
+
+    with pytest.raises(PermissionError):
+        reloaded.reserve(rid, by="worker-c", version=1, tenant_id=TENANT)
+
+
+def test_remnant_reserve_concurrent_overlapping_retry_and_competing_api_requests(
+    tmp_path, monkeypatch  # noqa: ANN001
+) -> None:
+    import threading
+    from fox3d import inventory as inv_mod
+    from fox3d.platform import Platform
+
+    plat = Platform(root=tmp_path / "api-race", mock_blender=True)
+    app_client = TestClient(create_app(plat))
+    created = plat.remnants.add_from_nesting(
+        {
+            "candidateRemnants": [
+                {"w": 600, "h": 400, "sheetIndex": 0},
+                {"w": 500, "h": 350, "sheetIndex": 1},
+            ]
+        },
+        material="WOOD_WHITE",
+        thickness=18,
+        source_run="api-concurrent",
+        tenant_id=TENANT,
+    )
+    rid_compete = created[0]["remnantId"]
+    rid_retry = created[1]["remnantId"]
+
+    # 1. Competing API requests for the same remnant (version 1): only one 200, one 409.
+    barrier = threading.Barrier(2)
+    compete_codes: list[int] = []
+    compete_winners: list[str] = []
+
+    def call_compete(who: str) -> None:
+        barrier.wait()
+        resp = app_client.post(
+            f"/api/remnants/{rid_compete}/reserve",
+            headers=HEADERS,
+            json={"by": who, "version": 1, "idempotencyKey": f"key-{who}"},
+        )
+        compete_codes.append(resp.status_code)
+        if resp.status_code == 200:
+            compete_winners.append(resp.json()["reservedBy"])
+
+    ta = threading.Thread(target=call_compete, args=("user-1",))
+    tb = threading.Thread(target=call_compete, args=("user-2",))
+    ta.start()
+    tb.start()
+    ta.join()
+    tb.join()
+
+    assert sorted(compete_codes) == [200, 409]
+    assert len(compete_winners) == 1
+
+    plat_check = Platform(root=tmp_path / "api-race", mock_blender=True)
+    disk_compete = plat_check.remnants.get(rid_compete, tenant_id=TENANT)
+    assert disk_compete["status"] == "reserved"
+    assert disk_compete["reservedBy"] == compete_winners[0]
+    assert disk_compete["version"] == 2
+
+    # 2. Overlapping retry with identical (by, version, idempotencyKey): both 200, reserved once.
+    orig_lease = inv_mod.lease_token
+    first_in_flight = threading.Event()
+    retry_sent = threading.Event()
+    lease_calls = {"n": 0}
+
+    def hooked_lease(remnant_id: str, version: int, by: str) -> str:
+        if remnant_id == rid_retry:
+            lease_calls["n"] += 1
+            if lease_calls["n"] == 1:
+                first_in_flight.set()
+                retry_sent.wait()
+        return orig_lease(remnant_id, version, by)
+
+    monkeypatch.setattr(inv_mod, "lease_token", hooked_lease)
+
+    retry_responses: list[tuple[int, dict[str, object]]] = []
+
+    def first_req() -> None:
+        r = app_client.post(
+            f"/api/remnants/{rid_retry}/reserve",
+            headers=HEADERS,
+            json={"by": "retry-user", "version": 1, "idempotencyKey": "idem-overlap"},
+        )
+        retry_responses.append((r.status_code, r.json()))
+
+    def retry_req() -> None:
+        first_in_flight.wait()
+        retry_sent.set()
+        r = app_client.post(
+            f"/api/remnants/{rid_retry}/reserve",
+            headers=HEADERS,
+            json={"by": "retry-user", "version": 1, "idempotencyKey": "idem-overlap"},
+        )
+        retry_responses.append((r.status_code, r.json()))
+
+    t_first = threading.Thread(target=first_req)
+    t_retry = threading.Thread(target=retry_req)
+    t_first.start()
+    t_retry.start()
+    t_first.join()
+    t_retry.join()
+
+    assert [code for code, _ in retry_responses] == [200, 200]
+    assert retry_responses[0][1]["version"] == 2
+    assert retry_responses[1][1]["version"] == 2
+    assert retry_responses[0][1]["leaseToken"] == retry_responses[1][1]["leaseToken"]
+    assert lease_calls["n"] == 1
+
+    plat_check_2 = Platform(root=tmp_path / "api-race", mock_blender=True)
+    disk_retry = plat_check_2.remnants.get(rid_retry, tenant_id=TENANT)
+    assert disk_retry["status"] == "reserved"
+    assert disk_retry["reservedBy"] == "retry-user"
+    assert disk_retry["version"] == 2
+
