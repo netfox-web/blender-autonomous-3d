@@ -221,7 +221,7 @@ def test_physical_os_reverse_and_readiness(platform):
     assert m["demand"]["label"] == "MOCK"
     families = platform.physical.families.list()
     assert set(families) == {"KD_FURNITURE", "RETAIL_FIXTURE", "PACKAGING_STRUCTURE", "ACRYLIC_SHEET"}
-    appr = platform.physical.approve(entity_id="x", actor="ops")
+    appr = platform.physical.approve(entity_id=out["candidates"][0]["productId"], tenant_id="t1", actor="ops")
     assert appr["status"] == "WAITING_APPROVAL"
     assert "LIVE_CNC" in appr["forbidden"]
 
