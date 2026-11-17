@@ -4,6 +4,7 @@
 
   var DEFAULT_TENANT = 'sonaqueen-home';
   var idSeq = 0;
+  var loadSeq = 0;
   var state = {
     materials: null,
     remnants: null,
@@ -330,7 +331,20 @@
     return el('span', { 'class': 'mt-tag' }, st || '—');
   }
 
+  function clearSelectedRemnant() {
+    clearReserveRetry();
+    state.selectedRem = null;
+    if ($('mt-rem-pick')) $('mt-rem-pick').hidden = false;
+    if ($('mt-rem-detail')) $('mt-rem-detail').hidden = true;
+    if ($('mt-rem-detail-body')) $('mt-rem-detail-body').textContent = '';
+    if ($('mt-reserve-btn')) {
+      $('mt-reserve-btn').disabled = true;
+      $('mt-reserve-btn').title = '';
+    }
+  }
+
   function selectRemnant(rem) {
+    clearReserveRetry();
     state.selectedRem = rem;
     $('mt-rem-pick').hidden = true;
     var detail = $('mt-rem-detail');
@@ -338,7 +352,7 @@
     $('mt-rem-detail-body').textContent = fmtJson(rem);
     var btn = $('mt-reserve-btn');
     var ok = String(rem.status || '').toLowerCase() === 'available';
-    btn.disabled = !ok;
+    btn.disabled = state.reserveSubmitting || !ok;
     btn.title = ok ? '' : '僅可用餘料可預留';
   }
 
@@ -359,7 +373,10 @@
       showBanner('餘料為 MOCK 資料（非持久化真實帳本），請勿當成現場庫存。', 'mock');
     }
     var items = snap.items || [];
+    var currentId = state.selectedRem && state.selectedRem.remnantId;
+    var matchedRem = null;
     if (!items.length) {
+      if (currentId && !state.reserveSubmitting) clearSelectedRemnant();
       wrap.appendChild(el('p', { 'class': 'mt-empty' }, '沒有餘料記錄。'));
       return;
     }
@@ -370,6 +387,10 @@
     var tbody = el('tbody');
     items.forEach(function (rem) {
       var tr = el('tr', { 'data-selectable': '1' });
+      if (currentId && rem.remnantId === currentId) {
+        tr.classList.add('sel');
+        matchedRem = rem;
+      }
       tr.appendChild(el('td', null, rem.remnantId || '—'));
       tr.appendChild(el('td', null, (rem.w || '?') + ' × ' + (rem.h || '?')));
       tr.appendChild(el('td', null, String(rem.materialCode || rem.material || '—')));
@@ -385,6 +406,18 @@
     });
     tbl.appendChild(tbody);
     wrap.appendChild(tbl);
+    if (currentId) {
+      if (matchedRem) {
+        state.selectedRem = matchedRem;
+        $('mt-rem-detail-body').textContent = fmtJson(matchedRem);
+        var btn = $('mt-reserve-btn');
+        var ok = String(matchedRem.status || '').toLowerCase() === 'available';
+        btn.disabled = state.reserveSubmitting || !ok;
+        btn.title = ok ? '' : '僅可用餘料可預留';
+      } else if (!state.reserveSubmitting) {
+        clearSelectedRemnant();
+      }
+    }
   }
 
   function renderBenchmark(data) {
@@ -429,7 +462,8 @@
   }
 
   function loadAll() {
-    if (state.loading) return;
+    loadSeq += 1;
+    var seq = loadSeq;
     state.loading = true;
     showBanner('');
     $('mt-refresh').disabled = true;
@@ -438,6 +472,7 @@
       api('/api/remnants'),
     ])
       .then(function (res) {
+        if (seq !== loadSeq) return;
         state.materials = res[0].data;
         state.remnants = res[1].data;
         renderSheets(state.materials);
@@ -445,9 +480,11 @@
         renderRemnants(state.remnants);
       })
       .catch(function (e) {
+        if (seq !== loadSeq) return;
         showBanner('載入失敗：' + (e.message || e), 'err');
       })
       .then(function () {
+        if (seq !== loadSeq) return;
         state.loading = false;
         $('mt-refresh').disabled = false;
       });
@@ -464,6 +501,50 @@
     return e.message || String(e);
   }
 
+  function clearLotRetry() {
+    state.lastLotAttempt = null;
+    var btn = $('mt-lot-retry');
+    if (btn) btn.hidden = true;
+  }
+
+  function clearReserveRetry() {
+    state.lastReserveAttempt = null;
+    var btn = $('mt-reserve-retry');
+    if (btn) btn.hidden = true;
+  }
+
+  function lotAttemptMatchesCurrent(attempt) {
+    if (!attempt || !attempt.body) return false;
+    var material = $('mt-lot-material') ? $('mt-lot-material').value : '';
+    var thickness = parseFloat($('mt-lot-thickness') && $('mt-lot-thickness').value, 10);
+    var qty = parseInt($('mt-lot-qty') && $('mt-lot-qty').value, 10);
+    var supplier = ($('mt-lot-supplier') && $('mt-lot-supplier').value || '').trim();
+    var actor = ($('mt-lot-actor') && $('mt-lot-actor').value || '').trim() || 'warehouse';
+    return (
+      tenant() === attempt.tenant &&
+      material === attempt.body.material &&
+      thickness === attempt.body.thickness &&
+      qty === attempt.body.sheetCount &&
+      actor === attempt.body.actor &&
+      (supplier || undefined) === attempt.body.supplierLot
+    );
+  }
+
+  function reserveAttemptMatchesCurrent(attempt) {
+    if (!attempt || !attempt.body) return false;
+    var rem = state.selectedRem;
+    if (!rem || rem.remnantId !== attempt.remnantId) return false;
+    if (String(rem.status || '').toLowerCase() !== 'available') return false;
+    var by = ($('mt-reserve-by') && $('mt-reserve-by').value || '').trim() || 'manual';
+    var leaseRaw = ($('mt-reserve-lease') && $('mt-reserve-lease').value || '').trim();
+    var leaseVal = leaseRaw ? parseFloat(leaseRaw, 10) : undefined;
+    return (
+      tenant() === attempt.tenant &&
+      by === attempt.body.by &&
+      leaseVal === attempt.body.leaseSeconds
+    );
+  }
+
   function sendLotAttempt(attempt) {
     if (!attempt || state.lotSubmitting) return;
     state.lotSubmitting = true;
@@ -471,7 +552,10 @@
     var retryBtn = $('mt-lot-retry');
     var okBtn = $('mt-confirm-ok');
     if (submitBtn) submitBtn.disabled = true;
-    if (retryBtn) retryBtn.disabled = true;
+    if (retryBtn) {
+      retryBtn.disabled = true;
+      retryBtn.hidden = true;
+    }
     if (okBtn) okBtn.disabled = true;
     var out = $('mt-lot-result');
     out.hidden = false;
@@ -484,11 +568,14 @@
           out.classList.add('err');
           out.textContent = bmsg + '\n' + fmtJson(r.data);
           showBanner(bmsg, 'err');
-          if (retryBtn) retryBtn.hidden = false;
+          if (state.lastLotAttempt === attempt && lotAttemptMatchesCurrent(attempt)) {
+            if (retryBtn) retryBtn.hidden = false;
+          } else {
+            clearLotRetry();
+          }
           return;
         }
-        state.lastLotAttempt = null;
-        if (retryBtn) retryBtn.hidden = true;
+        if (state.lastLotAttempt === attempt) clearLotRetry();
         out.classList.remove('err');
         out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
         loadAll();
@@ -502,7 +589,11 @@
           out.textContent = '失敗：HTTP ' + (e.status || '?') + '\n' + fmtJson(e.body || e.message);
           showBanner('入庫失敗（HTTP ' + (e.status || '?') + '）：' + errorDetail(e), 'err');
         }
-        if (retryBtn) retryBtn.hidden = false;
+        if (state.lastLotAttempt === attempt && lotAttemptMatchesCurrent(attempt)) {
+          if (retryBtn) retryBtn.hidden = false;
+        } else {
+          clearLotRetry();
+        }
       })
       .then(function () {
         state.lotSubmitting = false;
@@ -515,6 +606,7 @@
   function onLotSubmit(ev) {
     ev.preventDefault();
     if (state.lotSubmitting || state.confirmOpen) return;
+    clearLotRetry();
     var snapTenant = tenant();
     var material = $('mt-lot-material').value;
     var thickness = parseFloat($('mt-lot-thickness').value, 10);
@@ -546,7 +638,10 @@
     var retryBtn = $('mt-reserve-retry');
     var okBtn = $('mt-confirm-ok');
     if (reserveBtn) reserveBtn.disabled = true;
-    if (retryBtn) retryBtn.disabled = true;
+    if (retryBtn) {
+      retryBtn.disabled = true;
+      retryBtn.hidden = true;
+    }
     if (okBtn) okBtn.disabled = true;
     var out = $('mt-reserve-result');
     out.hidden = false;
@@ -564,11 +659,14 @@
           out.classList.add('err');
           out.textContent = bmsg + '\n' + fmtJson(r.data);
           showBanner(bmsg, 'err');
-          if (retryBtn) retryBtn.hidden = false;
+          if (state.lastReserveAttempt === attempt && reserveAttemptMatchesCurrent(attempt)) {
+            if (retryBtn) retryBtn.hidden = false;
+          } else {
+            clearReserveRetry();
+          }
           return;
         }
-        state.lastReserveAttempt = null;
-        if (retryBtn) retryBtn.hidden = true;
+        if (state.lastReserveAttempt === attempt) clearReserveRetry();
         out.classList.remove('err');
         out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
         loadAll();
@@ -582,7 +680,11 @@
           out.textContent = '失敗：HTTP ' + (e.status || '?') + '\n' + fmtJson(e.body || e.message);
           showBanner('預留失敗（HTTP ' + (e.status || '?') + '）：' + errorDetail(e), 'err');
         }
-        if (retryBtn) retryBtn.hidden = false;
+        if (state.lastReserveAttempt === attempt && reserveAttemptMatchesCurrent(attempt)) {
+          if (retryBtn) retryBtn.hidden = false;
+        } else {
+          clearReserveRetry();
+        }
       })
       .then(function () {
         state.reserveSubmitting = false;
@@ -599,6 +701,7 @@
   function onReserveSubmit(ev) {
     ev.preventDefault();
     if (state.reserveSubmitting || state.confirmOpen) return;
+    clearReserveRetry();
     var rem = state.selectedRem;
     if (!rem || String(rem.status).toLowerCase() !== 'available') return;
     var snapTenant = tenant();
@@ -660,7 +763,18 @@
     } catch (e) {
       $('mt-tenant').value = DEFAULT_TENANT;
     }
+    function onTenantEdit() {
+      clearLotRetry();
+      clearReserveRetry();
+      if (!state.confirmOpen) {
+        clearSelectedRemnant();
+        state.selectedLot = null;
+        if ($('mt-lot-detail')) $('mt-lot-detail').hidden = true;
+      }
+    }
+    $('mt-tenant').addEventListener('input', onTenantEdit);
     $('mt-tenant').addEventListener('change', function (e) {
+      onTenantEdit();
       try { localStorage.setItem('fox3d.tenant', e.target.value.trim()); } catch (x) { /* blocked */ }
       loadAll();
     });
@@ -669,21 +783,25 @@
       b.addEventListener('click', function () { setTabs(b.getAttribute('data-panel')); });
     });
     $('mt-lot-form').addEventListener('submit', onLotSubmit);
-    $('mt-lot-form').addEventListener('input', function () {
-      if (!state.lotSubmitting) {
-        state.lastLotAttempt = null;
-        if ($('mt-lot-retry')) $('mt-lot-retry').hidden = true;
-      }
-    });
+    $('mt-lot-form').addEventListener('input', clearLotRetry);
+    $('mt-lot-form').addEventListener('change', clearLotRetry);
     $('mt-reserve-form').addEventListener('submit', onReserveSubmit);
-    $('mt-reserve-form').addEventListener('input', function () {
-      if (!state.reserveSubmitting) {
-        state.lastReserveAttempt = null;
-        if ($('mt-reserve-retry')) $('mt-reserve-retry').hidden = true;
+    $('mt-reserve-form').addEventListener('input', clearReserveRetry);
+    $('mt-reserve-form').addEventListener('change', clearReserveRetry);
+    ensureRetryBtn('mt-lot-form', 'mt-lot-retry', function () {
+      if (!lotAttemptMatchesCurrent(state.lastLotAttempt)) {
+        clearLotRetry();
+        return;
       }
+      sendLotAttempt(state.lastLotAttempt);
     });
-    ensureRetryBtn('mt-lot-form', 'mt-lot-retry', function () { sendLotAttempt(state.lastLotAttempt); });
-    ensureRetryBtn('mt-reserve-form', 'mt-reserve-retry', function () { sendReserveAttempt(state.lastReserveAttempt); });
+    ensureRetryBtn('mt-reserve-form', 'mt-reserve-retry', function () {
+      if (!reserveAttemptMatchesCurrent(state.lastReserveAttempt)) {
+        clearReserveRetry();
+        return;
+      }
+      sendReserveAttempt(state.lastReserveAttempt);
+    });
     $('mt-bench-run').addEventListener('click', onBenchRun);
     loadAll();
   }
