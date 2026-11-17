@@ -144,6 +144,63 @@ def test_quote_list_limit_boundaries(tmp_path: Path, limit: int, expect_status: 
     assert res.status_code == expect_status
 
 
+def test_concurrent_create_space_on_same_platform_preserves_both(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: concurrent create_space on one Platform must not lose spaces to stale snapshots."""
+    import threading
+
+    from fox3d import factory as factory_mod
+    from fox3d import inventory
+
+    root = tmp_path / "data"
+    plat = Platform(root=root, mock_blender=True)
+    fac = plat.factory
+
+    first_write_entered = threading.Event()
+    allow_first_write_finish = threading.Event()
+    orig_write = inventory.atomic_write_json
+
+    def gated_write(path: Path, payload: Any) -> None:
+        first_write_entered.set()
+        allow_first_write_finish.wait(timeout=30)
+        orig_write(path, payload)
+
+    monkeypatch.setattr(inventory, "atomic_write_json", gated_write)
+    monkeypatch.setattr(factory_mod, "atomic_write_json", gated_write)
+
+    ids: list[str] = []
+    errors: list[str] = []
+    ready = threading.Barrier(2)
+
+    def worker(width: int) -> None:
+        try:
+            ready.wait(timeout=30)
+            twin = fac.create_space({**fac.default_room_3600(tenant_id="tenant-space"), "width": width})
+            ids.append(twin.spaceId)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(str(exc))
+
+    t1 = threading.Thread(target=worker, args=(3600,))
+    t2 = threading.Thread(target=worker, args=(3700,))
+    t1.start()
+    t2.start()
+    assert first_write_entered.wait(timeout=30)
+    allow_first_write_finish.set()
+    t1.join(timeout=120)
+    t2.join(timeout=120)
+    assert not t1.is_alive() and not t2.is_alive()
+    assert not errors
+    assert len(ids) == 2
+    assert ids[0] != ids[1]
+
+    plat2 = Platform(root=root, mock_blender=True)
+    restored = set(plat2.factory.spaces.keys())
+    assert set(ids) <= restored
+    on_disk = json.loads((root / "factory" / "state.json").read_text(encoding="utf-8"))
+    assert set(ids) <= set(on_disk.get("spaces") or {})
+
+
 def test_concurrent_runs_on_shared_root_preserve_both_quotes(tmp_path: Path) -> None:
     import threading
 

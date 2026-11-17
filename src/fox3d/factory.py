@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -241,20 +243,32 @@ class FurnitureFactory:
         with self._lock:
             self._apply_payload(payload)
 
-    def persist(self) -> None:
+    def _write_merged_state(self, path: Path) -> None:
+        """Merge in-memory state with on-disk state and apply. Caller must hold ``self._lock``."""
+        local = self._snapshot_payload()
+        disk = self._read_state_file(path) if path.exists() else {}
+        merged = self._merge_state_payload(disk, local)
+        atomic_write_json(path, merged)
+        self._apply_payload(merged)
+
+    @contextmanager
+    def _transaction(self) -> Iterator[None]:
+        """Mutate factory state under one cross-process lock, then persist atomically."""
         path = self._state_path()
         if not path:
+            with self._lock:
+                yield
             return
         lock = path.parent / "state.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
         with FileLock(lock):
             with self._lock:
-                local = self._snapshot_payload()
-            disk = self._read_state_file(path) if path.exists() else {}
-            merged = self._merge_state_payload(disk, local)
-            atomic_write_json(path, merged)
-            with self._lock:
-                self._apply_payload(merged)
+                yield
+                self._write_merged_state(path)
+
+    def persist(self) -> None:
+        with self._transaction():
+            pass
 
     def run_id_for_quote(self, quote_id: str, tenant_id: str) -> str:
         self._sync_from_disk()
@@ -307,8 +321,8 @@ class FurnitureFactory:
 
     def create_space(self, payload: dict[str, Any]) -> SpaceDigitalTwin:
         twin = self.platform.spaces.ingest(payload)
-        self.spaces[twin.spaceId] = twin
-        self.persist()
+        with self._transaction():
+            self.spaces[twin.spaceId] = twin
         return twin
 
     def default_room_3600(self, *, tenant_id: str) -> dict[str, Any]:
@@ -442,7 +456,6 @@ class FurnitureFactory:
         lead_spec = CabinetSpec.model_validate(assembly.cabinets[0].spec)
         quote = QuoteEngine().quote(lead_spec, combined_bom, nesting)
         quote_dump = quote.model_dump(mode="json")
-        self.quotes[quote.quoteId] = quote_dump
 
         gate = ManufacturingCandidateGate()
         gate.advance("COSTED")
@@ -515,10 +528,11 @@ class FurnitureFactory:
             },
             "productTypes": self.types.list(),
         }
-        self.assemblies[assembly.assemblyId] = run["assembly"]
-        self.runs[run["runId"]] = run
-        self._quote_run_index[str(quote.quoteId)] = str(run["runId"])
-        self.persist()
+        with self._transaction():
+            self.quotes[quote.quoteId] = quote_dump
+            self.assemblies[assembly.assemblyId] = run["assembly"]
+            self.runs[run["runId"]] = run
+            self._quote_run_index[str(quote.quoteId)] = str(run["runId"])
         return run
 
     def render_space_preview(self, *, tenant_id: str, space: SpaceDigitalTwin, assembly: Any) -> dict[str, Any]:
@@ -564,9 +578,9 @@ class FurnitureFactory:
             "resizedFrom": product_id,
             "lineage": lineage,
         }
-        self.platform.parametrics[nxt.productId] = record
-        self.revisions.append(lineage)
-        self.persist()
+        with self._transaction():
+            self.platform.parametrics[nxt.productId] = record
+            self.revisions.append(lineage)
         return record
 
     def approve(self, run_id: str, *, actor: str) -> dict[str, Any]:
@@ -600,41 +614,39 @@ class FurnitureFactory:
         with FileLock(lock):
             with self._lock:
                 local = self._snapshot_payload()
-            disk = self._read_state_file(path) if path.exists() else {}
-            merged = self._merge_state_payload(disk, local)
-            runs = merged.get("runs")
-            if not isinstance(runs, dict):
-                runs = {}
-                merged["runs"] = runs
-            run = runs.get(run_id)
-            if not isinstance(run, dict):
-                with self._lock:
-                    run = self.runs.get(run_id)
+                disk = self._read_state_file(path) if path.exists() else {}
+                merged = self._merge_state_payload(disk, local)
+                runs = merged.get("runs")
+                if not isinstance(runs, dict):
+                    runs = {}
+                    merged["runs"] = runs
+                run = runs.get(run_id)
                 if not isinstance(run, dict):
-                    raise KeyError(run_id)
-                runs[run_id] = run
-            gate = run.get("gate") or {}
-            if gate.get("status") == "APPROVED":
-                result = run
-            elif gate.get("status") != "WAITING_APPROVAL":
-                raise PermissionError("candidate is not waiting approval")
-            else:
-                approved_at = utcnow().isoformat()
-                run = dict(run)
-                run["gate"] = {
-                    "status": "APPROVED",
-                    "actor": actor,
-                    "approvedAt": approved_at,
-                    "liveMachineControl": False,
-                    "HUMAN_APPROVAL_REQUIRED": True,
-                    "autoLiveCnc": False,
-                    "note": "Approval is for manufacturing candidate only; LIVE_CNC remains blocked.",
-                }
-                runs[run_id] = run
-                merged["quoteRunIndex"] = self._rebuild_quote_run_index(runs)
+                    run = self.runs.get(run_id)
+                    if not isinstance(run, dict):
+                        raise KeyError(run_id)
+                    runs[run_id] = run
+                gate = run.get("gate") or {}
+                if gate.get("status") == "APPROVED":
+                    result = run
+                elif gate.get("status") != "WAITING_APPROVAL":
+                    raise PermissionError("candidate is not waiting approval")
+                else:
+                    approved_at = utcnow().isoformat()
+                    run = dict(run)
+                    run["gate"] = {
+                        "status": "APPROVED",
+                        "actor": actor,
+                        "approvedAt": approved_at,
+                        "liveMachineControl": False,
+                        "HUMAN_APPROVAL_REQUIRED": True,
+                        "autoLiveCnc": False,
+                        "note": "Approval is for manufacturing candidate only; LIVE_CNC remains blocked.",
+                    }
+                    runs[run_id] = run
+                    merged["quoteRunIndex"] = self._rebuild_quote_run_index(runs)
+                    result = run
                 atomic_write_json(path, merged)
-                result = run
-            with self._lock:
                 self._apply_payload(merged)
         return result
 
