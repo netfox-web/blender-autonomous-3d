@@ -88,15 +88,80 @@ class FurnitureFactory:
             },
         }
 
+    _GATE_RANK: dict[str, int] = {
+        "APPROVED": 4,
+        "WAITING_APPROVAL": 3,
+        "PREVIEWED": 2,
+        "COSTED": 1,
+    }
+
     @staticmethod
-    def _merge_state_payload(disk: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:
+    def _merge_record_maps(
+        disk: dict[str, Any],
+        local: dict[str, Any],
+        *,
+        pick: Any,
+    ) -> dict[str, Any]:
         merged: dict[str, Any] = {}
-        for key in ("assemblies", "quotes", "runs", "spaces", "quoteRunIndex", "parametrics"):
+        for key in set(disk) | set(local):
+            disk_rec = disk.get(key)
+            local_rec = local.get(key)
+            if isinstance(disk_rec, dict) and isinstance(local_rec, dict):
+                merged[key] = pick(disk_rec, local_rec)
+            elif isinstance(local_rec, dict):
+                merged[key] = local_rec
+            elif isinstance(disk_rec, dict):
+                merged[key] = disk_rec
+        return merged
+
+    @classmethod
+    def _pick_winning_run(cls, disk_rec: dict[str, Any], local_rec: dict[str, Any]) -> dict[str, Any]:
+        d_gate = disk_rec.get("gate") or {}
+        l_gate = local_rec.get("gate") or {}
+        d_rank = cls._GATE_RANK.get(str(d_gate.get("status") or ""), 0)
+        l_rank = cls._GATE_RANK.get(str(l_gate.get("status") or ""), 0)
+        if d_rank != l_rank:
+            return disk_rec if d_rank > l_rank else local_rec
+        d_stamp = str(d_gate.get("approvedAt") or disk_rec.get("createdAt") or "")
+        l_stamp = str(l_gate.get("approvedAt") or local_rec.get("createdAt") or "")
+        if d_stamp != l_stamp:
+            return disk_rec if d_stamp > l_stamp else local_rec
+        return disk_rec
+
+    @staticmethod
+    def _pick_disk_on_conflict(disk_rec: dict[str, Any], local_rec: dict[str, Any]) -> dict[str, Any]:
+        return disk_rec
+
+    @classmethod
+    def _rebuild_quote_run_index(cls, runs: dict[str, Any]) -> dict[str, str]:
+        index: dict[str, str] = {}
+        for run_id, run in runs.items():
+            if not isinstance(run, dict):
+                continue
+            qid = (run.get("quote") or {}).get("quoteId")
+            if qid:
+                index[str(qid)] = str(run_id)
+        return index
+
+    @classmethod
+    def _merge_state_payload(cls, disk: dict[str, Any], local: dict[str, Any]) -> dict[str, Any]:
+        merged: dict[str, Any] = {}
+        raw_d_runs = disk.get("runs")
+        raw_loc_runs = local.get("runs")
+        d_runs: dict[str, Any] = raw_d_runs if isinstance(raw_d_runs, dict) else {}
+        loc_runs: dict[str, Any] = raw_loc_runs if isinstance(raw_loc_runs, dict) else {}
+        merged_runs = cls._merge_record_maps(d_runs, loc_runs, pick=cls._pick_winning_run)
+        merged["runs"] = merged_runs
+
+        for key in ("assemblies", "quotes", "spaces", "parametrics"):
             raw_d = disk.get(key)
             raw_loc = local.get(key)
             d: dict[str, Any] = raw_d if isinstance(raw_d, dict) else {}
             loc: dict[str, Any] = raw_loc if isinstance(raw_loc, dict) else {}
-            merged[key] = {**d, **loc}
+            merged[key] = cls._merge_record_maps(d, loc, pick=cls._pick_disk_on_conflict)
+
+        merged["quoteRunIndex"] = cls._rebuild_quote_run_index(merged_runs)
+
         disk_rev = [r for r in (disk.get("revisions") or []) if isinstance(r, dict)]
         loc_rev = [r for r in (local.get("revisions") or []) if isinstance(r, dict)]
         seen: set[str] = set()
@@ -143,12 +208,12 @@ class FurnitureFactory:
         lock = path.parent / "state.lock"
         with FileLock(lock):
             disk = self._read_state_file(path)
-        if not disk:
-            return
-        with self._lock:
-            local = self._snapshot_payload()
-            merged = self._merge_state_payload(disk, local)
-            self._apply_payload(merged)
+            if not disk:
+                return
+            with self._lock:
+                local = self._snapshot_payload()
+                merged = self._merge_state_payload(disk, local)
+                self._apply_payload(merged)
 
     def load(self) -> None:
         path = self._state_path()
@@ -182,14 +247,14 @@ class FurnitureFactory:
             return
         lock = path.parent / "state.lock"
         lock.parent.mkdir(parents=True, exist_ok=True)
-        with self._lock:
-            local = self._snapshot_payload()
         with FileLock(lock):
+            with self._lock:
+                local = self._snapshot_payload()
             disk = self._read_state_file(path) if path.exists() else {}
             merged = self._merge_state_payload(disk, local)
             atomic_write_json(path, merged)
-        with self._lock:
-            self._apply_payload(merged)
+            with self._lock:
+                self._apply_payload(merged)
 
     def run_id_for_quote(self, quote_id: str, tenant_id: str) -> str:
         self._sync_from_disk()

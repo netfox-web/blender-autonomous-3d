@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
+from fox3d.factory import FurnitureFactory
 from fox3d.platform import Platform
 
 
@@ -176,6 +177,111 @@ def test_concurrent_runs_on_shared_root_preserve_both_quotes(tmp_path: Path) -> 
     listed = client.get("/api/factory/quotes", headers={"X-Tenant-Id": "tenant-shared"})
     ids = {item["quoteId"] for item in listed.json()["items"]}
     assert set(quotes) <= ids
+
+
+def test_merge_state_keeps_disk_approval_over_stale_local() -> None:
+    run_common = {
+        "runId": "run-1",
+        "tenantId": "tenant-a",
+        "createdAt": "2030-01-01T00:00:00+00:00",
+        "quote": {"quoteId": "quote-1"},
+    }
+    disk = {
+        "runs": {
+            "run-1": {
+                **run_common,
+                "gate": {
+                    "status": "APPROVED",
+                    "actor": "lead-a",
+                    "approvedAt": "2030-01-02T00:00:00+00:00",
+                },
+            }
+        }
+    }
+    local = {
+        "runs": {
+            "run-1": {
+                **run_common,
+                "gate": {"status": "WAITING_APPROVAL"},
+            }
+        }
+    }
+    merged = FurnitureFactory._merge_state_payload(disk, local)
+    assert merged["runs"]["run-1"]["gate"]["status"] == "APPROVED"
+    assert merged["runs"]["run-1"]["gate"]["actor"] == "lead-a"
+    assert merged["quoteRunIndex"]["quote-1"] == "run-1"
+
+
+def test_two_platform_instances_cross_process_approval_and_interleaved_run(tmp_path: Path) -> None:
+    """Reproduce issue #660: approval must survive a second Platform persisting a new quote."""
+    root = tmp_path / "data"
+    tenant = "tenant-a"
+
+    plat_a = Platform(root=root, mock_blender=True)
+    run_a = plat_a.factory.run(tenant_id=tenant, text="鞋櫃", render=False)
+    quote_a = run_a["quote"]["quoteId"]
+    run_id = run_a["runId"]
+
+    plat_b = Platform(root=root, mock_blender=True)
+    summaries = plat_b.factory.list_quote_summaries(tenant)
+    row = next(item for item in summaries if item["quoteId"] == quote_a)
+    assert row["gateStatus"] == "WAITING_APPROVAL"
+
+    approved = plat_a.factory.approve(run_id, actor="lead-a")
+    assert approved["gate"]["status"] == "APPROVED"
+
+    plat_b.factory._sync_from_disk()
+    row_after = next(item for item in plat_b.factory.list_quote_summaries(tenant) if item["quoteId"] == quote_a)
+    assert row_after["gateStatus"] == "APPROVED"
+
+    run_b = plat_b.factory.run(tenant_id=tenant, text="鞋櫃", render=False)
+    assert run_b["quote"]["quoteId"] != quote_a
+
+    plat_c = Platform(root=root, mock_blender=True)
+    run_restored = plat_c.factory.runs[plat_c.factory.run_id_for_quote(quote_a, tenant)]
+    assert run_restored["gate"]["status"] == "APPROVED"
+    assert run_restored["gate"]["actor"] == "lead-a"
+
+
+def test_interleaved_platform_persist_does_not_rollback_approval(tmp_path: Path) -> None:
+    import threading
+
+    root = tmp_path / "data"
+    tenant = "tenant-x"
+    plat_a = Platform(root=root, mock_blender=True)
+    run_a = plat_a.factory.run(tenant_id=tenant, text="鞋櫃", render=False)
+    run_id = run_a["runId"]
+    quote_a = run_a["quote"]["quoteId"]
+
+    plat_b = Platform(root=root, mock_blender=True)
+    errors: list[str] = []
+    barrier = threading.Barrier(2)
+
+    def approve_worker() -> None:
+        try:
+            barrier.wait(timeout=30)
+            plat_a.factory.approve(run_id, actor="ops")
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"approve: {exc}")
+
+    def run_worker() -> None:
+        try:
+            barrier.wait(timeout=30)
+            plat_b.factory.run(tenant_id=tenant, text="鞋櫃", render=False)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"run: {exc}")
+
+    threads = [threading.Thread(target=approve_worker), threading.Thread(target=run_worker)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=120)
+        assert not t.is_alive()
+    assert not errors
+
+    plat_check = Platform(root=root, mock_blender=True)
+    run = plat_check.factory.runs[plat_check.factory.run_id_for_quote(quote_a, tenant)]
+    assert run["gate"]["status"] == "APPROVED"
 
 
 def test_two_platform_instances_merge_quotes_on_shared_root(tmp_path: Path) -> None:

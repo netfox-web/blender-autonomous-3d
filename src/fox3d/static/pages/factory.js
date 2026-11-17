@@ -826,7 +826,7 @@
             loadQuoteDetail(state.selectedQuoteId);
           }
         } else if (state.quotes.length) {
-          loadQuoteDetail(state.quotes[state.quotes.length - 1].quoteId);
+          loadQuoteDetail(state.quotes[0].quoteId);
         }
       })
       .catch(function (err) {

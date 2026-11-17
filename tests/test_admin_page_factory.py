@@ -179,3 +179,11 @@ def test_factory_js_loads_quote_list_api() -> None:
     assert "/api/factory/quotes" in js
     assert "quotesRes" in js
     assert "quotesRes.data.items" in js
+
+
+def test_factory_js_defaults_detail_to_newest_quote() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/factory.js").read_text(encoding="utf-8")
+    assert "loadQuoteDetail(state.quotes[0].quoteId)" in js
+    assert "loadQuoteDetail(state.quotes[state.quotes.length - 1].quoteId)" not in js
