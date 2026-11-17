@@ -231,7 +231,7 @@ class StationDispatcher:
             if not lid:
                 continue
             lease = self.leases.get(lid)
-            if lease is None or lease.get("status") in {"COMPLETED", "EXPIRED"} or lease.get("tenantId") != station.get("tenantId"):
+            if lease is None or lease.get("status") in {"COMPLETED", "EXPIRED", "CANCELLED"} or lease.get("tenantId") != station.get("tenantId"):
                 station["currentLease"] = None
                 cleared += 1
                 self.inbox.record(
@@ -252,7 +252,7 @@ class StationDispatcher:
             return "QC_MANUAL"
         cap = OP_CAPABILITY.get(operation)
         if not cap:
-            raise PermissionError(f"no MANUAL_STATION capability for {operation}")
+            raise ValueError("invalid operation")
         return cap
 
     def _require_wo(self, work_order_id: str, tenant_id: str) -> dict[str, Any]:
@@ -289,88 +289,88 @@ class StationDispatcher:
         operator_id: str | None = None,
         shift_id: str | None = None,
     ) -> dict[str, Any]:
-        wo = self._require_wo(work_order_id, tenant_id)
-        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
-        station = self.stations.get(station_id, tenant_id=tenant_id)
-        if station.get("status") != "ONLINE":
-            self.inbox.record(
-                tenant_id=tenant_id,
-                code="STATION_OFFLINE",
-                work_order_id=work_order_id,
-                release_hash=wo.get("releaseHash"),
-                actor=actor,
+        with self._lock:
+            wo = self._require_wo(work_order_id, tenant_id)
+            self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
+            station = self.stations.get(station_id, tenant_id=tenant_id)
+            if station.get("status") != "ONLINE":
+                self.inbox.record(
+                    tenant_id=tenant_id,
+                    code="STATION_OFFLINE",
+                    work_order_id=work_order_id,
+                    release_hash=wo.get("releaseHash"),
+                    actor=actor,
+                )
+                raise PilotException("STATION_OFFLINE")
+            cap = self.capability_for(operation)
+            if cap not in (station.get("capabilities") or []):
+                raise PermissionError("station missing capability")
+            existing = self.active_lease_for_op(work_order_id=work_order_id, operation=operation)
+            if existing:
+                if existing.get("stationId") == station_id:
+                    return existing
+                raise PermissionError("operation already leased")
+            if station.get("currentLease"):
+                raise PermissionError("station already owns an operation")
+            if station.get("actuatorEndpoint") or station.get("machineCommand"):
+                raise PermissionError("station adapter may not execute machine commands")
+            job = self.queue.enqueue(
+                {
+                    "jobId": new_id(),
+                    "jobType": "MANUAL_STATION",
+                    "capability": cap,
+                    "tenantId": tenant_id,
+                    "workOrderId": work_order_id,
+                    "releaseId": wo.get("releaseId"),
+                    "releaseHash": wo.get("releaseHash"),
+                    "operation": operation,
+                    "stationId": station_id,
+                    "status": "queued",
+                    "machineCommand": False,
+                    "liveCnc": False,
+                    "liveLaser": False,
+                    "heartbeatAt": _now(),
+                }
             )
-            raise PilotException("STATION_OFFLINE")
-        cap = self.capability_for(operation)
-        if cap not in (station.get("capabilities") or []):
-            raise PermissionError("station missing capability")
-        if station.get("currentLease"):
-            raise PermissionError("station already owns an operation")
-        existing = self.active_lease_for_op(work_order_id=work_order_id, operation=operation)
-        if existing:
-            if existing.get("stationId") == station_id:
-                return existing
-            raise PermissionError("operation already leased")
-        if station.get("actuatorEndpoint") or station.get("machineCommand"):
-            raise PermissionError("station adapter may not execute machine commands")
-        job = self.queue.enqueue(
-            {
-                "jobId": new_id(),
-                "jobType": "MANUAL_STATION",
-                "capability": cap,
+            job["status"] = "reserved"
+            job["leaseOwner"] = station_id
+            claimed = job
+            lease = {
+                "leaseId": claimed["jobId"],
+                "jobId": claimed["jobId"],
                 "tenantId": tenant_id,
+                "stationId": station_id,
                 "workOrderId": work_order_id,
                 "releaseId": wo.get("releaseId"),
                 "releaseHash": wo.get("releaseHash"),
                 "operation": operation,
-                "stationId": station_id,
-                "status": "queued",
+                "capability": cap,
+                "status": "LEASED",
+                "acked": False,
+                "started": False,
+                "completed": False,
+                "actor": actor,
+                "operatorId": operator_id,
+                "shiftId": shift_id,
+                "createdAt": _now(),
                 "machineCommand": False,
-                "liveCnc": False,
-                "liveLaser": False,
-                "heartbeatAt": _now(),
             }
-        )
-        job["status"] = "reserved"
-        job["leaseOwner"] = station_id
-        claimed = job
-        lease = {
-            "leaseId": claimed["jobId"],
-            "jobId": claimed["jobId"],
-            "tenantId": tenant_id,
-            "stationId": station_id,
-            "workOrderId": work_order_id,
-            "releaseId": wo.get("releaseId"),
-            "releaseHash": wo.get("releaseHash"),
-            "operation": operation,
-            "capability": cap,
-            "status": "LEASED",
-            "acked": False,
-            "started": False,
-            "completed": False,
-            "actor": actor,
-            "operatorId": operator_id,
-            "shiftId": shift_id,
-            "createdAt": _now(),
-            "machineCommand": False,
-        }
-        lease["leaseHash"] = stable_hash({k: lease[k] for k in lease if k != "leaseHash"})
-        with self._lock:
+            lease["leaseHash"] = stable_hash({k: lease[k] for k in lease if k != "leaseHash"})
             self.leases[lease["leaseId"]] = lease
             station["currentLease"] = lease["leaseId"]
             self.stations.persist()
-        emit(
-            self,
-            "station.dispatch",
-            tenant_id=tenant_id,
-            aggregate_type="StationLease",
-            aggregate_id=lease["leaseId"],
-            actor=actor,
-            payload={"workOrderId": work_order_id, "operation": operation, "stationId": station_id},
-            release_hash=wo.get("releaseHash"),
-            semantic_key=f"{tenant_id}::dispatch::{work_order_id}::{operation}::{lease['leaseId']}",
-        )
-        return lease
+            emit(
+                self,
+                "station.dispatch",
+                tenant_id=tenant_id,
+                aggregate_type="StationLease",
+                aggregate_id=lease["leaseId"],
+                actor=actor,
+                payload={"workOrderId": work_order_id, "operation": operation, "stationId": station_id},
+                release_hash=wo.get("releaseHash"),
+                semantic_key=f"{tenant_id}::dispatch::{work_order_id}::{operation}::{lease['leaseId']}",
+            )
+            return lease
 
     def ack(
         self,
@@ -382,28 +382,30 @@ class StationDispatcher:
         operator_id: str | None = None,
         shift_id: str | None = None,
     ) -> dict[str, Any]:
-        lease = self._lease(lease_id, tenant_id)
-        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
-        if lease.get("acked"):
+        with self._lock:
+            lease = self._lease(lease_id, tenant_id)
+            self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
+            if lease.get("acked"):
+                return lease
+            self._refuse_closed_workorder(lease.get("workOrderId"))
+            lease["acked"] = True
+            lease["status"] = "ACKED"
+            lease["ackedBy"] = actor
+            lease["ackedAt"] = _now()
+            self.stations.heartbeat(lease["stationId"], tenant_id=tenant_id, actor=actor)
+            self.queue.heartbeat(lease["jobId"])
+            emit(
+                self,
+                "station.ack",
+                tenant_id=tenant_id,
+                aggregate_type="StationLease",
+                aggregate_id=lease_id,
+                actor=actor,
+                payload={"confirm": bool(confirm)},
+                release_hash=lease.get("releaseHash"),
+                semantic_key=f"{tenant_id}::ack::{lease_id}",
+            )
             return lease
-        lease["acked"] = True
-        lease["status"] = "ACKED"
-        lease["ackedBy"] = actor
-        lease["ackedAt"] = _now()
-        self.stations.heartbeat(lease["stationId"], tenant_id=tenant_id, actor=actor)
-        self.queue.heartbeat(lease["jobId"])
-        emit(
-            self,
-            "station.ack",
-            tenant_id=tenant_id,
-            aggregate_type="StationLease",
-            aggregate_id=lease_id,
-            actor=actor,
-            payload={"confirm": bool(confirm)},
-            release_hash=lease.get("releaseHash"),
-            semantic_key=f"{tenant_id}::ack::{lease_id}",
-        )
-        return lease
 
     def start(
         self,
@@ -414,37 +416,39 @@ class StationDispatcher:
         operator_id: str | None = None,
         shift_id: str | None = None,
     ) -> dict[str, Any]:
-        lease = self._lease(lease_id, tenant_id)
-        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
-        if not lease.get("acked"):
-            self.ack(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
-        if lease.get("started"):
+        with self._lock:
+            lease = self._lease(lease_id, tenant_id)
+            self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
+            if not lease.get("acked"):
+                self.ack(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
+            if lease.get("started"):
+                return lease
+            self._refuse_closed_workorder(lease.get("workOrderId"))
+            op = self.workorders.start_operation(
+                lease["workOrderId"],
+                lease["operation"],
+                actor=actor,
+                tenant_id=tenant_id,
+                operator_id=operator_id,
+                shift_id=shift_id,
+            )
+            lease["started"] = True
+            lease["status"] = "STARTED"
+            lease["opId"] = op["opId"]
+            lease["startedBy"] = actor
+            self.queue.set_status(lease["jobId"], "running")
+            emit(
+                self,
+                "station.start",
+                tenant_id=tenant_id,
+                aggregate_type="StationLease",
+                aggregate_id=lease_id,
+                actor=actor,
+                payload={"opId": op["opId"]},
+                release_hash=lease.get("releaseHash"),
+                semantic_key=f"{tenant_id}::start::{lease_id}",
+            )
             return lease
-        op = self.workorders.start_operation(
-            lease["workOrderId"],
-            lease["operation"],
-            actor=actor,
-            tenant_id=tenant_id,
-            operator_id=operator_id,
-            shift_id=shift_id,
-        )
-        lease["started"] = True
-        lease["status"] = "STARTED"
-        lease["opId"] = op["opId"]
-        lease["startedBy"] = actor
-        self.queue.set_status(lease["jobId"], "running")
-        emit(
-            self,
-            "station.start",
-            tenant_id=tenant_id,
-            aggregate_type="StationLease",
-            aggregate_id=lease_id,
-            actor=actor,
-            payload={"opId": op["opId"]},
-            release_hash=lease.get("releaseHash"),
-            semantic_key=f"{tenant_id}::start::{lease_id}",
-        )
-        return lease
 
     def complete(
         self,
@@ -456,44 +460,67 @@ class StationDispatcher:
         operator_id: str | None = None,
         shift_id: str | None = None,
     ) -> dict[str, Any]:
-        if not confirm:
-            raise PermissionError("human confirmation required")
-        lease = self._lease(lease_id, tenant_id)
-        self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
-        if lease.get("completed"):
+        with self._lock:
+            if not confirm:
+                raise PermissionError("human confirmation required")
+            lease = self._lease(lease_id, tenant_id)
+            self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
+            if lease.get("completed"):
+                return lease
+            self._refuse_closed_workorder(lease.get("workOrderId"))
+            if not lease.get("started"):
+                self.start(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
+            op_id = lease.get("opId")
+            self.workorders.complete_operation(
+                lease["workOrderId"], op_id, actor=actor, operator_id=operator_id, shift_id=shift_id
+            )
+            lease["completed"] = True
+            lease["status"] = "COMPLETED"
+            lease["completedBy"] = actor
+            lease["completedAt"] = _now()
+            station = self.stations.get(lease["stationId"], tenant_id=tenant_id)
+            if station.get("currentLease") == lease_id:
+                station["currentLease"] = None
+                self.stations.persist()
+            try:
+                self.queue.set_status(lease["jobId"], "completed")
+            except Exception:
+                job = self.queue.get(lease["jobId"])
+                if job:
+                    job["status"] = "completed"
+            emit(
+                self,
+                "station.complete",
+                tenant_id=tenant_id,
+                aggregate_type="StationLease",
+                aggregate_id=lease_id,
+                actor=actor,
+                payload={"opId": op_id},
+                release_hash=lease.get("releaseHash"),
+                semantic_key=f"{tenant_id}::complete::{lease_id}",
+            )
             return lease
-        if not lease.get("started"):
-            self.start(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
-        op_id = lease.get("opId")
-        self.workorders.complete_operation(
-            lease["workOrderId"], op_id, actor=actor, operator_id=operator_id, shift_id=shift_id
-        )
-        lease["completed"] = True
-        lease["status"] = "COMPLETED"
-        lease["completedBy"] = actor
-        lease["completedAt"] = _now()
-        station = self.stations.get(lease["stationId"], tenant_id=tenant_id)
-        if station.get("currentLease") == lease_id:
-            station["currentLease"] = None
+
+    def cancel_workorder(self, work_order_id: str, *, tenant_id: str, actor: str) -> None:
+        with self._lock:
+            for lease in self.leases.values():
+                if lease.get("tenantId") != tenant_id or lease.get("workOrderId") != work_order_id:
+                    continue
+                if lease.get("status") not in {"LEASED", "ACKED", "STARTED"}:
+                    continue
+                lease["status"] = "CANCELLED"
+                station = self.stations.get(lease["stationId"], tenant_id=tenant_id)
+                if station.get("currentLease") == lease["leaseId"]:
+                    station["currentLease"] = None
+                job = self.queue.get(lease["jobId"])
+                if job:
+                    job["status"] = "cancelled"
+                self.inbox.record(
+                    tenant_id=tenant_id, code="WORKORDER_CANCELLED", work_order_id=work_order_id,
+                    release_hash=lease.get("releaseHash"), actor=actor,
+                )
             self.stations.persist()
-        try:
-            self.queue.set_status(lease["jobId"], "completed")
-        except Exception:
-            job = self.queue.get(lease["jobId"])
-            if job:
-                job["status"] = "completed"
-        emit(
-            self,
-            "station.complete",
-            tenant_id=tenant_id,
-            aggregate_type="StationLease",
-            aggregate_id=lease_id,
-            actor=actor,
-            payload={"opId": op_id},
-            release_hash=lease.get("releaseHash"),
-            semantic_key=f"{tenant_id}::complete::{lease_id}",
-        )
-        return lease
+            self.persist()
 
     def expire_leases(self, *, max_age_seconds: float | None = None) -> list[str]:
         recovered = self.queue.recover_stale_leases(max_age_seconds=max_age_seconds or self.lease_seconds)
@@ -523,10 +550,19 @@ class StationDispatcher:
             self.persist()
         return expired
 
+    def _refuse_closed_workorder(self, work_order_id: str | None) -> None:
+        if not work_order_id:
+            return
+        wo = self.workorders.get(work_order_id)
+        if wo.get("state") in {"CANCELLED", "COMPLETED", "REJECTED"}:
+            raise PermissionError("cancelled/completed work order cannot dispatch")
+
     def _lease(self, lease_id: str, tenant_id: str) -> dict[str, Any]:
         lease = self.leases[lease_id]
         if lease.get("tenantId") != tenant_id:
             raise PermissionError("tenant isolation: lease")
+        if lease.get("status") == "CANCELLED":
+            raise PermissionError("lease cancelled")
         if lease.get("status") == "EXPIRED":
             self.inbox.record(
                 tenant_id=tenant_id,

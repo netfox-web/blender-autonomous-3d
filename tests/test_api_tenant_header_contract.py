@@ -54,6 +54,7 @@ ROUTES = [
     ('GET', '/api/pilot/batches'),
     ('GET', '/api/pilot/batches/board'),
     ('POST', '/api/pilot/work-orders/{work_order_id}/reserve'),
+    ('POST', '/api/pilot/workorders/{work_order_id}/reject'),
     ('POST', '/api/pilot/receipts'),
     ('POST', '/api/pilot/purchase-requests'),
     ('GET', '/api/pilot/health'),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
@@ -53,6 +54,7 @@ def _reject_container_required(schema: str, rows: list[Any]) -> None:
 
 class ContractService:
     def __init__(self, pilot: Any) -> None:
+        self._lock = threading.RLock()
         self.pilot = pilot
         self.journal: Any | None = None
         self.imports: dict[str, dict[str, Any]] = {}
@@ -68,93 +70,94 @@ class ContractService:
         source: str = "IMPORTED",
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        if source not in ALLOWED_SOURCES:
-            raise PermissionError("imports are MANUAL/IMPORTED")
-        schema = str(payload.get("schemaVersion") or "")
-        raw_key = idempotency_key or payload.get("idempotencyKey") or stable_hash(payload)
-        key = f"{tenant_id}::import::{schema}::{raw_key}"
-        if key in self._idem:
-            existing = self.imports[self._idem[key]]
-            if existing.get("tenantId") != tenant_id:
-                raise PermissionError("tenant isolation: import")
-            return existing
-        rows = list(payload.get("rows") or [])
-        # Type errors abort the whole bundle before the first receipt, quote, or adjustment.
-        _reject_container_required(schema, rows)
-        accepted: list[dict[str, Any]] = []
-        rejected: list[dict[str, Any]] = []
-        if schema == SCHEMA_RECEIPT:
-            for i, row in enumerate(rows):
-                missing = _require(row, ("material", "quantity"))
-                if missing:
-                    rejected.append({"index": i, "reasons": missing, "row": row})
-                    continue
-                rec = self.pilot.receiving.import_receipt(
-                    row,
-                    tenant_id=tenant_id,
-                    actor=actor,
-                    source=source,
-                    idempotency_key=str(row.get("idempotencyKey") or row.get("supplierLot") or f"{raw_key}:{i}"),
-                )
-                accepted.append(rec)
-        elif schema == SCHEMA_SUPPLIER:
-            for i, row in enumerate(rows):
-                missing = _require(row, ("supplierId",))
-                if missing:
-                    rejected.append({"index": i, "reasons": missing, "row": row})
-                    continue
-                rec = self.pilot.suppliers.import_json(
-                    __import__("json").dumps([row]),
-                    source=source,
-                )[0]
-                accepted.append(rec)
-        elif schema == SCHEMA_CARRIER:
-            for i, row in enumerate(rows):
-                missing = _require(row, ("carrier", "charge"))
-                if missing:
-                    rejected.append({"index": i, "reasons": missing, "row": row})
-                    continue
-                rec = self.pilot.logistics.import_carrier_quote(row, source=source)
-                accepted.append(rec)
-        elif schema == SCHEMA_ADJUST:
-            for i, row in enumerate(rows):
-                missing = _require(row, ("lotId", "quantity", "reason"))
-                if missing:
-                    rejected.append({"index": i, "reasons": missing, "row": row})
-                    continue
-                adj = self.draft_adjustment(row, tenant_id=tenant_id, actor=actor, source=source)
-                accepted.append(adj)
-        else:
-            raise PermissionError(f"unknown schema {schema}")
-        rec = {
-            "importId": new_id(),
-            "tenantId": tenant_id,
-            "schemaVersion": schema,
-            "source": source,
-            "truthLabel": source,
-            "liveProvider": False,
-            "accepted": accepted,
-            "rejected": rejected,
-            "acceptedCount": len(accepted),
-            "rejectedCount": len(rejected),
-            "actor": actor,
-            "at": _now(),
-            "silentPartial": False,
-        }
-        rec["importHash"] = stable_hash({k: rec[k] for k in rec if k not in {"importId", "importHash", "accepted", "rejected"}})
-        self.imports[rec["importId"]] = rec
-        self._idem[key] = rec["importId"]
-        emit(
-            self,
-            "contract.import",
-            tenant_id=tenant_id,
-            aggregate_type="ImportBundle",
-            aggregate_id=rec["importId"],
-            actor=actor,
-            payload={"schemaVersion": schema, "accepted": len(accepted), "rejected": len(rejected)},
-            semantic_key=key,
-        )
-        return rec
+        with self._lock:
+            if source not in ALLOWED_SOURCES:
+                raise PermissionError("imports are MANUAL/IMPORTED")
+            schema = str(payload.get("schemaVersion") or "")
+            raw_key = idempotency_key or payload.get("idempotencyKey") or stable_hash(payload)
+            key = f"{tenant_id}::import::{schema}::{raw_key}"
+            if key in self._idem:
+                existing = self.imports[self._idem[key]]
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: import")
+                return existing
+            rows = list(payload.get("rows") or [])
+            # Type errors abort the whole bundle before the first receipt, quote, or adjustment.
+            _reject_container_required(schema, rows)
+            accepted: list[dict[str, Any]] = []
+            rejected: list[dict[str, Any]] = []
+            if schema == SCHEMA_RECEIPT:
+                for i, row in enumerate(rows):
+                    missing = _require(row, ("material", "quantity"))
+                    if missing:
+                        rejected.append({"index": i, "reasons": missing, "row": row})
+                        continue
+                    rec = self.pilot.receiving.import_receipt(
+                        row,
+                        tenant_id=tenant_id,
+                        actor=actor,
+                        source=source,
+                        idempotency_key=str(row.get("idempotencyKey") or row.get("supplierLot") or f"{raw_key}:{i}"),
+                    )
+                    accepted.append(rec)
+            elif schema == SCHEMA_SUPPLIER:
+                for i, row in enumerate(rows):
+                    missing = _require(row, ("supplierId",))
+                    if missing:
+                        rejected.append({"index": i, "reasons": missing, "row": row})
+                        continue
+                    rec = self.pilot.suppliers.import_json(
+                        __import__("json").dumps([row]),
+                        source=source,
+                    )[0]
+                    accepted.append(rec)
+            elif schema == SCHEMA_CARRIER:
+                for i, row in enumerate(rows):
+                    missing = _require(row, ("carrier", "charge"))
+                    if missing:
+                        rejected.append({"index": i, "reasons": missing, "row": row})
+                        continue
+                    rec = self.pilot.logistics.import_carrier_quote(row, source=source)
+                    accepted.append(rec)
+            elif schema == SCHEMA_ADJUST:
+                for i, row in enumerate(rows):
+                    missing = _require(row, ("lotId", "quantity", "reason"))
+                    if missing:
+                        rejected.append({"index": i, "reasons": missing, "row": row})
+                        continue
+                    adj = self.draft_adjustment(row, tenant_id=tenant_id, actor=actor, source=source)
+                    accepted.append(adj)
+            else:
+                raise PermissionError(f"unknown schema {schema}")
+            rec = {
+                "importId": new_id(),
+                "tenantId": tenant_id,
+                "schemaVersion": schema,
+                "source": source,
+                "truthLabel": source,
+                "liveProvider": False,
+                "accepted": accepted,
+                "rejected": rejected,
+                "acceptedCount": len(accepted),
+                "rejectedCount": len(rejected),
+                "actor": actor,
+                "at": _now(),
+                "silentPartial": False,
+            }
+            rec["importHash"] = stable_hash({k: rec[k] for k in rec if k not in {"importId", "importHash", "accepted", "rejected"}})
+            self.imports[rec["importId"]] = rec
+            self._idem[key] = rec["importId"]
+            emit(
+                self,
+                "contract.import",
+                tenant_id=tenant_id,
+                aggregate_type="ImportBundle",
+                aggregate_id=rec["importId"],
+                actor=actor,
+                payload={"schemaVersion": schema, "accepted": len(accepted), "rejected": len(rejected)},
+                semantic_key=key,
+            )
+            return rec
 
     def draft_adjustment(self, row: dict[str, Any], *, tenant_id: str, actor: str, source: str = "MANUAL") -> dict[str, Any]:
         rec = {
