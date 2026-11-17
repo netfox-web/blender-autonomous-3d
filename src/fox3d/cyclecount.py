@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ def _now() -> str:
 
 class CycleCountService:
     def __init__(self, lots: Any, root: Path | None = None) -> None:
+        self._lock = threading.RLock()
         self.lots = lots
         self.root = Path(root) if root else None
         if self.root:
@@ -52,47 +54,48 @@ class CycleCountService:
         shift_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        key = f"{tenant_id}::cc::{idempotency_key or lot_id}:{counted}:{reason}"
-        if key in self._idem:
-            existing = self.counts[self._idem[key]]
-            if existing.get("tenantId") != tenant_id:
-                raise PermissionError("tenant isolation: cycle count")
-            return existing
-        q = self.lots.quantities(lot_id, tenant_id=tenant_id)
-        rec: dict[str, Any] = {
-            "cycleCountId": new_id(),
-            "tenantId": tenant_id,
-            "lotId": lot_id,
-            "systemAvailable": int(q["available"]),
-            "systemReserved": int(q["reserved"]),
-            "systemConsumed": int(q["consumed"]),
-            "systemSheetCount": int(q["sheetCount"]),
-            "counted": int(counted),
-            "variance": int(counted) - int(q["available"]),
-            "reason": reason,
-            "status": "WAITING_HUMAN_APPROVAL",
-            "applied": False,
-            "actor": actor,
-            "operatorId": operator_id,
-            "shiftId": shift_id,
-            "truthLabel": "REAL_LOGIC / MANUAL",
-            "notAccounting": True,
-            "createdAt": _now(),
-        }
-        rec["cycleCountHash"] = stable_hash({k: rec[k] for k in rec if k != "cycleCountHash"})
-        self.counts[rec["cycleCountId"]] = rec
-        self._idem[key] = rec["cycleCountId"]
-        emit(
-            self,
-            "cyclecount.create",
-            tenant_id=tenant_id,
-            aggregate_type="CycleCount",
-            aggregate_id=rec["cycleCountId"],
-            actor=actor,
-            payload={"lotId": lot_id, "variance": rec["variance"], "status": rec["status"]},
-            semantic_key=key,
-        )
-        return rec
+        with self._lock:
+            key = f"{tenant_id}::cc::{idempotency_key or lot_id}:{counted}:{reason}"
+            if key in self._idem:
+                existing = self.counts[self._idem[key]]
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: cycle count")
+                return existing
+            q = self.lots.quantities(lot_id, tenant_id=tenant_id)
+            rec: dict[str, Any] = {
+                "cycleCountId": new_id(),
+                "tenantId": tenant_id,
+                "lotId": lot_id,
+                "systemAvailable": int(q["available"]),
+                "systemReserved": int(q["reserved"]),
+                "systemConsumed": int(q["consumed"]),
+                "systemSheetCount": int(q["sheetCount"]),
+                "counted": int(counted),
+                "variance": int(counted) - int(q["available"]),
+                "reason": reason,
+                "status": "WAITING_HUMAN_APPROVAL",
+                "applied": False,
+                "actor": actor,
+                "operatorId": operator_id,
+                "shiftId": shift_id,
+                "truthLabel": "REAL_LOGIC / MANUAL",
+                "notAccounting": True,
+                "createdAt": _now(),
+            }
+            rec["cycleCountHash"] = stable_hash({k: rec[k] for k in rec if k != "cycleCountHash"})
+            self.counts[rec["cycleCountId"]] = rec
+            self._idem[key] = rec["cycleCountId"]
+            emit(
+                self,
+                "cyclecount.create",
+                tenant_id=tenant_id,
+                aggregate_type="CycleCount",
+                aggregate_id=rec["cycleCountId"],
+                actor=actor,
+                payload={"lotId": lot_id, "variance": rec["variance"], "status": rec["status"]},
+                semantic_key=key,
+            )
+            return rec
 
     def approve(self, cycle_count_id: str, *, tenant_id: str, actor: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         require_confirm(payload, action="cycle_count_adjust")

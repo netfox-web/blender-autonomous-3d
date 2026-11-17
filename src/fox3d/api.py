@@ -13,6 +13,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
+from fox3d.journal import SemanticKeyConflictError
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
 from fox3d.commerce import ImportValidationError, ProviderDisconnectedError
@@ -54,6 +55,42 @@ def _dimensions(value: Any) -> None:
 def _choice(value: Any, choices: Any, field: str) -> None:
     if not isinstance(value, str) or value not in choices:
         raise HTTPException(422, f"{field} 可用值: {', '.join(sorted(choices))}")
+
+
+_MAX_REMNANT_LEASE_SECONDS = 7 * 86400.0
+_MAX_REMNANT_BY_LEN = 120
+
+
+def _validate_remnant_reserve(body: dict[str, Any]) -> tuple[str, int, float | None, str | None]:
+    raw_by = body.get("by")
+    if not isinstance(raw_by, str):
+        raise HTTPException(422, "by 必須是非空字串且長度不超過 120")
+    by = raw_by.strip()
+    if not by or len(raw_by) > _MAX_REMNANT_BY_LEN:
+        raise HTTPException(422, "by 必須是非空字串且長度不超過 120")
+
+    raw_version = body.get("version")
+    if isinstance(raw_version, bool) or not isinstance(raw_version, int) or raw_version < 1:
+        raise HTTPException(422, "version 必須是正整數")
+
+    lease_seconds: float | None = None
+    if "leaseSeconds" in body:
+        raw_lease = body.get("leaseSeconds")
+        if isinstance(raw_lease, bool) or not isinstance(raw_lease, (int, float)):
+            raise HTTPException(422, "leaseSeconds 必須在 1 至 604800 秒（1–7 天）範圍內")
+        try:
+            lease_val = float(raw_lease)
+        except (TypeError, ValueError, OverflowError):
+            raise HTTPException(422, "leaseSeconds 必須在 1 至 604800 秒（1–7 天）範圍內") from None
+        if not math.isfinite(lease_val) or not (1.0 <= lease_val <= _MAX_REMNANT_LEASE_SECONDS):
+            raise HTTPException(422, "leaseSeconds 必須在 1 至 604800 秒（1–7 天）範圍內")
+        lease_seconds = lease_val
+
+    raw_idem = body.get("idempotencyKey")
+    if raw_idem is not None and (not isinstance(raw_idem, str) or len(raw_idem) > 200):
+        raise HTTPException(422, "idempotencyKey 格式錯誤")
+    idem = raw_idem.strip() if isinstance(raw_idem, str) and raw_idem.strip() else None
+    return by, raw_version, lease_seconds, idem
 
 
 def _entity_id(value: Any) -> str:
@@ -684,6 +721,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         qty = _require_receipt_quantity(row)
         _require_manual_source(row)
         _validate_receipt_numbers(row)
+        raw_idem = payload.get("idempotencyKey")
+        if raw_idem is not None and (not isinstance(raw_idem, str) or len(raw_idem) > 200):
+            raise HTTPException(422, "idempotencyKey 格式錯誤")
+        idem = raw_idem.strip() if isinstance(raw_idem, str) and raw_idem.strip() else None
         try:
             return get_platform().pilot.receiving.import_receipt(
                 {
@@ -697,7 +738,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 tenant_id=tid,
                 actor=str(payload.get("actor") or "api"),
                 source=str(payload.get("source") or "MANUAL"),
-                idempotency_key=payload.get("idempotencyKey"),
+                idempotency_key=idem,
             )
         except PilotException:
             raise
@@ -712,10 +753,28 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/remnants/{remnant_id}/reserve")
     def remnant_reserve(remnant_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
-        try:
-            return get_platform().remnants.reserve(remnant_id, by=str(body.get("by") or "api"), version=body.get("version"), lease_seconds=body.get("leaseSeconds"), tenant_id=tenant(x_tenant_id))
-        except (KeyError, PermissionError) as exc:
-            raise HTTPException(409, str(exc)) from exc
+        tid = require_tenant(x_tenant_id, body)
+        remnants_inv = get_platform().remnants
+        with remnants_inv._transaction(tenant_id=tid):
+            rec = remnants_inv.items.get(remnant_id)
+            if rec is None or remnants_inv._owner(rec) != tid:
+                raise HTTPException(404, "找不到餘料")
+            by, version, lease_seconds, idem = _validate_remnant_reserve(body)
+            try:
+                return remnants_inv.reserve(
+                    remnant_id,
+                    by=by,
+                    version=version,
+                    lease_seconds=lease_seconds,
+                    tenant_id=tid,
+                    idempotency_key=idem,
+                )
+            except KeyError as exc:
+                raise HTTPException(404, "找不到餘料") from exc
+            except PermissionError as exc:
+                if str(exc).startswith("tenant isolation"):
+                    raise HTTPException(404, "找不到餘料") from exc
+                raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/nesting/benchmarks")
     def nesting_benchmarks(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -725,8 +784,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         plat = get_platform()
         tid = require_tenant(x_tenant_id, body)
         result = run_benchmark(plat, tenant_id=tid)
-        plat.physical.benchmarks.append(result)
-        return result
+        return plat.physical.record_benchmark(result, tenant_id=tid)
 
     @app.post("/api/kd/candidates")
     def kd_candidates(payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -903,6 +961,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 raise HTTPException(403, str(exc)) from exc
             raise HTTPException(409, str(exc)) from exc
 
+    @app.post("/api/pilot/workorders/{work_order_id}/reject")
+    def pilot_workorder_reject(work_order_id: str, payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        _require_text_fields(payload, ("reason",))
+        service = get_platform().pilot.workorders
+        try:
+            service._require(work_order_id, tenant_id=tid)
+            return service.reject(work_order_id, actor=str(payload.get("actor") or "api"), reason=str(payload["reason"]))
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except PermissionError as exc:
+            raise HTTPException(403 if str(exc).startswith("tenant isolation") else 409, str(exc)) from exc
+
     @app.post("/api/pilot/receipts")
     def pilot_receipt(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
@@ -917,6 +988,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 source=str(payload.get("source") or "IMPORTED"),
                 idempotency_key=payload.get("idempotencyKey"),
             )
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
         except PilotException:
             raise
         except PermissionError as exc:
@@ -991,10 +1064,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 station_id=str(payload["stationId"]),
                 actor=str(payload.get("actor") or "api"),
             )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except ValueError as exc:
+            raise HTTPException(422, "invalid operation") from exc
         except PilotException as exc:
             raise HTTPException(409, exc.code) from exc
         except PermissionError as exc:
-            raise HTTPException(409, str(exc)) from exc
+            raise HTTPException(403 if str(exc).startswith("tenant isolation") else 409, str(exc)) from exc
 
     @app.post("/api/pilot/leases/{lease_id}/ack")
     def pilot_ack(lease_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

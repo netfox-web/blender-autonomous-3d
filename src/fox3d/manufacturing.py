@@ -5,9 +5,11 @@ Live CNC is never enabled. Manufacturing stops at WAITING_APPROVAL.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Literal, cast
 from builtins import list as builtin_list
+from contextlib import contextmanager
+from dataclasses import dataclass
+import threading
+from typing import Any, Iterator, Literal, cast
 
 from pydantic import BaseModel, Field
 
@@ -890,9 +892,52 @@ class RemnantInventory:
         self.items: dict[str, dict[str, Any]] = self.store.as_dict()
         self.default_tenant = default_tenant
         self._durable = type(self.store).__name__ == "DurableRemnantStore"
+        self._lock = getattr(self.store, "_lock", None) or threading.RLock()
 
     def _persist_label(self) -> str:
         return "durable-json" if self._durable else "in-process-ledger"
+
+    @contextmanager
+    def _transaction(self, *, tenant_id: str | None = None) -> Iterator[None]:
+        tx = getattr(self.store, "transaction", None)
+        if callable(tx):
+            try:
+                ctx = tx(tenant_id=tenant_id)
+            except TypeError:
+                ctx = tx()
+            with ctx:
+                yield
+        else:
+            with self._lock:
+                yield
+
+    def _sync_store(self, *, tenant_id: str | None = None) -> None:
+        sync = getattr(self.store, "_sync_from_disk", None)
+        if callable(sync):
+            try:
+                sync(tenant_id=tenant_id)
+            except TypeError:
+                sync()
+
+    def _effective_tenant(self, remnant_id: str, tenant_id: str | None) -> str | None:
+        if tenant_id is not None:
+            return tenant_id
+        with self._lock:
+            rec = self.items.get(remnant_id)
+            if rec is not None:
+                return self._owner(rec)
+        return None
+
+    def _put_store(self, rec: dict[str, Any], *, expected_version: int | None = None) -> dict[str, Any]:
+        if expected_version is not None:
+            try:
+                return cast(dict[str, Any], self.store.put(rec, expected_version=expected_version))
+            except TypeError:
+                existing = self.items.get(rec["remnantId"])
+                actual_v = 0 if existing is None else int(existing.get("version") or 1)
+                if actual_v != int(expected_version):
+                    raise PermissionError(f"stale remnant version {expected_version} != {actual_v}") from None
+        return cast(dict[str, Any], self.store.put(rec))
 
     def add_from_nesting(
         self,
@@ -910,44 +955,51 @@ class RemnantInventory:
         from fox3d.inventory import QUALITY_UPPER
 
         tid = tenant_id or self.default_tenant
-        for rem in nesting.get("candidateRemnants") or []:
-            rec = {
-                "remnantId": new_id(),
-                "tenantId": tid,
-                "sourceNestingRun": source_run,
-                "sourceRun": source_run,
-                "material": material,
-                "materialCode": map_cabinet_material(material).get("code"),
-                "thickness": thickness,
-                "w": rem["w"],
-                "h": rem["h"],
-                "grain": nesting.get("grainConstraint") or rem.get("grain") or "length",
-                "location": f"sheet:{rem.get('sheetIndex')}",
-                "status": "available",
-                "qualityState": QUALITY_UPPER["available"],
-                "reservedBy": None,
-                "consumedBy": None,
-                "createdAt": utcnow().isoformat(),
-                "area": rem.get("area") or rem["w"] * rem["h"],
-                "version": 1,
-                "leaseToken": None,
-                "reservedUntil": None,
-                "materialLotId": material_lot_id or rem.get("materialLotId") or nesting.get("materialLotId"),
-                "defects": list(rem.get("defects") or []),
-                "persistence": self._persist_label(),
-            }
-            self.store.put(rec)
-            created.append(rec)
+        with self._transaction(tenant_id=tid):
+            for rem in nesting.get("candidateRemnants") or []:
+                rec = {
+                    "remnantId": new_id(),
+                    "tenantId": tid,
+                    "sourceNestingRun": source_run,
+                    "sourceRun": source_run,
+                    "material": material,
+                    "materialCode": map_cabinet_material(material).get("code"),
+                    "thickness": thickness,
+                    "w": rem["w"],
+                    "h": rem["h"],
+                    "grain": nesting.get("grainConstraint") or rem.get("grain") or "length",
+                    "location": f"sheet:{rem.get('sheetIndex')}",
+                    "status": "available",
+                    "qualityState": QUALITY_UPPER["available"],
+                    "reservedBy": None,
+                    "consumedBy": None,
+                    "createdAt": utcnow().isoformat(),
+                    "area": rem.get("area") or rem["w"] * rem["h"],
+                    "version": 1,
+                    "leaseToken": None,
+                    "reservedUntil": None,
+                    "materialLotId": material_lot_id or rem.get("materialLotId") or nesting.get("materialLotId"),
+                    "defects": list(rem.get("defects") or []),
+                    "persistence": self._persist_label(),
+                }
+                self._put_store(rec)
+                self.items[rec["remnantId"]] = rec
+                created.append(dict(rec))
         return created
+
+    def _owner(self, rec: dict[str, Any]) -> str:
+        return str(rec.get("tenantId") or self.default_tenant)
 
     def available(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
         from fox3d.inventory import normalize_status
 
-        tid = tenant_id
-        rows = list(self.items.values())
-        if tid is not None:
-            rows = [v for v in rows if v.get("tenantId") in {None, tid}]
-        return [v for v in rows if normalize_status(v.get("status")) == "available"]
+        with self._lock:
+            self._sync_store(tenant_id=tenant_id)
+            tid = tenant_id
+            rows = list(self.items.values())
+            if tid is not None:
+                rows = [v for v in rows if self._owner(v) == tid]
+            return [v for v in rows if normalize_status(v.get("status")) == "available"]
 
     def get(self, remnant_id: str, *, tenant_id: str) -> dict[str, Any]:
         return self.store.get(remnant_id, tenant_id=tenant_id)
@@ -955,18 +1007,22 @@ class RemnantInventory:
     def set_quality(self, remnant_id: str, status: str, *, tenant_id: str | None = None) -> dict[str, Any]:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
-        rec = self.items[remnant_id]
-        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
-            raise PermissionError("tenant isolation: remnant")
-        st = normalize_status(status)
-        if st not in QUALITY_UPPER:
-            raise ValueError(st)
-        rec["status"] = st
-        rec["qualityState"] = QUALITY_UPPER[st]
-        rec["version"] = int(rec.get("version") or 1) + 1
-        rec["persistence"] = self._persist_label()
-        self.store.put(rec)
-        return rec
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
+            rec = self.items[remnant_id]
+            if tenant_id is not None and self._owner(rec) != tenant_id:
+                raise PermissionError("tenant isolation: remnant")
+            st = normalize_status(status)
+            if st not in QUALITY_UPPER:
+                raise ValueError(st)
+            current_v = int(rec.get("version") or 1)
+            updated = dict(rec)
+            updated["status"] = st
+            updated["qualityState"] = QUALITY_UPPER[st]
+            updated["version"] = current_v + 1
+            updated["persistence"] = self._persist_label()
+            self._put_store(updated, expected_version=current_v)
+            self.items[remnant_id] = updated
+            return dict(updated)
 
     def reserve(
         self,
@@ -976,30 +1032,68 @@ class RemnantInventory:
         version: int | None = None,
         lease_seconds: float | None = None,
         tenant_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         from datetime import timedelta
 
         from fox3d.infra import utcnow
         from fox3d.inventory import QUALITY_UPPER, lease_token, normalize_status
 
-        rec = self.items[remnant_id]
-        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
-            raise PermissionError("tenant isolation: remnant")
-        if normalize_status(rec.get("status")) != "available":
-            raise PermissionError(f"remnant {remnant_id} not available ({rec['status']})")
-        current_v = int(rec.get("version") or 1)
-        if version is not None and int(version) != current_v:
-            raise PermissionError(f"stale remnant version {version} != {current_v}")
-        rec["status"] = "reserved"
-        rec["qualityState"] = QUALITY_UPPER["reserved"]
-        rec["reservedBy"] = by
-        rec["version"] = current_v + 1
-        rec["leaseToken"] = lease_token(remnant_id, rec["version"], by)
-        if lease_seconds is not None:
-            rec["reservedUntil"] = (utcnow() + timedelta(seconds=float(lease_seconds))).isoformat()
-        rec["persistence"] = self._persist_label()
-        self.store.put(rec)
-        return rec
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
+            rec = self.items[remnant_id]
+            if tenant_id is not None and self._owner(rec) != tenant_id:
+                raise PermissionError("tenant isolation: remnant")
+            current_v = int(rec.get("version") or 1)
+            if (
+                idempotency_key
+                and normalize_status(rec.get("status")) == "reserved"
+                and rec.get("reservedBy") == by
+                and rec.get("idempotencyKey") == idempotency_key
+                and (version is None or int(version) in {current_v, current_v - 1})
+            ):
+                return dict(rec)
+            if normalize_status(rec.get("status")) != "available":
+                raise PermissionError(f"remnant {remnant_id} not available ({rec['status']})")
+            if version is not None and int(version) != current_v:
+                raise PermissionError(f"stale remnant version {version} != {current_v}")
+            next_v = current_v + 1
+            updated = dict(rec)
+            updated["status"] = "reserved"
+            updated["qualityState"] = QUALITY_UPPER["reserved"]
+            updated["reservedBy"] = by
+            updated["version"] = next_v
+            updated["leaseToken"] = lease_token(remnant_id, next_v, by)
+            updated["idempotencyKey"] = idempotency_key
+            if lease_seconds is not None:
+                updated["reservedUntil"] = (utcnow() + timedelta(seconds=float(lease_seconds))).isoformat()
+            updated["persistence"] = self._persist_label()
+            self._put_store(updated, expected_version=current_v)
+            self.items[remnant_id] = updated
+            return dict(updated)
+
+    def reserve_available(
+        self,
+        *,
+        by: str,
+        tenant_id: str | None = None,
+        lease_seconds: float | None = None,
+    ) -> list[dict[str, Any]]:
+        eff_tid = tenant_id or self.default_tenant
+        reserved: list[dict[str, Any]] = []
+        with self._transaction(tenant_id=eff_tid):
+            for rem in list(self.available(tenant_id=eff_tid)):
+                try:
+                    item = self.reserve(
+                        rem["remnantId"],
+                        by=by,
+                        version=rem.get("version"),
+                        lease_seconds=lease_seconds,
+                        tenant_id=eff_tid,
+                    )
+                    reserved.append(item)
+                except PermissionError:
+                    continue
+        return reserved
 
     def consume(
         self,
@@ -1012,70 +1106,89 @@ class RemnantInventory:
     ) -> dict[str, Any]:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
-        rec = self.items[remnant_id]
-        if tenant_id is not None and rec.get("tenantId") not in {None, tenant_id}:
-            raise PermissionError("tenant isolation: remnant")
-        st = normalize_status(rec.get("status"))
-        if st == "consumed":
-            raise PermissionError(f"remnant {remnant_id} already consumed")
-        if st == "reserved" and rec.get("reservedBy") != by:
-            raise PermissionError(f"remnant {remnant_id} reserved by {rec.get('reservedBy')}")
-        if st not in {"available", "reserved"}:
-            raise PermissionError(f"remnant {remnant_id} not consumable ({rec['status']})")
-        current_v = int(rec.get("version") or 1)
-        if version is not None and int(version) != current_v:
-            raise PermissionError(f"stale remnant version {version} != {current_v}")
-        if lease_token is not None and rec.get("leaseToken") and rec.get("leaseToken") != lease_token:
-            raise PermissionError("stale remnant lease token")
-        rec["status"] = "consumed"
-        rec["qualityState"] = QUALITY_UPPER["consumed"]
-        rec["consumedBy"] = by
-        rec["version"] = current_v + 1
-        rec["leaseToken"] = None
-        rec["persistence"] = self._persist_label()
-        self.store.put(rec)
-        return rec
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
+            rec = self.items[remnant_id]
+            if tenant_id is not None and self._owner(rec) != tenant_id:
+                raise PermissionError("tenant isolation: remnant")
+            st = normalize_status(rec.get("status"))
+            if st == "consumed":
+                raise PermissionError(f"remnant {remnant_id} already consumed")
+            if st == "reserved" and rec.get("reservedBy") != by:
+                raise PermissionError(f"remnant {remnant_id} reserved by {rec.get('reservedBy')}")
+            if st not in {"available", "reserved"}:
+                raise PermissionError(f"remnant {remnant_id} not consumable ({rec['status']})")
+            current_v = int(rec.get("version") or 1)
+            if version is not None and int(version) != current_v:
+                raise PermissionError(f"stale remnant version {version} != {current_v}")
+            if lease_token is not None and rec.get("leaseToken") and rec.get("leaseToken") != lease_token:
+                raise PermissionError("stale remnant lease token")
+            updated = dict(rec)
+            updated["status"] = "consumed"
+            updated["qualityState"] = QUALITY_UPPER["consumed"]
+            updated["consumedBy"] = by
+            updated["version"] = current_v + 1
+            updated["leaseToken"] = None
+            updated["persistence"] = self._persist_label()
+            self._put_store(updated, expected_version=current_v)
+            self.items[remnant_id] = updated
+            return dict(updated)
 
-    def recover_expired(self, *, now: Any | None = None) -> list[dict[str, Any]]:
+    def recover_expired(self, *, now: Any | None = None, tenant_id: str | None = None) -> list[dict[str, Any]]:
         from datetime import datetime
 
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
         stamp = cast(Any, now).isoformat() if hasattr(now, "isoformat") else (now or None)
         recovered: list[dict[str, Any]] = []
-        for rec in list(self.items.values()):
-            if normalize_status(rec.get("status")) != "reserved":
-                continue
-            until = rec.get("reservedUntil")
-            if not until:
-                continue
-            try:
-                deadline = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            current = cast(Any, now) if hasattr(now, "isoformat") else datetime.fromisoformat((stamp or datetime.now().isoformat()).replace("Z", "+00:00"))
-            if current.tzinfo is None and deadline.tzinfo is not None:
-                from datetime import timezone
+        with self._transaction(tenant_id=tenant_id):
+            for remnant_id, rec in list(self.items.items()):
+                if tenant_id is not None and self._owner(rec) != tenant_id:
+                    continue
+                if normalize_status(rec.get("status")) != "reserved":
+                    continue
+                until = rec.get("reservedUntil")
+                if not until:
+                    continue
+                try:
+                    deadline = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                current = cast(Any, now) if hasattr(now, "isoformat") else datetime.fromisoformat((stamp or datetime.now().isoformat()).replace("Z", "+00:00"))
+                if current.tzinfo is None and deadline.tzinfo is not None:
+                    from datetime import timezone
 
-                current = current.replace(tzinfo=timezone.utc)
-            if current >= deadline:
-                rec["status"] = "available"
-                rec["qualityState"] = QUALITY_UPPER["available"]
-                rec["reservedBy"] = None
-                rec["leaseToken"] = None
-                rec["reservedUntil"] = None
-                rec["version"] = int(rec.get("version") or 1) + 1
-                rec["recoveredFrom"] = "expired-lease"
-                rec["persistence"] = self._persist_label()
-                self.store.put(rec)
-                recovered.append(rec)
+                    current = current.replace(tzinfo=timezone.utc)
+                if current >= deadline:
+                    current_v = int(rec.get("version") or 1)
+                    updated = dict(rec)
+                    updated["status"] = "available"
+                    updated["qualityState"] = QUALITY_UPPER["available"]
+                    updated["reservedBy"] = None
+                    updated["leaseToken"] = None
+                    updated["reservedUntil"] = None
+                    updated["idempotencyKey"] = None
+                    updated["version"] = current_v + 1
+                    updated["recoveredFrom"] = "expired-lease"
+                    updated["persistence"] = self._persist_label()
+                    self._put_store(updated, expected_version=current_v)
+                    self.items[remnant_id] = updated
+                    recovered.append(dict(updated))
         return recovered
 
     def snapshot(self, *, tenant_id: str | None = None) -> dict[str, Any]:
-        return {
-            "source": "CONFIG",
-            "label": "REAL" if self._durable else "MOCK",
-            "persistence": self._persist_label(),
-            "items": list(self.items.values()) if tenant_id is None else [v for v in self.items.values() if v.get("tenantId") in {None, tenant_id}],
-            "availableCount": len(self.available(tenant_id=tenant_id) if tenant_id else self.available()),
-        }
+        from fox3d.inventory import normalize_status
+
+        with self._lock:
+            self._sync_store(tenant_id=tenant_id)
+            items = (
+                list(self.items.values())
+                if tenant_id is None
+                else [v for v in self.items.values() if self._owner(v) == tenant_id]
+            )
+            return {
+                "source": "CONFIG",
+                "label": "REAL" if self._durable else "MOCK",
+                "persistence": self._persist_label(),
+                "items": items,
+                "availableCount": sum(1 for v in items if normalize_status(v.get("status")) == "available"),
+            }

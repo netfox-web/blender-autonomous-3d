@@ -532,3 +532,452 @@ def test_pilot_blocked_and_network_error_are_not_success(admin_page: Page, admin
           return !!(result && result.textContent.includes('連線失敗') && confirm && !confirm.disabled);
         }"""
     )
+
+
+def _seed_available_remnant(admin_server: dict[str, Any], remnant_id: str = "rem-browser-1") -> str:
+    plat = admin_server["platform"]
+    rec = {
+        "remnantId": remnant_id,
+        "tenantId": TENANT,
+        "material": "WOOD_WHITE",
+        "materialCode": "WOOD_WHITE",
+        "thickness": 18,
+        "w": 600,
+        "h": 400,
+        "grain": "length",
+        "status": "available",
+        "qualityState": "AVAILABLE",
+        "version": 1,
+        "area": 240000,
+    }
+    plat.remnants.items[remnant_id] = rec
+    plat.remnants.store.put(rec)
+    return remnant_id
+
+
+def test_materials_lot_and_reserve_disable_buttons_and_second_click_does_not_repost(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    rid = _seed_available_remnant(admin_server, "rem-in-flight")
+    pending_lots: list[Route] = []
+    pending_reserve: list[Route] = []
+    _install(page, "/api/materials/lots", pending_lots.append)
+    _install(page, f"/api/remnants/{rid}/reserve", pending_reserve.append)
+
+    _goto(page, admin_server["base_url"], "/admin/materials", "#mt-lot-submit")
+    _open_details(page, "mt-lot-submit")
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function(
+        """() => {
+          const submit = document.getElementById('mt-lot-submit');
+          const ok = document.getElementById('mt-confirm-ok');
+          return !!(submit && submit.disabled && ok && ok.disabled);
+        }"""
+    )
+    assert len(pending_lots) == 1
+    _click_anyway(page, "mt-lot-submit")
+    _click_anyway(page, "mt-confirm-ok")
+    page.evaluate(
+        """() => {
+          document.getElementById('mt-lot-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }"""
+    )
+    assert len(pending_lots) == 1
+    _release(pending_lots, {"receiptId": "r-lot-held", "lotId": "lot-held", "acceptedQty": 1})
+    page.wait_for_function(
+        """() => {
+          const submit = document.getElementById('mt-lot-submit');
+          const ok = document.getElementById('mt-confirm-ok');
+          return !!(submit && !submit.disabled && ok && !ok.disabled);
+        }"""
+    )
+
+    page.locator("#tab-remnants").click()
+    row = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid)
+    row.wait_for(timeout=10_000)
+    row.click()
+    assert page.locator("#mt-reserve-btn").is_enabled()
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function(
+        """() => {
+          const btn = document.getElementById('mt-reserve-btn');
+          const ok = document.getElementById('mt-confirm-ok');
+          return !!(btn && btn.disabled && ok && ok.disabled);
+        }"""
+    )
+    assert len(pending_reserve) == 1
+    _click_anyway(page, "mt-reserve-btn")
+    _click_anyway(page, "mt-confirm-ok")
+    page.evaluate(
+        """() => {
+          document.getElementById('mt-reserve-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        }"""
+    )
+    assert len(pending_reserve) == 1
+    _release(pending_reserve, {"remnantId": rid, "status": "reserved", "version": 2})
+    page.wait_for_function(
+        """() => {
+          const btn = document.getElementById('mt-reserve-btn');
+          const ok = document.getElementById('mt-confirm-ok');
+          return !!(btn && !btn.disabled && ok && !ok.disabled);
+        }"""
+    )
+
+
+def test_materials_idempotency_key_differs_across_confirms_and_reused_on_retry(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    rid = _seed_available_remnant(admin_server, "rem-idem")
+    lot_bodies: list[dict[str, Any]] = []
+    reserve_bodies: list[dict[str, Any]] = []
+
+    def on_lot(route: Route) -> None:
+        body = json.loads(route.request.post_data or "{}")
+        lot_bodies.append(body)
+        if len(lot_bodies) == 1:
+            route.abort("failed")
+            return
+        route.fulfill(json={"receiptId": f"r-{len(lot_bodies)}", "lotId": f"l-{len(lot_bodies)}", "acceptedQty": 1})
+
+    def on_reserve(route: Route) -> None:
+        body = json.loads(route.request.post_data or "{}")
+        reserve_bodies.append(body)
+        if len(reserve_bodies) == 1:
+            route.abort("failed")
+            return
+        route.fulfill(json={"remnantId": rid, "status": "reserved", "version": 2})
+
+    _install(page, "/api/materials/lots", on_lot)
+    _install(page, f"/api/remnants/{rid}/reserve", on_reserve)
+
+    _goto(page, admin_server["base_url"], "/admin/materials", "#mt-lot-submit")
+    _open_details(page, "mt-lot-submit")
+
+    # Confirm #1 fails with network error -> button recovers and retry reuses the same idempotencyKey.
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function(
+        """() => {
+          const out = document.getElementById('mt-lot-result');
+          const submit = document.getElementById('mt-lot-submit');
+          const retry = document.getElementById('mt-lot-retry');
+          return !!(out && out.textContent.includes('連線失敗') && submit && !submit.disabled && retry && !retry.hidden && !retry.disabled);
+        }"""
+    )
+    assert len(lot_bodies) == 1
+    first_key = lot_bodies[0].get("idempotencyKey")
+    assert isinstance(first_key, str) and len(first_key) > 0
+
+    page.locator("#mt-lot-retry").click()
+    page.wait_for_function("() => (document.getElementById('mt-lot-result').textContent || '').includes('r-2')")
+    assert len(lot_bodies) == 2
+    assert lot_bodies[1]["idempotencyKey"] == first_key
+
+    # Confirm #2 generates a fresh idempotencyKey even when randomUUID falls back to timestamp+random.
+    page.evaluate("() => { try { Object.defineProperty(window.crypto, 'randomUUID', { value: null, configurable: true }); } catch (e) {} }")
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => (document.getElementById('mt-lot-result').textContent || '').includes('r-3')")
+    assert len(lot_bodies) == 3
+    second_key = lot_bodies[2].get("idempotencyKey")
+    assert isinstance(second_key, str) and len(second_key) > 0
+    assert second_key != first_key
+
+    # Reserve flow: confirm #1 fails -> retry reuses key; confirm #2 uses a new key.
+    page.locator("#tab-remnants").click()
+    row = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid)
+    row.wait_for(timeout=10_000)
+    row.click()
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function(
+        """() => {
+          const out = document.getElementById('mt-reserve-result');
+          const btn = document.getElementById('mt-reserve-btn');
+          const retry = document.getElementById('mt-reserve-retry');
+          return !!(out && out.textContent.includes('連線失敗') && btn && !btn.disabled && retry && !retry.hidden && !retry.disabled);
+        }"""
+    )
+    assert len(reserve_bodies) == 1
+    res_key_1 = reserve_bodies[0].get("idempotencyKey")
+    assert isinstance(res_key_1, str) and len(res_key_1) > 0
+
+    page.locator("#mt-reserve-retry").click()
+    page.wait_for_function("() => (document.getElementById('mt-reserve-result').textContent || '').includes('HTTP 200')")
+    assert len(reserve_bodies) == 2
+    assert reserve_bodies[1]["idempotencyKey"] == res_key_1
+
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => !document.getElementById('mt-reserve-btn').disabled")
+    assert len(reserve_bodies) == 3
+    assert reserve_bodies[2]["idempotencyKey"] != res_key_1
+
+
+def test_materials_409_and_blocked_show_failure_and_network_error_restores_button(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    rid = _seed_available_remnant(admin_server, "rem-409")
+
+    def on_reserve_409(route: Route) -> None:
+        route.fulfill(status=409, json={"detail": "stale remnant version 1 != 2"})
+
+    def on_lot_blocked(route: Route) -> None:
+        route.fulfill(status=200, json={"status": "BLOCKED", "truthLabel": "BLOCKED"})
+
+    _install(page, f"/api/remnants/{rid}/reserve", on_reserve_409)
+    _install(page, "/api/materials/lots", on_lot_blocked)
+
+    _goto(page, admin_server["base_url"], "/admin/materials", "#mt-lot-submit")
+    _open_details(page, "mt-lot-submit")
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => (document.getElementById('mt-lot-result').textContent || '').includes('已阻擋')")
+    lot_text = page.locator("#mt-lot-result").inner_text()
+    assert "失敗" in lot_text and "完成" not in lot_text
+    assert "err" in (page.locator("#mt-banner").get_attribute("class") or "")
+    assert page.locator("#mt-lot-submit").is_enabled()
+
+    page.locator("#tab-remnants").click()
+    row = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid)
+    row.wait_for(timeout=10_000)
+    row.click()
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => (document.getElementById('mt-reserve-result').textContent || '').includes('HTTP 409')")
+    res_text = page.locator("#mt-reserve-result").inner_text()
+    banner_text = page.locator("#mt-banner").inner_text()
+    assert "失敗" in res_text and "完成" not in res_text
+    assert "失敗" in banner_text and "409" in banner_text
+    assert "err" in (page.locator("#mt-banner").get_attribute("class") or "")
+    assert page.locator("#mt-reserve-btn").is_enabled()
+
+
+def test_materials_confirm_sends_snapshot_not_later_edits(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    seen: dict[str, Any] = {}
+
+    def on_lot(route: Route) -> None:
+        seen["body"] = json.loads(route.request.post_data or "{}")
+        seen["tenant"] = route.request.headers.get("x-tenant-id")
+        route.fulfill(json={"receiptId": "r-snap-lot", "lotId": "lot-snap", "acceptedQty": 3})
+
+    _install(page, "/api/materials/lots", on_lot)
+    _goto(page, admin_server["base_url"], "/admin/materials", "#mt-lot-submit")
+    _open_details(page, "mt-lot-submit")
+    page.locator("#mt-lot-material").select_option("WOOD_OAK")
+    page.locator("#mt-lot-qty").fill("3")
+    page.locator("#mt-lot-supplier").fill("snap-sup")
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    assert page.locator("#mt-lot-material").is_disabled()
+    assert page.locator("#mt-lot-qty").is_disabled()
+    assert page.locator("#mt-tenant").is_disabled()
+    assert "WOOD_OAK" in page.locator("#mt-confirm-text").inner_text()
+    assert TENANT in page.locator("#mt-confirm-text").inner_text()
+    page.evaluate(
+        """() => {
+          document.getElementById('mt-lot-material').value = 'WOOD_BLACK';
+          document.getElementById('mt-lot-qty').value = '99';
+          document.getElementById('mt-lot-supplier').value = 'mutated-sup';
+          document.getElementById('mt-tenant').value = 'mutated-tenant';
+        }"""
+    )
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => (document.getElementById('mt-lot-result').textContent || '').includes('r-snap-lot')")
+    assert seen["body"]["material"] == "WOOD_OAK"
+    assert seen["body"]["sheetCount"] == 3
+    assert seen["body"]["supplierLot"] == "snap-sup"
+    assert seen["tenant"] == TENANT
+
+
+def test_materials_switching_remnant_or_tenant_invalidates_retry(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    rid_a = _seed_available_remnant(admin_server, "rem-switch-a")
+    rid_b = _seed_available_remnant(admin_server, "rem-switch-b")
+    calls_a: list[tuple[str | None, dict[str, Any]]] = []
+    calls_b: list[tuple[str | None, dict[str, Any]]] = []
+    lot_calls: list[tuple[str | None, dict[str, Any]]] = []
+
+    def on_res_a(route: Route) -> None:
+        calls_a.append((route.request.headers.get("x-tenant-id"), json.loads(route.request.post_data or "{}")))
+        route.abort("failed")
+
+    def on_res_b(route: Route) -> None:
+        calls_b.append((route.request.headers.get("x-tenant-id"), json.loads(route.request.post_data or "{}")))
+        if len(calls_b) == 1:
+            route.abort("failed")
+            return
+        route.fulfill(json={"remnantId": rid_b, "status": "reserved", "version": 2})
+
+    def on_lot(route: Route) -> None:
+        lot_calls.append((route.request.headers.get("x-tenant-id"), json.loads(route.request.post_data or "{}")))
+        route.abort("failed")
+
+    _install(page, f"/api/remnants/{rid_a}/reserve", on_res_a)
+    _install(page, f"/api/remnants/{rid_b}/reserve", on_res_b)
+    _install(page, "/api/materials/lots", on_lot)
+
+    _goto(page, admin_server["base_url"], "/admin/materials", "#mt-lot-submit")
+    page.locator("#tab-remnants").click()
+
+    row_a = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid_a)
+    row_b = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid_b)
+    row_a.wait_for(timeout=10_000)
+    row_a.click()
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function(
+        """() => {
+          const retry = document.getElementById('mt-reserve-retry');
+          return !!(retry && !retry.hidden && !retry.disabled);
+        }"""
+    )
+    assert len(calls_a) == 1
+
+    # Selecting remnant B invalidates retry for A.
+    row_b.click()
+    assert page.locator("#mt-reserve-retry").is_hidden()
+    _click_anyway(page, "mt-reserve-retry")
+    assert len(calls_a) == 1
+    assert len(calls_b) == 0
+
+    # Reserve B fails -> retry shown; Lot fails -> retry shown; switching tenant invalidates both.
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => !document.getElementById('mt-reserve-retry').hidden")
+    assert len(calls_b) == 1
+
+    page.locator("#tab-sheets").click()
+    _open_details(page, "mt-lot-submit")
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => !document.getElementById('mt-lot-retry').hidden")
+    assert len(lot_calls) == 1
+
+    page.locator("#mt-tenant").fill("other-tenant")
+    page.locator("#mt-tenant").dispatch_event("change")
+    assert page.locator("#mt-lot-retry").is_hidden()
+    assert page.locator("#mt-reserve-retry").is_hidden()
+    assert page.locator("#mt-rem-detail").is_hidden()
+    assert page.locator("#mt-reserve-btn").is_disabled()
+    _click_anyway(page, "mt-lot-retry")
+    _click_anyway(page, "mt-reserve-retry")
+    assert len(lot_calls) == 1
+    assert len(calls_a) == 1
+    assert len(calls_b) == 1
+
+
+def test_materials_edits_and_switches_during_delayed_response_invalidate_retry(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    rid_a = _seed_available_remnant(admin_server, "rem-delay-a")
+    rid_b = _seed_available_remnant(admin_server, "rem-delay-b")
+    pending_lots: list[Route] = []
+    pending_res_a: list[Route] = []
+
+    _install(page, "/api/materials/lots", pending_lots.append)
+    _install(page, f"/api/remnants/{rid_a}/reserve", pending_res_a.append)
+
+    _goto(page, admin_server["base_url"], "/admin/materials", "#mt-lot-submit")
+    _open_details(page, "mt-lot-submit")
+
+    # 1. Edit lot form while request is in flight -> when it fails, retry stays hidden.
+    page.locator("#mt-lot-qty").fill("2")
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => document.getElementById('mt-lot-submit').disabled")
+    assert len(pending_lots) == 1
+
+    page.locator("#mt-lot-qty").fill("5")
+    pending_lots.pop().abort("failed")
+    page.wait_for_function(
+        """() => {
+          const submit = document.getElementById('mt-lot-submit');
+          const out = document.getElementById('mt-lot-result');
+          return !!(submit && !submit.disabled && out && out.textContent.includes('連線失敗'));
+        }"""
+    )
+    assert page.locator("#mt-lot-retry").is_hidden()
+    _click_anyway(page, "mt-lot-retry")
+    assert len(pending_lots) == 0
+
+    # 2. Edit reserve form while request is in flight -> when it fails, retry stays hidden.
+    page.locator("#tab-remnants").click()
+    row_a = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid_a)
+    row_b = page.locator("#mt-remnants-wrap tr[data-selectable]", has_text=rid_b)
+    row_a.wait_for(timeout=10_000)
+    row_a.click()
+    page.locator("#mt-reserve-by").fill("op-1")
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => document.getElementById('mt-reserve-btn').disabled")
+    assert len(pending_res_a) == 1
+
+    page.locator("#mt-reserve-by").fill("op-2")
+    pending_res_a.pop().abort("failed")
+    page.wait_for_function(
+        """() => {
+          const btn = document.getElementById('mt-reserve-btn');
+          const out = document.getElementById('mt-reserve-result');
+          return !!(btn && !btn.disabled && out && out.textContent.includes('連線失敗'));
+        }"""
+    )
+    assert page.locator("#mt-reserve-retry").is_hidden()
+    _click_anyway(page, "mt-reserve-retry")
+    assert len(pending_res_a) == 0
+
+    # 3. Switch remnant selection while reserve request for A is in flight -> retry stays hidden.
+    page.locator("#mt-reserve-btn").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => document.getElementById('mt-reserve-btn').disabled")
+    assert len(pending_res_a) == 1
+
+    row_b.click()
+    assert page.locator("#mt-reserve-btn").is_disabled()
+    pending_res_a.pop().abort("failed")
+    page.wait_for_function("() => !document.getElementById('mt-reserve-btn').disabled")
+    assert page.locator("#mt-reserve-retry").is_hidden()
+    _click_anyway(page, "mt-reserve-retry")
+    assert len(pending_res_a) == 0
+
+    # 4. Switch tenant while lot request is in flight -> retry stays hidden.
+    page.locator("#tab-sheets").click()
+    page.locator("#mt-lot-submit").click()
+    page.wait_for_selector("#mt-confirm[open]")
+    page.locator("#mt-confirm-ok").click()
+    page.wait_for_function("() => document.getElementById('mt-lot-submit').disabled")
+    assert len(pending_lots) == 1
+
+    page.locator("#mt-tenant").fill("tenant-in-flight")
+    page.locator("#mt-tenant").dispatch_event("change")
+    pending_lots.pop().abort("failed")
+    page.wait_for_function("() => !document.getElementById('mt-lot-submit').disabled")
+    assert page.locator("#mt-lot-retry").is_hidden()
+    _click_anyway(page, "mt-lot-retry")
+    assert len(pending_lots) == 0
+

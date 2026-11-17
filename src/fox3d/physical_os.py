@@ -32,6 +32,9 @@ class PhysicalProductFamilyRegistry:
         return rec
 
 
+MAX_BENCHMARKS_PER_TENANT = 20
+
+
 class PhysicalProductOS:
     def __init__(self, platform: Any) -> None:
         self.platform = platform
@@ -41,6 +44,23 @@ class PhysicalProductOS:
         self.acrylic = AcrylicFactory(platform)
         self.approvals: dict[tuple[str, str], dict[str, Any]] = {}
         self.benchmarks: list[dict[str, Any]] = []
+
+    def record_benchmark(
+        self,
+        result: dict[str, Any],
+        *,
+        tenant_id: str,
+        max_per_tenant: int = MAX_BENCHMARKS_PER_TENANT,
+    ) -> dict[str, Any]:
+        entry = {**result, "tenantId": tenant_id}
+        other = [b for b in self.benchmarks if b.get("tenantId") != tenant_id]
+        same = [b for b in self.benchmarks if b.get("tenantId") == tenant_id]
+        if max_per_tenant <= 0:
+            self.benchmarks[:] = other
+            return entry
+        kept_same = same[-(max_per_tenant - 1) :] if max_per_tenant > 1 else []
+        self.benchmarks[:] = [*other, *kept_same, entry]
+        return entry
 
     def reverse_rd(self, *, tenant_id: str, sheets: list[dict[str, Any]] | None = None, remnants: list[dict[str, Any]] | None = None, lots: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         remnants = remnants or self.platform.remnants.available(tenant_id=tenant_id)

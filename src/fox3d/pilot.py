@@ -89,6 +89,7 @@ class PilotOps:
             inbox=self.inbox,
             root=platform.root / "leases",
         )
+        self.workorders.dispatcher = self.dispatcher
         self.dispatcher.identity = self.identity
         self.contracts = ContractService(self)
         for svc in (
