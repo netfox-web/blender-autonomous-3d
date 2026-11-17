@@ -732,13 +732,28 @@ class KdFactory:
                     feasible.append({"kind": kind, "productId": spec["productId"], "dimensions": {"width": spec["width"], "height": spec["height"], "depth": spec["depth"]}, "fitsRemnants": True})
         return feasible
 
-    def generate_candidates(self, *, tenant_id: str, count: int = 24, preview_top: int = 3, render: bool = False) -> dict[str, Any]:
+    def generate_candidates(
+        self,
+        *,
+        tenant_id: str,
+        count: int = 24,
+        preview_top: int = 3,
+        render: bool = False,
+    ) -> dict[str, Any]:
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ValueError("count must be a positive integer")
+        if self.max_unapproved_per_tenant <= 0 or count > self.max_unapproved_per_tenant:
+            raise ValueError(
+                f"count must be between 1 and {max(0, self.max_unapproved_per_tenant)}"
+            )
         kinds = list(FLATPACK_PRODUCT_TYPES)
         materials = ["WOOD_WHITE", "WOOD_OAK"]
         seeded: list[dict[str, Any]] = []
         i = 0
+        target_seed = max(count, 20)
+        max_attempts = max(80, target_seed * 4)
         with self.batch_write(tenant_id=tenant_id):
-            while len(seeded) < max(count, 20):
+            while len(seeded) < target_seed and i < max_attempts:
                 kind = kinds[i % len(kinds)]
                 mat = materials[i % len(materials)]
                 rec = self.build_sku(tenant_id=tenant_id, kind=kind, material=mat, render=False)
@@ -746,25 +761,38 @@ class KdFactory:
                 rec["seed"] = i
                 seeded.append(rec)
                 i += 1
-                if i > 80:
-                    break
             ranked = [r for r in seeded if r["report"]["ok"] and not r["rdScore"]["engineeringVeto"]]
             ranked.sort(key=lambda r: (-(r["rdScore"]["overallDeterministic"] or 0), r["landed"]["unitLandedCost"]))
-            top = ranked[: max(preview_top, 1)]
+            selected = ranked[:count]
+            selected_ids = {pid for r in selected if (pid := self._candidate_id(r)) is not None}
+            for rec in seeded:
+                pid = self._candidate_id(rec)
+                if pid and pid not in selected_ids:
+                    self.candidates.pop(pid, None)
+                    self._remove_parametric(pid)
+            top = selected[: max(preview_top, 1)]
             if render:
                 for rec in top:
                     spec = CabinetSpec.model_validate(rec["spec"])
                     rec["preview"] = self.platform.render_parametric(spec.productId, tenant_id=tenant_id, explode=False)
-            for rec in reversed(ranked[:count]):
+            for rec in reversed(selected):
                 pid = self._candidate_id(rec)
                 if pid:
                     self.candidates.pop(pid, None)
                     self.candidates[pid] = rec
                     self._restore_parametric(pid, rec)
-        board = [self._board_row(r) for r in ranked[:count]]
+        with self._lock:
+            retained = [
+                self.candidates[pid]
+                for r in selected
+                if (pid := self._candidate_id(r)) is not None and pid in self.candidates
+            ]
+        board = [self._board_row(r) for r in retained]
         return {
             "generated": len(seeded),
             "ranked": len(ranked),
+            "retained": len(board),
+            "maxUnapprovedPerTenant": self.max_unapproved_per_tenant,
             "top": board[:10],
             "catalog": board,
             "profile": SMALL_SPACE_PROFILE,
@@ -807,6 +835,9 @@ class KdFactory:
                 rec = self.candidates.get(product_id)
             if not rec:
                 raise KeyError(product_id)
+            cand_tid = self._candidate_tenant(rec)
+            self._sync_tenant(cand_tid)
+            rec = self.candidates.get(product_id) or rec
             if rec.get("approvalState") not in {"COMMERCIAL_CANDIDATE", "WAITING_PRODUCT_APPROVAL", "DFM_VALID"}:
                 raise PermissionError(rec.get("approvalState"))
             rec = dict(rec)
@@ -818,7 +849,7 @@ class KdFactory:
                 "forbidden": list(FORBIDDEN_STATES),
             }
             self.candidates[product_id] = rec
-            self._mark_or_persist(self._candidate_tenant(rec))
+            self._mark_or_persist(cand_tid)
             return rec
 
     def confirm_prototype(self, product_id: str, *, actor: str) -> dict[str, Any]:
@@ -834,7 +865,13 @@ class KdFactory:
     def ecommerce_assets(self, *, tenant_id: str, product_id: str) -> dict[str, Any]:
         record = self.platform.parametrics.get(product_id)
         if not record:
+            self._sync_tenant(tenant_id)
+            record = self.platform.parametrics.get(product_id)
+        if not record:
             raise KeyError(product_id)
+        spec_tid = (record.get("spec") or {}).get("tenantId")
+        if spec_tid is not None and self._normalize_tenant(spec_tid) != self._normalize_tenant(tenant_id):
+            raise PermissionError("tenant isolation: ecommerce_assets")
         hero = self.platform.render_parametric(product_id, tenant_id=tenant_id)
         explode = self.platform.render_parametric(product_id, tenant_id=tenant_id, explode=True)
         twin = self.platform.create_twin(

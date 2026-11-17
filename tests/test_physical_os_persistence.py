@@ -1325,4 +1325,143 @@ def test_coexisting_legacy_and_canonical_files_do_not_resurrect_deleted_items(tm
     assert not (empty_root / "packaging" / f"{legacy_stem}.json").exists()
 
 
+def test_kd_catalog_count_aligned_with_retention_and_every_returned_id_usable_across_restart(
+    tmp_path: Path,
+) -> None:
+    """Review #4: /api/kd/catalog acceptable count, retention cap, and returned IDs must match."""
+    from fox3d.kd_factory import MAX_UNAPPROVED_CANDIDATES_PER_TENANT
+
+    root = tmp_path / "data"
+    plat1 = Platform(root=root, mock_blender=True)
+    client1 = TestClient(create_app(plat1))
+    headers_a = {"X-Tenant-Id": "tenant-a"}
+    headers_b = {"X-Tenant-Id": "tenant-b"}
+
+    # 1. Counts exceeding MAX_UNAPPROVED_CANDIDATES_PER_TENANT (including count=40, 25, 100) or invalid types fail with 422.
+    for bad_count in (0, -1, MAX_UNAPPROVED_CANDIDATES_PER_TENANT + 1, 40, 100, "40", True, 2.5):
+        bad_res = client1.post(
+            "/api/kd/catalog",
+            json={"count": bad_count, "render": False},
+            headers=headers_a,
+        )
+        assert bad_res.status_code == 422, (bad_count, bad_res.text)
+        assert "Traceback" not in bad_res.text
+
+    with pytest.raises(ValueError):
+        plat1.kd.generate_candidates(tenant_id="tenant-a", count=40, render=False)
+    assert client1.get("/api/kd/candidates", headers=headers_a).json()["items"] == []
+
+    # 2. Generating at the retention cap (count=24) retains every single returned ID.
+    cat_res = client1.post(
+        "/api/kd/catalog",
+        json={"count": MAX_UNAPPROVED_CANDIDATES_PER_TENANT, "render": False},
+        headers=headers_a,
+    )
+    assert cat_res.status_code == 200, cat_res.text
+    cat_body = cat_res.json()
+    catalog = cat_body["catalog"]
+    assert len(catalog) == MAX_UNAPPROVED_CANDIDATES_PER_TENANT
+    assert cat_body["retained"] == MAX_UNAPPROVED_CANDIDATES_PER_TENANT
+    returned_ids = [row["productId"] for row in catalog]
+    assert len(set(returned_ids)) == MAX_UNAPPROVED_CANDIDATES_PER_TENANT
+    assert {row["productId"] for row in cat_body["top"]} <= set(returned_ids)
+
+    listed_before = client1.get("/api/kd/candidates", headers=headers_a).json()["items"]
+    listed_before_ids = {item["spec"]["productId"] for item in listed_before}
+    assert set(returned_ids) == listed_before_ids
+
+    # Tenant isolation: tenant-b sees nothing and gets 404 on returned IDs.
+    assert client1.get("/api/kd/candidates", headers=headers_b).json()["items"] == []
+    assert (
+        client1.post(
+            "/api/physical-os/approve",
+            json={"entityId": returned_ids[0], "actor": "mallory"},
+            headers=headers_b,
+        ).status_code
+        == 404
+    )
+    assert (
+        client1.post(
+            f"/api/parametric/products/{returned_ids[0]}/resize",
+            json={"width": 600, "render": False},
+            headers=headers_b,
+        ).status_code
+        == 404
+    )
+
+    # 3. Exercise immediate follow-up operations on the first 12 returned IDs before restart.
+    for pid in returned_ids[:6]:
+        ap = client1.post(
+            "/api/physical-os/approve",
+            json={"entityId": pid, "actor": "ops-pre"},
+            headers=headers_a,
+        )
+        assert ap.status_code == 200, (pid, ap.text)
+    for pid in returned_ids[6:12]:
+        rsz = client1.post(
+            f"/api/parametric/products/{pid}/resize",
+            json={"width": 620, "render": False},
+            headers=headers_a,
+        )
+        assert rsz.status_code == 200, (pid, rsz.text)
+        adv = client1.post(
+            "/api/release/advance",
+            json={"entityId": pid, "target": "ENGINEERING_VALID", "actor": "ops-pre"},
+            headers=headers_a,
+        )
+        assert adv.status_code == 200, (pid, adv.text)
+
+    # 4. Restart Platform and verify ALL 24 returned IDs survive and the remaining 12 IDs also work for follow-up ops.
+    plat2 = Platform(root=root, mock_blender=True)
+    client2 = TestClient(create_app(plat2))
+
+    listed_after = client2.get("/api/kd/candidates", headers=headers_a).json()["items"]
+    listed_after_ids = {item["spec"]["productId"] for item in listed_after}
+    assert set(returned_ids) <= listed_after_ids
+
+    proto_top = plat2.kd.confirm_prototype(returned_ids[0], actor="kd-post")
+    assert proto_top["approvalState"] == "APPROVED_FOR_PROTOTYPE"
+
+    for pid in returned_ids[12:18]:
+        ap_post = client2.post(
+            "/api/physical-os/approve",
+            json={"entityId": pid, "actor": "ops-post"},
+            headers=headers_a,
+        )
+        assert ap_post.status_code == 200, (pid, ap_post.text)
+    for pid in returned_ids[18:]:
+        cand_rec = plat2.kd.candidates[pid]
+        if cand_rec.get("approvalState") in {"COMMERCIAL_CANDIDATE", "WAITING_PRODUCT_APPROVAL", "DFM_VALID"}:
+            proto = plat2.kd.confirm_prototype(pid, actor="kd-post")
+            assert proto["approvalState"] == "APPROVED_FOR_PROTOTYPE"
+        adv_post = client2.post(
+            "/api/release/advance",
+            json={"entityId": pid, "target": "ENGINEERING_VALID", "actor": "ops-post"},
+            headers=headers_a,
+        )
+        assert adv_post.status_code == 200, (pid, adv_post.text)
+        rsz_post = client2.post(
+            f"/api/parametric/products/{pid}/resize",
+            json={"width": 640, "render": False},
+            headers=headers_a,
+        )
+        assert rsz_post.status_code == 200, (pid, rsz_post.text)
+
+    batch = plat2.kd.production_batch([plat2.kd.candidates[returned_ids[-1]]], [2], tenant_id="tenant-a")
+    assert batch["batchId"] in plat2.kd.batches
+
+    # 5. Custom max_unapproved_per_tenant dynamically bounds API default and max count as well.
+    plat2.kd.max_unapproved_per_tenant = 6
+    assert (
+        client2.post("/api/kd/catalog", json={"count": 7, "render": False}, headers=headers_b).status_code
+        == 422
+    )
+    ok_custom = client2.post("/api/kd/catalog", json={"render": False}, headers=headers_b)
+    assert ok_custom.status_code == 200
+    assert len(ok_custom.json()["catalog"]) == 6
+    custom_ids = {row["productId"] for row in ok_custom.json()["catalog"]}
+    assert {c["spec"]["productId"] for c in client2.get("/api/kd/candidates", headers=headers_b).json()["items"]} == custom_ids
+
+
+
 

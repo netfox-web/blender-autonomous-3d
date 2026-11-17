@@ -671,6 +671,9 @@ class Platform:
 
     def resize_parametric(self, product_id: str, *, tenant_id: str, **dims: float) -> dict[str, Any]:
         current = self.parametrics.get(product_id)
+        if not current and getattr(self, "kd", None) is not None:
+            self.kd._sync_tenant(tenant_id)
+            current = self.parametrics.get(product_id)
         if not current:
             raise KeyError(product_id)
         from fox3d.parametric import CabinetSpec
