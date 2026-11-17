@@ -745,7 +745,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
         remnants_inv = get_platform().remnants
-        with remnants_inv._transaction():
+        with remnants_inv._transaction(tenant_id=tid):
             rec = remnants_inv.items.get(remnant_id)
             if rec is None or remnants_inv._owner(rec) != tid:
                 raise HTTPException(404, "找不到餘料")
