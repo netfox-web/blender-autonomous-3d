@@ -267,6 +267,7 @@ $('new-button').addEventListener('click', () => { if (!allowLeave()) return; $('
 for (const id of ['close-new','cancel-new']) $(id).addEventListener('click', () => $('new-dialog').close());
 $('new-form').addEventListener('submit', async event => {
   event.preventDefault(); const form = new FormData(event.currentTarget), submit = event.currentTarget.querySelector('[type=submit]');
+  if (submit.disabled) return;
   const draft = {sku:form.get('sku').trim(),name:form.get('name').trim(),family:form.get('family'),pageUrl:form.get('pageUrl').trim(),values:{},notes:''};
   for (const key of ['widthMm','depthMm','heightMm']) if (form.get(key)) draft.values[key] = {value:Number(form.get(key)),evidence:form.get('evidence').trim()};
   submit.disabled = true;

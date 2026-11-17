@@ -332,26 +332,98 @@
     return 'HTTP ' + (res ? res.status : '?') + (detail ? '：' + detail : '');
   }
 
+  function responseFailed(res) {
+    if (!res || !res.ok) return true;
+    var b = res.body;
+    if (!b || typeof b !== 'object') return false;
+    var st = String(b.status != null ? b.status : b.state != null ? b.state : b.truthLabel != null ? b.truthLabel : '')
+      .toUpperCase();
+    if (!st) return false;
+    return st === 'BLOCKED' || st === 'REJECTED' || st === 'SUBMISSION_UNKNOWN' || st === 'FAILED';
+  }
+
+  var actionInFlight = false;
+
+  function restoreFormConfirmStates() {
+    Object.keys(formConfirms).forEach(function (k) {
+      var ctl = formConfirms[k];
+      if (!ctl) return;
+      if (ctl.snapshot) {
+        ctl.box.disabled = false;
+        ctl.btn.disabled = false;
+      } else {
+        ctl.box.disabled = false;
+        ctl.btn.disabled = true;
+      }
+    });
+  }
+
+  // While one POST is in flight, every other action path is disabled so nothing is dropped.
+  function lockPeerActions(busy) {
+    var skip = {};
+    (busy || []).filter(Boolean).forEach(function (el) { skip[el] = 1; });
+    Object.keys(formConfirms).forEach(function (k) {
+      var ctl = formConfirms[k];
+      if (!ctl) return;
+      if (!skip[ctl.btn]) ctl.btn.disabled = true;
+      if (!skip[ctl.box]) ctl.box.disabled = true;
+    });
+    document.querySelectorAll('.pf-tabs button').forEach(function (b) { b.disabled = true; });
+    if ($('pf-refresh')) $('pf-refresh').disabled = true;
+    document.querySelectorAll('.pf-lease-actions .pf-btn, #pf-station-table .pf-btn-small').forEach(function (b) {
+      b.disabled = true;
+    });
+    var tf = $('pf-token-form');
+    if (tf) {
+      var tb = tf.querySelector('button[type="submit"]');
+      if (tb && !skip[tb]) tb.disabled = true;
+    }
+  }
+
+  function unlockPeerActions() {
+    document.querySelectorAll('.pf-tabs button').forEach(function (b) { b.disabled = false; });
+    if ($('pf-refresh')) $('pf-refresh').disabled = false;
+    document.querySelectorAll('.pf-lease-actions .pf-btn, #pf-station-table .pf-btn-small').forEach(function (b) {
+      b.disabled = false;
+    });
+    restoreFormConfirmStates();
+    var tf = $('pf-token-form');
+    if (tf) {
+      var tb = tf.querySelector('button[type="submit"]');
+      if (tb) tb.disabled = false;
+    }
+  }
+
   // Runs one API action: disables the triggering controls while in flight, re-enables them
   // afterwards, and always leaves a visible success / failure notice (network errors included).
   function runAction(opts) {
+    if (actionInFlight) {
+      notify('上一個操作仍在送出中，請稍候再試。', true);
+      return Promise.resolve(null);
+    }
+    actionInFlight = true;
     var busy = (opts.disable || []).filter(Boolean);
     busy.forEach(function (el) { el.disabled = true; });
+    lockPeerActions(busy);
     notify(opts.label + '：送出中…');
     var p;
     try { p = Promise.resolve(opts.request()); } catch (e) { p = Promise.reject(e); }
     return p.then(function (res) { return { res: res }; }, function (err) { return { err: err }; })
       .then(function (r) {
+        actionInFlight = false;
         busy.forEach(function (el) { el.disabled = false; });
+        unlockPeerActions();
         if (r.err) {
           var msg = (r.err && r.err.message) || String(r.err);
           notify(opts.label + '失敗：網路錯誤（' + msg + '），請確認連線後再試。', true);
           showDetail(String(msg), opts.label + ' 網路錯誤');
+          if (opts.onFail) opts.onFail();
           return null;
         }
         showDetail(r.res, opts.label + ' API 回應');
-        if (!r.res.ok) {
+        if (responseFailed(r.res)) {
           notify(opts.label + '失敗（' + errorText(r.res) + '）', true);
+          if (opts.onFail) opts.onFail();
           return r.res;
         }
         notify(opts.label + '：完成（HTTP ' + r.res.status + '）');
@@ -574,6 +646,10 @@
   }
 
   function onTabClick(ev) {
+    if (actionInFlight) {
+      notify('上一個操作仍在送出中，請稍候再切換面板。', true);
+      return;
+    }
     var btn = ev.target;
     if (!btn.dataset.panel) return;
     document.querySelectorAll('.pf-tabs button').forEach(function (b) {
@@ -593,6 +669,10 @@
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       if (!ctl || !ctl.snapshot) return; // only a confirmed snapshot is ever sent
+      if (actionInFlight) {
+        notify('上一個操作仍在送出中，請稍候再試。', true);
+        return;
+      }
       var snap = ctl.snapshot;
       runAction({
         label: label,
@@ -600,7 +680,8 @@
         request: function () {
           return api(path, { method: 'POST', tenant: snap.tenant, body: JSON.stringify(snap.payload) });
         },
-        onOk: function (res) { onOk(ctl, res); }
+        onOk: function (res) { onOk(ctl, res); },
+        onFail: function () { ctl.clear(); }
       });
     });
   }
@@ -652,6 +733,10 @@
     if (tf) {
       tf.addEventListener('submit', function (ev) {
         ev.preventDefault();
+        if (actionInFlight) {
+          notify('上一個操作仍在送出中，請稍候再試。', true);
+          return;
+        }
         var fd = new FormData(tf);
         var kind = trimmed(fd, 'kind');
         var objectId = trimmed(fd, 'objectId');
@@ -675,6 +760,10 @@
   }
 
   function reloadAll() {
+    if (actionInFlight) {
+      notify('上一個操作仍在送出中，請稍候再重新載入。', true);
+      return;
+    }
     activeTenant = fieldTenant();
     clearPendingConfirms();
     updateTenantHint();
