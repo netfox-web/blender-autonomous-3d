@@ -140,7 +140,7 @@ def test_pilot_floor_actions_handle_errors_and_disable_while_in_flight() -> None
     run = _js_function(js, "runAction")
     # in-flight lock, re-enable afterwards, visible failure notice for HTTP and network errors
     assert "el.disabled = true" in run and "el.disabled = false" in run
-    assert "網路錯誤" in run and "notify(" in run and "r.res.ok" in run
+    assert "網路錯誤" in run and "notify(" in run and "responseFailed" in run and "actionInFlight" in run
     # every action endpoint goes through runAction (no bare api(...).then(...) without a rejection path)
     for endpoint in ("/heartbeat", "/api/pilot/leases/", "/api/pilot/scan-token/"):
         idx = js.index(endpoint)

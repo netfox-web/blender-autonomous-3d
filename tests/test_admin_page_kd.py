@@ -143,8 +143,8 @@ def test_kd_js_post_guards_and_no_innerhtml() -> None:
     for fn in ("wireConfirmForm", "wireStructureForm"):
         start = js.index(f"function {fn}(")
         body = js[start : js.index("\n  function ", start + 1)]
-        assert "if (!pending) return;" in body
-        assert "go.disabled = true;" in body
+        assert "inFlight" in body and "go.disabled = true;" in body
+        assert "if (!pending" in body
         assert ".catch(function (e)" in body
         assert "go.disabled = false;" in body
 
