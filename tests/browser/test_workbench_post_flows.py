@@ -352,7 +352,18 @@ def _minimal_print_job() -> dict[str, Any]:
             "substrate": "fixture",
         },
         "plan": {"planHash": "fixture-hash", "panels": []},
-        "spec": {},
+        "spec": {
+            "width": 600,
+            "depth": 400,
+            "height": 800,
+            "components": [
+                {
+                    "role": "body",
+                    "location": [0, 0, 400],
+                    "size": [580, 380, 760],
+                }
+            ],
+        },
         "lastProofId": "proof-1",
         "release": None,
         "blenderAvailable": True,
@@ -435,7 +446,7 @@ def test_print_workspace_release_network_and_blocked_not_success(admin_page: Pag
     page.wait_for_function(
         """() => {
           const n = document.getElementById('notice');
-          return !!(n && n.className === 'error');
+          return !!(n && (n.textContent || '').includes('blocked release fixture'));
         }"""
     )
     assert "印刷下載包已完成" not in page.locator("#notice").inner_text()
@@ -543,7 +554,10 @@ def test_recipe_new_dialog_return_value_reset_and_inflight(admin_page: Page, adm
     assert page.evaluate("() => document.getElementById('new-dialog').returnValue") == ""
     page.locator("#new-form input[name=sku]").fill("NEW-FLOW-SKU")
     page.locator("#new-form input[name=name]").fill("Flow draft")
-    page.locator("#new-form").evaluate("form => form.requestSubmit()")
+    with page.expect_request(
+        lambda r: r.method == "POST" and _path(r.url) == "/api/recipe-library/products"
+    ):
+        page.locator("#new-form").evaluate("form => form.requestSubmit()")
     page.wait_for_function("() => document.querySelector('#new-form [type=submit]').disabled")
     assert len(pending) == 1
     page.evaluate(
