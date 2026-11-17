@@ -81,6 +81,26 @@
     return '租戶：' + tenantId + '\nPOST ' + path + '\n' + JSON.stringify(body, null, 2);
   }
 
+  function responseFailed(r) {
+    if (!r || r.ok === false || (r.status && r.status >= 400)) return true;
+    var j = r.json;
+    if (!j || typeof j !== 'object') return false;
+    var st = String(j.status != null ? j.status : j.truthLabel != null ? j.truthLabel : j.state != null ? j.state : '')
+      .toUpperCase();
+    if (!st) return false;
+    return st === 'BLOCKED' || st === 'REJECTED' || st === 'SUBMISSION_UNKNOWN' || st === 'FAILED';
+  }
+
+  function lockFormControls(form, on, exceptIds) {
+    if (!form) return;
+    var skip = exceptIds || {};
+    form.querySelectorAll('input, select, textarea, button').forEach(function (el) {
+      if (skip[el.id] || el.closest('.kd-confirm-actions')) return;
+      el.disabled = on;
+    });
+    if ($('kd-tenant')) $('kd-tenant').disabled = on;
+  }
+
   function syncTenantHint() {
     $('kd-tenant-active').textContent = activeTenant;
     $('kd-tenant-hint').hidden = fieldTenant() === activeTenant;
@@ -232,34 +252,45 @@
     var confirm = $(confirmId);
     var go = $(goId);
     var pending = null;
+    var inFlight = false;
 
     function reset() {
       confirm.hidden = true;
       $(payloadId).textContent = '';
       pending = null;
+      inFlight = false;
+      go.disabled = false;
+      lockFormControls(form, false);
     }
     confirmResets.push(reset);
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
+      if (inFlight) return;
       pending = buildPayload();
       pending.tenant = activeTenant;
       $(payloadId).textContent = previewText(pending.tenant, pending._path, pending.body);
       confirm.hidden = false;
+      lockFormControls(form, true, { 'kd-tenant': 1 });
     });
 
     $(cancelId).addEventListener('click', reset);
 
     go.addEventListener('click', function () {
-      if (!pending) return;
+      if (!pending || inFlight) return;
       var req = pending;
+      inFlight = true;
       go.disabled = true;
       api('POST', req._path, req.body, req.tenant).then(function (r) {
         if (pending === req) reset();
         onSuccess(r, req);
       }).catch(function (e) {
+        if (pending === req) reset();
         onSuccess({ ok: false, status: 0, json: { error: String(e) } }, req);
-      }).then(function () { go.disabled = false; });
+      }).then(function () {
+        inFlight = false;
+        go.disabled = false;
+      });
     });
   }
 
@@ -274,6 +305,7 @@
     var confirm = $(confirmId);
     var result = $(resultId);
     var pending = null;
+    var inFlight = false;
 
     if (!confirm.querySelector('.kd-confirm-actions')) {
       confirm.textContent = '';
@@ -292,29 +324,37 @@
       confirm.hidden = true;
       payloadPre.textContent = '';
       pending = null;
+      inFlight = false;
+      go.disabled = false;
+      lockFormControls(form, false);
     }
     confirmResets.push(reset);
 
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
+      if (inFlight) return;
       pending = { tenant: activeTenant, body: buildBody() };
       payloadPre.textContent = previewText(pending.tenant, path, pending.body);
       confirm.hidden = false;
+      lockFormControls(form, true);
     });
     cancel.addEventListener('click', reset);
     go.addEventListener('click', function () {
-      if (!pending) return;
+      if (!pending || inFlight) return;
       var req = pending;
+      inFlight = true;
       go.disabled = true;
       api('POST', path, req.body, req.tenant).then(function (r) {
         if (pending === req) reset();
         showJson(result, r.json, r.status);
-        if (!r.ok) result.classList.add('kd-err');
-        else result.classList.remove('kd-err');
+        result.classList.toggle('kd-err', responseFailed(r));
       }).catch(function (e) {
         showJson(result, { error: String(e) }, null);
         result.classList.add('kd-err');
-      }).then(function () { go.disabled = false; });
+      }).then(function () {
+        inFlight = false;
+        go.disabled = false;
+      });
     });
   }
 
@@ -330,7 +370,9 @@
         body: { kind: $('kd-sku-kind').value, render: $('kd-sku-render').checked },
       };
     }, function (r) {
-      showJson($('kd-sku-result'), r.json, r.status);
+      var out = $('kd-sku-result');
+      showJson(out, r.json, r.status);
+      out.classList.toggle('kd-err', responseFailed(r));
     });
 
     wireConfirmForm('kd-catalog-form', 'kd-catalog-confirm', 'kd-catalog-payload', 'kd-catalog-go', 'kd-catalog-cancel', function () {
@@ -345,7 +387,7 @@
       tbody.textContent = '';
       showJson($('kd-catalog-result'), r.json, r.status);
       $('kd-catalog-raw').hidden = false;
-      if (!r.ok) {
+      if (responseFailed(r)) {
         summary.hidden = false;
         summary.textContent = '型錄產生失敗（HTTP ' + r.status + '）';
         summary.className = 'kd-err';

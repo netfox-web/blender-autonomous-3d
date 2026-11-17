@@ -90,14 +90,17 @@
     try{await api(base(sku)+'/cancel',{method:'POST',body:JSON.stringify({taskId:generation.taskId})});if(token===serial)$('notice').textContent='已提出取消，等待 Blender 停止。';}catch(e){if(token===serial)$('notice').textContent=e.message;}finally{$('cancel').disabled=false;}
   });
   if($('dna-refresh'))$('dna-refresh').addEventListener('click',()=>loadDna());
+  let exportBusy=false;
   if($('dna-export-btn'))$('dna-export-btn').addEventListener('click',async()=>{
+    if(exportBusy)return;
+    exportBusy=true;
     const version=['FIXTURE_MASTER_V1','FIXTURE_SINGLE_V1'].includes($('version').value)?$('version').value:'FIXTURE_MASTER_V1';
     $('dna-export-btn').disabled=true;
     try{
       const exported=await api('/api/product-dna/v1/exports',{method:'POST',body:JSON.stringify({version,seal:true})});
       renderDna(exported, `已封存匯出包 (${exported.exportId.slice(0,8)})`);
       $('notice').textContent=`已建立並封存 Product DNA 匯出包（編號：${exported.exportId}）。`;
-    }catch(e){$('notice').textContent=e.message;}finally{$('dna-export-btn').disabled=false;}
+    }catch(e){$('notice').textContent=e.message;}finally{exportBusy=false;$('dna-export-btn').disabled=false;}
   });
   if($('dna-download-btn'))$('dna-download-btn').addEventListener('click',()=>{
     if(!latestDnaPayload)return;

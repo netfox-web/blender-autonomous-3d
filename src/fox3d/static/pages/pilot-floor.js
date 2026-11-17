@@ -332,9 +332,23 @@
     return 'HTTP ' + (res ? res.status : '?') + (detail ? '：' + detail : '');
   }
 
+  function responseFailed(res) {
+    if (!res || !res.ok) return true;
+    var b = res.body;
+    if (!b || typeof b !== 'object') return false;
+    var st = String(b.status != null ? b.status : b.state != null ? b.state : b.truthLabel != null ? b.truthLabel : '')
+      .toUpperCase();
+    if (!st) return false;
+    return st === 'BLOCKED' || st === 'REJECTED' || st === 'SUBMISSION_UNKNOWN' || st === 'FAILED';
+  }
+
+  var actionInFlight = false;
+
   // Runs one API action: disables the triggering controls while in flight, re-enables them
   // afterwards, and always leaves a visible success / failure notice (network errors included).
   function runAction(opts) {
+    if (actionInFlight) return Promise.resolve(null);
+    actionInFlight = true;
     var busy = (opts.disable || []).filter(Boolean);
     busy.forEach(function (el) { el.disabled = true; });
     notify(opts.label + '：送出中…');
@@ -342,16 +356,19 @@
     try { p = Promise.resolve(opts.request()); } catch (e) { p = Promise.reject(e); }
     return p.then(function (res) { return { res: res }; }, function (err) { return { err: err }; })
       .then(function (r) {
+        actionInFlight = false;
         busy.forEach(function (el) { el.disabled = false; });
         if (r.err) {
           var msg = (r.err && r.err.message) || String(r.err);
           notify(opts.label + '失敗：網路錯誤（' + msg + '），請確認連線後再試。', true);
           showDetail(String(msg), opts.label + ' 網路錯誤');
+          if (opts.onFail) opts.onFail();
           return null;
         }
         showDetail(r.res, opts.label + ' API 回應');
-        if (!r.res.ok) {
+        if (responseFailed(r.res)) {
           notify(opts.label + '失敗（' + errorText(r.res) + '）', true);
+          if (opts.onFail) opts.onFail();
           return r.res;
         }
         notify(opts.label + '：完成（HTTP ' + r.res.status + '）');
@@ -593,6 +610,7 @@
     form.addEventListener('submit', function (ev) {
       ev.preventDefault();
       if (!ctl || !ctl.snapshot) return; // only a confirmed snapshot is ever sent
+      if (actionInFlight) return;
       var snap = ctl.snapshot;
       runAction({
         label: label,
@@ -600,7 +618,8 @@
         request: function () {
           return api(path, { method: 'POST', tenant: snap.tenant, body: JSON.stringify(snap.payload) });
         },
-        onOk: function (res) { onOk(ctl, res); }
+        onOk: function (res) { onOk(ctl, res); },
+        onFail: function () { ctl.clear(); }
       });
     });
   }
