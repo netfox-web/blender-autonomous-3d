@@ -10,7 +10,8 @@ from typing import Any
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import MaterialLotRegistry, atomic_write_json, read_json
-from fox3d.journal import emit
+from fox3d.journal import SemanticKeyConflictError, emit
+from fox3d.outbox import BUSINESS_COMMITTED, PREPARED
 
 ALLOWED = frozenset({"MANUAL", "IMPORTED"})
 
@@ -99,6 +100,7 @@ class ReceivingService:
                     existing = self.receipts[self._idem[key]]
                     if existing.get("tenantId") != tenant_id:
                         raise PermissionError("tenant isolation: receipt")
+                    self._finalize_existing(existing, tenant_id=tenant_id, semantic_key=key, actor=actor)
                     return existing
                 qty = int(row.get("quantity") or row.get("sheetCount") or 0)
                 material = str(row.get("material") or "PB_18_WHITE")
@@ -156,6 +158,8 @@ class ReceivingService:
                 }
                 rec["receiptHash"] = stable_hash({k: rec[k] for k in rec if k not in {"receiptId", "receiptHash"}})
                 lots_before = copy.deepcopy(self.lots.lots)
+                event_type = "receipt.quarantined" if mismatch else "receipt.accepted"
+                payload: dict[str, Any] = {}
                 try:
                     if mismatch:
                         lot = self.lots.create(
@@ -191,21 +195,144 @@ class ReceivingService:
                         rec["status"] = "ACCEPTED"
                     self.receipts[rec["receiptId"]] = rec
                     self._idem[key] = rec["receiptId"]
+                    payload = {"status": rec.get("status"), "lotId": rec.get("lotId"), "source": source}
                     emit(
                         self,
-                        "receipt.quarantined" if rec.get("quarantined") else "receipt.accepted",
+                        event_type,
                         tenant_id=tenant_id,
                         aggregate_type="Receipt",
                         aggregate_id=rec["receiptId"],
                         actor=actor,
-                        payload={"status": rec.get("status"), "lotId": rec.get("lotId"), "source": source},
+                        payload=payload,
                         semantic_key=key,
                     )
                 except Exception:
-                    self.lots.lots = lots_before
-                    self.lots.persist()
-                    self.receipts.pop(rec["receiptId"], None)
-                    self._idem.pop(key, None)
-                    self.persist()
+                    if self._receipt_durable(
+                        tenant_id=tenant_id, semantic_key=key, event_type=event_type, payload=payload
+                    ):
+                        # Business snapshot and/or journal already committed. Rolling
+                        # them back would mint a new lot id on retry and collide with
+                        # the semantic key. Finish the outbox when we can; otherwise
+                        # keep the committed snapshot for restart reconcile.
+                        self._finalize_receipt_tx(
+                            tenant_id=tenant_id,
+                            semantic_key=key,
+                            event_type=event_type,
+                            payload=payload,
+                            actor=actor,
+                            aggregate_id=rec["receiptId"],
+                        )
+                        return rec
+                    self._rollback_receipt(lots_before, rec["receiptId"], key, tenant_id=tenant_id)
                     raise
                 return rec
+
+    def _finalize_existing(self, existing: dict[str, Any], *, tenant_id: str, semantic_key: str, actor: str) -> None:
+        event_type = "receipt.quarantined" if existing.get("quarantined") else "receipt.accepted"
+        payload = {"status": existing.get("status"), "lotId": existing.get("lotId"), "source": existing.get("source")}
+        try:
+            self._finalize_receipt_tx(
+                tenant_id=tenant_id,
+                semantic_key=semantic_key,
+                event_type=event_type,
+                payload=payload,
+                actor=actor,
+                aggregate_id=str(existing.get("receiptId") or ""),
+            )
+        except Exception:
+            return
+
+    def _open_receipt_txs(self, *, tenant_id: str, semantic_key: str) -> list[dict[str, Any]]:
+        outbox = self.outbox
+        if outbox is None or not semantic_key or not hasattr(outbox, "list_open"):
+            return []
+        return [tx for tx in outbox.list_open(tenant_id=tenant_id) if tx.get("semanticKey") == semantic_key]
+
+    def _journal_matches(
+        self, *, tenant_id: str, semantic_key: str, event_type: str, payload: dict[str, Any]
+    ) -> bool:
+        journal = self.journal
+        if journal is None or not semantic_key or not payload or not hasattr(journal, "check_semantic_key"):
+            return False
+        try:
+            found = journal.check_semantic_key(
+                tenant_id=tenant_id,
+                event_type=event_type,
+                payload=payload,
+                release_hash=None,
+                semantic_key=semantic_key,
+            )
+        except SemanticKeyConflictError:
+            return False
+        return found is not None
+
+    def _receipt_durable(
+        self, *, tenant_id: str, semantic_key: str, event_type: str, payload: dict[str, Any]
+    ) -> bool:
+        if self._journal_matches(
+            tenant_id=tenant_id, semantic_key=semantic_key, event_type=event_type, payload=payload
+        ):
+            return True
+        return any(tx.get("status") == BUSINESS_COMMITTED for tx in self._open_receipt_txs(
+            tenant_id=tenant_id, semantic_key=semantic_key
+        ))
+
+    def _finalize_receipt_tx(
+        self,
+        *,
+        tenant_id: str,
+        semantic_key: str,
+        event_type: str,
+        payload: dict[str, Any],
+        actor: str,
+        aggregate_id: str,
+    ) -> bool:
+        """Append the journal event when the business snapshot is already committed, then close the outbox."""
+        journal = self.journal
+        matched = self._journal_matches(
+            tenant_id=tenant_id, semantic_key=semantic_key, event_type=event_type, payload=payload
+        )
+        if not matched and journal is not None and hasattr(journal, "append"):
+            try:
+                journal.append(
+                    event_type,
+                    tenant_id=tenant_id,
+                    aggregate_type="Receipt",
+                    aggregate_id=aggregate_id,
+                    actor=actor,
+                    payload=payload,
+                    semantic_key=semantic_key,
+                    source=actor,
+                )
+            except Exception:
+                return False
+            matched = True
+        outbox = self.outbox
+        if outbox is None or not hasattr(outbox, "complete"):
+            return matched
+        for tx in self._open_receipt_txs(tenant_id=tenant_id, semantic_key=semantic_key):
+            try:
+                outbox.complete(str(tx["txId"]))
+            except Exception:
+                return matched
+        return matched
+
+    def _rollback_receipt(
+        self,
+        lots_before: dict[str, Any],
+        receipt_id: str,
+        semantic_key: str,
+        *,
+        tenant_id: str,
+    ) -> None:
+        self.lots.lots = lots_before
+        self.lots.persist()
+        self.receipts.pop(receipt_id, None)
+        self._idem.pop(semantic_key, None)
+        self.persist()
+        outbox = self.outbox
+        if outbox is None or not hasattr(outbox, "abort"):
+            return
+        for tx in self._open_receipt_txs(tenant_id=tenant_id, semantic_key=semantic_key):
+            if tx.get("status") == PREPARED:
+                outbox.abort(str(tx["txId"]))

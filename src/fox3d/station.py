@@ -387,6 +387,7 @@ class StationDispatcher:
             self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
             if lease.get("acked"):
                 return lease
+            self._refuse_closed_workorder(lease.get("workOrderId"))
             lease["acked"] = True
             lease["status"] = "ACKED"
             lease["ackedBy"] = actor
@@ -422,6 +423,7 @@ class StationDispatcher:
                 self.ack(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
             if lease.get("started"):
                 return lease
+            self._refuse_closed_workorder(lease.get("workOrderId"))
             op = self.workorders.start_operation(
                 lease["workOrderId"],
                 lease["operation"],
@@ -465,6 +467,7 @@ class StationDispatcher:
             self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
             if lease.get("completed"):
                 return lease
+            self._refuse_closed_workorder(lease.get("workOrderId"))
             if not lease.get("started"):
                 self.start(lease_id, tenant_id=tenant_id, actor=actor, operator_id=operator_id, shift_id=shift_id)
             op_id = lease.get("opId")
@@ -546,6 +549,13 @@ class StationDispatcher:
             self.stations.persist()
             self.persist()
         return expired
+
+    def _refuse_closed_workorder(self, work_order_id: str | None) -> None:
+        if not work_order_id:
+            return
+        wo = self.workorders.get(work_order_id)
+        if wo.get("state") in {"CANCELLED", "COMPLETED", "REJECTED"}:
+            raise PermissionError("cancelled/completed work order cannot dispatch")
 
     def _lease(self, lease_id: str, tenant_id: str) -> dict[str, Any]:
         lease = self.leases[lease_id]
