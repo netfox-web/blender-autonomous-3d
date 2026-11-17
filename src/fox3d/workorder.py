@@ -5,6 +5,7 @@ Binds to ManufacturingRelease.releaseHash. Reuses MaterialLot / RemnantStore.
 
 from __future__ import annotations
 
+import threading
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
@@ -82,6 +83,7 @@ class WorkOrderService:
         self._idem: dict[str, str] = {}
         self.operations: list[dict[str, Any]] = []
         self.allocation_policy = STRICT_STOCK
+        self._lock = threading.RLock()
         self.load()
 
     def load(self) -> None:
@@ -236,6 +238,23 @@ class WorkOrderService:
         )
         return rec
 
+    def _remnant_transaction(self, tenant_id: str) -> Any:
+        if self.remnants is None:
+            return nullcontext()
+        tx = getattr(self.remnants, "_transaction", None)
+        if callable(tx):
+            try:
+                return tx(tenant_id=tenant_id)
+            except TypeError:
+                return tx()
+        store_tx = getattr(getattr(self.remnants, "store", None), "transaction", None)
+        if callable(store_tx):
+            try:
+                return store_tx(tenant_id=tenant_id)
+            except TypeError:
+                return store_tx()
+        return nullcontext()
+
     def reserve_materials(
         self,
         work_order_id: str,
@@ -244,123 +263,133 @@ class WorkOrderService:
         tenant_id: str | None = None,
         allocation_policy: str | None = None,
     ) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=tenant_id)
-        self._assert_release_fresh(rec)
-        if rec.get("materialReserved"):
-            return rec
-        policy = allocation_policy or self.allocation_policy or STRICT_STOCK
-        if policy not in {STRICT_STOCK, FIXTURE_AUTO_SEED}:
-            raise PermissionError(policy)
-        tid = rec["tenantId"]
-        release = self._release_of(rec)
-        nesting = (release.get("snapshot") or {}).get("nesting") or {}
-        sheet_n = max(int(nesting.get("sheetCount") or 1), 1) * int(rec["quantity"])
-        material = str(nesting.get("sheetSku") or "PB_18_WHITE")
-        thickness = float(nesting.get("thickness") or 18)
-        grain = nesting.get("grain") or nesting.get("grainConstraint")
-        if not isinstance(grain, str) or grain in {"any", "none", ""}:
-            grain = None
-        sheet_mm = nesting.get("sheetMm") or []
-        length = float(sheet_mm[0]) if len(sheet_mm) >= 1 and sheet_mm[0] is not None else None
-        width = float(sheet_mm[1]) if len(sheet_mm) >= 2 and sheet_mm[1] is not None else None
-        lot_reservations: list[dict[str, Any]] = []
-        remaining = sheet_n
-        if policy == STRICT_STOCK:
-            try:
-                lot_reservations = self.lots.allocate_requirement(
-                    tenant_id=tid,
-                    work_order_id=rec["workOrderId"],
-                    quantity=sheet_n,
-                    material=material,
-                    thickness=thickness,
-                    grain=grain,
-                    length=length,
-                    width=width,
-                )
-                remaining = 0
-            except StockShortage as exc:
-                rec["shortage"] = {**exc.payload, "workOrderId": rec["workOrderId"], "policy": STRICT_STOCK}
-                raise
-        else:
-            lots = [
-                l
-                for l in self.lots.list(tenant_id=tid, allocatable=True)
-                if self.lots.lot_compatible(l, material=material, thickness=thickness, grain=grain, length=length, width=width)
-            ]
+        with self._lock:
+            rec = self._require(work_order_id, tenant_id=tenant_id)
+            self._assert_release_fresh(rec)
+            if rec.get("materialReserved"):
+                return rec
+            policy = allocation_policy or self.allocation_policy or STRICT_STOCK
+            if policy not in {STRICT_STOCK, FIXTURE_AUTO_SEED}:
+                raise PermissionError(policy)
+            tid = rec["tenantId"]
+            release = self._release_of(rec)
+            nesting = (release.get("snapshot") or {}).get("nesting") or {}
+            sheet_n = max(int(nesting.get("sheetCount") or 1), 1) * int(rec["quantity"])
+            material = str(nesting.get("sheetSku") or "PB_18_WHITE")
+            thickness = float(nesting.get("thickness") or 18)
+            grain = nesting.get("grain") or nesting.get("grainConstraint")
+            if not isinstance(grain, str) or grain in {"any", "none", ""}:
+                grain = None
+            sheet_mm = nesting.get("sheetMm") or []
+            length = float(sheet_mm[0]) if len(sheet_mm) >= 1 and sheet_mm[0] is not None else None
+            width = float(sheet_mm[1]) if len(sheet_mm) >= 2 and sheet_mm[1] is not None else None
+            lot_reservations: list[dict[str, Any]] = []
             remaining = sheet_n
-            for lot in lots:
-                avail = int(lot.get("remainingSheets") or 0)
-                if avail <= 0 or remaining <= 0:
-                    continue
-                take = min(remaining, avail)
-                item = self.lots.reserve_sheets(
-                    lot["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=take
-                )
-                lot_reservations.append(
-                    {
-                        "kind": "lot",
-                        "lotId": lot["lotId"],
-                        "quantity": take,
-                        "reservationId": item["reservationId"],
-                        "state": "RESERVED",
-                    }
-                )
-                remaining -= take
-            if remaining > 0:
-                extra = self.lots.create(
-                    tenant_id=tid,
-                    material=material,
-                    thickness=thickness,
-                    sheet_count=remaining,
-                    length=length if length is not None else 2440,
-                    width=width if width is not None else 1220,
-                    grain=str(grain or "length"),
-                )
-                extra["truthLabel"] = "FIXTURE"
-                extra["allocationPolicy"] = FIXTURE_AUTO_SEED
-                item = self.lots.reserve_sheets(
-                    extra["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=remaining
-                )
-                lot_reservations.append(
-                    {
-                        "kind": "lot",
-                        "lotId": extra["lotId"],
-                        "quantity": remaining,
-                        "reservationId": item["reservationId"],
-                        "state": "RESERVED",
-                        "truthLabel": "FIXTURE",
-                    }
-                )
-                remaining = 0
-        remnant_ids: list[str] = []
-        if self.remnants is not None:
-            for rem in list(self.remnants.available(tenant_id=tid)):
+            if policy == STRICT_STOCK:
                 try:
-                    self.remnants.reserve(rem["remnantId"], by=rec["workOrderId"], tenant_id=tid, version=rem.get("version"))
-                    remnant_ids.append(rem["remnantId"])
-                except PermissionError:
-                    continue
-        rec["reservations"] = lot_reservations + [{"kind": "remnant", "remnantId": rid} for rid in remnant_ids]
-        rec["lineage"]["materialLots"] = sorted({item["lotId"] for item in lot_reservations})
-        rec["lineage"]["remnants"] = remnant_ids
-        rec["materialReserved"] = True
-        rec["allocationPolicy"] = policy
-        rec["truthLabel"] = "FIXTURE" if policy == FIXTURE_AUTO_SEED else "REAL"
-        rec["reservedBy"] = actor
-        rec["reservedAt"] = _now()
-        self._transition(rec, "MATERIAL_RESERVED", actor=actor, reason=f"reserve:{policy}")
-        emit(
-            self,
-            "workorder.reserve",
-            tenant_id=rec["tenantId"],
-            aggregate_type="WorkOrder",
-            aggregate_id=rec["workOrderId"],
-            actor=actor,
-            payload={"policy": policy, "lots": rec["lineage"]["materialLots"]},
-            release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::wo-reserve::{rec['workOrderId']}",
-        )
-        return rec
+                    lot_reservations = self.lots.allocate_requirement(
+                        tenant_id=tid,
+                        work_order_id=rec["workOrderId"],
+                        quantity=sheet_n,
+                        material=material,
+                        thickness=thickness,
+                        grain=grain,
+                        length=length,
+                        width=width,
+                    )
+                    remaining = 0
+                except StockShortage as exc:
+                    rec["shortage"] = {**exc.payload, "workOrderId": rec["workOrderId"], "policy": STRICT_STOCK}
+                    raise
+            else:
+                with self.lots._transaction():
+                    lots = [
+                        l
+                        for l in self.lots.list(tenant_id=tid, allocatable=True)
+                        if self.lots.lot_compatible(l, material=material, thickness=thickness, grain=grain, length=length, width=width)
+                    ]
+                    remaining = sheet_n
+                    for lot in lots:
+                        avail = int(lot.get("remainingSheets") or 0)
+                        if avail <= 0 or remaining <= 0:
+                            continue
+                        take = min(remaining, avail)
+                        item = self.lots.reserve_sheets(
+                            lot["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=take
+                        )
+                        lot_reservations.append(
+                            {
+                                "kind": "lot",
+                                "lotId": lot["lotId"],
+                                "quantity": take,
+                                "reservationId": item["reservationId"],
+                                "state": "RESERVED",
+                            }
+                        )
+                        remaining -= take
+                    if remaining > 0:
+                        extra = self.lots.create(
+                            tenant_id=tid,
+                            material=material,
+                            thickness=thickness,
+                            sheet_count=remaining,
+                            length=length if length is not None else 2440,
+                            width=width if width is not None else 1220,
+                            grain=str(grain or "length"),
+                        )
+                        extra["truthLabel"] = "FIXTURE"
+                        extra["allocationPolicy"] = FIXTURE_AUTO_SEED
+                        item = self.lots.reserve_sheets(
+                            extra["lotId"], tenant_id=tid, work_order_id=rec["workOrderId"], quantity=remaining
+                        )
+                        lot_reservations.append(
+                            {
+                                "kind": "lot",
+                                "lotId": extra["lotId"],
+                                "quantity": remaining,
+                                "reservationId": item["reservationId"],
+                                "state": "RESERVED",
+                                "truthLabel": "FIXTURE",
+                            }
+                        )
+                        remaining = 0
+            remnant_ids: list[str] = []
+            if self.remnants is not None:
+                reserve_batch = getattr(self.remnants, "reserve_available", None)
+                if callable(reserve_batch):
+                    reserved_remnants = reserve_batch(by=rec["workOrderId"], tenant_id=tid)
+                    remnant_ids = [r["remnantId"] for r in reserved_remnants]
+                else:
+                    with self._remnant_transaction(tid):
+                        for rem in list(self.remnants.available(tenant_id=tid)):
+                            try:
+                                self.remnants.reserve(
+                                    rem["remnantId"], by=rec["workOrderId"], tenant_id=tid, version=rem.get("version")
+                                )
+                                remnant_ids.append(rem["remnantId"])
+                            except PermissionError:
+                                continue
+            rec["reservations"] = lot_reservations + [{"kind": "remnant", "remnantId": rid} for rid in remnant_ids]
+            rec["lineage"]["materialLots"] = sorted({item["lotId"] for item in lot_reservations})
+            rec["lineage"]["remnants"] = remnant_ids
+            rec["materialReserved"] = True
+            rec["allocationPolicy"] = policy
+            rec["truthLabel"] = "FIXTURE" if policy == FIXTURE_AUTO_SEED else "REAL"
+            rec["reservedBy"] = actor
+            rec["reservedAt"] = _now()
+            self._transition(rec, "MATERIAL_RESERVED", actor=actor, reason=f"reserve:{policy}")
+            emit(
+                self,
+                "workorder.reserve",
+                tenant_id=rec["tenantId"],
+                aggregate_type="WorkOrder",
+                aggregate_id=rec["workOrderId"],
+                actor=actor,
+                payload={"policy": policy, "lots": rec["lineage"]["materialLots"]},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{rec['tenantId']}::wo-reserve::{rec['workOrderId']}",
+            )
+            return rec
 
     def start_operation(
         self,
@@ -500,40 +529,44 @@ class WorkOrderService:
         return {"outcome": outcome, "remnants": created, "expectedVsRecordedSeparated": True}
 
     def consume_reserved(self, work_order_id: str, *, actor: str) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=None)
-        if rec.get("consumedFlag"):
+        with self._lock:
+            rec = self._require(work_order_id, tenant_id=None)
+            if rec.get("consumedFlag"):
+                return rec
+            reservations = rec.get("reservations") or []
+            has_remnants = self.remnants is not None and any(item.get("kind") == "remnant" for item in reservations)
+            with self._remnant_transaction(rec["tenantId"]) if has_remnants else nullcontext():
+                for item in reservations:
+                    if item.get("kind") == "lot":
+                        self.lots.consume_reservation(
+                            item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
+                        )
+                        item["state"] = "CONSUMED"
+                        rec["consumed"].append(item)
+                    elif item.get("kind") == "remnant" and self.remnants is not None:
+                        rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
+                        self.remnants.consume(
+                            item["remnantId"],
+                            by=rec["workOrderId"],
+                            tenant_id=rec["tenantId"],
+                            version=rem.get("version"),
+                            lease_token=rem.get("leaseToken"),
+                        )
+                        rec["consumed"].append(item)
+            rec["consumedFlag"] = True
+            rec["consumedBy"] = actor
+            emit(
+                self,
+                "workorder.consume",
+                tenant_id=rec["tenantId"],
+                aggregate_type="WorkOrder",
+                aggregate_id=rec["workOrderId"],
+                actor=actor,
+                payload={"consumed": True},
+                release_hash=rec.get("releaseHash"),
+                semantic_key=f"{rec['tenantId']}::wo-consume::{rec['workOrderId']}",
+            )
             return rec
-        for item in rec.get("reservations") or []:
-            if item.get("kind") == "lot":
-                self.lots.consume_reservation(
-                    item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
-                )
-                item["state"] = "CONSUMED"
-                rec["consumed"].append(item)
-            elif item.get("kind") == "remnant" and self.remnants is not None:
-                rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
-                self.remnants.consume(
-                    item["remnantId"],
-                    by=rec["workOrderId"],
-                    tenant_id=rec["tenantId"],
-                    version=rem.get("version"),
-                    lease_token=rem.get("leaseToken"),
-                )
-                rec["consumed"].append(item)
-        rec["consumedFlag"] = True
-        rec["consumedBy"] = actor
-        emit(
-            self,
-            "workorder.consume",
-            tenant_id=rec["tenantId"],
-            aggregate_type="WorkOrder",
-            aggregate_id=rec["workOrderId"],
-            actor=actor,
-            payload={"consumed": True},
-            release_hash=rec.get("releaseHash"),
-            semantic_key=f"{rec['tenantId']}::wo-consume::{rec['workOrderId']}",
-        )
-        return rec
 
     def consume_one(self, work_order_id: str, reservation_id: str, *, actor: str) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
@@ -974,26 +1007,35 @@ class WorkOrderService:
         """Release lot and remnant reservations that this work order has not consumed."""
         if rec.get("consumedFlag"):
             rec["consumedFrozen"] = True
-        for item in rec.get("reservations") or []:
-            if item.get("kind") == "lot" and item.get("state") == "RESERVED":
-                try:
-                    self.lots.release_reservation(
-                        item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
-                    )
-                    item["state"] = "RELEASED"
-                except (KeyError, PermissionError):
-                    continue
-            elif item.get("kind") == "remnant" and self.remnants is not None:
-                try:
-                    rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
-                    if normalize_status(rem.get("status")) == "reserved" and rem.get("reservedBy") == rec["workOrderId"]:
-                        rem["status"] = "available"
-                        rem["reservedBy"] = None
-                        rem["leaseToken"] = None
-                        rem["version"] = int(rem.get("version") or 1) + 1
-                        self.remnants.store.put(rem)
-                except (KeyError, PermissionError):
-                    continue
+        reservations = rec.get("reservations") or []
+        has_remnants = self.remnants is not None and any(item.get("kind") == "remnant" for item in reservations)
+        with self._remnant_transaction(rec["tenantId"]) if has_remnants else nullcontext():
+            for item in reservations:
+                if item.get("kind") == "lot" and item.get("state") == "RESERVED":
+                    try:
+                        self.lots.release_reservation(
+                            item["reservationId"], tenant_id=rec["tenantId"], work_order_id=rec["workOrderId"]
+                        )
+                        item["state"] = "RELEASED"
+                    except (KeyError, PermissionError):
+                        continue
+                elif item.get("kind") == "remnant" and self.remnants is not None:
+                    try:
+                        rem = self.remnants.get(item["remnantId"], tenant_id=rec["tenantId"])
+                        if normalize_status(rem.get("status")) == "reserved" and rem.get("reservedBy") == rec["workOrderId"]:
+                            current_v = int(rem.get("version") or 1)
+                            updated = dict(rem)
+                            updated["status"] = "available"
+                            updated["qualityState"] = "AVAILABLE"
+                            updated["reservedBy"] = None
+                            updated["leaseToken"] = None
+                            updated["reservedUntil"] = None
+                            updated["idempotencyKey"] = None
+                            updated["version"] = current_v + 1
+                            self.remnants.store.put(updated, expected_version=current_v)
+                            self.remnants.items[item["remnantId"]] = updated
+                    except (KeyError, PermissionError):
+                        continue
         rec["materialReserved"] = False
 
     def _require(self, work_order_id: str, tenant_id: str | None) -> dict[str, Any]:

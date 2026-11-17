@@ -898,14 +898,35 @@ class RemnantInventory:
         return "durable-json" if self._durable else "in-process-ledger"
 
     @contextmanager
-    def _transaction(self) -> Iterator[None]:
+    def _transaction(self, *, tenant_id: str | None = None) -> Iterator[None]:
         tx = getattr(self.store, "transaction", None)
         if callable(tx):
-            with tx():
+            try:
+                ctx = tx(tenant_id=tenant_id)
+            except TypeError:
+                ctx = tx()
+            with ctx:
                 yield
         else:
             with self._lock:
                 yield
+
+    def _sync_store(self, *, tenant_id: str | None = None) -> None:
+        sync = getattr(self.store, "_sync_from_disk", None)
+        if callable(sync):
+            try:
+                sync(tenant_id=tenant_id)
+            except TypeError:
+                sync()
+
+    def _effective_tenant(self, remnant_id: str, tenant_id: str | None) -> str | None:
+        if tenant_id is not None:
+            return tenant_id
+        with self._lock:
+            rec = self.items.get(remnant_id)
+            if rec is not None:
+                return self._owner(rec)
+        return None
 
     def _put_store(self, rec: dict[str, Any], *, expected_version: int | None = None) -> dict[str, Any]:
         if expected_version is not None:
@@ -934,7 +955,7 @@ class RemnantInventory:
         from fox3d.inventory import QUALITY_UPPER
 
         tid = tenant_id or self.default_tenant
-        with self._transaction():
+        with self._transaction(tenant_id=tid):
             for rem in nesting.get("candidateRemnants") or []:
                 rec = {
                     "remnantId": new_id(),
@@ -973,9 +994,7 @@ class RemnantInventory:
         from fox3d.inventory import normalize_status
 
         with self._lock:
-            sync = getattr(self.store, "_sync_from_disk", None)
-            if callable(sync):
-                sync()
+            self._sync_store(tenant_id=tenant_id)
             tid = tenant_id
             rows = list(self.items.values())
             if tid is not None:
@@ -988,7 +1007,7 @@ class RemnantInventory:
     def set_quality(self, remnant_id: str, status: str, *, tenant_id: str | None = None) -> dict[str, Any]:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
-        with self._transaction():
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
             rec = self.items[remnant_id]
             if tenant_id is not None and self._owner(rec) != tenant_id:
                 raise PermissionError("tenant isolation: remnant")
@@ -1020,7 +1039,7 @@ class RemnantInventory:
         from fox3d.infra import utcnow
         from fox3d.inventory import QUALITY_UPPER, lease_token, normalize_status
 
-        with self._transaction():
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
             rec = self.items[remnant_id]
             if tenant_id is not None and self._owner(rec) != tenant_id:
                 raise PermissionError("tenant isolation: remnant")
@@ -1052,6 +1071,30 @@ class RemnantInventory:
             self.items[remnant_id] = updated
             return dict(updated)
 
+    def reserve_available(
+        self,
+        *,
+        by: str,
+        tenant_id: str | None = None,
+        lease_seconds: float | None = None,
+    ) -> list[dict[str, Any]]:
+        eff_tid = tenant_id or self.default_tenant
+        reserved: list[dict[str, Any]] = []
+        with self._transaction(tenant_id=eff_tid):
+            for rem in list(self.available(tenant_id=eff_tid)):
+                try:
+                    item = self.reserve(
+                        rem["remnantId"],
+                        by=by,
+                        version=rem.get("version"),
+                        lease_seconds=lease_seconds,
+                        tenant_id=eff_tid,
+                    )
+                    reserved.append(item)
+                except PermissionError:
+                    continue
+        return reserved
+
     def consume(
         self,
         remnant_id: str,
@@ -1063,7 +1106,7 @@ class RemnantInventory:
     ) -> dict[str, Any]:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
-        with self._transaction():
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
             rec = self.items[remnant_id]
             if tenant_id is not None and self._owner(rec) != tenant_id:
                 raise PermissionError("tenant isolation: remnant")
@@ -1090,15 +1133,17 @@ class RemnantInventory:
             self.items[remnant_id] = updated
             return dict(updated)
 
-    def recover_expired(self, *, now: Any | None = None) -> list[dict[str, Any]]:
+    def recover_expired(self, *, now: Any | None = None, tenant_id: str | None = None) -> list[dict[str, Any]]:
         from datetime import datetime
 
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
         stamp = cast(Any, now).isoformat() if hasattr(now, "isoformat") else (now or None)
         recovered: list[dict[str, Any]] = []
-        with self._transaction():
+        with self._transaction(tenant_id=tenant_id):
             for remnant_id, rec in list(self.items.items()):
+                if tenant_id is not None and self._owner(rec) != tenant_id:
+                    continue
                 if normalize_status(rec.get("status")) != "reserved":
                     continue
                 until = rec.get("reservedUntil")
@@ -1131,14 +1176,19 @@ class RemnantInventory:
         return recovered
 
     def snapshot(self, *, tenant_id: str | None = None) -> dict[str, Any]:
+        from fox3d.inventory import normalize_status
+
         with self._lock:
-            sync = getattr(self.store, "_sync_from_disk", None)
-            if callable(sync):
-                sync()
+            self._sync_store(tenant_id=tenant_id)
+            items = (
+                list(self.items.values())
+                if tenant_id is None
+                else [v for v in self.items.values() if self._owner(v) == tenant_id]
+            )
             return {
                 "source": "CONFIG",
                 "label": "REAL" if self._durable else "MOCK",
                 "persistence": self._persist_label(),
-                "items": list(self.items.values()) if tenant_id is None else [v for v in self.items.values() if self._owner(v) == tenant_id],
-                "availableCount": len(self.available(tenant_id=tenant_id) if tenant_id else self.available()),
+                "items": items,
+                "availableCount": sum(1 for v in items if normalize_status(v.get("status")) == "available"),
             }
