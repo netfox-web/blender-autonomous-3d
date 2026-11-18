@@ -936,3 +936,221 @@ def test_completed_order_allows_measurement_replay_but_rejects_new_measurement(c
     assert client.post(url, headers=HEADERS, json={**body, "length": body["length"] + 100}).status_code == 409
     assert client.post(url, headers=HEADERS, json={**body, "idempotencyKey": "new"}).status_code == 409
     assert platform.pilot.logistics.cartons[carton["cartonId"]]["measureSeq"] == 1
+
+
+def test_concurrent_complete_and_create_cartons_never_500(client: TestClient, platform: Any) -> None:
+    rel, wo_same = _seed_release_receipt_and_wo(platform)
+    _complete_ops_and_qc(platform, wo_same)
+    same_id = wo_same["workOrderId"]
+
+    # Extra stock so several sibling work orders can reserve materials and instantiate cartons concurrently.
+    nest = (rel.get("snapshot") or {}).get("nesting") or {}
+    sheet_mm = nest.get("sheetMm") or [2440, 1220]
+    platform.pilot.receiving.import_receipt(
+        {
+            "supplierLot": f"{TENANT}-lot-race-extra",
+            "material": nest.get("sheetSku") or "PB_18_WHITE",
+            "thickness": nest.get("thickness") or 18,
+            "quantity": 60,
+            "length": float(sheet_mm[0]),
+            "width": float(sheet_mm[1]),
+        },
+        tenant_id=TENANT,
+        actor="recv",
+        source="MANUAL",
+        idempotency_key=f"{TENANT}-receipt-race-extra",
+    )
+
+    wo_ready = platform.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="ops")
+    platform.pilot.workorders.release_for_execution(wo_ready["workOrderId"], actor="ops")
+    platform.pilot.workorders.reserve_materials(
+        wo_ready["workOrderId"], actor="ops", tenant_id=TENANT, allocation_policy=STRICT_STOCK
+    )
+    _complete_ops_and_qc(platform, wo_ready)
+    ready_id = wo_ready["workOrderId"]
+    assert (
+        client.post(
+            f"/api/pilot/work-orders/{ready_id}/cartons",
+            headers=HEADERS,
+            json={"quantity": 2, "idempotencyKey": "ready-cartons"},
+        ).status_code
+        == 200
+    )
+
+    sibling_ids: list[str] = []
+    for idx in range(3):
+        sib = platform.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="ops")
+        platform.pilot.workorders.release_for_execution(sib["workOrderId"], actor="ops")
+        platform.pilot.workorders.reserve_materials(
+            sib["workOrderId"], actor="ops", tenant_id=TENANT, allocation_policy=STRICT_STOCK
+        )
+        sibling_ids.append(sib["workOrderId"])
+
+    barrier = Barrier(5)
+
+    def complete_same() -> Any:
+        barrier.wait()
+        return client.post(f"/api/pilot/work-orders/{same_id}/complete", headers=HEADERS, json={"confirm": True})
+
+    def create_same() -> Any:
+        barrier.wait()
+        return client.post(
+            f"/api/pilot/work-orders/{same_id}/cartons",
+            headers=HEADERS,
+            json={"quantity": 10, "idempotencyKey": "same-wo-cartons"},
+        )
+
+    def complete_ready() -> Any:
+        barrier.wait()
+        return client.post(f"/api/pilot/work-orders/{ready_id}/complete", headers=HEADERS, json={"confirm": True})
+
+    def create_sibling(idx: int) -> Any:
+        barrier.wait()
+        return client.post(
+            f"/api/pilot/work-orders/{sibling_ids[idx]}/cartons",
+            headers=HEADERS,
+            json={"quantity": 25, "idempotencyKey": f"sib-cartons-{idx}"},
+        )
+
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        f_comp_same = pool.submit(complete_same)
+        f_cart_same = pool.submit(create_same)
+        f_comp_ready = pool.submit(complete_ready)
+        f_sib0 = pool.submit(create_sibling, 0)
+        f_sib1 = pool.submit(create_sibling, 1)
+        r_comp_same = f_comp_same.result()
+        r_cart_same = f_cart_same.result()
+        r_comp_ready = f_comp_ready.result()
+        r_sib0 = f_sib0.result()
+        r_sib1 = f_sib1.result()
+
+    for res in (r_comp_same, r_cart_same, r_comp_ready, r_sib0, r_sib1):
+        assert res.status_code != 500, res.text
+    assert r_cart_same.status_code == 200
+    assert (r_comp_same.status_code, r_cart_same.status_code) in {(409, 200), (200, 200)}
+    if r_comp_same.status_code == 200:
+        assert platform.pilot.workorders.get(same_id)["state"] == "COMPLETED"
+    else:
+        assert platform.pilot.workorders.get(same_id)["state"] == "PACKING"
+    assert len(platform.pilot.workorders.get(same_id)["cartonIds"]) == 10
+    assert r_comp_ready.status_code == 200
+    assert platform.pilot.workorders.get(ready_id)["state"] == "COMPLETED"
+    assert r_sib0.status_code == 200 and r_sib1.status_code == 200
+
+
+def test_mismatch_written_via_service_or_http_blocks_completion(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    _complete_ops_and_qc(platform, wo)
+    wo_id = wo["workOrderId"]
+    created = client.post(
+        f"/api/pilot/work-orders/{wo_id}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "direct-mm-carton"},
+    ).json()
+    carton = created["items"][0]
+    exp = carton["expected"]
+
+    # Writing an out-of-tolerance measurement directly to logistics (without HTTP _sync_wo_mismatch_hold)
+    # must still prevent work order completion and sync mismatchHold onto the work order.
+    platform.pilot.logistics.record_measured(
+        carton["cartonId"],
+        tenant_id=TENANT,
+        length=float(exp["length"]) + 80.0,
+        width=float(exp["width"]),
+        height=float(exp["height"]),
+        weight_kg=float(exp["weightKg"]),
+        source="MEASURED",
+        measure_op_id="direct-mm-op-1",
+    )
+    res = client.post(f"/api/pilot/work-orders/{wo_id}/complete", headers=HEADERS, json={"confirm": True})
+    assert res.status_code == 409, res.text
+    assert "尺寸不符待人工確認" in res.json()["detail"]
+    wo_rec = platform.pilot.workorders.get(wo_id)
+    assert wo_rec["state"] != "COMPLETED"
+    assert wo_rec["mismatchHold"] is True
+
+
+def test_checklist_idempotency_key_conflicts_on_remeasure_and_across_restart(
+    client: TestClient, platform: Any
+) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    created = client.post(
+        f"/api/pilot/work-orders/{wo_id}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "chk-remeasure-carton"},
+    ).json()
+    carton = created["items"][0]
+    carton_id = carton["cartonId"]
+    exp = carton["expected"]
+
+    ok_dims = {
+        "length": float(exp["length"]),
+        "width": float(exp["width"]),
+        "height": float(exp["height"]),
+        "weightKg": float(exp["weightKg"]),
+    }
+    assert client.post(f"/api/pilot/cartons/{carton_id}/measured", headers=HEADERS, json=ok_dims).status_code == 200
+
+    chk_path = f"/api/pilot/work-orders/{wo_id}/packing-checklist"
+    body = {"idempotencyKey": "chk-remeasure-key"}
+    first = client.post(chk_path, headers=HEADERS, json=body)
+    assert first.status_code == 200, first.text
+    first_id = first.json()["checklistId"]
+
+    # Same key + same content returns the same checklist and does not emit a second journal event.
+    replay = client.post(chk_path, headers=HEADERS, json=body)
+    assert replay.status_code == 200 and replay.json()["checklistId"] == first_id
+    chk_events = [e for e in platform.pilot.journal.list(TENANT) if e.get("eventType") == "packing.checklist"]
+    assert len(chk_events) == 1
+
+    # A distinct idempotencyKey creates a distinct checklist even before cartons change.
+    distinct = client.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-distinct-key"})
+    assert distinct.status_code == 200
+    distinct_id = distinct.json()["checklistId"]
+    assert distinct_id != first_id
+
+    # Same key with different request body check fields conflicts with 409.
+    assert (
+        client.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-remeasure-key", "notes": "diff"}).status_code
+        == 409
+    )
+
+    # Re-measuring the carton with different dimensions changes the checklist content.
+    remeasured_dims = {**ok_dims, "length": float(exp["length"]) + 45.0}
+    m2 = client.post(f"/api/pilot/cartons/{carton_id}/measured", headers=HEADERS, json=remeasured_dims)
+    assert m2.status_code == 200 and m2.json()["mismatch"] is True
+
+    # Reusing the same idempotencyKey after re-measurement must return 409, not generate another checklist.
+    checklist_count_before = len(platform.pilot.logistics.checklists)
+    conflict_before_restart = client.post(chk_path, headers=HEADERS, json=body)
+    assert conflict_before_restart.status_code == 409, conflict_before_restart.text
+    assert len(platform.pilot.logistics.checklists) == checklist_count_before
+
+    # After process restart, reusing either key (whose stored signature no longer matches) still returns 409.
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    client2 = TestClient(create_app(restarted))
+    assert client2.post(chk_path, headers=HEADERS, json=body).status_code == 409
+    assert client2.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-distinct-key"}).status_code == 409
+    assert len(restarted.pilot.logistics.checklists) == checklist_count_before
+    assert client2.post(chk_path, headers={"X-Tenant-Id": "other-tenant"}, json=body).status_code == 404
+
+    # A fresh key for the new measurement succeeds, and after another restart + re-measurement it also returns 409.
+    after_remeasure = client2.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-after-remeasure"})
+    assert after_remeasure.status_code == 200
+    after_id = after_remeasure.json()["checklistId"]
+    assert after_id not in {first_id, distinct_id}
+
+    restarted2 = type(platform)(root=platform.root, mock_blender=True)
+    client3 = TestClient(create_app(restarted2))
+    assert (
+        client3.post(
+            chk_path, headers=HEADERS, json={"idempotencyKey": "chk-after-remeasure"}
+        ).json()["checklistId"]
+        == after_id
+    )
+    assert (
+        client3.post(f"/api/pilot/cartons/{carton_id}/measured", headers=HEADERS, json=ok_dims).status_code == 200
+    )
+    assert client3.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-after-remeasure"}).status_code == 409
+

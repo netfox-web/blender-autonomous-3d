@@ -559,6 +559,8 @@ class LogisticsService:
         tenant_id: str,
         work_order_id: str,
         release_hash: str,
+        idempotency_key: str | None = None,
+        signature: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             cartons = [
@@ -566,22 +568,47 @@ class LogisticsService:
                 for c in self.cartons.values()
                 if c["workOrderId"] == work_order_id and c.get("tenantId") == tenant_id
             ]
+            cartons.sort(key=lambda c: (int(c.get("index") or 0), str(c.get("cartonId") or "")))
+            items = [
+                {
+                    "cartonId": c["cartonId"],
+                    "expected": c.get("expected"),
+                    "measured": c.get("measured"),
+                    "mismatch": bool(c.get("mismatch")),
+                }
+                for c in cartons
+            ]
             pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
+            eff_sig = signature or stable_hash({"releaseHash": release_hash, "items": items})
+            store_key = f"{tenant_id}::checklist::{work_order_id}::{idempotency_key}" if idempotency_key else None
+            if store_key is not None:
+                previous = self._idem.get(store_key)
+                if previous is not None:
+                    if not isinstance(previous, dict) or previous.get("signature") != eff_sig:
+                        raise SemanticKeyConflictError("packing checklist idempotency conflict")
+                    chk_id = str(previous.get("checklistId") or "")
+                    existing = self.checklists.get(chk_id)
+                    if (
+                        existing is None
+                        or existing.get("tenantId") != tenant_id
+                        or existing.get("workOrderId") != work_order_id
+                    ):
+                        raise SemanticKeyConflictError("packing checklist idempotency conflict")
+                    return existing
+                prefix = f"{tenant_id}::checklist::"
+                suffix = f"::{idempotency_key}"
+                if any(
+                    isinstance(k, str) and k != store_key and k.startswith(prefix) and k.endswith(suffix)
+                    for k in self._idem
+                ):
+                    raise SemanticKeyConflictError("packing checklist idempotency conflict")
             rec: dict[str, Any] = {
                 "checklistId": new_id(),
                 "tenantId": tenant_id,
                 "workOrderId": work_order_id,
                 "releaseHash": release_hash,
                 "pinned": pinned,
-                "items": [
-                    {
-                        "cartonId": c["cartonId"],
-                        "expected": c.get("expected"),
-                        "measured": c.get("measured"),
-                        "mismatch": bool(c.get("mismatch")),
-                    }
-                    for c in cartons
-                ],
+                "items": items,
                 "mismatchHold": any(bool(c.get("mismatch")) for c in cartons),
                 "autoOverride": False,
                 "truthLabel": "REAL_LOGIC",
@@ -589,17 +616,28 @@ class LogisticsService:
             }
             rec["checklistHash"] = stable_hash({k: rec[k] for k in rec if k != "checklistHash"})
             self.checklists[rec["checklistId"]] = rec
-            emit(
-                self,
-                "packing.checklist",
-                tenant_id=tenant_id,
-                aggregate_type="PackingChecklist",
-                aggregate_id=rec["checklistId"],
-                actor="ops",
-                payload={"workOrderId": work_order_id, "pinned": pinned},
-                release_hash=release_hash,
-                semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}::{rec['checklistId']}",
-            )
+            if store_key is not None:
+                self._idem[store_key] = {"signature": eff_sig, "checklistId": rec["checklistId"]}
+            try:
+                emit(
+                    self,
+                    "packing.checklist",
+                    tenant_id=tenant_id,
+                    aggregate_type="PackingChecklist",
+                    aggregate_id=rec["checklistId"],
+                    actor="ops",
+                    payload={"workOrderId": work_order_id, "pinned": pinned},
+                    release_hash=release_hash,
+                    semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}::{rec['checklistId']}",
+                )
+            except Exception:
+                if self.root and (self.root / "logistics.json").exists():
+                    self.load()
+                else:
+                    self.checklists.pop(rec["checklistId"], None)
+                    if store_key is not None:
+                        self._idem.pop(store_key, None)
+                raise
             return rec
 
     def shipment_handoff(
