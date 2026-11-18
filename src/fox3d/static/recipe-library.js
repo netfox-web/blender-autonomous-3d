@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlSku = sku => encodeURIComponent(sku);
 let items = [], families = {}, fields = {}, selected = null, dirty = false, activeTab = 'threed', busy = false;
-let recipeRevisionRows = [], recipePickedRevision = null, recipeRestoreSnapshot = null, recipeRevisionPickToken = 0;
+let recipeRevisionRows = [], recipePickedRevision = null, recipeRestoreSnapshot = null, recipeRevisionPickToken = 0, recipeRevisionLoadToken = 0;
 const core = ['widthMm','depthMm','heightMm','material','doorCount','rowCount','compartmentCount','handles'];
 
 function message(text, error = false) {
@@ -132,15 +132,21 @@ async function loadRecipeRevisions() {
   list.replaceChildren(); renderRecipeRevisionDiff([]);
   if (restoreBtn) restoreBtn.disabled = true;
   const sku = selected.draft.sku;
-  let offset = 0, total = 1;
+  const loadToken = ++recipeRevisionLoadToken;
+  let pageOffset = 0, total = 1, rows = [];
   try {
-    while (offset < total) {
-      const data = await json(`/products/${urlSku(sku)}/revisions?offset=${offset}&limit=40`);
-      if (selected?.draft.sku !== sku) return;
-      recipeRevisionRows = recipeRevisionRows.concat(data.items || []);
+    while (pageOffset < total) {
+      const data = await json(`/products/${urlSku(sku)}/revisions?offset=${pageOffset}&limit=40`);
+      if (selected?.draft.sku !== sku || loadToken !== recipeRevisionLoadToken) return;
+      rows = rows.concat(data.items || []);
       total = data.total;
-      offset = recipeRevisionRows.length;
+      pageOffset += data.items.length;
+      if (!data.items.length && pageOffset < total) {
+        throw new Error('版本紀錄分頁異常，已停止載入。');
+      }
     }
+    if (selected?.draft.sku !== sku || loadToken !== recipeRevisionLoadToken) return;
+    recipeRevisionRows = rows;
   } catch (error) {
     if (selected?.draft.sku !== sku) return;
     list.replaceChildren();

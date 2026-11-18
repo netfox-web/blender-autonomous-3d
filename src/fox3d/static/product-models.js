@@ -7,7 +7,7 @@
   let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], dispose=null, viewId='', busy=false;
   const cancelPending=new Map();
   let masterInventory=[], categoryTree=[], categoryNodes=new Map(), categoryFilter='all', classification=null, classificationDirty=false, pendingNewCategory=null;
-  let revisionRows=[], pickedRevision=null, restoreSnapshot=null, revisionDetail=null, revisionPickToken=0;
+  let revisionRows=[], pickedRevision=null, restoreSnapshot=null, revisionDetail=null, revisionPickToken=0, mastersLoadToken=0, revisionLoadToken=0;
   const numeric=['widthMm','depthMm','heightMm','panelMm','backMm','doorMm','gapMm','rows'];
   const labels={idle:'尚未生成',queued:'排隊中',running:'Blender 生成中',succeeded:'生成完成',failed:'生成失敗',cancelled:'已取消'};
   function notice(text,error=false){$('notice').textContent=text;$('notice').className=error?'error':'';}
@@ -77,9 +77,9 @@
         renderInventory();switchView('models');await showStatus();});$(item.templateState==='PREVIEW_AVAILABLE'?'generated-masters':'masters').append(b);}
   }
   async function loadMasters(){
-    masterInventory=[];let offset=0,total=1,categoryTree=[];
-    while(offset<total){const data=await api(`?offset=${offset}&limit=200`);categoryTree=data.categoryTree;masterInventory=masterInventory.concat(data.items);total=data.total;offset=masterInventory.length;}
-    categoryNodes=new Map();indexCategories(categoryTree);
+    const token=++mastersLoadToken;let pageOffset=0,total=1,inv=[],tree=[];
+    while(pageOffset<total){const data=await api(`?offset=${pageOffset}&limit=200`);if(token!==mastersLoadToken)return;tree=data.categoryTree;inv=inv.concat(data.items);total=data.total;pageOffset+=data.items.length;if(!data.items.length&&pageOffset<total){notice('模型清單分頁異常，已停止載入。',true);break;}}
+    if(token!==mastersLoadToken)return;masterInventory=inv;categoryTree=tree;categoryNodes=new Map();indexCategories(categoryTree);
     const generated=masterInventory.filter(x=>x.templateState==='PREVIEW_AVAILABLE').length;
     $('generated-count').textContent=generated;$('master-count').textContent=masterInventory.length-generated;
     renderCategories();renderInventory();
@@ -138,16 +138,16 @@
       $('revision-list').append(b);}
   }
   async function loadRevisions(){
-    const card=$('revision-history-card');revisionRows=[];pickedRevision=null;revisionDetail=null;revisionPickToken++;
+    const card=$('revision-history-card');const token=++revisionLoadToken;revisionRows=[];pickedRevision=null;revisionDetail=null;revisionPickToken++;
     $('revision-restore').disabled=true;renderRevisionDiff([]);$('revision-list').replaceChildren();
     if(!selected?.id){card.hidden=true;return;}
-    card.hidden=false;const mid=selected.id;let offset=0,total=1;
-    while(offset<total){const data=await api(`/${mid}/revisions?offset=${offset}&limit=40`);if(selected?.id!==mid)return;revisionRows=revisionRows.concat(data.items||[]);total=data.total;offset=revisionRows.length;}
-    renderRevisionButtons(mid);
+    card.hidden=false;const mid=selected.id;let pageOffset=0,total=1,rows=[];
+    while(pageOffset<total){const data=await api(`/${mid}/revisions?offset=${pageOffset}&limit=40`);if(selected?.id!==mid||token!==revisionLoadToken)return;rows=rows.concat(data.items||[]);total=data.total;pageOffset+=data.items.length;if(!data.items.length&&pageOffset<total){notice('版本紀錄分頁異常，已停止載入。',true);break;}}
+    if(selected?.id!==mid||token!==revisionLoadToken)return;revisionRows=rows;renderRevisionButtons(mid);
   }
   function openRestoreDialog(){
     if(!selected||!pickedRevision)return;
-    if(dirty&&!window.confirm('有未儲存的修改，還原會覆寫編輯內容。請先儲存，或確定放棄修改並還原？'))return;
+    if((dirty||classificationDirty)&&!window.confirm('有未儲存的修改或分類變更，還原會覆寫編輯內容。請先儲存，或確定放棄並還原？'))return;
     const dialog=$('restore-revision-dialog');dialog.returnValue='';restoreSnapshot={targetRevision:pickedRevision,expectedRevision:selected.revision};
     $('restore-revision-summary').textContent=`將還原至第 ${pickedRevision} 版內容，並以目前第 ${selected.revision} 版為基礎另存新版本。`;dialog.showModal();
   }
