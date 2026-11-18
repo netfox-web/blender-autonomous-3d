@@ -206,9 +206,30 @@ def create(root, tid, data, expected_revision, *, idempotency_key=None):
         if existing:
             if existing.get('inputHash') != payload_hash:
                 raise DraftConflict('相同 idempotencyKey 已用於不同內容')
-            return get(root, tid, existing['id'])
-        created = save(root, tid, data, expected_revision)
-        render.atomic_json(record_path, {'id': created['id'], 'inputHash': payload_hash, 'key': key})
+            mid = existing['id']
+            try:
+                item = get(root, tid, mid)
+            except KeyError:
+                if existing.get('complete') is False:
+                    created = save(root, tid, data, expected_revision, mid)
+                    render.atomic_json(record_path, {
+                        'id': mid, 'inputHash': payload_hash, 'key': key, 'complete': True,
+                    })
+                    return created
+                raise
+            if existing.get('complete') is False:
+                render.atomic_json(record_path, {
+                    'id': mid, 'inputHash': payload_hash, 'key': key, 'complete': True,
+                })
+            return item
+        mid = new_id()
+        render.atomic_json(record_path, {
+            'id': mid, 'inputHash': payload_hash, 'key': key, 'complete': False,
+        })
+        created = save(root, tid, data, expected_revision, mid)
+        render.atomic_json(record_path, {
+            'id': mid, 'inputHash': payload_hash, 'key': key, 'complete': True,
+        })
         return created
 
 
@@ -258,9 +279,12 @@ def save(root,tid,data,revision,mid=None):
     validate_artworks(root,tid,m.model_dump())
     base=directory(root,tid); base.mkdir(parents=True,exist_ok=True)
     with FileLock(str(base/'write.lock'),timeout=10):
-        previous=get(root,tid,mid) if mid else None
-        if revision!=(previous['revision'] if previous else 0): raise DraftConflict('版本已變更；請重新載入後再儲存')
-        mid=mid or new_id()
+        previous = None
+        if mid and (base / mid / 'master.json').is_file():
+            previous = get(root, tid, mid)
+        if revision != (previous['revision'] if previous else 0):
+            raise DraftConflict('版本已變更；請重新載入後再儲存')
+        mid = mid or new_id()
         result={'id':mid,'revision':revision+1,'updatedAt':timestamp(),'draft':m.model_dump(),
                 'inputHash':render.input_hash(m.model_dump()),'productionReady':False}
         render.atomic_json(base/mid/'revisions'/f'{revision+1}.json',result)

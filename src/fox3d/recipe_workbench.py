@@ -260,18 +260,20 @@ class RecipeWorkbench:
             raise ValueError("圖片檔案遺失或已變動")
         return path, row["mime"]
 
-    def _require_tenant_history(self, con, tid, sku):
+    def _known_product(self, con, tid, sku):
         if self._read(con, tid, sku) is not None:
-            return
+            return True
         if con.execute(
             "SELECT 1 FROM revisions WHERE tenant=? AND sku=? LIMIT 1",
             (tid, sku),
-        ).fetchone() is None:
-            raise KeyError("找不到商品")
+        ).fetchone() is not None:
+            return True
+        return sku in self.seeds()
 
     def list_revisions(self, tid, sku, *, offset=0, limit=40):
         with self.connection() as con:
-            self._require_tenant_history(con, tid, sku)
+            if not self._known_product(con, tid, sku):
+                raise KeyError("找不到商品")
             rows = con.execute(
                 "SELECT revision, updated, payload FROM revisions WHERE tenant=? AND sku=? ORDER BY revision",
                 (tid, sku),
@@ -288,7 +290,8 @@ class RecipeWorkbench:
         if not isinstance(revision, int) or revision < 1:
             raise ValueError("版本編號須為正整數")
         with self.connection() as con:
-            self._require_tenant_history(con, tid, sku)
+            if not self._known_product(con, tid, sku):
+                raise KeyError("找不到商品")
             row = con.execute(
                 "SELECT revision, updated, payload FROM revisions WHERE tenant=? AND sku=? AND revision=?",
                 (tid, sku, revision),
@@ -301,7 +304,8 @@ class RecipeWorkbench:
 
     def restore(self, tid, sku, revision, expected_revision):
         with self.connection() as con:
-            self._require_tenant_history(con, tid, sku)
+            if not self._known_product(con, tid, sku):
+                raise KeyError("找不到商品")
         snapshot = self.get_revision(tid, sku, revision)
         current = self.get(tid, sku)
         if current["revision"] != expected_revision:
