@@ -5,7 +5,7 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlSku = sku => encodeURIComponent(sku);
 let items = [], families = {}, fields = {}, selected = null, dirty = false, activeTab = 'threed', busy = false;
-let recipeRevisionRows = [], recipePickedRevision = null, recipeRestoreSnapshot = null;
+let recipeRevisionRows = [], recipePickedRevision = null, recipeRestoreSnapshot = null, recipeRevisionPickToken = 0;
 const core = ['widthMm','depthMm','heightMm','material','doorCount','rowCount','compartmentCount','handles'];
 
 function message(text, error = false) {
@@ -93,36 +93,68 @@ function renderRecipeRevisionDiff(lines) {
   if (!lines.length) { box.textContent = '與目前版本相同。'; return; }
   for (const line of lines) { const p = document.createElement('p'); p.textContent = line; box.append(p); }
 }
-async function loadRecipeRevisions() {
-  recipeRevisionRows = []; recipePickedRevision = null;
-  const list = $('recipe-revision-list'), restoreBtn = $('recipe-revision-restore');
-  if (!list || !selected) return;
-  list.replaceChildren(); renderRecipeRevisionDiff([]);
-  if (restoreBtn) restoreBtn.disabled = true;
-  const sku = selected.draft.sku;
-  let data;
-  try { data = await json(`/products/${urlSku(sku)}/revisions`); }
-  catch { list.textContent = '尚無已儲存的修訂版本。'; return; }
-  if (selected?.draft.sku !== sku) return;
-  recipeRevisionRows = data.items || [];
-  if (!recipeRevisionRows.length) { list.textContent = '尚無已儲存的修訂版本。'; return; }
+function renderRecipeRevisionButtons(sku, restoreBtn) {
+  const list = $('recipe-revision-list');
+  list.replaceChildren();
+  if (!recipeRevisionRows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '尚無已儲存的修訂版本。';
+    list.append(empty);
+    return;
+  }
   for (const row of recipeRevisionRows) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'secondary';
     b.textContent = `第 ${row.revision} 版 · ${row.updatedAt ? new Date(row.updatedAt).toLocaleString('zh-TW') : '—'}`;
     b.addEventListener('click', async () => {
+      const token = ++recipeRevisionPickToken;
       recipePickedRevision = row.revision;
-      const detail = await json(`/products/${urlSku(sku)}/revisions/${row.revision}`);
-      if (selected?.draft.sku !== sku) return;
-      renderRecipeRevisionDiff(diffRecipeDraft(selected.draft, detail.draft));
-      if (restoreBtn) restoreBtn.disabled = row.revision === selected.revision;
+      if (restoreBtn) restoreBtn.disabled = true;
+      renderRecipeRevisionDiff([]);
+      try {
+        const detail = await json(`/products/${urlSku(sku)}/revisions/${row.revision}`);
+        if (selected?.draft.sku !== sku || token !== recipeRevisionPickToken) return;
+        renderRecipeRevisionDiff(diffRecipeDraft(selected.draft, detail.draft));
+        if (restoreBtn) restoreBtn.disabled = row.revision === selected.revision;
+      } catch (error) {
+        if (selected?.draft.sku === sku && token === recipeRevisionPickToken) message(error.message, true);
+      }
     });
     list.append(b);
   }
 }
+async function loadRecipeRevisions() {
+  recipeRevisionRows = []; recipePickedRevision = null; recipeRevisionPickToken++;
+  const list = $('recipe-revision-list'), restoreBtn = $('recipe-revision-restore');
+  if (!list || !selected) return;
+  list.replaceChildren(); renderRecipeRevisionDiff([]);
+  if (restoreBtn) restoreBtn.disabled = true;
+  const sku = selected.draft.sku;
+  let offset = 0, total = 1;
+  try {
+    while (offset < total) {
+      const data = await json(`/products/${urlSku(sku)}/revisions?offset=${offset}&limit=40`);
+      if (selected?.draft.sku !== sku) return;
+      recipeRevisionRows = recipeRevisionRows.concat(data.items || []);
+      total = data.total;
+      offset = recipeRevisionRows.length;
+    }
+  } catch (error) {
+    if (selected?.draft.sku !== sku) return;
+    list.replaceChildren();
+    const err = document.createElement('p');
+    err.className = 'form-error';
+    err.textContent = error.message || '無法載入版本紀錄';
+    list.append(err);
+    return;
+  }
+  renderRecipeRevisionButtons(sku, restoreBtn);
+}
 function openRecipeRestoreDialog() {
   if (!selected || !recipePickedRevision) return;
+  if (dirty && !window.confirm('尚有未儲存的修改，還原會覆寫編輯內容。請先儲存，或確定放棄修改並還原？')) return;
   const dialog = $('recipe-restore-dialog');
   dialog.returnValue = '';
   recipeRestoreSnapshot = { targetRevision: recipePickedRevision, expectedRevision: selected.revision, sku: selected.draft.sku };
