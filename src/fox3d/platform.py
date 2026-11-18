@@ -38,6 +38,7 @@ from fox3d.infra import (
     Scheduler,
     TenantRegistry,
     retry_delay_seconds,
+    utcnow,
 )
 from fox3d.jobs import BlenderJob
 from fox3d.media import ARExporter, AssemblyAnimator, BlenderToVideo, Product360Engine, RetailEngine, SyntheticFactory
@@ -504,7 +505,8 @@ class Platform:
             return self.queue.get(job["jobId"]) or job
 
         try:
-            self.queue.set_status(job["jobId"], "uploading")
+            # Fresh heartbeat: stale-lease recovery measures the upload from here.
+            self.queue.set_status(job["jobId"], "uploading", heartbeatAt=utcnow().isoformat())
         except Exception:
             pass
         stored = self._upload_outputs(job["tenantId"], job["jobId"], result.outputs or {})

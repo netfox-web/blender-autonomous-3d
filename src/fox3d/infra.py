@@ -748,21 +748,39 @@ class JobQueue:
         return job
 
     def recover_stale_leases(self, *, max_age_seconds: float = 30.0) -> builtins.list[str]:
-        """Failed-job / worker-offline recovery: expired lease returns to queued."""
+        """Failed-job / worker-offline recovery for in-flight jobs whose worker is gone.
+
+        Expired leases return to a claimable state (``queued``, or
+        ``retry_scheduled`` for ``uploading``, which has no edge to ``queued``)
+        until ``maxAttempts`` is used up, then become ``failed``. A stale
+        ``cancel_requested`` job has no worker left to acknowledge the cancel,
+        so it is finished as ``cancelled``. Returns the IDs of jobs put back
+        to a claimable state.
+        """
         now = utcnow()
         recovered: builtins.list[str] = []
-        for job in self._jobs.values():
-            if job["status"] not in {"leased", "reserved", "dispatched", "running", "rendering"}:
-                continue
-            beat = job.get("heartbeatAt") or job.get("startedAt")
-            if not beat:
-                continue
-            ts = datetime.fromisoformat(beat)
-            if (now - ts).total_seconds() > max_age_seconds:
+        with self._lock:
+            for job in self._jobs.values():
+                status = job["status"]
+                if status not in _STALE_RECOVERABLE_STATUSES:
+                    continue
+                beat = job.get("heartbeatAt") or job.get("startedAt")
+                if not beat:
+                    continue
+                ts = datetime.fromisoformat(beat)
+                if (now - ts).total_seconds() <= max_age_seconds:
+                    continue
+                if status == "cancel_requested":
+                    job["status"] = transition(status, "cancelled")
+                    job["leaseOwner"] = None
+                    job["completedAt"] = now.isoformat()
+                    job["error"] = "worker offline recovery: cancel completed"
+                    self._save(job)
+                    continue
                 attempts = int(job.get("attemptCount") or 0) + 1
                 job["attemptCount"] = attempts
                 if attempts < int(job.get("maxAttempts") or 3):
-                    job["status"] = "queued"
+                    job["status"] = "retry_scheduled" if status == "uploading" else "queued"
                     job["leaseOwner"] = None
                     job["error"] = "worker offline recovery: lease expired"
                     recovered.append(job["jobId"])
@@ -770,9 +788,14 @@ class JobQueue:
                     job["status"] = "failed"
                     job["error"] = "worker offline and retry exhausted"
                     job["completedAt"] = now.isoformat()
-        for job in self._jobs.values():
-            self._save(job)
+            for job in self._jobs.values():
+                self._save(job)
         return recovered
+
+
+_STALE_RECOVERABLE_STATUSES = frozenset(
+    {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "cancel_requested"}
+)
 
 
 def job_cache_key(job: dict[str, Any], *, blender_version: str) -> str:

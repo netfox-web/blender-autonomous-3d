@@ -88,3 +88,70 @@ def test_executed_job_result_survives_restart(tmp_path):
     assert restored['status'] == done['status']
     assert restored['outputAsset'] == done['outputAsset']
     assert restored['output'] == done['output']
+
+
+STALE_BEAT = '2000-01-01T00:00:00+00:00'
+
+
+def _stale_in_flight_job(tmp_path, key, status):
+    """Persist a claimed job stuck in ``status`` whose worker stopped beating."""
+    platform = Platform(tmp_path, mock_blender=True)
+    job = platform.submit_job({'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW', 'idempotencyKey': key})
+    assert platform.queue.claim('worker')['jobId'] == job['jobId']
+    platform.queue.set_status(job['jobId'], 'running', heartbeatAt=STALE_BEAT)
+    if status == 'uploading':
+        platform.queue.set_status(job['jobId'], 'uploading', heartbeatAt=STALE_BEAT)
+    else:
+        assert platform.cancel_job(job['jobId'], tenant_id='owner')['status'] == 'cancel_requested'
+    assert platform.get_job(job['jobId'], tenant_id='owner')['status'] == status
+    return job
+
+
+def test_stale_uploading_job_is_claimable_again_after_restart(tmp_path):
+    job = _stale_in_flight_job(tmp_path, 'upload-key', 'uploading')
+    restarted = Platform(tmp_path, mock_blender=True)
+    assert restarted.worker_offline_recovery() == [job['jobId']]
+    recovered = restarted.get_job(job['jobId'], tenant_id='owner')
+    assert recovered['status'] == 'retry_scheduled'
+    assert recovered['attemptCount'] == 1
+    assert recovered['leaseOwner'] is None
+    resent = restarted.submit_job({'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW', 'idempotencyKey': 'upload-key'})
+    assert resent['jobId'] == job['jobId']
+    assert resent['status'] == 'retry_scheduled'
+    # The recovered state is durable, and the job can be leased again.
+    again = Platform(tmp_path, mock_blender=True)
+    assert again.get_job(job['jobId'], tenant_id='owner')['status'] == 'retry_scheduled'
+    claimed = again.queue.claim('worker-2')
+    assert claimed is not None and claimed['jobId'] == job['jobId']
+    assert claimed['status'] == 'reserved'
+
+
+def test_stale_uploading_job_fails_when_attempts_are_used_up(tmp_path):
+    job = _stale_in_flight_job(tmp_path, 'upload-exhausted', 'uploading')
+    first = Platform(tmp_path, mock_blender=True)
+    first.queue.get(job['jobId'])['attemptCount'] = 2
+    assert first.worker_offline_recovery() == []
+    assert Platform(tmp_path, mock_blender=True).get_job(job['jobId'], tenant_id='owner')['status'] == 'failed'
+
+
+def test_fresh_uploading_job_is_not_recovered(tmp_path):
+    platform = Platform(tmp_path, mock_blender=True)
+    job = platform.submit_job({'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW'})
+    platform.queue.claim('worker')
+    platform.queue.set_status(job['jobId'], 'running')
+    platform.queue.heartbeat(job['jobId'])
+    platform.queue.set_status(job['jobId'], 'uploading')
+    assert platform.worker_offline_recovery() == []
+    assert platform.get_job(job['jobId'], tenant_id='owner')['status'] == 'uploading'
+
+
+def test_stale_cancel_requested_job_is_cancelled_after_restart(tmp_path):
+    job = _stale_in_flight_job(tmp_path, 'cancel-key', 'cancel_requested')
+    restarted = Platform(tmp_path, mock_blender=True)
+    assert restarted.worker_offline_recovery() == []
+    assert restarted.get_job(job['jobId'], tenant_id='owner')['status'] == 'cancelled'
+    resent = restarted.submit_job({'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW', 'idempotencyKey': 'cancel-key'})
+    assert resent['jobId'] == job['jobId']
+    assert resent['status'] == 'cancelled'
+    assert Platform(tmp_path, mock_blender=True).get_job(job['jobId'], tenant_id='owner')['status'] == 'cancelled'
+
