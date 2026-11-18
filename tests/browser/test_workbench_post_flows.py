@@ -716,3 +716,185 @@ def test_product_models_scan_network_and_4xx_not_success(admin_page: Page, admin
     assert "掃描完成" not in page.locator("#notice").inner_text()
     assert page.locator("#scan").is_enabled()
     _assert_inert(page)
+
+
+def test_print_workspace_and_product_models_over_100_items_pagination(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    from urllib.parse import parse_qs, urlparse
+
+    page = admin_page
+    base = admin_server["base_url"]
+    total = 105
+    assets_list = [
+        {
+            "id": f"{i + 1:064x}",
+            "name": f"art-{i + 1:03d}.pdf",
+            "provenance": {"type": "NAS_PRODUCT_CATALOG", "relativePath": f"folder/art-{i + 1:03d}.pdf"},
+            "info": {"type": "PDF", "pages": [{}]},
+            "usage": {
+                "role": "ARTWORK" if i < 104 else "UNCLASSIFIED",
+                "label": "印刷圖稿" if i < 104 else "待分類",
+                "note": "confirmed" if i < 104 else "",
+                "revision": 1 if i < 104 else 0,
+                "canUseForPrint": i < 104,
+                "canUseForModel": i < 104,
+            },
+        }
+        for i in range(total)
+    ]
+    asset_104_id = assets_list[103]["id"]
+    jobs_list = [
+        {
+            "id": f"00000000-0000-0000-0000-{i + 1:012d}",
+            "revision": 1,
+            "draft": {
+                "sku": f"SKU-{i + 1:03d}",
+                "name": f"商品-{i + 1:03d}",
+                "layout": "FLAT",
+                "panels": [{"label": "正面", "assetId": asset_104_id, "page": 0, "rotation": 0, "quantity": 1}],
+                "rip": "RasterLink 6",
+                "machine": "Mimaki",
+                "substrate": "Birch",
+            },
+            "plan": {"planHash": "a" * 64, "panels": [], "warnings": []},
+            "spec": {"width": 600, "depth": 400, "height": 800, "components": []},
+            "lastProofId": None,
+            "release": None,
+            "blenderAvailable": False,
+        }
+        for i in range(total)
+    ]
+    job_105_id = jobs_list[104]["id"]
+
+    def intercept_print(route: Route) -> None:
+        parsed = urlparse(route.request.url)
+        path = parsed.path
+        qs = parse_qs(parsed.query)
+        offset = int(qs.get("offset", ["0"])[0])
+        limit = min(int(qs.get("limit", ["100"])[0]), 100)
+        if route.request.method == "GET" and path == "/api/print-workspace/assets":
+            route.fulfill(
+                json={
+                    "items": assets_list[offset : offset + limit],
+                    "total": total,
+                    "offset": offset,
+                    "limit": limit,
+                    "skipped": 0,
+                }
+            )
+            return
+        if route.request.method == "GET" and path == "/api/print-workspace/jobs":
+            route.fulfill(
+                json={
+                    "items": jobs_list[offset : offset + limit],
+                    "total": total,
+                    "offset": offset,
+                    "limit": limit,
+                    "skipped": 0,
+                }
+            )
+            return
+        if route.request.method == "GET" and path == f"/api/print-workspace/jobs/{job_105_id}":
+            route.fulfill(json=jobs_list[104])
+            return
+        if route.request.method == "GET" and path == f"/api/print-workspace/jobs/{job_105_id}/preview":
+            route.fulfill(json={"state": "idle", "generated": False, "stale": False})
+            return
+        if route.request.method == "GET" and path.endswith("/sources"):
+            route.fulfill(json={"configured": False, "total": 0, "items": []})
+            return
+        if route.request.method == "GET" and "/preview" in path and path.startswith("/api/print-workspace/assets/"):
+            route.fulfill(status=404, json={"detail": "fixture"})
+            return
+        route.fallback()
+
+    page.add_init_script("window.mountRecipeViewer = () => () => {};")
+    page.route("**/api/print-workspace/**", intercept_print)
+    page.goto(base + "/admin/recipes/print", wait_until="domcontentloaded")
+    _wait_shell(page)
+    page.wait_for_function("() => (document.getElementById('job-count').textContent || '').includes('105 個商品')")
+    job_btn = page.locator(f'#jobs button[data-id="{job_105_id}"]')
+    assert job_btn.count() == 1
+    job_btn.click()
+    page.wait_for_function("() => document.getElementById('sku').value === 'SKU-105'")
+    assert page.locator('#panels select[data-key="assetId"]').first.input_value() == asset_104_id
+
+    model_item = {
+        "id": "model-page2-asset",
+        "revision": 1,
+        "inputHash": "b" * 64,
+        "templateState": "DRAFT",
+        "classification": {"categoryId": "unclassified", "path": ["未分類"], "source": "AUTO", "revision": 0},
+        "readiness": {"previewReady": False, "missing": "fixture", "assumptions": []},
+        "draft": {
+            "name": "超過百筆素材測試模型",
+            "family": "cabinet",
+            "subtype": "open",
+            "geometry": "OPEN_CABINET",
+            "widthMm": 424,
+            "depthMm": 295,
+            "heightMm": 900,
+            "variants": [{"sku": "V-104", "artworkAssetId": asset_104_id, "note": ""}],
+            "printFaces": [],
+        },
+    }
+
+    def intercept_models(route: Route) -> None:
+        parsed = urlparse(route.request.url)
+        path = parsed.path
+        qs = parse_qs(parsed.query)
+        offset = int(qs.get("offset", ["0"])[0])
+        limit = min(int(qs.get("limit", ["100"])[0]), 100)
+        if route.request.method == "GET" and path == "/api/product-models/assets":
+            route.fulfill(
+                json={
+                    "roles": {"UNCLASSIFIED": "待分類", "ARTWORK": "印刷圖稿"},
+                    "items": assets_list[offset : offset + limit],
+                    "total": total,
+                    "offset": offset,
+                    "limit": limit,
+                    "skipped": 0,
+                }
+            )
+            return
+        if route.request.method == "GET" and path == "/api/product-models":
+            route.fulfill(json={"items": [model_item], "categoryTree": [{"id": "unclassified", "label": "未分類"}]})
+            return
+        if route.request.method == "GET" and path == "/api/product-models/model-page2-asset":
+            route.fulfill(json=model_item)
+            return
+        if route.request.method == "GET" and path == "/api/product-models/model-page2-asset/classification":
+            route.fulfill(json=model_item["classification"])
+            return
+        if route.request.method == "GET" and path == "/api/product-models/model-page2-asset/preview":
+            route.fulfill(json={"state": "idle", "generated": False, "stale": False})
+            return
+        if route.request.method == "GET" and path == "/api/product-models/model-page2-asset/composition":
+            route.fulfill(
+                json={
+                    "state": "idle",
+                    "generated": False,
+                    "stale": False,
+                    "scenes": {"STUDIO": "白底棚拍"},
+                    "surfaces": [{"componentId": "door-1", "label": "門片", "widthMm": 280, "heightMm": 395}],
+                    "manifest": None,
+                }
+            )
+            return
+        route.fallback()
+
+    page.route("**/api/product-models**", intercept_models)
+    page.goto(base + "/admin/recipes/models", wait_until="domcontentloaded")
+    _wait_shell(page)
+    page.wait_for_function("() => (document.getElementById('notice').textContent || '').includes('從左側分類')", timeout=30_000)
+    page.locator("#masters button").filter(has_text="超過百筆素材測試模型").click()
+    page.wait_for_selector(".variant-art", timeout=15_000)
+    assert page.locator(".variant-art").first.input_value() == asset_104_id
+    assert "原關聯素材未確認或已改用途" not in page.locator(".variant-art").first.inner_text()
+
+    page.locator("#show-materials").click()
+    assert "105 筆素材；104 筆已確認印刷用途。" in page.locator("#usage-count").inner_text()
+    page.locator("#usage-query").fill("art-105.pdf")
+    page.locator("#usage-list button").filter(has_text="art-105.pdf").click()
+    assert page.locator("#usage-name").inner_text() == "art-105.pdf"

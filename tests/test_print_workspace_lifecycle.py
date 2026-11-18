@@ -226,6 +226,8 @@ def test_unknown_job_bundle_asset_return_404_and_422_hides_raw_exceptions(tmp_pa
 
 
 def test_proof_and_release_idempotent_on_repeat_requests(tmp_path: Path) -> None:
+    import zipfile
+
     c = _make_client(tmp_path, "tenant-a")
     a = _create_classified_asset(tmp_path, "tenant-a")
     j = jobs.save_job(tmp_path, "tenant-a", _draft(a["id"]))
@@ -241,16 +243,70 @@ def test_proof_and_release_idempotent_on_repeat_requests(tmp_path: Path) -> None
     bundles_dir = jobs.folder_for(tmp_path, "tenant-a", j["id"]) / "bundles"
     assert len([d for d in bundles_dir.iterdir() if d.is_dir()]) == 1
 
-    # Sending release twice for the same proofId returns the existing release and keeps it valid
-    rel_body = _release_payload(1, p["planHash"], proof_1.json()["bundleId"])
-    rel_1 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body)
-    rel_2 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body)
+    # Sending identical release twice for the same proofId reuses the existing bundle
+    rel_body_1 = _release_payload(1, p["planHash"], proof_1.json()["bundleId"], operator="王大明")
+    rel_1 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body_1)
+    rel_2 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body_1)
     assert rel_1.status_code == 200 and rel_2.status_code == 200
-    assert rel_1.json()["bundleId"] == rel_2.json()["bundleId"]
+    bid_1 = rel_1.json()["bundleId"]
+    assert bid_1 == rel_2.json()["bundleId"]
     assert len([d for d in bundles_dir.iterdir() if d.is_dir()]) == 2
 
-    dl = c.get(f"/api/print-workspace/jobs/{j['id']}/bundles/{rel_1.json()['bundleId']}?workspace=tenant-a")
-    assert dl.status_code == 200
+    dl_1 = c.get(f"/api/print-workspace/jobs/{j['id']}/bundles/{bid_1}?workspace=tenant-a")
+    assert dl_1.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(dl_1.content)) as zf:
+        manifest_1 = json.loads(zf.read("manifest.json"))
+    assert manifest_1["humanRelease"] == rel_body_1
+
+    # Submitting a different operator / measurementRecord / testPrintRecord for the same proofId
+    # must NOT silently reuse the old bundle; it creates a new release bundle with updated manifest.
+    rel_body_2 = {
+        **rel_body_1,
+        "operator": "李小華",
+        "measurementRecord": "第二次實測板件與出血修正紀錄（李小華覆核）",
+        "testPrintRecord": "第二次實機白墨與光油打樣確認紀錄（李小華覆核）",
+    }
+    rel_3 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body_2)
+    assert rel_3.status_code == 200
+    bid_2 = rel_3.json()["bundleId"]
+    assert bid_2 != bid_1
+    assert len([d for d in bundles_dir.iterdir() if d.is_dir()]) == 3
+
+    # Repeat identical second release request is idempotent
+    rel_4 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body_2)
+    assert rel_4.status_code == 200
+    assert rel_4.json()["bundleId"] == bid_2
+    assert len([d for d in bundles_dir.iterdir() if d.is_dir()]) == 3
+
+    # Job state reflects the latest release bundle and operator, and superseded bundle is rejected
+    job_now = c.get(f"/api/print-workspace/jobs/{j['id']}").json()
+    assert job_now["release"]["bundleId"] == bid_2
+    assert job_now["release"]["operator"] == "李小華"
+    assert c.get(f"/api/print-workspace/jobs/{j['id']}/bundles/{bid_1}?workspace=tenant-a").status_code == 422
+
+    dl_2 = c.get(f"/api/print-workspace/jobs/{j['id']}/bundles/{bid_2}?workspace=tenant-a")
+    assert dl_2.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(dl_2.content)) as zf:
+        manifest_2 = json.loads(zf.read("manifest.json"))
+    assert manifest_2["humanRelease"] == rel_body_2
+    assert manifest_2["humanRelease"]["operator"] == "李小華"
+    assert manifest_2["humanRelease"]["measurementRecord"] == rel_body_2["measurementRecord"]
+    assert manifest_2["humanRelease"]["testPrintRecord"] == rel_body_2["testPrintRecord"]
+
+    # Changing only measurementRecord (same operator) also creates a new release bundle
+    rel_body_3 = {
+        **rel_body_2,
+        "measurementRecord": "第三次量測微調紀錄（同人修正量測值）",
+    }
+    rel_5 = c.post(f"/api/print-workspace/jobs/{j['id']}/release", json=rel_body_3)
+    assert rel_5.status_code == 200
+    bid_3 = rel_5.json()["bundleId"]
+    assert bid_3 not in {bid_1, bid_2}
+    dl_3 = c.get(f"/api/print-workspace/jobs/{j['id']}/bundles/{bid_3}?workspace=tenant-a")
+    assert dl_3.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(dl_3.content)) as zf:
+        manifest_3 = json.loads(zf.read("manifest.json"))
+    assert manifest_3["humanRelease"] == rel_body_3
 
 
 def test_concurrent_proof_and_release_create_single_bundle_directory(tmp_path: Path) -> None:
@@ -539,4 +595,598 @@ def test_print_workspace_js_handles_404_409_and_skipped_count(tmp_path: Path) ->
     remaining = {d.name for d in bundles_dir.iterdir() if d.is_dir()}
     assert b1["bundleId"] in remaining
     assert len(remaining) == 3
+
+
+def test_ui_pagination_over_100_jobs_and_assets_across_pages(tmp_path: Path) -> None:
+    node = shutil.which("node")
+    assert node is not None, "node is required for UI pagination verification"
+
+    pw_js_path = STATIC / "print-workspace.js"
+    pm_js_path = STATIC / "product-models.js"
+    mc_js_path = STATIC / "model-compositions.js"
+
+    # 1. Verify print-workspace.js loads all pages (>100 jobs and >100 assets), shows accurate total count,
+    #    allows opening the 105th job (on page 2), and keeps the 105th asset selected in its panels.
+    pw_harness = f"""
+    const fs = require('fs');
+    const code = fs.readFileSync({json.dumps(str(pw_js_path))}, 'utf8');
+
+    const totalCount = 105;
+    const allAssets = Array.from({{ length: totalCount }}, (_, idx) => {{
+      const num = idx + 1;
+      const id = num.toString(16).padStart(64, '0');
+      return {{
+        id,
+        name: `art-${{String(num).padStart(3, '0')}}.pdf`,
+        info: {{ type: 'PDF', pages: [{{}}] }},
+        usage: {{ role: 'ARTWORK', label: '印刷圖稿', canUseForPrint: true, canUseForModel: true, revision: 1 }},
+      }};
+    }});
+    const allJobs = Array.from({{ length: totalCount }}, (_, idx) => {{
+      const num = idx + 1;
+      const id = `00000000-0000-0000-0000-${{String(num).padStart(12, '0')}}`;
+      const assetId = allAssets[idx].id;
+      return {{
+        id,
+        revision: 1,
+        updatedAt: `2026-11-18T00:00:${{String(totalCount - idx).padStart(2, '0')}}Z`,
+        draft: {{
+          sku: `SKU-${{String(num).padStart(3, '0')}}`,
+          name: `商品-${{String(num).padStart(3, '0')}}`,
+          layout: 'FLAT',
+          rip: 'RasterLink 6',
+          machine: 'Mimaki',
+          substrate: 'Birch',
+          panels: [{{ label: '正面', assetId, page: 0, rotation: 0, quantity: 1 }}],
+        }},
+        plan: {{
+          planHash: 'a'.repeat(64),
+          panels: [{{ label: '正面', page: 0, rotation: 0, widthMm: 286, heightMm: 401, trimWidthMm: 280, trimHeightMm: 395, quantity: 1 }}],
+          warnings: [],
+        }},
+        spec: {{}},
+        lastProofId: null,
+        release: null,
+        blenderAvailable: false,
+      }};
+    }});
+
+    const elements = new Map();
+    let currentPanels = [];
+    function makeEl(tag, id = '') {{
+      const el = {{
+        tagName: String(tag).toUpperCase(),
+        id,
+        textContent: '',
+        className: '',
+        value: '',
+        hidden: false,
+        disabled: false,
+        checked: false,
+        dataset: {{}},
+        attributes: {{}},
+        children: [],
+        listeners: {{}},
+        isConnected: true,
+        append(...kids) {{
+          for (const k of kids) {{
+            if (typeof k === 'string') {{
+              const t = makeEl('#text');
+              t.textContent = k;
+              this.children.push(t);
+            }} else if (k) {{
+              this.children.push(k);
+              if (this.tagName === 'SELECT' && k.selected) {{
+                this.value = k.value;
+              }}
+            }}
+          }}
+        }},
+        replaceChildren(...kids) {{
+          this.children = [];
+          this.append(...kids);
+          if (this.id === 'panels') currentPanels = this.children;
+        }},
+        setAttribute(k, v) {{ this.attributes[k] = String(v); }},
+        removeAttribute(k) {{ delete this.attributes[k]; }},
+        addEventListener(ev, fn) {{ (this.listeners[ev] ||= []).push(fn); }},
+        insertAdjacentElement() {{}},
+        findByDatasetKey(key) {{
+          if (this.dataset && this.dataset.key === key) return this;
+          for (const c of this.children) {{
+            if (c.findByDatasetKey) {{
+              const found = c.findByDatasetKey(key);
+              if (found) return found;
+            }}
+          }}
+          return null;
+        }},
+        findByClass(cls) {{
+          if (String(this.className || '').split(/\\s+/).includes(cls)) return this;
+          for (const c of this.children) {{
+            if (c.findByClass) {{
+              const found = c.findByClass(cls);
+              if (found) return found;
+            }}
+          }}
+          return null;
+        }},
+        findByTag(tName) {{
+          if (this.tagName === tName.toUpperCase()) return this;
+          for (const c of this.children) {{
+            if (c.findByTag) {{
+              const found = c.findByTag(tName);
+              if (found) return found;
+            }}
+          }}
+          return null;
+        }},
+        querySelector(sel) {{
+          if (sel === '.image-size') return this.findByClass('image-size') || makeEl('div');
+          if (sel === 'img') return this.findByTag('IMG') || makeEl('img');
+          if (sel === '.asset-info') return this.findByClass('asset-info') || makeEl('small');
+          if (sel.startsWith('[data-key=')) {{
+            const key = sel.slice('[data-key='.length, -1);
+            return this.findByDatasetKey(key) || makeEl('input');
+          }}
+          return makeEl('div');
+        }},
+        querySelectorAll(sel) {{
+          if (sel === 'button[data-id]') return this.children.filter(c => c.dataset && c.dataset.id);
+          return [];
+        }},
+        allText() {{
+          return this.textContent + this.children.map(c => c.allText ? c.allText() : (c.textContent || '')).join(' ');
+        }},
+      }};
+      return el;
+    }}
+    global.document = {{
+      getElementById(id) {{
+        if (!elements.has(id)) elements.set(id, makeEl('div', id));
+        return elements.get(id);
+      }},
+      createElement(tag) {{ return makeEl(tag); }},
+      querySelectorAll(sel) {{
+        if (sel === '.panel') return currentPanels;
+        return [];
+      }},
+    }};
+    global.Option = function(text, value, defaultSelected, selected) {{
+      const o = makeEl('option');
+      o.textContent = String(text);
+      o.value = String(value);
+      o.selected = !!selected;
+      return o;
+    }};
+    global.FormData = class FormData {{}};
+    global.window = {{
+      location: {{ href: '' }},
+      addEventListener() {{}},
+      mountRecipeViewer() {{ return () => {{}}; }},
+    }};
+    global.confirm = () => true;
+
+    const requestedUrls = [];
+    global.fetch = async (rawUrl) => {{
+      requestedUrls.push(rawUrl);
+      const u = new URL(rawUrl, 'http://localhost');
+      const offset = Number(u.searchParams.get('offset') || 0);
+      const limit = Math.min(Number(u.searchParams.get('limit') || 100), 100);
+      return {{
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        async json() {{
+          if (u.pathname === '/api/print-workspace/assets') {{
+            return {{
+              items: allAssets.slice(offset, offset + limit),
+              total: allAssets.length,
+              offset,
+              limit,
+              skipped: 1,
+            }};
+          }}
+          if (u.pathname === '/api/print-workspace/jobs') {{
+            return {{
+              items: allJobs.slice(offset, offset + limit),
+              total: allJobs.length,
+              offset,
+              limit,
+              skipped: 2,
+            }};
+          }}
+          if (u.pathname.startsWith('/api/print-workspace/jobs/') && u.pathname.endsWith('/preview')) {{
+            return {{ state: 'idle', generated: false, stale: false }};
+          }}
+          if (u.pathname.startsWith('/api/print-workspace/jobs/')) {{
+            const jid = u.pathname.split('/').pop();
+            return allJobs.find(j => j.id === jid);
+          }}
+          if (u.pathname === '/api/print-workspace/sources') {{
+            return {{ configured: false, total: 0, items: [] }};
+          }}
+          return {{}};
+        }},
+      }};
+    }};
+
+    eval(code);
+    (async () => {{
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      const jobBtns = document.getElementById('jobs').querySelectorAll('button[data-id]');
+      const jobCount = document.getElementById('job-count').allText();
+      const assetsText = document.getElementById('assets').allText();
+      // Click the 105th job (on page 2, index 104)
+      await jobBtns[104].onclick();
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+      const selectedSku = document.getElementById('sku').value;
+      const saveState = document.getElementById('save-state').textContent;
+      const panelSelect = currentPanels[0].findByDatasetKey('assetId');
+      const selectedOpt = panelSelect.children.find(o => o.value === panelSelect.value);
+      console.log(JSON.stringify({{
+        requestedUrls,
+        jobBtnsCount: jobBtns.length,
+        lastJobId: jobBtns[104].dataset.id,
+        jobCount,
+        hasAsset105InList: assetsText.includes('art-105.pdf'),
+        hasAssetTotalText: assetsText.includes('共 105 筆原稿'),
+        selectedSku,
+        saveState,
+        panelSelectedAssetId: panelSelect.value,
+        panelSelectedText: selectedOpt ? selectedOpt.textContent : '',
+        panelSelectedDisabled: selectedOpt ? !!selectedOpt.disabled : true,
+        panelOptionCount: panelSelect.children.length,
+      }}));
+    }})();
+    """
+    pw_proc = subprocess.run([node, "-e", pw_harness], check=True, capture_output=True, text=True, timeout=15)
+    pw_out = json.loads(pw_proc.stdout.strip().splitlines()[-1])
+
+    assert "/api/print-workspace/assets" in pw_out["requestedUrls"]
+    assert "/api/print-workspace/assets?offset=100&limit=100" in pw_out["requestedUrls"]
+    assert "/api/print-workspace/jobs" in pw_out["requestedUrls"]
+    assert "/api/print-workspace/jobs?offset=100&limit=100" in pw_out["requestedUrls"]
+    assert pw_out["jobBtnsCount"] == 105
+    assert pw_out["lastJobId"] == "00000000-0000-0000-0000-000000000105"
+    assert "105 個商品（有 2 筆無法讀取）" in pw_out["jobCount"]
+    assert pw_out["hasAsset105InList"] is True
+    assert pw_out["hasAssetTotalText"] is True
+    assert pw_out["selectedSku"] == "SKU-105"
+    assert pw_out["saveState"] == "已儲存 · 版本 1"
+    assert pw_out["panelSelectedAssetId"] == (105).to_bytes(32, "big").hex()
+    assert "art-105.pdf" in pw_out["panelSelectedText"]
+    assert pw_out["panelSelectedDisabled"] is False
+    assert pw_out["panelOptionCount"] == 106
+
+    # 2. Verify product-models.js and model-compositions.js load all pages (>100 assets),
+    #    display accurate total count, keep page-2 linked assets marked as confirmed (not disabled/unconfirmed),
+    #    and allow searching & classifying the 105th asset from page 2.
+    pm_harness = f"""
+    const fs = require('fs');
+    const pmCode = fs.readFileSync({json.dumps(str(pm_js_path))}, 'utf8');
+    const mcCode = fs.readFileSync({json.dumps(str(mc_js_path))}, 'utf8');
+
+    const totalCount = 105;
+    const roles = {{
+      UNCLASSIFIED: '待分類',
+      REFERENCE: '商品參考圖／電商圖',
+      DIMENSION: '尺寸／結構圖',
+      DIELINE: '刀模',
+      ARTWORK: '印刷圖稿',
+      PACKAGING: '貼紙／吊卡／包裝',
+    }};
+    const allAssets = Array.from({{ length: totalCount }}, (_, idx) => {{
+      const num = idx + 1;
+      const id = num.toString(16).padStart(64, '0');
+      const isArtwork = num <= 104;
+      return {{
+        id,
+        name: `art-${{String(num).padStart(3, '0')}}.pdf`,
+        provenance: {{ type: 'NAS_PRODUCT_CATALOG', relativePath: `folder/art-${{String(num).padStart(3, '0')}}.pdf` }},
+        info: {{ type: 'PDF', pages: [{{}}, {{}}] }},
+        usage: {{
+          role: isArtwork ? 'ARTWORK' : 'UNCLASSIFIED',
+          label: isArtwork ? '印刷圖稿' : '待分類',
+          note: isArtwork ? 'Confirmed artwork' : '',
+          revision: isArtwork ? 1 : 0,
+          canUseForModel: isArtwork,
+          canUseForPrint: isArtwork,
+        }},
+      }};
+    }});
+    const asset104Id = allAssets[103].id;
+    const asset105Id = allAssets[104].id;
+
+    const model1 = {{
+      id: 'model-104',
+      revision: 2,
+      inputHash: 'b'.repeat(64),
+      templateState: 'DRAFT',
+      classification: {{ categoryId: 'unclassified', path: ['未分類'], source: 'AUTO', revision: 0 }},
+      readiness: {{ previewReady: true, assumptions: [] }},
+      draft: {{
+        name: '第104號素材測試母版',
+        family: 'cabinet',
+        subtype: 'open',
+        geometry: 'OPEN_CABINET',
+        widthMm: 424,
+        depthMm: 295,
+        heightMm: 900,
+        panelMm: 15,
+        backMm: 3,
+        rows: 3,
+        dimensionEvidence: '實測',
+        structureEvidence: '三層',
+        notes: '',
+        variants: [{{ sku: 'SKU-104', artworkAssetId: asset104Id, note: '第2頁素材' }}],
+        printFaces: [],
+      }},
+    }};
+
+    const elements = new Map();
+    const windowListeners = {{}};
+    function makeEl(tag, id = '') {{
+      let _innerHTML = '';
+      const el = {{
+        tagName: String(tag).toUpperCase(),
+        id,
+        textContent: '',
+        className: '',
+        value: '',
+        hidden: false,
+        disabled: false,
+        checked: false,
+        inert: false,
+        dataset: {{}},
+        attributes: {{}},
+        children: [],
+        listeners: {{}},
+        elements: {{
+          geometry: {{ value: 'OPEN_CABINET', addEventListener() {{}} }},
+          namedItem(name) {{
+            if (!this[name]) this[name] = makeEl('input', name);
+            return this[name];
+          }},
+        }},
+        get innerHTML() {{ return _innerHTML; }},
+        set innerHTML(val) {{ _innerHTML = String(val); }},
+        insertAdjacentHTML(_pos, val) {{ _innerHTML += String(val); }},
+        append(...kids) {{
+          for (const k of kids) {{
+            if (typeof k === 'string') {{
+              const t = makeEl('#text');
+              t.textContent = k;
+              this.children.push(t);
+            }} else if (k) {{
+              this.children.push(k);
+            }}
+          }}
+        }},
+        replaceChildren(...kids) {{
+          this.children = [];
+          this.append(...kids);
+        }},
+        reset() {{}},
+        remove() {{}},
+        setAttribute(k, v) {{ this.attributes[k] = String(v); }},
+        addEventListener(ev, fn) {{ (this.listeners[ev] ||= []).push(fn); }},
+        findRec(pred) {{
+          if (pred(this)) return this;
+          for (const c of this.children) {{
+            if (c && c.findRec) {{
+              const found = c.findRec(pred);
+              if (found) return found;
+            }}
+          }}
+          return null;
+        }},
+        querySelector(sel) {{
+          if (sel === 'select[data-art]') return this.findRec(e => e.dataset && 'art' in e.dataset);
+          if (sel === 'select[data-page]') return this.findRec(e => e.dataset && 'page' in e.dataset);
+          if (sel === 'select[data-rotation]') return this.findRec(e => e.dataset && 'rotation' in e.dataset);
+          if (sel === 'img') return this.findRec(e => e.tagName === 'IMG');
+          if (sel === '.variant-sku') return {{ value: 'SKU-104' }};
+          if (sel === '.variant-art') return this._variantArt || makeEl('select');
+          if (sel === '.variant-note') return {{ value: '' }};
+          return makeEl('div');
+        }},
+        querySelectorAll() {{ return []; }},
+      }};
+      return el;
+    }}
+
+    global.document = {{
+      getElementById(id) {{
+        if (!elements.has(id)) elements.set(id, makeEl('div', id));
+        return elements.get(id);
+      }},
+      createElement(tag) {{ return makeEl(tag); }},
+      createTextNode(text) {{
+        const t = makeEl('#text');
+        t.textContent = String(text);
+        return t;
+      }},
+      querySelectorAll(sel) {{
+        if (sel === '.variant-art') {{
+          const v = document.getElementById('variants');
+          return v.children.map(r => {{
+            if (!r._variantArt) {{
+              const s = makeEl('select');
+              s.innerHTML = r.innerHTML;
+              r._variantArt = s;
+            }}
+            return r._variantArt;
+          }});
+        }}
+        return [];
+      }},
+    }};
+    global.Option = function(text, value, defaultSelected, selected) {{
+      const o = makeEl('option');
+      o.textContent = String(text);
+      o.value = String(value);
+      o.selected = !!selected;
+      return o;
+    }};
+    global.Event = class Event {{ constructor(type) {{ this.type = type; }} preventDefault() {{}} }};
+    global.CustomEvent = class CustomEvent {{ constructor(type, init) {{ this.type = type; this.detail = init?.detail; }} preventDefault() {{}} }};
+    global.URLSearchParams = URLSearchParams;
+    global.window = {{
+      location: {{ hash: '' }},
+      confirm: () => true,
+      addEventListener(ev, fn) {{ (windowListeners[ev] ||= []).push(fn); }},
+      dispatchEvent(ev) {{
+        for (const fn of (windowListeners[ev.type] || [])) fn(ev);
+      }},
+      mountRecipeViewer() {{ return () => {{}}; }},
+    }};
+    global.setInterval = () => 0;
+
+    const requestedUrls = [];
+    const classifiedCalls = [];
+    global.fetch = async (rawUrl, options = {{}}) => {{
+      requestedUrls.push(`${{options.method || 'GET'}} ${{rawUrl}}`);
+      const u = new URL(rawUrl, 'http://localhost');
+      return {{
+        ok: true,
+        status: 200,
+        async json() {{
+          if (u.pathname === '/api/product-models/catalog') {{
+            return {{ families: {{ cabinet: '木櫃' }}, subtypes: {{ open: '開放櫃', other: '其他' }}, configured: false, fileCount: 0, total: 0, items: [] }};
+          }}
+          if (u.pathname === '/api/product-models/recipe-references') {{
+            return {{ items: [] }};
+          }}
+          if (u.pathname === '/api/product-models/assets' && (!options.method || options.method === 'GET')) {{
+            const offset = Number(u.searchParams.get('offset') || 0);
+            const limit = Math.min(Number(u.searchParams.get('limit') || 100), 100);
+            return {{
+              roles,
+              items: allAssets.slice(offset, offset + limit),
+              total: allAssets.length,
+              offset,
+              limit,
+              skipped: 1,
+            }};
+          }}
+          if (u.pathname === `/api/product-models/assets/${{asset105Id}}/usage` && options.method === 'PUT') {{
+            const body = JSON.parse(options.body);
+            classifiedCalls.push(body);
+            allAssets[104].usage = {{
+              role: body.role,
+              label: roles[body.role],
+              note: body.note,
+              revision: body.expectedRevision + 1,
+              canUseForModel: body.role === 'ARTWORK',
+              canUseForPrint: body.role === 'ARTWORK',
+            }};
+            return allAssets[104];
+          }}
+          if (u.pathname === '/api/product-models') {{
+            return {{
+              items: [model1],
+              categoryTree: [{{ id: 'unclassified', label: '未分類' }}],
+            }};
+          }}
+          if (u.pathname === `/api/product-models/${{model1.id}}`) {{
+            return model1;
+          }}
+          if (u.pathname === `/api/product-models/${{model1.id}}/classification`) {{
+            return model1.classification;
+          }}
+          if (u.pathname === `/api/product-models/${{model1.id}}/preview`) {{
+            return {{ state: 'idle', generated: false, stale: false }};
+          }}
+          if (u.pathname === `/api/product-models/${{model1.id}}/composition`) {{
+            return {{
+              state: 'idle',
+              generated: false,
+              stale: false,
+              scenes: {{ STUDIO: '白底棚拍' }},
+              surfaces: [{{ componentId: 'door-1', label: '第一片門', widthMm: 280, heightMm: 395 }}],
+              manifest: {{
+                sourceRevision: 2,
+                scene: 'STUDIO',
+                draft: {{
+                  sku: 'SKU-104',
+                  scene: 'STUDIO',
+                  placement: 'AUTO',
+                  view: 'THREE_QUARTER',
+                  placements: [{{ componentId: 'door-1', assetId: asset104Id, page: 0, rotation: 0 }}],
+                }},
+                spec: {{ engineeringHash: 'c'.repeat(64) }},
+              }},
+            }};
+          }}
+          return {{}};
+        }},
+      }};
+    }};
+
+    eval(pmCode);
+    eval(mcCode);
+
+    (async () => {{
+      for (let i = 0; i < 60; i++) await Promise.resolve();
+      const initialUsageCount = document.getElementById('usage-count').textContent;
+
+      // Click model1 in #masters to load its variant (which links asset104Id from page 2)
+      const masterBtn = document.getElementById('masters').children[0];
+      await masterBtn.onclick();
+      for (let i = 0; i < 60; i++) await Promise.resolve();
+
+      const variantRowHtml = document.getElementById('variants').children[0].innerHTML;
+      const compSurface = document.getElementById('composition-faces').children[0];
+      const compArtSelect = compSurface.querySelector('select[data-art]');
+      const compOptionTexts = compArtSelect.children.map(o => o.textContent);
+
+      // Search for asset #105 (on page 2) in #usage-query and classify it as ARTWORK
+      const qInput = document.getElementById('usage-query');
+      qInput.value = 'art-105.pdf';
+      qInput.oninput();
+      const filteredButtons = document.getElementById('usage-list').children;
+      filteredButtons[0].onclick();
+      const reviewName = document.getElementById('usage-name').textContent;
+      document.getElementById('usage-role').value = 'ARTWORK';
+      document.getElementById('usage-note').value = '第105筆素材核對為正式印刷圖稿';
+      await document.getElementById('usage-form').onsubmit();
+      for (let i = 0; i < 40; i++) await Promise.resolve();
+      const updatedUsageCount = document.getElementById('usage-count').textContent;
+
+      console.log(JSON.stringify({{
+        requestedUrls,
+        initialUsageCount,
+        variantRowHtml,
+        compSelectedValue: compArtSelect.value,
+        compHasStaleWarning: compOptionTexts.some(t => t.includes('原圖稿已停用')),
+        compOptionCount: compArtSelect.children.length,
+        filteredCount: filteredButtons.length,
+        reviewName,
+        classifiedCalls,
+        updatedUsageCount,
+      }}));
+    }})();
+    """
+    pm_proc = subprocess.run([node, "-e", pm_harness], capture_output=True, text=True, timeout=15)
+    assert pm_proc.returncode == 0, f"STDOUT:\n{pm_proc.stdout}\nSTDERR:\n{pm_proc.stderr}"
+    pm_out = json.loads(pm_proc.stdout.strip().splitlines()[-1])
+
+    assert "GET /api/product-models/assets" in pm_out["requestedUrls"]
+    assert "GET /api/product-models/assets?offset=100&limit=100" in pm_out["requestedUrls"]
+    assert "105 筆素材；104 筆已確認印刷用途。有 1 筆無法讀取。" in pm_out["initialUsageCount"]
+    # Linked asset #104 (on page 2) is recognized as confirmed ARTWORK, NOT falsely marked as unconfirmed
+    assert "art-104.pdf · 已確認印刷用途" in pm_out["variantRowHtml"]
+    assert "原關聯素材未確認或已改用途" not in pm_out["variantRowHtml"]
+    # In model-compositions.js, linked asset #104 (on page 2) is also recognized and selected
+    assert pm_out["compSelectedValue"] == (104).to_bytes(32, "big").hex()
+    assert pm_out["compHasStaleWarning"] is False
+    assert pm_out["compOptionCount"] == 105  # 1 placeholder + 104 confirmed artworks
+    # Asset #105 (on page 2) can be searched, reviewed, and classified
+    assert pm_out["filteredCount"] == 1
+    assert pm_out["reviewName"] == "art-105.pdf"
+    assert len(pm_out["classifiedCalls"]) == 1
+    assert pm_out["classifiedCalls"][0]["role"] == "ARTWORK"
+    assert "105 筆已確認印刷用途" in pm_out["updatedUsageCount"]
+
 
