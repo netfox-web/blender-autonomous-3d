@@ -37,7 +37,7 @@ def test_work_order_actions_require_confirmation_and_respect_tenant(platform):  
         path = f"/api/pilot/work-orders/{order}/{action}"
         assert client.post(path, headers=headers, json={}).status_code == (403 if action == "consume" else 409)
     assert client.post(f"/api/pilot/work-orders/{order}/complete", headers=headers, json={"confirm": True}).status_code == 200
-    assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 409
+    assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 404
 
 
 def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
