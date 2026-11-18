@@ -1221,6 +1221,14 @@ def resolve_scene_glb_paths_for_blender(
     return out
 
 
+class SceneStoreUnavailable(Exception):
+    """Existing scene storage could not be safely read."""
+
+
+class BatchConflict(Exception):
+    """A batch operation conflicts with existing state."""
+
+
 class EcommerceSceneStore:
     """Persistent store for user-created 3D room scenes and matrix render batches."""
 
@@ -1321,6 +1329,19 @@ class EcommerceSceneStore:
                     by_id[item["id"]] = item
             return list(by_id.values())
 
+    def _read_scenes_for_update(self, path: Path) -> list[dict[str, Any]]:
+        try:
+            with path.open(encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list) or not all(isinstance(x, dict) for x in data["items"]):
+                raise ValueError("invalid scenes document")
+            return data["items"]
+        except FileNotFoundError:
+            return []
+        except (OSError, ValueError) as exc:
+            log.warning("Unable to read scenes for update: %s", exc)
+            raise SceneStoreUnavailable from exc
+
     def save_scene(self, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         path = self._tenant_dir(tenant_id) / "scenes.json"
         scene_id = str(payload.get("id") or "").strip() or ("SCENE_CUSTOM_" + new_id().split("-")[0].upper())
@@ -1345,8 +1366,7 @@ class EcommerceSceneStore:
         }
         record, warnings = self.guard_scene_paths(tenant_id, record)
         with self.lock:
-            stored = read_json(path)
-            custom = [x for x in (stored.get("items", []) if isinstance(stored, dict) else []) if x.get("id") != scene_id]
+            custom = [x for x in self._read_scenes_for_update(path) if x.get("id") != scene_id]
             custom.append(record)
             atomic_json(path, {"items": custom, "updatedAt": timestamp()})
         return {**record, "warnings": warnings}
@@ -1356,8 +1376,10 @@ class EcommerceSceneStore:
             raise ValueError("內建範例場景可修改，但不可刪除；您可以另存新場景")
         path = self._tenant_dir(tenant_id) / "scenes.json"
         with self.lock:
-            stored = read_json(path)
-            custom = [x for x in (stored.get("items", []) if isinstance(stored, dict) else []) if x.get("id") != scene_id]
+            existing = self._read_scenes_for_update(path)
+            if not any(x.get("id") == scene_id for x in existing):
+                raise KeyError("找不到此場景")
+            custom = [x for x in existing if x.get("id") != scene_id]
             atomic_json(path, {"items": custom, "updatedAt": timestamp()})
         return {"deleted": scene_id}
 
@@ -1493,6 +1515,49 @@ class EcommerceSceneStore:
         return doc
 
     def start_matrix_batch(self, tenant_id: str, payload: dict[str, Any], *, public_base_url: str = "") -> dict[str, Any]:
+        key = payload.get("idempotencyKey")
+        if key is not None and (not isinstance(key, str) or not key or len(key) > 200):
+            raise ValueError("無效的 idempotencyKey")
+        body = {k: v for k, v in payload.items() if k != "idempotencyKey"}
+        fingerprint = stable_hash(body)
+        with self.lock:
+            index_path = self._tenant_dir(tenant_id) / "batch-keys.json"
+            if index_path.exists():
+                try:
+                    index = json.loads(index_path.read_text(encoding="utf-8"))
+                    if not isinstance(index, dict):
+                        raise ValueError("invalid index")
+                except (OSError, ValueError) as exc:
+                    log.warning("Unable to read batch key index: %s", exc)
+                    raise SceneStoreUnavailable from exc
+            else:
+                index = {}
+            key_hash = hashlib.sha256(key.encode()).hexdigest() if key is not None else None
+            if key_hash and key_hash not in index:
+                # Recover the narrow crash window between writing the batch and its index.
+                for path in (self._tenant_dir(tenant_id) / "batches").glob("*/batch.json"):
+                    existing = read_json(path)
+                    if existing.get("idempotencyKeyHash") == key_hash:
+                        index[key_hash] = {"batchId": path.parent.name, "fingerprint": existing.get("requestFingerprint")}
+                        atomic_json(index_path, index)
+                        break
+            if key_hash and key_hash in index:
+                entry = index[key_hash]
+                if not isinstance(entry, dict) or not isinstance(entry.get("batchId"), str):
+                    raise SceneStoreUnavailable
+                if entry.get("fingerprint") != fingerprint:
+                    raise BatchConflict("此 idempotencyKey 已用於不同的請求")
+                try:
+                    return self.get_batch(tenant_id, entry["batchId"])
+                except KeyError as exc:
+                    raise BatchConflict("此 idempotencyKey 的批次已刪除") from exc
+            return self._start_matrix_batch_locked(tenant_id, body, public_base_url=public_base_url,
+                                                   index=index, index_path=index_path, key_hash=key_hash,
+                                                   fingerprint=fingerprint)
+
+    def _start_matrix_batch_locked(self, tenant_id: str, payload: dict[str, Any], *, public_base_url: str,
+                                   index: dict[str, Any], index_path: Path, key_hash: str | None,
+                                   fingerprint: str) -> dict[str, Any]:
         from fox3d.ai_scene_layout import load_settings  # lazy: ai_scene_layout imports this module
 
         settings = load_settings(self.root)
@@ -1589,6 +1654,8 @@ class EcommerceSceneStore:
 
         batch_doc = {
             "batchId": batch_id,
+            "idempotencyKeyHash": key_hash,
+            "requestFingerprint": fingerprint if key_hash else None,
             "warnings": warnings,
             "tenantId": tenant_id,
             "cabinetName": cabinet_cfg.get("name") or "收納王妃組合櫃",
@@ -1633,10 +1700,17 @@ class EcommerceSceneStore:
             "items": items,
         }
         atomic_json(bdir / "batch.json", batch_doc)
+        if key_hash:
+            index[key_hash] = {"batchId": batch_id, "fingerprint": fingerprint}
+            try:
+                atomic_json(index_path, index)
+            except Exception:
+                shutil.rmtree(bdir)
+                raise
         with self.lock:
             self._live_docs[batch_id] = batch_doc
 
-        self.executor.submit(
+        future = self.executor.submit(
             self._run_matrix_worker,
             tenant_id,
             batch_id,
@@ -1656,6 +1730,13 @@ class EcommerceSceneStore:
             ai_variation,
             blender_engine,
         )
+        self.tasks[batch_id] = future
+        def worker_done(_future: Future[Any]) -> None:
+            with self.lock:
+                self.tasks.pop(batch_id, None)
+                if self._live_docs.get(batch_id, {}).get("state") != "running":
+                    self._live_docs.pop(batch_id, None)
+        future.add_done_callback(worker_done)
         return batch_doc
 
     def _blender_job_for_item(
@@ -1813,43 +1894,25 @@ class EcommerceSceneStore:
                 cab_spec["nasScene"] = "STUDIO"
                 job = self._blender_job_for_item(batch_id, item, item_dir, cab_spec, scene_def, scene_hash, samples)
                 prepared[item["itemId"]] = {"cab_copy": cab_copy, "cab_spec": cab_spec, "scfg": scfg, "job": job}
-                engine_for_item = "local"
-                if fleet_blender_client is not None:
-                    eligible, why = fleet_eligible(scene_def)
-                    if eligible:
-                        try:
-                            task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
-                        except FleetError as exc:
-                            # auto: a refused or unreachable submit still renders here; forced fleet fails the item
-                            if not local_fallback_allowed(blender_engine, local_available=blender_ok):
-                                raise RuntimeError(f"艦隊送件失敗：{str(exc)[:220]}") from exc
-                            with self.lock:
-                                item["blenderNote"] = f"艦隊送件失敗，改本機光追：{str(exc)[:160]}"
-                        else:
-                            with self.lock:
-                                item["fleetTaskId"] = str(task.get("id"))
-                                item["stage"] = "blender"
-                            engine_for_item = "fleet"
-                    else:
-                        with self.lock:
-                            item["blenderNote"] = why
-                if engine_for_item == "local" and not blender_ok:
-                    raise RuntimeError(fleet_blender_note or "本機 Blender 未啟用或不可用")
                 with self.lock:
-                    item["blenderEngine"] = engine_for_item
+                    if item["state"] == "cancelled":
+                        continue
+                    item["blenderEngine"] = "fleet" if fleet_blender_client and fleet_eligible(scene_def)[0] else "local"
             except Exception as exc:
                 with self.lock:
+                    if item["state"] == "cancelled":
+                        continue
                     item["state"] = "failed"
                     item["stage"] = "done"
                     item["error"] = str(exc)[:300]
             self._save_batch_progress(bdir, items)
 
-        # ---- Stage B: finish items in order (fleet: wait + download; local: render here), then Plan B / Plan C as before
+        # Start each render only when its turn arrives, so queued work can be cancelled.
         ai_futures: list[Future[None]] = []
         for item in items:
-            if item.get("state") == "failed":
-                continue
             with self.lock:
+                if item.get("state") != "queued":
+                    continue
                 item["state"] = "running"
                 item["stage"] = "blender"
             self._save_batch_progress(bdir, items)
@@ -1858,22 +1921,23 @@ class EcommerceSceneStore:
                 prep = prepared[item["itemId"]]
                 cab_copy, cab_spec, scfg, job = prep["cab_copy"], prep["cab_spec"], prep["scfg"], prep["job"]
                 facts: dict[str, Any] | None = None
-                if item.get("fleetTaskId") and fleet_blender_client is not None:
+                if item.get("blenderEngine") == "fleet" and fleet_blender_client is not None:
                     try:
+                        task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
+                        item["fleetTaskId"] = str(task.get("id"))
                         facts = render_on_fleet(
-                            fleet_blender_client, job, item_dir, job_id=job["jobId"], task={"id": item["fleetTaskId"]},
+                            fleet_blender_client, job, item_dir, job_id=job["jobId"], task=task,
                             on_update=partial(self._note_fleet_progress, item, bdir, items),
                         )
                     except FleetError as exc:
-                        # Forced fleet must fail the item. Auto falls back only when this workstation can render.
                         if not local_fallback_allowed(blender_engine, local_available=blender_ok):
                             raise RuntimeError(f"艦隊 Blender 失敗：{str(exc)[:220]}") from exc
                         with self.lock:
                             item["blenderNote"] = f"艦隊失敗，改本機光追：{str(exc)[:160]}"
                             item["blenderEngine"] = "local"
-                        self._save_batch_progress(bdir, items)
-                        facts = None
                 if facts is None:
+                    if not blender_ok:
+                        raise RuntimeError(fleet_blender_note or "本機 Blender 未啟用或不可用")
                     facts = self._render_locally(job, item_dir)
                 item["hasCutout"] = bool(facts.get("hasCutout"))
                 item["hasGlb"] = (item_dir / "model.glb").is_file()
@@ -2026,14 +2090,16 @@ class EcommerceSceneStore:
             doc = self._live_docs.get(bdir.name) or read_json(bdir / "batch.json") or {}
             succeeded = sum(1 for x in items if x["state"] == "succeeded")
             failed = sum(1 for x in items if x["state"] == "failed")
-            completed = succeeded + failed
+            cancelled = sum(1 for x in items if x["state"] == "cancelled")
+            completed = succeeded + failed + cancelled
             total = len(items)
             doc.update(
-                items=json.loads(json.dumps(items)),
+                items=items,
                 completed=completed,
                 succeeded=succeeded,
                 failed=failed,
-                state="completed" if completed >= total else "running",
+                cancelled=cancelled,
+                state=("cancelled" if doc.get("cancelRequested") else "completed") if completed >= total else "running",
                 updatedAt=timestamp(),
             )
             done = completed >= total
@@ -2051,8 +2117,34 @@ class EcommerceSceneStore:
                     if attempt >= 19:
                         raise
                     time.sleep(0.2)
-            if done:
+            if done and bdir.name not in self.tasks:
                 self._live_docs.pop(bdir.name, None)
+
+    def cancel_batch(self, tenant_id: str, batch_id: str) -> dict[str, Any]:
+        with self.lock:
+            doc = self.get_batch(tenant_id, batch_id)
+            if doc.get("state") != "running":
+                return doc
+            live = self._live_docs.get(batch_id)
+            if live is None:
+                raise BatchConflict("批次工作程序無法取消")
+            live["cancelRequested"] = True
+            for item in live["items"]:
+                if item.get("state") == "queued":
+                    item["state"] = "cancelled"
+                    item["stage"] = "done"
+            bdir = self._tenant_dir(tenant_id) / "batches" / batch_id
+            self._save_batch_progress(bdir, live["items"])
+            return self.get_batch(tenant_id, batch_id)
+
+    def delete_batch(self, tenant_id: str, batch_id: str) -> dict[str, Any]:
+        with self.lock:
+            doc = self.get_batch(tenant_id, batch_id)
+            if doc.get("state") == "running" or batch_id in self.tasks:
+                raise BatchConflict("執行中的批次不可刪除")
+            shutil.rmtree(self._tenant_dir(tenant_id) / "batches" / batch_id)
+            self._live_docs.pop(batch_id, None)
+            return {"deleted": batch_id}
 
     def item_asset_path(self, tenant_id: str, batch_id: str, item_id: str, fmt: str, variant: int = 1) -> Path:
         files = {
