@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
-from fox3d.cyclecount import BOOK_CHANGED_MSG
+from fox3d.cyclecount import BOOK_CHANGED_MSG, IDEMPOTENCY_CONFLICT_MSG, _explicit_idem_key
 from fox3d.platform import Platform
 
 TENANT = "cc-api-a"
@@ -200,6 +200,139 @@ def test_create_cycle_count_idempotent_on_duplicate_post(client: TestClient) -> 
     assert listing.status_code == 200
     matches = [r for r in listing.json()["items"] if r["lotId"] == lot_id and r["reason"] == "same"]
     assert len(matches) == 1
+
+
+def test_same_idempotency_key_across_lots_is_409_and_does_not_create(client: TestClient) -> None:
+    lot_a = _receive(client, sheets=8)
+    lot_b = _receive(client, sheets=6)
+    body = {"counted": 4, "reason": "same", "idempotencyKey": "shared-key", "actor": "ops"}
+    first = client.post(f"/api/materials/lots/{lot_a}/cycle-counts", headers=_headers(), json=body)
+    second = client.post(f"/api/materials/lots/{lot_b}/cycle-counts", headers=_headers(), json=body)
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert second.json() == {"detail": IDEMPOTENCY_CONFLICT_MSG}
+    assert first.json()["cycleCountId"] not in second.text
+    assert lot_a not in second.text
+    listing = client.get("/api/materials/cycle-counts", headers=_headers())
+    assert listing.status_code == 200
+    body_list = listing.json()
+    assert body_list["total"] == 1
+    assert body_list["items"][0]["cycleCountId"] == first.json()["cycleCountId"]
+    assert body_list["items"][0]["lotId"] == lot_a
+    retry = client.post(f"/api/materials/lots/{lot_a}/cycle-counts", headers=_headers(), json=body)
+    assert retry.status_code == 200
+    assert retry.json()["cycleCountId"] == first.json()["cycleCountId"]
+    assert client.get("/api/materials/cycle-counts", headers=_headers()).json()["total"] == 1
+
+
+def test_same_idempotency_key_different_body_is_409(client: TestClient) -> None:
+    lot_id = _receive(client, sheets=8)
+    first_body = {"counted": 4, "reason": "first", "idempotencyKey": "once", "actor": "ops"}
+    first = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=first_body)
+    assert first.status_code == 200
+    variants = [
+        {"counted": 5, "reason": "first", "idempotencyKey": "once", "actor": "ops"},
+        {"counted": 0, "reason": "first", "idempotencyKey": "once", "actor": "ops"},
+        {"counted": 4, "reason": "other", "idempotencyKey": "once", "actor": "ops"},
+        {"counted": 4, "reason": "first", "idempotencyKey": "once", "actor": "clerk"},
+    ]
+    for body in variants:
+        res = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=body)
+        assert res.status_code == 409
+        assert res.json() == {"detail": IDEMPOTENCY_CONFLICT_MSG}
+        assert "Traceback" not in res.text
+        assert first.json()["cycleCountId"] not in res.text
+    listing = client.get("/api/materials/cycle-counts", headers=_headers())
+    items = listing.json()["items"]
+    assert len(items) == 1
+    assert items[0]["counted"] == 4
+    assert items[0]["reason"] == "first"
+    assert items[0]["actor"] == "ops"
+
+
+def test_idempotency_index_cannot_return_another_tenants_count(client: TestClient, platform) -> None:
+    lot_b = _receive(client, tenant=OTHER, sheets=5)
+    foreign = _create_cc(client, lot_b, tenant=OTHER, counted=1, reason="r", key="k")
+    lot_a = _receive(client, tenant=TENANT, sheets=5)
+    svc = platform.pilot.cyclecounts
+    svc._idem[_explicit_idem_key(TENANT, "k")] = {
+        "cycleCountId": foreign["cycleCountId"],
+        "lotId": lot_a,
+        "counted": 1,
+        "reason": "r",
+        "actor": "ops",
+        "operatorId": None,
+        "shiftId": None,
+    }
+    svc.persist()
+    res = client.post(
+        f"/api/materials/lots/{lot_a}/cycle-counts",
+        headers=_headers(TENANT),
+        json={"counted": 1, "reason": "r", "idempotencyKey": "k", "actor": "ops"},
+    )
+    assert res.status_code == 404
+    assert res.json()["detail"] == "找不到盤點或批次"
+    assert "tenant isolation" not in res.text
+    assert foreign["cycleCountId"] not in res.text
+    listing = client.get("/api/materials/cycle-counts", headers=_headers(TENANT))
+    assert all(row["cycleCountId"] != foreign["cycleCountId"] for row in listing.json()["items"])
+    assert all(row["lotId"] != lot_a for row in listing.json()["items"])
+    assert platform.pilot.cyclecounts.counts[foreign["cycleCountId"]]["tenantId"] == OTHER
+
+
+def test_same_idempotency_key_is_isolated_by_tenant(client: TestClient) -> None:
+    lot_a = _receive(client, tenant=TENANT, sheets=5)
+    lot_b = _receive(client, tenant=OTHER, sheets=5)
+    body = {"counted": 3, "reason": "t", "idempotencyKey": "shared", "actor": "ops"}
+    first = client.post(f"/api/materials/lots/{lot_a}/cycle-counts", headers=_headers(TENANT), json=body)
+    second = client.post(f"/api/materials/lots/{lot_b}/cycle-counts", headers=_headers(OTHER), json=body)
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["cycleCountId"] != second.json()["cycleCountId"]
+    assert first.json()["lotId"] == lot_a
+    assert second.json()["lotId"] == lot_b
+    own = client.get("/api/materials/cycle-counts", headers=_headers(OTHER))
+    assert {row["cycleCountId"] for row in own.json()["items"]} == {second.json()["cycleCountId"]}
+    denied = client.post(f"/api/materials/lots/{lot_a}/cycle-counts", headers=_headers(OTHER), json=body)
+    assert denied.status_code == 404
+    assert first.json()["cycleCountId"] not in denied.text
+
+
+def test_invalid_body_does_not_stick_or_block_the_original_key(client: TestClient) -> None:
+    lot_id = _receive(client, sheets=8)
+    body = {"counted": 4, "reason": "ok", "idempotencyKey": "keep-key", "actor": "ops"}
+    first = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=body)
+    assert first.status_code == 200
+    invalid = [
+        {"counted": -1, "reason": "ok", "idempotencyKey": "keep-key", "actor": "ops"},
+        {"counted": "4", "reason": "ok", "idempotencyKey": "keep-key", "actor": "ops"},
+        {"counted": 4, "reason": "", "idempotencyKey": "keep-key", "actor": "ops"},
+        {"counted": 4, "reason": "x" * 201, "idempotencyKey": "keep-key", "actor": "ops"},
+        {"counted": 4, "reason": "ok", "idempotencyKey": "", "actor": "ops"},
+    ]
+    for payload in invalid:
+        res = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=payload)
+        assert res.status_code == 422
+        assert "Traceback" not in res.text
+    retry = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=body)
+    assert retry.status_code == 200
+    assert retry.json()["cycleCountId"] == first.json()["cycleCountId"]
+    listing = client.get("/api/materials/cycle-counts", headers=_headers())
+    assert listing.json()["total"] == 1
+
+
+@pytest.mark.parametrize("key", ["", "   ", "x" * 201, None, 12, True])
+def test_malformed_idempotency_key_creates_nothing(client: TestClient, key: object) -> None:
+    lot_id = _receive(client, sheets=4)
+    res = client.post(
+        f"/api/materials/lots/{lot_id}/cycle-counts",
+        headers=_headers(),
+        json={"counted": 1, "reason": "r", "idempotencyKey": key, "actor": "ops"},
+    )
+    assert res.status_code == 422
+    assert res.json()["detail"] == "idempotencyKey 格式錯誤"
+    assert "Traceback" not in res.text
+    listing = client.get("/api/materials/cycle-counts", headers=_headers())
+    assert listing.json()["total"] == 0
 
 
 def test_cyclecount_list_pagination_exposes_older_rows(client: TestClient) -> None:

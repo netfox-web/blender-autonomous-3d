@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from fox3d.cyclecount import BOOK_CHANGED_MSG, CycleCountConflict
+from fox3d.cyclecount import BOOK_CHANGED_MSG, IDEMPOTENCY_CONFLICT_MSG, CycleCountConflict
 from fox3d.platform import Platform
 
 TENANT = "cc-a"
@@ -76,6 +76,178 @@ def test_create_is_idempotent_for_same_key(platform):
     again = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="k1")
     assert again["cycleCountId"] == first["cycleCountId"]
     assert len([c for c in svc.counts.values() if c["lotId"] == lot_id]) == 1
+    svc.approve(first["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    retried = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="k1")
+    assert retried["cycleCountId"] == first["cycleCountId"]
+    assert retried["status"] == "APPLIED"
+    assert len([c for c in svc.counts.values() if c["lotId"] == lot_id]) == 1
+    adjustments = [
+        row
+        for row in platform.lots.get(lot_id, tenant_id=TENANT).get("adjustments") or []
+        if row.get("source") == "CYCLE_COUNT"
+    ]
+    assert len(adjustments) == 1
+
+
+def _create_events(platform, tenant: str = TENANT) -> list[dict]:
+    return [e for e in platform.pilot.journal.list(tenant) if e.get("eventType") == "cyclecount.create"]
+
+
+def test_same_idempotency_key_on_another_lot_conflicts(platform):
+    svc = platform.pilot.cyclecounts
+    lot_a = _lot(platform, quantity=10)
+    lot_b = _lot(platform, quantity=8)
+    before_b = _q(platform, lot_b)
+    first = svc.create(
+        tenant_id=TENANT, lot_id=lot_a, counted=4, reason="r", actor="ops", idempotency_key="shared"
+    )
+    with pytest.raises(CycleCountConflict, match=IDEMPOTENCY_CONFLICT_MSG) as raised:
+        svc.create(tenant_id=TENANT, lot_id=lot_b, counted=4, reason="r", actor="ops", idempotency_key="shared")
+    assert first["cycleCountId"] not in str(raised.value)
+    assert lot_a not in str(raised.value)
+    assert _q(platform, lot_b) == before_b
+    rows = [c for c in svc.counts.values() if c["tenantId"] == TENANT]
+    assert [c["cycleCountId"] for c in rows] == [first["cycleCountId"]]
+    assert rows[0]["lotId"] == lot_a
+    again = svc.create(
+        tenant_id=TENANT, lot_id=lot_a, counted=4, reason="r", actor="ops", idempotency_key="shared"
+    )
+    assert again["cycleCountId"] == first["cycleCountId"]
+    other = svc.create(
+        tenant_id=TENANT, lot_id=lot_b, counted=4, reason="r", actor="ops", idempotency_key="other-key"
+    )
+    assert other["lotId"] == lot_b
+    assert other["cycleCountId"] != first["cycleCountId"]
+    assert len(_create_events(platform)) == 2
+
+
+def test_same_idempotency_key_different_fields_conflict(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform)
+    first = svc.create(
+        tenant_id=TENANT,
+        lot_id=lot_id,
+        counted=4,
+        reason="r",
+        actor="ops",
+        operator_id="op-1",
+        shift_id="sh-1",
+        idempotency_key="k",
+    )
+    variants = [
+        {"counted": 5, "reason": "r", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 0, "reason": "r", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "other", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "r", "actor": "clerk", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "r", "actor": "ops", "operator_id": "op-2", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "r", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-2"},
+    ]
+    for fields in variants:
+        with pytest.raises(CycleCountConflict, match=IDEMPOTENCY_CONFLICT_MSG) as raised:
+            svc.create(tenant_id=TENANT, lot_id=lot_id, idempotency_key="k", **fields)
+        assert first["cycleCountId"] not in str(raised.value)
+        assert lot_id not in str(raised.value)
+    kept = svc.counts[first["cycleCountId"]]
+    assert kept["counted"] == 4
+    assert kept["reason"] == "r"
+    assert kept["actor"] == "ops"
+    assert kept["operatorId"] == "op-1"
+    assert kept["shiftId"] == "sh-1"
+    assert len([c for c in svc.counts.values() if c["lotId"] == lot_id]) == 1
+    assert len(_create_events(platform)) == 1
+
+
+def test_idempotency_fingerprint_survives_reload_and_ignores_later_book_changes(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform, quantity=10)
+    first = svc.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="persist-key"
+    )
+    platform.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="later", quantity=2)
+    plat2 = Platform(root=platform.root, mock_blender=True)
+    svc2 = plat2.pilot.cyclecounts
+    saved = [
+        value
+        for value in svc2._idem.values()
+        if isinstance(value, dict) and value.get("cycleCountId") == first["cycleCountId"]
+    ]
+    assert saved == [
+        {
+            "cycleCountId": first["cycleCountId"],
+            "lotId": lot_id,
+            "counted": 4,
+            "reason": "r",
+            "actor": "ops",
+            "operatorId": None,
+            "shiftId": None,
+        }
+    ]
+    again = svc2.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="persist-key"
+    )
+    assert again["cycleCountId"] == first["cycleCountId"]
+    assert again["status"] == "WAITING_HUMAN_APPROVAL"
+    assert again["systemAvailable"] == first["systemAvailable"]
+    lot_b = _lot(plat2, quantity=6)
+    with pytest.raises(CycleCountConflict, match=IDEMPOTENCY_CONFLICT_MSG):
+        svc2.create(
+            tenant_id=TENANT, lot_id=lot_b, counted=4, reason="r", actor="ops", idempotency_key="persist-key"
+        )
+    assert len([c for c in svc2.counts.values() if c["tenantId"] == TENANT]) == 1
+
+
+def test_idempotency_key_is_isolated_by_tenant(platform):
+    svc = platform.pilot.cyclecounts
+    lot_a = _lot(platform, tenant=TENANT, quantity=5)
+    lot_b = _lot(platform, tenant=OTHER, quantity=5)
+    first = svc.create(
+        tenant_id=TENANT, lot_id=lot_a, counted=2, reason="r", actor="ops", idempotency_key="shared"
+    )
+    second = svc.create(
+        tenant_id=OTHER, lot_id=lot_b, counted=2, reason="r", actor="ops", idempotency_key="shared"
+    )
+    assert first["cycleCountId"] != second["cycleCountId"]
+    assert first["lotId"] == lot_a
+    assert second["lotId"] == lot_b
+    listed = svc.list_for_tenant(tenant_id=OTHER)
+    assert {row["cycleCountId"] for row in listed["items"]} == {second["cycleCountId"]}
+    with pytest.raises(PermissionError):
+        svc.create(tenant_id=OTHER, lot_id=lot_a, counted=2, reason="r", actor="intruder", idempotency_key="shared")
+
+
+def test_concurrent_same_key_on_two_lots_creates_one(platform):
+    svc = platform.pilot.cyclecounts
+    lot_a = _lot(platform, quantity=9)
+    lot_b = _lot(platform, quantity=9)
+
+    def attempt(lot_id: str) -> str:
+        try:
+            rec = svc.create(
+                tenant_id=TENANT,
+                lot_id=lot_id,
+                counted=3,
+                reason="race",
+                actor="ops",
+                idempotency_key="race-key",
+            )
+        except CycleCountConflict as exc:
+            assert str(exc) == IDEMPOTENCY_CONFLICT_MSG
+            return "conflict"
+        return rec["lotId"]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, (lot_a, lot_b)))
+    winners = [lot_id for lot_id in results if lot_id != "conflict"]
+    assert results.count("conflict") == 1
+    assert winners in ([lot_a], [lot_b])
+    rows = [c for c in svc.counts.values() if c.get("reason") == "race"]
+    assert len(rows) == 1
+    assert rows[0]["lotId"] == winners[0]
+    reloaded = Platform(root=platform.root, mock_blender=True)
+    kept = [c for c in reloaded.pilot.cyclecounts.counts.values() if c.get("reason") == "race"]
+    assert len(kept) == 1
+    assert kept[0]["lotId"] == winners[0]
+    assert len(_create_events(reloaded)) == 1
 
 
 @pytest.mark.parametrize("payload", [None, {}, {"confirm": False}, {"confirm": "no"}, {"confirm": 0}])

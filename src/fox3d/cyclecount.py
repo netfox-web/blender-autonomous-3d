@@ -16,14 +16,66 @@ from fox3d.operator import require_confirm
 from fox3d.storelock import FileLock
 
 BOOK_CHANGED_MSG = "帳面已變動，請重新盤點"
+IDEMPOTENCY_CONFLICT_MSG = "相同 idempotencyKey 已用於不同內容"
 
 
 class CycleCountConflict(PermissionError):
-    """Snapshot stale or invalid state transition for cycle count approval."""
+    """Snapshot stale, or the same idempotency key was reused for different content."""
 
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _explicit_idem_key(tenant_id: str, idempotency_key: str) -> str:
+    return f"{tenant_id}::cc-key::{idempotency_key}"
+
+
+def _implicit_idem_key(tenant_id: str, lot_id: str, counted: int, reason: str) -> str:
+    return f"{tenant_id}::cc::{lot_id}:{counted}:{reason}"
+
+
+def _request_identity(
+    *,
+    lot_id: str,
+    counted: int,
+    reason: str,
+    actor: str,
+    operator_id: str | None,
+    shift_id: str | None,
+) -> dict[str, Any]:
+    """Business fields of one create. Retries must match; derived snapshots must not."""
+    return {
+        "lotId": lot_id,
+        "counted": int(counted),
+        "reason": reason,
+        "actor": actor,
+        "operatorId": operator_id,
+        "shiftId": shift_id,
+    }
+
+
+def _saved_identity(saved: dict[str, Any] | None, rec: dict[str, Any]) -> dict[str, Any]:
+    source = saved if saved is not None else rec
+    return {
+        "lotId": source.get("lotId"),
+        "counted": source.get("counted"),
+        "reason": source.get("reason"),
+        "actor": source.get("actor"),
+        "operatorId": source.get("operatorId"),
+        "shiftId": source.get("shiftId"),
+    }
+
+
+def _idem_target(entry: Any) -> tuple[str, dict[str, Any] | None]:
+    """Return (cycleCountId, saved request). Legacy entries store only the id."""
+    if isinstance(entry, str) and entry:
+        return entry, None
+    if isinstance(entry, dict):
+        cycle_count_id = entry.get("cycleCountId")
+        if isinstance(cycle_count_id, str) and cycle_count_id:
+            return cycle_count_id, entry
+    raise KeyError("cycle count")
 
 
 class CycleCountService:
@@ -34,7 +86,7 @@ class CycleCountService:
         if self.root:
             self.root.mkdir(parents=True, exist_ok=True)
         self.counts: dict[str, dict[str, Any]] = {}
-        self._idem: dict[str, str] = {}
+        self._idem: dict[str, Any] = {}
         self.journal: Any | None = None
         self.outbox: Any | None = None
         self.load()
@@ -110,13 +162,29 @@ class CycleCountService:
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self._durable():
-            key = f"{tenant_id}::cc::{idempotency_key or lot_id}:{counted}:{reason}"
+            provided = idempotency_key.strip() if isinstance(idempotency_key, str) else ""
+            identity = _request_identity(
+                lot_id=lot_id,
+                counted=counted,
+                reason=reason,
+                actor=actor,
+                operator_id=operator_id,
+                shift_id=shift_id,
+            )
+            if provided:
+                key = _explicit_idem_key(tenant_id, provided)
+            else:
+                key = _implicit_idem_key(tenant_id, lot_id, identity["counted"], reason)
             if key in self._idem:
-                existing = self.counts[self._idem[key]]
+                cycle_count_id, saved = _idem_target(self._idem[key])
+                existing = self.counts[cycle_count_id]
                 if existing.get("tenantId") != tenant_id:
                     raise PermissionError("tenant isolation: cycle count")
+                if provided and _saved_identity(saved, existing) != identity:
+                    raise CycleCountConflict(IDEMPOTENCY_CONFLICT_MSG)
                 return existing
             q = self.lots.quantities(lot_id, tenant_id=tenant_id)
+            counted_n = identity["counted"]
             rec: dict[str, Any] = {
                 "cycleCountId": new_id(),
                 "tenantId": tenant_id,
@@ -125,8 +193,8 @@ class CycleCountService:
                 "systemReserved": int(q["reserved"]),
                 "systemConsumed": int(q["consumed"]),
                 "systemSheetCount": int(q["sheetCount"]),
-                "counted": int(counted),
-                "variance": int(counted) - int(q["available"]),
+                "counted": counted_n,
+                "variance": counted_n - int(q["available"]),
                 "reason": reason,
                 "status": "WAITING_HUMAN_APPROVAL",
                 "applied": False,
@@ -139,7 +207,10 @@ class CycleCountService:
             }
             rec["cycleCountHash"] = stable_hash({k: rec[k] for k in rec if k != "cycleCountHash"})
             self.counts[rec["cycleCountId"]] = rec
-            self._idem[key] = rec["cycleCountId"]
+            if provided:
+                self._idem[key] = {"cycleCountId": rec["cycleCountId"], **identity}
+            else:
+                self._idem[key] = rec["cycleCountId"]
             emit(
                 self,
                 "cyclecount.create",
