@@ -74,6 +74,7 @@ class PilotOps:
         self.qc = QcService(dam=platform.dam, workorders=self.workorders, root=platform.root / "qc")
         self.workorders.bind_qc(self.qc)
         self.logistics = LogisticsService(root=platform.root / "logistics")
+        self.workorders.logistics = self.logistics
         self.econ = PilotEconomics()
         self.receiving = ReceivingService(lots=platform.lots, root=platform.root / "receipts")
         self.reliability = ReliabilityHarness(self)

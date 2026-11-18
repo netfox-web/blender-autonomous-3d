@@ -77,6 +77,7 @@ class WorkOrderService:
             self.root.mkdir(parents=True, exist_ok=True)
         self.dispatcher: Any | None = None
         self.qc: Any | None = None
+        self.logistics: Any | None = None
         self.journal: Any | None = None
         self.outbox: Any | None = None
         self.orders: dict[str, dict[str, Any]] = {}
@@ -583,13 +584,21 @@ class WorkOrderService:
         return rec
 
     def set_packing(self, work_order_id: str, carton_ids: list[str]) -> dict[str, Any]:
-        rec = self._require(work_order_id, tenant_id=None)
-        rec["lineage"]["package"] = list(carton_ids)
-        rec["cartonIds"] = list(carton_ids)
-        if rec["state"] not in TERMINAL:
-            self._transition(rec, "PACKING", actor="ops", reason="packing")
-        self.persist()
-        return rec
+        with self._lock:
+            rec = self._require(work_order_id, tenant_id=None)
+            ids = list(carton_ids)
+            if (
+                rec.get("cartonIds") == ids
+                and rec.get("lineage", {}).get("package") == ids
+                and (rec["state"] == "PACKING" or rec["state"] in TERMINAL)
+            ):
+                return rec
+            rec["lineage"]["package"] = ids
+            rec["cartonIds"] = ids
+            if rec["state"] not in TERMINAL:
+                self._transition(rec, "PACKING", actor="ops", reason="packing")
+            self.persist()
+            return rec
 
     def complete(self, work_order_id: str, *, actor: str, qc_ok: bool = True) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
@@ -626,6 +635,20 @@ class WorkOrderService:
             raise PermissionError(f"required operations incomplete: {missing_ops}")
         if rec.get("packingRequired") and not rec.get("cartonIds"):
             raise PermissionError("packing required before completion")
+        if self.logistics is not None:
+            wo_cartons = [
+                c
+                for c in self.logistics.cartons.values()
+                if c.get("workOrderId") == rec["workOrderId"] and c.get("tenantId") == rec.get("tenantId")
+            ]
+            has_mismatch = any(bool(c.get("mismatch")) for c in wo_cartons)
+            mismatch_resolved = any(
+                not h.get("open") and h.get("reason") == "PACKING_MISMATCH" for h in (rec.get("holds") or [])
+            )
+            if rec.get("mismatchHold") or (has_mismatch and not mismatch_resolved):
+                raise PermissionError("尺寸不符待人工確認 (mismatchHold)")
+        elif rec.get("mismatchHold"):
+            raise PermissionError("尺寸不符待人工確認 (mismatchHold)")
         rec["completedBy"] = actor
         rec["completedAt"] = _now()
         self._transition(rec, "COMPLETED", actor=actor, reason="complete")

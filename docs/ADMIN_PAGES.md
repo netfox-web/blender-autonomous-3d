@@ -16,7 +16,7 @@
 | `/admin/kd` | 管理拆裝家具型錄、SKU 與就緒狀態。 | `/api/kd`、`/api/pages/kd` |
 | `/admin/kd#structures` | 產生陳列架、包裝及壓克力商品參數。 | `/api/retail`、`/api/packaging`、`/api/acrylic`、`/api/pages/kd` |
 | `/admin/materials` | 管理板材庫存、餘料預留與排版基準測試。 | `/api/materials`、`/api/remnants`、`/api/nesting`、`/api/pages/materials` |
-| `/admin/pilot` | 查看試產工單、批次、領料、收料與請購。 | `/api/pilot/console`、`/api/pilot/work-orders`、`/api/pilot/batches`、`/api/pilot/receipts`、`/api/pilot/purchase-requests`、`/api/pilot/import`、`/api/pilot/export`、`/api/pilot/health`、`/api/pages/pilot` |
+| `/admin/pilot` | 查看試產工單、批次、領料、收料、請購與裝箱作業。 | `/api/pilot/console`、`/api/pilot/work-orders`、`/api/pilot/batches`、`/api/pilot/receipts`、`/api/pilot/purchase-requests`、`/api/pilot/import`、`/api/pilot/export`、`/api/pilot/health`、`/api/pilot/cartons`、`/api/pages/pilot` |
 | `/admin/pilot-floor` | 管理現場站點、派工、掃碼與異常。 | `/api/pilot/operator`、`/api/pilot/scan`、`/api/pilot/stations`、`/api/pilot/dispatch`、`/api/pilot/leases`、`/api/pilot/exceptions`、`/api/pilot/scan-token`、`/api/pages/pilot-floor` |
 | `/admin/render` | 送出、查詢及取消 3D 算圖工作。 | `/api/3d/jobs`、`/api/render`、`/api/pages/render` |
 | `/admin/render#twins` | 建立、上傳與預覽數位分身。 | `/api/digital-twins`、`/api/pages/render` |
