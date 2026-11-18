@@ -133,3 +133,128 @@ def test_invalid_idempotency_key_is_rejected(setup, key):
     response = client.post('/api/ecommerce-scenes/batches', json={'idempotencyKey': key, 'aiEngine': 'off'})
     assert response.status_code == 422
     assert not futures
+
+
+def test_submit_failure_replays_durable_batch(setup):
+    _, store, futures = setup
+    body = {'idempotencyKey': 'retry-submit', 'aiEngine': 'off', 'blenderEngine': 'local'}
+    original_submit = store.executor.submit
+    with patch.object(store.executor, 'submit', side_effect=RuntimeError('executor unavailable')):
+        with pytest.raises(RuntimeError):
+            store.start_matrix_batch('tenant', body)
+    paths = list((store._tenant_dir('tenant') / 'batches').glob('*/batch.json'))
+    assert len(paths) == 1
+    assert not store._live_docs
+    store.executor.submit = original_submit  # type: ignore[method-assign]
+    replay = store.start_matrix_batch('tenant', body)
+    assert replay['batchId'] == paths[0].parent.name
+    assert len(futures) == 1
+    assert store.start_matrix_batch('tenant', body)['batchId'] == replay['batchId']
+    assert len(futures) == 1
+
+
+def test_restart_recovers_pending_batch_before_index_write(setup):
+    _, store, _ = setup
+    body = {'idempotencyKey': 'restart-pending', 'aiEngine': 'off', 'blenderEngine': 'local'}
+    with patch.object(store.executor, 'submit', side_effect=RuntimeError('stopped')):
+        with pytest.raises(RuntimeError):
+            store.start_matrix_batch('tenant', body)
+    (store._tenant_dir('tenant') / 'batch-keys.json').unlink()
+    with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'):
+        restarted = EcommerceSceneStore(store.platform)
+    work = []
+    restarted.executor.submit = lambda fn, *args: (work.append((fn, args)) or Future())  # type: ignore[method-assign]
+    result = restarted.start_matrix_batch('tenant', body)
+    assert len(work) == 1
+    fn, args = work[0]
+    restarted.platform.mock_blender = False
+    restarted.platform.runtime = SimpleNamespace(available=lambda: True)
+    with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'), \
+         patch.object(restarted, '_render_locally', return_value={}) as render:
+        fn(*args)
+    assert render.call_count == 1
+    saved = restarted.get_batch('tenant', result['batchId'])
+    assert saved['scheduleState'] == 'started'
+    assert saved['state'] == 'completed'
+    assert restarted.start_matrix_batch('tenant', body)['batchId'] == result['batchId']
+    assert len(work) == 1
+    restarted.executor.shutdown()
+    restarted.ai_executor.shutdown()
+
+
+def test_fleet_window_submits_before_collect_and_cancels_queued(setup):
+    client, store, _ = setup
+    work = []
+    store.executor.submit = lambda fn, *args: (work.append((fn, args)) or Future())  # type: ignore[method-assign]
+    response = client.post('/api/ecommerce-scenes/batches', json={
+        'aiEngine': 'off', 'blenderEngine': 'fleet',
+        'views': ['FRONT', 'THREE_QUARTER', 'FRONT', 'FRONT', 'FRONT', 'FRONT'],
+    })
+    batch_id = response.json()['batchId']
+    submitted = []
+
+    def submit(_client, job, **kwargs):
+        submitted.append(job['jobId'])
+        return {'id': job['jobId']}
+
+    collected = []
+
+    def collect(_client, job, item_dir, **kwargs):
+        collected.append(job["jobId"])
+        if len(collected) == 1:
+            assert len(submitted) == 4
+            result = client.post(f'/api/ecommerce-scenes/batches/{batch_id}/cancel').json()
+            assert [x['state'] for x in result['items']] == ['running'] * 4 + ['cancelled'] * 2
+        return {}
+
+    with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'), \
+         patch('fox3d.ecommerce_scene_studio.FleetImageClient.from_settings', return_value=object()), \
+         patch('fox3d.ecommerce_scene_studio.blender_fleet_status', return_value={'ready': True}), \
+         patch('fox3d.ecommerce_scene_studio.submit_blender_job', side_effect=submit), \
+         patch('fox3d.ecommerce_scene_studio.render_on_fleet', side_effect=collect):
+        fn, args = work[0]
+        fn(*args)
+    result = client.get(f'/api/ecommerce-scenes/batches/{batch_id}').json()
+    assert len(submitted) == 4
+    assert [x['state'] for x in result['items']] == ['succeeded'] * 4 + ['cancelled'] * 2
+
+
+def test_cancelled_pending_batch_is_not_rescheduled(setup):
+    _, store, futures = setup
+    body = {'idempotencyKey': 'cancel-before-start', 'aiEngine': 'off'}
+    batch = store.start_matrix_batch('tenant', body)
+    assert store.cancel_batch('tenant', batch['batchId'])['state'] == 'cancelled'
+    futures[0].set_result(None)
+    assert store.start_matrix_batch('tenant', body)['state'] == 'cancelled'
+    assert len(futures) == 1
+
+
+def test_fleet_window_refills_after_collection(setup):
+    client, store, _ = setup
+    work = []
+    store.executor.submit = lambda fn, *args: (work.append((fn, args)) or Future())  # type: ignore[method-assign]
+    batch = client.post('/api/ecommerce-scenes/batches', json={
+        'aiEngine': 'off', 'blenderEngine': 'fleet', 'views': ['FRONT'] * 6,
+    }).json()
+    submitted = []
+    counts = []
+
+    def submit(_client, job, **kwargs):
+        submitted.append(job['jobId'])
+        return {'id': job['jobId']}
+
+    def collect(_client, job, item_dir, **kwargs):
+        counts.append(len(submitted))
+        return {}
+
+    with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'), \
+         patch('fox3d.ecommerce_scene_studio.FleetImageClient.from_settings', return_value=object()), \
+         patch('fox3d.ecommerce_scene_studio.blender_fleet_status', return_value={'ready': True}), \
+         patch('fox3d.ecommerce_scene_studio.submit_blender_job', side_effect=submit), \
+         patch('fox3d.ecommerce_scene_studio.render_on_fleet', side_effect=collect):
+        fn, args = work[0]
+        fn(*args)
+    assert counts == [4, 5, 6, 6, 6, 6]
+    result = client.get('/api/ecommerce-scenes/batches/' + batch['batchId']).json()
+    assert result['state'] == 'completed'
+    assert all(item['state'] == 'succeeded' for item in result['items'])

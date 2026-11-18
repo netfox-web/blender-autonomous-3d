@@ -1476,7 +1476,7 @@ class EcommerceSceneStore:
 
     def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
         """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
-        if doc.get("state") != "running":
+        if doc.get("state") != "running" or doc.get("scheduleState") == "pending":
             return doc
         # A batch this process still owns (queued behind another batch, or mid-render) is alive even when its file
         # has not changed for a while; only batches left over from a previous process can be stale.
@@ -1548,7 +1548,10 @@ class EcommerceSceneStore:
                 if entry.get("fingerprint") != fingerprint:
                     raise BatchConflict("此 idempotencyKey 已用於不同的請求")
                 try:
-                    return self.get_batch(tenant_id, entry["batchId"])
+                    doc = self.get_batch(tenant_id, entry["batchId"])
+                    if doc.get("state") == "running" and doc.get("scheduleState") == "pending" and doc["batchId"] not in self.tasks:
+                        self._schedule_batch(tenant_id, doc)
+                    return doc
                 except KeyError as exc:
                     raise BatchConflict("此 idempotencyKey 的批次已刪除") from exc
             return self._start_matrix_batch_locked(tenant_id, body, public_base_url=public_base_url,
@@ -1691,6 +1694,10 @@ class EcommerceSceneStore:
                 "blenderEngine": blender_engine,
             },
             "createdAt": timestamp(),
+            "scheduleState": "pending",
+            "workerArgs": [cabinet_cfg, scenes_by_id, samples, ai_style_id, ai_prompt, ai_engine,
+                           ai_variants, ai_seed, ai_upsample, public_base_url, ai_final_prompt,
+                           ai_variation, blender_engine],
             "state": "running",
             "samples": samples,
             "total": len(items),
@@ -1707,37 +1714,36 @@ class EcommerceSceneStore:
             except Exception:
                 shutil.rmtree(bdir)
                 raise
-        with self.lock:
-            self._live_docs[batch_id] = batch_doc
+        self._schedule_batch(tenant_id, batch_doc)
+        return batch_doc
 
-        future = self.executor.submit(
-            self._run_matrix_worker,
-            tenant_id,
-            batch_id,
-            bdir,
-            cabinet_cfg,
-            scenes_by_id,
-            items,
-            samples,
-            ai_style_id,
-            ai_prompt,
-            ai_engine,
-            ai_variants,
-            ai_seed,
-            ai_upsample,
-            public_base_url,
-            ai_final_prompt,
-            ai_variation,
-            blender_engine,
-        )
+    def _schedule_batch(self, tenant_id: str, doc: dict[str, Any]) -> None:
+        """Submit a durable pending batch; the worker claims it before doing any work."""
+        batch_id = doc["batchId"]
+        bdir = self._tenant_dir(tenant_id) / "batches" / batch_id
+        self._live_docs[batch_id] = doc
+        try:
+            future = self.executor.submit(self._claim_and_run_batch, tenant_id, bdir, doc)
+        except Exception:
+            self._live_docs.pop(batch_id, None)
+            raise
         self.tasks[batch_id] = future
+
         def worker_done(_future: Future[Any]) -> None:
             with self.lock:
                 self.tasks.pop(batch_id, None)
                 if self._live_docs.get(batch_id, {}).get("state") != "running":
                     self._live_docs.pop(batch_id, None)
         future.add_done_callback(worker_done)
-        return batch_doc
+
+    def _claim_and_run_batch(self, tenant_id: str, bdir: Path, doc: dict[str, Any]) -> None:
+        with self.lock:
+            if doc.get("state") != "running":
+                return
+            doc["scheduleState"] = "started"
+            atomic_json(bdir / "batch.json", doc)
+        args = doc["workerArgs"]
+        self._run_matrix_worker(tenant_id, doc["batchId"], bdir, args[0], args[1], doc["items"], *args[2:])
 
     def _blender_job_for_item(
         self,
@@ -1910,11 +1916,34 @@ class EcommerceSceneStore:
                     item["error"] = str(exc)[:300]
             self._save_batch_progress(bdir, items)
 
-        # Start each render only when its turn arrives, so queued work can be cancelled.
+        # Submit a bounded window before collecting results, retaining cancellable queued items.
+        fleet_tasks: dict[str, dict[str, Any]] = {}
+        fleet_errors: dict[str, FleetError] = {}
+        def fill_fleet_window() -> None:
+            for queued in items:
+                if len(fleet_tasks) >= 4:
+                    break
+                with self.lock:
+                    if queued.get("state") != "queued" or queued.get("blenderEngine") != "fleet":
+                        continue
+                    queued["state"] = "running"
+                    queued["stage"] = "blender"
+                self._save_batch_progress(bdir, items)
+                try:
+                    job = prepared[queued["itemId"]]["job"]
+                    assert fleet_blender_client is not None
+                    task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
+                    queued["fleetTaskId"] = str(task.get("id"))
+                    fleet_tasks[queued["itemId"]] = task
+                except FleetError as exc:
+                    fleet_errors[queued["itemId"]] = exc
+                self._save_batch_progress(bdir, items)
+
+        fill_fleet_window()
         ai_futures: list[Future[None]] = []
         for item in items:
             with self.lock:
-                if item.get("state") != "queued":
+                if item.get("state") not in ("queued", "running"):
                     continue
                 item["state"] = "running"
                 item["stage"] = "blender"
@@ -1927,9 +1956,10 @@ class EcommerceSceneStore:
                 if item.get("blenderEngine") == "fleet" and fleet_blender_client is not None:
                     submitted = False
                     try:
-                        task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
+                        if item["itemId"] in fleet_errors:
+                            raise fleet_errors.pop(item["itemId"])
+                        task = fleet_tasks.pop(item["itemId"])
                         submitted = True
-                        item["fleetTaskId"] = str(task.get("id"))
                         facts = render_on_fleet(
                             fleet_blender_client, job, item_dir, job_id=job["jobId"], task=task,
                             on_update=partial(self._note_fleet_progress, item, bdir, items),
@@ -1996,6 +2026,7 @@ class EcommerceSceneStore:
                     item["stage"] = "done"
                     item["error"] = str(exc)[:300]
             self._save_batch_progress(bdir, items)
+            fill_fleet_window()
         # Do not block the (single) Blender worker on the AI pool: each _finish_item_ai saves its own progress and the
         # batch flips to completed when the last item lands, so the next batch's Blender renders can start right away.
         self._save_batch_progress(bdir, items)
