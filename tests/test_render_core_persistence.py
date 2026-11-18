@@ -155,3 +155,50 @@ def test_stale_cancel_requested_job_is_cancelled_after_restart(tmp_path):
     assert resent['status'] == 'cancelled'
     assert Platform(tmp_path, mock_blender=True).get_job(job['jobId'], tenant_id='owner')['status'] == 'cancelled'
 
+
+def _twin_fields(twin):
+    return {k: twin[k] for k in ('glb', 'previewAssetId', 'previewPath')}
+
+
+def test_product_e2e_twin_preview_survives_restart(tmp_path):
+    platform = Platform(tmp_path, mock_blender=True)
+    out = platform.product_e2e(tenant_id='owner', sku='SKU-1', glb_bytes=b'glb-bytes')
+    assert out['twin']['previewAssetId']
+    assert out['twin']['previewPath']
+    restored = Platform(tmp_path, mock_blender=True).get_twin(out['twin']['twinId'], tenant_id='owner')
+    assert _twin_fields(restored) == _twin_fields(out['twin'])
+
+
+def test_product_e2e_glb_path_override_survives_restart(tmp_path):
+    platform = Platform(tmp_path, mock_blender=True)
+    source = platform.create_twin({'tenantId': 'owner', 'sku': 'SKU-SRC'})
+    out = platform.product_e2e(tenant_id='owner', sku='SKU-SRC', glb_path=source['glb'])
+    assert out['twin']['glb'] == source['glb']
+    assert out['twin']['previewAssetId']
+    restored = Platform(tmp_path, mock_blender=True).get_twin(out['twin']['twinId'], tenant_id='owner')
+    assert restored['glb'] == source['glb']
+    assert _twin_fields(restored) == _twin_fields(out['twin'])
+
+
+def test_packaging_twin_preview_survives_restart(tmp_path):
+    platform = Platform(tmp_path, mock_blender=True)
+    out = platform.packaging_twin(tenant_id='owner', template='BOX', sku='BOX-01')
+    assert out['twin']['previewAssetId']
+    restored = Platform(tmp_path, mock_blender=True).get_twin(out['twin']['twinId'], tenant_id='owner')
+    assert _twin_fields(restored) == _twin_fields(out['twin'])
+
+
+def test_twin_update_rejects_identity_and_foreign_tenant(tmp_path):
+    import pytest
+    from fox3d.twin import ProductDigitalTwin
+    platform = Platform(tmp_path, mock_blender=True)
+    twin = platform.twins.create(ProductDigitalTwin(tenantId='owner', sku='SKU-1'))
+    with pytest.raises(ValueError):
+        platform.twins.update(twin, tenantId='other')
+    with pytest.raises(ValueError):
+        platform.twins.update(twin, notAField=1)
+    impostor = twin.model_copy(update={'tenantId': 'other'})
+    with pytest.raises(KeyError):
+        platform.twins.update(impostor, previewAssetId='x')
+    assert platform.twins.get(twin.twinId, tenant_id='owner').previewAssetId is None
+

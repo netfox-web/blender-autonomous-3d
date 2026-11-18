@@ -82,6 +82,26 @@ class TwinStore:
         self._items[twin.twinId] = twin
         return twin
 
+    def update(self, twin: ProductDigitalTwin, **changes: Any) -> ProductDigitalTwin:
+        """Apply post-create field changes and persist them to the snapshot.
+
+        Only fields of an already stored twin of the same tenant can change, so
+        a restart reloads what the caller returned (``glb``, ``previewAssetId``,
+        ``previewPath``).
+        """
+        validate_tenant_id(twin.tenantId)
+        stored = self._items.get(twin.twinId)
+        if stored is None or stored.tenantId != twin.tenantId:
+            raise KeyError(twin.twinId)
+        rejected = (set(changes) - set(ProductDigitalTwin.model_fields)) | ({"twinId", "tenantId"} & set(changes))
+        if rejected:
+            raise ValueError(f"cannot update twin fields: {sorted(rejected)}")
+        updated = twin.model_copy(update=changes)
+        # Write first: a failed write leaves both the snapshot and memory unchanged.
+        self._store.write(updated.tenantId, updated.twinId, updated.model_dump(mode="json"))
+        self._items[updated.twinId] = updated
+        return updated
+
     def get(self, twin_id: str, *, tenant_id: str) -> ProductDigitalTwin:
         validate_tenant_id(tenant_id)
         twin = self._items[twin_id]

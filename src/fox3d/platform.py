@@ -772,8 +772,7 @@ class Platform:
         twin = ProductDigitalTwin(tenantId=tenant_id, sku=sku)
         twin = self.twins.create(twin, glb_bytes=glb_bytes)
         if glb_path:
-            twin.glb = glb_path
-            self.twins._items[twin.twinId] = twin
+            twin = self.twins.update(twin, glb=glb_path)
         job = self.submit_job(
             {
                 "tenantId": tenant_id,
@@ -791,12 +790,12 @@ class Platform:
         result = self.execute_job(job)
         preview_id = (result.get("output") or {}).get("files", {}).get("beauty.png")
         if preview_id:
-            twin.previewAssetId = preview_id
+            preview_path: str | None = None
             try:
-                twin.previewPath = self.dam.get(preview_id, tenant_id=tenant_id).path
+                preview_path = self.dam.get(preview_id, tenant_id=tenant_id).path
             except Exception:
-                pass
-            self.twins._items[twin.twinId] = twin
+                preview_path = twin.previewPath
+            twin = self.twins.update(twin, previewAssetId=preview_id, previewPath=preview_path)
         return {"twin": twin.model_dump(mode="json"), "job": result}
 
     def product_360_e2e(self, *, tenant_id: str, twin_id: str, frames: int = 36) -> dict[str, Any]:
@@ -927,8 +926,7 @@ class Platform:
         rendered = self.execute_job(job)
         preview = (rendered.get("output") or {}).get("files", {}).get("beauty.png")
         if preview:
-            twin.previewAssetId = preview
-            self.twins._items[twin.twinId] = twin
+            twin = self.twins.update(twin, previewAssetId=preview)
         return {"twin": twin.model_dump(mode="json"), "job": rendered, "sameTwinStore": True}
 
     def blender_to_video(self, *, tenant_id: str, twin_id: str, adapter: str | None = None) -> dict[str, Any]:
