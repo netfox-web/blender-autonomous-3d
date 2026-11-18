@@ -9,8 +9,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from fox3d import product_models as models
+from fox3d.ids import new_id, stable_hash
 from fox3d.product_models_api import product_models_router
 from fox3d.recipe_admin_api import recipe_router
+from fox3d import recipe_3d as render
 
 HEADERS = {"X-Tenant-Id": "t"}
 RECIPE_HEADERS = {"X-Tenant-Id": "sonaqueen-home"}
@@ -154,4 +156,76 @@ def test_recipe_revision_list_restore_and_tenant_isolation(recipe_client, tmp_pa
     )
     assert restore.status_code == 200
     assert restore.json()["revision"] == 3
-    assert recipe_client.get(f"{url}/revisions", headers={"X-Tenant-Id": "other"}).status_code == 404
+    other = recipe_client.get(f"{url}/revisions", headers={"X-Tenant-Id": "other"})
+    assert other.status_code == 200
+    assert other.json()["total"] == 0
+
+
+def test_product_model_listing_pagination_total(tmp_path):
+    for i in range(205):
+        models.save(tmp_path, "t", {**cabinet(), "name": f"Cabinet {i:03d}"}, 0)
+    first = models.listing(tmp_path, "t", offset=0, limit=200)
+    second = models.listing(tmp_path, "t", offset=200, limit=200)
+    assert first["total"] == 205
+    assert len(first["items"]) == 200
+    assert len(second["items"]) == 5
+
+
+def test_product_model_revision_list_beyond_default_page(tmp_path):
+    item = _save_versions(tmp_path, 1)
+    for rev in range(1, 41):
+        item = models.save(tmp_path, "t", {**item["draft"], "notes": f"n{rev}"}, rev, item["id"])
+    head = models.list_revisions(tmp_path, "t", item["id"], offset=0, limit=40)
+    tail = models.list_revisions(tmp_path, "t", item["id"], offset=40, limit=40)
+    assert head["total"] == 41
+    assert len(head["items"]) == 40
+    assert len(tail["items"]) == 1
+    assert tail["items"][0]["revision"] == 41
+
+
+def test_create_idempotency_resumes_after_incomplete_record(tmp_path):
+    draft = cabinet()
+    payload_hash = render.input_hash(draft)
+    key = "resume-create"
+    store = models._idempotency_dir(tmp_path, "t")
+    store.mkdir(parents=True, exist_ok=True)
+    record_path = store / stable_hash(key)
+    mid = new_id()
+    render.atomic_json(record_path, {"id": mid, "inputHash": payload_hash, "key": key, "complete": False})
+    models.save(tmp_path, "t", draft, 0, mid)
+    resumed = models.create(tmp_path, "t", draft, 0, idempotency_key=key)
+    assert resumed["id"] == mid
+    again = models.create(tmp_path, "t", draft, 0, idempotency_key=key)
+    assert again["id"] == mid
+    record = render.read_json(record_path)
+    assert record.get("complete") is True
+
+
+def test_recipe_supplier_reference_empty_revision_list(recipe_client):
+    response = recipe_client.get(
+        "/api/recipe-library/products/LI-D40/revisions",
+        headers=RECIPE_HEADERS,
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 0
+    assert body["items"] == []
+
+
+def test_product_model_revision_diff_fields_only_save(tmp_path):
+    item = models.save(
+        tmp_path,
+        "t",
+        {**cabinet(), "variants": [{"sku": "SKU-A", "artworkAssetId": "", "note": ""}]},
+        0,
+    )
+    item = models.save(
+        tmp_path,
+        "t",
+        {**item["draft"], "variants": [{"sku": "SKU-B", "artworkAssetId": "", "note": ""}]},
+        1,
+        item["id"],
+    )
+    first = models.get_revision(tmp_path, "t", item["id"], 1)
+    current = models.get(tmp_path, "t", item["id"])
+    assert first["draft"]["variants"] != current["draft"]["variants"]
