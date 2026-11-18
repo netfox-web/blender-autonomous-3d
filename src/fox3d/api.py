@@ -405,6 +405,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().submit_job(payload)
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(409 if str(exc) == "idempotency conflict" else 422, str(exc)) from exc
 
     @app.get("/api/3d/jobs")
     def list_jobs(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -448,8 +450,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        if payload.get("sku") is None:
-            raise HTTPException(422, "缺少 sku")
+        sku = payload.get("sku")
+        if not isinstance(sku, str) or not sku or len(sku) > 128 or "/" in sku or "\\" in sku:
+            raise HTTPException(422, "sku 格式錯誤")
         try:
             return get_platform().create_twin(payload)
         except ValidationError as exc:
@@ -464,6 +467,10 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = tenant(x_tenant_id)
         data = await file.read()
         return get_platform().product_e2e(tenant_id=tid, sku=sku, glb_bytes=data)
+
+    @app.get("/api/digital-twins")
+    def list_twins(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return {"items": [t.model_dump(mode="json") for t in get_platform().twins.list(tenant_id=tenant(x_tenant_id))]}
 
     @app.get("/api/digital-twins/{twin_id}")
     def read_twin(twin_id: str, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -487,6 +494,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             return get_platform().product_360_e2e(tenant_id=tenant(x_tenant_id), twin_id=twin_id, frames=36)
         except (KeyError, PermissionError):
             raise HTTPException(404, "找不到數位分身") from None
+
+    @app.get("/api/parametric/products")
+    def list_parametrics(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        return {"items": [r for r in get_platform().parametrics.values() if r.get("spec", {}).get("tenantId") == tid]}
 
     @app.post("/api/parametric/products")
     def create_parametric(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

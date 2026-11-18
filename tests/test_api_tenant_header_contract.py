@@ -19,6 +19,8 @@ ROUTES = [
     ('POST', '/api/3d/jobs/{job_id}/cancel'),
     ('GET', '/api/assets/{asset_id}'),
     ('POST', '/api/digital-twins'),
+    ('GET', '/api/digital-twins'),
+    ('GET', '/api/parametric/products'),
     ('POST', '/api/digital-twins/upload'),
     ('GET', '/api/digital-twins/{twin_id}'),
     ('POST', '/api/digital-twins/{twin_id}/preview'),

@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import DAM, safe_path_component, validate_tenant_id
 from fox3d.pngutil import write_glb_stub
+from fox3d.render_store import RenderStore
 
 
 class ProductDigitalTwin(BaseModel):
@@ -44,6 +45,10 @@ class TwinStore:
     def __init__(self, dam: DAM) -> None:
         self.dam = dam
         self._items: dict[str, ProductDigitalTwin] = {}
+        self._store = RenderStore(dam.root.parent / "render_core" / "twins")
+        for record in self._store.read_all():
+            twin = ProductDigitalTwin.model_validate(record)
+            self._items[twin.twinId] = twin
 
     def create(self, twin: ProductDigitalTwin, *, glb_bytes: bytes | None = None) -> ProductDigitalTwin:
         validate_tenant_id(twin.tenantId)
@@ -73,6 +78,7 @@ class TwinStore:
                 "maxZ": twin.dimensions.get("height", 0),
             }
         twin.contentHash = twin.compute_hash()
+        self._store.write(twin.tenantId, twin.twinId, twin.model_dump(mode="json"))
         self._items[twin.twinId] = twin
         return twin
 
@@ -86,7 +92,7 @@ class TwinStore:
 
     def list(self, *, tenant_id: str) -> list[ProductDigitalTwin]:
         validate_tenant_id(tenant_id)
-        return [t for t in self._items.values() if t.tenantId == tenant_id]
+        return [t for t in self._items.values() if t.tenantId == tenant_id and (t.damAssetId or t.twinId) in self.dam._index]
 
     def new_version(self, twin_id: str, *, tenant_id: str, **changes: Any) -> ProductDigitalTwin:
         current = self.get(twin_id, tenant_id=tenant_id)

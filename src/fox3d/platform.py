@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from fox3d.render_store import ParametricStore
+from fox3d.storelock import FileLock
+
 import json
 import logging
 import os
@@ -20,7 +23,7 @@ from fox3d.blender import (
 )
 from fox3d.capabilities import BLENDER_PREVIEW, BLENDER_RENDER, capability_flags, foxstudio_operations
 from fox3d.gpu import GpuPolicy
-from fox3d.ids import new_id, sha256_bytes
+from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import (
     AIGateway,
     CapabilityRegistry,
@@ -81,7 +84,7 @@ class Platform:
         self.capabilities = CapabilityRegistry()
         self.models = ModelRegistry()
         self.recipes = RecipeRegistry()
-        self.queue = JobQueue()
+        self.queue = JobQueue(self.root / "render_core" / "jobs")
         self.reservations = ReservationBook()
         self.scheduler = Scheduler(self.compute, self.reservations)
         self.dam = DAM(self.root / "dam")
@@ -90,7 +93,7 @@ class Platform:
         self.twins = TwinStore(self.dam)
         self.studio = ProductStudio()
         self.materials = MaterialEngine(self.recipes, self.gateway)
-        self.parametrics: dict[str, dict[str, Any]] = {}
+        self.parametrics: dict[str, dict[str, Any]] = ParametricStore(self.root / "render_core" / "parametrics")
         self.packaging = PackagingEngine(self)
         self.rules = EngineeringRuleEngine()
         self.cabinets = CabinetEngine(self.rules)
@@ -260,9 +263,31 @@ class Platform:
     # ----- jobs ----------------------------------------------------------
     def submit_job(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.tenants.ensure(payload["tenantId"])
+        key = payload.get("idempotencyKey")
+        if key is not None and (not isinstance(key, str) or not key.strip() or len(key) > 200):
+            raise ValueError("invalid idempotencyKey")
+        fingerprint = stable_hash({k: v for k, v in payload.items() if k != "idempotencyKey"})
+        if key is None:
+            return self._submit_job(payload, None, fingerprint)
+        with self.queue._lock, FileLock(self.root / "render_core" / "jobs-submit.lock"):
+            if self.queue._store:
+                for saved in self.queue._store.read_all():
+                    self.queue._jobs.setdefault(saved["jobId"], saved)
+            if key is not None:
+                for existing in self.queue.list(tenant_id=payload["tenantId"]):
+                    if existing.get("idempotencyKey") == key:
+                        if existing.get("idempotencyFingerprint") != fingerprint:
+                            raise ValueError("idempotency conflict")
+                        return existing
+            return self._submit_job(payload, key, fingerprint)
+
+    def _submit_job(self, payload: dict[str, Any], key: str | None, fingerprint: str) -> dict[str, Any]:
         job = BlenderJob.model_validate(payload)
         record = job.model_dump(mode="json")
         record["routing_requirements"] = job.routing_requirements()
+        if key is not None:
+            record["idempotencyKey"] = key
+            record["idempotencyFingerprint"] = fingerprint
         return self.queue.enqueue(record)
 
     def get_job(self, job_id: str, *, tenant_id: str) -> dict[str, Any]:
@@ -697,7 +722,7 @@ class Platform:
 
     def render_parametric(self, product_id: str, *, tenant_id: str, explode: bool = False) -> dict[str, Any]:
         record = self.parametrics.get(product_id)
-        if not record:
+        if not record or record.get("spec", {}).get("tenantId") != tenant_id:
             raise KeyError(product_id)
         job = self.submit_job(
             {
@@ -713,6 +738,7 @@ class Platform:
         result = self.execute_job(job)
         record["previewJobId"] = result.get("jobId")
         record["preview"] = result.get("output")
+        self.parametrics[product_id] = record
         return {"parametric": record, "job": result}
 
     def real_smoke_test(self, *, tenant_id: str = "ops") -> dict[str, Any]:

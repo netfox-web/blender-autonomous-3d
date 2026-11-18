@@ -12,13 +12,14 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.jobs import JobStatus
+from fox3d.render_store import RenderStore
 
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "blocked": frozenset({"queued", "cancel_requested", "skipped", "expired"}),
@@ -424,6 +425,13 @@ class DAM:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self._index: dict[str, DamObject] = {}
+        self._store = RenderStore(root.parent / "render_core" / "assets")
+        for record in self._store.read_all():
+            obj = DamObject(**record)
+            path = Path(obj.path)
+            if (path.resolve().is_relative_to(self.root.resolve()) and path.is_file()
+                    and not path.is_symlink() and sha256_bytes(path.read_bytes()) == obj.sha256):
+                self._index[obj.asset_id] = obj
 
     def put(
         self,
@@ -456,6 +464,7 @@ class DAM:
             sha256=sha256_bytes(data),
             metadata=metadata or {},
         )
+        self._store.write(tenant_id, asset_id, asdict(obj))
         self._index[asset_id] = obj
         return obj
 
@@ -636,15 +645,24 @@ class Scheduler:
 # ---------------------------------------------------------------------------
 
 class JobQueue:
-    def __init__(self) -> None:
+    def __init__(self, root: Path | None = None) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._store = RenderStore(root) if root else None
+        if self._store:
+            for job in self._store.read_all():
+                self._jobs[job["jobId"]] = job
+
+    def _save(self, job: dict[str, Any]) -> None:
+        if self._store and job.get("tenantId"):
+            self._store.write(job["tenantId"], job["jobId"], job)
 
     def restore(self, job: dict[str, Any]) -> dict[str, Any]:
         """Reload a snapshot without resetting queue status (restart recovery)."""
         rec = dict(job)
         with self._lock:
             self._jobs[rec["jobId"]] = rec
+            self._save(rec)
         return rec
 
     def enqueue(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -656,6 +674,7 @@ class JobQueue:
         job.setdefault("createdAt", utcnow().isoformat())
         with self._lock:
             self._jobs[job["jobId"]] = job
+            self._save(job)
         return job
 
     def get(self, job_id: str) -> dict[str, Any] | None:
@@ -677,6 +696,7 @@ class JobQueue:
             job["completedAt"] = utcnow().isoformat()
         elif job["status"] in {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "waiting_approval"}:
             job["status"] = transition(job["status"], "cancel_requested")
+        self._save(job)
         return job
 
     def heartbeat(self, job_id: str, progress: float | None = None) -> dict[str, Any]:
@@ -684,6 +704,7 @@ class JobQueue:
         job["heartbeatAt"] = utcnow().isoformat()
         if progress is not None:
             job["progress"] = progress
+        self._save(job)
         return job
 
     def claim(
@@ -713,6 +734,7 @@ class JobQueue:
                 if target_key:
                     job["assignedComputeTargetKey"] = target_key
                 job["startedAt"] = job.get("startedAt") or utcnow().isoformat()
+                self._save(job)
                 return job
         return None
 
@@ -722,6 +744,7 @@ class JobQueue:
         job.update(fields)
         if status in {"succeeded", "completed", "failed", "cancelled", "expired", "blocked"}:
             job["completedAt"] = utcnow().isoformat()
+        self._save(job)
         return job
 
     def recover_stale_leases(self, *, max_age_seconds: float = 30.0) -> builtins.list[str]:
@@ -747,6 +770,8 @@ class JobQueue:
                     job["status"] = "failed"
                     job["error"] = "worker offline and retry exhausted"
                     job["completedAt"] = now.isoformat()
+        for job in self._jobs.values():
+            self._save(job)
         return recovered
 
 
