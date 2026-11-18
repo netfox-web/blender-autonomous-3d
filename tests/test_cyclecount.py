@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import pytest
 
+from fox3d.cyclecount import BOOK_CHANGED_MSG, CycleCountConflict
 from fox3d.platform import Platform
 
 TENANT = "cc-a"
@@ -216,39 +217,33 @@ def test_state_survives_reload(platform):
     svc = platform.pilot.cyclecounts
     lot_id = _lot(platform, quantity=10, reserve=2)
     waiting = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=5, reason="wait", actor="ops")
-    applied = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=6, reason="apply", actor="ops")
     rejected = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=1, reason="reject", actor="ops")
-    svc.approve(applied["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
     svc.reject(rejected["cycleCountId"], tenant_id=TENANT, actor="sup")
 
     plat2 = Platform(root=platform.root, mock_blender=True)
     svc2 = plat2.pilot.cyclecounts
     assert svc2 is not svc
     assert svc2.counts[waiting["cycleCountId"]]["status"] == "WAITING_HUMAN_APPROVAL"
-    assert svc2.counts[applied["cycleCountId"]]["status"] == "APPLIED"
-    assert svc2.counts[applied["cycleCountId"]]["approvedBy"] == "sup"
     assert svc2.counts[rejected["cycleCountId"]]["status"] == "REJECTED"
     assert svc2.counts[rejected["cycleCountId"]]["rejectedBy"] == "sup"
-    q = plat2.lots.quantities(lot_id, tenant_id=TENANT)
-    assert q["available"] == 6
-    assert q["reserved"] == 2
-    assert q["conserved"] is True
 
     # Guards still hold after reload.
     with pytest.raises(PermissionError, match="REJECTED"):
         svc2.approve(rejected["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
-    with pytest.raises(PermissionError, match="applied"):
-        svc2.reject(applied["cycleCountId"], tenant_id=TENANT, actor="sup")
     with pytest.raises(PermissionError, match="tenant isolation"):
         svc2.approve(waiting["cycleCountId"], tenant_id=OTHER, actor="intruder", payload=CONFIRM)
     # Idempotency index survives too.
     again = svc2.create(tenant_id=TENANT, lot_id=lot_id, counted=5, reason="wait", actor="ops")
     assert again["cycleCountId"] == waiting["cycleCountId"]
-    # The waiting count can still be approved after reload.
+    # The waiting count can still be approved after reload when the book is unchanged.
     svc2.approve(waiting["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    applied = svc2.create(tenant_id=TENANT, lot_id=lot_id, counted=6, reason="apply", actor="ops")
+    svc2.approve(applied["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
     q2 = plat2.lots.quantities(lot_id, tenant_id=TENANT)
-    assert q2["available"] == 5
+    assert q2["available"] == 6
     assert q2["reserved"] == 2
+    with pytest.raises(PermissionError, match="applied"):
+        svc2.reject(applied["cycleCountId"], tenant_id=TENANT, actor="sup")
 
 
 def test_unknown_lot_is_error(platform):
@@ -264,6 +259,19 @@ def test_unknown_cycle_count_id_is_error(platform):
         svc.approve("no-such-id", tenant_id=TENANT, actor="sup", payload=CONFIRM)
     with pytest.raises(KeyError):
         svc.reject("no-such-id", tenant_id=TENANT, actor="sup")
+
+
+def test_approve_rejects_when_book_changed_after_create(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform, quantity=10, reserve=2)
+    cc = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="stale book", actor="ops")
+    platform.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="after-count", quantity=1)
+    with pytest.raises(CycleCountConflict, match=BOOK_CHANGED_MSG):
+        svc.approve(cc["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    after = _q(platform, lot_id)
+    assert after["available"] == 7
+    assert after["reserved"] == 3
+    assert svc.counts[cc["cycleCountId"]]["applied"] is False
 
 
 def test_negative_count_cannot_be_applied(platform):

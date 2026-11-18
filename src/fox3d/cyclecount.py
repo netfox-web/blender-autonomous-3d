@@ -12,6 +12,12 @@ from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import emit
 from fox3d.operator import require_confirm
 
+BOOK_CHANGED_MSG = "帳面已變動，請重新盤點"
+
+
+class CycleCountConflict(PermissionError):
+    """Snapshot stale or invalid state transition for cycle count approval."""
+
 
 def _now() -> str:
     return utcnow().isoformat()
@@ -41,6 +47,35 @@ class CycleCountService:
         if not self.root:
             return
         atomic_write_json(self.root / "cyclecounts.json", {"counts": list(self.counts.values()), "idem": self._idem})
+
+    def _get(self, cycle_count_id: str, *, tenant_id: str) -> dict[str, Any]:
+        try:
+            rec = self.counts[cycle_count_id]
+        except KeyError:
+            raise
+        if rec.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: cycle count")
+        return rec
+
+    def list_for_tenant(
+        self,
+        *,
+        tenant_id: str,
+        status: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        limit = max(1, min(int(limit), 100))
+        offset = max(0, int(offset))
+        with self._lock:
+            rows = [c for c in self.counts.values() if c.get("tenantId") == tenant_id]
+            if status:
+                want = str(status).strip()
+                rows = [r for r in rows if r.get("status") == want]
+            rows.sort(key=lambda r: (r.get("createdAt") or "", r.get("cycleCountId") or ""), reverse=True)
+            total = len(rows)
+            page = rows[offset : offset + limit]
+            return {"items": page, "total": total, "offset": offset, "limit": limit}
 
     def create(
         self,
@@ -97,51 +132,60 @@ class CycleCountService:
             )
             return rec
 
-    def approve(self, cycle_count_id: str, *, tenant_id: str, actor: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        require_confirm(payload, action="cycle_count_adjust")
-        rec = self.counts[cycle_count_id]
-        if rec.get("tenantId") != tenant_id:
-            raise PermissionError("tenant isolation: cycle count")
-        if rec.get("applied"):
-            return rec
-        if rec.get("status") in {"REJECTED", "CANCELLED"}:
-            raise PermissionError(rec["status"])
+    def _book_matches_snapshot(self, rec: dict[str, Any], *, tenant_id: str) -> bool:
         before = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
-        lot = self.lots.apply_counted_available(
-            rec["lotId"], tenant_id=tenant_id, counted=int(rec["counted"]), actor=actor, reason=rec["reason"]
+        return (
+            int(before["available"]) == int(rec["systemAvailable"])
+            and int(before["reserved"]) == int(rec["systemReserved"])
+            and int(before["consumed"]) == int(rec["systemConsumed"])
         )
-        after = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
-        rec["applied"] = True
-        rec["status"] = "APPLIED"
-        rec["approvedBy"] = actor
-        rec["before"] = before
-        rec["after"] = after
-        rec["consumedUnchanged"] = before["consumed"] == after["consumed"]
-        rec["reservedUnchanged"] = before["reserved"] == after["reserved"]
-        rec["conserved"] = bool(after.get("conserved"))
-        emit(
-            self,
-            "cyclecount.approve",
-            tenant_id=tenant_id,
-            aggregate_type="CycleCount",
-            aggregate_id=cycle_count_id,
-            actor=actor,
-            payload={"lotId": rec["lotId"], "before": before, "after": after},
-            semantic_key=f"{tenant_id}::cc-approve::{cycle_count_id}",
-        )
-        _ = lot
-        return rec
+
+    def approve(self, cycle_count_id: str, *, tenant_id: str, actor: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+        with self._lock:
+            require_confirm(payload, action="cycle_count_adjust")
+            rec = self._get(cycle_count_id, tenant_id=tenant_id)
+            if rec.get("applied"):
+                return rec
+            status = rec.get("status")
+            if status in {"REJECTED", "CANCELLED"}:
+                raise PermissionError(rec["status"])
+            if not self._book_matches_snapshot(rec, tenant_id=tenant_id):
+                raise CycleCountConflict(BOOK_CHANGED_MSG)
+            before = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
+            lot = self.lots.apply_counted_available(
+                rec["lotId"], tenant_id=tenant_id, counted=int(rec["counted"]), actor=actor, reason=rec["reason"]
+            )
+            after = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
+            rec["applied"] = True
+            rec["status"] = "APPLIED"
+            rec["approvedBy"] = actor
+            rec["before"] = before
+            rec["after"] = after
+            rec["consumedUnchanged"] = before["consumed"] == after["consumed"]
+            rec["reservedUnchanged"] = before["reserved"] == after["reserved"]
+            rec["conserved"] = bool(after.get("conserved"))
+            emit(
+                self,
+                "cyclecount.approve",
+                tenant_id=tenant_id,
+                aggregate_type="CycleCount",
+                aggregate_id=cycle_count_id,
+                actor=actor,
+                payload={"lotId": rec["lotId"], "before": before, "after": after},
+                semantic_key=f"{tenant_id}::cc-approve::{cycle_count_id}",
+            )
+            _ = lot
+            return rec
 
     def reject(self, cycle_count_id: str, *, tenant_id: str, actor: str) -> dict[str, Any]:
-        rec = self.counts[cycle_count_id]
-        if rec.get("tenantId") != tenant_id:
-            raise PermissionError("tenant isolation: cycle count")
-        if rec.get("applied"):
-            raise PermissionError("cannot reject applied cycle count")
-        if rec.get("status") == "REJECTED":
-            # Idempotent like approve(): never overwrite the first rejection's audit fields.
+        with self._lock:
+            rec = self._get(cycle_count_id, tenant_id=tenant_id)
+            if rec.get("applied"):
+                raise PermissionError("cannot reject applied cycle count")
+            if rec.get("status") == "REJECTED":
+                # Idempotent like approve(): never overwrite the first rejection's audit fields.
+                return rec
+            rec["status"] = "REJECTED"
+            rec["rejectedBy"] = actor
+            self.persist()
             return rec
-        rec["status"] = "REJECTED"
-        rec["rejectedBy"] = actor
-        self.persist()
-        return rec
