@@ -5,8 +5,12 @@ Exercised through the ``platform`` fixture as ``platform.pilot.cyclecounts``.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
+from fox3d.cyclecount import BOOK_CHANGED_MSG, IDEMPOTENCY_CONFLICT_MSG, CycleCountConflict
 from fox3d.platform import Platform
 
 TENANT = "cc-a"
@@ -72,6 +76,178 @@ def test_create_is_idempotent_for_same_key(platform):
     again = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="k1")
     assert again["cycleCountId"] == first["cycleCountId"]
     assert len([c for c in svc.counts.values() if c["lotId"] == lot_id]) == 1
+    svc.approve(first["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    retried = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="k1")
+    assert retried["cycleCountId"] == first["cycleCountId"]
+    assert retried["status"] == "APPLIED"
+    assert len([c for c in svc.counts.values() if c["lotId"] == lot_id]) == 1
+    adjustments = [
+        row
+        for row in platform.lots.get(lot_id, tenant_id=TENANT).get("adjustments") or []
+        if row.get("source") == "CYCLE_COUNT"
+    ]
+    assert len(adjustments) == 1
+
+
+def _create_events(platform, tenant: str = TENANT) -> list[dict]:
+    return [e for e in platform.pilot.journal.list(tenant) if e.get("eventType") == "cyclecount.create"]
+
+
+def test_same_idempotency_key_on_another_lot_conflicts(platform):
+    svc = platform.pilot.cyclecounts
+    lot_a = _lot(platform, quantity=10)
+    lot_b = _lot(platform, quantity=8)
+    before_b = _q(platform, lot_b)
+    first = svc.create(
+        tenant_id=TENANT, lot_id=lot_a, counted=4, reason="r", actor="ops", idempotency_key="shared"
+    )
+    with pytest.raises(CycleCountConflict, match=IDEMPOTENCY_CONFLICT_MSG) as raised:
+        svc.create(tenant_id=TENANT, lot_id=lot_b, counted=4, reason="r", actor="ops", idempotency_key="shared")
+    assert first["cycleCountId"] not in str(raised.value)
+    assert lot_a not in str(raised.value)
+    assert _q(platform, lot_b) == before_b
+    rows = [c for c in svc.counts.values() if c["tenantId"] == TENANT]
+    assert [c["cycleCountId"] for c in rows] == [first["cycleCountId"]]
+    assert rows[0]["lotId"] == lot_a
+    again = svc.create(
+        tenant_id=TENANT, lot_id=lot_a, counted=4, reason="r", actor="ops", idempotency_key="shared"
+    )
+    assert again["cycleCountId"] == first["cycleCountId"]
+    other = svc.create(
+        tenant_id=TENANT, lot_id=lot_b, counted=4, reason="r", actor="ops", idempotency_key="other-key"
+    )
+    assert other["lotId"] == lot_b
+    assert other["cycleCountId"] != first["cycleCountId"]
+    assert len(_create_events(platform)) == 2
+
+
+def test_same_idempotency_key_different_fields_conflict(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform)
+    first = svc.create(
+        tenant_id=TENANT,
+        lot_id=lot_id,
+        counted=4,
+        reason="r",
+        actor="ops",
+        operator_id="op-1",
+        shift_id="sh-1",
+        idempotency_key="k",
+    )
+    variants = [
+        {"counted": 5, "reason": "r", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 0, "reason": "r", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "other", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "r", "actor": "clerk", "operator_id": "op-1", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "r", "actor": "ops", "operator_id": "op-2", "shift_id": "sh-1"},
+        {"counted": 4, "reason": "r", "actor": "ops", "operator_id": "op-1", "shift_id": "sh-2"},
+    ]
+    for fields in variants:
+        with pytest.raises(CycleCountConflict, match=IDEMPOTENCY_CONFLICT_MSG) as raised:
+            svc.create(tenant_id=TENANT, lot_id=lot_id, idempotency_key="k", **fields)
+        assert first["cycleCountId"] not in str(raised.value)
+        assert lot_id not in str(raised.value)
+    kept = svc.counts[first["cycleCountId"]]
+    assert kept["counted"] == 4
+    assert kept["reason"] == "r"
+    assert kept["actor"] == "ops"
+    assert kept["operatorId"] == "op-1"
+    assert kept["shiftId"] == "sh-1"
+    assert len([c for c in svc.counts.values() if c["lotId"] == lot_id]) == 1
+    assert len(_create_events(platform)) == 1
+
+
+def test_idempotency_fingerprint_survives_reload_and_ignores_later_book_changes(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform, quantity=10)
+    first = svc.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="persist-key"
+    )
+    platform.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="later", quantity=2)
+    plat2 = Platform(root=platform.root, mock_blender=True)
+    svc2 = plat2.pilot.cyclecounts
+    saved = [
+        value
+        for value in svc2._idem.values()
+        if isinstance(value, dict) and value.get("cycleCountId") == first["cycleCountId"]
+    ]
+    assert saved == [
+        {
+            "cycleCountId": first["cycleCountId"],
+            "lotId": lot_id,
+            "counted": 4,
+            "reason": "r",
+            "actor": "ops",
+            "operatorId": None,
+            "shiftId": None,
+        }
+    ]
+    again = svc2.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=4, reason="r", actor="ops", idempotency_key="persist-key"
+    )
+    assert again["cycleCountId"] == first["cycleCountId"]
+    assert again["status"] == "WAITING_HUMAN_APPROVAL"
+    assert again["systemAvailable"] == first["systemAvailable"]
+    lot_b = _lot(plat2, quantity=6)
+    with pytest.raises(CycleCountConflict, match=IDEMPOTENCY_CONFLICT_MSG):
+        svc2.create(
+            tenant_id=TENANT, lot_id=lot_b, counted=4, reason="r", actor="ops", idempotency_key="persist-key"
+        )
+    assert len([c for c in svc2.counts.values() if c["tenantId"] == TENANT]) == 1
+
+
+def test_idempotency_key_is_isolated_by_tenant(platform):
+    svc = platform.pilot.cyclecounts
+    lot_a = _lot(platform, tenant=TENANT, quantity=5)
+    lot_b = _lot(platform, tenant=OTHER, quantity=5)
+    first = svc.create(
+        tenant_id=TENANT, lot_id=lot_a, counted=2, reason="r", actor="ops", idempotency_key="shared"
+    )
+    second = svc.create(
+        tenant_id=OTHER, lot_id=lot_b, counted=2, reason="r", actor="ops", idempotency_key="shared"
+    )
+    assert first["cycleCountId"] != second["cycleCountId"]
+    assert first["lotId"] == lot_a
+    assert second["lotId"] == lot_b
+    listed = svc.list_for_tenant(tenant_id=OTHER)
+    assert {row["cycleCountId"] for row in listed["items"]} == {second["cycleCountId"]}
+    with pytest.raises(PermissionError):
+        svc.create(tenant_id=OTHER, lot_id=lot_a, counted=2, reason="r", actor="intruder", idempotency_key="shared")
+
+
+def test_concurrent_same_key_on_two_lots_creates_one(platform):
+    svc = platform.pilot.cyclecounts
+    lot_a = _lot(platform, quantity=9)
+    lot_b = _lot(platform, quantity=9)
+
+    def attempt(lot_id: str) -> str:
+        try:
+            rec = svc.create(
+                tenant_id=TENANT,
+                lot_id=lot_id,
+                counted=3,
+                reason="race",
+                actor="ops",
+                idempotency_key="race-key",
+            )
+        except CycleCountConflict as exc:
+            assert str(exc) == IDEMPOTENCY_CONFLICT_MSG
+            return "conflict"
+        return rec["lotId"]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(attempt, (lot_a, lot_b)))
+    winners = [lot_id for lot_id in results if lot_id != "conflict"]
+    assert results.count("conflict") == 1
+    assert winners in ([lot_a], [lot_b])
+    rows = [c for c in svc.counts.values() if c.get("reason") == "race"]
+    assert len(rows) == 1
+    assert rows[0]["lotId"] == winners[0]
+    reloaded = Platform(root=platform.root, mock_blender=True)
+    kept = [c for c in reloaded.pilot.cyclecounts.counts.values() if c.get("reason") == "race"]
+    assert len(kept) == 1
+    assert kept[0]["lotId"] == winners[0]
+    assert len(_create_events(reloaded)) == 1
 
 
 @pytest.mark.parametrize("payload", [None, {}, {"confirm": False}, {"confirm": "no"}, {"confirm": 0}])
@@ -216,39 +392,33 @@ def test_state_survives_reload(platform):
     svc = platform.pilot.cyclecounts
     lot_id = _lot(platform, quantity=10, reserve=2)
     waiting = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=5, reason="wait", actor="ops")
-    applied = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=6, reason="apply", actor="ops")
     rejected = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=1, reason="reject", actor="ops")
-    svc.approve(applied["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
     svc.reject(rejected["cycleCountId"], tenant_id=TENANT, actor="sup")
 
     plat2 = Platform(root=platform.root, mock_blender=True)
     svc2 = plat2.pilot.cyclecounts
     assert svc2 is not svc
     assert svc2.counts[waiting["cycleCountId"]]["status"] == "WAITING_HUMAN_APPROVAL"
-    assert svc2.counts[applied["cycleCountId"]]["status"] == "APPLIED"
-    assert svc2.counts[applied["cycleCountId"]]["approvedBy"] == "sup"
     assert svc2.counts[rejected["cycleCountId"]]["status"] == "REJECTED"
     assert svc2.counts[rejected["cycleCountId"]]["rejectedBy"] == "sup"
-    q = plat2.lots.quantities(lot_id, tenant_id=TENANT)
-    assert q["available"] == 6
-    assert q["reserved"] == 2
-    assert q["conserved"] is True
 
     # Guards still hold after reload.
     with pytest.raises(PermissionError, match="REJECTED"):
         svc2.approve(rejected["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
-    with pytest.raises(PermissionError, match="applied"):
-        svc2.reject(applied["cycleCountId"], tenant_id=TENANT, actor="sup")
     with pytest.raises(PermissionError, match="tenant isolation"):
         svc2.approve(waiting["cycleCountId"], tenant_id=OTHER, actor="intruder", payload=CONFIRM)
     # Idempotency index survives too.
     again = svc2.create(tenant_id=TENANT, lot_id=lot_id, counted=5, reason="wait", actor="ops")
     assert again["cycleCountId"] == waiting["cycleCountId"]
-    # The waiting count can still be approved after reload.
+    # The waiting count can still be approved after reload when the book is unchanged.
     svc2.approve(waiting["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    applied = svc2.create(tenant_id=TENANT, lot_id=lot_id, counted=6, reason="apply", actor="ops")
+    svc2.approve(applied["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
     q2 = plat2.lots.quantities(lot_id, tenant_id=TENANT)
-    assert q2["available"] == 5
+    assert q2["available"] == 6
     assert q2["reserved"] == 2
+    with pytest.raises(PermissionError, match="applied"):
+        svc2.reject(applied["cycleCountId"], tenant_id=TENANT, actor="sup")
 
 
 def test_unknown_lot_is_error(platform):
@@ -266,6 +436,19 @@ def test_unknown_cycle_count_id_is_error(platform):
         svc.reject("no-such-id", tenant_id=TENANT, actor="sup")
 
 
+def test_approve_rejects_when_book_changed_after_create(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform, quantity=10, reserve=2)
+    cc = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="stale book", actor="ops")
+    platform.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="after-count", quantity=1)
+    with pytest.raises(CycleCountConflict, match=BOOK_CHANGED_MSG):
+        svc.approve(cc["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    after = _q(platform, lot_id)
+    assert after["available"] == 7
+    assert after["reserved"] == 3
+    assert svc.counts[cc["cycleCountId"]]["applied"] is False
+
+
 def test_negative_count_cannot_be_applied(platform):
     svc = platform.pilot.cyclecounts
     lot_id = _lot(platform, quantity=5)
@@ -277,3 +460,121 @@ def test_negative_count_cannot_be_applied(platform):
     assert rec["status"] == "WAITING_HUMAN_APPROVAL"
     assert rec["applied"] is False
     assert _q(platform, lot_id) == before
+
+
+def test_apply_counted_available_rejects_stale_snapshot_in_transaction(platform):
+    lot_id = _lot(platform, quantity=10, reserve=2)
+    with pytest.raises(CycleCountConflict, match=BOOK_CHANGED_MSG):
+        platform.lots.apply_counted_available(
+            lot_id,
+            tenant_id=TENANT,
+            counted=4,
+            actor="ops",
+            reason="stale",
+            expect_available=10,
+            expect_reserved=0,
+            expect_consumed=0,
+        )
+    assert _q(platform, lot_id)["available"] == 8
+
+
+def test_approve_interleaved_reserve_does_not_inflate_sheet_count(platform, monkeypatch):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform, quantity=10)
+    cc = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=8, reason="interleave", actor="ops")
+    gate = threading.Event()
+    reserve_done = threading.Event()
+    orig = platform.lots.apply_counted_available
+
+    def gated(*args, **kwargs):
+        gate.set()
+        reserve_done.wait()
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(platform.lots, "apply_counted_available", gated)
+    errors: list[BaseException] = []
+
+    def approve() -> None:
+        try:
+            svc.approve(cc["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+        except CycleCountConflict as exc:
+            errors.append(exc)
+
+    def reserve() -> None:
+        gate.wait()
+        platform.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="interleaved", quantity=3)
+        reserve_done.set()
+
+    t1 = threading.Thread(target=approve)
+    t2 = threading.Thread(target=reserve)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    assert errors
+    after = _q(platform, lot_id)
+    assert after["available"] == 7
+    assert after["reserved"] == 3
+    assert after["sheetCount"] == 10
+    assert svc.counts[cc["cycleCountId"]]["applied"] is False
+
+
+def test_cross_platform_concurrent_approve_applies_once(tmp_path):
+    root = tmp_path / "dual-platform"
+    plat = Platform(root=root, mock_blender=True)
+    lot_id = _lot(plat, quantity=12)
+    cc = plat.pilot.cyclecounts.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=7, reason="dual", actor="ops", idempotency_key="dual-cc"
+    )
+    cid = cc["cycleCountId"]
+
+    def approve_from_fresh() -> dict:
+        other = Platform(root=root, mock_blender=True)
+        return other.pilot.cyclecounts.approve(cid, tenant_id=TENANT, actor="sup", payload=CONFIRM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: approve_from_fresh(), range(2)))
+    assert results[0]["cycleCountId"] == results[1]["cycleCountId"] == cid
+    assert results[0]["status"] == results[1]["status"] == "APPLIED"
+    assert {results[0]["approvedBy"], results[1]["approvedBy"]} == {"sup"}
+    plat2 = Platform(root=root, mock_blender=True)
+    adjs = [
+        a
+        for a in plat2.lots.get(lot_id, tenant_id=TENANT).get("adjustments") or []
+        if a.get("source") == "CYCLE_COUNT"
+    ]
+    assert len(adjs) == 1
+    assert plat2.lots.quantities(lot_id, tenant_id=TENANT)["available"] == 7
+
+
+def test_committed_adjustment_recovers_after_interruption_and_later_stock_change(tmp_path, monkeypatch):
+    root = tmp_path / "recovery"
+    platform = Platform(root=root, mock_blender=True)
+    lot_id = _lot(platform)
+    svc = platform.pilot.cyclecounts
+    cc = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=8, reason="recovery", actor="ops")
+    original = platform.lots.apply_counted_available
+
+    def interrupted(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("interrupted after inventory commit")
+
+    monkeypatch.setattr(platform.lots, "apply_counted_available", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        svc.approve(cc["cycleCountId"], tenant_id=TENANT, actor="first", payload=CONFIRM)
+    restarted = Platform(root=root, mock_blender=True)
+    with pytest.raises(PermissionError, match="applied"):
+        restarted.pilot.cyclecounts.reject(cc["cycleCountId"], tenant_id=TENANT, actor="other")
+    restarted.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="later", quantity=2)
+
+    def approve(_):
+        instance = Platform(root=root, mock_blender=True)
+        return instance.pilot.cyclecounts.approve(cc["cycleCountId"], tenant_id=TENANT, actor="retry", payload=CONFIRM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(approve, range(2)))
+    assert all(r["status"] == "APPLIED" and r["approvedBy"] == "first" for r in results)
+    assert results[0]["after"]["available"] == 8
+    final = Platform(root=root, mock_blender=True)
+    assert _q(final, lot_id)["available"] == 6
+    assert len([a for a in final.lots.get(lot_id, tenant_id=TENANT)["adjustments"] if a.get("cycleCountId") == cc["cycleCountId"]]) == 1

@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 from typing import Any, NoReturn
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
@@ -29,6 +29,7 @@ from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
+from fox3d.cyclecount_api import cyclecount_router
 from fox3d.recipe_admin_api import recipe_router
 from fox3d.station import STATION_CAPS
 
@@ -730,9 +731,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         }
 
     @app.get("/api/materials")
-    def materials(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def materials(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(0, ge=0),
+        limit: int = Query(100, ge=1, le=100),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        return {**materials_catalog(), "lots": get_platform().lots.list(tenant_id=tid)}
+        rows = get_platform().lots.list(tenant_id=tid)
+        total = len(rows)
+        if "offset" not in request.query_params and "limit" not in request.query_params:
+            return {**materials_catalog(), "lots": rows, "total": total, "offset": 0, "limit": total}
+        page = rows[offset : offset + limit]
+        return {**materials_catalog(), "lots": page, "total": total, "offset": offset, "limit": limit}
 
     @app.post("/api/materials/lots")
     def create_lot(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -1327,7 +1338,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def admin_features_index(request: Request) -> dict[str, Any]:
         return feature_index(list(request.app.routes))
 
-    app.include_router(recipe_router(lambda: platform if platform is not None else get_platform()))
+    platform_provider = lambda: platform if platform is not None else get_platform()
+    app.include_router(recipe_router(platform_provider))
+    app.include_router(cyclecount_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
         app.include_router(page)
     return app
