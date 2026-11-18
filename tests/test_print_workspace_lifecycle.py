@@ -565,7 +565,7 @@ def test_print_workspace_js_handles_404_409_and_skipped_count(tmp_path: Path) ->
           console.log(JSON.stringify({{ jobCount, jobsText, assetsText, notice404, notice409 }}));
         }})();
         """
-        proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, timeout=15)
+        proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
         out = json.loads(proc.stdout.strip().splitlines()[-1])
         assert "有 3 筆無法讀取" in out["jobCount"]
         assert "有 3 筆無法讀取" in out["jobsText"]
@@ -840,7 +840,7 @@ def test_ui_pagination_over_100_jobs_and_assets_across_pages(tmp_path: Path) -> 
       }}));
     }})();
     """
-    pw_proc = subprocess.run([node, "-e", pw_harness], check=True, capture_output=True, text=True, timeout=15)
+    pw_proc = subprocess.run([node, "-e", pw_harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
     pw_out = json.loads(pw_proc.stdout.strip().splitlines()[-1])
 
     assert "/api/print-workspace/assets" in pw_out["requestedUrls"]
@@ -1168,7 +1168,7 @@ def test_ui_pagination_over_100_jobs_and_assets_across_pages(tmp_path: Path) -> 
       }}));
     }})();
     """
-    pm_proc = subprocess.run([node, "-e", pm_harness], capture_output=True, text=True, timeout=15)
+    pm_proc = subprocess.run([node, "-e", pm_harness], capture_output=True, text=True, encoding="utf-8", timeout=15)
     assert pm_proc.returncode == 0, f"STDOUT:\n{pm_proc.stdout}\nSTDERR:\n{pm_proc.stderr}"
     pm_out = json.loads(pm_proc.stdout.strip().splitlines()[-1])
 
