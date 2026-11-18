@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from fox3d.render_store import ParametricStore
+from fox3d.storelock import FileLock
+
 import json
 import logging
 import os
@@ -20,7 +23,7 @@ from fox3d.blender import (
 )
 from fox3d.capabilities import BLENDER_PREVIEW, BLENDER_RENDER, capability_flags, foxstudio_operations
 from fox3d.gpu import GpuPolicy
-from fox3d.ids import new_id, sha256_bytes
+from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import (
     AIGateway,
     CapabilityRegistry,
@@ -35,6 +38,7 @@ from fox3d.infra import (
     Scheduler,
     TenantRegistry,
     retry_delay_seconds,
+    utcnow,
 )
 from fox3d.jobs import BlenderJob
 from fox3d.media import ARExporter, AssemblyAnimator, BlenderToVideo, Product360Engine, RetailEngine, SyntheticFactory
@@ -81,7 +85,7 @@ class Platform:
         self.capabilities = CapabilityRegistry()
         self.models = ModelRegistry()
         self.recipes = RecipeRegistry()
-        self.queue = JobQueue()
+        self.queue = JobQueue(self.root / "render_core" / "jobs")
         self.reservations = ReservationBook()
         self.scheduler = Scheduler(self.compute, self.reservations)
         self.dam = DAM(self.root / "dam")
@@ -90,7 +94,7 @@ class Platform:
         self.twins = TwinStore(self.dam)
         self.studio = ProductStudio()
         self.materials = MaterialEngine(self.recipes, self.gateway)
-        self.parametrics: dict[str, dict[str, Any]] = {}
+        self.parametrics: dict[str, dict[str, Any]] = ParametricStore(self.root / "render_core" / "parametrics")
         self.packaging = PackagingEngine(self)
         self.rules = EngineeringRuleEngine()
         self.cabinets = CabinetEngine(self.rules)
@@ -260,9 +264,31 @@ class Platform:
     # ----- jobs ----------------------------------------------------------
     def submit_job(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.tenants.ensure(payload["tenantId"])
+        key = payload.get("idempotencyKey")
+        if key is not None and (not isinstance(key, str) or not key.strip() or len(key) > 200):
+            raise ValueError("invalid idempotencyKey")
+        fingerprint = stable_hash({k: v for k, v in payload.items() if k != "idempotencyKey"})
+        if key is None:
+            return self._submit_job(payload, None, fingerprint)
+        with self.queue._lock, FileLock(self.root / "render_core" / "jobs-submit.lock"):
+            if self.queue._store:
+                for saved in self.queue._store.read_all():
+                    self.queue._jobs.setdefault(saved["jobId"], saved)
+            if key is not None:
+                for existing in self.queue.list(tenant_id=payload["tenantId"]):
+                    if existing.get("idempotencyKey") == key:
+                        if existing.get("idempotencyFingerprint") != fingerprint:
+                            raise ValueError("idempotency conflict")
+                        return existing
+            return self._submit_job(payload, key, fingerprint)
+
+    def _submit_job(self, payload: dict[str, Any], key: str | None, fingerprint: str) -> dict[str, Any]:
         job = BlenderJob.model_validate(payload)
         record = job.model_dump(mode="json")
         record["routing_requirements"] = job.routing_requirements()
+        if key is not None:
+            record["idempotencyKey"] = key
+            record["idempotencyFingerprint"] = fingerprint
         return self.queue.enqueue(record)
 
     def get_job(self, job_id: str, *, tenant_id: str) -> dict[str, Any]:
@@ -285,6 +311,7 @@ class Platform:
     def execute_job(self, job: dict[str, Any], *, timeout_seconds: float | None = None, cancel_flag: threading.Event | None = None) -> dict[str, Any]:
         if job.get("cancelRequested") or job.get("status") == "cancel_requested":
             job["status"] = "cancelled"
+            self.queue._save(job)
             return job
         self.compute.touch_heartbeats()
         placement = self.gpu_policy.place(self.scheduler, job)
@@ -325,6 +352,7 @@ class Platform:
                     ),
                     encoding="utf-8",
                 )
+            self.queue._save(job)
             return job
 
         # An explicit mock runtime can execute locally without claiming a GPU.
@@ -337,6 +365,7 @@ class Platform:
             self._release(job)
             job["status"] = "blocked"
             job["error"] = str(exc)
+            self.queue._save(job)
             return job
         job["gpu"] = placement.get("gpuName")
         job["gpuUuid"] = (self.probe.gpuUuid if self.probe else None)
@@ -368,6 +397,7 @@ class Platform:
             if done.get("status") not in {"completed", "succeeded"}:
                 done["status"] = term
             self._release(job)
+            self.queue._save(done)
             return done
         self.queue.heartbeat(job["jobId"], 0.05)
 
@@ -475,7 +505,8 @@ class Platform:
             return self.queue.get(job["jobId"]) or job
 
         try:
-            self.queue.set_status(job["jobId"], "uploading")
+            # Fresh heartbeat: stale-lease recovery measures the upload from here.
+            self.queue.set_status(job["jobId"], "uploading", heartbeatAt=utcnow().isoformat())
         except Exception:
             pass
         stored = self._upload_outputs(job["tenantId"], job["jobId"], result.outputs or {})
@@ -548,6 +579,7 @@ class Platform:
         done["usedMock"] = result.used_mock
         done["blenderVersion"] = result.blender_version
         done["outputs"] = dict(result.outputs or {})
+        self.queue._save(done)
         return done
 
     def _fail_or_retry(self, job: dict[str, Any], error: str) -> dict[str, Any]:
@@ -565,6 +597,7 @@ class Platform:
             # Immediate requeue for in-process tests; production would wait `delay`.
             current = self.queue.get(job["jobId"]) or job
             current["status"] = "queued"
+            self.queue._save(current)
             return current
         try:
             self.queue.set_status(job["jobId"], "failed", error=error, attemptCount=attempts)
@@ -697,7 +730,7 @@ class Platform:
 
     def render_parametric(self, product_id: str, *, tenant_id: str, explode: bool = False) -> dict[str, Any]:
         record = self.parametrics.get(product_id)
-        if not record:
+        if not record or record.get("spec", {}).get("tenantId") != tenant_id:
             raise KeyError(product_id)
         job = self.submit_job(
             {
@@ -713,6 +746,7 @@ class Platform:
         result = self.execute_job(job)
         record["previewJobId"] = result.get("jobId")
         record["preview"] = result.get("output")
+        self.parametrics[product_id] = record
         return {"parametric": record, "job": result}
 
     def real_smoke_test(self, *, tenant_id: str = "ops") -> dict[str, Any]:
@@ -738,8 +772,7 @@ class Platform:
         twin = ProductDigitalTwin(tenantId=tenant_id, sku=sku)
         twin = self.twins.create(twin, glb_bytes=glb_bytes)
         if glb_path:
-            twin.glb = glb_path
-            self.twins._items[twin.twinId] = twin
+            twin = self.twins.update(twin, glb=glb_path)
         job = self.submit_job(
             {
                 "tenantId": tenant_id,
@@ -757,12 +790,12 @@ class Platform:
         result = self.execute_job(job)
         preview_id = (result.get("output") or {}).get("files", {}).get("beauty.png")
         if preview_id:
-            twin.previewAssetId = preview_id
+            preview_path: str | None = None
             try:
-                twin.previewPath = self.dam.get(preview_id, tenant_id=tenant_id).path
+                preview_path = self.dam.get(preview_id, tenant_id=tenant_id).path
             except Exception:
-                pass
-            self.twins._items[twin.twinId] = twin
+                preview_path = twin.previewPath
+            twin = self.twins.update(twin, previewAssetId=preview_id, previewPath=preview_path)
         return {"twin": twin.model_dump(mode="json"), "job": result}
 
     def product_360_e2e(self, *, tenant_id: str, twin_id: str, frames: int = 36) -> dict[str, Any]:
@@ -893,8 +926,7 @@ class Platform:
         rendered = self.execute_job(job)
         preview = (rendered.get("output") or {}).get("files", {}).get("beauty.png")
         if preview:
-            twin.previewAssetId = preview
-            self.twins._items[twin.twinId] = twin
+            twin = self.twins.update(twin, previewAssetId=preview)
         return {"twin": twin.model_dump(mode="json"), "job": rendered, "sameTwinStore": True}
 
     def blender_to_video(self, *, tenant_id: str, twin_id: str, adapter: str | None = None) -> dict[str, Any]:

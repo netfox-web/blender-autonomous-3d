@@ -211,8 +211,8 @@ class StationDispatcher:
         payload = read_json(self.root / "leases.json") or {}
         self.leases = {l["leaseId"]: l for l in payload.get("leases") or []}
         for job in payload.get("jobs") or []:
-            if self.queue.get(job["jobId"]) is None:
-                self.queue.restore(job)
+            # The lease snapshot is the authority for manual-station recovery.
+            self.queue.restore(job)
 
     def persist(self) -> None:
         if not self.root:
@@ -332,8 +332,7 @@ class StationDispatcher:
                     "heartbeatAt": _now(),
                 }
             )
-            job["status"] = "reserved"
-            job["leaseOwner"] = station_id
+            self.queue.set_status(job["jobId"], "reserved", leaseOwner=station_id)
             claimed = job
             lease = {
                 "leaseId": claimed["jobId"],

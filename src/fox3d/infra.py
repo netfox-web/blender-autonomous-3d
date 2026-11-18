@@ -12,13 +12,14 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.jobs import JobStatus
+from fox3d.render_store import RenderStore
 
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "blocked": frozenset({"queued", "cancel_requested", "skipped", "expired"}),
@@ -405,9 +406,12 @@ def safe_path_component(value: str) -> str:
         _validate_path_component(value)
         _reject_windows_path_component(value)
         escaped = _escape_encoding_prefix(value)
-        if escaped is not None:
-            return escaped
-        return value
+        component = value if escaped is None else escaped
+        if len(component.encode("utf-8")) > _MAX_ENCODED_COMPONENT_BYTES:
+            # A safe name too long for ``{uuid}_{component}.glb`` would raise
+            # ENAMETOOLONG at write time; store it under the digest form.
+            return f"{_PATH_ENCODING_PREFIX}{_DIGEST_MARK}{sha256_bytes(value.encode('utf-8'))}"
+        return component
     except ValueError:
         return _encode_unsafe_path_component(value)
 
@@ -424,6 +428,13 @@ class DAM:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self._index: dict[str, DamObject] = {}
+        self._store = RenderStore(root.parent / "render_core" / "assets")
+        for record in self._store.read_all():
+            obj = DamObject(**record)
+            path = Path(obj.path)
+            if (path.resolve().is_relative_to(self.root.resolve()) and path.is_file()
+                    and not path.is_symlink() and sha256_bytes(path.read_bytes()) == obj.sha256):
+                self._index[obj.asset_id] = obj
 
     def put(
         self,
@@ -456,6 +467,7 @@ class DAM:
             sha256=sha256_bytes(data),
             metadata=metadata or {},
         )
+        self._store.write(tenant_id, asset_id, asdict(obj))
         self._index[asset_id] = obj
         return obj
 
@@ -636,15 +648,24 @@ class Scheduler:
 # ---------------------------------------------------------------------------
 
 class JobQueue:
-    def __init__(self) -> None:
+    def __init__(self, root: Path | None = None) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
+        self._store = RenderStore(root) if root else None
+        if self._store:
+            for job in self._store.read_all():
+                self._jobs[job["jobId"]] = job
+
+    def _save(self, job: dict[str, Any]) -> None:
+        if self._store and job.get("tenantId"):
+            self._store.write(job["tenantId"], job["jobId"], job)
 
     def restore(self, job: dict[str, Any]) -> dict[str, Any]:
         """Reload a snapshot without resetting queue status (restart recovery)."""
         rec = dict(job)
         with self._lock:
             self._jobs[rec["jobId"]] = rec
+            self._save(rec)
         return rec
 
     def enqueue(self, job: dict[str, Any]) -> dict[str, Any]:
@@ -656,6 +677,7 @@ class JobQueue:
         job.setdefault("createdAt", utcnow().isoformat())
         with self._lock:
             self._jobs[job["jobId"]] = job
+            self._save(job)
         return job
 
     def get(self, job_id: str) -> dict[str, Any] | None:
@@ -677,6 +699,7 @@ class JobQueue:
             job["completedAt"] = utcnow().isoformat()
         elif job["status"] in {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "waiting_approval"}:
             job["status"] = transition(job["status"], "cancel_requested")
+        self._save(job)
         return job
 
     def heartbeat(self, job_id: str, progress: float | None = None) -> dict[str, Any]:
@@ -684,6 +707,7 @@ class JobQueue:
         job["heartbeatAt"] = utcnow().isoformat()
         if progress is not None:
             job["progress"] = progress
+        self._save(job)
         return job
 
     def claim(
@@ -713,6 +737,7 @@ class JobQueue:
                 if target_key:
                     job["assignedComputeTargetKey"] = target_key
                 job["startedAt"] = job.get("startedAt") or utcnow().isoformat()
+                self._save(job)
                 return job
         return None
 
@@ -722,24 +747,43 @@ class JobQueue:
         job.update(fields)
         if status in {"succeeded", "completed", "failed", "cancelled", "expired", "blocked"}:
             job["completedAt"] = utcnow().isoformat()
+        self._save(job)
         return job
 
     def recover_stale_leases(self, *, max_age_seconds: float = 30.0) -> builtins.list[str]:
-        """Failed-job / worker-offline recovery: expired lease returns to queued."""
+        """Failed-job / worker-offline recovery for in-flight jobs whose worker is gone.
+
+        Expired leases return to a claimable state (``queued``, or
+        ``retry_scheduled`` for ``uploading``, which has no edge to ``queued``)
+        until ``maxAttempts`` is used up, then become ``failed``. A stale
+        ``cancel_requested`` job has no worker left to acknowledge the cancel,
+        so it is finished as ``cancelled``. Returns the IDs of jobs put back
+        to a claimable state.
+        """
         now = utcnow()
         recovered: builtins.list[str] = []
-        for job in self._jobs.values():
-            if job["status"] not in {"leased", "reserved", "dispatched", "running", "rendering"}:
-                continue
-            beat = job.get("heartbeatAt") or job.get("startedAt")
-            if not beat:
-                continue
-            ts = datetime.fromisoformat(beat)
-            if (now - ts).total_seconds() > max_age_seconds:
+        with self._lock:
+            for job in self._jobs.values():
+                status = job["status"]
+                if status not in _STALE_RECOVERABLE_STATUSES:
+                    continue
+                beat = job.get("heartbeatAt") or job.get("startedAt")
+                if not beat:
+                    continue
+                ts = datetime.fromisoformat(beat)
+                if (now - ts).total_seconds() <= max_age_seconds:
+                    continue
+                if status == "cancel_requested":
+                    job["status"] = transition(status, "cancelled")
+                    job["leaseOwner"] = None
+                    job["completedAt"] = now.isoformat()
+                    job["error"] = "worker offline recovery: cancel completed"
+                    self._save(job)
+                    continue
                 attempts = int(job.get("attemptCount") or 0) + 1
                 job["attemptCount"] = attempts
                 if attempts < int(job.get("maxAttempts") or 3):
-                    job["status"] = "queued"
+                    job["status"] = "retry_scheduled" if status == "uploading" else "queued"
                     job["leaseOwner"] = None
                     job["error"] = "worker offline recovery: lease expired"
                     recovered.append(job["jobId"])
@@ -747,7 +791,14 @@ class JobQueue:
                     job["status"] = "failed"
                     job["error"] = "worker offline and retry exhausted"
                     job["completedAt"] = now.isoformat()
+            for job in self._jobs.values():
+                self._save(job)
         return recovered
+
+
+_STALE_RECOVERABLE_STATUSES = frozenset(
+    {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "cancel_requested"}
+)
 
 
 def job_cache_key(job: dict[str, Any], *, blender_version: str) -> str:

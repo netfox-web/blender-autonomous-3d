@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import DAM, safe_path_component, validate_tenant_id
 from fox3d.pngutil import write_glb_stub
+from fox3d.render_store import RenderStore
 
 
 class ProductDigitalTwin(BaseModel):
@@ -44,6 +45,10 @@ class TwinStore:
     def __init__(self, dam: DAM) -> None:
         self.dam = dam
         self._items: dict[str, ProductDigitalTwin] = {}
+        self._store = RenderStore(dam.root.parent / "render_core" / "twins")
+        for record in self._store.read_all():
+            twin = ProductDigitalTwin.model_validate(record)
+            self._items[twin.twinId] = twin
 
     def create(self, twin: ProductDigitalTwin, *, glb_bytes: bytes | None = None) -> ProductDigitalTwin:
         validate_tenant_id(twin.tenantId)
@@ -73,8 +78,29 @@ class TwinStore:
                 "maxZ": twin.dimensions.get("height", 0),
             }
         twin.contentHash = twin.compute_hash()
+        self._store.write(twin.tenantId, twin.twinId, twin.model_dump(mode="json"))
         self._items[twin.twinId] = twin
         return twin
+
+    def update(self, twin: ProductDigitalTwin, **changes: Any) -> ProductDigitalTwin:
+        """Apply post-create field changes and persist them to the snapshot.
+
+        Only fields of an already stored twin of the same tenant can change, so
+        a restart reloads what the caller returned (``glb``, ``previewAssetId``,
+        ``previewPath``).
+        """
+        validate_tenant_id(twin.tenantId)
+        stored = self._items.get(twin.twinId)
+        if stored is None or stored.tenantId != twin.tenantId:
+            raise KeyError(twin.twinId)
+        rejected = (set(changes) - set(ProductDigitalTwin.model_fields)) | ({"twinId", "tenantId"} & set(changes))
+        if rejected:
+            raise ValueError(f"cannot update twin fields: {sorted(rejected)}")
+        updated = twin.model_copy(update=changes)
+        # Write first: a failed write leaves both the snapshot and memory unchanged.
+        self._store.write(updated.tenantId, updated.twinId, updated.model_dump(mode="json"))
+        self._items[updated.twinId] = updated
+        return updated
 
     def get(self, twin_id: str, *, tenant_id: str) -> ProductDigitalTwin:
         validate_tenant_id(tenant_id)
@@ -86,7 +112,7 @@ class TwinStore:
 
     def list(self, *, tenant_id: str) -> list[ProductDigitalTwin]:
         validate_tenant_id(tenant_id)
-        return [t for t in self._items.values() if t.tenantId == tenant_id]
+        return [t for t in self._items.values() if t.tenantId == tenant_id and (t.damAssetId or t.twinId) in self.dam._index]
 
     def new_version(self, twin_id: str, *, tenant_id: str, **changes: Any) -> ProductDigitalTwin:
         current = self.get(twin_id, tenant_id=tenant_id)
