@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home';
+  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, lastFilledCartonKey = '', loadedTenant = 'sonaqueen-home';
   try { $('tenant').value = localStorage.getItem('fox3d.tenant') || 'sonaqueen-home'; } catch (e) { /* storage unavailable */ }
   function tenant() { return $('tenant').value.trim() || 'sonaqueen-home'; }
   function api(path, options) {
@@ -111,8 +111,15 @@
     if (!d || typeof d !== 'object') return '—';
     return String(d.length) + '×' + String(d.width) + '×' + String(d.height) + ' mm / ' + String(d.weightKg) + ' kg';
   }
-  function fillMeasureInputs(carton) {
+  function cartonDimsKey(carton) {
+    if (!carton || typeof carton !== 'object') return '';
+    return String(carton.cartonId || '') + ':' + JSON.stringify(carton.measured || carton.expected || {});
+  }
+  function fillMeasureInputs(carton, force) {
     if (!carton || pending || posting) return;
+    var key = cartonDimsKey(carton);
+    if (!force && key && key === lastFilledCartonKey) return;
+    lastFilledCartonKey = key;
     var src = carton.measured || carton.expected || {};
     if (src.length != null) $('packing-length').value = String(src.length);
     if (src.width != null) $('packing-width').value = String(src.width);
@@ -129,6 +136,7 @@
     if (box) box.textContent = '';
     if (sel && !pending && !posting) sel.textContent = '';
     if (!currentCartons.length) {
+      lastFilledCartonKey = '';
       if (box) box.textContent = '尚無紙箱。';
       if (!preserveStatus && $('packing-status')) {
         $('packing-status').textContent = '尚無紙箱，請先建立紙箱。';
@@ -174,7 +182,7 @@
       btn.addEventListener('click', function () {
         if (pending || posting) return;
         if (sel) sel.value = String(c.cartonId || '');
-        fillMeasureInputs(c);
+        fillMeasureInputs(c, true);
       });
       actTd.appendChild(btn);
       row.appendChild(actTd);
@@ -190,8 +198,9 @@
           break;
         }
       }
-      sel.value = String(chosen.cartonId || '');
-      fillMeasureInputs(chosen);
+      var nextCid = String(chosen.cartonId || '');
+      sel.value = nextCid;
+      fillMeasureInputs(chosen, prevCid !== nextCid);
     }
     if (anyMismatch && !signedOff && $('packing-status')) {
       $('packing-status').textContent = '尺寸不符待人工確認';
@@ -218,14 +227,15 @@
     });
   }
   function selectOrder(item, preserveStatus) {
-    if (posting || pending) return;
     var prevId = selected && selected.workOrderId;
+    if ((posting || pending) && prevId !== (item && item.workOrderId)) return;
     selected = item;
     show('detail', item);
     $('actions').hidden = false;
     if ($('packing-panel')) {
       $('packing-panel').hidden = false;
       if (prevId !== item.workOrderId) {
+        lastFilledCartonKey = '';
         if ($('packing-idem')) $('packing-idem').value = 'pack-' + String(item.workOrderId || '1');
         if ($('packing-checklist')) $('packing-checklist').textContent = '尚未產生裝箱檢查表。';
       }
@@ -236,12 +246,18 @@
     if (!posting) clearPending();
     loadedTenant = tenant();
     var targetOrderId = keepOrderId !== undefined ? keepOrderId : (selected && selected.workOrderId);
-    if (!targetOrderId) selected = null; $('detail').textContent = '請選擇工單。'; $('actions').hidden = true;
-    if ($('packing-panel')) $('packing-panel').hidden = true;
+    var keepingSelected = Boolean(targetOrderId && selected && selected.workOrderId === targetOrderId);
+    if (!keepingSelected) {
+      selected = null;
+      lastFilledCartonKey = '';
+      $('detail').textContent = '請選擇工單。';
+      $('actions').hidden = true;
+      if ($('packing-panel')) $('packing-panel').hidden = true;
+    }
     load('overview', '/api/pilot/console', function (d) { var badges = Object.keys(d.badges || {}).map(function (k) { return [BADGE_NAMES[k] || k, d.badges[k]]; }); cards('overview', [['材料批號', (d.lots || []).length + ' 批'], ['放行紀錄', (d.releases || []).length + ' 筆'], ['機台連線控制', d.liveMachineControl ? '已開啟' : '關閉（人工）']].concat(badges), d); table('lots', d.lots, [['lotId','批號'],['material','材料'],['available','可用'],['reserved','已預留'],['quarantined','隔離'],['truthLabel','來源']]); table('receipts', d.receipts, [['receiptId','收料編號'],['material','材料'],['quantity','數量'],['status','狀態'],['truthLabel','來源']]); table('requests', d.purchaseRequests, [['requestId','請購編號'],['material','材料'],['quantity','數量'],['status','狀態']]); });
     load('orders', '/api/pilot/work-orders', function (d) {
       var list = (d && d.items) || [];
-      table('orders', list, [['workOrderId','工單編號'],['state','狀態'],['quantity','數量'],['truthLabel','資料來源']], function (item) { selectOrder(item, false); });
+      table('orders', list, [['workOrderId','工單編號'],['state','狀態'],['quantity','數量'],['truthLabel','資料來源']], function (item) { if (posting || pending) return; selectOrder(item, false); });
       if (targetOrderId) {
         for (var i = 0; i < list.length; i++) {
           if (list[i].workOrderId === targetOrderId) {
@@ -266,6 +282,11 @@
     $('confirmation').hidden = false;
     $('confirmation').scrollIntoView();
   }
+  function finishPost(task) {
+    posting = false;
+    $('confirm').disabled = false;
+    if (task && task.trigger) task.trigger.disabled = false;
+  }
   document.querySelectorAll('[data-action]').forEach(function (b) { b.addEventListener('click', function () { if (!selected || posting || pending) return; var action = b.dataset.action; var orderId = selected.workOrderId; prepare(b.textContent + '（工單 ' + orderId + '）', '/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/' + action, {confirm:true}, b); }); });
   $('confirm').addEventListener('click', function () {
     if (!pending || posting) return;
@@ -280,13 +301,12 @@
     var bodyText;
     try { bodyText = JSON.stringify(task.body); }
     catch (err) {
-      posting = false;
-      $('confirm').disabled = false;
-      if (task.trigger) task.trigger.disabled = false;
+      finishPost(task);
       $('result').textContent = '操作失敗：' + ((err && err.message) || err);
       return;
     }
     api(task.path, { method: 'POST', body: bodyText, tenant: task.tenant }).then(function (d) {
+      finishPost(task);
       if (typeof task.onDone === 'function') task.onDone(d);
       if (isMismatchResult(d)) {
         if ($('packing-status')) {
@@ -294,7 +314,6 @@
           $('packing-status').className = 'warn';
         }
         $('result').textContent = '尺寸不符待人工確認\n' + JSON.stringify(d, null, 2);
-        posting = false;
         refresh(task.workOrderId, true);
         return;
       }
@@ -307,9 +326,9 @@
         return;
       }
       show('result', d);
-      posting = false;
       refresh(task.workOrderId, Boolean(task.isPacking));
     }).catch(function (e) {
+      finishPost(task);
       var msg = (e && e.message) || String(e);
       var outMsg = msg.indexOf('連線失敗') >= 0 ? msg : ('操作失敗：' + msg);
       $('result').textContent = outMsg;
@@ -318,9 +337,7 @@
         $('packing-status').className = 'warn';
       }
     }).finally(function () {
-      posting = false;
-      $('confirm').disabled = false;
-      if (task.trigger) task.trigger.disabled = false;
+      finishPost(task);
     });
   });
   $('cancel').addEventListener('click', function () { if (posting) return; clearPending(); });
@@ -334,7 +351,7 @@
       var cid = $('packing-carton-id').value;
       for (var i = 0; i < currentCartons.length; i++) {
         if (String(currentCartons[i].cartonId) === cid) {
-          fillMeasureInputs(currentCartons[i]);
+          fillMeasureInputs(currentCartons[i], true);
           break;
         }
       }
@@ -386,6 +403,12 @@
         body,
         e.submitter || $('packing-measure-btn'),
         function (d) {
+          if (d && d.cartonId) {
+            var updated = currentCartons.map(function (c) {
+              return String(c.cartonId) === String(d.cartonId) ? d : c;
+            });
+            renderCartons(updated, true, d.mismatchHold);
+          }
           if (isMismatchResult(d)) {
             if ($('packing-status')) {
               $('packing-status').textContent = '尺寸不符待人工確認';
@@ -435,6 +458,9 @@
         { confirm: true },
         $('packing-resolve-btn'),
         function (d) {
+          if (d && typeof d.mismatchHold === 'boolean') {
+            renderCartons(currentCartons, true, d.mismatchHold);
+          }
           if (!$('packing-status')) return;
           if (d && d.mismatchHold === false) {
             $('packing-status').textContent = '尺寸不符已人工確認（紙箱仍標記超差），可進行完工。';

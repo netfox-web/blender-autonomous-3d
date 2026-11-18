@@ -660,17 +660,21 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
     first_carton_id = page.locator("#packing-carton-id").input_value()
     assert first_carton_id
     page.locator("#packing-length").fill("999")
+    assert page.locator("#packing-length").input_value() == "999"
     page.locator("#packing-measure-btn").click()
     page.wait_for_selector("#confirmation:not([hidden])")
     assert page.locator("#packing-length").is_disabled()
+    assert "999" in page.locator("#confirm-data").inner_text()
     page.locator("#confirm").click()
     page.wait_for_function(
         """() => {
           const status = document.getElementById('packing-status');
           const result = document.getElementById('result');
+          const btn = document.getElementById('packing-measure-btn');
           return !!(
             status && status.textContent.includes('尺寸不符待人工確認') &&
-            result && result.textContent.includes('尺寸不符待人工確認')
+            result && result.textContent.includes('尺寸不符待人工確認') &&
+            btn && !btn.disabled
           );
         }"""
     )
@@ -683,9 +687,11 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
         """() => {
           const chk = document.getElementById('packing-checklist');
           const status = document.getElementById('packing-status');
+          const btn = document.getElementById('packing-checklist-btn');
           return !!(
             chk && chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
-            status && status.textContent.includes('尺寸不符待人工確認')
+            status && status.textContent.includes('尺寸不符待人工確認') &&
+            btn && !btn.disabled
           );
         }"""
     )
@@ -709,16 +715,19 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
           const status = document.getElementById('packing-status');
           const btn = document.getElementById('packing-resolve-btn');
           const cartons = document.getElementById('packing-cartons');
+          const chk = document.getElementById('packing-checklist');
           return !!(
             status && status.textContent.includes('已人工確認') &&
             !status.textContent.includes('待人工確認') &&
             cartons && cartons.textContent.includes('尺寸不符（已人工確認）') &&
+            chk && chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
             btn && !btn.disabled
           );
         }"""
     )
     assert seen_resolve["body"] == {"confirm": True}
     assert seen_resolve["tenant"] == TENANT
+    assert "BLOCKED/NOT_CONNECTED" in page.locator("#packing-checklist").inner_text()
     plat = admin_server["platform"]
     rec = plat.pilot.workorders.get(wo_id)
     assert rec["mismatchHold"] is False
