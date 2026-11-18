@@ -243,7 +243,7 @@ def list_revisions(root, tid, mid, *, offset=0, limit=40):
     skipped = 0
     for path in paths:
         row = render.read_json(path)
-        if not row or not isinstance(row.get('revision'), int):
+        if not isinstance(row, dict) or not isinstance(row.get('revision'), int):
             skipped += 1
             continue
         entries.append(row)

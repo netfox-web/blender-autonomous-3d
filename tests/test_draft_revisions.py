@@ -264,6 +264,26 @@ def test_product_model_revision_list_omits_corrupt_snapshots(tmp_path, model_cli
     assert len(payload["items"]) == 2
 
 
+def test_product_model_revision_list_skips_non_object_json_outside_page(tmp_path, model_client):
+    item = models.save(tmp_path, "t", cabinet(), 0)
+    rev_dir = models.directory(tmp_path, "t") / item["id"] / "revisions"
+    (rev_dir / "999.json").write_text("[1]", encoding="utf-8")
+    body = models.list_revisions(tmp_path, "t", item["id"], offset=0, limit=1)
+    assert body["total"] == 1
+    assert body["skipped"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["revision"] == 1
+    response = model_client.get(
+        f"/api/product-models/{item['id']}/revisions?offset=0&limit=1",
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["skipped"] == 1
+    assert payload["items"][0]["revision"] == 1
+
+
 def test_product_model_listing_template_state_only_for_page(tmp_path, monkeypatch):
     calls: list[str] = []
 
