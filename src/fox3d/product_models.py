@@ -174,17 +174,18 @@ def _template_state(root, tid, item):
 
 def listing(root, tid, *, offset=0, limit=200):
     base = directory(root, tid)
-    items, skipped = [], 0
+    loaded, skipped = [], 0
     for p in sorted(base.glob('*/master.json')):
         try:
             item = get(root, tid, p.parent.name)
         except (KeyError, TypeError, ValueError):
             skipped += 1
             continue
-        items.append({**item, 'templateState': _template_state(root, tid, item)})
-    total = len(items)
-    page = items[offset:offset + limit]
-    return {'items': page, 'total': total, 'offset': offset, 'limit': limit, 'skipped': skipped}
+        loaded.append(item)
+    total = len(loaded)
+    page = loaded[offset:offset + limit]
+    items = [{**item, 'templateState': _template_state(root, tid, item)} for item in page]
+    return {'items': items, 'total': total, 'offset': offset, 'limit': limit, 'skipped': skipped}
 
 
 def _idempotency_dir(root, tid):
@@ -238,15 +239,20 @@ def list_revisions(root, tid, mid, *, offset=0, limit=40):
     folder = directory(root, tid) / mid / 'revisions'
     paths = sorted((p for p in folder.glob('*.json') if p.stem.isdigit() and int(p.stem) > 0),
                    key=lambda p: int(p.stem)) if folder.is_dir() else []
-    total = len(paths)
-    items = []
-    for path in paths[offset:offset + limit]:
+    entries = []
+    skipped = 0
+    for path in paths:
         row = render.read_json(path)
         if not row or not isinstance(row.get('revision'), int):
+            skipped += 1
             continue
+        entries.append(row)
+    total = len(entries)
+    items = []
+    for row in entries[offset:offset + limit]:
         items.append({'revision': row['revision'], 'updatedAt': row.get('updatedAt'),
                       'inputHash': row.get('inputHash')})
-    return {'items': items, 'total': total, 'offset': offset, 'limit': limit}
+    return {'items': items, 'total': total, 'offset': offset, 'limit': limit, 'skipped': skipped}
 
 
 def get_revision(root, tid, mid, revision):
