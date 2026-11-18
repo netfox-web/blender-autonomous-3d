@@ -691,6 +691,40 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
     )
     assert page.locator("#packing-checklist-btn").is_enabled()
 
+    # 4. Human sign-off closes the PACKING_MISMATCH hold; carton stays flagged, panel no longer pending.
+    resolve_path = f"/api/pilot/work-orders/{wo_id}/packing-mismatch/resolve"
+    seen_resolve: dict[str, Any] = {}
+
+    def on_resolve(route: Route) -> None:
+        seen_resolve["body"] = json.loads(route.request.post_data or "{}")
+        seen_resolve["tenant"] = route.request.headers.get("x-tenant-id")
+        route.continue_()
+
+    _install(page, resolve_path, on_resolve)
+    page.locator("#packing-resolve-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const status = document.getElementById('packing-status');
+          const btn = document.getElementById('packing-resolve-btn');
+          const cartons = document.getElementById('packing-cartons');
+          return !!(
+            status && status.textContent.includes('已人工確認') &&
+            !status.textContent.includes('待人工確認') &&
+            cartons && cartons.textContent.includes('尺寸不符（已人工確認）') &&
+            btn && !btn.disabled
+          );
+        }"""
+    )
+    assert seen_resolve["body"] == {"confirm": True}
+    assert seen_resolve["tenant"] == TENANT
+    plat = admin_server["platform"]
+    rec = plat.pilot.workorders.get(wo_id)
+    assert rec["mismatchHold"] is False
+    assert all(not h["open"] for h in rec["holds"] if h["reason"] == "PACKING_MISMATCH")
+    assert plat.pilot.logistics.cartons[first_carton_id]["mismatch"] is True
+
 
 
 def _seed_available_remnant(admin_server: dict[str, Any], remnant_id: str = "rem-browser-1") -> str:

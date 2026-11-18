@@ -33,8 +33,11 @@ def client(platform: Any) -> TestClient:
     return TestClient(create_app(platform))
 
 
-def _seed_release_receipt_and_wo(platform: Any, *, tenant: str = TENANT) -> tuple[dict[str, Any], dict[str, Any]]:
-    product = platform.kd.build_sku(tenant_id=tenant, kind="OPEN_SHELF")
+def _seed_release_receipt_and_wo(
+    platform: Any, *, tenant: str = TENANT, product: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    if product is None:
+        product = platform.kd.build_sku(tenant_id=tenant, kind="OPEN_SHELF")
     rel = platform.pilot.open_release(product, tenant_id=tenant, family="KD_FURNITURE")
     nest = (rel.get("snapshot") or {}).get("nesting") or {}
     sheet_mm = nest.get("sheetMm") or [2440, 1220]
@@ -479,3 +482,364 @@ def test_draft_work_order_cannot_create_orphan_cartons(client: TestClient, platf
     assert res.status_code == 409
     assert list(platform.pilot.logistics.cartons.values()) == []
 
+
+
+# --- Review fixes for PR #733 (issue #738) -------------------------------------------------
+
+
+def _wo_carton_ids(platform: Any, wo_id: str) -> set[str]:
+    return {
+        c["cartonId"]
+        for c in platform.pilot.logistics.cartons.values()
+        if c.get("workOrderId") == wo_id and c.get("tenantId") == TENANT
+    }
+
+
+def test_open_shelf_expected_weight_is_product_gross_kg(client: TestClient, platform: Any) -> None:
+    product = platform.kd.build_sku(tenant_id=TENANT, kind="OPEN_SHELF")
+    gross = float(product["weight"]["grossKg"])
+    assert gross > 0 and abs(gross - 8.0) > 1.0  # the old 8 kg default would be caught
+    rel, wo = _seed_release_receipt_and_wo(platform, product=product)
+    assert rel["snapshot"]["weight"]["grossKg"] == product["weight"]["grossKg"]
+    wo_id = wo["workOrderId"]
+
+    created = client.post(
+        f"/api/pilot/work-orders/{wo_id}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "weight-truth"},
+    )
+    assert created.status_code == 200, created.text
+    carton = created.json()["items"][0]
+    exp = carton["expected"]
+    assert exp["weightKg"] == gross
+    assert exp["length"] == float(product["packing"]["length"])
+    assert exp["width"] == float(product["packing"]["width"])
+    assert exp["height"] == float(product["packing"]["height"])
+
+    measured = client.post(
+        f"/api/pilot/cartons/{carton['cartonId']}/measured",
+        headers=HEADERS,
+        json={"length": exp["length"], "width": exp["width"], "height": exp["height"], "weightKg": gross},
+    )
+    assert measured.status_code == 200, measured.text
+    assert measured.json()["mismatch"] is False
+    assert measured.json()["mismatchHold"] is False
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda snap: snap.pop("weight", None),
+        lambda snap: snap.__setitem__("weight", {"grossKg": "heavy"}),
+        lambda snap: snap.__setitem__("weight", {"grossKg": float("nan")}),
+        lambda snap: snap.__setitem__("weight", {"grossKg": 0}),
+        lambda snap: snap.__setitem__("packing", {}),
+        lambda snap: snap["packing"].pop("height"),
+        lambda snap: snap["packing"].__setitem__("width", -5),
+    ],
+    ids=["no-weight", "weight-str", "weight-nan", "weight-zero", "no-packing", "no-height", "neg-width"],
+)
+def test_create_cartons_without_release_truth_is_422_not_default(
+    client: TestClient, platform: Any, mutate: Any
+) -> None:
+    rel, wo = _seed_release_receipt_and_wo(platform)
+    snap = platform.pilot.releases.releases[rel["releaseId"]]["snapshot"]
+    snap["packing"] = dict(snap["packing"])
+    mutate(snap)
+    res = client.post(
+        f"/api/pilot/work-orders/{wo['workOrderId']}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "no-truth"},
+    )
+    assert res.status_code == 422, res.text
+    assert _wo_carton_ids(platform, wo["workOrderId"]) == set()
+    assert platform.pilot.workorders.get(wo["workOrderId"]).get("cartonIds") in (None, [])
+
+
+def test_mismatch_hold_resolved_by_human_allows_complete(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    _complete_ops_and_qc(platform, wo)
+    created = client.post(
+        f"/api/pilot/work-orders/{wo_id}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "mm-resolve"},
+    ).json()
+    carton = created["items"][0]
+    exp = carton["expected"]
+    bad = {"length": exp["length"] + 50.0, "width": exp["width"], "height": exp["height"], "weightKg": exp["weightKg"]}
+    for _ in range(2):  # replaying the same measurement must not open a second hold
+        m = client.post(f"/api/pilot/cartons/{carton['cartonId']}/measured", headers=HEADERS, json=bad)
+        assert m.status_code == 200, m.text
+        assert m.json()["mismatch"] is True
+        assert m.json()["mismatchHold"] is True
+
+    rec = platform.pilot.workorders.get(wo_id)
+    pm_holds = [h for h in rec["holds"] if h["reason"] == "PACKING_MISMATCH"]
+    assert len(pm_holds) == 1
+    assert pm_holds[0]["open"] is True and pm_holds[0]["blocking"] is True
+    assert rec["mismatchHold"] is True
+
+    blocked = client.post(f"/api/pilot/work-orders/{wo_id}/complete", headers=HEADERS, json={"confirm": True})
+    assert blocked.status_code == 409
+    assert "尺寸不符待人工確認" in blocked.json()["detail"]
+
+    # Sign-off needs confirm and the owning tenant.
+    url = f"/api/pilot/work-orders/{wo_id}/packing-mismatch/resolve"
+    assert client.post(url, headers=HEADERS, json={}).status_code == 403
+    assert client.post(url, headers={"X-Tenant-Id": "other-tenant"}, json={"confirm": True}).status_code == 404
+    assert platform.pilot.workorders.get(wo_id)["holds"][-1]["open"] is True
+
+    resolved = client.post(url, headers=HEADERS, json={"confirm": True, "actor": "lead"})
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["mismatchHold"] is False
+    assert resolved.json()["resolvedHoldIds"] == [pm_holds[0]["holdId"]]
+    again = client.post(url, headers=HEADERS, json={"confirm": True, "actor": "lead"})
+    assert again.status_code == 200 and again.json()["resolvedHoldIds"] == []
+    hold_resolve_events = [
+        e for e in platform.pilot.journal.list(TENANT) if e.get("eventType") == "workorder.hold_resolve"
+    ]
+    assert len(hold_resolve_events) == 1
+
+    chk = client.post(f"/api/pilot/work-orders/{wo_id}/packing-checklist", headers=HEADERS, json={})
+    assert chk.status_code == 200
+    assert chk.json()["mismatch"] is True
+    assert chk.json()["mismatchHold"] is False
+
+    done = client.post(f"/api/pilot/work-orders/{wo_id}/complete", headers=HEADERS, json={"confirm": True})
+    assert done.status_code == 200, done.text
+    assert done.json()["state"] == "COMPLETED"
+    stored = platform.pilot.logistics.cartons[carton["cartonId"]]
+    assert stored["mismatch"] is True
+    assert stored["autoOverride"] is False
+
+
+def test_mismatch_resolved_via_existing_hold_flow_allows_complete(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    _complete_ops_and_qc(platform, wo)
+    carton = client.post(
+        f"/api/pilot/work-orders/{wo_id}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "mm-service"},
+    ).json()["items"][0]
+    exp = carton["expected"]
+    client.post(
+        f"/api/pilot/cartons/{carton['cartonId']}/measured",
+        headers=HEADERS,
+        json={"length": exp["length"], "width": exp["width"], "height": exp["height"], "weightKg": exp["weightKg"] + 5},
+    )
+    rec = platform.pilot.workorders.get(wo_id)
+    hold = next(h for h in rec["holds"] if h["reason"] == "PACKING_MISMATCH" and h["open"])
+    platform.pilot.workorders.resolve_hold(wo_id, hold["holdId"], actor="lead")
+    assert rec["mismatchHold"] is False
+    assert rec["state"] == "IN_PROGRESS"
+    done = client.post(f"/api/pilot/work-orders/{wo_id}/complete", headers=HEADERS, json={"confirm": True})
+    assert done.status_code == 200, done.text
+    assert platform.pilot.logistics.cartons[carton["cartonId"]]["mismatch"] is True
+    assert platform.pilot.logistics.cartons[carton["cartonId"]]["autoOverride"] is False
+
+
+def test_new_mismatch_after_signoff_blocks_again(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    _complete_ops_and_qc(platform, wo)
+    carton = client.post(
+        f"/api/pilot/work-orders/{wo_id}/cartons",
+        headers=HEADERS,
+        json={"quantity": 1, "idempotencyKey": "mm-again"},
+    ).json()["items"][0]
+    exp = carton["expected"]
+    url = f"/api/pilot/cartons/{carton['cartonId']}/measured"
+    body = {"length": exp["length"] + 50.0, "width": exp["width"], "height": exp["height"], "weightKg": exp["weightKg"]}
+    client.post(url, headers=HEADERS, json=body)
+    client.post(f"/api/pilot/work-orders/{wo_id}/packing-mismatch/resolve", headers=HEADERS, json={"confirm": True})
+    body2 = {**body, "length": exp["length"] + 90.0}
+    m = client.post(url, headers=HEADERS, json=body2)
+    assert m.status_code == 200 and m.json()["mismatchHold"] is True
+    blocked = client.post(f"/api/pilot/work-orders/{wo_id}/complete", headers=HEADERS, json={"confirm": True})
+    assert blocked.status_code == 409
+    assert "尺寸不符待人工確認" in blocked.json()["detail"]
+
+
+def test_second_idempotency_key_on_same_work_order_is_409(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    url = f"/api/pilot/work-orders/{wo_id}/cartons"
+    first = client.post(url, headers=HEADERS, json={"quantity": 2, "idempotencyKey": "k-a"})
+    assert first.status_code == 200
+    ids = first.json()["cartonIds"]
+    assert len(ids) == 2
+
+    second = client.post(url, headers=HEADERS, json={"quantity": 1, "idempotencyKey": "k-b"})
+    assert second.status_code == 409, second.text
+    # Replaying the first key still works.
+    replay = client.post(url, headers=HEADERS, json={"quantity": 2, "idempotencyKey": "k-a"})
+    assert replay.status_code == 200 and replay.json()["cartonIds"] == ids
+
+    rec = platform.pilot.workorders.get(wo_id)
+    listed = client.get(url, headers=HEADERS).json()
+    listed_ids = {c["cartonId"] for c in listed["items"]}
+    assert set(rec["cartonIds"]) == set(rec["lineage"]["package"]) == listed_ids == set(ids)
+    assert _wo_carton_ids(platform, wo_id) == set(ids)
+    assert rec["state"] == "PACKING"
+
+
+def test_qc_release_hold_does_not_close_unrelated_blocking_hold(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    hold = platform.pilot.workorders.hold(wo_id, actor="qa", reason="MATERIAL_QUARANTINE", blocking=True)
+    assert platform.pilot.workorders.get(wo_id)["state"] == "QC_HOLD"
+    for idx, spec in enumerate(platform.pilot.qc.schema(wo["productFamily"])):
+        nominal = float(spec["nominal"] if spec["nominal"] is not None else 100.0)
+        res = client.post(
+            f"/api/pilot/work-orders/{wo_id}/qc",
+            headers=HEADERS,
+            json={
+                "stage": "FINAL",
+                "checkId": spec["checkId"],
+                "measured": nominal,
+                "nominal": nominal,
+                "tol": float(spec["tol"]),
+                "unit": spec["unit"],
+                "idempotencyKey": f"quarantine-{idx}",
+            },
+        )
+        assert res.status_code == 200, res.text
+    resolve_before = [
+        e for e in platform.pilot.journal.list(TENANT) if e.get("eventType") == "workorder.hold_resolve"
+    ]
+    rel_hold = client.post(
+        f"/api/pilot/work-orders/{wo_id}/qc/release-hold",
+        headers=HEADERS,
+        json={"confirm": True, "actor": "e2e"},
+    )
+    assert rel_hold.status_code == 409, rel_hold.text
+    assert "MATERIAL_QUARANTINE" in rel_hold.json()["detail"]
+    rec = platform.pilot.workorders.get(wo_id)
+    stored = next(h for h in rec["holds"] if h["holdId"] == hold["holdId"])
+    assert stored["open"] is True
+    assert "resolvedBy" not in stored
+    assert rec["state"] == "QC_HOLD"
+    resolve_after = [
+        e for e in platform.pilot.journal.list(TENANT) if e.get("eventType") == "workorder.hold_resolve"
+    ]
+    assert len(resolve_after) == len(resolve_before)
+
+
+def test_qc_routes_reject_draft_work_order(client: TestClient, platform: Any) -> None:
+    product = platform.kd.build_sku(tenant_id=TENANT, kind="OPEN_SHELF")
+    rel = platform.pilot.open_release(product, tenant_id=TENANT, family="KD_FURNITURE")
+    draft = platform.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="ops")
+    wo_id = draft["workOrderId"]
+    spec = platform.pilot.qc.schema(draft["productFamily"])[0]
+    nominal = float(spec["nominal"] if spec["nominal"] is not None else 100.0)
+    fail = client.post(
+        f"/api/pilot/work-orders/{wo_id}/qc",
+        headers=HEADERS,
+        json={
+            "stage": "FINAL",
+            "checkId": spec["checkId"],
+            "measured": nominal + 10,
+            "nominal": nominal,
+            "tol": float(spec["tol"]),
+            "unit": spec["unit"],
+            "idempotencyKey": "draft-qc",
+        },
+    )
+    assert fail.status_code == 409, fail.text
+    assert platform.pilot.workorders.get(wo_id)["state"] == "DRAFT"
+    assert [c for c in platform.pilot.qc.checks.values() if c["workOrderId"] == wo_id] == []
+    rel_hold = client.post(
+        f"/api/pilot/work-orders/{wo_id}/qc/release-hold", headers=HEADERS, json={"confirm": True}
+    )
+    assert rel_hold.status_code == 409
+    assert platform.pilot.workorders.get(wo_id)["state"] == "DRAFT"
+
+    released = platform.pilot.workorders.release_for_execution(wo_id, actor="ops")
+    assert released["state"] == "RELEASED_FOR_MANUAL_EXECUTION"
+    assert (
+        client.post(
+            f"/api/pilot/work-orders/{wo_id}/qc/release-hold", headers=HEADERS, json={"confirm": True}
+        ).status_code
+        == 409
+    )
+
+
+def test_qc_service_failed_check_uses_state_machine(platform: Any) -> None:
+    product = platform.kd.build_sku(tenant_id=TENANT, kind="OPEN_SHELF")
+    rel = platform.pilot.open_release(product, tenant_id=TENANT, family="KD_FURNITURE")
+    draft = platform.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="ops")
+    with pytest.raises(PermissionError):
+        platform.pilot.qc.record(
+            tenant_id=TENANT,
+            work_order_id=draft["workOrderId"],
+            stage="FINAL",
+            check_id="THICKNESS",
+            measured=30.0,
+            nominal=18.0,
+            tol=0.5,
+            unit="mm",
+            operator="qc",
+        )
+    assert platform.pilot.workorders.get(draft["workOrderId"])["state"] == "DRAFT"
+
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    platform.pilot.qc.record(
+        tenant_id=TENANT,
+        work_order_id=wo["workOrderId"],
+        stage="FINAL",
+        check_id="THICKNESS",
+        measured=30.0,
+        nominal=18.0,
+        tol=0.5,
+        unit="mm",
+        operator="qc",
+    )
+    rec = platform.pilot.workorders.get(wo["workOrderId"])
+    assert rec["state"] == "QC_HOLD"
+    assert rec["audit"][-1]["to"] == "QC_HOLD"
+    assert rec["audit"][-1]["from"] == "MATERIAL_RESERVED"
+
+
+def test_qc_idempotency_survives_restart(platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    body = {
+        "stage": "FINAL",
+        "checkId": "THICKNESS",
+        "measured": 18.0,
+        "nominal": 18.0,
+        "tol": 0.5,
+        "unit": "mm",
+        "idempotencyKey": "qc-restart-key",
+    }
+    first = TestClient(create_app(platform)).post(f"/api/pilot/work-orders/{wo_id}/qc", headers=HEADERS, json=body)
+    assert first.status_code == 200, first.text
+    qc_id = first.json()["qcId"]
+
+    def thickness_rows(plat: Any) -> list[dict[str, Any]]:
+        return [c for c in plat.pilot.qc.checks.values() if c["workOrderId"] == wo_id and c["checkId"] == "THICKNESS"]
+
+    # A brand-new platform on the same data directory == process restart.
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    client2 = TestClient(create_app(restarted))
+    assert len(thickness_rows(restarted)) == 1
+
+    conflict = client2.post(
+        f"/api/pilot/work-orders/{wo_id}/qc", headers=HEADERS, json={**body, "measured": 38.5}
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert len(thickness_rows(restarted)) == 1
+    assert restarted.pilot.qc.required_final_ok(wo_id, wo["productFamily"], tenant_id=TENANT)["failed"] == []
+
+    replay = client2.post(f"/api/pilot/work-orders/{wo_id}/qc", headers=HEADERS, json=body)
+    assert replay.status_code == 200
+    assert replay.json()["qcId"] == qc_id
+    assert len(thickness_rows(restarted)) == 1
+
+    # Keys are scoped per tenant: another tenant cannot see or collide with this record.
+    other = client2.post(
+        f"/api/pilot/work-orders/{wo_id}/qc", headers={"X-Tenant-Id": "other-tenant"}, json=body
+    )
+    assert other.status_code == 404
