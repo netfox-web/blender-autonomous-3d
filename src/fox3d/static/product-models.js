@@ -4,7 +4,7 @@
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const form=$('master-form');
   let usageRoles={}, reviewAsset=null, usageLimit=20, draftSourceGroupId='', draftRecipeReference=null, recipeReferences=[];
-  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], dispose=null, viewId='', busy=false;
+  let selected=null, group=null, dirty=false, offset=0, fileOffset=0, task=null, previewBinding=null, assets=[], assetsTotal=0, assetsSkipped=0, dispose=null, viewId='', busy=false;
   const cancelPending=new Map();
   let masterInventory=[], categoryTree=[], categoryNodes=new Map(), categoryFilter='all', classification=null, classificationDirty=false, pendingNewCategory=null;
   let revisionRows=[], pickedRevision=null, restoreSnapshot=null, revisionDetail=null, revisionPickToken=0, mastersLoadToken=0, revisionLoadToken=0;
@@ -94,7 +94,35 @@
   $('model-category').onchange=()=>{classificationDirty=true;};
   $('classification-refresh').onclick=run(showClassification);
   $('classification-form').onsubmit=run(async()=>{if(!selected||!classification)return;const mid=selected.id;const key=$('model-category').value;$('classification-form').inert=true;try{await api('/'+mid+'/classification',{method:'PUT',body:body({categoryId:key,expectedRevision:classification.revision})});pendingNewCategory=null;await showClassification();await loadMasters();notice('分類已儲存；模型尺寸、圖稿與已生成成果保持不變。');}finally{$('classification-form').inert=false;}});
-  async function loadAssets(){const data=await api('/assets');assets=data.items;usageRoles=data.roles;
+  async function fetchAllPages(path){
+    const first=await api(path);
+    const firstItems=Array.isArray(first?.items)?first.items:[];
+    const items=[...firstItems];
+    const seen=new Set(firstItems.map(x=>x?.id).filter(Boolean));
+    let total=Number(first?.total)||items.length;
+    const limit=Number(first?.limit)||100;
+    let skipped=Number(first?.skipped)||0;
+    let nextOffset=(Number(first?.offset)||0)+firstItems.length;
+    while(nextOffset<total&&firstItems.length>0){
+      const sep=path.includes('?')?'&':'?';
+      const page=await api(`${path}${sep}offset=${nextOffset}&limit=${limit}`);
+      const pageItems=Array.isArray(page?.items)?page.items:[];
+      if(!pageItems.length)break;
+      if(Number.isFinite(Number(page?.total))&&Number(page.total)>=0)total=Number(page.total);
+      if(Number(page?.skipped)>skipped)skipped=Number(page.skipped);
+      nextOffset+=pageItems.length;
+      let added=0;
+      for(const item of pageItems){
+        if(item?.id&&seen.has(item.id))continue;
+        if(item?.id)seen.add(item.id);
+        items.push(item);
+        added++;
+      }
+      if(!added)break;
+    }
+    return {...first,items,total:Math.max(total,items.length),skipped};
+  }
+  async function loadAssets(){const data=await fetchAllPages('/assets');assets=data.items||[];assetsTotal=Math.max(Number(data.total)||0,assets.length);assetsSkipped=Number(data.skipped)||0;usageRoles=data.roles||{};
     const filter=$('usage-filter').value;$('usage-filter').innerHTML='<option value="">全部用途</option>'+options(usageRoles,filter);$('usage-role').innerHTML=options(usageRoles,reviewAsset?.usage.role||'UNCLASSIFIED');
     document.querySelectorAll('.variant-art').forEach(s=>{const value=s.value;s.innerHTML=assetOptions(value);});renderUsageList();}
   function assetOptions(current=''){const allowed=assets.filter(a=>a.usage.canUseForModel);return '<option value="">尚未選印刷圖稿</option>'+
@@ -102,7 +130,8 @@
     allowed.map(a=>`<option value="${esc(a.id)}" ${a.id===current?'selected':''}>${esc(a.name)} · 已確認印刷用途</option>`).join('');}
   function renderUsageList(){const q=$('usage-query').value.toLocaleLowerCase(),role=$('usage-filter').value;
     const found=assets.filter(a=>(!role||a.usage.role===role)&&((a.name||'')+' '+(a.provenance?.relativePath||'')).toLocaleLowerCase().includes(q));
-    $('usage-count').textContent=`${found.length} 筆素材；${assets.filter(a=>a.usage.canUseForModel).length} 筆已確認印刷用途。用途由人員核對，不依副檔名自動判定。`;$('usage-list').replaceChildren();
+    const shownTotal=(!q&&!role)?Math.max(assetsTotal,found.length):found.length;
+    $('usage-count').textContent=`${shownTotal} 筆素材；${assets.filter(a=>a.usage.canUseForModel).length} 筆已確認印刷用途。${assetsSkipped>0?`有 ${assetsSkipped} 筆無法讀取。`:''}用途由人員核對，不依副檔名自動判定。`;$('usage-list').replaceChildren();
     for(const a of found.slice(0,usageLimit)){const b=document.createElement('button');b.type='button';b.innerHTML=`${esc(a.name)} <span class="usage-badge">${esc(a.usage.label)}</span><small>${esc(a.provenance?.relativePath||a.provenance?.type)} · ${esc(a.id.slice(0,12))}</small>`;b.onclick=()=>review(a.id);$('usage-list').append(b);}
     $('usage-more').hidden=found.length<=usageLimit;}
   function review(id){const a=assets.find(x=>x.id===id);if(!a)return;reviewAsset=a;$('usage-form').hidden=false;$('usage-name').textContent=a.name;$('usage-source').textContent=a.provenance?.relativePath||a.provenance?.type||'';

@@ -4,6 +4,8 @@
   const tenant = 'sonaqueen-home';
   const base = '/api/print-workspace';
   let assets = [];
+  let assetsTotal = 0;
+  let assetsSkipped = 0;
   let current = null;
   let dirty = true;
   let epoch = 0;
@@ -43,9 +45,18 @@
       try {
         d = await r.json();
       } catch {
-        d = { detail: r.statusText };
+        d = null;
       }
-      throw Error(typeof d.detail === 'string' ? d.detail : JSON.stringify(d.detail));
+      const detail = typeof d?.detail === 'string' ? d.detail.trim() : '';
+      let msg = detail || (d?.detail ? JSON.stringify(d.detail) : r.statusText || '操作失敗');
+      if (r.status === 404) {
+        msg = detail ? `找不到指定資料（404）：${detail}` : '找不到指定資料（404），請重新整理列表';
+      } else if (r.status === 409) {
+        msg = detail ? `版本或狀態衝突（409）：${detail}` : '版本已變更或狀態衝突（409），請重新載入';
+      }
+      const err = new Error(msg);
+      err.status = r.status;
+      throw err;
     }
     return r.json();
   }
@@ -209,8 +220,40 @@
     };
   }
 
+  async function fetchAllPages(path) {
+    const first = await api(path);
+    const firstItems = Array.isArray(first?.items) ? first.items : [];
+    const items = [...firstItems];
+    const seen = new Set(firstItems.map(x => x?.id).filter(Boolean));
+    let total = Number(first?.total) || items.length;
+    const limit = Number(first?.limit) || 100;
+    let skipped = Number(first?.skipped) || 0;
+    let nextOffset = (Number(first?.offset) || 0) + firstItems.length;
+    while (nextOffset < total && firstItems.length > 0) {
+      const sep = path.includes('?') ? '&' : '?';
+      const page = await api(`${path}${sep}offset=${nextOffset}&limit=${limit}`);
+      const pageItems = Array.isArray(page?.items) ? page.items : [];
+      if (!pageItems.length) break;
+      if (Number.isFinite(Number(page?.total)) && Number(page.total) >= 0) total = Number(page.total);
+      if (Number(page?.skipped) > skipped) skipped = Number(page.skipped);
+      nextOffset += pageItems.length;
+      let added = 0;
+      for (const item of pageItems) {
+        if (item?.id && seen.has(item.id)) continue;
+        if (item?.id) seen.add(item.id);
+        items.push(item);
+        added++;
+      }
+      if (!added) break;
+    }
+    return { ...first, items, total: Math.max(total, items.length), skipped };
+  }
+
   function renderAssets() {
     $('assets').replaceChildren();
+    if (assetsTotal > 0) {
+      $('assets').append(h('small', { className: 'asset-count', textContent: `共 ${assetsTotal} 筆原稿` }));
+    }
     for (const a of assets) {
       const row = document.createElement('div');
       row.className = 'asset';
@@ -221,16 +264,26 @@
       row.append(title, meta);
       $('assets').append(row);
     }
+    if (assetsSkipped > 0) {
+      $('assets').append(h('small', { className: 'skipped-note', textContent: `有 ${assetsSkipped} 筆無法讀取` }));
+    }
   }
 
   async function loadAssets() {
-    assets = (await api('/assets')).items;
+    const res = await fetchAllPages('/assets');
+    assets = res.items || [];
+    assetsTotal = Math.max(Number(res.total) || 0, assets.length);
+    assetsSkipped = Number(res.skipped) || 0;
     renderAssets();
   }
 
   async function loadJobs() {
-    const js = (await api('/jobs')).items;
-    $('job-count').textContent = js.length ? `${js.length} 個商品` : '尚無商品';
+    const res = await fetchAllPages('/jobs');
+    const js = res.items || [];
+    const total = Math.max(Number(res.total) || 0, js.length);
+    const skipped = Number(res.skipped) || 0;
+    const countText = total ? `${total} 個商品` : '尚無商品';
+    $('job-count').textContent = skipped > 0 ? `${countText}（有 ${skipped} 筆無法讀取）` : countText;
     $('jobs').replaceChildren(
       ...(js.length
         ? js.map(j =>
@@ -241,7 +294,8 @@
               h('small', { textContent: `${j.draft.name ?? ''} · 版本 ${j.revision}` })
             )
           )
-        : [h('p', { textContent: '尚無商品，先匯入原稿再建立。' })])
+        : [h('p', { textContent: '尚無商品，先匯入原稿再建立。' })]),
+      ...(skipped > 0 ? [h('small', { className: 'skipped-note', textContent: `有 ${skipped} 筆無法讀取` })] : [])
     );
     $('jobs').querySelectorAll('button[data-id]').forEach(b => (b.onclick = () => action(() => select(b.dataset.id))));
   }

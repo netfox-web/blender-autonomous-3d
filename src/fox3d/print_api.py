@@ -1,4 +1,6 @@
 """Local Chinese artwork/print UI; never dispatches a production job."""
+import json
+import logging
 import re
 from pathlib import Path
 from threading import RLock
@@ -10,8 +12,16 @@ from pypdf.errors import PdfReadError
 from PIL import Image
 
 from fox3d import print_assets as assets, print_workspace as jobs, print_preview as preview, asset_usage
-from fox3d.recipe_3d import read_json
 from fox3d.recipe_preview_service import RecipePreviewService
+
+LOG = logging.getLogger(__name__)
+
+
+def _safe_detail(exc, root_path=None):
+    msg = str(exc).strip()[:500]
+    if not msg or (root_path is not None and str(root_path) in msg) or 'Traceback' in msg or 'Errno' in msg:
+        return '輸入資料驗證失敗'
+    return msg
 
 
 class Save(BaseModel):
@@ -37,8 +47,16 @@ def print_router(provider):
     def root():return provider().root
     def call(fn,*args,**kwargs):
         try:return fn(*args,**kwargs)
-        except (ValueError,OSError,KeyError,TypeError,IndexError,PdfReadError,Image.DecompressionBombError,Image.DecompressionBombWarning) as exc:
-            raise HTTPException(422,str(exc)[:500]) from exc
+        except (assets.NotFoundError,KeyError) as exc:
+            raise HTTPException(404,str(exc) if isinstance(exc,assets.NotFoundError) else '找不到指定資料') from exc
+        except (PdfReadError,Image.DecompressionBombError,Image.DecompressionBombWarning) as exc:
+            LOG.warning('印刷工作台原稿讀取失敗: %s',type(exc).__name__)
+            raise HTTPException(422,'原稿格式無效或超過安全上限') from exc
+        except (json.JSONDecodeError,UnicodeDecodeError,OSError,TypeError,IndexError) as exc:
+            LOG.warning('印刷工作台資料處理異常: %s',type(exc).__name__)
+            raise HTTPException(422,'資料格式無效或無法讀取') from exc
+        except ValueError as exc:
+            raise HTTPException(422,_safe_detail(exc,root())) from exc
     def tid(value):
         call(assets.workspace,root(),value);return value
     def service():
@@ -83,9 +101,9 @@ def print_router(provider):
         return call(assets.import_asset,root(),t,bytes(raw),file.filename or 'artwork')
 
     @r.get('/api/print-workspace/assets')
-    def listing(x_tenant_id:str|None=Header(None)):
-        t=tid(x_tenant_id);assets.workspace(root(),t)
-        return {'items':call(asset_usage.listing,root(),t)}
+    def listing(offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=100),x_tenant_id:str|None=Header(None)):
+        t=tid(x_tenant_id)
+        return call(asset_usage.listing_page,root(),t,offset=offset,limit=limit)
 
     @r.get('/api/print-workspace/assets/{aid}/preview')
     def image(aid:str,workspace:str,page:int=0):
@@ -93,9 +111,9 @@ def print_router(provider):
         return Response(call(assets.thumbnail,root(),t,aid,page),media_type='image/png',headers={'Cache-Control':'private, max-age=3600'})
 
     @r.get('/api/print-workspace/jobs')
-    def listing_jobs(x_tenant_id:str|None=Header(None)):
-        t=tid(x_tenant_id);folder=assets.workspace(root(),t)/'jobs'
-        return {'items':sorted([read_json(f) for f in folder.glob('*/job.json')],key=lambda j:j['updatedAt'],reverse=True)}
+    def listing_jobs(offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=100),x_tenant_id:str|None=Header(None)):
+        t=tid(x_tenant_id)
+        return call(jobs.list_jobs,root(),t,offset=offset,limit=limit)
 
     @r.post('/api/print-workspace/jobs')
     def create(body:Save,x_tenant_id:str|None=Header(None)):
@@ -137,14 +155,16 @@ def print_router(provider):
 
     @r.post('/api/print-workspace/jobs/{jid}/preview/cancel')
     def cancel(jid:str,body:Cancel,x_tenant_id:str|None=Header(None)):
-        return call(service().cancel,tid(x_tenant_id),jid,body.taskId)
+        t=tid(x_tenant_id);call(jobs.get_job,root(),t,jid)
+        return call(service().cancel,t,jid,body.taskId)
 
     @r.get('/api/print-workspace/jobs/{jid}/preview/{gid}/{name}')
     def preview_file(jid:str,gid:str,name:str,workspace:str):
         t=tid(workspace)
         if not re.fullmatch(r'[a-f0-9-]{36}',gid) or name not in preview.FILES:raise HTTPException(404)
-        folder=preview.folder_for(root(),t,jid)/'generations'/gid
+        folder=call(preview.folder_for,root(),t,jid)/'generations'/gid
         j=call(jobs.get_job,root(),t,jid)
+        if not folder.is_dir():raise HTTPException(404)
         call(jobs.plan,root(),t,j['draft'])
         manifest=call(preview.validate,folder)
         call(jobs.plan,root(),t,manifest['draft'])

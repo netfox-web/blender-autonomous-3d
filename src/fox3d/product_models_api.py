@@ -1,4 +1,6 @@
 """Local operator UI for NAS source discovery and versioned product models."""
+import json
+import logging
 from pathlib import Path
 from threading import RLock
 
@@ -9,12 +11,14 @@ from pydantic import Field
 from pypdf.errors import PdfReadError
 from PIL import Image
 
-from fox3d import nas_catalog as nas, product_models as models, recipe_3d as render, asset_usage
+from fox3d import nas_catalog as nas, product_models as models, recipe_3d as render, asset_usage, print_assets
 from fox3d.recipe_preview_service import RecipePreviewService
 from fox3d.recipe_workbench import DraftConflict
 from fox3d import model_compositions as compositions, print_preview
 from fox3d import model_batches, scene_templates
 from fox3d import model_categories as categories
+
+LOG = logging.getLogger(__name__)
 
 class Classification(models.Strict):
     categoryId: str = Field(min_length=1, max_length=80)
@@ -62,8 +66,19 @@ def product_models_router(provider):
     def call(fn,*args,**kwargs):
         try: return fn(*args,**kwargs)
         except (DraftConflict,Timeout) as exc: raise HTTPException(409,str(exc)) from exc
-        except KeyError as exc: raise HTTPException(404,'找不到指定資料') from exc
-        except (ValueError,OSError,PdfReadError,Image.DecompressionBombError,Image.DecompressionBombWarning) as exc: raise HTTPException(422,str(exc)[:1000]) from exc
+        except (print_assets.NotFoundError,KeyError) as exc:
+            raise HTTPException(404,str(exc) if isinstance(exc,print_assets.NotFoundError) else '找不到指定資料') from exc
+        except (PdfReadError,Image.DecompressionBombError,Image.DecompressionBombWarning) as exc:
+            LOG.warning('產品模型原稿讀取失敗: %s',type(exc).__name__)
+            raise HTTPException(422,'原稿格式無效或超過安全上限') from exc
+        except (json.JSONDecodeError,UnicodeDecodeError,OSError,TypeError,IndexError) as exc:
+            LOG.warning('產品模型資料處理異常: %s',type(exc).__name__)
+            raise HTTPException(422,'資料格式無效或無法讀取') from exc
+        except ValueError as exc:
+            msg=str(exc).strip()[:1000]
+            if not msg or str(root()) in msg or 'Traceback' in msg or 'Errno' in msg:
+                msg='輸入資料驗證失敗'
+            raise HTTPException(422,msg) from exc
     def tid(value):
         call(models.directory,root(),value)
         return value
@@ -111,8 +126,9 @@ def product_models_router(provider):
     def source_import(sid:str,x_tenant_id:str|None=Header(None)):
         return call(nas.import_file,root(),tid(x_tenant_id),sid)
     @r.get('/api/product-models/assets')
-    def asset_list(x_tenant_id:str|None=Header(None)):
-        return {'roles':asset_usage.ROLES,'items':call(asset_usage.listing,root(),tid(x_tenant_id))}
+    def asset_list(offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=100),x_tenant_id:str|None=Header(None)):
+        page=call(asset_usage.listing_page,root(),tid(x_tenant_id),offset=offset,limit=limit)
+        return {'roles':asset_usage.ROLES,**page}
     @r.get('/api/product-models/recipe-references')
     def references(x_tenant_id:str|None=Header(None)):
         from fox3d.recipe_workbench import RecipeWorkbench
