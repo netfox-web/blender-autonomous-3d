@@ -1040,13 +1040,34 @@ class MaterialLotRegistry:
             )
             return rec
 
-    def apply_counted_available(self, lot_id: str, *, tenant_id: str, counted: int, actor: str, reason: str) -> dict[str, Any]:
+    def apply_counted_available(
+        self,
+        lot_id: str,
+        *,
+        tenant_id: str,
+        counted: int,
+        actor: str,
+        reason: str,
+        expect_available: int | None = None,
+        expect_reserved: int | None = None,
+        expect_consumed: int | None = None,
+    ) -> dict[str, Any]:
         """Set available sheets to a counted value. Does not rewrite consumed/reserved."""
         qty = int(counted)
         if qty < 0:
             raise PermissionError("counted quantity cannot be negative")
         with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
+            if expect_available is not None:
+                book = self.quantities(lot_id, tenant_id=tenant_id)
+                if (
+                    int(book["available"]) != int(expect_available)
+                    or int(book["reserved"]) != int(expect_reserved or 0)
+                    or int(book["consumed"]) != int(expect_consumed or 0)
+                ):
+                    from fox3d.cyclecount import BOOK_CHANGED_MSG, CycleCountConflict
+
+                    raise CycleCountConflict(BOOK_CHANGED_MSG)
             reserved = int(rec.get("reservedSheets") or 0)
             consumed = int(rec.get("consumedSheets") or 0)
             rec["remainingSheets"] = qty

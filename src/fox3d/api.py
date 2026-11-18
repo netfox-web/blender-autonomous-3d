@@ -701,6 +701,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/materials")
     def materials(
+        request: Request,
         x_tenant_id: str | None = Header(default=None),
         offset: int = Query(0, ge=0),
         limit: int = Query(100, ge=1, le=100),
@@ -708,6 +709,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id)
         rows = get_platform().lots.list(tenant_id=tid)
         total = len(rows)
+        if "offset" not in request.query_params and "limit" not in request.query_params:
+            return {**materials_catalog(), "lots": rows, "total": total, "offset": 0, "limit": total}
         page = rows[offset : offset + limit]
         return {**materials_catalog(), "lots": page, "total": total, "offset": offset, "limit": limit}
 

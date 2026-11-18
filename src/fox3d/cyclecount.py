@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +13,7 @@ from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.journal import emit
 from fox3d.operator import require_confirm
+from fox3d.storelock import FileLock
 
 BOOK_CHANGED_MSG = "帳面已變動，請重新盤點"
 
@@ -47,6 +50,23 @@ class CycleCountService:
         if not self.root:
             return
         atomic_write_json(self.root / "cyclecounts.json", {"counts": list(self.counts.values()), "idem": self._idem})
+
+    def _lock_path(self) -> Path | None:
+        return (self.root / "cyclecounts.lock") if self.root else None
+
+    @contextmanager
+    def _durable(self) -> Iterator[None]:
+        with self._lock:
+            flock: FileLock | None = None
+            if self.root:
+                flock = FileLock(self._lock_path())  # type: ignore[arg-type]
+                flock.acquire()
+                self.load()
+            try:
+                yield
+            finally:
+                if flock is not None:
+                    flock.release()
 
     def _get(self, cycle_count_id: str, *, tenant_id: str) -> dict[str, Any]:
         try:
@@ -89,7 +109,7 @@ class CycleCountService:
         shift_id: str | None = None,
         idempotency_key: str | None = None,
     ) -> dict[str, Any]:
-        with self._lock:
+        with self._durable():
             key = f"{tenant_id}::cc::{idempotency_key or lot_id}:{counted}:{reason}"
             if key in self._idem:
                 existing = self.counts[self._idem[key]]
@@ -130,18 +150,12 @@ class CycleCountService:
                 payload={"lotId": lot_id, "variance": rec["variance"], "status": rec["status"]},
                 semantic_key=key,
             )
+            if self.journal is None:
+                self.persist()
             return rec
 
-    def _book_matches_snapshot(self, rec: dict[str, Any], *, tenant_id: str) -> bool:
-        before = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
-        return (
-            int(before["available"]) == int(rec["systemAvailable"])
-            and int(before["reserved"]) == int(rec["systemReserved"])
-            and int(before["consumed"]) == int(rec["systemConsumed"])
-        )
-
     def approve(self, cycle_count_id: str, *, tenant_id: str, actor: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
-        with self._lock:
+        with self._durable():
             require_confirm(payload, action="cycle_count_adjust")
             rec = self._get(cycle_count_id, tenant_id=tenant_id)
             if rec.get("applied"):
@@ -149,11 +163,21 @@ class CycleCountService:
             status = rec.get("status")
             if status in {"REJECTED", "CANCELLED"}:
                 raise PermissionError(rec["status"])
-            if not self._book_matches_snapshot(rec, tenant_id=tenant_id):
-                raise CycleCountConflict(BOOK_CHANGED_MSG)
-            before = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
+            before = {
+                "available": int(rec["systemAvailable"]),
+                "reserved": int(rec["systemReserved"]),
+                "consumed": int(rec["systemConsumed"]),
+                "sheetCount": int(rec["systemSheetCount"]),
+            }
             lot = self.lots.apply_counted_available(
-                rec["lotId"], tenant_id=tenant_id, counted=int(rec["counted"]), actor=actor, reason=rec["reason"]
+                rec["lotId"],
+                tenant_id=tenant_id,
+                counted=int(rec["counted"]),
+                actor=actor,
+                reason=rec["reason"],
+                expect_available=int(rec["systemAvailable"]),
+                expect_reserved=int(rec["systemReserved"]),
+                expect_consumed=int(rec["systemConsumed"]),
             )
             after = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
             rec["applied"] = True
@@ -174,11 +198,13 @@ class CycleCountService:
                 payload={"lotId": rec["lotId"], "before": before, "after": after},
                 semantic_key=f"{tenant_id}::cc-approve::{cycle_count_id}",
             )
+            if self.journal is None:
+                self.persist()
             _ = lot
             return rec
 
     def reject(self, cycle_count_id: str, *, tenant_id: str, actor: str) -> dict[str, Any]:
-        with self._lock:
+        with self._durable():
             rec = self._get(cycle_count_id, tenant_id=tenant_id)
             if rec.get("applied"):
                 raise PermissionError("cannot reject applied cycle count")
