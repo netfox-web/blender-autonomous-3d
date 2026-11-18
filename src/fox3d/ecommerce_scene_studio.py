@@ -1874,7 +1874,7 @@ class EcommerceSceneStore:
                 live["blenderEngineEffective"] = "fleet" if use_fleet_blender else ("local" if blender_ok else "none")
                 live["blenderFleetNote"] = fleet_blender_note
 
-        # ---- Stage A: build every job (CPU only) and pre-submit the fleet-eligible ones so the node queue fills at once
+        # ---- Stage A: prepare each job without submitting queued work.
         prepared: dict[str, dict[str, Any]] = {}
         for item in items:
             item_dir = bdir / item["itemId"]
@@ -1897,7 +1897,10 @@ class EcommerceSceneStore:
                 with self.lock:
                     if item["state"] == "cancelled":
                         continue
-                    item["blenderEngine"] = "fleet" if fleet_blender_client and fleet_eligible(scene_def)[0] else "local"
+                    eligible, why = fleet_eligible(scene_def) if fleet_blender_client else (False, "")
+                    if fleet_blender_client and not eligible:
+                        item["blenderNote"] = why
+                    item["blenderEngine"] = "fleet" if eligible else "local"
             except Exception as exc:
                 with self.lock:
                     if item["state"] == "cancelled":
@@ -1922,18 +1925,21 @@ class EcommerceSceneStore:
                 cab_copy, cab_spec, scfg, job = prep["cab_copy"], prep["cab_spec"], prep["scfg"], prep["job"]
                 facts: dict[str, Any] | None = None
                 if item.get("blenderEngine") == "fleet" and fleet_blender_client is not None:
+                    submitted = False
                     try:
                         task = submit_blender_job(fleet_blender_client, job, job_id=job["jobId"])
+                        submitted = True
                         item["fleetTaskId"] = str(task.get("id"))
                         facts = render_on_fleet(
                             fleet_blender_client, job, item_dir, job_id=job["jobId"], task=task,
                             on_update=partial(self._note_fleet_progress, item, bdir, items),
                         )
                     except FleetError as exc:
+                        reason = "Blender 失敗" if submitted else "送件失敗"
                         if not local_fallback_allowed(blender_engine, local_available=blender_ok):
-                            raise RuntimeError(f"艦隊 Blender 失敗：{str(exc)[:220]}") from exc
+                            raise RuntimeError(f"艦隊{reason}：{str(exc)[:220]}") from exc
                         with self.lock:
-                            item["blenderNote"] = f"艦隊失敗，改本機光追：{str(exc)[:160]}"
+                            item["blenderNote"] = f"艦隊{'失敗' if submitted else reason}，改本機光追：{str(exc)[:160]}"
                             item["blenderEngine"] = "local"
                 if facts is None:
                     if not blender_ok:

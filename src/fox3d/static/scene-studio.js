@@ -1095,19 +1095,35 @@
     };
   }
 
+  let batchSubmitting = false;
   async function submitBatch(body, { single = false } = {}) {
-    const batch = await api('/api/ecommerce-scenes/batches', { method: 'POST', body: JSON.stringify(body) });
-    state.activeBatchId = batch.batchId;
-    state.singleBatchId = single ? batch.batchId : null;
-    state.batches = [batch, ...state.batches.filter(b => b.batchId !== batch.batchId)].slice(0, 15);
-    rememberBatch(batch.batchId);
-    renderBatchPicker();
-    renderBlenderBatch(batch);
-    pollBlenderBatch(batch.batchId);
-    return batch;
+    if (batchSubmitting) throw new Error("批次送出中，請稍候");
+    batchSubmitting = true;
+    try {
+      const key = crypto.randomUUID ? crypto.randomUUID() : Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+      const payload = JSON.stringify({ ...body, idempotencyKey: key });
+      let batch;
+      try {
+        batch = await api('/api/ecommerce-scenes/batches', { method: 'POST', body: payload });
+      } catch (e) {
+        if (!(e instanceof TypeError)) throw e;
+        batch = await api('/api/ecommerce-scenes/batches', { method: 'POST', body: payload });
+      }
+      state.activeBatchId = batch.batchId;
+      state.singleBatchId = single ? batch.batchId : null;
+      state.batches = [batch, ...state.batches.filter(b => b.batchId !== batch.batchId)].slice(0, 15);
+      rememberBatch(batch.batchId);
+      renderBatchPicker();
+      renderBlenderBatch(batch);
+      pollBlenderBatch(batch.batchId);
+      return batch;
+    } finally {
+      batchSubmitting = false;
+    }
   }
 
   async function startRealBlenderBatch() {
+    if ($('blender-matrix-btn').disabled) return;
     const { sceneIds, themeIds, views, total } = getSelectedMatrix();
     if (!total) {
       notify('請至少勾選 1 個場景、1 種配色與 1 個視角', true);
@@ -1126,7 +1142,9 @@
   }
 
   async function startSinglePhotorealRender() {
-    if (!state.cabinet || !state.currentScene) return;
+    const button = $('render-single-photoreal-btn');
+    if (button.disabled || !state.cabinet || !state.currentScene) return;
+    button.disabled = true;
     const opts = collectAiOptions();
     try {
       $('single-photoreal-box').hidden = false;
@@ -1143,7 +1161,11 @@
         samples: 36
       }, { single: true });
     } catch (e) {
+      $('single-photoreal-status').textContent = '送出失敗';
+      $('single-photoreal-status').className = 'badge bad';
       notify(e.message, true);
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -1192,6 +1214,7 @@
   }
 
   function describeStage(batch, item) {
+    if (item.state === 'cancelled') return { cls: 'is-failed', text: '已取消' };
     if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
     if (item.state === 'queued') {
       if (item.fleetTaskId) {
@@ -1238,37 +1261,78 @@
 
   function renderBatchCard(batch, item) {
     const { sources, base, qs, rendered } = itemSources(batch, item);
-    const imgId = `bimg-${batch.batchId}-${item.itemId}`;
-    const ready = sources.filter(s => s.state === 'succeeded');
-    const primary = ready.find(s => !s.drift) || ready[0];
     const stage = describeStage(batch, item);
-    const tabs = sources.map(s =>
-      `<button type="button" class="thumb-tab ${primary && s.key === primary.key ? 'primary' : ''} is-${esc(s.state)} ${s.drift ? 'is-drift' : ''}" data-target="${imgId}" data-src="${s.state === 'succeeded' ? esc(s.src) : ''}" title="${esc(s.note || '')}" ${s.state === 'succeeded' ? '' : 'disabled'}>${esc(s.label)}${s.state === 'failed' ? ' ✕' : ''}</button>`
-    ).join('');
-    const hero = primary
-      ? `<img id="${imgId}" class="card-hero" src="${esc(primary.src)}" alt="${esc(item.sceneName)}">`
-      : `<div class="card-hero photoreal-loading">${esc(stage.text)}</div>`;
-    const glbLink = item.hasGlb ? `<a href="${base}/glb${qs}">GLB ↓</a>` : '';
-    const links = rendered
-      ? `<div class="gallery-links">${ready.map(s => `<a href="${esc(s.dl)}">${esc(s.label)} ↓</a>`).join('')}${glbLink}</div>`
-      : '';
-    const firstCaption = (item.aiVariants || []).find(v => v.caption);
-    const caption = firstCaption ? `<div class="card-caption" title="${esc(firstCaption.caption)}">AI 描述：${esc(firstCaption.caption)}</div>` : '';
-    const rerun = item.state === 'succeeded' && item.aiEngine === 'fleet_flux3'
-      ? `<div class="card-actions"><button type="button" class="btn-xs rerun-variants-btn" data-batch="${esc(batch.batchId)}" data-item="${esc(item.itemId)}">再生成 ${$('ai-variants').value} 張新變化</button></div>`
-      : '';
-    return `<article class="gallery-card" data-item-id="${esc(item.itemId)}">
-      ${hero}
-      <div class="card-tabs">${tabs}</div>
-      <div class="gallery-card-body">
-        <strong>#${item.index} · ${esc(item.sceneName)}</strong>
-        <span>配色：${esc(item.themeLabel)} · 視角：${esc(item.viewLabel)}</span>
-        <span class="card-stage ${stage.cls}">${esc(stage.text)}</span>
-        ${caption}
-        ${links}
-        ${rerun}
-      </div>
-    </article>`;
+    const ready = sources.filter(source => source.state === 'succeeded');
+    const primary = ready.find(source => !source.drift) || ready[0];
+    const article = document.createElement('article');
+    article.className = 'gallery-card';
+    article.dataset.itemId = item.itemId;
+    const hero = document.createElement(primary ? 'img' : 'div');
+    hero.className = primary ? 'card-hero' : 'card-hero photoreal-loading';
+    if (primary) {
+      hero.id = `bimg-${batch.batchId}-${item.itemId}`;
+      hero.src = primary.src;
+      hero.alt = item.sceneName;
+    } else hero.textContent = stage.text;
+    article.append(hero);
+    const tabs = document.createElement('div');
+    tabs.className = 'card-tabs';
+    sources.forEach(source => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'thumb-tab';
+      if (['queued', 'running', 'succeeded', 'failed'].includes(source.state)) button.classList.add(`is-${source.state}`);
+      if (source.drift) button.classList.add('is-drift');
+      if (source === primary) button.classList.add('primary');
+      button.dataset.target = hero.id;
+      button.dataset.src = source.state === 'succeeded' ? source.src : '';
+      button.title = source.note || '';
+      button.disabled = source.state !== 'succeeded';
+      button.textContent = source.label + (source.state === 'failed' ? ' ✕' : '');
+      tabs.append(button);
+    });
+    article.append(tabs);
+    const content = document.createElement('div');
+    content.className = 'gallery-card-body';
+    const addText = (tag, text, cls) => {
+      const el = document.createElement(tag);
+      if (cls) el.className = cls;
+      el.textContent = text;
+      content.append(el);
+      return el;
+    };
+    addText('strong', `#${item.index} · ${item.sceneName}`);
+    addText('span', `配色：${item.themeLabel} · 視角：${item.viewLabel}`);
+    addText('span', stage.text, `card-stage ${stage.cls}`);
+    const caption = (item.aiVariants || []).find(v => v.caption);
+    if (caption) addText('div', `AI 描述：${caption.caption}`, 'card-caption').title = caption.caption;
+    if (rendered) {
+      const links = document.createElement('div');
+      links.className = 'gallery-links';
+      const addLink = (url, label) => {
+        const link = document.createElement('a');
+        link.href = url;
+        link.textContent = label;
+        links.append(link);
+      };
+      ready.forEach(source => addLink(source.dl, `${source.label} ↓`));
+      if (item.hasGlb) addLink(`${base}/glb${qs}`, 'GLB ↓');
+      content.append(links);
+    }
+    if (item.state === 'succeeded' && item.aiEngine === 'fleet_flux3') {
+      const actions = document.createElement('div');
+      actions.className = 'card-actions';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn-xs rerun-variants-btn';
+      button.dataset.batch = batch.batchId;
+      button.dataset.item = item.itemId;
+      button.textContent = `再生成 ${$('ai-variants').value} 張新變化`;
+      actions.append(button);
+      content.append(actions);
+    }
+    article.append(content);
+    return article;
   }
 
   function renderSingleShowcase(batch, item) {
@@ -1276,23 +1340,56 @@
     const stage = describeStage(batch, item);
     $('single-photoreal-status').textContent = stage.text;
     $('single-photoreal-status').className = `badge ${stage.cls === 'is-done' ? 'ok' : (stage.cls === 'is-failed' ? 'bad' : 'warn')}`;
+    const content = $('single-photoreal-content');
+    content.replaceChildren();
     if (!rendered) {
-      $('single-photoreal-content').innerHTML = `<div class="photoreal-loading">${esc(stage.text)}</div>`;
+      const loading = document.createElement('div');
+      loading.className = 'photoreal-loading';
+      loading.textContent = stage.text;
+      content.append(loading);
       return;
     }
     const order = { v: 0, png: 1, ai_png: 2, cutout_png: 3 };
-    const blocks = sources
-      .slice()
-      .sort((a, b) => (order[a.key.startsWith('v') ? 'v' : a.key] ?? 9) - (order[b.key.startsWith('v') ? 'v' : b.key] ?? 9))
-      .map(s => {
-        const title = `${esc(s.label)}${s.seed != null ? ` <span class="muted">seed ${esc(s.seed)}</span>` : ''}`;
-        if (s.state !== 'succeeded') {
-          const msg = s.state === 'failed' ? `失敗：${s.note || ''}` : (s.note || 'GPU 艦隊處理中…');
-          return `<div class="photoreal-meta"><h4>${title}</h4><div class="photoreal-loading">${esc(msg)}</div></div>`;
+    sources.slice().sort((a, b) => (order[a.key.startsWith('v') ? 'v' : a.key] ?? 9) - (order[b.key.startsWith('v') ? 'v' : b.key] ?? 9)).forEach(source => {
+      const block = document.createElement('div');
+      block.className = 'photoreal-meta';
+      const title = document.createElement('h4');
+      title.textContent = source.label;
+      if (source.seed != null) {
+        const seed = document.createElement('span');
+        seed.className = 'muted';
+        seed.textContent = ` seed ${source.seed}`;
+        title.append(seed);
+      }
+      block.append(title);
+      if (source.state !== 'succeeded') {
+        const loading = document.createElement('div');
+        loading.className = 'photoreal-loading';
+        loading.textContent = source.state === 'failed' ? `失敗：${source.note || ''}` : (source.note || 'GPU 艦隊處理中…');
+        block.append(loading);
+      } else {
+        const img = document.createElement('img');
+        img.className = 'photoreal-hero-img';
+        img.src = source.src;
+        img.alt = source.label;
+        const links = document.createElement('div');
+        links.className = 'gallery-links';
+        const link = document.createElement('a');
+        link.className = source.key.startsWith('v') ? 'btn-sm primary' : 'btn-sm';
+        link.href = source.dl;
+        link.textContent = '下載 PNG';
+        links.append(link);
+        block.append(img, links);
+        if (source.caption) {
+          const caption = document.createElement('div');
+          caption.className = 'card-caption';
+          caption.title = source.caption;
+          caption.textContent = `AI 描述：${source.caption}`;
+          block.append(caption);
         }
-        return `<div class="photoreal-meta"><h4>${title}</h4><img class="photoreal-hero-img" src="${esc(s.src)}" alt="${esc(s.label)}"><div class="gallery-links"><a class="btn-sm ${s.key.startsWith('v') ? 'primary' : ''}" href="${esc(s.dl)}">下載 PNG</a></div>${s.caption ? `<div class="card-caption" title="${esc(s.caption)}">AI 描述：${esc(s.caption)}</div>` : ''}</div>`;
-      });
-    $('single-photoreal-content').innerHTML = blocks.join('');
+      }
+      content.append(block);
+    });
   }
 
   const BATCH_KEY = 'fox3d.scene-studio.batch';
@@ -1306,7 +1403,7 @@
   function batchLabel(b) {
     const when = b.createdAt ? new Date(b.createdAt) : null;
     const ts = when && !isNaN(when) ? `${String(when.getMonth() + 1).padStart(2, '0')}/${String(when.getDate()).padStart(2, '0')} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
-    const st = b.state === 'running' ? '執行中' : (b.state === 'interrupted' ? '已中斷' : `完成 ${b.succeeded}/${b.total}`);
+    const st = b.state === 'running' ? '執行中' : (b.state === 'cancelled' ? '已取消' : (b.state === 'interrupted' ? '已中斷' : (b.failed || b.state !== 'completed' ? '失敗' : `完成 ${b.succeeded}/${b.total}`)));
     const ai = b.aiVariantsPerItem ? ` · AI×${b.aiVariantsPerItem}` : '';
     return `${ts} · ${b.total} 組${ai} · ${st} · ${b.cabinetName || ''}`;
   }
@@ -1315,9 +1412,9 @@
     const sel = $('batch-picker');
     if (!sel) return;
     const list = state.batches || [];
-    sel.innerHTML = list.length
-      ? list.map(b => `<option value="${esc(b.batchId)}">${esc(batchLabel(b))}</option>`).join('')
-      : '<option value="">尚無批次</option>';
+    sel.replaceChildren();
+    if (!list.length) sel.add(new Option('尚無批次', ''));
+    list.forEach(b => sel.add(new Option(batchLabel(b), b.batchId)));
     if (state.activeBatchId && list.some(b => b.batchId === state.activeBatchId)) sel.value = state.activeBatchId;
   }
 
@@ -1360,8 +1457,12 @@
     const aiNote = batch.aiVariantsPerItem ? ` · ${batch.aiEngineLabel || '地端 AI'} ×${batch.aiVariantsPerItem}` : '';
     const statusEl = $('blender-batch-status');
     const aiWaiting = running && (batch.items || []).filter(it => it.stage === 'ai').length;
-    statusEl.textContent = `${running ? '執行中' : (interrupted ? '已中斷' : '已完成')} ${batch.completed}/${batch.total} · 成功 ${batch.succeeded}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}${aiWaiting ? ` · ${aiWaiting} 組等 GPU` : ''}`;
-    statusEl.className = `badge ${running ? 'warn' : ((batch.failed || interrupted) ? 'bad' : 'ok')}`;
+    const success = batch.state === 'completed' && !batch.failed;
+    const label = running ? '執行中' : (batch.state === 'cancelled' ? '已取消' : (interrupted ? '已中斷' : (success ? '已完成' : '失敗')));
+    statusEl.textContent = `${label} ${batch.completed}/${batch.total} · 成功 ${batch.succeeded}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}${aiWaiting ? ` · ${aiWaiting} 組等 GPU` : ''}`;
+    statusEl.className = `badge ${running ? 'warn' : (success ? 'ok' : 'bad')}`;
+    $('batch-cancel').hidden = !running || Boolean(batch.cancelRequested);
+    $('batch-delete').hidden = running;
     const rerunBtn = $('batch-rerun');
     if (rerunBtn) rerunBtn.hidden = !(batch.request && batch.state !== 'running');
     const zipLink = $('download-zip-link');
@@ -1371,7 +1472,7 @@
     } else {
       zipLink.hidden = true;
     }
-    $('blender-gallery').innerHTML = (batch.items || []).map(item => renderBatchCard(batch, item)).join('');
+    $('blender-gallery').replaceChildren(...(batch.items || []).map(item => renderBatchCard(batch, item)));
 
     const first = (batch.items || [])[0];
     if (first && state.singleBatchId === batch.batchId && $('single-photoreal-box') && !$('single-photoreal-box').hidden) {
@@ -1390,9 +1491,8 @@
         state.pollTimer = setTimeout(() => pollBlenderBatch(batchId), 2500);
       } else {
         const aiCount = (batch.items || []).reduce((n, it) => n + (it.aiVariants || []).filter(v => v.state === 'succeeded').length, 0);
-        notify(batch.state === 'interrupted'
-          ? '這個批次在工作台重新啟動時中斷了，請重新送出。'
-          : `批次完成：${batch.succeeded}/${batch.total} 組光追圖${aiCount ? `、${aiCount} 張地端 AI 實景` : ''}${batch.failed ? `，${batch.failed} 組失敗` : ''}。`, batch.state === 'interrupted');
+        const success = batch.state === 'completed' && !batch.failed;
+        notify(success ? `批次完成：${batch.succeeded}/${batch.total} 組光追圖${aiCount ? `、${aiCount} 張地端 AI 實景` : ''}。` : (batch.state === 'cancelled' ? '批次已取消。' : '批次失敗或已中斷。'), !success);
         refreshEngineStatus();
       }
     } catch (e) {
@@ -1703,7 +1803,7 @@
           return;
         }
         const rerun = ev.target.closest('.rerun-variants-btn');
-        if (rerun) {
+        if (rerun && !rerun.disabled) {
           rerun.disabled = true;
           rerunItemVariants(rerun.dataset.batch, rerun.dataset.item).finally(() => { rerun.disabled = false; });
         }
@@ -1713,7 +1813,7 @@
     $('batch-picker').addEventListener('change', () => showBatch($('batch-picker').value));
     $('batch-rerun').addEventListener('click', async () => {
       const b = state.lastBatch;
-      if (!b || !b.request) return;
+      if (!b || !b.request || $('batch-rerun').disabled) return;
       $('batch-rerun').disabled = true;
       try {
         await submitBatch({ ...b.request, aiSeed: 0 });
@@ -1723,6 +1823,40 @@
       } finally {
         $('batch-rerun').disabled = false;
       }
+    });
+    ['cancel', 'delete'].forEach(action => {
+      const button = $(`batch-${action}`);
+      button.addEventListener('click', async () => {
+        const batchId = state.lastBatch && state.lastBatch.batchId;
+        if (!batchId || button.disabled) return;
+        button.disabled = true;
+        try {
+          if (!window.confirm(action === 'cancel' ? '確定取消此批次？' : '確定刪除此批次？')) return;
+          const path = `/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`;
+          const result = await api(action === 'cancel' ? `${path}/cancel` : path, { method: action === 'cancel' ? 'POST' : 'DELETE' });
+          if (action === 'cancel') {
+            if (state.activeBatchId === batchId) renderBlenderBatch(result);
+          } else {
+            state.batches = state.batches.filter(b => b.batchId !== batchId);
+            if (state.activeBatchId === batchId) {
+              clearTimeout(state.pollTimer);
+              state.activeBatchId = null;
+              state.lastBatch = null;
+              rememberBatch('');
+              $('blender-gallery').replaceChildren();
+              $('blender-batch-status').textContent = '批次已刪除';
+              $('batch-delete').hidden = true;
+              $('download-zip-link').hidden = true;
+              $('batch-rerun').hidden = true;
+            }
+            renderBatchPicker();
+          }
+        } catch (e) {
+          notify(e.message, true);
+        } finally {
+          button.disabled = false;
+        }
+      });
     });
     $('batch-refresh').addEventListener('click', () => refreshBatchList($('batch-picker').value || null));
 

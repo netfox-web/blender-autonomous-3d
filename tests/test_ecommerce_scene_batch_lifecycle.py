@@ -125,3 +125,11 @@ def test_cancel_during_render_finishes_current_item_only(setup):
     assert len(calls) == 1
     assert result['state'] == 'cancelled'
     assert [x['state'] for x in result['items']] == ['succeeded', 'cancelled']
+
+
+@pytest.mark.parametrize('key', ['', 'x' * 201, 123, [], {}])
+def test_invalid_idempotency_key_is_rejected(setup, key):
+    client, _, futures = setup
+    response = client.post('/api/ecommerce-scenes/batches', json={'idempotencyKey': key, 'aiEngine': 'off'})
+    assert response.status_code == 422
+    assert not futures
