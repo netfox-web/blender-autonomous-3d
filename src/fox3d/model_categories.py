@@ -101,8 +101,8 @@ def save(root, tenant, mid, category_id, expected_revision):
     return get(root, tenant, mid, item=item)
 
 
-def inventory(root, tenant):
-    items = models.listing(root, tenant)
-    for item in items:
+def inventory(root, tenant, *, offset=0, limit=200):
+    listed = models.listing(root, tenant, offset=offset, limit=limit)
+    for item in listed['items']:
         item['classification'] = get(root, tenant, item['id'], item=item)
-    return {'items': items, 'categoryTree': TREE}
+    return {**listed, 'categoryTree': TREE}

@@ -25,6 +25,11 @@ class CancelPreview(BaseModel):
     taskId: str
 
 
+class RestoreRevision(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    expectedRevision: int = Field(ge=0)
+
+
 STATIC = Path(__file__).with_name("static")
 
 
@@ -117,6 +122,23 @@ def recipe_router(provider, *, catalog: Path = DEFAULT_CATALOG):
         if body.draft.sku != sku:
             raise HTTPException(422, "商品編號不一致")
         return call(store().save, tid, body)
+
+    @router.get("/api/recipe-library/products/{sku}/revisions")
+    def revision_list(sku: str, offset: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=200),
+                      x_tenant_id: str | None = Header(default=None)):
+        return call(store().list_revisions, tenant(x_tenant_id), sku, offset=offset, limit=limit)
+
+    @router.get("/api/recipe-library/products/{sku}/revisions/{n}")
+    def revision_detail(sku: str, n: int, x_tenant_id: str | None = Header(default=None)):
+        if n < 1:
+            raise HTTPException(422, "版本編號須為正整數")
+        return call(store().get_revision, tenant(x_tenant_id), sku, n)
+
+    @router.post("/api/recipe-library/products/{sku}/revisions/{n}/restore")
+    def revision_restore(sku: str, n: int, body: RestoreRevision, x_tenant_id: str | None = Header(default=None)):
+        if n < 1:
+            raise HTTPException(422, "版本編號須為正整數")
+        return call(store().restore, tenant(x_tenant_id), sku, n, body.expectedRevision)
 
     @router.post("/api/recipe-library/products/{sku}/validate")
     def validate(sku: str, x_tenant_id: str | None = Header(default=None)):

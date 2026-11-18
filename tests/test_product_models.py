@@ -110,10 +110,10 @@ def test_model_identity_changes_for_dimensions_but_not_claims_print_ready(tmp_pa
 
 def test_inventory_and_complete_dimensions_do_not_create_finished_templates(tmp_path):
     data,source,path,raw=configured(tmp_path);nas.scan(data)
-    assert m.listing(data,'t')==[]
+    assert m.listing(data,'t')['items']==[]
     item=m.save(data,'t',cabinet(),0)
     assert item['readiness']['previewReady']
-    assert m.listing(data,'t')[0]['templateState']=='DRAFT'
+    assert m.listing(data,'t')['items'][0]['templateState']=='DRAFT'
 
 def test_foreign_artwork_and_duplicate_skus_rejected(tmp_path):
     d=cabinet();d['variants']=[{'sku':'A','artworkAssetId':'a'*64}]

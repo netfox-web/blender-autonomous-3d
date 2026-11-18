@@ -37,6 +37,12 @@ class Save(models.Strict):
     draft: models.Master
     expectedRevision: int = Field(ge=0)
 
+class Create(Save):
+    idempotencyKey: str | None = Field(default=None, max_length=200)
+
+class RestoreRevision(models.Strict):
+    expectedRevision: int = Field(ge=0)
+
 class Generate(models.Strict):
     expectedRevision: int = Field(ge=1)
     inputHash: str = Field(pattern=r'^[a-f0-9]{64}$')
@@ -129,11 +135,23 @@ def product_models_router(provider):
     def classify(aid:str,body:Usage,x_tenant_id:str|None=Header(None)):
         return call(asset_usage.classify,root(),tid(x_tenant_id),aid,body.role,body.note,body.expectedRevision)
     @r.get('/api/product-models')
-    def listing(x_tenant_id:str|None=Header(None)):
-        return call(categories.inventory,root(),tid(x_tenant_id))
+    def listing(offset:int=Query(0,ge=0),limit:int=Query(200,ge=1,le=500),x_tenant_id:str|None=Header(None)):
+        return call(categories.inventory,root(),tid(x_tenant_id),offset=offset,limit=limit)
     @r.post('/api/product-models',status_code=201)
-    def create(body:Save,x_tenant_id:str|None=Header(None)):
-        return call(models.save,root(),tid(x_tenant_id),body.draft.model_dump(),body.expectedRevision)
+    def create(body:Create,x_tenant_id:str|None=Header(None)):
+        return call(models.create,root(),tid(x_tenant_id),body.draft.model_dump(),body.expectedRevision,
+                    idempotency_key=body.idempotencyKey)
+    @r.get('/api/product-models/{mid}/revisions')
+    def revision_list(mid:str,offset:int=Query(0,ge=0),limit:int=Query(40,ge=1,le=200),x_tenant_id:str|None=Header(None)):
+        return call(models.list_revisions,root(),tid(x_tenant_id),mid,offset=offset,limit=limit)
+    @r.get('/api/product-models/{mid}/revisions/{n}')
+    def revision_detail(mid:str,n:int,x_tenant_id:str|None=Header(None)):
+        if n < 1: raise HTTPException(422,'版本編號須為正整數')
+        return call(models.get_revision,root(),tid(x_tenant_id),mid,n)
+    @r.post('/api/product-models/{mid}/revisions/{n}/restore')
+    def revision_restore(mid:str,n:int,body:RestoreRevision,x_tenant_id:str|None=Header(None)):
+        if n < 1: raise HTTPException(422,'版本編號須為正整數')
+        return call(models.restore,root(),tid(x_tenant_id),mid,n,body.expectedRevision)
     @r.get('/api/product-models/{mid}')
     def detail(mid:str,x_tenant_id:str|None=Header(None)):
         return call(models.get,root(),tid(x_tenant_id),mid)

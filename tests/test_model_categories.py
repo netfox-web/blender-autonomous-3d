@@ -47,7 +47,7 @@ def test_empty_category_catalog_does_not_create_models_or_geometry(tmp_path):
         f'{kind}_{n}' for kind in ['open', 'hinged'] for n in range(2, 6)]:
         assert nodes[key]['draftDefaults']['geometry'] == 'PENDING'
         assert not any(k in nodes[key]['draftDefaults'] for k in ['widthMm', 'panelMm', 'depthMm'])
-    assert models.listing(tmp_path, 't') == []
+    assert models.listing(tmp_path, 't')['items'] == []
 
 
 @pytest.mark.parametrize('invalid', ['wood', 'does_not_exist', '../outside', 'coaster'])

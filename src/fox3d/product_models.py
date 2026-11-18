@@ -159,21 +159,91 @@ def get(root,tid,mid):
     if not data: raise KeyError('找不到模型')
     return {**data,'readiness':readiness(data['draft'])}
 
-def listing(root,tid):
-    items=[]
-    for p in sorted(directory(root,tid).glob('*/master.json')):
-        item=get(root,tid,p.parent.name)
+def _template_state(root, tid, item):
+    try:
+        preview = status(root, tid, item['id'], current_draft=item['draft'])
+        available = preview.get('generated') and not preview.get('stale')
+    except (ValueError, OSError, KeyError):
+        available = False
+    if not available:
+        from fox3d import model_compositions
+        composed = model_compositions.status(root, tid, item['id'], current_draft=item)
+        available = composed['generated'] and not composed['stale']
+    return 'PREVIEW_AVAILABLE' if available else 'DRAFT'
+
+
+def listing(root, tid, *, offset=0, limit=200):
+    base = directory(root, tid)
+    items, skipped = [], 0
+    for p in sorted(base.glob('*/master.json')):
         try:
-            preview=status(root,tid,item['id'],current_draft=item['draft'])
-            available=preview.get('generated') and not preview.get('stale')
-        except (ValueError,OSError,KeyError):
-            available=False
-        if not available:
-            from fox3d import model_compositions
-            composed=model_compositions.status(root,tid,item['id'],current_draft=item)
-            available=composed['generated'] and not composed['stale']
-        items.append({**item,'templateState':'PREVIEW_AVAILABLE' if available else 'DRAFT'})
-    return items
+            item = get(root, tid, p.parent.name)
+        except (KeyError, TypeError, ValueError):
+            skipped += 1
+            continue
+        items.append({**item, 'templateState': _template_state(root, tid, item)})
+    total = len(items)
+    page = items[offset:offset + limit]
+    return {'items': page, 'total': total, 'offset': offset, 'limit': limit, 'skipped': skipped}
+
+
+def _idempotency_dir(root, tid):
+    return directory(root, tid) / '.create-idempotency'
+
+
+def create(root, tid, data, expected_revision, *, idempotency_key=None):
+    if not idempotency_key or not idempotency_key.strip():
+        return save(root, tid, data, expected_revision)
+    key = idempotency_key.strip()
+    if len(key) > 200:
+        raise ValueError('idempotencyKey 格式錯誤')
+    payload_hash = render.input_hash(data)
+    store = _idempotency_dir(root, tid)
+    store.mkdir(parents=True, exist_ok=True)
+    record_path = store / stable_hash(key)
+    with FileLock(str(store / 'write.lock'), timeout=10):
+        existing = render.read_json(record_path)
+        if existing:
+            if existing.get('inputHash') != payload_hash:
+                raise DraftConflict('相同 idempotencyKey 已用於不同內容')
+            return get(root, tid, existing['id'])
+        created = save(root, tid, data, expected_revision)
+        render.atomic_json(record_path, {'id': created['id'], 'inputHash': payload_hash, 'key': key})
+        return created
+
+
+def list_revisions(root, tid, mid, *, offset=0, limit=40):
+    get(root, tid, mid)
+    folder = directory(root, tid) / mid / 'revisions'
+    paths = sorted((p for p in folder.glob('*.json') if p.stem.isdigit() and int(p.stem) > 0),
+                   key=lambda p: int(p.stem)) if folder.is_dir() else []
+    total = len(paths)
+    items = []
+    for path in paths[offset:offset + limit]:
+        row = render.read_json(path)
+        if not row or not isinstance(row.get('revision'), int):
+            continue
+        items.append({'revision': row['revision'], 'updatedAt': row.get('updatedAt'),
+                      'inputHash': row.get('inputHash')})
+    return {'items': items, 'total': total, 'offset': offset, 'limit': limit}
+
+
+def get_revision(root, tid, mid, revision):
+    if not isinstance(revision, int) or revision < 1:
+        raise ValueError('版本編號須為正整數')
+    get(root, tid, mid)
+    row = render.read_json(directory(root, tid) / mid / 'revisions' / f'{revision}.json')
+    if not row or row.get('revision') != revision:
+        raise KeyError('找不到版本')
+    return row
+
+
+def restore(root, tid, mid, revision, expected_revision):
+    snapshot = get_revision(root, tid, mid, revision)
+    current = get(root, tid, mid)
+    if current['revision'] != expected_revision:
+        raise DraftConflict('版本已變更；請重新載入後再儲存')
+    return save(root, tid, snapshot['draft'], expected_revision, mid)
 
 
 def validate_artworks(root,tid,data):
