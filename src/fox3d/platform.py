@@ -310,6 +310,7 @@ class Platform:
     def execute_job(self, job: dict[str, Any], *, timeout_seconds: float | None = None, cancel_flag: threading.Event | None = None) -> dict[str, Any]:
         if job.get("cancelRequested") or job.get("status") == "cancel_requested":
             job["status"] = "cancelled"
+            self.queue._save(job)
             return job
         self.compute.touch_heartbeats()
         placement = self.gpu_policy.place(self.scheduler, job)
@@ -350,6 +351,7 @@ class Platform:
                     ),
                     encoding="utf-8",
                 )
+            self.queue._save(job)
             return job
 
         # An explicit mock runtime can execute locally without claiming a GPU.
@@ -362,6 +364,7 @@ class Platform:
             self._release(job)
             job["status"] = "blocked"
             job["error"] = str(exc)
+            self.queue._save(job)
             return job
         job["gpu"] = placement.get("gpuName")
         job["gpuUuid"] = (self.probe.gpuUuid if self.probe else None)
@@ -393,6 +396,7 @@ class Platform:
             if done.get("status") not in {"completed", "succeeded"}:
                 done["status"] = term
             self._release(job)
+            self.queue._save(done)
             return done
         self.queue.heartbeat(job["jobId"], 0.05)
 
@@ -573,6 +577,7 @@ class Platform:
         done["usedMock"] = result.used_mock
         done["blenderVersion"] = result.blender_version
         done["outputs"] = dict(result.outputs or {})
+        self.queue._save(done)
         return done
 
     def _fail_or_retry(self, job: dict[str, Any], error: str) -> dict[str, Any]:
@@ -590,6 +595,7 @@ class Platform:
             # Immediate requeue for in-process tests; production would wait `delay`.
             current = self.queue.get(job["jobId"]) or job
             current["status"] = "queued"
+            self.queue._save(current)
             return current
         try:
             self.queue.set_status(job["jobId"], "failed", error=error, attemptCount=attempts)

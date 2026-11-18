@@ -76,3 +76,15 @@ def test_concurrent_platforms_and_cancel_survive_restart(tmp_path):
     restarted = TestClient(create_app(Platform(tmp_path, mock_blender=True)))
     assert restarted.get('/api/3d/jobs/' + job_id, headers=headers).json()['status'] == 'cancelled'
     assert len(restarted.get('/api/3d/jobs', headers=headers).json()['items']) == 1
+
+
+def test_executed_job_result_survives_restart(tmp_path):
+    platform = Platform(tmp_path, mock_blender=True)
+    job = platform.submit_job({'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW'})
+    done = platform.execute_job(job)
+    assert done['status'] == 'succeeded'
+    assert done['outputAsset']
+    restored = Platform(tmp_path, mock_blender=True).get_job(job['jobId'], tenant_id='owner')
+    assert restored['status'] == done['status']
+    assert restored['outputAsset'] == done['outputAsset']
+    assert restored['output'] == done['output']
