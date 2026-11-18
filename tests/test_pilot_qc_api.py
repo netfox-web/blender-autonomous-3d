@@ -59,9 +59,31 @@ def test_release_and_complete(platform: Any) -> None:
             nominal = spec["nominal"] if spec["nominal"] is not None else 100
             body = {"stage": "FINAL", "checkId": spec["checkId"], "measured": nominal, "nominal": nominal, "source": "MANUAL", "idempotencyKey": spec["checkId"]}
             assert client.post(path + "/qc", headers=HEADERS, json=body).status_code == 200
+    optional = {"stage": "FINAL", "checkId": "HOLE_DIA", "measured": 20, "source": "MANUAL", "idempotencyKey": "optional-fail"}
+    assert client.post(path + "/qc", headers=HEADERS, json=optional).json()["result"] == "FAIL"
     for _ in range(2):
         assert client.post(path + "/qc/release-hold", headers=HEADERS, json={"confirm": True}).json()["state"] == "IN_PROGRESS"
     _ops_and_pack(platform, wid, tenant=TENANT)
     response = client.post(path + "/complete", headers=HEADERS, json={"confirm": True})
     assert response.status_code == 200, response.text
     assert response.json()["state"] == "COMPLETED"
+
+
+def test_qc_invalid_inputs_and_defect_conflict(platform: Any) -> None:
+    client = TestClient(create_app(platform))
+    _, wo = _seed_release_receipt_and_wo(platform)
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}"
+    body = {"stage": "FINAL", "checkId": "THICKNESS", "measured": 18, "source": "MANUAL", "idempotencyKey": "key"}
+    for changes in ({"stage": None}, {"source": "DEVICE"}, {"measured": True}, {"measured": "18"}, {"idempotencyKey": " "}):
+        assert client.post(path + "/qc", headers=HEADERS, json={**body, **changes}).status_code == 422
+    assert client.post(path + "/qc/release-hold", headers=HEADERS, json={"confirm": []}).status_code == 403
+    assert client.post(path + "/defects", headers=HEADERS, json={"confirm": []}).status_code == 403
+    defect = {"code": "DEF_THICKNESS", "disposition": "REWORK", "idempotencyKey": "defect", "confirm": True}
+    responses = _concurrent(4, lambda: client.post(path + "/defects", headers=HEADERS, json=defect))
+    assert all(r.status_code == 200 for r in responses)
+    assert len({r.json()["defectId"] for r in responses}) == 1
+    assert client.post(path + "/defects", headers=HEADERS, json={**defect, "code": "DEF_SIZE"}).status_code == 409
+    page = client.get('/api/pilot/work-orders?offset=0&limit=1', headers=HEADERS).json()
+    assert page['total'] == 1 and len(page['items']) == 1
+    assert page['items'][0]['qcHold'] is False and page['items'][0]['qcOk'] is False
+    assert client.get('/api/pilot/work-orders?offset=1&limit=1', headers=HEADERS).json()['items'] == []

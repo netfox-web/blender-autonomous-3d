@@ -187,7 +187,6 @@ def _packing_status(mismatch: bool, mismatch_hold: bool, *, ok_text: str) -> str
     return ok_text
 
 
-_QC_OPEN_STATES_REJECTED = frozenset({"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"})
 
 
 def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:

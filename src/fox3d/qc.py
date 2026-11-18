@@ -279,7 +279,7 @@ class QcService:
                 latest[row["checkId"]] = row
         present = set(latest)
         missing = [cid for cid in required if cid not in present]
-        failed = [cid for cid, row in latest.items() if not row["ok"]]
+        failed = [cid for cid, row in latest.items() if cid in required and not row["ok"]]
         return {"ok": not missing and not failed, "missing": missing, "failed": failed, "required": required}
 
     def completion_allowed(self, work_order_id: str, family: str, *, tenant_id: str | None = None) -> bool:

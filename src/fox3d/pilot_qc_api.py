@@ -139,6 +139,8 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
         tid = _require_tenant(x_tenant_id, body)
         pilot = provider().pilot
         _require_wo(pilot, work_order_id, tid)
+        if not isinstance(body.get("confirm"), (bool, str, int)):
+            raise HTTPException(403, "需要確認")
         try:
             require_confirm(body, action="release_hold")
         except PermissionError as exc:
@@ -172,6 +174,8 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
         tid = _require_tenant(x_tenant_id, body)
         pilot = provider().pilot
         _require_wo(pilot, work_order_id, tid)
+        if not isinstance(body.get("confirm"), (bool, str, int)):
+            raise HTTPException(403, "需要確認")
         try:
             require_confirm(body, action="defect")
         except PermissionError as exc:
