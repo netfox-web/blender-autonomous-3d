@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import re
 from typing import Any
 
@@ -135,29 +136,32 @@ def irreversible_action(
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     require_confirm(payload, action=action)
-    wo = pilot.workorders.get(work_order_id)
-    if wo.get("tenantId") != tenant_id:
-        raise PermissionError("tenant isolation: operator")
-    if action == "consume":
-        rec = pilot.workorders.consume_reserved(work_order_id, actor=actor)
-    elif action == "complete_wo":
-        rec = pilot.workorders.complete(work_order_id, actor=actor, qc_ok=True)
-    elif action == "finalize_qc":
-        rec = pilot.qc.required_final_ok(work_order_id, wo["productFamily"], tenant_id=tenant_id)
-        if not rec.get("ok"):
-            raise PilotException("QC_FINAL_FAIL")
-    else:
-        raise PermissionError(action)
-    emit(
-        pilot,
-        f"operator.{action}",
-        tenant_id=tenant_id,
-        aggregate_type="WorkOrder",
-        aggregate_id=work_order_id,
-        actor=actor,
-        payload={"action": action},
-        release_hash=wo.get("releaseHash"),
-        semantic_key=f"{tenant_id}::operator::{action}::{work_order_id}",
-        source="operator",
-    )
-    return rec if isinstance(rec, dict) else {"ok": rec}
+    wo_lock = getattr(getattr(pilot, "workorders", None), "_lock", None)
+    log_lock = getattr(getattr(pilot, "logistics", None), "_lock", None) if action == "complete_wo" else None
+    with (wo_lock if wo_lock is not None else nullcontext()), (log_lock if log_lock is not None else nullcontext()):
+        wo = pilot.workorders.get(work_order_id)
+        if wo.get("tenantId") != tenant_id:
+            raise PermissionError("tenant isolation: operator")
+        if action == "consume":
+            rec = pilot.workorders.consume_reserved(work_order_id, actor=actor)
+        elif action == "complete_wo":
+            rec = pilot.workorders.complete(work_order_id, actor=actor, qc_ok=True)
+        elif action == "finalize_qc":
+            rec = pilot.qc.required_final_ok(work_order_id, wo["productFamily"], tenant_id=tenant_id)
+            if not rec.get("ok"):
+                raise PilotException("QC_FINAL_FAIL")
+        else:
+            raise PermissionError(action)
+        emit(
+            pilot,
+            f"operator.{action}",
+            tenant_id=tenant_id,
+            aggregate_type="WorkOrder",
+            aggregate_id=work_order_id,
+            actor=actor,
+            payload={"action": action},
+            release_hash=wo.get("releaseHash"),
+            semantic_key=f"{tenant_id}::operator::{action}::{work_order_id}",
+            source="operator",
+        )
+        return rec if isinstance(rec, dict) else {"ok": rec}
