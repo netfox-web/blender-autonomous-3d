@@ -83,7 +83,7 @@ def test_api_tenant_conflict_invalid_purpose_and_no_direct_save_bypass(tmp_path)
     c=TestClient(app);h={'X-Tenant-Id':'t'};path='/api/product-models/assets/'+a['id']+'/usage'
     body={'role':'REFERENCE','note':'Observed promotional layout','expectedRevision':0}
     assert c.get('/api/product-models/assets').status_code==422
-    assert c.put(path,headers={'X-Tenant-Id':'other'},json=body).status_code==422
+    assert c.put(path,headers={'X-Tenant-Id':'other'},json=body).status_code==404
     assert c.put(path,headers=h,json={**body,'role':'GUESSED'}).status_code==422
     assert c.put(path,headers=h,json={**body,'note':' '}).status_code==422
     assert c.put(path,headers=h,json=body).status_code==200
