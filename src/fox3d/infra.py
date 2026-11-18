@@ -11,6 +11,7 @@ import builtins
 import threading
 import time
 import unicodedata
+from contextlib import nullcontext
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -20,6 +21,7 @@ from typing import Any
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.jobs import JobStatus
 from fox3d.render_store import RenderStore
+from fox3d.storelock import FileLock
 
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "blocked": frozenset({"queued", "cancel_requested", "skipped", "expired"}),
@@ -660,10 +662,26 @@ class JobQueue:
         if self._store and job.get("tenantId"):
             self._store.write(job["tenantId"], job["jobId"], job)
 
+    def _process_lock(self):
+        return FileLock(self._store.root / ".queue.lock") if self._store else nullcontext()
+
+    def _refresh(self) -> None:
+        if self._store:
+            for saved in self._store.read_all():
+                current = self._jobs.get(saved["jobId"])
+                if current is None:
+                    self._jobs[saved["jobId"]] = saved
+                else:
+                    current.clear()
+                    current.update(saved)
+
     def restore(self, job: dict[str, Any]) -> dict[str, Any]:
         """Reload a snapshot without resetting queue status (restart recovery)."""
         rec = dict(job)
-        with self._lock:
+        with self._lock, self._process_lock():
+            self._refresh()
+            if rec["jobId"] in self._jobs:
+                return self._jobs[rec["jobId"]]
             self._jobs[rec["jobId"]] = rec
             self._save(rec)
         return rec
@@ -690,17 +708,19 @@ class JobQueue:
         return jobs
 
     def request_cancel(self, job_id: str) -> dict[str, Any]:
-        job = self._jobs[job_id]
-        job["cancelRequested"] = True
-        if job["status"] in {"queued", "retry_scheduled", "blocked"}:
-            transition(job["status"], "cancel_requested")
-            job["status"] = "cancel_requested"
-            job["status"] = transition("cancel_requested", "cancelled")
-            job["completedAt"] = utcnow().isoformat()
-        elif job["status"] in {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "waiting_approval"}:
-            job["status"] = transition(job["status"], "cancel_requested")
-        self._save(job)
-        return job
+        with self._lock, self._process_lock():
+            self._refresh()
+            job = self._jobs[job_id]
+            job["cancelRequested"] = True
+            if job["status"] in {"queued", "retry_scheduled", "blocked"}:
+                transition(job["status"], "cancel_requested")
+                job["status"] = "cancel_requested"
+                job["status"] = transition("cancel_requested", "cancelled")
+                job["completedAt"] = utcnow().isoformat()
+            elif job["status"] in {"leased", "reserved", "dispatched", "running", "rendering", "uploading", "waiting_approval"}:
+                job["status"] = transition(job["status"], "cancel_requested")
+            self._save(job)
+            return job
 
     def heartbeat(self, job_id: str, progress: float | None = None) -> dict[str, Any]:
         job = self._jobs[job_id]
@@ -718,7 +738,8 @@ class JobQueue:
         job_type: str | None = None,
         capability: str | None = None,
     ) -> dict[str, Any] | None:
-        with self._lock:
+        with self._lock, self._process_lock():
+            self._refresh()
             for job in self._jobs.values():
                 if job["status"] not in {"queued", "retry_scheduled"}:
                     continue
