@@ -236,7 +236,7 @@
     if (!posting) clearPending();
     loadedTenant = tenant();
     var targetOrderId = keepOrderId !== undefined ? keepOrderId : (selected && selected.workOrderId);
-    selected = null; $('detail').textContent = '請選擇工單。'; $('actions').hidden = true;
+    if (!targetOrderId) selected = null; $('detail').textContent = '請選擇工單。'; $('actions').hidden = true;
     if ($('packing-panel')) $('packing-panel').hidden = true;
     load('overview', '/api/pilot/console', function (d) { var badges = Object.keys(d.badges || {}).map(function (k) { return [BADGE_NAMES[k] || k, d.badges[k]]; }); cards('overview', [['材料批號', (d.lots || []).length + ' 批'], ['放行紀錄', (d.releases || []).length + ' 筆'], ['機台連線控制', d.liveMachineControl ? '已開啟' : '關閉（人工）']].concat(badges), d); table('lots', d.lots, [['lotId','批號'],['material','材料'],['available','可用'],['reserved','已預留'],['quarantined','隔離'],['truthLabel','來源']]); table('receipts', d.receipts, [['receiptId','收料編號'],['material','材料'],['quantity','數量'],['status','狀態'],['truthLabel','來源']]); table('requests', d.purchaseRequests, [['requestId','請購編號'],['material','材料'],['quantity','數量'],['status','狀態']]); });
     load('orders', '/api/pilot/work-orders', function (d) {
@@ -294,6 +294,7 @@
           $('packing-status').className = 'warn';
         }
         $('result').textContent = '尺寸不符待人工確認\n' + JSON.stringify(d, null, 2);
+        posting = false;
         refresh(task.workOrderId, true);
         return;
       }
@@ -306,6 +307,7 @@
         return;
       }
       show('result', d);
+      posting = false;
       refresh(task.workOrderId, Boolean(task.isPacking));
     }).catch(function (e) {
       var msg = (e && e.message) || String(e);

@@ -636,7 +636,7 @@ def test_mismatch_resolved_via_existing_hold_flow_allows_complete(client: TestCl
     assert rec["state"] == "IN_PROGRESS"
     done = client.post(f"/api/pilot/work-orders/{wo_id}/complete", headers=HEADERS, json={"confirm": True})
     assert done.status_code == 200, done.text
-    assert platform.pilot.logistics.cartons[carton["cartonId"]]["mismatch"] is True
+    assert platform.pilot.logistics.cartons[carton["cartonId"]].get("mismatch", False) is True
     assert platform.pilot.logistics.cartons[carton["cartonId"]]["autoOverride"] is False
 
 
@@ -843,3 +843,96 @@ def test_qc_idempotency_survives_restart(platform: Any) -> None:
         f"/api/pilot/work-orders/{wo_id}/qc", headers={"X-Tenant-Id": "other-tenant"}, json=body
     )
     assert other.status_code == 404
+
+
+def test_qc_plan_controls_threshold_and_missing_nominal_blocks_completion(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    _complete_ops_and_qc(platform, wo)
+    wo_id = wo["workOrderId"]
+    url = f"/api/pilot/work-orders/{wo_id}/qc"
+    missing = client.post(url, headers=HEADERS, json={"checkId": "PANEL_LENGTH", "measured": 9999, "idempotencyKey": "missing"})
+    assert missing.status_code == 422
+    platform.pilot.qc.checks = {key: row for key, row in platform.pilot.qc.checks.items() if row["checkId"] != "PANEL_LENGTH"}
+    with pytest.raises(PermissionError, match="QC"):
+        platform.pilot.workorders.complete(wo_id, actor="ops")
+    failed = client.post(url, headers=HEADERS, json={"checkId": "THICKNESS", "measured": 38.5, "nominal": 38.5, "tol": 100, "unit": "inch", "idempotencyKey": "bad"})
+    assert failed.status_code == 200
+    assert (failed.json()["nominal"], failed.json()["tol"], failed.json()["unit"], failed.json()["ok"]) == (18.0, 0.5, "mm", False)
+    with pytest.raises(PermissionError, match="QC"):
+        platform.pilot.workorders.complete(wo_id, actor="ops")
+    panel = client.post(url, headers=HEADERS, json={"checkId": "PANEL_LENGTH", "measured": 9999, "nominal": 100, "tol": 10000, "idempotencyKey": "panel"})
+    assert panel.status_code == 200
+    assert panel.json()["tol"] == 1.0 and panel.json()["ok"] is False
+    assert client.post(url, headers={"X-Tenant-Id": "other-tenant"}, json={"checkId": "THICKNESS", "measured": 18, "idempotencyKey": "bad"}).status_code == 404
+
+
+def test_checklist_key_persists_and_conflicts_after_carton_changes(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    wo_id = wo["workOrderId"]
+    path = f"/api/pilot/work-orders/{wo_id}/packing-checklist"
+    body = {"idempotencyKey": "checklist-key"}
+    responses = _concurrent(3, lambda: client.post(path, headers=HEADERS, json=body))
+    assert all(r.status_code == 200 for r in responses)
+    first_id = responses[0].json()["checklistId"]
+    assert {r.json()["checklistId"] for r in responses} == {first_id}
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    assert TestClient(create_app(restarted)).post(path, headers=HEADERS, json=body).json()["checklistId"] == first_id
+    created = client.post(f"/api/pilot/work-orders/{wo_id}/cartons", headers=HEADERS, json={"quantity": 1, "idempotencyKey": "carton"})
+    assert created.status_code == 200
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    client2 = TestClient(create_app(restarted))
+    assert client2.post(path, headers=HEADERS, json=body).status_code == 409
+    assert client2.post(path, headers={"X-Tenant-Id": "other-tenant"}, json=body).status_code == 404
+    fresh = client2.post(path, headers=HEADERS, json={"idempotencyKey": "new-key"})
+    assert fresh.status_code == 200 and fresh.json()["checklistId"] != first_id
+
+
+def test_concurrent_completion_and_measurement_are_serialized(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    _complete_ops_and_qc(platform, wo)
+    wo_id = wo["workOrderId"]
+    created = client.post(f"/api/pilot/work-orders/{wo_id}/cartons", headers=HEADERS, json={"quantity": 1, "idempotencyKey": "race-carton"}).json()
+    carton = created["items"][0]
+    expected = carton["expected"]
+    body = {"length": expected["length"] + 100, "width": expected["width"], "height": expected["height"], "weightKg": expected["weightKg"], "idempotencyKey": "race-measure"}
+    barrier = Barrier(2)
+
+    def complete() -> bool:
+        barrier.wait()
+        try:
+            platform.pilot.workorders.complete(wo_id, actor="ops")
+            return True
+        except PermissionError:
+            return False
+
+    def measure() -> Any:
+        barrier.wait()
+        return client.post(f"/api/pilot/cartons/{carton['cartonId']}/measured", headers=HEADERS, json=body)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        finished = pool.submit(complete)
+        measured = pool.submit(measure)
+        completed, response = finished.result(), measured.result()
+    assert (completed, response.status_code) in {(True, 409), (False, 200)}
+    if completed:
+        assert not platform.pilot.logistics.cartons[carton["cartonId"]].get("mismatch", False)
+    else:
+        assert platform.pilot.workorders.get(wo_id)["mismatchHold"]
+
+
+def test_completed_order_allows_measurement_replay_but_rejects_new_measurement(client: TestClient, platform: Any) -> None:
+    _rel, wo = _seed_release_receipt_and_wo(platform)
+    _complete_ops_and_qc(platform, wo)
+    wo_id = wo["workOrderId"]
+    created = client.post(f"/api/pilot/work-orders/{wo_id}/cartons", headers=HEADERS, json={"quantity": 1, "idempotencyKey": "replay-carton"}).json()
+    carton = created["items"][0]
+    expected = carton["expected"]
+    body = {key: expected[key] for key in ("length", "width", "height", "weightKg")}
+    body["idempotencyKey"] = "replay-measure"
+    url = f"/api/pilot/cartons/{carton['cartonId']}/measured"
+    assert client.post(url, headers=HEADERS, json=body).status_code == 200
+    platform.pilot.workorders.complete(wo_id, actor="ops")
+    assert client.post(url, headers=HEADERS, json=body).status_code == 200
+    assert client.post(url, headers=HEADERS, json={**body, "length": body["length"] + 100}).status_code == 409
+    assert client.post(url, headers=HEADERS, json={**body, "idempotencyKey": "new"}).status_code == 409
+    assert platform.pilot.logistics.cartons[carton["cartonId"]]["measureSeq"] == 1

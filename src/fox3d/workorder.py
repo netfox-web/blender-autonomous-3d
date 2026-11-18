@@ -603,6 +603,10 @@ class WorkOrderService:
             return rec
 
     def complete(self, work_order_id: str, *, actor: str, qc_ok: bool = True) -> dict[str, Any]:
+        with self._lock, self.logistics._lock if self.logistics is not None else nullcontext():
+            return self._complete_locked(work_order_id, actor=actor, qc_ok=qc_ok)
+
+    def _complete_locked(self, work_order_id: str, *, actor: str, qc_ok: bool) -> dict[str, Any]:
         rec = self._require(work_order_id, tenant_id=None)
         self._assert_release_fresh(rec, allow_bound_finish=True)
         if rec["state"] == "COMPLETED":

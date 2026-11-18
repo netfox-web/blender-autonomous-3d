@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Header, HTTPException
 
+from fox3d.ids import stable_hash
 from fox3d.infra import validate_tenant_id
 from fox3d.journal import SemanticKeyConflictError
 from fox3d.logistics import _measured_snapshot_equal
@@ -342,6 +343,15 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                 "truthLabel": "MEASURED",
             }
             op_id = explicit_op_id or _latest_matching_measure_op_id(carton, target_measured)
+            wo = _require_wo(pilot, str(carton.get("workOrderId") or ""), tid)
+            if wo.get("state") in {"COMPLETED", "REJECTED", "CANCELLED"}:
+                previous = (carton.get("measureOps") or {}).get(op_id) if op_id else None
+                if previous is None or not _measured_snapshot_equal(previous["measured"], target_measured):
+                    raise HTTPException(409, "工單已結束，無法回填實測值")
+                out = _serialize_carton(carton)
+                out["mismatchHold"] = bool(wo.get("mismatchHold"))
+                out["statusMessage"] = _packing_status(out["mismatch"], out["mismatchHold"], ok_text="實測尺寸符合預期")
+                return out
             try:
                 updated = pilot.logistics.record_measured(
                     carton_id,
@@ -373,7 +383,7 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
     ) -> dict[str, Any]:
         body = _require_body_dict(payload)
         tid = _require_tenant(x_tenant_id, body)
-        _ = _optional_idempotency_key(body, "idempotencyKey")
+        idem_key = _optional_idempotency_key(body, "idempotencyKey")
         pilot = provider().pilot
         _require_wo(pilot, work_order_id, tid)
 
@@ -396,8 +406,16 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
             ]
             expected_hold = any(bool(c.get("mismatch")) for c in cartons)
             expected_pinned = bool(cartons) and all(c.get("releaseHash") == rel_hash for c in cartons)
-            existing = None
-            for chk in reversed(list(pilot.logistics.checklists.values())):
+            signature = stable_hash({"releaseHash": rel_hash, "items": expected_items})
+            store_key = f"{tid}::checklist::{work_order_id}::{idem_key}" if idem_key else None
+            previous = pilot.logistics._idem.get(store_key) if store_key else None
+            if previous is not None:
+                if previous["signature"] != signature:
+                    raise HTTPException(409, "idempotencyKey 衝突")
+                existing = pilot.logistics.checklists[previous["checklistId"]]
+            else:
+                existing = None
+            for chk in reversed(list(pilot.logistics.checklists.values())) if existing is None else []:
                 if chk.get("tenantId") == tid and chk.get("workOrderId") == work_order_id:
                     if (
                         chk.get("releaseHash") == rel_hash
@@ -417,6 +435,9 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                         release_hash=rel_hash,
                     )
                 )
+            if store_key and previous is None:
+                pilot.logistics._idem[store_key] = {"signature": signature, "checklistId": rec["checklistId"]}
+            pilot.logistics.persist()
             mismatch_hold = _sync_wo_mismatch_hold(pilot, work_order_id, tid)
             rec["mismatch"] = bool(rec.get("mismatchHold"))
             rec["mismatchHold"] = mismatch_hold
@@ -526,11 +547,13 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
 
             spec = plan_by_id[check_id]
             measured = _require_finite_number(body.get("measured"), "measured")
-            raw_nom = body.get("nominal") if "nominal" in body and body.get("nominal") is not None else spec.get("nominal")
-            nominal = _require_finite_number(raw_nom if raw_nom is not None else measured, "nominal")
-            raw_tol = body.get("tol") if "tol" in body and body.get("tol") is not None else spec.get("tol")
-            tol = _require_finite_number(raw_tol if raw_tol is not None else 0.0, "tol")
-            unit = str(body.get("unit") or spec.get("unit") or "mm")
+            raw_nom = spec.get("nominal") if spec.get("nominal") is not None else body.get("nominal")
+            nominal = _require_finite_number(raw_nom, "nominal")
+            raw_tol = spec.get("tol") if spec.get("tol") is not None else body.get("tol")
+            tol = _require_finite_number(raw_tol, "tol")
+            if tol < 0:
+                raise HTTPException(422, "tol 須為非負數")
+            unit = str(spec.get("unit") or body.get("unit") or "mm")
 
             raw_source = body.get("source") or "MANUAL"
             if not isinstance(raw_source, str) or raw_source not in _ALLOWED_QC_SOURCES:
