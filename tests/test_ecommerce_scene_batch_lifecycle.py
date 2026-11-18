@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from fox3d.ecommerce_scene_api import ecommerce_scene_router
 from fox3d.ecommerce_scene_studio import EcommerceSceneStore
+from fox3d.recipe_3d import read_json as _read_json
 
 
 @pytest.fixture
@@ -154,6 +155,24 @@ def test_submit_failure_replays_durable_batch(setup):
     assert len(futures) == 1
     assert store.start_matrix_batch('tenant', body)['batchId'] == replay['batchId']
     assert len(futures) == 1
+
+
+def test_new_idempotency_key_skips_batch_glob_after_reconcile(setup):
+    _, store, _ = setup
+    body = {'aiEngine': 'off', 'blenderEngine': 'local'}
+    for views in (['FRONT'], ['THREE_QUARTER'], ['FRONT', 'THREE_QUARTER']):
+        store.start_matrix_batch('tenant', {**body, 'views': views})
+    store.reconcile_idempotency_index('tenant')
+    reads = []
+
+    def track(path, *args, **kwargs):
+        if isinstance(path, Path) and path.name == 'batch.json':
+            reads.append(path)
+        return _read_json(path, *args, **kwargs)
+
+    with patch('fox3d.ecommerce_scene_studio.read_json', side_effect=track):
+        store.start_matrix_batch('tenant', {**body, 'idempotencyKey': 'fresh-uuid-never-seen', 'views': ['FRONT']})
+    assert not reads
 
 
 def test_restart_recovers_pending_batch_before_index_write(setup):

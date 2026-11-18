@@ -1243,6 +1243,8 @@ class EcommerceSceneStore:
         # Live batch documents owned by this process, keyed by batch id: progress is written from memory, never
         # rebuilt from a read of batch.json that may transiently fail while the UI polls the same file.
         self._live_docs: dict[str, dict[str, Any]] = {}
+        # One-time per-tenant backfill of idempotency sidecars (off the submit hot path).
+        self._idempotency_reconciled: set[str] = set()
         try:
             ensure_pbr_texture_assets()
         except Exception:
@@ -1504,7 +1506,103 @@ class EcommerceSceneStore:
         for _, tenant_id, bpath in sorted(found, key=lambda x: (x[0], str(x[2]))):
             if self._recover_unscheduled(tenant_id, bpath):
                 recovered += 1
+        if self.root.is_dir():
+            for tdir in self.root.iterdir():
+                if tdir.is_dir():
+                    self.reconcile_idempotency_index(tdir)
         return recovered
+
+    def _batch_key_index_path(self, tenant_id: str) -> Path:
+        return self._tenant_dir(tenant_id) / "batch-keys.json"
+
+    def _idempotency_sidecar_path(self, tenant_id: str, key_hash: str) -> Path:
+        return self._tenant_dir(tenant_id) / "batches" / ".idempotency" / f"{key_hash}.json"
+
+    @staticmethod
+    def _read_batch_key_index(index_path: Path) -> dict[str, Any]:
+        if not index_path.exists():
+            return {}
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (OSError, ValueError) as exc:
+            log.warning("Unable to read batch key index: %s", exc)
+            raise SceneStoreUnavailable from exc
+        raise SceneStoreUnavailable
+
+    def reconcile_idempotency_index(self, tenant_ref: str | Path) -> None:
+        """Backfill per-key sidecars and batch-keys.json from on-disk batches (startup / migration only)."""
+        if isinstance(tenant_ref, Path):
+            tdir = tenant_ref
+            tenant_id = tdir.name
+        else:
+            tenant_id = tenant_ref
+            tdir = self._tenant_dir(tenant_id)
+        slug = tdir.name
+        with self.lock:
+            if slug in self._idempotency_reconciled:
+                return
+            index_path = tdir / "batch-keys.json"
+            index = self._read_batch_key_index(index_path) if index_path.exists() else {}
+            bdir = tdir / "batches"
+            if not bdir.is_dir():
+                self._idempotency_reconciled.add(slug)
+                return
+            idem_dir = bdir / ".idempotency"
+            idem_dir.mkdir(parents=True, exist_ok=True)
+            changed = False
+            for path in bdir.glob("*/batch.json"):
+                doc = read_json(path)
+                if not isinstance(doc, dict):
+                    continue
+                key_hash = doc.get("idempotencyKeyHash")
+                if not isinstance(key_hash, str) or not key_hash:
+                    continue
+                batch_id = path.parent.name
+                fingerprint = doc.get("requestFingerprint")
+                entry = {"batchId": batch_id, "fingerprint": fingerprint}
+                sidecar = idem_dir / f"{key_hash}.json"
+                if not sidecar.is_file():
+                    try:
+                        atomic_json(sidecar, entry)
+                    except OSError:
+                        log.warning("Unable to write idempotency sidecar for %s", key_hash)
+                if index.get(key_hash) != entry:
+                    index[key_hash] = entry
+                    changed = True
+            if changed:
+                try:
+                    atomic_json(index_path, index)
+                except OSError as exc:
+                    log.warning("Unable to update batch key index: %s", exc)
+            self._idempotency_reconciled.add(slug)
+
+    def _ensure_idempotency_reconciled(self, tenant_id: str) -> None:
+        slug = _tenant_slug(tenant_id)
+        if slug not in self._idempotency_reconciled:
+            self.reconcile_idempotency_index(tenant_id)
+
+    def _idempotency_index_entry(
+        self, tenant_id: str, key_hash: str, index: dict[str, Any], index_path: Path,
+    ) -> dict[str, Any] | None:
+        """Resolve a key hash via the in-memory index or its O(1) sidecar file."""
+        cached = index.get(key_hash)
+        if isinstance(cached, dict) and isinstance(cached.get("batchId"), str):
+            return cached
+        sidecar = self._idempotency_sidecar_path(tenant_id, key_hash)
+        if not sidecar.is_file():
+            return None
+        doc = read_json(sidecar)
+        if not isinstance(doc, dict) or not isinstance(doc.get("batchId"), str):
+            return None
+        entry = {"batchId": doc["batchId"], "fingerprint": doc.get("fingerprint")}
+        index[key_hash] = entry
+        try:
+            atomic_json(index_path, index)
+        except OSError:
+            pass
+        return entry
 
     def get_batch(self, tenant_id: str, batch_id: str) -> dict[str, Any]:
         bpath = self._tenant_dir(tenant_id) / "batches" / batch_id / "batch.json"
@@ -1580,34 +1678,19 @@ class EcommerceSceneStore:
         body = {k: v for k, v in payload.items() if k != "idempotencyKey"}
         fingerprint = stable_hash(body)
         with self.lock:
-            index_path = self._tenant_dir(tenant_id) / "batch-keys.json"
-            if index_path.exists():
-                try:
-                    index = json.loads(index_path.read_text(encoding="utf-8"))
-                    if not isinstance(index, dict):
-                        raise ValueError("invalid index")
-                except (OSError, ValueError) as exc:
-                    log.warning("Unable to read batch key index: %s", exc)
-                    raise SceneStoreUnavailable from exc
-            else:
-                index = {}
+            if key is not None:
+                self._ensure_idempotency_reconciled(tenant_id)
+            index_path = self._batch_key_index_path(tenant_id)
+            index = self._read_batch_key_index(index_path) if index_path.exists() else {}
             key_hash = hashlib.sha256(key.encode()).hexdigest() if key is not None else None
-            if key_hash and key_hash not in index:
-                # Recover the narrow crash window between writing the batch and its index.
-                for path in (self._tenant_dir(tenant_id) / "batches").glob("*/batch.json"):
-                    existing = read_json(path)
-                    if existing.get("idempotencyKeyHash") == key_hash:
-                        index[key_hash] = {"batchId": path.parent.name, "fingerprint": existing.get("requestFingerprint")}
-                        atomic_json(index_path, index)
-                        break
-            if key_hash and key_hash in index:
-                entry = index[key_hash]
-                if not isinstance(entry, dict) or not isinstance(entry.get("batchId"), str):
-                    raise SceneStoreUnavailable
+            if key_hash:
+                entry = self._idempotency_index_entry(tenant_id, key_hash, index, index_path)
+            else:
+                entry = None
+            if key_hash and entry is not None:
                 if entry.get("fingerprint") != fingerprint:
                     raise BatchConflict("此 idempotencyKey 已用於不同的請求")
                 try:
-                    # get_batch reschedules an unclaimed pending batch this process does not own yet.
                     return self.get_batch(tenant_id, entry["batchId"])
                 except KeyError as exc:
                     raise BatchConflict("此 idempotencyKey 的批次已刪除") from exc
@@ -1763,12 +1846,26 @@ class EcommerceSceneStore:
             "failed": 0,
             "items": items,
         }
+        sidecar_path = None
+        if key_hash:
+            sidecar_path = self._idempotency_sidecar_path(tenant_id, key_hash)
+            sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                atomic_json(sidecar_path, {"batchId": batch_id, "fingerprint": fingerprint})
+            except Exception:
+                shutil.rmtree(bdir)
+                raise
         atomic_json(bdir / "batch.json", batch_doc)
         if key_hash:
             index[key_hash] = {"batchId": batch_id, "fingerprint": fingerprint}
             try:
                 atomic_json(index_path, index)
             except Exception:
+                if sidecar_path is not None:
+                    try:
+                        sidecar_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 shutil.rmtree(bdir)
                 raise
         self._schedule_batch(tenant_id, batch_doc)
