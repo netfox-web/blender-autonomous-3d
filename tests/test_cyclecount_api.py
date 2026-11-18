@@ -351,6 +351,32 @@ def test_cyclecount_list_pagination_exposes_older_rows(client: TestClient) -> No
     assert all(row["status"] == "WAITING_HUMAN_APPROVAL" for row in older)
 
 
+def test_cyclecount_list_reflects_other_instance_writes(tmp_path) -> None:
+    root = tmp_path / "cyclecount-list-sync"
+    writer_plat = Platform(root=root, mock_blender=True)
+    writer = TestClient(create_app(writer_plat))
+    lot_id = _receive(writer, sheets=10)
+    created = _create_cc(writer, lot_id, counted=6, reason="sync", key="api-sync")
+    reader_plat = Platform(root=root, mock_blender=True)
+    reader = TestClient(create_app(reader_plat))
+    stale = reader.get("/api/materials/cycle-counts", headers=_headers())
+    assert stale.status_code == 200
+    assert {row["cycleCountId"] for row in stale.json()["items"]} == {created["cycleCountId"]}
+    writer_plat.pilot.cyclecounts.approve(
+        created["cycleCountId"],
+        tenant_id=TENANT,
+        actor="sup",
+        payload=CONFIRM,
+    )
+    applied = reader.get(
+        "/api/materials/cycle-counts",
+        headers=_headers(),
+        params={"status": "APPLIED"},
+    )
+    assert applied.status_code == 200
+    assert {row["cycleCountId"] for row in applied.json()["items"]} == {created["cycleCountId"]}
+
+
 def test_cross_platform_concurrent_approve_via_api(client: TestClient, platform) -> None:
     import threading
 
