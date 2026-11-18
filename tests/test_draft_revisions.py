@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,7 @@ from fox3d.ids import new_id, stable_hash
 from fox3d.product_models_api import product_models_router
 from fox3d.recipe_admin_api import recipe_router
 from fox3d import recipe_3d as render
+from fox3d.recipe_workbench import RecipeWorkbench
 
 HEADERS = {"X-Tenant-Id": "t"}
 RECIPE_HEADERS = {"X-Tenant-Id": "sonaqueen-home"}
@@ -171,6 +173,22 @@ def test_product_model_listing_pagination_total(tmp_path):
     assert len(second["items"]) == 5
 
 
+def test_product_model_listing_pagination_ids_unique_over_201(tmp_path):
+    for i in range(201):
+        models.save(tmp_path, "t", {**cabinet(), "name": f"Cabinet {i:03d}"}, 0)
+    collected: list[str] = []
+    page_offset = 0
+    total = 1
+    while page_offset < total:
+        page = models.listing(tmp_path, "t", offset=page_offset, limit=200)
+        collected.extend(row["id"] for row in page["items"])
+        total = page["total"]
+        page_offset += len(page["items"])
+        assert page["items"] or page_offset >= total
+    assert len(collected) == 201
+    assert len(set(collected)) == 201
+
+
 def test_product_model_revision_list_beyond_default_page(tmp_path):
     item = _save_versions(tmp_path, 1)
     for rev in range(1, 41):
@@ -229,3 +247,84 @@ def test_product_model_revision_diff_fields_only_save(tmp_path):
     first = models.get_revision(tmp_path, "t", item["id"], 1)
     current = models.get(tmp_path, "t", item["id"])
     assert first["draft"]["variants"] != current["draft"]["variants"]
+
+
+def test_product_model_revision_list_omits_corrupt_snapshots(tmp_path, model_client):
+    item = _save_versions(tmp_path, 3)
+    rev_dir = models.directory(tmp_path, "t") / item["id"] / "revisions"
+    (rev_dir / "2.json").write_text("{broken", encoding="utf-8")
+    body = models.list_revisions(tmp_path, "t", item["id"], offset=0, limit=40)
+    assert body["total"] == 2
+    assert body["skipped"] == 1
+    assert [row["revision"] for row in body["items"]] == [1, 3]
+    response = model_client.get(f"/api/product-models/{item['id']}/revisions", headers=HEADERS)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 2
+    assert len(payload["items"]) == 2
+
+
+def test_product_model_revision_list_skips_non_object_json_outside_page(tmp_path, model_client):
+    item = models.save(tmp_path, "t", cabinet(), 0)
+    rev_dir = models.directory(tmp_path, "t") / item["id"] / "revisions"
+    (rev_dir / "999.json").write_text("[1]", encoding="utf-8")
+    body = models.list_revisions(tmp_path, "t", item["id"], offset=0, limit=1)
+    assert body["total"] == 1
+    assert body["skipped"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["revision"] == 1
+    response = model_client.get(
+        f"/api/product-models/{item['id']}/revisions?offset=0&limit=1",
+        headers=HEADERS,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["skipped"] == 1
+    assert payload["items"][0]["revision"] == 1
+
+
+def test_product_model_listing_template_state_only_for_page(tmp_path, monkeypatch):
+    calls: list[str] = []
+
+    def track(_root, _tid, item):
+        calls.append(item["id"])
+        return "DRAFT"
+
+    monkeypatch.setattr(models, "_template_state", track)
+    ids = []
+    for i in range(5):
+        row = models.save(tmp_path, "t", {**cabinet(), "name": f"Cabinet {i}"}, 0)
+        ids.append(row["id"])
+    models.listing(tmp_path, "t", offset=0, limit=2)
+    models.listing(tmp_path, "t", offset=2, limit=2)
+    assert len(calls) == 4
+    assert set(calls).issubset(set(ids))
+
+
+def test_recipe_revision_list_reads_payload_only_for_one_page(recipe_client, tmp_path, monkeypatch):
+    sku = "LI-D40"
+    url = f"/api/recipe-library/products/{sku}"
+    base = recipe_client.get(url, headers=RECIPE_HEADERS).json()
+    draft = base["draft"]
+    revision = base["revision"]
+    for i in range(12):
+        draft = {**draft, "notes": f"note-{i}"}
+        saved = recipe_client.put(
+            url, headers=RECIPE_HEADERS, json={"expectedRevision": revision, "draft": draft}
+        )
+        assert saved.status_code == 200, saved.text
+        revision = saved.json()["revision"]
+    loads: list[str] = []
+    real_loads = json.loads
+
+    def counting_loads(text):
+        loads.append(text)
+        return real_loads(text)
+
+    monkeypatch.setattr("fox3d.recipe_workbench.json.loads", counting_loads)
+    store = RecipeWorkbench(tmp_path)
+    listed = store.list_revisions(RECIPE_HEADERS["X-Tenant-Id"], sku, offset=0, limit=5)
+    assert listed["total"] == 12
+    assert len(listed["items"]) == 5
+    assert len(loads) == 5

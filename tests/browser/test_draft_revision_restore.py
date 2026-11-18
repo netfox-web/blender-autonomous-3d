@@ -170,3 +170,35 @@ def test_product_models_variant_only_revision_shows_diff(admin_page: Page, admin
         timeout=15_000,
     )
     assert "與目前版本相同" not in page.locator("#revision-diff").inner_text()
+
+
+def test_product_models_restore_confirms_unsaved_classification(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    base = admin_server["base_url"]
+    _, model_name = _seed_three_revisions(base)
+    page = admin_page
+    page.add_init_script("window.mountRecipeViewer = () => () => {};")
+    _open_model(page, base, model_name)
+    dialogs: list[str] = []
+
+    def on_dialog(dialog) -> None:
+        dialogs.append(dialog.message)
+        dialog.dismiss()
+
+    page.on("dialog", on_dialog)
+    options = page.locator("#model-category option")
+    if options.count() < 2:
+        pytest.skip("fixture category tree has fewer than two leaf options")
+    current = page.locator("#model-category").input_value()
+    alt = None
+    for i in range(options.count()):
+        value = options.nth(i).get_attribute("value")
+        if value and value != current:
+            alt = value
+            break
+    assert alt is not None
+    page.select_option("#model-category", alt)
+    page.locator("#revision-list button").first.click()
+    page.locator("#revision-restore").click()
+    assert any("分類" in message for message in dialogs)

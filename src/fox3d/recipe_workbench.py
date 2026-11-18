@@ -274,13 +274,17 @@ class RecipeWorkbench:
         with self.connection() as con:
             if not self._known_product(con, tid, sku):
                 raise KeyError("找不到商品")
-            rows = con.execute(
-                "SELECT revision, updated, payload FROM revisions WHERE tenant=? AND sku=? ORDER BY revision",
+            total = con.execute(
+                "SELECT COUNT(*) FROM revisions WHERE tenant=? AND sku=?",
                 (tid, sku),
+            ).fetchone()[0]
+            rows = con.execute(
+                "SELECT revision, updated, payload FROM revisions WHERE tenant=? AND sku=? "
+                "ORDER BY revision LIMIT ? OFFSET ?",
+                (tid, sku, limit, offset),
             ).fetchall()
-        total = len(rows)
         items = []
-        for row in rows[offset:offset + limit]:
+        for row in rows:
             draft = json.loads(row["payload"])
             items.append({"revision": row["revision"], "updatedAt": row["updated"],
                           "inputHash": stable_hash(draft)})
