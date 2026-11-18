@@ -1059,7 +1059,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def pilot_work_orders(x_tenant_id: str | None = Header(default=None), offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
         pilot = get_platform().pilot
-        orders = [wo for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
+        with pilot.workorders._lock:
+            orders = [dict(wo) for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
         items = [{**wo, "qcHold": wo.get("state") == "QC_HOLD", "qcOk": pilot.qc.required_final_ok(wo["workOrderId"], str(wo.get("productFamily") or "KD_FURNITURE"), tenant_id=tid)["ok"]} for wo in orders[offset:offset + limit]]
         return {"items": items, "total": len(orders), "offset": offset, "limit": limit, "liveMachineControl": False}
 

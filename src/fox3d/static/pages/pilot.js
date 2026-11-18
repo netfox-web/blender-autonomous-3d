@@ -324,7 +324,13 @@
     }
     api(task.path, { method: 'POST', body: bodyText, tenant: task.tenant }).then(function (d) {
       if (typeof task.onDone === 'function') task.onDone(d);
-      if (d && (d.result === 'FAIL' || d.state === 'QC_HOLD')) { $('result').textContent = '品檢未通過或工單仍在 QC_HOLD'; $('qc-status').textContent = '品檢未通過或工單仍在 QC_HOLD'; if (task.isPacking) { posting = false; refresh(task.workOrderId, true); } return; }
+      if (d && d.result === 'FAIL' && /\/qc$/.test(task.path)) {
+        $('result').textContent = '品檢未通過或工單仍在 QC_HOLD';
+        $('qc-status').textContent = '品檢未通過或工單仍在 QC_HOLD';
+        posting = false;
+        refresh(task.workOrderId, true);
+        return;
+      }
       if (isMismatchResult(d)) {
         if ($('packing-status')) {
           $('packing-status').textContent = '尺寸不符待人工確認';

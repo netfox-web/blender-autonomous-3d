@@ -1,4 +1,6 @@
 """Tenant isolation, idempotency and persistence of the pilot QC API."""
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -87,3 +89,34 @@ def test_qc_invalid_inputs_and_defect_conflict(platform: Any) -> None:
     assert page['total'] == 1 and len(page['items']) == 1
     assert page['items'][0]['qcHold'] is False and page['items'][0]['qcOk'] is False
     assert client.get('/api/pilot/work-orders?offset=1&limit=1', headers=HEADERS).json()['items'] == []
+
+
+def test_concurrent_qc_post_and_work_order_list(platform: Any) -> None:
+    client = TestClient(create_app(platform))
+    _, wo = _seed_release_receipt_and_wo(platform)
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}/qc"
+    workers = 8
+    barrier = Barrier(workers)
+
+    def list_orders(_: int) -> None:
+        barrier.wait()
+        for _ in range(25):
+            response = client.get("/api/pilot/work-orders", headers=HEADERS)
+            assert response.status_code != 500, response.text
+
+    def record_qc(thread_id: int) -> None:
+        barrier.wait()
+        for i in range(40):
+            body = {
+                "stage": "FINAL",
+                "checkId": "THICKNESS",
+                "measured": 17 + ((thread_id + i) % 5),
+                "source": "MANUAL",
+                "idempotencyKey": f"concurrent-{thread_id}-{i}",
+            }
+            client.post(path, headers=HEADERS, json=body)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        tasks = [pool.submit(list_orders, i) for i in range(4)] + [pool.submit(record_qc, i) for i in range(4)]
+        for task in tasks:
+            task.result()

@@ -267,7 +267,7 @@ class QcService:
                 wo_tenant = None
         rows = [
             c
-            for c in self.checks.values()
+            for c in list(self.checks.values())
             if c["workOrderId"] == work_order_id
             and c["stage"] == "FINAL"
             and (wo_tenant is None or c.get("tenantId") == wo_tenant)
