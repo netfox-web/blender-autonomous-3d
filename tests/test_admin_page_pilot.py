@@ -60,3 +60,4 @@ def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
     assert "/packing-mismatch/resolve" in js and "packing-resolve-btn" in js
     assert "refreshSeq" in js and "cartonLoadSeq" in js and "Promise.all" in js
     assert "function actionButtons" in js and "setLocked(lockedBtns, true)" in js
+    assert "data-carton-load-done" in js and "markCartonLoadDone" in js
