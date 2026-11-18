@@ -27,6 +27,7 @@ from fox3d.contracts import (
 from fox3d.features import feature_index
 from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
+from fox3d.pilot_packing_api import pilot_packing_router
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
 from fox3d.cyclecount_api import cyclecount_router
@@ -1340,6 +1341,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     platform_provider = lambda: platform if platform is not None else get_platform()
     app.include_router(recipe_router(platform_provider))
+    app.include_router(pilot_packing_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
         app.include_router(page)

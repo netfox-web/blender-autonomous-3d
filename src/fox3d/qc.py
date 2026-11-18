@@ -77,6 +77,8 @@ class QcService:
         self.outbox: Any | None = None
         self.checks: dict[str, dict[str, Any]] = {}
         self.defects: dict[str, dict[str, Any]] = {}
+        # (tenant, workOrderId, idempotencyKey) -> {"sig": request signature, "qcId": recorded check}
+        self.idem: dict[str, dict[str, str]] = {}
         self.load()
 
     def load(self) -> None:
@@ -85,11 +87,19 @@ class QcService:
         payload = read_json(self.root / "qc.json") or {}
         self.checks = {r["qcId"]: r for r in payload.get("checks") or []}
         self.defects = {r["defectId"]: r for r in payload.get("defects") or []}
+        self.idem = {
+            str(k): {"sig": str(v.get("sig")), "qcId": str(v.get("qcId"))}
+            for k, v in (payload.get("idem") or {}).items()
+            if isinstance(v, dict)
+        }
 
     def persist(self) -> None:
         if not self.root:
             return
-        atomic_write_json(self.root / "qc.json", {"checks": list(self.checks.values()), "defects": list(self.defects.values())})
+        atomic_write_json(
+            self.root / "qc.json",
+            {"checks": list(self.checks.values()), "defects": list(self.defects.values()), "idem": self.idem},
+        )
 
     def schema(self, family: str) -> list[dict[str, Any]]:
         return plan_for_family(family)
@@ -143,16 +153,20 @@ class QcService:
         rec["qcHash"] = stable_hash({k: rec[k] for k in rec if k not in {"qcId", "qcHash"}})
         if dam_asset_id and self.dam is not None:
             self.dam.get(dam_asset_id, tenant_id=tenant_id)
+        hold_wo = False
         if self.workorders is not None:
             wo = self.workorders.get(work_order_id)
             if wo.get("tenantId") != tenant_id:
                 raise PermissionError("tenant isolation: qc")
+            hold_wo = not ok and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}
+            if hold_wo and wo.get("state") in {"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"}:
+                raise PermissionError(f"work order in {wo.get('state')} cannot be put on QC_HOLD")
         self.checks[rec["qcId"]] = rec
         if self.workorders is not None:
             wo = self.workorders.get(work_order_id)
             wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
-            if not ok and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}:
-                wo["state"] = "QC_HOLD"
+            if hold_wo and wo.get("state") != "QC_HOLD":
+                self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
         release_hash = None
         if self.workorders is not None:
             try:

@@ -5,13 +5,14 @@ from __future__ import annotations
 import copy
 import json
 import math
+import threading
 from pathlib import Path
 from typing import Any
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.journal import emit
+from fox3d.journal import SemanticKeyConflictError, emit
 
 ALLOWED_SOURCES = frozenset({"MANUAL", "IMPORTED"})
 PALLET_MM = (1200.0, 1000.0)
@@ -96,6 +97,7 @@ def _carton_physical_oversize(dims: dict[str, Any]) -> bool:
 
 class LogisticsService:
     def __init__(self, root: Path | None = None) -> None:
+        self._lock = threading.RLock()
         self.root = Path(root) if root else None
         if self.root:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -154,58 +156,70 @@ class LogisticsService:
         product_version: Any = None,
         lot_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        n = _require_quantity(quantity)
-        raw_key = idempotency_key or f"{work_order_id}:{batch_id}"
-        key = f"{tenant_id}::carton::{raw_key}"
-        if key in self._idem:
-            ids = self._idem[key]
-            if not isinstance(ids, list):
-                raise PermissionError("idempotency namespace collision: carton")
-            rows = [self.cartons[i] for i in ids]
-            if any(r.get("tenantId") != tenant_id for r in rows):
-                raise PermissionError("tenant isolation: carton")
+        with self._lock:
+            n = _require_quantity(quantity)
+            raw_key = idempotency_key or f"{work_order_id}:{batch_id}"
+            key = f"{tenant_id}::carton::{raw_key}"
+            if key in self._idem:
+                ids = self._idem[key]
+                if not isinstance(ids, list):
+                    raise PermissionError("idempotency namespace collision: carton")
+                rows = [self.cartons[i] for i in ids]
+                if any(r.get("tenantId") != tenant_id for r in rows):
+                    raise PermissionError("tenant isolation: carton")
+                if len(rows) != n or any(r.get("workOrderId") != work_order_id for r in rows):
+                    raise SemanticKeyConflictError("carton idempotency conflict")
+                return rows
+            rows = []
+            ids = []
+            for i in range(n):
+                rec = {
+                    "cartonId": new_id(),
+                    "tenantId": tenant_id,
+                    "workOrderId": work_order_id,
+                    "batchId": batch_id,
+                    "index": i,
+                    "contents": list(contents or [{"sku": "product", "qty": 1}]),
+                    "expected": {
+                        "length": float(plan.get("length") or 400),
+                        "width": float(plan.get("width") or 300),
+                        "height": float(plan.get("height") or 200),
+                        "weightKg": float(expected_weight_kg),
+                        "source": plan.get("costSource") or "CONFIG_ESTIMATE",
+                        "truthLabel": "EXPECTED",
+                    },
+                    "measured": None,
+                    "releaseHash": release_hash,
+                    "productVersion": product_version,
+                    "lotIds": list(lot_ids or []),
+                    "createdAt": _now(),
+                }
+                rec["cartonHash"] = stable_hash({k: rec[k] for k in rec if k not in {"cartonId", "cartonHash"}})
+                self.cartons[rec["cartonId"]] = rec
+                rows.append(rec)
+                ids.append(rec["cartonId"])
+            self._idem[key] = ids
+            try:
+                emit(
+                    self,
+                    "carton.instantiate",
+                    tenant_id=tenant_id,
+                    aggregate_type="Carton",
+                    aggregate_id=ids[0] if ids else key,
+                    actor="ops",
+                    payload={"count": len(ids), "workOrderId": work_order_id},
+                    release_hash=release_hash,
+                    semantic_key=key,
+                )
+            except Exception:
+                if self.root and (self.root / "logistics.json").exists():
+                    self.load()
+                else:
+                    for cid in ids:
+                        self.cartons.pop(cid, None)
+                    self._idem.pop(key, None)
+                raise
             return rows
-        rows = []
-        ids = []
-        for i in range(n):
-            rec = {
-                "cartonId": new_id(),
-                "tenantId": tenant_id,
-                "workOrderId": work_order_id,
-                "batchId": batch_id,
-                "index": i,
-                "contents": list(contents or [{"sku": "product", "qty": 1}]),
-                "expected": {
-                    "length": float(plan.get("length") or 400),
-                    "width": float(plan.get("width") or 300),
-                    "height": float(plan.get("height") or 200),
-                    "weightKg": float(expected_weight_kg),
-                    "source": plan.get("costSource") or "CONFIG_ESTIMATE",
-                    "truthLabel": "EXPECTED",
-                },
-                "measured": None,
-                "releaseHash": release_hash,
-                "productVersion": product_version,
-                "lotIds": list(lot_ids or []),
-                "createdAt": _now(),
-            }
-            rec["cartonHash"] = stable_hash({k: rec[k] for k in rec if k not in {"cartonId", "cartonHash"}})
-            self.cartons[rec["cartonId"]] = rec
-            rows.append(rec)
-            ids.append(rec["cartonId"])
-        self._idem[key] = ids
-        emit(
-            self,
-            "carton.instantiate",
-            tenant_id=tenant_id,
-            aggregate_type="Carton",
-            aggregate_id=ids[0] if ids else key,
-            actor="ops",
-            payload={"count": len(ids), "workOrderId": work_order_id},
-            release_hash=release_hash,
-            semantic_key=key,
-        )
-        return rows
 
     def record_measured(
         self,
@@ -219,73 +233,74 @@ class LogisticsService:
         source: str = "IMPORTED",
         measure_op_id: str | None = None,
     ) -> dict[str, Any]:
-        rec = self.cartons[carton_id]
-        prev_snapshot = copy.deepcopy(rec)
-        if rec.get("tenantId") != tenant_id:
-            raise PermissionError("tenant isolation: carton measure")
-        expected = dict(rec["expected"])
-        m_len = _positive_finite(length, "length")
-        m_wid = _positive_finite(width, "width")
-        m_hgt = _positive_finite(height, "height")
-        m_wgt = _positive_finite(weight_kg, "weightKg")
-        measured = {
-            "length": m_len,
-            "width": m_wid,
-            "height": m_hgt,
-            "weightKg": m_wgt,
-            "source": source if source in {"IMPORTED", "MANUAL", "MEASURED"} else "IMPORTED",
-            "truthLabel": "MEASURED",
-        }
-        op_id = measure_op_id or new_id()
-        ops = rec.setdefault("measureOps", {})
-        latest_seq = int(rec.get("measureSeq") or 0)
-        prior = ops.get(op_id)
-        if prior is not None:
-            if not _measured_snapshot_equal(dict(prior["measured"]), measured):
-                raise ValueError("measure op payload mismatch on retry")
-            audit_measured = dict(prior["measured"])
-            stale_retry = int(prior["seq"]) < latest_seq
-        else:
-            audit_measured = measured
-            stale_retry = False
-            latest_seq += 1
-            ops[op_id] = {"measured": dict(measured), "seq": latest_seq}
-            rec["measureSeq"] = latest_seq
-        if not stale_retry:
-            rec["measured"] = measured
-            rec["expected"] = expected
-            mismatch = (
-                abs(m_len - float(expected["length"])) > 5
-                or abs(m_wid - float(expected["width"])) > 5
-                or abs(m_hgt - float(expected["height"])) > 5
-                or abs(m_wgt - float(expected.get("weightKg") or 0)) > 1.0
-            )
-            rec["mismatch"] = mismatch
-            rec["autoOverride"] = False
-        try:
-            emit(
-                self,
-                "carton.measured",
-                tenant_id=tenant_id,
-                aggregate_type="Carton",
-                aggregate_id=carton_id,
-                actor="ops",
-                payload={"measured": audit_measured, "measureOpId": op_id},
-                release_hash=rec.get("releaseHash"),
-                semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
-            )
-        except Exception:
-            if self.root and (self.root / "logistics.json").exists():
-                disk = read_json(self.root / "logistics.json") or {}
-                disk_cartons = {r["cartonId"]: r for r in disk.get("cartons") or []}
-                if carton_id in disk_cartons:
-                    self.cartons[carton_id] = disk_cartons[carton_id]
+        with self._lock:
+            rec = self.cartons[carton_id]
+            prev_snapshot = copy.deepcopy(rec)
+            if rec.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: carton measure")
+            expected = dict(rec["expected"])
+            m_len = _positive_finite(length, "length")
+            m_wid = _positive_finite(width, "width")
+            m_hgt = _positive_finite(height, "height")
+            m_wgt = _positive_finite(weight_kg, "weightKg")
+            measured = {
+                "length": m_len,
+                "width": m_wid,
+                "height": m_hgt,
+                "weightKg": m_wgt,
+                "source": source if source in {"IMPORTED", "MANUAL", "MEASURED"} else "IMPORTED",
+                "truthLabel": "MEASURED",
+            }
+            op_id = measure_op_id or new_id()
+            ops = rec.setdefault("measureOps", {})
+            latest_seq = int(rec.get("measureSeq") or 0)
+            prior = ops.get(op_id)
+            if prior is not None:
+                if not _measured_snapshot_equal(dict(prior["measured"]), measured):
+                    raise ValueError("measure op payload mismatch on retry")
+                audit_measured = dict(prior["measured"])
+                stale_retry = int(prior["seq"]) < latest_seq
+            else:
+                audit_measured = measured
+                stale_retry = False
+                latest_seq += 1
+                ops[op_id] = {"measured": dict(measured), "seq": latest_seq}
+                rec["measureSeq"] = latest_seq
+            if not stale_retry:
+                rec["measured"] = measured
+                rec["expected"] = expected
+                mismatch = (
+                    abs(m_len - float(expected["length"])) > 5
+                    or abs(m_wid - float(expected["width"])) > 5
+                    or abs(m_hgt - float(expected["height"])) > 5
+                    or abs(m_wgt - float(expected.get("weightKg") or 0)) > 1.0
+                )
+                rec["mismatch"] = mismatch
+                rec["autoOverride"] = False
+            try:
+                emit(
+                    self,
+                    "carton.measured",
+                    tenant_id=tenant_id,
+                    aggregate_type="Carton",
+                    aggregate_id=carton_id,
+                    actor="ops",
+                    payload={"measured": audit_measured, "measureOpId": op_id},
+                    release_hash=rec.get("releaseHash"),
+                    semantic_key=f"{tenant_id}::carton-measured::{carton_id}::{op_id}",
+                )
+            except Exception:
+                if self.root and (self.root / "logistics.json").exists():
+                    disk = read_json(self.root / "logistics.json") or {}
+                    disk_cartons = {r["cartonId"]: r for r in disk.get("cartons") or []}
+                    if carton_id in disk_cartons:
+                        self.cartons[carton_id] = disk_cartons[carton_id]
+                    else:
+                        self.cartons[carton_id] = prev_snapshot
                 else:
                     self.cartons[carton_id] = prev_snapshot
-            else:
-                self.cartons[carton_id] = prev_snapshot
-            raise
-        return rec
+                raise
+            return rec
 
     def packing_list(
         self,
@@ -545,46 +560,47 @@ class LogisticsService:
         work_order_id: str,
         release_hash: str,
     ) -> dict[str, Any]:
-        cartons = [
-            c
-            for c in self.cartons.values()
-            if c["workOrderId"] == work_order_id and c.get("tenantId") == tenant_id
-        ]
-        pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
-        rec: dict[str, Any] = {
-            "checklistId": new_id(),
-            "tenantId": tenant_id,
-            "workOrderId": work_order_id,
-            "releaseHash": release_hash,
-            "pinned": pinned,
-            "items": [
-                {
-                    "cartonId": c["cartonId"],
-                    "expected": c.get("expected"),
-                    "measured": c.get("measured"),
-                    "mismatch": bool(c.get("mismatch")),
-                }
-                for c in cartons
-            ],
-            "mismatchHold": any(bool(c.get("mismatch")) for c in cartons),
-            "autoOverride": False,
-            "truthLabel": "REAL_LOGIC",
-            "carrierProvider": "BLOCKED/NOT_CONNECTED",
-        }
-        rec["checklistHash"] = stable_hash({k: rec[k] for k in rec if k != "checklistHash"})
-        self.checklists[rec["checklistId"]] = rec
-        emit(
-            self,
-            "packing.checklist",
-            tenant_id=tenant_id,
-            aggregate_type="PackingChecklist",
-            aggregate_id=rec["checklistId"],
-            actor="ops",
-            payload={"workOrderId": work_order_id, "pinned": pinned},
-            release_hash=release_hash,
-            semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}::{rec['checklistId']}",
-        )
-        return rec
+        with self._lock:
+            cartons = [
+                c
+                for c in self.cartons.values()
+                if c["workOrderId"] == work_order_id and c.get("tenantId") == tenant_id
+            ]
+            pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
+            rec: dict[str, Any] = {
+                "checklistId": new_id(),
+                "tenantId": tenant_id,
+                "workOrderId": work_order_id,
+                "releaseHash": release_hash,
+                "pinned": pinned,
+                "items": [
+                    {
+                        "cartonId": c["cartonId"],
+                        "expected": c.get("expected"),
+                        "measured": c.get("measured"),
+                        "mismatch": bool(c.get("mismatch")),
+                    }
+                    for c in cartons
+                ],
+                "mismatchHold": any(bool(c.get("mismatch")) for c in cartons),
+                "autoOverride": False,
+                "truthLabel": "REAL_LOGIC",
+                "carrierProvider": "BLOCKED/NOT_CONNECTED",
+            }
+            rec["checklistHash"] = stable_hash({k: rec[k] for k in rec if k != "checklistHash"})
+            self.checklists[rec["checklistId"]] = rec
+            emit(
+                self,
+                "packing.checklist",
+                tenant_id=tenant_id,
+                aggregate_type="PackingChecklist",
+                aggregate_id=rec["checklistId"],
+                actor="ops",
+                payload={"workOrderId": work_order_id, "pinned": pinned},
+                release_hash=release_hash,
+                semantic_key=f"{tenant_id}::pack-check::{work_order_id}::{release_hash}::{rec['checklistId']}",
+            )
+            return rec
 
     def shipment_handoff(
         self,
