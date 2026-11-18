@@ -144,25 +144,56 @@ def _latest_matching_measure_op_id(carton: dict[str, Any], target_measured: dict
     return None
 
 
-def _sync_wo_mismatch_hold(pilot: Any, work_order_id: str, tid: str) -> bool:
+def _sync_wo_mismatch_hold(pilot: Any, work_order_id: str, tid: str, *, actor: str = "pack") -> bool:
     wo = pilot.workorders.orders.get(work_order_id)
     if wo is None or wo.get("tenantId") != tid:
         return False
-    wo_cartons = [
-        c
-        for c in pilot.logistics.cartons.values()
-        if c.get("workOrderId") == work_order_id and c.get("tenantId") == tid
-    ]
-    hold = any(bool(c.get("mismatch")) for c in wo_cartons)
-    if wo.get("mismatchHold") != hold:
-        wo["mismatchHold"] = hold
-        pilot.workorders.persist()
-    return hold
+    return bool(pilot.workorders.sync_packing_mismatch(work_order_id, actor=actor))
+
+
+def _snapshot_positive(raw: Any, field: str) -> float:
+    """Release snapshot values must be finite positive numbers; never substitute a default."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        raise HTTPException(422, f"放行快照缺少有效的 {field}，無法建立紙箱")
+    val = float(raw)
+    if not math.isfinite(val) or val <= 0:
+        raise HTTPException(422, f"放行快照缺少有效的 {field}，無法建立紙箱")
+    return val
+
+
+def _expected_packing_from_release(pilot: Any, wo: dict[str, Any]) -> tuple[dict[str, Any], float]:
+    """Carton plan + expected gross weight from the release snapshot (product truth, no 8 kg default)."""
+    rel = pilot.releases.releases.get(str(wo.get("releaseId") or "")) or {}
+    raw_snap = rel.get("snapshot")
+    snap: dict[str, Any] = raw_snap if isinstance(raw_snap, dict) else {}
+    packing = snap.get("packing")
+    if not isinstance(packing, dict):
+        packing = {}
+    plan = dict(packing)
+    for dim in ("length", "width", "height"):
+        plan[dim] = _snapshot_positive(packing.get(dim), f"packing.{dim}")
+    weight_info = snap.get("weight")
+    if not isinstance(weight_info, dict):
+        weight_info = {}
+    raw_weight = weight_info.get("grossKg")
+    if raw_weight is None:
+        raw_weight = packing.get("weightKg")
+    return plan, _snapshot_positive(raw_weight, "weight.grossKg")
+
+
+def _packing_status(mismatch: bool, mismatch_hold: bool, *, ok_text: str) -> str:
+    if mismatch_hold:
+        return "尺寸不符待人工確認"
+    if mismatch:
+        return "尺寸不符已人工確認"
+    return ok_text
+
+
+_QC_OPEN_STATES_REJECTED = frozenset({"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"})
 
 
 def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
     router = APIRouter()
-    qc_idem_store: dict[str, tuple[str, dict[str, Any]]] = {}
 
     @router.post("/api/pilot/work-orders/{work_order_id}/cartons")
     def create_work_order_cartons(
@@ -186,15 +217,17 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                     raise HTTPException(409, "工單尚未預留材料，無法建立紙箱")
                 if wo.get("state") in {"COMPLETED", "REJECTED", "CANCELLED"}:
                     raise HTTPException(409, "工單已結束，無法建立紙箱")
-            rel = pilot.releases.releases.get(str(wo.get("releaseId") or "")) or {}
-            snap = rel.get("snapshot") if isinstance(rel.get("snapshot"), dict) else {}
-            packing = (snap or {}).get("packing")
-            if not isinstance(packing, dict) or not packing:
-                packing = {"length": 400, "width": 300, "height": 200}
-            weight_info = (snap or {}).get("weight")
-            if not isinstance(weight_info, dict):
-                weight_info = {}
-            expected_weight = float(packing.get("weightKg") or weight_info.get("grossKg") or 8.0)
+            if not is_retry:
+                bound = [
+                    c
+                    for c in pilot.logistics.cartons.values()
+                    if c.get("workOrderId") == work_order_id and c.get("tenantId") == tid
+                ]
+                if bound or wo.get("cartonIds"):
+                    raise HTTPException(409, "工單已有其他冪等鍵建立的紙箱，不可再建立新的一批")
+                packing, expected_weight = _expected_packing_from_release(pilot, wo)
+            else:
+                packing, expected_weight = {}, 0.0  # replay: stored cartons are returned unchanged
             lot_ids = list((wo.get("lineage") or {}).get("materialLots") or [])
             try:
                 cartons = pilot.logistics.instantiate_cartons(
@@ -222,7 +255,6 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                 wo = pilot.workorders.set_packing(work_order_id, carton_ids)
             except PermissionError as exc:
                 raise HTTPException(409, str(exc)) from exc
-            _sync_wo_mismatch_hold(pilot, work_order_id, tid)
             items = [_serialize_carton(c) for c in cartons]
             return {
                 "workOrderId": work_order_id,
@@ -257,6 +289,7 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                 "workOrderId": work_order_id,
                 "tenantId": tid,
                 "releaseHash": wo.get("releaseHash"),
+                "mismatchHold": bool(wo.get("mismatchHold")),
                 "cartonCount": len(items),
                 "items": items,
                 "cartons": items,
@@ -329,7 +362,7 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
             mismatch_hold = _sync_wo_mismatch_hold(pilot, wo_id, tid)
             out = _serialize_carton(updated)
             out["mismatchHold"] = mismatch_hold
-            out["statusMessage"] = "尺寸不符待人工確認" if out["mismatch"] else "實測尺寸符合預期"
+            out["statusMessage"] = _packing_status(out["mismatch"], mismatch_hold, ok_text="實測尺寸符合預期")
             return out
 
     @router.post("/api/pilot/work-orders/{work_order_id}/packing-checklist")
@@ -384,11 +417,55 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                         release_hash=rel_hash,
                     )
                 )
-            wo["mismatchHold"] = bool(rec.get("mismatchHold"))
-            pilot.workorders.persist()
+            mismatch_hold = _sync_wo_mismatch_hold(pilot, work_order_id, tid)
+            rec["mismatch"] = bool(rec.get("mismatchHold"))
+            rec["mismatchHold"] = mismatch_hold
             rec["carrierProvider"] = "BLOCKED/NOT_CONNECTED"
-            rec["statusMessage"] = "尺寸不符待人工確認" if rec.get("mismatchHold") else "裝箱檢查通過"
+            rec["statusMessage"] = _packing_status(rec["mismatch"], mismatch_hold, ok_text="裝箱檢查通過")
             return rec
+
+    @router.post("/api/pilot/work-orders/{work_order_id}/packing-mismatch/resolve")
+    def resolve_packing_mismatch(
+        work_order_id: str,
+        payload: Any = Body(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        """Human sign-off on out-of-tolerance cartons: closes the open PACKING_MISMATCH hold(s).
+
+        Carton ``mismatch`` / ``autoOverride`` stay as recorded; only the work-order gate is lifted.
+        """
+        body = _require_body_dict(payload)
+        tid = _require_tenant(x_tenant_id, body)
+        pilot = provider().pilot
+        _require_wo(pilot, work_order_id, tid)
+        try:
+            require_confirm(body, action="resolve_packing_mismatch")
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        actor = str(body.get("actor") or "pack")[:120]
+
+        with pilot.workorders._lock, pilot.logistics._lock:
+            wo = _require_wo(pilot, work_order_id, tid)
+            # Bring legacy / not-yet-synced mismatches under a hold first so the sign-off covers them.
+            _sync_wo_mismatch_hold(pilot, work_order_id, tid, actor=actor)
+            open_pm = [
+                h for h in wo.get("holds") or [] if h.get("open") and h.get("reason") == "PACKING_MISMATCH"
+            ]
+            try:
+                for h in open_pm:
+                    pilot.workorders.resolve_hold(work_order_id, h["holdId"], actor=actor)
+            except PermissionError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            mismatch_hold = _sync_wo_mismatch_hold(pilot, work_order_id, tid, actor=actor)
+            pilot.workorders.persist()
+            return {
+                "workOrderId": work_order_id,
+                "tenantId": tid,
+                "state": wo.get("state"),
+                "mismatchHold": mismatch_hold,
+                "resolvedHoldIds": [h["holdId"] for h in open_pm],
+                "holds": wo.get("holds") or [],
+            }
 
     if importlib.util.find_spec("fox3d.pilot_qc_api") is None:
 
@@ -465,29 +542,38 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
             store_key = f"{tid}::qc-idem::{work_order_id}::{idem_key}"
 
             with pilot.workorders._lock:
-                _require_wo(pilot, work_order_id, tid)
-                if store_key in qc_idem_store:
-                    prev_sig, prev_rec = qc_idem_store[store_key]
-                    if prev_sig != sig:
+                wo = _require_wo(pilot, work_order_id, tid)
+                prev = pilot.qc.idem.get(store_key)
+                if prev is not None:
+                    if prev.get("sig") != sig:
                         raise HTTPException(409, "idempotencyKey 衝突")
-                    return prev_rec
-                rec = pilot.qc.record(
-                    tenant_id=tid,
-                    work_order_id=work_order_id,
-                    stage=stage,
-                    check_id=check_id,
-                    measured=measured,
-                    nominal=nominal,
-                    tol=tol,
-                    unit=unit,
-                    operator=operator,
-                    required_final=bool(spec.get("requiredFinal")),
-                    source=raw_source,
-                )
+                    prev_rec = pilot.qc.checks.get(str(prev.get("qcId")))
+                    if prev_rec is not None:
+                        return dict(prev_rec)
+                if wo.get("state") in _QC_OPEN_STATES_REJECTED:
+                    raise HTTPException(409, "工單尚未預留材料，無法記錄品檢")
+                if wo.get("state") in {"COMPLETED", "REJECTED", "CANCELLED"}:
+                    raise HTTPException(409, "工單已結束，無法記錄品檢")
+                try:
+                    rec = pilot.qc.record(
+                        tenant_id=tid,
+                        work_order_id=work_order_id,
+                        stage=stage,
+                        check_id=check_id,
+                        measured=measured,
+                        nominal=nominal,
+                        tol=tol,
+                        unit=unit,
+                        operator=operator,
+                        required_final=bool(spec.get("requiredFinal")),
+                        source=raw_source,
+                    )
+                except PermissionError as exc:
+                    raise HTTPException(409, str(exc)) from exc
+                pilot.qc.idem[store_key] = {"sig": sig, "qcId": str(rec["qcId"])}
                 pilot.qc.persist()
                 pilot.workorders.persist()
-                qc_idem_store[store_key] = (sig, rec)
-                return rec
+                return dict(rec)
 
         @router.post("/api/pilot/work-orders/{work_order_id}/qc/release-hold")
         def release_work_order_qc_hold(
@@ -506,18 +592,20 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
 
             with pilot.workorders._lock:
                 wo = _require_wo(pilot, work_order_id, tid)
+                if wo.get("state") in _QC_OPEN_STATES_REJECTED:
+                    raise HTTPException(409, "工單尚未預留材料，無 QC_HOLD 可解除")
                 family = str(wo.get("productFamily") or "KD_FURNITURE")
                 req_ok = pilot.qc.required_final_ok(
                     work_order_id, family, tenant_id=tid, plan=wo.get("qcPlan")
                 )
                 if not req_ok.get("ok"):
                     raise HTTPException(409, "required final QC 尚未全部通過，無法解除 QC_HOLD")
-                actor = str(body.get("actor") or "qc")
+                actor = str(body.get("actor") or "qc")[:120]
                 if wo.get("state") == "QC_HOLD":
-                    for h in wo.get("holds") or []:
-                        if h.get("open") and h.get("reason") != "PACKING_MISMATCH":
-                            h["open"] = False
-                            h["resolvedBy"] = actor
+                    other_holds = [h for h in wo.get("holds") or [] if h.get("open") and h.get("blocking")]
+                    if other_holds:
+                        reasons = sorted({str(h.get("reason") or "") for h in other_holds})
+                        raise HTTPException(409, f"仍有未結的 blocking hold（{', '.join(reasons)}），QC 無法解除")
                     pilot.workorders._transition(wo, "IN_PROGRESS", actor=actor, reason="qc-release-hold")
                     pilot.workorders.persist()
                 return wo

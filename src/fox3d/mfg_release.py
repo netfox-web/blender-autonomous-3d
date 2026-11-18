@@ -82,6 +82,7 @@ def product_snapshot(rec: dict[str, Any], *, family: str | None = None) -> dict[
         "nesting": nesting,
         "nestingHash": rec.get("nestingHash") or nesting.get("nestingHash") or (rec.get("lineage") or {}).get("nestingHash"),
         "packing": packing,
+        "weight": dict(rec["weight"]) if isinstance(rec.get("weight"), dict) else {},
         "packagingHash": rec.get("packagingHash") or packing.get("packagingHash") or (rec.get("lineage") or {}).get("packagingHash"),
         "quote": rec.get("quote") or rec.get("landed") or rec.get("cost") or {},
         "instructions": rec.get("instructions") or {},
