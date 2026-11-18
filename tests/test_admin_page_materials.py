@@ -28,6 +28,7 @@ def test_materials_page_serves_html_and_shell(client: TestClient) -> None:
     assert "/admin/recipes/assets/fox3d-shell.css" in res.text
     assert "/admin/pages/assets/materials.js" in res.text
     assert "/admin/pages/assets/materials.css" in res.text
+    assert "/admin/recipes/assets/fox3d-pagination.js" in res.text
     assert 'aria-label="工作台導覽"' not in res.text
 
 
@@ -344,6 +345,19 @@ def test_nesting_benchmark_api_caps_per_tenant(client: TestClient, platform) -> 
     assert tenant_rows[0]["seq"] == 5
     assert len(other_rows) == 1
     assert all(b.get("tenantId") for b in platform.physical.benchmarks)
+
+
+def test_materials_js_uses_cycle_count_flow_guards() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/materials.js").read_text(encoding="utf-8")
+    assert "fox3dFetchAllPages" in js
+    assert "cycleCountPageFetcher" in js
+    assert "lastCcAttempt" in js
+    assert "mt-cc-retry" in js
+    assert "帳面已變動" in js
+    assert "mt-cc-submit" in js
+    assert "innerHTML" not in js
 
 
 def test_confirm_dialog_resets_return_value_before_opening() -> None:
