@@ -30,7 +30,15 @@ class RenderStore:
             unlink_owned(target, missing_ok=True)
 
     def read_all(self) -> list[dict[str, Any]]:
-        return [json.loads(path.read_text(encoding='utf-8')) for path in self.root.glob('*/*.json')]
+        records = []
+        for path in self.root.glob('*/*.json'):
+            try:
+                record = json.loads(path.read_text(encoding='utf-8'))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if isinstance(record, dict):
+                records.append(record)
+        return records
 
 
 class ParametricStore(dict[str, dict[str, Any]]):

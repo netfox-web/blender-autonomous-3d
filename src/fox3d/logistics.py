@@ -553,6 +553,37 @@ class LogisticsService:
             "scannerPath": None,
         }
 
+    def _checklist_idem_entry(
+        self,
+        tenant_id: str,
+        key: Any,
+        value: Any,
+    ) -> tuple[str, str] | None:
+        if not isinstance(key, str) or not isinstance(value, dict):
+            return None
+        prefix = f"{tenant_id}::checklist::"
+        if not key.startswith(prefix):
+            return None
+        if value.get("tenantId") not in (None, tenant_id):
+            return None
+        wo_id = value.get("workOrderId")
+        idem_key = value.get("idempotencyKey")
+        if isinstance(wo_id, str) and isinstance(idem_key, str):
+            return wo_id, idem_key
+        chk_id = str(value.get("checklistId") or "")
+        existing = self.checklists.get(chk_id)
+        if isinstance(existing, dict) and existing.get("tenantId") == tenant_id:
+            chk_wo = existing.get("workOrderId")
+            if isinstance(chk_wo, str) and chk_wo:
+                wo_prefix = f"{prefix}{chk_wo}::"
+                if key.startswith(wo_prefix):
+                    return chk_wo, key[len(wo_prefix) :]
+        rest = key[len(prefix) :]
+        legacy_wo, sep, legacy_idem = rest.partition("::")
+        if sep:
+            return legacy_wo, legacy_idem
+        return None
+
     def packing_checklist(
         self,
         *,
@@ -580,13 +611,27 @@ class LogisticsService:
             ]
             pinned = bool(cartons) and all(c.get("releaseHash") == release_hash for c in cartons)
             eff_sig = signature or stable_hash({"releaseHash": release_hash, "items": items})
-            store_key = f"{tenant_id}::checklist::{work_order_id}::{idempotency_key}" if idempotency_key else None
-            if store_key is not None:
-                previous = self._idem.get(store_key)
-                if previous is not None:
-                    if not isinstance(previous, dict) or previous.get("signature") != eff_sig:
+            store_key: str | None = None
+            if idempotency_key:
+                candidate_key = f"{tenant_id}::checklist::{work_order_id}::{idempotency_key}"
+                if candidate_key in self._idem and not isinstance(self._idem[candidate_key], dict):
+                    raise SemanticKeyConflictError("packing checklist idempotency conflict")
+                matched_value: dict[str, Any] | None = None
+                for k, v in self._idem.items():
+                    parsed = self._checklist_idem_entry(tenant_id, k, v)
+                    if parsed is None:
+                        continue
+                    entry_wo_id, entry_idem_key = parsed
+                    if entry_idem_key != idempotency_key:
+                        continue
+                    if entry_wo_id != work_order_id:
                         raise SemanticKeyConflictError("packing checklist idempotency conflict")
-                    chk_id = str(previous.get("checklistId") or "")
+                    matched_value = v
+                    break
+                if matched_value is not None:
+                    if matched_value.get("signature") != eff_sig:
+                        raise SemanticKeyConflictError("packing checklist idempotency conflict")
+                    chk_id = str(matched_value.get("checklistId") or "")
                     existing = self.checklists.get(chk_id)
                     if (
                         existing is None
@@ -595,13 +640,12 @@ class LogisticsService:
                     ):
                         raise SemanticKeyConflictError("packing checklist idempotency conflict")
                     return existing
-                prefix = f"{tenant_id}::checklist::"
-                suffix = f"::{idempotency_key}"
-                if any(
-                    isinstance(k, str) and k != store_key and k.startswith(prefix) and k.endswith(suffix)
-                    for k in self._idem
-                ):
-                    raise SemanticKeyConflictError("packing checklist idempotency conflict")
+                if candidate_key not in self._idem:
+                    store_key = candidate_key
+                else:
+                    store_key = (
+                        f"{tenant_id}::checklist::{json.dumps([work_order_id, idempotency_key], ensure_ascii=False)}"
+                    )
             rec: dict[str, Any] = {
                 "checklistId": new_id(),
                 "tenantId": tenant_id,
@@ -617,7 +661,13 @@ class LogisticsService:
             rec["checklistHash"] = stable_hash({k: rec[k] for k in rec if k != "checklistHash"})
             self.checklists[rec["checklistId"]] = rec
             if store_key is not None:
-                self._idem[store_key] = {"signature": eff_sig, "checklistId": rec["checklistId"]}
+                self._idem[store_key] = {
+                    "tenantId": tenant_id,
+                    "workOrderId": work_order_id,
+                    "idempotencyKey": idempotency_key,
+                    "signature": eff_sig,
+                    "checklistId": rec["checklistId"],
+                }
             try:
                 emit(
                     self,

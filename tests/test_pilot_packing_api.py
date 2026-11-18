@@ -1175,3 +1175,244 @@ def test_checklist_idempotency_key_conflicts_on_remeasure_and_across_restart(
         client3.post(f"/api/pilot/cartons/{carton_id}/measured", headers=HEADERS, json=ok_dims).status_code == 200
     )
     assert client3.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-after-remeasure"}).status_code == 409
+
+
+def test_checklist_idempotency_keys_with_delimiters_across_and_same_work_orders(
+    client: TestClient, platform: Any
+) -> None:
+    from fox3d.journal import SemanticKeyConflictError
+
+    rel, wo_a = _seed_release_receipt_and_wo(platform)
+    wo_b = platform.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="ops")
+    platform.pilot.workorders.release_for_execution(wo_b["workOrderId"], actor="ops")
+    platform.pilot.workorders.reserve_materials(
+        wo_b["workOrderId"],
+        actor="ops",
+        tenant_id=TENANT,
+        allocation_policy=STRICT_STOCK,
+    )
+    wo_a_id = wo_a["workOrderId"]
+    wo_b_id = wo_b["workOrderId"]
+    rel_hash = rel["releaseHash"]
+
+    # 1. Direct LogisticsService.packing_checklist:
+    # (a) Cross-work-order: key "a::b" on WO A, then "b" on WO B.
+    svc = platform.pilot.logistics
+    chk_a_ab = svc.packing_checklist(
+        tenant_id=TENANT,
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="a::b",
+    )
+    chk_b_b = svc.packing_checklist(
+        tenant_id=TENANT,
+        work_order_id=wo_b_id,
+        release_hash=rel_hash,
+        idempotency_key="b",
+    )
+    # (b) Same-work-order: key "same::c" on WO A, then "c" on WO A; and literal "a::b" then "b" on a single WO.
+    chk_a_sc = svc.packing_checklist(
+        tenant_id=TENANT,
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="same::c",
+    )
+    chk_a_c = svc.packing_checklist(
+        tenant_id=TENANT,
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="c",
+    )
+    assert len({chk_a_ab["checklistId"], chk_b_b["checklistId"], chk_a_sc["checklistId"], chk_a_c["checklistId"]}) == 4
+
+    # Literal "a::b" followed by "b" on the SAME work order (and reverse order "d" followed by "c::d"):
+    same_wo_ab = svc.packing_checklist(
+        tenant_id="tenant-same-wo",
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="a::b",
+    )
+    same_wo_b = svc.packing_checklist(
+        tenant_id="tenant-same-wo",
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="b",
+    )
+    same_wo_d = svc.packing_checklist(
+        tenant_id="tenant-same-wo",
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="d",
+    )
+    same_wo_cd = svc.packing_checklist(
+        tenant_id="tenant-same-wo",
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+        idempotency_key="c::d",
+    )
+    assert len({same_wo_ab["checklistId"], same_wo_b["checklistId"], same_wo_d["checklistId"], same_wo_cd["checklistId"]}) == 4
+
+    # Boundary shift when work_order_id itself contains "::":
+    shift_1 = svc.packing_checklist(
+        tenant_id="tenant-shift",
+        work_order_id="wo",
+        release_hash=rel_hash,
+        idempotency_key="1::b",
+    )
+    shift_2 = svc.packing_checklist(
+        tenant_id="tenant-shift",
+        work_order_id="wo::1",
+        release_hash=rel_hash,
+        idempotency_key="b",
+    )
+    assert shift_1["checklistId"] != shift_2["checklistId"]
+    assert (
+        svc.packing_checklist(
+            tenant_id="tenant-shift",
+            work_order_id="wo",
+            release_hash=rel_hash,
+            idempotency_key="1::b",
+        )["checklistId"]
+        == shift_1["checklistId"]
+    )
+    assert (
+        svc.packing_checklist(
+            tenant_id="tenant-shift",
+            work_order_id="wo::1",
+            release_hash=rel_hash,
+            idempotency_key="b",
+        )["checklistId"]
+        == shift_2["checklistId"]
+    )
+
+    # Exact replays return each key's own checklist.
+    assert (
+        svc.packing_checklist(
+            tenant_id=TENANT,
+            work_order_id=wo_a_id,
+            release_hash=rel_hash,
+            idempotency_key="a::b",
+        )["checklistId"]
+        == chk_a_ab["checklistId"]
+    )
+    assert (
+        svc.packing_checklist(
+            tenant_id=TENANT,
+            work_order_id=wo_b_id,
+            release_hash=rel_hash,
+            idempotency_key="b",
+        )["checklistId"]
+        == chk_b_b["checklistId"]
+    )
+    assert (
+        svc.packing_checklist(
+            tenant_id=TENANT,
+            work_order_id=wo_a_id,
+            release_hash=rel_hash,
+            idempotency_key="same::c",
+        )["checklistId"]
+        == chk_a_sc["checklistId"]
+    )
+    assert (
+        svc.packing_checklist(
+            tenant_id=TENANT,
+            work_order_id=wo_a_id,
+            release_hash=rel_hash,
+            idempotency_key="c",
+        )["checklistId"]
+        == chk_a_c["checklistId"]
+    )
+
+    # Reusing "a::b" on WO B or "b" on WO A (true cross-WO duplicate key) raises SemanticKeyConflictError.
+    with pytest.raises(SemanticKeyConflictError):
+        svc.packing_checklist(
+            tenant_id=TENANT,
+            work_order_id=wo_b_id,
+            release_hash=rel_hash,
+            idempotency_key="a::b",
+        )
+    with pytest.raises(SemanticKeyConflictError):
+        svc.packing_checklist(
+            tenant_id=TENANT,
+            work_order_id=wo_a_id,
+            release_hash=rel_hash,
+            idempotency_key="b",
+        )
+
+    # 2. HTTP endpoint: keys containing "::" across work orders and on the same work order.
+    path_a = f"/api/pilot/work-orders/{wo_a_id}/packing-checklist"
+    path_b = f"/api/pilot/work-orders/{wo_b_id}/packing-checklist"
+
+    res_a_http = client.post(path_a, headers=HEADERS, json={"idempotencyKey": "http::key"})
+    assert res_a_http.status_code == 200, res_a_http.text
+    res_b_suffix = client.post(path_b, headers=HEADERS, json={"idempotencyKey": "key"})
+    assert res_b_suffix.status_code == 200, res_b_suffix.text
+    res_a_same_pair1 = client.post(path_a, headers=HEADERS, json={"idempotencyKey": "http-same::sub"})
+    assert res_a_same_pair1.status_code == 200, res_a_same_pair1.text
+    res_a_same_pair2 = client.post(path_a, headers=HEADERS, json={"idempotencyKey": "sub"})
+    assert res_a_same_pair2.status_code == 200, res_a_same_pair2.text
+    res_b_prefixed_wo = client.post(path_b, headers=HEADERS, json={"idempotencyKey": f"{wo_a_id}::sub"})
+    assert res_b_prefixed_wo.status_code == 200, res_b_prefixed_wo.text
+    assert (
+        len(
+            {
+                res_a_http.json()["checklistId"],
+                res_b_suffix.json()["checklistId"],
+                res_a_same_pair1.json()["checklistId"],
+                res_a_same_pair2.json()["checklistId"],
+                res_b_prefixed_wo.json()["checklistId"],
+            }
+        )
+        == 5
+    )
+
+    # Cross-WO reuse of identical "http::key" or "key" returns 409.
+    assert client.post(path_b, headers=HEADERS, json={"idempotencyKey": "http::key"}).status_code == 409
+    assert client.post(path_a, headers=HEADERS, json={"idempotencyKey": "key"}).status_code == 409
+
+    # 3. Backward compatibility with legacy persisted idem entries (without explicit workOrderId/idempotencyKey fields).
+    legacy_chk_cross = svc.packing_checklist(
+        tenant_id=TENANT,
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+    )
+    legacy_chk_same = svc.packing_checklist(
+        tenant_id=TENANT,
+        work_order_id=wo_a_id,
+        release_hash=rel_hash,
+    )
+    legacy_sig = svc._idem[f"{TENANT}::checklist::{wo_a_id}::a::b"]["signature"]
+    svc._idem[f"{TENANT}::checklist::{wo_a_id}::legacy::delim-cross"] = {
+        "signature": legacy_sig,
+        "checklistId": legacy_chk_cross["checklistId"],
+    }
+    svc._idem[f"{TENANT}::checklist::{wo_a_id}::legacy::delim-same"] = {
+        "signature": legacy_sig,
+        "checklistId": legacy_chk_same["checklistId"],
+    }
+    svc.persist()
+
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    client2 = TestClient(create_app(restarted))
+
+    # Suffix "delim-cross" on WO B and suffix "delim-same" on WO A are distinct keys and must succeed after loading legacy data.
+    r_b_delim = client2.post(path_b, headers=HEADERS, json={"idempotencyKey": "delim-cross"})
+    assert r_b_delim.status_code == 200, r_b_delim.text
+    r_a_delim = client2.post(path_a, headers=HEADERS, json={"idempotencyKey": "delim-same"})
+    assert r_a_delim.status_code == 200, r_a_delim.text
+    assert len(
+        {
+            legacy_chk_cross["checklistId"],
+            legacy_chk_same["checklistId"],
+            r_b_delim.json()["checklistId"],
+            r_a_delim.json()["checklistId"],
+        }
+    ) == 4
+
+    # Exact replay of legacy key "legacy::delim-cross" on WO A returns legacy_chk_cross, while on WO B it conflicts with 409.
+    r_a_legacy = client2.post(path_a, headers=HEADERS, json={"idempotencyKey": "legacy::delim-cross"})
+    assert r_a_legacy.status_code == 200
+    assert r_a_legacy.json()["checklistId"] == legacy_chk_cross["checklistId"]
+    assert client2.post(path_b, headers=HEADERS, json={"idempotencyKey": "legacy::delim-cross"}).status_code == 409
+
+
