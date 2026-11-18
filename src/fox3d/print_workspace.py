@@ -5,8 +5,11 @@ No network output, hot-folder dispatch, or machine control exists in this module
 from __future__ import annotations
 
 import io
+import json
+import logging
 import math
 import re
+import shutil
 import zipfile
 from threading import RLock
 from typing import Literal
@@ -20,11 +23,18 @@ from pypdf.generic import (NameObject, DictionaryObject, NumberObject, DecodedSt
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.recipe_3d import atomic_json, read_json
-from fox3d.print_assets import workspace, asset
+from fox3d.print_assets import NotFoundError, workspace, asset
 from fox3d.asset_usage import require_artwork
 
+LOG=logging.getLogger(__name__)
 LOCK=RLock()
 PT=72/25.4
+MAX_PROOF_BUNDLES=10
+
+
+class JobList(list):
+    skipped: int = 0
+    total: int = 0
 
 
 class Panel(BaseModel):
@@ -72,16 +82,65 @@ class Release(BaseModel):
 
 
 def folder_for(root,tenant,jid):
-    if not re.fullmatch(r'[a-f0-9-]{36}',jid):
-        raise ValueError('無效工作編號')
+    if not isinstance(jid,str) or not re.fullmatch(r'[a-f0-9-]{36}',jid):
+        raise NotFoundError('找不到印刷工作')
     return workspace(root,tenant)/'jobs'/jid
 
 
 def get_job(root,tenant,jid):
-    j=read_json(folder_for(root,tenant,jid)/'job.json')
-    if not j or j['id']!=jid:
-        raise ValueError('找不到印刷工作')
+    path=folder_for(root,tenant,jid)/'job.json'
+    if not path.is_file():
+        raise NotFoundError('找不到印刷工作')
+    j=read_json(path)
+    if not isinstance(j,dict) or j.get('id')!=jid:
+        raise NotFoundError('找不到印刷工作')
     return j
+
+
+def _valid_job_record(path, j):
+    if not isinstance(j, dict):
+        return False
+    jid = j.get('id')
+    if not isinstance(jid, str) or not re.fullmatch(r'[a-f0-9-]{36}', jid) or jid != path.parent.name:
+        return False
+    updated_at = j.get('updatedAt')
+    if not isinstance(updated_at, str) or not updated_at.strip():
+        return False
+    rev = j.get('revision')
+    if not isinstance(rev, int) or isinstance(rev, bool) or rev < 1:
+        return False
+    draft = j.get('draft')
+    if not isinstance(draft, dict):
+        return False
+    PrintDraft.model_validate(draft)
+    return True
+
+
+def listing(root,tenant,*,offset=0,limit=None):
+    folder=workspace(root,tenant)/'jobs'
+    items=[]
+    skipped=0
+    for f in sorted(folder.glob('*/job.json')):
+        try:
+            j=json.loads(f.read_text(encoding='utf-8'))
+            if not _valid_job_record(f,j):
+                raise ValueError('invalid job record')
+            items.append(j)
+        except (OSError,ValueError,KeyError,TypeError):
+            skipped+=1
+            LOG.warning('略過無法讀取或缺欄位的印刷工作紀錄: job=%s',f.parent.name)
+    items.sort(key=lambda j:(j['updatedAt'],j['id']),reverse=True)
+    total=len(items)
+    sliced=items[offset:] if limit is None else items[offset:offset+limit]
+    out=JobList(sliced)
+    out.skipped=skipped
+    out.total=total
+    return out
+
+
+def list_jobs(root,tenant,*,offset=0,limit=100):
+    rows=listing(root,tenant,offset=offset,limit=limit)
+    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped}
 
 
 def save_job(root,tenant,draft,*,jid=None,expected_revision=0):
@@ -211,18 +270,29 @@ def stamp_proof(page):
 
 
 def validate_bundle(folder):
-    meta=read_json(folder/'bundle-meta.json');raw=(folder/'manifest.json').read_bytes()
-    if sha256_bytes(raw)!=meta.get('manifestSha256'):raise ValueError('印刷清單驗證失敗')
-    import json
+    meta_path=folder/'bundle-meta.json'
+    manifest_path=folder/'manifest.json'
+    if not folder.is_dir() or not meta_path.is_file() or not manifest_path.is_file():
+        raise NotFoundError('找不到印刷下載包')
+    meta=read_json(meta_path)
+    try:
+        raw=manifest_path.read_bytes()
+    except OSError as exc:
+        raise NotFoundError('找不到印刷下載包') from exc
+    if not isinstance(meta,dict) or sha256_bytes(raw)!=meta.get('manifestSha256'):
+        raise ValueError('印刷清單驗證失敗')
     m=json.loads(raw)
-    if m.get('kind') not in ('PROOF','APPROVED_FOR_MANUAL_RIP_IMPORT'):
+    if not isinstance(m,dict) or m.get('kind') not in ('PROOF','APPROVED_FOR_MANUAL_RIP_IMPORT'):
         raise ValueError('不明印刷包類型')
     if m.get('liveMachineControl') is not False or m.get('productionReady') is not False:
         raise ValueError('印刷授權狀態不符')
     expected={f'panel-{i+1}.pdf' for i in range(len(m['plan']['panels']))}
     if set(m['files'])!=expected:raise ValueError('印刷檔案清單不符')
     for name,record in m['files'].items():
-        data=(folder/name).read_bytes()
+        file_path=folder/name
+        if not file_path.is_file():
+            raise ValueError('印刷檔案已變更，請重新生成')
+        data=file_path.read_bytes()
         if sha256_bytes(data)!=record['sha256'] or len(data)!=record['sizeBytes']:
             raise ValueError('印刷檔案已變更，請重新生成')
         reader=PdfReader(io.BytesIO(data))
@@ -237,12 +307,119 @@ def validate_bundle(folder):
     return m
 
 
-def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None):
+def _verify_complete_bundle(folder):
+    m=validate_bundle(folder)
+    zip_path=folder/'package.zip'
+    zip_meta_path=folder/'zip-meta.json'
+    if not zip_path.is_file() or not zip_meta_path.is_file():
+        raise NotFoundError('找不到印刷下載包')
+    zip_meta=read_json(zip_meta_path)
+    if not isinstance(zip_meta,dict) or sha256_bytes(zip_path.read_bytes())!=zip_meta.get('sha256'):
+        raise ValueError('下載包驗證失敗')
+    return zip_path,m
+
+
+def _load_valid_bundle(folder):
+    try:
+        _,m=_verify_complete_bundle(folder)
+        return m
+    except (ValueError,OSError,KeyError,TypeError):
+        return None
+
+
+def _find_existing_proof(bundles_root,jid,revision,plan_hash,last_proof_id=None):
+    candidates=[]
+    if isinstance(last_proof_id,str) and re.fullmatch(r'[a-f0-9-]{36}',last_proof_id):
+        candidates.append(bundles_root/last_proof_id)
+    if bundles_root.is_dir():
+        for child in sorted(bundles_root.iterdir()):
+            if child.is_dir() and child not in candidates:
+                candidates.append(child)
+    for folder in candidates:
+        m=_load_valid_bundle(folder)
+        if m and m.get('kind')=='PROOF' and m.get('jobId')==jid and m.get('revision')==revision and m.get('plan',{}).get('planHash')==plan_hash:
+            return m
+    return None
+
+
+def _find_existing_release(bundles_root,jid,revision,plan_hash,proof_id,current_release=None):
+    candidates=[]
+    if isinstance(current_release,dict):
+        rel_bid=current_release.get('bundleId')
+        if isinstance(rel_bid,str) and re.fullmatch(r'[a-f0-9-]{36}',rel_bid):
+            candidates.append(bundles_root/rel_bid)
+    if bundles_root.is_dir():
+        for child in sorted(bundles_root.iterdir()):
+            if child.is_dir() and child not in candidates:
+                candidates.append(child)
+    for folder in candidates:
+        m=_load_valid_bundle(folder)
+        if not m:
+            continue
+        hr=m.get('humanRelease')
+        if (m.get('kind')=='APPROVED_FOR_MANUAL_RIP_IMPORT' and m.get('jobId')==jid
+                and m.get('revision')==revision and m.get('plan',{}).get('planHash')==plan_hash
+                and isinstance(hr,dict) and hr.get('proofId')==proof_id):
+            return m
+    return None
+
+
+def _prune_proof_bundles(bundles_root,job,*,limit=MAX_PROOF_BUNDLES):
+    if not bundles_root.is_dir() or limit<1:
+        return
+    protected=set()
+    last_proof=job.get('lastProofId')
+    if isinstance(last_proof,str) and last_proof:
+        protected.add(last_proof)
+    rel=job.get('release')
+    if isinstance(rel,dict):
+        for key in ('bundleId','proofId'):
+            val=rel.get(key)
+            if isinstance(val,str) and val:
+                protected.add(val)
+    proof_entries=[]
+    for child in bundles_root.iterdir():
+        if not child.is_dir():
+            continue
+        manifest=read_json(child/'manifest.json')
+        if not isinstance(manifest,dict):
+            continue
+        kind=manifest.get('kind')
+        if kind=='APPROVED_FOR_MANUAL_RIP_IMPORT':
+            protected.add(child.name)
+            hr=manifest.get('humanRelease')
+            if isinstance(hr,dict) and isinstance(hr.get('proofId'),str) and hr['proofId']:
+                protected.add(hr['proofId'])
+        elif kind=='PROOF':
+            try:
+                mtime=child.stat().st_mtime_ns
+            except OSError:
+                mtime=0
+            rev=manifest.get('revision',0)
+            rev_num=rev if isinstance(rev,int) and not isinstance(rev,bool) else 0
+            created=str(manifest.get('createdAt') or '')
+            proof_entries.append(((rev_num,created,mtime,child.name),child))
+    if len(proof_entries)<=limit:
+        return
+    proof_entries.sort(key=lambda item:item[0],reverse=True)
+    keep={child.name for _,child in proof_entries if child.name in protected}
+    for _,child in proof_entries:
+        if len(keep)>=limit:
+            break
+        keep.add(child.name)
+    for _,child in proof_entries:
+        if child.name not in keep:
+            shutil.rmtree(child,ignore_errors=True)
+
+
+def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None,max_proof_bundles=None):
     with LOCK:
         j=get_job(root,tenant,jid);p=plan(root,tenant,j['draft'])
         if j['revision']!=expected_revision or p['planHash']!=plan_hash:
             raise ValueError('設定已變更，請先儲存並重新核對')
+        bundles_root=folder_for(root,tenant,jid)/'bundles'
         kind='PROOF'
+        r=None
         if release:
             r=Release.model_validate(release)
             if r.expectedRevision!=expected_revision or r.planHash!=plan_hash:raise ValueError('放行版本不符')
@@ -250,11 +427,28 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None):
                 raise ValueError('需要操作人員完成全部尺寸與實體打樣確認')
             if any(not s.strip() for s in (r.operator,r.measurementRecord,r.testPrintRecord)) or not all(j['draft'][k].strip() for k in ('rip','machine','substrate')):
                 raise ValueError('請填操作人員、量測／打樣紀錄、RIP、機台與材質')
-            proof=validate_bundle(folder_for(root,tenant,jid)/'bundles'/r.proofId)
+            proof=validate_bundle(bundles_root/r.proofId)
             if proof['kind']!='PROOF' or proof['jobId']!=jid or proof['revision']!=j['revision'] or proof['plan']['planHash']!=plan_hash:
                 raise ValueError('請先下載並核對這個版本的校稿')
             kind='APPROVED_FOR_MANUAL_RIP_IMPORT'
-        bid=new_id();folder=folder_for(root,tenant,jid)/'bundles'/bid;folder.mkdir(parents=True)
+            existing_rel=_find_existing_release(bundles_root,jid,j['revision'],plan_hash,r.proofId,j.get('release'))
+            if existing_rel:
+                bid=existing_rel['bundleId']
+                op=(existing_rel.get('humanRelease') or {}).get('operator',r.operator)
+                rel_record={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':op,'proofId':r.proofId}
+                if j.get('release')!=rel_record:
+                    j['release']=rel_record
+                    atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+                return {'bundleId':bid,'kind':kind,'planHash':plan_hash,'revision':j['revision']}
+        else:
+            existing_proof=_find_existing_proof(bundles_root,jid,j['revision'],plan_hash,j.get('lastProofId'))
+            if existing_proof:
+                bid=existing_proof['bundleId']
+                if j.get('lastProofId')!=bid:
+                    j['lastProofId']=bid
+                    atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+                return {'bundleId':bid,'kind':kind,'planHash':plan_hash,'revision':j['revision']}
+        bid=new_id();folder=bundles_root/bid;folder.mkdir(parents=True)
         files={};cache={}
         for i,panel in enumerate(PrintDraft.model_validate(j['draft']).panels):
             if panel.assetId not in cache:cache[panel.assetId]=asset(root,tenant,panel.assetId)
@@ -269,8 +463,8 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None):
             with target.open('wb') as f:writer.write(f)
             data=target.read_bytes();files[target.name]={'sha256':sha256_bytes(data),'sizeBytes':len(data)}
         manifest={'bundleId':bid,'jobId':jid,'revision':j['revision'],'kind':kind,'plan':p,'files':files,
-                  'createdAt':str(utcnow()),'humanRelease':Release.model_validate(release).model_dump() if release else None,
-                  'approvalAuthority':'USER_ATTESTATION' if release else 'NONE','liveMachineControl':False,
+                  'createdAt':str(utcnow()),'humanRelease':r.model_dump() if r else None,
+                  'approvalAuthority':'USER_ATTESTATION' if r else 'NONE','liveMachineControl':False,
                   'productionReady':False,'note':'Digital file approval does not certify equipment setup, manufacturing, or color. No machine was contacted.'}
         atomic_json(folder/'manifest.json',manifest)
         atomic_json(folder/'bundle-meta.json',{'manifestSha256':sha256_bytes((folder/'manifest.json').read_bytes())})
@@ -280,7 +474,6 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None):
             prefix='PROOF' if kind=='PROOF' else 'RIP_IMPORT'
             for name in files:z.write(folder/name,f'{prefix}_{j["draft"]["sku"]}_{name}')
             z.write(folder/'manifest.json','manifest.json')
-            import json
             z.writestr('netfox-handoff.json',json.dumps({'schema':'fox3d.print-handoff.v1','jobId':jid,'bundleId':bid,
                 'status':kind,'sku':j['draft']['sku'],'productName':j['draft']['name'],'planHash':plan_hash,
                 'rip':j['draft']['rip'],'machine':j['draft']['machine'],'substrate':j['draft']['substrate'],
@@ -289,23 +482,21 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None):
             z.writestr('READ-ME.txt',f'{kind}\nImport each PDF at 100% scale. Preserve page/trim boxes. Confirm jig origin, media profile, white/clear ink and print a measured sample.\nNo hot-folder or printer dispatch has occurred.\n')
         atomic_json(folder/'zip-meta.json',{'sha256':sha256_bytes(zip_path.read_bytes())})
         j['lastProofId']=bid if kind=='PROOF' else j.get('lastProofId')
-        if release:j['release']={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':release['operator']}
+        if r:j['release']={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':r.operator,'proofId':r.proofId}
         atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+        _prune_proof_bundles(bundles_root,j,limit=MAX_PROOF_BUNDLES if max_proof_bundles is None else max_proof_bundles)
         return {'bundleId':bid,'kind':kind,'planHash':plan_hash,'revision':j['revision']}
 
 
 def bundle_download(root,tenant,jid,bid):
-    if not re.fullmatch(r'[a-f0-9-]{36}',bid):raise ValueError('無效下載編號')
-    folder=folder_for(root,tenant,jid)/'bundles'/bid;m=validate_bundle(folder)
+    j=get_job(root,tenant,jid)
+    if not isinstance(bid,str) or not re.fullmatch(r'[a-f0-9-]{36}',bid):raise NotFoundError('找不到印刷下載包')
+    folder=folder_for(root,tenant,jid)/'bundles'/bid;path,m=_verify_complete_bundle(folder)
     if m['jobId']!=jid or m['bundleId']!=bid:raise ValueError('印刷工作身分不符')
     for panel in m['plan']['draft']['panels']:
         require_artwork(root,tenant,panel['assetId'])
-    j=get_job(root,tenant,jid)
     if m['kind']!='PROOF':
         p=plan(root,tenant,j['draft'])
         if not j.get('release') or j['release']['bundleId']!=bid or m['revision']!=j['revision'] or m['plan']['planHash']!=p['planHash']:
             raise ValueError('此印刷放行已過期，請重新校稿與確認')
-    path=folder/'package.zip'
-    if sha256_bytes(path.read_bytes())!=read_json(folder/'zip-meta.json').get('sha256'):
-        raise ValueError('下載包驗證失敗')
     return path,m
