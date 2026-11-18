@@ -566,6 +566,133 @@ def test_pilot_blocked_and_network_error_are_not_success(admin_page: Page, admin
     )
 
 
+def _seed_pilot_packing_work_order(admin_server: dict[str, Any]) -> str:
+    plat = admin_server["platform"]
+    product = plat.kd.build_sku(tenant_id=TENANT, kind="OPEN_SHELF")
+    rel = plat.pilot.open_release(product, tenant_id=TENANT, family="KD_FURNITURE")
+    wo = plat.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="browser-test")
+    plat.pilot.workorders.release_for_execution(wo["workOrderId"], actor="browser-test")
+    plat.pilot.workorders.reserve_materials(
+        wo["workOrderId"], actor="browser-test", tenant_id=TENANT, allocation_policy="FIXTURE_AUTO_SEED"
+    )
+    return str(wo["workOrderId"])
+
+
+def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    wo_id = _seed_pilot_packing_work_order(admin_server)
+
+    _goto(page, admin_server["base_url"], "/admin/pilot", "#orders")
+    row_btn = page.locator("#orders tr", has_text=wo_id).locator("button")
+    row_btn.wait_for(timeout=10_000)
+    row_btn.click()
+    page.wait_for_selector("#packing-panel:not([hidden])")
+
+    # 1. route.abort on carton creation shows error and restores buttons.
+    create_path = f"/api/pilot/work-orders/{wo_id}/cartons"
+    abort_first = {"abort": True}
+    seen_create: dict[str, Any] = {}
+
+    def on_create(route: Route) -> None:
+        if abort_first["abort"]:
+            abort_first["abort"] = False
+            route.abort("failed")
+            return
+        seen_create["body"] = json.loads(route.request.post_data or "{}")
+        seen_create["tenant"] = route.request.headers.get("x-tenant-id")
+        route.continue_()
+
+    _install(page, create_path, on_create)
+
+    page.locator("#packing-quantity").fill("2")
+    page.locator("#packing-idem").fill("browser-pack-idem-1")
+    page.locator("#packing-create-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    assert page.locator("#packing-quantity").is_disabled()
+    assert page.locator("#packing-idem").is_disabled()
+    assert page.locator("#tenant").is_disabled()
+    snap_text = page.locator("#confirm-data").inner_text()
+    assert "browser-pack-idem-1" in snap_text and TENANT in snap_text
+
+    # Mutating inputs while confirmation is open does not change the snapshotted payload.
+    page.evaluate(
+        """() => {
+          document.getElementById('packing-quantity').value = '9';
+          document.getElementById('packing-idem').value = 'mutated-idem';
+          document.getElementById('tenant').value = 'mutated-tenant';
+        }"""
+    )
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const result = document.getElementById('result');
+          const status = document.getElementById('packing-status');
+          const createBtn = document.getElementById('packing-create-btn');
+          const confirmBtn = document.getElementById('confirm');
+          return !!(
+            result && result.textContent.includes('連線失敗') &&
+            status && status.textContent.includes('連線失敗') &&
+            createBtn && !createBtn.disabled &&
+            confirmBtn && !confirmBtn.disabled
+          );
+        }"""
+    )
+
+    # Restore inputs and submit carton creation successfully.
+    page.locator("#tenant").fill(TENANT)
+    page.locator("#packing-quantity").fill("2")
+    page.locator("#packing-idem").fill("browser-pack-idem-1")
+    page.locator("#packing-create-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const sel = document.getElementById('packing-carton-id');
+          return !!(sel && sel.options.length === 2);
+        }"""
+    )
+    assert seen_create["body"] == {"quantity": 2, "idempotencyKey": "browser-pack-idem-1"}
+    assert seen_create["tenant"] == TENANT
+
+    # 2. Record a mismatched measurement -> must show 尺寸不符待人工確認, not success.
+    first_carton_id = page.locator("#packing-carton-id").input_value()
+    assert first_carton_id
+    page.locator("#packing-length").fill("999")
+    page.locator("#packing-measure-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    assert page.locator("#packing-length").is_disabled()
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const status = document.getElementById('packing-status');
+          const result = document.getElementById('result');
+          return !!(
+            status && status.textContent.includes('尺寸不符待人工確認') &&
+            result && result.textContent.includes('尺寸不符待人工確認')
+          );
+        }"""
+    )
+
+    # 3. Generate packing checklist -> mismatchHold=true keeps 尺寸不符待人工確認 on panel.
+    page.locator("#packing-checklist-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const chk = document.getElementById('packing-checklist');
+          const status = document.getElementById('packing-status');
+          return !!(
+            chk && chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
+            status && status.textContent.includes('尺寸不符待人工確認')
+          );
+        }"""
+    )
+    assert page.locator("#packing-checklist-btn").is_enabled()
+
+
+
 def _seed_available_remnant(admin_server: dict[str, Any], remnant_id: str = "rem-browser-1") -> str:
     plat = admin_server["platform"]
     rec = {

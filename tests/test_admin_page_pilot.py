@@ -54,3 +54,6 @@ def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
     assert "function isBlockedResult" in js and "veto === true" in js and "truthLabel" in js
     assert "連線失敗" in js and "已阻擋" in js
     assert "if (posting || pending) return" in js
+    assert "innerHTML" not in js
+    assert "尺寸不符待人工確認" in js
+    assert "/cartons" in js and "/measured" in js and "/packing-checklist" in js
