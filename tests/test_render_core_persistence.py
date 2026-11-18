@@ -202,3 +202,31 @@ def test_twin_update_rejects_identity_and_foreign_tenant(tmp_path):
         platform.twins.update(impostor, previewAssetId='x')
     assert platform.twins.get(twin.twinId, tenant_id='owner').previewAssetId is None
 
+
+def test_upload_rejects_overlong_safe_sku_with_422(tmp_path):
+    client = TestClient(create_app(Platform(tmp_path, mock_blender=True)))
+    headers = {'X-Tenant-Id': 'owner'}
+    for sku in ('U' * 300, 'U' * 129, '界' * 67, 'a/' * 65):
+        response = client.post('/api/digital-twins/upload', headers=headers,
+                               data={'sku': sku}, files={'file': ('m.glb', b'glb')})
+        assert response.status_code == 422, sku
+    assert client.get('/api/digital-twins', headers=headers).json()['items'] == []
+    ok = client.post('/api/digital-twins/upload', headers=headers,
+                     data={'sku': '界' * 66}, files={'file': ('m.glb', b'glb')})
+    assert ok.status_code == 200
+    assert ok.json()['twin']['sku'] == '界' * 66
+    # Upload keeps encoding path separators instead of rejecting them.
+    slashed = client.post('/api/digital-twins/upload', headers=headers,
+                          data={'sku': 'a/' * 64}, files={'file': ('m.glb', b'glb')})
+    assert slashed.status_code == 200
+
+
+def test_product_e2e_overlong_safe_sku_writes_short_filename(tmp_path):
+    from pathlib import Path
+    platform = Platform(tmp_path, mock_blender=True)
+    out = platform.product_e2e(tenant_id='owner', sku='U' * 300, glb_bytes=b'glb')
+    name = Path(out['twin']['glb']).name
+    assert len(name.encode('utf-8')) <= 255
+    assert '_enc~=' in name
+    restored = Platform(tmp_path, mock_blender=True).get_twin(out['twin']['twinId'], tenant_id='owner')
+    assert restored['sku'] == 'U' * 300

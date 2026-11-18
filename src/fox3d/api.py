@@ -93,6 +93,26 @@ def _validate_remnant_reserve(body: dict[str, Any]) -> tuple[str, int, float | N
     return by, raw_version, lease_seconds, idem
 
 
+_MAX_SKU_CHARS = 128
+_MAX_SKU_UTF8_BYTES = 200
+
+
+def _require_valid_sku(sku: Any, *, allow_separators: bool = False) -> str:
+    """SKU limits shared by JSON create and multipart upload (422, never 500).
+
+    Both enforce the same character and UTF-8 byte limits. Upload keeps its
+    existing contract of accepting ``/``, ``\\`` and control characters, which
+    ``safe_path_component`` encodes; JSON create rejects them.
+    """
+    if not isinstance(sku, str) or not sku or len(sku) > _MAX_SKU_CHARS:
+        raise HTTPException(422, "sku 格式錯誤")
+    if any(0xD800 <= ord(c) <= 0xDFFF for c in sku) or len(sku.encode("utf-8", "surrogatepass")) > _MAX_SKU_UTF8_BYTES:
+        raise HTTPException(422, "sku 格式錯誤")
+    if not allow_separators and any(ord(c) < 32 or c in "/\\" for c in sku):
+        raise HTTPException(422, "sku 格式錯誤")
+    return sku
+
+
 def _entity_id(value: Any) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
         raise HTTPException(422, "entityId 格式錯誤")
@@ -450,11 +470,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def create_twin(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
-        sku = payload.get("sku")
-        if (not isinstance(sku, str) or not sku or len(sku) > 128
-                or any(ord(c) < 32 or 0xD800 <= ord(c) <= 0xDFFF or c in "/\\" for c in sku)
-                or len(sku.encode("utf-8")) > 200):
-            raise HTTPException(422, "sku 格式錯誤")
+        _require_valid_sku(payload.get("sku"))
         try:
             return get_platform().create_twin(payload)
         except ValidationError as exc:
@@ -467,6 +483,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         x_tenant_id: str | None = Header(default=None),
     ) -> dict[str, Any]:
         tid = tenant(x_tenant_id)
+        _require_valid_sku(sku, allow_separators=True)
         data = await file.read()
         return get_platform().product_e2e(tenant_id=tid, sku=sku, glb_bytes=data)
 

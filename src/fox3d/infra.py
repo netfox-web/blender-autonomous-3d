@@ -406,9 +406,12 @@ def safe_path_component(value: str) -> str:
         _validate_path_component(value)
         _reject_windows_path_component(value)
         escaped = _escape_encoding_prefix(value)
-        if escaped is not None:
-            return escaped
-        return value
+        component = value if escaped is None else escaped
+        if len(component.encode("utf-8")) > _MAX_ENCODED_COMPONENT_BYTES:
+            # A safe name too long for ``{uuid}_{component}.glb`` would raise
+            # ENAMETOOLONG at write time; store it under the digest form.
+            return f"{_PATH_ENCODING_PREFIX}{_DIGEST_MARK}{sha256_bytes(value.encode('utf-8'))}"
+        return component
     except ValueError:
         return _encode_unsafe_path_component(value)
 
