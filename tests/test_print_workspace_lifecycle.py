@@ -1190,3 +1190,315 @@ def test_ui_pagination_over_100_jobs_and_assets_across_pages(tmp_path: Path) -> 
     assert "105 筆已確認印刷用途" in pm_out["updatedUsageCount"]
 
 
+def test_pagination_1000_jobs_and_assets_avoids_rereading_and_mid_page_update_never_misses_items(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c_a = _make_client(tmp_path, "tenant-a")
+    c_b = _make_client(tmp_path, "tenant-b")
+
+    # Seed one real classified artwork asset in tenant-a so save_job / plan validation succeeds on mid-page update,
+    # and one asset + job in tenant-b to verify strict tenant isolation across cache and cursor pagination.
+    real_asset_a = _create_classified_asset(tmp_path, "tenant-a", seed=1)
+    real_asset_b = _create_classified_asset(tmp_path, "tenant-b", seed=2)
+    job_b = jobs.save_job(tmp_path, "tenant-b", _draft(real_asset_b["id"], sku="TENANT-B-SKU", name="租戶B商品"))
+
+    ws_a = assets.workspace(tmp_path, "tenant-a")
+    assets_dir = ws_a / "assets"
+    jobs_dir = ws_a / "jobs"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+
+    total_items = 1000
+    expected_asset_ids = {real_asset_a["id"]}
+    for idx in range(2, total_items + 1):
+        aid = f"{idx:064x}"
+        expected_asset_ids.add(aid)
+        afolder = assets_dir / aid
+        afolder.mkdir(parents=True, exist_ok=True)
+        (afolder / "asset.json").write_text(
+            json.dumps(
+                {
+                    "id": aid,
+                    "name": f"synthetic-{idx:04d}.pdf",
+                    "sizeBytes": 512,
+                    "info": {
+                        "type": "PDF",
+                        "pages": [
+                            {
+                                "mediaBoxPt": [0.0, 0.0, 286.0 * jobs.PT, 401.0 * jobs.PT],
+                                "trimBoxPt": [3.0 * jobs.PT, 3.0 * jobs.PT, 283.0 * jobs.PT, 398.0 * jobs.PT],
+                                "rotation": 0,
+                                "widthMm": 286.0,
+                                "heightMm": 401.0,
+                                "trimWidthMm": 280.0,
+                                "trimHeightMm": 395.0,
+                            }
+                        ],
+                        "color": "SOURCE_PDF_PRESERVED",
+                        "sizeAuthority": "PDF_BOXES_NOT_PHYSICAL_MEASUREMENT",
+                    },
+                    "provenance": {"type": "USER_UPLOAD"},
+                    "truth": "USER_PROVIDED_SOURCE",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (afolder / "usage.json").write_text(
+            json.dumps(
+                {
+                    "role": "ARTWORK",
+                    "note": f"Synthetic classification {idx}",
+                    "revision": 1,
+                    "updatedAt": "2026-11-18T00:00:00Z",
+                    "assetSha256": aid,
+                    "authority": "OPERATOR_CLASSIFICATION_ONLY",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    base_draft = _draft(real_asset_a["id"], sku="SKU-0001", name="商品-0001")
+    expected_job_ids: list[str] = []
+    for idx in range(1, total_items + 1):
+        jid = f"00000000-0000-0000-0000-{idx:012d}"
+        expected_job_ids.append(jid)
+        jfolder = jobs_dir / jid
+        jfolder.mkdir(parents=True, exist_ok=True)
+        hh = (idx // 3600) % 24
+        mm = (idx // 60) % 60
+        ss = idx % 60
+        ts = f"2026-11-18T{hh:02d}:{mm:02d}:{ss:02d}Z"
+        (jfolder / "job.json").write_text(
+            json.dumps(
+                {
+                    "id": jid,
+                    "revision": 1,
+                    "updatedAt": ts,
+                    "draft": {**base_draft, "sku": f"SKU-{idx:04d}", "name": f"商品-{idx:04d}"},
+                    "release": None,
+                    "lastProofId": None,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    # Clear caches so page 1 starts completely cold
+    jobs.clear_job_cache()
+    asset_usage.clear_asset_cache()
+
+    read_counts = {"job.json": 0, "asset.json": 0, "usage.json": 0}
+    real_read_text = Path.read_text
+
+    def counting_read_text(self: Path, *args, **kwargs):
+        if self.name in read_counts:
+            read_counts[self.name] += 1
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    # 1. Paginate 1000 assets across 10 pages (limit=100):
+    #    Page 1 reads all 1000 asset.json files once and 100 usage.json files;
+    #    pages 2..10 read 0 asset.json files and 100 usage.json files each.
+    collected_assets: list[str] = []
+    per_page_asset_reads: list[int] = []
+    per_page_usage_reads: list[int] = []
+    for page_idx in range(10):
+        before_asset = read_counts["asset.json"]
+        before_usage = read_counts["usage.json"]
+        res = c_a.get(f"/api/print-workspace/assets?offset={page_idx * 100}&limit=100")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["total"] == 1000
+        assert body["skipped"] == 0
+        assert len(body["items"]) == 100
+        collected_assets.extend(item["id"] for item in body["items"])
+        per_page_asset_reads.append(read_counts["asset.json"] - before_asset)
+        per_page_usage_reads.append(read_counts["usage.json"] - before_usage)
+
+    assert per_page_asset_reads[0] == 1000
+    assert per_page_asset_reads[1:] == [0] * 9
+    assert sum(per_page_asset_reads) == 1000  # 1x total instead of 10x (10,000)
+    assert per_page_usage_reads == [100] * 10
+    assert sum(per_page_usage_reads) == 1000  # 1x total instead of 10x (10,000)
+    assert len(collected_assets) == 1000
+    assert set(collected_assets) == expected_asset_ids
+
+    # Subsequent pagination via /api/product-models/assets reads 0 asset.json and 0 usage.json files
+    before_pm_asset = read_counts["asset.json"]
+    before_pm_usage = read_counts["usage.json"]
+    pm_res = c_a.get("/api/product-models/assets?offset=0&limit=100")
+    assert pm_res.status_code == 200 and pm_res.json()["total"] == 1000
+    assert read_counts["asset.json"] - before_pm_asset == 0
+    assert read_counts["usage.json"] - before_pm_usage == 0
+
+    # 2. Paginate 1000 jobs across 10 pages (limit=100) while updating jobs mid-pagination:
+    #    Descending order means idx=1000 is first (index 0) and idx=1 is last (index 999).
+    #    - Page 1 (offset=0, limit=100) returns jobs 1000..901.
+    #    - Before Page 2, update job 850 (which sits on Page 2 at index 150) AND job 995 (on Page 1 at index 5).
+    #      Under a naive updatedAt sort, job 850 would jump to index 0 (Page 1) and push job 901 to Page 2,
+    #      causing job 850 to be completely missed!
+    per_page_job_reads: list[int] = []
+    collected_jobs_offset: list[dict] = []
+    collected_jobs_cursor: list[dict] = []
+
+    before_p1 = read_counts["job.json"]
+    p1_res = c_a.get("/api/print-workspace/jobs?offset=0&limit=100")
+    assert p1_res.status_code == 200
+    p1 = p1_res.json()
+    per_page_job_reads.append(read_counts["job.json"] - before_p1)
+    assert per_page_job_reads[0] == 1000
+    assert p1["total"] == 1000
+    assert len(p1["items"]) == 100
+    assert p1["nextCursor"]
+    collected_jobs_offset.extend(p1["items"])
+    collected_jobs_cursor.extend(p1["items"])
+
+    # Mid-pagination update of a Page-2 job (job 850) and a Page-1 job (job 995)
+    job_850_id = f"00000000-0000-0000-0000-{850:012d}"
+    job_995_id = f"00000000-0000-0000-0000-{995:012d}"
+    assert job_850_id not in {item["id"] for item in p1["items"]}
+    assert job_995_id in {item["id"] for item in p1["items"]}
+
+    upd_850 = c_a.put(
+        f"/api/print-workspace/jobs/{job_850_id}",
+        json={"draft": {**base_draft, "sku": "SKU-0850-UPD", "name": "換頁期間更新商品850"}, "expectedRevision": 1},
+    )
+    assert upd_850.status_code == 200, upd_850.text
+    assert upd_850.json()["revision"] == 2
+
+    upd_995 = c_a.put(
+        f"/api/print-workspace/jobs/{job_995_id}",
+        json={"draft": {**base_draft, "sku": "SKU-0995-UPD", "name": "換頁期間更新商品995"}, "expectedRevision": 1},
+    )
+    assert upd_995.status_code == 200, upd_995.text
+    assert upd_995.json()["revision"] == 2
+
+    cursor = p1["nextCursor"]
+    for page_idx in range(1, 10):
+        before = read_counts["job.json"]
+        res_off = c_a.get(f"/api/print-workspace/jobs?offset={page_idx * 100}&limit=100")
+        assert res_off.status_code == 200
+        body_off = res_off.json()
+        per_page_job_reads.append(read_counts["job.json"] - before)
+        collected_jobs_offset.extend(body_off["items"])
+
+        res_cur = c_a.get(f"/api/print-workspace/jobs?offset={page_idx * 100}&limit=100&cursor={cursor}")
+        assert res_cur.status_code == 200
+        body_cur = res_cur.json()
+        collected_jobs_cursor.extend(body_cur["items"])
+        cursor = body_cur["nextCursor"] or ""
+
+    # Page 2 only re-read the 2 updated job.json files (NOT all 1000), and pages 3..10 read 0 files!
+    assert per_page_job_reads[1] == 2
+    assert per_page_job_reads[2:] == [0] * 8
+    assert sum(per_page_job_reads) == 1002  # instead of 10 * 1000 = 10,000
+
+    # Neither offset pagination nor cursor pagination missed any of the 1000 jobs!
+    offset_ids = [item["id"] for item in collected_jobs_offset]
+    cursor_ids = [item["id"] for item in collected_jobs_cursor]
+    assert len(offset_ids) == 1000
+    assert len(set(offset_ids)) == 1000
+    assert set(offset_ids) == set(expected_job_ids)
+    assert len(cursor_ids) == 1000
+    assert len(set(cursor_ids)) == 1000
+    assert set(cursor_ids) == set(expected_job_ids)
+
+    # Job 850 (updated while on Page 1) was returned on Page 2 with its updated revision=2 and SKU
+    fetched_850 = next(item for item in collected_jobs_cursor if item["id"] == job_850_id)
+    assert fetched_850["revision"] == 2
+    assert fetched_850["draft"]["sku"] == "SKU-0850-UPD"
+
+    # Tenant isolation: tenant-b never sees tenant-a's cached items or cursor results
+    b_jobs = c_b.get(f"/api/print-workspace/jobs?cursor={p1['nextCursor']}").json()
+    assert b_jobs["total"] == 1
+    assert [item["id"] for item in b_jobs["items"]] == [job_b["id"]]
+    b_assets = c_b.get("/api/print-workspace/assets").json()
+    assert b_assets["total"] == 1
+    assert [item["id"] for item in b_assets["items"]] == [real_asset_b["id"]]
+
+    # Boundary / malformed cursor inputs are handled cleanly without leaking internals
+    empty_cur = c_a.get("/api/print-workspace/jobs?cursor=&limit=5")
+    assert empty_cur.status_code == 200 and len(empty_cur.json()["items"]) == 5
+    unknown_cur = c_a.get("/api/print-workspace/jobs?cursor=unknown-cursor-id&offset=0&limit=5")
+    assert unknown_cur.status_code == 200 and len(unknown_cur.json()["items"]) == 5
+    too_long_cur = c_a.get(f"/api/print-workspace/jobs?cursor={'x' * 201}")
+    assert too_long_cur.status_code == 422
+    assert str(tmp_path) not in too_long_cur.text and "Traceback" not in too_long_cur.text
+
+
+def test_ui_fetch_all_pages_1000_jobs_with_mid_pagination_update_loses_no_items() -> None:
+    node = shutil.which("node")
+    assert node is not None, "node is required for UI pagination verification"
+
+    pagination_js_path = STATIC / "fox3d-pagination.js"
+    harness = f"""
+    const fs = require('fs');
+    const code = fs.readFileSync({json.dumps(str(pagination_js_path))}, 'utf8');
+    global.window = {{}};
+    eval(code);
+
+    const totalCount = 1000;
+    const jobs = Array.from({{ length: totalCount }}, (_, idx) => {{
+      const num = totalCount - idx;
+      const id = `00000000-0000-0000-0000-${{String(num).padStart(12, '0')}}`;
+      const createdAt = `2026-11-18T00:${{String(Math.floor(num / 60)).padStart(2, '0')}}:${{String(num % 60).padStart(2, '0')}}Z`;
+      return {{ id, revision: 1, createdAt, updatedAt: createdAt, draft: {{ sku: `SKU-${{num}}` }} }};
+    }});
+
+    const calls = [];
+    async function mockApi(path) {{
+      calls.push(path);
+      const u = new URL(path, 'http://localhost');
+      const limit = Number(u.searchParams.get('limit') || 100);
+      const offset = Number(u.searchParams.get('offset') || 0);
+      const cursor = u.searchParams.get('cursor') || '';
+
+      // Simulate a job on page 2 (index 150) being updated AND a new job being created right after page 1 is fetched
+      if (calls.length === 2) {{
+        jobs[150].revision = 2;
+        jobs[150].updatedAt = '2026-11-19T00:00:00Z';
+        jobs.unshift({{
+          id: '00000000-0000-0000-0000-000000009999',
+          revision: 1,
+          createdAt: '2026-11-19T01:00:00Z',
+          updatedAt: '2026-11-19T01:00:00Z',
+          draft: {{ sku: 'SKU-NEW' }},
+        }});
+      }}
+
+      let filtered = jobs;
+      if (cursor && cursor.includes('|')) {{
+        const [cTime, cId] = cursor.split('|');
+        filtered = jobs.filter(j => (j.createdAt < cTime) || (j.createdAt === cTime && j.id < cId));
+      }} else {{
+        filtered = jobs.slice(offset);
+      }}
+      const sliced = filtered.slice(0, limit);
+      const last = sliced[sliced.length - 1];
+      const nextCursor = (last && last.id !== jobs[jobs.length - 1].id) ? `${{last.createdAt}}|${{last.id}}` : null;
+      return {{ items: sliced, total: jobs.length, offset, limit, skipped: 0, nextCursor }};
+    }}
+
+    (async () => {{
+      const updatedTargetId = jobs[150].id;
+      const res = await global.window.fox3dFetchAllPages(mockApi, '/jobs');
+      const uniqueIds = new Set(res.items.map(x => x.id));
+      const updatedItem = res.items.find(x => x.id === updatedTargetId);
+      console.log(JSON.stringify({{
+        callCount: calls.length,
+        secondCallHasCursor: calls[1].includes('cursor='),
+        totalReturned: res.items.length,
+        uniqueCount: uniqueIds.size,
+        updatedRevision: updatedItem ? updatedItem.revision : 0,
+      }}));
+    }})();
+    """
+    proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert out["callCount"] == 10
+    assert out["secondCallHasCursor"] is True
+    assert out["totalReturned"] == 1000
+    assert out["uniqueCount"] == 1000
+    assert out["updatedRevision"] == 2
+
+
