@@ -58,3 +58,5 @@ def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
     assert "尺寸不符待人工確認" in js
     assert "/cartons" in js and "/measured" in js and "/packing-checklist" in js
     assert "/packing-mismatch/resolve" in js and "packing-resolve-btn" in js
+    assert "refreshSeq" in js and "cartonLoadSeq" in js and "Promise.all" in js
+    assert "function actionButtons" in js and "setLocked(lockedBtns, true)" in js
