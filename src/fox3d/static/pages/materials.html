@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
   <link rel="stylesheet" href="/admin/pages/assets/materials.css">
   <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/recipes/assets/fox3d-pagination.js"></script>
   <script defer src="/admin/pages/assets/materials.js"></script>
 </head>
 <body>
@@ -43,7 +44,20 @@
           <aside class="mt-detail" id="mt-lot-detail" hidden aria-live="polite">
             <h3>批次詳情</h3>
             <pre id="mt-lot-detail-body"></pre>
+            <form id="mt-cc-form" class="mt-form mt-cc-form">
+              <h4>實地盤點</h4>
+              <p class="mt-hint">送出後需主管核准才會調整可用庫存。</p>
+              <label>盤點數（張） <input id="mt-cc-counted" type="number" min="0" step="1" required></label>
+              <label>原因 <input id="mt-cc-reason" type="text" maxlength="200" required placeholder="1–200 字"></label>
+              <button type="submit" id="mt-cc-submit" class="mt-btn">送出盤點（需確認）</button>
+            </form>
+            <pre id="mt-cc-lot-result" class="mt-result" hidden></pre>
           </aside>
+        </div>
+        <div class="mt-col mt-col-wide">
+          <h2>待核准盤點</h2>
+          <p class="mt-hint">僅顯示待主管核准的盤點單；核准前會比對帳面快照。</p>
+          <div class="mt-scroll" id="mt-cc-wrap"><p class="mt-empty">載入中…</p></div>
         </div>
       </div>
 

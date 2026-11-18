@@ -15,6 +15,9 @@
     lotSubmitting: false,
     reserveSubmitting: false,
     benchSubmitting: false,
+    ccSubmitting: false,
+    ccActionId: null,
+    cycleCounts: null,
     lastLotAttempt: null,
     lastReserveAttempt: null,
   };
@@ -287,6 +290,32 @@
     }
   }
 
+  function lotAvailable(lot) {
+    if (!lot) return '—';
+    if (lot.remainingSheets != null) return String(lot.remainingSheets);
+    if (lot.quantity != null) return String(lot.quantity);
+    return '—';
+  }
+
+  function selectLot(lot) {
+    state.selectedLot = lot;
+    var detail = $('mt-lot-detail');
+    var body = $('mt-lot-detail-body');
+    if (!detail || !body) return;
+    detail.hidden = false;
+    body.textContent = fmtJson(lot);
+    var counted = $('mt-cc-counted');
+    var reason = $('mt-cc-reason');
+    if (counted && !state.ccSubmitting && !state.confirmOpen) {
+      counted.value = lotAvailable(lot);
+    }
+    if (reason && !state.ccSubmitting && !state.confirmOpen) reason.value = '';
+    if ($('mt-cc-lot-result')) {
+      $('mt-cc-lot-result').hidden = true;
+      $('mt-cc-lot-result').textContent = '';
+    }
+  }
+
   function lotRow(lot) {
     var tr = el('tr', { 'data-selectable': '1' });
     var id = lot.lotId || lot.materialLotId || lot.id || '—';
@@ -294,14 +323,20 @@
     tr.appendChild(el('td', null, String(lot.material || lot.materialCode || '—')));
     tr.appendChild(el('td', null, String(lot.quantity != null ? lot.quantity : lot.sheetCount || '—')));
     tr.appendChild(el('td', null, String(lot.thickness != null ? lot.thickness : '—')));
-    tr.addEventListener('click', function () {
-      state.selectedLot = lot;
+    var act = el('td');
+    var ccBtn = el('button', { type: 'button', 'class': 'mt-btn mt-btn-small', 'data-cc-lot': id }, '盤點');
+    ccBtn.addEventListener('click', function (ev) {
+      ev.stopPropagation();
       Array.prototype.forEach.call(tr.parentNode.querySelectorAll('tr'), function (r) { r.classList.remove('sel'); });
       tr.classList.add('sel');
-      var detail = $('mt-lot-detail');
-      var body = $('mt-lot-detail-body');
-      detail.hidden = false;
-      body.textContent = fmtJson(lot);
+      selectLot(lot);
+    });
+    act.appendChild(ccBtn);
+    tr.appendChild(act);
+    tr.addEventListener('click', function () {
+      Array.prototype.forEach.call(tr.parentNode.querySelectorAll('tr'), function (r) { r.classList.remove('sel'); });
+      tr.classList.add('sel');
+      selectLot(lot);
     });
     return tr;
   }
@@ -315,7 +350,7 @@
     }
     var tbl = el('table', { 'class': 'mt-table' });
     var hr = el('tr');
-    ['批次 ID', '材料', '張數', '厚度'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    ['批次 ID', '材料', '張數', '厚度', ''].forEach(function (h) { hr.appendChild(el('th', null, h)); });
     tbl.appendChild(el('thead')).appendChild(hr);
     var tbody = el('tbody');
     lots.forEach(function (lot) { tbody.appendChild(lotRow(lot)); });
@@ -461,6 +496,91 @@
     $('mt-bench-raw').textContent = fmtJson(data);
   }
 
+  function fetchAllPagesHelper() {
+    return window.fox3dFetchAllPages || globalThis.fox3dFetchAllPages;
+  }
+
+  function materialsPageFetcher(path) {
+    return api(path).then(function (res) {
+      var data = res.data || {};
+      return {
+        items: Array.isArray(data.lots) ? data.lots : [],
+        total: Number(data.total),
+        offset: Number(data.offset) || 0,
+        limit: Number(data.limit) || 100,
+        catalog: data,
+      };
+    });
+  }
+
+  function fetchAllMaterials() {
+    var fetchAll = fetchAllPagesHelper();
+    if (!fetchAll) {
+      return api('/api/materials').then(function (res) { return res.data; });
+    }
+    return fetchAll(materialsPageFetcher, '/api/materials').then(function (page) {
+      var catalog = page.catalog || {};
+      return Object.assign({}, catalog, {
+        lots: page.items || [],
+        total: page.total,
+        offset: 0,
+        limit: page.limit,
+      });
+    });
+  }
+
+  function loadCycleCounts() {
+    var q = '/api/materials/cycle-counts?status=WAITING_HUMAN_APPROVAL&limit=100';
+    return api(q).then(function (res) {
+      state.cycleCounts = res.data;
+      renderCycleCounts((res.data && res.data.items) || []);
+      return res.data;
+    });
+  }
+
+  function renderCycleCounts(items) {
+    var wrap = $('mt-cc-wrap');
+    if (!wrap) return;
+    wrap.textContent = '';
+    if (!items.length) {
+      wrap.appendChild(el('p', { 'class': 'mt-empty' }, '目前沒有待核准盤點。'));
+      return;
+    }
+    var tbl = el('table', { 'class': 'mt-table' });
+    var hr = el('tr');
+    ['盤點單', '批次', '快照可用', '盤點數', '差異', ''].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+    tbl.appendChild(el('thead')).appendChild(hr);
+    var tbody = el('tbody');
+    items.forEach(function (cc) {
+      var tr = el('tr');
+      tr.appendChild(el('td', null, cc.cycleCountId || '—'));
+      tr.appendChild(el('td', null, cc.lotId || '—'));
+      tr.appendChild(el('td', null, String(cc.systemAvailable != null ? cc.systemAvailable : '—')));
+      tr.appendChild(el('td', null, String(cc.counted != null ? cc.counted : '—')));
+      tr.appendChild(el('td', null, String(cc.variance != null ? cc.variance : '—')));
+      var act = el('td');
+      var approveBtn = el('button', {
+        type: 'button',
+        'class': 'mt-btn mt-btn-primary mt-btn-small',
+        'data-cc-approve': cc.cycleCountId || '',
+      }, '核准');
+      var rejectBtn = el('button', {
+        type: 'button',
+        'class': 'mt-btn mt-btn-small',
+        'data-cc-reject': cc.cycleCountId || '',
+      }, '駁回');
+      approveBtn.addEventListener('click', function () { onCycleCountApprove(cc); });
+      rejectBtn.addEventListener('click', function () { onCycleCountReject(cc); });
+      act.appendChild(approveBtn);
+      act.appendChild(document.createTextNode(' '));
+      act.appendChild(rejectBtn);
+      tr.appendChild(act);
+      tbody.appendChild(tr);
+    });
+    tbl.appendChild(tbody);
+    wrap.appendChild(tbl);
+  }
+
   function loadAll() {
     loadSeq += 1;
     var seq = loadSeq;
@@ -468,12 +588,13 @@
     showBanner('');
     $('mt-refresh').disabled = true;
     Promise.all([
-      api('/api/materials'),
+      fetchAllMaterials(),
       api('/api/remnants'),
+      loadCycleCounts(),
     ])
       .then(function (res) {
         if (seq !== loadSeq) return;
-        state.materials = res[0].data;
+        state.materials = res[0];
         state.remnants = res[1].data;
         renderSheets(state.materials);
         renderLots(state.materials.lots || []);
@@ -720,6 +841,171 @@
     });
   }
 
+  function sendCycleCountAttempt(attempt) {
+    if (!attempt || state.ccSubmitting) return;
+    state.ccSubmitting = true;
+    var submitBtn = $('mt-cc-submit');
+    var okBtn = $('mt-confirm-ok');
+    var fields = formFields($('mt-cc-form'));
+    setLocked(fields, true);
+    if (submitBtn) submitBtn.disabled = true;
+    if (okBtn) okBtn.disabled = true;
+    var out = $('mt-cc-lot-result');
+    if (out) {
+      out.hidden = false;
+      out.classList.remove('err');
+      out.textContent = '送出中…';
+    }
+    var path = '/api/materials/lots/' + encodeURIComponent(attempt.lotId) + '/cycle-counts';
+    api(path, { method: 'POST', body: attempt.body, json: true, tenant: attempt.tenant })
+      .then(function (r) {
+        if (isBlockedResult(r.data)) {
+          var bmsg = blockedMessage('盤點', r.data);
+          if (out) {
+            out.classList.add('err');
+            out.textContent = bmsg + '\n' + fmtJson(r.data);
+          }
+          showBanner(bmsg, 'err');
+          return;
+        }
+        if (out) {
+          out.classList.remove('err');
+          out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
+        }
+        loadAll();
+      })
+      .catch(function (e) {
+        if (out) {
+          out.classList.add('err');
+          if (e && e.network) {
+            out.textContent = '失敗：' + e.message;
+            showBanner('盤點失敗：' + e.message, 'err');
+          } else if (e && e.status === 409) {
+            out.textContent = '帳面已變動：' + errorDetail(e);
+            showBanner('帳面已變動，請重新盤點', 'err');
+          } else {
+            out.textContent = '失敗：HTTP ' + (e.status || '?') + '\n' + fmtJson(e.body || e.message);
+            showBanner('盤點失敗（HTTP ' + (e.status || '?') + '）：' + errorDetail(e), 'err');
+          }
+        }
+      })
+      .then(function () {
+        state.ccSubmitting = false;
+        state.ccActionId = null;
+        setLocked(fields, false);
+        if (submitBtn) submitBtn.disabled = false;
+        if (okBtn) okBtn.disabled = false;
+      });
+  }
+
+  function onCycleCountSubmit(ev) {
+    ev.preventDefault();
+    if (state.ccSubmitting || state.confirmOpen) return;
+    var lot = state.selectedLot;
+    if (!lot || !lot.lotId) return;
+    var snapTenant = tenant();
+    var counted = parseInt($('mt-cc-counted') && $('mt-cc-counted').value, 10);
+    var reason = ($('mt-cc-reason') && $('mt-cc-reason').value || '').trim();
+    if (!Number.isFinite(counted) || counted < 0 || !reason) return;
+    var snapCounted = counted;
+    var snapReason = reason;
+    var fields = formFields($('mt-cc-form'));
+    var msg = '批次 ' + lot.lotId + ' · 盤點數 ' + snapCounted + ' · 原因「' + snapReason + '」· 租戶 ' + snapTenant;
+    confirmDialog('確認送出盤點', msg, fields, function () {
+      if (state.ccSubmitting) return;
+      var body = {
+        counted: snapCounted,
+        reason: snapReason,
+        idempotencyKey: makeIdempotencyKey(),
+        actor: 'warehouse',
+      };
+      sendCycleCountAttempt({ lotId: lot.lotId, body: body, tenant: snapTenant });
+    });
+  }
+
+  function postCycleCountAction(cc, action) {
+    if (!cc || !cc.cycleCountId || state.ccActionId) return;
+    state.ccActionId = cc.cycleCountId;
+    var snapTenant = tenant();
+    var path = '/api/materials/cycle-counts/' + encodeURIComponent(cc.cycleCountId) + '/' + action;
+    var wrap = $('mt-cc-wrap');
+    var buttons = wrap ? wrap.querySelectorAll('button') : [];
+    setLocked(buttons, true);
+  }
+
+  function finishCycleCountAction() {
+    state.ccActionId = null;
+    var wrap = $('mt-cc-wrap');
+    if (wrap) setLocked(wrap.querySelectorAll('button'), false);
+    if ($('mt-confirm-ok')) $('mt-confirm-ok').disabled = false;
+  }
+
+  function onCycleCountApprove(cc) {
+    if (state.ccActionId || state.confirmOpen) return;
+    var snap = {
+      available: cc.systemAvailable,
+      reserved: cc.systemReserved,
+      consumed: cc.systemConsumed,
+      counted: cc.counted,
+      variance: cc.variance,
+    };
+    var snapTenant = tenant();
+    var lockNodes = [$('mt-tenant')];
+    var msg = (
+      '快照可用 ' + snap.available + ' / 預留 ' + snap.reserved + ' / 已耗 ' + snap.consumed +
+      '\n盤點數 ' + snap.counted + '（差異 ' + snap.variance + '）\n租戶 ' + snapTenant
+    );
+    confirmDialog('確認核准盤點', msg, lockNodes, function () {
+      if (state.ccActionId) return;
+      postCycleCountAction(cc, 'approve');
+      var okBtn = $('mt-confirm-ok');
+      if (okBtn) okBtn.disabled = true;
+      api(
+        '/api/materials/cycle-counts/' + encodeURIComponent(cc.cycleCountId) + '/approve',
+        { method: 'POST', body: { confirm: true, actor: 'supervisor' }, json: true, tenant: snapTenant }
+      )
+        .then(function (r) {
+          if (isBlockedResult(r.data)) {
+            showBanner(blockedMessage('核准盤點', r.data), 'err');
+            return;
+          }
+          showBanner('盤點已核准', '');
+          loadAll();
+        })
+        .catch(function (e) {
+          if (e && e.network) {
+            showBanner('核准失敗：' + e.message, 'err');
+          } else if (e && e.status === 409) {
+            showBanner('帳面已變動，請重新盤點', 'err');
+          } else {
+            showBanner('核准失敗：' + errorDetail(e), 'err');
+          }
+        })
+        .then(function () { finishCycleCountAction(); });
+    });
+  }
+
+  function onCycleCountReject(cc) {
+    if (state.ccActionId || state.confirmOpen) return;
+    var snapTenant = tenant();
+    confirmDialog('確認駁回盤點', '駁回盤點單 ' + cc.cycleCountId + ' · 租戶 ' + snapTenant, [$('mt-tenant')], function () {
+      if (state.ccActionId) return;
+      postCycleCountAction(cc, 'reject');
+      api(
+        '/api/materials/cycle-counts/' + encodeURIComponent(cc.cycleCountId) + '/reject',
+        { method: 'POST', body: { actor: 'supervisor' }, json: true, tenant: snapTenant }
+      )
+        .then(function () {
+          showBanner('盤點已駁回', '');
+          loadAll();
+        })
+        .catch(function (e) {
+          showBanner('駁回失敗：' + errorDetail(e), 'err');
+        })
+        .then(function () { finishCycleCountAction(); });
+    });
+  }
+
   function onBenchRun() {
     if (state.benchSubmitting || state.confirmOpen) return;
     var snapTenant = tenant();
@@ -803,6 +1089,7 @@
       sendReserveAttempt(state.lastReserveAttempt);
     });
     $('mt-bench-run').addEventListener('click', onBenchRun);
+    if ($('mt-cc-form')) $('mt-cc-form').addEventListener('submit', onCycleCountSubmit);
     loadAll();
   }
 
