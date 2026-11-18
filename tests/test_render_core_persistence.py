@@ -59,7 +59,7 @@ def test_idempotency_concurrency_restart_and_conflict(tmp_path):
 
 def test_invalid_sku(tmp_path):
     client = TestClient(create_app(Platform(tmp_path, mock_blender=True)))
-    for sku in ('x' * 5000, 'a/b', 'a\\b', '', None):
+    for sku in ('x' * 5000, 'a/b', 'a\\b', '', None, '界' * 128, 'a\x00b'):
         assert client.post('/api/digital-twins', headers={'X-Tenant-Id': 'owner'}, json={'sku': sku}).status_code == 422
 
 

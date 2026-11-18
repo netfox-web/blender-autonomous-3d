@@ -451,7 +451,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         payload["tenantId"] = tid
         sku = payload.get("sku")
-        if not isinstance(sku, str) or not sku or len(sku) > 128 or "/" in sku or "\\" in sku:
+        if (not isinstance(sku, str) or not sku or len(sku) > 128
+                or any(ord(c) < 32 or 0xD800 <= ord(c) <= 0xDFFF or c in "/\\" for c in sku)
+                or len(sku.encode("utf-8")) > 200):
             raise HTTPException(422, "sku 格式錯誤")
         try:
             return get_platform().create_twin(payload)
