@@ -785,3 +785,22 @@ def test_consecutive_chaos_fresh_roots(tmp_path):
     assert b["ok"] is True
     assert a["sharedJournalHealthyAfterAcceptance"] is True
     assert b["sharedJournalHealthyAfterAcceptance"] is True
+
+
+def test_manual_station_cancel_survives_restart(tmp_path):
+    from fox3d.platform import Platform
+
+    plat = Platform(root=tmp_path, mock_blender=True)
+    wo, _ = _ready_wo(plat, tenant='cancel-restart')
+    station = plat.pilot.stations.register(
+        tenant_id='cancel-restart',
+        capabilities=['PANEL_CUTTING_MANUAL', 'EDGE_BANDING_MANUAL', 'DRILLING_MANUAL',
+                      'ASSEMBLY_MANUAL', 'PACKING_MANUAL', 'QC_MANUAL'], actor='op',
+    )
+    lease = plat.pilot.dispatcher.dispatch(
+        tenant_id='cancel-restart', work_order_id=wo['workOrderId'],
+        operation=wo['traveler']['steps'][0]['operation'], station_id=station['stationId'], actor='op',
+    )
+    assert plat.cancel_job(lease['jobId'], tenant_id='cancel-restart')['status'] == 'cancel_requested'
+    restarted = Platform(root=tmp_path, mock_blender=True)
+    assert restarted.get_job(lease['jobId'], tenant_id='cancel-restart')['status'] in {'cancel_requested', 'cancelled'}

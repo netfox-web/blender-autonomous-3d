@@ -211,7 +211,7 @@ class StationDispatcher:
         payload = read_json(self.root / "leases.json") or {}
         self.leases = {l["leaseId"]: l for l in payload.get("leases") or []}
         for job in payload.get("jobs") or []:
-            # The lease snapshot is the authority for manual-station recovery.
+            # The lease snapshot is a fallback for jobs missing from the durable store.
             self.queue.restore(job)
 
     def persist(self) -> None:
@@ -221,6 +221,14 @@ class StationDispatcher:
         for lease in self.leases.values():
             job = self.queue.get(lease.get("jobId") or "")
             if job:
+                with self.queue._lock, self.queue._process_lock():
+                    saved = next((r for r in self.queue._store.read_all()
+                                  if r.get("jobId") == job["jobId"]), None) if self.queue._store else None
+                    if saved and saved.get("status") == job.get("status") and not saved.get("cancelRequested"):
+                        for field in ("heartbeatAt", "startedAt"):
+                            if field in job:
+                                saved[field] = job[field]
+                        self.queue._save(saved)
                 jobs.append(job)
         atomic_write_json(self.root / "leases.json", {"leases": list(self.leases.values()), "jobs": jobs})
 

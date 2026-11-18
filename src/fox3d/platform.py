@@ -273,7 +273,12 @@ class Platform:
         with self.queue._lock, FileLock(self.root / "render_core" / "jobs-submit.lock"):
             if self.queue._store:
                 for saved in self.queue._store.read_all():
-                    self.queue._jobs.setdefault(saved["jobId"], saved)
+                    existing = self.queue._jobs.get(saved["jobId"])
+                    if existing is None:
+                        self.queue._jobs[saved["jobId"]] = saved
+                    else:
+                        existing.clear()
+                        existing.update(saved)
             if key is not None:
                 for existing in self.queue.list(tenant_id=payload["tenantId"]):
                     if existing.get("idempotencyKey") == key:
