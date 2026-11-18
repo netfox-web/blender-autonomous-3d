@@ -71,7 +71,13 @@ def ecommerce_scene_router(provider) -> APIRouter:
         root = Path(plat.root).resolve()
         with lock:
             if root not in stores:
-                stores[root] = EcommerceSceneStore(plat)
+                created = EcommerceSceneStore(plat)
+                stores[root] = created
+                try:
+                    # Batches accepted before a restart but never claimed by a worker would otherwise never run.
+                    created.recover_pending_batches()
+                except Exception as exc:  # reads still recover each batch lazily
+                    log.warning("Startup batch recovery failed: %s", exc)
             return stores[root]
 
     def tenant(x_tenant_id: str | None) -> str:

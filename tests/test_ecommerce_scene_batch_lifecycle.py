@@ -1,3 +1,6 @@
+import json
+import os
+import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -258,3 +261,131 @@ def test_fleet_window_refills_after_collection(setup):
     result = client.get('/api/ecommerce-scenes/batches/' + batch['batchId']).json()
     assert result['state'] == 'completed'
     assert all(item['state'] == 'succeeded' for item in result['items'])
+
+
+def _restart(platform):
+    """A fresh store on the same data directory whose executor records submissions instead of running them."""
+    with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'):
+        restarted = EcommerceSceneStore(platform)
+    work: list = []
+    restarted.executor.submit = lambda fn, *args: (work.append((fn, args)) or Future())  # type: ignore[method-assign]
+    return restarted, work
+
+
+def _run(store, work_item):
+    fn, args = work_item
+    store.platform.mock_blender = False
+    store.platform.runtime = SimpleNamespace(available=lambda: True)
+    with patch('fox3d.ecommerce_scene_studio.ensure_pbr_texture_assets'), \
+         patch.object(store, '_render_locally', return_value={}) as render:
+        fn(*args)
+    return render.call_count
+
+
+def test_restart_recovers_queued_batch_without_key_on_read(setup):
+    _, store, futures = setup
+    body = {'aiEngine': 'off', 'blenderEngine': 'local'}
+    first = store.start_matrix_batch('tenant', body)
+    queued = store.start_matrix_batch('tenant', {**body, 'views': ['FRONT', 'THREE_QUARTER']})
+    assert len(futures) == 2  # both accepted; the process "dies" before any worker claims them
+    restarted, work = _restart(store.platform)
+    # Another tenant can neither see nor wake the batch.
+    with pytest.raises(KeyError):
+        restarted.get_batch('other', queued['batchId'])
+    assert not work
+    doc = restarted.get_batch('tenant', queued['batchId'])
+    assert doc['state'] == 'running' and doc['scheduleState'] == 'pending'
+    assert len(work) == 1
+    # Reading again (and listing) does not schedule it a second time; listing also wakes the other batch.
+    restarted.get_batch('tenant', queued['batchId'])
+    listed = {b['batchId']: b for b in restarted.list_batches('tenant')}
+    assert listed[first['batchId']]['state'] == 'running'
+    assert len(work) == 2
+    restarted.list_batches('tenant')
+    assert len(work) == 2
+    assert _run(restarted, work[0]) == 2
+    saved = restarted.get_batch('tenant', queued['batchId'])
+    assert saved['state'] == 'completed'
+    assert saved['scheduleState'] == 'started'
+    assert [i['state'] for i in saved['items']] == ['succeeded', 'succeeded']
+    # Once claimed, a later restart never replays it.
+    again, again_work = _restart(store.platform)
+    assert again.get_batch('tenant', queued['batchId'])['state'] == 'completed'
+    assert again.recover_pending_batches() == 1  # only the still-unclaimed first batch
+    assert len(again_work) == 1
+    for s in (restarted, again):
+        s.executor.shutdown()
+        s.ai_executor.shutdown()
+
+
+def test_restart_recovers_concurrent_reads_once(setup):
+    _, store, _ = setup
+    batch = store.start_matrix_batch('tenant', {'aiEngine': 'off'})
+    restarted, work = _restart(store.platform)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        states = list(pool.map(lambda _: restarted.get_batch('tenant', batch['batchId'])['state'], range(8)))
+    assert states == ['running'] * 8
+    assert len(work) == 1
+    restarted.executor.shutdown()
+    restarted.ai_executor.shutdown()
+
+
+def test_recovered_pending_batch_can_be_cancelled(setup):
+    _, store, _ = setup
+    batch = store.start_matrix_batch('tenant', {'aiEngine': 'off', 'views': ['FRONT', 'THREE_QUARTER']})
+    restarted, work = _restart(store.platform)
+    result = restarted.cancel_batch('tenant', batch['batchId'])
+    assert result['state'] == 'cancelled'
+    assert [i['state'] for i in result['items']] == ['cancelled', 'cancelled']
+    assert _run(restarted, work[0]) == 0  # the worker sees the cancellation and renders nothing
+    assert restarted.get_batch('tenant', batch['batchId'])['state'] == 'cancelled'
+    restarted.executor.shutdown()
+    restarted.ai_executor.shutdown()
+
+
+def test_startup_recovery_via_api_without_resend(setup, tmp_path):
+    _, store, _ = setup
+    older = store.start_matrix_batch('tenant-a', {'aiEngine': 'off'})
+    newer = store.start_matrix_batch('tenant-b', {'aiEngine': 'off'})
+    restarted, work = _restart(store.platform)
+    app = FastAPI()
+    with patch('fox3d.ecommerce_scene_api.EcommerceSceneStore', return_value=restarted):
+        app.include_router(ecommerce_scene_router(lambda: store.platform))
+        with TestClient(app) as client:
+            # The first request of any kind creates the store, which schedules every unclaimed batch, oldest first.
+            assert client.get('/api/ecommerce-scenes/batches/missing').status_code == 404
+            assert [args[2]['batchId'] for _, args in work] == [older['batchId'], newer['batchId']]
+            assert client.get('/api/ecommerce-scenes/batches/' + newer['batchId'],
+                              headers={'X-Tenant-Id': 'tenant-b'}).json()['state'] == 'running'
+            assert len(work) == 2
+            assert _run(restarted, work[1]) == 1
+            assert client.get('/api/ecommerce-scenes/batches/' + newer['batchId'],
+                              headers={'X-Tenant-Id': 'tenant-b'}).json()['state'] == 'completed'
+    restarted.executor.shutdown()
+    restarted.ai_executor.shutdown()
+
+
+def test_startup_recovery_skips_foreign_or_incomplete_batches(setup):
+    _, store, _ = setup
+    moved = store.start_matrix_batch('tenant-a', {'aiEngine': 'off'})
+    broken = store.start_matrix_batch('tenant-a', {'aiEngine': 'off'})
+    bdir = store._tenant_dir('tenant-a') / 'batches'
+    doc = json.loads((bdir / moved['batchId'] / 'batch.json').read_text(encoding='utf-8'))
+    doc['tenantId'] = 'tenant-b'  # claims another tenant than the directory it lives in
+    (bdir / moved['batchId'] / 'batch.json').write_text(json.dumps(doc), encoding='utf-8')
+    doc = json.loads((bdir / broken['batchId'] / 'batch.json').read_text(encoding='utf-8'))
+    del doc['workerArgs']
+    (bdir / broken['batchId'] / 'batch.json').write_text(json.dumps(doc), encoding='utf-8')
+    restarted, work = _restart(store.platform)
+    assert restarted.recover_pending_batches() == 0
+    with pytest.raises(KeyError):
+        restarted.get_batch('tenant-b', moved['batchId'])
+    restarted.get_batch('tenant-a', moved['batchId'])
+    assert not work
+    # A pending batch without worker arguments cannot run; it ages out like any orphaned batch instead of hanging.
+    old = time.time() - 10_000
+    os.utime(bdir / broken['batchId'] / 'batch.json', (old, old))
+    assert restarted.get_batch('tenant-a', broken['batchId'])['state'] == 'interrupted'
+    assert not work
+    restarted.executor.shutdown()
+    restarted.ai_executor.shutdown()

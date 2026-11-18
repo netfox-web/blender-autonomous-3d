@@ -1443,13 +1443,72 @@ class EcommerceSceneStore:
         paths = sorted(bdir.glob("*/batch.json"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
         out = []
         for p in paths[:15]:
+            self._recover_unscheduled(tenant_id, p)
             data = read_json(p)
             if data:
                 out.append(self._mark_if_stale(p, data))
         return out
 
+    @staticmethod
+    def _is_recoverable_pending(doc: Any) -> bool:
+        """A durably accepted batch that no worker has claimed yet and that still carries its worker arguments."""
+        return (
+            isinstance(doc, dict)
+            and doc.get("state") == "running"
+            and doc.get("scheduleState") == "pending"
+            and isinstance(doc.get("batchId"), str)
+            and isinstance(doc.get("items"), list)
+            and isinstance(doc.get("workerArgs"), list)
+            and len(doc["workerArgs"]) == 13
+        )
+
+    def _recover_unscheduled(self, tenant_id: str, bpath: Path) -> bool:
+        """Schedule a persisted pending batch that this process does not own (left over from a restart).
+
+        The check and the submit happen under the store lock, so concurrent readers schedule it once.
+        """
+        with self.lock:
+            batch_id = bpath.parent.name
+            if batch_id in self.tasks or batch_id in self._live_docs:
+                return False
+            doc = read_json(bpath)
+            if not self._is_recoverable_pending(doc) or doc["batchId"] != batch_id or doc.get("tenantId") != tenant_id:
+                return False
+            try:
+                self._schedule_batch(tenant_id, doc)
+            except Exception as exc:  # executor shut down: leave the batch pending for the next read
+                log.warning("Unable to schedule recovered batch %s: %s", batch_id, exc)
+                return False
+            log.info("Recovered unscheduled batch %s", batch_id)
+            return True
+
+    def recover_pending_batches(self) -> int:
+        """Startup recovery: schedule every tenant's accepted-but-unclaimed batch, oldest first."""
+        found: list[tuple[str, str, Path]] = []
+        if not self.root.is_dir():
+            return 0
+        for tdir in self.root.iterdir():
+            bdir = tdir / "batches"
+            if not bdir.is_dir():
+                continue
+            for bpath in bdir.glob("*/batch.json"):
+                doc = read_json(bpath)
+                if not self._is_recoverable_pending(doc):
+                    continue
+                tenant_id = doc.get("tenantId")
+                # Only trust the tenant id when it maps back to the directory the batch was found in.
+                if not isinstance(tenant_id, str) or _tenant_slug(tenant_id) != tdir.name:
+                    continue
+                found.append((str(doc.get("createdAt") or ""), tenant_id, bpath))
+        recovered = 0
+        for _, tenant_id, bpath in sorted(found, key=lambda x: (x[0], str(x[2]))):
+            if self._recover_unscheduled(tenant_id, bpath):
+                recovered += 1
+        return recovered
+
     def get_batch(self, tenant_id: str, batch_id: str) -> dict[str, Any]:
         bpath = self._tenant_dir(tenant_id) / "batches" / batch_id / "batch.json"
+        self._recover_unscheduled(tenant_id, bpath)
         data = read_json(bpath)
         for _ in range(4):  # the worker may be replacing the file right now (Windows: short window where it is unreadable)
             if data or not bpath.exists():
@@ -1476,7 +1535,7 @@ class EcommerceSceneStore:
 
     def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
         """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
-        if doc.get("state") != "running" or doc.get("scheduleState") == "pending":
+        if doc.get("state") != "running" or self._is_recoverable_pending(doc):
             return doc
         # A batch this process still owns (queued behind another batch, or mid-render) is alive even when its file
         # has not changed for a while; only batches left over from a previous process can be stale.
@@ -1548,10 +1607,8 @@ class EcommerceSceneStore:
                 if entry.get("fingerprint") != fingerprint:
                     raise BatchConflict("此 idempotencyKey 已用於不同的請求")
                 try:
-                    doc = self.get_batch(tenant_id, entry["batchId"])
-                    if doc.get("state") == "running" and doc.get("scheduleState") == "pending" and doc["batchId"] not in self.tasks:
-                        self._schedule_batch(tenant_id, doc)
-                    return doc
+                    # get_batch reschedules an unclaimed pending batch this process does not own yet.
+                    return self.get_batch(tenant_id, entry["batchId"])
                 except KeyError as exc:
                     raise BatchConflict("此 idempotencyKey 的批次已刪除") from exc
             return self._start_matrix_batch_locked(tenant_id, body, public_base_url=public_base_url,
