@@ -209,6 +209,16 @@
               </div>
             </form>
           </section>
+
+          <section class="card" id="revision-history-card" hidden>
+            <div class="card-head compact">
+              <h2>版本紀錄</h2>
+            </div>
+            <p class="muted" id="revision-history-note">列出已儲存的母版修訂；還原會另存新版本，不會改寫歷史檔案。</p>
+            <div id="revision-list" class="revision-list" role="list"></div>
+            <div id="revision-diff" class="revision-diff" aria-live="polite"></div>
+            <button type="button" id="revision-restore" class="secondary" disabled>還原至選定版本</button>
+          </section>
         </div>
 
         <!-- 步驟 3：情境場景庫與單款換圖 -->
@@ -511,5 +521,16 @@
       </div>
     </div>
   </main>
+
+  <dialog id="restore-revision-dialog">
+    <form id="restore-revision-form" method="dialog">
+      <h2>確認還原版本</h2>
+      <p id="restore-revision-summary" class="muted"></p>
+      <div class="actions">
+        <button type="submit" value="cancel" class="secondary">取消</button>
+        <button type="submit" value="confirm" id="restore-revision-confirm" class="primary">確認還原</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>
