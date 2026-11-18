@@ -5,6 +5,9 @@ Exercised through the ``platform`` fixture as ``platform.pilot.cyclecounts``.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from fox3d.cyclecount import BOOK_CHANGED_MSG, CycleCountConflict
@@ -285,3 +288,88 @@ def test_negative_count_cannot_be_applied(platform):
     assert rec["status"] == "WAITING_HUMAN_APPROVAL"
     assert rec["applied"] is False
     assert _q(platform, lot_id) == before
+
+
+def test_apply_counted_available_rejects_stale_snapshot_in_transaction(platform):
+    lot_id = _lot(platform, quantity=10, reserve=2)
+    with pytest.raises(CycleCountConflict, match=BOOK_CHANGED_MSG):
+        platform.lots.apply_counted_available(
+            lot_id,
+            tenant_id=TENANT,
+            counted=4,
+            actor="ops",
+            reason="stale",
+            expect_available=10,
+            expect_reserved=0,
+            expect_consumed=0,
+        )
+    assert _q(platform, lot_id)["available"] == 8
+
+
+def test_approve_interleaved_reserve_does_not_inflate_sheet_count(platform, monkeypatch):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform, quantity=10)
+    cc = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=8, reason="interleave", actor="ops")
+    gate = threading.Event()
+    reserve_done = threading.Event()
+    orig = platform.lots.apply_counted_available
+
+    def gated(*args, **kwargs):
+        gate.set()
+        reserve_done.wait()
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(platform.lots, "apply_counted_available", gated)
+    errors: list[BaseException] = []
+
+    def approve() -> None:
+        try:
+            svc.approve(cc["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+        except CycleCountConflict as exc:
+            errors.append(exc)
+
+    def reserve() -> None:
+        gate.wait()
+        platform.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="interleaved", quantity=3)
+        reserve_done.set()
+
+    t1 = threading.Thread(target=approve)
+    t2 = threading.Thread(target=reserve)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    assert errors
+    after = _q(platform, lot_id)
+    assert after["available"] == 7
+    assert after["reserved"] == 3
+    assert after["sheetCount"] == 10
+    assert svc.counts[cc["cycleCountId"]]["applied"] is False
+
+
+def test_cross_platform_concurrent_approve_applies_once(tmp_path):
+    root = tmp_path / "dual-platform"
+    plat = Platform(root=root, mock_blender=True)
+    lot_id = _lot(plat, quantity=12)
+    cc = plat.pilot.cyclecounts.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=7, reason="dual", actor="ops", idempotency_key="dual-cc"
+    )
+    cid = cc["cycleCountId"]
+
+    def approve_from_fresh() -> dict:
+        other = Platform(root=root, mock_blender=True)
+        return other.pilot.cyclecounts.approve(cid, tenant_id=TENANT, actor="sup", payload=CONFIRM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _: approve_from_fresh(), range(2)))
+    assert results[0]["cycleCountId"] == results[1]["cycleCountId"] == cid
+    assert results[0]["status"] == results[1]["status"] == "APPLIED"
+    assert {results[0]["approvedBy"], results[1]["approvedBy"]} == {"sup"}
+    plat2 = Platform(root=root, mock_blender=True)
+    adjs = [
+        a
+        for a in plat2.lots.get(lot_id, tenant_id=TENANT).get("adjustments") or []
+        if a.get("source") == "CYCLE_COUNT"
+    ]
+    assert len(adjs) == 1
+    assert plat2.lots.quantities(lot_id, tenant_id=TENANT)["available"] == 7

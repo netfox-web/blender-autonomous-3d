@@ -352,6 +352,9 @@ def test_materials_js_uses_cycle_count_flow_guards() -> None:
 
     js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/materials.js").read_text(encoding="utf-8")
     assert "fox3dFetchAllPages" in js
+    assert "cycleCountPageFetcher" in js
+    assert "lastCcAttempt" in js
+    assert "mt-cc-retry" in js
     assert "帳面已變動" in js
     assert "mt-cc-submit" in js
     assert "innerHTML" not in js

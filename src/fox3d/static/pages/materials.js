@@ -20,6 +20,7 @@
     cycleCounts: null,
     lastLotAttempt: null,
     lastReserveAttempt: null,
+    lastCcAttempt: null,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -529,12 +530,38 @@
     });
   }
 
+  function cycleCountPageFetcher(path) {
+    return api(path).then(function (res) {
+      var data = res.data || {};
+      return {
+        items: Array.isArray(data.items) ? data.items : [],
+        total: Number(data.total),
+        offset: Number(data.offset) || 0,
+        limit: Number(data.limit) || 100,
+      };
+    });
+  }
+
   function loadCycleCounts() {
-    var q = '/api/materials/cycle-counts?status=WAITING_HUMAN_APPROVAL&limit=100';
-    return api(q).then(function (res) {
-      state.cycleCounts = res.data;
-      renderCycleCounts((res.data && res.data.items) || []);
-      return res.data;
+    var base = '/api/materials/cycle-counts?status=WAITING_HUMAN_APPROVAL';
+    var fetchAll = fetchAllPagesHelper();
+    if (!fetchAll) {
+      return api(base + '&limit=100').then(function (res) {
+        state.cycleCounts = res.data;
+        renderCycleCounts((res.data && res.data.items) || []);
+        return res.data;
+      });
+    }
+    return fetchAll(cycleCountPageFetcher, base).then(function (page) {
+      var data = {
+        items: page.items || [],
+        total: page.total,
+        offset: 0,
+        limit: page.limit,
+      };
+      state.cycleCounts = data;
+      renderCycleCounts(data.items);
+      return data;
     });
   }
 
@@ -634,6 +661,12 @@
     if (btn) btn.hidden = true;
   }
 
+  function clearCcRetry() {
+    state.lastCcAttempt = null;
+    var btn = $('mt-cc-retry');
+    if (btn) btn.hidden = true;
+  }
+
   function lotAttemptMatchesCurrent(attempt) {
     if (!attempt || !attempt.body) return false;
     var material = $('mt-lot-material') ? $('mt-lot-material').value : '';
@@ -663,6 +696,20 @@
       tenant() === attempt.tenant &&
       by === attempt.body.by &&
       leaseVal === attempt.body.leaseSeconds
+    );
+  }
+
+  function ccAttemptMatchesCurrent(attempt) {
+    if (!attempt || !attempt.body || !attempt.lotId) return false;
+    var lot = state.selectedLot;
+    if (!lot || lot.lotId !== attempt.lotId) return false;
+    var counted = parseInt($('mt-cc-counted') && $('mt-cc-counted').value, 10);
+    var reason = ($('mt-cc-reason') && $('mt-cc-reason').value || '').trim();
+    if (!Number.isFinite(counted) || counted < 0 || !reason) return false;
+    return (
+      tenant() === attempt.tenant &&
+      counted === attempt.body.counted &&
+      reason === attempt.body.reason
     );
   }
 
@@ -845,10 +892,15 @@
     if (!attempt || state.ccSubmitting) return;
     state.ccSubmitting = true;
     var submitBtn = $('mt-cc-submit');
+    var retryBtn = $('mt-cc-retry');
     var okBtn = $('mt-confirm-ok');
     var fields = formFields($('mt-cc-form'));
     setLocked(fields, true);
     if (submitBtn) submitBtn.disabled = true;
+    if (retryBtn) {
+      retryBtn.disabled = true;
+      retryBtn.hidden = true;
+    }
     if (okBtn) okBtn.disabled = true;
     var out = $('mt-cc-lot-result');
     if (out) {
@@ -866,8 +918,14 @@
             out.textContent = bmsg + '\n' + fmtJson(r.data);
           }
           showBanner(bmsg, 'err');
+          if (state.lastCcAttempt === attempt && ccAttemptMatchesCurrent(attempt)) {
+            if (retryBtn) retryBtn.hidden = false;
+          } else {
+            clearCcRetry();
+          }
           return;
         }
+        if (state.lastCcAttempt === attempt) clearCcRetry();
         if (out) {
           out.classList.remove('err');
           out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
@@ -888,12 +946,18 @@
             showBanner('盤點失敗（HTTP ' + (e.status || '?') + '）：' + errorDetail(e), 'err');
           }
         }
+        if (state.lastCcAttempt === attempt && ccAttemptMatchesCurrent(attempt)) {
+          if (retryBtn) retryBtn.hidden = false;
+        } else {
+          clearCcRetry();
+        }
       })
       .then(function () {
         state.ccSubmitting = false;
         state.ccActionId = null;
         setLocked(fields, false);
         if (submitBtn) submitBtn.disabled = false;
+        if (retryBtn) retryBtn.disabled = false;
         if (okBtn) okBtn.disabled = false;
       });
   }
@@ -913,13 +977,15 @@
     var msg = '批次 ' + lot.lotId + ' · 盤點數 ' + snapCounted + ' · 原因「' + snapReason + '」· 租戶 ' + snapTenant;
     confirmDialog('確認送出盤點', msg, fields, function () {
       if (state.ccSubmitting) return;
+      clearCcRetry();
       var body = {
         counted: snapCounted,
         reason: snapReason,
         idempotencyKey: makeIdempotencyKey(),
         actor: 'warehouse',
       };
-      sendCycleCountAttempt({ lotId: lot.lotId, body: body, tenant: snapTenant });
+      state.lastCcAttempt = { lotId: lot.lotId, body: body, tenant: snapTenant };
+      sendCycleCountAttempt(state.lastCcAttempt);
     });
   }
 
@@ -1052,6 +1118,7 @@
     function onTenantEdit() {
       clearLotRetry();
       clearReserveRetry();
+      clearCcRetry();
       if (!state.confirmOpen) {
         clearSelectedRemnant();
         state.selectedLot = null;
@@ -1088,8 +1155,19 @@
       }
       sendReserveAttempt(state.lastReserveAttempt);
     });
+    ensureRetryBtn('mt-cc-form', 'mt-cc-retry', function () {
+      if (!ccAttemptMatchesCurrent(state.lastCcAttempt)) {
+        clearCcRetry();
+        return;
+      }
+      sendCycleCountAttempt(state.lastCcAttempt);
+    });
     $('mt-bench-run').addEventListener('click', onBenchRun);
-    if ($('mt-cc-form')) $('mt-cc-form').addEventListener('submit', onCycleCountSubmit);
+    if ($('mt-cc-form')) {
+      $('mt-cc-form').addEventListener('submit', onCycleCountSubmit);
+      $('mt-cc-form').addEventListener('input', clearCcRetry);
+      $('mt-cc-form').addEventListener('change', clearCcRetry);
+    }
     loadAll();
   }
 

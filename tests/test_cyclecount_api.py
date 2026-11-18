@@ -163,3 +163,86 @@ def test_materials_lots_pagination(client: TestClient) -> None:
     assert len(body["lots"]) == 2
     assert body["offset"] == 0
     assert body["limit"] == 2
+
+
+def test_materials_without_pagination_returns_all_lots(client: TestClient) -> None:
+    for i in range(105):
+        res = client.post(
+            "/api/materials/lots",
+            headers=_headers(TENANT),
+            json={
+                "material": "WOOD_WHITE",
+                "thickness": 18,
+                "sheetCount": 1,
+                "actor": "ops",
+                "idempotencyKey": f"legacy-page-{i}",
+            },
+        )
+        assert res.status_code == 200
+    legacy = client.get("/api/materials", headers=_headers())
+    assert legacy.status_code == 200
+    body = legacy.json()
+    assert body["total"] >= 105
+    assert len(body["lots"]) == body["total"]
+    paged = client.get("/api/materials", headers=_headers(), params={"limit": 100})
+    assert paged.status_code == 200
+    assert len(paged.json()["lots"]) == 100
+
+
+def test_create_cycle_count_idempotent_on_duplicate_post(client: TestClient) -> None:
+    lot_id = _receive(client, sheets=8)
+    body = {"counted": 4, "reason": "same", "idempotencyKey": "lost-resp", "actor": "ops"}
+    first = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=body)
+    second = client.post(f"/api/materials/lots/{lot_id}/cycle-counts", headers=_headers(), json=body)
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["cycleCountId"] == second.json()["cycleCountId"]
+    listing = client.get("/api/materials/cycle-counts", headers=_headers(), params={"status": "WAITING_HUMAN_APPROVAL"})
+    assert listing.status_code == 200
+    matches = [r for r in listing.json()["items"] if r["lotId"] == lot_id and r["reason"] == "same"]
+    assert len(matches) == 1
+
+
+def test_cyclecount_list_pagination_exposes_older_rows(client: TestClient) -> None:
+    lot_ids = [_receive(client, sheets=2, tenant=TENANT) for _ in range(105)]
+    for i, lot_id in enumerate(lot_ids):
+        _create_cc(client, lot_id, counted=1, reason=f"page-{i}", key=f"page-{i}")
+    page0 = client.get("/api/materials/cycle-counts", headers=_headers(), params={"offset": 0, "limit": 100})
+    page1 = client.get("/api/materials/cycle-counts", headers=_headers(), params={"offset": 100, "limit": 100})
+    assert page0.status_code == 200 and page1.status_code == 200
+    assert page0.json()["total"] >= 105
+    assert len(page0.json()["items"]) == 100
+    assert len(page1.json()["items"]) >= 5
+    first_batch_ids = {row["cycleCountId"] for row in page0.json()["items"]}
+    older = [row for row in page1.json()["items"] if row["cycleCountId"] not in first_batch_ids]
+    assert older
+    assert all(row["status"] == "WAITING_HUMAN_APPROVAL" for row in older)
+
+
+def test_cross_platform_concurrent_approve_via_api(client: TestClient, platform) -> None:
+    import threading
+
+    lot_id = _receive(client, sheets=15)
+    cc = _create_cc(client, lot_id, counted=9, reason="api-dual", key="api-dual")
+    barrier = threading.Barrier(2)
+
+    def approve_once(_: int) -> int:
+        other = Platform(root=platform.root, mock_blender=True)
+        other_client = TestClient(create_app(other))
+        barrier.wait()
+        return other_client.post(
+            f"/api/materials/cycle-counts/{cc['cycleCountId']}/approve",
+            headers=_headers(),
+            json={**CONFIRM, "actor": "sup"},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = list(pool.map(approve_once, range(2)))
+    assert sorted(statuses) == [200, 200]
+    plat_check = Platform(root=platform.root, mock_blender=True)
+    adjs = [
+        a
+        for a in plat_check.lots.get(lot_id, tenant_id=TENANT).get("adjustments") or []
+        if a.get("source") == "CYCLE_COUNT"
+    ]
+    assert len(adjs) == 1
+    assert plat_check.lots.quantities(lot_id, tenant_id=TENANT)["available"] == 9
