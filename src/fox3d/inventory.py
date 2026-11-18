@@ -1051,6 +1051,7 @@ class MaterialLotRegistry:
         expect_available: int | None = None,
         expect_reserved: int | None = None,
         expect_consumed: int | None = None,
+        cycle_count_id: str | None = None,
     ) -> dict[str, Any]:
         """Set available sheets to a counted value. Does not rewrite consumed/reserved."""
         qty = int(counted)
@@ -1058,6 +1059,8 @@ class MaterialLotRegistry:
             raise PermissionError("counted quantity cannot be negative")
         with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
+            if cycle_count_id and any(a.get("cycleCountId") == cycle_count_id for a in rec.get("adjustments", [])):
+                return rec
             if expect_available is not None:
                 book = self.quantities(lot_id, tenant_id=tenant_id)
                 if (
@@ -1077,6 +1080,8 @@ class MaterialLotRegistry:
             rec.setdefault("adjustments", []).append(
                 {
                     "adjustmentId": adj_id,
+                    "cycleCountId": cycle_count_id,
+                    "after": self.quantities(lot_id, tenant_id=tenant_id),
                     "actor": actor,
                     "reason": reason,
                     "source": "CYCLE_COUNT",

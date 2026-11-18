@@ -178,11 +178,13 @@ class CycleCountService:
                 expect_available=int(rec["systemAvailable"]),
                 expect_reserved=int(rec["systemReserved"]),
                 expect_consumed=int(rec["systemConsumed"]),
+                cycle_count_id=cycle_count_id,
             )
-            after = self.lots.quantities(rec["lotId"], tenant_id=tenant_id)
+            adjustment = next(a for a in lot["adjustments"] if a.get("cycleCountId") == cycle_count_id)
+            after = adjustment["after"]
             rec["applied"] = True
             rec["status"] = "APPLIED"
-            rec["approvedBy"] = actor
+            rec["approvedBy"] = adjustment["actor"]
             rec["before"] = before
             rec["after"] = after
             rec["consumedUnchanged"] = before["consumed"] == after["consumed"]
@@ -194,7 +196,7 @@ class CycleCountService:
                 tenant_id=tenant_id,
                 aggregate_type="CycleCount",
                 aggregate_id=cycle_count_id,
-                actor=actor,
+                actor=adjustment["actor"],
                 payload={"lotId": rec["lotId"], "before": before, "after": after},
                 semantic_key=f"{tenant_id}::cc-approve::{cycle_count_id}",
             )
@@ -206,7 +208,11 @@ class CycleCountService:
     def reject(self, cycle_count_id: str, *, tenant_id: str, actor: str) -> dict[str, Any]:
         with self._durable():
             rec = self._get(cycle_count_id, tenant_id=tenant_id)
-            if rec.get("applied"):
+            # A committed inventory adjustment must be recovered by approval, never rejected.
+            with self.lots._transaction():
+                lot = self.lots.get(rec["lotId"], tenant_id=tenant_id)
+                committed = any(a.get("cycleCountId") == cycle_count_id for a in lot.get("adjustments", []))
+            if rec.get("applied") or committed:
                 raise PermissionError("cannot reject applied cycle count")
             if rec.get("status") == "REJECTED":
                 # Idempotent like approve(): never overwrite the first rejection's audit fields.

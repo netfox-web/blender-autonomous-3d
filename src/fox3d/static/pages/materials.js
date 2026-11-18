@@ -977,6 +977,12 @@
     var msg = '批次 ' + lot.lotId + ' · 盤點數 ' + snapCounted + ' · 原因「' + snapReason + '」· 租戶 ' + snapTenant;
     confirmDialog('確認送出盤點', msg, fields, function () {
       if (state.ccSubmitting) return;
+      var previous = state.lastCcAttempt;
+      if (previous && previous.lotId === lot.lotId && previous.tenant === snapTenant &&
+          previous.body.counted === snapCounted && previous.body.reason === snapReason) {
+        sendCycleCountAttempt(previous);
+        return;
+      }
       clearCcRetry();
       var body = {
         counted: snapCounted,
@@ -1165,8 +1171,12 @@
     $('mt-bench-run').addEventListener('click', onBenchRun);
     if ($('mt-cc-form')) {
       $('mt-cc-form').addEventListener('submit', onCycleCountSubmit);
-      $('mt-cc-form').addEventListener('input', clearCcRetry);
-      $('mt-cc-form').addEventListener('change', clearCcRetry);
+      function updateCcRetryVisibility() {
+        var retry = $('mt-cc-retry');
+        if (retry) retry.hidden = !ccAttemptMatchesCurrent(state.lastCcAttempt);
+      }
+      $('mt-cc-form').addEventListener('input', updateCcRetryVisibility);
+      $('mt-cc-form').addEventListener('change', updateCcRetryVisibility);
     }
     loadAll();
   }

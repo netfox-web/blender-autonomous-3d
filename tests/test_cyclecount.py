@@ -373,3 +373,36 @@ def test_cross_platform_concurrent_approve_applies_once(tmp_path):
     ]
     assert len(adjs) == 1
     assert plat2.lots.quantities(lot_id, tenant_id=TENANT)["available"] == 7
+
+
+def test_committed_adjustment_recovers_after_interruption_and_later_stock_change(tmp_path, monkeypatch):
+    root = tmp_path / "recovery"
+    platform = Platform(root=root, mock_blender=True)
+    lot_id = _lot(platform)
+    svc = platform.pilot.cyclecounts
+    cc = svc.create(tenant_id=TENANT, lot_id=lot_id, counted=8, reason="recovery", actor="ops")
+    original = platform.lots.apply_counted_available
+
+    def interrupted(*args, **kwargs):
+        original(*args, **kwargs)
+        raise RuntimeError("interrupted after inventory commit")
+
+    monkeypatch.setattr(platform.lots, "apply_counted_available", interrupted)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        svc.approve(cc["cycleCountId"], tenant_id=TENANT, actor="first", payload=CONFIRM)
+    restarted = Platform(root=root, mock_blender=True)
+    with pytest.raises(PermissionError, match="applied"):
+        restarted.pilot.cyclecounts.reject(cc["cycleCountId"], tenant_id=TENANT, actor="other")
+    restarted.lots.reserve_sheets(lot_id, tenant_id=TENANT, work_order_id="later", quantity=2)
+
+    def approve(_):
+        instance = Platform(root=root, mock_blender=True)
+        return instance.pilot.cyclecounts.approve(cc["cycleCountId"], tenant_id=TENANT, actor="retry", payload=CONFIRM)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(approve, range(2)))
+    assert all(r["status"] == "APPLIED" and r["approvedBy"] == "first" for r in results)
+    assert results[0]["after"]["available"] == 8
+    final = Platform(root=root, mock_blender=True)
+    assert _q(final, lot_id)["available"] == 6
+    assert len([a for a in final.lots.get(lot_id, tenant_id=TENANT)["adjustments"] if a.get("cycleCountId") == cc["cycleCountId"]]) == 1
