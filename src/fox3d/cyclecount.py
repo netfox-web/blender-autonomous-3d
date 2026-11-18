@@ -19,6 +19,14 @@ BOOK_CHANGED_MSG = "帳面已變動，請重新盤點"
 IDEMPOTENCY_CONFLICT_MSG = "相同 idempotencyKey 已用於不同內容"
 
 
+def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+
+
 class CycleCountConflict(PermissionError):
     """Snapshot stale, or the same idempotency key was reused for different content."""
 
@@ -87,21 +95,70 @@ class CycleCountService:
             self.root.mkdir(parents=True, exist_ok=True)
         self.counts: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, Any] = {}
+        self._store_sig: tuple[int, int, int, int] | None = None
         self.journal: Any | None = None
         self.outbox: Any | None = None
         self.load()
 
+    def _store_path(self) -> Path | None:
+        return (self.root / "cyclecounts.json") if self.root else None
+
     def load(self) -> None:
         if not self.root:
             return
-        payload = read_json(self.root / "cyclecounts.json") or {}
+        path = self._store_path()
+        assert path is not None
+        payload = read_json(path) or {}
         self.counts = {r["cycleCountId"]: r for r in payload.get("counts") or []}
         self._idem = dict(payload.get("idem") or {})
+        self._store_sig = _file_sig(path)
 
     def persist(self) -> None:
         if not self.root:
             return
-        atomic_write_json(self.root / "cyclecounts.json", {"counts": list(self.counts.values()), "idem": self._idem})
+        path = self._store_path()
+        assert path is not None
+        atomic_write_json(path, {"counts": list(self.counts.values()), "idem": self._idem})
+        self._store_sig = _file_sig(path)
+
+    def _sync_from_disk(self) -> None:
+        if not self.root:
+            return
+        path = self._store_path()
+        assert path is not None
+        sig = _file_sig(path)
+        if sig == self._store_sig:
+            return
+        if sig is None:
+            if self._store_sig is not None:
+                self.counts = {}
+                self._idem = {}
+                self._store_sig = None
+            return
+        for _ in range(8):
+            sig_before = _file_sig(path)
+            if sig_before is None:
+                break
+            try:
+                payload = read_json(path) or {}
+            except FileNotFoundError:
+                continue
+            sig_after = _file_sig(path)
+            if sig_after != sig_before:
+                continue
+            self.counts = {r["cycleCountId"]: r for r in payload.get("counts") or []}
+            self._idem = dict(payload.get("idem") or {})
+            self._store_sig = sig_after
+            return
+        lock_path = self._lock_path()
+        if lock_path is None:
+            return
+        flock = FileLock(lock_path)
+        flock.acquire()
+        try:
+            self.load()
+        finally:
+            flock.release()
 
     def _lock_path(self) -> Path | None:
         return (self.root / "cyclecounts.lock") if self.root else None
@@ -140,6 +197,7 @@ class CycleCountService:
         limit = max(1, min(int(limit), 100))
         offset = max(0, int(offset))
         with self._lock:
+            self._sync_from_disk()
             rows = [c for c in self.counts.values() if c.get("tenantId") == tenant_id]
             if status:
                 want = str(status).strip()

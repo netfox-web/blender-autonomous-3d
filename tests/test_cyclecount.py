@@ -519,6 +519,37 @@ def test_approve_interleaved_reserve_does_not_inflate_sheet_count(platform, monk
     assert svc.counts[cc["cycleCountId"]]["applied"] is False
 
 
+def test_list_for_tenant_syncs_create_and_approve_from_other_instance(tmp_path):
+    root = tmp_path / "shared-cyclecount-list"
+    writer = Platform(root=root, mock_blender=True)
+    reader = Platform(root=root, mock_blender=True)
+    lot_id = _lot(writer, quantity=10)
+    created = writer.pilot.cyclecounts.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=6, reason="floor", actor="ops", idempotency_key="list-sync"
+    )
+    assert reader.pilot.cyclecounts.counts == {}
+    listed = reader.pilot.cyclecounts.list_for_tenant(tenant_id=TENANT)
+    assert {row["cycleCountId"] for row in listed["items"]} == {created["cycleCountId"]}
+    assert listed["items"][0]["status"] == "WAITING_HUMAN_APPROVAL"
+    writer.pilot.cyclecounts.approve(created["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    waiting = reader.pilot.cyclecounts.list_for_tenant(tenant_id=TENANT, status="WAITING_HUMAN_APPROVAL")
+    applied = reader.pilot.cyclecounts.list_for_tenant(tenant_id=TENANT, status="APPLIED")
+    assert waiting["items"] == []
+    assert {row["cycleCountId"] for row in applied["items"]} == {created["cycleCountId"]}
+    assert applied["items"][0]["status"] == "APPLIED"
+    assert reader.pilot.cyclecounts.list_for_tenant(tenant_id=OTHER)["items"] == []
+
+
+def test_list_for_tenant_skips_disk_reload_when_store_unchanged(platform):
+    svc = platform.pilot.cyclecounts
+    lot_id = _lot(platform)
+    svc.create(tenant_id=TENANT, lot_id=lot_id, counted=4, reason="cache", actor="ops")
+    before_sig = svc._store_sig
+    listed = svc.list_for_tenant(tenant_id=TENANT)
+    assert listed["total"] == 1
+    assert svc._store_sig == before_sig
+
+
 def test_cross_platform_concurrent_approve_applies_once(tmp_path):
     root = tmp_path / "dual-platform"
     plat = Platform(root=root, mock_blender=True)
