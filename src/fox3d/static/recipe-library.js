@@ -5,6 +5,7 @@ const $ = id => document.getElementById(id);
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const urlSku = sku => encodeURIComponent(sku);
 let items = [], families = {}, fields = {}, selected = null, dirty = false, activeTab = 'threed', busy = false;
+let recipeRevisionRows = [], recipePickedRevision = null, recipeRestoreSnapshot = null, recipeRevisionPickToken = 0;
 const core = ['widthMm','depthMm','heightMm','material','doorCount','rowCount','compartmentCount','handles'];
 
 function message(text, error = false) {
@@ -74,6 +75,92 @@ function fieldMarkup(key) {
   const modified = selected.validation.changedFields.includes(key);
   return `<div class="field"><label for="${esc(id)}" class="field-title"><span class="field-label">${esc(definition.label)}</span><span class="field-unit">${definition.unit === 'mm' ? 'mm' : definition.unit === 'count' ? '個' : ''}</span></label>${input}<details><summary class="${modified ? 'changed' : ''}">${modified ? '草稿修改 · ' : ''}${entry.evidence ? '查看／編輯資料依據' : '補充資料依據'}</summary><label class="sr-only" for="evidence-${esc(key)}">${esc(definition.label)}的資料依據</label><input id="evidence-${esc(key)}" data-evidence="${esc(key)}" value="${esc(entry.evidence)}" placeholder="填寫圖面、規格書或量測依據" maxlength="2000"></details></div>`;
 }
+function diffRecipeDraft(current, other) {
+  const lines = [];
+  if ((current?.name || '') !== (other?.name || '')) lines.push(`商品名稱：${other?.name || ''} → ${current?.name || ''}`);
+  if ((current?.notes || '') !== (other?.notes || '')) lines.push(`備註已變更`);
+  const keys = new Set([...Object.keys(current?.values || {}), ...Object.keys(other?.values || {})]);
+  for (const key of [...keys].sort()) {
+    const a = current?.values?.[key], b = other?.values?.[key];
+    if (JSON.stringify(a) !== JSON.stringify(b)) lines.push(`${fields[key]?.label || key}：${String(b?.value ?? '')} → ${String(a?.value ?? '')}`);
+  }
+  return lines;
+}
+function renderRecipeRevisionDiff(lines) {
+  const box = $('recipe-revision-diff');
+  if (!box) return;
+  box.replaceChildren();
+  if (!lines.length) { box.textContent = '與目前版本相同。'; return; }
+  for (const line of lines) { const p = document.createElement('p'); p.textContent = line; box.append(p); }
+}
+function renderRecipeRevisionButtons(sku, restoreBtn) {
+  const list = $('recipe-revision-list');
+  list.replaceChildren();
+  if (!recipeRevisionRows.length) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = '尚無已儲存的修訂版本。';
+    list.append(empty);
+    return;
+  }
+  for (const row of recipeRevisionRows) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'secondary';
+    b.textContent = `第 ${row.revision} 版 · ${row.updatedAt ? new Date(row.updatedAt).toLocaleString('zh-TW') : '—'}`;
+    b.addEventListener('click', async () => {
+      const token = ++recipeRevisionPickToken;
+      recipePickedRevision = row.revision;
+      if (restoreBtn) restoreBtn.disabled = true;
+      renderRecipeRevisionDiff([]);
+      try {
+        const detail = await json(`/products/${urlSku(sku)}/revisions/${row.revision}`);
+        if (selected?.draft.sku !== sku || token !== recipeRevisionPickToken) return;
+        renderRecipeRevisionDiff(diffRecipeDraft(selected.draft, detail.draft));
+        if (restoreBtn) restoreBtn.disabled = row.revision === selected.revision;
+      } catch (error) {
+        if (selected?.draft.sku === sku && token === recipeRevisionPickToken) message(error.message, true);
+      }
+    });
+    list.append(b);
+  }
+}
+async function loadRecipeRevisions() {
+  recipeRevisionRows = []; recipePickedRevision = null; recipeRevisionPickToken++;
+  const list = $('recipe-revision-list'), restoreBtn = $('recipe-revision-restore');
+  if (!list || !selected) return;
+  list.replaceChildren(); renderRecipeRevisionDiff([]);
+  if (restoreBtn) restoreBtn.disabled = true;
+  const sku = selected.draft.sku;
+  let offset = 0, total = 1;
+  try {
+    while (offset < total) {
+      const data = await json(`/products/${urlSku(sku)}/revisions?offset=${offset}&limit=40`);
+      if (selected?.draft.sku !== sku) return;
+      recipeRevisionRows = recipeRevisionRows.concat(data.items || []);
+      total = data.total;
+      offset = recipeRevisionRows.length;
+    }
+  } catch (error) {
+    if (selected?.draft.sku !== sku) return;
+    list.replaceChildren();
+    const err = document.createElement('p');
+    err.className = 'form-error';
+    err.textContent = error.message || '無法載入版本紀錄';
+    list.append(err);
+    return;
+  }
+  renderRecipeRevisionButtons(sku, restoreBtn);
+}
+function openRecipeRestoreDialog() {
+  if (!selected || !recipePickedRevision) return;
+  if (dirty && !window.confirm('尚有未儲存的修改，還原會覆寫編輯內容。請先儲存，或確定放棄修改並還原？')) return;
+  const dialog = $('recipe-restore-dialog');
+  dialog.returnValue = '';
+  recipeRestoreSnapshot = { targetRevision: recipePickedRevision, expectedRevision: selected.revision, sku: selected.draft.sku };
+  $('recipe-restore-summary').textContent = `將還原至第 ${recipePickedRevision} 版內容，並以目前第 ${selected.revision} 版為基礎另存新版本。`;
+  dialog.showModal();
+}
 function validationMarkup(v, expanded = false) {
   const labels = keys => keys.map(k => fields[k]?.label || k).join('、');
   return `<div class="validation-box"><strong>${v.dataComplete ? '基本資料已填妥，下一步為工程與建模驗證。' : `還有 ${v.missingFields.length} 項資料待補齊。`}</strong>${expanded && v.missingFields.length ? `<p>待補：${esc(labels(v.missingFields))}</p>` : ''}${v.unreferencedFields.length ? `<p>待補資料依據：${esc(labels(v.unreferencedFields))}</p>` : ''}${v.issues.length ? `<ul>${v.issues.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}${expanded ? `<p>${v.sourceIntegrityVerified ? '原始供應商快照完整性：核對通過。草稿修改仍待確認。' : '此商品尚未綁定已驗證的供應商快照。'}<br>${esc(v.nextStep)}</p>` : ''}</div>`;
@@ -84,7 +171,7 @@ function renderDetail() {
   const extras = Object.keys(d.values).filter(k => !core.includes(k) && !pending.includes(k));
   $('detail').innerHTML = `<div class="detail-header"><div class="detail-top">${imageMarkup(selected,'hero-image')}<div class="product-identity"><div class="sku-line">${esc(d.sku)} · ${esc(families[d.family].name)}</div><h2>${esc(d.name)}</h2><div class="badges"><span class="badge green" id="revision-badge"></span><span class="badge amber">待補 ${selected.validation.missingFields.length} 項</span><span class="badge neutral" id="badge-3d">3D 模型狀態查詢中…</span></div></div></div></div>
   <div class="tabs" role="tablist" aria-label="商品資訊"><button class="tab" id="specs-tab" role="tab" aria-controls="specs-panel">規格與缺漏</button><button class="tab" id="sources-tab" role="tab" aria-controls="sources-panel">圖片與來源</button><button class="tab" id="threed-tab" role="tab" aria-controls="threed-panel">3D 預覽與下載</button></div>
-  <div id="specs-panel" role="tabpanel" aria-labelledby="specs-tab"><form id="edit-form"><div class="panel"><div id="validation-result">${validationMarkup(selected.validation)}</div><div class="section-title"><h3>基本資料</h3><span class="muted">尺寸單位：毫米</span></div><div class="form-grid"><label>商品名稱<input id="edit-name" value="${esc(d.name)}" required maxlength="240"></label><label>商品來源網址<input id="edit-url" type="url" value="${esc(d.pageUrl)}" placeholder="https://…"></label></div><div class="form-grid three extra-section">${['widthMm','depthMm','heightMm'].map(fieldMarkup).join('')}</div><div class="form-grid extra-section">${core.filter(k => !['widthMm','depthMm','heightMm'].includes(k)).map(fieldMarkup).join('')}</div><div class="gap-section"><div class="section-title"><h3>工程與機構資料</h3><span>依商品圖面逐項補齊</span></div><div class="form-grid">${pending.map(fieldMarkup).join('')}</div></div>${extras.length ? `<div class="extra-section"><div class="section-title"><h3>供應商補充規格</h3></div><div class="form-grid">${extras.map(fieldMarkup).join('')}</div></div>` : ''}<label class="notes-label">備註<textarea id="edit-notes" rows="4" maxlength="10000">${esc(d.notes)}</textarea></label></div><div class="form-actions"><span id="save-state" class="save-state">${selected.updatedAt ? '上次儲存 ' + esc(new Date(selected.updatedAt).toLocaleString('zh-TW')) : '原始供應商參考資料'}</span><button id="validate-button" type="button" class="secondary">驗證資料</button><button id="export-one" type="button" class="secondary">匯出此商品</button><button id="save-button" type="submit" class="primary">儲存草稿</button></div></form></div>
+  <div id="specs-panel" role="tabpanel" aria-labelledby="specs-tab"><form id="edit-form"><div class="panel"><div id="validation-result">${validationMarkup(selected.validation)}</div><div class="revision-panel"><h3>版本紀錄</h3><p class="muted">還原會另存新版本，不會改寫歷史修訂。</p><div id="recipe-revision-list" class="revision-list"></div><div id="recipe-revision-diff" class="revision-diff" aria-live="polite"></div><button type="button" id="recipe-revision-restore" class="secondary" disabled>還原至選定版本</button></div><div class="section-title"><h3>基本資料</h3><span class="muted">尺寸單位：毫米</span></div><div class="form-grid"><label>商品名稱<input id="edit-name" value="${esc(d.name)}" required maxlength="240"></label><label>商品來源網址<input id="edit-url" type="url" value="${esc(d.pageUrl)}" placeholder="https://…"></label></div><div class="form-grid three extra-section">${['widthMm','depthMm','heightMm'].map(fieldMarkup).join('')}</div><div class="form-grid extra-section">${core.filter(k => !['widthMm','depthMm','heightMm'].includes(k)).map(fieldMarkup).join('')}</div><div class="gap-section"><div class="section-title"><h3>工程與機構資料</h3><span>依商品圖面逐項補齊</span></div><div class="form-grid">${pending.map(fieldMarkup).join('')}</div></div>${extras.length ? `<div class="extra-section"><div class="section-title"><h3>供應商補充規格</h3></div><div class="form-grid">${extras.map(fieldMarkup).join('')}</div></div>` : ''}<label class="notes-label">備註<textarea id="edit-notes" rows="4" maxlength="10000">${esc(d.notes)}</textarea></label></div><div class="form-actions"><span id="save-state" class="save-state">${selected.updatedAt ? '上次儲存 ' + esc(new Date(selected.updatedAt).toLocaleString('zh-TW')) : '原始供應商參考資料'}</span><button id="validate-button" type="button" class="secondary">驗證資料</button><button id="export-one" type="button" class="secondary">匯出此商品</button><button id="save-button" type="submit" class="primary">儲存草稿</button></div></form></div>
   <div id="sources-panel" class="panel" role="tabpanel" aria-labelledby="sources-tab" hidden><div class="upload-row"><div><h3>商品圖片與原始來源</h3><p class="muted">上傳圖片作為參考，保留供應商來源供核對。</p></div><button id="upload-button" class="secondary">上傳圖片</button><input id="upload-file" type="file" accept="image/png,image/jpeg" hidden></div><div class="source-grid">${sourceCards()}</div></div>
   <div id="threed-panel" class="panel" role="tabpanel" aria-labelledby="threed-tab" hidden><div class="threed-header"><div><h3>確認設定，生成你的商品 3D</h3><p class="muted">① 選商品　② 確認下方設定　③ 生成並下載。板件、材質與五金簡化僅供預覽，不能直接製造。</p></div><div class="threed-header-actions"><button id="generate-3d-btn" type="button" class="primary">⚡ 生成 3D 預覽</button></div></div><div id="assumptions-card" class="assumptions-box"></div><div id="threed-stage" class="threed-stage"></div><div id="bom-container" class="bom-section"></div></div>`;
   $('revision-badge').textContent = selected.status === 'DRAFT' ? '草稿 v' + selected.revision : '供應商參考';
@@ -98,6 +185,8 @@ function renderDetail() {
   $('export-one').addEventListener('click', () => download(d.sku));
   $('upload-button').addEventListener('click', () => $('upload-file').click());
   $('upload-file').addEventListener('change', uploadImage);
+  $('recipe-revision-restore')?.addEventListener('click', openRecipeRestoreDialog);
+  loadRecipeRevisions().catch(error => message(error.message, true));
   refreshBadge3D();
   tab(activeTab);
 }
@@ -276,6 +365,22 @@ $('new-form').addEventListener('submit', async event => {
   finally { submit.disabled = false; }
 });
 $('import-button').addEventListener('click', () => { if (allowLeave()) $('import-file').click(); });
+$('recipe-restore-form')?.addEventListener('submit', async event => {
+  if (event.submitter?.value !== 'confirm') { recipeRestoreSnapshot = null; return; }
+  event.preventDefault();
+  const snap = recipeRestoreSnapshot;
+  recipeRestoreSnapshot = null;
+  if (!snap || !selected) return;
+  const btn = $('recipe-restore-confirm'), dialog = $('recipe-restore-dialog');
+  btn.disabled = true;
+  try {
+    await json(`/products/${urlSku(snap.sku)}/revisions/${snap.targetRevision}/restore`, { method: 'POST', body: JSON.stringify({ expectedRevision: snap.expectedRevision }) });
+    dialog.close();
+    await load(snap.sku);
+    message(`已還原第 ${snap.targetRevision} 版內容並另存為新版本。`);
+  } catch (error) { message(error.message, true); }
+  finally { btn.disabled = false; }
+});
 $('import-file').addEventListener('change', async event => {
   const file = event.target.files[0]; if (!file) return;
   $('import-button').disabled = true;

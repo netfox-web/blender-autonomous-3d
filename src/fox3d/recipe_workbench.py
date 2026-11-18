@@ -259,3 +259,55 @@ class RecipeWorkbench:
         if not path.is_file() or sha256_bytes(path.read_bytes()) != row["digest"]:
             raise ValueError("圖片檔案遺失或已變動")
         return path, row["mime"]
+
+    def _known_product(self, con, tid, sku):
+        if self._read(con, tid, sku) is not None:
+            return True
+        if con.execute(
+            "SELECT 1 FROM revisions WHERE tenant=? AND sku=? LIMIT 1",
+            (tid, sku),
+        ).fetchone() is not None:
+            return True
+        return sku in self.seeds()
+
+    def list_revisions(self, tid, sku, *, offset=0, limit=40):
+        with self.connection() as con:
+            if not self._known_product(con, tid, sku):
+                raise KeyError("找不到商品")
+            rows = con.execute(
+                "SELECT revision, updated, payload FROM revisions WHERE tenant=? AND sku=? ORDER BY revision",
+                (tid, sku),
+            ).fetchall()
+        total = len(rows)
+        items = []
+        for row in rows[offset:offset + limit]:
+            draft = json.loads(row["payload"])
+            items.append({"revision": row["revision"], "updatedAt": row["updated"],
+                          "inputHash": stable_hash(draft)})
+        return {"items": items, "total": total, "offset": offset, "limit": limit}
+
+    def get_revision(self, tid, sku, revision):
+        if not isinstance(revision, int) or revision < 1:
+            raise ValueError("版本編號須為正整數")
+        with self.connection() as con:
+            if not self._known_product(con, tid, sku):
+                raise KeyError("找不到商品")
+            row = con.execute(
+                "SELECT revision, updated, payload FROM revisions WHERE tenant=? AND sku=? AND revision=?",
+                (tid, sku, revision),
+            ).fetchone()
+        if row is None:
+            raise KeyError("找不到版本")
+        draft = ProductDraft.model_validate(json.loads(row["payload"]))
+        return {"revision": row["revision"], "updatedAt": row["updated"], "draft": draft.model_dump(),
+                "inputHash": stable_hash(draft.model_dump())}
+
+    def restore(self, tid, sku, revision, expected_revision):
+        with self.connection() as con:
+            if not self._known_product(con, tid, sku):
+                raise KeyError("找不到商品")
+        snapshot = self.get_revision(tid, sku, revision)
+        current = self.get(tid, sku)
+        if current["revision"] != expected_revision:
+            raise DraftConflict("商品已被其他視窗更新，請重新載入後再儲存")
+        return self.save(tid, SaveDraft(expectedRevision=expected_revision, draft=ProductDraft.model_validate(snapshot["draft"])))
