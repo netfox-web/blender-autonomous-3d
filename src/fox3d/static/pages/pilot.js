@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], loadedTenant = 'sonaqueen-home';
+  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home';
   try { $('tenant').value = localStorage.getItem('fox3d.tenant') || 'sonaqueen-home'; } catch (e) { /* storage unavailable */ }
   function tenant() { return $('tenant').value.trim() || 'sonaqueen-home'; }
   function api(path, options) {
@@ -40,7 +40,10 @@
     return out.status === 'blocked' || tokenBad(out.status) || tokenBad(out.label) || tokenBad(out.truthLabel) || String(out.error || '').indexOf('BLOCKED_') === 0 || out.veto === true || checksHaveVeto(out) || Boolean(job && (job.status === 'blocked' || tokenBad(job.status) || tokenBad(job.label) || tokenBad(job.truthLabel) || String(job.error || '').indexOf('BLOCKED_') === 0));
   }
   function isMismatchResult(out) {
-    return Boolean(out && typeof out === 'object' && (out.mismatch === true || out.mismatchHold === true));
+    if (!out || typeof out !== 'object') return false;
+    // mismatchHold is the work-order gate; a carton mismatch already signed off is no longer pending.
+    if (typeof out.mismatchHold === 'boolean') return out.mismatchHold;
+    return out.mismatch === true;
   }
   function blockedMessage(label, out) {
     var code = (out && (out.error || out.status || out.label || out.truthLabel)) || '';
@@ -116,8 +119,10 @@
     if (src.height != null) $('packing-height').value = String(src.height);
     if (src.weightKg != null) $('packing-weight').value = String(src.weightKg);
   }
-  function renderCartons(items, preserveStatus) {
+  function renderCartons(items, preserveStatus, mismatchHold) {
     currentCartons = Array.isArray(items) ? items : [];
+    currentMismatchHold = typeof mismatchHold === 'boolean' ? mismatchHold : null;
+    var signedOff = currentMismatchHold === false;
     var box = $('packing-cartons');
     var sel = $('packing-carton-id');
     var prevCid = sel ? sel.value : '';
@@ -155,7 +160,7 @@
         String(c.cartonId || ''),
         fmtDims(c.expected),
         c.measured ? fmtDims(c.measured) : '尚未量測',
-        c.mismatch ? '尺寸不符待人工確認' : (c.measured ? '正常' : '待量測')
+        c.mismatch ? (signedOff ? '尺寸不符（已人工確認）' : '尺寸不符待人工確認') : (c.measured ? '正常' : '待量測')
       ];
       cells.forEach(function (val) {
         var td = document.createElement('td');
@@ -188,7 +193,7 @@
       sel.value = String(chosen.cartonId || '');
       fillMeasureInputs(chosen);
     }
-    if (anyMismatch && $('packing-status')) {
+    if (anyMismatch && !signedOff && $('packing-status')) {
       $('packing-status').textContent = '尺寸不符待人工確認';
       $('packing-status').className = 'warn';
     } else if (!preserveStatus && $('packing-status')) {
@@ -204,7 +209,7 @@
     }
     return api('/api/pilot/work-orders/' + encodeURIComponent(workOrderId) + '/cartons').then(function (d) {
       if (!selected || selected.workOrderId !== workOrderId) return;
-      renderCartons(d.items || d.cartons || [], preserveStatus);
+      renderCartons(d.items || d.cartons || [], preserveStatus, d.mismatchHold);
     }).catch(function (e) {
       if ($('packing-status')) {
         $('packing-status').textContent = '紙箱讀取失敗：' + e.message;
@@ -379,13 +384,13 @@
         body,
         e.submitter || $('packing-measure-btn'),
         function (d) {
-          if (d && d.mismatch) {
+          if (isMismatchResult(d)) {
             if ($('packing-status')) {
               $('packing-status').textContent = '尺寸不符待人工確認';
               $('packing-status').className = 'warn';
             }
           } else if ($('packing-status')) {
-            $('packing-status').textContent = '實測尺寸重量已回填（符合預期）。';
+            $('packing-status').textContent = d && d.mismatch ? '實測尺寸重量已回填（尺寸不符已人工確認）。' : '實測尺寸重量已回填（符合預期）。';
             $('packing-status').className = '';
           }
         },
@@ -412,6 +417,29 @@
           } else if ($('packing-status')) {
             $('packing-status').textContent = '裝箱檢查表已產生（無尺寸不符，物流商 ' + String((d && d.carrierProvider) || 'BLOCKED/NOT_CONNECTED') + '）。';
             $('packing-status').className = '';
+          }
+        },
+        true
+      );
+    });
+  }
+  if ($('packing-resolve-btn')) {
+    $('packing-resolve-btn').addEventListener('click', function () {
+      if (!selected || posting || pending) return;
+      var orderId = selected.workOrderId;
+      prepare(
+        '人工確認尺寸不符並解除裝箱 hold（工單 ' + orderId + '）',
+        '/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/packing-mismatch/resolve',
+        { confirm: true },
+        $('packing-resolve-btn'),
+        function (d) {
+          if (!$('packing-status')) return;
+          if (d && d.mismatchHold === false) {
+            $('packing-status').textContent = '尺寸不符已人工確認（紙箱仍標記超差），可進行完工。';
+            $('packing-status').className = '';
+          } else {
+            $('packing-status').textContent = '尺寸不符待人工確認';
+            $('packing-status').className = 'warn';
           }
         },
         true
