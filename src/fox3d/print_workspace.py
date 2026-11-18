@@ -342,7 +342,7 @@ def _find_existing_proof(bundles_root,jid,revision,plan_hash,last_proof_id=None)
     return None
 
 
-def _find_existing_release(bundles_root,jid,revision,plan_hash,proof_id,current_release=None):
+def _find_existing_release(bundles_root,jid,revision,plan_hash,release_data,current_release=None):
     candidates=[]
     if isinstance(current_release,dict):
         rel_bid=current_release.get('bundleId')
@@ -359,7 +359,7 @@ def _find_existing_release(bundles_root,jid,revision,plan_hash,proof_id,current_
         hr=m.get('humanRelease')
         if (m.get('kind')=='APPROVED_FOR_MANUAL_RIP_IMPORT' and m.get('jobId')==jid
                 and m.get('revision')==revision and m.get('plan',{}).get('planHash')==plan_hash
-                and isinstance(hr,dict) and hr.get('proofId')==proof_id):
+                and isinstance(hr,dict) and hr==release_data):
             return m
     return None
 
@@ -431,11 +431,11 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None,max
             if proof['kind']!='PROOF' or proof['jobId']!=jid or proof['revision']!=j['revision'] or proof['plan']['planHash']!=plan_hash:
                 raise ValueError('請先下載並核對這個版本的校稿')
             kind='APPROVED_FOR_MANUAL_RIP_IMPORT'
-            existing_rel=_find_existing_release(bundles_root,jid,j['revision'],plan_hash,r.proofId,j.get('release'))
+            release_payload=r.model_dump()
+            existing_rel=_find_existing_release(bundles_root,jid,j['revision'],plan_hash,release_payload,j.get('release'))
             if existing_rel:
                 bid=existing_rel['bundleId']
-                op=(existing_rel.get('humanRelease') or {}).get('operator',r.operator)
-                rel_record={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':op,'proofId':r.proofId}
+                rel_record={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':r.operator,'proofId':r.proofId}
                 if j.get('release')!=rel_record:
                     j['release']=rel_record
                     atomic_json(folder_for(root,tenant,jid)/'job.json',j)
