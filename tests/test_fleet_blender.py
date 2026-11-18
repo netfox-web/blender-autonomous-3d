@@ -365,7 +365,7 @@ def test_scene_studio_shows_fleet_progress_and_gates_glb_link():
     assert "item.fleetStatus" in js
     assert "item.progressNote" in js
     assert "GPU 艦隊排隊中" in js
-    assert "item.hasGlb ? `<a href=\"${base}/glb${qs}\">GLB ↓</a>`" in js
+    assert "if (item.hasGlb) addLink(`${base}/glb${qs}`, 'GLB ↓')" in js
     assert "join('')}<a href=\"${base}/glb${qs}\">GLB ↓</a>" not in js
 
 
