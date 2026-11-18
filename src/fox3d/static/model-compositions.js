@@ -32,32 +32,7 @@
     }
     $('composition-accept').checked=false;
   }
-  async function fetchAllPages(path){
-    const first=await api(path);
-    const firstItems=Array.isArray(first?.items)?first.items:[];
-    const items=[...firstItems];
-    const seen=new Set(firstItems.map(x=>x?.id).filter(Boolean));
-    let total=Number(first?.total)||items.length;
-    const limit=Number(first?.limit)||100;
-    let nextOffset=(Number(first?.offset)||0)+firstItems.length;
-    while(nextOffset<total&&firstItems.length>0){
-      const sep=path.includes('?')?'&':'?';
-      const page=await api(`${path}${sep}offset=${nextOffset}&limit=${limit}`);
-      const pageItems=Array.isArray(page?.items)?page.items:[];
-      if(!pageItems.length)break;
-      if(Number.isFinite(Number(page?.total))&&Number(page.total)>=0)total=Number(page.total);
-      nextOffset+=pageItems.length;
-      let added=0;
-      for(const item of pageItems){
-        if(item?.id&&seen.has(item.id))continue;
-        if(item?.id)seen.add(item.id);
-        items.push(item);
-        added++;
-      }
-      if(!added)break;
-    }
-    return {...first,items};
-  }
+  const fetchAllPages=path=>(window.fox3dFetchAllPages||globalThis.fox3dFetchAllPages||require('./src/fox3d/static/fox3d-pagination.js').fetchAllPages)(api,path);
   async function load(reset=false){if(!master)return;const token=epoch,id=master.id;
     const s=await api('/'+id+'/composition');if(token!==epoch||master.id!==id)return;
     if(reset){const a=await fetchAllPages('/assets');if(token!==epoch)return;assets=a.items||[];fields(s);dirty=false;}
