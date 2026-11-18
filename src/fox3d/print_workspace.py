@@ -4,6 +4,7 @@ No network output, hot-folder dispatch, or machine control exists in this module
 """
 from __future__ import annotations
 
+import copy
 import io
 import json
 import logging
@@ -30,11 +31,42 @@ LOG=logging.getLogger(__name__)
 LOCK=RLock()
 PT=72/25.4
 MAX_PROOF_BUNDLES=10
+_MAX_CACHE_ENTRIES=10_000
+_JOB_CACHE:dict[str,tuple[tuple[int,int,int],dict|None]]={}
+_CREATED_AT_INDEX:dict[tuple[str,str],str]={}
 
 
 class JobList(list):
     skipped: int = 0
     total: int = 0
+    next_cursor: str | None = None
+
+
+def _file_sig(path)->tuple[int,int,int]|None:
+    try:
+        st=path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns,st.st_size,st.st_ino)
+
+
+def _store_cache(cache:dict,key,value)->None:
+    if key in cache:
+        cache.pop(key,None)
+    elif len(cache)>=_MAX_CACHE_ENTRIES:
+        cache.pop(next(iter(cache)),None)
+    cache[key]=value
+
+
+def _invalidate_job_cache(path)->None:
+    with LOCK:
+        _JOB_CACHE.pop(str(path),None)
+
+
+def clear_job_cache()->None:
+    with LOCK:
+        _JOB_CACHE.clear()
+        _CREATED_AT_INDEX.clear()
 
 
 class Panel(BaseModel):
@@ -106,6 +138,9 @@ def _valid_job_record(path, j):
     updated_at = j.get('updatedAt')
     if not isinstance(updated_at, str) or not updated_at.strip():
         return False
+    created_at = j.get('createdAt')
+    if created_at is not None and (not isinstance(created_at, str) or not created_at.strip()):
+        return False
     rev = j.get('revision')
     if not isinstance(rev, int) or isinstance(rev, bool) or rev < 1:
         return False
@@ -116,31 +151,86 @@ def _valid_job_record(path, j):
     return True
 
 
-def listing(root,tenant,*,offset=0,limit=None):
+def _job_created_at(path_str:str,j:dict)->str:
+    created=j.get('createdAt')
+    if isinstance(created,str) and created.strip():
+        _store_cache(_CREATED_AT_INDEX,(path_str,j['id']),created)
+        return created
+    existing=_CREATED_AT_INDEX.get((path_str,j['id']))
+    if existing is not None:
+        return existing
+    _store_cache(_CREATED_AT_INDEX,(path_str,j['id']),j['updatedAt'])
+    return j['updatedAt']
+
+
+def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
+    return (_job_created_at(path_str,j),j['id'])
+
+
+def listing(root,tenant,*,offset=0,limit=None,cursor=None):
     folder=workspace(root,tenant)/'jobs'
-    items=[]
+    entries=[]
     skipped=0
     for f in sorted(folder.glob('*/job.json')):
+        key=str(f)
+        sig=_file_sig(f)
+        if sig is None:
+            skipped+=1
+            LOG.warning('略過無法讀取或缺欄位的印刷工作紀錄: job=%s',f.parent.name)
+            continue
+        with LOCK:
+            cached=_JOB_CACHE.get(key)
+        if cached is not None and cached[0]==sig:
+            record=cached[1]
+            if record is None:
+                skipped+=1
+                LOG.warning('略過無法讀取或缺欄位的印刷工作紀錄: job=%s',f.parent.name)
+            else:
+                entries.append((key,record))
+            continue
         try:
             j=json.loads(f.read_text(encoding='utf-8'))
             if not _valid_job_record(f,j):
                 raise ValueError('invalid job record')
-            items.append(j)
+            with LOCK:
+                _job_created_at(key,j)
+                _store_cache(_JOB_CACHE,key,(sig,j))
+            entries.append((key,j))
         except (OSError,ValueError,KeyError,TypeError):
+            with LOCK:
+                _store_cache(_JOB_CACHE,key,(sig,None))
             skipped+=1
             LOG.warning('略過無法讀取或缺欄位的印刷工作紀錄: job=%s',f.parent.name)
-    items.sort(key=lambda j:(j['updatedAt'],j['id']),reverse=True)
-    total=len(items)
-    sliced=items[offset:] if limit is None else items[offset:offset+limit]
-    out=JobList(sliced)
+    with LOCK:
+        entries.sort(key=lambda item:_job_sort_key(item[0],item[1]),reverse=True)
+        if isinstance(cursor,str) and cursor.strip():
+            raw_cursor=cursor.strip()
+            if '|' in raw_cursor:
+                c_created,c_id=raw_cursor.rsplit('|',1)
+                filtered=[item for item in entries if _job_sort_key(item[0],item[1])<(c_created,c_id)]
+            else:
+                idx=next((i for i,item in enumerate(entries) if item[1]['id']==raw_cursor),None)
+                filtered=entries[idx+1:] if idx is not None else entries[offset:]
+            sliced_entries=filtered if limit is None else filtered[:limit]
+        else:
+            sliced_entries=entries[offset:] if limit is None else entries[offset:offset+limit]
+        next_cursor=None
+        if limit is not None and sliced_entries and entries:
+            last_key,last_job=sliced_entries[-1]
+            if last_job['id']!=entries[-1][1]['id']:
+                sort_created,sort_id=_job_sort_key(last_key,last_job)
+                next_cursor=f'{sort_created}|{sort_id}'
+    total=len(entries)
+    out=JobList(copy.deepcopy(j) for _,j in sliced_entries)
     out.skipped=skipped
     out.total=total
+    out.next_cursor=next_cursor
     return out
 
 
-def list_jobs(root,tenant,*,offset=0,limit=100):
-    rows=listing(root,tenant,offset=offset,limit=limit)
-    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped}
+def list_jobs(root,tenant,*,offset=0,limit=100,cursor=None):
+    rows=listing(root,tenant,offset=offset,limit=limit,cursor=cursor)
+    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped,'nextCursor':rows.next_cursor}
 
 
 def save_job(root,tenant,draft,*,jid=None,expected_revision=0):
@@ -155,9 +245,13 @@ def save_job(root,tenant,draft,*,jid=None,expected_revision=0):
             jid=new_id();old={'revision':0}
         # Validate source pages and real dimensions before saving a job.
         plan(root,tenant,d)
-        j={'id':jid,'revision':old['revision']+1,'draft':d,'updatedAt':str(utcnow()),
+        now=str(utcnow())
+        created_at=old.get('createdAt') or old.get('updatedAt') or now
+        j={'id':jid,'revision':old['revision']+1,'draft':d,'createdAt':created_at,'updatedAt':now,
            'release':None,'lastProofId':old.get('lastProofId')}
-        atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+        job_path=folder_for(root,tenant,jid)/'job.json'
+        atomic_json(job_path,j)
+        _invalidate_job_cache(job_path)
         return j
 
 
@@ -438,7 +532,9 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None,max
                 rel_record={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':r.operator,'proofId':r.proofId}
                 if j.get('release')!=rel_record:
                     j['release']=rel_record
-                    atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+                    job_path=folder_for(root,tenant,jid)/'job.json'
+                    atomic_json(job_path,j)
+                    _invalidate_job_cache(job_path)
                 return {'bundleId':bid,'kind':kind,'planHash':plan_hash,'revision':j['revision']}
         else:
             existing_proof=_find_existing_proof(bundles_root,jid,j['revision'],plan_hash,j.get('lastProofId'))
@@ -446,7 +542,9 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None,max
                 bid=existing_proof['bundleId']
                 if j.get('lastProofId')!=bid:
                     j['lastProofId']=bid
-                    atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+                    job_path=folder_for(root,tenant,jid)/'job.json'
+                    atomic_json(job_path,j)
+                    _invalidate_job_cache(job_path)
                 return {'bundleId':bid,'kind':kind,'planHash':plan_hash,'revision':j['revision']}
         bid=new_id();folder=bundles_root/bid;folder.mkdir(parents=True)
         files={};cache={}
@@ -483,7 +581,9 @@ def export_bundle(root,tenant,jid,*,expected_revision,plan_hash,release=None,max
         atomic_json(folder/'zip-meta.json',{'sha256':sha256_bytes(zip_path.read_bytes())})
         j['lastProofId']=bid if kind=='PROOF' else j.get('lastProofId')
         if r:j['release']={'bundleId':bid,'planHash':plan_hash,'revision':j['revision'],'operator':r.operator,'proofId':r.proofId}
-        atomic_json(folder_for(root,tenant,jid)/'job.json',j)
+        job_path=folder_for(root,tenant,jid)/'job.json'
+        atomic_json(job_path,j)
+        _invalidate_job_cache(job_path)
         _prune_proof_bundles(bundles_root,j,limit=MAX_PROOF_BUNDLES if max_proof_bundles is None else max_proof_bundles)
         return {'bundleId':bid,'kind':kind,'planHash':plan_hash,'revision':j['revision']}
 

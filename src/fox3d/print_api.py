@@ -111,9 +111,9 @@ def print_router(provider):
         return Response(call(assets.thumbnail,root(),t,aid,page),media_type='image/png',headers={'Cache-Control':'private, max-age=3600'})
 
     @r.get('/api/print-workspace/jobs')
-    def listing_jobs(offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=100),x_tenant_id:str|None=Header(None)):
+    def listing_jobs(offset:int=Query(0,ge=0),limit:int=Query(100,ge=1,le=100),cursor:str|None=Query(None,max_length=200),x_tenant_id:str|None=Header(None)):
         t=tid(x_tenant_id)
-        return call(jobs.list_jobs,root(),t,offset=offset,limit=limit)
+        return call(jobs.list_jobs,root(),t,offset=offset,limit=limit,cursor=cursor)
 
     @r.post('/api/print-workspace/jobs')
     def create(body:Save,x_tenant_id:str|None=Header(None)):
