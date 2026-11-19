@@ -362,7 +362,7 @@
         <div class="row-between">
           <div class="btn-group batch-head">
             <h3>批次成果</h3>
-            <select id="batch-picker" class="batch-picker" title="切換要看的批次（最近 15 批都在，重新整理也不會不見）"></select>
+            <select id="batch-picker" class="batch-picker" title="切換要看的批次"></select>
             <button id="batch-refresh" type="button" class="btn-xs" title="重新讀取批次清單">重新整理</button>
           </div>
           <div class="btn-group">
@@ -375,8 +375,45 @@
         </div>
         <div id="blender-gallery" class="matrix-gallery"></div>
       </div>
+
+      <div id="batch-history-section" class="gallery-section batch-history-section">
+        <div class="row-between">
+          <div class="btn-group batch-head">
+            <h3>歷史批次</h3>
+            <span id="batch-history-summary" class="badge">共 0 批</span>
+          </div>
+          <div class="btn-group">
+            <label class="history-filter-label">狀態篩選
+              <select id="batch-history-state" class="batch-state-filter">
+                <option value="">全部狀態</option>
+                <option value="running">執行中</option>
+                <option value="completed">已完成</option>
+                <option value="failed">失敗</option>
+                <option value="cancelled">已取消</option>
+                <option value="interrupted">已中斷</option>
+              </select>
+            </label>
+            <button id="batch-history-refresh" type="button" class="btn-xs">重新載入歷史</button>
+          </div>
+        </div>
+        <div id="batch-history-list" class="batch-history-list"></div>
+        <div class="batch-history-foot">
+          <button id="batch-history-more" type="button" class="btn-sm" hidden>載入更多</button>
+        </div>
+      </div>
     </section>
   </main>
+
+  <dialog id="batch-delete-dialog" class="studio-dialog">
+    <form id="batch-delete-form" method="dialog">
+      <h3>確認刪除批次</h3>
+      <p id="batch-delete-summary" class="muted"></p>
+      <div class="btn-group dialog-actions">
+        <button type="submit" value="cancel" id="batch-delete-cancel" class="btn-sm">取消</button>
+        <button type="submit" value="confirm" id="batch-delete-confirm" class="btn-sm danger">確認刪除</button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="/admin/recipes/assets/scene-studio.js"></script>
 </body>

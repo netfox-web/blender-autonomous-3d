@@ -28,6 +28,7 @@ from fox3d.features import feature_index
 from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
 from fox3d.pilot_packing_api import pilot_packing_router
+from fox3d.pilot_batch_api import pilot_batch_router
 from fox3d.pilot_qc_api import pilot_qc_router
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
@@ -1084,12 +1085,6 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         items = enriched[offset : offset + limit]
         return {"items": items, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
 
-    @app.get("/api/pilot/batches")
-    def pilot_batches(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        tid = require_tenant(x_tenant_id)
-        items = [b for b in get_platform().pilot_batch.batches.values() if b.get("tenantId") == tid]
-        return {"items": items, "liveMachineControl": False, "physicalPilotBatchValidated": False}
-
     @app.get("/api/pilot/batches/board")
     def pilot_batch_board(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
@@ -1372,6 +1367,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     platform_provider = lambda: platform if platform is not None else get_platform()
     app.include_router(recipe_router(platform_provider))
     app.include_router(pilot_packing_router(platform_provider))
+    app.include_router(pilot_batch_router(platform_provider))
     app.include_router(pilot_qc_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):

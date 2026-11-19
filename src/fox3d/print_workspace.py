@@ -170,10 +170,12 @@ def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
 def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]],folder=None)->tuple[str,str]|None:
     parts=raw_cursor.split('|')
     if len(parts)==3:
-        c_tenant,c_created,c_id=parts
-        if c_tenant!=tenant_token or not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
-            return None
-        return (c_created,c_id)
+        p0,p1,p2=parts
+        if p0==tenant_token and p1.strip() and re.fullmatch(r'[a-f0-9-]{36}',p2):
+            return (p1,p2)
+        if p2==tenant_token and p0.strip() and re.fullmatch(r'[a-f0-9-]{36}',p1):
+            return (p0,p1)
+        return None
     if len(parts)==2:
         c_created,c_id=parts
         if not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
@@ -241,7 +243,8 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
             last_key,last_job=sliced_entries[-1]
             if last_job['id']!=entries[-1][1]['id']:
                 sort_created,sort_id=_job_sort_key(last_key,last_job)
-                next_cursor=f'{tenant_token}|{sort_created}|{sort_id}'
+                if '|' not in sort_created and '|' not in sort_id and '|' not in tenant_token:
+                    next_cursor=f'{tenant_token}|{sort_created}|{sort_id}'
     total=len(entries)
     out=JobList(copy.deepcopy(j) for _,j in sliced_entries)
     out.skipped=skipped

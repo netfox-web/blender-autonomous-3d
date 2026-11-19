@@ -315,13 +315,13 @@ def test_restart_recovers_queued_batch_without_key_on_read(setup):
     doc = restarted.get_batch('tenant', queued['batchId'])
     assert doc['state'] == 'running' and doc['scheduleState'] == 'pending'
     assert len(work) == 1
-    # Reading again (and listing) does not schedule it a second time; listing also wakes the other batch.
+    # Reading again does not schedule it a second time; listing is read-only and does not trigger recovery.
     restarted.get_batch('tenant', queued['batchId'])
-    listed = {b['batchId']: b for b in restarted.list_batches('tenant')}
+    listed = {b['batchId']: b for b in restarted.list_batches('tenant')['items']}
     assert listed[first['batchId']]['state'] == 'running'
-    assert len(work) == 2
+    assert len(work) == 1
     restarted.list_batches('tenant')
-    assert len(work) == 2
+    assert len(work) == 1
     assert _run(restarted, work[0]) == 2
     saved = restarted.get_batch('tenant', queued['batchId'])
     assert saved['state'] == 'completed'
