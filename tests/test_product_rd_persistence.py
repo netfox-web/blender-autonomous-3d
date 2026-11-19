@@ -563,8 +563,6 @@ def test_cross_tenant_and_unknown_ids_return_404(tmp_path: Path) -> None:
         {"text": ["書櫃"]},
         {"text": {"q": "書櫃"}},
         {"text": "書櫃\x00衣櫃"},
-        {"text": "x" * 2001},
-        {"text": "櫃" * 2001},
         {"text": "高" + ("9" * 400) + "cm"},
         {"text": "預算 " + ("9" * 400)},
         {"variantCount": 0},
@@ -668,6 +666,50 @@ def test_generate_backward_compatible_variant_count_null_and_empty_text(tmp_path
 
     # Tenant isolation holds for legacy inputs as well.
     assert client.get(f"/api/product-rd/results/{idem_null.json()['rdId']}", headers=TENANT_B).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "long_text",
+    [
+        "書櫃" + ("甲" * 2000),
+        "書櫃 " + ("x" * 5000),
+        "客廳 寬180cm 電視櫃 " + ("奶油風 " * 1500),
+    ],
+)
+def test_generate_accepts_long_text_like_legacy_contract(tmp_path: Path, long_text: str) -> None:
+    """Legacy /api/product-rd/generate never capped text length; long requests must still succeed and persist."""
+    plat, client = _make_client(tmp_path)
+
+    # The legacy generator itself handles this text directly.
+    direct = plat.rd.run(tenant_id="tenant-alpha", text=long_text, variant_count=1)
+    assert direct["baseSpec"]["kind"]
+
+    res = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": long_text, "variantCount": 1, "idempotencyKey": "long-text-1"},
+    )
+    assert res.status_code == 200, res.text[:500]
+    data = res.json()
+    assert data["requestedVariantCount"] == 1
+    assert data["text"] == long_text
+    assert data["baseSpec"]["kind"] == direct["baseSpec"]["kind"]
+
+    # Persisted verbatim, survives restart, idempotent resend returns the same record, tenant-scoped.
+    _, client2 = _make_client(tmp_path)
+    detail = client2.get(f"/api/product-rd/results/{data['rdId']}", headers=TENANT_A)
+    assert detail.status_code == 200
+    assert detail.json()["text"] == long_text
+    again = client2.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": long_text, "variantCount": 1, "idempotencyKey": "long-text-1"},
+    )
+    assert again.status_code == 200
+    assert again.json()["rdId"] == data["rdId"]
+    assert client2.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == 1
+    assert client2.get(f"/api/product-rd/results/{data['rdId']}", headers=TENANT_B).status_code == 404
+
 
 
 def test_non_terminal_or_failed_render_job_never_marks_truth_label_real(

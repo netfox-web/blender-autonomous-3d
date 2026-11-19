@@ -17,8 +17,6 @@ from fox3d.ids import stable_hash
 from fox3d.infra import utcnow, validate_tenant_id
 from fox3d.storelock import FileLock
 
-MAX_RD_TEXT_CHARS = 2000
-MAX_RD_TEXT_UTF8_BYTES = 6000
 MIN_RD_VARIANT_COUNT = 1
 MAX_RD_VARIANT_COUNT = 100
 DEFAULT_RD_VARIANT_COUNT = 12
@@ -60,8 +58,6 @@ def validate_rd_text(raw: Any, *, required_non_empty: bool = False) -> str:
         raise ValueError("text 格式錯誤")
     if required_non_empty and not raw.strip():
         raise ValueError("text 不可為空白")
-    if len(raw) > MAX_RD_TEXT_CHARS or len(raw.encode("utf-8")) > MAX_RD_TEXT_UTF8_BYTES:
-        raise ValueError(f"text 長度不可超過 {MAX_RD_TEXT_CHARS} 字")
     return raw
 
 
