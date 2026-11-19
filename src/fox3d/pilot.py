@@ -112,7 +112,7 @@ class PilotOps:
             if svc is None:
                 continue
             svc.journal = self.journal
-            # StationRegistry and ContractService gain outbox at runtime; they do not declare it.
+            # ContractService gains outbox at runtime; it does not declare it.
             setattr(svc, "outbox", self.outbox)
         self._reconcile_startup()
 
@@ -142,7 +142,21 @@ class PilotOps:
         if atype == "StationLease":
             return aid in self.dispatcher.leases
         if atype == "Station":
-            return aid in self.stations.stations
+            rec = self.stations.stations.get(str(aid)) if isinstance(aid, str) else None
+            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
+                return False
+            ev = tx.get("event") or {}
+            et = str(ev.get("event_type") or ev.get("eventType") or "")
+            if et == "station.status":
+                trans_id = payload.get("transitionId")
+                ops = rec.get("statusTransitions")
+                if not isinstance(trans_id, str) or not trans_id or not isinstance(ops, dict):
+                    return False
+                op_rec = ops.get(trans_id)
+                if not isinstance(op_rec, dict):
+                    return False
+                return op_rec.get("status") == payload.get("status") and op_rec.get("note") == payload.get("note")
+            return True
         if atype == "Operator":
             rec = self.identity.operators.get(aid) if isinstance(aid, str) else None
             event = tx.get("event") or {}
@@ -155,7 +169,16 @@ class PilotOps:
         if atype == "CycleCount":
             return aid in self.cyclecounts.counts
         if atype == "PilotException":
-            return aid in self.inbox.items
+            rec = self.inbox.items.get(str(aid)) if isinstance(aid, str) else None
+            if not rec or (tenant_id and rec.get("tenantId") != tenant_id):
+                return False
+            ev = tx.get("event") or {}
+            et = str(ev.get("event_type") or ev.get("eventType") or "")
+            if et == "exception.acknowledged":
+                return bool(rec.get("acknowledgedAt")) and rec.get("ackNote") == payload.get("note")
+            if et == "exception.resolved":
+                return rec.get("status") == "RESOLVED" and rec.get("resolution") == payload.get("resolution")
+            return True
         if atype == "Carton":
             rec = self.logistics.cartons.get(str(aid)) if isinstance(aid, str) else None
             ev = tx.get("event") or {}
