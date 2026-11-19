@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0;
+  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, cartonLoadDoneSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0;
   try { $('tenant').value = localStorage.getItem('fox3d.tenant') || 'sonaqueen-home'; } catch (e) { /* storage unavailable */ }
   function tenant() { return $('tenant').value.trim() || 'sonaqueen-home'; }
   function api(path, options) {
@@ -220,6 +220,10 @@
       $('packing-status').className = '';
     }
   }
+  function markCartonLoadDone() {
+    cartonLoadDoneSeq++;
+    if ($('packing-panel')) $('packing-panel').setAttribute('data-carton-load-done', String(cartonLoadDoneSeq));
+  }
   function loadCartons(workOrderId, preserveStatus) {
     if (!workOrderId) return Promise.resolve();
     var seq = ++cartonLoadSeq;
@@ -233,10 +237,10 @@
     }).catch(function (e) {
       if (seq !== cartonLoadSeq || !selected || selected.workOrderId !== workOrderId) return;
       if ($('packing-status')) {
-        $('packing-status').textContent = '紙箱讀取失敗：' + e.message;
+        $('packing-status').textContent = '紙箱讀取失敗：' + ((e && e.message) || e);
         $('packing-status').className = 'warn';
       }
-    });
+    }).finally(markCartonLoadDone);
   }
   function loadQc(orderId) {
     $('qc-status').textContent = '載入中…';
@@ -315,7 +319,7 @@
     }).catch(function (e) {
       if (seq !== batchDetailSeq || tid !== tenant()) return;
       box.className = 'warn';
-      box.textContent = '批次明細讀取失敗：' + e.message;
+      box.textContent = '批次明細讀取失敗：' + ((e && e.message) || e);
     });
   }
   function fetchOutcome(path, tid) {
@@ -328,7 +332,14 @@
     var fetchAll = window.fox3dFetchAllPages || globalThis.fox3dFetchAllPages;
     var path = '/api/pilot/work-orders';
     if (fetchAll) {
-      return fetchAll(function (p) { return api(p, { tenant: tid }); }, path).then(
+      // The shared pagination helper turns a malformed page into an empty list;
+      // reject it here so a broken list read is shown as 讀取失敗 and clears the stale selection.
+      return fetchAll(function (p) {
+        return api(p, { tenant: tid }).then(function (d) {
+          if (!d || typeof d !== 'object' || (d.items != null && !Array.isArray(d.items))) throw new Error('工單清單格式錯誤');
+          return d;
+        });
+      }, path).then(
         function (data) { return { ok: true, data: data }; },
         function (err) { return { ok: false, error: err }; }
       );
@@ -336,26 +347,36 @@
     return fetchOutcome('/api/pilot/work-orders', tid);
   }
   function applySection(id, outcome, render) {
-    if (outcome.ok) render(outcome.data);
-    else if ($(id)) $(id).textContent = '讀取失敗：' + outcome.error.message;
+    if (outcome.ok) {
+      try {
+        render(outcome.data);
+      } catch (e) {
+        if ($(id)) $(id).textContent = '讀取失敗：' + ((e && e.message) || e);
+      }
+    } else if ($(id)) {
+      $(id).textContent = '讀取失敗：' + ((outcome.error && outcome.error.message) || outcome.error);
+    }
+  }
+  function clearSelection() {
+    selected = null;
+    $('detail').textContent = '請選擇工單。';
+    $('actions').hidden = true;
+    if ($('packing-panel')) $('packing-panel').hidden = true;
+    if ($('qc-panel')) $('qc-panel').hidden = true;
   }
   function refresh(keepOrderId, preserveStatus) {
     if (!posting) clearPending();
     var seq = ++refreshSeq;
     batchDetailSeq++;
-    $('batch-detail').textContent = '請選擇批次。';
-    $('batch-detail').className = '';
+    if ($('batch-detail')) {
+      $('batch-detail').textContent = '請選擇批次。';
+      $('batch-detail').className = '';
+    }
     var cSeq = ++cartonLoadSeq;
     var reqTenant = tenant();
     loadedTenant = reqTenant;
     var targetOrderId = keepOrderId !== undefined ? keepOrderId : (selected && selected.workOrderId);
-    if (!targetOrderId) {
-      selected = null;
-      $('detail').textContent = '請選擇工單。';
-      $('actions').hidden = true;
-      if ($('packing-panel')) $('packing-panel').hidden = true;
-      if ($('qc-panel')) $('qc-panel').hidden = true;
-    }
+    if (!targetOrderId) clearSelection();
     var reqs = [
       fetchOutcome('/api/pilot/console', reqTenant),
       fetchWorkOrdersOutcome(reqTenant),
@@ -365,7 +386,10 @@
       targetOrderId ? fetchOutcome('/api/pilot/work-orders/' + encodeURIComponent(targetOrderId) + '/cartons', reqTenant) : Promise.resolve(null)
     ];
     return Promise.all(reqs).then(function (res) {
-      if (seq !== refreshSeq) return;
+      if (seq !== refreshSeq) {
+        if (res[5]) markCartonLoadDone();
+        return;
+      }
       applySection('overview', res[0], function (d) {
         var badges = Object.keys(d.badges || {}).map(function (k) { return [BADGE_NAMES[k] || k, d.badges[k]]; });
         cards('overview', [['材料批號', (d.lots || []).length + ' 批'], ['放行紀錄', (d.releases || []).length + ' 筆'], ['機台連線控制', d.liveMachineControl ? '已開啟' : '關閉（人工）']].concat(badges), d);
@@ -373,8 +397,13 @@
         table('receipts', d.receipts, [['receiptId','收料編號'],['material','材料'],['quantity','數量'],['status','狀態'],['truthLabel','來源']]);
         table('requests', d.purchaseRequests, [['requestId','請購編號'],['material','材料'],['quantity','數量'],['status','狀態']]);
       });
+      // A selection survives only if the work-order list loads and still contains it;
+      // a failed or malformed list must not leave stale order actions usable.
+      var ordersLoaded = false;
       applySection('orders', res[1], function (d) {
-        var list = (d && d.items) || [];
+        if (!d || typeof d !== 'object') throw new Error('工單清單格式錯誤');
+        var list = d.items == null ? [] : d.items;
+        if (!Array.isArray(list)) throw new Error('工單清單格式錯誤');
         table('orders', list, [['workOrderId','工單編號'],['state','狀態'],['quantity','數量'],['truthLabel','資料來源']], function (item) { selectOrder(item, false); });
         var matched = null;
         if (targetOrderId) {
@@ -388,13 +417,11 @@
         if (matched) {
           selectOrder(matched, Boolean(preserveStatus), true);
         } else if (targetOrderId) {
-          selected = null;
-          $('detail').textContent = '請選擇工單。';
-          $('actions').hidden = true;
-          if ($('packing-panel')) $('packing-panel').hidden = true;
-          if ($('qc-panel')) $('qc-panel').hidden = true;
+          clearSelection();
         }
+        ordersLoaded = true;
       });
+      if (!ordersLoaded) clearSelection();
       applySection('batches', res[2], function (d) {
         table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { loadBatchDetail(item); });
       });
@@ -412,15 +439,28 @@
         var j = d.journalIntegrity || {};
         cards('health', [['待人工處理', d.queuedManualOperations], ['進行中的站點租約', d.activeStationLeases], ['逾時租約', d.expiredStationLeases], ['預留短缺', d.reservationShortageCount], ['放行被拒（過期）', d.staleReleaseRejects], ['品檢 通過／不合格／重工', [d.qcPass, d.qcFail, d.qcRework].map(function (x) { return x == null ? '—' : x; }).join(' / ')], ['包裝異常', d.packingExceptions], ['作業日誌完整性', (j.ok ? '正常' : '異常') + (j.status ? '（' + j.status + '）' : '')]], d);
       });
-      if (res[5] && selected && selected.workOrderId === targetOrderId && cSeq === cartonLoadSeq) {
-        if (res[5].ok) {
-          renderCartons(res[5].data.items || res[5].data.cartons || [], Boolean(preserveStatus), res[5].data.mismatchHold);
-        } else if ($('packing-status')) {
-          $('packing-status').textContent = '紙箱讀取失敗：' + res[5].error.message;
-          $('packing-status').className = 'warn';
+      if (res[5]) {
+        if (selected && selected.workOrderId === targetOrderId && cSeq === cartonLoadSeq) {
+          if (res[5].ok) {
+            try {
+              renderCartons(res[5].data.items || res[5].data.cartons || [], Boolean(preserveStatus), res[5].data.mismatchHold);
+            } catch (e) {
+              if ($('packing-status')) {
+                $('packing-status').textContent = '紙箱讀取失敗：' + ((e && e.message) || e);
+                $('packing-status').className = 'warn';
+              }
+            }
+          } else if ($('packing-status')) {
+            $('packing-status').textContent = '紙箱讀取失敗：' + ((res[5].error && res[5].error.message) || res[5].error);
+            $('packing-status').className = 'warn';
+          }
         }
+        markCartonLoadDone();
       }
     });
+  }
+  function stillSelected(task) {
+    return Boolean(selected && task.workOrderId && selected.workOrderId === task.workOrderId);
   }
   function prepare(label, path, body, trigger, onDone, isPacking) {
     if (posting || pending) return;
@@ -478,9 +518,10 @@
       if (isMismatchResult(d)) {
         return refresh(task.workOrderId, true).then(function () {
           releaseControls();
-          if (task.isPacking) renderCartons(currentCartons, true, currentMismatchHold);
-          if (typeof task.onDone === 'function') task.onDone(d);
-          if ($('packing-status')) {
+          var keepPacking = !task.isPacking || stillSelected(task);
+          if (task.isPacking && keepPacking) renderCartons(currentCartons, true, currentMismatchHold);
+          if (keepPacking && typeof task.onDone === 'function') task.onDone(d);
+          if (keepPacking && $('packing-status')) {
             $('packing-status').textContent = '尺寸不符待人工確認';
             $('packing-status').className = 'warn';
           }
@@ -499,8 +540,9 @@
       }
       return refresh(task.workOrderId, Boolean(task.isPacking)).then(function () {
         releaseControls();
-        if (task.isPacking) renderCartons(currentCartons, true, currentMismatchHold);
-        if (typeof task.onDone === 'function') task.onDone(d);
+        var keepPacking = !task.isPacking || stillSelected(task);
+        if (task.isPacking && keepPacking) renderCartons(currentCartons, true, currentMismatchHold);
+        if (keepPacking && typeof task.onDone === 'function') task.onDone(d);
         show('result', d);
       });
     }).catch(function (e) {

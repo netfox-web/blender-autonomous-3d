@@ -589,6 +589,9 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
     row_btn.wait_for(timeout=10_000)
     row_btn.click()
     page.wait_for_selector("#packing-panel:not([hidden])")
+    page.wait_for_function(
+        "() => Number(document.getElementById('packing-panel').getAttribute('data-carton-load-done') || '0') >= 1"
+    )
 
     # 1. route.abort on carton creation shows error and restores buttons.
     create_path = f"/api/pilot/work-orders/{wo_id}/cartons"
@@ -747,6 +750,9 @@ def test_pilot_packing_flow_locks_buttons_during_refresh_and_ignores_stale_respo
     row_btn.wait_for(timeout=10_000)
     row_btn.click()
     page.wait_for_selector("#packing-panel:not([hidden])")
+    page.wait_for_function(
+        "() => Number(document.getElementById('packing-panel').getAttribute('data-carton-load-done') || '0') >= 1"
+    )
 
     page.locator("#packing-quantity").fill("1")
     page.locator("#packing-idem").fill("browser-pack-sync-1")
@@ -788,13 +794,17 @@ def test_pilot_packing_flow_locks_buttons_during_refresh_and_ignores_stale_respo
     page.route(re.compile(re.escape(cartons_path) + r"$"), on_cartons_route)
 
     # User edits #packing-length while a background GET /cartons is in flight; completion must not overwrite "999".
+    before_edit_done = int(page.locator("#packing-panel").get_attribute("data-carton-load-done") or "0")
     with page.expect_request(lambda req: req.method == "GET" and _path(req.url) == cartons_path):
         page.locator("#orders tr", has_text=wo_id).locator("button").click()
     page.evaluate("() => true")
     assert len(edit_cartons_get) == 1
     page.locator("#packing-length").fill("999")
-    with page.expect_response(lambda resp: resp.request.method == "GET" and _path(resp.url) == cartons_path):
-        edit_cartons_get.pop().continue_()
+    edit_cartons_get.pop().continue_()
+    page.wait_for_function(
+        "(prev) => Number(document.getElementById('packing-panel').getAttribute('data-carton-load-done') || '0') > prev",
+        arg=before_edit_done,
+    )
     assert page.locator("#packing-length").input_value() == "999"
 
     hold_next_get["hold"] = True
@@ -875,6 +885,7 @@ def test_pilot_packing_flow_locks_buttons_during_refresh_and_ignores_stale_respo
     )
 
     # Fulfill the stale pre-resolve GET /cartons with mismatchHold=True; UI must ignore it.
+    before_stale_done = int(page.locator("#packing-panel").get_attribute("data-carton-load-done") or "0")
     stale_carton = dict(admin_server["platform"].pilot.logistics.cartons[carton_id])
     stale_cartons_get.pop().fulfill(
         status=200,
@@ -890,11 +901,204 @@ def test_pilot_packing_flow_locks_buttons_during_refresh_and_ignores_stale_respo
             }
         ),
     )
-    page.evaluate("() => new Promise(resolve => setTimeout(resolve, 0))")
+    page.wait_for_function(
+        "(prev) => Number(document.getElementById('packing-panel').getAttribute('data-carton-load-done') || '0') > prev",
+        arg=before_stale_done,
+    )
     status_text = page.locator("#packing-status").inner_text()
     assert "已人工確認" in status_text and "待人工確認" not in status_text
     assert "尺寸不符（已人工確認）" in page.locator("#packing-cartons").inner_text()
     assert "BLOCKED/NOT_CONNECTED" in page.locator("#packing-checklist").inner_text()
+
+
+def test_pilot_health_null_isolates_render_error_and_updates_other_sections(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    wo_id = _seed_pilot_packing_work_order(admin_server)
+
+    page.route(
+        re.compile(re.escape("/api/pilot/health") + r"$"),
+        lambda route: route.fulfill(status=200, content_type="application/json", body="null"),
+    )
+
+    _goto(page, admin_server["base_url"], "/admin/pilot", "#orders")
+    page.wait_for_function(
+        """(expectedWo) => {
+          const health = document.getElementById('health');
+          const overview = document.getElementById('overview');
+          const orders = document.getElementById('orders');
+          const board = document.getElementById('board');
+          const refreshBtn = document.getElementById('refresh');
+          return !!(
+            health && health.textContent.includes('讀取失敗') &&
+            overview && overview.textContent.includes('材料批號') &&
+            orders && orders.textContent.includes(expectedWo) &&
+            board && board.textContent.includes('整體判定') &&
+            refreshBtn && !refreshBtn.disabled
+          );
+        }""",
+        arg=wo_id,
+    )
+
+    row_btn = page.locator("#orders tr", has_text=wo_id).locator("button")
+    row_btn.click()
+    page.wait_for_selector("#packing-panel:not([hidden])")
+    page.wait_for_function(
+        "() => Number(document.getElementById('packing-panel').getAttribute('data-carton-load-done') || '0') >= 1"
+    )
+
+    # POST carton creation while /api/pilot/health returns null must succeed and unlock buttons.
+    before_create_done = int(page.locator("#packing-panel").get_attribute("data-carton-load-done") or "0")
+    page.locator("#packing-quantity").fill("1")
+    page.locator("#packing-idem").fill("browser-health-null-1")
+    page.locator("#packing-create-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """(prev) => {
+          const panel = document.getElementById('packing-panel');
+          const done = Number((panel && panel.getAttribute('data-carton-load-done')) || '0');
+          const sel = document.getElementById('packing-carton-id');
+          const createBtn = document.getElementById('packing-create-btn');
+          const confirmBtn = document.getElementById('confirm');
+          return !!(done > prev && sel && sel.options.length === 1 && createBtn && !createBtn.disabled && confirmBtn && !confirmBtn.disabled);
+        }""",
+        arg=before_create_done,
+    )
+    assert "讀取失敗" in page.locator("#health").inner_text()
+    assert "操作失敗" not in page.locator("#result").inner_text()
+    assert wo_id in page.locator("#result").inner_text()
+    assert "已建立 1 個紙箱並綁定工單。" in page.locator("#packing-status").inner_text()
+
+    # Mutate carton on backend and submit a receipt POST: both overview (#receipts, before health)
+    # and cartons (#packing-cartons, after health in refresh) must update, and buttons must unlock.
+    carton_id = page.locator("#packing-carton-id").input_value()
+    admin_server["platform"].pilot.logistics.cartons[carton_id]["measured"] = {
+        "length": 777.0,
+        "width": 400.0,
+        "height": 200.0,
+        "weightKg": 12.0,
+    }
+    before_receipt_done = int(page.locator("#packing-panel").get_attribute("data-carton-load-done") or "0")
+    page.locator("#receipt input[name=material]").fill("HEALTH-NULL-MAT")
+    page.locator("#receipt input[name=quantity]").fill("3")
+    page.locator("#receipt input[name=supplierLot]").fill("lot-health-null")
+    page.locator("#receipt button").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """(prev) => {
+          const panel = document.getElementById('packing-panel');
+          const done = Number((panel && panel.getAttribute('data-carton-load-done')) || '0');
+          const receipts = document.getElementById('receipts');
+          const cartons = document.getElementById('packing-cartons');
+          const receiptBtn = document.querySelector('#receipt button');
+          return !!(
+            done > prev &&
+            receipts && receipts.textContent.includes('HEALTH-NULL-MAT') &&
+            cartons && cartons.textContent.includes('777×400×200 mm / 12 kg') &&
+            receiptBtn && !receiptBtn.disabled
+          );
+        }""",
+        arg=before_receipt_done,
+    )
+    assert "讀取失敗" in page.locator("#health").inner_text()
+    assert "操作失敗" not in page.locator("#result").inner_text()
+    for btn_id in (
+        "packing-create-btn",
+        "packing-measure-btn",
+        "packing-checklist-btn",
+        "packing-resolve-btn",
+        "confirm",
+        "refresh",
+    ):
+        assert page.locator(f"#{btn_id}").is_enabled(), btn_id
+
+
+@pytest.mark.parametrize(
+    ("list_status", "list_body"),
+    [(200, "null"), (200, '{"items": "not-a-list"}'), (500, '{"detail": "boom"}')],
+    ids=["null", "malformed", "http-500"],
+)
+def test_pilot_work_order_list_failure_after_post_clears_stale_selection(
+    admin_page: Page, admin_server: dict[str, Any], list_status: int, list_body: str
+) -> None:
+    page = admin_page
+    wo_id = _seed_pilot_packing_work_order(admin_server)
+
+    _goto(page, admin_server["base_url"], "/admin/pilot", "#orders")
+    row_btn = page.locator("#orders tr", has_text=wo_id).locator("button")
+    row_btn.wait_for(timeout=10_000)
+    row_btn.click()
+    page.wait_for_selector("#packing-panel:not([hidden])")
+    page.wait_for_selector("#actions:not([hidden])")
+    page.wait_for_function(
+        "() => Number(document.getElementById('packing-panel').getAttribute('data-carton-load-done') || '0') >= 1"
+    )
+
+    # From now on the work-order list read fails; every POST under the work order is recorded.
+    page.route(
+        re.compile(re.escape("/api/pilot/work-orders") + r"$"),
+        lambda route: route.fulfill(status=list_status, content_type="application/json", body=list_body),
+    )
+    order_posts: list[str] = []
+
+    def record_order_post(route: Route) -> None:
+        if route.request.method == "POST":
+            order_posts.append(_path(route.request.url))
+        route.continue_()
+
+    page.route(re.compile(re.escape("/api/pilot/work-orders/") + r".*"), record_order_post)
+
+    before_done = int(page.locator("#packing-panel").get_attribute("data-carton-load-done") or "0")
+    page.locator("#packing-quantity").fill("1")
+    page.locator("#packing-idem").fill(f"browser-list-fail-{list_status}-{len(list_body)}")
+    page.locator("#packing-create-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """(prev) => {
+          const panel = document.getElementById('packing-panel');
+          const done = Number((panel && panel.getAttribute('data-carton-load-done')) || '0');
+          const confirmBtn = document.getElementById('confirm');
+          const createBtn = document.getElementById('packing-create-btn');
+          return !!(done > prev && confirmBtn && !confirmBtn.disabled && createBtn && !createBtn.disabled);
+        }""",
+        arg=before_done,
+    )
+    assert order_posts == [f"/api/pilot/work-orders/{wo_id}/cartons"]
+    # The POST itself succeeded and the error from the list read is kept visible.
+    assert wo_id in page.locator("#result").inner_text()
+    assert "讀取失敗" in page.locator("#orders").inner_text()
+    # The stale selection is gone: no order actions, no packing panel, no detail.
+    assert page.locator("#actions").is_hidden()
+    assert page.locator("#packing-panel").is_hidden()
+    assert page.locator("#detail").inner_text() == "請選擇工單。"
+    # Other sections still refreshed.
+    assert "材料批號" in page.locator("#overview").inner_text()
+    assert "整體判定" in page.locator("#board").inner_text()
+
+    # Even when forced, the stale order actions and packing forms cannot start a new POST.
+    page.evaluate(
+        """() => {
+          document.querySelectorAll('#actions [data-action]').forEach((b) => {
+            b.disabled = false;
+            b.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          });
+          ['packing-create', 'packing-measure'].forEach((id) => {
+            const f = document.getElementById(id);
+            f.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          });
+          ['packing-checklist-btn', 'packing-resolve-btn'].forEach((id) => {
+            document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+          });
+        }"""
+    )
+    assert page.locator("#confirmation").is_hidden()
+    _click_anyway(page, "confirm")
+    assert page.locator("#confirmation").is_hidden()
+    assert order_posts == [f"/api/pilot/work-orders/{wo_id}/cartons"]
 
 
 def test_pilot_packing_flow_repeated_cycles_under_concurrent_refresh_load(

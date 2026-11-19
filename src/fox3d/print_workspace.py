@@ -136,10 +136,10 @@ def _valid_job_record(path, j):
     if not isinstance(jid, str) or not re.fullmatch(r'[a-f0-9-]{36}', jid) or jid != path.parent.name:
         return False
     updated_at = j.get('updatedAt')
-    if not isinstance(updated_at, str) or not updated_at.strip():
+    if not isinstance(updated_at, str) or not updated_at.strip() or '|' in updated_at:
         return False
     created_at = j.get('createdAt')
-    if created_at is not None and (not isinstance(created_at, str) or not created_at.strip()):
+    if created_at is not None and (not isinstance(created_at, str) or not created_at.strip() or '|' in created_at):
         return False
     rev = j.get('revision')
     if not isinstance(rev, int) or isinstance(rev, bool) or rev < 1:
@@ -167,28 +167,29 @@ def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
     return (_job_created_at(path_str,j),j['id'])
 
 
-def _jobs_after_cursor(entries,cursor,offset,tag):
-    """套用本租戶鍵集游標。對不上的游標改走 offset，避免其他租戶的位置把呼叫者的工作濾掉。"""
-    raw=cursor.strip()
-    if '|' not in raw:
-        idx=next((i for i,item in enumerate(entries) if item[1]['id']==raw),None)
-        return entries[idx+1:] if idx is not None else entries[offset:]
-    pieces=[part.strip() for part in raw.rsplit('|',2)]
-    if len(pieces)==3:
-        created,job_id,bound=pieces
-        if bound!=tag or not created:
-            return entries[offset:]
-    else:
-        created,job_id=pieces
-        if not created or not any(item[1]['id']==job_id for item in entries):
-            return entries[offset:]
-    boundary=(created,job_id)
-    return [item for item in entries if _job_sort_key(item[0],item[1])<boundary]
+def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]],folder=None)->tuple[str,str]|None:
+    parts=raw_cursor.split('|')
+    if len(parts)==3:
+        p0,p1,p2=parts
+        if p0==tenant_token and p1.strip() and re.fullmatch(r'[a-f0-9-]{36}',p2):
+            return (p1,p2)
+        if p2==tenant_token and p0.strip() and re.fullmatch(r'[a-f0-9-]{36}',p1):
+            return (p0,p1)
+        return None
+    if len(parts)==2:
+        c_created,c_id=parts
+        if not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
+            return None
+        if any(item[1]['id']==c_id for item in entries) or (folder is not None and (folder/c_id/'job.json').is_file()):
+            return (c_created,c_id)
+        return None
+    return None
 
 
 def listing(root,tenant,*,offset=0,limit=None,cursor=None):
-    folder=workspace(root,tenant)/'jobs'
-    tag=folder.parent.name
+    ws=workspace(root,tenant)
+    tenant_token=ws.name
+    folder=ws/'jobs'
     entries=[]
     skipped=0
     for f in sorted(folder.glob('*/job.json')):
@@ -224,7 +225,16 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
     with LOCK:
         entries.sort(key=lambda item:_job_sort_key(item[0],item[1]),reverse=True)
         if isinstance(cursor,str) and cursor.strip():
-            filtered=_jobs_after_cursor(entries,cursor,offset,tag)
+            raw_cursor=cursor.strip()
+            if '|' in raw_cursor:
+                cursor_key=_parse_composite_cursor(raw_cursor,tenant_token,entries,folder)
+                if cursor_key is not None:
+                    filtered=[item for item in entries if _job_sort_key(item[0],item[1])<cursor_key]
+                else:
+                    filtered=entries[offset:]
+            else:
+                idx=next((i for i,item in enumerate(entries) if item[1]['id']==raw_cursor),None)
+                filtered=entries[idx+1:] if idx is not None else entries[offset:]
             sliced_entries=filtered if limit is None else filtered[:limit]
         else:
             sliced_entries=entries[offset:] if limit is None else entries[offset:offset+limit]
@@ -233,8 +243,8 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
             last_key,last_job=sliced_entries[-1]
             if last_job['id']!=entries[-1][1]['id']:
                 sort_created,sort_id=_job_sort_key(last_key,last_job)
-                if '|' not in sort_created and '|' not in sort_id and '|' not in tag:
-                    next_cursor=f'{sort_created}|{sort_id}|{tag}'
+                if '|' not in sort_created and '|' not in sort_id and '|' not in tenant_token:
+                    next_cursor=f'{tenant_token}|{sort_created}|{sort_id}'
     total=len(entries)
     out=JobList(copy.deepcopy(j) for _,j in sliced_entries)
     out.skipped=skipped
