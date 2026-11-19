@@ -18,6 +18,14 @@
     singleBatchId: null,
     lastBatch: null,
     batches: [],
+    historyItems: [],
+    historyTotal: 0,
+    historyOffset: 0,
+    historyLimit: 15,
+    historySkipped: 0,
+    historyStateFilter: '',
+    historyLoading: false,
+    historyToken: 0,
     pollTimer: null,
     aiEngine: 'fleet_flux3',
     engines: [],
@@ -1111,9 +1119,20 @@
       }
       state.activeBatchId = batch.batchId;
       state.singleBatchId = single ? batch.batchId : null;
-      state.batches = [batch, ...state.batches.filter(b => b.batchId !== batch.batchId)].slice(0, 15);
+      state.batches = upsertBatch(state.batches, batch);
+      const effState = batchStatusInfo(batch).state;
+      if (!state.historyStateFilter || state.historyStateFilter === effState) {
+        if (!state.historyItems.some(b => b.batchId === batch.batchId)) {
+          state.historyItems = [batch, ...state.historyItems].sort(compareBatchOrder);
+          state.historyOffset += 1;
+          state.historyTotal += 1;
+        } else {
+          state.historyItems = state.historyItems.map(b => (b.batchId === batch.batchId ? batch : b));
+        }
+      }
       rememberBatch(batch.batchId);
       renderBatchPicker();
+      renderBatchHistory();
       renderBlenderBatch(batch);
       pollBlenderBatch(batch.batchId);
       return batch;
@@ -1215,6 +1234,7 @@
 
   function describeStage(batch, item) {
     if (item.state === 'cancelled') return { cls: 'is-failed', text: '已取消' };
+    if (item.state === 'interrupted') return { cls: 'is-failed', text: '已中斷' };
     if (item.state === 'failed') return { cls: 'is-failed', text: `失敗：${item.error || '未知錯誤'}` };
     if (item.state === 'queued') {
       if (item.fleetTaskId) {
@@ -1233,6 +1253,11 @@
     if (item.state === 'running') {
       if (item.blenderEngine === 'fleet') return { cls: 'is-running', text: fleetBlenderStageText(item) };
       return { cls: 'is-running', text: `本機 Blender Cycles 光追算圖中…${item.blenderNote ? `（${item.blenderNote}）` : ''}` };
+    }
+    if (item.state !== 'succeeded') {
+      if (batch.state === 'cancelled') return { cls: 'is-failed', text: '已取消' };
+      if (batch.state === 'interrupted') return { cls: 'is-failed', text: '已中斷' };
+      return { cls: 'is-failed', text: `失敗：${item.error || '未完成'}` };
     }
     if (item.aiState === 'failed') return { cls: 'is-failed', text: `AI 實景失敗：${item.aiError || ''}（光追圖仍可用）` };
     if (item.aiState === 'partial') return { cls: 'is-done', text: '完成（部分 AI 變化失敗）' };
@@ -1400,12 +1425,45 @@
     try { return localStorage.getItem(BATCH_KEY) || ''; } catch (e) { return ''; }
   }
 
+  function compareBatchOrder(a, b) {
+    const ca = String(a?.createdAt || '');
+    const cb = String(b?.createdAt || '');
+    if (ca !== cb) return cb.localeCompare(ca);
+    return String(b?.batchId || '').localeCompare(String(a?.batchId || ''));
+  }
+
+  function upsertBatch(list, batch) {
+    if (!batch || !batch.batchId) return list || [];
+    return [batch, ...(list || []).filter(b => b.batchId !== batch.batchId)].sort(compareBatchOrder);
+  }
+
+  function batchStatusInfo(b) {
+    const st = String(b?.state || '');
+    const total = Number(b?.total) || 0;
+    const succeeded = Number(b?.succeeded) || 0;
+    const failed = Number(b?.failed) || 0;
+    if (st === 'running') {
+      return { state: 'running', label: '執行中', badgeCls: 'badge warn' };
+    }
+    if (st === 'cancelled') {
+      return { state: 'cancelled', label: '已取消', badgeCls: 'badge bad' };
+    }
+    if (st === 'interrupted') {
+      return { state: 'interrupted', label: '已中斷', badgeCls: 'badge bad' };
+    }
+    if (st === 'failed' || failed > 0 || st !== 'completed') {
+      return { state: 'failed', label: '失敗', badgeCls: 'badge bad' };
+    }
+    return { state: 'completed', label: '已完成', badgeCls: 'badge ok', summaryLabel: `完成 ${succeeded}/${total}` };
+  }
+
   function batchLabel(b) {
     const when = b.createdAt ? new Date(b.createdAt) : null;
     const ts = when && !isNaN(when) ? `${String(when.getMonth() + 1).padStart(2, '0')}/${String(when.getDate()).padStart(2, '0')} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}` : '';
-    const st = b.state === 'running' ? '執行中' : (b.state === 'cancelled' ? '已取消' : (b.state === 'interrupted' ? '已中斷' : (b.failed || b.state !== 'completed' ? '失敗' : `完成 ${b.succeeded}/${b.total}`)));
+    const info = batchStatusInfo(b);
+    const st = info.summaryLabel || info.label;
     const ai = b.aiVariantsPerItem ? ` · AI×${b.aiVariantsPerItem}` : '';
-    return `${ts} · ${b.total} 組${ai} · ${st} · ${b.cabinetName || ''}`;
+    return `${ts} · ${b.total ?? 0} 組${ai} · ${st} · ${b.cabinetName || ''}`;
   }
 
   function renderBatchPicker() {
@@ -1418,12 +1476,243 @@
     if (state.activeBatchId && list.some(b => b.batchId === state.activeBatchId)) sel.value = state.activeBatchId;
   }
 
+  let deleteSnapshot = null;
+  let deleteInFlight = false;
+
+  function setDeleteControlsLocked(locked) {
+    if ($('batch-delete')) $('batch-delete').disabled = locked;
+    const list = $('batch-history-list');
+    if (list) {
+      list.inert = locked;
+      list.querySelectorAll('.history-delete-btn').forEach(btn => {
+        btn.disabled = locked || btn.dataset.running === 'true';
+      });
+    }
+  }
+
+  function openDeleteBatchDialog(batch, triggerBtn = null) {
+    const dialog = $('batch-delete-dialog');
+    if (deleteInFlight || deleteSnapshot || !dialog || dialog.open || (triggerBtn && triggerBtn.disabled)) return;
+    if (!batch || !batch.batchId || batch.state === 'running') return;
+    dialog.returnValue = '';
+    deleteSnapshot = {
+      batchId: String(batch.batchId),
+      label: batchLabel(batch),
+      triggerBtn
+    };
+    const summary = $('batch-delete-summary');
+    if (summary) {
+      summary.textContent = `確定要刪除批次「${deleteSnapshot.batchId}」（${deleteSnapshot.label}）嗎？刪除後無法還原。`;
+    }
+    setDeleteControlsLocked(true);
+    dialog.showModal();
+  }
+
+  async function executeDeleteBatch() {
+    if (deleteInFlight || !deleteSnapshot) return;
+    const snap = deleteSnapshot;
+    const dialog = $('batch-delete-dialog');
+    const confirmBtn = $('batch-delete-confirm');
+    const cancelBtn = $('batch-delete-cancel');
+    deleteInFlight = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+    setDeleteControlsLocked(true);
+    try {
+      await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(snap.batchId)}`, { method: 'DELETE' });
+      deleteSnapshot = null;
+      if (dialog && dialog.open) {
+        dialog.returnValue = 'confirm';
+        dialog.close('confirm');
+      }
+      state.batches = (state.batches || []).filter(b => b.batchId !== snap.batchId);
+      if (state.historyItems.some(b => b.batchId === snap.batchId)) {
+        state.historyItems = state.historyItems.filter(b => b.batchId !== snap.batchId);
+        state.historyOffset = Math.max(0, state.historyOffset - 1);
+        state.historyTotal = Math.max(0, state.historyTotal - 1);
+      }
+      if (state.activeBatchId === snap.batchId) {
+        clearTimeout(state.pollTimer);
+        state.activeBatchId = null;
+        state.lastBatch = null;
+        rememberBatch('');
+        $('blender-gallery').replaceChildren();
+        $('blender-batch-status').textContent = '批次已刪除';
+        $('blender-batch-status').className = 'badge';
+        $('batch-delete').hidden = true;
+        $('download-zip-link').hidden = true;
+        if ($('batch-rerun')) $('batch-rerun').hidden = true;
+      }
+      renderBatchPicker();
+      renderBatchHistory();
+      notify('已刪除批次。');
+    } catch (e) {
+      notify(e.message, true);
+    } finally {
+      deleteInFlight = false;
+      if (confirmBtn) confirmBtn.disabled = false;
+      if (cancelBtn) cancelBtn.disabled = false;
+      if (!dialog || !dialog.open) {
+        deleteSnapshot = null;
+      }
+      setDeleteControlsLocked(Boolean(dialog && dialog.open));
+    }
+  }
+
+  function renderBatchHistory() {
+    const listEl = $('batch-history-list');
+    const summaryEl = $('batch-history-summary');
+    const moreBtn = $('batch-history-more');
+    if (!listEl) return;
+    const items = state.historyItems || [];
+    const total = Math.max(Number(state.historyTotal) || 0, items.length);
+    const skipped = Number(state.historySkipped) || 0;
+    if (summaryEl) {
+      summaryEl.textContent = `共 ${total} 批（已載入 ${items.length} 批${skipped ? ` · 略過壞檔 ${skipped} 筆` : ''}）`;
+    }
+    listEl.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'batch-history-empty muted';
+      empty.textContent = state.historyLoading ? '載入歷史批次中…' : '尚無符合條件的批次紀錄';
+      listEl.append(empty);
+    } else {
+      items.forEach(b => {
+        const info = batchStatusInfo(b);
+        const row = document.createElement('div');
+        row.className = `batch-history-row${state.activeBatchId === b.batchId ? ' active' : ''}`;
+        row.dataset.batchId = String(b.batchId || '');
+        row.dataset.state = info.state;
+
+        const main = document.createElement('div');
+        main.className = 'batch-history-info';
+
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `${info.badgeCls} batch-history-status`;
+        statusBadge.textContent = info.label;
+        main.append(statusBadge);
+
+        const title = document.createElement('strong');
+        title.className = 'batch-history-title';
+        title.textContent = String(b.cabinetName || b.cabinetSku || b.batchId || '');
+        main.append(title);
+
+        const meta = document.createElement('span');
+        meta.className = 'batch-history-meta muted';
+        const when = b.createdAt ? new Date(b.createdAt) : null;
+        const ts = when && !isNaN(when)
+          ? `${String(when.getFullYear())}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')} ${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`
+          : String(b.createdAt || '');
+        const totalCount = Number(b.total) || 0;
+        const succCount = Number(b.succeeded) || 0;
+        const failCount = Number(b.failed) || 0;
+        const countText = totalCount ? ` · 成功 ${succCount}/${totalCount}${failCount ? ` · 失敗 ${failCount}` : ''}` : '';
+        meta.textContent = `${b.batchId || ''}${ts ? ` · ${ts}` : ''}${countText}`;
+        main.append(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'btn-group batch-history-actions';
+
+        const openBtn = document.createElement('button');
+        openBtn.type = 'button';
+        openBtn.className = 'btn-xs history-open-btn';
+        openBtn.dataset.batchId = String(b.batchId || '');
+        openBtn.textContent = '開啟';
+        openBtn.addEventListener('click', () => showBatch(b.batchId));
+        actions.append(openBtn);
+
+        const canZip = b.state !== 'running' && (Number(b.succeeded) > 0 || (b.succeeded === undefined && info.state === 'completed'));
+        if (canZip) {
+          const zipLink = document.createElement('a');
+          zipLink.className = 'btn-xs history-zip-link';
+          zipLink.dataset.batchId = String(b.batchId || '');
+          zipLink.href = `/api/ecommerce-scenes/batches/${encodeURIComponent(b.batchId)}/zip?workspace=${encodeURIComponent(tenant)}`;
+          zipLink.textContent = '下載 .zip';
+          actions.append(zipLink);
+        }
+
+        const delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'btn-xs danger history-delete-btn';
+        delBtn.dataset.batchId = String(b.batchId || '');
+        delBtn.dataset.running = String(b.state === 'running');
+        delBtn.disabled = b.state === 'running' || deleteInFlight || Boolean(deleteSnapshot);
+        delBtn.textContent = '刪除';
+        delBtn.addEventListener('click', () => openDeleteBatchDialog(b, delBtn));
+        actions.append(delBtn);
+
+        row.append(main, actions);
+        listEl.append(row);
+      });
+    }
+    if (moreBtn) {
+      const hasMore = items.length < total && state.historyOffset < total;
+      moreBtn.hidden = !hasMore && !state.historyLoading;
+      moreBtn.disabled = state.historyLoading;
+      moreBtn.textContent = state.historyLoading ? '載入中…' : `載入更多（${items.length}/${total}）`;
+    }
+  }
+
+  async function loadBatchHistory({ append = false, silent = false } = {}) {
+    if (append && state.historyLoading) return;
+    const moreBtn = $('batch-history-more');
+    const refreshBtn = $('batch-history-refresh');
+    state.historyLoading = true;
+    if (moreBtn) moreBtn.disabled = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    const filterState = $('batch-history-state') ? $('batch-history-state').value : state.historyStateFilter;
+    state.historyStateFilter = filterState;
+    const offset = append ? state.historyOffset : 0;
+    const limit = state.historyLimit || 15;
+    const token = ++state.historyToken;
+    try {
+      const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+      if (filterState) params.set('state', filterState);
+      const res = await api(`/api/ecommerce-scenes/batches?${params.toString()}`);
+      if (token !== state.historyToken) return;
+      const incoming = Array.isArray(res.items) ? res.items : [];
+      if (append) {
+        const seen = new Set(state.historyItems.map(b => b.batchId));
+        for (const b of incoming) {
+          if (b && b.batchId && !seen.has(b.batchId)) {
+            seen.add(b.batchId);
+            state.historyItems.push(b);
+          }
+        }
+        state.historyOffset = offset + incoming.length;
+      } else {
+        state.historyItems = [...incoming];
+        state.historyOffset = incoming.length;
+      }
+      state.historyTotal = Number.isFinite(Number(res.total)) ? Number(res.total) : state.historyItems.length;
+      state.historySkipped = Number(res.skipped) || 0;
+      if (!filterState && incoming.length) {
+        const merged = new Map();
+        for (const b of [...state.historyItems, ...(state.batches || [])]) {
+          if (b && b.batchId && !merged.has(b.batchId)) merged.set(b.batchId, b);
+        }
+        state.batches = [...merged.values()].sort(compareBatchOrder);
+        renderBatchPicker();
+      }
+    } catch (e) {
+      if (!silent && token === state.historyToken) notify(e.message, true);
+    } finally {
+      if (token === state.historyToken) {
+        state.historyLoading = false;
+        if (moreBtn) moreBtn.disabled = false;
+        if (refreshBtn) refreshBtn.disabled = false;
+        renderBatchHistory();
+      }
+    }
+  }
+
   async function refreshBatchList(selectId) {
     try {
       const ov = await api('/api/ecommerce-scenes/overview');
       state.overview = ov;
       state.batches = ov.batches || [];
       renderBatchPicker();
+      await loadBatchHistory({ append: false, silent: true });
       if (selectId) await showBatch(selectId);
     } catch (e) {
       notify(e.message, true);
@@ -1438,8 +1727,12 @@
     rememberBatch(batchId);
     try {
       const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
-      state.batches = [batch, ...state.batches.filter(b => b.batchId !== batchId)].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 15);
+      state.batches = upsertBatch(state.batches, batch);
+      if (state.historyItems.some(b => b.batchId === batchId)) {
+        state.historyItems = state.historyItems.map(b => (b.batchId === batchId ? batch : b));
+      }
       renderBatchPicker();
+      renderBatchHistory();
       renderBlenderBatch(batch);
       if (batch.state === 'running') pollBlenderBatch(batch.batchId);
     } catch (e) {
@@ -1452,15 +1745,13 @@
     state.lastBatch = batch;
     const picker = $('batch-picker');
     if (picker && picker.value !== batch.batchId && (state.batches || []).some(b => b.batchId === batch.batchId)) picker.value = batch.batchId;
-    const running = batch.state === 'running';
-    const interrupted = batch.state === 'interrupted';
+    const info = batchStatusInfo(batch);
+    const running = info.state === 'running';
     const aiNote = batch.aiVariantsPerItem ? ` · ${batch.aiEngineLabel || '地端 AI'} ×${batch.aiVariantsPerItem}` : '';
     const statusEl = $('blender-batch-status');
     const aiWaiting = running && (batch.items || []).filter(it => it.stage === 'ai').length;
-    const success = batch.state === 'completed' && !batch.failed;
-    const label = running ? '執行中' : (batch.state === 'cancelled' ? '已取消' : (interrupted ? '已中斷' : (success ? '已完成' : '失敗')));
-    statusEl.textContent = `${label} ${batch.completed}/${batch.total} · 成功 ${batch.succeeded}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}${aiWaiting ? ` · ${aiWaiting} 組等 GPU` : ''}`;
-    statusEl.className = `badge ${running ? 'warn' : (success ? 'ok' : 'bad')}`;
+    statusEl.textContent = `${info.label} ${batch.completed ?? 0}/${batch.total ?? 0} · 成功 ${batch.succeeded ?? 0}${batch.failed ? ` · 失敗 ${batch.failed}` : ''}${aiNote}${aiWaiting ? ` · ${aiWaiting} 組等 GPU` : ''}`;
+    statusEl.className = info.badgeCls;
     $('batch-cancel').hidden = !running || Boolean(batch.cancelRequested);
     $('batch-delete').hidden = running;
     const rerunBtn = $('batch-rerun');
@@ -1485,7 +1776,13 @@
     try {
       const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
       state.batches = (state.batches || []).map(b => (b.batchId === batch.batchId ? batch : b));
-      if (batch.state !== 'running') renderBatchPicker();
+      if (state.historyItems.some(b => b.batchId === batch.batchId)) {
+        state.historyItems = state.historyItems.map(b => (b.batchId === batch.batchId ? batch : b));
+      }
+      if (batch.state !== 'running') {
+        renderBatchPicker();
+        renderBatchHistory();
+      }
       renderBlenderBatch(batch);
       if (batch.state === 'running') {
         state.pollTimer = setTimeout(() => pollBlenderBatch(batchId), 2500);
@@ -1824,40 +2121,73 @@
         $('batch-rerun').disabled = false;
       }
     });
-    ['cancel', 'delete'].forEach(action => {
-      const button = $(`batch-${action}`);
-      button.addEventListener('click', async () => {
+    const cancelBtn = $('batch-cancel');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', async () => {
         const batchId = state.lastBatch && state.lastBatch.batchId;
-        if (!batchId || button.disabled) return;
-        button.disabled = true;
+        if (!batchId || cancelBtn.disabled) return;
+        cancelBtn.disabled = true;
         try {
-          if (!window.confirm(action === 'cancel' ? '確定取消此批次？' : '確定刪除此批次？')) return;
-          const path = `/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`;
-          const result = await api(action === 'cancel' ? `${path}/cancel` : path, { method: action === 'cancel' ? 'POST' : 'DELETE' });
-          if (action === 'cancel') {
-            if (state.activeBatchId === batchId) renderBlenderBatch(result);
-          } else {
-            state.batches = state.batches.filter(b => b.batchId !== batchId);
-            if (state.activeBatchId === batchId) {
-              clearTimeout(state.pollTimer);
-              state.activeBatchId = null;
-              state.lastBatch = null;
-              rememberBatch('');
-              $('blender-gallery').replaceChildren();
-              $('blender-batch-status').textContent = '批次已刪除';
-              $('batch-delete').hidden = true;
-              $('download-zip-link').hidden = true;
-              $('batch-rerun').hidden = true;
-            }
-            renderBatchPicker();
+          if (!window.confirm('確定取消此批次？')) return;
+          const path = `/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}/cancel`;
+          const result = await api(path, { method: 'POST' });
+          state.batches = upsertBatch(state.batches, result);
+          if (state.historyItems.some(b => b.batchId === batchId)) {
+            state.historyItems = state.historyItems.map(b => (b.batchId === batchId ? result : b));
           }
+          renderBatchPicker();
+          renderBatchHistory();
+          if (state.activeBatchId === batchId) renderBlenderBatch(result);
         } catch (e) {
           notify(e.message, true);
         } finally {
-          button.disabled = false;
+          cancelBtn.disabled = false;
         }
       });
-    });
+    }
+    const deleteBtn = $('batch-delete');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () => {
+        if (!state.lastBatch || deleteBtn.disabled) return;
+        openDeleteBatchDialog(state.lastBatch, deleteBtn);
+      });
+    }
+    const deleteDialog = $('batch-delete-dialog');
+    if (deleteDialog) {
+      deleteDialog.addEventListener('close', () => {
+        if (!deleteInFlight) {
+          deleteSnapshot = null;
+          setDeleteControlsLocked(false);
+        }
+      });
+    }
+    const deleteForm = $('batch-delete-form');
+    if (deleteForm) {
+      deleteForm.addEventListener('submit', async e => {
+        if (e.submitter && e.submitter.value !== 'confirm') {
+          deleteSnapshot = null;
+          setDeleteControlsLocked(false);
+          return;
+        }
+        e.preventDefault();
+        await executeDeleteBatch();
+      });
+    }
+    if ($('batch-history-state')) {
+      $('batch-history-state').addEventListener('change', () => {
+        state.historyLoading = false;
+        loadBatchHistory({ append: false });
+      });
+    }
+    if ($('batch-history-more')) {
+      $('batch-history-more').addEventListener('click', () => loadBatchHistory({ append: true }));
+    }
+    if ($('batch-history-refresh')) {
+      $('batch-history-refresh').addEventListener('click', () => {
+        state.historyLoading = false;
+        loadBatchHistory({ append: false });
+      });
+    }
     $('batch-refresh').addEventListener('click', () => refreshBatchList($('batch-picker').value || null));
 
     // Step Tabs Switching Logic
@@ -1917,11 +2247,18 @@
       setup3DViewportEvents();
       bindEvents();
 
+      state.batches = ov.batches || [];
+      state.historyItems = [...state.batches];
+      state.historyOffset = state.historyItems.length;
+      state.historyTotal = state.historyItems.length;
+      renderBatchPicker();
+      renderBatchHistory();
+      const historyPromise = loadBatchHistory({ append: false, silent: true });
+
       await refreshAiKeyStatus();
       refreshEngineStatus();
+      await historyPromise;
 
-      state.batches = ov.batches || [];
-      renderBatchPicker();
       if (state.batches.length) {
         const wanted = rememberedBatch();
         const running = state.batches.find(b => b.state === 'running');
