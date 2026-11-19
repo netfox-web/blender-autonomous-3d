@@ -387,6 +387,20 @@ def ecommerce_scene_router(provider) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    @router.get("/api/ecommerce-scenes/batches")
+    def list_batches(
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=15, ge=1, le=50),
+        state: str | None = Query(default=None),
+        workspace: str | None = Query(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id or workspace)
+        try:
+            return store().list_batches(tid, offset=offset, limit=limit, state=state)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
     @router.post("/api/ecommerce-scenes/batches", status_code=202)
     def start_batch(payload: dict[str, Any], request: Request, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         try:
