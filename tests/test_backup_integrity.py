@@ -194,8 +194,8 @@ def test_backup_snapshot_consistent_or_fail_closed(tmp_path):
 def test_tenant_backup_preserves_a_and_excludes_b_full_matrix(tmp_path):
     plat = Platform(root=tmp_path / "live", mock_blender=True)
     seed_a = seed_tenant_backup_fixture(plat, tenant_id="ta", actor="ops-a")
-    seed_tenant_backup_fixture(plat, tenant_id="tb", actor="ops-b")
-    plat.pilot.logistics.import_carrier_quote(
+    seed_b = seed_tenant_backup_fixture(plat, tenant_id="tb", actor="ops-b")
+    global_quote = plat.pilot.logistics.import_carrier_quote(
         {"carrier": "X", "service": "ground", "charge": 9, "dimDivisor": 6000},
         source="IMPORTED",
         allow_global=True,
@@ -205,13 +205,18 @@ def test_tenant_backup_preserves_a_and_excludes_b_full_matrix(tmp_path):
     )
     dest = tmp_path / "bak"
     backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    backed_a_logistics = read_json(dest / "data" / "logistics" / "logistics.json")
+    assert [q["quoteId"] for q in backed_a_logistics["carrier_quotes"]] == [seed_a["quoteId"]]
     restore_pilot(dest, tmp_path / "r-a", tenant_id="ta")
     restored = Platform(root=tmp_path / "r-a", mock_blender=True)
     matrix = evaluate_tenant_restore_matrix(live=plat, restored=restored, tenant_a="ta", tenant_b="tb")
     assert matrix["tenantLeakageAbsent"] is True
     assert matrix["tenantRequiredStatePreserved"] is True, matrix["missing"]
     assert restored.lots.list(tenant_id="tb") == []
-    assert restored.pilot.logistics.carrier_quotes == {}
+    assert set(restored.pilot.logistics.carrier_quotes) == {seed_a["quoteId"]}
+    assert restored.pilot.logistics.carrier_quotes[seed_a["quoteId"]]["tenantId"] == "ta"
+    assert seed_b["quoteId"] not in restored.pilot.logistics.carrier_quotes
+    assert global_quote["quoteId"] not in restored.pilot.logistics.carrier_quotes
     again = restored.pilot.logistics.instantiate_cartons(
         tenant_id="ta",
         work_order_id=seed_a["workOrderId"],
@@ -225,6 +230,21 @@ def test_tenant_backup_preserves_a_and_excludes_b_full_matrix(tmp_path):
     assert seed_a["workOrderId"] in restored.pilot.workorders.orders
     assert seed_a["releaseId"] in restored.pilot.releases.packets
     assert restored.pilot.releases.get(seed_a["releaseId"])["tenantId"] == "ta"
+
+    dest_b = tmp_path / "bak-b"
+    backup_pilot(plat.root, dest_b, tenant_ids=["tb"])
+    backed_b_logistics = read_json(dest_b / "data" / "logistics" / "logistics.json")
+    assert [q["quoteId"] for q in backed_b_logistics["carrier_quotes"]] == [seed_b["quoteId"]]
+    restore_pilot(dest_b, tmp_path / "r-b", tenant_id="tb")
+    restored_b = Platform(root=tmp_path / "r-b", mock_blender=True)
+    plat_reconciled = Platform(root=plat.root, mock_blender=True)
+    matrix_b = evaluate_tenant_restore_matrix(live=plat_reconciled, restored=restored_b, tenant_a="tb", tenant_b="ta")
+    assert matrix_b["tenantLeakageAbsent"] is True
+    assert matrix_b["tenantRequiredStatePreserved"] is True, matrix_b["missing"]
+    assert set(restored_b.pilot.logistics.carrier_quotes) == {seed_b["quoteId"]}
+    assert restored_b.pilot.logistics.carrier_quotes[seed_b["quoteId"]]["tenantId"] == "tb"
+    assert seed_a["quoteId"] not in restored_b.pilot.logistics.carrier_quotes
+    assert global_quote["quoteId"] not in restored_b.pilot.logistics.carrier_quotes
 
 
 def test_pallet_derived_kept_and_cross_tenant_or_orphan_fail_closed(tmp_path):
@@ -752,5 +772,134 @@ def test_backup_legacy_mixed_or_ambiguous_journal_and_remnants_handled_safely(tm
     assert [
         e["eventId"] for e in restored_coexist_vic.pilot.journal.list(victim)
     ] == [ev_vic["eventId"]]
+
+
+def test_tenant_backup_carrier_quotes_http_and_global_exclusion_and_fail_closed(tmp_path):
+    from fastapi.testclient import TestClient
+    from fox3d.api import create_app
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    client = TestClient(create_app(plat))
+
+    res_a = client.post(
+        "/api/pilot/carrier-quotes",
+        headers={"X-Tenant-Id": "ta"},
+        json={"carrier": "TCAT-A", "service": "ground", "charge": 135, "dimDivisor": 6000, "source": "MANUAL"},
+    )
+    assert res_a.status_code == 200, res_a.text
+    qid_a = res_a.json()["quoteId"]
+
+    res_b = client.post(
+        "/api/pilot/carrier-quotes",
+        headers={"X-Tenant-Id": "tb"},
+        json={"carrier": "HCT-B", "service": "express", "charge": 260, "dimDivisor": 5000, "source": "IMPORTED"},
+    )
+    assert res_b.status_code == 200, res_b.text
+    qid_b = res_b.json()["quoteId"]
+
+    g_allow = plat.pilot.logistics.import_carrier_quote(
+        {"carrier": "GLOBAL-1", "service": "ground", "charge": 99, "dimDivisor": 6000},
+        source="IMPORTED",
+        allow_global=True,
+    )
+    g_quote = plat.pilot.logistics.import_carrier_quote(
+        {"carrier": "GLOBAL-2", "service": "ground", "charge": 88, "dimDivisor": 6000},
+        source="IMPORTED",
+        global_quote=True,
+    )
+    g_is = plat.pilot.logistics.import_carrier_quote(
+        {"carrier": "GLOBAL-3", "service": "ground", "charge": 77, "dimDivisor": 6000},
+        source="IMPORTED",
+        is_global=True,
+    )
+    global_ids = {g_allow["quoteId"], g_quote["quoteId"], g_is["quoteId"]}
+
+    # 1. Tenant A backup & restore preserves qid_a and excludes qid_b and all explicit global quotes.
+    dest_a = tmp_path / "bak-http-a"
+    backup_pilot(plat.root, dest_a, tenant_ids=["ta"])
+    backed_a = read_json(dest_a / "data" / "logistics" / "logistics.json")
+    assert [q["quoteId"] for q in backed_a["carrier_quotes"]] == [qid_a]
+
+    restore_pilot(dest_a, tmp_path / "r-http-a", tenant_id="ta")
+    restored_a = Platform(root=tmp_path / "r-http-a", mock_blender=True)
+    assert set(restored_a.pilot.logistics.carrier_quotes) == {qid_a}
+    assert restored_a.pilot.logistics.carrier_quotes[qid_a]["tenantId"] == "ta"
+    assert restored_a.pilot.logistics.carrier_quotes[qid_a]["charge"] == 135.0
+    assert qid_b not in restored_a.pilot.logistics.carrier_quotes
+    assert not (global_ids & set(restored_a.pilot.logistics.carrier_quotes))
+
+    client_r_a = TestClient(create_app(restored_a))
+    list_r_a = client_r_a.get("/api/pilot/carrier-quotes", headers={"X-Tenant-Id": "ta"})
+    assert list_r_a.status_code == 200
+    assert [q["quoteId"] for q in list_r_a.json()["items"]] == [qid_a]
+    list_r_a_as_b = client_r_a.get("/api/pilot/carrier-quotes", headers={"X-Tenant-Id": "tb"})
+    assert list_r_a_as_b.status_code == 200
+    assert list_r_a_as_b.json()["items"] == []
+
+    matrix_a = evaluate_tenant_restore_matrix(live=plat, restored=restored_a, tenant_a="ta", tenant_b="tb")
+    assert matrix_a["tenantLeakageAbsent"] is True
+    assert matrix_a["tenantRequiredStatePreserved"] is True, matrix_a["missing"]
+
+    # 2. Tenant B backup & restore preserves qid_b and excludes qid_a and all explicit global quotes.
+    dest_b = tmp_path / "bak-http-b"
+    backup_pilot(plat.root, dest_b, tenant_ids=["tb"])
+    backed_b = read_json(dest_b / "data" / "logistics" / "logistics.json")
+    assert [q["quoteId"] for q in backed_b["carrier_quotes"]] == [qid_b]
+
+    restore_pilot(dest_b, tmp_path / "r-http-b", tenant_id="tb")
+    restored_b = Platform(root=tmp_path / "r-http-b", mock_blender=True)
+    assert set(restored_b.pilot.logistics.carrier_quotes) == {qid_b}
+    assert restored_b.pilot.logistics.carrier_quotes[qid_b]["tenantId"] == "tb"
+    assert restored_b.pilot.logistics.carrier_quotes[qid_b]["charge"] == 260.0
+    assert qid_a not in restored_b.pilot.logistics.carrier_quotes
+    assert not (global_ids & set(restored_b.pilot.logistics.carrier_quotes))
+
+    matrix_b = evaluate_tenant_restore_matrix(live=plat, restored=restored_b, tenant_a="tb", tenant_b="ta")
+    assert matrix_b["tenantLeakageAbsent"] is True
+    assert matrix_b["tenantRequiredStatePreserved"] is True, matrix_b["missing"]
+
+    # 3. Restore matrix detects leaked global or cross-tenant quote, or missing/mutated tenant quote.
+    restored_a.pilot.logistics.carrier_quotes[g_allow["quoteId"]] = dict(g_allow)
+    leaked_global_matrix = evaluate_tenant_restore_matrix(
+        live=plat, restored=restored_a, tenant_a="ta", tenant_b="tb"
+    )
+    assert leaked_global_matrix["tenantLeakageAbsent"] is False
+    assert "carrierQuotes" in leaked_global_matrix["leakage"]
+    restored_a.pilot.logistics.carrier_quotes.pop(g_allow["quoteId"], None)
+
+    restored_a.pilot.logistics.carrier_quotes[qid_a]["charge"] = 999.0
+    mutated_matrix = evaluate_tenant_restore_matrix(
+        live=plat, restored=restored_a, tenant_a="ta", tenant_b="tb"
+    )
+    assert mutated_matrix["tenantRequiredStatePreserved"] is False
+    assert "carrierQuotes" in mutated_matrix["identityMismatch"]
+
+    # 4. Fail-closed on ambiguous/unassigned tenantless quote or conflicting globalQuote+tenantId.
+    logistics_path = plat.root / "logistics" / "logistics.json"
+    base_payload = read_json(logistics_path)
+
+    for idx, bad_quote in enumerate(
+        [
+            {"quoteId": "legacy-unassigned", "carrier": "OLD", "service": "ground", "charge": 50},
+            {"quoteId": "empty-tid", "tenantId": "", "carrier": "OLD", "service": "ground", "charge": 50},
+            {"quoteId": "space-tid", "tenantId": "   ", "globalQuote": True, "carrier": "OLD", "charge": 50},
+            {"quoteId": "conflict-global", "tenantId": "ta", "globalQuote": True, "carrier": "OLD", "charge": 50},
+            {
+                "quoteId": "conflict-ownership",
+                "tenantId": "ta",
+                "ownership": "GLOBAL_REFERENCE",
+                "carrier": "OLD",
+                "charge": 50,
+            },
+        ]
+    ):
+        corrupted = dict(base_payload)
+        corrupted["carrier_quotes"] = [*base_payload["carrier_quotes"], bad_quote]
+        atomic_write_json(logistics_path, corrupted)
+        bad_dest = tmp_path / f"bak-bad-quote-{idx}"
+        with pytest.raises(BackupError, match="ambiguous"):
+            backup_pilot(plat.root, bad_dest, tenant_ids=["ta"])
+        _assert_no_manifest(bad_dest)
+
 
 

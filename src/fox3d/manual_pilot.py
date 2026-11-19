@@ -123,6 +123,11 @@ def seed_tenant_backup_fixture(plat: Platform, *, tenant_id: str, actor: str = "
         product_version=rel.get("productVersion"),
     )
     pallet = plat.pilot.logistics.palletize([c["cartonId"] for c in cartons])
+    quote = plat.pilot.logistics.import_carrier_quote(
+        {"carrier": f"CARRIER-{tenant_id}", "service": "ground", "charge": 120, "dimDivisor": 6000},
+        source="IMPORTED",
+        tenant_id=tenant_id,
+    )
     ship = plat.pilot.logistics.shipment_draft(
         origin="TW", destination="TW-TPE", carton_ids=[c["cartonId"] for c in cartons]
     )
@@ -165,6 +170,7 @@ def seed_tenant_backup_fixture(plat: Platform, *, tenant_id: str, actor: str = "
         "releaseHash": rel["releaseHash"],
         "cartonId": cartons[0]["cartonId"],
         "palletPlanId": pallet["palletPlanId"],
+        "quoteId": quote["quoteId"],
         "operatorId": op["operatorId"],
         "batchId": wo["batchId"],
         "remnantIds": [r["remnantId"] for r in remnants],
@@ -391,6 +397,11 @@ def run_manual_factory_scenario(
         {"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000},
         source="IMPORTED",
         allow_global=True,
+    )
+    plat.pilot.logistics.import_carrier_quote(
+        {"carrier": f"CARRIER-{a}", "service": "ground", "charge": 150, "dimDivisor": 6000},
+        source="IMPORTED",
+        tenant_id=a,
     )
     plat.pilot.qc.defect(
         tenant_id=a,
