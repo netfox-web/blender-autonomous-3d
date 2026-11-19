@@ -30,6 +30,7 @@ def test_batch_detail_hold_and_failure(admin_page, admin_server):
     detail = page.locator('#batch-detail')
     detail.get_by_text('stale_lineage').wait_for()
     assert 'warn' in detail.get_attribute('class')
+    assert detail.evaluate("el => getComputedStyle(el).borderTopStyle") == 'solid'
     assert 'unit-1' in detail.inner_text() and 'carton-1' in detail.inner_text()
     page.route('**/api/pilot/batches/batch-1/readiness', lambda route: route.abort())
     page.locator('#batches button').click()
