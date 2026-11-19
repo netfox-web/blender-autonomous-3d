@@ -5,6 +5,7 @@ No network output, hot-folder dispatch, or machine control exists in this module
 from __future__ import annotations
 
 import copy
+from datetime import datetime
 import io
 import json
 import logging
@@ -167,20 +168,35 @@ def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
     return (_job_created_at(path_str,j),j['id'])
 
 
+def _valid_cursor_timestamp(value:str)->bool:
+    if not isinstance(value,str) or not value or value!=value.strip() or '|' in value:
+        return False
+    if len(value)<19 or ('T' not in value and ' ' not in value):
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
+
+
 def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]],folder=None)->tuple[str,str]|None:
     parts=raw_cursor.split('|')
     if len(parts)==3:
         p0,p1,p2=parts
-        if p0==tenant_token and p1.strip() and re.fullmatch(r'[a-f0-9-]{36}',p2):
+        if p0==tenant_token and _valid_cursor_timestamp(p1) and re.fullmatch(r'[a-f0-9-]{36}',p2):
             return (p1,p2)
-        if p2==tenant_token and p0.strip() and re.fullmatch(r'[a-f0-9-]{36}',p1):
+        if p2==tenant_token and _valid_cursor_timestamp(p0) and re.fullmatch(r'[a-f0-9-]{36}',p1):
             return (p0,p1)
         return None
     if len(parts)==2:
         c_created,c_id=parts
-        if not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
+        if not _valid_cursor_timestamp(c_created) or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
             return None
-        if any(item[1]['id']==c_id for item in entries) or (folder is not None and (folder/c_id/'job.json').is_file()):
+        matching=next((item for item in entries if item[1]['id']==c_id),None)
+        if matching is not None:
+            return (c_created,c_id) if _job_sort_key(matching[0],matching[1])==(c_created,c_id) else None
+        if folder is not None and (folder/c_id/'job.json').is_file():
             return (c_created,c_id)
         return None
     return None
