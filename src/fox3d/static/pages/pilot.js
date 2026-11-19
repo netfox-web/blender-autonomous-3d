@@ -430,9 +430,9 @@
       if (d && d.result === 'FAIL' && /\/qc$/.test(task.path)) {
         $('result').textContent = '品檢未通過或工單仍在 QC_HOLD';
         if ($('qc-status')) $('qc-status').textContent = '品檢未通過或工單仍在 QC_HOLD';
-        return refresh(task.workOrderId, true).then(function () {
-          releaseControls();
-        });
+        releaseControls();
+        if (task.workOrderId) loadQc(task.workOrderId);
+        return;
       }
       if (isMismatchResult(d)) {
         return refresh(task.workOrderId, true).then(function () {
