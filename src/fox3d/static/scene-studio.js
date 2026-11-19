@@ -1776,12 +1776,11 @@
     try {
       const batch = await api(`/api/ecommerce-scenes/batches/${encodeURIComponent(batchId)}`);
       state.batches = (state.batches || []).map(b => (b.batchId === batch.batchId ? batch : b));
-      if (state.historyItems.some(b => b.batchId === batch.batchId)) {
-        state.historyItems = state.historyItems.map(b => (b.batchId === batch.batchId ? batch : b));
-      }
       if (batch.state !== 'running') {
         renderBatchPicker();
-        renderBatchHistory();
+        // A state transition can change filtered membership, totals and pagination.
+        // Reload from the server, invalidating any older in-flight history request.
+        loadBatchHistory({ append: false });
       }
       renderBlenderBatch(batch);
       if (batch.state === 'running') {

@@ -165,6 +165,60 @@ def test_batch_history_load_more_and_state_filter_single_inflight(
     assert any('state=failed' in q for q in history_queries)
 
 
+
+@pytest.mark.parametrize('filter_state', ['running', 'completed'])
+def test_poll_completion_refreshes_filtered_history(
+    admin_page: Page, admin_server: dict[str, Any], filter_state: str
+) -> None:
+    page = admin_page
+    running = _history_batch(1, state='running', succeeded=0)
+    completed = _history_batch(1)
+    pending_poll: list[Route] = []
+    finished = False
+    detail_calls = 0
+    history_queries: list[str] = []
+
+    def history(route: Route) -> None:
+        query = route.request.url.split('?', 1)[1]
+        history_queries.append(query)
+        current = completed if finished else running
+        matches = f'state={current["state"]}' in query or 'state=' not in query
+        route.fulfill(json={'items': [current] if matches else [], 'total': int(matches),
+                            'offset': 0, 'limit': 15, 'skipped': 0})
+
+    def detail(route: Route) -> None:
+        nonlocal detail_calls
+        detail_calls += 1
+        if detail_calls == 1:
+            route.fulfill(json=running)
+        else:
+            pending_poll.append(route)
+
+    page.route('**/api/ecommerce-scenes/batches?**', history)
+    page.route('**/api/ecommerce-scenes/batches/hist_01', detail)
+    open_studio(page, admin_server)
+    page.locator('#batch-history-list .history-open-btn').wait_for()
+    page.select_option('#batch-history-state', filter_state)
+    expected_initial = 1 if filter_state == 'running' else 0
+    page.wait_for_function(
+        "n => document.querySelectorAll('#batch-history-list .batch-history-row').length === n",
+        arg=expected_initial,
+    )
+    page.wait_for_function("() => !document.querySelector('#batch-history-refresh').disabled")
+    assert len(pending_poll) == 1
+    finished = True
+    pending_poll[0].fulfill(json=completed)
+    expected_final = 0 if filter_state == 'running' else 1
+    page.wait_for_function(
+        "n => document.querySelectorAll('#batch-history-list .batch-history-row').length === n "
+        "&& document.querySelector('#batch-history-summary').textContent.includes(`共 ${n} 批`)",
+        arg=expected_final,
+    )
+    assert page.locator('#batch-history-more').is_hidden()
+    assert sum(f'state={filter_state}' in q and 'offset=0' in q for q in history_queries) >= 2
+    if expected_final:
+        assert page.locator('#batch-history-list .batch-history-row').get_attribute('data-state') == 'completed'
+
 def test_batch_history_delete_confirm_snapshot_and_single_inflight(
     admin_page: Page, admin_server: dict[str, Any]
 ) -> None:
