@@ -1114,9 +1114,21 @@ class MaterialLotRegistry:
             )
             return rec
 
-    def quarantine(self, lot_id: str, *, tenant_id: str, actor: str, reason: str) -> dict[str, Any]:
+    def quarantine(
+        self,
+        lot_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        reason: str,
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
         with self._transaction():
             rec = self.get(lot_id, tenant_id=tenant_id)
+            if expected_version is not None and int(rec.get("version") or 1) != int(expected_version):
+                raise PermissionError("stale lot version")
+            if rec.get("quarantined") or rec.get("qualityState") == "QUARANTINED":
+                raise PermissionError("lot already quarantined")
             rec["quarantined"] = True
             rec["qualityState"] = "QUARANTINED"
             rec["quarantineReason"] = reason
@@ -1128,7 +1140,37 @@ class MaterialLotRegistry:
                 aggregate_id=lot_id,
                 actor=actor,
                 payload={"reason": reason},
-                semantic_key=f"{tenant_id}::quarantine::{lot_id}::{reason}",
+                semantic_key=f"{tenant_id}::quarantine::{lot_id}::{reason}::{rec['version']}",
+            )
+            return rec
+
+    def release_quarantine(
+        self,
+        lot_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        reason: str,
+        expected_version: int | None = None,
+    ) -> dict[str, Any]:
+        with self._transaction():
+            rec = self.get(lot_id, tenant_id=tenant_id)
+            if expected_version is not None and int(rec.get("version") or 1) != int(expected_version):
+                raise PermissionError("stale lot version")
+            if not rec.get("quarantined") and rec.get("qualityState") != "QUARANTINED":
+                raise PermissionError("lot not quarantined")
+            rec["quarantined"] = False
+            rec["qualityState"] = "AVAILABLE"
+            rec["quarantineReleaseReason"] = reason
+            rec["quarantineReleasedBy"] = actor
+            rec["version"] = int(rec.get("version") or 1) + 1
+            self._emit(
+                "material.release_quarantine",
+                tenant_id=tenant_id,
+                aggregate_id=lot_id,
+                actor=actor,
+                payload={"reason": reason},
+                semantic_key=f"{tenant_id}::release-quarantine::{lot_id}::{reason}::{rec['version']}",
             )
             return rec
 
