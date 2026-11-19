@@ -82,6 +82,30 @@ def _make_client(root: Path, tenant: str = "tenant-a") -> TestClient:
     return TestClient(app, headers={"X-Tenant-Id": tenant})
 
 
+def _write_listed_job(root: Path, tenant: str, jid: str, ts: str, sku: str) -> None:
+    folder = assets.workspace(root, tenant) / "jobs" / jid
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "job.json").write_text(
+        json.dumps(
+            {
+                "id": jid,
+                "revision": 1,
+                "createdAt": ts,
+                "updatedAt": ts,
+                "draft": {
+                    "sku": sku,
+                    "name": f"商品{sku}",
+                    "layout": "FLAT",
+                    "panels": [{"label": "正面", "assetId": "ab" * 32, "page": 0, "rotation": 0}],
+                },
+                "release": None,
+                "lastProofId": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_corrupted_job_and_asset_files_are_skipped_logged_and_paginated(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -1188,6 +1212,90 @@ def test_ui_pagination_over_100_jobs_and_assets_across_pages(tmp_path: Path) -> 
     assert len(pm_out["classifiedCalls"]) == 1
     assert pm_out["classifiedCalls"][0]["role"] == "ARTWORK"
     assert "105 筆已確認印刷用途" in pm_out["updatedUsageCount"]
+
+
+def test_job_cursor_stays_inside_caller_tenant_and_still_continues_after_cursor_row_deletion(
+    tmp_path: Path,
+) -> None:
+    c_a = _make_client(tmp_path, "tenant-a")
+    c_b = _make_client(tmp_path, "tenant-b")
+    a3, a2, a1 = (
+        "00000000-0000-0000-0000-000000000003",
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000001",
+    )
+    b_new, b_old = (
+        "00000000-0000-0000-0000-000000000201",
+        "00000000-0000-0000-0000-000000000200",
+    )
+    _write_listed_job(tmp_path, "tenant-a", a3, "2026-11-18T00:00:03Z", "A-3")
+    _write_listed_job(tmp_path, "tenant-a", a2, "2026-11-18T00:00:02Z", "A-2")
+    _write_listed_job(tmp_path, "tenant-a", a1, "2026-11-18T00:00:01Z", "A-1")
+    # Newer than tenant-a's cursor, so a foreign keyset position would drop it; the older row would survive.
+    _write_listed_job(tmp_path, "tenant-b", b_new, "2026-11-19T00:00:00Z", "B-NEW")
+    _write_listed_job(tmp_path, "tenant-b", b_old, "2020-01-01T00:00:00Z", "B-OLD")
+
+    page = c_a.get("/api/print-workspace/jobs?limit=1")
+    assert page.status_code == 200
+    body = page.json()
+    assert [item["id"] for item in body["items"]] == [a3]
+    cursor = body["nextCursor"]
+    assert isinstance(cursor, str) and cursor.count("|") == 2
+
+    continued = c_a.get(f"/api/print-workspace/jobs?offset=1&limit=1&cursor={cursor}")
+    assert continued.status_code == 200
+    assert [item["id"] for item in continued.json()["items"]] == [a2]
+
+    foreign = c_b.get(f"/api/print-workspace/jobs?cursor={cursor}&limit=1")
+    assert foreign.status_code == 200
+    foreign_body = foreign.json()
+    assert foreign_body["total"] == 2
+    assert [item["id"] for item in foreign_body["items"]] == [b_new]
+    assert a3 not in foreign.text and a2 not in foreign.text and a1 not in foreign.text
+    assert str(tmp_path) not in foreign.text and "Traceback" not in foreign.text
+    foreign_again = c_b.get(f"/api/print-workspace/jobs?cursor={cursor}&limit=1")
+    assert foreign_again.status_code == 200 and foreign_again.json() == foreign_body
+
+    own_next = c_b.get(f"/api/print-workspace/jobs?cursor={foreign_body['nextCursor']}&limit=1")
+    assert own_next.status_code == 200
+    assert [item["id"] for item in own_next.json()["items"]] == [b_old]
+
+    legacy = f"{body['items'][0]['createdAt']}|{a3}"
+    legacy_foreign = c_b.get(f"/api/print-workspace/jobs?cursor={legacy}")
+    assert legacy_foreign.status_code == 200
+    assert [item["id"] for item in legacy_foreign.json()["items"]] == [b_new, b_old]
+    legacy_own = c_a.get(f"/api/print-workspace/jobs?cursor={legacy}&limit=1")
+    assert legacy_own.status_code == 200
+    assert [item["id"] for item in legacy_own.json()["items"]] == [a2]
+
+    ancient = c_b.get(
+        "/api/print-workspace/jobs?cursor=1990-01-01T00:00:00Z|00000000-0000-0000-0000-000000000099"
+    )
+    assert ancient.status_code == 200
+    assert [item["id"] for item in ancient.json()["items"]] == [b_new, b_old]
+    mismatched = c_b.get(f"/api/print-workspace/jobs?cursor={body['items'][0]['createdAt']}|{a3}|{'0' * 24}")
+    assert mismatched.status_code == 200
+    assert [item["id"] for item in mismatched.json()["items"]] == [b_new, b_old]
+    blank = c_b.get("/api/print-workspace/jobs?cursor=")
+    assert blank.status_code == 200
+    assert [item["id"] for item in blank.json()["items"]] == [b_new, b_old]
+
+    def _list(tenant: str) -> list[str]:
+        listed = jobs.list_jobs(tmp_path, tenant, offset=0, limit=100, cursor=cursor)
+        return [item["id"] for item in listed["items"]]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        same_a = pool.submit(_list, "tenant-a")
+        same_b = pool.submit(_list, "tenant-b")
+        assert same_a.result() == [a2, a1]
+        assert same_b.result() == [b_new, b_old]
+
+    (assets.workspace(tmp_path, "tenant-a") / "jobs" / a3 / "job.json").unlink()
+    jobs.clear_job_cache()
+    after_delete = c_a.get(f"/api/print-workspace/jobs?offset=1&limit=1&cursor={cursor}")
+    assert after_delete.status_code == 200
+    assert [item["id"] for item in after_delete.json()["items"]] == [a2]
+    assert a3 not in after_delete.text
 
 
 def test_pagination_1000_jobs_and_assets_avoids_rereading_and_mid_page_update_never_misses_items(

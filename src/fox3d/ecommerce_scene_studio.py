@@ -6,6 +6,7 @@ the canonical `FURNISHED_SCENE_V1` contract consumed by `scripts/blender_job.py`
 """
 from __future__ import annotations
 
+import copy
 import hashlib
 import io
 import json
@@ -13,6 +14,7 @@ import logging
 import math
 import os
 import random
+import re
 import struct
 import shutil
 import time
@@ -59,6 +61,7 @@ from fox3d.recipe_workbench import timestamp
 # A batch whose batch.json has not been touched for this long while still 'running' has lost its worker
 # (the workbench was restarted mid-batch); it is shown as interrupted instead of spinning forever.
 STALE_RUNNING_SEC = 300
+BATCH_STATES: tuple[str, ...] = ("running", "completed", "failed", "cancelled", "interrupted")
 log = logging.getLogger(__name__)
 AI_ITEM_CONCURRENCY = 3
 
@@ -1415,7 +1418,7 @@ class EcommerceSceneStore:
             "maxAiVariants": MAX_AI_VARIANTS,
             "cameraViews": list(CAMERA_VIEWS.values()),
             "scenes": self.list_scenes(tenant_id),
-            "batches": self.list_batches(tenant_id),
+            "batches": self.list_batches(tenant_id, offset=0, limit=15)["items"],
         }
 
     def preview_plan(self, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1438,18 +1441,93 @@ class EcommerceSceneStore:
             "view": view,
         }
 
-    def list_batches(self, tenant_id: str) -> list[dict[str, Any]]:
-        bdir = self._tenant_dir(tenant_id) / "batches"
-        if not bdir.exists():
-            return []
-        paths = sorted(bdir.glob("*/batch.json"), key=lambda p: p.stat().st_mtime_ns, reverse=True)
-        out = []
-        for p in paths[:15]:
-            self._recover_unscheduled(tenant_id, p)
-            data = read_json(p)
-            if data:
-                out.append(self._mark_if_stale(p, data))
-        return out
+    def _tenant_batches_dir(self, tenant_id: str) -> Path:
+        new_dir = self.root / _tenant_slug(tenant_id)
+        if new_dir.is_dir():
+            return new_dir / "batches"
+        legacy = self.root / _tenant_slug_legacy(tenant_id)
+        if legacy.is_dir():
+            return legacy / "batches"
+        return new_dir / "batches"
+
+    @staticmethod
+    def _valid_batch_doc(doc: Any, tenant_id: str) -> bool:
+        if not isinstance(doc, dict):
+            return False
+        batch_id = doc.get("batchId")
+        if not isinstance(batch_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", batch_id):
+            return False
+        created_at = doc.get("createdAt")
+        if not isinstance(created_at, str) or not created_at.strip():
+            return False
+        raw_state = doc.get("state")
+        if not isinstance(raw_state, str) or raw_state not in BATCH_STATES:
+            return False
+        doc_tenant = doc.get("tenantId")
+        if doc_tenant is not None and (not isinstance(doc_tenant, str) or doc_tenant != tenant_id):
+            return False
+        items = doc.get("items")
+        if items is not None and not isinstance(items, list):
+            return False
+        for count_key in ("total", "completed", "succeeded", "failed", "cancelled"):
+            val = doc.get(count_key)
+            if val is not None and (not isinstance(val, int) or isinstance(val, bool) or val < 0):
+                return False
+        return True
+
+    @staticmethod
+    def _batch_effective_state(doc: dict[str, Any]) -> str:
+        raw_state = str(doc.get("state") or "")
+        if raw_state == "completed" and int(doc.get("failed") or 0) > 0:
+            return "failed"
+        return raw_state
+
+    def list_batches(
+        self,
+        tenant_id: str,
+        *,
+        offset: int = 0,
+        limit: int = 15,
+        state: str | None = None,
+    ) -> dict[str, Any]:
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
+            raise ValueError("offset 必須為大於或等於 0 的整數")
+        if not isinstance(limit, int) or isinstance(limit, bool) or not (1 <= limit <= 50):
+            raise ValueError("limit 必須為 1–50 的整數")
+        want_state: str | None = None
+        if state is not None and state != "":
+            if not isinstance(state, str) or state not in BATCH_STATES:
+                raise ValueError("不支援的批次狀態")
+            want_state = state
+        bdir = self._tenant_batches_dir(tenant_id)
+        if not bdir.is_dir():
+            return {"items": [], "total": 0, "offset": offset, "limit": limit, "skipped": 0}
+        rows: list[dict[str, Any]] = []
+        skipped = 0
+        for p in sorted(bdir.glob("*/batch.json")):
+            if p.parent.name.startswith("."):
+                continue
+            try:
+                data = read_json(p)
+            except Exception:
+                data = None
+            if not self._valid_batch_doc(data, tenant_id):
+                skipped += 1
+                continue
+            data = self._effective_view(p, data)
+            if want_state is not None and self._batch_effective_state(data) != want_state:
+                continue
+            rows.append(data)
+        rows.sort(key=lambda d: (str(d.get("createdAt") or ""), str(d.get("batchId") or "")), reverse=True)
+        total = len(rows)
+        page = rows[offset : offset + limit]
+        return {
+            "items": page,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "skipped": skipped,
+        }
 
     @staticmethod
     def _is_recoverable_pending(doc: Any) -> bool:
@@ -1550,7 +1628,6 @@ class EcommerceSceneStore:
                 self._idempotency_reconciled.add(slug)
                 return
             idem_dir = bdir / ".idempotency"
-            idem_dir.mkdir(parents=True, exist_ok=True)
             changed = False
             for path in bdir.glob("*/batch.json"):
                 doc = read_json(path)
@@ -1565,6 +1642,7 @@ class EcommerceSceneStore:
                 sidecar = idem_dir / f"{key_hash}.json"
                 if not sidecar.is_file():
                     try:
+                        idem_dir.mkdir(parents=True, exist_ok=True)
                         atomic_json(sidecar, entry)
                     except OSError:
                         log.warning("Unable to write idempotency sidecar for %s", key_hash)
@@ -1631,43 +1709,62 @@ class EcommerceSceneStore:
             safe = "".join(c for c in item_id if c.isalnum() or c in ("-", "_"))
             item["hasGlb"] = bool(safe) and (bdir / safe / "model.glb").is_file()
 
-    def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
+    def _is_stale_running(self, bpath: Path, doc: dict[str, Any]) -> bool:
         """A 'running' batch whose file stopped changing for STALE_RUNNING_SEC has no live worker any more."""
         if doc.get("state") != "running" or self._is_recoverable_pending(doc):
-            return doc
+            return False
         # A batch this process still owns (queued behind another batch, or mid-render) is alive even when its file
         # has not changed for a while; only batches left over from a previous process can be stale.
         with self.lock:
-            if str(doc.get("batchId") or bpath.parent.name) in self._live_docs:
-                return doc
+            if str(doc.get("batchId") or bpath.parent.name) in self._live_docs or bpath.parent.name in self.tasks:
+                return False
         try:
             age = time.time() - bpath.stat().st_mtime
         except OSError:
-            return doc
-        if age < STALE_RUNNING_SEC:
+            return False
+        return age >= STALE_RUNNING_SEC
+
+    @staticmethod
+    def _as_interrupted(doc: dict[str, Any]) -> dict[str, Any]:
+        """Return a copy of a stale running batch with its unfinished work marked failed and state 'interrupted'."""
+        doc = copy.deepcopy(doc)
+        for item in doc.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            if item.get("state") in ("queued", "running"):
+                item["state"] = "failed"
+                item["stage"] = "done"
+                item["error"] = "工作台重新啟動，批次中斷；請重新送出這一組"
+                if item.get("aiState") in ("pending", "running"):
+                    item["aiState"] = "failed"
+                    item["aiError"] = item["error"]
+                for v in item.get("aiVariants") or []:
+                    if isinstance(v, dict) and v.get("state") in ("queued", "running"):
+                        v["state"] = "failed"
+                        v["error"] = item["error"]
+        items = [x for x in doc.get("items") or [] if isinstance(x, dict)]
+        doc["succeeded"] = sum(1 for x in items if x.get("state") == "succeeded")
+        doc["failed"] = sum(1 for x in items if x.get("state") == "failed")
+        doc["completed"] = doc["succeeded"] + doc["failed"]
+        doc["state"] = "interrupted"
+        doc["updatedAt"] = timestamp()
+        return doc
+
+    def _effective_view(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
+        """Read-only view used by the history list: a stale running batch is reported as interrupted, nothing is written."""
+        if self._is_stale_running(bpath, doc):
+            return self._as_interrupted(doc)
+        return doc
+
+    def _mark_if_stale(self, bpath: Path, doc: dict[str, Any]) -> dict[str, Any]:
+        """Persist the interrupted state of a stale running batch (see _is_stale_running)."""
+        if not self._is_stale_running(bpath, doc):
             return doc
         with self.lock:
             doc = read_json(bpath) or doc
             if doc.get("state") != "running":
                 return doc
-            for item in doc.get("items") or []:
-                if item.get("state") in ("queued", "running"):
-                    item["state"] = "failed"
-                    item["stage"] = "done"
-                    item["error"] = "工作台重新啟動，批次中斷；請重新送出這一組"
-                    if item.get("aiState") in ("pending", "running"):
-                        item["aiState"] = "failed"
-                        item["aiError"] = item["error"]
-                    for v in item.get("aiVariants") or []:
-                        if v.get("state") in ("queued", "running"):
-                            v["state"] = "failed"
-                            v["error"] = item["error"]
-            items = doc.get("items") or []
-            doc["succeeded"] = sum(1 for x in items if x.get("state") == "succeeded")
-            doc["failed"] = sum(1 for x in items if x.get("state") == "failed")
-            doc["completed"] = doc["succeeded"] + doc["failed"]
-            doc["state"] = "interrupted"
-            doc["updatedAt"] = timestamp()
+            doc = self._as_interrupted(doc)
             atomic_json(bpath, doc)
         return doc
 

@@ -167,8 +167,28 @@ def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
     return (_job_created_at(path_str,j),j['id'])
 
 
+def _jobs_after_cursor(entries,cursor,offset,tag):
+    """套用本租戶鍵集游標。對不上的游標改走 offset，避免其他租戶的位置把呼叫者的工作濾掉。"""
+    raw=cursor.strip()
+    if '|' not in raw:
+        idx=next((i for i,item in enumerate(entries) if item[1]['id']==raw),None)
+        return entries[idx+1:] if idx is not None else entries[offset:]
+    pieces=[part.strip() for part in raw.rsplit('|',2)]
+    if len(pieces)==3:
+        created,job_id,bound=pieces
+        if bound!=tag or not created:
+            return entries[offset:]
+    else:
+        created,job_id=pieces
+        if not created or not any(item[1]['id']==job_id for item in entries):
+            return entries[offset:]
+    boundary=(created,job_id)
+    return [item for item in entries if _job_sort_key(item[0],item[1])<boundary]
+
+
 def listing(root,tenant,*,offset=0,limit=None,cursor=None):
     folder=workspace(root,tenant)/'jobs'
+    tag=folder.parent.name
     entries=[]
     skipped=0
     for f in sorted(folder.glob('*/job.json')):
@@ -204,18 +224,8 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
     with LOCK:
         entries.sort(key=lambda item:_job_sort_key(item[0],item[1]),reverse=True)
         if isinstance(cursor,str) and cursor.strip():
-            raw_cursor=cursor.strip()
-            if '|' in raw_cursor:
-                c_created,c_id=raw_cursor.rsplit('|',1)
-                if any(item[1]['id']==c_id for item in entries):
-                    filtered=[item for item in entries if _job_sort_key(item[0],item[1])<(c_created,c_id)]
-                    sliced_entries=filtered if limit is None else filtered[:limit]
-                else:
-                    sliced_entries=entries[offset:] if limit is None else entries[offset:offset+limit]
-            else:
-                idx=next((i for i,item in enumerate(entries) if item[1]['id']==raw_cursor),None)
-                filtered=entries[idx+1:] if idx is not None else entries[offset:]
-                sliced_entries=filtered if limit is None else filtered[:limit]
+            filtered=_jobs_after_cursor(entries,cursor,offset,tag)
+            sliced_entries=filtered if limit is None else filtered[:limit]
         else:
             sliced_entries=entries[offset:] if limit is None else entries[offset:offset+limit]
         next_cursor=None
@@ -223,7 +233,8 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
             last_key,last_job=sliced_entries[-1]
             if last_job['id']!=entries[-1][1]['id']:
                 sort_created,sort_id=_job_sort_key(last_key,last_job)
-                next_cursor=f'{sort_created}|{sort_id}'
+                if '|' not in sort_created and '|' not in sort_id and '|' not in tag:
+                    next_cursor=f'{sort_created}|{sort_id}|{tag}'
     total=len(entries)
     out=JobList(copy.deepcopy(j) for _,j in sliced_entries)
     out.skipped=skipped
