@@ -29,6 +29,17 @@
     ShippingEstimate: ['預估運費', '依體積估算運送費用']
   };
 
+  var RD_PAGE_LIMIT = 10;
+  var rdHistoryReqSeq = 0;
+  var rdDetailReqSeq = 0;
+  var rdGenerateReqSeq = 0;
+  var rdApproveReqSeq = 0;
+  var rdGenerateInFlight = false;
+  var rdApproveInFlight = false;
+  var rdLoadMoreInFlight = false;
+  var rdPendingGenerate = null;
+  var rdPendingApprove = null;
+
   var state = {
     productTypeCodes: [],
     productTypes: [],
@@ -40,8 +51,20 @@
     selectedQuoteId: null,
     selectedQuoteDetail: null,
     lastRdResult: null,
+    selectedRdId: null,
+    rdHistory: [],
+    rdTotal: 0,
+    rdNextCursor: null,
+    rdHasMore: false,
     mockBlender: true
   };
+
+  function makeIdempotencyKey(prefix) {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return prefix + '-' + crypto.randomUUID();
+    }
+    return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
 
   function $(id) {
     return document.getElementById(id);
@@ -62,18 +85,32 @@
     return v || 'sonaqueen-home';
   }
 
-
-  // While a confirm box is open, lock the inputs of the card it belongs to, so the request
-  // sent on 確認 is exactly what the summary showed (the handlers read the fields on 確認).
-  function lockWhileConfirming(box) {
+  // Synchronously and via MutationObserver lock controls in the owning card while a confirm box is open.
+  function syncConfirmLock(box) {
+    if (!box) return;
     var card = box.closest('.fc-card') || box.parentElement;
-    var fields = card.querySelectorAll('input, select, textarea');
+    if (!card) return;
+    var fields = card.querySelectorAll(
+      'input, select, textarea, .fc-preset-btn, [id$="-prepare-btn"], [id$="-prepare"]'
+    );
+    var open = !box.hidden;
+    Array.prototype.forEach.call(fields, function (f) {
+      if (box.contains(f)) return;
+      if (open) {
+        if (f.dataset.fcWasDisabled === undefined) {
+          f.dataset.fcWasDisabled = f.disabled ? '1' : '';
+        }
+        f.disabled = true;
+      } else if (f.dataset.fcWasDisabled !== undefined) {
+        f.disabled = f.dataset.fcWasDisabled === '1';
+        delete f.dataset.fcWasDisabled;
+      }
+    });
+  }
+
+  function lockWhileConfirming(box) {
     new MutationObserver(function () {
-      var open = !box.hidden;
-      Array.prototype.forEach.call(fields, function (f) {
-        if (open) { f.dataset.fcWasDisabled = f.disabled ? '1' : ''; f.disabled = true; }
-        else if (f.dataset.fcWasDisabled !== undefined) { f.disabled = f.dataset.fcWasDisabled === '1'; delete f.dataset.fcWasDisabled; }
-      });
+      syncConfirmLock(box);
     }).observe(box, { attributes: true, attributeFilter: ['hidden'] });
   }
   Array.prototype.forEach.call(document.querySelectorAll('.fc-confirm'), lockWhileConfirming);
@@ -269,6 +306,10 @@
       });
       var btnRd = el('button', { type: 'button', 'class': 'fc-btn small secondary' }, '帶入研發');
       btnRd.addEventListener('click', function () {
+        if (rdGenerateInFlight || ($('rd-confirm-box') && !$('rd-confirm-box').hidden)) {
+          showGlobalAlert('研發確認框開啟或送出中，請先完成或取消目前操作。', 'err');
+          return;
+        }
         $('rd-text').value =
           '客廳 寬' +
           Math.round((Number(item.defaultWidth) || 800) / 10) +
@@ -643,13 +684,128 @@
     }
   }
 
-  // ---- 5. 商品研發產生 (#rd) -----------------------------------------------
-  function renderRdResult(rd, apiRes) {
+  // ---- 5. 商品研發產生與歷史核准 (#rd) -------------------------------------
+  function resolveRdJudgeLabel(rd) {
+    if (!rd) return 'MOCK';
+    if (rd.judgeLabel === 'REAL' || rd.judgeLabel === 'MOCK') return rd.judgeLabel;
+    if (rd.scoringStatus === 'REAL' || rd.scoringStatus === 'MOCK') return rd.scoringStatus;
+    if (rd.approval && (rd.approval.judgeLabel === 'REAL' || rd.approval.judgeLabel === 'MOCK')) {
+      return rd.approval.judgeLabel;
+    }
+    var top = Array.isArray(rd.top) ? rd.top : [];
+    if (top.length) {
+      var allReal = top.every(function (r) {
+        return r && r.judge && r.judge.label === 'REAL';
+      });
+      return allReal ? 'REAL' : 'MOCK';
+    }
+    return 'MOCK';
+  }
+
+  function formatRdTime(iso) {
+    if (!iso) return '—';
+    return String(iso).replace('T', ' ').replace(/\.\d+Z$/, ' UTC').replace(/Z$/, ' UTC');
+  }
+
+  function isBlockedOrFailedPayload(data) {
+    if (!data || typeof data !== 'object') return true;
+    var st = String(data.status || '').toUpperCase();
+    if (st === 'FAILED' || st.indexOf('BLOCKED') === 0) return true;
+    var err = String(data.error || '').toUpperCase();
+    if (err.indexOf('BLOCKED') === 0) return true;
+    return false;
+  }
+
+  function classifyRdRenderJob(job) {
+    if (!job || typeof job !== 'object') return null;
+    var rawStatus = String(job.status || '').trim();
+    var st = rawStatus.toLowerCase();
+    var err = String(job.error || '').trim();
+    if (
+      isBlockedOrFailedPayload(job) ||
+      st === 'cancelled' ||
+      st === 'cancel_requested' ||
+      st === 'expired'
+    ) {
+      return {
+        state: 'failed',
+        job: job,
+        detail: err || rawStatus || 'FAILED'
+      };
+    }
+    if (
+      st === 'retry_scheduled' ||
+      (st === 'queued' && (Boolean(err) || Number(job.attemptCount || 0) > 0))
+    ) {
+      return {
+        state: 'retrying',
+        job: job,
+        detail: err || rawStatus || 'queued'
+      };
+    }
+    if (st === 'succeeded' || st === 'completed') {
+      return {
+        state: 'completed',
+        job: job,
+        label: job.realBlender && !job.usedMock ? 'REAL' : 'MOCK'
+      };
+    }
+    if (st === 'skipped') {
+      return {
+        state: 'skipped',
+        job: job,
+        detail: 'SKIPPED'
+      };
+    }
+    return {
+      state: 'pending',
+      job: job,
+      detail: rawStatus || 'queued'
+    };
+  }
+
+  function resetRdSelectionUI() {
+    state.lastRdResult = null;
+    state.selectedRdId = null;
+    rdPendingApprove = null;
+    var appBox = $('rd-approve-confirm');
+    if (appBox) {
+      appBox.hidden = true;
+      syncConfirmLock(appBox);
+    }
+    if ($('rd-approve-out')) $('rd-approve-out').hidden = true;
+    if ($('rd-api-out')) $('rd-api-out').hidden = true;
+    if ($('rd-body')) $('rd-body').hidden = true;
+    if ($('rd-empty')) {
+      $('rd-empty').hidden = false;
+      $('rd-empty').className = 'fc-state';
+      $('rd-empty').textContent = '請在左側輸入研發需求並點擊「產生商品研發方案…」，或從下方歷史清單選取方案。';
+    }
+    var gateBadge = $('rd-gate-badge');
+    if (gateBadge) {
+      gateBadge.className = 'fc-badge neutral';
+      gateBadge.textContent = '尚未執行';
+    }
+  }
+
+  function renderRdResult(rd, apiRes, outBoxId, outTitle) {
+    if (!rd || typeof rd !== 'object') return;
     state.lastRdResult = rd;
+    state.selectedRdId = rd.rdId || null;
     $('rd-empty').hidden = true;
     $('rd-body').hidden = false;
 
-    var approvalStatus = rd.approval && rd.approval.status ? rd.approval.status : 'WAITING_APPROVAL';
+    var approveConfirm = $('rd-approve-confirm');
+    if (approveConfirm && !rdApproveInFlight) {
+      approveConfirm.hidden = true;
+      syncConfirmLock(approveConfirm);
+      rdPendingApprove = null;
+    }
+
+    var approval = rd.approval || {};
+    var approvalStatus = approval.status || 'WAITING_APPROVAL';
+    var approvedAt = approval.approvedAt || rd.approvedAt || null;
+    var approvedActor = approval.actor || null;
     var gateInfo = truthBadgeInfo(approvalStatus);
     var gateBadge = $('rd-gate-badge');
     gateBadge.className = 'fc-badge ' + gateInfo.cls;
@@ -657,8 +813,7 @@
 
     var badgesBox = $('rd-truth-badges');
     badgesBox.textContent = '';
-    var top0 = rd.top && rd.top[0] ? rd.top[0] : null;
-    var judgeLabel = top0 && top0.judge ? top0.judge.label : 'MOCK';
+    var judgeLabel = resolveRdJudgeLabel(rd);
     badgesBox.appendChild(
       el(
         'span',
@@ -666,29 +821,71 @@
         '視覺評分來源：' + judgeLabel + (judgeLabel === 'MOCK' ? '（啟發式規則評分）' : '')
       )
     );
-    if (rd.parametricRender && rd.parametricRender.job) {
-      var pJob = rd.parametricRender.job;
-      var rLabel = pJob.realBlender && !pJob.usedMock ? 'REAL' : 'MOCK';
+    if (approvalStatus === 'APPROVED' && judgeLabel === 'MOCK') {
       badgesBox.appendChild(
-        el(
-          'span',
-          { 'class': 'fc-badge ' + (rLabel === 'REAL' ? 'ok' : 'warn') },
-          '母版 3D 預覽：' + rLabel + (rLabel === 'MOCK' ? '（模擬算圖）' : '')
-        )
+        el('span', { 'class': 'fc-badge warn' }, 'MOCK 評分方案（核准後仍為模擬評分）')
       );
+    }
+    if (rd.parametricRender && rd.parametricRender.job) {
+      var renderInfo = classifyRdRenderJob(rd.parametricRender.job);
+      if (renderInfo && renderInfo.state === 'failed') {
+        badgesBox.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-badge err' },
+            '母版 3D 預覽：' + renderInfo.detail + '（算圖失敗）'
+          )
+        );
+      } else if (renderInfo && renderInfo.state === 'retrying') {
+        badgesBox.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-badge warn' },
+            '母版 3D 預覽：排隊重試中（' + (renderInfo.job.status || 'queued') + ' · ' + renderInfo.detail + '）'
+          )
+        );
+      } else if (renderInfo && renderInfo.state === 'completed') {
+        var rLabel = renderInfo.label;
+        badgesBox.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-badge ' + (rLabel === 'REAL' ? 'ok' : 'warn') },
+            '母版 3D 預覽：' + rLabel + (rLabel === 'MOCK' ? '（模擬算圖）' : '')
+          )
+        );
+      } else if (renderInfo && renderInfo.state === 'skipped') {
+        badgesBox.appendChild(
+          el('span', { 'class': 'fc-badge neutral' }, '母版 3D 預覽：SKIPPED（已略過）')
+        );
+      } else if (renderInfo) {
+        badgesBox.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-badge neutral' },
+            '母版 3D 預覽：排隊待算圖（' + renderInfo.detail + '）'
+          )
+        );
+      }
     }
 
     var intentBox = $('rd-intent-summary');
     intentBox.textContent = '';
     var baseSpec = rd.baseSpec || {};
     var kvs = [
-      ['研發單號', rd.rdId],
+      ['研發單號', rd.rdId || '—'],
+      ['建立時間', formatRdTime(rd.createdAt)],
       ['解析櫃型', (TYPE_LABELS[baseSpec.kind] || baseSpec.kind || '—') + ' (' + (baseSpec.kind || '') + ')'],
       ['母版尺寸 (mm)', (baseSpec.width || '—') + ' × ' + (baseSpec.height || '—') + ' × ' + (baseSpec.depth || '—')],
       ['產生／合格變體數', (rd.variantCount || 0) + ' 組 ／ 合格 ' + (rd.scoredCount || 0) + ' 組'],
       ['工程規則檢核', rd.baseReport && rd.baseReport.ok ? '通過 (OK)' : '有工程警告'],
-      ['量產放行門檻', rd.HUMAN_APPROVAL_REQUIRED ? '需人工核准' : '標準']
+      ['核准狀態', approvalStatus === 'APPROVED' ? 'APPROVED（已核准）' : 'WAITING_APPROVAL（待核准）']
     ];
+    if (approvalStatus === 'APPROVED') {
+      kvs.push(['核准人員', approvedActor || '—']);
+      kvs.push(['核准時間 (approvedAt)', approvedAt || '—']);
+    } else {
+      kvs.push(['量產放行門檻', rd.HUMAN_APPROVAL_REQUIRED ? '需人工核准' : '標準']);
+    }
     kvs.forEach(function (pair) {
       var kv = el('div', { 'class': 'fc-kv' });
       kv.appendChild(el('small', null, pair[0]));
@@ -703,6 +900,7 @@
       var dims = v.dimensions || row.spec || {};
       var q = row.quote || {};
       var j = row.judge || {};
+      var rowJudgeLabel = judgeLabel === 'MOCK' ? 'MOCK' : (j.label || judgeLabel);
       var tr = el('tr');
       tr.appendChild(el('td', null, '#' + (idx + 1)));
       tr.appendChild(el('td', null, '門 ' + v.door + ' / 層 ' + v.shelf + ' / 抽 ' + v.drawer));
@@ -720,7 +918,7 @@
         )
       );
       var tdJ = el('td');
-      tdJ.appendChild(makeBadge(j.label || 'MOCK'));
+      tdJ.appendChild(makeBadge(rowJudgeLabel));
       tr.appendChild(tdJ);
       topTbody.appendChild(tr);
     });
@@ -755,9 +953,307 @@
       actBox.appendChild(btnToRev);
     }
 
-    if (apiRes) {
-      renderApiAnswer($('rd-api-out'), '商品研發產生結果', apiRes);
+    var btnApprovePrep = $('rd-approve-prepare');
+    var actorInput = $('rd-approve-actor');
+    if (btnApprovePrep && !rdApproveInFlight) {
+      if (approvalStatus === 'APPROVED') {
+        btnApprovePrep.disabled = true;
+        btnApprovePrep.textContent = '此研發方案已核准（APPROVED）';
+        if (actorInput) actorInput.disabled = true;
+      } else {
+        btnApprovePrep.disabled = false;
+        btnApprovePrep.textContent = '核准此研發方案…';
+        if (actorInput) actorInput.disabled = false;
+      }
     }
+
+    renderRdHistory();
+
+    if (apiRes) {
+      renderApiAnswer($(outBoxId || 'rd-api-out'), outTitle || '商品研發產生結果', apiRes);
+    }
+  }
+
+  function renderRdHistory() {
+    var emptyEl = $('rd-history-empty');
+    var wrapEl = $('rd-history-wrap');
+    var tbody = $('rd-history-tbody');
+    var moreWrap = $('rd-history-more-wrap');
+    var metaEl = $('rd-history-meta');
+    if (!emptyEl || !wrapEl || !tbody) return;
+
+    tbody.textContent = '';
+    if (metaEl) {
+      metaEl.textContent =
+        '共 ' + state.rdTotal + ' 筆方案 · 依建立時間由新到舊排列 · GET /api/product-rd/results';
+    }
+
+    if (!state.rdHistory.length) {
+      emptyEl.hidden = false;
+      emptyEl.className = 'fc-state';
+      emptyEl.textContent = '尚無歷史研發方案。請由上方表單產生。';
+      wrapEl.hidden = true;
+      if (moreWrap) moreWrap.hidden = true;
+      return;
+    }
+
+    emptyEl.hidden = true;
+    wrapEl.hidden = false;
+
+    state.rdHistory.forEach(function (item) {
+      var tr = el('tr', { 'data-rd-id': item.rdId || '' });
+      if (state.selectedRdId && state.selectedRdId === item.rdId) {
+        tr.className = 'selected';
+      }
+
+      var tdId = el('td');
+      tdId.appendChild(el('code', null, item.rdId || '—'));
+      tr.appendChild(tdId);
+
+      tr.appendChild(el('td', null, formatRdTime(item.createdAt)));
+
+      var tdSummary = el('td');
+      var stack = el('div', { 'class': 'fc-cell-stack' });
+      var rawText = String(item.text || (item.intent && item.intent.notes) || '').trim();
+      var summaryText = rawText || '（預設需求）';
+      if (summaryText.length > 80) {
+        summaryText = summaryText.slice(0, 80) + '…';
+      }
+      stack.appendChild(el('span', null, summaryText));
+      var bs = item.baseSpec || {};
+      var specLine =
+        (TYPE_LABELS[bs.kind] || bs.kind || 'CABINET') +
+        ' · ' +
+        (bs.width || '—') +
+        '×' +
+        (bs.height || '—') +
+        '×' +
+        (bs.depth || '—') +
+        ' mm';
+      stack.appendChild(el('span', { 'class': 'fc-mute-small' }, specLine));
+      tdSummary.appendChild(stack);
+      tr.appendChild(tdSummary);
+
+      tr.appendChild(
+        el('td', null, (item.scoredCount || 0) + ' / ' + (item.variantCount || 0) + ' 組')
+      );
+
+      var judgeLabel = resolveRdJudgeLabel(item);
+      var tdJudge = el('td');
+      tdJudge.appendChild(makeBadge(judgeLabel));
+      tr.appendChild(tdJudge);
+
+      var app = item.approval || {};
+      var appStatus = app.status || 'WAITING_APPROVAL';
+      var appAt = app.approvedAt || item.approvedAt || '';
+      var tdGate = el('td');
+      var gateStack = el('div', { 'class': 'fc-cell-stack' });
+      gateStack.appendChild(makeBadge(appStatus));
+      if (appStatus === 'APPROVED' && (app.actor || appAt)) {
+        gateStack.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-mute-small' },
+            (app.actor ? app.actor + ' · ' : '') + (appAt || '')
+          )
+        );
+      }
+      tdGate.appendChild(gateStack);
+      tr.appendChild(tdGate);
+
+      var tdAct = el('td');
+      var actWrap = el('div', { 'class': 'fc-actions' });
+      var btnView = el(
+        'button',
+        { type: 'button', 'class': 'fc-btn small primary' },
+        appStatus === 'APPROVED' ? '查看明細' : '查看／核准'
+      );
+      btnView.addEventListener('click', function () {
+        loadRdDetail(item.rdId);
+      });
+      actWrap.appendChild(btnView);
+      tdAct.appendChild(actWrap);
+      tr.appendChild(tdAct);
+
+      tbody.appendChild(tr);
+    });
+
+    if (moreWrap) {
+      moreWrap.hidden = !state.rdHasMore;
+    }
+  }
+
+  function upsertRdHistoryItem(rd) {
+    if (!rd || !rd.rdId) return;
+    var replaced = false;
+    var next = state.rdHistory.map(function (existing) {
+      if (existing.rdId === rd.rdId) {
+        replaced = true;
+        return rd;
+      }
+      return existing;
+    });
+    if (!replaced) {
+      next.unshift(rd);
+      state.rdTotal = Math.max(state.rdTotal + 1, next.length);
+    }
+    state.rdHistory = next;
+  }
+
+  function loadRdDetail(rdId) {
+    if (!rdId || rdApproveInFlight) return;
+    var reqSeq = ++rdDetailReqSeq;
+    var tenantAtReq = currentTenant();
+    rdPendingApprove = null;
+    var appBox = $('rd-approve-confirm');
+    if (appBox) {
+      appBox.hidden = true;
+      syncConfirmLock(appBox);
+    }
+    $('rd-empty').hidden = false;
+    $('rd-empty').className = 'fc-state';
+    $('rd-empty').textContent = '正在讀取研發方案 ' + rdId + ' 明細…';
+    $('rd-body').hidden = true;
+
+    return apiFetch('/api/product-rd/results/' + encodeURIComponent(rdId))
+      .then(function (res) {
+        if (reqSeq !== rdDetailReqSeq || tenantAtReq !== currentTenant()) return;
+        if (!res.ok || !res.data || isBlockedOrFailedPayload(res.data)) {
+          state.selectedRdId = null;
+          state.lastRdResult = null;
+          renderRdHistory();
+          var gateBadge = $('rd-gate-badge');
+          if (gateBadge) {
+            gateBadge.className = 'fc-badge err';
+            gateBadge.textContent = '查詢失敗';
+          }
+          $('rd-empty').hidden = false;
+          $('rd-empty').className = 'fc-state error';
+          $('rd-empty').textContent = '查詢研發方案失敗（HTTP ' + res.status + '）：找不到方案 ' + rdId;
+          showGlobalAlert('查詢研發方案失敗（HTTP ' + res.status + '）', 'err');
+          return;
+        }
+        upsertRdHistoryItem(res.data);
+        renderRdResult(res.data, res, 'rd-approve-out', '研發方案明細查詢結果');
+      })
+      .catch(function (err) {
+        if (reqSeq !== rdDetailReqSeq || tenantAtReq !== currentTenant()) return;
+        state.selectedRdId = null;
+        state.lastRdResult = null;
+        renderRdHistory();
+        $('rd-empty').hidden = false;
+        $('rd-empty').className = 'fc-state error';
+        $('rd-empty').textContent = '連線失敗，無法讀取研發方案：' + ((err && err.message) || err);
+        showGlobalAlert('連線失敗，請稍後再試：' + ((err && err.message) || err), 'err');
+      });
+  }
+
+  function refreshRdHistory() {
+    var reqSeq = ++rdHistoryReqSeq;
+    var tenantAtReq = currentTenant();
+    var emptyEl = $('rd-history-empty');
+    if (emptyEl && !state.rdHistory.length) {
+      emptyEl.hidden = false;
+      emptyEl.className = 'fc-state';
+      emptyEl.textContent = '載入歷史研發方案中…';
+    }
+
+    return apiFetch('/api/product-rd/results?offset=0&limit=' + RD_PAGE_LIMIT)
+      .then(function (res) {
+        if (reqSeq !== rdHistoryReqSeq || tenantAtReq !== currentTenant()) return;
+        if (!res.ok || !res.data || !Array.isArray(res.data.items)) {
+          state.rdHistory = [];
+          state.rdTotal = 0;
+          state.rdNextCursor = null;
+          state.rdHasMore = false;
+          if ($('rd-history-wrap')) $('rd-history-wrap').hidden = true;
+          if ($('rd-history-more-wrap')) $('rd-history-more-wrap').hidden = true;
+          if (emptyEl) {
+            emptyEl.hidden = false;
+            emptyEl.className = 'fc-state error';
+            emptyEl.textContent = '載入歷史研發方案失敗（HTTP ' + res.status + '）';
+          }
+          return;
+        }
+        var d = res.data;
+        state.rdHistory = d.items;
+        state.rdTotal = typeof d.total === 'number' ? d.total : d.items.length;
+        state.rdNextCursor = typeof d.nextCursor === 'string' && d.nextCursor ? d.nextCursor : null;
+        state.rdHasMore = Boolean(d.hasMore || state.rdNextCursor);
+        renderRdHistory();
+
+        if (state.selectedRdId) {
+          var matched = null;
+          for (var i = 0; i < state.rdHistory.length; i++) {
+            if (state.rdHistory[i].rdId === state.selectedRdId) {
+              matched = state.rdHistory[i];
+              break;
+            }
+          }
+          if (matched && !rdApproveInFlight) {
+            renderRdResult(matched, null);
+          }
+        } else if (state.rdHistory.length && !rdApproveInFlight) {
+          renderRdResult(state.rdHistory[0], null);
+        }
+      })
+      .catch(function (err) {
+        if (reqSeq !== rdHistoryReqSeq || tenantAtReq !== currentTenant()) return;
+        if ($('rd-history-wrap') && !state.rdHistory.length) $('rd-history-wrap').hidden = true;
+        if ($('rd-history-more-wrap')) $('rd-history-more-wrap').hidden = true;
+        if (emptyEl && !state.rdHistory.length) {
+          emptyEl.hidden = false;
+          emptyEl.className = 'fc-state error';
+          emptyEl.textContent = '載入歷史研發方案連線失敗：' + ((err && err.message) || err);
+        }
+      });
+  }
+
+  function loadMoreRdHistory() {
+    if (rdLoadMoreInFlight || !state.rdHasMore) return;
+    var btn = $('rd-history-more-btn');
+    var reqSeq = rdHistoryReqSeq;
+    var tenantAtReq = currentTenant();
+    rdLoadMoreInFlight = true;
+    if (btn) btn.disabled = true;
+
+    var offset = state.rdHistory.length;
+    var path = '/api/product-rd/results?offset=' + offset + '&limit=' + RD_PAGE_LIMIT;
+    if (state.rdNextCursor) {
+      path += '&cursor=' + encodeURIComponent(state.rdNextCursor);
+    }
+
+    return apiFetch(path)
+      .then(function (res) {
+        if (reqSeq !== rdHistoryReqSeq || tenantAtReq !== currentTenant()) return;
+        if (!res.ok || !res.data || !Array.isArray(res.data.items)) {
+          showGlobalAlert('載入更多歷史研發方案失敗（HTTP ' + res.status + '）', 'err');
+          return;
+        }
+        var d = res.data;
+        var seen = {};
+        state.rdHistory.forEach(function (x) {
+          if (x && x.rdId) seen[x.rdId] = true;
+        });
+        d.items.forEach(function (item) {
+          if (item && item.rdId && !seen[item.rdId]) {
+            seen[item.rdId] = true;
+            state.rdHistory.push(item);
+          }
+        });
+        if (typeof d.total === 'number') state.rdTotal = d.total;
+        state.rdNextCursor = typeof d.nextCursor === 'string' && d.nextCursor ? d.nextCursor : null;
+        state.rdHasMore = Boolean(d.hasMore || state.rdNextCursor);
+        renderRdHistory();
+      })
+      .catch(function (err) {
+        if (reqSeq !== rdHistoryReqSeq || tenantAtReq !== currentTenant()) return;
+        showGlobalAlert('載入更多研發方案連線失敗：' + ((err && err.message) || err), 'err');
+      })
+      .finally(function () {
+        rdLoadMoreInFlight = false;
+        if (btn) btn.disabled = false;
+      });
   }
 
   // ---- 資料載入 ------------------------------------------------------------
@@ -766,7 +1262,8 @@
     $('fc-types-state').className = 'fc-state';
     $('fc-types-state').textContent = '載入商品類型與工廠資料中…';
 
-    return Promise.all([
+    var rdPromise = refreshRdHistory();
+    var corePromise = Promise.all([
       apiFetch('/api/factory/product-types'),
       apiFetch('/api/pages/factory/state')
     ])
@@ -827,6 +1324,8 @@
         $('fc-types-state').className = 'fc-state error';
         $('fc-types-state').textContent = '連線失敗：' + err;
       });
+
+    return Promise.all([corePromise, rdPromise]);
   }
 
   // ---- Hash 聚焦 (#rd 等) --------------------------------------------------
@@ -857,7 +1356,30 @@
       /* storage blocked */
     }
 
+    $('fc-tenant').addEventListener('input', function () {
+      rdGenerateReqSeq++;
+      rdApproveReqSeq++;
+      rdHistoryReqSeq++;
+      rdDetailReqSeq++;
+      rdPendingGenerate = null;
+      var box = $('rd-confirm-box');
+      box.hidden = true;
+      syncConfirmLock(box);
+      state.rdHistory = [];
+      state.rdTotal = 0;
+      state.rdNextCursor = null;
+      state.rdHasMore = false;
+      resetRdSelectionUI();
+      renderRdHistory();
+    });
+
     $('fc-tenant').addEventListener('change', function (e) {
+      rdGenerateReqSeq++;
+      rdApproveReqSeq++;
+      rdPendingGenerate = null;
+      var generateBox = $('rd-confirm-box');
+      generateBox.hidden = true;
+      syncConfirmLock(generateBox);
       var v = e.target.value.trim() || 'sonaqueen-home';
       e.target.value = v;
       try {
@@ -866,6 +1388,11 @@
         /* storage blocked */
       }
       state.selectedQuoteId = null;
+      state.rdHistory = [];
+      state.rdTotal = 0;
+      state.rdNextCursor = null;
+      state.rdHasMore = false;
+      resetRdSelectionUI();
       refreshAll();
     });
 
@@ -1175,63 +1702,294 @@
         });
     });
 
-    // 5. 商品研發產生 (#rd)
+    // 5. 商品研發產生與歷史核准 (#rd)
     Array.prototype.forEach.call(document.querySelectorAll('.fc-preset-btn'), function (b) {
       b.addEventListener('click', function () {
+        if (rdGenerateInFlight || !$('rd-confirm-box').hidden) return;
         $('rd-text').value = b.getAttribute('data-text') || '';
       });
     });
 
     $('rd-prepare-btn').addEventListener('click', function () {
+      if (rdGenerateInFlight || !$('rd-confirm-box').hidden) return;
       var txt = $('rd-text').value.trim();
       if (!txt) {
         showGlobalAlert('請輸入商品研發需求描述文字。', 'err');
         return;
       }
-      var cnt = Number($('rd-count').value) || 12;
+      if (txt.length > 2000) {
+        showGlobalAlert('商品研發需求文字不可超過 2000 字。', 'err');
+        return;
+      }
+      var rawCnt = $('rd-count').value.trim();
+      var cnt = Number(rawCnt);
+      if (!rawCnt || !Number.isInteger(cnt) || cnt < 10 || cnt > 50) {
+        showGlobalAlert('候選變體數量須為 10 至 50 的整數。', 'err');
+        return;
+      }
+      rdPendingGenerate = {
+        text: txt,
+        tenant: currentTenant(),
+        variantCount: cnt,
+        idempotencyKey: makeIdempotencyKey('rd-gen')
+      };
       $('rd-confirm-msg').textContent =
-        '即將根據需求「' + txt + '」產生 ' + cnt + ' 組研發候選變體並執行工程與視覺評分，請確認：';
-      $('rd-confirm-box').hidden = false;
+        '即將為租戶「' + rdPendingGenerate.tenant + '」根據需求「' +
+        rdPendingGenerate.text +
+        '」產生 ' +
+        rdPendingGenerate.variantCount +
+        ' 組研發候選變體並執行工程與視覺評分，請確認：';
+      var box = $('rd-confirm-box');
+      box.hidden = false;
+      syncConfirmLock(box);
     });
 
     $('rd-confirm-no').addEventListener('click', function () {
-      $('rd-confirm-box').hidden = true;
+      if (rdGenerateInFlight) return;
+      rdPendingGenerate = null;
+      var box = $('rd-confirm-box');
+      box.hidden = true;
+      syncConfirmLock(box);
     });
 
     $('rd-confirm-yes').addEventListener('click', function () {
-      var btn = $('rd-confirm-yes');
-      btn.disabled = true;
+      if (rdGenerateInFlight || !rdPendingGenerate || rdPendingGenerate.tenant !== currentTenant()) return;
+      var snap = rdPendingGenerate;
+      var reqSeq = ++rdGenerateReqSeq;
+      rdGenerateInFlight = true;
+      var yesBtn = $('rd-confirm-yes');
+      var noBtn = $('rd-confirm-no');
+      var prepBtn = $('rd-prepare-btn');
+      yesBtn.disabled = true;
+      noBtn.disabled = true;
+      prepBtn.disabled = true;
+
       var payload = {
-        text: $('rd-text').value.trim(),
-        variantCount: Number($('rd-count').value) || 12
+        text: rdPendingGenerate.text,
+        variantCount: rdPendingGenerate.variantCount,
+        idempotencyKey: rdPendingGenerate.idempotencyKey
       };
 
-      apiFetch('/api/product-rd/generate', { method: 'POST', body: payload })
+      apiFetch('/api/product-rd/generate', { method: 'POST', headers: { 'X-Tenant-Id': snap.tenant }, body: payload })
         .then(function (res) {
-          $('rd-confirm-box').hidden = true;
-          if (res.ok && res.data) {
-            renderRdResult(res.data, res);
-            showGlobalAlert(
-              '商品研發方案產生完成（單號 ' +
-                res.data.rdId +
-                '），共評選出前 ' +
-                (res.data.top ? res.data.top.length : 0) +
-                ' 名候選方案。',
-              'ok'
-            );
+          if (reqSeq !== rdGenerateReqSeq || snap.tenant !== currentTenant()) return;
+          var renderInfo = res.data && res.data.parametricRender
+            ? classifyRdRenderJob(res.data.parametricRender.job)
+            : null;
+          var renderFailed = renderInfo && renderInfo.state === 'failed';
+          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data) && !renderFailed) {
+            rdPendingGenerate = null;
+            var box = $('rd-confirm-box');
+            box.hidden = true;
+            syncConfirmLock(box);
+            upsertRdHistoryItem(res.data);
+            renderRdResult(res.data, res, 'rd-api-out', '商品研發產生結果');
+            if (renderInfo && renderInfo.state === 'retrying') {
+              showGlobalAlert(
+                '研發方案（單號 ' +
+                  res.data.rdId +
+                  '）已儲存，但母版 3D 算圖暫時失敗並已排隊重試：' +
+                  renderInfo.detail,
+                'warn'
+              );
+            } else if (renderInfo && renderInfo.state === 'pending') {
+              showGlobalAlert(
+                '研發方案（單號 ' +
+                  res.data.rdId +
+                  '）已儲存，母版 3D 預覽排隊待算圖（' +
+                  renderInfo.detail +
+                  '）。',
+                'warn'
+              );
+            } else {
+              showGlobalAlert(
+                '商品研發方案產生完成（單號 ' +
+                  res.data.rdId +
+                  '），共評選出前 ' +
+                  (res.data.top ? res.data.top.length : 0) +
+                  ' 名候選方案。',
+                'ok'
+              );
+            }
             return refreshAll();
           } else {
+            var boxErr = $('rd-confirm-box');
+            boxErr.hidden = true;
+            syncConfirmLock(boxErr);
+            rdPendingGenerate = null;
             renderApiAnswer($('rd-api-out'), '商品研發產生失敗', res);
-            showGlobalAlert('商品研發產生失敗（HTTP ' + res.status + '）', 'err');
+            var errDetail = (renderFailed && renderInfo.detail) ||
+              (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
+            if (res.ok && renderFailed) {
+              showGlobalAlert('研發方案已儲存，但母版 3D 算圖失敗：' + errDetail, 'err');
+              return refreshRdHistory();
+            }
+            showGlobalAlert('商品研發產生失敗：' + errDetail, 'err');
           }
         })
         .catch(function (e) {
+          if (reqSeq !== rdGenerateReqSeq || snap.tenant !== currentTenant()) return;
           showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
         })
         .finally(function () {
-          btn.disabled = false;
+          rdGenerateInFlight = false;
+          yesBtn.disabled = false;
+          noBtn.disabled = false;
+          if ($('rd-confirm-box').hidden) {
+            prepBtn.disabled = false;
+          }
         });
     });
+
+    if ($('rd-approve-prepare')) {
+      $('rd-approve-prepare').addEventListener('click', function () {
+        if (rdApproveInFlight || !state.selectedRdId || !$('rd-approve-confirm').hidden) return;
+        var current = state.lastRdResult;
+        if (current && current.approval && current.approval.status === 'APPROVED') return;
+        var actor = ($('rd-approve-actor').value || '').trim();
+        if (!actor) {
+          showGlobalAlert('請輸入核准人員姓名或工號。', 'err');
+          return;
+        }
+        if (actor.length > 120) {
+          showGlobalAlert('核准人員名稱不可超過 120 字。', 'err');
+          return;
+        }
+        var judgeLbl = resolveRdJudgeLabel(current);
+        rdPendingApprove = {
+          rdId: state.selectedRdId,
+          tenant: currentTenant(),
+          actor: actor
+        };
+        $('rd-approve-msg').textContent =
+          '確定為租戶「' + rdPendingApprove.tenant + '」由「' +
+          rdPendingApprove.actor +
+          '」核准研發方案 ' +
+          rdPendingApprove.rdId +
+          ' 嗎？核准後狀態將改為 APPROVED 並記錄 approvedAt' +
+          (judgeLbl === 'MOCK' ? '（視覺評分來源仍維持標示為 MOCK）' : '') +
+          '：';
+        var box = $('rd-approve-confirm');
+        box.hidden = false;
+        syncConfirmLock(box);
+      });
+    }
+
+    if ($('rd-approve-no')) {
+      $('rd-approve-no').addEventListener('click', function () {
+        if (rdApproveInFlight) return;
+        rdPendingApprove = null;
+        var box = $('rd-approve-confirm');
+        box.hidden = true;
+        syncConfirmLock(box);
+      });
+    }
+
+    if ($('rd-approve-yes')) {
+      $('rd-approve-yes').addEventListener('click', function () {
+        if (rdApproveInFlight || !rdPendingApprove || rdPendingApprove.tenant !== currentTenant()) return;
+        var reqSeq = ++rdApproveReqSeq;
+        rdApproveInFlight = true;
+        var snap = {
+          rdId: rdPendingApprove.rdId,
+          tenant: rdPendingApprove.tenant,
+          actor: rdPendingApprove.actor
+        };
+        var yesBtn = $('rd-approve-yes');
+        var noBtn = $('rd-approve-no');
+        var prepBtn = $('rd-approve-prepare');
+        yesBtn.disabled = true;
+        noBtn.disabled = true;
+        prepBtn.disabled = true;
+
+        apiFetch('/api/product-rd/results/' + encodeURIComponent(snap.rdId) + '/approve', {
+          method: 'POST',
+          headers: { 'X-Tenant-Id': snap.tenant },
+          body: {
+            actor: snap.actor,
+            confirm: true
+          }
+        })
+          .then(function (res) {
+            if (reqSeq !== rdApproveReqSeq || snap.tenant !== currentTenant()) return;
+            if (res.ok && res.data && !isBlockedOrFailedPayload(res.data)) {
+              rdPendingApprove = null;
+              var box = $('rd-approve-confirm');
+              box.hidden = true;
+              syncConfirmLock(box);
+              rdApproveInFlight = false;
+              upsertRdHistoryItem(res.data);
+              renderRdResult(
+                res.data,
+                res,
+                'rd-approve-out',
+                '核准研發方案回應（POST /api/product-rd/results/' + snap.rdId + '/approve）'
+              );
+              var judgeLbl = resolveRdJudgeLabel(res.data);
+              var appAt = (res.data.approval && res.data.approval.approvedAt) || res.data.approvedAt || '';
+              showGlobalAlert(
+                '研發方案 ' +
+                  snap.rdId +
+                  ' 已由 ' +
+                  ((res.data.approval && res.data.approval.actor) || snap.actor) +
+                  ' 核准（APPROVED，approvedAt=' +
+                  appAt +
+                  '，評分來源：' +
+                  judgeLbl +
+                  '）。',
+                'ok'
+              );
+              return refreshRdHistory();
+            } else {
+              var boxErr = $('rd-approve-confirm');
+              boxErr.hidden = true;
+              syncConfirmLock(boxErr);
+              rdPendingApprove = null;
+              renderApiAnswer(
+                $('rd-approve-out'),
+                '核准研發方案失敗（POST /api/product-rd/results/' + snap.rdId + '/approve）',
+                res
+              );
+              var detail = (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
+              showGlobalAlert('核准研發方案失敗：' + detail, 'err');
+            }
+          })
+          .catch(function (e) {
+            if (reqSeq !== rdApproveReqSeq || snap.tenant !== currentTenant()) return;
+            showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
+          })
+          .finally(function () {
+            rdApproveInFlight = false;
+            yesBtn.disabled = false;
+            noBtn.disabled = false;
+            if ($('rd-approve-confirm').hidden) {
+              var isApproved =
+                state.lastRdResult &&
+                state.lastRdResult.approval &&
+                state.lastRdResult.approval.status === 'APPROVED';
+              prepBtn.disabled = Boolean(isApproved);
+              if ($('rd-approve-actor')) $('rd-approve-actor').disabled = Boolean(isApproved);
+            }
+          });
+      });
+    }
+
+    if ($('rd-lookup-btn')) {
+      $('rd-lookup-btn').addEventListener('click', function () {
+        var rid = ($('rd-lookup-id').value || '').trim();
+        if (!rid) {
+          showGlobalAlert('請先輸入要查詢的研發單號 rdId。', 'err');
+          return;
+        }
+        loadRdDetail(rid);
+      });
+    }
+
+    if ($('rd-history-more-btn')) {
+      $('rd-history-more-btn').addEventListener('click', function () {
+        loadMoreRdHistory();
+      });
+    }
   }
 
   function boot() {

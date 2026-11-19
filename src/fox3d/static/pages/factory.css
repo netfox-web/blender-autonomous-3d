@@ -216,6 +216,12 @@ body {
   color: var(--fg);
 }
 
+.fc-alert.warn {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
 .fc-alert.err {
   border-color: var(--err);
   background: var(--err-soft);
@@ -674,6 +680,21 @@ code {
 .fc-preset-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.fc-preset-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fc-stack {
+  margin-top: 16px;
+}
+
+.fc-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 @media (max-width: 900px) {

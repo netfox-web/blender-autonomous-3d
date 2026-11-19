@@ -34,6 +34,13 @@ from fox3d.pilot_batch_api import pilot_batch_router
 from fox3d.pilot_qc_api import pilot_qc_router
 from fox3d.pilot_shipping_api import pilot_shipping_router
 from fox3d.platform import Platform
+from fox3d.product_rd_store import (
+    ProductRDIdempotencyConflict,
+    validate_optional_idempotency_key,
+    validate_rd_actor,
+    validate_rd_text,
+    validate_rd_variant_count,
+)
 from fox3d.recovery import ExceptionStateError, PilotException
 from fox3d.cyclecount_api import cyclecount_router
 from fox3d.materials_lot_ops_api import materials_lot_ops_router
@@ -708,15 +715,82 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         plat = get_platform()
         try:
-            rd = plat.product_rd(tenant_id=tid, text=payload.get("text") or "", variant_count=bounded_count(payload.get("variantCount"), 12, "variantCount"))
-            if rd.get("baseSpec") and not plat._production_gate():
-                stored = plat.create_parametric({**rd["baseSpec"], "tenantId": tid, "kind": rd["baseSpec"].get("kind")})
-                rd["parametricRender"] = plat.render_parametric(stored["spec"]["productId"], tenant_id=tid)
-            return rd
+            text = validate_rd_text(payload.get("text"))
+            variant_count = validate_rd_variant_count(payload.get("variantCount"))
+            idem = validate_optional_idempotency_key(payload.get("idempotencyKey"))
+            return plat.product_rd(
+                tenant_id=tid,
+                text=text,
+                variant_count=variant_count,
+                idempotency_key=idem,
+                render_base=True,
+            )
+        except ProductRDIdempotencyConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from None
-        except (ValueError, TypeError):
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except (TypeError, OverflowError):
             raise HTTPException(422, "商品欄位格式錯誤") from None
+
+    @app.get("/api/product-rd/results")
+    def list_product_rd_results(
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=20, ge=1, le=100),
+        cursor: str | None = Query(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        try:
+            return get_platform().list_product_rd_results(
+                tenant_id=tid,
+                offset=offset,
+                limit=limit,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.get("/api/product-rd/results/{result_id}")
+    def read_product_rd_result(
+        result_id: str,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = tenant(x_tenant_id)
+        try:
+            return get_platform().get_product_rd_result(result_id, tenant_id=tid)
+        except KeyError:
+            raise HTTPException(404, "找不到研發方案") from None
+
+    @app.post("/api/product-rd/results/{result_id}/approve")
+    def approve_product_rd_result(
+        result_id: str,
+        payload: dict[str, Any] | None = None,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        plat = get_platform()
+        if not plat.rd_store.exists(tid, result_id):
+            raise HTTPException(404, "找不到研發方案")
+        try:
+            actor = validate_rd_actor(body.get("actor"), default="human")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+        try:
+            return plat.approve_product_rd(
+                result_id,
+                tenant_id=tid,
+                actor=actor,
+                confirm=body.get("confirm"),
+            )
+        except KeyError:
+            raise HTTPException(404, "找不到研發方案") from None
+        except PermissionError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
 
     @app.post("/api/e2e/smoke")
     def e2e_smoke() -> dict[str, Any]:

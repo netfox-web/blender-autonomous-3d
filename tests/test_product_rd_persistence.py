@@ -1,0 +1,776 @@
+"""Persistence, pagination, idempotency, concurrency, tenant isolation, and input validation tests for Product R&D."""
+
+from __future__ import annotations
+
+import json
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from fox3d.api import create_app
+from fox3d.ids import stable_hash
+from fox3d.platform import Platform
+from fox3d.storelock import CrashInjected
+
+TENANT_A = {"X-Tenant-Id": "tenant-alpha"}
+TENANT_B = {"X-Tenant-Id": "tenant-beta"}
+
+
+def _make_client(root: Path) -> tuple[Platform, TestClient]:
+    plat = Platform(root=root, mock_blender=True)
+    return plat, TestClient(create_app(plat), raise_server_exceptions=False)
+
+
+def test_generate_persists_per_tenant_across_restart(tmp_path: Path) -> None:
+    _, client1 = _make_client(tmp_path)
+
+    res_a1 = client1.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "玄關 寬80cm 高120cm 白木紋鞋櫃 雙門 四層", "variantCount": 10},
+    )
+    assert res_a1.status_code == 200, res_a1.text
+    rd_a1 = res_a1.json()
+
+    res_a2 = client1.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書房 寬100cm 高180cm 書櫃 四層", "variantCount": 11},
+    )
+    assert res_a2.status_code == 200, res_a2.text
+    rd_a2 = res_a2.json()
+
+    res_b1 = client1.post(
+        "/api/product-rd/generate",
+        headers=TENANT_B,
+        json={"text": "臥室 寬120cm 高220cm 衣櫃 雙門", "variantCount": 10},
+    )
+    assert res_b1.status_code == 200, res_b1.text
+    rd_b1 = res_b1.json()
+
+    # Recreate Platform + FastAPI app from the same disk root (simulated process restart).
+    _, client2 = _make_client(tmp_path)
+
+    list_a = client2.get("/api/product-rd/results", headers=TENANT_A)
+    assert list_a.status_code == 200
+    body_a = list_a.json()
+    assert body_a["total"] == 2
+    assert [item["rdId"] for item in body_a["items"]] == [rd_a2["rdId"], rd_a1["rdId"]]
+
+    detail_a1 = client2.get(f"/api/product-rd/results/{rd_a1['rdId']}", headers=TENANT_A)
+    assert detail_a1.status_code == 200
+    d_a1 = detail_a1.json()
+    assert d_a1["rdId"] == rd_a1["rdId"]
+    assert d_a1["tenantId"] == "tenant-alpha"
+    assert d_a1["text"] == "玄關 寬80cm 高120cm 白木紋鞋櫃 雙門 四層"
+    assert d_a1["approval"]["status"] == "WAITING_APPROVAL"
+    assert d_a1["approvedAt"] is None
+    assert d_a1["baseSpec"] == rd_a1["baseSpec"]
+    assert d_a1["parametricRender"]["job"]["jobId"] == rd_a1["parametricRender"]["job"]["jobId"]
+
+    list_b = client2.get("/api/product-rd/results", headers=TENANT_B)
+    assert list_b.status_code == 200
+    assert [item["rdId"] for item in list_b.json()["items"]] == [rd_b1["rdId"]]
+
+    list_empty = client2.get("/api/product-rd/results", headers={"X-Tenant-Id": "tenant-empty"})
+    assert list_empty.status_code == 200
+    assert list_empty.json()["items"] == []
+    assert list_empty.json()["total"] == 0
+
+
+def test_atomic_write_leaves_no_temp_files_and_survives_failed_write_or_corrupt_sibling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    ok = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬180cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert ok.status_code == 200
+    rd_id = ok.json()["rdId"]
+
+    rd_root = tmp_path / "product_rd"
+    assert list(rd_root.rglob("*.tmp")) == []
+
+    # Simulate crash during publish_bytes on a second generate: store must have no partial file.
+    import fox3d.product_rd_store as store_mod
+
+    orig_publish = store_mod.publish_bytes
+
+    def _crash_publish(writer: Any, target: Path, **kwargs: Any) -> dict[str, Any]:
+        raise CrashInjected("simulated crash before os.replace")
+
+    monkeypatch.setattr(store_mod, "publish_bytes", _crash_publish)
+    with pytest.raises(CrashInjected):
+        plat.product_rd(tenant_id="tenant-alpha", text="書櫃 90cm", variant_count=10)
+    monkeypatch.setattr(store_mod, "publish_bytes", orig_publish)
+
+    assert list(rd_root.rglob("*.tmp")) == []
+    _, restarted = _make_client(tmp_path)
+    listed = restarted.get("/api/product-rd/results", headers=TENANT_A).json()
+    assert [item["rdId"] for item in listed["items"]] == [rd_id]
+
+    # Corrupt sibling JSON file must be skipped cleanly without breaking list or valid get.
+    tenant_dir = rd_root / stable_hash("tenant-alpha")
+    (tenant_dir / "corrupt_record.json").write_text("{broken json", encoding="utf-8")
+    _, restarted2 = _make_client(tmp_path)
+    listed2 = restarted2.get("/api/product-rd/results", headers=TENANT_A)
+    assert listed2.status_code == 200
+    assert listed2.json()["skipped"] == 1
+    assert [item["rdId"] for item in listed2.json()["items"]] == [rd_id]
+    assert restarted2.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).status_code == 200
+
+
+def test_generate_idempotency_concurrent_restart_conflict_and_tenant_scope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat1, client1 = _make_client(tmp_path)
+    plat2, client2 = _make_client(tmp_path)
+
+    run_count = 0
+    count_lock = threading.Lock()
+    orig_run = plat1.rd.run
+    orig_run2 = plat2.rd.run
+
+    def _counted_run_1(**kwargs: Any) -> dict[str, Any]:
+        nonlocal run_count
+        with count_lock:
+            run_count += 1
+        return orig_run(**kwargs)
+
+    def _counted_run_2(**kwargs: Any) -> dict[str, Any]:
+        nonlocal run_count
+        with count_lock:
+            run_count += 1
+        return orig_run2(**kwargs)
+
+    monkeypatch.setattr(plat1.rd, "run", _counted_run_1)
+    monkeypatch.setattr(plat2.rd, "run", _counted_run_2)
+
+    body = {
+        "text": "客廳 寬160cm 奶油風電視櫃 雙門 掃地機器人",
+        "variantCount": 10,
+        "idempotencyKey": "idem-rd-001",
+    }
+    barrier = threading.Barrier(6)
+    clients = [client1, client2, client1, client2, client1, client2]
+
+    def _send(c: TestClient) -> Any:
+        barrier.wait()
+        return c.post("/api/product-rd/generate", headers=TENANT_A, json=body)
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        responses = list(pool.map(_send, clients))
+
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    rd_ids = {r.json()["rdId"] for r in responses}
+    assert len(rd_ids) == 1
+    assert run_count == 1
+    winner_id = next(iter(rd_ids))
+
+    # Restart and resend the same idempotencyKey -> returns the exact same rdId, still no new run.
+    plat3, client3 = _make_client(tmp_path)
+    monkeypatch.setattr(
+        plat3.rd,
+        "run",
+        lambda **_kw: (_ for _ in ()).throw(AssertionError("should not re-run for idempotent replay")),
+    )
+    replay = client3.post("/api/product-rd/generate", headers=TENANT_A, json=body)
+    assert replay.status_code == 200
+    assert replay.json()["rdId"] == winner_id
+    assert client3.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == 1
+
+    # Different parameters with same idempotencyKey -> 409 Conflict.
+    conflict_text = client3.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={**body, "text": "書房 寬90cm 書櫃 四層"},
+    )
+    assert conflict_text.status_code == 409
+    conflict_count = client3.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={**body, "variantCount": 12},
+    )
+    assert conflict_count.status_code == 409
+
+    # Another tenant using the same idempotencyKey gets its own isolated record.
+    _, client_other = _make_client(tmp_path)
+    other_res = client_other.post("/api/product-rd/generate", headers=TENANT_B, json=body)
+    assert other_res.status_code == 200
+    assert other_res.json()["rdId"] != winner_id
+
+
+def test_results_pagination_by_created_at_offset_and_cursor_and_approve_keeps_order(tmp_path: Path) -> None:
+    plat, client = _make_client(tmp_path)
+    template = plat.rd.run(tenant_id="tenant-alpha", text="書櫃 80cm", variant_count=10)
+
+    tenant_dir = tmp_path / "product_rd" / stable_hash("tenant-alpha")
+    tenant_dir.mkdir(parents=True, exist_ok=True)
+
+    expected_pairs: list[tuple[str, str]] = []
+    base_mtime = 1_700_000_000.0
+    for i in range(25):
+        rd_id = f"rd-item-{i:02d}"
+        minute = i // 2  # Intentional timestamp ties to exercise deterministic rdId tie-breaking
+        created_at = f"2026-11-19T10:{minute:02d}:00.000000Z"
+        rec = {
+            **template,
+            "rdId": rd_id,
+            "tenantId": "tenant-alpha",
+            "createdAt": created_at,
+            "text": f"方案 {i:02d}",
+            "requestedVariantCount": 10,
+            "judgeLabel": "MOCK",
+            "scoringStatus": "MOCK",
+            "truthLabel": "MOCK",
+            "HUMAN_APPROVAL_REQUIRED": True,
+            "liveMachineControl": False,
+            "approvedAt": None,
+            "approval": {
+                "status": "WAITING_APPROVAL",
+                "HUMAN_APPROVAL_REQUIRED": True,
+                "autoApproveForbiddenForProduction": True,
+                "liveMachineControl": False,
+                "approvedAt": None,
+                "actor": None,
+                "judgeLabel": "MOCK",
+            },
+        }
+        fpath = tenant_dir / f"{stable_hash(rd_id)}.json"
+        fpath.write_text(json.dumps(rec, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        # Invert mtime so older createdAt has newer mtime on disk.
+        inv_mtime = base_mtime + (30 - i) * 60
+        os.utime(fpath, (inv_mtime, inv_mtime))
+        expected_pairs.append((created_at, rd_id))
+
+    expected_ids = [rid for _, rid in sorted(expected_pairs, reverse=True)]
+
+    # 1. Offset pagination
+    offset_ids: list[str] = []
+    for offset, exp_len, exp_more in ((0, 10, True), (10, 10, True), (20, 5, False)):
+        r = client.get(f"/api/product-rd/results?offset={offset}&limit=10", headers=TENANT_A)
+        assert r.status_code == 200
+        page = r.json()
+        assert page["total"] == 25
+        assert page["offset"] == offset
+        assert page["limit"] == 10
+        assert page["hasMore"] is exp_more
+        assert (page["nextCursor"] is not None) is exp_more
+        ids = [x["rdId"] for x in page["items"]]
+        assert len(ids) == exp_len
+        offset_ids.extend(ids)
+    assert offset_ids == expected_ids
+
+    # 2. Cursor pagination
+    cursor_ids: list[str] = []
+    cursor: str | None = None
+    pages = 0
+    while True:
+        qs = f"?limit=7&cursor={cursor}" if cursor else "?limit=7"
+        r = client.get(f"/api/product-rd/results{qs}", headers=TENANT_A)
+        assert r.status_code == 200
+        body = r.json()
+        cursor_ids.extend(x["rdId"] for x in body["items"])
+        pages += 1
+        assert pages <= 10
+        if not body["nextCursor"]:
+            assert body["hasMore"] is False
+            break
+        cursor = body["nextCursor"]
+    assert cursor_ids == expected_ids
+
+    # 3. Approving an older item updates its file mtime and approvedAt, but must NOT move its createdAt sort rank.
+    oldest_id = expected_ids[-1]
+    ap = client.post(
+        f"/api/product-rd/results/{oldest_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "reviewer"},
+    )
+    assert ap.status_code == 200
+    after_ids: list[str] = []
+    for offset in (0, 10, 20):
+        r = client.get(f"/api/product-rd/results?offset={offset}&limit=10", headers=TENANT_A)
+        after_ids.extend(x["rdId"] for x in r.json()["items"])
+    assert after_ids == expected_ids
+
+    # 4. Cross-tenant cursor must never drop or leak Tenant B's items; bad pagination params -> 422.
+    res_b = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_B,
+        json={"text": "鞋櫃 80cm", "variantCount": 10},
+    )
+    assert res_b.status_code == 200
+    first_a_cursor = client.get("/api/product-rd/results?limit=5", headers=TENANT_A).json()["nextCursor"]
+    assert first_a_cursor
+    b_with_a_cursor = client.get(
+        f"/api/product-rd/results?limit=5&cursor={first_a_cursor}", headers=TENANT_B
+    )
+    assert b_with_a_cursor.status_code == 200
+    assert [x["rdId"] for x in b_with_a_cursor.json()["items"]] == [res_b.json()["rdId"]]
+
+    # Composite cursor whose anchor rdId exists in Tenant A but with a forged/mismatched timestamp falls back safely.
+    tok_a = first_a_cursor.split("|")[0]
+    forged_cursor = f"{tok_a}|1999-01-01T00:00:00.000000Z|{expected_ids[0]}"
+    a_forged = client.get(f"/api/product-rd/results?offset=0&limit=5&cursor={forged_cursor}", headers=TENANT_A)
+    assert a_forged.status_code == 200
+    assert [x["rdId"] for x in a_forged.json()["items"]] == expected_ids[:5]
+
+    for bad_qs in ("?limit=0", "?limit=101", "?offset=-1", f"?cursor={'c' * 201}"):
+        bad_res = client.get(f"/api/product-rd/results{bad_qs}", headers=TENANT_A)
+        assert bad_res.status_code == 422, bad_qs
+
+
+def test_approve_requires_confirm_and_idempotent_resend_keeps_approved_at(tmp_path: Path) -> None:
+    _, client = _make_client(tmp_path)
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬150cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert gen.status_code == 200
+    rd_id = gen.json()["rdId"]
+
+    bad_confirm_cases: tuple[dict[str, Any], ...] = (
+        {},
+        {"confirm": False},
+        {"confirm": 0},
+        {"confirm": ""},
+        {"confirm": "false"},
+        {"confirm": "yes"},
+        {"confirm": None},
+        {"confirm": []},
+        {"confirm": {}},
+        {"confirm": 1.0},
+    )
+    for bad_confirm in bad_confirm_cases:
+        resp = client.post(
+            f"/api/product-rd/results/{rd_id}/approve",
+            headers=TENANT_A,
+            json=bad_confirm,
+        )
+        assert resp.status_code == 422, f"expected 422 for {bad_confirm!r}, got {resp.status_code}"
+
+    # Still WAITING_APPROVAL before valid confirm
+    still_waiting = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert still_waiting["approval"]["status"] == "WAITING_APPROVAL"
+    assert still_waiting["approvedAt"] is None
+
+    first = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "chief-designer"},
+    )
+    assert first.status_code == 200, first.text
+    first_data = first.json()
+    approved_at = first_data["approvedAt"]
+    assert isinstance(approved_at, str) and approved_at.endswith("Z")
+    assert first_data["approval"]["status"] == "APPROVED"
+    assert first_data["approval"]["approvedAt"] == approved_at
+    assert first_data["approval"]["actor"] == "chief-designer"
+    assert first_data["productionAssets"]
+
+    # Immediate resend with different actor returns original approvedAt and original actor.
+    second = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "second-actor"},
+    )
+    assert second.status_code == 200
+    second_data = second.json()
+    assert second_data["approvedAt"] == approved_at
+    assert second_data["approval"]["approvedAt"] == approved_at
+    assert second_data["approval"]["actor"] == "chief-designer"
+
+    # Restart Platform and resend again -> still returns original approvedAt, and missing confirm still 422.
+    _, restarted = _make_client(tmp_path)
+    no_confirm_after = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={},
+    )
+    assert no_confirm_after.status_code == 422
+
+    third = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "third-actor"},
+    )
+    assert third.status_code == 200
+    assert third.json()["approvedAt"] == approved_at
+    assert third.json()["approval"]["approvedAt"] == approved_at
+    assert third.json()["approval"]["actor"] == "chief-designer"
+
+
+def test_concurrent_approve_executes_once_across_threads_and_instances(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat1, client1 = _make_client(tmp_path)
+    plat2, client2 = _make_client(tmp_path)
+
+    created = client1.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書房 寬100cm 書櫃 四層", "variantCount": 10},
+    ).json()
+    rd_id = created["rdId"]
+
+    approve_calls = 0
+    call_lock = threading.Lock()
+    orig1 = plat1.rd.approve
+    orig2 = plat2.rd.approve
+
+    def _spy1(rec: dict[str, Any], *, actor: str) -> dict[str, Any]:
+        nonlocal approve_calls
+        with call_lock:
+            approve_calls += 1
+        return orig1(rec, actor=actor)
+
+    def _spy2(rec: dict[str, Any], *, actor: str) -> dict[str, Any]:
+        nonlocal approve_calls
+        with call_lock:
+            approve_calls += 1
+        return orig2(rec, actor=actor)
+
+    monkeypatch.setattr(plat1.rd, "approve", _spy1)
+    monkeypatch.setattr(plat2.rd, "approve", _spy2)
+
+    barrier = threading.Barrier(6)
+    targets = [(client1, f"actor-{i}") if i % 2 == 0 else (client2, f"actor-{i}") for i in range(6)]
+
+    def _fire(pair: tuple[TestClient, str]) -> Any:
+        c, actor = pair
+        barrier.wait()
+        return c.post(
+            f"/api/product-rd/results/{rd_id}/approve",
+            headers=TENANT_A,
+            json={"confirm": True, "actor": actor},
+        )
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(_fire, targets))
+
+    assert all(r.status_code == 200 for r in results), [r.text for r in results]
+    assert approve_calls == 1
+    approved_ats = {r.json()["approvedAt"] for r in results}
+    actors = {r.json()["approval"]["actor"] for r in results}
+    assert len(approved_ats) == 1
+    assert len(actors) == 1
+
+    _, restarted = _make_client(tmp_path)
+    persisted = restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert persisted["approvedAt"] == next(iter(approved_ats))
+    assert persisted["approval"]["actor"] == next(iter(actors))
+
+
+def test_mock_scored_scheme_remains_labeled_mock_after_approve_and_restart(tmp_path: Path) -> None:
+    _, client = _make_client(tmp_path)
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "臥室 寬120cm 高200cm 衣櫃 雙門", "variantCount": 10},
+    ).json()
+    rd_id = gen["rdId"]
+    assert gen["judgeLabel"] == "MOCK"
+    assert gen["scoringStatus"] == "MOCK"
+    assert gen["truthLabel"] == "MOCK"
+    assert all(row["judge"]["label"] == "MOCK" for row in gen["top"])
+
+    approved = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-director"},
+    ).json()
+    assert approved["approval"]["status"] == "APPROVED"
+    assert approved["approvedAt"]
+    assert approved["judgeLabel"] == "MOCK"
+    assert approved["scoringStatus"] == "MOCK"
+    assert approved["truthLabel"] == "MOCK"
+    assert approved["approval"]["judgeLabel"] == "MOCK"
+    assert all(row["judge"]["label"] == "MOCK" for row in approved["top"])
+    assert approved["productionAssets"]
+    assert all(asset["judgeLabel"] == "MOCK" for asset in approved["productionAssets"])
+
+    _, restarted = _make_client(tmp_path)
+    fetched = restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert fetched["approval"]["status"] == "APPROVED"
+    assert fetched["judgeLabel"] == "MOCK"
+    assert fetched["approval"]["judgeLabel"] == "MOCK"
+    assert all(row["judge"]["label"] == "MOCK" for row in fetched["top"])
+
+    listed_item = restarted.get("/api/product-rd/results", headers=TENANT_A).json()["items"][0]
+    assert listed_item["approval"]["status"] == "APPROVED"
+    assert listed_item["judgeLabel"] == "MOCK"
+
+
+def test_cross_tenant_and_unknown_ids_return_404(tmp_path: Path) -> None:
+    _, client = _make_client(tmp_path)
+    created = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "玄關 寬90cm 鞋櫃 雙門", "variantCount": 10},
+    ).json()
+    rd_id = created["rdId"]
+
+    for target_id in (rd_id, "missing-rd-id", "..traversal", "id with spaces", "x" * 80):
+        get_b = client.get(f"/api/product-rd/results/{target_id}", headers=TENANT_B)
+        assert get_b.status_code == 404, target_id
+        assert get_b.json() == {"detail": "找不到研發方案"}
+
+        for body in ({}, {"confirm": True, "actor": "intruder"}):
+            post_b = client.post(
+                f"/api/product-rd/results/{target_id}/approve",
+                headers=TENANT_B,
+                json=body,
+            )
+            assert post_b.status_code == 404, (target_id, body)
+            assert post_b.json() == {"detail": "找不到研發方案"}
+
+    assert client.get("/api/product-rd/results/../traversal", headers=TENANT_B).status_code == 404
+
+    # Tenant A's record was untouched by Tenant B's approve attempts.
+    intact = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert intact["approval"]["status"] == "WAITING_APPROVAL"
+
+    # Body tenantId mismatch on approve -> 403; non-string tenantId -> 422.
+    mismatch = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"tenantId": "tenant-beta", "confirm": True},
+    )
+    assert mismatch.status_code == 403
+    non_str_tid = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"tenantId": ["bad"], "confirm": True},
+    )
+    assert non_str_tid.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "bad_body",
+    [
+        {"text": 123},
+        {"text": 0},
+        {"text": True},
+        {"text": False},
+        {"text": ["書櫃"]},
+        {"text": {"q": "書櫃"}},
+        {"text": "書櫃\x00衣櫃"},
+        {"text": "高" + ("9" * 400) + "cm"},
+        {"text": "預算 " + ("9" * 400)},
+        {"variantCount": 0},
+        {"variantCount": -1},
+        {"variantCount": 101},
+        {"variantCount": 100000},
+        {"variantCount": 12.5},
+        {"variantCount": True},
+        {"variantCount": False},
+        {"variantCount": "12"},
+        {"variantCount": [12]},
+        {"variantCount": {"n": 12}},
+        {"idempotencyKey": ""},
+        {"idempotencyKey": "   "},
+        {"idempotencyKey": "k" * 201},
+        {"idempotencyKey": 99},
+        {"idempotencyKey": True},
+        {"idempotencyKey": ["k"]},
+        {"idempotencyKey": "bad\nkey"},
+    ],
+)
+def test_generate_bad_inputs_return_422_and_do_not_persist(tmp_path: Path, bad_body: dict[str, Any]) -> None:
+    _, client = _make_client(tmp_path)
+    res = client.post("/api/product-rd/generate", headers=TENANT_A, json=bad_body)
+    assert res.status_code == 422, f"expected 422 for {bad_body!r}, got {res.status_code}: {res.text}"
+    assert "traceback" not in res.text.lower()
+    assert str(tmp_path) not in res.text
+    assert client.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == 0
+
+
+def test_generate_backward_compatible_variant_count_null_and_empty_text(tmp_path: Path) -> None:
+    _, client = _make_client(tmp_path)
+
+    # Legacy range 1..100 (including <10 like 1, 5, 9 and >50 like 51, 100) must succeed and persist.
+    for count in (1, 5, 9, 51, 100):
+        res = client.post(
+            "/api/product-rd/generate",
+            headers=TENANT_A,
+            json={"text": "書櫃", "variantCount": count},
+        )
+        assert res.status_code == 200, (count, res.text)
+        data = res.json()
+        assert data["requestedVariantCount"] == count
+        assert data["text"] == "書櫃"
+        assert data["approval"]["status"] == "WAITING_APPROVAL"
+        assert client.get(f"/api/product-rd/results/{data['rdId']}", headers=TENANT_A).status_code == 200
+
+    # Explicit null variantCount and omitted variantCount both default to 12.
+    null_vc = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書櫃", "variantCount": None},
+    )
+    assert null_vc.status_code == 200, null_vc.text
+    assert null_vc.json()["requestedVariantCount"] == 12
+
+    omitted_vc = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書櫃"},
+    )
+    assert omitted_vc.status_code == 200, omitted_vc.text
+    assert omitted_vc.json()["requestedVariantCount"] == 12
+
+    # Empty, whitespace-only, explicit null, and omitted text are accepted per legacy contract.
+    for legacy_body, expected_text in (
+        ({}, ""),
+        ({"text": None}, ""),
+        ({"text": ""}, ""),
+        ({"text": "   "}, "   "),
+        ({"text": None, "variantCount": None}, ""),
+        ({"text": "", "variantCount": 5}, ""),
+    ):
+        resp = client.post("/api/product-rd/generate", headers=TENANT_A, json=legacy_body)
+        assert resp.status_code == 200, (legacy_body, resp.text)
+        payload = resp.json()
+        assert payload["text"] == expected_text
+        assert payload["baseSpec"]["kind"] == "CABINET"
+
+    # Normalized null/omitted/default inputs share the same idempotency fingerprint; different count conflicts.
+    idem_null = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": None, "variantCount": None, "idempotencyKey": "legacy-idem-null"},
+    )
+    assert idem_null.status_code == 200
+    idem_explicit = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "", "variantCount": 12, "idempotencyKey": "legacy-idem-null"},
+    )
+    assert idem_explicit.status_code == 200
+    assert idem_explicit.json()["rdId"] == idem_null.json()["rdId"]
+
+    idem_conflict = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "", "variantCount": 5, "idempotencyKey": "legacy-idem-null"},
+    )
+    assert idem_conflict.status_code == 409
+
+    # Tenant isolation holds for legacy inputs as well.
+    assert client.get(f"/api/product-rd/results/{idem_null.json()['rdId']}", headers=TENANT_B).status_code == 404
+
+
+@pytest.mark.parametrize(
+    "long_text",
+    [
+        "書櫃" + ("甲" * 2000),
+        "書櫃 " + ("x" * 5000),
+        "客廳 寬180cm 電視櫃 " + ("奶油風 " * 1500),
+    ],
+)
+def test_generate_accepts_long_text_like_legacy_contract(tmp_path: Path, long_text: str) -> None:
+    """Legacy /api/product-rd/generate never capped text length; long requests must still succeed and persist."""
+    plat, client = _make_client(tmp_path)
+
+    # The legacy generator itself handles this text directly.
+    direct = plat.rd.run(tenant_id="tenant-alpha", text=long_text, variant_count=1)
+    assert direct["baseSpec"]["kind"]
+
+    res = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": long_text, "variantCount": 1, "idempotencyKey": "long-text-1"},
+    )
+    assert res.status_code == 200, res.text[:500]
+    data = res.json()
+    assert data["requestedVariantCount"] == 1
+    assert data["text"] == long_text
+    assert data["baseSpec"]["kind"] == direct["baseSpec"]["kind"]
+
+    # Persisted verbatim, survives restart, idempotent resend returns the same record, tenant-scoped.
+    _, client2 = _make_client(tmp_path)
+    detail = client2.get(f"/api/product-rd/results/{data['rdId']}", headers=TENANT_A)
+    assert detail.status_code == 200
+    assert detail.json()["text"] == long_text
+    again = client2.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": long_text, "variantCount": 1, "idempotencyKey": "long-text-1"},
+    )
+    assert again.status_code == 200
+    assert again.json()["rdId"] == data["rdId"]
+    assert client2.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == 1
+    assert client2.get(f"/api/product-rd/results/{data['rdId']}", headers=TENANT_B).status_code == 404
+
+
+
+def test_non_terminal_or_failed_render_job_never_marks_truth_label_real(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+
+    for non_done_status in ("queued", "failed", "retry_scheduled"):
+        monkeypatch.setattr(
+            plat,
+            "render_parametric",
+            lambda pid, *, tenant_id: {
+                "parametric": {"spec": {"productId": pid}},
+                "job": {
+                    "jobId": f"job-{non_done_status}",
+                    "status": non_done_status,
+                    "error": "worker transient crash",
+                    "attemptCount": 1,
+                    "realBlender": True,
+                    "usedMock": False,
+                },
+            },
+        )
+        res = client.post(
+            "/api/product-rd/generate",
+            headers=TENANT_A,
+            json={"text": "電視櫃 180cm", "variantCount": 5},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["judgeLabel"] == "REAL"
+        assert body["truthLabel"] == "MOCK", f"status={non_done_status} must not claim REAL truthLabel"
+
+
+def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
+    _, client = _make_client(tmp_path)
+
+    min_vc = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書櫃 " + ("甲" * 1997), "variantCount": 1},
+    )
+    assert len("書櫃 " + ("甲" * 1997)) == 2000
+    assert min_vc.status_code == 200, min_vc.text
+    assert min_vc.json()["requestedVariantCount"] == 1
+
+    max_vc = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "電視櫃 180cm", "variantCount": 100},
+    )
+    assert max_vc.status_code == 200, max_vc.text
+    assert max_vc.json()["requestedVariantCount"] == 100
+    rd_id = max_vc.json()["rdId"]
+
+    for bad_actor in ("", "   ", "a" * 121, 123, True, ["a"], {"a": 1}, "bad\nactor"):
+        bad_ap = client.post(
+            f"/api/product-rd/results/{rd_id}/approve",
+            headers=TENANT_A,
+            json={"confirm": True, "actor": bad_actor},
+        )
+        assert bad_ap.status_code == 422, f"expected 422 for actor={bad_actor!r}"
+        assert "traceback" not in bad_ap.text.lower()

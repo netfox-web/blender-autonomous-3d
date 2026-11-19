@@ -66,6 +66,13 @@ from fox3d.publish import CatalogRelease
 from fox3d.release import ReleaseGate
 from fox3d.sandbox import SandboxRegistry
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
+from fox3d.product_rd_store import (
+    DEFAULT_RD_VARIANT_COUNT,
+    ProductRDStore,
+    validate_optional_idempotency_key,
+    validate_rd_text,
+    validate_rd_variant_count,
+)
 from fox3d.rd import GatewayVisionProvider, ProductRDAgent, VisionJudge
 from fox3d.recipes import BlenderRecipeResearchAgent, RecipeIntelligence
 from fox3d.scene import SceneDSL, compile_scene_graph
@@ -106,6 +113,7 @@ class Platform:
         self.spaces = SpacePipeline()
         self.judge = VisionJudge(GatewayVisionProvider(self.gateway))
         self.rd = ProductRDAgent(self.cabinets, self.cost, self.judge, self.studio)
+        self.rd_store = ProductRDStore(self.root / "product_rd")
         self.factory = FurnitureFactory(self)
         self.lots = MaterialLotRegistry(self.root / "lots")
         self.remnants = RemnantInventory(DurableRemnantStore(self.root / "remnants"), default_tenant="default")
@@ -889,12 +897,93 @@ class Platform:
         job = self.submit_job(payload)
         return self.execute_job(job)
 
-    def product_rd(self, *, tenant_id: str, text: str, variant_count: int = 12) -> dict[str, Any]:
-        result = self.rd.run(tenant_id=tenant_id, text=text, variant_count=variant_count)
-        result["HUMAN_APPROVAL_REQUIRED"] = True
-        if isinstance(result.get("approval"), dict):
-            result["approval"]["HUMAN_APPROVAL_REQUIRED"] = True
-        return result
+    def product_rd(
+        self,
+        *,
+        tenant_id: str,
+        text: str | None = "",
+        variant_count: int | None = DEFAULT_RD_VARIANT_COUNT,
+        idempotency_key: str | None = None,
+        render_base: bool = False,
+    ) -> dict[str, Any]:
+        from fox3d.infra import validate_tenant_id
+
+        tid = validate_tenant_id(tenant_id)
+        self.tenants.ensure(tid)
+        clean_text = validate_rd_text(text, required_non_empty=False)
+        clean_count = validate_rd_variant_count(variant_count)
+        idem = validate_optional_idempotency_key(idempotency_key)
+        fingerprint = stable_hash(
+            {
+                "text": clean_text,
+                "variantCount": clean_count,
+                "renderBase": bool(render_base),
+            }
+        )
+
+        def _build() -> dict[str, Any]:
+            result = self.rd.run(tenant_id=tid, text=clean_text, variant_count=clean_count)
+            try:
+                json.dumps(result, allow_nan=False)
+            except ValueError as exc:
+                raise ValueError("數值超出有效範圍") from exc
+            result["HUMAN_APPROVAL_REQUIRED"] = True
+            if isinstance(result.get("approval"), dict):
+                result["approval"]["HUMAN_APPROVAL_REQUIRED"] = True
+            if render_base and result.get("baseSpec") and not self._production_gate():
+                stored = self.create_parametric(
+                    {**result["baseSpec"], "tenantId": tid, "kind": result["baseSpec"].get("kind")}
+                )
+                result["parametricRender"] = self.render_parametric(stored["spec"]["productId"], tenant_id=tid)
+            return result
+
+        return self.rd_store.create_or_get(
+            tenant_id=tid,
+            text=clean_text,
+            variant_count=clean_count,
+            idempotency_key=idem,
+            fingerprint=fingerprint,
+            default_judge_status=str(getattr(self.judge.provider, "status", "MOCK")),
+            builder=_build,
+        )
+
+    def list_product_rd_results(
+        self,
+        *,
+        tenant_id: str,
+        offset: int = 0,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        return self.rd_store.list_results(tenant_id, offset=offset, limit=limit, cursor=cursor)
+
+    def get_product_rd_result(self, rd_id: str, *, tenant_id: str) -> dict[str, Any]:
+        return self.rd_store.get(tenant_id, rd_id)
+
+    def approve_product_rd(
+        self,
+        rd_id: str,
+        *,
+        tenant_id: str,
+        actor: str = "human",
+        confirm: Any = False,
+    ) -> dict[str, Any]:
+        from fox3d.infra import validate_tenant_id
+        from fox3d.operator import require_confirm
+
+        tid = validate_tenant_id(tenant_id)
+        if not self.rd_store.exists(tid, rd_id):
+            raise KeyError(rd_id)
+        if isinstance(confirm, float) or not isinstance(confirm, (bool, str, int)):
+            raise PermissionError("human confirmation required for product_rd_approve")
+        require_confirm({"confirm": confirm}, action="product_rd_approve")
+        return self.rd_store.approve(
+            tid,
+            rd_id,
+            actor=actor,
+            default_judge_status=str(getattr(self.judge.provider, "status", "MOCK")),
+            approve_fn=lambda rec, act: self.rd.approve(rec, actor=act),
+        )
 
     def furniture_factory_run(self, *, tenant_id: str, render: bool = False, **kwargs: Any) -> dict[str, Any]:
         return self.factory.run(tenant_id=tenant_id, render=render, **kwargs)
