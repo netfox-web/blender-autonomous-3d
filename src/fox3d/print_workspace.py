@@ -167,14 +167,21 @@ def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
     return (_job_created_at(path_str,j),j['id'])
 
 
-def _parse_composite_cursor(raw_cursor:str,tenant_token:str)->tuple[str,str]|None:
+def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]],folder=None)->tuple[str,str]|None:
     parts=raw_cursor.split('|')
-    if len(parts)!=3:
+    if len(parts)==3:
+        c_tenant,c_created,c_id=parts
+        if c_tenant!=tenant_token or not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
+            return None
+        return (c_created,c_id)
+    if len(parts)==2:
+        c_created,c_id=parts
+        if not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
+            return None
+        if any(item[1]['id']==c_id for item in entries) or (folder is not None and (folder/c_id/'job.json').is_file()):
+            return (c_created,c_id)
         return None
-    c_tenant,c_created,c_id=parts
-    if c_tenant!=tenant_token or not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
-        return None
-    return (c_created,c_id)
+    return None
 
 
 def listing(root,tenant,*,offset=0,limit=None,cursor=None):
@@ -218,7 +225,7 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
         if isinstance(cursor,str) and cursor.strip():
             raw_cursor=cursor.strip()
             if '|' in raw_cursor:
-                cursor_key=_parse_composite_cursor(raw_cursor,tenant_token)
+                cursor_key=_parse_composite_cursor(raw_cursor,tenant_token,entries,folder)
                 if cursor_key is not None:
                     filtered=[item for item in entries if _job_sort_key(item[0],item[1])<cursor_key]
                 else:

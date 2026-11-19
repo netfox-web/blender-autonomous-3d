@@ -1587,8 +1587,44 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert p2_deleted["total"] == 3
     assert p2_deleted["nextCursor"] is None
 
-    # Case 3: Cross-tenant cursor isolation — tenant-b ignores tenant-a's composite cursor
-    # even when tenant-b has records newer than, equal to (including identical anchor ID), or older than cursor_ab.
+    # Case 3: Legacy 2-part cursor ("createdAt|id") compatibility migration across version upgrade —
+    # a client that obtained a 2-part nextCursor before deployment and continues pagination without offset
+    # (so offset defaults to 0) must advance past [A, B] to [C, D] and receive a new 3-part nextCursor.
+    paths_a = reset_tenant_a_jobs()
+    legacy_cursor_ab = f"2026-11-19T00:03:00Z|{id_b}"
+    p2_legacy_page = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={legacy_cursor_ab}").json()
+    assert [x["id"] for x in p2_legacy_page["items"]] == [id_c]
+    assert p2_legacy_page["nextCursor"] == f"{ws_a.name}|2026-11-19T00:02:00Z|{id_c}"
+
+    p3_upgraded_page = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={p2_legacy_page['nextCursor']}").json()
+    assert [x["id"] for x in p3_upgraded_page["items"]] == [id_d]
+    assert p3_upgraded_page["nextCursor"] is None
+
+    # Legacy 2-part cursor also continues without offset when anchor B's file still belongs to tenant-a on disk
+    # even if anchor B's job.json became corrupted.
+    paths_a["B"].write_text("{corrupted-legacy-anchor", encoding="utf-8")
+    jobs.clear_job_cache()
+    p2_legacy_corrupted = c_a.get(f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}").json()
+    assert [x["id"] for x in p2_legacy_corrupted["items"]] == [id_c, id_d]
+    assert p2_legacy_corrupted["skipped"] == 1
+    assert p2_legacy_corrupted["nextCursor"] is None
+
+    # When a legacy 2-part cursor's anchor has completely disappeared from disk, tenant ownership cannot be
+    # verified from the legacy format alone, so it explicitly falls back to entries[offset:].
+    shutil.rmtree(paths_a["B"].parent)
+    jobs.clear_job_cache()
+    p2_legacy_deleted_with_offset = c_a.get(
+        f"/api/print-workspace/jobs?offset=2&limit=2&cursor={legacy_cursor_ab}"
+    ).json()
+    assert [x["id"] for x in p2_legacy_deleted_with_offset["items"]] == [id_d]
+    p2_legacy_deleted_no_offset = c_a.get(
+        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}"
+    ).json()
+    assert [x["id"] for x in p2_legacy_deleted_no_offset["items"]] == [id_a, id_c]
+
+    # Case 4: Cross-tenant cursor isolation — tenant-b ignores tenant-a's 3-part and legacy 2-part cursors
+    # even when tenant-b has records newer than, equal to (including identical anchor ID for 3-part), or older than cursor_ab.
+    paths_a = reset_tenant_a_jobs()
     b_newer_id = "00000000-0000-0000-0000-000000000099"
     b_older_id = "00000000-0000-0000-0000-000000000000"
     write_job(jobs_dir_b, b_newer_id, "2026-11-19T01:00:00Z", base_draft_b, "SKU-B-NEW")
@@ -1600,14 +1636,18 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert [x["id"] for x in b_with_a_cursor["items"]] == [b_newer_id, id_b, b_older_id]
     assert all(x["draft"]["sku"].startswith("SKU-B") for x in b_with_a_cursor["items"])
 
-    # Forged / legacy 2-part or malformed composite cursors without valid tenant token fall back to offset
+    # Cross-tenant legacy 2-part cursors (anchors belonging only to tenant-a) and malformed composite cursors fall back to offset
     for bad_cursor in (
-        f"2026-11-19T00:03:00Z|{id_b}",
+        f"2026-11-19T00:04:00Z|{id_a}",
+        f"2026-11-19T00:02:00Z|{id_c}",
+        "|",
         "||",
+        f"|{id_b}",
+        "2026-11-19T00:03:00Z|not-a-uuid",
         f"{ws_b.name}||00000000-0000-0000-0000-000000000003",
         f"{ws_b.name}|2026-11-19T00:03:00Z|not-a-uuid",
         f"{ws_b.name}|2026-11-19T00:03:00Z|{id_b}|extra",
     ):
-        res_bad = c_b.get(f"/api/print-workspace/jobs?offset=0&limit=10&cursor={bad_cursor}")
+        res_bad = c_b.get(f"/api/print-workspace/jobs?limit=10&cursor={bad_cursor}")
         assert res_bad.status_code == 200
         assert [x["id"] for x in res_bad.json()["items"]] == [b_newer_id, id_b, b_older_id]
