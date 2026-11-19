@@ -6,6 +6,7 @@ import csv
 import io
 import json
 from contextlib import contextmanager
+from datetime import datetime, time, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterator, Mapping, Protocol
@@ -43,13 +44,45 @@ class ProviderDisconnectedError(PermissionError):
     """The requested live provider is not connected."""
 
 
+# Files written before tenant stamping have no formatVersion. Their rows kept whatever
+# tenantId the caller sent, so none of them has a trustworthy owner.
+SNAPSHOT_FORMAT_VERSION = 2
+
+
+def _quarantine_legacy_row(row: dict[str, Any]) -> dict[str, Any]:
+    rec = dict(row)
+    claimed = rec.pop("tenantId", None)
+    if claimed is not None and "claimedTenantId" not in rec:
+        rec["claimedTenantId"] = claimed
+    return rec
+
+
+def _snapshot_key(row: dict[str, Any]) -> str | tuple[str, str]:
+    tenant = row.get("tenantId")
+    return (tenant, row["snapshotId"]) if isinstance(tenant, str) and tenant else row["snapshotId"]
+
+
+def _instant(value: str, *, end_of_day: bool = False) -> datetime:
+    # Naive timestamps and dates are UTC; date-only expirations include the whole day.
+    if not isinstance(value, str):
+        raise ValueError("Invalid snapshot timestamp")
+    if len(value) == 10:
+        day = datetime.strptime(value, "%Y-%m-%d").date()
+        return datetime.combine(day, time.max if end_of_day else time.min, tzinfo=timezone.utc)
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return (result if result.tzinfo else result.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
 class SnapshotStore:
     def __init__(self, root: Path | None = None, *, kind: str) -> None:
         self.kind = kind
         self.root = Path(root) if root else None
         if self.root:
             self.root.mkdir(parents=True, exist_ok=True)
-        self.items: dict[str, dict[str, Any]] = {}
+        self.items: dict[str | tuple[str, str], dict[str, Any]] = {}
+        # Pre-upgrade rows of unknown ownership. Never returned by active() or get().
+        self.legacy: dict[str, dict[str, Any]] = {}
+        self._legacy_unkeyed: list[Any] = []
         self._lock = RLock()
         self._file_lock = FileLock(str((self.root / f"{self.kind}.lock").resolve())) if self.root else None
         self.load()
@@ -71,12 +104,35 @@ class SnapshotStore:
         if not self.root:
             return
         payload = read_json(self.root / f"{self.kind}.json") or {}
-        self.items = {r["snapshotId"]: r for r in payload.get("items") or []}
+        if not isinstance(payload, dict):
+            payload = {}
+        if payload.get("formatVersion") == SNAPSHOT_FORMAT_VERSION:
+            trusted = payload.get("items") or []
+            legacy_rows = payload.get("legacyItems") or []
+        else:
+            trusted, legacy_rows = [], payload.get("items") or []
+        self.items = {_snapshot_key(r): r for r in trusted}
+        self.legacy = {}
+        self._legacy_unkeyed = []
+        for row in legacy_rows:
+            if isinstance(row, dict) and isinstance(row.get("snapshotId"), str):
+                self.legacy[row["snapshotId"]] = _quarantine_legacy_row(row)
+            else:
+                # Kept verbatim so a later write does not drop data an operator may need.
+                self._legacy_unkeyed.append(row)
 
     def persist(self) -> None:
         if not self.root:
             return
-        atomic_write_json(self.root / f"{self.kind}.json", {"kind": self.kind, "items": list(self.items.values())})
+        atomic_write_json(
+            self.root / f"{self.kind}.json",
+            {
+                "kind": self.kind,
+                "formatVersion": SNAPSHOT_FORMAT_VERSION,
+                "items": list(self.items.values()),
+                "legacyItems": [*self.legacy.values(), *self._legacy_unkeyed],
+            },
+        )
 
     def add(self, row: dict[str, Any], *, source: str) -> dict[str, Any]:
         return self.add_many([row], source=source)[0]
@@ -101,7 +157,7 @@ class SnapshotStore:
         with self._locked():
             self._load()
             previous = self.items
-            self.items = {**previous, **{rec["snapshotId"]: rec for rec in records}}
+            self.items = {**previous, **{_snapshot_key(rec): rec for rec in records}}
             try:
                 self.persist()
             except Exception:
@@ -109,12 +165,63 @@ class SnapshotStore:
                 raise
         return records
 
+    def assign_legacy(self, snapshot_ids: list[str], *, tenant_id: str) -> int:
+        """Assign explicitly identified quarantined records under the store lock; never overwrite.
+
+        Only rows from pre-upgrade files are eligible. Their stored tenantId was supplied by
+        the importer, so the owner must come from an independent, trusted source.
+        """
+        if not isinstance(tenant_id, str) or not tenant_id or not snapshot_ids or len(set(snapshot_ids)) != len(snapshot_ids):
+            raise ValueError("A tenant and unique snapshot IDs are required")
+        with self._locked():
+            self._load()
+            if any(sid not in self.legacy or (tenant_id, sid) in self.items for sid in snapshot_ids):
+                raise ValueError("Legacy snapshot missing or destination already exists")
+            previous_items, previous_legacy = self.items, self.legacy
+            self.items, self.legacy = dict(previous_items), dict(previous_legacy)
+            for sid in snapshot_ids:
+                row = dict(self.legacy.pop(sid))
+                row["tenantId"] = tenant_id
+                row["snapshotHash"] = _row_hash(row)
+                self.items[(tenant_id, sid)] = row
+            try:
+                self.persist()
+            except Exception:
+                self.items, self.legacy = previous_items, previous_legacy
+                raise
+            return len(snapshot_ids)
+
+    def quarantined(self) -> list[dict[str, Any]]:
+        """Pre-upgrade rows awaiting a trusted ownership decision (maintenance use only)."""
+        with self._locked():
+            self._load()
+            return [dict(row) for row in self.legacy.values()]
+
+    def get(self, snapshot_id: str, *, tenant_id: str | None = None) -> dict[str, Any] | None:
+        """Exact lookup. A tenant sees only its own rows; no tenant sees only unscoped rows."""
+        if not isinstance(snapshot_id, str) or not snapshot_id:
+            return None
+        if tenant_id is not None and (not isinstance(tenant_id, str) or not tenant_id):
+            return None
+        key: str | tuple[str, str] = (tenant_id, snapshot_id) if tenant_id else snapshot_id
+        with self._locked():
+            self._load()
+            row = self.items.get(key)
+        return dict(row) if row is not None else None
+
     def active(self, *, at: str | None = None) -> list[dict[str, Any]]:
         with self._locked():
             self._load()
             rows = list(self.items.values())
         if at:
-            rows = [r for r in rows if str(r.get("effectiveAt") or "") <= at and (not r.get("expiresAt") or str(r["expiresAt"]) >= at)]
+            moment = _instant(at)
+            def valid(row: dict[str, Any]) -> bool:
+                try:
+                    start, end = row.get("effectiveAt"), row.get("expiresAt")
+                    return (start in (None, "") or _instant(start) <= moment) and (end in (None, "") or _instant(end, end_of_day=True) >= moment)
+                except (ValueError, TypeError, OverflowError):
+                    return False
+            rows = [r for r in rows if valid(r)]
         return rows
 
 

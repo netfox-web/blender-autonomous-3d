@@ -43,6 +43,17 @@ class JobList(list):
     next_cursor: str | None = None
 
 
+class CursorExpiredError(ValueError):
+    """A legacy 2-part job cursor whose anchor can no longer be verified.
+
+    Mapped to HTTP 410 so that already-deployed clients (which do not know the
+    ``cursorExpired`` flag) reject instead of treating an empty page as the end.
+    """
+
+    def __init__(self)->None:
+        super().__init__('分頁游標已失效，請從第一頁重新載入清單')
+
+
 def _file_sig(path)->tuple[int,int,int]|None:
     try:
         st=path.stat()
@@ -180,6 +191,14 @@ def _valid_cursor_timestamp(value:str)->bool:
     return True
 
 
+def _is_legacy_two_part_cursor(raw_cursor:str)->bool:
+    parts=raw_cursor.split('|')
+    if len(parts)!=2:
+        return False
+    c_created,c_id=parts
+    return _valid_cursor_timestamp(c_created) and bool(re.fullmatch(r'[a-f0-9-]{36}',c_id))
+
+
 def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]],folder=None)->tuple[str,str]|None:
     parts=raw_cursor.split('|')
     if len(parts)==3:
@@ -246,6 +265,8 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
                 cursor_key=_parse_composite_cursor(raw_cursor,tenant_token,entries,folder)
                 if cursor_key is not None:
                     filtered=[item for item in entries if _job_sort_key(item[0],item[1])<cursor_key]
+                elif _is_legacy_two_part_cursor(raw_cursor):
+                    raise CursorExpiredError()
                 else:
                     filtered=entries[offset:]
             else:
@@ -271,7 +292,7 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
 
 def list_jobs(root,tenant,*,offset=0,limit=100,cursor=None):
     rows=listing(root,tenant,offset=offset,limit=limit,cursor=cursor)
-    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped,'nextCursor':rows.next_cursor}
+    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped,'nextCursor':rows.next_cursor,'cursorExpired':False}
 
 
 def save_job(root,tenant,draft,*,jid=None,expected_revision=0):

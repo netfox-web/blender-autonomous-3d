@@ -1261,23 +1261,31 @@ def test_job_cursor_stays_inside_caller_tenant_and_still_continues_after_cursor_
     assert [item["id"] for item in own_next.json()["items"]] == [b_old]
 
     legacy = f"{body['items'][0]['createdAt']}|{a3}"
+    # A legacy 2-part cursor whose anchor is not in the caller's tenant cannot be verified:
+    # explicit 410 (old clients throw on !ok) instead of an empty 200 page they would treat as the end.
     legacy_foreign = c_b.get(f"/api/print-workspace/jobs?cursor={legacy}")
-    assert legacy_foreign.status_code == 200
-    assert [item["id"] for item in legacy_foreign.json()["items"]] == [b_new, b_old]
+    assert legacy_foreign.status_code == 410
+    assert isinstance(legacy_foreign.json()["detail"], str) and legacy_foreign.json()["detail"]
+    assert a3 not in legacy_foreign.text and a2 not in legacy_foreign.text and a1 not in legacy_foreign.text
+    assert b_new not in legacy_foreign.text and str(tmp_path) not in legacy_foreign.text
+    # The owner's verifiable legacy cursor keeps working after the old sunset date.
     legacy_own = c_a.get(f"/api/print-workspace/jobs?cursor={legacy}&limit=1")
     assert legacy_own.status_code == 200
+    assert legacy_own.json()["cursorExpired"] is False
     assert [item["id"] for item in legacy_own.json()["items"]] == [a2]
 
     ancient = c_b.get(
         "/api/print-workspace/jobs?cursor=1990-01-01T00:00:00Z|00000000-0000-0000-0000-000000000099"
     )
-    assert ancient.status_code == 200
-    assert [item["id"] for item in ancient.json()["items"]] == [b_new, b_old]
+    assert ancient.status_code == 410
+    assert "Traceback" not in ancient.text
     mismatched = c_b.get(f"/api/print-workspace/jobs?cursor={body['items'][0]['createdAt']}|{a3}|{'0' * 24}")
     assert mismatched.status_code == 200
+    assert mismatched.json()["cursorExpired"] is False
     assert [item["id"] for item in mismatched.json()["items"]] == [b_new, b_old]
     blank = c_b.get("/api/print-workspace/jobs?cursor=")
     assert blank.status_code == 200
+    assert blank.json()["cursorExpired"] is False
     assert [item["id"] for item in blank.json()["items"]] == [b_new, b_old]
 
     def _list(tenant: str) -> list[str]:
@@ -1576,15 +1584,70 @@ def test_ui_fetch_all_pages_1000_jobs_with_mid_pagination_update_loses_no_items(
 
       let filtered = jobs;
       if (cursor && cursor.includes('|')) {{
-        const [cTime, cId] = cursor.split('|');
+        const parts = cursor.split('|');
+        if (parts.length === 2) {{
+          return {{ items: [], total: jobs.length, offset, limit, skipped: 0, nextCursor: null, cursorExpired: true }};
+        }}
+        const [, cTime, cId] = parts;
         filtered = jobs.filter(j => (j.createdAt < cTime) || (j.createdAt === cTime && j.id < cId));
       }} else {{
         filtered = jobs.slice(offset);
       }}
       const sliced = filtered.slice(0, limit);
       const last = sliced[sliced.length - 1];
-      const nextCursor = (last && last.id !== jobs[jobs.length - 1].id) ? `${{last.createdAt}}|${{last.id}}` : null;
-      return {{ items: sliced, total: jobs.length, offset, limit, skipped: 0, nextCursor }};
+      const nextCursor = (last && last.id !== jobs[jobs.length - 1].id) ? `tenant-a|${{last.createdAt}}|${{last.id}}` : null;
+      return {{ items: sliced, total: jobs.length, offset, limit, skipped: 0, nextCursor, cursorExpired: false }};
+    }}
+
+    // Also verify that when page 1 initially hands out a retired 2-part cursor and anchor is deleted before page 2,
+    // receiving cursorExpired: true causes fox3dFetchAllPages to restart from page 1 instead of duplicating items.
+    const smallJobs = [
+      {{ id: '00000000-0000-0000-0000-000000000004', createdAt: '2026-11-19T00:04:00Z' }},
+      {{ id: '00000000-0000-0000-0000-000000000003', createdAt: '2026-11-19T00:03:00Z' }},
+      {{ id: '00000000-0000-0000-0000-000000000002', createdAt: '2026-11-19T00:02:00Z' }},
+      {{ id: '00000000-0000-0000-0000-000000000001', createdAt: '2026-11-19T00:01:00Z' }},
+    ];
+    const expiredCalls = [];
+    async function mockExpiredApi(path) {{
+      expiredCalls.push(path);
+      const u = new URL(path, 'http://localhost');
+      const limit = Number(u.searchParams.get('limit') || 2);
+      const cursor = u.searchParams.get('cursor') || '';
+      if (expiredCalls.length === 1) {{
+        // First response from pre-upgrade server with legacy 2-part cursor
+        return {{
+          items: smallJobs.slice(0, 2),
+          total: 4,
+          offset: 0,
+          limit: 2,
+          skipped: 0,
+          nextCursor: `${{smallJobs[1].createdAt}}|${{smallJobs[1].id}}`,
+        }};
+      }}
+      if (expiredCalls.length === 2) {{
+        // Anchor B was deleted and server now rejects 2-part cursor with cursorExpired: true
+        smallJobs.splice(1, 1);
+        return {{
+          items: [],
+          total: smallJobs.length,
+          offset: 2,
+          limit: 2,
+          skipped: 0,
+          nextCursor: null,
+          cursorExpired: true,
+        }};
+      }}
+      let filtered = smallJobs;
+      if (cursor) {{
+        const [, cTime, cId] = cursor.split('|');
+        filtered = smallJobs.filter(j => (j.createdAt < cTime) || (j.createdAt === cTime && j.id < cId));
+      }}
+      const sliced = filtered.slice(0, limit);
+      const last = sliced[sliced.length - 1];
+      const nextCursor = (last && last.id !== smallJobs[smallJobs.length - 1].id)
+        ? `tenant-a|${{last.createdAt}}|${{last.id}}`
+        : null;
+      return {{ items: sliced, total: smallJobs.length, offset: 0, limit: 2, skipped: 0, nextCursor, cursorExpired: false }};
     }}
 
     (async () => {{
@@ -1592,12 +1655,39 @@ def test_ui_fetch_all_pages_1000_jobs_with_mid_pagination_update_loses_no_items(
       const res = await global.window.fox3dFetchAllPages(mockApi, '/jobs');
       const uniqueIds = new Set(res.items.map(x => x.id));
       const updatedItem = res.items.find(x => x.id === updatedTargetId);
+      const secondCursor = new URL(calls[1], 'http://localhost').searchParams.get('cursor') || '';
+      const expiredRes = await global.window.fox3dFetchAllPages(mockExpiredApi, '/jobs');
+      const initialExpiredCalls = [];
+      const initialExpiredRes = await global.window.fox3dFetchAllPages(async (p) => {{
+        initialExpiredCalls.push(p);
+        if (p.includes('cursor=2026-11-19T00:03:00Z|')) {{
+          return {{ items: [], total: 3, offset: 0, limit: 2, skipped: 0, nextCursor: null, cursorExpired: true }};
+        }}
+        const u = new URL(p, 'http://localhost');
+        const c = u.searchParams.get('cursor') || '';
+        let filtered = smallJobs;
+        if (c) {{
+          const [, cTime, cId] = c.split('|');
+          filtered = smallJobs.filter(j => (j.createdAt < cTime) || (j.createdAt === cTime && j.id < cId));
+        }}
+        const sliced = filtered.slice(0, 2);
+        const last = sliced[sliced.length - 1];
+        const nextCursor = (last && last.id !== smallJobs[smallJobs.length - 1].id)
+          ? `tenant-a|${{last.createdAt}}|${{last.id}}`
+          : null;
+        return {{ items: sliced, total: smallJobs.length, offset: 0, limit: 2, skipped: 0, nextCursor, cursorExpired: false }};
+      }}, '/jobs?cursor=2026-11-19T00:03:00Z|00000000-0000-0000-0000-000000000003');
       console.log(JSON.stringify({{
         callCount: calls.length,
         secondCallHasCursor: calls[1].includes('cursor='),
+        secondCursorPartCount: secondCursor.split('|').length,
         totalReturned: res.items.length,
         uniqueCount: uniqueIds.size,
         updatedRevision: updatedItem ? updatedItem.revision : 0,
+        expiredCallCount: expiredCalls.length,
+        expiredItems: expiredRes.items.map(x => x.id),
+        initialExpiredCalls,
+        initialExpiredItems: initialExpiredRes.items.map(x => x.id),
       }}));
     }})();
     """
@@ -1605,9 +1695,130 @@ def test_ui_fetch_all_pages_1000_jobs_with_mid_pagination_update_loses_no_items(
     out = json.loads(proc.stdout.strip().splitlines()[-1])
     assert out["callCount"] == 10
     assert out["secondCallHasCursor"] is True
+    assert out["secondCursorPartCount"] == 3
     assert out["totalReturned"] == 1000
     assert out["uniqueCount"] == 1000
     assert out["updatedRevision"] == 2
+    assert out["expiredCallCount"] == 4
+    assert out["expiredItems"] == [
+        "00000000-0000-0000-0000-000000000004",
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000001",
+    ]
+    assert out["initialExpiredCalls"][0] == "/jobs?cursor=2026-11-19T00:03:00Z|00000000-0000-0000-0000-000000000003"
+    assert out["initialExpiredCalls"][1] == "/jobs"
+    assert out["initialExpiredItems"] == [
+        "00000000-0000-0000-0000-000000000004",
+        "00000000-0000-0000-0000-000000000002",
+        "00000000-0000-0000-0000-000000000001",
+    ]
+
+
+def test_ui_fetch_all_pages_rejects_when_cursor_expires_again_after_retry() -> None:
+    """A second cursorExpired after the restart must reject, never return a partial list as complete."""
+    node = shutil.which("node")
+    assert node is not None, "node is required for UI pagination verification"
+
+    pagination_js_path = STATIC / "fox3d-pagination.js"
+    harness = f"""
+    const fs = require('fs');
+    const code = fs.readFileSync({json.dumps(str(pagination_js_path))}, 'utf8');
+    global.window = {{}};
+    eval(code);
+    const fetchAll = global.window.fox3dFetchAllPages;
+
+    (async () => {{
+    const jobA = {{ id: '00000000-0000-0000-0000-000000000002', createdAt: '2026-11-19T00:02:00Z' }};
+    const expiredPage = {{ items: [], total: 2, offset: 1, limit: 1, skipped: 0, nextCursor: null, cursorExpired: true }};
+
+    async function settle(promise) {{
+      try {{
+        const value = await promise;
+        return {{ ok: true, count: value.items.length, total: value.total }};
+      }} catch (err) {{
+        return {{
+          ok: false,
+          message: String(err && err.message),
+          cursorExpired: Boolean(err && err.cursorExpired),
+          incompleteResult: Boolean(err && err.incompleteResult),
+          status: err && err.status,
+        }};
+      }}
+    }}
+
+    // Rolling deploy: both first-page responses come from an old server that hands out a legacy
+    // 2-part cursor, and every follow-up page is answered by the new server, which rejects it.
+    const rollingCalls = [];
+    const rolling = await settle(fetchAll(async (p) => {{
+      rollingCalls.push(p);
+      if (p.includes('cursor=')) return expiredPage;
+      return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `${{jobA.createdAt}}|${{jobA.id}}` }};
+    }}, '/jobs'));
+
+    // The cursor in the initial request is expired, and the first page is still expired after
+    // dropping it.
+    const initialCalls = [];
+    const initial = await settle(fetchAll(async (p) => {{
+      initialCalls.push(p);
+      return expiredPage;
+    }}, '/jobs?cursor=2026-11-19T00:03:00Z|00000000-0000-0000-0000-000000000003'));
+
+    // The follow-up page after the restart fails with HTTP 400: the original error must surface.
+    const badRequestCalls = [];
+    const badRequest = await settle(fetchAll(async (p) => {{
+      badRequestCalls.push(p);
+      if (p.includes('cursor=')) {{
+        const err = new Error('bad cursor');
+        err.status = 400;
+        throw err;
+      }}
+      return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `${{jobA.createdAt}}|${{jobA.id}}` }};
+    }}, '/jobs'));
+
+    // A single expiry is still recovered by restarting from the first page.
+    let recoveredCalls = 0;
+    const jobB = {{ id: '00000000-0000-0000-0000-000000000001', createdAt: '2026-11-19T00:01:00Z' }};
+    const recovered = await settle(fetchAll(async (p) => {{
+      recoveredCalls++;
+      if (recoveredCalls === 1) {{
+        return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `${{jobA.createdAt}}|${{jobA.id}}` }};
+      }}
+      if (recoveredCalls === 2) return expiredPage;
+      if (p.includes('cursor=')) {{
+        return {{ items: [jobB], total: 2, offset: 1, limit: 1, skipped: 0, nextCursor: null }};
+      }}
+      return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `tenant-a|${{jobA.createdAt}}|${{jobA.id}}` }};
+    }}, '/jobs'));
+
+    console.log(JSON.stringify({{ rolling, rollingCalls, initial, initialCalls, badRequest, badRequestCalls, recovered, recoveredCalls }}));
+    }})().catch(err => {{ console.error(err); process.exit(1); }});
+    """
+    proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    assert out["rolling"]["ok"] is False, out["rolling"]
+    assert out["rolling"]["cursorExpired"] is True
+    assert out["rolling"]["incompleteResult"] is True
+    assert "游標已失效" in out["rolling"]["message"]
+    assert len(out["rollingCalls"]) == 4
+    assert out["rollingCalls"][0] == "/jobs"
+    assert out["rollingCalls"][2] == "/jobs"
+
+    assert out["initial"]["ok"] is False, out["initial"]
+    assert out["initial"]["cursorExpired"] is True
+    assert out["initial"]["incompleteResult"] is True
+    assert out["initialCalls"] == [
+        "/jobs?cursor=2026-11-19T00:03:00Z|00000000-0000-0000-0000-000000000003",
+        "/jobs",
+    ]
+
+    assert out["badRequest"]["ok"] is False, out["badRequest"]
+    assert out["badRequest"]["status"] == 400
+    assert out["badRequest"]["message"] == "bad cursor"
+    assert len(out["badRequestCalls"]) == 4
+
+    assert out["recovered"] == {"ok": True, "count": 2, "total": 2}
+    assert out["recoveredCalls"] == 4
 
 
 def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores_cross_tenant_cursor(
@@ -1671,6 +1882,7 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     p1 = c_a.get("/api/print-workspace/jobs?offset=0&limit=2").json()
     assert [x["id"] for x in p1["items"]] == [id_a, id_b]
     assert p1["nextCursor"]
+    assert p1["cursorExpired"] is False
     cursor_ab = p1["nextCursor"]
 
     paths_a["B"].write_text("{corrupted-anchor-json", encoding="utf-8")
@@ -1679,6 +1891,7 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert p2_corrupted["skipped"] == 1
     assert p2_corrupted["total"] == 3
     assert p2_corrupted["nextCursor"] is None
+    assert p2_corrupted["cursorExpired"] is False
 
     # Case 2: Anchor B's job.json disappears (deleted) after page 1 is fetched;
     # page 2 (with cumulative offset=2 and cursor anchored at B) must return [C, D], not [D].
@@ -1694,49 +1907,58 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert p2_deleted["skipped"] == 0
     assert p2_deleted["total"] == 3
     assert p2_deleted["nextCursor"] is None
+    assert p2_deleted["cursorExpired"] is False
 
     # Compatibility with main's 3-part cursor format ("createdAt|id|tenant_tag") when anchor is deleted
     main_3part_cursor_ab = f"2026-11-19T00:03:00Z|{id_b}|{ws_a.name}"
     p2_deleted_main_fmt = c_a.get(f"/api/print-workspace/jobs?offset=2&limit=2&cursor={main_3part_cursor_ab}").json()
     assert [x["id"] for x in p2_deleted_main_fmt["items"]] == [id_c, id_d]
     assert p2_deleted_main_fmt["nextCursor"] is None
+    assert p2_deleted_main_fmt["cursorExpired"] is False
 
-    # Case 3: Legacy 2-part cursor ("createdAt|id") compatibility migration across version upgrade —
-    # a client that obtained a 2-part nextCursor before deployment and continues pagination without offset
-    # (so offset defaults to 0) must advance past [A, B] to [C, D] and receive a new 3-part nextCursor.
+    # Case 3: Legacy 2-part cursor ("createdAt|id") handed out by pre-upgrade servers.
+    # A verifiable anchor keeps paginating (no date-based retirement); an anchor that can no longer be
+    # verified gets an explicit HTTP 410 instead of an empty 200 page that old clients read as "end of list".
     paths_a = reset_tenant_a_jobs()
     legacy_cursor_ab = f"2026-11-19T00:03:00Z|{id_b}"
     p2_legacy_page = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={legacy_cursor_ab}").json()
+    assert p2_legacy_page["cursorExpired"] is False
+    assert "legacyCursorSunset" not in p2_legacy_page
     assert [x["id"] for x in p2_legacy_page["items"]] == [id_c]
     assert p2_legacy_page["nextCursor"] == f"{ws_a.name}|2026-11-19T00:02:00Z|{id_c}"
+    p3_from_legacy = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={p2_legacy_page['nextCursor']}").json()
+    assert [x["id"] for x in p3_from_legacy["items"]] == [id_d]
+    assert p3_from_legacy["nextCursor"] is None
 
-    p3_upgraded_page = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={p2_legacy_page['nextCursor']}").json()
-    assert [x["id"] for x in p3_upgraded_page["items"]] == [id_d]
-    assert p3_upgraded_page["nextCursor"] is None
-
-    # Legacy 2-part cursor also continues without offset when anchor B's file still belongs to tenant-a on disk
-    # even if anchor B's job.json became corrupted.
+    # Anchor file still in the caller's tenant but corrupted: the cursor position is still known, keep going.
     paths_a["B"].write_text("{corrupted-legacy-anchor", encoding="utf-8")
     jobs.clear_job_cache()
     p2_legacy_corrupted = c_a.get(f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}").json()
+    assert p2_legacy_corrupted["cursorExpired"] is False
     assert [x["id"] for x in p2_legacy_corrupted["items"]] == [id_c, id_d]
     assert p2_legacy_corrupted["skipped"] == 1
     assert p2_legacy_corrupted["nextCursor"] is None
 
-    # When a legacy 2-part cursor's anchor has completely disappeared from disk, tenant ownership cannot be
-    # verified from the legacy format alone, so it explicitly falls back to entries[offset:].
+    # Anchor deleted: position cannot be verified -> 410, with or without offset, and repeatable.
     shutil.rmtree(paths_a["B"].parent)
     jobs.clear_job_cache()
-    p2_legacy_deleted_with_offset = c_a.get(
-        f"/api/print-workspace/jobs?offset=2&limit=2&cursor={legacy_cursor_ab}"
-    ).json()
-    assert [x["id"] for x in p2_legacy_deleted_with_offset["items"]] == [id_d]
-    p2_legacy_deleted_no_offset = c_a.get(
-        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}"
-    ).json()
-    assert [x["id"] for x in p2_legacy_deleted_no_offset["items"]] == [id_a, id_c]
+    for legacy_url in (
+        f"/api/print-workspace/jobs?offset=2&limit=2&cursor={legacy_cursor_ab}",
+        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}",
+        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}",
+    ):
+        gone = c_a.get(legacy_url)
+        assert gone.status_code == 410, gone.text
+        assert "游標已失效" in gone.json()["detail"]
+        assert id_c not in gone.text and id_d not in gone.text
+        assert str(tmp_path) not in gone.text and "Traceback" not in gone.text
 
-    # Case 4: Cross-tenant cursor isolation — tenant-b ignores tenant-a's 3-part and legacy 2-part cursors
+    # Anchor exists but its sort key no longer matches the cursor (createdAt differs) -> 410.
+    paths_a = reset_tenant_a_jobs()
+    mismatched_legacy = c_a.get(f"/api/print-workspace/jobs?limit=2&cursor=2026-11-18T00:00:00Z|{id_b}")
+    assert mismatched_legacy.status_code == 410
+
+    # Case 4: Cross-tenant cursor isolation — tenant-b ignores tenant-a's 3-part cursors
     # even when tenant-b has records newer than, equal to (including identical anchor ID for 3-part), or older than cursor_ab.
     paths_a = reset_tenant_a_jobs()
     b_newer_id = "00000000-0000-0000-0000-000000000099"
@@ -1747,19 +1969,28 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
 
     b_with_a_cursor = c_b.get(f"/api/print-workspace/jobs?offset=0&limit=10&cursor={cursor_ab}").json()
     assert b_with_a_cursor["total"] == 3
+    assert b_with_a_cursor["cursorExpired"] is False
     assert [x["id"] for x in b_with_a_cursor["items"]] == [b_newer_id, id_b, b_older_id]
     assert all(x["draft"]["sku"].startswith("SKU-B") for x in b_with_a_cursor["items"])
 
     b_with_a_main_cursor = c_b.get(f"/api/print-workspace/jobs?offset=0&limit=10&cursor={main_3part_cursor_ab}").json()
     assert b_with_a_main_cursor["total"] == 3
+    assert b_with_a_main_cursor["cursorExpired"] is False
     assert [x["id"] for x in b_with_a_main_cursor["items"]] == [b_newer_id, id_b, b_older_id]
 
-    # Cross-tenant legacy 2-part cursors (anchors belonging only to tenant-a, or colliding ID with mismatched createdAt)
-    # and malformed composite cursors fall back to offset
-    for bad_cursor in (
+    # Cross-tenant legacy 2-part cursors cannot be verified in tenant-b: 410, never tenant-a or tenant-b records
+    for foreign_legacy_cursor in (
         f"2026-11-19T00:04:00Z|{id_a}",
         f"2026-11-19T00:02:00Z|{id_c}",
         f"2026-11-18T00:00:00Z|{id_b}",
+    ):
+        res_foreign = c_b.get(f"/api/print-workspace/jobs?limit=10&cursor={foreign_legacy_cursor}")
+        assert res_foreign.status_code == 410
+        assert id_a not in res_foreign.text and id_c not in res_foreign.text
+        assert b_newer_id not in res_foreign.text and b_older_id not in res_foreign.text
+
+    # Malformed composite cursors fall back to offset
+    for bad_cursor in (
         "|",
         "||",
         f"|{id_b}",
@@ -1776,4 +2007,109 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     ):
         res_bad = c_b.get(f"/api/print-workspace/jobs?limit=10&cursor={bad_cursor}")
         assert res_bad.status_code == 200
+        assert res_bad.json()["cursorExpired"] is False
         assert [x["id"] for x in res_bad.json()["items"]] == [b_newer_id, id_b, b_older_id]
+
+
+LEGACY_PAGINATION_JS = Path(__file__).resolve().parent / "fixtures" / "legacy_fox3d_pagination.js"
+
+
+def _run_cross_version_pagination(old_first_page: dict, responses: dict[str, dict]) -> dict:
+    """Paginate /jobs with the frozen pre-upgrade client and the current client.
+
+    The first request is answered by an old server (``old_first_page``, which hands out a legacy
+    2-part cursor); every later request is answered by the current server (``responses`` holds the
+    real HTTP status/body per path). The api shim mirrors print-workspace.js: throw on !ok with
+    ``err.status``.
+    """
+    node = shutil.which("node")
+    assert node is not None, "node is required for UI pagination verification"
+    harness = f"""
+    const fs = require('fs');
+    function load(file) {{
+      const sandbox = {{ exports: {{}} }};
+      new Function('module', 'window', 'globalThis', fs.readFileSync(file, 'utf8'))(sandbox, undefined, undefined);
+      return sandbox.exports.fetchAllPages;
+    }}
+    const clients = {{
+      legacy: load({json.dumps(str(LEGACY_PAGINATION_JS))}),
+      current: load({json.dumps(str(STATIC / "fox3d-pagination.js"))}),
+    }};
+    const oldFirst = {json.dumps(old_first_page)};
+    const responses = {json.dumps(responses)};
+    (async () => {{
+      const out = {{}};
+      for (const [name, fetchAll] of Object.entries(clients)) {{
+        const calls = [];
+        const api = async (path) => {{
+          calls.push(path);
+          if (calls.length === 1) return JSON.parse(JSON.stringify(oldFirst));
+          const res = responses[path];
+          if (!res) throw Object.assign(new Error('unexpected path ' + path), {{ status: -1 }});
+          if (res.status !== 200) {{
+            throw Object.assign(new Error(String(res.body && res.body.detail)), {{ status: res.status }});
+          }}
+          return JSON.parse(JSON.stringify(res.body));
+        }};
+        try {{
+          const value = await fetchAll(api, '/jobs');
+          out[name] = {{ ok: true, ids: value.items.map(x => x.id), total: value.total, calls }};
+        }} catch (err) {{
+          out[name] = {{ ok: false, status: err && err.status, message: String(err && err.message), calls }};
+        }}
+      }}
+      console.log(JSON.stringify(out));
+    }})().catch(err => {{ console.error(err); process.exit(1); }});
+    """
+    proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def test_legacy_client_cross_version_pagination_never_returns_partial_list(tmp_path: Path) -> None:
+    """Rolling deploy: an old server hands out page 1 with a 2-part cursor, the new server answers page 2.
+
+    The already-deployed client (no cursorExpired support) must get either the full list (anchor still
+    verifiable) or an error (anchor gone) -- never a partial list reported as complete.
+    """
+    from urllib.parse import quote
+
+    c_a = _make_client(tmp_path, "tenant-a")
+    newer, older = "00000000-0000-0000-0000-000000000302", "00000000-0000-0000-0000-000000000301"
+    _write_listed_job(tmp_path, "tenant-a", newer, "2026-11-18T00:00:02Z", "X-2")
+    _write_listed_job(tmp_path, "tenant-a", older, "2026-11-18T00:00:01Z", "X-1")
+
+    first = c_a.get("/api/print-workspace/jobs?limit=1").json()
+    assert [x["id"] for x in first["items"]] == [newer]
+    legacy_cursor = f"{first['items'][0]['createdAt']}|{newer}"
+    # What a pre-upgrade server returned: 2-part cursor and no cursorExpired flag.
+    old_first_page = {k: v for k, v in first.items() if k != "cursorExpired"} | {"nextCursor": legacy_cursor}
+    page2_path = f"/jobs?offset=1&limit=1&cursor={quote(legacy_cursor, safe=chr(39) + '-_.!~*()')}"
+
+    def serve(paths: list[str]) -> dict[str, dict]:
+        jobs.clear_job_cache()
+        out = {}
+        for path in paths:
+            res = c_a.get(f"/api/print-workspace{path}")
+            out[path] = {"status": res.status_code, "body": res.json()}
+        return out
+
+    # Anchor still exists: the new server keeps honouring the verifiable legacy cursor.
+    kept = _run_cross_version_pagination(old_first_page, serve([page2_path, "/jobs"]))
+    for name in ("legacy", "current"):
+        assert kept[name]["ok"] is True, kept
+        assert kept[name]["ids"] == [newer, older]
+        assert kept[name]["total"] == 2
+        assert kept[name]["calls"] == ["/jobs", page2_path]
+
+    # Anchor deleted before page 2: the new server refuses with 410; the old client rejects instead of
+    # returning 1 of 2 as complete, and the current client restarts from page 1 and gets the full list.
+    shutil.rmtree(assets.workspace(tmp_path, "tenant-a") / "jobs" / newer)
+    gone = _run_cross_version_pagination(old_first_page, serve([page2_path, "/jobs"]))
+    assert gone["legacy"]["ok"] is False, gone
+    assert gone["legacy"]["status"] == 410
+    assert "游標已失效" in gone["legacy"]["message"]
+    assert gone["legacy"]["calls"] == ["/jobs", page2_path]
+    assert gone["current"]["ok"] is True, gone
+    assert gone["current"]["ids"] == [older]
+    assert gone["current"]["total"] == 1
+    assert gone["current"]["calls"] == ["/jobs", page2_path, "/jobs"]

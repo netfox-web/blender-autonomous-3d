@@ -519,3 +519,42 @@ def test_whole_number_float_moq_keeps_integer_risk() -> None:
     assert by_id["two"]["moqRisk"] == 1
     at_two = svc.compare(["two"], release_hash="r", quantity=2)
     assert at_two["ranked"][0]["moqRisk"] == 0
+
+
+def test_compare_resolves_fx_by_tenant_when_ids_collide(tmp_path) -> None:  # noqa: ANN001
+    from fox3d.commerce import ProviderRegistry
+
+    svc = SupplierQuoteService(ProviderRegistry(tmp_path))
+    quote = _quote(svc, "q1")
+    svc.import_fx({"snapshotId": "shared", "pair": "USD/TWD", "rate": 30}, source="MANUAL", tenant_id="tenant-a")
+    # A forged tenantId in the row is ignored; the verified tenant argument wins.
+    svc.import_fx({"snapshotId": "shared", "tenantId": "tenant-a", "pair": "USD/TWD", "rate": 31}, source="IMPORTED", tenant_id="tenant-b")
+    other = SupplierQuoteService(ProviderRegistry(tmp_path))  # another process sees the same files
+    other.quotes = svc.quotes
+    for service in (svc, other):
+        for tenant, expected in (("tenant-a", "MANUAL"), ("tenant-b", "IMPORTED")):
+            cmp = service.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="shared", tenant_id=tenant)
+            assert cmp["fxSource"] == expected
+        # No tenant: tenant-owned snapshots are not visible.
+        assert service.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="shared")["fxSource"] == "NONE"
+        assert service.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="shared", tenant_id="tenant-c")["fxSource"] == "NONE"
+    with pytest.raises(ValueError, match="^invalid_tenant$"):
+        svc.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="shared", tenant_id="")
+    with pytest.raises(ValueError, match="^invalid_tenant$"):
+        svc.import_fx({"pair": "USD/TWD", "rate": 1}, source="MANUAL", tenant_id="")
+
+
+def test_compare_without_tenant_uses_unscoped_fx_and_ignores_legacy(tmp_path) -> None:  # noqa: ANN001
+    from fox3d.commerce import ProviderRegistry
+
+    (tmp_path / "fx.json").write_text(
+        json.dumps({"items": [{"snapshotId": "legacy", "tenantId": "tenant-a", "source": "IMPORTED"}]})
+    )
+    svc = SupplierQuoteService(ProviderRegistry(tmp_path))
+    quote = _quote(svc, "q1")
+    unscoped = svc.import_fx({"snapshotId": "plain", "pair": "USD/TWD", "rate": 32}, source="MANUAL")
+    assert "tenantId" not in unscoped
+    assert svc.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="plain")["fxSource"] == "MANUAL"
+    assert svc.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="plain", tenant_id="tenant-a")["fxSource"] == "NONE"
+    for tenant in (None, "tenant-a"):
+        assert svc.compare([quote["quoteId"]], release_hash="r", quantity=1, fx_snapshot_id="legacy", tenant_id=tenant)["fxSource"] == "NONE"

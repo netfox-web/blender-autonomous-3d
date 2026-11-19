@@ -51,10 +51,29 @@ def open_studio(page: Page, server: dict[str, Any]) -> None:
     page.locator('[data-tab="tab-matrix"]').click()
 
 
+def test_wait_for_pending_repolls_until_target_reached(admin_page: Page) -> None:
+    page = admin_page
+    gate_polls = 0
+    current_target = 1
+
+    def pending_count() -> int:
+        nonlocal gate_polls
+        gate_polls += 1
+        if gate_polls in (1, 3):
+            return current_target - 1
+        return current_target
+
+    page.expose_function('__fox3dPendingSelfTest', pending_count)
+    _wait_for_pending(page, '__fox3dPendingSelfTest', 1)
+    assert gate_polls >= 2
+    current_target = 2
+    _wait_for_pending(page, '__fox3dPendingSelfTest', 2)
+    assert gate_polls >= 4
+
+
 def test_batch_inflight_and_network_error(admin_page: Page, admin_server: dict[str, Any]) -> None:
     page = admin_page
     pending: list[Route] = []
-    gate_polls = 0
 
     def hold_post(route: Route) -> None:
         if route.request.method == 'POST':
@@ -62,20 +81,12 @@ def test_batch_inflight_and_network_error(admin_page: Page, admin_server: dict[s
             return
         route.continue_()
 
-    def pending_count() -> int:
-        nonlocal gate_polls
-        gate_polls += 1
-        if gate_polls in (1, 3):
-            return len(pending) - 1
-        return len(pending)
-
-    page.expose_function('__fox3dPendingBatches', pending_count)
+    page.expose_function('__fox3dPendingBatches', lambda: len(pending))
     page.route('**/api/ecommerce-scenes/batches', hold_post)
     open_studio(page, admin_server)
     page.locator('#blender-matrix-btn').click()
     page.wait_for_function("() => document.querySelector('#blender-matrix-btn').disabled")
     _wait_for_pending(page, '__fox3dPendingBatches', 1)
-    assert gate_polls >= 2
     assert len(pending) == 1
     page.locator('#blender-matrix-btn').evaluate("el => el.dispatchEvent(new MouseEvent('click', {bubbles:true}))")
     assert len(pending) == 1
@@ -83,7 +94,6 @@ def test_batch_inflight_and_network_error(admin_page: Page, admin_server: dict[s
     pending[0].abort()
     # The automatic network retry keeps the button disabled and carries the same key.
     _wait_for_pending(page, '__fox3dPendingBatches', 2)
-    assert gate_polls >= 4
     assert page.locator('#blender-matrix-btn').is_disabled()
     assert len(pending) == 2
     assert json.loads(pending[1].request.post_data or '{}')['idempotencyKey'] == first_key
@@ -119,21 +129,26 @@ def test_cancel_button_posts_snapshot_and_shows_cancelled(admin_page: Page, admi
                'succeeded': 0, 'failed': 0, 'items': []}
     cancelled = {**running, 'state': 'cancelled', 'completed': 1, 'cancelled': 1}
     calls: list[str] = []
-    page.route('**/api/ecommerce-scenes/batches', lambda route: route.fulfill(json=running))
-    page.route('**/api/ecommerce-scenes/batches/batch2', lambda route: route.fulfill(json=cancelled if calls else running))
+    pending_gets: list[Route] = []
 
     def cancel(route: Route) -> None:
         calls.append(route.request.url)
         route.fulfill(json=cancelled)
 
+    page.route('**/api/ecommerce-scenes/batches', lambda route: route.fulfill(json=running))
+    page.expose_function('__fox3dPendingCancelPoll', lambda: len(pending_gets))
+    page.route('**/api/ecommerce-scenes/batches/batch2', lambda route: pending_gets.append(route))
     page.route('**/api/ecommerce-scenes/batches/batch2/cancel', cancel)
     page.on('dialog', lambda dialog: dialog.accept())
     open_studio(page, admin_server)
     page.locator('#blender-matrix-btn').click()
+    _wait_for_pending(page, '__fox3dPendingCancelPoll', 1)
     page.locator('#batch-cancel').click()
     page.wait_for_function("() => document.querySelector('#blender-batch-status').textContent.includes('已取消')")
     assert len(calls) == 1
+    assert len(pending_gets) == 1
     assert '已完成' not in page.locator('#blender-batch-status').inner_text()
+    pending_gets[0].abort()
 
 
 def _history_batch(idx: int, *, state: str = 'completed', succeeded: int = 1, failed: int = 0) -> dict[str, Any]:

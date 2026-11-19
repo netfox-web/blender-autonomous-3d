@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import os
 import re
+from datetime import datetime, timezone
 
 from pathlib import Path
 from typing import Any, NoReturn
@@ -25,7 +26,8 @@ from fox3d.contracts import (
     SCHEMA_SUPPLIER,
 )
 from fox3d.features import feature_index
-from fox3d.infra import validate_tenant_id
+from fox3d.infra import utcnow, validate_tenant_id
+from fox3d.release import MAX_EVENTS_PER_TENANT
 from fox3d.operator import make_token, require_confirm
 from fox3d.pilot_packing_api import pilot_packing_router
 from fox3d.pilot_batch_api import pilot_batch_router
@@ -130,6 +132,68 @@ def _entity_id(value: Any) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", value):
         raise HTTPException(422, "entityId 格式錯誤")
     return value
+
+
+_SNAPSHOT_KINDS = ("material", "hardware", "packaging", "logistics", "fx")
+_MAX_COMMERCE_SNAPSHOT_PAGE = 100
+_SNAPSHOT_AT_RE = re.compile(
+    r"^[0-9]{4}-[0-9]{2}-[0-9]{2}"
+    r"(?:[T ][0-9]{2}:[0-9]{2}(?::[0-9]{2}(?:\.[0-9]{1,6})?)?(?:Z|[+-][0-9]{2}:[0-9]{2})?)?$"
+)
+
+
+def _snapshot_at(raw: str | None) -> str:
+    if raw is None:
+        return utcnow().isoformat()
+    if not isinstance(raw, str) or not _SNAPSHOT_AT_RE.fullmatch(raw):
+        raise HTTPException(422, "at 格式錯誤")
+    try:
+        if "T" in raw or " " in raw:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                parsed.astimezone(timezone.utc)
+        else:
+            datetime.strptime(raw, "%Y-%m-%d")
+    except (ValueError, OverflowError):
+        raise HTTPException(422, "at 格式錯誤") from None
+    return raw
+
+
+def _approval_stale(ledger: Any, approval: dict[str, Any], entity: dict[str, Any] | None) -> bool:
+    """Read-only staleness. A stored stale flag wins; otherwise compare current hashes."""
+    if approval.get("stale") is True:
+        return True
+    if entity is None:
+        return False
+    return bool(ledger.is_stale(approval, entity))
+
+
+def _annotate_release_row(row: dict[str, Any]) -> None:
+    """Mark released only when the row is an export approval that is not stale or blocked."""
+    decision = row.get("decision")
+    state = row.get("state")
+    decision_s = decision if isinstance(decision, str) else ""
+    state_s = state if isinstance(state, str) else ""
+    stale = row.get("stale") is True or decision_s == "STALE" or state_s == "STALE"
+    blocked = row.get("blocked") is True or decision_s == "BLOCKED" or state_s == "BLOCKED"
+    approved = decision_s == "APPROVED_FOR_EXPORT" or state_s == "APPROVED_FOR_EXPORT"
+    row["stale"] = stale
+    row["blocked"] = blocked
+    row["released"] = approved and not stale and not blocked and row.get("verificationAvailable") is not False
+
+
+def _stamp_snapshot_tenant(rows: Any, tenant_id: str) -> Any:
+    if not isinstance(rows, list):
+        return rows
+    stamped: list[Any] = []
+    for row in rows:
+        if isinstance(row, dict):
+            rec = dict(row)
+            rec["tenantId"] = tenant_id
+            stamped.append(rec)
+        else:
+            stamped.append(row)
+    return stamped
 
 
 # These services raise PermissionError for bad input. Handlers check fields first.
@@ -1151,20 +1215,102 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                 plat.kd._mark_or_persist(tid)
         return advanced
 
+    @app.get("/api/release/events")
+    def release_events(
+        entityId: str | None = Query(default=None),
+        limit: int = Query(default=MAX_EVENTS_PER_TENANT, ge=1, le=MAX_EVENTS_PER_TENANT),
+        offset: int = Query(default=0, ge=0),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        entity_id = _entity_id(entityId) if entityId is not None else None
+        plat = get_platform()
+        try:
+            page = plat.release.events_page(
+                tid,
+                entity_id=entity_id,
+                limit=limit,
+                offset=offset,
+                include_archived=True,
+            )
+        except ValueError:
+            raise HTTPException(422, "查詢參數超出範圍") from None
+        items = page.get("items")
+        if isinstance(items, list):
+            for ev in items:
+                if isinstance(ev, dict):
+                    _annotate_release_row(ev)
+        page["events"] = page.get("items")
+        return page
+
+    @app.get("/api/release/approvals")
+    def release_approvals(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        plat = get_platform()
+        try:
+            records = plat.release.list_approvals(tid)
+        except ValueError:
+            raise HTTPException(422, "查詢參數超出範圍") from None
+        items: list[dict[str, Any]] = []
+        for rec in records:
+            raw_id = rec.get("entityId")
+            entity_id = raw_id if isinstance(raw_id, str) else ""
+            entity = plat.physical.find_entity(entity_id, tenant_id=tid) if entity_id else None
+            rec["verificationAvailable"] = isinstance(entity, dict)
+            rec["stale"] = _approval_stale(plat.release, rec, entity if isinstance(entity, dict) else None)
+            _annotate_release_row(rec)
+            items.append(rec)
+        return {"items": items, "total": len(items), "tenantId": tid}
+
     @app.post("/api/commerce/import")
     def commerce_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
-        _ = tenant(x_tenant_id)
+        tid = tenant(x_tenant_id)
         plat = get_platform()
         kind = str(payload.get("kind") or "material")
         if kind not in {"material", "hardware", "packaging", "logistics", "fx"}:
             raise HTTPException(422, "未知的 provider kind")
         store = getattr(plat.providers, kind)
         source = str(payload.get("source") or "MANUAL")
-        rows = payload.get("rows", [])
+        rows = _stamp_snapshot_tenant(payload.get("rows", []), tid)
         try:
             return {"items": plat.providers.import_rows(store, rows, source=source), "liveProviderReady": False}
         except (ProviderDisconnectedError, ImportValidationError) as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/commerce/snapshots")
+    def commerce_snapshots(
+        at: str | None = Query(default=None),
+        limit: int = Query(default=20, ge=1, le=_MAX_COMMERCE_SNAPSHOT_PAGE),
+        offset: int = Query(default=0, ge=0),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        moment = _snapshot_at(at)
+        plat = get_platform()
+        visible: list[dict[str, Any]] = []
+        for kind in _SNAPSHOT_KINDS:
+            store = getattr(plat.providers, kind)
+            for row in store.active(at=moment):
+                if not isinstance(row, dict) or row.get("tenantId") != tid:
+                    continue
+                visible.append(dict(row))
+        visible.sort(
+            key=lambda row: (
+                str(row.get("kind") or ""),
+                str(row.get("snapshotId") or ""),
+                str(row.get("importedAt") or ""),
+            )
+        )
+        total = len(visible)
+        page = visible[offset : offset + limit]
+        return {
+            "items": page,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "hasMore": offset + len(page) < total,
+            "at": moment,
+        }
 
     @app.post("/api/safety/evaluate")
     def safety_eval(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

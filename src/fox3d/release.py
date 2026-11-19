@@ -1097,6 +1097,26 @@ class ReleaseGate:
                 "activeCount": len(active),
             }
 
+    def list_approvals(self, tenant_id: str) -> list[dict[str, Any]]:
+        """Read-only approvals for one tenant. Does not record or rotate events."""
+        if not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id must be a non-empty string")
+        tid = self._normalize_tenant(tenant_id)
+        with self._locked_store():
+            self._sync_tenant(tid)
+            rows = [
+                copy.deepcopy(rec)
+                for (owner, _entity), rec in self.approvals.items()
+                if owner == tid
+            ]
+        rows.sort(
+            key=lambda rec: (
+                str(rec.get("entityId") or ""),
+                str(rec.get("approvedAt") or ""),
+            )
+        )
+        return rows
+
     def _entity_lock(self, key: tuple[str, str]) -> threading.RLock:
         with self._locks_guard:
             lock = self._key_locks.get(key)
