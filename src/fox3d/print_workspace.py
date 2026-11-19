@@ -207,7 +207,10 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
             raw_cursor=cursor.strip()
             if '|' in raw_cursor:
                 c_created,c_id=raw_cursor.rsplit('|',1)
-                filtered=[item for item in entries if _job_sort_key(item[0],item[1])<(c_created,c_id)]
+                if any(item[1]['id']==c_id for item in entries):
+                    filtered=[item for item in entries if _job_sort_key(item[0],item[1])<(c_created,c_id)]
+                else:
+                    filtered=entries[offset:]
             else:
                 idx=next((i for i,item in enumerate(entries) if item[1]['id']==raw_cursor),None)
                 filtered=entries[idx+1:] if idx is not None else entries[offset:]
