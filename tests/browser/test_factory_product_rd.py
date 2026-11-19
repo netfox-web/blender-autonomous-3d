@@ -451,14 +451,6 @@ def test_queued_retry_render_job_from_fail_or_retry_not_shown_as_completed_previ
 
     monkeypatch.setattr(platform.runtime, "run_job", _transient_fail_run_job)
 
-    captured_responses: list[dict[str, Any]] = []
-    page.on(
-        "response",
-        lambda resp: captured_responses.append(resp.json())
-        if resp.url.endswith("/api/product-rd/generate") and resp.status == 200
-        else None,
-    )
-
     page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
     page.wait_for_selector("#rd-prepare-btn", timeout=20_000)
     _switch_tenant(page, "retry-render-tenant")
@@ -467,11 +459,17 @@ def test_queued_retry_render_job_from_fail_or_retry_not_shown_as_completed_previ
     page.locator("#rd-text").fill("書房 寬90cm 高180cm 書櫃 四層")
     page.locator("#rd-count").fill("10")
     page.locator("#rd-prepare-btn").click()
-    page.locator("#rd-confirm-yes").click()
+    # Wait on the generate response itself instead of a "response" listener, which can lag behind the DOM update.
+    with page.expect_response(
+        lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
+        timeout=20_000,
+    ) as generate_info:
+        page.locator("#rd-confirm-yes").click()
+    generate_resp = generate_info.value
+    assert generate_resp.status == 200
 
     expect(page.locator("#rd-body")).to_be_visible(timeout=20_000)
-    assert len(captured_responses) == 1
-    actual_job = captured_responses[0]["parametricRender"]["job"]
+    actual_job = generate_resp.json()["parametricRender"]["job"]
     assert actual_job["status"] == "queued"
     assert actual_job["error"] == "blender worker transient crash"
     assert actual_job["attemptCount"] == 1
