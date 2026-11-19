@@ -1712,6 +1712,113 @@ def test_ui_fetch_all_pages_1000_jobs_with_mid_pagination_update_loses_no_items(
     ]
 
 
+def test_ui_fetch_all_pages_rejects_when_cursor_expires_again_after_retry() -> None:
+    """A second cursorExpired after the restart must reject, never return a partial list as complete."""
+    node = shutil.which("node")
+    assert node is not None, "node is required for UI pagination verification"
+
+    pagination_js_path = STATIC / "fox3d-pagination.js"
+    harness = f"""
+    const fs = require('fs');
+    const code = fs.readFileSync({json.dumps(str(pagination_js_path))}, 'utf8');
+    global.window = {{}};
+    eval(code);
+    const fetchAll = global.window.fox3dFetchAllPages;
+
+    (async () => {{
+    const jobA = {{ id: '00000000-0000-0000-0000-000000000002', createdAt: '2026-11-19T00:02:00Z' }};
+    const expiredPage = {{ items: [], total: 2, offset: 1, limit: 1, skipped: 0, nextCursor: null, cursorExpired: true }};
+
+    async function settle(promise) {{
+      try {{
+        const value = await promise;
+        return {{ ok: true, count: value.items.length, total: value.total }};
+      }} catch (err) {{
+        return {{
+          ok: false,
+          message: String(err && err.message),
+          cursorExpired: Boolean(err && err.cursorExpired),
+          incompleteResult: Boolean(err && err.incompleteResult),
+          status: err && err.status,
+        }};
+      }}
+    }}
+
+    // Rolling deploy: both first-page responses come from an old server that hands out a legacy
+    // 2-part cursor, and every follow-up page is answered by the new server, which rejects it.
+    const rollingCalls = [];
+    const rolling = await settle(fetchAll(async (p) => {{
+      rollingCalls.push(p);
+      if (p.includes('cursor=')) return expiredPage;
+      return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `${{jobA.createdAt}}|${{jobA.id}}` }};
+    }}, '/jobs'));
+
+    // The cursor in the initial request is expired, and the first page is still expired after
+    // dropping it.
+    const initialCalls = [];
+    const initial = await settle(fetchAll(async (p) => {{
+      initialCalls.push(p);
+      return expiredPage;
+    }}, '/jobs?cursor=2026-11-19T00:03:00Z|00000000-0000-0000-0000-000000000003'));
+
+    // The follow-up page after the restart fails with HTTP 400: the original error must surface.
+    const badRequestCalls = [];
+    const badRequest = await settle(fetchAll(async (p) => {{
+      badRequestCalls.push(p);
+      if (p.includes('cursor=')) {{
+        const err = new Error('bad cursor');
+        err.status = 400;
+        throw err;
+      }}
+      return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `${{jobA.createdAt}}|${{jobA.id}}` }};
+    }}, '/jobs'));
+
+    // A single expiry is still recovered by restarting from the first page.
+    let recoveredCalls = 0;
+    const jobB = {{ id: '00000000-0000-0000-0000-000000000001', createdAt: '2026-11-19T00:01:00Z' }};
+    const recovered = await settle(fetchAll(async (p) => {{
+      recoveredCalls++;
+      if (recoveredCalls === 1) {{
+        return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `${{jobA.createdAt}}|${{jobA.id}}` }};
+      }}
+      if (recoveredCalls === 2) return expiredPage;
+      if (p.includes('cursor=')) {{
+        return {{ items: [jobB], total: 2, offset: 1, limit: 1, skipped: 0, nextCursor: null }};
+      }}
+      return {{ items: [jobA], total: 2, offset: 0, limit: 1, skipped: 0, nextCursor: `tenant-a|${{jobA.createdAt}}|${{jobA.id}}` }};
+    }}, '/jobs'));
+
+    console.log(JSON.stringify({{ rolling, rollingCalls, initial, initialCalls, badRequest, badRequestCalls, recovered, recoveredCalls }}));
+    }})().catch(err => {{ console.error(err); process.exit(1); }});
+    """
+    proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
+    out = json.loads(proc.stdout.strip().splitlines()[-1])
+
+    assert out["rolling"]["ok"] is False, out["rolling"]
+    assert out["rolling"]["cursorExpired"] is True
+    assert out["rolling"]["incompleteResult"] is True
+    assert "游標已失效" in out["rolling"]["message"]
+    assert len(out["rollingCalls"]) == 4
+    assert out["rollingCalls"][0] == "/jobs"
+    assert out["rollingCalls"][2] == "/jobs"
+
+    assert out["initial"]["ok"] is False, out["initial"]
+    assert out["initial"]["cursorExpired"] is True
+    assert out["initial"]["incompleteResult"] is True
+    assert out["initialCalls"] == [
+        "/jobs?cursor=2026-11-19T00:03:00Z|00000000-0000-0000-0000-000000000003",
+        "/jobs",
+    ]
+
+    assert out["badRequest"]["ok"] is False, out["badRequest"]
+    assert out["badRequest"]["status"] == 400
+    assert out["badRequest"]["message"] == "bad cursor"
+    assert len(out["badRequestCalls"]) == 4
+
+    assert out["recovered"] == {"ok": True, "count": 2, "total": 2}
+    assert out["recoveredCalls"] == 4
+
+
 def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores_cross_tenant_cursor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

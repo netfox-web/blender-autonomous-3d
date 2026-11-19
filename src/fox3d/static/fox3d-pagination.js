@@ -11,20 +11,34 @@
     return params.length ? `${base}?${params.join('&')}` : base;
   }
 
+  const MAX_ATTEMPTS = 2;
+
+  // Raised when the server still reports an expired cursor after the restart
+  // from the first page. Returning the items collected so far would make the
+  // caller treat a partial list as complete, so fail loudly instead.
+  function cursorExpiredError() {
+    const err = new Error('分頁游標已失效，重新載入後仍無法取得完整清單，請稍後再試。');
+    err.cursorExpired = true;
+    err.incompleteResult = true;
+    return err;
+  }
+
   async function fetchAllPages(api, path) {
     let activePath = path;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      const canRetry = attempt + 1 < MAX_ATTEMPTS;
       let first;
       try {
         first = await api(activePath);
       } catch (err) {
-        if (attempt === 0 && err && (err.status === 400 || err.cursorExpired)) {
+        if (canRetry && err && (err.status === 400 || err.cursorExpired)) {
           activePath = stripCursorParam(activePath);
           continue;
         }
         throw err;
       }
-      if (first?.cursorExpired && attempt === 0) {
+      if (first?.cursorExpired) {
+        if (!canRetry) throw cursorExpiredError();
         activePath = stripCursorParam(activePath);
         continue;
       }
@@ -45,7 +59,7 @@
         try {
           page = await api(`${activePath}${sep}offset=${nextOffset}&limit=${limit}${cursorParam}`);
         } catch (err) {
-          if (usesCursor && attempt === 0 && err && (err.status === 400 || err.cursorExpired)) {
+          if (usesCursor && canRetry && err && (err.status === 400 || err.cursorExpired)) {
             activePath = stripCursorParam(activePath);
             restartFromFirstPage = true;
             break;
@@ -53,10 +67,9 @@
           throw err;
         }
         if (page?.cursorExpired) {
-          if (attempt === 0) {
-            activePath = stripCursorParam(activePath);
-            restartFromFirstPage = true;
-          }
+          if (!canRetry) throw cursorExpiredError();
+          activePath = stripCursorParam(activePath);
+          restartFromFirstPage = true;
           break;
         }
         const pageItems = Array.isArray(page?.items) ? page.items : [];
@@ -77,7 +90,7 @@
       if (restartFromFirstPage) continue;
       return { ...first, items, total: Math.max(total, items.length), skipped };
     }
-    return { items: [], total: 0, skipped: 0 };
+    throw cursorExpiredError();
   }
 
   if (typeof window === 'object' && window) {
