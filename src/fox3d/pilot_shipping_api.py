@@ -12,14 +12,13 @@ import csv
 import io
 import json
 import math
-import re
 from collections.abc import Callable
 from typing import Any
 
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 
 from fox3d.journal import SemanticKeyConflictError
-from fox3d.logistics import ALLOWED_SOURCES, DIM_DIVISOR
+from fox3d.logistics import ALLOWED_SOURCES, DIM_DIVISOR, _parse_valid_until_date
 from fox3d.pilot_packing_api import (
     _optional_idempotency_key,
     _require_body_dict,
@@ -29,7 +28,6 @@ from fox3d.pilot_packing_api import (
 )
 
 _ALLOWED_SHIPMENT_STATUSES = frozenset({"SHIPMENT_DRAFT", "HANDED_OFF_MANUAL"})
-_DATE_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 _MAX_TEXT_LEN = 200
 _MAX_CARTONS_PER_REQ = 500
 
@@ -237,10 +235,14 @@ def _validate_and_normalize_quote_row(
     raw_valid_until = row.get("validUntil")
     if raw_valid_until in (None, ""):
         valid_until = "9999-12-31"
-    elif not isinstance(raw_valid_until, str) or not _DATE_PREFIX_RE.match(raw_valid_until.strip()):
-        raise HTTPException(422, f"{prefix}validUntil 日期格式錯誤（須為 YYYY-MM-DD）")
     else:
-        valid_until = raw_valid_until.strip()
+        try:
+            valid_until = _parse_valid_until_date(raw_valid_until).isoformat()
+        except ValueError as exc:
+            raise HTTPException(
+                422,
+                f"{prefix}validUntil 日期格式錯誤（須為有效的 YYYY-MM-DD 日曆日期）",
+            ) from exc
 
     raw_qid = row.get("quoteId")
     quote_id: str | None = None
@@ -461,6 +463,8 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                     existing = logistics.shipments.get(str(entry.get("shipmentId") or ""))
                     if existing is None or existing.get("tenantId") != tid:
                         raise HTTPException(409, "idempotencyKey 衝突")
+                    if existing.get("status") == "HANDED_OFF_MANUAL" or existing.get("handoff") is not None:
+                        raise HTTPException(409, "出貨單已人工交運，不可透過建立草稿改寫")
                     return _serialize_shipment(logistics, existing, tid)
 
             try:
@@ -469,26 +473,21 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                     destination=destination,
                     carton_ids=carton_ids,
                     service=service,
+                    quote_id=quote_id,
+                    dim_divisor=dim_divisor,
                 )
+            except SemanticKeyConflictError as exc:
+                raise HTTPException(409, str(exc)) from exc
             except ValueError as exc:
                 raise HTTPException(422, str(exc)) from exc
             except PermissionError as exc:
                 raise HTTPException(404, "找不到紙箱") from exc
 
-            changed = False
-            if quote_id is not None and rec.get("quoteId") != quote_id:
-                rec["quoteId"] = quote_id
-                changed = True
-            if dim_divisor is not None and rec.get("dimDivisor") != dim_divisor:
-                rec["dimDivisor"] = dim_divisor
-                changed = True
             if idem_key is not None:
                 logistics._idem[f"{tid}::shipment-key::{idem_key}"] = {
                     "shipmentId": rec["shipmentId"],
                     "sig": req_sig,
                 }
-                changed = True
-            if changed:
                 logistics.persist()
             return _serialize_shipment(logistics, rec, tid)
 
@@ -718,12 +717,19 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
             k in body_dict for k in ("rows", "items", "quotes", "csv", "json", "content", "fileContent")
         )
         validated: list[tuple[dict[str, Any], str]] = []
+        seen_qids: set[str] = set()
         for idx, row in enumerate(raw_rows):
             norm, src = _validate_and_normalize_quote_row(
                 row,
                 default_source=default_source,
                 row_index=idx if is_batch else None,
             )
+            qid = norm.get("quoteId")
+            if isinstance(qid, str) and qid:
+                if qid in seen_qids:
+                    prefix = f"rows[{idx}] " if is_batch else ""
+                    raise HTTPException(422, f"{prefix}批次報價中 quoteId 不可重複")
+                seen_qids.add(qid)
             validated.append((norm, src))
 
         target_service = service
@@ -763,19 +769,42 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                 if target_divisor is None:
                     target_divisor = float(ship.get("dimDivisor") or DIM_DIVISOR)
 
+            for norm, _src in validated:
+                qid = norm.get("quoteId")
+                if isinstance(qid, str) and qid:
+                    existing = logistics.carrier_quotes.get(qid)
+                    if existing is not None and existing.get("tenantId") != tid:
+                        raise HTTPException(409, "quoteId 衝突：該報價 ID 已由其他租戶持有")
+
+            prev_quotes = dict(logistics.carrier_quotes)
             created: list[dict[str, Any]] = []
-            for norm, src in validated:
-                rec = logistics.import_carrier_quote(norm, source=src)
-                rec["tenantId"] = tid
-                created.append(
-                    _serialize_quote(
-                        logistics,
-                        rec,
-                        target_service=target_service,
-                        target_dim_divisor=target_divisor,
+            try:
+                for norm, src in validated:
+                    row_with_tenant = {**norm, "tenantId": tid}
+                    rec = logistics.import_carrier_quote(
+                        row_with_tenant,
+                        source=src,
+                        tenant_id=tid,
+                        persist=False,
                     )
-                )
-            logistics.persist()
+                    created.append(
+                        _serialize_quote(
+                            logistics,
+                            rec,
+                            target_service=target_service,
+                            target_dim_divisor=target_divisor,
+                        )
+                    )
+                logistics.persist()
+            except PermissionError as exc:
+                logistics.carrier_quotes = prev_quotes
+                raise HTTPException(409, "quoteId 衝突：該報價 ID 已由其他租戶持有") from exc
+            except ValueError as exc:
+                logistics.carrier_quotes = prev_quotes
+                raise HTTPException(422, str(exc)) from exc
+            except Exception:
+                logistics.carrier_quotes = prev_quotes
+                raise
 
         primary = created[0]
         return {

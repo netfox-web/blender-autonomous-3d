@@ -683,8 +683,26 @@ def test_bad_inputs_return_422_and_never_partial_write(
         {"carrier": "DHL", "charge": 100, "source": "LIVE_PROVIDER"},
         {"carrier": "DHL", "charge": 100, "liveProvider": True},
         {"carrier": "DHL", "charge": 100, "validUntil": "not-a-date"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "9999-99-99"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2026-02-30"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2025-02-29"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2026-13-01"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2026-00-10"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2026-04-31"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2026-01-00"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2099-12-31extra"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2099-12-31T00:00:00"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2099-12-31 12:00"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2099/12/31"},
+        {"carrier": "DHL", "charge": 100, "validUntil": "2099-1-1"},
         {"rows": []},
         {"rows": [{"carrier": "GOOD", "charge": 100}, {"carrier": "BAD", "charge": "not-a-number"}]},
+        {
+            "rows": [
+                {"quoteId": "dup-q1", "carrier": "GOOD", "charge": 100},
+                {"quoteId": "dup-q1", "carrier": "GOOD2", "charge": 120},
+            ]
+        },
         {"csv": ""},
         {"csv": "carrier,charge\nGOOD,100\nBAD,negative-text"},
         {"json": "{malformed json"},
@@ -694,6 +712,203 @@ def test_bad_inputs_return_422_and_never_partial_write(
         assert res.status_code == 422, f"quote {bad_quote!r} -> {res.status_code} {res.text}"
         assert "Traceback" not in res.text
         assert set(platform.pilot.logistics.carrier_quotes) == quotes_before
+
+
+def test_carrier_quote_cross_tenant_id_collision_and_crash_recovery(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "quote-isolation-root"
+    plat = Platform(root=root, mock_blender=True)
+    c1 = TestClient(create_app(plat))
+
+    # 1. Tenant A creates a quote with an explicit quoteId and another with server-generated quoteId.
+    q_a1 = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={
+            "quoteId": "quote-tenant-a-1",
+            "carrier": "TCAT-A",
+            "service": "ground",
+            "charge": 180,
+            "dimDivisor": 6000,
+            "validUntil": "2028-02-29",
+        },
+    )
+    assert q_a1.status_code == 200, q_a1.text
+    q_a2 = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={"carrier": "HCT-A", "service": "air", "charge": 350, "dimDivisor": 5000},
+    )
+    assert q_a2.status_code == 200, q_a2.text
+    qid_a2 = q_a2.json()["quoteId"]
+
+    # 2. Tenant B attempts to overwrite Tenant A's quoteId (both explicit and server-generated).
+    for target_qid in ("quote-tenant-a-1", qid_a2):
+        steal = c1.post(
+            "/api/pilot/carrier-quotes",
+            headers=OTHER_HEADERS,
+            json={"quoteId": target_qid, "carrier": "STEAL-B", "service": "ground", "charge": 1},
+        )
+        assert steal.status_code == 409, steal.text
+
+    # 3. Tenant B sends a multi-row batch where row 0 is new and row 1 collides with Tenant A's quoteId.
+    # The entire batch must be rejected atomically with zero writes.
+    batch_collision = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=OTHER_HEADERS,
+        json={
+            "rows": [
+                {"quoteId": "quote-tenant-b-clean", "carrier": "KERRY-B", "charge": 210},
+                {"quoteId": "quote-tenant-a-1", "carrier": "STEAL-B", "charge": 1},
+            ]
+        },
+    )
+    assert batch_collision.status_code == 409, batch_collision.text
+    assert "quote-tenant-b-clean" not in plat.pilot.logistics.carrier_quotes
+
+    # Tenant A's list still has both original quotes untouched; Tenant B has none.
+    list_a = c1.get("/api/pilot/carrier-quotes", headers=HEADERS).json()
+    assert list_a["total"] == 2
+    by_id_a = {q["quoteId"]: q for q in list_a["items"]}
+    assert by_id_a["quote-tenant-a-1"]["carrier"] == "TCAT-A"
+    assert by_id_a["quote-tenant-a-1"]["charge"] == 180.0
+    assert by_id_a[qid_a2]["carrier"] == "HCT-A"
+    assert c1.get("/api/pilot/carrier-quotes", headers=OTHER_HEADERS).json()["items"] == []
+
+    # 4. Simulate an interruption right after the first persist() inside import_carrier_quote:
+    # tenantId must ALREADY be set before any disk write, so reloading never leaks a tenantless global quote.
+    orig_persist = plat.pilot.logistics.persist
+    persisted_snapshots: list[dict[str, Any]] = []
+
+    def spy_persist() -> None:
+        for q in plat.pilot.logistics.carrier_quotes.values():
+            persisted_snapshots.append(dict(q))
+        orig_persist()
+
+    monkeypatch.setattr(plat.pilot.logistics, "persist", spy_persist)
+    direct = plat.pilot.logistics.import_carrier_quote(
+        {"quoteId": "quote-direct-a", "carrier": "DIRECT-A", "charge": 260},
+        source="MANUAL",
+        tenant_id=TENANT,
+    )
+    assert direct["tenantId"] == TENANT
+    assert all(s.get("tenantId") == TENANT for s in persisted_snapshots)
+
+    # Simulate mid-batch crash on the 2nd row before batch persist completes.
+    orig_import = plat.pilot.logistics.import_carrier_quote
+    call_count = 0
+
+    def crashing_import(row: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            raise RuntimeError("simulated mid-batch crash")
+        return orig_import(row, **kwargs)
+
+    monkeypatch.setattr(plat.pilot.logistics, "import_carrier_quote", crashing_import)
+    with pytest.raises(RuntimeError, match="simulated mid-batch crash"):
+        c1.post(
+            "/api/pilot/carrier-quotes",
+            headers=HEADERS,
+            json={
+                "rows": [
+                    {"quoteId": "batch-crash-row-1", "carrier": "C1", "charge": 100},
+                    {"quoteId": "batch-crash-row-2", "carrier": "C2", "charge": 200},
+                ]
+            },
+        )
+    assert "batch-crash-row-1" not in plat.pilot.logistics.carrier_quotes
+    assert "batch-crash-row-2" not in plat.pilot.logistics.carrier_quotes
+
+    # Reload a fresh Platform from disk and verify tenant isolation and atomic recovery.
+    reloaded = Platform(root=root, mock_blender=True)
+    c2 = TestClient(create_app(reloaded))
+    reloaded_a = {q["quoteId"] for q in c2.get("/api/pilot/carrier-quotes", headers=HEADERS).json()["items"]}
+    assert reloaded_a == {"quote-tenant-a-1", qid_a2, "quote-direct-a"}
+    assert c2.get("/api/pilot/carrier-quotes", headers=OTHER_HEADERS).json()["items"] == []
+
+
+def test_shipment_draft_conflict_on_quote_divisor_and_post_handoff_immutable(
+    client: TestClient, platform: Any
+) -> None:
+    _wo, cartons = _create_cartons(client, platform, tenant=TENANT, quantity=2, idem_key="ship-conflict-cartons")
+
+    q1 = client.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={"carrier": "TCAT", "service": "ground", "charge": 180, "dimDivisor": 6000},
+    ).json()
+    q2 = client.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={"carrier": "HCT", "service": "ground", "charge": 220, "dimDivisor": 5000},
+    ).json()
+
+    # Create draft with quoteId=q1 and dimDivisor=6000.
+    base_req = {
+        "origin": "TW",
+        "destination": "TW-TPE",
+        "cartonIds": [cartons[0]],
+        "service": "ground",
+        "quoteId": q1["quoteId"],
+        "dimDivisor": 6000,
+    }
+    first = client.post("/api/pilot/shipments", headers=HEADERS, json=base_req)
+    assert first.status_code == 200, first.text
+    sid = first.json()["shipmentId"]
+    assert first.json()["quoteId"] == q1["quoteId"]
+    assert first.json()["dimDivisor"] == 6000.0
+
+    # Exact same full request is idempotent -> 200 and same shipmentId.
+    same = client.post("/api/pilot/shipments", headers=HEADERS, json=base_req)
+    assert same.status_code == 200
+    assert same.json()["shipmentId"] == sid
+
+    # Re-sending same cartons/route/service with a different quoteId, omitted quoteId,
+    # different dimDivisor, or omitted dimDivisor must return 409 without mutating the draft.
+    for conflicting_patch in (
+        {"quoteId": q2["quoteId"]},
+        {"quoteId": None},
+        {"dimDivisor": 5000},
+        {"dimDivisor": None},
+        {"quoteId": q2["quoteId"], "dimDivisor": 5000},
+    ):
+        attempt = dict(base_req)
+        for k, v in conflicting_patch.items():
+            if v is None:
+                attempt.pop(k, None)
+            else:
+                attempt[k] = v
+        conflict = client.post("/api/pilot/shipments", headers=HEADERS, json=attempt)
+        assert conflict.status_code == 409, f"patch {conflicting_patch!r} -> {conflict.status_code} {conflict.text}"
+        stored = platform.pilot.logistics.shipments[sid]
+        assert stored["quoteId"] == q1["quoteId"]
+        assert stored["dimDivisor"] == 6000.0
+
+    # Hand off the shipment manually.
+    ho = client.post(
+        f"/api/pilot/shipments/{sid}/handoff",
+        headers=HEADERS,
+        json={"carrier": "TCAT", "tracking": "TRK-IMMUTABLE-1"},
+    )
+    assert ho.status_code == 200
+    assert ho.json()["status"] == "HANDED_OFF_MANUAL"
+
+    # Once handed off, attempting to create/overwrite draft (either with a different quote/divisor
+    # or with the original parameters) is rejected with 409 and leaves the handed-off shipment intact.
+    for post_handoff_body in (
+        {**base_req, "quoteId": q2["quoteId"]},
+        {**base_req, "dimDivisor": 5000},
+        base_req,
+    ):
+        res = client.post("/api/pilot/shipments", headers=HEADERS, json=post_handoff_body)
+        assert res.status_code == 409, res.text
+        after = client.get(f"/api/pilot/shipments/{sid}", headers=HEADERS).json()
+        assert after["status"] == "HANDED_OFF_MANUAL"
+        assert after["quoteId"] == q1["quoteId"]
+        assert after["dimDivisor"] == 6000.0
+        assert after["handoff"]["tracking"] == "TRK-IMMUTABLE-1"
 
 
 def test_shipping_state_survives_platform_reload(tmp_path: Any) -> None:

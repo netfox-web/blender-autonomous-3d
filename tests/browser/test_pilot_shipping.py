@@ -216,4 +216,3 @@ def test_pilot_shipping_xss_and_confirm_snapshot_survives_mutation(
     created = ship_resp.value.json()
     assert created["origin"] == "SNAP-ORIGIN"
     assert created["destination"] == "SNAP-DEST"
-

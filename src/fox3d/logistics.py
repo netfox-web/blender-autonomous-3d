@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+from datetime import date
 import json
 import math
+import re
 import threading
 from pathlib import Path
 from typing import Any
@@ -19,10 +21,24 @@ PALLET_MM = (1200.0, 1000.0)
 PALLET_MAX_H = 1400.0
 PALLET_MAX_KG = 500.0
 DIM_DIVISOR = 6000.0
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _now() -> str:
     return utcnow().isoformat()
+
+
+def _parse_valid_until_date(raw: Any) -> date:
+    """Parse and validate a strict ISO 8601 calendar date string (YYYY-MM-DD)."""
+    if not isinstance(raw, str):
+        raise ValueError("validUntil must be a YYYY-MM-DD date string")
+    text = raw.strip()
+    if not _ISO_DATE_RE.fullmatch(text):
+        raise ValueError("validUntil must be in YYYY-MM-DD format")
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError("validUntil is not a valid calendar date") from exc
 
 
 def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
@@ -473,6 +489,8 @@ class LogisticsService:
         destination: str,
         carton_ids: list[str],
         service: str = "ground",
+        quote_id: str | None = None,
+        dim_divisor: float | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             if not carton_ids:
@@ -483,6 +501,12 @@ class LogisticsService:
             tenants = {c.get("tenantId") for c in cartons}
             if len(tenants) != 1 or None in tenants:
                 raise PermissionError("cross-tenant carton mix")
+            norm_quote_id: str | None = None
+            if quote_id is not None and quote_id != "":
+                if not isinstance(quote_id, str) or not quote_id.strip():
+                    raise ValueError("quote_id must be a non-empty string")
+                norm_quote_id = quote_id.strip()
+            norm_divisor = _positive_finite(dim_divisor, "dim_divisor") if dim_divisor is not None else None
             rec: dict[str, Any] = {
                 "shipmentId": new_id(),
                 "tenantId": next(iter(tenants)),
@@ -498,6 +522,10 @@ class LogisticsService:
                 "providerNeutral": True,
                 "createdAt": _now(),
             }
+            if norm_quote_id is not None:
+                rec["quoteId"] = norm_quote_id
+            if norm_divisor is not None:
+                rec["dimDivisor"] = norm_divisor
             rec["requestHash"] = stable_hash({k: rec[k] for k in rec if k not in {"shipmentId", "requestHash"}})
             tenant = rec["tenantId"]
             ordered = sorted(carton_ids)
@@ -511,20 +539,48 @@ class LogisticsService:
                 existing = self.shipments[sid]
                 if existing.get("tenantId") != tenant:
                     raise PermissionError("tenant isolation: shipment")
+                if existing.get("status") == "HANDED_OFF_MANUAL" or existing.get("handoff") is not None:
+                    raise SemanticKeyConflictError("shipment already handed off; cannot modify or recreate draft")
+                existing_quote = existing.get("quoteId")
+                existing_div = existing.get("dimDivisor")
+                div_matches = (
+                    existing_div is None and norm_divisor is None
+                ) or (
+                    existing_div is not None
+                    and norm_divisor is not None
+                    and abs(float(existing_div) - norm_divisor) <= 1e-6
+                )
+                if existing_quote != norm_quote_id or not div_matches:
+                    raise SemanticKeyConflictError("shipment draft conflict: quoteId or dimDivisor mismatch")
                 return existing
             self._idem[idem] = rec["shipmentId"]
             self.shipments[rec["shipmentId"]] = rec
             return rec
 
-    def shipment_draft(self, *, origin: str, destination: str, carton_ids: list[str], service: str = "ground") -> dict[str, Any]:
+    def shipment_draft(
+        self,
+        *,
+        origin: str,
+        destination: str,
+        carton_ids: list[str],
+        service: str = "ground",
+        quote_id: str | None = None,
+        dim_divisor: float | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
-            rec = self.shipping_request(origin=origin, destination=destination, carton_ids=carton_ids, service=service)
-            if rec.get("status") != "HANDED_OFF_MANUAL":
-                rec["submittedToCarrier"] = False
-                rec["booked"] = False
-                rec["shipped"] = False
-                rec["status"] = "SHIPMENT_DRAFT"
-                rec["liveCarrier"] = False
+            rec = self.shipping_request(
+                origin=origin,
+                destination=destination,
+                carton_ids=carton_ids,
+                service=service,
+                quote_id=quote_id,
+                dim_divisor=dim_divisor,
+            )
+            rec["submittedToCarrier"] = False
+            rec["booked"] = False
+            rec["shipped"] = False
+            rec["status"] = "SHIPMENT_DRAFT"
+            rec["liveCarrier"] = False
             emit(
                 self,
                 "shipment.draft",
@@ -537,28 +593,68 @@ class LogisticsService:
             )
             return rec
 
-    def import_carrier_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
+    def import_carrier_quote(
+        self,
+        row: dict[str, Any],
+        *,
+        source: str,
+        raw: str | None = None,
+        tenant_id: str | None = None,
+        persist: bool = True,
+    ) -> dict[str, Any]:
         with self._lock:
             if source not in ALLOWED_SOURCES:
                 raise PermissionError("carrier quotes are MANUAL/IMPORTED unless a live carrier is connected")
+            eff_tenant: str | None = None
+            if tenant_id is not None:
+                if not isinstance(tenant_id, str) or not tenant_id.strip():
+                    raise ValueError("tenant_id must be a non-empty string")
+                eff_tenant = tenant_id.strip()
+            elif row.get("tenantId") not in (None, ""):
+                raw_tid = row.get("tenantId")
+                if not isinstance(raw_tid, str) or not raw_tid.strip():
+                    raise ValueError("tenantId must be a non-empty string")
+                eff_tenant = raw_tid.strip()
+
+            raw_qid = row.get("quoteId")
+            if raw_qid not in (None, ""):
+                if not isinstance(raw_qid, str) or not raw_qid.strip():
+                    raise ValueError("quoteId must be a non-empty string")
+                quote_id = raw_qid.strip()
+            else:
+                quote_id = new_id()
+
+            existing = self.carrier_quotes.get(quote_id)
+            if existing is not None and existing.get("tenantId") != eff_tenant:
+                raise PermissionError("tenant isolation: carrier quote")
+
+            raw_valid_until = row.get("validUntil")
+            if raw_valid_until in (None, ""):
+                valid_until = "9999-12-31"
+            else:
+                valid_until = _parse_valid_until_date(raw_valid_until).isoformat()
+
             rec: dict[str, Any] = {
-                "quoteId": row.get("quoteId") or new_id(),
+                "quoteId": quote_id,
                 "carrier": row.get("carrier") or "carrier",
                 "service": row.get("service") or "ground",
                 "charge": float(row.get("charge") or row.get("amount") or 0),
                 "currency": row.get("currency") or "TWD",
                 "dimDivisor": float(row.get("dimDivisor") or DIM_DIVISOR),
-                "validUntil": row.get("validUntil") or "9999-12-31",
+                "validUntil": valid_until,
                 "source": source,
                 "truthLabel": source,
                 "liveProvider": False,
                 "importedAt": _now(),
                 "rawSourceHash": stable_hash(raw if raw is not None else json.dumps(row, sort_keys=True, default=str)),
             }
+            if eff_tenant is not None:
+                rec["tenantId"] = eff_tenant
             rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
             rec["ownership"] = "GLOBAL_REFERENCE"
             self.carrier_quotes[rec["quoteId"]] = rec
-            self.persist()
+            if persist:
+                self.persist()
             return rec
 
     def quote_stale(self, quote: dict[str, Any], *, service: str, dim_divisor: float | None = None) -> bool:
@@ -566,10 +662,15 @@ class LogisticsService:
             return True
         if dim_divisor is not None and abs(float(quote.get("dimDivisor") or 0) - float(dim_divisor)) > 1e-6:
             return True
-        valid_until = str(quote.get("validUntil") or "9999-12-31").strip()
-        if valid_until and valid_until[:10] < _now()[:10]:
-            return True
-        return False
+        raw_valid = quote.get("validUntil")
+        if raw_valid in (None, ""):
+            valid_date = date(9999, 12, 31)
+        else:
+            try:
+                valid_date = _parse_valid_until_date(raw_valid)
+            except ValueError:
+                return True
+        return valid_date < utcnow().date()
 
     def label_payload(self, carton_id: str) -> dict[str, Any]:
         with self._lock:
