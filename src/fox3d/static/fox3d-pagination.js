@@ -13,6 +13,12 @@
 
   const MAX_ATTEMPTS = 2;
 
+  // 400 (malformed cursor), 410 (server can no longer verify a legacy cursor
+  // anchor) or an error flagged cursorExpired all mean "restart from page 1".
+  function isCursorRejection(err) {
+    return Boolean(err && (err.status === 400 || err.status === 410 || err.cursorExpired));
+  }
+
   // Raised when the server still reports an expired cursor after the restart
   // from the first page. Returning the items collected so far would make the
   // caller treat a partial list as complete, so fail loudly instead.
@@ -31,7 +37,7 @@
       try {
         first = await api(activePath);
       } catch (err) {
-        if (canRetry && err && (err.status === 400 || err.cursorExpired)) {
+        if (canRetry && isCursorRejection(err)) {
           activePath = stripCursorParam(activePath);
           continue;
         }
@@ -59,7 +65,7 @@
         try {
           page = await api(`${activePath}${sep}offset=${nextOffset}&limit=${limit}${cursorParam}`);
         } catch (err) {
-          if (usesCursor && canRetry && err && (err.status === 400 || err.cursorExpired)) {
+          if (usesCursor && canRetry && isCursorRejection(err)) {
             activePath = stripCursorParam(activePath);
             restartFromFirstPage = true;
             break;

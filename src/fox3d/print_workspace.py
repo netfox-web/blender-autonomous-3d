@@ -5,7 +5,7 @@ No network output, hot-folder dispatch, or machine control exists in this module
 from __future__ import annotations
 
 import copy
-from datetime import date, datetime
+from datetime import datetime
 import io
 import json
 import logging
@@ -32,7 +32,6 @@ LOG=logging.getLogger(__name__)
 LOCK=RLock()
 PT=72/25.4
 MAX_PROOF_BUNDLES=10
-LEGACY_CURSOR_SUNSET_DATE='2026-11-19'
 _MAX_CACHE_ENTRIES=10_000
 _JOB_CACHE:dict[str,tuple[tuple[int,int,int],dict|None]]={}
 _CREATED_AT_INDEX:dict[tuple[str,str],str]={}
@@ -42,8 +41,17 @@ class JobList(list):
     skipped: int = 0
     total: int = 0
     next_cursor: str | None = None
-    cursor_expired: bool = False
-    legacy_cursor_sunset: str = LEGACY_CURSOR_SUNSET_DATE
+
+
+class CursorExpiredError(ValueError):
+    """A legacy 2-part job cursor whose anchor can no longer be verified.
+
+    Mapped to HTTP 410 so that already-deployed clients (which do not know the
+    ``cursorExpired`` flag) reject instead of treating an empty page as the end.
+    """
+
+    def __init__(self)->None:
+        super().__init__('分頁游標已失效，請從第一頁重新載入清單')
 
 
 def _file_sig(path)->tuple[int,int,int]|None:
@@ -183,19 +191,6 @@ def _valid_cursor_timestamp(value:str)->bool:
     return True
 
 
-def _legacy_cursor_is_retired(now:datetime|date|str|None=None)->bool:
-    sunset=date.fromisoformat(LEGACY_CURSOR_SUNSET_DATE)
-    if now is None:
-        current_date=utcnow().date()
-    elif isinstance(now,datetime):
-        current_date=now.date()
-    elif isinstance(now,date):
-        current_date=now
-    else:
-        current_date=datetime.fromisoformat(str(now)).date()
-    return current_date>=sunset
-
-
 def _is_legacy_two_part_cursor(raw_cursor:str)->bool:
     parts=raw_cursor.split('|')
     if len(parts)!=2:
@@ -204,7 +199,7 @@ def _is_legacy_two_part_cursor(raw_cursor:str)->bool:
     return _valid_cursor_timestamp(c_created) and bool(re.fullmatch(r'[a-f0-9-]{36}',c_id))
 
 
-def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]]|None=None,folder=None)->tuple[str,str]|None:
+def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[str,dict]],folder=None)->tuple[str,str]|None:
     parts=raw_cursor.split('|')
     if len(parts)==3:
         p0,p1,p2=parts
@@ -214,12 +209,10 @@ def _parse_composite_cursor(raw_cursor:str,tenant_token:str,entries:list[tuple[s
             return (p0,p1)
         return None
     if len(parts)==2:
-        if _legacy_cursor_is_retired():
-            return None
         c_created,c_id=parts
         if not _valid_cursor_timestamp(c_created) or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
             return None
-        matching=next((item for item in (entries or ()) if item[1]['id']==c_id),None)
+        matching=next((item for item in entries if item[1]['id']==c_id),None)
         if matching is not None:
             return (c_created,c_id) if _job_sort_key(matching[0],matching[1])==(c_created,c_id) else None
         if folder is not None and (folder/c_id/'job.json').is_file():
@@ -266,7 +259,6 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
             LOG.warning('略過無法讀取或缺欄位的印刷工作紀錄: job=%s',f.parent.name)
     with LOCK:
         entries.sort(key=lambda item:_job_sort_key(item[0],item[1]),reverse=True)
-        cursor_expired=False
         if isinstance(cursor,str) and cursor.strip():
             raw_cursor=cursor.strip()
             if '|' in raw_cursor:
@@ -274,8 +266,7 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
                 if cursor_key is not None:
                     filtered=[item for item in entries if _job_sort_key(item[0],item[1])<cursor_key]
                 elif _is_legacy_two_part_cursor(raw_cursor):
-                    cursor_expired=True
-                    filtered=[]
+                    raise CursorExpiredError()
                 else:
                     filtered=entries[offset:]
             else:
@@ -296,14 +287,12 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
     out.skipped=skipped
     out.total=total
     out.next_cursor=next_cursor
-    out.cursor_expired=cursor_expired
-    out.legacy_cursor_sunset=LEGACY_CURSOR_SUNSET_DATE
     return out
 
 
 def list_jobs(root,tenant,*,offset=0,limit=100,cursor=None):
     rows=listing(root,tenant,offset=offset,limit=limit,cursor=cursor)
-    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped,'nextCursor':rows.next_cursor,'cursorExpired':rows.cursor_expired,'legacyCursorSunset':rows.legacy_cursor_sunset}
+    return {'items':list(rows),'total':rows.total,'offset':offset,'limit':limit,'skipped':rows.skipped,'nextCursor':rows.next_cursor,'cursorExpired':False}
 
 
 def save_job(root,tenant,draft,*,jid=None,expected_revision=0):
