@@ -44,6 +44,10 @@ OP_CAPABILITY = {
     "rework": "QC_MANUAL",
 }
 LEASE_SECONDS = 120.0
+ADMIN_STATION_STATUSES = frozenset({"ACTIVE", "MAINTENANCE", "DISABLED"})
+OPERATOR_STATION_STATUSES = frozenset({"ONLINE", "OFFLINE", "PAUSED"})
+ALL_STATION_STATUSES = ADMIN_STATION_STATUSES | OPERATOR_STATION_STATUSES
+DISPATCHABLE_STATION_STATUSES = frozenset({"ONLINE", "ACTIVE"})
 
 
 def _now() -> str:
@@ -151,10 +155,36 @@ class StationRegistry:
         self.persist()
         return rec
 
-    def set_status(self, station_id: str, *, tenant_id: str, status: str) -> dict[str, Any]:
+    def set_status(
+        self,
+        station_id: str,
+        *,
+        tenant_id: str,
+        status: str,
+        actor: str = "ops",
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in ALL_STATION_STATUSES:
+            raise ValueError(f"invalid station status: {status}")
         rec = self.get(station_id, tenant_id=tenant_id)
+        if rec.get("status") == status:
+            return rec
         rec["status"] = status
+        rec["statusUpdatedAt"] = _now()
+        rec["statusUpdatedBy"] = actor
+        if note is not None:
+            rec["statusNote"] = note
         self.persist()
+        emit(
+            self,
+            "station.status",
+            tenant_id=tenant_id,
+            aggregate_type="Station",
+            aggregate_id=rec["stationId"],
+            actor=actor,
+            payload={"status": status, "note": note},
+            semantic_key=f"{tenant_id}::station::{rec['stationId']}::status::{status}",
+        )
         return rec
 
     def list(self, *, tenant_id: str) -> list[dict[str, Any]]:
@@ -301,7 +331,10 @@ class StationDispatcher:
             wo = self._require_wo(work_order_id, tenant_id)
             self._require_identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
             station = self.stations.get(station_id, tenant_id=tenant_id)
-            if station.get("status") != "ONLINE":
+            station_status = str(station.get("status") or "")
+            if station_status not in DISPATCHABLE_STATION_STATUSES:
+                if station_status in {"MAINTENANCE", "DISABLED"}:
+                    raise PermissionError("station unavailable for dispatch")
                 self.inbox.record(
                     tenant_id=tenant_id,
                     code="STATION_OFFLINE",
@@ -563,6 +596,20 @@ class StationDispatcher:
         wo = self.workorders.get(work_order_id)
         if wo.get("state") in {"CANCELLED", "COMPLETED", "REJECTED"}:
             raise PermissionError("cancelled/completed work order cannot dispatch")
+
+    def list_leases(
+        self,
+        *,
+        tenant_id: str,
+        station_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        items = [dict(lease) for lease in self.leases.values() if lease.get("tenantId") == tenant_id]
+        if station_id:
+            items = [lease for lease in items if lease.get("stationId") == station_id]
+        if status:
+            items = [lease for lease in items if lease.get("status") == status]
+        return items
 
     def _lease(self, lease_id: str, tenant_id: str) -> dict[str, Any]:
         lease = self.leases[lease_id]

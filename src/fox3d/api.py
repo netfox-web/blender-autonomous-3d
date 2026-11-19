@@ -31,10 +31,10 @@ from fox3d.pilot_packing_api import pilot_packing_router
 from fox3d.pilot_batch_api import pilot_batch_router
 from fox3d.pilot_qc_api import pilot_qc_router
 from fox3d.platform import Platform
-from fox3d.recovery import PilotException
+from fox3d.recovery import ExceptionStateError, PilotException
 from fox3d.cyclecount_api import cyclecount_router
 from fox3d.recipe_admin_api import recipe_router
-from fox3d.station import STATION_CAPS
+from fox3d.station import ADMIN_STATION_STATUSES, STATION_CAPS
 
 
 def _dimensions(value: Any) -> None:
@@ -159,6 +159,28 @@ def _raise_permission(exc: PermissionError) -> NoReturn:
     if message.startswith("tenant isolation"):
         raise HTTPException(403, message) from exc
     raise HTTPException(422, message) from exc
+
+
+def _pilot_tenant_missing(exc: BaseException) -> bool:
+    return isinstance(exc, (KeyError, PermissionError)) and (
+        isinstance(exc, KeyError) or str(exc).startswith("tenant isolation")
+    )
+
+
+def _paginate_list(
+    request: Request,
+    rows: list[dict[str, Any]],
+    *,
+    offset: int,
+    limit: int,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    total = len(rows)
+    base: dict[str, Any] = dict(extra or {})
+    if "offset" not in request.query_params and "limit" not in request.query_params:
+        return {**base, "items": rows, "total": total, "offset": 0, "limit": total}
+    page = rows[offset : offset + limit]
+    return {**base, "items": page, "total": total, "offset": offset, "limit": limit}
 
 
 def _require_text_fields(payload: dict[str, Any], names: tuple[str, ...]) -> None:
@@ -1173,6 +1195,61 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except PermissionError as exc:
             raise HTTPException(403, str(exc)) from exc
 
+    @app.get("/api/pilot/stations")
+    def pilot_stations_list(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        rows = get_platform().pilot.stations.list(tenant_id=tid)
+        return _paginate_list(request, rows, offset=offset, limit=limit)
+
+    @app.put("/api/pilot/stations/{station_id}/status")
+    def pilot_station_status(
+        station_id: str,
+        payload: dict[str, Any],
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id, payload)
+        status = str(payload.get("status") or "")
+        if status not in ADMIN_STATION_STATUSES:
+            raise HTTPException(422, f"status 可用值: {', '.join(sorted(ADMIN_STATION_STATUSES))}")
+        try:
+            return get_platform().pilot.stations.set_status(
+                station_id,
+                tenant_id=tid,
+                status=status,
+                actor=str(payload.get("actor") or "api"),
+                note=payload.get("note"),
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except PermissionError as exc:
+            if _pilot_tenant_missing(exc):
+                raise HTTPException(404, "resource not found") from exc
+            _raise_permission(exc)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get("/api/pilot/leases")
+    def pilot_leases_list(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        stationId: str | None = None,
+        status: str | None = None,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
+        tid = require_tenant(x_tenant_id)
+        rows = get_platform().pilot.dispatcher.list_leases(
+            tenant_id=tid,
+            station_id=stationId,
+            status=status,
+        )
+        return _paginate_list(request, rows, offset=offset, limit=limit, extra={"liveMachineControl": False})
+
     @app.post("/api/pilot/stations")
     def pilot_station(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
@@ -1259,9 +1336,62 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(403, str(exc)) from exc
 
     @app.get("/api/pilot/exceptions")
-    def pilot_exceptions(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def pilot_exceptions(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        status: str | None = None,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=500),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        return {"items": get_platform().pilot.inbox.list(tenant_id=tid)}
+        rows = get_platform().pilot.inbox.list(tenant_id=tid, status=status)
+        return _paginate_list(request, rows, offset=offset, limit=limit)
+
+    @app.post("/api/pilot/exceptions/{exception_id}/ack")
+    def pilot_exception_ack(
+        exception_id: str,
+        payload: dict[str, Any] | None = None,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        try:
+            return get_platform().pilot.inbox.acknowledge(
+                exception_id,
+                tenant_id=tid,
+                actor=str(body.get("actor") or "api"),
+                note=body.get("note"),
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except ExceptionStateError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except PermissionError as exc:
+            if _pilot_tenant_missing(exc):
+                raise HTTPException(404, "resource not found") from exc
+            _raise_permission(exc)
+
+    @app.post("/api/pilot/exceptions/{exception_id}/resolve")
+    def pilot_exception_resolve(
+        exception_id: str,
+        payload: dict[str, Any] | None = None,
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        body = payload or {}
+        tid = require_tenant(x_tenant_id, body)
+        try:
+            return get_platform().pilot.inbox.resolve(
+                exception_id,
+                tenant_id=tid,
+                actor=str(body.get("actor") or "api"),
+                resolution=body.get("resolution"),
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "resource not found") from exc
+        except PermissionError as exc:
+            if _pilot_tenant_missing(exc):
+                raise HTTPException(404, "resource not found") from exc
+            _raise_permission(exc)
 
     @app.post("/api/pilot/import")
     def pilot_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

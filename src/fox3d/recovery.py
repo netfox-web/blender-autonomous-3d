@@ -113,6 +113,10 @@ class PilotException(PermissionError):
         self.silentSuccess = False
 
 
+class ExceptionStateError(PermissionError):
+    """Raised when an exception inbox transition is not allowed (e.g. ack after resolve)."""
+
+
 def catalog_entry(code: str) -> dict[str, Any]:
     if code not in CATALOG:
         raise KeyError(code)
@@ -240,11 +244,78 @@ class ExceptionInbox:
             raise
         return rec
 
-    def list(self, *, tenant_id: str) -> list[dict[str, Any]]:
-        return [i for i in self.items.values() if i.get("tenantId") == tenant_id]
+    def list(self, *, tenant_id: str, status: str | None = None) -> list[dict[str, Any]]:
+        items = [i for i in self.items.values() if i.get("tenantId") == tenant_id]
+        if status:
+            items = [i for i in items if i.get("status") == status]
+        return items
 
     def get(self, exception_id: str, *, tenant_id: str) -> dict[str, Any]:
         rec = self.items[exception_id]
         if rec.get("tenantId") != tenant_id:
             raise PermissionError("tenant isolation: exception")
+        return rec
+
+    def acknowledge(
+        self,
+        exception_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            rec = self.get(exception_id, tenant_id=tenant_id)
+            if rec.get("status") == "RESOLVED":
+                raise ExceptionStateError("exception already resolved")
+            if rec.get("status") == "ACKNOWLEDGED":
+                return rec
+            rec["status"] = "ACKNOWLEDGED"
+            rec["acknowledgedAt"] = utcnow().isoformat()
+            rec["acknowledgedBy"] = actor
+            if note is not None:
+                rec["ackNote"] = note
+            self.persist()
+        emit(
+            self,
+            "exception.acknowledged",
+            tenant_id=tenant_id,
+            aggregate_type="PilotException",
+            aggregate_id=rec["exceptionId"],
+            actor=actor,
+            payload={"note": note, "status": "ACKNOWLEDGED"},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{tenant_id}::exc-ack::{rec['exceptionId']}",
+        )
+        return rec
+
+    def resolve(
+        self,
+        exception_id: str,
+        *,
+        tenant_id: str,
+        actor: str,
+        resolution: str | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            rec = self.get(exception_id, tenant_id=tenant_id)
+            if rec.get("status") == "RESOLVED":
+                return rec
+            rec["status"] = "RESOLVED"
+            rec["resolvedAt"] = utcnow().isoformat()
+            rec["resolvedBy"] = actor
+            if resolution is not None:
+                rec["resolution"] = resolution
+            self.persist()
+        emit(
+            self,
+            "exception.resolved",
+            tenant_id=tenant_id,
+            aggregate_type="PilotException",
+            aggregate_id=rec["exceptionId"],
+            actor=actor,
+            payload={"resolution": resolution, "status": "RESOLVED"},
+            release_hash=rec.get("releaseHash"),
+            semantic_key=f"{tenant_id}::exc-resolve::{rec['exceptionId']}",
+        )
         return rec
