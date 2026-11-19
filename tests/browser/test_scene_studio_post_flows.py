@@ -8,6 +8,42 @@ from playwright.sync_api import Page, Route
 
 pytestmark = pytest.mark.browser
 
+_WAIT_TOKEN = 0
+
+
+def _wait_for_pending(page: Page, getter_name: str, expected: int) -> None:
+    global _WAIT_TOKEN
+    _WAIT_TOKEN += 1
+    page.wait_for_function(
+        """([name, target, token]) => {
+            const store = (window.__fox3dPendingWait = window.__fox3dPendingWait || {});
+            const entry = (store[name] = store[name] || { token: 0, value: -1, busy: false });
+            if (entry.token !== token) {
+                entry.token = token;
+                entry.value = -1;
+                entry.busy = false;
+            }
+            if (!entry.busy && typeof window[name] === 'function') {
+                entry.busy = true;
+                window[name]().then(
+                    n => {
+                        if (entry.token === token) {
+                            entry.value = Number(n);
+                            entry.busy = false;
+                        }
+                    },
+                    () => {
+                        if (entry.token === token) {
+                            entry.busy = false;
+                        }
+                    }
+                );
+            }
+            return entry.value >= target;
+        }""",
+        arg=[getter_name, expected, _WAIT_TOKEN],
+    )
+
 
 def open_studio(page: Page, server: dict[str, Any]) -> None:
     page.goto(server['base_url'] + '/admin/recipes/scenes', wait_until='domcontentloaded')
@@ -18,6 +54,7 @@ def open_studio(page: Page, server: dict[str, Any]) -> None:
 def test_batch_inflight_and_network_error(admin_page: Page, admin_server: dict[str, Any]) -> None:
     page = admin_page
     pending: list[Route] = []
+    gate_polls = 0
 
     def hold_post(route: Route) -> None:
         if route.request.method == 'POST':
@@ -25,19 +62,28 @@ def test_batch_inflight_and_network_error(admin_page: Page, admin_server: dict[s
             return
         route.continue_()
 
-    page.expose_function('__fox3dPendingBatches', lambda: len(pending))
+    def pending_count() -> int:
+        nonlocal gate_polls
+        gate_polls += 1
+        if gate_polls in (1, 3):
+            return len(pending) - 1
+        return len(pending)
+
+    page.expose_function('__fox3dPendingBatches', pending_count)
     page.route('**/api/ecommerce-scenes/batches', hold_post)
     open_studio(page, admin_server)
     page.locator('#blender-matrix-btn').click()
     page.wait_for_function("() => document.querySelector('#blender-matrix-btn').disabled")
-    page.wait_for_function("async () => (await window.__fox3dPendingBatches()) >= 1")
+    _wait_for_pending(page, '__fox3dPendingBatches', 1)
+    assert gate_polls >= 2
     assert len(pending) == 1
     page.locator('#blender-matrix-btn').evaluate("el => el.dispatchEvent(new MouseEvent('click', {bubbles:true}))")
     assert len(pending) == 1
     first_key = json.loads(pending[0].request.post_data or '{}')['idempotencyKey']
     pending[0].abort()
     # The automatic network retry keeps the button disabled and carries the same key.
-    page.wait_for_function("async () => (await window.__fox3dPendingBatches()) >= 2")
+    _wait_for_pending(page, '__fox3dPendingBatches', 2)
+    assert gate_polls >= 4
     assert page.locator('#blender-matrix-btn').is_disabled()
     assert len(pending) == 2
     assert json.loads(pending[1].request.post_data or '{}')['idempotencyKey'] == first_key
@@ -74,7 +120,7 @@ def test_cancel_button_posts_snapshot_and_shows_cancelled(admin_page: Page, admi
     cancelled = {**running, 'state': 'cancelled', 'completed': 1, 'cancelled': 1}
     calls: list[str] = []
     page.route('**/api/ecommerce-scenes/batches', lambda route: route.fulfill(json=running))
-    page.route('**/api/ecommerce-scenes/batches/batch2', lambda route: route.fulfill(json=running))
+    page.route('**/api/ecommerce-scenes/batches/batch2', lambda route: route.fulfill(json=cancelled if calls else running))
 
     def cancel(route: Route) -> None:
         calls.append(route.request.url)
@@ -135,6 +181,7 @@ def test_batch_history_load_more_and_state_filter_single_inflight(
             return
         route.fulfill(json={'items': page1, 'total': 18, 'offset': 0, 'limit': 15, 'skipped': 1})
 
+    page.expose_function('__fox3dPendingMore', lambda: len(pending_more))
     page.route('**/api/ecommerce-scenes/batches?**', handle_history)
     page.route('**/api/ecommerce-scenes/batches/hist_02', lambda route: route.fulfill(json=page1[1]))
     page.route('**/api/ecommerce-scenes/batches/hist_01', lambda route: route.fulfill(json=page1[0]))
@@ -160,6 +207,7 @@ def test_batch_history_load_more_and_state_filter_single_inflight(
     assert not more_btn.is_hidden()
     more_btn.click()
     page.wait_for_function("() => document.querySelector('#batch-history-more').disabled")
+    _wait_for_pending(page, '__fox3dPendingMore', 1)
     assert len(pending_more) == 1
     more_btn.evaluate("el => el.dispatchEvent(new MouseEvent('click', {bubbles:true}))")
     assert len(pending_more) == 1
@@ -202,17 +250,24 @@ def test_poll_completion_refreshes_filtered_history(
         else:
             pending_poll.append(route)
 
+    page.expose_function('__fox3dPendingPoll', lambda: len(pending_poll))
+    page.expose_function(
+        '__fox3dFilteredHistoryQueries',
+        lambda: sum(f'state={filter_state}' in q and 'offset=0' in q for q in history_queries),
+    )
     page.route('**/api/ecommerce-scenes/batches?**', history)
     page.route('**/api/ecommerce-scenes/batches/hist_01', detail)
     open_studio(page, admin_server)
     page.locator('#batch-history-list .history-open-btn').wait_for()
     page.select_option('#batch-history-state', filter_state)
     expected_initial = 1 if filter_state == 'running' else 0
+    _wait_for_pending(page, '__fox3dFilteredHistoryQueries', 1)
     page.wait_for_function(
         "n => document.querySelectorAll('#batch-history-list .batch-history-row').length === n",
         arg=expected_initial,
     )
     page.wait_for_function("() => !document.querySelector('#batch-history-refresh').disabled")
+    _wait_for_pending(page, '__fox3dPendingPoll', 1)
     assert len(pending_poll) == 1
     finished = True
     pending_poll[0].fulfill(json=completed)
@@ -235,6 +290,7 @@ def test_batch_history_delete_confirm_snapshot_and_single_inflight(
     b2 = _history_batch(2, state='completed', succeeded=1)
     pending_deletes: list[Route] = []
 
+    page.expose_function('__fox3dPendingDeletes', lambda: len(pending_deletes))
     page.route(
         '**/api/ecommerce-scenes/batches?**',
         lambda route: route.fulfill(json={'items': [b1, b2], 'total': 2, 'offset': 0, 'limit': 15, 'skipped': 0}),
@@ -262,6 +318,7 @@ def test_batch_history_delete_confirm_snapshot_and_single_inflight(
     confirm_btn = page.locator('#batch-delete-confirm')
     confirm_btn.click()
     page.wait_for_function("() => document.getElementById('batch-delete-confirm').disabled")
+    _wait_for_pending(page, '__fox3dPendingDeletes', 1)
     assert len(pending_deletes) == 1
     assert pending_deletes[0].request.url.endswith('/api/ecommerce-scenes/batches/hist_01')
 
@@ -284,6 +341,7 @@ def test_batch_history_delete_confirm_snapshot_and_single_inflight(
     page.locator('#batch-history-list .batch-history-row[data-batch-id="hist_02"] .history-delete-btn').click()
     confirm_btn.click()
     page.wait_for_function("() => document.getElementById('batch-delete-confirm').disabled")
+    _wait_for_pending(page, '__fox3dPendingDeletes', 2)
     assert len(pending_deletes) == 2
     pending_deletes[1].abort()
     page.wait_for_function("() => !document.getElementById('batch-delete-confirm').disabled")
