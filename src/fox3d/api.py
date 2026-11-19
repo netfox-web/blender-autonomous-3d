@@ -9,11 +9,11 @@ import re
 from pathlib import Path
 from typing import Any, NoReturn
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
+from fastapi import Body, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from pydantic import ValidationError
 
-from fox3d.journal import SemanticKeyConflictError
+from fox3d.journal import JournalCommitError, SemanticKeyConflictError
 from fox3d.admin import render_admin
 from fox3d.admin_pages import page_routers
 from fox3d.commerce import ImportValidationError, ProviderDisconnectedError
@@ -165,6 +165,35 @@ def _pilot_tenant_missing(exc: BaseException) -> bool:
     return isinstance(exc, (KeyError, PermissionError)) and (
         isinstance(exc, KeyError) or str(exc).startswith("tenant isolation")
     )
+
+
+def _require_json_object(payload: Any, *, allow_none: bool = False) -> dict[str, Any]:
+    if payload is None and allow_none:
+        return {}
+    if not isinstance(payload, dict):
+        raise HTTPException(422, "請求內容須為 JSON 物件")
+    return payload
+
+
+def _optional_str_field(payload: dict[str, Any], field: str) -> str | None:
+    raw = payload.get(field)
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        raise HTTPException(422, f"{field} 格式錯誤")
+    return raw
+
+
+def _optional_key_field(payload: dict[str, Any], field: str) -> str | None:
+    if field not in payload or payload[field] in (None, ""):
+        return None
+    raw = payload[field]
+    if not isinstance(raw, str):
+        raise HTTPException(422, f"{field} 格式錯誤")
+    val = raw.strip()
+    if not val or len(raw) > 200:
+        raise HTTPException(422, f"{field} 格式錯誤")
+    return val
 
 
 def _paginate_list(
@@ -1209,20 +1238,28 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.put("/api/pilot/stations/{station_id}/status")
     def pilot_station_status(
         station_id: str,
-        payload: dict[str, Any],
+        payload: Any = Body(default=None),
         x_tenant_id: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        tid = require_tenant(x_tenant_id, payload)
-        status = str(payload.get("status") or "")
-        if status not in ADMIN_STATION_STATUSES:
+        body = _require_json_object(payload)
+        tid = require_tenant(x_tenant_id, body)
+        raw_status = body.get("status")
+        if not isinstance(raw_status, str) or raw_status not in ADMIN_STATION_STATUSES:
             raise HTTPException(422, f"status 可用值: {', '.join(sorted(ADMIN_STATION_STATUSES))}")
+        actor = (_optional_str_field(body, "actor") or "").strip() or "api"
+        note = _optional_str_field(body, "note")
+        t_key = _optional_key_field(body, "transitionId")
+        i_key = _optional_key_field(body, "idempotencyKey")
+        if t_key and i_key and t_key != i_key:
+            raise HTTPException(422, "transitionId 與 idempotencyKey 不一致")
         try:
             return get_platform().pilot.stations.set_status(
                 station_id,
                 tenant_id=tid,
-                status=status,
-                actor=str(payload.get("actor") or "api"),
-                note=payload.get("note"),
+                status=raw_status,
+                actor=actor,
+                note=note,
+                transition_id=t_key or i_key,
             )
         except KeyError as exc:
             raise HTTPException(404, "resource not found") from exc
@@ -1230,8 +1267,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             if _pilot_tenant_missing(exc):
                 raise HTTPException(404, "resource not found") from exc
             _raise_permission(exc)
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        except JournalCommitError as exc:
+            raise HTTPException(503, "稽核日誌寫入失敗，請重試") from exc
 
     @app.get("/api/pilot/leases")
     def pilot_leases_list(
@@ -1350,17 +1391,19 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     @app.post("/api/pilot/exceptions/{exception_id}/ack")
     def pilot_exception_ack(
         exception_id: str,
-        payload: dict[str, Any] | None = None,
+        payload: Any = Body(default=None),
         x_tenant_id: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        body = payload or {}
+        body = _require_json_object(payload, allow_none=True)
         tid = require_tenant(x_tenant_id, body)
+        actor = (_optional_str_field(body, "actor") or "").strip() or "api"
+        note = _optional_str_field(body, "note")
         try:
             return get_platform().pilot.inbox.acknowledge(
                 exception_id,
                 tenant_id=tid,
-                actor=str(body.get("actor") or "api"),
-                note=body.get("note"),
+                actor=actor,
+                note=note,
             )
         except KeyError as exc:
             raise HTTPException(404, "resource not found") from exc
@@ -1370,21 +1413,29 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             if _pilot_tenant_missing(exc):
                 raise HTTPException(404, "resource not found") from exc
             _raise_permission(exc)
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except JournalCommitError as exc:
+            raise HTTPException(503, "稽核日誌寫入失敗，請重試") from exc
 
     @app.post("/api/pilot/exceptions/{exception_id}/resolve")
     def pilot_exception_resolve(
         exception_id: str,
-        payload: dict[str, Any] | None = None,
+        payload: Any = Body(default=None),
         x_tenant_id: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        body = payload or {}
+        body = _require_json_object(payload, allow_none=True)
         tid = require_tenant(x_tenant_id, body)
+        actor = (_optional_str_field(body, "actor") or "").strip() or "api"
+        resolution = _optional_str_field(body, "resolution")
         try:
             return get_platform().pilot.inbox.resolve(
                 exception_id,
                 tenant_id=tid,
-                actor=str(body.get("actor") or "api"),
-                resolution=body.get("resolution"),
+                actor=actor,
+                resolution=resolution,
             )
         except KeyError as exc:
             raise HTTPException(404, "resource not found") from exc
@@ -1392,6 +1443,12 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             if _pilot_tenant_missing(exc):
                 raise HTTPException(404, "resource not found") from exc
             _raise_permission(exc)
+        except SemanticKeyConflictError as exc:
+            raise HTTPException(409, "idempotency conflict") from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except JournalCommitError as exc:
+            raise HTTPException(503, "稽核日誌寫入失敗，請重試") from exc
 
     @app.post("/api/pilot/import")
     def pilot_import(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

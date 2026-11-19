@@ -740,7 +740,8 @@
           stationId: st.stationId,
           status: sel.value,
           note: (note.value || '').trim(),
-          actor: 'floor-admin'
+          actor: 'floor-admin',
+          transitionId: 'pf-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10)
         };
       }
     });
@@ -758,9 +759,13 @@
       var snap = ctl.snapshot;
       runAction({
         label: '站點狀態',
-        disable: [ctl.btn, ctl.box, sel, note],
+        disable: [ctl.btn, ctl.box],
         request: function () {
-          var body = { status: snap.payload.status, actor: snap.payload.actor };
+          var body = {
+            status: snap.payload.status,
+            actor: snap.payload.actor,
+            transitionId: snap.payload.transitionId
+          };
           if (snap.payload.note) body.note = snap.payload.note;
           return api(
             '/api/pilot/stations/' + encodeURIComponent(snap.payload.stationId) + '/status',
