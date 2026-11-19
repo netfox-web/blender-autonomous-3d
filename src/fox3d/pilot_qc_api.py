@@ -121,11 +121,10 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                     operator=operator,
                     required_final=bool(spec.get("requiredFinal")),
                     source=raw_source,
+                    idem_entry=(store_key, sig),
                 )
             except PermissionError as exc:
                 raise HTTPException(409, str(exc)) from exc
-            pilot.qc.idem[store_key] = {"sig": sig, "qcId": str(rec["qcId"])}
-            pilot.qc.persist()
             pilot.workorders.persist()
             return dict(rec)
 
@@ -194,11 +193,9 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                     raise HTTPException(409, "idempotencyKey 衝突")
                 return dict(pilot.qc.defects[previous["qcId"]])
             try:
-                rec = pilot.qc.defect(tenant_id=tid, work_order_id=work_order_id, code=code, disposition=disposition, actor=str(body.get("actor") or "qc"), note=str(body.get("note") or ""))
+                rec = pilot.qc.defect(tenant_id=tid, work_order_id=work_order_id, code=code, disposition=disposition, actor=str(body.get("actor") or "qc"), note=str(body.get("note") or ""), idem_entry=(store_key, signature))
             except PermissionError as exc:
                 raise HTTPException(409, "工單狀態不允許此處置") from exc
-            pilot.qc.idem[store_key] = {"sig": signature, "qcId": str(rec["defectId"])}
-            pilot.qc.persist()
             return dict(rec)
 
     return router

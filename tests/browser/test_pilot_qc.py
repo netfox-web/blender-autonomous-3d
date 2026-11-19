@@ -163,3 +163,28 @@ def test_pilot_work_orders_list_fetches_all_pages_over_100(admin_page: Page, adm
     page.goto(admin_server["base_url"] + "/admin/pilot")
     expect(page.locator("#orders")).to_contain_text("wo-100")
     assert any("work-orders" in url and "offset=" not in url for url in requested)
+
+
+@pytest.mark.browser
+def test_qc_response_during_confirmation_recovers_on_cancel(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    page = admin_page
+    page.add_init_script("""(() => {
+      const original = window.fetch;
+      let first = true;
+      window.fetch = function(url, options) {
+        if (String(url).endsWith('/test-order/qc') && first) {
+          first = false;
+          return new Promise(resolve => { window.releaseQc = () => resolve({ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({plan: [{checkId: 'THICKNESS', nominal: 18}], requiredFinalOk: {ok: false}}))}); });
+        }
+        return original.apply(this, arguments);
+      };
+    })();""")
+    page.route("**/api/pilot/work-orders*", lambda r: r.fulfill(json={"items": [{"workOrderId": "test-order", "state": "QC_HOLD"}], "total": 1}))
+    page.route("**/api/pilot/work-orders/test-order/qc", lambda r: r.fulfill(json={"plan": [{"checkId": "THICKNESS", "nominal": 18}], "requiredFinalOk": {"ok": False}}))
+    page.goto(admin_server["base_url"] + "/admin/pilot")
+    page.locator("#orders button").click()
+    page.locator("#qc-release").click()
+    page.evaluate("async () => { window.releaseQc(); for (let i = 0; i < 10; i++) await Promise.resolve(); }")
+    page.locator("#cancel").click()
+    expect(page.locator("#qc-checks form")).to_have_count(1)
+    expect(page.locator("#qc-status")).to_contain_text("尚未通過")
