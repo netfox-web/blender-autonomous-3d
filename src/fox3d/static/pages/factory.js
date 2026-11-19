@@ -32,6 +32,8 @@
   var RD_PAGE_LIMIT = 10;
   var rdHistoryReqSeq = 0;
   var rdDetailReqSeq = 0;
+  var rdGenerateReqSeq = 0;
+  var rdApproveReqSeq = 0;
   var rdGenerateInFlight = false;
   var rdApproveInFlight = false;
   var rdLoadMoreInFlight = false;
@@ -714,6 +716,11 @@
     return false;
   }
 
+  function rdRenderJobFailure(data) {
+    var job = data && data.parametricRender && data.parametricRender.job;
+    return job && isBlockedOrFailedPayload(job) ? job : null;
+  }
+
   function resetRdSelectionUI() {
     state.lastRdResult = null;
     state.selectedRdId = null;
@@ -724,6 +731,7 @@
       syncConfirmLock(appBox);
     }
     if ($('rd-approve-out')) $('rd-approve-out').hidden = true;
+    if ($('rd-api-out')) $('rd-api-out').hidden = true;
     if ($('rd-body')) $('rd-body').hidden = true;
     if ($('rd-empty')) {
       $('rd-empty').hidden = false;
@@ -777,15 +785,12 @@
     }
     if (rd.parametricRender && rd.parametricRender.job) {
       var pJob = rd.parametricRender.job;
-      var jobBlocked =
-        String(pJob.status || '').toUpperCase().indexOf('BLOCKED') === 0 ||
-        String(pJob.error || '').toUpperCase().indexOf('BLOCKED') === 0;
-      if (jobBlocked) {
+      if (isBlockedOrFailedPayload(pJob)) {
         badgesBox.appendChild(
           el(
             'span',
             { 'class': 'fc-badge err' },
-            '母版 3D 預覽：' + String(pJob.error || 'BLOCKED') + '（主機環境受阻）'
+            '母版 3D 預覽：' + String(pJob.error || pJob.status || 'FAILED') + '（算圖失敗）'
           )
         );
       } else {
@@ -1288,7 +1293,30 @@
       /* storage blocked */
     }
 
+    $('fc-tenant').addEventListener('input', function () {
+      rdGenerateReqSeq++;
+      rdApproveReqSeq++;
+      rdHistoryReqSeq++;
+      rdDetailReqSeq++;
+      rdPendingGenerate = null;
+      var box = $('rd-confirm-box');
+      box.hidden = true;
+      syncConfirmLock(box);
+      state.rdHistory = [];
+      state.rdTotal = 0;
+      state.rdNextCursor = null;
+      state.rdHasMore = false;
+      resetRdSelectionUI();
+      renderRdHistory();
+    });
+
     $('fc-tenant').addEventListener('change', function (e) {
+      rdGenerateReqSeq++;
+      rdApproveReqSeq++;
+      rdPendingGenerate = null;
+      var generateBox = $('rd-confirm-box');
+      generateBox.hidden = true;
+      syncConfirmLock(generateBox);
       var v = e.target.value.trim() || 'sonaqueen-home';
       e.target.value = v;
       try {
@@ -1638,11 +1666,12 @@
       }
       rdPendingGenerate = {
         text: txt,
+        tenant: currentTenant(),
         variantCount: cnt,
         idempotencyKey: makeIdempotencyKey('rd-gen')
       };
       $('rd-confirm-msg').textContent =
-        '即將根據需求「' +
+        '即將為租戶「' + rdPendingGenerate.tenant + '」根據需求「' +
         rdPendingGenerate.text +
         '」產生 ' +
         rdPendingGenerate.variantCount +
@@ -1661,7 +1690,9 @@
     });
 
     $('rd-confirm-yes').addEventListener('click', function () {
-      if (rdGenerateInFlight || !rdPendingGenerate) return;
+      if (rdGenerateInFlight || !rdPendingGenerate || rdPendingGenerate.tenant !== currentTenant()) return;
+      var snap = rdPendingGenerate;
+      var reqSeq = ++rdGenerateReqSeq;
       rdGenerateInFlight = true;
       var yesBtn = $('rd-confirm-yes');
       var noBtn = $('rd-confirm-no');
@@ -1676,9 +1707,10 @@
         idempotencyKey: rdPendingGenerate.idempotencyKey
       };
 
-      apiFetch('/api/product-rd/generate', { method: 'POST', body: payload })
+      apiFetch('/api/product-rd/generate', { method: 'POST', headers: { 'X-Tenant-Id': snap.tenant }, body: payload })
         .then(function (res) {
-          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data)) {
+          if (reqSeq !== rdGenerateReqSeq || snap.tenant !== currentTenant()) return;
+          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data) && !rdRenderJobFailure(res.data)) {
             rdPendingGenerate = null;
             var box = $('rd-confirm-box');
             box.hidden = true;
@@ -1700,11 +1732,18 @@
             syncConfirmLock(boxErr);
             rdPendingGenerate = null;
             renderApiAnswer($('rd-api-out'), '商品研發產生失敗', res);
-            var errDetail = (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
+            var failedJob = rdRenderJobFailure(res.data);
+            var errDetail = (failedJob && (failedJob.error || failedJob.status)) ||
+              (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
+            if (res.ok && failedJob) {
+              showGlobalAlert('研發方案已儲存，但母版 3D 算圖失敗：' + errDetail, 'err');
+              return refreshRdHistory();
+            }
             showGlobalAlert('商品研發產生失敗：' + errDetail, 'err');
           }
         })
         .catch(function (e) {
+          if (reqSeq !== rdGenerateReqSeq || snap.tenant !== currentTenant()) return;
           showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
         })
         .finally(function () {
@@ -1734,10 +1773,11 @@
         var judgeLbl = resolveRdJudgeLabel(current);
         rdPendingApprove = {
           rdId: state.selectedRdId,
+          tenant: currentTenant(),
           actor: actor
         };
         $('rd-approve-msg').textContent =
-          '確定由「' +
+          '確定為租戶「' + rdPendingApprove.tenant + '」由「' +
           rdPendingApprove.actor +
           '」核准研發方案 ' +
           rdPendingApprove.rdId +
@@ -1762,10 +1802,12 @@
 
     if ($('rd-approve-yes')) {
       $('rd-approve-yes').addEventListener('click', function () {
-        if (rdApproveInFlight || !rdPendingApprove) return;
+        if (rdApproveInFlight || !rdPendingApprove || rdPendingApprove.tenant !== currentTenant()) return;
+        var reqSeq = ++rdApproveReqSeq;
         rdApproveInFlight = true;
         var snap = {
           rdId: rdPendingApprove.rdId,
+          tenant: rdPendingApprove.tenant,
           actor: rdPendingApprove.actor
         };
         var yesBtn = $('rd-approve-yes');
@@ -1777,12 +1819,14 @@
 
         apiFetch('/api/product-rd/results/' + encodeURIComponent(snap.rdId) + '/approve', {
           method: 'POST',
+          headers: { 'X-Tenant-Id': snap.tenant },
           body: {
             actor: snap.actor,
             confirm: true
           }
         })
           .then(function (res) {
+            if (reqSeq !== rdApproveReqSeq || snap.tenant !== currentTenant()) return;
             if (res.ok && res.data && !isBlockedOrFailedPayload(res.data)) {
               rdPendingApprove = null;
               var box = $('rd-approve-confirm');
@@ -1826,6 +1870,7 @@
             }
           })
           .catch(function (e) {
+            if (reqSeq !== rdApproveReqSeq || snap.tenant !== currentTenant()) return;
             showGlobalAlert('連線失敗，請稍後再試：' + ((e && e.message) || e), 'err');
           })
           .finally(function () {

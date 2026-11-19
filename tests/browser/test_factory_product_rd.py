@@ -339,3 +339,97 @@ def test_product_rd_approve_inflight_network_error_and_lookup_404_clears_selecti
     expect(page.locator("#rd-empty")).to_contain_text("HTTP 404")
     expect(page.locator("#rd-body")).to_be_hidden()
 
+
+def test_tenant_switch_cancels_confirmations_and_ignores_inflight_responses(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    held: list[Route] = []
+    item = {
+        "rdId": "tenant-a-result",
+        "text": "Tenant A plan",
+        "baseSpec": {},
+        "baseReport": {"ok": True},
+        "top": [],
+        "approval": {"status": "WAITING_APPROVAL"},
+    }
+    page.route(
+        "**/api/product-rd/results?*",
+        lambda route: route.fulfill(json={"items": [], "total": 0, "hasMore": False}),
+    )
+    page.route("**/api/product-rd/generate", lambda route: held.append(route))
+    page.route("**/api/product-rd/results/tenant-a-result/approve", lambda route: held.append(route))
+    page.expose_function("__heldCount", lambda: len(held))
+    page.goto(admin_server["base_url"] + "/admin/factory#rd")
+    page.locator("#rd-text").fill("Tenant A requirement")
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+    expect(page.locator("#rd-confirm-msg")).to_contain_text("sonaqueen-home")
+    _switch_tenant(page, "tenant-b")
+    expect(page.locator("#rd-confirm-box")).to_be_hidden()
+    _force_click(page, "rd-confirm-yes")
+    assert len(held) == 0
+
+    _switch_tenant(page, "sonaqueen-home")
+    page.locator("#rd-prepare-btn").click()
+    page.locator("#rd-confirm-yes").click()
+    page.wait_for_function("async () => (await window.__heldCount()) === 1")
+    assert held[0].request.headers["x-tenant-id"] == "sonaqueen-home"
+    _switch_tenant(page, "tenant-b")
+    _switch_tenant(page, "sonaqueen-home")
+    held[0].fulfill(json=item)
+    expect(page.locator("#rd-confirm-yes")).to_be_enabled()
+    expect(page.locator("#rd-history-empty")).to_contain_text("尚無歷史研發方案")
+    expect(page.locator("#rd-body")).to_be_hidden()
+
+    # Load an A plan, then cancel approval on switching tenants.
+    _switch_tenant(page, "tenant-b")
+    page.unroute("**/api/product-rd/results?*")
+    page.route(
+        "**/api/product-rd/results?*",
+        lambda route: route.fulfill(json={"items": [item] if route.request.headers.get("x-tenant-id") == "sonaqueen-home" else [], "total": 1, "hasMore": False}),
+    )
+    _switch_tenant(page, "sonaqueen-home")
+    expect(page.locator("#rd-body")).to_be_visible()
+    page.locator("#rd-approve-actor").fill("approver")
+    page.locator("#rd-approve-prepare").click()
+    expect(page.locator("#rd-approve-msg")).to_contain_text("sonaqueen-home")
+    _switch_tenant(page, "tenant-b")
+    _force_click(page, "rd-approve-yes")
+    assert len(held) == 1
+    _switch_tenant(page, "sonaqueen-home")
+    expect(page.locator("#rd-body")).to_be_visible()
+    page.locator("#rd-approve-actor").fill("approver")
+    page.locator("#rd-approve-prepare").click()
+    page.locator("#rd-approve-yes").click()
+    page.wait_for_function("async () => (await window.__heldCount()) === 2")
+    assert held[1].request.headers["x-tenant-id"] == "sonaqueen-home"
+    _switch_tenant(page, "tenant-b")
+    held[1].fulfill(json={**item, "approval": {"status": "APPROVED", "actor": "approver"}})
+    expect(page.locator("#rd-approve-yes")).to_be_enabled()
+    expect(page.locator("#rd-history-empty")).to_contain_text("尚無歷史研發方案")
+    expect(page.locator("#rd-body")).to_be_hidden()
+
+
+@pytest.mark.parametrize("status", ["blocked", "failed"])
+def test_nested_render_job_failure_is_not_success(
+    admin_page: Page, admin_server: dict[str, Any], status: str
+) -> None:
+    page = admin_page
+    item = {
+        "rdId": "partial-result", "text": "plan", "baseSpec": {}, "baseReport": {"ok": True},
+        "top": [], "approval": {"status": "WAITING_APPROVAL"},
+        "parametricRender": {"job": {"status": status, "realBlender": True, "usedMock": False}},
+    }
+    page.route("**/api/product-rd/generate", lambda route: route.fulfill(json=item))
+    page.route("**/api/product-rd/results?*", lambda route: route.fulfill(json={"items": [item], "total": 1}))
+    page.goto(admin_server["base_url"] + "/admin/factory#rd")
+    expect(page.locator("#rd-truth-badges")).to_contain_text(status)
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+    page.locator("#rd-text").fill("Test requirement")
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+    page.locator("#rd-confirm-yes").click()
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert err")
+    expect(page.locator("#fc-global-status")).to_contain_text(status)
+    expect(page.locator("#fc-global-status")).to_contain_text("研發方案已儲存")
