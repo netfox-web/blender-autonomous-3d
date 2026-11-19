@@ -100,6 +100,9 @@
   function formFields(form, trigger) {
     var nodes = [];
     if (form) form.querySelectorAll('input, select, textarea').forEach(function (el) { nodes.push(el); });
+    if (trigger && $('qc-panel') && $('qc-panel').contains(trigger)) {
+      $('qc-panel').querySelectorAll('input, select, textarea, button').forEach(function (el) { if (nodes.indexOf(el) < 0) nodes.push(el); });
+    }
     if (trigger && $('packing-panel') && $('packing-panel').contains(trigger)) {
       $('packing-panel').querySelectorAll('input, select, textarea').forEach(function (el) {
         if (nodes.indexOf(el) < 0) nodes.push(el);
@@ -239,12 +242,45 @@
       }
     }).finally(markCartonLoadDone);
   }
+  function loadQc(orderId) {
+    $('qc-status').textContent = '載入中…';
+    api('/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/qc').then(function (d) {
+      if (!selected || selected.workOrderId !== orderId || pending || posting) return;
+      var box = $('qc-checks'); box.textContent = '';
+      $('qc-status').textContent = d.requiredFinalOk.ok ? '必要最終檢驗通過' : '必要最終檢驗尚未通過';
+      (d.plan || []).forEach(function (spec) {
+        var form = document.createElement('form'), lastSignature = '', retryKey = '';
+        var label = document.createElement('label'); label.textContent = String(spec.checkId) + ' 實測值 ';
+        var input = document.createElement('input'); input.type = 'number'; input.step = 'any'; input.required = true; label.appendChild(input); form.appendChild(label);
+        var nominal = document.createElement('input'); nominal.type = 'number'; nominal.step = 'any'; nominal.required = true; nominal.placeholder = '標稱值';
+        if (spec.nominal != null) { nominal.value = String(spec.nominal); nominal.disabled = true; }
+        form.appendChild(nominal);
+        var button = document.createElement('button'); button.type = 'submit'; button.textContent = '記錄檢驗'; form.appendChild(button); box.appendChild(form);
+        form.addEventListener('submit', function (e) {
+          e.preventDefault(); if (pending || posting || !selected) return;
+          var signature = JSON.stringify([orderId, spec.checkId, input.value, nominal.value]);
+          if (signature !== lastSignature || !retryKey) { retryKey = 'qc-' + Date.now() + '-' + Math.random().toString(36).slice(2); lastSignature = signature; }
+          var body = {stage:'FINAL', checkId:spec.checkId, measured:Number(input.value), nominal:Number(nominal.value), source:'MANUAL', idempotencyKey:retryKey};
+          prepare('記錄檢驗（工單 ' + orderId + '）', '/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/qc', body, button, function () { retryKey = ''; });
+        });
+      });
+    }).catch(function (e) { $('qc-status').textContent = '讀取失敗：' + e.message; });
+  }
+  if ($('qc-release')) {
+    $('qc-release').addEventListener('click', function () {
+      if (!selected || pending || posting) return;
+      var id = selected.workOrderId;
+      prepare('解除 QC_HOLD（工單 ' + id + '）', '/api/pilot/work-orders/' + encodeURIComponent(id) + '/qc/release-hold', {confirm:true}, $('qc-release'));
+    });
+  }
   function selectOrder(item, preserveStatus, skipLoadCartons) {
     if ((posting && !skipLoadCartons) || pending) return Promise.resolve();
     var prevId = selected && selected.workOrderId;
     selected = item;
     show('detail', item);
     $('actions').hidden = false;
+    $('qc-panel').hidden = false;
+    loadQc(item.workOrderId);
     if ($('packing-panel')) {
       $('packing-panel').hidden = false;
       if (prevId !== item.workOrderId) {
@@ -269,6 +305,24 @@
       function (err) { return { ok: false, error: err }; }
     );
   }
+  function fetchWorkOrdersOutcome(tid) {
+    var fetchAll = window.fox3dFetchAllPages || globalThis.fox3dFetchAllPages;
+    var path = '/api/pilot/work-orders';
+    if (fetchAll) {
+      // The shared pagination helper turns a malformed page into an empty list;
+      // reject it here so a broken list read is shown as 讀取失敗 and clears the stale selection.
+      return fetchAll(function (p) {
+        return api(p, { tenant: tid }).then(function (d) {
+          if (!d || typeof d !== 'object' || (d.items != null && !Array.isArray(d.items))) throw new Error('工單清單格式錯誤');
+          return d;
+        });
+      }, path).then(
+        function (data) { return { ok: true, data: data }; },
+        function (err) { return { ok: false, error: err }; }
+      );
+    }
+    return fetchOutcome('/api/pilot/work-orders', tid);
+  }
   function applySection(id, outcome, render) {
     if (outcome.ok) {
       try {
@@ -285,6 +339,7 @@
     $('detail').textContent = '請選擇工單。';
     $('actions').hidden = true;
     if ($('packing-panel')) $('packing-panel').hidden = true;
+    if ($('qc-panel')) $('qc-panel').hidden = true;
   }
   function refresh(keepOrderId, preserveStatus) {
     if (!posting) clearPending();
@@ -296,7 +351,7 @@
     if (!targetOrderId) clearSelection();
     var reqs = [
       fetchOutcome('/api/pilot/console', reqTenant),
-      fetchOutcome('/api/pilot/work-orders', reqTenant),
+      fetchWorkOrdersOutcome(reqTenant),
       fetchOutcome('/api/pilot/batches', reqTenant),
       fetchOutcome('/api/pilot/batches/board', reqTenant),
       fetchOutcome('/api/pilot/health', reqTenant),
@@ -421,6 +476,17 @@
       if (task.trigger) task.trigger.disabled = false;
     }
     api(task.path, { method: 'POST', body: bodyText, tenant: task.tenant }).then(function (d) {
+      if (d && d.result === 'FAIL' && /\/qc$/.test(task.path)) {
+        var failMsg = '品檢未通過或工單仍在 QC_HOLD';
+        $('result').textContent = failMsg;
+        if ($('qc-status')) $('qc-status').textContent = failMsg;
+        return refresh(task.workOrderId).then(function () {
+          releaseControls();
+          $('result').textContent = failMsg;
+          if ($('qc-status')) $('qc-status').textContent = failMsg;
+          if (task.workOrderId) loadQc(task.workOrderId);
+        });
+      }
       if (isMismatchResult(d)) {
         return refresh(task.workOrderId, true).then(function () {
           releaseControls();
@@ -456,6 +522,7 @@
       var msg = (e && e.message) || String(e);
       var outMsg = msg.indexOf('連線失敗') >= 0 ? msg : ('操作失敗：' + msg);
       $('result').textContent = outMsg;
+      if (task.trigger && $('qc-panel').contains(task.trigger)) $('qc-status').textContent = outMsg;
       if ((task.isPacking || ($('packing-panel') && !$('packing-panel').hidden)) && $('packing-status')) {
         $('packing-status').textContent = msg.indexOf('尺寸不符待人工確認') >= 0 ? ('尺寸不符待人工確認：' + outMsg) : outMsg;
         $('packing-status').className = 'warn';

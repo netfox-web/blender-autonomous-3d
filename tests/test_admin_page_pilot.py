@@ -37,7 +37,7 @@ def test_work_order_actions_require_confirmation_and_respect_tenant(platform):  
         path = f"/api/pilot/work-orders/{order}/{action}"
         assert client.post(path, headers=headers, json={}).status_code == (403 if action == "consume" else 409)
     assert client.post(f"/api/pilot/work-orders/{order}/complete", headers=headers, json={"confirm": True}).status_code == 200
-    assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 409
+    assert client.post(f"/api/pilot/work-orders/{order}/complete", headers={"X-Tenant-Id": "other"}, json={"confirm": True}).status_code == 404
 
 
 def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
@@ -61,3 +61,5 @@ def test_pilot_js_snapshots_tenant_and_locks_confirm() -> None:
     assert "refreshSeq" in js and "cartonLoadSeq" in js and "Promise.all" in js
     assert "function actionButtons" in js and "setLocked(lockedBtns, true)" in js
     assert "data-carton-load-done" in js and "markCartonLoadDone" in js
+    assert "fox3dFetchAllPages" in js and "fetchWorkOrdersOutcome" in js
+    assert "return refresh(task.workOrderId).then(function () {" in js

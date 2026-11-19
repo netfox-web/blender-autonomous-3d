@@ -227,14 +227,21 @@ class QcService:
         rec["defectHash"] = stable_hash({k: rec[k] for k in rec if k != "defectHash"})
         if dam_asset_id and self.dam is not None:
             self.dam.get(dam_asset_id, tenant_id=tenant_id)
-        self.defects[rec["defectId"]] = rec
         if self.workorders is not None:
             wo = self.workorders.get(work_order_id)
+            if wo.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: qc")
             if disposition == "REWORK" and wo.get("state") == "QC_HOLD":
-                wo["state"] = "IN_PROGRESS"
+                if any(h.get("open") and h.get("blocking") for h in wo.get("holds") or []):
+                    raise PermissionError("blocking hold")
+                self.workorders._transition(wo, "IN_PROGRESS", actor=actor, reason="defect-rework")
                 wo["rework"] = True
             if disposition in {"SCRAP", "REJECT"}:
-                wo["state"] = "REJECTED"
+                self.workorders._transition(wo, "REJECTED", actor=actor, reason="defect-reject")
+            self.workorders.persist()
+        self.defects[rec["defectId"]] = rec
+        emit(self, "qc.defect", tenant_id=tenant_id, aggregate_type="QC", aggregate_id=rec["defectId"], actor=actor, payload={"workOrderId": work_order_id, "code": code, "disposition": disposition}, semantic_key=f"{tenant_id}::defect::{rec['defectId']}")
+        self.persist()
         return rec
 
     def required_final_ok(
@@ -260,7 +267,7 @@ class QcService:
                 wo_tenant = None
         rows = [
             c
-            for c in self.checks.values()
+            for c in list(self.checks.values())
             if c["workOrderId"] == work_order_id
             and c["stage"] == "FINAL"
             and (wo_tenant is None or c.get("tenantId") == wo_tenant)
@@ -272,7 +279,7 @@ class QcService:
                 latest[row["checkId"]] = row
         present = set(latest)
         missing = [cid for cid in required if cid not in present]
-        failed = [cid for cid, row in latest.items() if not row["ok"]]
+        failed = [cid for cid, row in latest.items() if cid in required and not row["ok"]]
         return {"ok": not missing and not failed, "missing": missing, "failed": failed, "required": required}
 
     def completion_allowed(self, work_order_id: str, family: str, *, tenant_id: str | None = None) -> bool:
