@@ -18,6 +18,9 @@
     ccSubmitting: false,
     ccActionId: null,
     cycleCounts: null,
+    lotDetail: null,
+    quarantineSubmitting: false,
+    remOpsSubmitting: false,
     lastLotAttempt: null,
     lastReserveAttempt: null,
     lastCcAttempt: null,
@@ -298,13 +301,91 @@
     return '—';
   }
 
-  function selectLot(lot) {
+  function renderLotDetail(data) {
+    var body = $('mt-lot-detail-body');
+    if (!body) return;
+    body.textContent = '';
+    if (!data) {
+      body.appendChild(el('p', { 'class': 'mt-empty' }, '無法載入批次明細。'));
+      return;
+    }
+    var q = data.quantities || {};
+    var lot = data.lot || {};
+    var summary = el('dl', { 'class': 'mt-dl' });
+    [
+      ['批次', data.lotId || lot.lotId || '—'],
+      ['材料', String(lot.material || '—')],
+      ['可用', String(q.available != null ? q.available : '—')],
+      ['預留', String(q.reserved != null ? q.reserved : '—')],
+      ['已耗', String(q.consumed != null ? q.consumed : '—')],
+      ['隔離', lot.quarantined ? '是' : '否'],
+      ['版本', String(data.version != null ? data.version : lot.version || '—')],
+    ].forEach(function (pair) {
+      var row = el('div');
+      row.appendChild(el('dt', null, pair[0]));
+      row.appendChild(el('dd', null, pair[1]));
+      summary.appendChild(row);
+    });
+    body.appendChild(summary);
+    if (data.sourceReceipt) {
+      var rec = el('p', { 'class': 'mt-hint' });
+      rec.appendChild(document.createTextNode('來源收料：'));
+      rec.appendChild(el('code', null, data.sourceReceipt.receiptId || '—'));
+      body.appendChild(rec);
+    }
+    var resv = data.reservations || [];
+    if (resv.length) {
+      var rh = el('h4', null, '預留清單（' + resv.length + '）');
+      body.appendChild(rh);
+      var tbl = el('table', { 'class': 'mt-table' });
+      var hr = el('tr');
+      ['預留 ID', '工單', '張數', '狀態'].forEach(function (h) { hr.appendChild(el('th', null, h)); });
+      tbl.appendChild(el('thead')).appendChild(hr);
+      var tbody = el('tbody');
+      resv.forEach(function (item) {
+        var tr = el('tr');
+        tr.appendChild(el('td', null, item.reservationId || '—'));
+        tr.appendChild(el('td', null, item.workOrderId || '—'));
+        tr.appendChild(el('td', null, String(item.quantity != null ? item.quantity : '—')));
+        tr.appendChild(el('td', null, item.state || '—'));
+        tbody.appendChild(tr);
+      });
+      tbl.appendChild(tbody);
+      body.appendChild(tbl);
+    }
+    var qh = data.quarantineHistory || [];
+    if (qh.length) {
+      body.appendChild(el('h4', null, '隔離歷史'));
+      var ul = el('ul', { 'class': 'mt-list' });
+      qh.forEach(function (ev) {
+        var li = el('li');
+        li.textContent = (ev.eventType || '?') + ' · ' + (ev.actor || '—') + ' · ' + (ev.reason || '');
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+    }
+    var verInput = $('mt-quarantine-version');
+    if (verInput && !state.quarantineSubmitting && !state.confirmOpen) {
+      verInput.value = String(data.version != null ? data.version : lot.version || '');
+    }
+    var qBtn = $('mt-quarantine-btn');
+    var relBtn = $('mt-release-quarantine-btn');
+    var isQ = Boolean(lot.quarantined);
+    if (qBtn) {
+      qBtn.hidden = isQ;
+      qBtn.disabled = state.quarantineSubmitting;
+    }
+    if (relBtn) {
+      relBtn.hidden = !isQ;
+      relBtn.disabled = state.quarantineSubmitting;
+    }
+  }
+
+  function loadLotDetail(lot) {
+    if (!lot || !lot.lotId) return Promise.resolve();
     state.selectedLot = lot;
     var detail = $('mt-lot-detail');
-    var body = $('mt-lot-detail-body');
-    if (!detail || !body) return;
-    detail.hidden = false;
-    body.textContent = fmtJson(lot);
+    if (detail) detail.hidden = false;
     var counted = $('mt-cc-counted');
     var reason = $('mt-cc-reason');
     if (counted && !state.ccSubmitting && !state.confirmOpen) {
@@ -315,6 +396,29 @@
       $('mt-cc-lot-result').hidden = true;
       $('mt-cc-lot-result').textContent = '';
     }
+    var body = $('mt-lot-detail-body');
+    if (body) {
+      body.textContent = '';
+      body.appendChild(el('p', { 'class': 'mt-hint' }, '載入明細中…'));
+    }
+    return api('/api/materials/lots/' + encodeURIComponent(lot.lotId))
+      .then(function (r) {
+        state.lotDetail = r.data;
+        if (state.selectedLot && state.selectedLot.lotId === lot.lotId) {
+          renderLotDetail(r.data);
+        }
+        return r.data;
+      })
+      .catch(function (e) {
+        if (body) {
+          body.textContent = '';
+          body.appendChild(el('p', { 'class': 'mt-empty' }, '明細載入失敗：' + errorDetail(e)));
+        }
+      });
+  }
+
+  function selectLot(lot) {
+    loadLotDetail(lot);
   }
 
   function lotRow(lot) {
@@ -379,6 +483,32 @@
     }
   }
 
+  function updateRemnantOpsButtons(rem) {
+    var releaseBtn = $('mt-rem-release-btn');
+    var consumeBtn = $('mt-rem-consume-btn');
+    var reserveBtn = $('mt-reserve-btn');
+    if (!rem) {
+      if (releaseBtn) releaseBtn.disabled = true;
+      if (consumeBtn) consumeBtn.disabled = true;
+      if (reserveBtn) reserveBtn.disabled = true;
+      return;
+    }
+    var st = String(rem.status || '').toLowerCase();
+    var avail = st === 'available';
+    var reserved = st === 'reserved';
+    var consumable = avail || reserved;
+    if (reserveBtn) {
+      reserveBtn.disabled = state.reserveSubmitting || state.remOpsSubmitting || !avail;
+      reserveBtn.title = avail ? '' : '僅可用餘料可預留';
+    }
+    if (releaseBtn) {
+      releaseBtn.disabled = state.remOpsSubmitting || !reserved;
+    }
+    if (consumeBtn) {
+      consumeBtn.disabled = state.remOpsSubmitting || state.confirmOpen || !consumable;
+    }
+  }
+
   function selectRemnant(rem) {
     clearReserveRetry();
     state.selectedRem = rem;
@@ -386,10 +516,11 @@
     var detail = $('mt-rem-detail');
     detail.hidden = false;
     $('mt-rem-detail-body').textContent = fmtJson(rem);
-    var btn = $('mt-reserve-btn');
-    var ok = String(rem.status || '').toLowerCase() === 'available';
-    btn.disabled = state.reserveSubmitting || !ok;
-    btn.title = ok ? '' : '僅可用餘料可預留';
+    if ($('mt-rem-ops-result')) {
+      $('mt-rem-ops-result').hidden = true;
+      $('mt-rem-ops-result').textContent = '';
+    }
+    updateRemnantOpsButtons(rem);
   }
 
   function renderRemnants(snap) {
@@ -446,10 +577,7 @@
       if (matchedRem) {
         state.selectedRem = matchedRem;
         $('mt-rem-detail-body').textContent = fmtJson(matchedRem);
-        var btn = $('mt-reserve-btn');
-        var ok = String(matchedRem.status || '').toLowerCase() === 'available';
-        btn.disabled = state.reserveSubmitting || !ok;
-        btn.title = ok ? '' : '僅可用餘料可預留';
+        updateRemnantOpsButtons(matchedRem);
       } else if (!state.reserveSubmitting) {
         clearSelectedRemnant();
       }
@@ -856,11 +984,7 @@
       })
       .then(function () {
         state.reserveSubmitting = false;
-        if (reserveBtn) {
-          var remNow = state.selectedRem;
-          var ok = Boolean(remNow && String(remNow.status || '').toLowerCase() === 'available');
-          reserveBtn.disabled = !ok;
-        }
+        updateRemnantOpsButtons(state.selectedRem);
         if (retryBtn) retryBtn.disabled = false;
         if (okBtn) okBtn.disabled = false;
       });
@@ -1078,6 +1202,199 @@
     });
   }
 
+  function sendQuarantineAttempt(path, attempt) {
+    if (!attempt || state.quarantineSubmitting) return;
+    state.quarantineSubmitting = true;
+    var qBtn = $('mt-quarantine-btn');
+    var relBtn = $('mt-release-quarantine-btn');
+    var okBtn = $('mt-confirm-ok');
+    var fields = formFields($('mt-quarantine-form'));
+    setLocked(fields, true);
+    if (qBtn) qBtn.disabled = true;
+    if (relBtn) relBtn.disabled = true;
+    if (okBtn) okBtn.disabled = true;
+    var out = $('mt-quarantine-result');
+    if (out) {
+      out.hidden = false;
+      out.classList.remove('err');
+      out.textContent = '送出中…';
+    }
+    api(path, { method: 'POST', body: attempt.body, json: true, tenant: attempt.tenant })
+      .then(function (r) {
+        if (isBlockedResult(r.data)) {
+          var bmsg = blockedMessage('隔離', r.data);
+          if (out) {
+            out.classList.add('err');
+            out.textContent = bmsg + '\n' + fmtJson(r.data);
+          }
+          showBanner(bmsg, 'err');
+          return;
+        }
+        if (out) {
+          out.classList.remove('err');
+          out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
+        }
+        return loadAll();
+      })
+      .then(function () {
+        if (state.selectedLot && state.selectedLot.lotId === attempt.lotId) {
+          loadLotDetail(state.selectedLot);
+        }
+      })
+      .catch(function (e) {
+        if (out) {
+          out.classList.add('err');
+          if (e && e.network) {
+            out.textContent = '失敗：' + e.message;
+            showBanner('隔離失敗：' + e.message, 'err');
+          } else if (e && e.status === 409) {
+            out.textContent = '版本衝突：' + errorDetail(e);
+            showBanner('版本衝突，請重新載入明細', 'err');
+          } else {
+            out.textContent = '失敗：HTTP ' + (e.status || '?') + '\n' + fmtJson(e.body || e.message);
+            showBanner('隔離失敗（HTTP ' + (e.status || '?') + '）：' + errorDetail(e), 'err');
+          }
+        }
+      })
+      .then(function () {
+        state.quarantineSubmitting = false;
+        setLocked(fields, false);
+        if (okBtn) okBtn.disabled = false;
+        if (state.selectedLot) {
+          renderLotDetail(state.lotDetail);
+        }
+      });
+  }
+
+  function onQuarantineSubmit(ev) {
+    ev.preventDefault();
+    var target = ev.submitter || ev.target;
+    var action = target && target.getAttribute('data-quarantine-action');
+    if (!action) return;
+    onQuarantineAction(action);
+  }
+
+  function onQuarantineAction(action) {
+    if (state.quarantineSubmitting || state.confirmOpen) return;
+    var lot = state.selectedLot;
+    if (!lot || !lot.lotId) return;
+    var snapTenant = tenant();
+    var reasonEl = $('mt-quarantine-reason');
+    var reason = reasonEl ? reasonEl.value.trim() : '';
+    if (!reason) return;
+    var snapReason = reason;
+    var verRaw = $('mt-quarantine-version') && $('mt-quarantine-version').value.trim();
+    var verVal = verRaw ? parseInt(verRaw, 10) : undefined;
+    var fields = formFields($('mt-quarantine-form'));
+    var label = action === 'quarantine' ? '隔離批次' : '解除隔離';
+    var path = action === 'quarantine'
+      ? '/api/materials/lots/' + encodeURIComponent(lot.lotId) + '/quarantine'
+      : '/api/materials/lots/' + encodeURIComponent(lot.lotId) + '/release-quarantine';
+    var msg = label + ' ' + lot.lotId + ' · 原因「' + snapReason + '」· 租戶 ' + snapTenant;
+    confirmDialog('確認' + label, msg, fields, function () {
+      if (state.quarantineSubmitting) return;
+      var body = { confirm: true, reason: snapReason, actor: 'warehouse' };
+      if (Number.isFinite(verVal) && verVal >= 1) body.expectedVersion = verVal;
+      sendQuarantineAttempt(path, { lotId: lot.lotId, body: body, tenant: snapTenant });
+    });
+  }
+
+  function sendRemnantOp(path, body, label) {
+    if (state.remOpsSubmitting) return;
+    state.remOpsSubmitting = true;
+    var fields = formFields($('mt-rem-ops-form'));
+    var releaseBtn = $('mt-rem-release-btn');
+    var consumeBtn = $('mt-rem-consume-btn');
+    var okBtn = $('mt-confirm-ok');
+    setLocked(fields, true);
+    updateRemnantOpsButtons(state.selectedRem);
+    if (okBtn) okBtn.disabled = true;
+    var out = $('mt-rem-ops-result');
+    if (out) {
+      out.hidden = false;
+      out.classList.remove('err');
+      out.textContent = '送出中…';
+    }
+    api(path, { method: 'POST', body: body, json: true, tenant: tenant() })
+      .then(function (r) {
+        if (isBlockedResult(r.data)) {
+          var bmsg = blockedMessage(label, r.data);
+          if (out) {
+            out.classList.add('err');
+            out.textContent = bmsg + '\n' + fmtJson(r.data);
+          }
+          showBanner(bmsg, 'err');
+          return;
+        }
+        if (out) {
+          out.classList.remove('err');
+          out.textContent = 'HTTP ' + r.status + '\n' + fmtJson(r.data);
+        }
+        loadAll();
+      })
+      .catch(function (e) {
+        if (out) {
+          out.classList.add('err');
+          out.textContent = e && e.network
+            ? ('失敗：' + e.message)
+            : ('失敗：HTTP ' + (e.status || '?') + '\n' + fmtJson(e.body || e.message));
+        }
+        showBanner(label + '失敗：' + errorDetail(e), 'err');
+      })
+      .then(function () {
+        state.remOpsSubmitting = false;
+        setLocked(fields, false);
+        if (okBtn) okBtn.disabled = false;
+        updateRemnantOpsButtons(state.selectedRem);
+      });
+  }
+
+  function onRemnantRelease() {
+    if (state.remOpsSubmitting || state.confirmOpen) return;
+    var rem = state.selectedRem;
+    if (!rem || String(rem.status || '').toLowerCase() !== 'reserved') return;
+    var by = ($('mt-rem-ops-by') && $('mt-rem-ops-by').value.trim()) || 'manual';
+    var snapBy = by;
+    var snapVer = rem.version;
+    var fields = formFields($('mt-rem-ops-form'));
+    confirmDialog(
+      '確認取消預留',
+      '取消餘料 ' + rem.remnantId + ' 的預留（操作者 ' + snapBy + '）',
+      fields,
+      function () {
+        sendRemnantOp(
+          '/api/remnants/' + encodeURIComponent(rem.remnantId) + '/release-reservation',
+          { by: snapBy, version: snapVer },
+          '取消預留'
+        );
+      }
+    );
+  }
+
+  function onRemnantConsume() {
+    if (state.remOpsSubmitting || state.confirmOpen) return;
+    var rem = state.selectedRem;
+    if (!rem) return;
+    var st = String(rem.status || '').toLowerCase();
+    if (st !== 'available' && st !== 'reserved') return;
+    var by = ($('mt-rem-ops-by') && $('mt-rem-ops-by').value.trim()) || 'manual';
+    var snapBy = by;
+    var snapVer = rem.version;
+    var fields = formFields($('mt-rem-ops-form'));
+    confirmDialog(
+      '確認消耗餘料',
+      '消耗餘料 ' + rem.remnantId + '（操作者 ' + snapBy + '）',
+      fields,
+      function () {
+        sendRemnantOp(
+          '/api/remnants/' + encodeURIComponent(rem.remnantId) + '/consume',
+          { by: snapBy, version: snapVer, idempotencyKey: makeIdempotencyKey() },
+          '消耗餘料'
+        );
+      }
+    );
+  }
+
   function onBenchRun() {
     if (state.benchSubmitting || state.confirmOpen) return;
     var snapTenant = tenant();
@@ -1169,6 +1486,15 @@
       sendCycleCountAttempt(state.lastCcAttempt);
     });
     $('mt-bench-run').addEventListener('click', onBenchRun);
+    if ($('mt-quarantine-form')) {
+      $('mt-quarantine-form').addEventListener('submit', onQuarantineSubmit);
+    }
+    if ($('mt-rem-release-btn')) {
+      $('mt-rem-release-btn').addEventListener('click', onRemnantRelease);
+    }
+    if ($('mt-rem-consume-btn')) {
+      $('mt-rem-consume-btn').addEventListener('click', onRemnantConsume);
+    }
     if ($('mt-cc-form')) {
       $('mt-cc-form').addEventListener('submit', onCycleCountSubmit);
       function updateCcRetryVisibility() {
