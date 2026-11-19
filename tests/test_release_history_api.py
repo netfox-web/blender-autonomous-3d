@@ -451,12 +451,32 @@ def test_readiness_history_markup_keeps_tables_in_scroll_containers() -> None:
 
 
 def test_legacy_snapshot_quarantine_and_explicit_assignment(client: TestClient, platform) -> None:  # noqa: ANN001
+    import json
+
     store = platform.providers.fx
-    store.add({"snapshotId": "legacy", "price": 5}, source="MANUAL")
+    # Pre-upgrade file: the old import endpoint kept caller-supplied tenantIds, including forged ones.
+    (store.root / "fx.json").write_text(
+        json.dumps(
+            {
+                "kind": "fx",
+                "items": [
+                    {"snapshotId": "legacy", "price": 5},
+                    {"snapshotId": "forged-b", "tenantId": TENANT_B, "price": 666},
+                ],
+            }
+        )
+    )
+    store.load()
     for tenant in (TENANT_A, TENANT_B):
-        assert not client.get("/api/commerce/snapshots", headers=_headers(tenant)).json()["items"]
+        body = client.get("/api/commerce/snapshots", headers=_headers(tenant)).json()
+        assert body["items"] == [] and body["total"] == 0
+    # New imports rewrite the file but must not promote legacy rows.
+    assert client.post("/api/commerce/import", headers=_headers(TENANT_A), json={"kind": "fx", "rows": [{"snapshotId": "new-a"}]}).status_code == 200
+    assert not client.get("/api/commerce/snapshots", headers=_headers(TENANT_B)).json()["items"]
+    assert "666" not in client.get("/api/commerce/snapshots", headers=_headers(TENANT_B)).text
     store.assign_legacy(["legacy"], tenant_id=TENANT_A)
-    assert client.get("/api/commerce/snapshots", headers=_headers(TENANT_A)).json()["items"][0]["snapshotId"] == "legacy"
+    ids = {row["snapshotId"] for row in client.get("/api/commerce/snapshots", headers=_headers(TENANT_A)).json()["items"]}
+    assert ids == {"legacy", "new-a"}
     assert not client.get("/api/commerce/snapshots", headers=_headers(TENANT_B)).json()["items"]
 
 
