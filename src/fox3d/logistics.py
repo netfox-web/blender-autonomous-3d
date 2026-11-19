@@ -25,6 +25,14 @@ def _now() -> str:
     return utcnow().isoformat()
 
 
+def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+
+
 def _require_quantity(quantity: object) -> int:
     if isinstance(quantity, bool):
         raise ValueError("quantity must be a positive integer")
@@ -111,12 +119,14 @@ class LogisticsService:
         self.checklists: dict[str, dict[str, Any]] = {}
         self.handoffs: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, Any] = {}
+        self._store_sig: tuple[int, int, int, int] | None = None
         self.load()
 
     def load(self) -> None:
         if not self.root:
             return
-        payload = read_json(self.root / "logistics.json") or {}
+        path = self.root / "logistics.json"
+        payload = read_json(path) or {}
         self.cartons = {r["cartonId"]: r for r in payload.get("cartons") or []}
         self.pallets = {r["palletPlanId"]: r for r in payload.get("pallets") or []}
         self.shipments = {r["shipmentId"]: r for r in payload.get("shipments") or []}
@@ -124,12 +134,23 @@ class LogisticsService:
         self.checklists = {r["checklistId"]: r for r in payload.get("checklists") or []}
         self.handoffs = {r["handoffId"]: r for r in payload.get("handoffs") or []}
         self._idem = dict(payload.get("idem") or {})
+        self._store_sig = _file_sig(path)
+
+    def _sync_from_disk(self) -> None:
+        if not self.root:
+            return
+        path = self.root / "logistics.json"
+        sig = _file_sig(path)
+        if sig == self._store_sig or sig is None:
+            return
+        self.load()
 
     def persist(self) -> None:
         if not self.root:
             return
+        path = self.root / "logistics.json"
         atomic_write_json(
-            self.root / "logistics.json",
+            path,
             {
                 "cartons": list(self.cartons.values()),
                 "pallets": list(self.pallets.values()),
@@ -140,6 +161,7 @@ class LogisticsService:
                 "idem": self._idem,
             },
         )
+        self._store_sig = _file_sig(path)
 
     def instantiate_cartons(
         self,
@@ -365,83 +387,84 @@ class LogisticsService:
         }
 
     def palletize(self, carton_ids: list[str]) -> dict[str, Any]:
-        cartons = [self.cartons[i] for i in carton_ids]
-        tenants = {c.get("tenantId") for c in cartons}
-        if not cartons or len(tenants) != 1 or None in tenants:
-            raise PermissionError("cross-tenant pallet mix")
-        stackable: list[dict[str, Any]] = []
-        held: list[str] = []
-        plan_oversize = False
-        for c in cartons:
-            d = c.get("measured") or c["expected"]
-            if _carton_physical_oversize(d):
-                held.append(c["cartonId"])
-                plan_oversize = True
-            else:
-                stackable.append(c)
+        with self._lock:
+            cartons = [self.cartons[i] for i in carton_ids]
+            tenants = {c.get("tenantId") for c in cartons}
+            if not cartons or len(tenants) != 1 or None in tenants:
+                raise PermissionError("cross-tenant pallet mix")
+            stackable: list[dict[str, Any]] = []
+            held: list[str] = []
+            plan_oversize = False
+            for c in cartons:
+                d = c.get("measured") or c["expected"]
+                if _carton_physical_oversize(d):
+                    held.append(c["cartonId"])
+                    plan_oversize = True
+                else:
+                    stackable.append(c)
 
-        current: list[str] = []
-        used_w = 0.0
-        used_d = 0.0
-        height = 0.0
-        weight = 0.0
-        pallets: list[dict[str, Any]] = []
+            current: list[str] = []
+            used_w = 0.0
+            used_d = 0.0
+            height = 0.0
+            weight = 0.0
+            pallets: list[dict[str, Any]] = []
 
-        def flush() -> None:
-            nonlocal current, used_w, used_d, height, weight, plan_oversize
-            if not current:
-                return
-            pallet_oversize = (
-                height > PALLET_MAX_H
-                or weight > PALLET_MAX_KG
-                or used_w > PALLET_MM[0]
-                or used_d > PALLET_MM[1]
-            )
-            if pallet_oversize:
-                plan_oversize = True
-            pallets.append(
-                {
-                    "cartonIds": list(current),
-                    "footprintMm": [PALLET_MM[0], PALLET_MM[1]],
-                    "heightMm": round(height, 1),
-                    "weightKg": round(weight, 3),
-                    "usedFootprintMm": [round(used_w, 1), round(used_d, 1)],
-                    "label": "PLANNING",
-                    "carrierCertification": False,
-                    "oversize": pallet_oversize,
-                }
-            )
-            current, used_w, used_d, height, weight = [], 0.0, 0.0, 0.0, 0.0
+            def flush() -> None:
+                nonlocal current, used_w, used_d, height, weight, plan_oversize
+                if not current:
+                    return
+                pallet_oversize = (
+                    height > PALLET_MAX_H
+                    or weight > PALLET_MAX_KG
+                    or used_w > PALLET_MM[0]
+                    or used_d > PALLET_MM[1]
+                )
+                if pallet_oversize:
+                    plan_oversize = True
+                pallets.append(
+                    {
+                        "cartonIds": list(current),
+                        "footprintMm": [PALLET_MM[0], PALLET_MM[1]],
+                        "heightMm": round(height, 1),
+                        "weightKg": round(weight, 3),
+                        "usedFootprintMm": [round(used_w, 1), round(used_d, 1)],
+                        "label": "PLANNING",
+                        "carrierCertification": False,
+                        "oversize": pallet_oversize,
+                    }
+                )
+                current, used_w, used_d, height, weight = [], 0.0, 0.0, 0.0, 0.0
 
-        for c in stackable:
-            d = c.get("measured") or c["expected"]
-            cl, cw, ch, ck = float(d["length"]), float(d["width"]), float(d["height"]), float(d.get("weightKg") or 0)
-            if height + ch > PALLET_MAX_H or weight + ck > PALLET_MAX_KG:
-                flush()
-            current.append(c["cartonId"])
-            used_w = max(used_w, cl)
-            used_d = max(used_d, cw)
-            height += ch
-            weight += ck
-        flush()
-        status = "NEEDS_HUMAN" if plan_oversize else "PLANNING"
-        rec: dict[str, Any] = {
-            "palletPlanId": new_id(),
-            "tenantId": next(iter(tenants)),
-            "cartonIds": list(carton_ids),
-            "pallets": pallets,
-            "palletCount": len(pallets),
-            "heldCartonIds": held,
-            "constraints": {"footprintMm": list(PALLET_MM), "maxHeightMm": PALLET_MAX_H, "maxWeightKg": PALLET_MAX_KG},
-            "label": "PLANNING",
-            "carrierCertification": False,
-            "oversize": plan_oversize,
-            "status": status,
-        }
-        rec["planHash"] = stable_hash({k: rec[k] for k in rec if k not in {"palletPlanId", "planHash"}})
-        self.pallets[rec["palletPlanId"]] = rec
-        self.persist()
-        return rec
+            for c in stackable:
+                d = c.get("measured") or c["expected"]
+                cl, cw, ch, ck = float(d["length"]), float(d["width"]), float(d["height"]), float(d.get("weightKg") or 0)
+                if height + ch > PALLET_MAX_H or weight + ck > PALLET_MAX_KG:
+                    flush()
+                current.append(c["cartonId"])
+                used_w = max(used_w, cl)
+                used_d = max(used_d, cw)
+                height += ch
+                weight += ck
+            flush()
+            status = "NEEDS_HUMAN" if plan_oversize else "PLANNING"
+            rec: dict[str, Any] = {
+                "palletPlanId": new_id(),
+                "tenantId": next(iter(tenants)),
+                "cartonIds": list(carton_ids),
+                "pallets": pallets,
+                "palletCount": len(pallets),
+                "heldCartonIds": held,
+                "constraints": {"footprintMm": list(PALLET_MM), "maxHeightMm": PALLET_MAX_H, "maxWeightKg": PALLET_MAX_KG},
+                "label": "PLANNING",
+                "carrierCertification": False,
+                "oversize": plan_oversize,
+                "status": status,
+            }
+            rec["planHash"] = stable_hash({k: rec[k] for k in rec if k not in {"palletPlanId", "planHash"}})
+            self.pallets[rec["palletPlanId"]] = rec
+            self.persist()
+            return rec
 
     def shipping_request(
         self,
@@ -451,107 +474,115 @@ class LogisticsService:
         carton_ids: list[str],
         service: str = "ground",
     ) -> dict[str, Any]:
-        if not carton_ids:
-            raise ValueError("carton_ids must not be empty")
-        if len(carton_ids) != len(set(carton_ids)):
-            raise ValueError("duplicate carton_ids")
-        cartons = [self.cartons[i] for i in carton_ids]
-        tenants = {c.get("tenantId") for c in cartons}
-        if len(tenants) != 1 or None in tenants:
-            raise PermissionError("cross-tenant carton mix")
-        rec: dict[str, Any] = {
-            "shipmentId": new_id(),
-            "tenantId": next(iter(tenants)),
-            "origin": origin,
-            "destination": destination,
-            "service": service,
-            "cartonIds": list(carton_ids),
-            "pieces": len(cartons),
-            "submittedToCarrier": False,
-            "booked": False,
-            "shipped": False,
-            "status": "SHIPMENT_DRAFT",
-            "providerNeutral": True,
-            "createdAt": _now(),
-        }
-        rec["requestHash"] = stable_hash({k: rec[k] for k in rec if k not in {"shipmentId", "requestHash"}})
-        tenant = rec["tenantId"]
-        ordered = sorted(carton_ids)
-        raw = f"{origin}:{destination}:{','.join(ordered)}:{service}"
-        idem = f"{tenant}::shipment::{raw}"
-        if idem in self._idem:
-            stored = self._idem[idem]
-            sid = stored[0] if isinstance(stored, list) else stored
-            if sid not in self.shipments:
-                raise PermissionError("idempotency namespace collision: shipment")
-            existing = self.shipments[sid]
-            if existing.get("tenantId") != tenant:
-                raise PermissionError("tenant isolation: shipment")
-            return existing
-        self._idem[idem] = rec["shipmentId"]
-        self.shipments[rec["shipmentId"]] = rec
-        return rec
+        with self._lock:
+            if not carton_ids:
+                raise ValueError("carton_ids must not be empty")
+            if len(carton_ids) != len(set(carton_ids)):
+                raise ValueError("duplicate carton_ids")
+            cartons = [self.cartons[i] for i in carton_ids]
+            tenants = {c.get("tenantId") for c in cartons}
+            if len(tenants) != 1 or None in tenants:
+                raise PermissionError("cross-tenant carton mix")
+            rec: dict[str, Any] = {
+                "shipmentId": new_id(),
+                "tenantId": next(iter(tenants)),
+                "origin": origin,
+                "destination": destination,
+                "service": service,
+                "cartonIds": list(carton_ids),
+                "pieces": len(cartons),
+                "submittedToCarrier": False,
+                "booked": False,
+                "shipped": False,
+                "status": "SHIPMENT_DRAFT",
+                "providerNeutral": True,
+                "createdAt": _now(),
+            }
+            rec["requestHash"] = stable_hash({k: rec[k] for k in rec if k not in {"shipmentId", "requestHash"}})
+            tenant = rec["tenantId"]
+            ordered = sorted(carton_ids)
+            raw = f"{origin}:{destination}:{','.join(ordered)}:{service}"
+            idem = f"{tenant}::shipment::{raw}"
+            if idem in self._idem:
+                stored = self._idem[idem]
+                sid = stored[0] if isinstance(stored, list) else stored
+                if sid not in self.shipments:
+                    raise PermissionError("idempotency namespace collision: shipment")
+                existing = self.shipments[sid]
+                if existing.get("tenantId") != tenant:
+                    raise PermissionError("tenant isolation: shipment")
+                return existing
+            self._idem[idem] = rec["shipmentId"]
+            self.shipments[rec["shipmentId"]] = rec
+            return rec
 
     def shipment_draft(self, *, origin: str, destination: str, carton_ids: list[str], service: str = "ground") -> dict[str, Any]:
-        rec = self.shipping_request(origin=origin, destination=destination, carton_ids=carton_ids, service=service)
-        rec["submittedToCarrier"] = False
-        rec["booked"] = False
-        rec["shipped"] = False
-        rec["status"] = "SHIPMENT_DRAFT"
-        rec["liveCarrier"] = False
-        emit(
-            self,
-            "shipment.draft",
-            tenant_id=rec.get("tenantId") or "",
-            aggregate_type="Shipment",
-            aggregate_id=rec["shipmentId"],
-            actor="ops",
-            payload={"status": "SHIPMENT_DRAFT", "booked": False},
-            semantic_key=f"{rec.get('tenantId')}::shipment::{rec['shipmentId']}",
-        )
-        return rec
+        with self._lock:
+            rec = self.shipping_request(origin=origin, destination=destination, carton_ids=carton_ids, service=service)
+            if rec.get("status") != "HANDED_OFF_MANUAL":
+                rec["submittedToCarrier"] = False
+                rec["booked"] = False
+                rec["shipped"] = False
+                rec["status"] = "SHIPMENT_DRAFT"
+                rec["liveCarrier"] = False
+            emit(
+                self,
+                "shipment.draft",
+                tenant_id=rec.get("tenantId") or "",
+                aggregate_type="Shipment",
+                aggregate_id=rec["shipmentId"],
+                actor="ops",
+                payload={"status": "SHIPMENT_DRAFT", "booked": False},
+                semantic_key=f"{rec.get('tenantId')}::shipment::{rec['shipmentId']}",
+            )
+            return rec
 
     def import_carrier_quote(self, row: dict[str, Any], *, source: str, raw: str | None = None) -> dict[str, Any]:
-        if source not in ALLOWED_SOURCES:
-            raise PermissionError("carrier quotes are MANUAL/IMPORTED unless a live carrier is connected")
-        rec: dict[str, Any] = {
-            "quoteId": row.get("quoteId") or new_id(),
-            "carrier": row.get("carrier") or "carrier",
-            "service": row.get("service") or "ground",
-            "charge": float(row.get("charge") or row.get("amount") or 0),
-            "currency": row.get("currency") or "TWD",
-            "dimDivisor": float(row.get("dimDivisor") or DIM_DIVISOR),
-            "validUntil": row.get("validUntil") or "9999-12-31",
-            "source": source,
-            "truthLabel": source,
-            "liveProvider": False,
-            "importedAt": _now(),
-            "rawSourceHash": stable_hash(raw if raw is not None else json.dumps(row, sort_keys=True, default=str)),
-        }
-        rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
-        rec["ownership"] = "GLOBAL_REFERENCE"
-        self.carrier_quotes[rec["quoteId"]] = rec
-        self.persist()
-        return rec
+        with self._lock:
+            if source not in ALLOWED_SOURCES:
+                raise PermissionError("carrier quotes are MANUAL/IMPORTED unless a live carrier is connected")
+            rec: dict[str, Any] = {
+                "quoteId": row.get("quoteId") or new_id(),
+                "carrier": row.get("carrier") or "carrier",
+                "service": row.get("service") or "ground",
+                "charge": float(row.get("charge") or row.get("amount") or 0),
+                "currency": row.get("currency") or "TWD",
+                "dimDivisor": float(row.get("dimDivisor") or DIM_DIVISOR),
+                "validUntil": row.get("validUntil") or "9999-12-31",
+                "source": source,
+                "truthLabel": source,
+                "liveProvider": False,
+                "importedAt": _now(),
+                "rawSourceHash": stable_hash(raw if raw is not None else json.dumps(row, sort_keys=True, default=str)),
+            }
+            rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
+            rec["ownership"] = "GLOBAL_REFERENCE"
+            self.carrier_quotes[rec["quoteId"]] = rec
+            self.persist()
+            return rec
 
     def quote_stale(self, quote: dict[str, Any], *, service: str, dim_divisor: float | None = None) -> bool:
         if quote.get("service") != service:
             return True
         if dim_divisor is not None and abs(float(quote.get("dimDivisor") or 0) - float(dim_divisor)) > 1e-6:
             return True
+        valid_until = str(quote.get("validUntil") or "9999-12-31").strip()
+        if valid_until and valid_until[:10] < _now()[:10]:
+            return True
         return False
 
     def label_payload(self, carton_id: str) -> dict[str, Any]:
-        rec = self.cartons[carton_id]
-        payload = f"FOX3D:{rec['batchId']}:{rec['cartonId'][:8]}"
-        return {
-            "cartonId": carton_id,
-            "barcode": {"symbology": "CODE128", "payload": payload, "printVerified": False, "label": "PARTIAL"},
-            "qr": {"payload": payload, "printVerified": False, "label": "PARTIAL"},
-            "text": {"batchId": rec["batchId"], "index": rec["index"]},
-            "printerPath": None,
-            "scannerPath": None,
-        }
+        with self._lock:
+            rec = self.cartons[carton_id]
+            payload = f"FOX3D:{rec['batchId']}:{rec['cartonId'][:8]}"
+            return {
+                "cartonId": carton_id,
+                "barcode": {"symbology": "CODE128", "payload": payload, "printVerified": False, "label": "PARTIAL"},
+                "qr": {"payload": payload, "printVerified": False, "label": "PARTIAL"},
+                "text": {"batchId": rec["batchId"], "index": rec["index"]},
+                "printerPath": None,
+                "scannerPath": None,
+            }
 
     def _checklist_idem_entry(
         self,
@@ -699,50 +730,66 @@ class LogisticsService:
         tracking: str,
         actor: str,
     ) -> dict[str, Any]:
-        rec = self.shipments[shipment_id]
-        if rec.get("tenantId") != tenant_id:
-            raise PermissionError("tenant isolation: shipment")
-        key = f"{tenant_id}::handoff::{tracking}"
-        if key in self._idem:
-            hid = self._idem[key]
-            existing = self.handoffs.get(hid)
-            if existing is None:
-                raise PermissionError("idempotency namespace collision: handoff")
-            if existing.get("tenantId") != tenant_id:
-                raise PermissionError("tenant isolation: handoff")
+        with self._lock:
+            rec = self.shipments[shipment_id]
+            if rec.get("tenantId") != tenant_id:
+                raise PermissionError("tenant isolation: shipment")
+            key = f"{tenant_id}::handoff::{tracking}"
+            if key in self._idem:
+                hid = self._idem[key]
+                existing = self.handoffs.get(hid)
+                if existing is None:
+                    raise PermissionError("idempotency namespace collision: handoff")
+                if existing.get("tenantId") != tenant_id:
+                    raise PermissionError("tenant isolation: handoff")
+                if existing.get("shipmentId") != shipment_id:
+                    raise SemanticKeyConflictError("tracking already bound to another shipment")
+                return rec
+            prior_handoff = rec.get("handoff")
+            if isinstance(prior_handoff, dict) and prior_handoff.get("tracking") != tracking:
+                raise SemanticKeyConflictError("shipment already handed off with different tracking")
+            prev_snapshot = copy.deepcopy(rec)
+            handoff: dict[str, Any] = {
+                "handoffId": new_id(),
+                "shipmentId": shipment_id,
+                "tenantId": tenant_id,
+                "carrier": carrier,
+                "tracking": tracking,
+                "actor": actor,
+                "at": _now(),
+                "source": "MANUAL",
+                "truthLabel": "MANUAL/IMPORTED",
+                "liveProvider": False,
+                "booked": False,
+                "submittedToCarrier": False,
+                "deliveryConfirmed": False,
+                "status": "HANDED_OFF_MANUAL",
+            }
+            rec["handoff"] = handoff
+            rec["status"] = "HANDED_OFF_MANUAL"
+            rec["booked"] = False
+            rec["submittedToCarrier"] = False
+            rec["shipped"] = False
+            rec["liveCarrier"] = False
+            self.handoffs[handoff["handoffId"]] = handoff
+            self._idem[key] = handoff["handoffId"]
+            try:
+                emit(
+                    self,
+                    "shipment.handoff",
+                    tenant_id=tenant_id,
+                    aggregate_type="Shipment",
+                    aggregate_id=shipment_id,
+                    actor=actor,
+                    payload={"carrier": carrier, "tracking": tracking, "liveProvider": False, "deliveryConfirmed": False},
+                    semantic_key=key,
+                )
+            except Exception:
+                if self.root and (self.root / "logistics.json").exists():
+                    self.load()
+                else:
+                    self.shipments[shipment_id] = prev_snapshot
+                    self.handoffs.pop(handoff["handoffId"], None)
+                    self._idem.pop(key, None)
+                raise
             return rec
-        handoff: dict[str, Any] = {
-            "handoffId": new_id(),
-            "shipmentId": shipment_id,
-            "tenantId": tenant_id,
-            "carrier": carrier,
-            "tracking": tracking,
-            "actor": actor,
-            "at": _now(),
-            "source": "MANUAL",
-            "truthLabel": "MANUAL/IMPORTED",
-            "liveProvider": False,
-            "booked": False,
-            "submittedToCarrier": False,
-            "deliveryConfirmed": False,
-            "status": "HANDED_OFF_MANUAL",
-        }
-        rec["handoff"] = handoff
-        rec["status"] = "HANDED_OFF_MANUAL"
-        rec["booked"] = False
-        rec["submittedToCarrier"] = False
-        rec["shipped"] = False
-        rec["liveCarrier"] = False
-        self.handoffs[handoff["handoffId"]] = handoff
-        self._idem[key] = handoff["handoffId"]
-        emit(
-            self,
-            "shipment.handoff",
-            tenant_id=tenant_id,
-            aggregate_type="Shipment",
-            aggregate_id=shipment_id,
-            actor=actor,
-            payload={"carrier": carrier, "tracking": tracking, "liveProvider": False, "deliveryConfirmed": False},
-            semantic_key=key,
-        )
-        return rec
