@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -45,13 +46,10 @@ def _now_iso() -> str:
     return utcnow().isoformat()
 
 
-def atomic_write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+def _replace_with_retry(src: Path, dst: Path) -> None:
     for attempt in range(6):
         try:
-            tmp.replace(path)
+            src.replace(dst)
             return
         except PermissionError:
             if attempt == 5:
@@ -59,10 +57,25 @@ def atomic_write_json(path: Path, payload: Any) -> None:
             time.sleep(0.02 * (2 ** attempt))
 
 
+def atomic_write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    _replace_with_retry(tmp, path)
+
+
 def read_json(path: Path) -> Any:
     if not path.exists():
         return None
-    return json.loads(path.read_text(encoding="utf-8"))
+    for attempt in range(6):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            if sys.platform != "win32" or attempt == 5:
+                raise
+            time.sleep(0.02 * (2 ** attempt))
 
 
 def normalize_status(status: str | None) -> str:
@@ -648,7 +661,7 @@ class MaterialLotRegistry:
             self._crash_before_commit = False
             self._die("after-staging")
             raise CrashInjected("before commit")
-        staging.replace(path)
+        _replace_with_retry(staging, path)
         self.generation = disk_gen + 1
 
     def create(
