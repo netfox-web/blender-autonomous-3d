@@ -27,7 +27,7 @@ from uuid import uuid4
 
 from filelock import FileLock
 
-from fox3d.commerce import PROVIDER_BY_KIND, SNAPSHOT_FORMAT_VERSION, SnapshotStore, _row_hash
+from fox3d.commerce import PROVIDER_BY_KIND, SNAPSHOT_FORMAT_VERSION, SnapshotStore, _row_hash, _snapshot_key
 from fox3d.ids import sha256_bytes
 from fox3d.infra import utcnow
 
@@ -303,13 +303,30 @@ def _apply_assignment(
 
 
 def _reject_duplicate_rows(data: bytes) -> None:
+    """Refuse provider files whose rows SnapshotStore would fold together on load.
+
+    load() keys trusted rows by _snapshot_key and legacy rows by snapshotId, so a rewrite
+    after assignment would silently keep only the last row of each duplicated key.
+    """
     try:
         payload = json.loads(data)
         if not isinstance(payload, dict):
             raise ValueError
-        legacy = payload.get("legacyItems", []) if payload.get("formatVersion") == SNAPSHOT_FORMAT_VERSION else payload.get("items", [])
-        if not isinstance(legacy, list):
+        if payload.get("formatVersion") == SNAPSHOT_FORMAT_VERSION:
+            trusted = payload.get("items") or []
+            legacy = payload.get("legacyItems") or []
+        else:
+            trusted, legacy = [], payload.get("items") or []
+        if not isinstance(trusted, list) or not isinstance(legacy, list):
             raise ValueError
+        seen_trusted: set[str | tuple[str, str]] = set()
+        for row in trusted:
+            if not isinstance(row, dict) or not isinstance(row.get("snapshotId"), str):
+                continue
+            key = _snapshot_key(row)
+            if key in seen_trusted:
+                raise LegacyOpsError("duplicate-provider-ids", "Provider contains duplicate assigned snapshot IDs")
+            seen_trusted.add(key)
         seen: set[str] = set()
         for row in legacy:
             if isinstance(row, dict) and isinstance(row.get("snapshotId"), str):

@@ -489,6 +489,57 @@ def test_duplicate_legacy_rows_refused_even_when_unrequested(tmp_path, capsys):
         assert live.read_bytes() == before
 
 
+def _v2(root: Path, kind: str, items: list[dict], legacy_items: list[dict]) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{kind}.json"
+    payload = {"kind": kind, "formatVersion": 2, "items": items, "legacyItems": legacy_items}
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_duplicate_assigned_rows_refused_without_losing_data(tmp_path, capsys):
+    # Two different assigned rows share a storage key; load() would fold them and the
+    # rewrite after assignment would keep only the second one.
+    cases = {
+        "tenant": [{"snapshotId": "dup", "tenantId": "tenant-b", "price": 1},
+                   {"snapshotId": "dup", "tenantId": "tenant-b", "price": 2}],
+        "untenanted": [{"snapshotId": "dup", "price": 1}, {"snapshotId": "dup", "price": 2}],
+    }
+    for name, items in cases.items():
+        root = tmp_path / name / "providers"
+        live = _v2(root, "fx", items, [{"snapshotId": "old", "price": 9}])
+        backup = _copy(live, tmp_path / name / "backup.json")
+        audit = tmp_path / name / "audit.jsonl"
+        before = live.read_bytes()
+        assert main(_assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])) == 1
+        assert _stderr(capsys)["error"] == "duplicate-provider-ids"
+        assert live.read_bytes() == before
+        records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
+        assert [record["action"] for record in records] == ["refused"]
+        assert records[0]["reason"] == "duplicate-provider-ids"
+
+
+def test_same_snapshot_id_under_different_tenants_still_assigns(tmp_path, capsys):
+    root = tmp_path / "providers"
+    live = _v2(
+        root,
+        "fx",
+        [{"snapshotId": "dup", "tenantId": "tenant-b", "price": 1},
+         {"snapshotId": "dup", "tenantId": "tenant-c", "price": 2},
+         {"snapshotId": "dup", "price": 3}],
+        [{"snapshotId": "old", "price": 9}],
+    )
+    backup = _copy(live, tmp_path / "backup.json")
+    assert main(_assign_args(root, backup, tmp_path / "audit.jsonl", tenant="tenant-a", snapshot_ids=["old"])) == 0
+    assert _stdout(capsys)["action"] == "assigned"
+    saved = json.loads(live.read_text(encoding="utf-8"))
+    assert sorted((row.get("tenantId", ""), row["snapshotId"], row["price"]) for row in saved["items"] if row["snapshotId"] == "dup") == [
+        ("", "dup", 3), ("tenant-b", "dup", 1), ("tenant-c", "dup", 2)
+    ]
+    assert [(row["tenantId"], row["snapshotId"]) for row in saved["items"] if row["snapshotId"] == "old"] == [("tenant-a", "old")]
+    assert saved["legacyItems"] == []
+
+
 def test_audit_failure_before_and_after_assignment_recovers(tmp_path, capsys, monkeypatch):
     import scripts.assign_commerce_legacy as module
 
