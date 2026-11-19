@@ -18,6 +18,7 @@
 | `/admin/materials` | 管理板材庫存、餘料預留與排版基準測試。 | `/api/materials`、`/api/remnants`、`/api/nesting`、`/api/pages/materials` |
 | `/admin/pilot` | 查看試產工單、批次、領料、收料、請購與裝箱作業。 | `/api/pilot/console`、`/api/pilot/work-orders`、`/api/pilot/batches`、`/api/pilot/receipts`、`/api/pilot/purchase-requests`、`/api/pilot/import`、`/api/pilot/export`、`/api/pilot/health`、`/api/pilot/cartons`、`/api/pages/pilot` |
 | `/admin/pilot-floor` | 管理現場站點、派工、掃碼與異常。 | `/api/pilot/operator`、`/api/pilot/scan`、`/api/pilot/stations`、`/api/pilot/dispatch`、`/api/pilot/leases`、`/api/pilot/exceptions`、`/api/pilot/scan-token`、`/api/pages/pilot-floor` |
+| `/admin/pilot-shipping` | 管理試產棧板規劃、出貨草稿、運費報價匯入、紙箱標籤與人工交運。 | `/api/pilot/pallets`、`/api/pilot/shipments`、`/api/pilot/carrier-quotes`、`/api/pages/pilot-shipping` |
 | `/admin/render` | 送出、查詢及取消 3D 算圖工作。 | `/api/3d/jobs`、`/api/render`、`/api/pages/render` |
 | `/admin/render#twins` | 建立、上傳與預覽數位分身。 | `/api/digital-twins`、`/api/pages/render` |
 | `/admin/readiness` | 查看就緒狀態、證據、放行、安全評估與 KPI。 | `/api/readiness`、`/api/evidence`、`/api/release`、`/api/safety`、`/api/kpi`、`/api/pages/readiness` |
