@@ -43,7 +43,16 @@
           <div class="mt-scroll" id="mt-lots-wrap"><p class="mt-empty">載入中…</p></div>
           <aside class="mt-detail" id="mt-lot-detail" hidden aria-live="polite">
             <h3>批次詳情</h3>
-            <pre id="mt-lot-detail-body"></pre>
+            <div id="mt-lot-detail-body" class="mt-detail-body"></div>
+            <form id="mt-quarantine-form" class="mt-form">
+              <h4>隔離 / 解除隔離</h4>
+              <p class="mt-hint" id="mt-quarantine-hint">需確認並填寫原因；帶 expectedVersion 可避免覆寫衝突。</p>
+              <label>原因 <input id="mt-quarantine-reason" type="text" maxlength="200" required placeholder="1–200 字"></label>
+              <label>版本（選填，樂觀鎖） <input id="mt-quarantine-version" type="number" min="1" step="1" placeholder="expectedVersion"></label>
+              <button type="submit" id="mt-quarantine-btn" class="mt-btn" data-quarantine-action="quarantine">隔離批次（需確認）</button>
+              <button type="submit" id="mt-release-quarantine-btn" class="mt-btn" data-quarantine-action="release" hidden>解除隔離（需確認）</button>
+            </form>
+            <pre id="mt-quarantine-result" class="mt-result" hidden></pre>
             <form id="mt-cc-form" class="mt-form mt-cc-form">
               <h4>實地盤點</h4>
               <p class="mt-hint">送出後需主管核准才會調整可用庫存。</p>
@@ -102,6 +111,14 @@
               <button type="submit" class="mt-btn mt-btn-primary" id="mt-reserve-btn" disabled>預留餘料（需確認）</button>
               <button type="button" class="mt-btn" id="mt-reserve-retry" hidden>重送</button>
             </form>
+            <form id="mt-rem-ops-form" class="mt-form">
+              <h4>取消預留 / 消耗</h4>
+              <p class="mt-hint">取消預留僅預留者或租約過期者可操作；消耗帶 idempotencyKey 可安全重送。</p>
+              <label>操作者 <input id="mt-rem-ops-by" type="text" value="manual" required></label>
+              <button type="button" id="mt-rem-release-btn" class="mt-btn" disabled>取消預留</button>
+              <button type="button" id="mt-rem-consume-btn" class="mt-btn mt-btn-primary" disabled>消耗餘料（需確認）</button>
+            </form>
+            <pre id="mt-rem-ops-result" class="mt-result" hidden></pre>
           </aside>
           <p class="mt-empty" id="mt-rem-pick">請在左側表格選擇一筆餘料。</p>
         </div>

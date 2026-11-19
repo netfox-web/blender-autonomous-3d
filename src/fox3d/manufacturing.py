@@ -1095,6 +1095,57 @@ class RemnantInventory:
                     continue
         return reserved
 
+    def release_reservation(
+        self,
+        remnant_id: str,
+        *,
+        by: str,
+        version: int | None = None,
+        tenant_id: str | None = None,
+    ) -> dict[str, Any]:
+        from datetime import datetime, timezone
+
+        from fox3d.inventory import QUALITY_UPPER, normalize_status
+
+        with self._transaction(tenant_id=self._effective_tenant(remnant_id, tenant_id)):
+            rec = self.items[remnant_id]
+            if tenant_id is not None and self._owner(rec) != tenant_id:
+                raise PermissionError("tenant isolation: remnant")
+            st = normalize_status(rec.get("status"))
+            if st != "reserved":
+                raise PermissionError(f"remnant {remnant_id} not reserved")
+            current_v = int(rec.get("version") or 1)
+            if version is not None and int(version) != current_v:
+                raise PermissionError(f"stale remnant version {version} != {current_v}")
+            reserved_by = str(rec.get("reservedBy") or "")
+            allowed = reserved_by == by
+            if not allowed:
+                until = rec.get("reservedUntil")
+                if until:
+                    try:
+                        deadline = datetime.fromisoformat(str(until).replace("Z", "+00:00"))
+                        now = datetime.now(timezone.utc)
+                        if deadline.tzinfo is None and now.tzinfo is not None:
+                            deadline = deadline.replace(tzinfo=timezone.utc)
+                        if now >= deadline:
+                            allowed = True
+                    except ValueError:
+                        pass
+            if not allowed:
+                raise PermissionError(f"remnant {remnant_id} reserved by {reserved_by}")
+            updated = dict(rec)
+            updated["status"] = "available"
+            updated["qualityState"] = QUALITY_UPPER["available"]
+            updated["reservedBy"] = None
+            updated["leaseToken"] = None
+            updated["reservedUntil"] = None
+            updated["idempotencyKey"] = None
+            updated["version"] = current_v + 1
+            updated["persistence"] = self._persist_label()
+            self._put_store(updated, expected_version=current_v)
+            self.items[remnant_id] = updated
+            return dict(updated)
+
     def consume(
         self,
         remnant_id: str,
@@ -1103,6 +1154,7 @@ class RemnantInventory:
         version: int | None = None,
         lease_token: str | None = None,
         tenant_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         from fox3d.inventory import QUALITY_UPPER, normalize_status
 
@@ -1112,6 +1164,8 @@ class RemnantInventory:
                 raise PermissionError("tenant isolation: remnant")
             st = normalize_status(rec.get("status"))
             if st == "consumed":
+                if idempotency_key and rec.get("consumeIdempotencyKey") == idempotency_key:
+                    return dict(rec)
                 raise PermissionError(f"remnant {remnant_id} already consumed")
             if st == "reserved" and rec.get("reservedBy") != by:
                 raise PermissionError(f"remnant {remnant_id} reserved by {rec.get('reservedBy')}")
@@ -1128,6 +1182,7 @@ class RemnantInventory:
             updated["consumedBy"] = by
             updated["version"] = current_v + 1
             updated["leaseToken"] = None
+            updated["consumeIdempotencyKey"] = idempotency_key
             updated["persistence"] = self._persist_label()
             self._put_store(updated, expected_version=current_v)
             self.items[remnant_id] = updated

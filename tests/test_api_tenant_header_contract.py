@@ -68,13 +68,18 @@ ROUTES = [
     ('GET', '/api/pilot/health'),
     ('GET', '/api/pilot/operator'),
     ('POST', '/api/pilot/scan'),
+    ('GET', '/api/pilot/stations'),
     ('POST', '/api/pilot/stations'),
+    ('PUT', '/api/pilot/stations/{station_id}/status'),
     ('POST', '/api/pilot/stations/{station_id}/heartbeat'),
+    ('GET', '/api/pilot/leases'),
     ('POST', '/api/pilot/dispatch'),
     ('POST', '/api/pilot/leases/{lease_id}/ack'),
     ('POST', '/api/pilot/leases/{lease_id}/start'),
     ('POST', '/api/pilot/leases/{lease_id}/complete'),
     ('GET', '/api/pilot/exceptions'),
+    ('POST', '/api/pilot/exceptions/{exception_id}/ack'),
+    ('POST', '/api/pilot/exceptions/{exception_id}/resolve'),
     ('POST', '/api/pilot/import'),
     ('GET', '/api/pilot/export'),
     ('POST', '/api/pilot/work-orders/{work_order_id}/consume'),
@@ -107,7 +112,7 @@ def test_tenant_header_contract(client, method, path, header):
     url = re.sub(r"\{[^}]+\}", "missing", path)
     headers = {} if header is None else {"X-Tenant-Id": header}
     kwargs = {}
-    if method == "POST":
+    if method in {"POST", "PUT"}:
         if path == "/api/digital-twins/upload":
             kwargs = {"data": {"sku": "sku"}, "files": {"file": ("test.glb", b"glb")}}
         else:

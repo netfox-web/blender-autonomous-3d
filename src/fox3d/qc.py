@@ -125,6 +125,7 @@ class QcService:
         source: str = "TEST_DATA",
         lot_id: str | None = None,
         operation: str | None = None,
+        idem_entry: tuple[str, str] | None = None,
     ) -> dict[str, Any]:
         if source not in {"TEST_DATA", "IMPORTED", "MANUAL", "DEVICE"}:
             source = "TEST_DATA"
@@ -162,11 +163,14 @@ class QcService:
             if hold_wo and wo.get("state") in {"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"}:
                 raise PermissionError(f"work order in {wo.get('state')} cannot be put on QC_HOLD")
         self.checks[rec["qcId"]] = rec
+        if idem_entry is not None:
+            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": rec["qcId"]}
         if self.workorders is not None:
             wo = self.workorders.get(work_order_id)
             wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
             if hold_wo and wo.get("state") != "QC_HOLD":
                 self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
+            self.workorders.persist()
         release_hash = None
         if self.workorders is not None:
             try:
@@ -206,6 +210,7 @@ class QcService:
         actor: str,
         note: str = "",
         dam_asset_id: str | None = None,
+        idem_entry: tuple[str, str] | None = None,
     ) -> dict[str, Any]:
         if code not in DEFECT_CODES:
             raise ValueError(code)
@@ -240,8 +245,9 @@ class QcService:
                 self.workorders._transition(wo, "REJECTED", actor=actor, reason="defect-reject")
             self.workorders.persist()
         self.defects[rec["defectId"]] = rec
+        if idem_entry is not None:
+            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": rec["defectId"]}
         emit(self, "qc.defect", tenant_id=tenant_id, aggregate_type="QC", aggregate_id=rec["defectId"], actor=actor, payload={"workOrderId": work_order_id, "code": code, "disposition": disposition}, semantic_key=f"{tenant_id}::defect::{rec['defectId']}")
-        self.persist()
         return rec
 
     def required_final_ok(

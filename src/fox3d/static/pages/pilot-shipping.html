@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>試產出貨與棧板 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/pilot-shipping.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/pilot-shipping.js"></script>
+</head>
+<body>
+  <main class="ps" id="ps-root">
+    <header class="ps-head">
+      <p class="ps-eyebrow">試產現場 · 棧板與出貨</p>
+      <h1>試產出貨與棧板</h1>
+      <p class="ps-lede">規劃紙箱上棧板、建立出貨草稿、匯入手動或檔案（JSON／CSV）運費報價、查詢紙箱標籤與執行人工交運。本頁僅供現場規劃與手動交運紀錄，不呼叫任何真實物流商；過期或不相符報價（quote_stale）會標示為過期不可用。</p>
+    </header>
+
+    <section class="ps-tools" aria-label="工具列">
+      <label class="ps-tenant">租戶
+        <input id="ps-tenant" type="text" value="sonaqueen-home" spellcheck="false" autocomplete="off" aria-label="租戶代碼">
+      </label>
+      <button type="button" id="ps-refresh" class="ps-btn ps-btn-primary">重新載入</button>
+      <p id="ps-tenant-hint" class="ps-tenant-hint" role="status" hidden></p>
+      <p id="ps-banner" class="ps-banner">提醒（非即時物流連線）：棧板為 PLANNING 試算、出貨為手動草稿與人工交運紀錄（MANUAL/IMPORTED）、標籤硬體為 PARTIAL。</p>
+    </section>
+
+    <div class="ps-layout">
+      <div class="ps-panels">
+        <section id="ps-pallet-section" class="ps-panel" aria-labelledby="ps-pallet-heading">
+          <h2 id="ps-pallet-heading">1. 紙箱清單與棧板規劃</h2>
+          <p id="ps-cartons-status" class="ps-muted">載入中…</p>
+          <div class="ps-scroll">
+            <table class="ps-table" id="ps-cartons-table" aria-label="租戶紙箱清單">
+              <thead>
+                <tr><th>選取</th><th>紙箱編號</th><th>工單／批次</th><th>尺寸與重量</th><th>標籤</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <form id="ps-pallet-form" class="ps-form" aria-label="建立棧板規劃">
+            <h3>建立棧板規劃</h3>
+            <label>紙箱編號（多筆以逗號或空白分隔，亦可由上方表格勾選）
+              <input id="ps-pallet-carton-ids" name="cartonIds" type="text" required placeholder="例如 carton-1, carton-2" autocomplete="off">
+            </label>
+            <div class="ps-confirm" data-action="pallet">
+              <label><input type="checkbox" id="ps-pallet-confirm-box" class="ps-confirm-box"> 我確認要依上述紙箱建立棧板規劃</label>
+              <button type="submit" id="ps-pallet-submit" class="ps-btn ps-btn-primary" disabled>建立棧板規劃</button>
+              <p id="ps-pallet-confirm-summary" class="ps-confirm-summary" hidden></p>
+            </div>
+          </form>
+          <p id="ps-pallet-result" class="ps-result" role="status" hidden></p>
+
+          <h3>已建立棧板規劃</h3>
+          <p id="ps-pallets-status" class="ps-muted">載入中…</p>
+          <div class="ps-scroll">
+            <table class="ps-table" id="ps-pallets-table" aria-label="棧板規劃清單">
+              <thead>
+                <tr><th>棧板規劃編號</th><th>棧板數</th><th>紙箱數</th><th>狀態</th><th>操作</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ps-shipment-draft-section" class="ps-panel" aria-labelledby="ps-ship-draft-heading">
+          <h2 id="ps-ship-draft-heading">2. 建立出貨草稿</h2>
+          <form id="ps-shipment-form" class="ps-form" aria-label="建立出貨草稿">
+            <div class="ps-grid-2">
+              <label>起運地（origin）
+                <input id="ps-ship-origin" name="origin" type="text" value="TW" required autocomplete="off">
+              </label>
+              <label>目的地（destination）
+                <input id="ps-ship-destination" name="destination" type="text" value="TW-TPE" required autocomplete="off">
+              </label>
+            </div>
+            <label>紙箱編號（多筆以逗號或空白分隔）
+              <input id="ps-ship-carton-ids" name="cartonIds" type="text" required placeholder="例如 carton-1, carton-2" autocomplete="off">
+            </label>
+            <div class="ps-grid-2">
+              <label>運送服務（service）
+                <select id="ps-ship-service" name="service">
+                  <option value="ground">陸運（ground）</option>
+                  <option value="air">空運（air）</option>
+                  <option value="sea">海運（sea）</option>
+                  <option value="express">快遞（express）</option>
+                </select>
+              </label>
+              <label>材積除數（dimDivisor）
+                <input id="ps-ship-divisor" name="dimDivisor" type="number" step="any" min="1" value="6000">
+              </label>
+            </div>
+            <label>綁定運費報價（選填）
+              <select id="ps-ship-quote-id" name="quoteId">
+                <option value="">不指定（自動比對現有報價）</option>
+              </select>
+            </label>
+            <div class="ps-confirm" data-action="shipment">
+              <label><input type="checkbox" id="ps-ship-confirm-box" class="ps-confirm-box"> 我確認要建立出貨草稿（不向真實物流商下單）</label>
+              <button type="submit" id="ps-ship-submit" class="ps-btn ps-btn-primary" disabled>建立出貨草稿</button>
+              <p id="ps-ship-confirm-summary" class="ps-confirm-summary" hidden></p>
+            </div>
+          </form>
+          <p id="ps-shipment-result" class="ps-result" role="status" hidden></p>
+        </section>
+
+        <section id="ps-handoff-section" class="ps-panel" aria-labelledby="ps-handoff-heading">
+          <h2 id="ps-handoff-heading">3. 人工交運（冪等）</h2>
+          <form id="ps-handoff-form" class="ps-form" aria-label="人工交運">
+            <label>出貨單編號（shipmentId）
+              <input id="ps-handoff-shipment-id" name="shipmentId" type="text" required placeholder="建立草稿或點選下方出貨單可帶入" autocomplete="off">
+            </label>
+            <div class="ps-grid-2">
+              <label>物流商名稱（carrier）
+                <input id="ps-handoff-carrier" name="carrier" type="text" value="MANUAL_VAN" required autocomplete="off">
+              </label>
+              <label>追蹤碼（tracking，重送同碼具冪等性）
+                <input id="ps-handoff-tracking" name="tracking" type="text" required placeholder="例如 TRK-001" autocomplete="off">
+              </label>
+            </div>
+            <label>作業人員（actor）
+              <input id="ps-handoff-actor" name="actor" type="text" value="shipping-ops" autocomplete="off">
+            </label>
+            <div class="ps-confirm" data-action="handoff">
+              <label><input type="checkbox" id="ps-handoff-confirm-box" class="ps-confirm-box"> 我確認要執行人工交運（非即時物流商 API 託運）</label>
+              <button type="submit" id="ps-handoff-submit" class="ps-btn ps-btn-primary" disabled>執行交運</button>
+              <p id="ps-handoff-confirm-summary" class="ps-confirm-summary" hidden></p>
+            </div>
+          </form>
+          <p id="ps-handoff-result" class="ps-result" role="status" hidden></p>
+        </section>
+
+        <section id="ps-shipments-section" class="ps-panel" aria-labelledby="ps-shipments-heading">
+          <h2 id="ps-shipments-heading">4. 出貨單分頁列表</h2>
+          <div class="ps-filter-bar">
+            <label>狀態篩選
+              <select id="ps-ship-status-filter" aria-label="出貨單狀態篩選">
+                <option value="">全部狀態</option>
+                <option value="SHIPMENT_DRAFT">出貨草稿（SHIPMENT_DRAFT）</option>
+                <option value="HANDED_OFF_MANUAL">已人工交運（HANDED_OFF_MANUAL）</option>
+              </select>
+            </label>
+            <label>每頁筆數
+              <select id="ps-ship-limit" aria-label="每頁筆數">
+                <option value="10">10 筆</option>
+                <option value="25">25 筆</option>
+                <option value="50">50 筆</option>
+                <option value="100">100 筆</option>
+              </select>
+            </label>
+            <div class="ps-pager">
+              <button type="button" id="ps-ship-prev" class="ps-btn ps-btn-small" disabled>上一頁</button>
+              <span id="ps-ship-page-info" class="ps-muted">第 1 頁</span>
+              <button type="button" id="ps-ship-next" class="ps-btn ps-btn-small" disabled>下一頁</button>
+            </div>
+          </div>
+          <p id="ps-shipments-status" class="ps-muted">載入中…</p>
+          <div class="ps-scroll">
+            <table class="ps-table" id="ps-shipments-table" aria-label="出貨單列表">
+              <thead>
+                <tr><th>出貨單號</th><th>起訖</th><th>服務</th><th>箱數</th><th>狀態</th><th>報價有效性</th><th>交運追蹤碼</th><th>建立時間</th><th>操作</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ps-quotes-section" class="ps-panel" aria-labelledby="ps-quotes-heading">
+          <h2 id="ps-quotes-heading">5. 匯入運費報價與過期標示</h2>
+          <form id="ps-quote-form" class="ps-form" aria-label="手動新增運費報價">
+            <h3>手動新增運費報價（MANUAL）</h3>
+            <div class="ps-grid-2">
+              <label>物流商（carrier）
+                <input id="ps-quote-carrier" name="carrier" type="text" required placeholder="例如 新竹物流" autocomplete="off">
+              </label>
+              <label>服務類型（service）
+                <select id="ps-quote-service" name="service">
+                  <option value="ground">陸運（ground）</option>
+                  <option value="air">空運（air）</option>
+                  <option value="sea">海運（sea）</option>
+                  <option value="express">快遞（express）</option>
+                </select>
+              </label>
+            </div>
+            <div class="ps-grid-2">
+              <label>運費金額（charge）
+                <input id="ps-quote-charge" name="charge" type="number" step="any" min="0.01" required placeholder="例如 180">
+              </label>
+              <label>幣別（currency）
+                <input id="ps-quote-currency" name="currency" type="text" value="TWD">
+              </label>
+            </div>
+            <div class="ps-grid-2">
+              <label>材積除數（dimDivisor）
+                <input id="ps-quote-divisor" name="dimDivisor" type="number" step="any" min="1" value="6000">
+              </label>
+              <label>有效期限（validUntil）
+                <input id="ps-quote-valid-until" name="validUntil" type="text" value="9999-12-31" placeholder="YYYY-MM-DD">
+              </label>
+            </div>
+            <div class="ps-confirm" data-action="quote-manual">
+              <label><input type="checkbox" id="ps-quote-confirm-box" class="ps-confirm-box"> 我確認要新增此筆手動運費報價</label>
+              <button type="submit" id="ps-quote-submit" class="ps-btn ps-btn-primary" disabled>匯入手動報價</button>
+              <p id="ps-quote-confirm-summary" class="ps-confirm-summary" hidden></p>
+            </div>
+          </form>
+
+          <form id="ps-quote-file-form" class="ps-form" aria-label="匯入檔案或文字報價">
+            <h3>匯入 JSON／CSV 檔案報價（IMPORTED）</h3>
+            <div class="ps-grid-2">
+              <label>格式
+                <select id="ps-quote-format" name="format">
+                  <option value="csv">CSV</option>
+                  <option value="json">JSON</option>
+                </select>
+              </label>
+              <label>選擇檔案（選填，會自動讀入下方內容欄）
+                <input id="ps-quote-file" type="file" accept=".csv,.json,text/csv,application/json">
+              </label>
+            </div>
+            <label>JSON 或 CSV 報價內容
+              <textarea id="ps-quote-content" name="content" rows="3" required placeholder="carrier,service,charge,dimDivisor,validUntil&#10;TW-POST,ground,180,6000,9999-12-31"></textarea>
+            </label>
+            <div class="ps-confirm" data-action="quote-file">
+              <label><input type="checkbox" id="ps-quote-file-confirm-box" class="ps-confirm-box"> 我確認要匯入上述 JSON／CSV 運費報價</label>
+              <button type="submit" id="ps-quote-file-submit" class="ps-btn ps-btn-primary" disabled>匯入檔案報價</button>
+              <p id="ps-quote-file-confirm-summary" class="ps-confirm-summary" hidden></p>
+            </div>
+          </form>
+
+          <div class="ps-filter-bar ps-quote-check-bar">
+            <label>檢查服務類型
+              <select id="ps-quote-check-service" aria-label="報價比對服務類型">
+                <option value="">依報價自身服務</option>
+                <option value="ground">比對陸運（ground）</option>
+                <option value="air">比對空運（air）</option>
+                <option value="sea">比對海運（sea）</option>
+                <option value="express">比對快遞（express）</option>
+              </select>
+            </label>
+            <label>檢查材積除數
+              <input id="ps-quote-check-divisor" type="number" step="any" min="1" value="6000" aria-label="報價比對材積除數">
+            </label>
+            <button type="button" id="ps-quote-check-btn" class="ps-btn ps-btn-small">重新檢查過期狀態</button>
+          </div>
+          <p id="ps-quotes-status" class="ps-muted">載入中…</p>
+          <div class="ps-scroll">
+            <table class="ps-table" id="ps-quotes-table" aria-label="運費報價清單">
+              <thead>
+                <tr><th>報價編號</th><th>物流商</th><th>服務</th><th>金額</th><th>材積除數</th><th>效期</th><th>來源</th><th>狀態</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ps-label-section" class="ps-panel" aria-labelledby="ps-label-heading">
+          <h2 id="ps-label-heading">6. 紙箱標籤內容查詢</h2>
+          <form id="ps-label-form" class="ps-form" aria-label="查詢紙箱標籤">
+            <label>紙箱編號（cartonId）
+              <input id="ps-label-carton-id" name="cartonId" type="text" required placeholder="輸入紙箱編號或點選上方紙箱表格的「標籤」按鈕" autocomplete="off">
+            </label>
+            <button type="submit" id="ps-label-submit" class="ps-btn">查詢標籤內容</button>
+          </form>
+          <div id="ps-label-result" class="ps-label-box" hidden></div>
+        </section>
+      </div>
+
+      <aside class="ps-detail" aria-label="詳細與 API 回應">
+        <h2>詳細資料與回應</h2>
+        <p id="ps-detail-hint" class="ps-muted">點選表格列可預覽明細；勾選確認後會鎖定表單並以快照內容送出。</p>
+        <p id="ps-action-status" class="ps-action-status" role="status" aria-live="polite"></p>
+        <pre id="ps-detail" class="ps-out">尚無資料</pre>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
