@@ -129,32 +129,26 @@ def test_cancel_button_posts_snapshot_and_shows_cancelled(admin_page: Page, admi
                'succeeded': 0, 'failed': 0, 'items': []}
     cancelled = {**running, 'state': 'cancelled', 'completed': 1, 'cancelled': 1}
     calls: list[str] = []
-    get_calls = 0
-    gets_before_cancel: int | None = None
-
-    def get_batch(route: Route) -> None:
-        nonlocal get_calls
-        get_calls += 1
-        route.fulfill(json=cancelled if calls else running)
+    pending_gets: list[Route] = []
 
     def cancel(route: Route) -> None:
-        nonlocal gets_before_cancel
-        gets_before_cancel = get_calls
         calls.append(route.request.url)
         route.fulfill(json=cancelled)
 
     page.route('**/api/ecommerce-scenes/batches', lambda route: route.fulfill(json=running))
-    page.route('**/api/ecommerce-scenes/batches/batch2', get_batch)
+    page.expose_function('__fox3dPendingCancelPoll', lambda: len(pending_gets))
+    page.route('**/api/ecommerce-scenes/batches/batch2', lambda route: pending_gets.append(route))
     page.route('**/api/ecommerce-scenes/batches/batch2/cancel', cancel)
     page.on('dialog', lambda dialog: dialog.accept())
     open_studio(page, admin_server)
     page.locator('#blender-matrix-btn').click()
+    _wait_for_pending(page, '__fox3dPendingCancelPoll', 1)
     page.locator('#batch-cancel').click()
     page.wait_for_function("() => document.querySelector('#blender-batch-status').textContent.includes('已取消')")
     assert len(calls) == 1
-    assert gets_before_cancel is not None
-    assert get_calls == gets_before_cancel
+    assert len(pending_gets) == 1
     assert '已完成' not in page.locator('#blender-batch-status').inner_text()
+    pending_gets[0].abort()
 
 
 def _history_batch(idx: int, *, state: str = 'completed', succeeded: int = 1, failed: int = 0) -> dict[str, Any]:
