@@ -280,6 +280,12 @@
       $(id).textContent = '讀取失敗：' + ((outcome.error && outcome.error.message) || outcome.error);
     }
   }
+  function clearSelection() {
+    selected = null;
+    $('detail').textContent = '請選擇工單。';
+    $('actions').hidden = true;
+    if ($('packing-panel')) $('packing-panel').hidden = true;
+  }
   function refresh(keepOrderId, preserveStatus) {
     if (!posting) clearPending();
     var seq = ++refreshSeq;
@@ -287,12 +293,7 @@
     var reqTenant = tenant();
     loadedTenant = reqTenant;
     var targetOrderId = keepOrderId !== undefined ? keepOrderId : (selected && selected.workOrderId);
-    if (!targetOrderId) {
-      selected = null;
-      $('detail').textContent = '請選擇工單。';
-      $('actions').hidden = true;
-      if ($('packing-panel')) $('packing-panel').hidden = true;
-    }
+    if (!targetOrderId) clearSelection();
     var reqs = [
       fetchOutcome('/api/pilot/console', reqTenant),
       fetchOutcome('/api/pilot/work-orders', reqTenant),
@@ -313,8 +314,13 @@
         table('receipts', d.receipts, [['receiptId','收料編號'],['material','材料'],['quantity','數量'],['status','狀態'],['truthLabel','來源']]);
         table('requests', d.purchaseRequests, [['requestId','請購編號'],['material','材料'],['quantity','數量'],['status','狀態']]);
       });
+      // A selection survives only if the work-order list loads and still contains it;
+      // a failed or malformed list must not leave stale order actions usable.
+      var ordersLoaded = false;
       applySection('orders', res[1], function (d) {
-        var list = d.items || [];
+        if (!d || typeof d !== 'object') throw new Error('工單清單格式錯誤');
+        var list = d.items == null ? [] : d.items;
+        if (!Array.isArray(list)) throw new Error('工單清單格式錯誤');
         table('orders', list, [['workOrderId','工單編號'],['state','狀態'],['quantity','數量'],['truthLabel','資料來源']], function (item) { selectOrder(item, false); });
         var matched = null;
         if (targetOrderId) {
@@ -328,12 +334,11 @@
         if (matched) {
           selectOrder(matched, Boolean(preserveStatus), true);
         } else if (targetOrderId) {
-          selected = null;
-          $('detail').textContent = '請選擇工單。';
-          $('actions').hidden = true;
-          if ($('packing-panel')) $('packing-panel').hidden = true;
+          clearSelection();
         }
+        ordersLoaded = true;
       });
+      if (!ordersLoaded) clearSelection();
       applySection('batches', res[2], function (d) {
         table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { show('batch-detail', item); });
       });
@@ -370,6 +375,9 @@
         markCartonLoadDone();
       }
     });
+  }
+  function stillSelected(task) {
+    return Boolean(selected && task.workOrderId && selected.workOrderId === task.workOrderId);
   }
   function prepare(label, path, body, trigger, onDone, isPacking) {
     if (posting || pending) return;
@@ -416,9 +424,10 @@
       if (isMismatchResult(d)) {
         return refresh(task.workOrderId, true).then(function () {
           releaseControls();
-          if (task.isPacking) renderCartons(currentCartons, true, currentMismatchHold);
-          if (typeof task.onDone === 'function') task.onDone(d);
-          if ($('packing-status')) {
+          var keepPacking = !task.isPacking || stillSelected(task);
+          if (task.isPacking && keepPacking) renderCartons(currentCartons, true, currentMismatchHold);
+          if (keepPacking && typeof task.onDone === 'function') task.onDone(d);
+          if (keepPacking && $('packing-status')) {
             $('packing-status').textContent = '尺寸不符待人工確認';
             $('packing-status').className = 'warn';
           }
@@ -437,8 +446,9 @@
       }
       return refresh(task.workOrderId, Boolean(task.isPacking)).then(function () {
         releaseControls();
-        if (task.isPacking) renderCartons(currentCartons, true, currentMismatchHold);
-        if (typeof task.onDone === 'function') task.onDone(d);
+        var keepPacking = !task.isPacking || stillSelected(task);
+        if (task.isPacking && keepPacking) renderCartons(currentCartons, true, currentMismatchHold);
+        if (keepPacking && typeof task.onDone === 'function') task.onDone(d);
         show('result', d);
       });
     }).catch(function (e) {
