@@ -196,7 +196,9 @@ def test_tenant_backup_preserves_a_and_excludes_b_full_matrix(tmp_path):
     seed_a = seed_tenant_backup_fixture(plat, tenant_id="ta", actor="ops-a")
     seed_tenant_backup_fixture(plat, tenant_id="tb", actor="ops-b")
     plat.pilot.logistics.import_carrier_quote(
-        {"carrier": "X", "service": "ground", "charge": 9, "dimDivisor": 6000}, source="IMPORTED"
+        {"carrier": "X", "service": "ground", "charge": 9, "dimDivisor": 6000},
+        source="IMPORTED",
+        allow_global=True,
     )
     plat.pilot.outbox.prepare(
         {"tenant_id": "tb", "aggregate_type": "Seed", "aggregate_id": "tb-tx", "semantic_key": "tb::seed-tx"}

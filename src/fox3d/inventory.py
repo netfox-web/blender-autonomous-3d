@@ -59,9 +59,23 @@ def _replace_with_retry(src: Path, dst: Path) -> None:
 
 def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    _replace_with_retry(tmp, path)
+    tmp = path.with_name(f".{path.name}.{new_id()}.tmp")
+    text = json.dumps(payload, indent=2, default=str)
+    owned = False
+    try:
+        with tmp.open("x", encoding="utf-8") as fh:
+            owned = True
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        _replace_with_retry(tmp, path)
+        owned = False
+    finally:
+        if owned and tmp.exists():
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def read_json(path: Path) -> Any:

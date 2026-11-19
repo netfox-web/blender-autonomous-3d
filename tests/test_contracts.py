@@ -312,3 +312,131 @@ def test_export_bundle_content_hash_stable_with_fixed_clock(platform, monkeypatc
     assert exported["contentHash"] == expect
     again = stable_hash({k: exported[k] for k in exported if k != "contentHash"})
     assert again == exported["contentHash"]
+
+
+def test_carrier_quote_bundle_holds_logistics_lock_and_preserves_concurrent_commit_on_failure(
+    platform, monkeypatch
+):
+    import threading
+    from fox3d.logistics import LogisticsService
+
+    cs = _contracts(platform)
+    logistics = platform.pilot.logistics
+
+    # Seed an initial quote before the batch.
+    logistics.import_carrier_quote(
+        {"quoteId": "q-seed-initial", "carrier": "SEED", "charge": 100},
+        source="MANUAL",
+        tenant_id="tenant-seed",
+    )
+
+    orig_require = contracts_mod._require
+    row_index = 0
+    other_thread_acquired_between_rows: list[bool] = []
+    worker_thread: threading.Thread | None = None
+    worker_attempted = threading.Event()
+
+    def concurrent_tenant_b_write() -> None:
+        # Attempt a non-blocking acquire between row 0 and row 1; must fail because import_bundle holds logistics._lock.
+        can_steal = logistics._lock.acquire(blocking=False)
+        if can_steal:
+            logistics._lock.release()
+        other_thread_acquired_between_rows.append(can_steal)
+        worker_attempted.set()
+        # Now perform the real blocking import_carrier_quote (with default persist=True) for tenant-b.
+        logistics.import_carrier_quote(
+            {"quoteId": "q-concurrent-tenant-b", "carrier": "TCAT-B", "charge": 260},
+            source="MANUAL",
+            tenant_id="tenant-b",
+        )
+
+    def hooked_require(row: dict, fields: tuple[str, ...]) -> list[str]:
+        nonlocal row_index, worker_thread
+        row_index += 1
+        if row_index == 2:
+            # Right after row 0's import_carrier_quote returned and before row 1 runs:
+            worker_thread = threading.Thread(target=concurrent_tenant_b_write)
+            worker_thread.start()
+            assert worker_attempted.wait(timeout=5.0)
+        return orig_require(row, fields)
+
+    monkeypatch.setattr(contracts_mod, "_require", hooked_require)
+
+    # Row 0 is valid; Row 1 has an invalid validUntil date so import_carrier_quote raises ValueError mid-batch.
+    with pytest.raises(ValueError, match="validUntil"):
+        cs.import_bundle(
+            {
+                "schemaVersion": SCHEMA_CARRIER,
+                "rows": [
+                    {"quoteId": "q-batch-a-row0", "carrier": "DHL-A", "charge": 150},
+                    {"quoteId": "q-batch-a-row1", "carrier": "DHL-A", "charge": 180, "validUntil": "not-a-date"},
+                ],
+            },
+            tenant_id="tenant-a",
+            actor="ops",
+            source="IMPORTED",
+        )
+
+    assert worker_thread is not None
+    worker_thread.join(timeout=5.0)
+    assert not worker_thread.is_alive()
+
+    # Because import_bundle held logistics._lock across the whole batch, the other thread could NOT acquire the lock mid-batch.
+    assert other_thread_acquired_between_rows == [False]
+
+    # Row 0 from the failed batch was rolled back, while tenant-b's quote committed after the rollback is preserved in memory and on disk.
+    assert "q-batch-a-row0" not in logistics.carrier_quotes
+    assert "q-batch-a-row1" not in logistics.carrier_quotes
+    assert set(logistics.carrier_quotes) == {"q-seed-initial", "q-concurrent-tenant-b"}
+
+    # A subsequent persist() and reload from disk must preserve tenant-b's committed quote.
+    logistics.persist()
+    reloaded = LogisticsService(root=logistics.root)
+    assert set(reloaded.carrier_quotes) == {"q-seed-initial", "q-concurrent-tenant-b"}
+    assert reloaded.carrier_quotes["q-concurrent-tenant-b"]["tenantId"] == "tenant-b"
+
+    # Also verify that if a re-entrant hook inserts another tenant's persisted quote right after row 0 returns
+    # and row 1 raises, the inserted quote is still preserved after rollback, persist(), and reload.
+    monkeypatch.setattr(contracts_mod, "_require", orig_require)
+    orig_import_quote = logistics.import_carrier_quote
+    call_seq = 0
+
+    def reentrant_hook(row: dict, **kwargs):
+        nonlocal call_seq
+        call_seq += 1
+        if call_seq == 1:
+            res = orig_import_quote(row, **kwargs)
+            orig_import_quote(
+                {"quoteId": "q-reentrant-tenant-c", "carrier": "HCT-C", "charge": 310},
+                source="MANUAL",
+                tenant_id="tenant-c",
+            )
+            return res
+        raise RuntimeError("row 2 failed after re-entrant commit")
+
+    monkeypatch.setattr(logistics, "import_carrier_quote", reentrant_hook)
+    with pytest.raises(RuntimeError, match="row 2 failed after re-entrant commit"):
+        cs.import_bundle(
+            {
+                "schemaVersion": SCHEMA_CARRIER,
+                "rows": [
+                    {"quoteId": "q-batch-a2-row0", "carrier": "DHL-A2", "charge": 155},
+                    {"quoteId": "q-batch-a2-row1", "carrier": "DHL-A2", "charge": 185},
+                ],
+            },
+            tenant_id="tenant-a",
+            actor="ops",
+            source="IMPORTED",
+        )
+
+    assert "q-batch-a2-row0" not in logistics.carrier_quotes
+    assert "q-reentrant-tenant-c" in logistics.carrier_quotes
+    logistics.persist()
+    reloaded2 = LogisticsService(root=logistics.root)
+    assert set(reloaded2.carrier_quotes) == {
+        "q-seed-initial",
+        "q-concurrent-tenant-b",
+        "q-reentrant-tenant-c",
+    }
+
+

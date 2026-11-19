@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from typing import Any
 
@@ -112,13 +113,40 @@ class ContractService:
                     )[0]
                     accepted.append(rec)
             elif schema == SCHEMA_CARRIER:
-                for i, row in enumerate(rows):
-                    missing = _require(row, ("carrier", "charge"))
-                    if missing:
-                        rejected.append({"index": i, "reasons": missing, "row": row})
-                        continue
-                    rec = self.pilot.logistics.import_carrier_quote(row, source=source)
-                    accepted.append(rec)
+                logistics = self.pilot.logistics
+                with logistics._lock:
+                    logistics._sync_from_disk()
+                    prev_quotes = copy.deepcopy(logistics.carrier_quotes)
+                    sig_before = logistics._store_sig
+                    touched_qids: set[str] = set()
+                    try:
+                        for i, row in enumerate(rows):
+                            missing = _require(row, ("carrier", "charge"))
+                            if missing:
+                                rejected.append({"index": i, "reasons": missing, "row": row})
+                                continue
+                            rec = logistics.import_carrier_quote(
+                                row,
+                                source=source,
+                                tenant_id=tenant_id,
+                                persist=False,
+                            )
+                            touched_qids.add(rec["quoteId"])
+                            accepted.append(rec)
+                        if accepted:
+                            logistics.persist()
+                    except Exception:
+                        for qid in touched_qids:
+                            if qid in prev_quotes:
+                                logistics.carrier_quotes[qid] = prev_quotes[qid]
+                            else:
+                                logistics.carrier_quotes.pop(qid, None)
+                        if sig_before != logistics._store_sig:
+                            try:
+                                logistics.persist()
+                            except Exception:
+                                pass
+                        raise
             elif schema == SCHEMA_ADJUST:
                 for i, row in enumerate(rows):
                     missing = _require(row, ("lotId", "quantity", "reason"))

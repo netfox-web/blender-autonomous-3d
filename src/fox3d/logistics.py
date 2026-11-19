@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+from collections.abc import Mapping
 import copy
 from datetime import date
 import json
@@ -47,6 +49,34 @@ def _file_sig(path: Path) -> tuple[int, int, int, int] | None:
     except FileNotFoundError:
         return None
     return (st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_ino)
+
+
+def is_explicit_global_carrier_quote(quote: dict[str, Any]) -> bool:
+    """Return True only when a tenantless quote was explicitly marked as global."""
+    raw_tid = quote.get("tenantId")
+    if isinstance(raw_tid, str) and raw_tid.strip():
+        return False
+    if raw_tid not in (None, ""):
+        return False
+    return bool(
+        quote.get("globalQuote") is True
+        or quote.get("isGlobal") is True
+        or quote.get("allowGlobal") is True
+    )
+
+
+def is_tenantless_carrier_quote(
+    quote: dict[str, Any],
+    *,
+    include_explicit_global: bool = False,
+) -> bool:
+    """Return True when a quote has no valid tenantId (and is not explicitly global unless requested)."""
+    raw_tid = quote.get("tenantId")
+    if isinstance(raw_tid, str) and raw_tid.strip():
+        return False
+    if not include_explicit_global and is_explicit_global_carrier_quote(quote):
+        return False
+    return True
 
 
 def _require_quantity(quantity: object) -> int:
@@ -402,7 +432,7 @@ class LogisticsService:
             "certification": False,
         }
 
-    def palletize(self, carton_ids: list[str]) -> dict[str, Any]:
+    def palletize(self, carton_ids: list[str], *, persist: bool = True) -> dict[str, Any]:
         with self._lock:
             cartons = [self.cartons[i] for i in carton_ids]
             tenants = {c.get("tenantId") for c in cartons}
@@ -479,7 +509,12 @@ class LogisticsService:
             }
             rec["planHash"] = stable_hash({k: rec[k] for k in rec if k not in {"palletPlanId", "planHash"}})
             self.pallets[rec["palletPlanId"]] = rec
-            self.persist()
+            if persist:
+                try:
+                    self.persist()
+                except Exception:
+                    self.pallets.pop(rec["palletPlanId"], None)
+                    raise
             return rec
 
     def shipping_request(
@@ -566,8 +601,11 @@ class LogisticsService:
         service: str = "ground",
         quote_id: str | None = None,
         dim_divisor: float | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
+            shipment_ids_before = set(self.shipments)
+            idem_keys_before = set(self._idem)
             rec = self.shipping_request(
                 origin=origin,
                 destination=destination,
@@ -576,21 +614,89 @@ class LogisticsService:
                 quote_id=quote_id,
                 dim_divisor=dim_divisor,
             )
+            sid = rec["shipmentId"]
+            tenant = str(rec.get("tenantId") or "")
+            ordered = sorted(carton_ids)
+            raw = f"{origin}:{destination}:{','.join(ordered)}:{service}"
+            content_idem_key = f"{tenant}::shipment::{raw}"
+            created_new_shipment = sid not in shipment_ids_before
+            created_content_idem = content_idem_key not in idem_keys_before
+            prev_existing = copy.deepcopy(rec) if not created_new_shipment else None
+
+            store_key: str | None = None
+            created_store_key = False
+            if idempotency_key is not None:
+                if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+                    if created_content_idem:
+                        self._idem.pop(content_idem_key, None)
+                    if created_new_shipment:
+                        self.shipments.pop(sid, None)
+                    raise ValueError("idempotency_key must be a non-empty string")
+                clean_idem = idempotency_key.strip()
+                store_key = f"{tenant}::shipment-key::{clean_idem}"
+                req_sig = {
+                    "origin": origin,
+                    "destination": destination,
+                    "cartonIds": ordered,
+                    "service": service,
+                    "quoteId": rec.get("quoteId"),
+                    "dimDivisor": rec.get("dimDivisor"),
+                }
+                if store_key in self._idem:
+                    entry = self._idem[store_key]
+                    if not isinstance(entry, dict) or entry.get("sig") != req_sig or entry.get("shipmentId") != sid:
+                        if created_content_idem:
+                            self._idem.pop(content_idem_key, None)
+                        if created_new_shipment:
+                            self.shipments.pop(sid, None)
+                        raise SemanticKeyConflictError("idempotencyKey 衝突：相同冪等鍵不可用於不同出貨參數")
+                else:
+                    self._idem[store_key] = {
+                        "shipmentId": sid,
+                        "sig": req_sig,
+                    }
+                    created_store_key = True
+
             rec["submittedToCarrier"] = False
             rec["booked"] = False
             rec["shipped"] = False
             rec["status"] = "SHIPMENT_DRAFT"
             rec["liveCarrier"] = False
-            emit(
-                self,
-                "shipment.draft",
-                tenant_id=rec.get("tenantId") or "",
-                aggregate_type="Shipment",
-                aggregate_id=rec["shipmentId"],
-                actor="ops",
-                payload={"status": "SHIPMENT_DRAFT", "booked": False},
-                semantic_key=f"{rec.get('tenantId')}::shipment::{rec['shipmentId']}",
-            )
+            try:
+                emit(
+                    self,
+                    "shipment.draft",
+                    tenant_id=tenant,
+                    aggregate_type="Shipment",
+                    aggregate_id=sid,
+                    actor="ops",
+                    payload={"status": "SHIPMENT_DRAFT", "booked": False},
+                    semantic_key=f"{tenant}::shipment::{sid}",
+                )
+            except Exception:
+                disk_shipments: set[str] = set()
+                disk_idem: dict[str, Any] = {}
+                if self.root and (self.root / "logistics.json").exists():
+                    try:
+                        disk = read_json(self.root / "logistics.json") or {}
+                        disk_shipments = {
+                            str(r["shipmentId"])
+                            for r in (disk.get("shipments") or [])
+                            if isinstance(r, dict) and "shipmentId" in r
+                        }
+                        if isinstance(disk.get("idem"), dict):
+                            disk_idem = disk["idem"]
+                    except Exception:
+                        pass
+                if created_store_key and store_key is not None and store_key not in disk_idem:
+                    self._idem.pop(store_key, None)
+                if created_content_idem and content_idem_key not in disk_idem:
+                    self._idem.pop(content_idem_key, None)
+                if created_new_shipment and sid not in disk_shipments:
+                    self.shipments.pop(sid, None)
+                elif not created_new_shipment and prev_existing is not None and sid not in disk_shipments:
+                    self.shipments[sid] = prev_existing
+                raise
             return rec
 
     def import_carrier_quote(
@@ -600,21 +706,51 @@ class LogisticsService:
         source: str,
         raw: str | None = None,
         tenant_id: str | None = None,
+        allow_global: bool = False,
+        global_quote: bool = False,
+        is_global: bool = False,
         persist: bool = True,
     ) -> dict[str, Any]:
         with self._lock:
             if source not in ALLOWED_SOURCES:
                 raise PermissionError("carrier quotes are MANUAL/IMPORTED unless a live carrier is connected")
+            if not isinstance(row, dict):
+                raise ValueError("carrier quote row must be a dict")
+            for flag_name, flag_val in (
+                ("allow_global", allow_global),
+                ("global_quote", global_quote),
+                ("is_global", is_global),
+            ):
+                if not isinstance(flag_val, bool):
+                    raise ValueError(f"{flag_name} must be a boolean")
+            explicit_global = bool(allow_global or global_quote or is_global)
+
+            raw_valid_until = row.get("validUntil")
+            if raw_valid_until in (None, ""):
+                valid_until = "9999-12-31"
+            else:
+                valid_until = _parse_valid_until_date(raw_valid_until).isoformat()
+
             eff_tenant: str | None = None
             if tenant_id is not None:
                 if not isinstance(tenant_id, str) or not tenant_id.strip():
                     raise ValueError("tenant_id must be a non-empty string")
                 eff_tenant = tenant_id.strip()
-            elif row.get("tenantId") not in (None, ""):
+            if "tenantId" in row and row.get("tenantId") is not None:
                 raw_tid = row.get("tenantId")
                 if not isinstance(raw_tid, str) or not raw_tid.strip():
                     raise ValueError("tenantId must be a non-empty string")
-                eff_tenant = raw_tid.strip()
+                row_tid = raw_tid.strip()
+                if eff_tenant is not None and row_tid != eff_tenant:
+                    raise PermissionError("tenant isolation: carrier quote")
+                eff_tenant = row_tid
+
+            if eff_tenant is not None and explicit_global:
+                raise ValueError("cannot combine tenant_id with explicit global carrier quote flag")
+            if eff_tenant is None and not explicit_global:
+                raise ValueError(
+                    "tenant_id is required for import_carrier_quote unless allow_global=True (or global_quote=True)"
+                )
 
             raw_qid = row.get("quoteId")
             if raw_qid not in (None, ""):
@@ -625,14 +761,11 @@ class LogisticsService:
                 quote_id = new_id()
 
             existing = self.carrier_quotes.get(quote_id)
-            if existing is not None and existing.get("tenantId") != eff_tenant:
-                raise PermissionError("tenant isolation: carrier quote")
-
-            raw_valid_until = row.get("validUntil")
-            if raw_valid_until in (None, ""):
-                valid_until = "9999-12-31"
-            else:
-                valid_until = _parse_valid_until_date(raw_valid_until).isoformat()
+            if existing is not None:
+                if existing.get("tenantId") != eff_tenant:
+                    raise PermissionError("tenant isolation: carrier quote")
+                if eff_tenant is None and not is_explicit_global_carrier_quote(existing):
+                    raise PermissionError("tenant isolation: legacy unassigned carrier quote")
 
             rec: dict[str, Any] = {
                 "quoteId": quote_id,
@@ -651,11 +784,417 @@ class LogisticsService:
             if eff_tenant is not None:
                 rec["tenantId"] = eff_tenant
             rec["quoteHash"] = stable_hash({k: rec[k] for k in rec if k not in {"quoteId", "quoteHash"}})
-            rec["ownership"] = "GLOBAL_REFERENCE"
+            if eff_tenant is None:
+                rec["ownership"] = "GLOBAL_REFERENCE"
+                rec["globalQuote"] = True
+            else:
+                rec["ownership"] = "TENANT_OWNED"
+                rec["globalQuote"] = False
+            prev_quotes = copy.deepcopy(self.carrier_quotes)
             self.carrier_quotes[rec["quoteId"]] = rec
             if persist:
-                self.persist()
+                try:
+                    self.persist()
+                except Exception:
+                    self.carrier_quotes = prev_quotes
+                    raise
             return rec
+
+    def _quote_shipment_references(self) -> dict[str, list[dict[str, Any]]]:
+        refs: dict[str, list[dict[str, Any]]] = {}
+        for ship in self.shipments.values():
+            qid = ship.get("quoteId")
+            if isinstance(qid, str) and qid.strip():
+                refs.setdefault(qid.strip(), []).append(ship)
+        return refs
+
+    def inspect_tenantless_carrier_quotes(
+        self,
+        *,
+        include_explicit_global: bool = False,
+    ) -> dict[str, Any]:
+        """List carrier quotes missing tenantId along with any shipment tenant references."""
+        if not isinstance(include_explicit_global, bool):
+            raise ValueError("include_explicit_global must be a boolean")
+        with self._lock:
+            self._sync_from_disk()
+            refs_by_qid = self._quote_shipment_references()
+            items: list[dict[str, Any]] = []
+            sorted_quotes = sorted(
+                self.carrier_quotes.values(),
+                key=lambda q: (str(q.get("importedAt") or ""), str(q.get("quoteId") or "")),
+            )
+            for q in sorted_quotes:
+                if not is_tenantless_carrier_quote(q, include_explicit_global=include_explicit_global):
+                    continue
+                qid = str(q.get("quoteId") or "")
+                ref_shipments = refs_by_qid.get(qid, [])
+                ref_tenants = sorted(
+                    {
+                        str(s["tenantId"]).strip()
+                        for s in ref_shipments
+                        if isinstance(s.get("tenantId"), str) and str(s["tenantId"]).strip()
+                    }
+                )
+                ref_ship_ids = sorted(
+                    str(s["shipmentId"]) for s in ref_shipments if isinstance(s.get("shipmentId"), str) and s["shipmentId"]
+                )
+                inferred_tid = ref_tenants[0] if len(ref_tenants) == 1 else None
+                item = copy.deepcopy(q)
+                item["quoteId"] = qid
+                item["tenantId"] = None
+                item["explicitGlobal"] = is_explicit_global_carrier_quote(q)
+                item["inferredTenantId"] = inferred_tid
+                item["referencedByTenants"] = ref_tenants
+                item["referencedShipmentIds"] = ref_ship_ids
+                item["conflict"] = len(ref_tenants) > 1
+                items.append(item)
+            return {
+                "totalQuotes": len(self.carrier_quotes),
+                "tenantlessCount": len(items),
+                "quoteIds": [item["quoteId"] for item in items],
+                "items": items,
+                "quotes": items,
+            }
+
+    list_tenantless_carrier_quotes = inspect_tenantless_carrier_quotes
+    check_tenantless_carrier_quotes = inspect_tenantless_carrier_quotes
+
+    def migrate_tenantless_carrier_quotes(
+        self,
+        *,
+        tenant_id: str | None = None,
+        default_tenant_id: str | None = None,
+        assignments: Mapping[str, str] | None = None,
+        quote_ids: list[str] | set[str] | tuple[str, ...] | None = None,
+        infer_from_shipments: bool = True,
+        mark_global: bool = False,
+        include_explicit_global: bool = False,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Attribute legacy tenantless carrier quotes to tenants (or mark them explicitly global)."""
+        if (
+            not isinstance(dry_run, bool)
+            or not isinstance(mark_global, bool)
+            or not isinstance(infer_from_shipments, bool)
+            or not isinstance(include_explicit_global, bool)
+        ):
+            raise ValueError("boolean flags must be bool")
+
+        eff_default_tid: str | None = None
+        for label, raw_tid in (("tenant_id", tenant_id), ("default_tenant_id", default_tenant_id)):
+            if raw_tid is not None:
+                if not isinstance(raw_tid, str) or not raw_tid.strip():
+                    raise ValueError(f"{label} must be a non-empty string")
+                cleaned = raw_tid.strip()
+                if eff_default_tid is not None and eff_default_tid != cleaned:
+                    raise ValueError("tenant_id and default_tenant_id mismatch")
+                eff_default_tid = cleaned
+
+        norm_assignments: dict[str, str] = {}
+        if assignments is not None:
+            if not isinstance(assignments, Mapping):
+                raise ValueError("assignments must be a mapping of quoteId -> tenantId")
+            for raw_qid, raw_target in assignments.items():
+                if not isinstance(raw_qid, str) or not raw_qid.strip():
+                    raise ValueError("assignment quoteId must be a non-empty string")
+                if not isinstance(raw_target, str) or not raw_target.strip():
+                    raise ValueError("assignment tenantId must be a non-empty string")
+                norm_assignments[raw_qid.strip()] = raw_target.strip()
+
+        if mark_global and (eff_default_tid is not None or norm_assignments):
+            raise ValueError("cannot combine mark_global=True with tenant assignments")
+
+        filter_qids: list[str] | None = None
+        if quote_ids is not None:
+            if not isinstance(quote_ids, (list, set, tuple)):
+                raise ValueError("quote_ids must be a collection of quoteId strings")
+            filter_qids = []
+            seen_filter: set[str] = set()
+            for item in quote_ids:
+                if not isinstance(item, str) or not item.strip():
+                    raise ValueError("quote_ids elements must be non-empty strings")
+                cleaned_qid = item.strip()
+                if cleaned_qid not in seen_filter:
+                    seen_filter.add(cleaned_qid)
+                    filter_qids.append(cleaned_qid)
+
+        with self._lock:
+            self._sync_from_disk()
+            for qid in norm_assignments:
+                if qid not in self.carrier_quotes:
+                    raise KeyError(f"carrier quote not found: {qid}")
+            if filter_qids is not None:
+                for qid in filter_qids:
+                    if qid not in self.carrier_quotes:
+                        raise KeyError(f"carrier quote not found: {qid}")
+
+            refs_by_qid = self._quote_shipment_references()
+            if filter_qids is not None:
+                candidate_ids = list(filter_qids)
+                for qid in norm_assignments:
+                    if qid not in candidate_ids:
+                        candidate_ids.append(qid)
+            else:
+                candidate_ids = [
+                    str(q.get("quoteId") or "")
+                    for q in sorted(
+                        self.carrier_quotes.values(),
+                        key=lambda r: (str(r.get("importedAt") or ""), str(r.get("quoteId") or "")),
+                    )
+                    if is_tenantless_carrier_quote(q, include_explicit_global=include_explicit_global)
+                    or str(q.get("quoteId") or "") in norm_assignments
+                ]
+
+            assigned: list[dict[str, Any]] = []
+            marked_global: list[dict[str, Any]] = []
+            already_assigned: list[dict[str, Any]] = []
+            unresolved: list[dict[str, Any]] = []
+            conflicts: list[dict[str, Any]] = []
+            planned_updates: dict[str, dict[str, Any]] = {}
+
+            for qid in candidate_ids:
+                quote = self.carrier_quotes[qid]
+                existing_tid_raw = quote.get("tenantId")
+                existing_tid = existing_tid_raw.strip() if isinstance(existing_tid_raw, str) and existing_tid_raw.strip() else None
+                explicit_requested = qid in norm_assignments or (filter_qids is not None and qid in filter_qids)
+                ref_shipments = refs_by_qid.get(qid, [])
+                ref_tenants = sorted(
+                    {
+                        str(s["tenantId"]).strip()
+                        for s in ref_shipments
+                        if isinstance(s.get("tenantId"), str) and str(s["tenantId"]).strip()
+                    }
+                )
+
+                if existing_tid is not None:
+                    want_tid = norm_assignments.get(qid) or eff_default_tid
+                    if mark_global:
+                        raise PermissionError(f"tenant isolation: carrier quote {qid} is already owned by a tenant")
+                    if want_tid is not None and want_tid != existing_tid:
+                        raise PermissionError(f"tenant isolation: carrier quote {qid} is owned by another tenant")
+                    already_assigned.append({"quoteId": qid, "tenantId": existing_tid})
+                    continue
+
+                if mark_global:
+                    if ref_tenants:
+                        entry = {
+                            "quoteId": qid,
+                            "reason": "referenced_by_tenant_shipments",
+                            "referencedByTenants": ref_tenants,
+                        }
+                        conflicts.append(entry)
+                        unresolved.append(entry)
+                        if explicit_requested:
+                            raise PermissionError(
+                                f"tenant isolation: carrier quote {qid} is referenced by tenant shipments"
+                            )
+                        continue
+                    updated = copy.deepcopy(quote)
+                    updated.pop("tenantId", None)
+                    updated["quoteHash"] = stable_hash(
+                        {
+                            k: updated[k]
+                            for k in updated
+                            if k
+                            not in {
+                                "quoteId",
+                                "quoteHash",
+                                "ownership",
+                                "globalQuote",
+                                "isGlobal",
+                                "allowGlobal",
+                                "migratedFromTenantless",
+                            }
+                        }
+                    )
+                    updated["ownership"] = "GLOBAL_REFERENCE"
+                    updated["globalQuote"] = True
+                    planned_updates[qid] = updated
+                    marked_global.append({"quoteId": qid, "globalQuote": True})
+                    continue
+
+                target_tid: str | None = None
+                source_reason = ""
+                if qid in norm_assignments:
+                    target_tid = norm_assignments[qid]
+                    source_reason = "explicit_assignment"
+                elif filter_qids is not None and qid in filter_qids and eff_default_tid is not None:
+                    target_tid = eff_default_tid
+                    source_reason = "explicit_quote_filter"
+                elif len(ref_tenants) > 1:
+                    conflict_entry = {
+                        "quoteId": qid,
+                        "reason": "multiple_referencing_tenants",
+                        "referencedByTenants": ref_tenants,
+                    }
+                    conflicts.append(conflict_entry)
+                    unresolved.append(conflict_entry)
+                    continue
+                elif len(ref_tenants) == 1 and infer_from_shipments:
+                    target_tid = ref_tenants[0]
+                    source_reason = "inferred_from_shipment"
+                elif eff_default_tid is not None:
+                    target_tid = eff_default_tid
+                    source_reason = "default_tenant"
+
+                if target_tid is None:
+                    unresolved.append(
+                        {
+                            "quoteId": qid,
+                            "reason": "no_target_tenant",
+                            "referencedByTenants": ref_tenants,
+                        }
+                    )
+                    continue
+
+                other_ref_tenants = [t for t in ref_tenants if t != target_tid]
+                if other_ref_tenants:
+                    if explicit_requested:
+                        raise PermissionError(
+                            f"tenant isolation: carrier quote {qid} is referenced by another tenant's shipment"
+                        )
+                    conflict_entry = {
+                        "quoteId": qid,
+                        "reason": "shipment_tenant_mismatch",
+                        "targetTenantId": target_tid,
+                        "referencedByTenants": ref_tenants,
+                    }
+                    conflicts.append(conflict_entry)
+                    unresolved.append(conflict_entry)
+                    continue
+
+                updated = copy.deepcopy(quote)
+                updated["tenantId"] = target_tid
+                updated.pop("globalQuote", None)
+                updated.pop("isGlobal", None)
+                updated.pop("allowGlobal", None)
+                updated["quoteHash"] = stable_hash(
+                    {
+                        k: updated[k]
+                        for k in updated
+                        if k
+                        not in {
+                            "quoteId",
+                            "quoteHash",
+                            "ownership",
+                            "globalQuote",
+                            "isGlobal",
+                            "allowGlobal",
+                            "migratedFromTenantless",
+                        }
+                    }
+                )
+                updated["ownership"] = "TENANT_OWNED"
+                updated["globalQuote"] = False
+                updated["migratedFromTenantless"] = True
+                planned_updates[qid] = updated
+                assigned.append(
+                    {
+                        "quoteId": qid,
+                        "tenantId": target_tid,
+                        "attribution": source_reason,
+                    }
+                )
+
+            if not dry_run and planned_updates:
+                prev_quotes = copy.deepcopy(self.carrier_quotes)
+                try:
+                    for qid, updated_rec in planned_updates.items():
+                        self.carrier_quotes[qid] = updated_rec
+                    self.persist()
+                except Exception:
+                    self.carrier_quotes = prev_quotes
+                    raise
+
+            return {
+                "dryRun": dry_run,
+                "assignedCount": len(assigned),
+                "markedGlobalCount": len(marked_global),
+                "alreadyAssignedCount": len(already_assigned),
+                "unresolvedCount": len(unresolved),
+                "conflictCount": len(conflicts),
+                "assigned": assigned,
+                "markedGlobal": marked_global,
+                "alreadyAssigned": already_assigned,
+                "unresolved": unresolved,
+                "conflicts": conflicts,
+            }
+
+    assign_tenantless_carrier_quotes = migrate_tenantless_carrier_quotes
+
+    def unassign_migrated_carrier_quotes(
+        self,
+        quote_ids: list[str] | set[str] | tuple[str, ...],
+        *,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Roll back quotes that were migrated from tenantless state back to unassigned tenantless state."""
+        if not isinstance(dry_run, bool):
+            raise ValueError("dry_run must be a boolean")
+        if not isinstance(quote_ids, (list, set, tuple)) or not quote_ids:
+            raise ValueError("quote_ids must be a non-empty collection of quoteId strings")
+        norm_ids: list[str] = []
+        for item in quote_ids:
+            if not isinstance(item, str) or not item.strip():
+                raise ValueError("quote_ids elements must be non-empty strings")
+            cleaned = item.strip()
+            if cleaned not in norm_ids:
+                norm_ids.append(cleaned)
+
+        with self._lock:
+            self._sync_from_disk()
+            for qid in norm_ids:
+                if qid not in self.carrier_quotes:
+                    raise KeyError(f"carrier quote not found: {qid}")
+                rec = self.carrier_quotes[qid]
+                if not rec.get("migratedFromTenantless"):
+                    raise PermissionError(f"carrier quote {qid} was not migrated from tenantless state")
+
+            planned: dict[str, dict[str, Any]] = {}
+            rolled_back: list[dict[str, Any]] = []
+            for qid in norm_ids:
+                rec = copy.deepcopy(self.carrier_quotes[qid])
+                prev_tid = rec.pop("tenantId", None)
+                rec.pop("migratedFromTenantless", None)
+                rec.pop("globalQuote", None)
+                rec.pop("isGlobal", None)
+                rec.pop("allowGlobal", None)
+                rec["quoteHash"] = stable_hash(
+                    {
+                        k: rec[k]
+                        for k in rec
+                        if k
+                        not in {
+                            "quoteId",
+                            "quoteHash",
+                            "ownership",
+                            "globalQuote",
+                            "isGlobal",
+                            "allowGlobal",
+                            "migratedFromTenantless",
+                        }
+                    }
+                )
+                rec["ownership"] = "GLOBAL_REFERENCE"
+                planned[qid] = rec
+                rolled_back.append({"quoteId": qid, "previousTenantId": prev_tid})
+
+            if not dry_run and planned:
+                prev_quotes = copy.deepcopy(self.carrier_quotes)
+                try:
+                    for qid, updated_rec in planned.items():
+                        self.carrier_quotes[qid] = updated_rec
+                    self.persist()
+                except Exception:
+                    self.carrier_quotes = prev_quotes
+                    raise
+
+            return {
+                "dryRun": dry_run,
+                "rolledBackCount": len(rolled_back),
+                "rolledBack": rolled_back,
+            }
 
     def quote_stale(self, quote: dict[str, Any], *, service: str, dim_divisor: float | None = None) -> bool:
         if quote.get("service") != service:
@@ -894,3 +1433,147 @@ class LogisticsService:
                     self._idem.pop(key, None)
                 raise
             return rec
+
+
+def _resolve_logistics_service(target: Any) -> LogisticsService:
+    if isinstance(target, LogisticsService):
+        return target
+    if hasattr(target, "pilot") and hasattr(target.pilot, "logistics"):
+        return target.pilot.logistics  # type: ignore[no-any-return]
+    if hasattr(target, "logistics") and isinstance(target.logistics, LogisticsService):
+        return target.logistics
+    if isinstance(target, (str, Path)):
+        p = Path(target)
+        if p.name == "logistics.json":
+            return LogisticsService(root=p.parent)
+        if (p / "logistics" / "logistics.json").exists() or (p / "logistics").is_dir():
+            return LogisticsService(root=p / "logistics")
+        if (p / "logistics.json").exists():
+            return LogisticsService(root=p)
+        return LogisticsService(root=p / "logistics" if not p.name == "logistics" else p)
+    raise TypeError(f"cannot resolve LogisticsService from {type(target).__name__}")
+
+
+def inspect_tenantless_carrier_quotes(
+    target: Any,
+    *,
+    include_explicit_global: bool = False,
+) -> dict[str, Any]:
+    svc = _resolve_logistics_service(target)
+    return svc.inspect_tenantless_carrier_quotes(include_explicit_global=include_explicit_global)
+
+
+def migrate_tenantless_carrier_quotes(
+    target: Any,
+    *,
+    tenant_id: str | None = None,
+    default_tenant_id: str | None = None,
+    assignments: Mapping[str, str] | None = None,
+    quote_ids: list[str] | set[str] | tuple[str, ...] | None = None,
+    infer_from_shipments: bool = True,
+    mark_global: bool = False,
+    include_explicit_global: bool = False,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    svc = _resolve_logistics_service(target)
+    return svc.migrate_tenantless_carrier_quotes(
+        tenant_id=tenant_id,
+        default_tenant_id=default_tenant_id,
+        assignments=assignments,
+        quote_ids=quote_ids,
+        infer_from_shipments=infer_from_shipments,
+        mark_global=mark_global,
+        include_explicit_global=include_explicit_global,
+        dry_run=dry_run,
+    )
+
+
+def unassign_migrated_carrier_quotes(
+    target: Any,
+    quote_ids: list[str] | set[str] | tuple[str, ...],
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    svc = _resolve_logistics_service(target)
+    return svc.unassign_migrated_carrier_quotes(quote_ids, dry_run=dry_run)
+
+
+def cli_main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Inspect or migrate legacy tenantless carrier quotes in logistics.json.",
+    )
+    parser.add_argument("--root", required=True, help="Data root directory (.fox3d-data, logistics/, or logistics.json)")
+    parser.add_argument(
+        "--check",
+        "--list",
+        dest="check_only",
+        action="store_true",
+        help="Only inspect and list tenantless carrier quotes without modifying anything",
+    )
+    parser.add_argument("--dry-run", action="store_true", help="Compute migration result without writing to disk")
+    parser.add_argument("--tenant", "--default-tenant", dest="tenant_id", default=None, help="Default target tenant ID")
+    parser.add_argument(
+        "--assign",
+        action="append",
+        default=[],
+        metavar="QUOTE_ID=TENANT_ID",
+        help="Explicit quoteId=tenantId assignment (repeatable)",
+    )
+    parser.add_argument(
+        "--quote-id",
+        action="append",
+        default=[],
+        dest="quote_ids",
+        help="Specific quoteId to migrate (repeatable)",
+    )
+    parser.add_argument("--no-infer", action="store_true", help="Do not infer tenant from referencing shipments")
+    parser.add_argument("--mark-global", action="store_true", help="Mark tenantless quotes as explicitly global")
+    parser.add_argument(
+        "--include-explicit-global",
+        action="store_true",
+        help="Also include quotes already marked as explicit global",
+    )
+    parser.add_argument(
+        "--unassign",
+        action="append",
+        default=[],
+        dest="unassign_ids",
+        help="Roll back a quoteId that was previously migrated from tenantless state",
+    )
+    args = parser.parse_args(argv)
+
+    svc = _resolve_logistics_service(Path(args.root))
+    if args.unassign_ids:
+        result = svc.unassign_migrated_carrier_quotes(args.unassign_ids, dry_run=bool(args.dry_run))
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return 0
+
+    if args.check_only:
+        result = svc.inspect_tenantless_carrier_quotes(
+            include_explicit_global=bool(args.include_explicit_global),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return 0
+
+    parsed_assignments: dict[str, str] = {}
+    for item in args.assign:
+        if "=" not in item:
+            raise ValueError(f"invalid --assign {item!r}, expected QUOTE_ID=TENANT_ID")
+        qid, tid = item.split("=", 1)
+        parsed_assignments[qid.strip()] = tid.strip()
+
+    result = svc.migrate_tenantless_carrier_quotes(
+        tenant_id=args.tenant_id,
+        assignments=parsed_assignments if parsed_assignments else None,
+        quote_ids=args.quote_ids if args.quote_ids else None,
+        infer_from_shipments=not bool(args.no_infer),
+        mark_global=bool(args.mark_global),
+        include_explicit_global=bool(args.include_explicit_global),
+        dry_run=bool(args.dry_run),
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(cli_main())

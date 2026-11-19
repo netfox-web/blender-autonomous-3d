@@ -309,7 +309,11 @@ def test_logistics_quote_date_validation_and_shipment_draft_handoff_guard(tmp_pa
 
     for bad_date in ("9999-99-99", "2026-02-30", "2025-02-29", "2099-12-31extra", "not-a-date"):
         with pytest.raises(ValueError, match="validUntil"):
-            log.import_carrier_quote({"carrier": "C", "charge": 100, "validUntil": bad_date}, source="MANUAL")
+            log.import_carrier_quote(
+                {"carrier": "C", "charge": 100, "validUntil": bad_date},
+                source="MANUAL",
+                tenant_id="t",
+            )
         assert log.quote_stale({"service": "ground", "dimDivisor": 6000, "validUntil": bad_date}, service="ground") is True
 
     q_a = log.import_carrier_quote(
@@ -362,3 +366,371 @@ def test_logistics_quote_date_validation_and_shipment_draft_handoff_guard(tmp_pa
             quote_id="q-owned-a",
             dim_divisor=6000,
         )
+
+
+def test_import_carrier_quote_requires_tenant_or_explicit_global_flag(tmp_path):
+    log = _wired_logistics(tmp_path)
+
+    # Without tenant_id, without row["tenantId"], and without explicit global flag -> rejected.
+    with pytest.raises(ValueError, match="tenant_id"):
+        log.import_carrier_quote({"carrier": "TCAT", "charge": 150}, source="MANUAL")
+    assert log.carrier_quotes == {}
+
+    # Invalid tenant_id / row["tenantId"] / flag values -> rejected.
+    for bad_tid in ("", "   ", 123):
+        with pytest.raises(ValueError, match="tenant_id"):
+            log.import_carrier_quote({"carrier": "TCAT", "charge": 150}, source="MANUAL", tenant_id=bad_tid)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="tenantId"):
+            log.import_carrier_quote({"carrier": "TCAT", "charge": 150, "tenantId": bad_tid}, source="MANUAL")
+
+    with pytest.raises(ValueError, match="allow_global"):
+        log.import_carrier_quote({"carrier": "TCAT", "charge": 150}, source="MANUAL", allow_global="yes")  # type: ignore[arg-type]
+
+    # Combining tenant_id (or row tenantId) with explicit global flag -> rejected.
+    with pytest.raises(ValueError, match="global"):
+        log.import_carrier_quote(
+            {"carrier": "TCAT", "charge": 150},
+            source="MANUAL",
+            tenant_id="tenant-a",
+            allow_global=True,
+        )
+    with pytest.raises(ValueError, match="global"):
+        log.import_carrier_quote(
+            {"carrier": "TCAT", "charge": 150, "tenantId": "tenant-a"},
+            source="MANUAL",
+            global_quote=True,
+        )
+
+    # Mismatched tenant_id and row["tenantId"] -> PermissionError.
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.import_carrier_quote(
+            {"carrier": "TCAT", "charge": 150, "tenantId": "tenant-b"},
+            source="MANUAL",
+            tenant_id="tenant-a",
+        )
+    assert log.carrier_quotes == {}
+
+    # Explicit global flags (allow_global=True, global_quote=True, is_global=True) succeed.
+    g1 = log.import_carrier_quote(
+        {"quoteId": "g-allow", "carrier": "GLOBAL-1", "charge": 100},
+        source="IMPORTED",
+        allow_global=True,
+    )
+    assert g1.get("tenantId") is None
+    assert g1["globalQuote"] is True
+    assert g1["ownership"] == "GLOBAL_REFERENCE"
+
+    g2 = log.import_carrier_quote(
+        {"quoteId": "g-quote", "carrier": "GLOBAL-2", "charge": 110},
+        source="MANUAL",
+        global_quote=True,
+    )
+    assert g2.get("tenantId") is None
+    assert g2["globalQuote"] is True
+
+    g3 = log.import_carrier_quote(
+        {"quoteId": "g-is", "carrier": "GLOBAL-3", "charge": 120},
+        source="MANUAL",
+        is_global=True,
+    )
+    assert g3.get("tenantId") is None
+    assert g3["globalQuote"] is True
+
+    # Tenant quote cannot overwrite global quoteId and vice versa.
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.import_carrier_quote(
+            {"quoteId": "g-allow", "carrier": "HIJACK", "charge": 1},
+            source="MANUAL",
+            tenant_id="tenant-a",
+        )
+
+    t1 = log.import_carrier_quote(
+        {"quoteId": "t-owned", "carrier": "TENANT-1", "charge": 200},
+        source="MANUAL",
+        tenant_id="tenant-a",
+    )
+    assert t1["tenantId"] == "tenant-a"
+    assert t1["globalQuote"] is False
+    assert t1["ownership"] == "TENANT_OWNED"
+
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.import_carrier_quote(
+            {"quoteId": "t-owned", "carrier": "HIJACK-GLOBAL", "charge": 1},
+            source="MANUAL",
+            allow_global=True,
+        )
+
+
+def test_logistics_persist_atomic_write_and_mid_write_failure_rollback(tmp_path, monkeypatch):
+    import fox3d.inventory as inv_mod
+
+    log = _wired_logistics(tmp_path)
+    q_init = log.import_carrier_quote(
+        {"quoteId": "q-init", "carrier": "INIT-C", "charge": 180},
+        source="MANUAL",
+        tenant_id="tenant-a",
+    )
+    assert (log.root / "logistics.json").exists()
+    bytes_before = (log.root / "logistics.json").read_bytes()
+
+    # Simulate failure inside atomic_write_json after writing the temporary file but before replace completes.
+    def failing_replace(src, dst):
+        assert src.exists()
+        assert src.suffix == ".tmp"
+        raise OSError("simulated mid-persist failure during atomic replace")
+
+    monkeypatch.setattr(inv_mod, "_replace_with_retry", failing_replace)
+    with pytest.raises(OSError, match="simulated mid-persist failure"):
+        log.import_carrier_quote(
+            {"quoteId": "q-fail", "carrier": "FAIL-C", "charge": 999},
+            source="MANUAL",
+            tenant_id="tenant-a",
+        )
+
+    # In-memory state is rolled back, temporary .tmp file is cleaned up, and disk file is untouched.
+    assert set(log.carrier_quotes) == {"q-init"}
+    assert log.carrier_quotes["q-init"]["charge"] == q_init["charge"]
+    assert list(log.root.glob("*.tmp")) == []
+    assert (log.root / "logistics.json").read_bytes() == bytes_before
+
+    reloaded = LogisticsService(root=log.root)
+    assert set(reloaded.carrier_quotes) == {"q-init"}
+    assert reloaded.carrier_quotes["q-init"]["carrier"] == "INIT-C"
+
+
+def test_inspect_and_migrate_tenantless_carrier_quotes_and_rollback(tmp_path):
+    import json
+
+    log = _wired_logistics(tmp_path)
+    cartons_a = _carton(log, "tenant-a", wo="wo-a", qty=2)
+    cartons_b = _carton(log, "tenant-b", wo="wo-b", qty=1)
+
+    # Create one owned quote and one explicit global quote.
+    log.import_carrier_quote(
+        {"quoteId": "q-owned-a", "carrier": "CA", "charge": 100},
+        source="MANUAL",
+        tenant_id="tenant-a",
+    )
+    log.import_carrier_quote(
+        {"quoteId": "q-explicit-global", "carrier": "CG", "charge": 150},
+        source="IMPORTED",
+        allow_global=True,
+    )
+
+    # Create shipments referencing legacy quoteIds for tenant-a and a conflicting quoteId across tenant-a & tenant-b.
+    log.shipment_draft(
+        origin="TW",
+        destination="TPE",
+        carton_ids=[cartons_a[0]["cartonId"]],
+        quote_id="q-legacy-infer-a",
+    )
+    log.shipment_draft(
+        origin="TW",
+        destination="KH",
+        carton_ids=[cartons_a[1]["cartonId"]],
+        quote_id="q-legacy-conflict",
+    )
+    log.shipment_draft(
+        origin="TW",
+        destination="KH",
+        carton_ids=[cartons_b[0]["cartonId"]],
+        quote_id="q-legacy-conflict",
+    )
+    log.persist()
+
+    # Inject 3 legacy tenantless quotes directly into logistics.json (simulating interrupted pre-fix writes).
+    path = log.root / "logistics.json"
+    disk = json.loads(path.read_text(encoding="utf-8"))
+    for qid, charge in (
+        ("q-legacy-infer-a", 210.0),
+        ("q-legacy-unreferenced", 220.0),
+        ("q-legacy-conflict", 230.0),
+    ):
+        disk["carrier_quotes"].append(
+            {
+                "quoteId": qid,
+                "carrier": "LEGACY-C",
+                "service": "ground",
+                "charge": charge,
+                "currency": "TWD",
+                "dimDivisor": 6000.0,
+                "validUntil": "2099-12-31",
+                "source": "MANUAL",
+                "truthLabel": "MANUAL",
+                "liveProvider": False,
+                "importedAt": "2026-11-19T00:00:00+00:00",
+                "rawSourceHash": "legacy-raw",
+                "quoteHash": "legacy-hash",
+                "ownership": "GLOBAL_REFERENCE",
+            }
+        )
+    path.write_text(json.dumps(disk, indent=2), encoding="utf-8")
+    log.load()
+
+    # 1. Inspect legacy tenantless quotes (excludes tenant-owned and explicit global by default).
+    report = log.inspect_tenantless_carrier_quotes()
+    assert report["tenantlessCount"] == 3
+    assert set(report["quoteIds"]) == {"q-legacy-infer-a", "q-legacy-unreferenced", "q-legacy-conflict"}
+    by_qid = {item["quoteId"]: item for item in report["items"]}
+    assert by_qid["q-legacy-infer-a"]["inferredTenantId"] == "tenant-a"
+    assert by_qid["q-legacy-infer-a"]["conflict"] is False
+    assert by_qid["q-legacy-unreferenced"]["inferredTenantId"] is None
+    assert by_qid["q-legacy-conflict"]["inferredTenantId"] is None
+    assert by_qid["q-legacy-conflict"]["conflict"] is True
+    assert by_qid["q-legacy-conflict"]["referencedByTenants"] == ["tenant-a", "tenant-b"]
+
+    # Including explicit global quotes lists 4 items.
+    report_with_global = log.inspect_tenantless_carrier_quotes(include_explicit_global=True)
+    assert report_with_global["tenantlessCount"] == 4
+    assert "q-explicit-global" in report_with_global["quoteIds"]
+
+    # 2. Dry-run migration does not mutate memory or disk.
+    dry = log.migrate_tenantless_carrier_quotes(default_tenant_id="tenant-b", dry_run=True)
+    assert dry["dryRun"] is True
+    assert dry["assignedCount"] == 2  # q-legacy-infer-a -> tenant-a, q-legacy-unreferenced -> tenant-b
+    assert dry["conflictCount"] == 1  # q-legacy-conflict stays unresolved
+    assert log.carrier_quotes["q-legacy-infer-a"].get("tenantId") is None
+
+    # 3. Attempting to explicitly assign q-legacy-infer-a (referenced by tenant-a's shipment) to tenant-b fails.
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.migrate_tenantless_carrier_quotes(assignments={"q-legacy-infer-a": "tenant-b"})
+
+    # Attempting to overwrite already-owned q-owned-a to tenant-b fails.
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.migrate_tenantless_carrier_quotes(assignments={"q-owned-a": "tenant-b"})
+
+    # 4. Run actual migration with shipment inference + default_tenant_id="tenant-b".
+    migrated = log.migrate_tenantless_carrier_quotes(default_tenant_id="tenant-b")
+    assert migrated["assignedCount"] == 2
+    assigned_map = {a["quoteId"]: a for a in migrated["assigned"]}
+    assert assigned_map["q-legacy-infer-a"]["tenantId"] == "tenant-a"
+    assert assigned_map["q-legacy-infer-a"]["attribution"] == "inferred_from_shipment"
+    assert assigned_map["q-legacy-unreferenced"]["tenantId"] == "tenant-b"
+    assert assigned_map["q-legacy-unreferenced"]["attribution"] == "default_tenant"
+    assert migrated["conflictCount"] == 1
+    assert migrated["conflicts"][0]["quoteId"] == "q-legacy-conflict"
+
+    # Re-running migration is idempotent (0 newly assigned, only the multi-tenant conflict remains).
+    again = log.migrate_tenantless_carrier_quotes(default_tenant_id="tenant-b")
+    assert again["assignedCount"] == 0
+    assert again["conflictCount"] == 1
+
+    # 5. Rollback (unassign) works for quotes migrated from tenantless state, and refuses natively owned quotes.
+    with pytest.raises(PermissionError, match="not migrated from tenantless"):
+        log.unassign_migrated_carrier_quotes(["q-owned-a"])
+
+    rb = log.unassign_migrated_carrier_quotes(["q-legacy-unreferenced"])
+    assert rb["rolledBackCount"] == 1
+    assert rb["rolledBack"][0] == {"quoteId": "q-legacy-unreferenced", "previousTenantId": "tenant-b"}
+    assert log.carrier_quotes["q-legacy-unreferenced"].get("tenantId") is None
+
+    reloaded = LogisticsService(root=log.root)
+    assert reloaded.carrier_quotes["q-legacy-infer-a"]["tenantId"] == "tenant-a"
+    assert reloaded.carrier_quotes["q-legacy-unreferenced"].get("tenantId") is None
+
+
+def test_palletize_persist_false_and_rollback_on_persist_failure(tmp_path, monkeypatch):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "tenant-a", qty=1)
+    cid = cartons[0]["cartonId"]
+
+    orig_persist = log.persist
+    persist_calls = 0
+
+    def spy_persist() -> None:
+        nonlocal persist_calls
+        persist_calls += 1
+        orig_persist()
+
+    monkeypatch.setattr(log, "persist", spy_persist)
+
+    # persist=False puts the pallet in memory without writing to disk.
+    p_mem = log.palletize([cid], persist=False)
+    assert persist_calls == 0
+    assert p_mem["palletPlanId"] in log.pallets
+    assert LogisticsService(root=log.root).pallets == {}
+
+    log.pallets.pop(p_mem["palletPlanId"], None)
+
+    # Default persist=True writes once; if persist raises OSError, memory is rolled back.
+    def fail_persist() -> None:
+        raise OSError("simulated palletize persist failure")
+
+    monkeypatch.setattr(log, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated palletize persist failure"):
+        log.palletize([cid])
+    assert log.pallets == {}
+    assert LogisticsService(root=log.root).pallets == {}
+
+
+def test_shipment_draft_single_persist_and_rollback_preserves_existing_draft(tmp_path, monkeypatch):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "tenant-a", qty=2)
+    c1, c2 = cartons[0]["cartonId"], cartons[1]["cartonId"]
+
+    orig_persist = log.persist
+
+    # 1. Failing persist on a brand new shipment draft rolls back new shipment, content idem key, and API idem key.
+    def fail_persist() -> None:
+        raise OSError("simulated shipment draft persist failure")
+
+    monkeypatch.setattr(log, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated shipment draft persist failure"):
+        log.shipment_draft(
+            origin="TW",
+            destination="TPE",
+            carton_ids=[c1],
+            service="ground",
+            idempotency_key="idem-fail-1",
+        )
+    assert log.shipments == {}
+    assert f"tenant-a::shipment::TW:TPE:{c1}:ground" not in log._idem
+    assert "tenant-a::shipment-key::idem-fail-1" not in log._idem
+
+    # 2. Succeeding shipment_draft with idempotency_key calls persist() exactly once with all keys in memory.
+    persist_snapshots: list[tuple[set[str], set[str]]] = []
+
+    def spy_persist() -> None:
+        persist_snapshots.append((set(log.shipments), set(log._idem)))
+        orig_persist()
+
+    monkeypatch.setattr(log, "persist", spy_persist)
+    draft1 = log.shipment_draft(
+        origin="TW",
+        destination="TPE",
+        carton_ids=[c1],
+        service="ground",
+        idempotency_key="idem-ok-1",
+    )
+    assert len(persist_snapshots) == 1
+    snap_shipments, snap_idem = persist_snapshots[0]
+    assert draft1["shipmentId"] in snap_shipments
+    assert f"tenant-a::shipment::TW:TPE:{c1}:ground" in snap_idem
+    assert "tenant-a::shipment-key::idem-ok-1" in snap_idem
+
+    # 3. Create an existing draft for c2 without idempotency_key, then fail persist when attaching a new idempotency_key:
+    # the existing draft and content idem key must NOT be deleted.
+    existing = log.shipment_draft(
+        origin="TW",
+        destination="KHH",
+        carton_ids=[c2],
+        service="ground",
+    )
+    existing_sid = existing["shipmentId"]
+    content_key_c2 = f"tenant-a::shipment::TW:KHH:{c2}:ground"
+    assert existing_sid in log.shipments
+    assert log._idem.get(content_key_c2) == existing_sid
+
+    monkeypatch.setattr(log, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated shipment draft persist failure"):
+        log.shipment_draft(
+            origin="TW",
+            destination="KHH",
+            carton_ids=[c2],
+            service="ground",
+            idempotency_key="idem-attach-fail",
+        )
+    assert existing_sid in log.shipments
+    assert log._idem.get(content_key_c2) == existing_sid
+    assert "tenant-a::shipment-key::idem-attach-fail" not in log._idem
+
