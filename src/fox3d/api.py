@@ -29,6 +29,7 @@ from fox3d.infra import validate_tenant_id
 from fox3d.operator import make_token, require_confirm
 from fox3d.pilot_packing_api import pilot_packing_router
 from fox3d.pilot_batch_api import pilot_batch_router
+from fox3d.pilot_qc_api import pilot_qc_router
 from fox3d.platform import Platform
 from fox3d.recovery import PilotException
 from fox3d.cyclecount_api import cyclecount_router
@@ -1056,10 +1057,33 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         return get_platform().pilot.console(tenant_id=require_tenant(x_tenant_id))
 
     @app.get("/api/pilot/work-orders")
-    def pilot_work_orders(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def pilot_work_orders(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
-        items = [wo for wo in get_platform().pilot.workorders.orders.values() if wo.get("tenantId") == tid]
-        return {"items": items, "liveMachineControl": False}
+        pilot = get_platform().pilot
+        with pilot.workorders._lock:
+            orders = [dict(wo) for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
+        enriched = [
+            {
+                **wo,
+                "qcHold": wo.get("state") == "QC_HOLD",
+                "qcOk": pilot.qc.required_final_ok(
+                    wo["workOrderId"],
+                    str(wo.get("productFamily") or "KD_FURNITURE"),
+                    tenant_id=tid,
+                )["ok"],
+            }
+            for wo in orders
+        ]
+        total = len(enriched)
+        if "offset" not in request.query_params and "limit" not in request.query_params:
+            return {"items": enriched, "total": total, "offset": 0, "limit": total, "liveMachineControl": False}
+        items = enriched[offset : offset + limit]
+        return {"items": items, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
 
     @app.get("/api/pilot/batches/board")
     def pilot_batch_board(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -1276,6 +1300,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def pilot_consume(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
+        wo = get_platform().pilot.workorders.orders.get(work_order_id)
+        if wo is None or wo.get("tenantId") != tid:
+            raise HTTPException(404, "找不到工單")
         try:
             return get_platform().pilot.confirm_action(
                 tenant_id=tid,
@@ -1291,6 +1318,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     def pilot_complete_wo(work_order_id: str, payload: dict[str, Any] | None = None, x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
         body = payload or {}
         tid = require_tenant(x_tenant_id, body)
+        wo = get_platform().pilot.workorders.orders.get(work_order_id)
+        if wo is None or wo.get("tenantId") != tid:
+            raise HTTPException(404, "找不到工單")
         try:
             return get_platform().pilot.confirm_action(
                 tenant_id=tid,
@@ -1338,6 +1368,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     app.include_router(recipe_router(platform_provider))
     app.include_router(pilot_packing_router(platform_provider))
     app.include_router(pilot_batch_router(platform_provider))
+    app.include_router(pilot_qc_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
         app.include_router(page)

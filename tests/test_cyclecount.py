@@ -609,3 +609,112 @@ def test_committed_adjustment_recovers_after_interruption_and_later_stock_change
     final = Platform(root=root, mock_blender=True)
     assert _q(final, lot_id)["available"] == 6
     assert len([a for a in final.lots.get(lot_id, tenant_id=TENANT)["adjustments"] if a.get("cycleCountId") == cc["cycleCountId"]]) == 1
+
+
+def test_lot_staging_replace_retries_transient_permission_error(tmp_path, monkeypatch):
+    from pathlib import Path
+    from fox3d import inventory as inv_mod
+
+    root = tmp_path / "staging-retry"
+    platform = Platform(root=root, mock_blender=True)
+    lot_id = _lot(platform, quantity=12)
+    cc = platform.pilot.cyclecounts.create(tenant_id=TENANT, lot_id=lot_id, counted=7, reason="win-lock", actor="ops")
+    pauses: list[float] = []
+    monkeypatch.setattr(inv_mod.time, "sleep", pauses.append)
+    orig_replace = Path.replace
+    staging_attempts = 0
+
+    def flaky_staging_replace(self: Path, target: Path) -> Path:
+        nonlocal staging_attempts
+        if self.name == "lots.json.staging":
+            staging_attempts += 1
+            if staging_attempts <= 2:
+                raise PermissionError(13, "Access is denied")
+        return orig_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", flaky_staging_replace)
+    approved = platform.pilot.cyclecounts.approve(cc["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    assert approved["status"] == "APPLIED"
+    assert staging_attempts == 3
+    assert pauses == [0.02, 0.04]
+    assert not (root / "lots" / "lots.json.staging").exists()
+    reloaded = Platform(root=root, mock_blender=True)
+    assert _q(reloaded, lot_id)["available"] == 7
+    adjs = [a for a in reloaded.lots.get(lot_id, tenant_id=TENANT)["adjustments"] if a.get("source") == "CYCLE_COUNT"]
+    assert len(adjs) == 1
+
+
+def test_lot_staging_replace_sustained_permission_error_rolls_back(tmp_path, monkeypatch):
+    from pathlib import Path
+    from fox3d import inventory as inv_mod
+
+    root = tmp_path / "staging-fail"
+    platform = Platform(root=root, mock_blender=True)
+    lot_id = _lot(platform, quantity=12)
+    before = _q(platform, lot_id)
+    cc = platform.pilot.cyclecounts.create(tenant_id=TENANT, lot_id=lot_id, counted=7, reason="denied", actor="ops")
+    pauses: list[float] = []
+    monkeypatch.setattr(inv_mod.time, "sleep", pauses.append)
+    orig_replace = Path.replace
+    staging_attempts = 0
+
+    def denied_staging_replace(self: Path, target: Path) -> Path:
+        nonlocal staging_attempts
+        if self.name == "lots.json.staging":
+            staging_attempts += 1
+            raise PermissionError(13, "Access is denied")
+        return orig_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", denied_staging_replace)
+    with pytest.raises(PermissionError, match="Access is denied"):
+        platform.pilot.cyclecounts.approve(cc["cycleCountId"], tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    assert staging_attempts == 6
+    assert len(pauses) == 5
+    assert _q(platform, lot_id) == before
+    assert platform.pilot.cyclecounts.counts[cc["cycleCountId"]]["applied"] is False
+    reloaded = Platform(root=root, mock_blender=True)
+    assert _q(reloaded, lot_id) == before
+    assert reloaded.pilot.cyclecounts.counts[cc["cycleCountId"]]["status"] == "WAITING_HUMAN_APPROVAL"
+
+
+def test_inventory_read_json_retries_transient_windows_permission_error(tmp_path, monkeypatch):
+    from pathlib import Path
+    from fox3d import inventory as inv_mod
+
+    target = tmp_path / "lots.json"
+    inv_mod.atomic_write_json(target, {"generation": 3, "lots": []})
+    pauses: list[float] = []
+    monkeypatch.setattr(inv_mod.time, "sleep", pauses.append)
+    orig_read_text = Path.read_text
+    calls = 0
+
+    def flaky_read_text(self: Path, *args, **kwargs) -> str:
+        nonlocal calls
+        if self == target:
+            calls += 1
+            if calls <= 2:
+                raise PermissionError(13, "Access is denied")
+        return orig_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", flaky_read_text)
+    monkeypatch.setattr(inv_mod.sys, "platform", "win32")
+    assert inv_mod.read_json(target) == {"generation": 3, "lots": []}
+    assert calls == 3
+    assert pauses == [0.02, 0.04]
+
+    calls = 0
+    pauses.clear()
+    monkeypatch.setattr(inv_mod.sys, "platform", "linux")
+    with pytest.raises(PermissionError, match="Access is denied"):
+        inv_mod.read_json(target)
+    assert calls == 1
+    assert pauses == []
+
+    def unlinked_mid_read(self: Path, *args, **kwargs) -> str:
+        if self == target:
+            target.unlink(missing_ok=True)
+            raise FileNotFoundError(str(self))
+        return orig_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", unlinked_mid_read)
+    assert inv_mod.read_json(target) is None
