@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -423,3 +424,22 @@ def test_commerce_snapshots_reject_out_of_range_input(client: TestClient, params
     assert response.status_code == 422
     assert "Traceback" not in response.text
     assert "snap-" not in response.text
+
+
+def test_readiness_history_markup_keeps_tables_in_scroll_containers() -> None:
+    base = Path(__file__).resolve().parents[1] / "src/fox3d/static/pages"
+    html = (base / "readiness.html").read_text(encoding="utf-8")
+    css = (base / "readiness.css").read_text(encoding="utf-8")
+    js = (base / "readiness.js").read_text(encoding="utf-8")
+    for element_id in ("rd-history-table", "rd-approvals-table", "rd-snap-table"):
+        assert f'class="rd-table-wrap" id="{element_id}"' in html
+    assert 'id="rd-history"' in html
+    assert 'id="rd-snapshots"' in html
+    assert "overflow-x:auto" in css
+    assert "innerHTML" not in js
+    verdict = js[js.index("function releaseVerdict") : js.index("function cellText")]
+    assert verdict.index("已過期") < verdict.index("已放行")
+    assert verdict.index("已封鎖") < verdict.index("已放行")
+    assert "/api/release/events" in js
+    assert "/api/release/approvals" in js
+    assert "/api/commerce/snapshots" in js
