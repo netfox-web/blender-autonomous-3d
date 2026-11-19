@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from fox3d.journal import EventJournal
+from fox3d.journal import EventJournal, SemanticKeyConflictError
 from fox3d.logistics import LogisticsService
 from fox3d.outbox import CommitOutbox
 
@@ -300,3 +300,65 @@ def test_reload_preserves_cartons_and_idempotency(tmp_path):
     ship_b = reloaded.shipping_request(origin="TW", destination="TPE", carton_ids=[cid])
     assert ship_b["shipmentId"] == ship_a["shipmentId"]
     assert reloaded.cartons[cid]["workOrderId"] == "wo"
+
+
+def test_logistics_quote_date_validation_and_shipment_draft_handoff_guard(tmp_path):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "t")
+    cid = cartons[0]["cartonId"]
+
+    for bad_date in ("9999-99-99", "2026-02-30", "2025-02-29", "2099-12-31extra", "not-a-date"):
+        with pytest.raises(ValueError, match="validUntil"):
+            log.import_carrier_quote({"carrier": "C", "charge": 100, "validUntil": bad_date}, source="MANUAL")
+        assert log.quote_stale({"service": "ground", "dimDivisor": 6000, "validUntil": bad_date}, service="ground") is True
+
+    q_a = log.import_carrier_quote(
+        {"quoteId": "q-owned-a", "carrier": "CA", "charge": 100, "validUntil": "2099-12-31"},
+        source="MANUAL",
+        tenant_id="t",
+    )
+    assert q_a["tenantId"] == "t"
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.import_carrier_quote(
+            {"quoteId": "q-owned-a", "carrier": "CB", "charge": 50},
+            source="MANUAL",
+            tenant_id="other",
+        )
+
+    draft = log.shipment_draft(
+        origin="TW",
+        destination="TPE",
+        carton_ids=[cid],
+        service="ground",
+        quote_id="q-owned-a",
+        dim_divisor=6000,
+    )
+    with pytest.raises(SemanticKeyConflictError):
+        log.shipment_draft(
+            origin="TW",
+            destination="TPE",
+            carton_ids=[cid],
+            service="ground",
+            quote_id="other-quote",
+            dim_divisor=6000,
+        )
+    with pytest.raises(SemanticKeyConflictError):
+        log.shipment_draft(
+            origin="TW",
+            destination="TPE",
+            carton_ids=[cid],
+            service="ground",
+            quote_id="q-owned-a",
+            dim_divisor=5000,
+        )
+
+    log.shipment_handoff(draft["shipmentId"], tenant_id="t", carrier="CA", tracking="TRK-LOG-1", actor="ops")
+    with pytest.raises(SemanticKeyConflictError):
+        log.shipment_draft(
+            origin="TW",
+            destination="TPE",
+            carton_ids=[cid],
+            service="ground",
+            quote_id="q-owned-a",
+            dim_divisor=6000,
+        )

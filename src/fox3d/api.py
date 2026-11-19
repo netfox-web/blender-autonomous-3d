@@ -30,6 +30,7 @@ from fox3d.operator import make_token, require_confirm
 from fox3d.pilot_packing_api import pilot_packing_router
 from fox3d.pilot_batch_api import pilot_batch_router
 from fox3d.pilot_qc_api import pilot_qc_router
+from fox3d.pilot_shipping_api import pilot_shipping_router
 from fox3d.platform import Platform
 from fox3d.recovery import ExceptionStateError, PilotException
 from fox3d.cyclecount_api import cyclecount_router
@@ -1557,6 +1558,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     app.include_router(pilot_packing_router(platform_provider))
     app.include_router(pilot_batch_router(platform_provider))
     app.include_router(pilot_qc_router(platform_provider))
+    app.include_router(pilot_shipping_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     app.include_router(materials_lot_ops_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
