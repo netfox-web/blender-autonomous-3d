@@ -1261,22 +1261,24 @@ def test_job_cursor_stays_inside_caller_tenant_and_still_continues_after_cursor_
     assert [item["id"] for item in own_next.json()["items"]] == [b_old]
 
     legacy = f"{body['items'][0]['createdAt']}|{a3}"
+    # A legacy 2-part cursor whose anchor is not in the caller's tenant cannot be verified:
+    # explicit 410 (old clients throw on !ok) instead of an empty 200 page they would treat as the end.
     legacy_foreign = c_b.get(f"/api/print-workspace/jobs?cursor={legacy}")
-    assert legacy_foreign.status_code == 200
-    assert legacy_foreign.json()["cursorExpired"] is True
-    assert legacy_foreign.json()["items"] == []
+    assert legacy_foreign.status_code == 410
+    assert isinstance(legacy_foreign.json()["detail"], str) and legacy_foreign.json()["detail"]
     assert a3 not in legacy_foreign.text and a2 not in legacy_foreign.text and a1 not in legacy_foreign.text
+    assert b_new not in legacy_foreign.text and str(tmp_path) not in legacy_foreign.text
+    # The owner's verifiable legacy cursor keeps working after the old sunset date.
     legacy_own = c_a.get(f"/api/print-workspace/jobs?cursor={legacy}&limit=1")
     assert legacy_own.status_code == 200
-    assert legacy_own.json()["cursorExpired"] is True
-    assert legacy_own.json()["items"] == []
+    assert legacy_own.json()["cursorExpired"] is False
+    assert [item["id"] for item in legacy_own.json()["items"]] == [a2]
 
     ancient = c_b.get(
         "/api/print-workspace/jobs?cursor=1990-01-01T00:00:00Z|00000000-0000-0000-0000-000000000099"
     )
-    assert ancient.status_code == 200
-    assert ancient.json()["cursorExpired"] is True
-    assert ancient.json()["items"] == []
+    assert ancient.status_code == 410
+    assert "Traceback" not in ancient.text
     mismatched = c_b.get(f"/api/print-workspace/jobs?cursor={body['items'][0]['createdAt']}|{a3}|{'0' * 24}")
     assert mismatched.status_code == 200
     assert mismatched.json()["cursorExpired"] is False
@@ -1820,7 +1822,7 @@ def test_ui_fetch_all_pages_rejects_when_cursor_expires_again_after_retry() -> N
 
 
 def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores_cross_tenant_cursor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
 ) -> None:
     c_a = _make_client(tmp_path, "tenant-a")
     c_b = _make_client(tmp_path, "tenant-b")
@@ -1914,59 +1916,47 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert p2_deleted_main_fmt["nextCursor"] is None
     assert p2_deleted_main_fmt["cursorExpired"] is False
 
-    # Case 3: Legacy 2-part cursor ("createdAt|id") retirement and deleted-anchor protection —
-    # after LEGACY_CURSOR_SUNSET_DATE (2026-11-19), 2-part cursors receive an explicit cursorExpired=True response
-    # with empty items rather than silently falling back to page 1 and returning duplicate records.
+    # Case 3: Legacy 2-part cursor ("createdAt|id") handed out by pre-upgrade servers.
+    # A verifiable anchor keeps paginating (no date-based retirement); an anchor that can no longer be
+    # verified gets an explicit HTTP 410 instead of an empty 200 page that old clients read as "end of list".
     paths_a = reset_tenant_a_jobs()
     legacy_cursor_ab = f"2026-11-19T00:03:00Z|{id_b}"
     p2_legacy_page = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={legacy_cursor_ab}").json()
-    assert p2_legacy_page["cursorExpired"] is True
-    assert p2_legacy_page["legacyCursorSunset"] == jobs.LEGACY_CURSOR_SUNSET_DATE
-    assert p2_legacy_page["items"] == []
-    assert p2_legacy_page["nextCursor"] is None
+    assert p2_legacy_page["cursorExpired"] is False
+    assert "legacyCursorSunset" not in p2_legacy_page
+    assert [x["id"] for x in p2_legacy_page["items"]] == [id_c]
+    assert p2_legacy_page["nextCursor"] == f"{ws_a.name}|2026-11-19T00:02:00Z|{id_c}"
+    p3_from_legacy = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={p2_legacy_page['nextCursor']}").json()
+    assert [x["id"] for x in p3_from_legacy["items"]] == [id_d]
+    assert p3_from_legacy["nextCursor"] is None
 
+    # Anchor file still in the caller's tenant but corrupted: the cursor position is still known, keep going.
     paths_a["B"].write_text("{corrupted-legacy-anchor", encoding="utf-8")
     jobs.clear_job_cache()
     p2_legacy_corrupted = c_a.get(f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}").json()
-    assert p2_legacy_corrupted["cursorExpired"] is True
-    assert p2_legacy_corrupted["items"] == []
+    assert p2_legacy_corrupted["cursorExpired"] is False
+    assert [x["id"] for x in p2_legacy_corrupted["items"]] == [id_c, id_d]
     assert p2_legacy_corrupted["skipped"] == 1
     assert p2_legacy_corrupted["nextCursor"] is None
 
+    # Anchor deleted: position cannot be verified -> 410, with or without offset, and repeatable.
     shutil.rmtree(paths_a["B"].parent)
     jobs.clear_job_cache()
-    p2_legacy_deleted_with_offset = c_a.get(
-        f"/api/print-workspace/jobs?offset=2&limit=2&cursor={legacy_cursor_ab}"
-    ).json()
-    assert p2_legacy_deleted_with_offset["cursorExpired"] is True
-    assert p2_legacy_deleted_with_offset["items"] == []
-    assert p2_legacy_deleted_with_offset["nextCursor"] is None
+    for legacy_url in (
+        f"/api/print-workspace/jobs?offset=2&limit=2&cursor={legacy_cursor_ab}",
+        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}",
+        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}",
+    ):
+        gone = c_a.get(legacy_url)
+        assert gone.status_code == 410, gone.text
+        assert "游標已失效" in gone.json()["detail"]
+        assert id_c not in gone.text and id_d not in gone.text
+        assert str(tmp_path) not in gone.text and "Traceback" not in gone.text
 
-    p2_legacy_deleted_no_offset = c_a.get(
-        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}"
-    ).json()
-    assert p2_legacy_deleted_no_offset["cursorExpired"] is True
-    assert p2_legacy_deleted_no_offset["items"] == []
-    assert p2_legacy_deleted_no_offset["nextCursor"] is None
-
-    # Even during a simulated pre-sunset window (if LEGACY_CURSOR_SUNSET_DATE is in the future),
-    # a deleted anchor on a 2-part cursor must still return cursorExpired=True instead of silently repeating page 1.
-    monkeypatch.setattr(jobs, "LEGACY_CURSOR_SUNSET_DATE", "2099-01-01")
+    # Anchor exists but its sort key no longer matches the cursor (createdAt differs) -> 410.
     paths_a = reset_tenant_a_jobs()
-    p2_presunset_valid = c_a.get(f"/api/print-workspace/jobs?limit=1&cursor={legacy_cursor_ab}").json()
-    assert p2_presunset_valid["cursorExpired"] is False
-    assert [x["id"] for x in p2_presunset_valid["items"]] == [id_c]
-    assert p2_presunset_valid["nextCursor"] == f"{ws_a.name}|2026-11-19T00:02:00Z|{id_c}"
-
-    shutil.rmtree(paths_a["B"].parent)
-    jobs.clear_job_cache()
-    p2_presunset_deleted_no_offset = c_a.get(
-        f"/api/print-workspace/jobs?limit=2&cursor={legacy_cursor_ab}"
-    ).json()
-    assert p2_presunset_deleted_no_offset["cursorExpired"] is True
-    assert p2_presunset_deleted_no_offset["items"] == []
-    assert p2_presunset_deleted_no_offset["nextCursor"] is None
-    monkeypatch.undo()
+    mismatched_legacy = c_a.get(f"/api/print-workspace/jobs?limit=2&cursor=2026-11-18T00:00:00Z|{id_b}")
+    assert mismatched_legacy.status_code == 410
 
     # Case 4: Cross-tenant cursor isolation — tenant-b ignores tenant-a's 3-part cursors
     # even when tenant-b has records newer than, equal to (including identical anchor ID for 3-part), or older than cursor_ab.
@@ -1988,19 +1978,16 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert b_with_a_main_cursor["cursorExpired"] is False
     assert [x["id"] for x in b_with_a_main_cursor["items"]] == [b_newer_id, id_b, b_older_id]
 
-    # Cross-tenant legacy 2-part cursors receive cursorExpired=True with empty items and never leak tenant-a records
-    for retired_legacy_cursor in (
+    # Cross-tenant legacy 2-part cursors cannot be verified in tenant-b: 410, never tenant-a or tenant-b records
+    for foreign_legacy_cursor in (
         f"2026-11-19T00:04:00Z|{id_a}",
         f"2026-11-19T00:02:00Z|{id_c}",
         f"2026-11-18T00:00:00Z|{id_b}",
     ):
-        res_retired = c_b.get(f"/api/print-workspace/jobs?limit=10&cursor={retired_legacy_cursor}")
-        assert res_retired.status_code == 200
-        retired_body = res_retired.json()
-        assert retired_body["cursorExpired"] is True
-        assert retired_body["items"] == []
-        assert retired_body["total"] == 3
-        assert id_a not in res_retired.text and id_c not in res_retired.text
+        res_foreign = c_b.get(f"/api/print-workspace/jobs?limit=10&cursor={foreign_legacy_cursor}")
+        assert res_foreign.status_code == 410
+        assert id_a not in res_foreign.text and id_c not in res_foreign.text
+        assert b_newer_id not in res_foreign.text and b_older_id not in res_foreign.text
 
     # Malformed composite cursors fall back to offset
     for bad_cursor in (
@@ -2022,3 +2009,107 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
         assert res_bad.status_code == 200
         assert res_bad.json()["cursorExpired"] is False
         assert [x["id"] for x in res_bad.json()["items"]] == [b_newer_id, id_b, b_older_id]
+
+
+LEGACY_PAGINATION_JS = Path(__file__).resolve().parent / "fixtures" / "legacy_fox3d_pagination.js"
+
+
+def _run_cross_version_pagination(old_first_page: dict, responses: dict[str, dict]) -> dict:
+    """Paginate /jobs with the frozen pre-upgrade client and the current client.
+
+    The first request is answered by an old server (``old_first_page``, which hands out a legacy
+    2-part cursor); every later request is answered by the current server (``responses`` holds the
+    real HTTP status/body per path). The api shim mirrors print-workspace.js: throw on !ok with
+    ``err.status``.
+    """
+    node = shutil.which("node")
+    assert node is not None, "node is required for UI pagination verification"
+    harness = f"""
+    const fs = require('fs');
+    function load(file) {{
+      const sandbox = {{ exports: {{}} }};
+      new Function('module', 'window', 'globalThis', fs.readFileSync(file, 'utf8'))(sandbox, undefined, undefined);
+      return sandbox.exports.fetchAllPages;
+    }}
+    const clients = {{
+      legacy: load({json.dumps(str(LEGACY_PAGINATION_JS))}),
+      current: load({json.dumps(str(STATIC / "fox3d-pagination.js"))}),
+    }};
+    const oldFirst = {json.dumps(old_first_page)};
+    const responses = {json.dumps(responses)};
+    (async () => {{
+      const out = {{}};
+      for (const [name, fetchAll] of Object.entries(clients)) {{
+        const calls = [];
+        const api = async (path) => {{
+          calls.push(path);
+          if (calls.length === 1) return JSON.parse(JSON.stringify(oldFirst));
+          const res = responses[path];
+          if (!res) throw Object.assign(new Error('unexpected path ' + path), {{ status: -1 }});
+          if (res.status !== 200) {{
+            throw Object.assign(new Error(String(res.body && res.body.detail)), {{ status: res.status }});
+          }}
+          return JSON.parse(JSON.stringify(res.body));
+        }};
+        try {{
+          const value = await fetchAll(api, '/jobs');
+          out[name] = {{ ok: true, ids: value.items.map(x => x.id), total: value.total, calls }};
+        }} catch (err) {{
+          out[name] = {{ ok: false, status: err && err.status, message: String(err && err.message), calls }};
+        }}
+      }}
+      console.log(JSON.stringify(out));
+    }})().catch(err => {{ console.error(err); process.exit(1); }});
+    """
+    proc = subprocess.run([node, "-e", harness], check=True, capture_output=True, text=True, encoding="utf-8", timeout=15)
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def test_legacy_client_cross_version_pagination_never_returns_partial_list(tmp_path: Path) -> None:
+    """Rolling deploy: an old server hands out page 1 with a 2-part cursor, the new server answers page 2.
+
+    The already-deployed client (no cursorExpired support) must get either the full list (anchor still
+    verifiable) or an error (anchor gone) -- never a partial list reported as complete.
+    """
+    from urllib.parse import quote
+
+    c_a = _make_client(tmp_path, "tenant-a")
+    newer, older = "00000000-0000-0000-0000-000000000302", "00000000-0000-0000-0000-000000000301"
+    _write_listed_job(tmp_path, "tenant-a", newer, "2026-11-18T00:00:02Z", "X-2")
+    _write_listed_job(tmp_path, "tenant-a", older, "2026-11-18T00:00:01Z", "X-1")
+
+    first = c_a.get("/api/print-workspace/jobs?limit=1").json()
+    assert [x["id"] for x in first["items"]] == [newer]
+    legacy_cursor = f"{first['items'][0]['createdAt']}|{newer}"
+    # What a pre-upgrade server returned: 2-part cursor and no cursorExpired flag.
+    old_first_page = {k: v for k, v in first.items() if k != "cursorExpired"} | {"nextCursor": legacy_cursor}
+    page2_path = f"/jobs?offset=1&limit=1&cursor={quote(legacy_cursor, safe=chr(39) + '-_.!~*()')}"
+
+    def serve(paths: list[str]) -> dict[str, dict]:
+        jobs.clear_job_cache()
+        out = {}
+        for path in paths:
+            res = c_a.get(f"/api/print-workspace{path}")
+            out[path] = {"status": res.status_code, "body": res.json()}
+        return out
+
+    # Anchor still exists: the new server keeps honouring the verifiable legacy cursor.
+    kept = _run_cross_version_pagination(old_first_page, serve([page2_path, "/jobs"]))
+    for name in ("legacy", "current"):
+        assert kept[name]["ok"] is True, kept
+        assert kept[name]["ids"] == [newer, older]
+        assert kept[name]["total"] == 2
+        assert kept[name]["calls"] == ["/jobs", page2_path]
+
+    # Anchor deleted before page 2: the new server refuses with 410; the old client rejects instead of
+    # returning 1 of 2 as complete, and the current client restarts from page 1 and gets the full list.
+    shutil.rmtree(assets.workspace(tmp_path, "tenant-a") / "jobs" / newer)
+    gone = _run_cross_version_pagination(old_first_page, serve([page2_path, "/jobs"]))
+    assert gone["legacy"]["ok"] is False, gone
+    assert gone["legacy"]["status"] == 410
+    assert "游標已失效" in gone["legacy"]["message"]
+    assert gone["legacy"]["calls"] == ["/jobs", page2_path]
+    assert gone["current"]["ok"] is True, gone
+    assert gone["current"]["ids"] == [older]
+    assert gone["current"]["total"] == 1
+    assert gone["current"]["calls"] == ["/jobs", page2_path, "/jobs"]
