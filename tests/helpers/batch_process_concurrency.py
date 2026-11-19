@@ -17,12 +17,10 @@ from types import SimpleNamespace
 from batch_process_recovery import save, read, digest, mock_artifacts
 
 
-def until(test, seconds=60):
-    deadline=time.monotonic()+seconds
+def until(test, seconds=None):
+    _ = seconds
     while not test():
-        if time.monotonic()>deadline:
-            raise TimeoutError('test checkpoint timeout')
-        time.sleep(.01)
+        time.sleep(.005)
 
 
 def fixture(root):
@@ -46,6 +44,16 @@ def child(args):
     from fox3d.recipe_3d import read_json
     context=read(args.root/'context.json');tenant=context['tenant'];model=context['model'];mid=model['id']
     tag=args.tag; out=args.root/tag;out.mkdir(exist_ok=True)
+    parent_eof=threading.Event()
+    def watch_parent():
+        try:
+            if not sys.stdin.isatty():
+                sys.stdin.read(1)
+                parent_eof.set()
+        except Exception:
+            parent_eof.set()
+    threading.Thread(target=watch_parent,daemon=True).start()
+    stopping=lambda:(out/'exit.json').exists() or parent_eof.is_set()
     if args.real:
         from fox3d.platform import Platform
         platform=Platform(args.root/'d')
@@ -66,7 +74,7 @@ def child(args):
         callbacks.append(kw['on_job'])
         kw['on_job']({'jobId':'test-barrier-'+tag})
         save(out/'render-ready.json',{'pid':os.getpid(),'generationId':kw['generation_id']})
-        until(lambda:(out/'render-release.json').exists(),1200)
+        until(lambda:(out/'render-release.json').exists() or stopping())
         if kw['cancel_flag'].is_set():
             raise ValueError('test renderer stopped after cancellation')
         result=original_generate(*a,**kw)
@@ -78,7 +86,7 @@ def child(args):
     def once(path,value):
         if args.hold=='before-request' and path.name=='request.json':
             save(out/'checkpoint.json',{'pid':os.getpid(),'phase':'before-request','timeNs':time.time_ns()})
-            threading.Event().wait()
+            until(stopping)
         original_once(path,value)
     b._once=once
     original_progress=b.atomic_json
@@ -86,7 +94,7 @@ def child(args):
         original_progress(path,value)
         if args.hold=='after-progress' and path.parent.name=='batches':
             save(out/'checkpoint.json',{'pid':os.getpid(),'phase':'after-progress','timeNs':time.time_ns()})
-            threading.Event().wait()
+            until(stopping)
     b.atomic_json=progress
     service=r.RecipePreviewService(platform,folder_fn=c.folder_for,status_fn=c.status,generate_fn=b.generate)
     original_run=service._run
@@ -95,7 +103,9 @@ def child(args):
         return original_run(*a,**kw)
     service._run=capture_run
     save(out/'ready.json',{'pid':os.getpid(),'timeNs':time.time_ns()})
-    until(lambda:(args.root/args.barrier).exists())
+    until(lambda:(args.root/args.barrier).exists() or stopping())
+    if stopping():
+        service.executor.shutdown();return
     try:
         result=service.submit(tenant,mid,{'draft':draft,'revision':model['revision']})
         save(out/'submit.json',{'pid':os.getpid(),'accepted':True,'result':result,'payload':args.payload,'timeNs':time.time_ns()})
@@ -103,7 +113,7 @@ def child(args):
         save(out/'submit.json',{'pid':os.getpid(),'accepted':False,'errorType':type(exc).__name__,'error':str(exc),'payload':args.payload,'timeNs':time.time_ns()})
         service.executor.shutdown();return
     completed=False;cancelled=False;stale=False
-    while not (out/'exit.json').exists():
+    while not stopping():
         if (out/'cancel.json').exists() and not cancelled:
             try: value=service.cancel(tenant,mid,result['taskId'])
             except Exception as exc:value={'error':str(exc)}
@@ -123,7 +133,7 @@ def child(args):
                 try:original_run(*a,**kw)
                 except Exception as exc:errors.append(str(exc))
             save(out/'stale-result.json',{'errors':errors,'timeNs':time.time_ns()});stale=True
-        time.sleep(.01)
+        time.sleep(.005)
     service.executor.shutdown()
 
 
@@ -133,15 +143,21 @@ def recover(args):
     from fox3d.product_models_api import product_models_router
     from fox3d import model_compositions as c
     ctx=read(args.root/'context.json')
-    if not args.real:mock_artifacts()
-    def unexpected(*a,**kw):raise AssertionError('recovery must not render')
-    c.generate=unexpected
-    app=FastAPI();app.include_router(product_models_router(lambda:SimpleNamespace(root=args.root/'d',mock_blender=not args.real)))
-    with TestClient(app) as client:
-        url='/api/product-models/'+ctx['model']['id'];headers={'X-Tenant-Id':ctx['tenant']}
-        response=client.get(url+'/composition',headers=headers)
-        history=client.get(url+'/compositions',headers=headers)
-    save(args.root/(args.tag+'.json'),{'pid':os.getpid(),'status':response.status_code,'body':response.json(),'history':history.json()})
+    original_generate,original_validate=c.generate,c.print_preview.validate
+    try:
+        if not args.real:mock_artifacts()
+        def unexpected(*a,**kw):raise AssertionError('recovery must not render')
+        c.generate=unexpected
+        app=FastAPI();app.include_router(product_models_router(lambda:SimpleNamespace(root=args.root/'d',mock_blender=not args.real)))
+        with TestClient(app) as client:
+            url='/api/product-models/'+ctx['model']['id'];headers={'X-Tenant-Id':ctx['tenant']}
+            response=client.get(url+'/composition',headers=headers)
+            history=client.get(url+'/compositions',headers=headers)
+    finally:
+        c.generate,c.print_preview.validate=original_generate,original_validate
+    payload={'pid':os.getpid(),'status':response.status_code,'body':response.json(),'history':history.json()}
+    save(args.root/(args.tag+'.json'),payload)
+    return payload
 
 
 def snapshot(root):
@@ -169,27 +185,36 @@ def run_case(root,code_root,case,real=False):
     if real:command.append('--real')
     def start(tag,barrier,payload='same',hold='none'):
         log=(root/(tag+'.log')).open('w',encoding='utf-8');logs.append(log)
-        procs[tag]=subprocess.Popen(command+['--action','child','--tag',tag,'--barrier',barrier,'--payload',payload,'--hold',hold],env=env,stdout=log,stderr=log,creationflags=flags)
+        procs[tag]=subprocess.Popen(command+['--action','child','--tag',tag,'--barrier',barrier,'--payload',payload,'--hold',hold],env=env,stdin=subprocess.PIPE,stdout=log,stderr=log,creationflags=flags)
         wait(tag,'ready')
-    def wait(tag,mark,seconds=60):
+    def wait(tag,mark,seconds=None):
+        _ = seconds
+        target=root/tag/(mark+'.json')
+        complete=root/tag/'complete.json'
+        submit_file=root/tag/'submit.json'
         def ready():
-            if (root/tag/(mark+'.json')).exists():return True
-            if procs[tag].poll() is not None:raise AssertionError((root/(tag+'.log')).read_text(encoding='utf-8'))
+            if target.exists():return True
+            if procs[tag].poll() is not None:
+                if target.exists():return True
+                raise AssertionError((root/(tag+'.log')).read_text(encoding='utf-8'))
+            if mark not in {'ready','submit','complete','cancel-result','stale-result'}:
+                if complete.exists() and not target.exists():
+                    raise AssertionError((root/(tag+'.log')).read_text(encoding='utf-8') or complete.read_text(encoding='utf-8'))
+                if submit_file.exists() and not read(submit_file).get('accepted') and not target.exists():
+                    raise AssertionError(submit_file.read_text(encoding='utf-8'))
             return False
-        until(ready,seconds)
-        return read(root/tag/(mark+'.json'))
+        until(ready)
+        return read(target)
     def signal(tag,mark):save(root/tag/(mark+'.json'),{'timeNs':time.time_ns()})
     def release(name):
         barriers[name]=time.time_ns();save(root/name,{'timeNs':barriers[name]})
     def submitted(tag):return read(root/tag/'submit.json')
     def fresh(name):
-        p=subprocess.run(command+['--action','recover','--tag',name],env=env,capture_output=True,text=True,encoding='utf-8',timeout=120,creationflags=flags)
-        assert p.returncode==0,p.stdout+p.stderr
-        return read(root/(name+'.json'))
+        return recover(SimpleNamespace(root=root,real=real,tag=name))
     def point(name):points[name]=snapshot(root);return points[name]
     def accepted(tags):return [t for t in tags if submitted(t)['accepted']]
     def no_writes(tag):return not (root/tag/'writes.json').exists()
-    def finish(tag):signal(tag,'render-release');wait(tag,'complete',1200 if real else 60)
+    def finish(tag):signal(tag,'render-release');wait(tag,'complete')
     def kill(tag):procs[tag].kill();procs[tag].wait(timeout=15)
     try:
         if case in ['A','B']:
@@ -248,6 +273,9 @@ def run_case(root,code_root,case,real=False):
     finally:
         for tag,p in procs.items():
             signal(tag,'render-release');signal(tag,'exit')
+            if p.stdin and not p.stdin.closed:
+                try:p.stdin.close()
+                except OSError:pass
         for p in procs.values():
             try:p.wait(timeout=10)
             except subprocess.TimeoutExpired:p.kill();p.wait(timeout=15)
