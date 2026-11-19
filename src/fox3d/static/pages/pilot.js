@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, dirtyMeasureFields = {};
+  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0;
   try { $('tenant').value = localStorage.getItem('fox3d.tenant') || 'sonaqueen-home'; } catch (e) { /* storage unavailable */ }
   function tenant() { return $('tenant').value.trim() || 'sonaqueen-home'; }
   function api(path, options) {
@@ -58,7 +58,7 @@
     if (!items || !items.length) { target.textContent = '目前沒有資料。'; return; }
     var wrap = document.createElement('div'), t = document.createElement('table'), head = document.createElement('tr'); wrap.className = 'table';
     fields.forEach(function (f) { var th = document.createElement('th'); th.textContent = f[1]; head.appendChild(th); }); if (onSelect) { var th = document.createElement('th'); th.textContent = '明細'; head.appendChild(th); } t.appendChild(head);
-    items.forEach(function (item) { var row = document.createElement('tr'); fields.forEach(function (f) { var td = document.createElement('td'), v = item[f[0]]; td.textContent = v == null ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v); row.appendChild(td); }); if (onSelect) { var cell = document.createElement('td'), b = document.createElement('button'); b.textContent = '查看'; b.addEventListener('click', function () { onSelect(item); }); cell.appendChild(b); row.appendChild(cell); } t.appendChild(row); }); wrap.appendChild(t); target.appendChild(wrap);
+    items.forEach(function (item) { var row = document.createElement('tr'); fields.forEach(function (f) { var td = document.createElement('td'), v = item[f[0]]; td.textContent = v == null ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v); row.appendChild(td); }); if (onSelect) { var cell = document.createElement('td'), b = document.createElement('button'); b.textContent = id === 'batches' ? '明細' : '查看'; b.addEventListener('click', function () { onSelect(item); }); cell.appendChild(b); row.appendChild(cell); } t.appendChild(row); }); wrap.appendChild(t); target.appendChild(wrap);
   }
   var BADGE_NAMES = {LIVE_CNC: 'CNC 連線', LIVE_LASER: '雷射連線', Vision: '視覺辨識', Demand: '需求預測', quotes: '報價資料', receipts: '收料資料', sandbox: '沙盒隔離'};
   // readable status cards; the raw API answer stays one click away for engineers
@@ -295,6 +295,29 @@
     }
     return Promise.resolve();
   }
+  function loadBatchDetail(item) {
+    var seq = ++batchDetailSeq, tid = tenant(), id = item.batchId;
+    var box = $('batch-detail');
+    box.className = '';
+    box.textContent = '載入中…';
+    var base = '/api/pilot/batches/' + encodeURIComponent(id);
+    function allUnits(offset, rows) {
+      return api(base + '/units?offset=' + offset + '&limit=100', {tenant: tid}).then(function (d) {
+        var next = rows.concat(d.items || []);
+        return next.length < d.total && next.length > offset ? allUnits(next.length, next) : next;
+      });
+    }
+    Promise.all([api(base, {tenant: tid}), allUnits(0, []), api(base + '/readiness', {tenant: tid}), api(base + '/genealogy', {tenant: tid})]).then(function (data) {
+      if (seq !== batchDetailSeq || tid !== tenant()) return;
+      var ready = data[2];
+      box.className = (data[0].state === 'HOLD' || data[0].staleLineage || ready.staleLineage || (ready.blockers || []).length || ready.decision !== 'READY_FOR_HUMAN_BATCH_GO_NO_GO') ? 'warn' : '';
+      box.textContent = JSON.stringify({批次: data[0], 單元: data[1], 就緒度: ready, 族譜: data[3]}, null, 2);
+    }).catch(function (e) {
+      if (seq !== batchDetailSeq || tid !== tenant()) return;
+      box.className = 'warn';
+      box.textContent = '批次明細讀取失敗：' + e.message;
+    });
+  }
   function fetchOutcome(path, tid) {
     return api(path, { tenant: tid }).then(
       function (data) { return { ok: true, data: data }; },
@@ -319,6 +342,9 @@
   function refresh(keepOrderId, preserveStatus) {
     if (!posting) clearPending();
     var seq = ++refreshSeq;
+    batchDetailSeq++;
+    $('batch-detail').textContent = '請選擇批次。';
+    $('batch-detail').className = '';
     var cSeq = ++cartonLoadSeq;
     var reqTenant = tenant();
     loadedTenant = reqTenant;
@@ -370,7 +396,7 @@
         }
       });
       applySection('batches', res[2], function (d) {
-        table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { show('batch-detail', item); });
+        table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { loadBatchDetail(item); });
       });
       applySection('board', res[3], function (d) {
         $('board').textContent = '';
@@ -380,7 +406,7 @@
         var rows = document.createElement('div');
         rows.id = 'board-rows';
         $('board').appendChild(rows);
-        table('board-rows', d.rows, [['batchId','批次編號'],['decision','判定']], function (item) { show('batch-detail', item); });
+        table('board-rows', d.rows, [['batchId','批次編號'],['decision','判定']], function (item) { loadBatchDetail(item); });
       });
       applySection('health', res[4], function (d) {
         var j = d.journalIntegrity || {};
