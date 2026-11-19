@@ -1,4 +1,5 @@
 """Read-only, tenant-scoped pilot batch API."""
+import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
@@ -56,3 +57,12 @@ def test_eco_is_reported_without_writing(tmp_path):
     result = TestClient(create_app(plat)).get(f"/api/pilot/batches/{batch['batchId']}/readiness", headers={'X-Tenant-Id': 'pa'}).json()
     assert result['staleLineage'] is True and 'stale_lineage' in result['blockers']
     assert path.read_bytes() == before and path.stat().st_mtime_ns == mtime
+
+
+@pytest.mark.parametrize("suffix", ("", "/missing", "/missing/units", "/missing/readiness", "/missing/genealogy"))
+@pytest.mark.parametrize("header", (None, "", "  ", "../invalid"))
+def test_batch_header_validation(platform, suffix, header):
+    headers = {} if header is None else {"X-Tenant-Id": header}
+    response = TestClient(create_app(platform)).get('/api/pilot/batches' + suffix, headers=headers)
+    assert response.status_code == 400
+    assert response.json() == {"detail": "X-Tenant-Id 無效"}
