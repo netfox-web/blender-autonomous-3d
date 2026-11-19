@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 from pathlib import Path
 from typing import Any, NoReturn
@@ -140,10 +140,12 @@ def _snapshot_at(raw: str | None) -> str:
         raise HTTPException(422, "at 格式錯誤")
     try:
         if "T" in raw or " " in raw:
-            datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is not None:
+                parsed.astimezone(timezone.utc)
         else:
             datetime.strptime(raw, "%Y-%m-%d")
-    except ValueError:
+    except (ValueError, OverflowError):
         raise HTTPException(422, "at 格式錯誤") from None
     return raw
 
@@ -168,7 +170,7 @@ def _annotate_release_row(row: dict[str, Any]) -> None:
     approved = decision_s == "APPROVED_FOR_EXPORT" or state_s == "APPROVED_FOR_EXPORT"
     row["stale"] = stale
     row["blocked"] = blocked
-    row["released"] = approved and not stale and not blocked
+    row["released"] = approved and not stale and not blocked and row.get("verificationAvailable") is not False
 
 
 def _stamp_snapshot_tenant(rows: Any, tenant_id: str) -> Any:
@@ -1127,6 +1129,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raw_id = rec.get("entityId")
             entity_id = raw_id if isinstance(raw_id, str) else ""
             entity = plat.physical.find_entity(entity_id, tenant_id=tid) if entity_id else None
+            rec["verificationAvailable"] = isinstance(entity, dict)
             rec["stale"] = _approval_stale(plat.release, rec, entity if isinstance(entity, dict) else None)
             _annotate_release_row(rec)
             items.append(rec)

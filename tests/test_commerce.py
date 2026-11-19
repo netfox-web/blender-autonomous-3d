@@ -179,3 +179,30 @@ def test_independent_stores_serialize_concurrent_writes(tmp_path):
         for future in futures:
             future.result(timeout=5)
     assert set(SnapshotStore(tmp_path, kind="fx").items) == {"first", "second"}
+
+
+def test_tenant_collisions_concurrent_and_legacy_assignment(tmp_path):  # noqa: ANN001
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    (tmp_path / "fx.json").write_text(json.dumps({"items": [{"snapshotId": "old", "price": 1}]}))
+    first, second = SnapshotStore(tmp_path, kind="fx"), SnapshotStore(tmp_path, kind="fx")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda pair: pair[0].add({"snapshotId": "same", "tenantId": pair[1]}, source="MANUAL"), [(first, "a"), (second, "b")]))
+    assert len(results) == 2
+    rows = SnapshotStore(tmp_path, kind="fx").active()
+    assert {r.get("tenantId") for r in rows} == {None, "a", "b"}
+    assert first.assign_legacy(["old"], tenant_id="a") == 1
+    rows = SnapshotStore(tmp_path, kind="fx").active()
+    assert next(r for r in rows if r["snapshotId"] == "old")["tenantId"] == "a"
+    with pytest.raises(ValueError):
+        second.assign_legacy(["old"], tenant_id="b")
+
+
+def test_snapshot_dates_use_utc_and_inclusive_expiration():
+    store = SnapshotStore(kind="fx")
+    store.add({"snapshotId": "a", "effectiveAt": "2026-11-19T10:00:00+08:00", "expiresAt": "2026-11-19"}, source="MANUAL")
+    store.add({"snapshotId": "bad", "expiresAt": "invalid"}, source="MANUAL")
+    assert [r["snapshotId"] for r in store.active(at="2026-11-19T03:00:00+00:00")] == ["a"]
+    assert not store.active(at="2026-11-19T01:59:59Z")
+    assert not store.active(at="2026-11-20T00:00:00Z")

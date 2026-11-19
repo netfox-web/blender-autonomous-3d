@@ -592,6 +592,8 @@
     var gen = ++historyGen;
     var pinned = tenant();
     var entityId = ($('rd-history-entity') && $('rd-history-entity').value.trim()) || '';
+    fillTable($('rd-history-table'), [], [], function () {});
+    fillTable($('rd-approvals-table'), [], [], function () {});
     if (st) st.textContent = '載入中…';
     if (apSt) apSt.textContent = '載入中…';
     setPager('rd-history-prev', 'rd-history-next', historyOffset, false);
@@ -636,6 +638,8 @@
       });
     }).catch(function (e) {
       if (gen !== historyGen) return;
+      fillTable($('rd-history-table'), [], [], function () {});
+      fillTable($('rd-approvals-table'), [], [], function () {});
       if (st) st.textContent = '載入失敗：' + ((e && e.message) || e);
       if (apSt) apSt.textContent = '載入失敗：' + ((e && e.message) || e);
     });
@@ -647,6 +651,7 @@
     var gen = ++snapGen;
     var pinned = tenant();
     var at = ($('rd-snap-at') && $('rd-snap-at').value.trim()) || '';
+    fillTable($('rd-snap-table'), [], [], function () {});
     st.textContent = '載入中…';
     setPager('rd-snap-prev', 'rd-snap-next', snapOffset, false);
     var path = '/api/commerce/snapshots' + qs({ at: at, limit: snapLimit, offset: snapOffset });
@@ -670,6 +675,7 @@
       setPager('rd-snap-prev', 'rd-snap-next', r.data.offset || 0, !!r.data.hasMore);
     }).catch(function (e) {
       if (gen !== snapGen) return;
+      fillTable($('rd-snap-table'), [], [], function () {});
       st.textContent = '載入失敗：' + ((e && e.message) || e);
     });
   }

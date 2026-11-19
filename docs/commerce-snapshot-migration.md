@@ -1,0 +1,5 @@
+# Legacy commerce snapshot ownership
+
+Snapshots saved before tenant stamping have unknown ownership and are quarantined from all tenant queries. Do not infer their owner from the caller or the default tenant. Back up the provider JSON files and determine ownership from independent records before assigning individual IDs. With the application stopped, use `SnapshotStore(provider_directory, kind=kind).assign_legacy([snapshot_id], tenant_id=verified_tenant)` in a trusted local maintenance session. The operation locks and reloads the file, refuses missing IDs and destination collisions, and writes atomically. It updates the snapshot hash to reflect the tenant. Repeat only after resolving any collision; no HTTP endpoint grants ownership. Restore the backup to undo an assignment, taking care not to overwrite later imports.
+
+Timestamps without an offset are interpreted as UTC. Dates denote UTC midnight for query and effective times; a date-only expiration includes the entire UTC day. Invalid stored bounds are excluded from active results.

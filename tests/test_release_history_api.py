@@ -238,7 +238,7 @@ def test_release_approvals_compute_stale_without_writing(client: TestClient, pla
     assert repeated.json()["items"] == stale.json()["items"]
 
 
-def test_release_approvals_released_only_when_export_is_current(client: TestClient, platform) -> None:  # noqa: ANN001
+def test_release_approvals_released_only_when_export_is_current(client: TestClient, platform, monkeypatch) -> None:  # noqa: ANN001
     entity_id = "export-ready"
     entity = _entity(entity_id)
     steps = (
@@ -261,6 +261,11 @@ def test_release_approvals_released_only_when_export_is_current(client: TestClie
         )
         assert response.status_code == 200, response.text
 
+    missing = client.get("/api/release/approvals", headers=_headers(TENANT_A)).json()
+    missing_row = next(item for item in missing["items"] if item["entityId"] == entity_id)
+    assert missing_row["verificationAvailable"] is False
+    assert missing_row["released"] is False
+    monkeypatch.setattr(platform.physical, "find_entity", lambda *args, **kwargs: entity)
     listed = client.get("/api/release/approvals", headers=_headers(TENANT_A)).json()
     row = next(item for item in listed["items"] if item["entityId"] == entity_id)
     assert row["state"] == "APPROVED_FOR_EXPORT"
@@ -443,3 +448,30 @@ def test_readiness_history_markup_keeps_tables_in_scroll_containers() -> None:
     assert "/api/release/events" in js
     assert "/api/release/approvals" in js
     assert "/api/commerce/snapshots" in js
+
+
+def test_legacy_snapshot_quarantine_and_explicit_assignment(client: TestClient, platform) -> None:  # noqa: ANN001
+    store = platform.providers.fx
+    store.add({"snapshotId": "legacy", "price": 5}, source="MANUAL")
+    for tenant in (TENANT_A, TENANT_B):
+        assert not client.get("/api/commerce/snapshots", headers=_headers(tenant)).json()["items"]
+    store.assign_legacy(["legacy"], tenant_id=TENANT_A)
+    assert client.get("/api/commerce/snapshots", headers=_headers(TENANT_A)).json()["items"][0]["snapshotId"] == "legacy"
+    assert not client.get("/api/commerce/snapshots", headers=_headers(TENANT_B)).json()["items"]
+
+
+def test_same_snapshot_id_is_isolated_by_tenant(client: TestClient) -> None:
+    for tenant, price in ((TENANT_A, 1), (TENANT_B, 2)):
+        response = client.post("/api/commerce/import", headers=_headers(tenant), json={"kind": "fx", "rows": [{"snapshotId": "same", "price": price}]})
+        assert response.status_code == 200
+    for tenant, price in ((TENANT_A, 1), (TENANT_B, 2)):
+        rows = client.get("/api/commerce/snapshots", headers=_headers(tenant)).json()["items"]
+        assert len(rows) == 1 and rows[0]["price"] == price
+
+
+def test_snapshot_api_timezone_and_date_boundaries(client: TestClient) -> None:
+    response = client.post("/api/commerce/import", headers=_headers(TENANT_A), json={"kind": "fx", "rows": [{"snapshotId": "date", "effectiveAt": "2026-11-19T10:00:00+08:00", "expiresAt": "2026-11-19"}]})
+    assert response.status_code == 200
+    for at, expected in (("2026-11-19T03:00:00+00:00", 1), ("2026-11-20T00:00:00Z", 0)):
+        assert client.get("/api/commerce/snapshots", params={"at": at}, headers=_headers(TENANT_A)).json()["total"] == expected
+    assert client.get("/api/commerce/snapshots", params={"at": "0001-01-01T00:00:00+23:00"}, headers=_headers(TENANT_A)).status_code == 422

@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx
 import pytest
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 
 from tests.browser.conftest import TENANT
 
@@ -178,3 +178,25 @@ def test_stale_and_blocked_are_not_shown_as_released(admin_page: Page, admin_ser
     assert page.evaluate("window.__fox3dXss || 0") == 0
     assert page.locator('img[src="x"]').count() == 0
     assert page.evaluate("document.documentElement.scrollWidth") <= 400
+
+
+def test_switch_tenant_network_failure_clears_old_tables(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    page = admin_page
+    def handle(route):  # noqa: ANN001
+        if route.request.headers.get("x-tenant-id") == "tenant-new":
+            route.abort()
+        else:
+            row = {"entityId": "old-private", "state": "APPROVED_FOR_EXPORT", "released": True, "snapshotId": "old-private"}
+            route.fulfill(json={"items": [row], "total": 1, "offset": 0, "hasMore": False})
+    for pattern in ("**/api/release/events**", "**/api/release/approvals**", "**/api/commerce/snapshots**"):
+        page.route(pattern, handle)
+    page.goto(admin_server["base_url"] + "/admin/readiness", wait_until="domcontentloaded")
+    for table in ("rd-history-table", "rd-approvals-table", "rd-snap-table"):
+        page.locator(f"#{table} td").first.wait_for()
+    page.locator("#rd-tenant").fill("tenant-new")
+    page.locator("#rd-tenant").dispatch_event("change")
+    for status in ("rd-history-status", "rd-approvals-status", "rd-snap-status"):
+        expect(page.locator(f"#{status}")).to_contain_text("載入失敗")
+    for table in ("rd-history-table", "rd-approvals-table", "rd-snap-table"):
+        assert page.locator(f"#{table}").is_hidden()
+        assert "old-private" not in (page.locator(f"#{table}").text_content() or "")

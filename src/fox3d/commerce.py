@@ -6,6 +6,7 @@ import csv
 import io
 import json
 from contextlib import contextmanager
+from datetime import datetime, time, timezone
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterator, Mapping, Protocol
@@ -43,13 +44,29 @@ class ProviderDisconnectedError(PermissionError):
     """The requested live provider is not connected."""
 
 
+def _snapshot_key(row: dict[str, Any]) -> str | tuple[str, str]:
+    tenant = row.get("tenantId")
+    return (tenant, row["snapshotId"]) if isinstance(tenant, str) and tenant else row["snapshotId"]
+
+
+def _instant(value: str, *, end_of_day: bool = False) -> datetime:
+    # Naive timestamps and dates are UTC; date-only expirations include the whole day.
+    if not isinstance(value, str):
+        raise ValueError("Invalid snapshot timestamp")
+    if len(value) == 10:
+        day = datetime.strptime(value, "%Y-%m-%d").date()
+        return datetime.combine(day, time.max if end_of_day else time.min, tzinfo=timezone.utc)
+    result = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return (result if result.tzinfo else result.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
 class SnapshotStore:
     def __init__(self, root: Path | None = None, *, kind: str) -> None:
         self.kind = kind
         self.root = Path(root) if root else None
         if self.root:
             self.root.mkdir(parents=True, exist_ok=True)
-        self.items: dict[str, dict[str, Any]] = {}
+        self.items: dict[str | tuple[str, str], dict[str, Any]] = {}
         self._lock = RLock()
         self._file_lock = FileLock(str((self.root / f"{self.kind}.lock").resolve())) if self.root else None
         self.load()
@@ -71,7 +88,7 @@ class SnapshotStore:
         if not self.root:
             return
         payload = read_json(self.root / f"{self.kind}.json") or {}
-        self.items = {r["snapshotId"]: r for r in payload.get("items") or []}
+        self.items = {_snapshot_key(r): r for r in payload.get("items") or []}
 
     def persist(self) -> None:
         if not self.root:
@@ -101,7 +118,7 @@ class SnapshotStore:
         with self._locked():
             self._load()
             previous = self.items
-            self.items = {**previous, **{rec["snapshotId"]: rec for rec in records}}
+            self.items = {**previous, **{_snapshot_key(rec): rec for rec in records}}
             try:
                 self.persist()
             except Exception:
@@ -109,12 +126,41 @@ class SnapshotStore:
                 raise
         return records
 
+    def assign_legacy(self, snapshot_ids: list[str], *, tenant_id: str) -> int:
+        """Assign explicitly identified unowned records under the store lock; never overwrite."""
+        if not tenant_id or not snapshot_ids or len(set(snapshot_ids)) != len(snapshot_ids):
+            raise ValueError("A tenant and unique snapshot IDs are required")
+        with self._locked():
+            self._load()
+            if any(sid not in self.items or (tenant_id, sid) in self.items for sid in snapshot_ids):
+                raise ValueError("Legacy snapshot missing or destination already exists")
+            previous = self.items
+            self.items = dict(previous)
+            for sid in snapshot_ids:
+                row = dict(self.items.pop(sid))
+                row["tenantId"] = tenant_id
+                row["snapshotHash"] = _row_hash(row)
+                self.items[(tenant_id, sid)] = row
+            try:
+                self.persist()
+            except Exception:
+                self.items = previous
+                raise
+            return len(snapshot_ids)
+
     def active(self, *, at: str | None = None) -> list[dict[str, Any]]:
         with self._locked():
             self._load()
             rows = list(self.items.values())
         if at:
-            rows = [r for r in rows if str(r.get("effectiveAt") or "") <= at and (not r.get("expiresAt") or str(r["expiresAt"]) >= at)]
+            moment = _instant(at)
+            def valid(row: dict[str, Any]) -> bool:
+                try:
+                    start, end = row.get("effectiveAt"), row.get("expiresAt")
+                    return (start in (None, "") or _instant(start) <= moment) and (end in (None, "") or _instant(end, end_of_day=True) >= moment)
+                except (ValueError, TypeError, OverflowError):
+                    return False
+            rows = [r for r in rows if valid(r)]
         return rows
 
 
