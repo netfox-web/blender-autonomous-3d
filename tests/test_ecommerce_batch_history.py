@@ -294,3 +294,73 @@ def test_get_batches_does_not_touch_mtimes_or_trigger_recovery(tmp_path: Path):
 
     store.executor.shutdown(wait=True)
     store.ai_executor.shutdown(wait=True)
+
+
+def test_restart_reports_stale_running_batches_as_interrupted_in_list_filters_and_allows_delete(env):
+    """After a restart, running batches with no live worker must show as interrupted without opening each one."""
+    client, store, root = env
+    bdir = _batches_dir(root)
+    stale_mtime = 1_650_000_000.0
+    stale_ids = ["b_stale_1", "b_stale_2", "b_stale_3"]
+    for i, batch_id in enumerate(stale_ids):
+        _write_batch_fixture(
+            bdir,
+            batch_id,
+            created_at=f"2026-11-18T16:0{i}:00Z",
+            state="running",
+            total=2,
+            completed=1,
+            succeeded=1,
+            mtime=stale_mtime,
+            extra={
+                "items": [
+                    {"itemId": "i1", "state": "succeeded", "stage": "done"},
+                    {"itemId": "i2", "state": "running", "stage": "render"},
+                ]
+            },
+        )
+    # A running batch that was touched just now is still considered alive.
+    _write_batch_fixture(bdir, "b_fresh_running", created_at="2026-11-18T16:10:00Z", state="running", completed=0, succeeded=0)
+    # A running batch this process still owns stays running however old its file is.
+    _write_batch_fixture(bdir, "b_owned_running", created_at="2026-11-18T16:11:00Z", state="running", mtime=stale_mtime)
+    store._live_docs["b_owned_running"] = {"batchId": "b_owned_running", "state": "running"}
+
+    def snapshot() -> dict[str, int]:
+        return {str(p.relative_to(bdir)): p.stat().st_mtime_ns for p in sorted(bdir.rglob("*"))}
+
+    before = snapshot()
+
+    full = client.get("/api/ecommerce-scenes/batches").json()
+    by_id = {x["batchId"]: x for x in full["items"]}
+    for batch_id in stale_ids:
+        row = by_id[batch_id]
+        assert row["state"] == "interrupted"
+        assert row["failed"] == 1 and row["succeeded"] == 1 and row["completed"] == 2
+        assert [it["state"] for it in row["items"]] == ["succeeded", "failed"]
+    assert by_id["b_fresh_running"]["state"] == "running"
+    assert by_id["b_owned_running"]["state"] == "running"
+
+    running = client.get("/api/ecommerce-scenes/batches?state=running").json()
+    assert running["total"] == 2
+    assert sorted(x["batchId"] for x in running["items"]) == ["b_fresh_running", "b_owned_running"]
+
+    interrupted = client.get("/api/ecommerce-scenes/batches?state=interrupted").json()
+    assert interrupted["total"] == 3
+    assert [x["batchId"] for x in interrupted["items"]] == list(reversed(stale_ids))
+
+    overview_states = {x["batchId"]: x["state"] for x in client.get("/api/ecommerce-scenes/overview").json()["batches"]}
+    assert all(overview_states[b] == "interrupted" for b in stale_ids)
+
+    # Listing is read-only: nothing on disk changed, the raw file still says running.
+    assert snapshot() == before
+    assert json.loads((bdir / "b_stale_1" / "batch.json").read_text(encoding="utf-8"))["state"] == "running"
+
+    # The stale batch the list offers for deletion can actually be deleted; a live one cannot.
+    resp = client.delete("/api/ecommerce-scenes/batches/b_stale_2")
+    assert resp.status_code == 200, resp.text
+    assert not (bdir / "b_stale_2").exists()
+    assert client.delete("/api/ecommerce-scenes/batches/b_fresh_running").status_code == 409
+
+    after = client.get("/api/ecommerce-scenes/batches?state=interrupted").json()
+    assert after["total"] == 2
+    assert [x["batchId"] for x in after["items"]] == ["b_stale_3", "b_stale_1"]
