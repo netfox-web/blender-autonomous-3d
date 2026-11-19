@@ -23,10 +23,11 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Mapping, TypedDict
+from uuid import uuid4
 
 from filelock import FileLock
 
-from fox3d.commerce import PROVIDER_BY_KIND, SnapshotStore
+from fox3d.commerce import PROVIDER_BY_KIND, SNAPSHOT_FORMAT_VERSION, SnapshotStore, _row_hash
 from fox3d.ids import sha256_bytes
 from fox3d.infra import utcnow
 
@@ -93,8 +94,10 @@ def _existing_root(provider_root: Path) -> Path:
 def _same_file(left: Path, right: Path) -> bool:
     try:
         left_stat, right_stat = left.stat(), right.stat()
-    except OSError:
+    except FileNotFoundError:
         return False
+    except OSError as exc:
+        raise LegacyOpsError("audit-failed", "Cannot safely compare file paths") from exc
     return left_stat.st_dev == right_stat.st_dev and left_stat.st_ino == right_stat.st_ino
 
 
@@ -223,8 +226,11 @@ def _apply_assignment(
     tenant_id: str,
     backup_path: Path,
     live: Path,
+    audit_path: Path,
+    at: str,
+    actor: str,
 ) -> _Applied:
-    """Classify and maybe assign while the provider lock is held. No audit I/O."""
+    """Classify, audit and assign while the provider lock is held."""
     try:
         store = SnapshotStore(root, kind=kind)
     except json.JSONDecodeError as exc:
@@ -243,19 +249,38 @@ def _apply_assignment(
         # Re-check inside the lock. A symlink swap must not turn the backup into the live file.
         if backup_path.resolve() == live.resolve() or _same_file(backup_path, live):
             raise LegacyOpsError("backup-is-live", "Backup must be a separate copy of the provider file")
-        tag = _classify(store, snapshot_ids, tenant_id)
         live_bytes = _read_bytes(live, code="provider-invalid", message="Provider file could not be read")
+        _reject_duplicate_rows(live_bytes)
+        tag = _classify(store, snapshot_ids, tenant_id)
         backup_bytes = _read_bytes(backup_path, code="backup-missing", message="Backup file does not exist")
         backup_sha = sha256_bytes(backup_bytes)
         if tag == "assign":
             if live_bytes != backup_bytes:
                 raise LegacyOpsError("backup-mismatch", "Backup does not match the current provider file")
+            hashes = {}
+            for snapshot_id in snapshot_ids:
+                row = dict(store.legacy[snapshot_id])
+                row["tenantId"] = tenant_id
+                hashes[snapshot_id] = _row_hash(row)
+            intent = _audit_record(
+                at=at, action="intent", ok=False, reason=None,
+                message="Assignment intended; confirm completion against provider", kind=kind,
+                tenant_id=tenant_id, snapshot_ids=snapshot_ids, actor=actor,
+                backup=str(backup_path), assigned_count=len(snapshot_ids),
+                snapshot_hashes=hashes, backup_sha256=backup_sha,
+            )
+            intent["providerRoot"] = str(root)
+            intent["transactionId"] = uuid4().hex
+            _append_audit(audit_path, intent)
             try:
                 assigned = store.assign_legacy(snapshot_ids, tenant_id=tenant_id)
             except ValueError as exc:
                 raise LegacyOpsError("rejected", "Legacy snapshot was not assigned") from exc
             except OSError as exc:
                 raise LegacyOpsError("io-error", "Provider file could not be written") from exc
+            completed = dict(intent)
+            completed.update(action="assigned", ok=True, message="Assignment recorded", intentAt=at)
+            _append_audit(audit_path, completed)
             return {
                 "action": "assigned",
                 "assignedCount": assigned,
@@ -266,6 +291,7 @@ def _apply_assignment(
         if set(snapshot_ids) - _ids_in_backup(backup_bytes):
             raise LegacyOpsError("backup-unrelated", "Backup does not contain the requested snapshot IDs")
         if tag == "already-assigned":
+            _recover_audit(audit_path, root, kind, tenant_id, snapshot_ids, backup_sha, store)
             return {
                 "action": "already-assigned",
                 "assignedCount": 0,
@@ -274,6 +300,50 @@ def _apply_assignment(
                 "mutated": False,
             }
         raise LegacyOpsError("rejected", "Legacy snapshot was not assigned")
+
+
+def _reject_duplicate_rows(data: bytes) -> None:
+    try:
+        payload = json.loads(data)
+        if not isinstance(payload, dict):
+            raise ValueError
+        legacy = payload.get("legacyItems", []) if payload.get("formatVersion") == SNAPSHOT_FORMAT_VERSION else payload.get("items", [])
+        if not isinstance(legacy, list):
+            raise ValueError
+        seen: set[str] = set()
+        for row in legacy:
+            if isinstance(row, dict) and isinstance(row.get("snapshotId"), str):
+                sid = row["snapshotId"]
+                if sid in seen:
+                    raise LegacyOpsError("duplicate-provider-ids", "Provider contains duplicate legacy snapshot IDs")
+                seen.add(sid)
+    except (ValueError, UnicodeError) as exc:
+        raise LegacyOpsError("provider-invalid", "Provider file is not valid JSON") from exc
+
+
+def _recover_audit(path: Path, root: Path, kind: str, tenant: str, ids: list[str], backup_sha: str, store: SnapshotStore) -> None:
+    hashes = _hashes(store, ids, tenant)
+    if not path.exists():
+        return
+    try:
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    except (OSError, UnicodeError, ValueError) as exc:
+        raise LegacyOpsError("audit-failed", "Audit log cannot be read safely") from exc
+    for index, record in reversed(list(enumerate(records))):
+        if not isinstance(record, dict) or record.get("action") != "intent":
+            continue
+        if (record.get("providerRoot"), record.get("kind"), record.get("tenantId"), record.get("snapshotIds"), record.get("backupSha256")) != (str(root), kind, tenant, ids, backup_sha):
+            continue
+        if any(isinstance(later, dict) and later.get("action") == "assigned" and later.get("transactionId") == record.get("transactionId") for later in records[index + 1:]):
+            break
+        if not isinstance(record.get("at"), str) or not isinstance(record.get("transactionId"), str):
+            raise LegacyOpsError("audit-failed", "Audit intent is malformed")
+        if record.get("snapshotHashes") != hashes or any(_row_hash(store.items[(tenant, sid)]) != hashes.get(sid) for sid in ids):
+            raise LegacyOpsError("audit-failed", "Assigned snapshots do not match the audit intent")
+        recovered = dict(record)
+        recovered.update(action="assigned", ok=True, message="Assignment recovered from intent", intentAt=record["at"])
+        _append_audit(path, recovered)
+        break
 
 
 def _append_audit(path: Path, record: Mapping[str, Any]) -> None:
@@ -288,13 +358,25 @@ def _append_audit(path: Path, record: Mapping[str, Any]) -> None:
     lock = FileLock(str(path) + ".lock")
     try:
         with lock:
+            if path.exists():
+                raw = path.read_bytes()
+                if raw and (not raw.endswith(b"\n") or any(not isinstance(json.loads(line), dict) for line in raw.splitlines())):
+                    raise OSError("Invalid audit log")
             fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o644)
             try:
-                os.write(fd, data)
+                written = os.write(fd, data)
+                if written != len(data):
+                    raise OSError("Short audit write")
                 os.fsync(fd)
             finally:
                 os.close(fd)
-    except OSError as exc:
+            if os.name != "nt":
+                directory_fd = os.open(path.parent, os.O_RDONLY)
+                try:
+                    os.fsync(directory_fd)
+                finally:
+                    os.close(directory_fd)
+    except (OSError, ValueError, UnicodeError) as exc:
         raise LegacyOpsError("audit-failed", "Could not write the audit record") from exc
 
 
@@ -370,7 +452,19 @@ def execute_assign(
     checked_actor = ""
     backup_path: Path | None = None
     root: Path | None = None
+    audit_safe = False
     try:
+        root = _existing_root(provider_root)
+        # Resolve the supplied backup even when argument validation will fail.
+        backup_path = Path(backup).resolve()
+        if backup_path.is_dir():
+            if kind not in PROVIDER_BY_KIND:
+                raise LegacyOpsError("invalid-kind", "Unknown provider kind")
+            backup_path = (backup_path / f"{kind}.json").resolve()
+        if (_clobbers_provider(audit_path, root, backup_path)
+                or _clobbers_provider(Path(str(audit_path) + ".lock"), root, backup_path)):
+            raise LegacyOpsError("audit-failed", "Audit path must not be the provider file or the backup")
+        audit_safe = True
         checked_kind = _check_kind(kind)
         if all(_is_safe_token(item) for item in snapshot_ids):
             checked_ids = list(snapshot_ids)
@@ -401,9 +495,12 @@ def execute_assign(
             tenant_id=checked_tenant,
             backup_path=backup_path,
             live=live,
+            audit_path=audit_path,
+            at=at,
+            actor=checked_actor,
         )
     except LegacyOpsError as exc:
-        if exc.code != "audit-failed" and not _clobbers_provider(audit_path, root, backup_path):
+        if exc.code != "audit-failed" and audit_safe and not _clobbers_provider(audit_path, root, backup_path):
             try:
                 _append_audit(
                     audit_path,
@@ -441,12 +538,8 @@ def execute_assign(
         snapshot_hashes=applied["snapshotHashes"],
         backup_sha256=applied["backupSha256"],
     )
-    try:
+    if not applied["mutated"]:
         _append_audit(audit_path, record)
-    except LegacyOpsError as exc:
-        if applied["mutated"]:
-            raise LegacyOpsError("audit-failed", "Assignment was saved but the audit record could not be written") from exc
-        raise
     return {
         "ok": True,
         "action": applied["action"],

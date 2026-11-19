@@ -148,7 +148,7 @@ def test_assign_uses_explicit_tenant_not_claimed_tenant(tmp_path, capsys):
     assert opened["price"] == 999
     assert store.get("forged", tenant_id="tenant-b") is None
     assert [row["snapshotId"] for row in store.quarantined()] == ["plain"]
-    record = json.loads(audit.read_text(encoding="utf-8"))
+    record = json.loads(audit.read_text(encoding="utf-8").splitlines()[-1])
     assert record["action"] == "assigned"
     assert record["actor"] == "ops-maintainer"
     assert record["snapshotIds"] == ["forged"]
@@ -197,10 +197,10 @@ def test_repeat_assign_does_not_write_again(tmp_path, capsys):
     assert store.get("other", tenant_id="tenant-a")["snapshotHash"] == hashes["other"]
     assert store.get("old", tenant_id="tenant-b") is None
     lines = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
-    assert [line["action"] for line in lines] == ["assigned", "already-assigned"]
+    assert [line["action"] for line in lines] == ["intent", "assigned", "already-assigned"]
     assert lines[0]["assignedCount"] == 2
-    assert lines[1]["assignedCount"] == 0
-    assert lines[1]["snapshotHashes"] == hashes
+    assert lines[2]["assignedCount"] == 0
+    assert lines[2]["snapshotHashes"] == hashes
 
 
 def test_destination_conflict_is_refused(tmp_path, capsys):
@@ -457,7 +457,204 @@ def test_concurrent_calls_assign_one_tenant_only(tmp_path):
     assert store.get("old", tenant_id=other) is None
     assert store.quarantined() == []
     lines = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
-    assert sorted(line["action"] for line in lines) == ["assigned", "refused"]
+    assert sorted(line["action"] for line in lines) == ["assigned", "intent", "refused"]
     assert [line["tenantId"] for line in lines if line["action"] == "assigned"] == owners
     assert [line["reason"] for line in lines if line["action"] == "refused"] == ["missing"]
-    assert all(line["assignedCount"] == (1 if line["action"] == "assigned" else 0) for line in lines)
+    assert all(line["assignedCount"] == (1 if line["action"] in ("intent", "assigned") else 0) for line in lines)
+
+
+def test_early_validation_never_writes_provider_backup_or_hardlinks(tmp_path, capsys):
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "backup" / "fx.json")
+    hardlink = tmp_path / "backup-link"
+    os.link(backup, hardlink)
+    before = live.read_bytes()
+    for audit in (live, backup, hardlink):
+        assert main(_assign_args(root, backup, audit, tenant=" ", snapshot_ids=["old", "old"])) == 1
+        assert _stderr(capsys)["error"] == "audit-failed"
+        assert live.read_bytes() == backup.read_bytes() == before
+
+
+def test_duplicate_legacy_rows_refused_even_when_unrequested(tmp_path, capsys):
+    for duplicate_id in ("old", "other"):
+        root = tmp_path / duplicate_id / "providers"
+        live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1},
+                                    {"snapshotId": duplicate_id, "price": 2},
+                                    {"snapshotId": duplicate_id, "price": 3}])
+        backup = _copy(live, tmp_path / duplicate_id / "backup.json")
+        before = live.read_bytes()
+        assert main(_assign_args(root, backup, tmp_path / duplicate_id / "audit", tenant="tenant-a", snapshot_ids=["old"])) == 1
+        assert _stderr(capsys)["error"] == "duplicate-provider-ids"
+        assert live.read_bytes() == before
+
+
+def test_audit_failure_before_and_after_assignment_recovers(tmp_path, capsys, monkeypatch):
+    import scripts.assign_commerce_legacy as module
+
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "backup.json")
+    audit = tmp_path / "audit.jsonl"
+    args = _assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])
+    before = live.read_bytes()
+    append = module._append_audit
+
+    def fail_intent(path, record):
+        if record["action"] == "intent":
+            raise module.LegacyOpsError("audit-failed", "failed")
+        append(path, record)
+
+    monkeypatch.setattr(module, "_append_audit", fail_intent)
+    assert main(args) == 1
+    assert _stderr(capsys)["error"] == "audit-failed"
+    assert live.read_bytes() == before
+
+    def fail_completed(path, record):
+        if record["action"] == "assigned":
+            raise module.LegacyOpsError("audit-failed", "failed")
+        append(path, record)
+
+    monkeypatch.setattr(module, "_append_audit", fail_completed)
+    assert main(args) == 1
+    assert _stderr(capsys)["error"] == "audit-failed"
+    assert SnapshotStore(root, kind="fx").get("old", tenant_id="tenant-a") is not None
+    assert [json.loads(line)["action"] for line in audit.read_text().splitlines()] == ["intent"]
+    monkeypatch.setattr(module, "_append_audit", append)
+    assert main(args) == 0
+    assert _stdout(capsys)["action"] == "already-assigned"
+    records = [json.loads(line) for line in audit.read_text().splitlines()]
+    assert [record["action"] for record in records] == ["intent", "assigned", "already-assigned"]
+    assert records[1]["actor"] == "ops-maintainer"
+    assert records[1]["snapshotHashes"] == records[0]["snapshotHashes"]
+
+
+def test_interruption_after_provider_write_can_recover(tmp_path, capsys, monkeypatch):
+    import pytest
+    import scripts.assign_commerce_legacy as module
+
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "backup.json")
+    audit = tmp_path / "audit.jsonl"
+    args = _assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])
+    append = module._append_audit
+
+    def interrupt(path, record):
+        if record["action"] == "assigned":
+            raise KeyboardInterrupt
+        append(path, record)
+
+    monkeypatch.setattr(module, "_append_audit", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        main(args)
+    monkeypatch.setattr(module, "_append_audit", append)
+    assert main(args) == 0
+    assert _stdout(capsys)["action"] == "already-assigned"
+    records = [json.loads(line) for line in audit.read_text().splitlines()]
+    assert [record["action"] for record in records] == ["intent", "assigned", "already-assigned"]
+    assert records[0]["transactionId"] == records[1]["transactionId"]
+
+
+def test_interruption_before_provider_write_and_retries(tmp_path, capsys, monkeypatch):
+    import pytest
+    from scripts import assign_commerce_legacy as module
+
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "backup.json")
+    audit = tmp_path / "audit.jsonl"
+    args = _assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])
+    before = live.read_bytes()
+    assign = module.SnapshotStore.assign_legacy
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(module.SnapshotStore, "assign_legacy", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        main(args)
+    assert live.read_bytes() == before
+    monkeypatch.setattr(module.SnapshotStore, "assign_legacy", assign)
+    assert main(args) == 0
+    capsys.readouterr()
+    assert main(args) == 0
+    capsys.readouterr()
+    assert [json.loads(line)["action"] for line in audit.read_text().splitlines()] == [
+        "intent", "intent", "assigned", "already-assigned"
+    ]
+
+
+def test_partial_audit_write_refuses_provider_change(tmp_path, capsys, monkeypatch):
+    from scripts import assign_commerce_legacy as module
+
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "backup.json")
+    audit = tmp_path / "audit.jsonl"
+    before = live.read_bytes()
+    write = module.os.write
+
+    def partial(fd, data):
+        return write(fd, data[:10])
+
+    monkeypatch.setattr(module.os, "write", partial)
+    assert main(_assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])) == 1
+    assert _stderr(capsys)["error"] == "audit-failed"
+    assert live.read_bytes() == before
+    monkeypatch.setattr(module.os, "write", write)
+    assert main(_assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])) == 1
+    assert _stderr(capsys)["error"] == "audit-failed"
+    assert live.read_bytes() == before
+
+
+def test_audit_lock_cannot_clobber_backup(tmp_path, capsys):
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "audit.lock")
+    before = backup.read_bytes()
+    assert main(_assign_args(root, backup, tmp_path / "audit", tenant="tenant-a", snapshot_ids=["old"])) == 1
+    assert _stderr(capsys)["error"] == "audit-failed"
+    assert live.read_bytes() == backup.read_bytes() == before
+
+
+def test_duplicate_version_two_legacy_rows_are_refused(tmp_path, capsys):
+    root = tmp_path / "providers"
+    root.mkdir()
+    live = root / "fx.json"
+    live.write_text(json.dumps({"formatVersion": 2, "kind": "fx", "items": [], "legacyItems": [
+        {"snapshotId": "old", "price": 1}, {"snapshotId": "other", "price": 2},
+        {"snapshotId": "other", "price": 3},
+    ]}))
+    before = live.read_bytes()
+    backup = _copy(live, tmp_path / "backup.json")
+    assert main(_assign_args(root, backup, tmp_path / "audit", tenant="tenant-a", snapshot_ids=["old"])) == 1
+    assert _stderr(capsys)["error"] == "duplicate-provider-ids"
+    assert live.read_bytes() == before
+
+
+def test_recovery_rejects_modified_snapshot_with_stale_hash(tmp_path, capsys, monkeypatch):
+    from scripts import assign_commerce_legacy as module
+
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"snapshotId": "old", "price": 1}])
+    backup = _copy(live, tmp_path / "backup.json")
+    audit = tmp_path / "audit.jsonl"
+    args = _assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])
+    append = module._append_audit
+
+    def fail_completion(path, record):
+        if record["action"] == "assigned":
+            raise module.LegacyOpsError("audit-failed", "failed")
+        append(path, record)
+
+    monkeypatch.setattr(module, "_append_audit", fail_completion)
+    assert main(args) == 1
+    capsys.readouterr()
+    payload = json.loads(live.read_text())
+    payload["items"][0]["price"] = 999
+    live.write_text(json.dumps(payload))
+    monkeypatch.setattr(module, "_append_audit", append)
+    assert main(args) == 1
+    assert _stderr(capsys)["error"] == "audit-failed"
+    assert [json.loads(line)["action"] for line in audit.read_text().splitlines()] == ["intent"]
