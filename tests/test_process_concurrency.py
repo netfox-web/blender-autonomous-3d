@@ -23,3 +23,14 @@ def test_independent_service_process_ownership(tmp_path,case,record_property):
     for child in result['children'].values():
         if not child['submit']['accepted']:
             assert child['renderEntries']==[] and child['writes']==[]
+
+
+def test_until_waits_for_observable_condition_without_wall_clock_cutoff(monkeypatch):
+    clock={'now':0.0};polls={'count':0}
+    monkeypatch.setattr(harness.time,'monotonic',lambda:clock['now'])
+    monkeypatch.setattr(harness.time,'sleep',lambda _dt:clock.__setitem__('now',clock['now']+100.0))
+    def condition():
+        polls['count']+=1
+        return polls['count']>=3
+    harness.until(condition,seconds=60)
+    assert polls['count']==3 and clock['now']==200.0
