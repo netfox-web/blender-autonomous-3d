@@ -405,19 +405,20 @@ class CommitOutbox:
                 self._cache_put(path, rec, bump=True)
                 return copy.deepcopy(rec)
 
-    def complete(self, tx_id: str) -> None:
+    def complete(self, tx_id: str) -> bool:
         if self._mutation_blocked(tx_id):
-            return
+            return False
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
                 path = self._path(tx_id)
                 self._tx_cache.pop(path, None)
                 _bump_tx_gen(path)
                 path.unlink(missing_ok=True)
+        return True
 
-    def abort(self, tx_id: str) -> bool:
+    def abort(self, tx_id: str) -> bool | None:
         if self._mutation_blocked(tx_id):
-            return False
+            return None
         with self._lock:
             with FileLock(self.root / "outbox.lock"):
                 path = self._path(tx_id)
@@ -491,8 +492,8 @@ class CommitOutbox:
                             semantic_key=semantic,
                         )
                         if found is not None:
-                            self.complete(tx_id)
-                            finalized += 1
+                            if self.complete(tx_id):
+                                finalized += 1
                             continue
                     else:
                         existing = [e for e in journal.list(tenant_id) if e.get("semanticKey") == semantic]
@@ -504,8 +505,8 @@ class CommitOutbox:
                                 and e.get("releaseHash") == rel_hash
                                 for e in existing
                             ):
-                                self.complete(tx_id)
-                                finalized += 1
+                                if self.complete(tx_id):
+                                    finalized += 1
                                 continue
                             raise SemanticKeyConflictError(
                                 f"semantic_key conflict for {semantic}: eventType, payloadHash, or releaseHash mismatch"
@@ -520,6 +521,8 @@ class CommitOutbox:
                         tx = latest
                 if not committed and tx.get("status") != BUSINESS_COMMITTED:
                     aborted_ok = self.abort(tx_id)
+                    if aborted_ok is None:
+                        continue
                     latest = self._load_tx_file(self._path(tx_id))
                     if aborted_ok is False or latest.get("status") in {BUSINESS_COMMITTED, COMMITTED}:
                         if latest:
@@ -546,8 +549,8 @@ class CommitOutbox:
                             semantic_key=semantic,
                             source=str(ev.get("source") or "reconcile"),
                         )
-                    self.complete(tx_id)
-                    finalized += 1
+                    if self.complete(tx_id):
+                        finalized += 1
             except Exception:
                 failed.append(tx_id)
         try:

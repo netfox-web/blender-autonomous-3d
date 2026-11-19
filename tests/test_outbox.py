@@ -610,7 +610,7 @@ def test_abort_under_shared_lock_preserves_late_committed_tx_when_journal_append
     orig_abort = outbox1.abort
     triggered = {"done": False}
 
-    def mark_before_abort(tid: str) -> bool:
+    def mark_before_abort(tid: str) -> bool | None:
         if not triggered["done"] and tid == tx2_id:
             triggered["done"] = True
             outbox2.mark_business_committed(tx2_id, observed_generation=2)
@@ -914,13 +914,18 @@ def test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path: Pa
     tx_id = ""
 
     def peer_side() -> None:
-        ready.wait()
-        outcome["abort"] = peer.abort(tx_id)
-        peer.complete(tx_id)
-        outcome["reconcile"] = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
-        outcome["exists"] = owner._path(tx_id).exists()
-        outcome["status"] = (read_json(owner._path(tx_id)) or {}).get("status")
-        done.set()
+        try:
+            ready.wait()
+            outcome["abort"] = peer.abort(tx_id)
+            peer.complete(tx_id)
+            outcome["reconcile"] = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
+            outcome["exists"] = owner._path(tx_id).exists()
+            outcome["status"] = (read_json(owner._path(tx_id)) or {}).get("status")
+        except BaseException as exc:
+            outcome["peer_error"] = exc
+            raise
+        finally:
+            done.set()
 
     worker = threading.Thread(target=peer_side)
     worker.start()
@@ -929,8 +934,9 @@ def test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path: Pa
             tx = owner.prepare(_make_event(1))
             tx_id = str(tx["txId"])
             ready.set()
-            done.wait()
-            assert outcome["abort"] is False
+            assert done.wait(timeout=30), "peer thread did not finish"
+            assert "peer_error" not in outcome, outcome.get("peer_error")
+            assert outcome["abort"] is None
             assert outcome["exists"] is True
             assert outcome["status"] == PREPARED
             assert outcome["reconcile"] == {"finalized": 0, "aborted": 0, "failed": [], "open": 1}
@@ -958,7 +964,7 @@ def test_claim_held_outside_this_process_blocks_cleanup_until_released(tmp_path:
         res = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
         assert res == {"finalized": 0, "aborted": 0, "failed": [], "open": 1}
         peer.complete(tx_id)
-        assert peer.abort(tx_id) is False
+        assert peer.abort(tx_id) is None
         assert read_json(owner._path(tx_id))["status"] == PREPARED
     finally:
         claim.release()
@@ -966,4 +972,38 @@ def test_claim_held_outside_this_process_blocks_cleanup_until_released(tmp_path:
     assert res_abort == {"finalized": 0, "aborted": 1, "failed": [], "open": 0}
     assert not owner._path(tx_id).exists()
     assert journal.list("ta") == []
+
+
+def test_reconcile_abort_blocked_during_claim_probe_does_not_finalize(tmp_path: Path) -> None:
+    """Concurrent claim probing during business_committed must not write journal events."""
+    outbox = CommitOutbox(tmp_path / "tx")
+    journal = EventJournal(tmp_path / "journal")
+    journal.outbox = outbox
+    tx = outbox.prepare(_make_event(1))
+    tx_id = str(tx["txId"])
+    claim_path = outbox._claim_path(tx_id)
+    probe_holder: dict[str, FileLock] = {}
+
+    def probe_during_callback(_tx: dict[str, Any]) -> bool:
+        probe = FileLock(claim_path)
+        assert probe.try_acquire(), "simulated peer must hold claim before abort runs"
+        probe_holder["probe"] = probe
+        return False
+
+    res = outbox.reconcile(journal=journal, business_committed=probe_during_callback)
+    assert res == {"finalized": 0, "aborted": 0, "failed": [], "open": 1}
+    assert journal.list("ta") == []
+    assert read_json(outbox._path(tx_id))["status"] == PREPARED
+
+    probe = probe_holder.pop("probe")
+    probe.release()
+    try:
+        claim_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    res_after = outbox.reconcile(journal=journal, business_committed=lambda _tx: False)
+    assert res_after == {"finalized": 0, "aborted": 1, "failed": [], "open": 0}
+    assert journal.list("ta") == []
+    assert not outbox._path(tx_id).exists()
 
