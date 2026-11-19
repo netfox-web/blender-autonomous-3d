@@ -75,11 +75,12 @@ def test_native_upload_path_and_traversal(store, glb_bytes):
 def test_save_and_batch_guard_existing_and_inline_scenes(store):
     saved = store.save_scene('alice', scene('/etc/passwd'))
     assert saved['warnings'] and 'glbPath' not in saved['props'][0]
-    with patch.object(store.executor, 'submit') as submit:
+    with patch.object(store.executor, 'submit'):
         batch = store.start_matrix_batch('alice', {'sceneIds': ['custom'], 'currentScene': scene('/tmp/evil.glb'), 'aiEngine': 'off'})
     assert batch['warnings']
     assert 'glbPath' not in batch['request']['currentScene']['props'][0]
-    scenes = submit.call_args.args[5]
+    saved_batch = store.get_batch('alice', batch['batchId'])
+    scenes = saved_batch['workerArgs'][1]
     assert 'glbPath' not in scenes['custom']['props'][0]
 
 

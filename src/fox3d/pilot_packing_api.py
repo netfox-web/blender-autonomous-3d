@@ -273,7 +273,7 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
     ) -> dict[str, Any]:
         tid = _require_tenant(x_tenant_id)
         pilot = provider().pilot
-        with pilot.logistics._lock:
+        with pilot.workorders._lock, pilot.logistics._lock:
             wo = _require_wo(pilot, work_order_id, tid)
             raw_cartons = [
                 c
@@ -391,6 +391,7 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
                 for c in pilot.logistics.cartons.values()
                 if c.get("workOrderId") == work_order_id and c.get("tenantId") == tid
             ]
+            cartons.sort(key=lambda c: (int(c.get("index") or 0), str(c.get("cartonId") or "")))
             expected_items = [
                 {
                     "cartonId": c["cartonId"],
@@ -402,38 +403,38 @@ def pilot_packing_router(provider: Callable[[], Any]) -> APIRouter:
             ]
             expected_hold = any(bool(c.get("mismatch")) for c in cartons)
             expected_pinned = bool(cartons) and all(c.get("releaseHash") == rel_hash for c in cartons)
-            signature = stable_hash({"releaseHash": rel_hash, "items": expected_items})
-            store_key = f"{tid}::checklist::{work_order_id}::{idem_key}" if idem_key else None
-            previous = pilot.logistics._idem.get(store_key) if store_key else None
-            if previous is not None:
-                if previous["signature"] != signature:
-                    raise HTTPException(409, "idempotencyKey 衝突")
-                existing = pilot.logistics.checklists[previous["checklistId"]]
-            else:
-                existing = None
-            for chk in reversed(list(pilot.logistics.checklists.values())) if existing is None else []:
-                if chk.get("tenantId") == tid and chk.get("workOrderId") == work_order_id:
-                    if (
-                        chk.get("releaseHash") == rel_hash
-                        and chk.get("items") == expected_items
-                        and bool(chk.get("mismatchHold")) == expected_hold
-                        and bool(chk.get("pinned")) == expected_pinned
-                    ):
-                        existing = chk
-                    break
+            extra_body = {k: v for k, v in body.items() if k not in {"idempotencyKey", "tenantId"}}
+            sig_payload: dict[str, Any] = {"releaseHash": rel_hash, "items": expected_items}
+            if extra_body:
+                sig_payload["body"] = extra_body
+            signature = stable_hash(sig_payload)
+            existing: dict[str, Any] | None = None
+            if idem_key is None:
+                for chk in reversed(list(pilot.logistics.checklists.values())):
+                    if chk.get("tenantId") == tid and chk.get("workOrderId") == work_order_id:
+                        if (
+                            chk.get("releaseHash") == rel_hash
+                            and chk.get("items") == expected_items
+                            and bool(chk.get("mismatchHold")) == expected_hold
+                            and bool(chk.get("pinned")) == expected_pinned
+                        ):
+                            existing = chk
+                        break
             if existing is not None:
                 rec = dict(existing)
             else:
-                rec = dict(
-                    pilot.logistics.packing_checklist(
-                        tenant_id=tid,
-                        work_order_id=work_order_id,
-                        release_hash=rel_hash,
+                try:
+                    rec = dict(
+                        pilot.logistics.packing_checklist(
+                            tenant_id=tid,
+                            work_order_id=work_order_id,
+                            release_hash=rel_hash,
+                            idempotency_key=idem_key,
+                            signature=signature,
+                        )
                     )
-                )
-            if store_key and previous is None:
-                pilot.logistics._idem[store_key] = {"signature": signature, "checklistId": rec["checklistId"]}
-            pilot.logistics.persist()
+                except SemanticKeyConflictError as exc:
+                    raise HTTPException(409, "idempotencyKey 衝突") from exc
             mismatch_hold = _sync_wo_mismatch_hold(pilot, work_order_id, tid)
             rec["mismatch"] = bool(rec.get("mismatchHold"))
             rec["mismatchHold"] = mismatch_hold

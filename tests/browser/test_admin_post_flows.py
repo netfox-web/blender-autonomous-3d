@@ -660,17 +660,21 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
     first_carton_id = page.locator("#packing-carton-id").input_value()
     assert first_carton_id
     page.locator("#packing-length").fill("999")
+    assert page.locator("#packing-length").input_value() == "999"
     page.locator("#packing-measure-btn").click()
     page.wait_for_selector("#confirmation:not([hidden])")
     assert page.locator("#packing-length").is_disabled()
+    assert "999" in page.locator("#confirm-data").inner_text()
     page.locator("#confirm").click()
     page.wait_for_function(
         """() => {
           const status = document.getElementById('packing-status');
           const result = document.getElementById('result');
+          const btn = document.getElementById('packing-measure-btn');
           return !!(
             status && status.textContent.includes('尺寸不符待人工確認') &&
-            result && result.textContent.includes('尺寸不符待人工確認')
+            result && result.textContent.includes('尺寸不符待人工確認') &&
+            btn && !btn.disabled
           );
         }"""
     )
@@ -683,9 +687,11 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
         """() => {
           const chk = document.getElementById('packing-checklist');
           const status = document.getElementById('packing-status');
+          const btn = document.getElementById('packing-checklist-btn');
           return !!(
             chk && chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
-            status && status.textContent.includes('尺寸不符待人工確認')
+            status && status.textContent.includes('尺寸不符待人工確認') &&
+            btn && !btn.disabled
           );
         }"""
     )
@@ -709,6 +715,156 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
           const status = document.getElementById('packing-status');
           const btn = document.getElementById('packing-resolve-btn');
           const cartons = document.getElementById('packing-cartons');
+          const chk = document.getElementById('packing-checklist');
+          return !!(
+            status && status.textContent.includes('已人工確認') &&
+            !status.textContent.includes('待人工確認') &&
+            cartons && cartons.textContent.includes('尺寸不符（已人工確認）') &&
+            chk && chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
+            btn && !btn.disabled
+          );
+        }"""
+    )
+    assert seen_resolve["body"] == {"confirm": True}
+    assert seen_resolve["tenant"] == TENANT
+    assert "BLOCKED/NOT_CONNECTED" in page.locator("#packing-checklist").inner_text()
+    plat = admin_server["platform"]
+    rec = plat.pilot.workorders.get(wo_id)
+    assert rec["mismatchHold"] is False
+    assert all(not h["open"] for h in rec["holds"] if h["reason"] == "PACKING_MISMATCH")
+    assert plat.pilot.logistics.cartons[first_carton_id]["mismatch"] is True
+
+
+def test_pilot_packing_flow_locks_buttons_during_refresh_and_ignores_stale_responses(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    wo_id = _seed_pilot_packing_work_order(admin_server)
+    cartons_path = f"/api/pilot/work-orders/{wo_id}/cartons"
+
+    _goto(page, admin_server["base_url"], "/admin/pilot", "#orders")
+    row_btn = page.locator("#orders tr", has_text=wo_id).locator("button")
+    row_btn.wait_for(timeout=10_000)
+    row_btn.click()
+    page.wait_for_selector("#packing-panel:not([hidden])")
+
+    page.locator("#packing-quantity").fill("1")
+    page.locator("#packing-idem").fill("browser-pack-sync-1")
+    page.locator("#packing-create-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const sel = document.getElementById('packing-carton-id');
+          const btn = document.getElementById('packing-measure-btn');
+          return !!(sel && sel.options.length === 1 && btn && !btn.disabled);
+        }"""
+    )
+    carton_id = page.locator("#packing-carton-id").input_value()
+    assert carton_id
+
+    # Hold the post-measurement refresh GET /cartons to verify panel stability and button locking.
+    hold_next_get = {"hold_during_edit": True, "hold": False, "capture_stale": False}
+    edit_cartons_get: list[Route] = []
+    held_refresh_get: list[Route] = []
+    stale_cartons_get: list[Route] = []
+
+    def on_cartons_route(route: Route) -> None:
+        if route.request.method == "GET" and _path(route.request.url) == cartons_path:
+            if hold_next_get["hold_during_edit"]:
+                hold_next_get["hold_during_edit"] = False
+                edit_cartons_get.append(route)
+                return
+            if hold_next_get["hold"]:
+                hold_next_get["hold"] = False
+                held_refresh_get.append(route)
+                return
+            if hold_next_get["capture_stale"]:
+                hold_next_get["capture_stale"] = False
+                stale_cartons_get.append(route)
+                return
+        route.continue_()
+
+    page.route(re.compile(re.escape(cartons_path) + r"$"), on_cartons_route)
+
+    # User edits #packing-length while a background GET /cartons is in flight; completion must not overwrite "999".
+    with page.expect_request(lambda req: req.method == "GET" and _path(req.url) == cartons_path):
+        page.locator("#orders tr", has_text=wo_id).locator("button").click()
+    page.evaluate("() => true")
+    assert len(edit_cartons_get) == 1
+    page.locator("#packing-length").fill("999")
+    with page.expect_response(lambda resp: resp.request.method == "GET" and _path(resp.url) == cartons_path):
+        edit_cartons_get.pop().continue_()
+    assert page.locator("#packing-length").input_value() == "999"
+
+    hold_next_get["hold"] = True
+    page.locator("#packing-measure-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    with page.expect_request(lambda req: req.method == "GET" and _path(req.url) == cartons_path):
+        page.locator("#confirm").click()
+    page.evaluate("() => true")
+    assert len(held_refresh_get) == 1
+
+    # While post-action refresh is in flight, packing panel stays visible and all action buttons stay disabled.
+    assert page.locator("#packing-panel").is_visible()
+    for btn_id in (
+        "packing-create-btn",
+        "packing-measure-btn",
+        "packing-checklist-btn",
+        "packing-resolve-btn",
+        "confirm",
+        "refresh",
+    ):
+        assert page.locator(f"#{btn_id}").is_disabled(), btn_id
+
+    _click_anyway(page, "packing-checklist-btn")
+    assert page.locator("#confirmation").is_hidden()
+
+    held_refresh_get.pop().continue_()
+    page.wait_for_function(
+        """() => {
+          const status = document.getElementById('packing-status');
+          const result = document.getElementById('result');
+          const chkBtn = document.getElementById('packing-checklist-btn');
+          return !!(
+            status && status.textContent.includes('尺寸不符待人工確認') &&
+            result && result.textContent.includes('尺寸不符待人工確認') &&
+            chkBtn && !chkBtn.disabled
+          );
+        }"""
+    )
+
+    # Capture an in-flight GET /cartons before checklist + sign-off, then fulfill it out of order after sign-off.
+    hold_next_get["capture_stale"] = True
+    with page.expect_request(lambda req: req.method == "GET" and _path(req.url) == cartons_path):
+        page.locator("#orders tr", has_text=wo_id).locator("button").click()
+    page.evaluate("() => true")
+    assert len(stale_cartons_get) == 1
+
+    page.locator("#packing-checklist-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const chk = document.getElementById('packing-checklist');
+          const status = document.getElementById('packing-status');
+          const resolveBtn = document.getElementById('packing-resolve-btn');
+          return !!(
+            chk && chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
+            status && status.textContent.includes('尺寸不符待人工確認') &&
+            resolveBtn && !resolveBtn.disabled
+          );
+        }"""
+    )
+
+    page.locator("#packing-resolve-btn").click()
+    page.wait_for_selector("#confirmation:not([hidden])")
+    page.locator("#confirm").click()
+    page.wait_for_function(
+        """() => {
+          const status = document.getElementById('packing-status');
+          const cartons = document.getElementById('packing-cartons');
+          const btn = document.getElementById('packing-resolve-btn');
           return !!(
             status && status.textContent.includes('已人工確認') &&
             !status.textContent.includes('待人工確認') &&
@@ -717,13 +873,130 @@ def test_pilot_packing_flow_snapshot_mismatch_and_abort_restores_button(
           );
         }"""
     )
-    assert seen_resolve["body"] == {"confirm": True}
-    assert seen_resolve["tenant"] == TENANT
-    plat = admin_server["platform"]
-    rec = plat.pilot.workorders.get(wo_id)
-    assert rec["mismatchHold"] is False
-    assert all(not h["open"] for h in rec["holds"] if h["reason"] == "PACKING_MISMATCH")
-    assert plat.pilot.logistics.cartons[first_carton_id]["mismatch"] is True
+
+    # Fulfill the stale pre-resolve GET /cartons with mismatchHold=True; UI must ignore it.
+    stale_carton = dict(admin_server["platform"].pilot.logistics.cartons[carton_id])
+    stale_cartons_get.pop().fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps(
+            {
+                "workOrderId": wo_id,
+                "tenantId": TENANT,
+                "mismatchHold": True,
+                "cartonCount": 1,
+                "items": [stale_carton],
+                "cartons": [stale_carton],
+            }
+        ),
+    )
+    page.evaluate("() => new Promise(resolve => setTimeout(resolve, 0))")
+    status_text = page.locator("#packing-status").inner_text()
+    assert "已人工確認" in status_text and "待人工確認" not in status_text
+    assert "尺寸不符（已人工確認）" in page.locator("#packing-cartons").inner_text()
+    assert "BLOCKED/NOT_CONNECTED" in page.locator("#packing-checklist").inner_text()
+
+
+def test_pilot_packing_flow_repeated_cycles_under_concurrent_refresh_load(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    wo_ids = [_seed_pilot_packing_work_order(admin_server) for _ in range(3)]
+    _goto(page, admin_server["base_url"], "/admin/pilot", "#orders")
+
+    for idx, wo_id in enumerate(wo_ids):
+        row_btn = page.locator("#orders tr", has_text=wo_id).locator("button")
+        row_btn.wait_for(timeout=10_000)
+        row_btn.click()
+        page.wait_for_function(
+            """(expectedWo) => {
+              const panel = document.getElementById('packing-panel');
+              const detail = document.getElementById('detail');
+              const chk = document.getElementById('packing-checklist');
+              return !!(
+                panel && !panel.hidden &&
+                detail && detail.textContent.includes(expectedWo) &&
+                chk && chk.textContent.includes('尚未產生裝箱檢查表')
+              );
+            }""",
+            arg=wo_id,
+        )
+
+        # Fire concurrent background console/health reads while running the packing cycle to simulate load.
+        page.evaluate(
+            """() => {
+              fetch('/api/pilot/console', { headers: { 'X-Tenant-Id': 'sonaqueen-home' } });
+              fetch('/api/pilot/health', { headers: { 'X-Tenant-Id': 'sonaqueen-home' } });
+              fetch('/api/pilot/batches/board', { headers: { 'X-Tenant-Id': 'sonaqueen-home' } });
+            }"""
+        )
+
+        page.locator("#packing-quantity").fill("1")
+        page.locator("#packing-idem").fill(f"browser-repeat-idem-{idx}")
+        page.locator("#packing-create-btn").click()
+        page.wait_for_selector("#confirmation:not([hidden])")
+        page.locator("#confirm").click()
+        page.wait_for_function(
+            """() => {
+              const sel = document.getElementById('packing-carton-id');
+              const btn = document.getElementById('packing-measure-btn');
+              return !!(sel && sel.options.length === 1 && btn && !btn.disabled);
+            }"""
+        )
+
+        page.locator("#packing-length").fill("999")
+        page.locator("#packing-measure-btn").click()
+        page.wait_for_selector("#confirmation:not([hidden])")
+        page.locator("#confirm").click()
+        page.wait_for_function(
+            """() => {
+              const status = document.getElementById('packing-status');
+              const result = document.getElementById('result');
+              const chkBtn = document.getElementById('packing-checklist-btn');
+              return !!(
+                status && status.textContent.includes('尺寸不符待人工確認') &&
+                result && result.textContent.includes('尺寸不符待人工確認') &&
+                chkBtn && !chkBtn.disabled
+              );
+            }"""
+        )
+
+        page.locator("#packing-checklist-btn").click()
+        page.wait_for_selector("#confirmation:not([hidden])")
+        page.locator("#confirm").click()
+        page.wait_for_function(
+            """(expectedWo) => {
+              const chk = document.getElementById('packing-checklist');
+              const status = document.getElementById('packing-status');
+              const resolveBtn = document.getElementById('packing-resolve-btn');
+              return !!(
+                chk && chk.textContent.includes(expectedWo) &&
+                chk.textContent.includes('BLOCKED/NOT_CONNECTED') &&
+                status && status.textContent.includes('尺寸不符待人工確認') &&
+                resolveBtn && !resolveBtn.disabled
+              );
+            }""",
+            arg=wo_id,
+        )
+
+        page.locator("#packing-resolve-btn").click()
+        page.wait_for_selector("#confirmation:not([hidden])")
+        page.locator("#confirm").click()
+        page.wait_for_function(
+            """() => {
+              const status = document.getElementById('packing-status');
+              const cartons = document.getElementById('packing-cartons');
+              const btn = document.getElementById('packing-resolve-btn');
+              return !!(
+                status && status.textContent.includes('已人工確認') &&
+                !status.textContent.includes('待人工確認') &&
+                cartons && cartons.textContent.includes('尺寸不符（已人工確認）') &&
+                btn && !btn.disabled
+              );
+            }"""
+        )
+        rec = admin_server["platform"].pilot.workorders.get(wo_id)
+        assert rec["mismatchHold"] is False
 
 
 

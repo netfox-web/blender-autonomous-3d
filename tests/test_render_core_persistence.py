@@ -230,3 +230,50 @@ def test_product_e2e_overlong_safe_sku_writes_short_filename(tmp_path):
     assert '_enc~=' in name
     restored = Platform(tmp_path, mock_blender=True).get_twin(out['twin']['twinId'], tenant_id='owner')
     assert restored['sku'] == 'U' * 300
+
+
+def _claim_in_process(root, barrier, results, owner):
+    from pathlib import Path
+    from fox3d.infra import JobQueue
+
+    queue = JobQueue(Path(root))
+    barrier.wait()
+    result = queue.claim(owner)
+    results.put(result['jobId'] if result else None)
+
+
+def test_claim_is_exclusive_across_processes(tmp_path):
+    import multiprocessing
+    from fox3d.infra import JobQueue
+
+    root = tmp_path / 'jobs'
+    JobQueue(root).enqueue({'jobId': 'one', 'tenantId': 'owner'})
+    ctx = multiprocessing.get_context('spawn')
+    barrier = ctx.Barrier(2)
+    results = ctx.Queue()
+    processes = [ctx.Process(target=_claim_in_process, args=(str(root), barrier, results, str(i))) for i in range(2)]
+    for process in processes:
+        process.start()
+    for process in processes:
+        process.join()
+        assert process.exitcode == 0
+    assert sorted([results.get(), results.get()], key=lambda x: x or '') == [None, 'one']
+    assert JobQueue(root).get('one')['status'] == 'reserved'
+
+
+def test_idempotent_submit_refreshes_cancelled_job(tmp_path):
+    first = Platform(tmp_path, mock_blender=True)
+    payload = {'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW', 'idempotencyKey': 'same'}
+    job = first.submit_job(payload)
+    second = Platform(tmp_path, mock_blender=True)
+    second.cancel_job(job['jobId'], tenant_id='owner')
+    assert first.submit_job(payload)['status'] == 'cancelled'
+
+
+def test_corrupt_render_record_does_not_block_other_jobs(tmp_path):
+    first = Platform(tmp_path, mock_blender=True)
+    job = first.submit_job({'tenantId': 'owner', 'jobType': 'BLENDER_PREVIEW'})
+    folder = next((tmp_path / 'render_core' / 'jobs').iterdir())
+    (folder / 'broken.json').write_text('{"jobId":', encoding='utf-8')
+    restarted = Platform(tmp_path, mock_blender=True)
+    assert [item['jobId'] for item in restarted.queue.list(tenant_id='owner')] == [job['jobId']]
