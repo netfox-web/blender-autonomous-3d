@@ -1754,15 +1754,23 @@ def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores
     assert b_with_a_main_cursor["total"] == 3
     assert [x["id"] for x in b_with_a_main_cursor["items"]] == [b_newer_id, id_b, b_older_id]
 
-    # Cross-tenant legacy 2-part cursors (anchors belonging only to tenant-a) and malformed composite cursors fall back to offset
+    # Cross-tenant legacy 2-part cursors (anchors belonging only to tenant-a, or colliding ID with mismatched createdAt)
+    # and malformed composite cursors fall back to offset
     for bad_cursor in (
         f"2026-11-19T00:04:00Z|{id_a}",
         f"2026-11-19T00:02:00Z|{id_c}",
+        f"2026-11-18T00:00:00Z|{id_b}",
         "|",
         "||",
         f"|{id_b}",
         "2026-11-19T00:03:00Z|not-a-uuid",
+        f"not-a-timestamp|{id_b}",
         f"{ws_b.name}||00000000-0000-0000-0000-000000000003",
+        f"{ws_b.name}| 2026-11-19T00:03:00Z|{id_b}",
+        f"{ws_b.name}|2026-11-19T00:03:00Z |{id_b}",
+        f"{ws_b.name}|0000|{id_b}",
+        f"{ws_b.name}|not-a-timestamp|{id_b}",
+        f"0000|{id_b}|{ws_b.name}",
         f"{ws_b.name}|2026-11-19T00:03:00Z|not-a-uuid",
         f"{ws_b.name}|2026-11-19T00:03:00Z|{id_b}|extra",
     ):
