@@ -392,6 +392,7 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
         with logistics._lock:
             logistics._sync_from_disk()
             _verify_tenant_cartons(logistics, carton_ids, tid)
+            store_key: str | None = None
             if idem_key is not None:
                 store_key = f"{tid}::pallet::{idem_key}"
                 if store_key in logistics._idem:
@@ -403,21 +404,21 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                         raise HTTPException(409, "idempotencyKey 衝突")
                     return dict(existing)
             try:
-                plan = logistics.palletize(carton_ids)
+                plan = logistics.palletize(carton_ids, persist=False)
             except PermissionError as exc:
                 raise HTTPException(404, "找不到紙箱") from exc
-            if idem_key is not None:
-                store_key = f"{tid}::pallet::{idem_key}"
+            if store_key is not None:
                 logistics._idem[store_key] = {
                     "palletPlanId": plan["palletPlanId"],
                     "cartonIds": list(carton_ids),
                 }
-                try:
-                    logistics.persist()
-                except Exception:
+            try:
+                logistics.persist()
+            except Exception:
+                if store_key is not None:
                     logistics._idem.pop(store_key, None)
-                    logistics.pallets.pop(plan["palletPlanId"], None)
-                    raise
+                logistics.pallets.pop(plan["palletPlanId"], None)
+                raise
             return dict(plan)
 
     @router.get("/api/pilot/pallets")
@@ -503,6 +504,7 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                     service=service,
                     quote_id=quote_id,
                     dim_divisor=dim_divisor,
+                    idempotency_key=idem_key,
                 )
             except SemanticKeyConflictError as exc:
                 raise HTTPException(409, str(exc)) from exc
@@ -511,17 +513,6 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
             except PermissionError as exc:
                 raise HTTPException(404, "找不到紙箱") from exc
 
-            if idem_key is not None:
-                store_key = f"{tid}::shipment-key::{idem_key}"
-                logistics._idem[store_key] = {
-                    "shipmentId": rec["shipmentId"],
-                    "sig": req_sig,
-                }
-                try:
-                    logistics.persist()
-                except Exception:
-                    logistics._idem.pop(store_key, None)
-                    raise
             return _serialize_shipment(logistics, rec, tid)
 
     @router.get("/api/pilot/shipments")

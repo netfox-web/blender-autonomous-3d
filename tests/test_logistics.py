@@ -627,3 +627,110 @@ def test_inspect_and_migrate_tenantless_carrier_quotes_and_rollback(tmp_path):
     reloaded = LogisticsService(root=log.root)
     assert reloaded.carrier_quotes["q-legacy-infer-a"]["tenantId"] == "tenant-a"
     assert reloaded.carrier_quotes["q-legacy-unreferenced"].get("tenantId") is None
+
+
+def test_palletize_persist_false_and_rollback_on_persist_failure(tmp_path, monkeypatch):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "tenant-a", qty=1)
+    cid = cartons[0]["cartonId"]
+
+    orig_persist = log.persist
+    persist_calls = 0
+
+    def spy_persist() -> None:
+        nonlocal persist_calls
+        persist_calls += 1
+        orig_persist()
+
+    monkeypatch.setattr(log, "persist", spy_persist)
+
+    # persist=False puts the pallet in memory without writing to disk.
+    p_mem = log.palletize([cid], persist=False)
+    assert persist_calls == 0
+    assert p_mem["palletPlanId"] in log.pallets
+    assert LogisticsService(root=log.root).pallets == {}
+
+    log.pallets.pop(p_mem["palletPlanId"], None)
+
+    # Default persist=True writes once; if persist raises OSError, memory is rolled back.
+    def fail_persist() -> None:
+        raise OSError("simulated palletize persist failure")
+
+    monkeypatch.setattr(log, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated palletize persist failure"):
+        log.palletize([cid])
+    assert log.pallets == {}
+    assert LogisticsService(root=log.root).pallets == {}
+
+
+def test_shipment_draft_single_persist_and_rollback_preserves_existing_draft(tmp_path, monkeypatch):
+    log = _wired_logistics(tmp_path)
+    cartons = _carton(log, "tenant-a", qty=2)
+    c1, c2 = cartons[0]["cartonId"], cartons[1]["cartonId"]
+
+    orig_persist = log.persist
+
+    # 1. Failing persist on a brand new shipment draft rolls back new shipment, content idem key, and API idem key.
+    def fail_persist() -> None:
+        raise OSError("simulated shipment draft persist failure")
+
+    monkeypatch.setattr(log, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated shipment draft persist failure"):
+        log.shipment_draft(
+            origin="TW",
+            destination="TPE",
+            carton_ids=[c1],
+            service="ground",
+            idempotency_key="idem-fail-1",
+        )
+    assert log.shipments == {}
+    assert f"tenant-a::shipment::TW:TPE:{c1}:ground" not in log._idem
+    assert "tenant-a::shipment-key::idem-fail-1" not in log._idem
+
+    # 2. Succeeding shipment_draft with idempotency_key calls persist() exactly once with all keys in memory.
+    persist_snapshots: list[tuple[set[str], set[str]]] = []
+
+    def spy_persist() -> None:
+        persist_snapshots.append((set(log.shipments), set(log._idem)))
+        orig_persist()
+
+    monkeypatch.setattr(log, "persist", spy_persist)
+    draft1 = log.shipment_draft(
+        origin="TW",
+        destination="TPE",
+        carton_ids=[c1],
+        service="ground",
+        idempotency_key="idem-ok-1",
+    )
+    assert len(persist_snapshots) == 1
+    snap_shipments, snap_idem = persist_snapshots[0]
+    assert draft1["shipmentId"] in snap_shipments
+    assert f"tenant-a::shipment::TW:TPE:{c1}:ground" in snap_idem
+    assert "tenant-a::shipment-key::idem-ok-1" in snap_idem
+
+    # 3. Create an existing draft for c2 without idempotency_key, then fail persist when attaching a new idempotency_key:
+    # the existing draft and content idem key must NOT be deleted.
+    existing = log.shipment_draft(
+        origin="TW",
+        destination="KHH",
+        carton_ids=[c2],
+        service="ground",
+    )
+    existing_sid = existing["shipmentId"]
+    content_key_c2 = f"tenant-a::shipment::TW:KHH:{c2}:ground"
+    assert existing_sid in log.shipments
+    assert log._idem.get(content_key_c2) == existing_sid
+
+    monkeypatch.setattr(log, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated shipment draft persist failure"):
+        log.shipment_draft(
+            origin="TW",
+            destination="KHH",
+            carton_ids=[c2],
+            service="ground",
+            idempotency_key="idem-attach-fail",
+        )
+    assert existing_sid in log.shipments
+    assert log._idem.get(content_key_c2) == existing_sid
+    assert "tenant-a::shipment-key::idem-attach-fail" not in log._idem
+

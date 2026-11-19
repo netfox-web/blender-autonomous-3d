@@ -432,7 +432,7 @@ class LogisticsService:
             "certification": False,
         }
 
-    def palletize(self, carton_ids: list[str]) -> dict[str, Any]:
+    def palletize(self, carton_ids: list[str], *, persist: bool = True) -> dict[str, Any]:
         with self._lock:
             cartons = [self.cartons[i] for i in carton_ids]
             tenants = {c.get("tenantId") for c in cartons}
@@ -509,11 +509,12 @@ class LogisticsService:
             }
             rec["planHash"] = stable_hash({k: rec[k] for k in rec if k not in {"palletPlanId", "planHash"}})
             self.pallets[rec["palletPlanId"]] = rec
-            try:
-                self.persist()
-            except Exception:
-                self.pallets.pop(rec["palletPlanId"], None)
-                raise
+            if persist:
+                try:
+                    self.persist()
+                except Exception:
+                    self.pallets.pop(rec["palletPlanId"], None)
+                    raise
             return rec
 
     def shipping_request(
@@ -600,8 +601,11 @@ class LogisticsService:
         service: str = "ground",
         quote_id: str | None = None,
         dim_divisor: float | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
+            shipment_ids_before = set(self.shipments)
+            idem_keys_before = set(self._idem)
             rec = self.shipping_request(
                 origin=origin,
                 destination=destination,
@@ -610,21 +614,89 @@ class LogisticsService:
                 quote_id=quote_id,
                 dim_divisor=dim_divisor,
             )
+            sid = rec["shipmentId"]
+            tenant = str(rec.get("tenantId") or "")
+            ordered = sorted(carton_ids)
+            raw = f"{origin}:{destination}:{','.join(ordered)}:{service}"
+            content_idem_key = f"{tenant}::shipment::{raw}"
+            created_new_shipment = sid not in shipment_ids_before
+            created_content_idem = content_idem_key not in idem_keys_before
+            prev_existing = copy.deepcopy(rec) if not created_new_shipment else None
+
+            store_key: str | None = None
+            created_store_key = False
+            if idempotency_key is not None:
+                if not isinstance(idempotency_key, str) or not idempotency_key.strip():
+                    if created_content_idem:
+                        self._idem.pop(content_idem_key, None)
+                    if created_new_shipment:
+                        self.shipments.pop(sid, None)
+                    raise ValueError("idempotency_key must be a non-empty string")
+                clean_idem = idempotency_key.strip()
+                store_key = f"{tenant}::shipment-key::{clean_idem}"
+                req_sig = {
+                    "origin": origin,
+                    "destination": destination,
+                    "cartonIds": ordered,
+                    "service": service,
+                    "quoteId": rec.get("quoteId"),
+                    "dimDivisor": rec.get("dimDivisor"),
+                }
+                if store_key in self._idem:
+                    entry = self._idem[store_key]
+                    if not isinstance(entry, dict) or entry.get("sig") != req_sig or entry.get("shipmentId") != sid:
+                        if created_content_idem:
+                            self._idem.pop(content_idem_key, None)
+                        if created_new_shipment:
+                            self.shipments.pop(sid, None)
+                        raise SemanticKeyConflictError("idempotencyKey 衝突：相同冪等鍵不可用於不同出貨參數")
+                else:
+                    self._idem[store_key] = {
+                        "shipmentId": sid,
+                        "sig": req_sig,
+                    }
+                    created_store_key = True
+
             rec["submittedToCarrier"] = False
             rec["booked"] = False
             rec["shipped"] = False
             rec["status"] = "SHIPMENT_DRAFT"
             rec["liveCarrier"] = False
-            emit(
-                self,
-                "shipment.draft",
-                tenant_id=rec.get("tenantId") or "",
-                aggregate_type="Shipment",
-                aggregate_id=rec["shipmentId"],
-                actor="ops",
-                payload={"status": "SHIPMENT_DRAFT", "booked": False},
-                semantic_key=f"{rec.get('tenantId')}::shipment::{rec['shipmentId']}",
-            )
+            try:
+                emit(
+                    self,
+                    "shipment.draft",
+                    tenant_id=tenant,
+                    aggregate_type="Shipment",
+                    aggregate_id=sid,
+                    actor="ops",
+                    payload={"status": "SHIPMENT_DRAFT", "booked": False},
+                    semantic_key=f"{tenant}::shipment::{sid}",
+                )
+            except Exception:
+                disk_shipments: set[str] = set()
+                disk_idem: dict[str, Any] = {}
+                if self.root and (self.root / "logistics.json").exists():
+                    try:
+                        disk = read_json(self.root / "logistics.json") or {}
+                        disk_shipments = {
+                            str(r["shipmentId"])
+                            for r in (disk.get("shipments") or [])
+                            if isinstance(r, dict) and "shipmentId" in r
+                        }
+                        if isinstance(disk.get("idem"), dict):
+                            disk_idem = disk["idem"]
+                    except Exception:
+                        pass
+                if created_store_key and store_key is not None and store_key not in disk_idem:
+                    self._idem.pop(store_key, None)
+                if created_content_idem and content_idem_key not in disk_idem:
+                    self._idem.pop(content_idem_key, None)
+                if created_new_shipment and sid not in disk_shipments:
+                    self.shipments.pop(sid, None)
+                elif not created_new_shipment and prev_existing is not None and sid not in disk_shipments:
+                    self.shipments[sid] = prev_existing
+                raise
             return rec
 
     def import_carrier_quote(

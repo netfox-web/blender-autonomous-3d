@@ -1129,3 +1129,198 @@ def test_batch_import_persist_mid_write_failure_preserves_disk_and_memory(
     assert [q["quoteId"] for q in items] == ["q-before-fail"]
     assert items[0]["carrier"] == "SEED-CARRIER"
     assert items[0]["charge"] == 160.0
+
+
+def test_pallet_create_single_persist_and_failure_rollback(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "pallet-single-persist-root"
+    plat = Platform(root=root, mock_blender=True)
+    c1 = TestClient(create_app(plat))
+    _wo, cartons = _create_cartons(c1, plat, tenant=TENANT, quantity=2, idem_key="pal-persist-cartons")
+
+    logistics = plat.pilot.logistics
+    orig_persist = logistics.persist
+
+    # 1. If persist() fails during POST /api/pilot/pallets, neither pallet nor idempotencyKey is persisted or kept in memory.
+    def fail_first_persist() -> None:
+        raise OSError("simulated pallet persist failure")
+
+    monkeypatch.setattr(logistics, "persist", fail_first_persist)
+    with pytest.raises(OSError, match="simulated pallet persist failure"):
+        c1.post(
+            "/api/pilot/pallets",
+            headers=HEADERS,
+            json={"cartonIds": cartons, "idempotencyKey": "pal-idem-atomic"},
+        )
+    assert logistics.pallets == {}
+    assert f"{TENANT}::pallet::pal-idem-atomic" not in logistics._idem
+    assert c1.get("/api/pilot/pallets", headers=HEADERS).json()["items"] == []
+
+    # 2. If only a 2nd persist() call would fail, POST /api/pilot/pallets must succeed because it persists only once
+    # with both the pallet and the idempotency key in the same write.
+    call_count = 0
+    persisted_states: list[tuple[set[str], set[str]]] = []
+
+    def fail_on_second_persist() -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise OSError("unexpected second persist call")
+        persisted_states.append((set(logistics.pallets), set(logistics._idem)))
+        orig_persist()
+
+    monkeypatch.setattr(logistics, "persist", fail_on_second_persist)
+    ok = c1.post(
+        "/api/pilot/pallets",
+        headers=HEADERS,
+        json={"cartonIds": cartons, "idempotencyKey": "pal-idem-atomic"},
+    )
+    assert ok.status_code == 200, ok.text
+    plan_id = ok.json()["palletPlanId"]
+    assert call_count == 1
+    assert plan_id in persisted_states[0][0]
+    assert f"{TENANT}::pallet::pal-idem-atomic" in persisted_states[0][1]
+
+    # GET /api/pilot/pallets returns the pallet; retrying with same idempotencyKey returns the same palletPlanId.
+    monkeypatch.setattr(logistics, "persist", orig_persist)
+    listed = c1.get("/api/pilot/pallets", headers=HEADERS).json()["items"]
+    assert [p["palletPlanId"] for p in listed] == [plan_id]
+    retry = c1.post(
+        "/api/pilot/pallets",
+        headers=HEADERS,
+        json={"cartonIds": cartons, "idempotencyKey": "pal-idem-atomic"},
+    )
+    assert retry.status_code == 200
+    assert retry.json()["palletPlanId"] == plan_id
+
+    # Importing a quote (triggering another persist()) and reloading from disk must NOT lose the pallet.
+    q_res = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={"quoteId": "q-after-pal", "carrier": "TCAT", "charge": 150},
+    )
+    assert q_res.status_code == 200
+    reloaded = Platform(root=root, mock_blender=True)
+    c2 = TestClient(create_app(reloaded))
+    assert [p["palletPlanId"] for p in c2.get("/api/pilot/pallets", headers=HEADERS).json()["items"]] == [plan_id]
+    retry_after_reload = c2.post(
+        "/api/pilot/pallets",
+        headers=HEADERS,
+        json={"cartonIds": list(cartons[:1]), "idempotencyKey": "pal-idem-atomic"},
+    )
+    assert retry_after_reload.status_code == 409
+
+
+def test_shipment_draft_create_single_persist_and_failure_rollback_preserves_existing(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "shipment-single-persist-root"
+    plat = Platform(root=root, mock_blender=True)
+    c1 = TestClient(create_app(plat))
+    _wo, cartons = _create_cartons(c1, plat, tenant=TENANT, quantity=2, idem_key="ship-persist-cartons")
+    c_first, c_second = cartons[0], cartons[1]
+
+    logistics = plat.pilot.logistics
+    orig_persist = logistics.persist
+
+    # 1. When persist() fails on a newly created draft, the shipment, content idem key, and API idem key are all rolled back.
+    def fail_persist() -> None:
+        raise OSError("simulated shipment persist failure")
+
+    monkeypatch.setattr(logistics, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated shipment persist failure"):
+        c1.post(
+            "/api/pilot/shipments",
+            headers=HEADERS,
+            json={
+                "origin": "TW",
+                "destination": "TPE",
+                "cartonIds": [c_first],
+                "service": "ground",
+                "idempotencyKey": "ship-key-1",
+            },
+        )
+    assert logistics.shipments == {}
+    assert f"{TENANT}::shipment::TW:TPE:{c_first}:ground" not in logistics._idem
+    assert f"{TENANT}::shipment-key::ship-key-1" not in logistics._idem
+
+    # After the failed persist is resolved, sending the same idempotencyKey with destination="KH" creates only ONE shipment (KH).
+    monkeypatch.setattr(logistics, "persist", orig_persist)
+    kh_res = c1.post(
+        "/api/pilot/shipments",
+        headers=HEADERS,
+        json={
+            "origin": "TW",
+            "destination": "KH",
+            "cartonIds": [c_first],
+            "service": "ground",
+            "idempotencyKey": "ship-key-1",
+        },
+    )
+    assert kh_res.status_code == 200, kh_res.text
+    assert len(logistics.shipments) == 1
+    assert kh_res.json()["destination"] == "KH"
+
+    # 2. If a 2nd persist() call would fail, POST /api/pilot/shipments still succeeds in 1 persist() with the API idempotency key included;
+    # re-sending the same idempotencyKey with a different destination returns 409 instead of creating a second shipment.
+    call_count = 0
+
+    def fail_on_second_persist() -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            raise OSError("unexpected second persist call in create_shipment_draft")
+        orig_persist()
+
+    monkeypatch.setattr(logistics, "persist", fail_on_second_persist)
+    tpe_res = c1.post(
+        "/api/pilot/shipments",
+        headers=HEADERS,
+        json={
+            "origin": "TW",
+            "destination": "TPE",
+            "cartonIds": [c_second],
+            "service": "ground",
+            "idempotencyKey": "ship-key-2",
+        },
+    )
+    assert tpe_res.status_code == 200, tpe_res.text
+    assert call_count == 1
+    tpe_sid = tpe_res.json()["shipmentId"]
+    assert f"{TENANT}::shipment-key::ship-key-2" in logistics._idem
+
+    monkeypatch.setattr(logistics, "persist", orig_persist)
+    conflict_kh = c1.post(
+        "/api/pilot/shipments",
+        headers=HEADERS,
+        json={
+            "origin": "TW",
+            "destination": "KH",
+            "cartonIds": [c_second],
+            "service": "ground",
+            "idempotencyKey": "ship-key-2",
+        },
+    )
+    assert conflict_kh.status_code == 409
+    assert set(logistics.shipments) == {kh_res.json()["shipmentId"], tpe_sid}
+
+    # 3. If shipping_request returns an ALREADY existing draft (e.g. tpe_sid for c_second) and persist() fails when attaching a new idempotencyKey,
+    # the existing draft tpe_sid must NOT be deleted from memory or disk.
+    monkeypatch.setattr(logistics, "persist", fail_persist)
+    with pytest.raises(OSError, match="simulated shipment persist failure"):
+        c1.post(
+            "/api/pilot/shipments",
+            headers=HEADERS,
+            json={
+                "origin": "TW",
+                "destination": "TPE",
+                "cartonIds": [c_second],
+                "service": "ground",
+                "idempotencyKey": "ship-key-attach-fail",
+            },
+        )
+    assert tpe_sid in logistics.shipments
+    assert f"{TENANT}::shipment::TW:TPE:{c_second}:ground" in logistics._idem
+    assert f"{TENANT}::shipment-key::ship-key-attach-fail" not in logistics._idem
+
