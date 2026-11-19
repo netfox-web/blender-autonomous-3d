@@ -320,6 +320,48 @@ def test_pilot_floor_confirm_snapshot_tenant_and_body(admin_page: Page, admin_se
     assert seen["tenant"] == TENANT
 
 
+def test_pilot_floor_exception_ack_then_resolve(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    platform = admin_server["platform"]
+    exc = platform.pilot.inbox.record(
+        tenant_id=TENANT,
+        code="MATERIAL_SHORTAGE",
+        work_order_id="wo-browser",
+        actor="seed",
+        detail="browser exc",
+    )
+    exc_id = exc["exceptionId"]
+    base = admin_server["base_url"]
+    page = admin_page
+    page.goto(base + "/admin/pilot-floor", wait_until="domcontentloaded")
+    _wait_shell(page)
+    page.locator("#tab-exceptions").click()
+    page.wait_for_function(
+        "() => (document.getElementById('pf-exc-status').textContent || '').includes('筆異常')",
+        timeout=20_000,
+    )
+    row = page.locator("#pf-exc-table tbody tr").filter(has_text=exc_id)
+    row.locator("button", has_text="確認").click()
+    page.locator(".pf-inline-confirm .pf-confirm-box").last.check()
+    page.locator(".pf-inline-confirm button.pf-btn-primary").last.click()
+    page.wait_for_function(
+        "() => (document.getElementById('pf-action-status').textContent || '').includes('完成')",
+        timeout=20_000,
+    )
+    row.locator("button", has_text="結案").click()
+    page.locator(".pf-inline-confirm .pf-confirm-box").last.check()
+    page.locator(".pf-inline-confirm button.pf-btn-primary").last.click()
+    page.wait_for_function(
+        "() => (document.getElementById('pf-action-status').textContent || '').includes('完成')",
+        timeout=20_000,
+    )
+    page.locator("#pf-exc-filter").select_option("RESOLVED")
+    page.wait_for_function(
+        f"() => (document.getElementById('pf-exc-table').innerText || '').includes('{exc_id}')",
+        timeout=20_000,
+    )
+    assert platform.pilot.inbox.get(exc_id, tenant_id=TENANT)["status"] == "RESOLVED"
+
+
 def test_pilot_floor_blocked_and_network_are_not_success(admin_page: Page, admin_server: dict[str, Any]) -> None:
     page = admin_page
 

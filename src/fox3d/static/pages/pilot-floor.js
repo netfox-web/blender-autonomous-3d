@@ -204,20 +204,32 @@
     items.forEach(function (st) {
       var tr = document.createElement('tr');
       tr.dataset.json = JSON.stringify(st);
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'pf-btn pf-btn-small';
-      btn.textContent = '心跳';
-      btn.addEventListener('click', function (ev) {
+      var actions = document.createElement('div');
+      actions.className = 'pf-station-actions';
+      var hb = document.createElement('button');
+      hb.type = 'button';
+      hb.className = 'pf-btn pf-btn-small';
+      hb.textContent = '心跳';
+      hb.addEventListener('click', function (ev) {
         ev.stopPropagation();
         heartbeatStation(st.stationId);
       });
+      var stBtn = document.createElement('button');
+      stBtn.type = 'button';
+      stBtn.className = 'pf-btn pf-btn-small';
+      stBtn.textContent = '狀態';
+      stBtn.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        stationStatusChange(st);
+      });
+      actions.appendChild(hb);
+      actions.appendChild(stBtn);
       rowCells(tr, [
         code(st.stationId),
         st.status || '—',
         (st.capabilities || []).join(', '),
         st.heartbeatAt || '—',
-        btn
+        actions
       ]);
       tr.addEventListener('click', function () {
         selectRow(tr);
@@ -281,9 +293,9 @@
     if (!items || !items.length) {
       var tr = document.createElement('tr');
       var td = document.createElement('td');
-      td.colSpan = 4;
+      td.colSpan = 6;
       td.className = 'pf-empty';
-      td.textContent = '沒有未處理異常。';
+      td.textContent = '沒有符合條件的異常。';
       tr.appendChild(td);
       tb.appendChild(tr);
       return;
@@ -291,11 +303,39 @@
     items.forEach(function (ex) {
       var tr = document.createElement('tr');
       tr.dataset.json = JSON.stringify(ex);
+      var excId = ex.exceptionId || ex.id || '';
+      var st = String(ex.status || 'OPEN');
+      var actions = document.createElement('div');
+      actions.className = 'pf-exc-actions';
+      if (st === 'OPEN' || st === 'ACKNOWLEDGED') {
+        if (st === 'OPEN') {
+          var ackBtn = document.createElement('button');
+          ackBtn.type = 'button';
+          ackBtn.className = 'pf-btn pf-btn-small';
+          ackBtn.textContent = '確認';
+          ackBtn.addEventListener('click', function (ev) {
+            ev.stopPropagation();
+            exceptionAction(excId, 'ack');
+          });
+          actions.appendChild(ackBtn);
+        }
+        var resBtn = document.createElement('button');
+        resBtn.type = 'button';
+        resBtn.className = 'pf-btn pf-btn-small';
+        resBtn.textContent = '結案';
+        resBtn.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          exceptionAction(excId, 'resolve');
+        });
+        actions.appendChild(resBtn);
+      }
       rowCells(tr, [
-        code((ex.exceptionId || ex.id || '—')),
-        ex.kind || ex.code || '—',
-        ex.message || ex.summary || '—',
-        ex.createdAt || ex.at || '—'
+        code(excId || '—'),
+        ex.errorCode || ex.kind || ex.code || '—',
+        st,
+        ex.detail || ex.message || ex.summary || '—',
+        ex.createdAt || ex.at || '—',
+        actions
       ]);
       tr.addEventListener('click', function () {
         selectRow(tr);
@@ -372,7 +412,7 @@
     });
     document.querySelectorAll('.pf-tabs button').forEach(function (b) { b.disabled = true; });
     if ($('pf-refresh')) $('pf-refresh').disabled = true;
-    document.querySelectorAll('.pf-lease-actions .pf-btn, #pf-station-table .pf-btn-small').forEach(function (b) {
+    document.querySelectorAll('.pf-lease-actions .pf-btn, .pf-station-actions .pf-btn, .pf-exc-actions .pf-btn, #pf-station-table .pf-btn-small').forEach(function (b) {
       b.disabled = true;
     });
     var tf = $('pf-token-form');
@@ -385,7 +425,7 @@
   function unlockPeerActions() {
     document.querySelectorAll('.pf-tabs button').forEach(function (b) { b.disabled = false; });
     if ($('pf-refresh')) $('pf-refresh').disabled = false;
-    document.querySelectorAll('.pf-lease-actions .pf-btn, #pf-station-table .pf-btn-small').forEach(function (b) {
+    document.querySelectorAll('.pf-lease-actions .pf-btn, .pf-station-actions .pf-btn, .pf-exc-actions .pf-btn, #pf-station-table .pf-btn-small').forEach(function (b) {
       b.disabled = false;
     });
     restoreFormConfirmStates();
@@ -468,10 +508,53 @@
       });
   }
 
+  function loadStationsList() {
+    var t = activeTenant;
+    setStatus('pf-station-status', '載入中…');
+    return api('/api/pilot/stations', { tenant: t })
+      .then(function (res) {
+        if (t !== activeTenant) return;
+        if (!res.ok) {
+          setStatus('pf-station-status', '載入失敗（HTTP ' + res.status + '）', true);
+          return;
+        }
+        var items = (res.body && res.body.items) || [];
+        setStatus('pf-station-status', items.length + ' 個工作站（共 ' + ((res.body && res.body.total) || items.length) + '）');
+        renderStations(items);
+      })
+      .catch(function (e) {
+        if (t !== activeTenant) return;
+        setStatus('pf-station-status', '載入失敗：' + e, true);
+      });
+  }
+
+  function loadLeasesList() {
+    var t = activeTenant;
+    setStatus('pf-lease-status', '載入中…');
+    return api('/api/pilot/leases', { tenant: t })
+      .then(function (res) {
+        if (t !== activeTenant) return;
+        if (!res.ok) {
+          setStatus('pf-lease-status', '載入失敗（HTTP ' + res.status + '）', true);
+          return;
+        }
+        var items = (res.body && res.body.items) || [];
+        setStatus('pf-lease-status', items.length + ' 筆租約（共 ' + ((res.body && res.body.total) || items.length) + '）');
+        renderLeases(items);
+      })
+      .catch(function (e) {
+        if (t !== activeTenant) return;
+        setStatus('pf-lease-status', '載入失敗：' + e, true);
+      });
+  }
+
   function loadExceptions() {
     var t = activeTenant;
     setStatus('pf-exc-status', '載入中…');
-    return api('/api/pilot/exceptions', { tenant: t })
+    var filter = $('pf-exc-filter');
+    var status = filter && filter.value ? String(filter.value) : '';
+    var path = '/api/pilot/exceptions' + (status ? '?status=' + encodeURIComponent(status) : '');
+    return api(path, { tenant: t })
       .then(function (res) {
         if (t !== activeTenant) return;
         if (!res.ok) {
@@ -607,6 +690,116 @@
     });
   }
 
+  function stationStatusChange(st) {
+    showDetail(st, '站點狀態');
+    removeInlineConfirm();
+    var wrap = document.createElement('div');
+    wrap.className = 'pf-confirm pf-inline-confirm';
+    var title = document.createElement('p');
+    title.className = 'pf-muted';
+    title.textContent = '站點 ' + (st.stationId || '') + ' 狀態切換';
+    wrap.appendChild(title);
+    var statusLabel = document.createElement('label');
+    statusLabel.textContent = '新狀態 ';
+    var sel = document.createElement('select');
+    sel.name = 'status';
+    ['ACTIVE', 'MAINTENANCE', 'DISABLED'].forEach(function (v) {
+      var opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = v;
+      if (v === (st.status || 'ACTIVE') || (st.status === 'ONLINE' && v === 'ACTIVE')) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    statusLabel.appendChild(sel);
+    wrap.appendChild(statusLabel);
+    var noteLabel = document.createElement('label');
+    noteLabel.textContent = '說明 ';
+    var note = document.createElement('input');
+    note.type = 'text';
+    note.name = 'note';
+    note.autocomplete = 'off';
+    noteLabel.appendChild(note);
+    wrap.appendChild(noteLabel);
+    var confirmLabel = document.createElement('label');
+    var box = document.createElement('input');
+    box.type = 'checkbox';
+    box.className = 'pf-confirm-box';
+    confirmLabel.appendChild(box);
+    confirmLabel.appendChild(document.createTextNode(' 我確認要變更站點狀態'));
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pf-btn pf-btn-primary';
+    btn.textContent = '送出';
+    btn.disabled = true;
+    wrap.appendChild(confirmLabel);
+    wrap.appendChild(btn);
+    $('pf-detail').parentNode.appendChild(wrap);
+    var ctl = makeConfirm(wrap, {
+      build: function () {
+        return {
+          stationId: st.stationId,
+          status: sel.value,
+          note: (note.value || '').trim(),
+          actor: 'floor-admin'
+        };
+      }
+    });
+    box.addEventListener('change', function () {
+      if (box.checked) {
+        sel.disabled = true;
+        note.disabled = true;
+      } else {
+        sel.disabled = false;
+        note.disabled = false;
+      }
+    });
+    btn.addEventListener('click', function () {
+      if (!ctl.snapshot) return;
+      var snap = ctl.snapshot;
+      runAction({
+        label: '站點狀態',
+        disable: [ctl.btn, ctl.box, sel, note],
+        request: function () {
+          var body = { status: snap.payload.status, actor: snap.payload.actor };
+          if (snap.payload.note) body.note = snap.payload.note;
+          return api(
+            '/api/pilot/stations/' + encodeURIComponent(snap.payload.stationId) + '/status',
+            { method: 'PUT', tenant: snap.tenant, body: JSON.stringify(body) }
+          );
+        },
+        onOk: function () {
+          wrap.remove();
+          loadStationsList();
+          loadOperator();
+        }
+      });
+    });
+  }
+
+  function exceptionAction(excId, action) {
+    var labels = { ack: '異常確認', resolve: '異常結案' };
+    showDetail({ exceptionId: excId, action: action }, labels[action]);
+    inlineConfirm(labels[action] + '（' + excId + '）', '我確認要執行', function () {
+      var body = { actor: 'floor-admin' };
+      if (action === 'ack') body.note = 'floor ack';
+      else body.resolution = 'floor resolve';
+      return { exceptionId: excId, action: action, body: body };
+    }, function (snap, ctl, wrap) {
+      runAction({
+        label: labels[snap.payload.action],
+        disable: [ctl.btn, ctl.box],
+        request: function () {
+          var path = '/api/pilot/exceptions/' + encodeURIComponent(snap.payload.exceptionId) + '/' + snap.payload.action;
+          return api(path, { method: 'POST', tenant: snap.tenant, body: JSON.stringify(snap.payload.body) });
+        },
+        onOk: function () {
+          wrap.remove();
+          loadExceptions();
+        }
+      });
+    });
+  }
+
   function heartbeatStation(stationId) {
     showDetail({ stationId: stationId, step: '請在詳細面板勾選確認後送出' }, '心跳確認');
     inlineConfirm('', '我確認要更新心跳', function () {
@@ -663,6 +856,8 @@
       p.classList.toggle('pf-hidden', !on);
     });
     if (btn.dataset.panel === 'exceptions') loadExceptions();
+    if (btn.dataset.panel === 'stations') loadStationsList();
+    if (btn.dataset.panel === 'dispatch') loadLeasesList();
   }
 
   function wireConfirmForm(key, form, label, build, path, onOk) {
@@ -782,6 +977,8 @@
     $('pf-tenant').addEventListener('input', updateTenantHint);
     $('pf-tenant').addEventListener('change', updateTenantHint);
     $('pf-refresh').addEventListener('click', reloadAll);
+    var excFilter = $('pf-exc-filter');
+    if (excFilter) excFilter.addEventListener('change', loadExceptions);
     wireForms();
     loadOperator();
     loadExceptions();
