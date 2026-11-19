@@ -152,3 +152,40 @@ def test_concurrent_qc_post_and_work_order_list(platform: Any) -> None:
         tasks = [pool.submit(list_orders, i) for i in range(4)] + [pool.submit(record_qc, i) for i in range(4)]
         for task in tasks:
             task.result()
+
+
+def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -> None:
+    import pytest
+    import fox3d.qc as qc_module
+
+    original_emit = qc_module.emit
+    for action, body, id_field in [
+        ("qc", {"checkId": "THICKNESS", "measured": 18, "idempotencyKey": "crash-check"}, "qcId"),
+        ("defects", {"code": "DEF_SIZE", "disposition": "SCRAP", "confirm": True, "idempotencyKey": "crash-defect"}, "defectId"),
+    ]:
+        _, wo = _seed_release_receipt_and_wo(platform)
+        path = f"/api/pilot/work-orders/{wo['workOrderId']}/{action}"
+
+        def crash_after_emit(*args: Any, **kwargs: Any) -> Any:
+            original_emit(*args, **kwargs)
+            raise RuntimeError("simulated process interruption")
+
+        monkeypatch.setattr(qc_module, "emit", crash_after_emit)
+        with pytest.raises(RuntimeError, match="simulated process interruption"):
+            TestClient(create_app(platform)).post(path, headers=HEADERS, json=body)
+        monkeypatch.setattr(qc_module, "emit", original_emit)
+        restarted = type(platform)(root=platform.root, mock_blender=True)
+        rows = restarted.pilot.qc.checks if action == "qc" else restarted.pilot.qc.defects
+        matching = [r for r in rows.values() if r["workOrderId"] == wo["workOrderId"]]
+        assert len(matching) == 1
+        expected_id = matching[0][id_field]
+        audit_before = list(restarted.pilot.workorders.get(wo["workOrderId"])["audit"])
+        client = TestClient(create_app(restarted))
+        replay = client.post(path, headers=HEADERS, json=body)
+        assert replay.status_code == 200 and replay.json()[id_field] == expected_id
+        restarted.pilot.qc.load()
+        restarted.pilot.workorders.load()
+        rows = restarted.pilot.qc.checks if action == "qc" else restarted.pilot.qc.defects
+        assert len([r for r in rows.values() if r["workOrderId"] == wo["workOrderId"]]) == 1
+        assert restarted.pilot.workorders.get(wo["workOrderId"])["audit"] == audit_before
+        assert client.post(path, headers={"X-Tenant-Id": "other"}, json=body).status_code == 404
