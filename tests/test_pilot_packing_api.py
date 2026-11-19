@@ -1036,6 +1036,10 @@ def test_concurrent_complete_and_create_cartons_never_500(client: TestClient, pl
     assert r_comp_ready.status_code == 200
     assert platform.pilot.workorders.get(ready_id)["state"] == "COMPLETED"
     assert r_sib0.status_code == 200 and r_sib1.status_code == 200
+    ready_cartons = list(platform.pilot.workorders.get(ready_id)["cartonIds"])
+    with pytest.raises(PermissionError):
+        platform.pilot.workorders.set_packing(ready_id, ["unexpected-carton"])
+    assert platform.pilot.workorders.get(ready_id)["cartonIds"] == ready_cartons
 
 
 def test_mismatch_written_via_service_or_http_blocks_completion(client: TestClient, platform: Any) -> None:
@@ -1073,8 +1077,10 @@ def test_mismatch_written_via_service_or_http_blocks_completion(client: TestClie
 def test_checklist_idempotency_key_conflicts_on_remeasure_and_across_restart(
     client: TestClient, platform: Any
 ) -> None:
-    _rel, wo = _seed_release_receipt_and_wo(platform)
+    rel, wo = _seed_release_receipt_and_wo(platform)
     wo_id = wo["workOrderId"]
+    wo_other = platform.pilot.workorders.create(tenant_id=TENANT, release=rel, quantity=1, actor="ops")
+    other_wo_id = wo_other["workOrderId"]
     created = client.post(
         f"/api/pilot/work-orders/{wo_id}/cartons",
         headers=HEADERS,
@@ -1110,9 +1116,17 @@ def test_checklist_idempotency_key_conflicts_on_remeasure_and_across_restart(
     distinct_id = distinct.json()["checklistId"]
     assert distinct_id != first_id
 
-    # Same key with different request body check fields conflicts with 409.
+    # Same key with different request body check fields or on another work order conflicts with 409.
     assert (
         client.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-remeasure-key", "notes": "diff"}).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            f"/api/pilot/work-orders/{other_wo_id}/packing-checklist",
+            headers=HEADERS,
+            json=body,
+        ).status_code
         == 409
     )
 
@@ -1132,6 +1146,14 @@ def test_checklist_idempotency_key_conflicts_on_remeasure_and_across_restart(
     client2 = TestClient(create_app(restarted))
     assert client2.post(chk_path, headers=HEADERS, json=body).status_code == 409
     assert client2.post(chk_path, headers=HEADERS, json={"idempotencyKey": "chk-distinct-key"}).status_code == 409
+    assert (
+        client2.post(
+            f"/api/pilot/work-orders/{other_wo_id}/packing-checklist",
+            headers=HEADERS,
+            json=body,
+        ).status_code
+        == 409
+    )
     assert len(restarted.pilot.logistics.checklists) == checklist_count_before
     assert client2.post(chk_path, headers={"X-Tenant-Id": "other-tenant"}, json=body).status_code == 404
 

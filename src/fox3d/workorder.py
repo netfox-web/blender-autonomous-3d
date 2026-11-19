@@ -586,7 +586,7 @@ class WorkOrderService:
         return rec
 
     def set_packing(self, work_order_id: str, carton_ids: list[str]) -> dict[str, Any]:
-        with self._lock:
+        with self._lock, self.logistics._lock if self.logistics is not None else nullcontext():
             rec = self._require(work_order_id, tenant_id=None)
             ids = list(carton_ids)
             if (
@@ -595,10 +595,9 @@ class WorkOrderService:
                 and (rec["state"] == "PACKING" or rec["state"] in TERMINAL)
             ):
                 return rec
+            self._transition(rec, "PACKING", actor="ops", reason="packing")
             rec["lineage"]["package"] = ids
             rec["cartonIds"] = ids
-            if rec["state"] not in TERMINAL:
-                self._transition(rec, "PACKING", actor="ops", reason="packing")
             self.persist()
             return rec
 
@@ -611,8 +610,8 @@ class WorkOrderService:
         self._assert_release_fresh(rec, allow_bound_finish=True)
         if rec["state"] == "COMPLETED":
             return rec
-        if rec["state"] in {"REJECTED"}:
-            raise PermissionError("cannot complete rejected work order")
+        if rec["state"] in {"REJECTED", "CANCELLED"}:
+            raise PermissionError(f"cannot complete {rec['state'].lower()} work order")
         open_holds = [h for h in rec.get("holds") or [] if h.get("open") and h.get("blocking")]
         if any(h.get("reason") == PACKING_MISMATCH for h in open_holds):
             raise PermissionError("尺寸不符待人工確認 (mismatchHold)")
@@ -736,7 +735,11 @@ class WorkOrderService:
     def reject(self, work_order_id: str, *, actor: str, reason: str) -> dict[str, Any]:
         # Same lock as dispatch / ack / start / complete so a lease cannot be
         # finished, or a station claimed, after the work order is rejected.
-        with self.dispatcher._lock if self.dispatcher is not None else nullcontext():
+        with (
+            self.dispatcher._lock if self.dispatcher is not None else nullcontext(),
+            self._lock,
+            self.logistics._lock if self.logistics is not None else nullcontext(),
+        ):
             rec = self._require(work_order_id, tenant_id=None)
             if rec["state"] in TERMINAL:
                 raise PermissionError("cannot reject terminal work order")
@@ -754,7 +757,11 @@ class WorkOrderService:
             return rec
 
     def cancel(self, work_order_id: str, *, actor: str) -> dict[str, Any]:
-        with self.dispatcher._lock if self.dispatcher is not None else nullcontext():
+        with (
+            self.dispatcher._lock if self.dispatcher is not None else nullcontext(),
+            self._lock,
+            self.logistics._lock if self.logistics is not None else nullcontext(),
+        ):
             rec = self._require(work_order_id, tenant_id=None)
             if rec["state"] == "CANCELLED":
                 return rec
