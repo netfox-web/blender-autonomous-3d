@@ -110,7 +110,7 @@ def _quarantine_history(platform: Any, *, tenant_id: str, lot_id: str) -> list[d
             {
                 "eventType": ev.get("eventType"),
                 "actor": ev.get("actor"),
-                "at": ev.get("createdAt") or ev.get("timestamp"),
+                "at": ev.get("at"),
                 "reason": (ev.get("payload") or {}).get("reason"),
                 "eventId": ev.get("eventId"),
             }
