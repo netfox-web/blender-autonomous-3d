@@ -716,9 +716,52 @@
     return false;
   }
 
-  function rdRenderJobFailure(data) {
-    var job = data && data.parametricRender && data.parametricRender.job;
-    return job && isBlockedOrFailedPayload(job) ? job : null;
+  function classifyRdRenderJob(job) {
+    if (!job || typeof job !== 'object') return null;
+    var rawStatus = String(job.status || '').trim();
+    var st = rawStatus.toLowerCase();
+    var err = String(job.error || '').trim();
+    if (
+      isBlockedOrFailedPayload(job) ||
+      st === 'cancelled' ||
+      st === 'cancel_requested' ||
+      st === 'expired'
+    ) {
+      return {
+        state: 'failed',
+        job: job,
+        detail: err || rawStatus || 'FAILED'
+      };
+    }
+    if (
+      st === 'retry_scheduled' ||
+      (st === 'queued' && (Boolean(err) || Number(job.attemptCount || 0) > 0))
+    ) {
+      return {
+        state: 'retrying',
+        job: job,
+        detail: err || rawStatus || 'queued'
+      };
+    }
+    if (st === 'succeeded' || st === 'completed') {
+      return {
+        state: 'completed',
+        job: job,
+        label: job.realBlender && !job.usedMock ? 'REAL' : 'MOCK'
+      };
+    }
+    if (st === 'skipped') {
+      return {
+        state: 'skipped',
+        job: job,
+        detail: 'SKIPPED'
+      };
+    }
+    return {
+      state: 'pending',
+      job: job,
+      detail: rawStatus || 'queued'
+    };
   }
 
   function resetRdSelectionUI() {
@@ -784,22 +827,42 @@
       );
     }
     if (rd.parametricRender && rd.parametricRender.job) {
-      var pJob = rd.parametricRender.job;
-      if (isBlockedOrFailedPayload(pJob)) {
+      var renderInfo = classifyRdRenderJob(rd.parametricRender.job);
+      if (renderInfo && renderInfo.state === 'failed') {
         badgesBox.appendChild(
           el(
             'span',
             { 'class': 'fc-badge err' },
-            '母版 3D 預覽：' + String(pJob.error || pJob.status || 'FAILED') + '（算圖失敗）'
+            '母版 3D 預覽：' + renderInfo.detail + '（算圖失敗）'
           )
         );
-      } else {
-        var rLabel = pJob.realBlender && !pJob.usedMock ? 'REAL' : 'MOCK';
+      } else if (renderInfo && renderInfo.state === 'retrying') {
+        badgesBox.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-badge warn' },
+            '母版 3D 預覽：排隊重試中（' + (renderInfo.job.status || 'queued') + ' · ' + renderInfo.detail + '）'
+          )
+        );
+      } else if (renderInfo && renderInfo.state === 'completed') {
+        var rLabel = renderInfo.label;
         badgesBox.appendChild(
           el(
             'span',
             { 'class': 'fc-badge ' + (rLabel === 'REAL' ? 'ok' : 'warn') },
             '母版 3D 預覽：' + rLabel + (rLabel === 'MOCK' ? '（模擬算圖）' : '')
+          )
+        );
+      } else if (renderInfo && renderInfo.state === 'skipped') {
+        badgesBox.appendChild(
+          el('span', { 'class': 'fc-badge neutral' }, '母版 3D 預覽：SKIPPED（已略過）')
+        );
+      } else if (renderInfo) {
+        badgesBox.appendChild(
+          el(
+            'span',
+            { 'class': 'fc-badge neutral' },
+            '母版 3D 預覽：排隊待算圖（' + renderInfo.detail + '）'
           )
         );
       }
@@ -1710,21 +1773,44 @@
       apiFetch('/api/product-rd/generate', { method: 'POST', headers: { 'X-Tenant-Id': snap.tenant }, body: payload })
         .then(function (res) {
           if (reqSeq !== rdGenerateReqSeq || snap.tenant !== currentTenant()) return;
-          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data) && !rdRenderJobFailure(res.data)) {
+          var renderInfo = res.data && res.data.parametricRender
+            ? classifyRdRenderJob(res.data.parametricRender.job)
+            : null;
+          var renderFailed = renderInfo && renderInfo.state === 'failed';
+          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data) && !renderFailed) {
             rdPendingGenerate = null;
             var box = $('rd-confirm-box');
             box.hidden = true;
             syncConfirmLock(box);
             upsertRdHistoryItem(res.data);
             renderRdResult(res.data, res, 'rd-api-out', '商品研發產生結果');
-            showGlobalAlert(
-              '商品研發方案產生完成（單號 ' +
-                res.data.rdId +
-                '），共評選出前 ' +
-                (res.data.top ? res.data.top.length : 0) +
-                ' 名候選方案。',
-              'ok'
-            );
+            if (renderInfo && renderInfo.state === 'retrying') {
+              showGlobalAlert(
+                '研發方案（單號 ' +
+                  res.data.rdId +
+                  '）已儲存，但母版 3D 算圖暫時失敗並已排隊重試：' +
+                  renderInfo.detail,
+                'warn'
+              );
+            } else if (renderInfo && renderInfo.state === 'pending') {
+              showGlobalAlert(
+                '研發方案（單號 ' +
+                  res.data.rdId +
+                  '）已儲存，母版 3D 預覽排隊待算圖（' +
+                  renderInfo.detail +
+                  '）。',
+                'warn'
+              );
+            } else {
+              showGlobalAlert(
+                '商品研發方案產生完成（單號 ' +
+                  res.data.rdId +
+                  '），共評選出前 ' +
+                  (res.data.top ? res.data.top.length : 0) +
+                  ' 名候選方案。',
+                'ok'
+              );
+            }
             return refreshAll();
           } else {
             var boxErr = $('rd-confirm-box');
@@ -1732,10 +1818,9 @@
             syncConfirmLock(boxErr);
             rdPendingGenerate = null;
             renderApiAnswer($('rd-api-out'), '商品研發產生失敗', res);
-            var failedJob = rdRenderJobFailure(res.data);
-            var errDetail = (failedJob && (failedJob.error || failedJob.status)) ||
+            var errDetail = (renderFailed && renderInfo.detail) ||
               (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
-            if (res.ok && failedJob) {
+            if (res.ok && renderFailed) {
               showGlobalAlert('研發方案已儲存，但母版 3D 算圖失敗：' + errDetail, 'err');
               return refreshRdHistory();
             }

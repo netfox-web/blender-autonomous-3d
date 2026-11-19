@@ -433,3 +433,67 @@ def test_nested_render_job_failure_is_not_success(
     expect(page.locator("#fc-global-status")).to_have_class("fc-alert err")
     expect(page.locator("#fc-global-status")).to_contain_text(status)
     expect(page.locator("#fc-global-status")).to_contain_text("研發方案已儲存")
+
+
+def test_queued_retry_render_job_from_fail_or_retry_not_shown_as_completed_preview(
+    admin_page: Page, admin_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fox3d.blender import RuntimeResult
+
+    page = admin_page
+    platform = admin_server["platform"]
+    orig_run_job = platform.runtime.run_job
+
+    def _transient_fail_run_job(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
+        if job.get("tenantId") == "retry-render-tenant":
+            return RuntimeResult(status="failed", outputs={}, error="blender worker transient crash")
+        return orig_run_job(job, **kwargs)
+
+    monkeypatch.setattr(platform.runtime, "run_job", _transient_fail_run_job)
+
+    captured_responses: list[dict[str, Any]] = []
+    page.on(
+        "response",
+        lambda resp: captured_responses.append(resp.json())
+        if resp.url.endswith("/api/product-rd/generate") and resp.status == 200
+        else None,
+    )
+
+    page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
+    page.wait_for_selector("#rd-prepare-btn", timeout=20_000)
+    _switch_tenant(page, "retry-render-tenant")
+    expect(page.locator("#rd-history-empty")).to_contain_text("尚無歷史研發方案")
+
+    page.locator("#rd-text").fill("書房 寬90cm 高180cm 書櫃 四層")
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+    page.locator("#rd-confirm-yes").click()
+
+    expect(page.locator("#rd-body")).to_be_visible(timeout=20_000)
+    assert len(captured_responses) == 1
+    actual_job = captured_responses[0]["parametricRender"]["job"]
+    assert actual_job["status"] == "queued"
+    assert actual_job["error"] == "blender worker transient crash"
+    assert actual_job["attemptCount"] == 1
+
+    # Global status distinguishes retry-queued (warn) from completed (ok) and terminal failure (err).
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert warn")
+    expect(page.locator("#fc-global-status")).to_contain_text("排隊重試")
+    expect(page.locator("#fc-global-status")).to_contain_text("blender worker transient crash")
+    expect(page.locator("#fc-global-status")).not_to_contain_text("商品研發方案產生完成")
+
+    # Preview badge shows retry-queued state, never completed MOCK or REAL preview.
+    expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("queued")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("blender worker transient crash")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("算圖失敗")
+
+    # Reloading from GET /api/product-rd/results preserves the retry-queued preview badge.
+    page.reload(wait_until="domcontentloaded")
+    _switch_tenant(page, "retry-render-tenant")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中", timeout=20_000)
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+    assert getattr(page, "_fox3d_console_errors", []) == []

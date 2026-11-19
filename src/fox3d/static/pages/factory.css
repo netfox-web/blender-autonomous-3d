@@ -216,6 +216,12 @@ body {
   color: var(--fg);
 }
 
+.fc-alert.warn {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
 .fc-alert.err {
   border-color: var(--err);
   background: var(--err-soft);
