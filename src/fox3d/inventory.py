@@ -12,7 +12,7 @@ import os
 import sys
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterator, Protocol, cast
 
@@ -575,40 +575,44 @@ class MaterialLotRegistry:
         self._pending_audit = []
         txs: list[dict[str, Any]] = []
         outbox = self.outbox
-        if self.journal is not None and outbox is not None and pending:
-            for ev in pending:
-                txs.append(outbox.prepare(ev, expected_generation=self._tx_expected))
-            if self._fail_after_prepare:
-                self._fail_after_prepare = False
-                from fox3d.journal import JournalCommitError
+        guard: AbstractContextManager[None] = nullcontext()
+        if self.journal is not None and outbox is not None and pending and hasattr(outbox, "hold"):
+            guard = outbox.hold()
+        with guard:
+            if self.journal is not None and outbox is not None and pending:
+                for ev in pending:
+                    txs.append(outbox.prepare(ev, expected_generation=self._tx_expected))
+                if self._fail_after_prepare:
+                    self._fail_after_prepare = False
+                    from fox3d.journal import JournalCommitError
 
-                raise JournalCommitError("injected prepare-then-business-fail")
-            self._die("after-prepare")
-        self.persist(expected_generation=self._tx_expected)
-        if outbox is not None:
-            for tx in txs:
-                outbox.mark_business_committed(tx["txId"], observed_generation=self.generation)
-        self._die("after-business")
-        if self.journal is not None:
-            if self._fail_journal_finalize:
-                self._fail_journal_finalize = False
-                from fox3d.journal import JournalCommitError
-
-                raise JournalCommitError("injected journal finalize failure")
-            for ev in pending:
-                self.journal.append(
-                    ev["event_type"],
-                    tenant_id=ev["tenant_id"],
-                    aggregate_type=ev["aggregate_type"],
-                    aggregate_id=ev["aggregate_id"],
-                    actor=ev["actor"],
-                    payload=ev["payload"],
-                    semantic_key=ev.get("semantic_key"),
-                    source=ev.get("source"),
-                )
+                    raise JournalCommitError("injected prepare-then-business-fail")
+                self._die("after-prepare")
+            self.persist(expected_generation=self._tx_expected)
             if outbox is not None:
                 for tx in txs:
-                    outbox.complete(tx["txId"])
+                    outbox.mark_business_committed(tx["txId"], observed_generation=self.generation)
+            self._die("after-business")
+            if self.journal is not None:
+                if self._fail_journal_finalize:
+                    self._fail_journal_finalize = False
+                    from fox3d.journal import JournalCommitError
+
+                    raise JournalCommitError("injected journal finalize failure")
+                for ev in pending:
+                    self.journal.append(
+                        ev["event_type"],
+                        tenant_id=ev["tenant_id"],
+                        aggregate_type=ev["aggregate_type"],
+                        aggregate_id=ev["aggregate_id"],
+                        actor=ev["actor"],
+                        payload=ev["payload"],
+                        semantic_key=ev.get("semantic_key"),
+                        source=ev.get("source"),
+                    )
+                if outbox is not None:
+                    for tx in txs:
+                        outbox.complete(tx["txId"])
 
     def _emit(self, event_type: str, *, tenant_id: str, aggregate_id: str, actor: str, payload: dict[str, Any], semantic_key: str | None = None) -> None:
         if self.journal is None:

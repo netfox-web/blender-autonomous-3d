@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 import pytest
 
 from fox3d.cyclecount import BOOK_CHANGED_MSG, IDEMPOTENCY_CONFLICT_MSG, CycleCountConflict
+from fox3d.inventory import read_json
+from fox3d.outbox import PREPARED, CommitOutbox
 from fox3d.platform import Platform
 
 TENANT = "cc-a"
@@ -576,6 +579,65 @@ def test_cross_platform_concurrent_approve_applies_once(tmp_path):
     ]
     assert len(adjs) == 1
     assert plat2.lots.quantities(lot_id, tenant_id=TENANT)["available"] == 7
+
+
+def test_peer_reconcile_between_prepare_and_mark_applies_once(tmp_path, monkeypatch):
+    """Startup reconcile of a second platform runs after prepare and before mark.
+
+    That is the interleaving that deleted the outbox file under load. Both
+    approvals must still apply the count once and leave no open transaction.
+    """
+    root = tmp_path / "peer-during-prepare"
+    plat = Platform(root=root, mock_blender=True)
+    lot_id = _lot(plat, quantity=12)
+    cc = plat.pilot.cyclecounts.create(
+        tenant_id=TENANT, lot_id=lot_id, counted=7, reason="peer", actor="ops", idempotency_key="peer-cc"
+    )
+    cid = cc["cycleCountId"]
+    real_prepare = CommitOutbox.prepare
+    state: dict[str, Any] = {"armed": False}
+
+    def prepare_then_peer(
+        self: CommitOutbox, event: dict[str, Any], *, expected_generation: int | None = None
+    ) -> dict[str, Any]:
+        rec = real_prepare(self, event, expected_generation=expected_generation)
+        if state["armed"] or event.get("event_type") != "material.cyclecount":
+            return rec
+        state["armed"] = True
+        path = self._path(str(rec["txId"]))
+        prepared = read_json(path)
+        assert prepared["status"] == PREPARED
+        assert prepared["txId"] == rec["txId"]
+        peer = Platform(root=root, mock_blender=True)
+        state["peer"] = peer
+        survived = read_json(path)
+        assert survived["status"] == PREPARED
+        assert survived["txId"] == rec["txId"]
+        return rec
+
+    monkeypatch.setattr(CommitOutbox, "prepare", prepare_then_peer)
+    approved = plat.pilot.cyclecounts.approve(cid, tenant_id=TENANT, actor="sup", payload=CONFIRM)
+    assert state["armed"] is True
+    peer = state["peer"]
+    assert isinstance(peer, Platform)
+    again = peer.pilot.cyclecounts.approve(cid, tenant_id=TENANT, actor="other", payload=CONFIRM)
+    assert approved["status"] == "APPLIED"
+    assert again["status"] == "APPLIED"
+    assert approved["approvedBy"] == "sup"
+    assert again["approvedBy"] == "sup"
+    final = Platform(root=root, mock_blender=True)
+    adjs = [
+        row
+        for row in final.lots.get(lot_id, tenant_id=TENANT).get("adjustments") or []
+        if row.get("source") == "CYCLE_COUNT"
+    ]
+    assert len(adjs) == 1
+    assert final.lots.quantities(lot_id, tenant_id=TENANT)["available"] == 7
+    assert final.pilot.outbox.list_open(tenant_id=TENANT) == []
+    assert final.pilot.cyclecounts.list_for_tenant(tenant_id=OTHER)["items"] == []
+    events = final.pilot.journal.list(TENANT)
+    assert len([ev for ev in events if ev.get("eventType") == "material.cyclecount"]) == 1
+    assert len([ev for ev in events if ev.get("eventType") == "cyclecount.approve"]) == 1
 
 
 def test_committed_adjustment_recovers_after_interruption_and_later_stock_change(tmp_path, monkeypatch):

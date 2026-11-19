@@ -7,6 +7,7 @@ import json
 import os
 import re
 import threading
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -139,26 +140,28 @@ def emit(
                 release_hash=release_hash,
                 semantic_key=semantic_key,
             )
-        tx = outbox.prepare(event)
-        _maybe_crash(owner, "after-outbox-prepare")
-        persist()
-        if hasattr(outbox, "mark_business_committed"):
-            outbox.mark_business_committed(tx["txId"])
-        _maybe_crash(owner, "after-business-persist")
-        rec = journal.append(
-            event_type,
-            tenant_id=tenant_id,
-            aggregate_type=aggregate_type,
-            aggregate_id=aggregate_id,
-            actor=actor,
-            payload=payload or {},
-            release_hash=release_hash,
-            semantic_key=semantic_key,
-            source=source,
-        )
-        outbox.complete(tx["txId"])
-        _maybe_crash(owner, "after-outbox-complete")
-        return rec
+        guard: AbstractContextManager[None] = outbox.hold() if hasattr(outbox, "hold") else nullcontext()
+        with guard:
+            tx = outbox.prepare(event)
+            _maybe_crash(owner, "after-outbox-prepare")
+            persist()
+            if hasattr(outbox, "mark_business_committed"):
+                outbox.mark_business_committed(tx["txId"])
+            _maybe_crash(owner, "after-business-persist")
+            rec = journal.append(
+                event_type,
+                tenant_id=tenant_id,
+                aggregate_type=aggregate_type,
+                aggregate_id=aggregate_id,
+                actor=actor,
+                payload=payload or {},
+                release_hash=release_hash,
+                semantic_key=semantic_key,
+                source=source,
+            )
+            outbox.complete(tx["txId"])
+            _maybe_crash(owner, "after-outbox-complete")
+            return rec
     if getattr(owner, "_tx_depth", 0) == 0 and callable(persist):
         if semantic_key and hasattr(journal, "check_semantic_key"):
             journal.check_semantic_key(
