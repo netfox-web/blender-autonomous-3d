@@ -18,19 +18,27 @@ def open_studio(page: Page, server: dict[str, Any]) -> None:
 def test_batch_inflight_and_network_error(admin_page: Page, admin_server: dict[str, Any]) -> None:
     page = admin_page
     pending: list[Route] = []
-    page.route('**/api/ecommerce-scenes/batches', lambda route: pending.append(route))
+
+    def hold_post(route: Route) -> None:
+        if route.request.method == 'POST':
+            pending.append(route)
+            return
+        route.continue_()
+
+    page.expose_function('__fox3dPendingBatches', lambda: len(pending))
+    page.route('**/api/ecommerce-scenes/batches', hold_post)
     open_studio(page, admin_server)
     page.locator('#blender-matrix-btn').click()
     page.wait_for_function("() => document.querySelector('#blender-matrix-btn').disabled")
+    page.wait_for_function("async () => (await window.__fox3dPendingBatches()) >= 1")
     assert len(pending) == 1
     page.locator('#blender-matrix-btn').evaluate("el => el.dispatchEvent(new MouseEvent('click', {bubbles:true}))")
     assert len(pending) == 1
     first_key = json.loads(pending[0].request.post_data or '{}')['idempotencyKey']
     pending[0].abort()
-    page.wait_for_function("() => document.querySelector('#blender-matrix-btn').disabled")
-    # The automatic network retry carries the same key.
-    page.wait_for_function("() => document.querySelector('#blender-matrix-btn').disabled")
-    page.wait_for_event('request', predicate=lambda req: req.method == 'POST' and req.url.endswith('/batches')) if len(pending) < 2 else None
+    # The automatic network retry keeps the button disabled and carries the same key.
+    page.wait_for_function("async () => (await window.__fox3dPendingBatches()) >= 2")
+    assert page.locator('#blender-matrix-btn').is_disabled()
     assert len(pending) == 2
     assert json.loads(pending[1].request.post_data or '{}')['idempotencyKey'] == first_key
     pending[1].abort()
