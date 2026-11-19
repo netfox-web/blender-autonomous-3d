@@ -170,6 +170,7 @@ class QcService:
             wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
             if hold_wo and wo.get("state") != "QC_HOLD":
                 self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
+            self.workorders.persist()
         release_hash = None
         if self.workorders is not None:
             try:

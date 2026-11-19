@@ -159,16 +159,17 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
     import fox3d.qc as qc_module
 
     original_emit = qc_module.emit
+
+    def crash_after_emit(*args: Any, **kwargs: Any) -> Any:
+        original_emit(*args, **kwargs)
+        raise RuntimeError("simulated process interruption")
+
     for action, body, id_field in [
         ("qc", {"checkId": "THICKNESS", "measured": 18, "idempotencyKey": "crash-check"}, "qcId"),
         ("defects", {"code": "DEF_SIZE", "disposition": "SCRAP", "confirm": True, "idempotencyKey": "crash-defect"}, "defectId"),
     ]:
         _, wo = _seed_release_receipt_and_wo(platform)
         path = f"/api/pilot/work-orders/{wo['workOrderId']}/{action}"
-
-        def crash_after_emit(*args: Any, **kwargs: Any) -> Any:
-            original_emit(*args, **kwargs)
-            raise RuntimeError("simulated process interruption")
 
         monkeypatch.setattr(qc_module, "emit", crash_after_emit)
         with pytest.raises(RuntimeError, match="simulated process interruption"):
@@ -189,3 +190,35 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
         assert len([r for r in rows.values() if r["workOrderId"] == wo["workOrderId"]]) == 1
         assert restarted.pilot.workorders.get(wo["workOrderId"])["audit"] == audit_before
         assert client.post(path, headers={"X-Tenant-Id": "other"}, json=body).status_code == 404
+
+    _, wo = _seed_release_receipt_and_wo(platform)
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}/qc"
+    body = {
+        "stage": "IN_PROCESS",
+        "checkId": "HOLE_DIA",
+        "measured": 9,
+        "source": "MANUAL",
+        "idempotencyKey": "crash-fail-hold",
+    }
+
+    monkeypatch.setattr(qc_module, "emit", crash_after_emit)
+    with pytest.raises(RuntimeError, match="simulated process interruption"):
+        TestClient(create_app(platform)).post(path, headers=HEADERS, json=body)
+    monkeypatch.setattr(qc_module, "emit", original_emit)
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    matching = [r for r in restarted.pilot.qc.checks.values() if r["workOrderId"] == wo["workOrderId"]]
+    assert len(matching) == 1
+    assert matching[0]["result"] == "FAIL"
+    expected_id = matching[0]["qcId"]
+    wo_reloaded = restarted.pilot.workorders.get(wo["workOrderId"])
+    assert wo_reloaded["state"] == "QC_HOLD"
+    assert expected_id in wo_reloaded["lineage"]["qc"]
+    client = TestClient(create_app(restarted))
+    replay = client.post(path, headers=HEADERS, json=body)
+    assert replay.status_code == 200 and replay.json()["qcId"] == expected_id
+    restarted.pilot.qc.load()
+    restarted.pilot.workorders.load()
+    assert len([r for r in restarted.pilot.qc.checks.values() if r["workOrderId"] == wo["workOrderId"]]) == 1
+    wo_after = restarted.pilot.workorders.get(wo["workOrderId"])
+    assert wo_after["state"] == "QC_HOLD"
+    assert expected_id in wo_after["lineage"]["qc"]
