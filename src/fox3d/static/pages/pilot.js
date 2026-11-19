@@ -301,6 +301,17 @@
       function (err) { return { ok: false, error: err }; }
     );
   }
+  function fetchWorkOrdersOutcome(tid) {
+    var fetchAll = window.fox3dFetchAllPages || globalThis.fox3dFetchAllPages;
+    var path = '/api/pilot/work-orders';
+    if (fetchAll) {
+      return fetchAll(function (p) { return api(p, { tenant: tid }); }, path).then(
+        function (data) { return { ok: true, data: data }; },
+        function (err) { return { ok: false, error: err }; }
+      );
+    }
+    return fetchOutcome('/api/pilot/work-orders', tid);
+  }
   function applySection(id, outcome, render) {
     if (outcome.ok) render(outcome.data);
     else if ($(id)) $(id).textContent = '讀取失敗：' + outcome.error.message;
@@ -321,7 +332,7 @@
     }
     var reqs = [
       fetchOutcome('/api/pilot/console', reqTenant),
-      fetchOutcome('/api/pilot/work-orders', reqTenant),
+      fetchWorkOrdersOutcome(reqTenant),
       fetchOutcome('/api/pilot/batches', reqTenant),
       fetchOutcome('/api/pilot/batches/board', reqTenant),
       fetchOutcome('/api/pilot/health', reqTenant),
@@ -428,11 +439,15 @@
     }
     api(task.path, { method: 'POST', body: bodyText, tenant: task.tenant }).then(function (d) {
       if (d && d.result === 'FAIL' && /\/qc$/.test(task.path)) {
-        $('result').textContent = '品檢未通過或工單仍在 QC_HOLD';
-        if ($('qc-status')) $('qc-status').textContent = '品檢未通過或工單仍在 QC_HOLD';
-        releaseControls();
-        if (task.workOrderId) loadQc(task.workOrderId);
-        return;
+        var failMsg = '品檢未通過或工單仍在 QC_HOLD';
+        $('result').textContent = failMsg;
+        if ($('qc-status')) $('qc-status').textContent = failMsg;
+        return refresh(task.workOrderId).then(function () {
+          releaseControls();
+          $('result').textContent = failMsg;
+          if ($('qc-status')) $('qc-status').textContent = failMsg;
+          if (task.workOrderId) loadQc(task.workOrderId);
+        });
       }
       if (isMismatchResult(d)) {
         return refresh(task.workOrderId, true).then(function () {

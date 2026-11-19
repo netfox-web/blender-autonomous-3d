@@ -91,6 +91,38 @@ def test_qc_invalid_inputs_and_defect_conflict(platform: Any) -> None:
     assert client.get('/api/pilot/work-orders?offset=1&limit=1', headers=HEADERS).json()['items'] == []
 
 
+def test_work_orders_without_pagination_returns_all(platform: Any) -> None:
+    client = TestClient(create_app(platform))
+    _, wo = _seed_release_receipt_and_wo(platform)
+    product = platform.kd.build_sku(tenant_id=TENANT, kind="OPEN_SHELF")
+    rel = platform.pilot.open_release(product, tenant_id=TENANT, family="KD_FURNITURE")
+    last_id = wo["workOrderId"]
+    for i in range(101):
+        created = platform.pilot.workorders.create(
+            tenant_id=TENANT,
+            release=rel,
+            quantity=1,
+            actor="ops",
+            idempotency_key=f"legacy-list-{i}",
+        )
+        last_id = created["workOrderId"]
+    legacy = client.get("/api/pilot/work-orders", headers=HEADERS)
+    assert legacy.status_code == 200
+    body = legacy.json()
+    assert body["total"] >= 102
+    assert len(body["items"]) == body["total"]
+    assert any(item["workOrderId"] == last_id for item in body["items"])
+    paged = client.get("/api/pilot/work-orders?offset=100&limit=100", headers=HEADERS)
+    assert paged.status_code == 200
+    page = paged.json()
+    assert page["total"] >= 102
+    assert len(page["items"]) >= 2
+    assert any(item["workOrderId"] == last_id for item in page["items"])
+    other = client.get("/api/pilot/work-orders", headers={"X-Tenant-Id": "other-tenant-list"}).json()
+    assert other["total"] == 0
+    assert other["items"] == []
+
+
 def test_concurrent_qc_post_and_work_order_list(platform: Any) -> None:
     client = TestClient(create_app(platform))
     _, wo = _seed_release_receipt_and_wo(platform)

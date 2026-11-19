@@ -1056,13 +1056,33 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         return get_platform().pilot.console(tenant_id=require_tenant(x_tenant_id))
 
     @app.get("/api/pilot/work-orders")
-    def pilot_work_orders(x_tenant_id: str | None = Header(default=None), offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100)) -> dict[str, Any]:
+    def pilot_work_orders(
+        request: Request,
+        x_tenant_id: str | None = Header(default=None),
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=100),
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id)
         pilot = get_platform().pilot
         with pilot.workorders._lock:
             orders = [dict(wo) for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
-        items = [{**wo, "qcHold": wo.get("state") == "QC_HOLD", "qcOk": pilot.qc.required_final_ok(wo["workOrderId"], str(wo.get("productFamily") or "KD_FURNITURE"), tenant_id=tid)["ok"]} for wo in orders[offset:offset + limit]]
-        return {"items": items, "total": len(orders), "offset": offset, "limit": limit, "liveMachineControl": False}
+        enriched = [
+            {
+                **wo,
+                "qcHold": wo.get("state") == "QC_HOLD",
+                "qcOk": pilot.qc.required_final_ok(
+                    wo["workOrderId"],
+                    str(wo.get("productFamily") or "KD_FURNITURE"),
+                    tenant_id=tid,
+                )["ok"],
+            }
+            for wo in orders
+        ]
+        total = len(enriched)
+        if "offset" not in request.query_params and "limit" not in request.query_params:
+            return {"items": enriched, "total": total, "offset": 0, "limit": total, "liveMachineControl": False}
+        items = enriched[offset : offset + limit]
+        return {"items": items, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
 
     @app.get("/api/pilot/batches")
     def pilot_batches(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
