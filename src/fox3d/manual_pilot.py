@@ -388,7 +388,9 @@ def run_manual_factory_scenario(
         source="IMPORTED",
     )
     plat.pilot.logistics.import_carrier_quote(
-        {"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000}, source="IMPORTED"
+        {"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000},
+        source="IMPORTED",
+        allow_global=True,
     )
     plat.pilot.qc.defect(
         tenant_id=a,

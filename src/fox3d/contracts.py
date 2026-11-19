@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import threading
 from typing import Any
 
@@ -112,13 +113,25 @@ class ContractService:
                     )[0]
                     accepted.append(rec)
             elif schema == SCHEMA_CARRIER:
-                for i, row in enumerate(rows):
-                    missing = _require(row, ("carrier", "charge"))
-                    if missing:
-                        rejected.append({"index": i, "reasons": missing, "row": row})
-                        continue
-                    rec = self.pilot.logistics.import_carrier_quote(row, source=source)
-                    accepted.append(rec)
+                prev_quotes = copy.deepcopy(self.pilot.logistics.carrier_quotes)
+                try:
+                    for i, row in enumerate(rows):
+                        missing = _require(row, ("carrier", "charge"))
+                        if missing:
+                            rejected.append({"index": i, "reasons": missing, "row": row})
+                            continue
+                        rec = self.pilot.logistics.import_carrier_quote(
+                            row,
+                            source=source,
+                            tenant_id=tenant_id,
+                            persist=False,
+                        )
+                        accepted.append(rec)
+                    if accepted:
+                        self.pilot.logistics.persist()
+                except Exception:
+                    self.pilot.logistics.carrier_quotes = prev_quotes
+                    raise
             elif schema == SCHEMA_ADJUST:
                 for i, row in enumerate(rows):
                     missing = _require(row, ("lotId", "quantity", "reason"))

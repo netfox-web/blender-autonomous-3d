@@ -8,6 +8,7 @@ label payload queries. Never connects to or calls any live carrier provider.
 
 from __future__ import annotations
 
+import copy
 import csv
 import io
 import json
@@ -18,7 +19,16 @@ from typing import Any
 from fastapi import APIRouter, Body, Header, HTTPException, Query, Request
 
 from fox3d.journal import SemanticKeyConflictError
-from fox3d.logistics import ALLOWED_SOURCES, DIM_DIVISOR, _parse_valid_until_date
+from fox3d.logistics import (
+    ALLOWED_SOURCES,
+    DIM_DIVISOR,
+    _parse_valid_until_date,
+    inspect_tenantless_carrier_quotes,
+    is_explicit_global_carrier_quote,
+    is_tenantless_carrier_quote,
+    migrate_tenantless_carrier_quotes,
+    unassign_migrated_carrier_quotes,
+)
 from fox3d.pilot_packing_api import (
     _optional_idempotency_key,
     _require_body_dict,
@@ -79,11 +89,23 @@ def _verify_tenant_cartons(logistics: Any, carton_ids: list[str], tid: str) -> l
     return found
 
 
+def _quote_visible_to_tenant(quote: dict[str, Any], tid: str) -> bool:
+    """Return True if the quote belongs to tid or was explicitly marked as a global quote.
+
+    Legacy tenantless quotes (left behind by interrupted pre-fix writes where tenantId is None
+    and no explicit global flag was set) are not exposed across tenants until migrated.
+    """
+    q_tid = quote.get("tenantId")
+    if isinstance(q_tid, str) and q_tid.strip():
+        return q_tid.strip() == tid
+    return is_explicit_global_carrier_quote(quote)
+
+
 def _visible_quotes(logistics: Any, tid: str) -> list[dict[str, Any]]:
     rows = [
         q
         for q in logistics.carrier_quotes.values()
-        if q.get("tenantId") in (None, tid)
+        if _quote_visible_to_tenant(q, tid)
     ]
     rows.sort(key=lambda q: (str(q.get("importedAt") or ""), str(q.get("quoteId") or "")), reverse=True)
     return rows
@@ -132,7 +154,7 @@ def _serialize_shipment(
     selected_quote: dict[str, Any] | None = None
     if isinstance(target_qid, str) and target_qid:
         raw_q = logistics.carrier_quotes.get(target_qid)
-        if raw_q is not None and raw_q.get("tenantId") in (None, tid):
+        if raw_q is not None and _quote_visible_to_tenant(raw_q, tid):
             selected_quote = _serialize_quote(
                 logistics, raw_q, target_service=ship_service, target_dim_divisor=eff_divisor
             )
@@ -385,11 +407,17 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
             except PermissionError as exc:
                 raise HTTPException(404, "找不到紙箱") from exc
             if idem_key is not None:
-                logistics._idem[f"{tid}::pallet::{idem_key}"] = {
+                store_key = f"{tid}::pallet::{idem_key}"
+                logistics._idem[store_key] = {
                     "palletPlanId": plan["palletPlanId"],
                     "cartonIds": list(carton_ids),
                 }
-                logistics.persist()
+                try:
+                    logistics.persist()
+                except Exception:
+                    logistics._idem.pop(store_key, None)
+                    logistics.pallets.pop(plan["palletPlanId"], None)
+                    raise
             return dict(plan)
 
     @router.get("/api/pilot/pallets")
@@ -443,7 +471,7 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
             _verify_tenant_cartons(logistics, carton_ids, tid)
             if quote_id is not None:
                 quote = logistics.carrier_quotes.get(quote_id)
-                if quote is None or quote.get("tenantId") not in (None, tid):
+                if quote is None or not _quote_visible_to_tenant(quote, tid):
                     raise HTTPException(404, "找不到運費報價")
 
             req_sig = {
@@ -484,11 +512,16 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                 raise HTTPException(404, "找不到紙箱") from exc
 
             if idem_key is not None:
-                logistics._idem[f"{tid}::shipment-key::{idem_key}"] = {
+                store_key = f"{tid}::shipment-key::{idem_key}"
+                logistics._idem[store_key] = {
                     "shipmentId": rec["shipmentId"],
                     "sig": req_sig,
                 }
-                logistics.persist()
+                try:
+                    logistics.persist()
+                except Exception:
+                    logistics._idem.pop(store_key, None)
+                    raise
             return _serialize_shipment(logistics, rec, tid)
 
     @router.get("/api/pilot/shipments")
@@ -548,7 +581,7 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                 raise HTTPException(404, "找不到出貨單")
             if quoteId is not None and quoteId != "":
                 q = logistics.carrier_quotes.get(quoteId)
-                if q is None or q.get("tenantId") not in (None, tid):
+                if q is None or not _quote_visible_to_tenant(q, tid):
                     raise HTTPException(404, "找不到運費報價")
             return _serialize_shipment(
                 logistics,
@@ -776,7 +809,7 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                     if existing is not None and existing.get("tenantId") != tid:
                         raise HTTPException(409, "quoteId 衝突：該報價 ID 已由其他租戶持有")
 
-            prev_quotes = dict(logistics.carrier_quotes)
+            prev_quotes = copy.deepcopy(logistics.carrier_quotes)
             created: list[dict[str, Any]] = []
             try:
                 for norm, src in validated:
@@ -798,7 +831,9 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
                 logistics.persist()
             except PermissionError as exc:
                 logistics.carrier_quotes = prev_quotes
-                raise HTTPException(409, "quoteId 衝突：該報價 ID 已由其他租戶持有") from exc
+                if str(exc).startswith("tenant isolation"):
+                    raise HTTPException(409, "quoteId 衝突：該報價 ID 已由其他租戶持有") from exc
+                raise
             except ValueError as exc:
                 logistics.carrier_quotes = prev_quotes
                 raise HTTPException(422, str(exc)) from exc
@@ -860,3 +895,13 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
 
 
 router = pilot_shipping_router
+
+__all__ = [
+    "inspect_tenantless_carrier_quotes",
+    "is_explicit_global_carrier_quote",
+    "is_tenantless_carrier_quote",
+    "migrate_tenantless_carrier_quotes",
+    "pilot_shipping_router",
+    "router",
+    "unassign_migrated_carrier_quotes",
+]

@@ -180,7 +180,11 @@ def main(argv: list[str] | None = None, *, hooks: dict | None = None) -> int:
         add("reliability fixture stress", "FIXTURE", f"wo={stress['workOrderCount']} ops={stress['operationTransitions']} oversell={not stress['noOversell']}")
 
         log = plat.pilot.logistics
-        carrier = log.import_carrier_quote({"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000}, source="IMPORTED")
+        carrier = log.import_carrier_quote(
+            {"carrier": "TW-POST", "service": "ground", "charge": 180, "dimDivisor": 6000},
+            source="IMPORTED",
+            allow_global=True,
+        )
         add("carrier quote", carrier["truthLabel"], carrier["quoteId"][:8])
 
         previews = []

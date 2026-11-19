@@ -959,3 +959,173 @@ def test_shipping_state_survives_platform_reload(tmp_path: Any) -> None:
     ).json()
     assert retry["handoff"]["handoffId"] == handed["handoff"]["handoffId"]
     assert len(plat2.pilot.logistics.handoffs) == 1
+
+
+def test_legacy_tenantless_quotes_hidden_until_migrated_and_cli_script(
+    tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import scripts.migrate_carrier_quotes as migrate_script
+
+    root = tmp_path / "legacy-quote-root"
+    plat = Platform(root=root, mock_blender=True)
+    c1 = TestClient(create_app(plat))
+    _wo_a, cartons_a = _create_cartons(c1, plat, tenant=TENANT, quantity=1, idem_key="leg-cartons-a")
+    _wo_b, cartons_b = _create_cartons(c1, plat, tenant=OTHER_TENANT, quantity=1, idem_key="leg-cartons-b")
+
+    # 1. Tenant A creates an owned quote via HTTP; an explicit global quote is also imported via library flag.
+    owned = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={"quoteId": "q-owned-a", "carrier": "TCAT-OWNED", "charge": 180},
+    )
+    assert owned.status_code == 200
+    plat.pilot.logistics.import_carrier_quote(
+        {"quoteId": "q-explicit-global", "carrier": "GLOBAL-REF", "charge": 199},
+        source="IMPORTED",
+        allow_global=True,
+    )
+
+    # 2. Inject two legacy tenantless quotes into logistics.json (simulating interrupted pre-fix persist).
+    log_path = root / "logistics" / "logistics.json"
+    disk = json.loads(log_path.read_text(encoding="utf-8"))
+    for qid, carrier_name, charge in (
+        ("q-legacy-orphan-1", "LEGACY-ORPHAN-1", 250.0),
+        ("q-legacy-orphan-2", "LEGACY-ORPHAN-2", 275.0),
+    ):
+        disk["carrier_quotes"].append(
+            {
+                "quoteId": qid,
+                "carrier": carrier_name,
+                "service": "ground",
+                "charge": charge,
+                "currency": "TWD",
+                "dimDivisor": 6000.0,
+                "validUntil": "2099-12-31",
+                "source": "MANUAL",
+                "truthLabel": "MANUAL",
+                "liveProvider": False,
+                "importedAt": "2026-11-19T01:00:00+00:00",
+                "rawSourceHash": "legacy-raw",
+                "quoteHash": "legacy-hash",
+                "ownership": "GLOBAL_REFERENCE",
+            }
+        )
+    log_path.write_text(json.dumps(disk, indent=2), encoding="utf-8")
+    plat.pilot.logistics.load()
+
+    # 3. Before migration: neither TENANT nor OTHER_TENANT sees the legacy tenantless quotes,
+    # while both tenants see the explicit global quote (q-explicit-global).
+    vis_a_before = {q["quoteId"] for q in c1.get("/api/pilot/carrier-quotes", headers=HEADERS).json()["items"]}
+    vis_b_before = {q["quoteId"] for q in c1.get("/api/pilot/carrier-quotes", headers=OTHER_HEADERS).json()["items"]}
+    assert vis_a_before == {"q-owned-a", "q-explicit-global"}
+    assert vis_b_before == {"q-explicit-global"}
+
+    # Neither tenant can bind a shipment draft to an unmigrated legacy tenantless quote.
+    for hdrs, cids in ((HEADERS, cartons_a), (OTHER_HEADERS, cartons_b)):
+        bind_res = c1.post(
+            "/api/pilot/shipments",
+            headers=hdrs,
+            json={"origin": "TW", "destination": "TPE", "cartonIds": cids, "quoteId": "q-legacy-orphan-1"},
+        )
+        assert bind_res.status_code == 404
+
+    # 4. Run the CLI script in --check mode to list legacy tenantless quotes.
+    capsys.readouterr()
+    rc_check = migrate_script.main(["--root", str(root), "--check"])
+    assert rc_check == 0
+    check_out = json.loads(capsys.readouterr().out)
+    assert check_out["tenantlessCount"] == 2
+    assert set(check_out["quoteIds"]) == {"q-legacy-orphan-1", "q-legacy-orphan-2"}
+
+    # 5. Run the CLI script to assign q-legacy-orphan-1 to TENANT and default remaining to OTHER_TENANT.
+    rc_mig = migrate_script.main(
+        [
+            "--root",
+            str(root),
+            "--tenant",
+            OTHER_TENANT,
+            "--assign",
+            f"q-legacy-orphan-1={TENANT}",
+        ]
+    )
+    assert rc_mig == 0
+    mig_out = json.loads(capsys.readouterr().out)
+    assert mig_out["assignedCount"] == 2
+    assert mig_out["unresolvedCount"] == 0
+
+    # 6. Verify visibility and tenant isolation after migration.
+    vis_a_after = {q["quoteId"] for q in c1.get("/api/pilot/carrier-quotes", headers=HEADERS).json()["items"]}
+    vis_b_after = {q["quoteId"] for q in c1.get("/api/pilot/carrier-quotes", headers=OTHER_HEADERS).json()["items"]}
+    assert vis_a_after == {"q-owned-a", "q-explicit-global", "q-legacy-orphan-1"}
+    assert vis_b_after == {"q-explicit-global", "q-legacy-orphan-2"}
+
+    # TENANT can now bind a shipment to q-legacy-orphan-1, while OTHER_TENANT gets 404 for q-legacy-orphan-1.
+    ship_a = c1.post(
+        "/api/pilot/shipments",
+        headers=HEADERS,
+        json={"origin": "TW", "destination": "TPE", "cartonIds": cartons_a, "quoteId": "q-legacy-orphan-1"},
+    )
+    assert ship_a.status_code == 200, ship_a.text
+    assert ship_a.json()["quoteId"] == "q-legacy-orphan-1"
+
+    cross_ship_b = c1.post(
+        "/api/pilot/shipments",
+        headers=OTHER_HEADERS,
+        json={"origin": "TW", "destination": "TPE", "cartonIds": cartons_b, "quoteId": "q-legacy-orphan-1"},
+    )
+    assert cross_ship_b.status_code == 404
+
+
+def test_batch_import_persist_mid_write_failure_preserves_disk_and_memory(
+    tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import fox3d.inventory as inv_mod
+
+    root = tmp_path / "batch-persist-fail-root"
+    plat = Platform(root=root, mock_blender=True)
+    c1 = TestClient(create_app(plat))
+
+    # 1. Seed an initial quote for TENANT so logistics.json exists on disk.
+    seed = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=HEADERS,
+        json={"quoteId": "q-before-fail", "carrier": "SEED-CARRIER", "charge": 160},
+    )
+    assert seed.status_code == 200, seed.text
+    log_file = root / "logistics" / "logistics.json"
+    assert log_file.exists()
+    raw_before = log_file.read_bytes()
+
+    # 2. Simulate persist() failing mid-write (after writing bytes to temporary file, during fsync and during replace).
+    def mid_write_fsync_crash(fd: int) -> None:
+        tmp_files = list((root / "logistics").glob("*.tmp"))
+        assert len(tmp_files) == 1
+        # Simulate a half-written temp file before crash.
+        tmp_files[0].write_text('{"carrier_quotes": [{"quoteId": "half-written', encoding="utf-8")
+        raise OSError("disk full during batch carrier quote fsync")
+
+    monkeypatch.setattr(inv_mod.os, "fsync", mid_write_fsync_crash)
+    with pytest.raises(OSError, match="disk full during batch carrier quote fsync"):
+        c1.post(
+            "/api/pilot/carrier-quotes",
+            headers=HEADERS,
+            json={
+                "rows": [
+                    {"quoteId": "q-batch-mid-1", "carrier": "MID-1", "charge": 200},
+                    {"quoteId": "q-batch-mid-2", "carrier": "MID-2", "charge": 300},
+                ]
+            },
+        )
+
+    # 3. In-memory quotes are rolled back, no .tmp file remains, and disk bytes match pre-import state.
+    assert set(plat.pilot.logistics.carrier_quotes) == {"q-before-fail"}
+    assert list((root / "logistics").glob("*.tmp")) == []
+    assert log_file.read_bytes() == raw_before
+
+    # 4. Reloading a fresh Platform from disk yields exact pre-import data.
+    reloaded = Platform(root=root, mock_blender=True)
+    c2 = TestClient(create_app(reloaded))
+    items = c2.get("/api/pilot/carrier-quotes", headers=HEADERS).json()["items"]
+    assert [q["quoteId"] for q in items] == ["q-before-fail"]
+    assert items[0]["carrier"] == "SEED-CARRIER"
+    assert items[0]["charge"] == 160.0
