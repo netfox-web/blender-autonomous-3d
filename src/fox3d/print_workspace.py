@@ -136,10 +136,10 @@ def _valid_job_record(path, j):
     if not isinstance(jid, str) or not re.fullmatch(r'[a-f0-9-]{36}', jid) or jid != path.parent.name:
         return False
     updated_at = j.get('updatedAt')
-    if not isinstance(updated_at, str) or not updated_at.strip():
+    if not isinstance(updated_at, str) or not updated_at.strip() or '|' in updated_at:
         return False
     created_at = j.get('createdAt')
-    if created_at is not None and (not isinstance(created_at, str) or not created_at.strip()):
+    if created_at is not None and (not isinstance(created_at, str) or not created_at.strip() or '|' in created_at):
         return False
     rev = j.get('revision')
     if not isinstance(rev, int) or isinstance(rev, bool) or rev < 1:
@@ -167,8 +167,20 @@ def _job_sort_key(path_str:str,j:dict)->tuple[str,str]:
     return (_job_created_at(path_str,j),j['id'])
 
 
+def _parse_composite_cursor(raw_cursor:str,tenant_token:str)->tuple[str,str]|None:
+    parts=raw_cursor.split('|')
+    if len(parts)!=3:
+        return None
+    c_tenant,c_created,c_id=parts
+    if c_tenant!=tenant_token or not c_created.strip() or not re.fullmatch(r'[a-f0-9-]{36}',c_id):
+        return None
+    return (c_created,c_id)
+
+
 def listing(root,tenant,*,offset=0,limit=None,cursor=None):
-    folder=workspace(root,tenant)/'jobs'
+    ws=workspace(root,tenant)
+    tenant_token=ws.name
+    folder=ws/'jobs'
     entries=[]
     skipped=0
     for f in sorted(folder.glob('*/job.json')):
@@ -206,9 +218,9 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
         if isinstance(cursor,str) and cursor.strip():
             raw_cursor=cursor.strip()
             if '|' in raw_cursor:
-                c_created,c_id=raw_cursor.rsplit('|',1)
-                if any(item[1]['id']==c_id for item in entries):
-                    filtered=[item for item in entries if _job_sort_key(item[0],item[1])<(c_created,c_id)]
+                cursor_key=_parse_composite_cursor(raw_cursor,tenant_token)
+                if cursor_key is not None:
+                    filtered=[item for item in entries if _job_sort_key(item[0],item[1])<cursor_key]
                 else:
                     filtered=entries[offset:]
             else:
@@ -222,7 +234,7 @@ def listing(root,tenant,*,offset=0,limit=None,cursor=None):
             last_key,last_job=sliced_entries[-1]
             if last_job['id']!=entries[-1][1]['id']:
                 sort_created,sort_id=_job_sort_key(last_key,last_job)
-                next_cursor=f'{sort_created}|{sort_id}'
+                next_cursor=f'{tenant_token}|{sort_created}|{sort_id}'
     total=len(entries)
     out=JobList(copy.deepcopy(j) for _,j in sliced_entries)
     out.skipped=skipped

@@ -1502,3 +1502,112 @@ def test_ui_fetch_all_pages_1000_jobs_with_mid_pagination_update_loses_no_items(
     assert out["updatedRevision"] == 2
 
 
+def test_composite_cursor_continues_when_anchor_corrupted_or_deleted_and_ignores_cross_tenant_cursor(
+    tmp_path: Path,
+) -> None:
+    c_a = _make_client(tmp_path, "tenant-a")
+    c_b = _make_client(tmp_path, "tenant-b")
+
+    asset_a = _create_classified_asset(tmp_path, "tenant-a", seed=1)
+    asset_b = _create_classified_asset(tmp_path, "tenant-b", seed=2)
+
+    base_draft_a = _draft(asset_a["id"], sku="SKU-A", name="商品A")
+    base_draft_b = _draft(asset_b["id"], sku="SKU-B", name="商品B")
+
+    ws_a = assets.workspace(tmp_path, "tenant-a")
+    ws_b = assets.workspace(tmp_path, "tenant-b")
+    jobs_dir_a = ws_a / "jobs"
+    jobs_dir_b = ws_b / "jobs"
+    jobs_dir_a.mkdir(parents=True, exist_ok=True)
+    jobs_dir_b.mkdir(parents=True, exist_ok=True)
+
+    # Seed 4 valid jobs in tenant-a so descending sort order is A, B, C, D
+    job_specs_a = [
+        ("A", "00000000-0000-0000-0000-000000000004", "2026-11-19T00:04:00Z"),
+        ("B", "00000000-0000-0000-0000-000000000003", "2026-11-19T00:03:00Z"),
+        ("C", "00000000-0000-0000-0000-000000000002", "2026-11-19T00:02:00Z"),
+        ("D", "00000000-0000-0000-0000-000000000001", "2026-11-19T00:01:00Z"),
+    ]
+
+    def write_job(jobs_dir: Path, jid: str, ts: str, draft: dict, sku: str) -> Path:
+        path = jobs_dir / jid / "job.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "id": jid,
+                    "revision": 1,
+                    "createdAt": ts,
+                    "updatedAt": ts,
+                    "draft": {**draft, "sku": sku, "name": f"商品-{sku}"},
+                    "release": None,
+                    "lastProofId": None,
+                }
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    def reset_tenant_a_jobs() -> dict[str, Path]:
+        jobs.clear_job_cache()
+        paths: dict[str, Path] = {}
+        for label, jid, ts in job_specs_a:
+            paths[label] = write_job(jobs_dir_a, jid, ts, base_draft_a, f"SKU-{label}")
+        return paths
+
+    id_a, id_b, id_c, id_d = [jid for _, jid, _ in job_specs_a]
+
+    # Case 1: Anchor B's job.json becomes corrupted after page 1 is fetched;
+    # page 2 (with cumulative offset=2 and cursor anchored at B) must return [C, D], not [D].
+    paths_a = reset_tenant_a_jobs()
+    p1 = c_a.get("/api/print-workspace/jobs?offset=0&limit=2").json()
+    assert [x["id"] for x in p1["items"]] == [id_a, id_b]
+    assert p1["nextCursor"]
+    cursor_ab = p1["nextCursor"]
+
+    paths_a["B"].write_text("{corrupted-anchor-json", encoding="utf-8")
+    p2_corrupted = c_a.get(f"/api/print-workspace/jobs?offset=2&limit=2&cursor={cursor_ab}").json()
+    assert [x["id"] for x in p2_corrupted["items"]] == [id_c, id_d]
+    assert p2_corrupted["skipped"] == 1
+    assert p2_corrupted["total"] == 3
+    assert p2_corrupted["nextCursor"] is None
+
+    # Case 2: Anchor B's job.json disappears (deleted) after page 1 is fetched;
+    # page 2 (with cumulative offset=2 and cursor anchored at B) must return [C, D], not [D].
+    paths_a = reset_tenant_a_jobs()
+    p1_del = c_a.get("/api/print-workspace/jobs?offset=0&limit=2").json()
+    assert [x["id"] for x in p1_del["items"]] == [id_a, id_b]
+    cursor_del = p1_del["nextCursor"]
+    assert cursor_del
+
+    shutil.rmtree(paths_a["B"].parent)
+    p2_deleted = c_a.get(f"/api/print-workspace/jobs?offset=2&limit=2&cursor={cursor_del}").json()
+    assert [x["id"] for x in p2_deleted["items"]] == [id_c, id_d]
+    assert p2_deleted["skipped"] == 0
+    assert p2_deleted["total"] == 3
+    assert p2_deleted["nextCursor"] is None
+
+    # Case 3: Cross-tenant cursor isolation — tenant-b ignores tenant-a's composite cursor
+    # even when tenant-b has records newer than, equal to (including identical anchor ID), or older than cursor_ab.
+    b_newer_id = "00000000-0000-0000-0000-000000000099"
+    b_older_id = "00000000-0000-0000-0000-000000000000"
+    write_job(jobs_dir_b, b_newer_id, "2026-11-19T01:00:00Z", base_draft_b, "SKU-B-NEW")
+    write_job(jobs_dir_b, id_b, "2026-11-19T00:03:00Z", base_draft_b, "SKU-B-SAME-ID")
+    write_job(jobs_dir_b, b_older_id, "2026-11-18T23:00:00Z", base_draft_b, "SKU-B-OLD")
+
+    b_with_a_cursor = c_b.get(f"/api/print-workspace/jobs?offset=0&limit=10&cursor={cursor_ab}").json()
+    assert b_with_a_cursor["total"] == 3
+    assert [x["id"] for x in b_with_a_cursor["items"]] == [b_newer_id, id_b, b_older_id]
+    assert all(x["draft"]["sku"].startswith("SKU-B") for x in b_with_a_cursor["items"])
+
+    # Forged / legacy 2-part or malformed composite cursors without valid tenant token fall back to offset
+    for bad_cursor in (
+        f"2026-11-19T00:03:00Z|{id_b}",
+        "||",
+        f"{ws_b.name}||00000000-0000-0000-0000-000000000003",
+        f"{ws_b.name}|2026-11-19T00:03:00Z|not-a-uuid",
+        f"{ws_b.name}|2026-11-19T00:03:00Z|{id_b}|extra",
+    ):
+        res_bad = c_b.get(f"/api/print-workspace/jobs?offset=0&limit=10&cursor={bad_cursor}")
+        assert res_bad.status_code == 200
+        assert [x["id"] for x in res_bad.json()["items"]] == [b_newer_id, id_b, b_older_id]
