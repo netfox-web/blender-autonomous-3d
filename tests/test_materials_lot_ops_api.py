@@ -107,6 +107,41 @@ def test_quarantine_reserve_release_flow(client: TestClient, platform) -> None:
     assert ok.json().get("materialReserved") is True
 
 
+def _parse_utc_iso(value: str) -> datetime:
+    text = value.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(text)
+    if dt.tzinfo is None:
+        pytest.fail(f"expected timezone-aware timestamp, got {value!r}")
+    return dt
+
+
+def test_quarantine_history_at_timestamps(client: TestClient, platform) -> None:
+    _seed_wo_ready(platform, tenant=TENANT)
+    receipts = [r for r in platform.pilot.receiving.receipts.values() if r.get("tenantId") == TENANT]
+    assert receipts
+    lot_id = str(receipts[-1]["lotId"])
+    detail = client.get(f"/api/materials/lots/{lot_id}", headers=_headers()).json()
+    q = client.post(
+        f"/api/materials/lots/{lot_id}/quarantine",
+        headers=_headers(),
+        json={**CONFIRM, "expectedVersion": detail["version"]},
+    )
+    assert q.status_code == 200
+    released = client.post(
+        f"/api/materials/lots/{lot_id}/release-quarantine",
+        headers=_headers(),
+        json={**CONFIRM, "reason": "cleared", "expectedVersion": q.json().get("version")},
+    )
+    assert released.status_code == 200
+    history = client.get(f"/api/materials/lots/{lot_id}", headers=_headers()).json()["quarantineHistory"]
+    types = {row["eventType"] for row in history}
+    assert types == {"material.quarantine", "material.release_quarantine"}
+    by_type = {row["eventType"]: row for row in history}
+    quarantine_at = _parse_utc_iso(by_type["material.quarantine"]["at"])
+    release_at = _parse_utc_iso(by_type["material.release_quarantine"]["at"])
+    assert release_at >= quarantine_at
+
+
 def test_quarantine_requires_confirm_and_reason(client: TestClient) -> None:
     lot_id = _receive(client)
     no_confirm = client.post(
