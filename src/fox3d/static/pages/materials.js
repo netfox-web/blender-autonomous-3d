@@ -301,6 +301,13 @@
     return '—';
   }
 
+  function fmtQuarantineAt(value) {
+    if (value == null || String(value).trim() === '') return '—';
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return '—';
+    return d.toLocaleString('zh-TW');
+  }
+
   function renderLotDetail(data) {
     var body = $('mt-lot-detail-body');
     if (!body) return;
@@ -359,7 +366,8 @@
       var ul = el('ul', { 'class': 'mt-list' });
       qh.forEach(function (ev) {
         var li = el('li');
-        li.textContent = (ev.eventType || '?') + ' · ' + (ev.actor || '—') + ' · ' + (ev.reason || '');
+        li.textContent = (ev.eventType || '?') + ' · ' + (ev.actor || '—') + ' · ' + (ev.reason || '')
+          + ' · ' + fmtQuarantineAt(ev.at);
         ul.appendChild(li);
       });
       body.appendChild(ul);

@@ -360,6 +360,16 @@ def test_materials_js_uses_cycle_count_flow_guards() -> None:
     assert "innerHTML" not in js
 
 
+def test_materials_js_quarantine_history_displays_at() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/materials.js").read_text(encoding="utf-8")
+    assert "fmtQuarantineAt" in js
+    assert "isNaN(d.getTime())" in js
+    assert "fmtQuarantineAt(ev.at)" in js
+    assert "隔離歷史" in js
+
+
 def test_confirm_dialog_resets_return_value_before_opening() -> None:
     # Esc keeps the previous returnValue; without a reset, Esc after an earlier "ok" would confirm.
     from pathlib import Path
