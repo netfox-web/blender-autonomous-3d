@@ -676,6 +676,21 @@ code {
   color: var(--accent);
 }
 
+.fc-preset-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.fc-stack {
+  margin-top: 16px;
+}
+
+.fc-cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
 @media (max-width: 900px) {
   .fc-grid-2,
   .fc-grid-quotes {
