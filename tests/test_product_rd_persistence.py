@@ -556,27 +556,27 @@ def test_cross_tenant_and_unknown_ids_return_404(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "bad_body",
     [
-        {"text": ""},
-        {"text": "   "},
-        {"text": None},
         {"text": 123},
+        {"text": 0},
         {"text": True},
+        {"text": False},
         {"text": ["書櫃"]},
         {"text": {"q": "書櫃"}},
         {"text": "書櫃\x00衣櫃"},
         {"text": "x" * 2001},
         {"text": "櫃" * 2001},
-        {"variantCount": 9},
-        {"variantCount": 51},
+        {"text": "高" + ("9" * 400) + "cm"},
+        {"text": "預算 " + ("9" * 400)},
         {"variantCount": 0},
         {"variantCount": -1},
         {"variantCount": 101},
+        {"variantCount": 100000},
         {"variantCount": 12.5},
         {"variantCount": True},
         {"variantCount": False},
         {"variantCount": "12"},
-        {"variantCount": None},
         {"variantCount": [12]},
+        {"variantCount": {"n": 12}},
         {"idempotencyKey": ""},
         {"idempotencyKey": "   "},
         {"idempotencyKey": "k" * 201},
@@ -595,23 +595,133 @@ def test_generate_bad_inputs_return_422_and_do_not_persist(tmp_path: Path, bad_b
     assert client.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == 0
 
 
+def test_generate_backward_compatible_variant_count_null_and_empty_text(tmp_path: Path) -> None:
+    _, client = _make_client(tmp_path)
+
+    # Legacy range 1..100 (including <10 like 1, 5, 9 and >50 like 51, 100) must succeed and persist.
+    for count in (1, 5, 9, 51, 100):
+        res = client.post(
+            "/api/product-rd/generate",
+            headers=TENANT_A,
+            json={"text": "書櫃", "variantCount": count},
+        )
+        assert res.status_code == 200, (count, res.text)
+        data = res.json()
+        assert data["requestedVariantCount"] == count
+        assert data["text"] == "書櫃"
+        assert data["approval"]["status"] == "WAITING_APPROVAL"
+        assert client.get(f"/api/product-rd/results/{data['rdId']}", headers=TENANT_A).status_code == 200
+
+    # Explicit null variantCount and omitted variantCount both default to 12.
+    null_vc = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書櫃", "variantCount": None},
+    )
+    assert null_vc.status_code == 200, null_vc.text
+    assert null_vc.json()["requestedVariantCount"] == 12
+
+    omitted_vc = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "書櫃"},
+    )
+    assert omitted_vc.status_code == 200, omitted_vc.text
+    assert omitted_vc.json()["requestedVariantCount"] == 12
+
+    # Empty, whitespace-only, explicit null, and omitted text are accepted per legacy contract.
+    for legacy_body, expected_text in (
+        ({}, ""),
+        ({"text": None}, ""),
+        ({"text": ""}, ""),
+        ({"text": "   "}, "   "),
+        ({"text": None, "variantCount": None}, ""),
+        ({"text": "", "variantCount": 5}, ""),
+    ):
+        resp = client.post("/api/product-rd/generate", headers=TENANT_A, json=legacy_body)
+        assert resp.status_code == 200, (legacy_body, resp.text)
+        payload = resp.json()
+        assert payload["text"] == expected_text
+        assert payload["baseSpec"]["kind"] == "CABINET"
+
+    # Normalized null/omitted/default inputs share the same idempotency fingerprint; different count conflicts.
+    idem_null = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": None, "variantCount": None, "idempotencyKey": "legacy-idem-null"},
+    )
+    assert idem_null.status_code == 200
+    idem_explicit = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "", "variantCount": 12, "idempotencyKey": "legacy-idem-null"},
+    )
+    assert idem_explicit.status_code == 200
+    assert idem_explicit.json()["rdId"] == idem_null.json()["rdId"]
+
+    idem_conflict = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "", "variantCount": 5, "idempotencyKey": "legacy-idem-null"},
+    )
+    assert idem_conflict.status_code == 409
+
+    # Tenant isolation holds for legacy inputs as well.
+    assert client.get(f"/api/product-rd/results/{idem_null.json()['rdId']}", headers=TENANT_B).status_code == 404
+
+
+def test_non_terminal_or_failed_render_job_never_marks_truth_label_real(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+
+    for non_done_status in ("queued", "failed", "retry_scheduled"):
+        monkeypatch.setattr(
+            plat,
+            "render_parametric",
+            lambda pid, *, tenant_id: {
+                "parametric": {"spec": {"productId": pid}},
+                "job": {
+                    "jobId": f"job-{non_done_status}",
+                    "status": non_done_status,
+                    "error": "worker transient crash",
+                    "attemptCount": 1,
+                    "realBlender": True,
+                    "usedMock": False,
+                },
+            },
+        )
+        res = client.post(
+            "/api/product-rd/generate",
+            headers=TENANT_A,
+            json={"text": "電視櫃 180cm", "variantCount": 5},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["judgeLabel"] == "REAL"
+        assert body["truthLabel"] == "MOCK", f"status={non_done_status} must not claim REAL truthLabel"
+
+
 def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
     _, client = _make_client(tmp_path)
 
     min_vc = client.post(
         "/api/product-rd/generate",
         headers=TENANT_A,
-        json={"text": "書櫃 " + ("甲" * 1997), "variantCount": 10},
+        json={"text": "書櫃 " + ("甲" * 1997), "variantCount": 1},
     )
     assert len("書櫃 " + ("甲" * 1997)) == 2000
     assert min_vc.status_code == 200, min_vc.text
+    assert min_vc.json()["requestedVariantCount"] == 1
 
     max_vc = client.post(
         "/api/product-rd/generate",
         headers=TENANT_A,
-        json={"text": "電視櫃 180cm", "variantCount": 50},
+        json={"text": "電視櫃 180cm", "variantCount": 100},
     )
     assert max_vc.status_code == 200, max_vc.text
+    assert max_vc.json()["requestedVariantCount"] == 100
     rd_id = max_vc.json()["rdId"]
 
     for bad_actor in ("", "   ", "a" * 121, 123, True, ["a"], {"a": 1}, "bad\nactor"):

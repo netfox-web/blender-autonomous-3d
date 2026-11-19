@@ -19,8 +19,8 @@ from fox3d.storelock import FileLock
 
 MAX_RD_TEXT_CHARS = 2000
 MAX_RD_TEXT_UTF8_BYTES = 6000
-MIN_RD_VARIANT_COUNT = 10
-MAX_RD_VARIANT_COUNT = 50
+MIN_RD_VARIANT_COUNT = 1
+MAX_RD_VARIANT_COUNT = 100
 DEFAULT_RD_VARIANT_COUNT = 12
 MAX_IDEMPOTENCY_KEY_LEN = 200
 MAX_ACTOR_LEN = 120
@@ -50,6 +50,10 @@ def is_valid_rd_id(value: Any) -> bool:
 
 
 def validate_rd_text(raw: Any, *, required_non_empty: bool = False) -> str:
+    if raw is None:
+        if required_non_empty:
+            raise ValueError("text 不可為空白")
+        return ""
     if not isinstance(raw, str):
         raise ValueError("text 格式錯誤")
     if "\x00" in raw or any(0xD800 <= ord(c) <= 0xDFFF for c in raw):
@@ -61,9 +65,9 @@ def validate_rd_text(raw: Any, *, required_non_empty: bool = False) -> str:
     return raw
 
 
-def validate_rd_variant_count(raw: Any) -> int:
+def validate_rd_variant_count(raw: Any, *, default: int = DEFAULT_RD_VARIANT_COUNT) -> int:
     if raw is None:
-        raise ValueError(f"variantCount 須為 {MIN_RD_VARIANT_COUNT} 至 {MAX_RD_VARIANT_COUNT} 的整數")
+        return default
     if isinstance(raw, bool) or not isinstance(raw, int):
         raise ValueError(f"variantCount 須為 {MIN_RD_VARIANT_COUNT} 至 {MAX_RD_VARIANT_COUNT} 的整數")
     if not (MIN_RD_VARIANT_COUNT <= raw <= MAX_RD_VARIANT_COUNT):
@@ -149,8 +153,11 @@ def _resolve_render_label(rd: dict[str, Any]) -> str:
     job = param_render.get("job")
     if not isinstance(job, dict):
         return "SKIPPED"
-    if job.get("status") == "blocked" or str(job.get("error") or "").startswith("BLOCKED"):
+    status = str(job.get("status") or "").lower()
+    if status == "blocked" or str(job.get("error") or "").startswith("BLOCKED"):
         return str(job.get("error") or "BLOCKED")
+    if status not in {"succeeded", "completed"}:
+        return status.upper() or "SKIPPED"
     if job.get("realBlender") and not job.get("usedMock"):
         return "REAL"
     return "MOCK"
@@ -255,7 +262,11 @@ class ProductRDStore:
     def _write_record_unlocked(self, tenant_id: str, record: dict[str, Any]) -> None:
         rd_id = str(record["rdId"])
         target = self._record_path(tenant_id, rd_id)
-        data = json.dumps(record, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        try:
+            raw_json = json.dumps(record, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        except ValueError as exc:
+            raise ValueError("數值超出有效範圍") from exc
+        data = raw_json.encode("utf-8")
         publish_bytes(lambda stream: stream.write(data), target)
         try:
             st = target.stat()

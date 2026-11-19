@@ -67,6 +67,7 @@ from fox3d.release import ReleaseGate
 from fox3d.sandbox import SandboxRegistry
 from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, CostEngine, EngineeringRuleEngine, NestingAdapter
 from fox3d.product_rd_store import (
+    DEFAULT_RD_VARIANT_COUNT,
     ProductRDStore,
     validate_optional_idempotency_key,
     validate_rd_text,
@@ -900,8 +901,8 @@ class Platform:
         self,
         *,
         tenant_id: str,
-        text: str,
-        variant_count: int = 12,
+        text: str | None = "",
+        variant_count: int | None = DEFAULT_RD_VARIANT_COUNT,
         idempotency_key: str | None = None,
         render_base: bool = False,
     ) -> dict[str, Any]:
@@ -922,6 +923,10 @@ class Platform:
 
         def _build() -> dict[str, Any]:
             result = self.rd.run(tenant_id=tid, text=clean_text, variant_count=clean_count)
+            try:
+                json.dumps(result, allow_nan=False)
+            except ValueError as exc:
+                raise ValueError("數值超出有效範圍") from exc
             result["HUMAN_APPROVAL_REQUIRED"] = True
             if isinstance(result.get("approval"), dict):
                 result["approval"]["HUMAN_APPROVAL_REQUIRED"] = True

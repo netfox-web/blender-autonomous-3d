@@ -32,7 +32,6 @@ from fox3d.pilot_batch_api import pilot_batch_router
 from fox3d.pilot_qc_api import pilot_qc_router
 from fox3d.platform import Platform
 from fox3d.product_rd_store import (
-    DEFAULT_RD_VARIANT_COUNT,
     ProductRDIdempotencyConflict,
     validate_optional_idempotency_key,
     validate_rd_actor,
@@ -599,12 +598,8 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         tid = require_tenant(x_tenant_id, payload)
         plat = get_platform()
         try:
-            text = validate_rd_text(payload["text"], required_non_empty=True) if "text" in payload else ""
-            variant_count = (
-                validate_rd_variant_count(payload["variantCount"])
-                if "variantCount" in payload
-                else DEFAULT_RD_VARIANT_COUNT
-            )
+            text = validate_rd_text(payload.get("text"))
+            variant_count = validate_rd_variant_count(payload.get("variantCount"))
             idem = validate_optional_idempotency_key(payload.get("idempotencyKey"))
             return plat.product_rd(
                 tenant_id=tid,
@@ -619,7 +614,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(422, _validation_detail(exc)) from None
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
-        except TypeError:
+        except (TypeError, OverflowError):
             raise HTTPException(422, "商品欄位格式錯誤") from None
 
     @app.get("/api/product-rd/results")
