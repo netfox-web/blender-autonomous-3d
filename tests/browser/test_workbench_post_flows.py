@@ -344,14 +344,19 @@ def test_pilot_floor_exception_ack_then_resolve(admin_page: Page, admin_server: 
     page.locator(".pf-inline-confirm .pf-confirm-box").last.check()
     page.locator(".pf-inline-confirm button.pf-btn-primary").last.click()
     page.wait_for_function(
-        "() => (document.getElementById('pf-action-status').textContent || '').includes('完成')",
+        "() => (document.getElementById('pf-action-status').textContent || '').includes('異常確認：完成')",
         timeout=20_000,
     )
+    page.wait_for_function(
+        f"() => (document.getElementById('pf-exc-table').innerText || '').includes('{exc_id}') && (document.getElementById('pf-exc-table').innerText || '').includes('ACKNOWLEDGED')",
+        timeout=20_000,
+    )
+    row = page.locator("#pf-exc-table tbody tr").filter(has_text=exc_id)
     row.locator("button", has_text="結案").click()
     page.locator(".pf-inline-confirm .pf-confirm-box").last.check()
     page.locator(".pf-inline-confirm button.pf-btn-primary").last.click()
     page.wait_for_function(
-        "() => (document.getElementById('pf-action-status').textContent || '').includes('完成')",
+        "() => (document.getElementById('pf-action-status').textContent || '').includes('異常結案：完成')",
         timeout=20_000,
     )
     page.locator("#pf-exc-filter").select_option("RESOLVED")
@@ -360,6 +365,101 @@ def test_pilot_floor_exception_ack_then_resolve(admin_page: Page, admin_server: 
         timeout=20_000,
     )
     assert platform.pilot.inbox.get(exc_id, tenant_id=TENANT)["status"] == "RESOLVED"
+
+
+def test_pilot_floor_station_status_cycle_and_retry_lock(admin_page: Page, admin_server: dict[str, Any]) -> None:
+    platform = admin_server["platform"]
+    platform.pilot.stations.register(
+        tenant_id=TENANT,
+        capabilities=["PANEL_CUTTING_MANUAL"],
+        station_id="st-browser",
+        actor="seed",
+        status="ONLINE",
+    )
+    seen_puts: list[dict[str, Any]] = []
+    fail_once = {"pending": True}
+
+    def on_status_put(route: Route) -> None:
+        if route.request.method != "PUT":
+            route.continue_()
+            return
+        body = json.loads(route.request.post_data or "{}")
+        seen_puts.append(body)
+        if fail_once["pending"]:
+            fail_once["pending"] = False
+            route.fulfill(status=503, json={"detail": "injected failure"})
+            return
+        route.continue_()
+
+    page = admin_page
+    page.route("**/api/pilot/stations/st-browser/status", on_status_put)
+    page.goto(admin_server["base_url"] + "/admin/pilot-floor", wait_until="domcontentloaded")
+    _wait_shell(page)
+    page.locator("#tab-stations").click()
+    page.wait_for_function(
+        "() => (document.getElementById('pf-station-table').innerText || '').includes('st-browser')",
+        timeout=20_000,
+    )
+
+    row = page.locator("#pf-station-table tbody tr").filter(has_text="st-browser")
+    row.locator("button", has_text="狀態").click()
+    inline = page.locator(".pf-inline-confirm").last
+    inline.locator("select[name=status]").select_option("MAINTENANCE")
+    inline.locator("input[name=note]").fill("first")
+    inline.locator(".pf-confirm-box").check()
+    assert inline.locator("select[name=status]").is_disabled()
+    assert inline.locator("input[name=note]").is_disabled()
+    inline.locator("button.pf-btn-primary").click()
+    page.wait_for_function(
+        "() => (document.getElementById('pf-action-status').textContent || '').includes('失敗')",
+        timeout=20_000,
+    )
+    assert inline.locator(".pf-confirm-box").is_checked()
+    assert inline.locator("select[name=status]").is_disabled()
+    assert inline.locator("input[name=note]").is_disabled()
+
+    # Retry sends the exact same snapshotted transitionId and payload.
+    inline.locator("button.pf-btn-primary").click()
+    page.wait_for_function(
+        "() => (document.getElementById('pf-action-status').textContent || '').includes('站點狀態：完成')",
+        timeout=20_000,
+    )
+    assert len(seen_puts) == 2
+    assert seen_puts[0] == seen_puts[1]
+    assert seen_puts[0]["status"] == "MAINTENANCE"
+    assert seen_puts[0]["note"] == "first"
+    assert seen_puts[0]["transitionId"]
+
+    # Switch MAINTENANCE -> ACTIVE -> MAINTENANCE ("second")
+    for status, note_text in (("ACTIVE", ""), ("MAINTENANCE", "second")):
+        page.wait_for_function(
+            "() => (document.getElementById('pf-station-table').innerText || '').includes('st-browser')",
+            timeout=20_000,
+        )
+        row = page.locator("#pf-station-table tbody tr").filter(has_text="st-browser")
+        row.locator("button", has_text="狀態").click()
+        inline = page.locator(".pf-inline-confirm").last
+        inline.locator("select[name=status]").select_option(status)
+        inline.locator("input[name=note]").fill(note_text)
+        inline.locator(".pf-confirm-box").check()
+        inline.locator("button.pf-btn-primary").click()
+        page.wait_for_function(
+            "() => (document.getElementById('pf-action-status').textContent || '').includes('站點狀態：完成')",
+            timeout=20_000,
+        )
+
+    events = [
+        ev
+        for ev in platform.pilot.journal.list(TENANT)
+        if ev.get("eventType") == "station.status" and ev.get("aggregateId") == "st-browser"
+    ]
+    assert [(ev["payload"]["status"], ev["payload"]["note"]) for ev in events] == [
+        ("MAINTENANCE", "first"),
+        ("ACTIVE", None),
+        ("MAINTENANCE", "second"),
+    ]
+    assert len({ev["payload"]["transitionId"] for ev in events}) == 3
+    assert platform.pilot.journal.verify(TENANT)["ok"] is True
 
 
 def test_pilot_floor_blocked_and_network_are_not_success(admin_page: Page, admin_server: dict[str, Any]) -> None:
