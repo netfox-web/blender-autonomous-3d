@@ -47,6 +47,8 @@ def print_router(provider):
     def root():return provider().root
     def call(fn,*args,**kwargs):
         try:return fn(*args,**kwargs)
+        except jobs.CursorExpiredError as exc:
+            raise HTTPException(410,str(exc)) from exc
         except (assets.NotFoundError,KeyError) as exc:
             raise HTTPException(404,str(exc) if isinstance(exc,assets.NotFoundError) else '找不到指定資料') from exc
         except (PdfReadError,Image.DecompressionBombError,Image.DecompressionBombWarning) as exc:
