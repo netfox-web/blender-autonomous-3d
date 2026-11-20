@@ -338,6 +338,21 @@ def _manual_batch_unit(tmp_path, qty=1):
     return plat, batch, bu, human, human_shift, live, measured
 
 
+def test_human_no_go_is_overridden_by_new_ncr(tmp_path):
+    plat, batch, unit, human, shift, _, _ = _manual_batch_unit(tmp_path)
+    pb = plat.pilot_batch
+    args = dict(tenant_id="pa", operator_id=human["operatorId"], shift_id=shift["shiftId"])
+    pb.record_decision(batch["batchId"], **args, decision="HUMAN_BATCH_NO_GO", reason="review")
+    assert pb.readiness_readonly(batch["batchId"], tenant_id="pa")["decision"] == "HUMAN_BATCH_NO_GO"
+    pb.record_ncr(unit["unitExecutionId"], **args, category="quality", evidence="inspection")
+    ready = pb.readiness_readonly(batch["batchId"], tenant_id="pa")
+    assert ready["decision"] == "HOLD_REWORK"
+    assert "unresolved_hold" in ready["blockers"]
+    board = pb.decision_board(tenant_id="pa", candidate_ids=[batch["candidateId"]])
+    assert board["decision"] == "HOLD_REWORK"
+    assert board["rows"][0]["decision"] == "HOLD_REWORK"
+
+
 def test_manual_bogus_checklist_blocks_pack(tmp_path):
     plat, batch, bu, human, human_shift, live, measured = _manual_batch_unit(tmp_path)
     with pytest.raises(PilotBatchError, match="checklist"):

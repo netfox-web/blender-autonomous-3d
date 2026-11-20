@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, cartonLoadDoneSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0, qcLoadSeq = 0, qcReloadNeeded = false;
+  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, cartonLoadDoneSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0, qcLoadSeq = 0, qcReloadNeeded = false, qcPendingData = null, qcPendingOrderId = null;
   try { $('tenant').value = localStorage.getItem('fox3d.tenant') || 'sonaqueen-home'; } catch (e) { /* storage unavailable */ }
   function tenant() { return $('tenant').value.trim() || 'sonaqueen-home'; }
   function api(path, options) {
@@ -111,11 +111,43 @@
     if ($('tenant') && nodes.indexOf($('tenant')) < 0) nodes.push($('tenant'));
     return nodes;
   }
+  function renderQcPanel(orderId, d) {
+    if (!selected || selected.workOrderId !== orderId || pending || posting) return false;
+    var box = $('qc-checks'); box.textContent = '';
+    $('qc-status').textContent = d.requiredFinalOk.ok ? '必要最終檢驗通過' : '必要最終檢驗尚未通過';
+    (d.plan || []).forEach(function (spec) {
+      var form = document.createElement('form'), lastSignature = '', retryKey = '';
+      var label = document.createElement('label'); label.textContent = String(spec.checkId) + ' 實測值 ';
+      var input = document.createElement('input'); input.type = 'number'; input.step = 'any'; input.required = true; label.appendChild(input); form.appendChild(label);
+      var nominal = document.createElement('input'); nominal.type = 'number'; nominal.step = 'any'; nominal.required = true; nominal.placeholder = '標稱值';
+      if (spec.nominal != null) { nominal.value = String(spec.nominal); nominal.disabled = true; }
+      form.appendChild(nominal);
+      var button = document.createElement('button'); button.type = 'submit'; button.textContent = '記錄檢驗'; form.appendChild(button); box.appendChild(form);
+      form.addEventListener('submit', function (e) {
+        e.preventDefault(); if (pending || posting || !selected) return;
+        var signature = JSON.stringify([orderId, spec.checkId, input.value, nominal.value]);
+        if (signature !== lastSignature || !retryKey) { retryKey = 'qc-' + Date.now() + '-' + Math.random().toString(36).slice(2); lastSignature = signature; }
+        var body = {stage:'FINAL', checkId:spec.checkId, measured:Number(input.value), nominal:Number(nominal.value), source:'MANUAL', idempotencyKey:retryKey};
+        prepare('記錄檢驗（工單 ' + orderId + '）', '/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/qc', body, button, function () { retryKey = ''; });
+      });
+    });
+    return true;
+  }
   function clearPending() {
     if (pending && pending.fields) setLocked(pending.fields, false);
     pending = null;
     $('confirmation').hidden = true;
-    if (qcReloadNeeded && selected) { qcReloadNeeded = false; loadQc(selected.workOrderId); }
+    var qcNeedsReload = qcReloadNeeded || (qcPendingData && qcPendingOrderId) || (selected && $('qc-status') && $('qc-status').textContent === '載入中…' && $('qc-checks') && !$('qc-checks').children.length);
+    if (qcPendingData && selected && qcPendingOrderId === selected.workOrderId && renderQcPanel(qcPendingOrderId, qcPendingData)) {
+      qcPendingData = null;
+      qcPendingOrderId = null;
+      qcReloadNeeded = false;
+    } else if (qcNeedsReload && selected) {
+      qcPendingData = null;
+      qcPendingOrderId = null;
+      qcReloadNeeded = false;
+      loadQc(selected.workOrderId);
+    }
   }
   function resetMeasureDirty() {
     dirtyMeasureFields = {};
@@ -246,28 +278,13 @@
   function loadQc(orderId) {
     var seq = ++qcLoadSeq;
     qcReloadNeeded = false;
+    qcPendingData = null;
+    qcPendingOrderId = null;
     $('qc-status').textContent = '載入中…';
     api('/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/qc').then(function (d) {
       if (seq !== qcLoadSeq || !selected || selected.workOrderId !== orderId) return;
-      if (pending || posting) { qcReloadNeeded = true; return; }
-      var box = $('qc-checks'); box.textContent = '';
-      $('qc-status').textContent = d.requiredFinalOk.ok ? '必要最終檢驗通過' : '必要最終檢驗尚未通過';
-      (d.plan || []).forEach(function (spec) {
-        var form = document.createElement('form'), lastSignature = '', retryKey = '';
-        var label = document.createElement('label'); label.textContent = String(spec.checkId) + ' 實測值 ';
-        var input = document.createElement('input'); input.type = 'number'; input.step = 'any'; input.required = true; label.appendChild(input); form.appendChild(label);
-        var nominal = document.createElement('input'); nominal.type = 'number'; nominal.step = 'any'; nominal.required = true; nominal.placeholder = '標稱值';
-        if (spec.nominal != null) { nominal.value = String(spec.nominal); nominal.disabled = true; }
-        form.appendChild(nominal);
-        var button = document.createElement('button'); button.type = 'submit'; button.textContent = '記錄檢驗'; form.appendChild(button); box.appendChild(form);
-        form.addEventListener('submit', function (e) {
-          e.preventDefault(); if (pending || posting || !selected) return;
-          var signature = JSON.stringify([orderId, spec.checkId, input.value, nominal.value]);
-          if (signature !== lastSignature || !retryKey) { retryKey = 'qc-' + Date.now() + '-' + Math.random().toString(36).slice(2); lastSignature = signature; }
-          var body = {stage:'FINAL', checkId:spec.checkId, measured:Number(input.value), nominal:Number(nominal.value), source:'MANUAL', idempotencyKey:retryKey};
-          prepare('記錄檢驗（工單 ' + orderId + '）', '/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/qc', body, button, function () { retryKey = ''; });
-        });
-      });
+      if (pending || posting) { qcReloadNeeded = true; qcPendingData = d; qcPendingOrderId = orderId; return; }
+      renderQcPanel(orderId, d);
     }).catch(function (e) {
       if (seq !== qcLoadSeq || !selected || selected.workOrderId !== orderId) return;
       if (pending || posting) { qcReloadNeeded = true; return; }
@@ -432,6 +449,11 @@
       if (!ordersLoaded) clearSelection();
       applySection('batches', res[2], function (d) {
         table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { loadBatchDetail(item); });
+        if (Array.isArray(d.items) && Number.isInteger(d.total) && d.total >= d.items.length) {
+          var count = document.createElement('p');
+          count.textContent = '顯示 ' + d.items.length + ' / 共 ' + d.total + ' 筆';
+          $('batches').insertBefore(count, $('batches').firstChild);
+        }
       });
       applySection('board', res[3], function (d) {
         $('board').textContent = '';
@@ -508,7 +530,11 @@
     }
     function releaseControls() {
       posting = false;
-      if (qcReloadNeeded && selected) { qcReloadNeeded = false; loadQc(selected.workOrderId); }
+      if (qcPendingData && selected && qcPendingOrderId === selected.workOrderId && renderQcPanel(qcPendingOrderId, qcPendingData)) {
+        qcPendingData = null;
+        qcPendingOrderId = null;
+        qcReloadNeeded = false;
+      } else if (qcReloadNeeded && selected) { qcReloadNeeded = false; loadQc(selected.workOrderId); }
       setLocked(lockedBtns, false);
       $('confirm').disabled = false;
       if (task.trigger) task.trigger.disabled = false;
@@ -567,7 +593,11 @@
       }
     }).finally(function () {
       posting = false;
-      if (qcReloadNeeded && selected) { qcReloadNeeded = false; loadQc(selected.workOrderId); }
+      if (qcPendingData && selected && qcPendingOrderId === selected.workOrderId && renderQcPanel(qcPendingOrderId, qcPendingData)) {
+        qcPendingData = null;
+        qcPendingOrderId = null;
+        qcReloadNeeded = false;
+      } else if (qcReloadNeeded && selected) { qcReloadNeeded = false; loadQc(selected.workOrderId); }
       setLocked(lockedBtns, false);
       $('confirm').disabled = false;
       if (task.trigger) task.trigger.disabled = false;

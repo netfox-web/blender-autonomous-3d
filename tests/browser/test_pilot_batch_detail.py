@@ -36,3 +36,15 @@ def test_batch_detail_hold_and_failure(admin_page, admin_server):
     page.locator('#batches button').click()
     detail.get_by_text('批次明細讀取失敗').wait_for()
     assert 'warn' in detail.get_attribute('class')
+
+
+def test_batch_list_shows_returned_count_and_total(admin_page, admin_server):
+    page = admin_page
+    items = [{'batchId': f'batch-{i}', 'state': 'PLANNED'} for i in range(100)]
+    page.route('**/api/pilot/batches', lambda route: route.fulfill(
+        status=200, content_type='application/json',
+        body=json.dumps({'items': items, 'total': 101}),
+    ))
+    page.goto(admin_server['base_url'] + '/admin/pilot')
+    page.get_by_text('顯示 100 / 共 101 筆', exact=True).wait_for()
+    assert page.locator('#batches button').count() == 100
