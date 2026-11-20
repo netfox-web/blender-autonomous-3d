@@ -1,6 +1,6 @@
 (function () {
   'use strict';
-  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, cartonLoadDoneSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0, qcLoadSeq = 0, qcReloadNeeded = false, qcPendingData = null, qcPendingOrderId = null;
+  var $ = function (id) { return document.getElementById(id); }, selected = null, pending = null, exported = null, posting = false, currentCartons = [], currentMismatchHold = null, loadedTenant = 'sonaqueen-home', refreshSeq = 0, cartonLoadSeq = 0, cartonLoadDoneSeq = 0, dirtyMeasureFields = {}, batchDetailSeq = 0, qcLoadSeq = 0, qcLoadInFlight = false, qcReloadNeeded = false, qcPendingData = null, qcPendingOrderId = null;
   try { $('tenant').value = localStorage.getItem('fox3d.tenant') || 'sonaqueen-home'; } catch (e) { /* storage unavailable */ }
   function tenant() { return $('tenant').value.trim() || 'sonaqueen-home'; }
   function api(path, options) {
@@ -137,7 +137,7 @@
     if (pending && pending.fields) setLocked(pending.fields, false);
     pending = null;
     $('confirmation').hidden = true;
-    var qcNeedsReload = qcReloadNeeded || (qcPendingData && qcPendingOrderId) || (selected && $('qc-status') && $('qc-status').textContent === '載入中…' && $('qc-checks') && !$('qc-checks').children.length);
+    var qcNeedsReload = qcReloadNeeded || (qcPendingData && qcPendingOrderId) || (selected && qcLoadInFlight);
     if (qcPendingData && selected && qcPendingOrderId === selected.workOrderId && renderQcPanel(qcPendingOrderId, qcPendingData)) {
       qcPendingData = null;
       qcPendingOrderId = null;
@@ -280,6 +280,7 @@
     qcReloadNeeded = false;
     qcPendingData = null;
     qcPendingOrderId = null;
+    qcLoadInFlight = true;
     $('qc-status').textContent = '載入中…';
     api('/api/pilot/work-orders/' + encodeURIComponent(orderId) + '/qc').then(function (d) {
       if (seq !== qcLoadSeq || !selected || selected.workOrderId !== orderId) return;
@@ -289,7 +290,7 @@
       if (seq !== qcLoadSeq || !selected || selected.workOrderId !== orderId) return;
       if (pending || posting) { qcReloadNeeded = true; return; }
       $('qc-status').textContent = '讀取失敗：' + e.message;
-    });
+    }).finally(function () { if (seq === qcLoadSeq) qcLoadInFlight = false; });
   }
   if ($('qc-release')) {
     $('qc-release').addEventListener('click', function () {
