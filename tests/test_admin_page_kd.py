@@ -35,6 +35,7 @@ def test_kd_page_loads_shared_shell(client: TestClient) -> None:
     assert "/admin/recipes/assets/fox3d-shell.js" in res.text
     assert "/admin/recipes/assets/fox3d-shell.css" in res.text
     assert "/admin/pages/assets/kd.js" in res.text
+    assert "/admin/pages/assets/kd-packaging.js" in res.text
     assert "/admin/pages/assets/kd.css" in res.text
     assert 'aria-label="工作台導覽"' not in res.text
 
