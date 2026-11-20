@@ -16,6 +16,7 @@ READY_KEYS = (
     "qcTraceabilityReady",
     "importedSupplierQuoteReady",
     "importedCarrierQuoteReady",
+    "tenantlessCarrierQuotesReady",
     "liveFactoryExecutionReady",
     "liveProviderReady",
     "machineControlReady",
@@ -38,6 +39,29 @@ def scoped_readiness(*, evidence: dict[str, Any] | None = None) -> dict[str, Any
     vision = bool(ev.get("liveVision"))
     demand = bool(ev.get("liveDemand"))
     jail = bool(ev.get("osJail"))
+    raw_tenantless = ev.get("tenantlessCarrierQuotes")
+    if raw_tenantless is None:
+        raw_tenantless = ev.get("tenantlessQuotes")
+    tenantless_invalid = False
+    if raw_tenantless is None:
+        tenantless_count = 0
+    elif isinstance(raw_tenantless, bool):
+        tenantless_count = 1 if raw_tenantless else 0
+    elif isinstance(raw_tenantless, int):
+        if raw_tenantless < 0:
+            tenantless_invalid = True
+        tenantless_count = raw_tenantless
+    else:
+        try:
+            parsed_count = int(raw_tenantless)
+        except (TypeError, ValueError):
+            tenantless_invalid = True
+            tenantless_count = -1
+        else:
+            if parsed_count < 0:
+                tenantless_invalid = True
+            tenantless_count = parsed_count
+    tenantless_zero = (not tenantless_invalid) and tenantless_count == 0
     matrix = {
         "coreRenderE2EReady": bool(ev.get("coreRender", True)),
         "kdPrototypeReady": bool(ev.get("kd", True)),
@@ -49,7 +73,9 @@ def scoped_readiness(*, evidence: dict[str, Any] | None = None) -> dict[str, Any
         "manualPilotOpsReady": bool(ev.get("pilotOps", False)),
         "qcTraceabilityReady": bool(ev.get("qc", False)),
         "importedSupplierQuoteReady": bool(ev.get("supplierQuotes", False)),
-        "importedCarrierQuoteReady": bool(ev.get("carrierQuotes", False)),
+        "importedCarrierQuoteReady": bool(ev.get("carrierQuotes", False)) and tenantless_zero,
+        "tenantlessCarrierQuotesCount": tenantless_count,
+        "tenantlessCarrierQuotesReady": tenantless_zero,
         "liveFactoryExecutionReady": False,
         "liveProviderReady": live_provider,
         "machineControlReady": machine,
@@ -59,6 +85,7 @@ def scoped_readiness(*, evidence: dict[str, Any] | None = None) -> dict[str, Any
         "fullAutonomousFactoryReady": False,
         "labels": {
             "commercialPricingReady": "IMPORTED" if ev.get("importedCost") else "CONFIG_ESTIMATE",
+            "tenantlessCarrierQuotesReady": "REAL" if tenantless_zero else "BLOCKED",
             "liveProviderReady": "LIVE_PROVIDER" if live_provider else "BLOCKED",
             "liveFactoryExecutionReady": "BLOCKED",
             "machineControlReady": "BLOCKED",
@@ -76,6 +103,7 @@ def scoped_readiness(*, evidence: dict[str, Any] | None = None) -> dict[str, Any
             matrix["kdPrototypeReady"],
             matrix["liveProviderReady"],
             matrix["machineControlReady"],
+            tenantless_zero,
             vision,
             demand,
             jail,

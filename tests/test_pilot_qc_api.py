@@ -475,3 +475,56 @@ def test_completing_failure_does_not_stop_other_pending_recovery(platform: Any, 
     assert platform.pilot.workorders.get(wo_b["workOrderId"])["state"] == "REJECTED"
     assert platform.pilot.workorders.get(wo_a["workOrderId"])["state"] != "REJECTED"
     fault_a["active"] = False
+
+
+def test_paginated_work_orders_only_check_returned_rows(platform: Any, monkeypatch: Any) -> None:
+    client = TestClient(create_app(platform))
+    for i in range(112):
+        platform.pilot.workorders.orders[f"page-{i}"] = {
+            "workOrderId": f"page-{i}", "tenantId": TENANT, "state": "IN_PROGRESS"
+        }
+    platform.pilot.workorders.orders["other-page"] = {
+        "workOrderId": "other-page", "tenantId": "other", "state": "IN_PROGRESS"
+    }
+    original = platform.pilot.qc.required_final_ok
+    calls: list[str] = []
+
+    def counted(work_order_id: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        calls.append(work_order_id)
+        return original(work_order_id, *args, **kwargs)
+
+    monkeypatch.setattr(platform.pilot.qc, "required_final_ok", counted)
+    page = client.get("/api/pilot/work-orders?offset=100&limit=10", headers=HEADERS).json()
+    assert page["total"] == 112
+    assert calls == [item["workOrderId"] for item in page["items"]]
+    assert len(calls) == 10
+    calls.clear()
+    assert client.get("/api/pilot/work-orders?offset=112&limit=10", headers=HEADERS).json()["items"] == []
+    assert calls == []
+    assert len(client.get("/api/pilot/work-orders", headers=HEADERS).json()["items"]) == 112
+    assert len(calls) == 112
+
+
+def test_idempotency_snapshot_survives_interruption_at_business_persist(platform: Any) -> None:
+    import pytest
+
+    for action, body, id_field in [
+        ("qc", {"checkId": "THICKNESS", "measured": 18, "idempotencyKey": "snapshot-check"}, "qcId"),
+        ("defects", {"code": "DEF_SIZE", "disposition": "SCRAP", "confirm": True, "idempotencyKey": "snapshot-defect"}, "defectId"),
+    ]:
+        _, wo = _seed_release_receipt_and_wo(platform)
+        path = f"/api/pilot/work-orders/{wo['workOrderId']}/{action}"
+        platform.pilot.qc._crash_mode = "after-business-persist"
+        with pytest.raises(RuntimeError):
+            TestClient(create_app(platform)).post(path, headers=HEADERS, json=body)
+        platform.pilot.qc._crash_mode = None
+        restarted = type(platform)(root=platform.root, mock_blender=True)
+        rows = restarted.pilot.qc.checks if action == "qc" else restarted.pilot.qc.defects
+        matching = [row for row in rows.values() if row["workOrderId"] == wo["workOrderId"]]
+        assert len(matching) == 1
+        response = TestClient(create_app(restarted)).post(path, headers=HEADERS, json=body)
+        assert response.status_code == 200
+        assert response.json()[id_field] == matching[0][id_field]
+        restarted.pilot.qc.load()
+        rows = restarted.pilot.qc.checks if action == "qc" else restarted.pilot.qc.defects
+        assert len([row for row in rows.values() if row["workOrderId"] == wo["workOrderId"]]) == 1

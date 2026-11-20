@@ -733,11 +733,12 @@ class PortfolioFactory:
             self._require_tenant(rec, tenant_id)
         scored = []
         for rec in rows:
+            commercial = rec.get("commercial") or {}
             valid = (
                 rec.get("state") not in {"REJECTED_DFM", "NEEDS_INPUT", "SUPERSEDED"}
                 and bool((rec.get("dfm") or {}).get("engineeringOk"))
                 and bool((rec.get("dfm") or {}).get("conservationOk"))
-                and not (rec.get("commercial") or {}).get("stale")
+                and not commercial.get("stale")
             )
             breakdown = self._score_breakdown(rec, pol)
             total = sum(breakdown[k]["weighted"] for k in pol["weights"]) if valid else None
@@ -750,6 +751,7 @@ class PortfolioFactory:
                     "score": total,
                     "breakdown": breakdown,
                     "state": rec["state"],
+                    "landedCost": commercial.get("landedCost"),
                     "engineeringHash": rec.get("engineeringHash"),
                     "bomHash": rec.get("bomHash"),
                     "costSnapshotHash": (rec.get("commercial") or {}).get("costSnapshotHash"),
@@ -814,9 +816,18 @@ class PortfolioFactory:
         self._require_tenant(ranking, tenant_id)
         if not actor or not reason:
             raise PortfolioError("BLOCKED", "human override requires actor/reason")
+        scored = [r for r in (ranking.get("scored") or []) if isinstance(r, dict)]
+        target = next((r for r in scored if r.get("candidateId") == candidate_id), None)
+        if target is None:
+            raise PortfolioError("BLOCKED", "candidate not in ranking")
+        if not target.get("valid"):
+            raise PortfolioError("BLOCKED", "cannot override invalid candidate")
         ranking["humanOverrides"].append(
-            {"actor": actor, "reason": reason, "candidateId": candidate_id, "at": _now(), "rewritesScore": False}
+            {"actor": actor, "reason": reason, "candidateId": candidate_id, "at": _now(), "rewritesScore": True}
         )
+        top10 = [r for r in (ranking.get("top10") or []) if r.get("candidateId") != candidate_id]
+        top10.insert(0, dict(target))
+        ranking["top10"] = top10[:10]
         self.persist()
         return ranking
 
