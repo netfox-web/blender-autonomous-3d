@@ -483,6 +483,74 @@ def test_material_rejects_string_false_consumes_inventory(tmp_path):
     assert plat.lots.quantities(lot["lotId"], tenant_id="pa")["available"] == before
 
 
+def test_labor_api_same_fields_distinct_idempotency_keys(tmp_path):
+    _, client, headers, ctx, uid = _create_started_unit(tmp_path)
+    ops = {
+        "operatorId": ctx["fixture"]["operatorId"],
+        "shiftId": ctx["shift"]["shiftId"],
+    }
+    first = client.post(
+        f"/api/prototypes/units/{uid}/labor",
+        headers=headers,
+        json={**ops, "minutes": 12, "reason": "assembly", "source": "FIXTURE", "idempotencyKey": "asm-a"},
+    )
+    second = client.post(
+        f"/api/prototypes/units/{uid}/labor",
+        headers=headers,
+        json={**ops, "minutes": 12, "reason": "assembly", "source": "FIXTURE", "idempotencyKey": "asm-b"},
+    )
+    assert first.status_code == 200 and second.status_code == 200
+    assert first.json()["laborId"] != second.json()["laborId"]
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    rows = [r for r in plat.prototype.labor.values() if r.get("prototypeUnitId") == uid and r.get("reason") == "assembly"]
+    assert len(rows) == 2
+    assert {r["minutes"] for r in rows} == {12.0}
+
+
+def test_labor_api_idem_persist_failure_is_atomic(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    _, client, headers, ctx, uid = _create_started_unit(tmp_path)
+    ops = {
+        "operatorId": ctx["fixture"]["operatorId"],
+        "shiftId": ctx["shift"]["shiftId"],
+    }
+    body = {**ops, "minutes": 20, "reason": "trim", "source": "FIXTURE", "idempotencyKey": "fail-key"}
+    from fox3d.prototype import PrototypeFactory
+
+    orig_persist = PrototypeFactory.persist
+    fail_next = {"active": False}
+
+    def fail_persist(self) -> None:
+        if fail_next["active"]:
+            fail_next["active"] = False
+            raise OSError("simulated idempotent persist failure")
+        return orig_persist(self)
+
+    monkeypatch.setattr(PrototypeFactory, "persist", fail_persist)
+    fail_next["active"] = True
+    with pytest.raises(OSError, match="simulated idempotent persist failure"):
+        client.post(f"/api/prototypes/units/{uid}/labor", headers=headers, json=body)
+    monkeypatch.setattr(PrototypeFactory, "persist", orig_persist)
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    rows = [r for r in plat.prototype.labor.values() if r.get("prototypeUnitId") == uid]
+    assert len(rows) == 0
+    plat_reload = Platform(root=tmp_path / "live", mock_blender=True)
+    assert plat_reload.prototype.api_idem.get(f"pa::api-idem::labor::{uid}::fail-key") is None
+
+    ok = client.post(f"/api/prototypes/units/{uid}/labor", headers=headers, json=body)
+    assert ok.status_code == 200
+    conflict = client.post(
+        f"/api/prototypes/units/{uid}/labor",
+        headers=headers,
+        json={**body, "minutes": 21},
+    )
+    assert conflict.status_code == 409
+    plat2 = Platform(root=tmp_path / "live", mock_blender=True)
+    rows2 = [r for r in plat2.prototype.labor.values() if r.get("prototypeUnitId") == uid]
+    assert len(rows2) == 1
+    assert rows2[0]["minutes"] == 20
+
+
 def test_labor_api_distinct_minutes_and_idempotent_resend(tmp_path):
     _, client, headers, ctx, uid = _create_started_unit(tmp_path)
     ops = {

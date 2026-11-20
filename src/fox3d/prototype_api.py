@@ -10,7 +10,6 @@ from fastapi import APIRouter, Body, Header, HTTPException, Query
 
 from fox3d.ids import stable_hash
 from fox3d.infra import validate_tenant_id
-from fox3d.inventory import atomic_write_json, read_json
 from fox3d.prototype import PrototypeError
 from fox3d.storelock import FileLock
 
@@ -92,27 +91,8 @@ def _json_bool(payload: dict[str, Any], key: str, *, default: bool = False) -> b
     raise HTTPException(422, f"{key} 須為布林值")
 
 
-def _api_idem_path(factory: Any) -> Path:
-    return factory.root / "api_idem.json"
-
-
 def _api_idem_lock_path(factory: Any) -> Path:
     return factory.root / "api-idem.lock"
-
-
-def _load_api_idem_store(factory: Any) -> dict[str, dict[str, Any]]:
-    raw = read_json(_api_idem_path(factory)) or {}
-    if not isinstance(raw, dict):
-        return {}
-    store: dict[str, dict[str, Any]] = {}
-    for key, entry in raw.items():
-        if isinstance(key, str) and isinstance(entry, dict):
-            store[key] = entry
-    return store
-
-
-def _save_api_idem_store(factory: Any, store: dict[str, dict[str, Any]]) -> None:
-    atomic_write_json(_api_idem_path(factory), store)
 
 
 def _idem_run(
@@ -126,23 +106,60 @@ def _idem_run(
 ) -> dict[str, Any]:
     store_key = f"{tenant_id}::api-idem::{scope}::{idem_key}"
     with FileLock(_api_idem_lock_path(factory)):
-        store = _load_api_idem_store(factory)
-        prev = store.get(store_key)
+        factory.load()
+        prev = factory.api_idem.get(store_key)
         if prev is not None:
             if prev.get("sig") != sig:
                 raise HTTPException(409, "idempotencyKey 衝突")
             result = prev.get("result")
             if isinstance(result, dict):
                 return dict(result)
+        created: dict[str, Any] | None = None
+        factory.begin_persist_hold()
         try:
-            result = action()
-        except (PrototypeError, PermissionError, KeyError) as exc:
-            _map_prototype_error(exc)
-        if not isinstance(result, dict):
-            raise HTTPException(500, "內部回應格式錯誤")
-        store[store_key] = {"sig": sig, "result": dict(result)}
-        _save_api_idem_store(factory, store)
-        return result
+            try:
+                result = action()
+            except (PrototypeError, PermissionError, KeyError) as exc:
+                _map_prototype_error(exc)
+            if not isinstance(result, dict):
+                raise HTTPException(500, "內部回應格式錯誤")
+            created = dict(result)
+            factory.api_idem[store_key] = {"sig": sig, "result": created}
+            try:
+                factory.end_persist_hold_and_flush()
+            except Exception:
+                factory.api_idem.pop(store_key, None)
+                if created:
+                    _rollback_api_idem_action(factory, created)
+                factory.abort_persist_hold()
+                factory.load()
+                raise
+        except HTTPException:
+            factory.api_idem.pop(store_key, None)
+            if created:
+                _rollback_api_idem_action(factory, created)
+            factory.abort_persist_hold()
+            factory.load()
+            raise
+        except Exception:
+            factory.api_idem.pop(store_key, None)
+            if created:
+                _rollback_api_idem_action(factory, created)
+            factory.abort_persist_hold()
+            factory.load()
+            raise
+        return created
+
+
+def _rollback_api_idem_action(factory: Any, result: dict[str, Any]) -> None:
+    labor_id = result.get("laborId")
+    if isinstance(labor_id, str):
+        factory.labor.pop(labor_id, None)
+    unit_id = result.get("prototypeUnitId")
+    if isinstance(unit_id, str):
+        unit = factory.units.get(unit_id)
+        if isinstance(unit, dict) and unit.get("latestLaborId") == labor_id:
+            unit.pop("latestLaborId", None)
 
 
 def _idem_sig(payload: dict[str, Any]) -> str:
@@ -443,6 +460,7 @@ def prototype_router(provider: Callable[[], Any]) -> APIRouter:
                 minutes=float(raw_minutes),
                 reason=reason.strip(),
                 source=source,
+                idempotency_key=idem,
             )
             result["evidenceSourceLabel"] = _public_evidence_source(result)
             return result

@@ -969,6 +969,11 @@ class PrototypeFactory:
         self.plans: dict[str, dict[str, Any]] = {}
         self.labor: dict[str, dict[str, Any]] = {}
         self.idem: dict[str, str] = {}
+        self.api_idem: dict[str, dict[str, Any]] = {}
+        self._persist_hold = 0
+        self._persist_deferred = False
+        self._emit_hold = 0
+        self._deferred_emits: list[dict[str, Any]] = []
         self.journal: Any | None = None
         self.outbox: Any | None = None
         self._crash_mode = ""
@@ -990,6 +995,13 @@ class PrototypeFactory:
         self.decisions = {r["decisionId"]: r for r in payload.get("decisions") or [] if isinstance(r, dict) and r.get("decisionId")}
         raw_idem = payload.get("idem") or {}
         self.idem = dict(raw_idem) if isinstance(raw_idem, dict) else {}
+        raw_api_idem = payload.get("apiIdem") or {}
+        self.api_idem = {k: v for k, v in raw_api_idem.items() if isinstance(k, str) and isinstance(v, dict)} if isinstance(raw_api_idem, dict) else {}
+        legacy_api_idem = read_json(self.root / "api_idem.json")
+        if isinstance(legacy_api_idem, dict):
+            for key, entry in legacy_api_idem.items():
+                if isinstance(key, str) and isinstance(entry, dict) and key not in self.api_idem:
+                    self.api_idem[key] = entry
         self.intents = {r["intentId"]: r for r in payload.get("inventoryIntents") or [] if isinstance(r, dict) and r.get("intentId")}
         self.packages = {r["evidencePackageId"]: r for r in payload.get("packages") or [] if isinstance(r, dict) and r.get("evidencePackageId")}
         self.launch_decisions = {r["launchDecisionId"]: r for r in payload.get("launchDecisions") or [] if isinstance(r, dict) and r.get("launchDecisionId")}
@@ -998,6 +1010,10 @@ class PrototypeFactory:
         self._bind_journal()
 
     def persist(self) -> None:
+        if self._persist_hold > 0:
+            self._persist_deferred = True
+            return
+        self._persist_deferred = False
         atomic_write_json(
             self._path(),
             {
@@ -1014,10 +1030,47 @@ class PrototypeFactory:
                 "pilotPlans": list(self.plans.values()),
                 "labor": list(self.labor.values()),
                 "idem": self.idem,
+                "apiIdem": self.api_idem,
                 "liveMachineControl": False,
                 "truthLabel": "REAL_LOGIC",
             },
         )
+
+    def begin_persist_hold(self) -> None:
+        self._persist_hold += 1
+        self._emit_hold += 1
+
+    def end_persist_hold_and_flush(self) -> None:
+        if self._persist_hold <= 0:
+            raise RuntimeError("persist hold underflow")
+        self._persist_hold -= 1
+        self._emit_hold -= 1
+        if self._persist_hold == 0:
+            if self._persist_deferred:
+                self.persist()
+            self._flush_deferred_emits()
+
+    def abort_persist_hold(self) -> None:
+        if self._persist_hold > 0:
+            self._persist_hold -= 1
+        if self._emit_hold > 0:
+            self._emit_hold -= 1
+        self._deferred_emits.clear()
+        self._persist_deferred = False
+
+    def _flush_deferred_emits(self) -> None:
+        pending = list(self._deferred_emits)
+        self._deferred_emits.clear()
+        for item in pending:
+            self._emit(
+                item["event_type"],
+                tenant_id=item["tenant_id"],
+                aggregate_type=item["aggregate_type"],
+                aggregate_id=item["aggregate_id"],
+                actor=item["actor"],
+                payload=item.get("payload"),
+                semantic_key=item.get("semantic_key"),
+            )
 
     def _bind_journal(self) -> None:
         pilot = getattr(self.platform, "pilot", None)
@@ -1027,6 +1080,19 @@ class PrototypeFactory:
         self.outbox = getattr(pilot, "outbox", None)
 
     def _emit(self, event_type: str, *, tenant_id: str, aggregate_type: str, aggregate_id: str, actor: str, payload: dict[str, Any] | None = None, semantic_key: str | None = None) -> dict[str, Any] | None:
+        if self._emit_hold > 0:
+            self._deferred_emits.append(
+                {
+                    "event_type": event_type,
+                    "tenant_id": tenant_id,
+                    "aggregate_type": aggregate_type,
+                    "aggregate_id": aggregate_id,
+                    "actor": actor,
+                    "payload": payload or {},
+                    "semantic_key": semantic_key,
+                }
+            )
+            return None
         self._bind_journal()
         return emit(
             self,
@@ -2568,6 +2634,7 @@ class PrototypeFactory:
         minutes: float,
         reason: str,
         source: str = "MANUAL",
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         ident = self._identity(tenant_id=tenant_id, operator_id=operator_id, shift_id=shift_id)
         unit = self.units[prototype_unit_id]
@@ -2575,7 +2642,10 @@ class PrototypeFactory:
         src = self._source_for(ident, source)
         qty = _finite_number(minutes, "laborMinutes", allow_zero=True)
         wo_id = unit.get("inventoryWorkOrderId") or unit.get("laborWorkOrderId") or f"proto:{prototype_unit_id}"
-        key = f"{tenant_id}::labor::{prototype_unit_id}::{unit.get('engineeringHash')}::{qty}::{reason}"
+        if idempotency_key:
+            key = f"{tenant_id}::api-labor::{prototype_unit_id}::{idempotency_key.strip()}"
+        else:
+            key = f"{tenant_id}::labor::{prototype_unit_id}::{unit.get('engineeringHash')}::{qty}::{reason}"
 
         def _make():
             rec = {
