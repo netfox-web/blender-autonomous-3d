@@ -233,7 +233,7 @@ class PilotOps:
             rec = self.logistics.checklists.get(str(aid)) if isinstance(aid, str) else None
             return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         if atype == "QC":
-            rec = self.qc.checks.get(str(aid)) if isinstance(aid, str) else None
+            rec = (self.qc.checks.get(str(aid)) or self.qc.defects.get(str(aid))) if isinstance(aid, str) else None
             return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         proto = getattr(self.platform, "prototype", None)
         ev = tx.get("event") or {}
@@ -297,6 +297,7 @@ class PilotOps:
 
     def _reconcile_startup(self) -> dict[str, Any]:
         recovered = self.outbox.reconcile(journal=self.journal, business_committed=self._business_committed)
+        self.qc.recover_pending()
         station = self.dispatcher.reconcile()
         return {"outbox": recovered, "station": station}
 
