@@ -5,6 +5,7 @@ from __future__ import annotations
 from fox3d.render_store import ParametricStore
 from fox3d.storelock import FileLock
 
+import copy
 import json
 import logging
 import os
@@ -942,7 +943,7 @@ class Platform:
                 compact_rd_embedded_text(result, summary)
             return result
 
-        return self.rd_store.create_or_get(
+        record = self.rd_store.create_or_get(
             tenant_id=tid,
             text=clean_text,
             variant_count=clean_count,
@@ -951,6 +952,40 @@ class Platform:
             default_judge_status=str(getattr(self.judge.provider, "status", "MOCK")),
             builder=_build,
         )
+        return self._with_live_rd_render(record, tid)
+
+    def _with_live_rd_render(self, record: dict[str, Any], tenant_id: str) -> dict[str, Any]:
+        """Overlay the current queue state of an R&D record's base render job.
+
+        The stored record keeps the job as it was when the scheme was generated;
+        later retries only update the job queue. Reads therefore replace that
+        snapshot with the live job when it belongs to the same tenant, and mark
+        it ``jobStatusSource="SNAPSHOT"`` when the job can no longer be found so
+        the UI can say the status is the generation-time snapshot.
+        """
+        param_render = record.get("parametricRender")
+        if not isinstance(param_render, dict):
+            return record
+        snapshot_job = param_render.get("job")
+        if not isinstance(snapshot_job, dict):
+            return record
+        job_id = snapshot_job.get("jobId")
+        live = self.queue.get(job_id) if isinstance(job_id, str) and job_id else None
+        live_copy: dict[str, Any] | None = None
+        if isinstance(live, dict) and live.get("tenantId") == tenant_id:
+            # A worker thread may be updating the job dict while we copy it.
+            for _ in range(3):
+                try:
+                    live_copy = copy.deepcopy(live)
+                    break
+                except RuntimeError:
+                    continue
+        if live_copy is not None:
+            param_render["job"] = live_copy
+            param_render["jobStatusSource"] = "LIVE"
+        else:
+            param_render["jobStatusSource"] = "SNAPSHOT"
+        return record
 
     def list_product_rd_results(
         self,
@@ -960,10 +995,13 @@ class Platform:
         limit: int = 20,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        return self.rd_store.list_results(tenant_id, offset=offset, limit=limit, cursor=cursor)
+        page = self.rd_store.list_results(tenant_id, offset=offset, limit=limit, cursor=cursor)
+        page["items"] = [self._with_live_rd_render(item, tenant_id) for item in page["items"]]
+        return page
 
     def get_product_rd_result(self, rd_id: str, *, tenant_id: str) -> dict[str, Any]:
-        return self.rd_store.get(tenant_id, rd_id)
+        record = self.rd_store.get(tenant_id, rd_id)
+        return self._with_live_rd_render(record, tenant_id)
 
     def approve_product_rd(
         self,
@@ -982,13 +1020,14 @@ class Platform:
         if isinstance(confirm, float) or not isinstance(confirm, (bool, str, int)):
             raise PermissionError("human confirmation required for product_rd_approve")
         require_confirm({"confirm": confirm}, action="product_rd_approve")
-        return self.rd_store.approve(
+        approved = self.rd_store.approve(
             tid,
             rd_id,
             actor=actor,
             default_judge_status=str(getattr(self.judge.provider, "status", "MOCK")),
             approve_fn=lambda rec, act: self.rd.approve(rec, actor=act),
         )
+        return self._with_live_rd_render(approved, tid)
 
     def furniture_factory_run(self, *, tenant_id: str, render: bool = False, **kwargs: Any) -> dict[str, Any]:
         return self.factory.run(tenant_id=tenant_id, render=render, **kwargs)
