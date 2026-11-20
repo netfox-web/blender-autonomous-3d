@@ -123,6 +123,19 @@ class QcService:
         marker = cls._pending_skip_marker(operation_id)
         return operation_id in applied or marker in applied
 
+    @classmethod
+    def _release_qc_applied_marker(cls, wo: dict[str, Any], operation_id: str) -> None:
+        """Drop crash-recovery markers once the QC operation is no longer pending."""
+        applied = wo.get("qcAppliedOperations")
+        if not applied:
+            return
+        marker = cls._pending_skip_marker(operation_id)
+        kept = [entry for entry in applied if entry not in {operation_id, marker}]
+        if kept:
+            wo["qcAppliedOperations"] = kept
+        else:
+            wo.pop("qcAppliedOperations", None)
+
     def _record_pending_skip(self, wo: dict[str, Any], operation_id: str, rec: dict[str, Any], kind: str, reason: str) -> None:
         applied = wo.setdefault("qcAppliedOperations", [])
         marker = self._pending_skip_marker(operation_id)
@@ -161,6 +174,7 @@ class QcService:
                     except Exception as exc:
                         logger.warning("recover_pending: emit failed for %s: %s", operation_id, exc)
                         continue
+                    self._release_qc_applied_marker(wo, operation_id)
                     del self.pending[operation_id]
                     try:
                         self.persist()
@@ -199,6 +213,22 @@ class QcService:
                     continue
                 logger.warning("recover_pending: emit failed for %s: %s", operation_id, exc)
                 continue
+            if self.workorders is not None:
+                wo_done = self.workorders.get(rec["workOrderId"])
+                if wo_done.get("tenantId") == rec["tenantId"]:
+                    self._release_qc_applied_marker(wo_done, operation_id)
+                    try:
+                        self.workorders.persist()
+                    except Exception as exc:
+                        if operation_id == completing:
+                            completing_error = exc
+                        else:
+                            logger.warning(
+                                "recover_pending: workorder persist after marker release failed for %s: %s",
+                                operation_id,
+                                exc,
+                            )
+                        continue
             del self.pending[operation_id]
             try:
                 self.persist()
