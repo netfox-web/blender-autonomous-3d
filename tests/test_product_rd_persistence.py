@@ -745,6 +745,233 @@ def test_non_terminal_or_failed_render_job_never_marks_truth_label_real(
         assert body["truthLabel"] == "MOCK", f"status={non_done_status} must not claim REAL truthLabel"
 
 
+def test_fail_or_retry_actual_render_job_shape_persists_across_restart_and_approve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fox3d.blender import RuntimeResult
+
+    plat, client = _make_client(tmp_path)
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+
+    def _crash_real_blender(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
+        return RuntimeResult(
+            status="failed",
+            outputs={},
+            error="OPTIX_DEVICE_LOST",
+            real_blender=True,
+            real_optix=True,
+            real_cycles=True,
+            real_render_output=False,
+            used_mock=False,
+            blender_version="4.2.0",
+        )
+
+    monkeypatch.setattr(plat.runtime, "run_job", _crash_real_blender)
+
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬160cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert gen.status_code == 200, gen.text
+    created = gen.json()
+    rd_id = created["rdId"]
+    job = created["parametricRender"]["job"]
+
+    # Verify exact _fail_or_retry shape when attempts < maxAttempts.
+    assert job["status"] == "queued"
+    assert job["error"] == "OPTIX_DEVICE_LOST"
+    assert job["attemptCount"] == 1
+    assert job["maxAttempts"] == 3
+    assert job["retryDelaySeconds"] > 0
+    assert job["realBlender"] is True
+    assert job["usedMock"] is False
+    assert job["output"] == {}
+    assert created["truthLabel"] == "MOCK"
+
+    # Restart and verify list, get, approve, and cross-tenant isolation preserve the exact queued+error job shape.
+    _, restarted = _make_client(tmp_path)
+    listed = restarted.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert len(listed) == 1
+    assert listed[0]["parametricRender"]["job"]["status"] == "queued"
+    assert listed[0]["parametricRender"]["job"]["error"] == "OPTIX_DEVICE_LOST"
+    assert listed[0]["parametricRender"]["job"]["attemptCount"] == 1
+
+    approved = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200
+    app_body = approved.json()
+    assert app_body["approval"]["status"] == "APPROVED"
+    assert app_body["truthLabel"] == "MOCK"
+    assert app_body["parametricRender"]["job"]["status"] == "queued"
+    assert app_body["parametricRender"]["job"]["error"] == "OPTIX_DEVICE_LOST"
+    assert app_body["parametricRender"]["job"]["attemptCount"] == 1
+
+    assert restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+
+
+def _runtime_result(status: str, *, error: str | None = None, used_mock: bool = True) -> Any:
+    from fox3d.blender import RuntimeResult
+
+    return RuntimeResult(
+        status=status,
+        outputs={},
+        error=error,
+        real_blender=not used_mock,
+        real_optix=not used_mock,
+        real_cycles=not used_mock,
+        real_render_output=False,
+        used_mock=used_mock,
+        blender_version="4.2.0",
+    )
+
+
+def _generate_with_queued_retry(
+    plat: Platform, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> tuple[str, str, Any]:
+    """Generate an R&D scheme whose base render fails once and is requeued by _fail_or_retry."""
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+    orig_run_job = plat.runtime.run_job
+    monkeypatch.setattr(
+        plat.runtime,
+        "run_job",
+        lambda job, **kw: _runtime_result("failed", error="OPTIX_DEVICE_LOST", used_mock=False),
+    )
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬160cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert gen.status_code == 200, gen.text
+    body = gen.json()
+    job = body["parametricRender"]["job"]
+    assert job["status"] == "queued"
+    assert job["attemptCount"] == 1
+    assert body["parametricRender"]["jobStatusSource"] == "LIVE"
+    return body["rdId"], job["jobId"], orig_run_job
+
+
+def _render_job(body: dict[str, Any]) -> dict[str, Any]:
+    job = body["parametricRender"]["job"]
+    assert isinstance(job, dict)
+    return job
+
+
+def test_rd_reads_show_live_render_status_after_queued_retry_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, orig_run_job = _generate_with_queued_retry(plat, client, monkeypatch)
+
+    # The worker retries the queued job and this time the (mock) render succeeds.
+    monkeypatch.setattr(plat.runtime, "run_job", orig_run_job)
+    retried = plat.run_next()
+    assert retried is not None and retried["jobId"] == job_id
+    assert retried["status"] == "succeeded"
+
+    # The stored R&D record still holds the generation-time snapshot ...
+    stored = plat.rd_store.get("tenant-alpha", rd_id)
+    assert stored["parametricRender"]["job"]["status"] == "queued"
+
+    # ... but list, get and approve report the current queue state.
+    listed = client.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert len(listed) == 1
+    assert _render_job(listed[0])["status"] == "succeeded"
+    assert listed[0]["parametricRender"]["jobStatusSource"] == "LIVE"
+
+    got = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert _render_job(got)["status"] == "succeeded"
+
+    approved = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200, approved.text
+    app_body = approved.json()
+    assert app_body["approval"]["status"] == "APPROVED"
+    assert _render_job(app_body)["status"] == "succeeded"
+    assert app_body["parametricRender"]["jobStatusSource"] == "LIVE"
+    # truthLabel is never upgraded by a later retry; it stays the conservative generation-time value.
+    assert app_body["truthLabel"] == "MOCK"
+
+    # Restart: the queue is reloaded from disk, so the live state survives a process restart.
+    _, restarted = _make_client(tmp_path)
+    after = restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert _render_job(after)["status"] == "succeeded"
+    assert after["approval"]["status"] == "APPROVED"
+
+    # Another tenant still gets nothing.
+    assert restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+    assert restarted.get("/api/product-rd/results", headers=TENANT_B).json()["items"] == []
+
+
+def test_rd_reads_show_terminal_failure_after_retries_exhausted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, _ = _generate_with_queued_retry(plat, client, monkeypatch)
+
+    # Attempts 2 and 3 fail as well -> the job ends terminally failed.
+    second = plat.run_next()
+    assert second is not None and second["status"] == "queued" and second["attemptCount"] == 2
+    third = plat.run_next()
+    assert third is not None and third["jobId"] == job_id
+    assert third["status"] == "failed" and third["attemptCount"] == 3
+
+    _, restarted = _make_client(tmp_path)
+    listed = restarted.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    job = _render_job(listed[0])
+    assert job["status"] == "failed"
+    assert job["error"] == "OPTIX_DEVICE_LOST"
+    assert job["attemptCount"] == 3
+
+    approved = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200, approved.text
+    assert _render_job(approved.json())["status"] == "failed"
+    assert approved.json()["truthLabel"] == "MOCK"
+
+
+def test_rd_render_status_falls_back_to_marked_snapshot_when_job_missing_or_foreign(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, _ = _generate_with_queued_retry(plat, client, monkeypatch)
+
+    # Job disappears from the queue (e.g. purged): reads keep the snapshot and say so.
+    live_job = plat.queue._jobs.pop(job_id)
+    got = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
+    assert got.status_code == 200
+    body = got.json()
+    assert body["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
+    assert _render_job(body)["status"] == "queued"
+    assert _render_job(body)["jobId"] == job_id
+
+    # A job ID that resolves to another tenant's job is never overlaid onto this record.
+    plat.queue._jobs[job_id] = {**live_job, "tenantId": "tenant-beta", "status": "succeeded", "error": "beta-secret"}
+    listed = client.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert listed[0]["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
+    assert _render_job(listed[0])["status"] == "queued"
+    assert "beta-secret" not in json.dumps(listed[0])
+
+    # Malformed snapshot job IDs are handled without errors.
+    for bad_job_id in (None, "", 123, ["x"]):
+        record = plat.rd_store.get("tenant-alpha", rd_id)
+        record["parametricRender"]["job"]["jobId"] = bad_job_id
+        with plat.rd_store.tenant_lock("tenant-alpha"):
+            plat.rd_store._write_record_unlocked("tenant-alpha", record)
+        res = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
+        assert res.status_code == 200, (bad_job_id, res.text)
+        assert res.json()["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
+
+
 def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
     _, client = _make_client(tmp_path)
 
@@ -774,3 +1001,251 @@ def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
         )
         assert bad_ap.status_code == 422, f"expected 422 for actor={bad_actor!r}"
         assert "traceback" not in bad_ap.text.lower()
+
+
+def test_v2_generate_enforces_server_side_text_cap_while_legacy_remains_uncapped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+
+    # Exact 2000-char boundaries (ASCII, CJK 3-byte UTF-8, and 4-byte emoji) succeed on v2.
+    for idx, ok_text in enumerate(
+        (
+            "書櫃 " + ("x" * 1997),
+            "書櫃" + ("甲" * 1998),
+            "🪑" * 2000,
+        )
+    ):
+        assert len(ok_text) == 2000
+        res = client.post(
+            "/api/v2/product-rd/generate",
+            headers=TENANT_A,
+            json={"text": ok_text, "variantCount": 1, "idempotencyKey": f"v2-boundary-{idx}"},
+        )
+        assert res.status_code == 200, (idx, res.text[:300])
+        body = res.json()
+        assert body["text"] == ok_text
+        assert body["textLength"] == 2000
+        assert body["textTruncated"] is False
+        assert len(body["textSummary"]) == 201
+
+    # 2001+ chars, empty/null/whitespace, and malformed inputs fail 422 on v2 without running rd.run or persisting.
+    before_total = client.get("/api/product-rd/results", headers=TENANT_A).json()["total"]
+    orig_run = plat.rd.run
+
+    def _forbid_run(**kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("v2 invalid input must not execute rd.run")
+
+    monkeypatch.setattr(plat.rd, "run", _forbid_run)
+    for bad_v2_body in (
+        {},
+        {"text": None},
+        {"text": ""},
+        {"text": "   "},
+        {"text": "x" * 2001},
+        {"text": "櫃" * 2001},
+        {"text": "🪑" * 2001},
+        {"text": " " * 2001},
+        {"text": 123},
+        {"text": True},
+        {"text": ["書櫃"]},
+        {"text": "書櫃\x00衣櫃"},
+        {"text": "書櫃", "variantCount": 0},
+        {"text": "書櫃", "variantCount": 101},
+        {"text": "書櫃", "variantCount": True},
+        {"text": "書櫃", "idempotencyKey": ""},
+        {"text": "書櫃", "idempotencyKey": "k" * 201},
+        # Reusing an existing valid idempotencyKey with >2000 chars on v2 must still fail validation first.
+        {"text": "櫃" * 2001, "variantCount": 1, "idempotencyKey": "v2-boundary-0"},
+    ):
+        bad_res = client.post("/api/v2/product-rd/generate", headers=TENANT_A, json=bad_v2_body)
+        assert bad_res.status_code == 422, (bad_v2_body, bad_res.status_code, bad_res.text)
+        assert "traceback" not in bad_res.text.lower()
+        assert str(tmp_path) not in bad_res.text
+
+    assert client.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == before_total
+    monkeypatch.setattr(plat.rd, "run", orig_run)
+
+    # Meanwhile legacy /api/product-rd/generate still accepts >2000 chars without cap.
+    over_2000 = "客廳 寬180cm 電視櫃 " + ("甲" * 2200)
+    legacy_ok = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": over_2000, "variantCount": 1},
+    )
+    assert legacy_ok.status_code == 200, legacy_ok.text[:300]
+    assert legacy_ok.json()["text"] == over_2000
+
+
+def test_v2_generate_idempotency_concurrency_and_tenant_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat1, client1 = _make_client(tmp_path)
+    plat2, client2 = _make_client(tmp_path)
+
+    run_count = 0
+    lock = threading.Lock()
+    orig1 = plat1.rd.run
+    orig2 = plat2.rd.run
+
+    def _spy1(**kw: Any) -> dict[str, Any]:
+        nonlocal run_count
+        with lock:
+            run_count += 1
+        return orig1(**kw)
+
+    def _spy2(**kw: Any) -> dict[str, Any]:
+        nonlocal run_count
+        with lock:
+            run_count += 1
+        return orig2(**kw)
+
+    monkeypatch.setattr(plat1.rd, "run", _spy1)
+    monkeypatch.setattr(plat2.rd, "run", _spy2)
+
+    body = {"text": "臥室 寬120cm 衣櫃 雙門 四層", "variantCount": 10, "idempotencyKey": "v2-idem-concurrent"}
+    barrier = threading.Barrier(6)
+    clients = [client1, client2, client1, client2, client1, client2]
+
+    def _fire(c: TestClient) -> Any:
+        barrier.wait()
+        return c.post("/api/v2/product-rd/generate", headers=TENANT_A, json=body)
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        responses = list(pool.map(_fire, clients))
+
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    assert run_count == 1
+    rd_ids = {r.json()["rdId"] for r in responses}
+    assert len(rd_ids) == 1
+    rd_id = next(iter(rd_ids))
+
+    # Parameter conflict on same idempotencyKey -> 409.
+    conflict = client1.post(
+        "/api/v2/product-rd/generate",
+        headers=TENANT_A,
+        json={**body, "text": "玄關 鞋櫃 80cm"},
+    )
+    assert conflict.status_code == 409
+
+    # Tenant B cannot see or approve Tenant A's v2 record, and gets its own isolated record for the same key.
+    assert client1.get("/api/product-rd/results", headers=TENANT_B).json()["total"] == 0
+    assert client1.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+    assert (
+        client1.post(
+            f"/api/product-rd/results/{rd_id}/approve",
+            headers=TENANT_B,
+            json={"confirm": True, "actor": "other"},
+        ).status_code
+        == 404
+    )
+    other_created = client2.post("/api/v2/product-rd/generate", headers=TENANT_B, json=body)
+    assert other_created.status_code == 200
+    assert other_created.json()["rdId"] != rd_id
+
+
+def test_rd_store_summarizes_list_results_and_compacts_duplicate_text_copies(tmp_path: Path) -> None:
+    plat, client = _make_client(tmp_path)
+    unique_tail = ("極長需求說明段落_" * 800) + "TAIL_MARKER_END"
+    long_text = "書房 寬100cm 高180cm 白木紋書櫃 雙門 四層 " + unique_tail
+    assert len(long_text) > 7000
+
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": long_text, "variantCount": 10},
+    )
+    assert gen.status_code == 200
+    gen_data = gen.json()
+    rd_id = gen_data["rdId"]
+    assert gen_data["text"] == long_text
+    assert gen_data["textLength"] == len(long_text)
+    assert gen_data["textTruncated"] is False
+    assert len(gen_data["textSummary"]) == 201
+    assert gen_data["textSummary"].endswith("…")
+
+    # On disk, the full long_text is stored only once (in record["text"]), not duplicated across nested metadata/notes.
+    record_file = tmp_path / "product_rd" / stable_hash("tenant-alpha") / f"{stable_hash(rd_id)}.json"
+    raw_disk = record_file.read_text(encoding="utf-8")
+    assert raw_disk.count("TAIL_MARKER_END") == 1
+
+    # List endpoint summarizes text and strips long tail so list responses stay small.
+    _, restarted = _make_client(tmp_path)
+    list_res = restarted.get("/api/product-rd/results", headers=TENANT_A)
+    assert list_res.status_code == 200
+    assert "TAIL_MARKER_END" not in list_res.text
+    list_item = list_res.json()["items"][0]
+    assert list_item["rdId"] == rd_id
+    assert list_item["textTruncated"] is True
+    assert list_item["textLength"] == len(long_text)
+    assert list_item["text"] == gen_data["textSummary"]
+    assert list_item["textSummary"] == gen_data["textSummary"]
+
+    # Detail and approve endpoints still return the full verbatim text.
+    detail_res = restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert detail["text"] == long_text
+    assert detail["textTruncated"] is False
+    assert detail["textLength"] == len(long_text)
+
+    ap_res = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-approver"},
+    )
+    assert ap_res.status_code == 200
+    assert ap_res.json()["text"] == long_text
+    assert ap_res.json()["textTruncated"] is False
+
+    # Pre-existing legacy un-compacted record on disk is also summarized cleanly when listed.
+    legacy_id = "rd-legacy-bloated-01"
+    legacy_tail = ("舊版重複長字串_" * 500) + "LEGACY_BLOATED_TAIL_END"
+    legacy_long = "玄關 鞋櫃 80cm " + legacy_tail
+    legacy_rec = plat.rd.run(tenant_id="tenant-alpha", text=legacy_long, variant_count=10)
+    legacy_rec.update(
+        {
+            "rdId": legacy_id,
+            "tenantId": "tenant-alpha",
+            "createdAt": "2026-11-20T00:00:00.000000Z",
+            "text": legacy_long,
+            "approval": {
+                "status": "WAITING_APPROVAL",
+                "HUMAN_APPROVAL_REQUIRED": True,
+                "autoApproveForbiddenForProduction": True,
+                "liveMachineControl": False,
+                "approvedAt": None,
+                "actor": None,
+                "judgeLabel": "MOCK",
+            },
+        }
+    )
+    legacy_path = tmp_path / "product_rd" / stable_hash("tenant-alpha") / f"{stable_hash(legacy_id)}.json"
+    legacy_path.write_text(json.dumps(legacy_rec, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+
+    _, restarted2 = _make_client(tmp_path)
+    list_res2 = restarted2.get("/api/product-rd/results", headers=TENANT_A)
+    assert list_res2.status_code == 200
+    assert "LEGACY_BLOATED_TAIL_END" not in list_res2.text
+    by_id = {item["rdId"]: item for item in list_res2.json()["items"]}
+    assert by_id[legacy_id]["textTruncated"] is True
+    assert by_id[legacy_id]["textLength"] == len(legacy_long)
+    assert restarted2.get(f"/api/product-rd/results/{legacy_id}", headers=TENANT_A).json()["text"] == legacy_long
+
+    # Optional max_record_bytes cap rejects oversized writes atomically without leaving temp files.
+    from fox3d.product_rd_store import ProductRDStore
+
+    capped_root = tmp_path / "capped_rd"
+    capped_store = ProductRDStore(capped_root, max_record_bytes=4096)
+    with pytest.raises(ValueError, match="超過大小上限"):
+        capped_store.create_or_get(
+            tenant_id="tenant-alpha",
+            text="書櫃 " + ("超長內容" * 1500),
+            variant_count=1,
+            idempotency_key=None,
+            fingerprint="fp-oversized",
+            default_judge_status="MOCK",
+            builder=lambda: {"rdId": "rd-too-big", "top": [], "approval": {"status": "WAITING_APPROVAL"}},
+        )
+    assert capped_store.list_results("tenant-alpha")["total"] == 0
+    assert list(capped_root.rglob("*.tmp")) == []

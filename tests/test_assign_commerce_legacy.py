@@ -2,6 +2,7 @@
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from threading import Barrier, Thread
 
@@ -9,7 +10,7 @@ from fox3d.commerce import SnapshotStore
 from scripts.assign_commerce_legacy import main
 
 
-def _legacy(root: Path, kind: str, items: list[dict]) -> Path:
+def _legacy(root: Path, kind: str, items: Sequence[object]) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{kind}.json"
     path.write_text(json.dumps({"kind": kind, "items": items}), encoding="utf-8")
@@ -489,7 +490,7 @@ def test_duplicate_legacy_rows_refused_even_when_unrequested(tmp_path, capsys):
         assert live.read_bytes() == before
 
 
-def _v2(root: Path, kind: str, items: list[dict], legacy_items: list[dict]) -> Path:
+def _v2(root: Path, kind: str, items: Sequence[object], legacy_items: Sequence[object]) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{kind}.json"
     payload = {"kind": kind, "formatVersion": 2, "items": items, "legacyItems": legacy_items}
@@ -517,6 +518,152 @@ def test_duplicate_assigned_rows_refused_without_losing_data(tmp_path, capsys):
         records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
         assert [record["action"] for record in records] == ["refused"]
         assert records[0]["reason"] == "duplicate-provider-ids"
+
+
+def test_integer_snapshot_id_duplicates_are_refused_without_rewriting(tmp_path, capsys):
+    # Version-2 items are keyed even when snapshotId is not a string. Two rows with
+    # snapshotId 5 under one tenant would collapse on load and disappear on persist.
+    cases = {
+        "tenant": [
+            {"snapshotId": 5, "tenantId": "tenant-b", "price": 1},
+            {"snapshotId": 5, "tenantId": "tenant-b", "price": 2},
+        ],
+        "untenanted": [
+            {"snapshotId": 5, "price": 1},
+            {"snapshotId": 5, "price": 2},
+        ],
+        # JSON numbers and booleans that Python stores as one key.
+        "int-and-float": [
+            {"snapshotId": 5, "tenantId": "tenant-b", "price": 1},
+            {"snapshotId": 5.0, "tenantId": "tenant-b", "price": 2},
+        ],
+        "int-and-bool": [
+            {"snapshotId": 1, "tenantId": "tenant-b", "price": 1},
+            {"snapshotId": True, "tenantId": "tenant-b", "price": 2},
+        ],
+    }
+    for name, items in cases.items():
+        root = tmp_path / name / "providers"
+        live = _v2(root, "fx", items, [{"snapshotId": "old", "price": 9}])
+        backup = _copy(live, tmp_path / name / "backup.json")
+        audit = tmp_path / name / "audit.jsonl"
+        before = live.read_bytes()
+        args = _assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])
+        assert main(args) == 1
+        assert _stderr(capsys)["error"] == "duplicate-provider-ids"
+        assert main(args) == 1
+        assert _stderr(capsys)["error"] == "duplicate-provider-ids"
+        assert live.read_bytes() == before
+        assert backup.read_bytes() == before
+        records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
+        assert [record["action"] for record in records] == ["refused", "refused"]
+        assert [record["reason"] for record in records] == ["duplicate-provider-ids", "duplicate-provider-ids"]
+
+
+def test_distinct_integer_snapshot_ids_are_kept_on_assign(tmp_path, capsys):
+    root = tmp_path / "providers"
+    live = _v2(
+        root,
+        "fx",
+        [
+            {"snapshotId": 5, "tenantId": "tenant-b", "price": 1},
+            {"snapshotId": 5, "tenantId": "tenant-c", "price": 2},
+            {"snapshotId": 6, "tenantId": "tenant-b", "price": 3},
+        ],
+        [{"snapshotId": "old", "price": 9}],
+    )
+    backup = _copy(live, tmp_path / "backup.json")
+    assert main(_assign_args(root, backup, tmp_path / "audit.jsonl", tenant="tenant-a", snapshot_ids=["old"])) == 0
+    assert _stdout(capsys)["action"] == "assigned"
+    saved = json.loads(live.read_text(encoding="utf-8"))
+    assert sorted((row.get("tenantId", ""), row["snapshotId"], row["price"]) for row in saved["items"] if row["snapshotId"] != "old") == [
+        ("tenant-b", 5, 1),
+        ("tenant-b", 6, 3),
+        ("tenant-c", 5, 2),
+    ]
+    assert [(row["tenantId"], row["snapshotId"], row["price"]) for row in saved["items"] if row["snapshotId"] == "old"] == [
+        ("tenant-a", "old", 9)
+    ]
+    assert saved["legacyItems"] == []
+
+
+def test_malformed_version_two_items_return_provider_invalid_without_intent(tmp_path, capsys):
+    cases = {
+        "non-dict": ["not-a-row"],
+        "missing-snapshot-id": [{"tenantId": "tenant-b", "price": 1}],
+        "unhashable-snapshot-id": [{"snapshotId": ["nested"], "tenantId": "tenant-b", "price": 1}],
+    }
+    for name, items in cases.items():
+        root = tmp_path / name / "providers"
+        live = _v2(root, "fx", items, [{"snapshotId": "old", "price": 9}])
+        backup = _copy(live, tmp_path / name / "backup.json")
+        audit = tmp_path / name / "audit.jsonl"
+        before = live.read_bytes()
+        args = _assign_args(root, backup, audit, tenant="tenant-a", snapshot_ids=["old"])
+        assert main(args) == 1
+        err = _stderr(capsys)
+        assert err["error"] == "provider-invalid"
+        assert "not-a-row" not in err["message"]
+        assert "nested" not in err["message"]
+        assert main(args) == 1
+        err = _stderr(capsys)
+        assert err["error"] == "provider-invalid"
+        assert live.read_bytes() == before
+        assert backup.read_bytes() == before
+        records = [json.loads(line) for line in audit.read_text(encoding="utf-8").splitlines()]
+        assert [record["action"] for record in records] == ["refused", "refused"]
+        assert [record["reason"] for record in records] == ["provider-invalid", "provider-invalid"]
+        assert all("not-a-row" not in record["message"] and "nested" not in record["message"] for record in records)
+
+
+def test_dry_run_malformed_version_two_items_return_provider_invalid(tmp_path, capsys):
+    cases = {
+        "non-dict": ["not-a-row"],
+        "missing-snapshot-id": [{"price": 1}],
+        "unhashable-snapshot-id": [{"snapshotId": {"bad": True}}],
+    }
+    for name, items in cases.items():
+        root = tmp_path / name / "providers"
+        live = _v2(root, "fx", items, [{"snapshotId": "old", "price": 9}])
+        before = live.read_bytes()
+        code = main(["--provider-root", str(root), "--dry-run", "--kind", "fx"])
+        err = _stderr(capsys)
+        assert code == 1
+        assert err["error"] == "provider-invalid"
+        assert "not-a-row" not in err["message"]
+        assert "Traceback" not in err["message"]
+        assert live.read_bytes() == before
+        assert not (tmp_path / name / "audit.jsonl").exists()
+
+
+def test_unkeyed_legacy_rows_survive_assignment(tmp_path, capsys):
+    root = tmp_path / "providers"
+    live = _legacy(root, "fx", [{"price": 1}, "junk", {"snapshotId": "old", "price": 2}])
+    backup = _copy(live, tmp_path / "backup.json")
+    assert main(_assign_args(root, backup, tmp_path / "audit.jsonl", tenant="tenant-a", snapshot_ids=["old"])) == 0
+    assert _stdout(capsys)["action"] == "assigned"
+    saved = json.loads(live.read_text(encoding="utf-8"))
+    assert saved["legacyItems"] == [{"price": 1}, "junk"]
+    assert [(row["tenantId"], row["snapshotId"], row["price"]) for row in saved["items"]] == [("tenant-a", "old", 2)]
+
+
+def test_version_two_unkeyed_legacy_rows_survive_assignment(tmp_path, capsys):
+    root = tmp_path / "providers"
+    live = _v2(
+        root,
+        "fx",
+        [{"snapshotId": "kept", "tenantId": "tenant-b", "price": 4}],
+        [{"snapshotId": "old", "price": 9}, {"price": 1}, "junk"],
+    )
+    backup = _copy(live, tmp_path / "backup.json")
+    assert main(_assign_args(root, backup, tmp_path / "audit.jsonl", tenant="tenant-a", snapshot_ids=["old"])) == 0
+    assert _stdout(capsys)["action"] == "assigned"
+    saved = json.loads(live.read_text(encoding="utf-8"))
+    assert saved["legacyItems"] == [{"price": 1}, "junk"]
+    kept = [row for row in saved["items"] if row["snapshotId"] == "kept"]
+    assert [(row["tenantId"], row["price"]) for row in kept] == [("tenant-b", 4)]
+    assigned = [row for row in saved["items"] if row["snapshotId"] == "old"]
+    assert [(row["tenantId"], row["price"]) for row in assigned] == [("tenant-a", 9)]
 
 
 def test_same_snapshot_id_under_different_tenants_still_assigns(tmp_path, capsys):

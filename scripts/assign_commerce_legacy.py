@@ -22,7 +22,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, Mapping, TypedDict
+from typing import Any, Mapping, NoReturn, TypedDict
 from uuid import uuid4
 
 from filelock import FileLock
@@ -119,6 +119,36 @@ def _claimed(row: Mapping[str, Any]) -> str | None:
     return None
 
 
+def _raise_provider_load_error(exc: Exception) -> NoReturn:
+    """Map SnapshotStore load failures to a stable provider-invalid error.
+
+    A version-2 item that is not an object, or that has no snapshotId, makes
+    load() raise KeyError or AttributeError. An unhashable snapshotId raises
+    TypeError. Those must not surface as a traceback.
+    """
+    if isinstance(exc, json.JSONDecodeError):
+        raise LegacyOpsError("provider-invalid", "Provider file is not valid JSON") from exc
+    if isinstance(exc, OSError):
+        raise LegacyOpsError("provider-invalid", "Provider file could not be read") from exc
+    if isinstance(exc, (KeyError, AttributeError, TypeError)):
+        raise LegacyOpsError("provider-invalid", "Provider file contains a row that cannot be loaded") from exc
+    raise exc
+
+
+def _open_store(root: Path, kind: str) -> SnapshotStore:
+    try:
+        return SnapshotStore(root, kind=kind)
+    except (json.JSONDecodeError, OSError, KeyError, AttributeError, TypeError) as exc:
+        _raise_provider_load_error(exc)
+
+
+def _reload_store(store: SnapshotStore) -> None:
+    try:
+        store.load()
+    except (json.JSONDecodeError, OSError, KeyError, AttributeError, TypeError) as exc:
+        _raise_provider_load_error(exc)
+
+
 def _list_kind(root: Path, kind: str) -> dict[str, Any]:
     path = root / f"{kind}.json"
     if not path.exists():
@@ -126,11 +156,9 @@ def _list_kind(root: Path, kind: str) -> dict[str, Any]:
     if not path.is_file():
         raise LegacyOpsError("provider-invalid", "Provider path is not a file")
     try:
-        rows = SnapshotStore(root, kind=kind).quarantined()
-    except json.JSONDecodeError as exc:
-        raise LegacyOpsError("provider-invalid", "Provider file is not valid JSON") from exc
-    except OSError as exc:
-        raise LegacyOpsError("provider-invalid", "Provider file could not be read") from exc
+        rows = _open_store(root, kind).quarantined()
+    except (json.JSONDecodeError, OSError, KeyError, AttributeError, TypeError) as exc:
+        _raise_provider_load_error(exc)
     listed = [
         {"snapshotId": row["snapshotId"], "claimedTenantId": _claimed(row)}
         for row in rows
@@ -231,21 +259,14 @@ def _apply_assignment(
     actor: str,
 ) -> _Applied:
     """Classify, audit and assign while the provider lock is held."""
-    try:
-        store = SnapshotStore(root, kind=kind)
-    except json.JSONDecodeError as exc:
-        raise LegacyOpsError("provider-invalid", "Provider file is not valid JSON") from exc
-    except OSError as exc:
-        raise LegacyOpsError("provider-invalid", "Provider file could not be read") from exc
+    # Reject unloadable or colliding rows before SnapshotStore.load() folds them
+    # or raises. The same check runs again on the bytes read under the lock.
+    _reject_duplicate_rows(_read_bytes(live, code="provider-invalid", message="Provider file could not be read"))
+    store = _open_store(root, kind)
     # Hold this store's lock until assign_legacy returns. A second FileLock on the same
     # path would release the operating-system lock when that inner lock exited.
     with store._locked():
-        try:
-            store.load()
-        except json.JSONDecodeError as exc:
-            raise LegacyOpsError("provider-invalid", "Provider file is not valid JSON") from exc
-        except OSError as exc:
-            raise LegacyOpsError("provider-invalid", "Provider file could not be read") from exc
+        _reload_store(store)
         # Re-check inside the lock. A symlink swap must not turn the backup into the live file.
         if backup_path.resolve() == live.resolve() or _same_file(backup_path, live):
             raise LegacyOpsError("backup-is-live", "Backup must be a separate copy of the provider file")
@@ -302,11 +323,29 @@ def _apply_assignment(
         raise LegacyOpsError("rejected", "Legacy snapshot was not assigned")
 
 
+def _trusted_storage_key(row: object) -> Any:
+    """Return the key SnapshotStore._load would use, or refuse a row it cannot store.
+
+    Non-objects and rows without snapshotId make _load raise. Every hashable snapshotId
+    is keyed, including integers; an unhashable id cannot be stored without TypeError.
+    """
+    if not isinstance(row, dict) or "snapshotId" not in row:
+        raise LegacyOpsError("provider-invalid", "Provider file contains a row that cannot be loaded")
+    key = _snapshot_key(row)
+    try:
+        hash(key)
+    except TypeError as exc:
+        raise LegacyOpsError("provider-invalid", "Provider file contains a row that cannot be loaded") from exc
+    return key
+
+
 def _reject_duplicate_rows(data: bytes) -> None:
     """Refuse provider files whose rows SnapshotStore would fold together on load.
 
-    load() keys trusted rows by _snapshot_key and legacy rows by snapshotId, so a rewrite
-    after assignment would silently keep only the last row of each duplicated key.
+    load() keys every trusted row by _snapshot_key, not only string snapshotIds, and
+    legacy rows with a string snapshotId by that id. A rewrite after assignment would
+    silently keep only the last row of each duplicated key. Rows the store cannot load
+    are refused before that rewrite is attempted.
     """
     try:
         payload = json.loads(data)
@@ -319,11 +358,9 @@ def _reject_duplicate_rows(data: bytes) -> None:
             trusted, legacy = [], payload.get("items") or []
         if not isinstance(trusted, list) or not isinstance(legacy, list):
             raise ValueError
-        seen_trusted: set[str | tuple[str, str]] = set()
+        seen_trusted: set[Any] = set()
         for row in trusted:
-            if not isinstance(row, dict) or not isinstance(row.get("snapshotId"), str):
-                continue
-            key = _snapshot_key(row)
+            key = _trusted_storage_key(row)
             if key in seen_trusted:
                 raise LegacyOpsError("duplicate-provider-ids", "Provider contains duplicate assigned snapshot IDs")
             seen_trusted.add(key)

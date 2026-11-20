@@ -39,6 +39,7 @@ from fox3d.product_rd_store import (
     validate_optional_idempotency_key,
     validate_rd_actor,
     validate_rd_text,
+    validate_rd_v2_text,
     validate_rd_variant_count,
 )
 from fox3d.recovery import ExceptionStateError, PilotException
@@ -710,12 +711,16 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         except ValidationError as exc:
             raise HTTPException(422, _validation_detail(exc)) from exc
 
-    @app.post("/api/product-rd/generate")
-    def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+    def _run_product_rd_generate(
+        payload: dict[str, Any],
+        x_tenant_id: str | None,
+        *,
+        v2: bool,
+    ) -> dict[str, Any]:
         tid = require_tenant(x_tenant_id, payload)
         plat = get_platform()
         try:
-            text = validate_rd_text(payload.get("text"))
+            text = validate_rd_v2_text(payload.get("text")) if v2 else validate_rd_text(payload.get("text"))
             variant_count = validate_rd_variant_count(payload.get("variantCount"))
             idem = validate_optional_idempotency_key(payload.get("idempotencyKey"))
             return plat.product_rd(
@@ -733,6 +738,14 @@ def create_app(platform: Platform | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from None
         except (TypeError, OverflowError):
             raise HTTPException(422, "商品欄位格式錯誤") from None
+
+    @app.post("/api/product-rd/generate")
+    def product_rd(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return _run_product_rd_generate(payload, x_tenant_id, v2=False)
+
+    @app.post("/api/v2/product-rd/generate")
+    def product_rd_v2(payload: dict[str, Any], x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
+        return _run_product_rd_generate(payload, x_tenant_id, v2=True)
 
     @app.get("/api/product-rd/results")
     def list_product_rd_results(

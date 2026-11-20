@@ -507,7 +507,8 @@
 
           <form id="fc-rd-form" class="fc-form" novalidate>
             <label>研發需求描述文字
-              <textarea id="rd-text" rows="3" maxlength="2000" required placeholder="請輸入商品需求，例如：客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000">客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000</textarea>
+              <textarea id="rd-text" rows="3" required aria-describedby="rd-text-hint" placeholder="請輸入商品需求，例如：客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000">客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000</textarea>
+              <span class="fc-mute-small" id="rd-text-hint">建議 2000 字以內；超過仍可送出（歷史清單僅顯示摘要）。</span>
             </label>
 
             <label>產生候選變體數量（10–50 組）
@@ -614,6 +615,7 @@
                 <th>需求與母版規格</th>
                 <th>合格 / 變體數</th>
                 <th>評分來源</th>
+                <th>母版預覽</th>
                 <th>核准狀態</th>
                 <th>操作</th>
               </tr>
