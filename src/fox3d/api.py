@@ -45,6 +45,7 @@ from fox3d.product_rd_store import (
 from fox3d.recovery import ExceptionStateError, PilotException
 from fox3d.cyclecount_api import cyclecount_router
 from fox3d.materials_lot_ops_api import materials_lot_ops_router
+from fox3d.portfolio_api import portfolio_router
 from fox3d.recipe_admin_api import recipe_router
 from fox3d.station import ADMIN_STATION_STATUSES, STATION_CAPS
 
@@ -1796,6 +1797,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     app.include_router(pilot_shipping_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     app.include_router(materials_lot_ops_router(platform_provider))
+    app.include_router(portfolio_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
         app.include_router(page)
     return app

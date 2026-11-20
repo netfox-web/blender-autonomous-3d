@@ -16,6 +16,7 @@
 | `/admin/kd` | 管理拆裝家具型錄、SKU 與就緒狀態。 | `/api/kd`、`/api/pages/kd` |
 | `/admin/kd#structures` | 產生陳列架、包裝及壓克力商品參數。 | `/api/retail`、`/api/packaging`、`/api/acrylic`、`/api/pages/kd` |
 | `/admin/materials` | 管理板材庫存、餘料預留與排版基準測試。 | `/api/materials`、`/api/remnants`、`/api/nesting`、`/api/pages/materials` |
+| `/admin/portfolio` | 小空間 KD 商品組合：建立需求、候選、排名、送審與原型核准。 | `/api/portfolio`、`/api/pages/portfolio` |
 | `/admin/pilot` | 查看試產工單、批次、領料、收料、請購與裝箱作業。 | `/api/pilot/console`、`/api/pilot/work-orders`、`/api/pilot/batches`、`/api/pilot/receipts`、`/api/pilot/purchase-requests`、`/api/pilot/import`、`/api/pilot/export`、`/api/pilot/health`、`/api/pilot/cartons`、`/api/pages/pilot` |
 | `/admin/pilot-floor` | 管理現場站點、派工、掃碼與異常。 | `/api/pilot/operator`、`/api/pilot/scan`、`/api/pilot/stations`、`/api/pilot/dispatch`、`/api/pilot/leases`、`/api/pilot/exceptions`、`/api/pilot/scan-token`、`/api/pages/pilot-floor` |
 | `/admin/pilot-shipping` | 管理試產棧板規劃、出貨草稿、運費報價匯入、紙箱標籤與人工交運。 | `/api/pilot/pallets`、`/api/pilot/shipments`、`/api/pilot/carrier-quotes`、`/api/pages/pilot-shipping` |
