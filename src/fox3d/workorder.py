@@ -603,6 +603,8 @@ class WorkOrderService:
 
     def complete(self, work_order_id: str, *, actor: str, qc_ok: bool = True) -> dict[str, Any]:
         with self._lock, self.logistics._lock if self.logistics is not None else nullcontext():
+            if self.qc is not None:
+                self.qc.recover_pending()
             return self._complete_locked(work_order_id, actor=actor, qc_ok=qc_ok)
 
     def _complete_locked(self, work_order_id: str, *, actor: str, qc_ok: bool) -> dict[str, Any]:
@@ -762,6 +764,8 @@ class WorkOrderService:
             self._lock,
             self.logistics._lock if self.logistics is not None else nullcontext(),
         ):
+            if self.qc is not None:
+                self.qc.recover_pending()
             rec = self._require(work_order_id, tenant_id=None)
             if rec["state"] == "CANCELLED":
                 return rec
