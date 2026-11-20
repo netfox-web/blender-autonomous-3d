@@ -24,6 +24,7 @@
 | `/admin/readiness` | 查看就緒狀態、證據、放行、安全評估與 KPI。 | `/api/readiness`、`/api/evidence`、`/api/release`、`/api/safety`、`/api/kpi`、`/api/pages/readiness` |
 | `/admin/readiness#physical-os` | 查看實體商品家族、就緒狀態與人工核准。 | `/api/physical-os`、`/api/pages/readiness` |
 | `/admin/readiness#commerce` | 匯入外部電商商品資料。 | `/api/commerce`、`/api/pages/readiness` |
+| `/admin/prototypes` | 原型驗證決策看板、單元矩陣、現場開工／完工、工時與證據包（上市／試產決策只讀）。 | `/api/prototypes` |
 | `/admin/system` | 查看健康檢查、主機偵測與 API 文件。 | `/health`、`/api/probe`、`/docs`、`/redoc`、`/openapi.json`、`/api/pages/system` |
 
 # Adding an admin page
