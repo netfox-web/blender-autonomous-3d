@@ -10,6 +10,7 @@
     selectedCandidate: null,
     confirmOpen: false,
     inflight: {},
+    contextVersion: 0,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -227,10 +228,38 @@
     $('po-supersede').disabled = !state.selectedCandidate || state.inflight.supersede;
   }
 
+  function contextSnapshot() {
+    return { portfolioId: state.portfolioId, tenant: tenant(), version: state.contextVersion };
+  }
+
+  function contextMatches(snap) {
+    return snap.portfolioId === state.portfolioId && snap.tenant === tenant() && snap.version === state.contextVersion;
+  }
+
+  function resetContext() {
+    state.contextVersion += 1;
+    state.portfolioId = null;
+    state.rankingId = null;
+    state.approvalId = null;
+    state.approvalCandidateId = null;
+    state.selectedCandidate = null;
+    renderCandidates([]);
+    renderRanking(null);
+    $('po-ranking-meta').textContent = '';
+    $('po-stale-hint').hidden = true;
+    $('po-detail').hidden = true;
+    $('po-demand-label').textContent = '需求為估計值';
+    if ($('po-override-dialog').open) $('po-override-dialog').close('cancel');
+    $('po-intent-status').textContent = '';
+    updateActionButtons();
+  }
+
   function refreshCandidates() {
     if (!state.portfolioId) return Promise.resolve();
-    return api('/api/portfolio/intents/' + encodeURIComponent(state.portfolioId) + '/candidates')
+    var snap = contextSnapshot();
+    return api('/api/portfolio/intents/' + encodeURIComponent(snap.portfolioId) + '/candidates', { tenantId: snap.tenant })
       .then(function (res) {
+        if (!contextMatches(snap)) return;
         if (!res.ok) throw new Error((res.body && res.body.detail) || '載入候選失敗');
         renderCandidates(res.body.items || []);
       });
@@ -266,13 +295,17 @@
       $('po-override-snapshot').hidden = false;
       $('po-override-actor').readOnly = true;
       $('po-override-reason').readOnly = true;
+      var snapContext = contextSnapshot();
+      var rankingId = state.rankingId;
       var btn = $('po-override-ok');
       btn.disabled = true;
-      api('/api/portfolio/rankings/' + encodeURIComponent(state.rankingId) + '/override', {
+      api('/api/portfolio/rankings/' + encodeURIComponent(rankingId) + '/override', {
         method: 'POST',
         body: { actor: actor, reason: reason, candidateId: $('po-override-candidate').value.trim() },
+        tenantId: snapContext.tenant,
       }).then(function (res) {
         btn.disabled = false;
+        if (!contextMatches(snapContext) || rankingId !== state.rankingId) return;
         dlg.close('ok');
         if (!res.ok) {
           showBanner((res.body && res.body.detail) || '改排失敗');
@@ -298,16 +331,19 @@
   }
 
   function wire() {
+    $('po-tenant').addEventListener('input', resetContext);
     var intentForm = $('po-intent-form');
     if (intentForm) {
       intentForm.addEventListener('submit', function (ev) {
         ev.preventDefault();
         if (state.inflight.intent) return;
+        var intentSnap = contextSnapshot();
         setInflight('intent', true);
         var btn = $('po-create-intent');
         btn.disabled = true;
         api('/api/portfolio/intents', {
           method: 'POST',
+          tenantId: intentSnap.tenant,
           body: {
             segment: $('po-segment').value,
             demandSource: $('po-demand-source').value,
@@ -316,15 +352,13 @@
         }).then(function (res) {
           setInflight('intent', false);
           btn.disabled = false;
+          if (!contextMatches(intentSnap)) return;
           if (!res.ok) {
             showBanner((res.body && res.body.detail) || '建立需求失敗');
             return;
           }
+          resetContext();
           state.portfolioId = res.body.portfolioId;
-          state.rankingId = null;
-          state.approvalId = null;
-          state.approvalCandidateId = null;
-          state.selectedCandidate = null;
           $('po-intent-status').textContent = '需求 ID：' + state.portfolioId;
           showBanner('已建立組合需求', true);
           updateActionButtons();
@@ -339,12 +373,14 @@
 
     $('po-generate') && $('po-generate').addEventListener('click', function () {
       if (!state.portfolioId || state.inflight.generate) return;
+      var snap = contextSnapshot();
       setInflight('generate', true);
       $('po-generate').disabled = true;
-      api('/api/portfolio/intents/' + encodeURIComponent(state.portfolioId) + '/candidates', { method: 'POST' })
+      api('/api/portfolio/intents/' + encodeURIComponent(snap.portfolioId) + '/candidates', { method: 'POST', tenantId: snap.tenant })
         .then(function (res) {
           setInflight('generate', false);
           updateActionButtons();
+          if (!contextMatches(snap)) return;
           if (!res.ok) {
             showBanner((res.body && res.body.detail) || '產生候選失敗');
             return;
@@ -383,14 +419,17 @@
 
     $('po-rank') && $('po-rank').addEventListener('click', function () {
       if (!state.portfolioId || state.inflight.rank) return;
+      var snap = contextSnapshot();
       setInflight('rank', true);
       $('po-rank').disabled = true;
-      api('/api/portfolio/intents/' + encodeURIComponent(state.portfolioId) + '/rankings', {
+      api('/api/portfolio/intents/' + encodeURIComponent(snap.portfolioId) + '/rankings', {
         method: 'POST',
+        tenantId: snap.tenant,
         body: {},
       }).then(function (res) {
         setInflight('rank', false);
         updateActionButtons();
+        if (!contextMatches(snap)) return;
         if (!res.ok) {
           showBanner((res.body && res.body.detail) || '排名失敗');
           return;

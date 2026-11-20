@@ -62,12 +62,7 @@ def test_portfolio_page_loads_and_shows_demand_estimate(admin_page, admin_server
 def test_override_dialog_snapshots_fields(admin_page, admin_server) -> None:
     page = admin_page
     _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
-    page.locator("#po-segment").select_option("STUDENT")
-    page.locator("#po-create-intent").click()
-    page.wait_for_function("() => !!(document.getElementById('po-generate') && !document.getElementById('po-generate').disabled)")
-    page.locator("#po-generate").click()
-    page.locator("#po-rank").click()
-    page.wait_for_function("() => document.querySelectorAll('#po-ranking-table tbody button').length > 0")
+    _portfolio_bootstrap(page)
     page.locator("#po-ranking-table button").first.click()
     page.locator("#po-override-actor").fill("snap-actor")
     page.locator("#po-override-reason").fill("snap-reason")
@@ -280,3 +275,83 @@ def test_ranking_cost_column_shows_numbers(admin_page, admin_server) -> None:
     assert cost_cell != "有效"
     assert cost_cell != "排除"
     assert re.match(r"^-?\d", cost_cell)
+
+
+def test_new_intent_clears_old_candidates_and_ranking(admin_page, admin_server) -> None:
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    old_id = page.locator("#po-ranking-table tbody tr").first.locator("td").nth(1).inner_text()
+    old_status = page.locator("#po-intent-status").inner_text()
+    page.locator("#po-create-intent").click()
+    expect(page.locator("#po-intent-status")).not_to_have_text(old_status)
+    expect(page.locator("#po-ranking-table")).not_to_contain_text(old_id)
+    expect(page.locator("#po-ranking-table tbody button")).to_have_count(0)
+    expect(page.locator("#po-candidates-wrap .po-card")).to_have_count(0)
+    expect(page.locator("#po-submit-approval")).to_be_disabled()
+    expect(page.locator("#po-approve")).to_be_disabled()
+
+
+@pytest.mark.parametrize("kind", ["candidates", "rankings"])
+@pytest.mark.parametrize("switch", ["intent", "tenant"])
+def test_delayed_portfolio_response_cannot_restore_old_rows(admin_page, admin_server, kind, switch) -> None:
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    pending: list[Route] = []
+    pattern = re.compile(r"/api/portfolio/intents/.+/" + kind + r"$")
+
+    def capture(route: Route) -> None:
+        if route.request.method == ("GET" if kind == "candidates" else "POST"):
+            pending.append(route)
+        else:
+            route.continue_()
+
+    page.route(pattern, capture)
+    page.evaluate("""kind => {
+      const original = window.fetch;
+      window.testResponseHandled = false;
+      window.fetch = function(url, options) {
+        const promise = original.apply(this, arguments);
+        if (url.endsWith('/' + kind) && (options.method || 'GET') === (kind === 'candidates' ? 'GET' : 'POST')) {
+          promise.then(response => {
+            const read = response.text.bind(response);
+            response.text = () => read().then(text => { window.testResponseHandled = true; return text; });
+          });
+        }
+        return promise;
+      };
+    }""", kind)
+    page.locator("#po-refresh" if kind == "candidates" else "#po-rank").click()
+    # A subsequent browser interaction dispatches the intercepted request before releasing it.
+    if switch == "intent":
+        old_status = page.locator("#po-intent-status").inner_text()
+        page.locator("#po-create-intent").click()
+        expect(page.locator("#po-intent-status")).not_to_have_text(old_status)
+    else:
+        page.locator("#po-tenant").fill("other-tenant")
+    payload = {"items": [{"candidateId": "old-candidate"}]} if kind == "candidates" else {
+        "rankingId": "old-ranking", "top10": [{"candidateId": "old-candidate"}]
+    }
+    _release(pending, payload)
+    assert len(pending) == 1
+    page.wait_for_function("() => window.testResponseHandled")
+    expect(page.locator("#po-candidates-wrap")).not_to_contain_text("old-candidate")
+    expect(page.locator("#po-ranking-table")).not_to_contain_text("old-candidate")
+    expect(page.locator("#po-submit-approval")).to_be_disabled()
+
+
+def test_tenant_switch_closes_old_override_dialog(admin_page, admin_server) -> None:
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    page.locator("#po-ranking-table button").first.click()
+    expect(page.locator("#po-override-dialog")).to_have_js_property("open", True)
+    page.evaluate("""() => {
+      const input = document.getElementById('po-tenant');
+      input.value = 'other-tenant';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }""")
+    expect(page.locator("#po-override-dialog")).to_have_js_property("open", False)
+    expect(page.locator("#po-ranking-table tbody button")).to_have_count(0)
+    expect(page.locator("#po-submit-approval")).to_be_disabled()
