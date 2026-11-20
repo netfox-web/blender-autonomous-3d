@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 import copy
 from datetime import date
 import json
@@ -212,6 +212,81 @@ def is_tenantless_carrier_quote(
     return False
 
 
+CARRIER_QUOTE_RECORD_REMEDIATION = (
+    "run scripts/migrate_carrier_quotes.py --check to list rawIndex/recordFingerprint, then "
+    "--keep-duplicate QUOTE_ID=FINGERPRINT (duplicate quoteId) or --drop-invalid FINGERPRINT (non-object record)"
+)
+
+
+def carrier_quote_record_key(rec: Any, idx: int, taken: Collection[str] = ()) -> str:
+    """Storage key used by LogisticsService.load(); records without quoteId get a unique placeholder key."""
+    raw_qid = rec.get("quoteId") if isinstance(rec, dict) else None
+    if isinstance(raw_qid, str) and raw_qid.strip():
+        return raw_qid.strip()
+    if raw_qid not in (None, ""):
+        return str(raw_qid)
+    return f"<missing-quoteId:{idx}>" if "<missing-quoteId>" in taken else "<missing-quoteId>"
+
+
+def carrier_quote_record_fingerprint(rec: Any) -> str:
+    """Content fingerprint that identifies one raw carrier_quotes entry independent of its list position."""
+    return stable_hash({"record": rec})
+
+
+def scan_carrier_quote_records(rows: Any) -> dict[str, Any]:
+    """Shared raw-record rule for logistics.json carrier_quotes (load, preflight, migration, backup).
+
+    Every entry that is not a JSON object, and every entry whose quoteId is shared with another
+    entry, is an anomaly. Anomalies are never usable as quotes (fail-closed), must be preserved
+    verbatim on persist, and block readiness / tenant-scoped backups until explicitly resolved.
+    """
+    if rows is None:
+        rows = []
+    if not isinstance(rows, list):
+        raise ValueError("logistics.json carrier_quotes must be a list")
+    keyed: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    taken: set[str] = set()
+    anomalies: list[dict[str, Any]] = []
+    for idx, rec in enumerate(rows):
+        if not isinstance(rec, dict):
+            anomalies.append(
+                {
+                    "rawIndex": idx,
+                    "reason": "non_object",
+                    "quoteId": None,
+                    "recordFingerprint": carrier_quote_record_fingerprint(rec),
+                    "record": rec,
+                }
+            )
+            continue
+        key = carrier_quote_record_key(rec, idx, taken)
+        taken.add(key)
+        keyed.setdefault(key, []).append((idx, rec))
+    unique: dict[str, tuple[int, dict[str, Any]]] = {}
+    for key, entries in keyed.items():
+        if len(entries) == 1:
+            unique[key] = entries[0]
+            continue
+        for idx, rec in entries:
+            anomalies.append(
+                {
+                    "rawIndex": idx,
+                    "reason": "duplicate_quote_id",
+                    "quoteId": key,
+                    "duplicateCount": len(entries),
+                    "recordFingerprint": carrier_quote_record_fingerprint(rec),
+                    "record": rec,
+                }
+            )
+    anomalies.sort(key=lambda a: int(a["rawIndex"]))
+    return {
+        "unique": unique,
+        "anomalies": anomalies,
+        "duplicateQuoteIds": sorted({str(a["quoteId"]) for a in anomalies if a["reason"] == "duplicate_quote_id"}),
+        "nonObjectCount": sum(1 for a in anomalies if a["reason"] == "non_object"),
+    }
+
+
 def _require_quantity(quantity: object) -> int:
     if isinstance(quantity, bool):
         raise ValueError("quantity must be a positive integer")
@@ -295,6 +370,7 @@ class LogisticsService:
         self.pallets: dict[str, dict[str, Any]] = {}
         self.shipments: dict[str, dict[str, Any]] = {}
         self.carrier_quotes: dict[str, dict[str, Any]] = {}
+        self._carrier_quote_anomalies: list[dict[str, Any]] = []
         self.checklists: dict[str, dict[str, Any]] = {}
         self.handoffs: dict[str, dict[str, Any]] = {}
         self._idem: dict[str, Any] = {}
@@ -309,22 +385,11 @@ class LogisticsService:
         self.cartons = {r["cartonId"]: r for r in payload.get("cartons") or []}
         self.pallets = {r["palletPlanId"]: r for r in payload.get("pallets") or []}
         self.shipments = {r["shipmentId"]: r for r in payload.get("shipments") or []}
-        self.carrier_quotes = {}
-        for idx, r in enumerate(payload.get("carrier_quotes") or []):
-            if not isinstance(r, dict):
-                continue
-            raw_qid = r.get("quoteId")
-            if isinstance(raw_qid, str) and raw_qid.strip():
-                qid_key = raw_qid.strip()
-            elif raw_qid not in (None, ""):
-                qid_key = str(raw_qid)
-            else:
-                qid_key = (
-                    f"<missing-quoteId:{idx}>"
-                    if "<missing-quoteId>" in self.carrier_quotes
-                    else "<missing-quoteId>"
-                )
-            self.carrier_quotes[qid_key] = r
+        scan = scan_carrier_quote_records(payload.get("carrier_quotes"))
+        self.carrier_quotes = {key: rec for key, (_idx, rec) in scan["unique"].items()}
+        # Non-object entries and every copy of a duplicated quoteId are quarantined: unusable as quotes,
+        # written back verbatim by persist(), and reported as blocking until resolve_carrier_quote_records().
+        self._carrier_quote_anomalies = scan["anomalies"]
         self.checklists = {r["checklistId"]: r for r in payload.get("checklists") or []}
         self.handoffs = {r["handoffId"]: r for r in payload.get("handoffs") or []}
         self._idem = dict(payload.get("idem") or {})
@@ -349,7 +414,10 @@ class LogisticsService:
                 "cartons": list(self.cartons.values()),
                 "pallets": list(self.pallets.values()),
                 "shipments": list(self.shipments.values()),
-                "carrier_quotes": list(self.carrier_quotes.values()),
+                "carrier_quotes": [
+                    *self.carrier_quotes.values(),
+                    *(a["record"] for a in self._carrier_quote_anomalies),
+                ],
                 "checklists": list(self.checklists.values()),
                 "handoffs": list(self.handoffs.values()),
                 "idem": self._idem,
@@ -908,6 +976,7 @@ class LogisticsService:
             else:
                 quote_id = new_id()
 
+            self._refuse_quarantined_quote_ids([quote_id])
             existing = self.carrier_quotes.get(quote_id)
             if existing is not None:
                 if existing.get("tenantId") != eff_tenant:
@@ -948,6 +1017,122 @@ class LogisticsService:
                     raise
             return rec
 
+    def _quarantined_duplicate_quote_ids(self) -> set[str]:
+        return {
+            str(a["quoteId"]) for a in self._carrier_quote_anomalies if a["reason"] == "duplicate_quote_id"
+        }
+
+    def _refuse_quarantined_quote_ids(self, quote_ids: list[str]) -> None:
+        dup_ids = self._quarantined_duplicate_quote_ids()
+        for qid in quote_ids:
+            if qid in dup_ids:
+                # Prefixed with "tenant isolation" so HTTP callers map it to 409 without exposing record contents.
+                raise PermissionError(
+                    f"tenant isolation: carrier quote {qid} has duplicate records in logistics.json; "
+                    f"{CARRIER_QUOTE_RECORD_REMEDIATION}"
+                )
+
+    def resolve_carrier_quote_records(
+        self,
+        *,
+        keep: Mapping[str, str] | None = None,
+        drop: list[str] | set[str] | tuple[str, ...] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Explicitly resolve quarantined carrier_quotes entries.
+
+        keep: quoteId -> recordFingerprint of the one duplicate copy to keep; all other copies are removed.
+        drop: recordFingerprints of non-object entries to remove.
+        Removed entries are returned verbatim in ``removed`` so the operator retains a copy.
+        """
+        if not isinstance(dry_run, bool):
+            raise ValueError("dry_run must be a boolean")
+        norm_keep: dict[str, str] = {}
+        if keep is not None:
+            if not isinstance(keep, Mapping):
+                raise ValueError("keep must be a mapping of quoteId -> recordFingerprint")
+            for raw_qid, raw_fp in keep.items():
+                if not isinstance(raw_qid, str) or not raw_qid.strip():
+                    raise ValueError("keep quoteId must be a non-empty string")
+                if not isinstance(raw_fp, str) or not raw_fp.strip():
+                    raise ValueError("keep recordFingerprint must be a non-empty string")
+                norm_keep[raw_qid.strip()] = raw_fp.strip()
+        norm_drop: list[str] = []
+        if drop is not None:
+            if not isinstance(drop, (list, set, tuple)):
+                raise ValueError("drop must be a collection of recordFingerprint strings")
+            for raw_fp in drop:
+                if not isinstance(raw_fp, str) or not raw_fp.strip():
+                    raise ValueError("drop elements must be non-empty recordFingerprint strings")
+                if raw_fp.strip() not in norm_drop:
+                    norm_drop.append(raw_fp.strip())
+        if not norm_keep and not norm_drop:
+            raise ValueError("nothing to resolve: pass keep (quoteId -> fingerprint) and/or drop (fingerprints)")
+
+        with self._lock:
+            self._sync_from_disk()
+            anomalies = self._carrier_quote_anomalies
+            kept: list[dict[str, Any]] = []
+            keep_pos_set: set[int] = set()
+            removed_pos: set[int] = set()
+            restored: dict[str, dict[str, Any]] = {}
+
+            for qid, fp in norm_keep.items():
+                positions = [
+                    i
+                    for i, a in enumerate(anomalies)
+                    if a["reason"] == "duplicate_quote_id" and a["quoteId"] == qid
+                ]
+                if not positions:
+                    raise KeyError(f"no duplicate carrier quote records for quoteId: {qid}")
+                matches = [i for i in positions if anomalies[i]["recordFingerprint"] == fp]
+                if not matches:
+                    raise KeyError(f"recordFingerprint {fp} does not match any duplicate record of quoteId {qid}")
+                keep_pos = matches[0]
+                restored[qid] = anomalies[keep_pos]["record"]
+                kept.append({"quoteId": qid, "rawIndex": anomalies[keep_pos]["rawIndex"], "recordFingerprint": fp})
+                keep_pos_set.add(keep_pos)
+                removed_pos.update(i for i in positions if i != keep_pos)
+
+            for fp in norm_drop:
+                matches = [
+                    i
+                    for i, a in enumerate(anomalies)
+                    if a["reason"] == "non_object" and a["recordFingerprint"] == fp
+                ]
+                if not matches:
+                    raise KeyError(f"recordFingerprint {fp} does not match any non-object carrier quote record")
+                removed_pos.update(matches)
+
+            removed = [
+                {
+                    k: copy.deepcopy(anomalies[i][k])
+                    for k in ("rawIndex", "reason", "quoteId", "recordFingerprint", "record")
+                }
+                for i in sorted(removed_pos)
+            ]
+            resolved_pos = removed_pos | keep_pos_set
+            if not dry_run:
+                prev_quotes = copy.deepcopy(self.carrier_quotes)
+                prev_anomalies = self._carrier_quote_anomalies
+                try:
+                    for qid, rec in restored.items():
+                        self.carrier_quotes[qid] = rec
+                    self._carrier_quote_anomalies = [a for i, a in enumerate(anomalies) if i not in resolved_pos]
+                    self.persist()
+                except Exception:
+                    self.carrier_quotes = prev_quotes
+                    self._carrier_quote_anomalies = prev_anomalies
+                    raise
+            return {
+                "dryRun": dry_run,
+                "keptCount": len(kept),
+                "removedCount": len(removed),
+                "kept": kept,
+                "removed": removed,
+                "remainingAnomalyCount": len(anomalies) - len(resolved_pos),
+            }
+
     def _quote_shipment_references(self) -> dict[str, list[dict[str, Any]]]:
         refs: dict[str, list[dict[str, Any]]] = {}
         for ship in self.shipments.values():
@@ -955,6 +1140,48 @@ class LogisticsService:
             if isinstance(qid, str) and qid.strip():
                 refs.setdefault(qid.strip(), []).append(ship)
         return refs
+
+    @staticmethod
+    def _anomaly_report_item(
+        anomaly: dict[str, Any],
+        refs_by_qid: dict[str, list[dict[str, Any]]],
+    ) -> dict[str, Any]:
+        rec = anomaly["record"]
+        item: dict[str, Any] = copy.deepcopy(rec) if isinstance(rec, dict) else {"rawRecord": copy.deepcopy(rec)}
+        qid = anomaly["quoteId"]
+        ref_shipments = refs_by_qid.get(qid, []) if qid is not None else []
+        if anomaly["reason"] == "duplicate_quote_id":
+            item["quoteId"] = qid
+            item["tenantId"] = classify_carrier_quote(rec)["tenantId"]
+            item["duplicateCount"] = anomaly["duplicateCount"]
+            item["remediation"] = (
+                f"python scripts/migrate_carrier_quotes.py --root <data-root> "
+                f"--keep-duplicate {qid}={anomaly['recordFingerprint']} (removes the other copies)"
+            )
+        else:
+            item["quoteId"] = f"<non-object:{anomaly['rawIndex']}>"
+            item["tenantId"] = None
+            item["remediation"] = (
+                "python scripts/migrate_carrier_quotes.py --root <data-root> "
+                f"--drop-invalid {anomaly['recordFingerprint']}"
+            )
+        item["explicitGlobal"] = False
+        item["issue"] = anomaly["reason"]
+        item["rawIndex"] = anomaly["rawIndex"]
+        item["recordFingerprint"] = anomaly["recordFingerprint"]
+        item["inferredTenantId"] = None
+        item["referencedByTenants"] = sorted(
+            {
+                str(s["tenantId"]).strip()
+                for s in ref_shipments
+                if isinstance(s.get("tenantId"), str) and str(s["tenantId"]).strip()
+            }
+        )
+        item["referencedShipmentIds"] = sorted(
+            str(s["shipmentId"]) for s in ref_shipments if isinstance(s.get("shipmentId"), str) and s["shipmentId"]
+        )
+        item["conflict"] = True
+        return item
 
     def inspect_tenantless_carrier_quotes(
         self,
@@ -1011,10 +1238,18 @@ class LogisticsService:
                 item["referencedShipmentIds"] = ref_ship_ids
                 item["conflict"] = has_conflict
                 items.append(item)
+            for anomaly in self._carrier_quote_anomalies:
+                items.append(self._anomaly_report_item(anomaly, refs_by_qid))
             conflict_items = [item for item in items if item.get("conflict")]
             blocking_items = [item for item in items if not item.get("explicitGlobal")]
+            anomalies = self._carrier_quote_anomalies
             return {
-                "totalQuotes": len(self.carrier_quotes),
+                "totalQuotes": len(self.carrier_quotes) + len(anomalies),
+                "duplicateQuoteIds": sorted(
+                    {str(a["quoteId"]) for a in anomalies if a["reason"] == "duplicate_quote_id"}
+                ),
+                "duplicateRecordCount": sum(1 for a in anomalies if a["reason"] == "duplicate_quote_id"),
+                "invalidRecordCount": sum(1 for a in anomalies if a["reason"] == "non_object"),
                 "tenantlessCount": len(items),
                 "blockingCount": len(blocking_items),
                 "conflictCount": len(conflict_items),
@@ -1089,6 +1324,7 @@ class LogisticsService:
 
         with self._lock:
             self._sync_from_disk()
+            self._refuse_quarantined_quote_ids([*norm_assignments, *(filter_qids or [])])
             for qid in norm_assignments:
                 if qid not in self.carrier_quotes:
                     raise KeyError(f"carrier quote not found: {qid}")
@@ -1327,6 +1563,23 @@ class LogisticsService:
                     }
                 )
 
+            if filter_qids is None:
+                # Quarantined raw records cannot be migrated until resolved; keep them visible so
+                # --require-zero never passes while backup would still be BLOCKED.
+                for anomaly in self._carrier_quote_anomalies:
+                    anomaly_entry: dict[str, Any] = {
+                        "quoteId": (
+                            anomaly["quoteId"]
+                            if anomaly["reason"] == "duplicate_quote_id"
+                            else f"<non-object:{anomaly['rawIndex']}>"
+                        ),
+                        "reason": anomaly["reason"],
+                        "rawIndex": anomaly["rawIndex"],
+                        "recordFingerprint": anomaly["recordFingerprint"],
+                    }
+                    conflicts.append(anomaly_entry)
+                    unresolved.append(anomaly_entry)
+
             if not dry_run and planned_updates:
                 prev_quotes = copy.deepcopy(self.carrier_quotes)
                 try:
@@ -1374,6 +1627,7 @@ class LogisticsService:
 
         with self._lock:
             self._sync_from_disk()
+            self._refuse_quarantined_quote_ids(norm_ids)
             for qid in norm_ids:
                 if qid not in self.carrier_quotes:
                     raise KeyError(f"carrier quote not found: {qid}")
@@ -1728,6 +1982,17 @@ def unassign_migrated_carrier_quotes(
     return svc.unassign_migrated_carrier_quotes(quote_ids, dry_run=dry_run)
 
 
+def resolve_carrier_quote_records(
+    target: Any,
+    *,
+    keep: Mapping[str, str] | None = None,
+    drop: list[str] | set[str] | tuple[str, ...] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    svc = _resolve_logistics_service(target)
+    return svc.resolve_carrier_quote_records(keep=keep, drop=drop, dry_run=dry_run)
+
+
 def cli_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Inspect or migrate legacy tenantless carrier quotes in logistics.json.",
@@ -1775,9 +2040,44 @@ def cli_main(argv: list[str] | None = None) -> int:
         dest="unassign_ids",
         help="Roll back a quoteId that was previously migrated from tenantless state",
     )
+    parser.add_argument(
+        "--keep-duplicate",
+        action="append",
+        default=[],
+        dest="keep_duplicates",
+        metavar="QUOTE_ID=FINGERPRINT",
+        help="Resolve a duplicated quoteId by keeping the record with this recordFingerprint (repeatable)",
+    )
+    parser.add_argument(
+        "--drop-invalid",
+        action="append",
+        default=[],
+        dest="drop_invalid",
+        metavar="FINGERPRINT",
+        help="Remove a non-object carrier_quotes entry identified by its recordFingerprint (repeatable)",
+    )
     args = parser.parse_args(argv)
 
     svc = _resolve_logistics_service(Path(args.root))
+    if args.keep_duplicates or args.drop_invalid:
+        keep_map: dict[str, str] = {}
+        for item in args.keep_duplicates:
+            if "=" not in item:
+                parser.error(f"invalid --keep-duplicate {item!r}, expected QUOTE_ID=FINGERPRINT")
+            qid, fp = item.split("=", 1)
+            if qid.strip() in keep_map:
+                parser.error(f"--keep-duplicate given twice for quoteId {qid.strip()!r}")
+            keep_map[qid.strip()] = fp.strip()
+        result = svc.resolve_carrier_quote_records(
+            keep=keep_map or None,
+            drop=list(args.drop_invalid) or None,
+            dry_run=bool(args.dry_run),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        if args.require_zero and int(result.get("remainingAnomalyCount") or 0) > 0:
+            return 1
+        return 0
+
     if args.unassign_ids:
         result = svc.unassign_migrated_carrier_quotes(args.unassign_ids, dry_run=bool(args.dry_run))
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))

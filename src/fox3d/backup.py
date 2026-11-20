@@ -14,10 +14,12 @@ from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
 from fox3d.logistics import (
+    CARRIER_QUOTE_RECORD_REMEDIATION,
     carrier_quote_id,
     classify_carrier_quote,
     is_explicit_global_carrier_quote,
     is_valid_tenant_carrier_quote,
+    scan_carrier_quote_records,
 )
 from fox3d.release import (
     is_matching_tenant_stem,
@@ -246,6 +248,23 @@ def _quote_id_of(rec: dict[str, Any]) -> str:
     return carrier_quote_id(rec)
 
 
+def _block_carrier_quote_record_anomalies(rows: list[Any], rel: str, key: str) -> None:
+    """Fail closed on raw entries LogisticsService quarantines (same rule as preflight / readiness)."""
+    anomalies = scan_carrier_quote_records(rows)["anomalies"]
+    if not anomalies:
+        return
+    first = anomalies[0]
+    if first["reason"] == "duplicate_quote_id":
+        detail = f"duplicate quoteId={first['quoteId']} ({first['duplicateCount']} records)"
+    else:
+        detail = f"non-object record at rawIndex={first['rawIndex']}"
+    raise BackupError(
+        "BLOCKED",
+        f"ambiguous {rel}:{key} {detail}; {len(anomalies)} unresolved raw record(s); "
+        f"{CARRIER_QUOTE_RECORD_REMEDIATION}",
+    )
+
+
 def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
     if not isinstance(idem, dict):
         raise BackupError("BLOCKED", "malformed idem container")
@@ -340,6 +359,8 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
             continue
         kept: list[dict[str, Any]] = []
         parents = _parent_tenants(payload, rel, key) if policy == TENANT_DERIVED else {}
+        if rel == "logistics/logistics.json" and key == "carrier_quotes":
+            _block_carrier_quote_record_anomalies(rows, rel, key)
         for rec in rows:
             if not isinstance(rec, dict):
                 raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:{key}")

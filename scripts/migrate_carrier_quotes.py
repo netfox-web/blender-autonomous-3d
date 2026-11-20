@@ -5,7 +5,9 @@ Pre-deployment / backup readiness requirement:
   global quotes, and fail-closed (BLOCKED) if any legacy tenantless quote, rolled-back quote
   (ownership=GLOBAL_REFERENCE without globalQuote), or conflicting quote (e.g. tenantId combined
   with globalQuote/isGlobal/allowGlobal/GLOBAL_REFERENCE, or ownership=TENANT_OWNED combined
-  with global flags without tenantId) remains in logistics.json.
+  with global flags without tenantId) remains in logistics.json. Raw entries that are not JSON
+  objects, and every copy of a quoteId that appears more than once, are also reported (issue
+  non_object / duplicate_quote_id with rawIndex + recordFingerprint) and block backup until resolved.
   Before deployment or running tenant-scoped backups, verify tenantlessCount == 0:
     python scripts/migrate_carrier_quotes.py --root .fox3d-data --check --require-zero
 
@@ -21,6 +23,11 @@ Usage examples:
 
   # Apply migration with explicit per-quote attribution and default tenant:
   python scripts/migrate_carrier_quotes.py --root .fox3d-data --tenant tenant-a --assign q1=tenant-b
+
+  # Resolve a duplicated quoteId by keeping one copy (fingerprint from --check output; others removed
+  # and printed in "removed"), or remove a non-object entry; add --dry-run to preview:
+  python scripts/migrate_carrier_quotes.py --root .fox3d-data --keep-duplicate q1=<recordFingerprint>
+  python scripts/migrate_carrier_quotes.py --root .fox3d-data --drop-invalid <recordFingerprint>
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ from fox3d.logistics import (  # noqa: E402
     is_tenantless_carrier_quote,
     is_valid_tenant_carrier_quote,
     migrate_tenantless_carrier_quotes,
+    resolve_carrier_quote_records,
     unassign_migrated_carrier_quotes,
 )
 
@@ -52,6 +60,7 @@ __all__ = [
     "is_valid_tenant_carrier_quote",
     "main",
     "migrate_tenantless_carrier_quotes",
+    "resolve_carrier_quote_records",
     "unassign_migrated_carrier_quotes",
 ]
 
