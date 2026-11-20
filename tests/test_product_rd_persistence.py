@@ -745,6 +745,74 @@ def test_non_terminal_or_failed_render_job_never_marks_truth_label_real(
         assert body["truthLabel"] == "MOCK", f"status={non_done_status} must not claim REAL truthLabel"
 
 
+def test_fail_or_retry_actual_render_job_shape_persists_across_restart_and_approve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fox3d.blender import RuntimeResult
+
+    plat, client = _make_client(tmp_path)
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+
+    def _crash_real_blender(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
+        return RuntimeResult(
+            status="failed",
+            outputs={},
+            error="OPTIX_DEVICE_LOST",
+            real_blender=True,
+            real_optix=True,
+            real_cycles=True,
+            real_render_output=False,
+            used_mock=False,
+            blender_version="4.2.0",
+        )
+
+    monkeypatch.setattr(plat.runtime, "run_job", _crash_real_blender)
+
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬160cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert gen.status_code == 200, gen.text
+    created = gen.json()
+    rd_id = created["rdId"]
+    job = created["parametricRender"]["job"]
+
+    # Verify exact _fail_or_retry shape when attempts < maxAttempts.
+    assert job["status"] == "queued"
+    assert job["error"] == "OPTIX_DEVICE_LOST"
+    assert job["attemptCount"] == 1
+    assert job["maxAttempts"] == 3
+    assert job["retryDelaySeconds"] > 0
+    assert job["realBlender"] is True
+    assert job["usedMock"] is False
+    assert job["output"] == {}
+    assert created["truthLabel"] == "MOCK"
+
+    # Restart and verify list, get, approve, and cross-tenant isolation preserve the exact queued+error job shape.
+    _, restarted = _make_client(tmp_path)
+    listed = restarted.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert len(listed) == 1
+    assert listed[0]["parametricRender"]["job"]["status"] == "queued"
+    assert listed[0]["parametricRender"]["job"]["error"] == "OPTIX_DEVICE_LOST"
+    assert listed[0]["parametricRender"]["job"]["attemptCount"] == 1
+
+    approved = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200
+    app_body = approved.json()
+    assert app_body["approval"]["status"] == "APPROVED"
+    assert app_body["truthLabel"] == "MOCK"
+    assert app_body["parametricRender"]["job"]["status"] == "queued"
+    assert app_body["parametricRender"]["job"]["error"] == "OPTIX_DEVICE_LOST"
+    assert app_body["parametricRender"]["job"]["attemptCount"] == 1
+
+    assert restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+
+
 def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
     _, client = _make_client(tmp_path)
 

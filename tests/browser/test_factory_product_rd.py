@@ -443,23 +443,74 @@ def test_queued_retry_render_job_from_fail_or_retry_not_shown_as_completed_previ
     page = admin_page
     platform = admin_server["platform"]
     orig_run_job = platform.runtime.run_job
+    orig_submit_job = platform.submit_job
+    mode_by_tenant: dict[str, str] = {}
 
-    def _transient_fail_run_job(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
-        if job.get("tenantId") == "retry-render-tenant":
-            return RuntimeResult(status="failed", outputs={}, error="blender worker transient crash")
+    def _controlled_submit_job(payload: dict[str, Any]) -> dict[str, Any]:
+        mode = mode_by_tenant.get(str(payload.get("tenantId") or ""), "")
+        if mode == "terminal_fail":
+            payload = {**payload, "maxAttempts": 1}
+        return orig_submit_job(payload)
+
+    def _controlled_run_job(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
+        mode = mode_by_tenant.get(str(job.get("tenantId") or ""), "")
+        if mode == "retry_real_crash":
+            # Worst-case trap: realBlender=True & usedMock=False while _fail_or_retry requeues with error.
+            return RuntimeResult(
+                status="failed",
+                outputs={},
+                error="blender worker transient crash",
+                real_blender=True,
+                real_optix=True,
+                real_cycles=True,
+                real_render_output=False,
+                used_mock=False,
+                blender_version="4.2.0",
+            )
+        if mode == "terminal_fail":
+            return RuntimeResult(
+                status="failed",
+                outputs={},
+                error="optix kernel fatal error",
+                real_blender=True,
+                used_mock=False,
+            )
         return orig_run_job(job, **kwargs)
 
-    monkeypatch.setattr(platform.runtime, "run_job", _transient_fail_run_job)
+    monkeypatch.setattr(platform, "submit_job", _controlled_submit_job)
+    monkeypatch.setattr(platform.runtime, "run_job", _controlled_run_job)
 
     page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
     page.wait_for_selector("#rd-prepare-btn", timeout=20_000)
     _switch_tenant(page, "retry-render-tenant")
     expect(page.locator("#rd-history-empty")).to_contain_text("尚無歷史研發方案")
 
+    # 1. Completed baseline (status == "succeeded", usedMock == True) -> ok alert + completed MOCK badge.
+    page.locator("#rd-text").fill("客廳 寬150cm 電視櫃 雙門")
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+    with page.expect_response(
+        lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
+        timeout=20_000,
+    ) as done_info:
+        page.locator("#rd-confirm-yes").click()
+    done_data = done_info.value.json()
+    done_rd_id = done_data["rdId"]
+    assert done_data["parametricRender"]["job"]["status"] == "succeeded"
+
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert ok")
+    expect(page.locator("#fc-global-status")).to_contain_text("商品研發方案產生完成")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：MOCK（模擬算圖已完成）")
+    expect(page.locator("#rd-intent-summary")).to_contain_text("已完成（MOCK）")
+    expect(
+        page.locator(f'#rd-history-tbody tr[data-rd-id="{done_rd_id}"] [data-role="rd-preview-status"]')
+    ).to_contain_text("已完成 · MOCK")
+
+    # 2. Queued retry from real _fail_or_retry (attempts=1 < maxAttempts=3, realBlender=True, usedMock=False).
+    mode_by_tenant["retry-render-tenant"] = "retry_real_crash"
     page.locator("#rd-text").fill("書房 寬90cm 高180cm 書櫃 四層")
     page.locator("#rd-count").fill("10")
     page.locator("#rd-prepare-btn").click()
-    # Wait on the generate response itself instead of a "response" listener, which can lag behind the DOM update.
     with page.expect_response(
         lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
         timeout=20_000,
@@ -467,31 +518,215 @@ def test_queued_retry_render_job_from_fail_or_retry_not_shown_as_completed_previ
         page.locator("#rd-confirm-yes").click()
     generate_resp = generate_info.value
     assert generate_resp.status == 200
-
-    expect(page.locator("#rd-body")).to_be_visible(timeout=20_000)
-    actual_job = generate_resp.json()["parametricRender"]["job"]
+    retry_body = generate_resp.json()
+    retry_rd_id = retry_body["rdId"]
+    actual_job = retry_body["parametricRender"]["job"]
     assert actual_job["status"] == "queued"
     assert actual_job["error"] == "blender worker transient crash"
     assert actual_job["attemptCount"] == 1
+    assert actual_job["maxAttempts"] == 3
+    assert actual_job["retryDelaySeconds"] > 0
+    assert actual_job["realBlender"] is True
+    assert actual_job["usedMock"] is False
 
     # Global status distinguishes retry-queued (warn) from completed (ok) and terminal failure (err).
     expect(page.locator("#fc-global-status")).to_have_class("fc-alert warn")
     expect(page.locator("#fc-global-status")).to_contain_text("排隊重試")
+    expect(page.locator("#fc-global-status")).to_contain_text("第 1/3 次嘗試")
     expect(page.locator("#fc-global-status")).to_contain_text("blender worker transient crash")
     expect(page.locator("#fc-global-status")).not_to_contain_text("商品研發方案產生完成")
+    expect(page.locator("#fc-global-status")).not_to_contain_text("算圖失敗")
 
-    # Preview badge shows retry-queued state, never completed MOCK or REAL preview.
+    # Detail badge, summary KV, and history table row all show retry-queued, never completed MOCK/REAL or failed.
     expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中")
     expect(page.locator("#rd-truth-badges")).to_contain_text("queued")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("第 1/3 次嘗試")
     expect(page.locator("#rd-truth-badges")).to_contain_text("blender worker transient crash")
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("已完成")
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("算圖失敗")
+    expect(page.locator("#rd-intent-summary")).to_contain_text("排隊重試中")
+    expect(page.locator("#rd-intent-summary")).not_to_contain_text("已完成")
 
-    # Reloading from GET /api/product-rd/results preserves the retry-queued preview badge.
+    retry_row_preview = page.locator(
+        f'#rd-history-tbody tr[data-rd-id="{retry_rd_id}"] [data-role="rd-preview-status"]'
+    )
+    expect(retry_row_preview).to_contain_text("排隊重試中（queued · 第 1/3 次嘗試）")
+    expect(retry_row_preview).not_to_contain_text("已完成")
+
+    # Approving a retry-queued scheme warns in the confirm box and keeps the retry-queued preview badge after approval.
+    page.locator("#rd-approve-actor").fill("rd-reviewer")
+    page.locator("#rd-approve-prepare").click()
+    expect(page.locator("#rd-approve-msg")).to_contain_text("排隊重試中")
+    page.locator("#rd-approve-yes").click()
+    expect(page.locator("#rd-gate-badge")).to_contain_text("APPROVED", timeout=20_000)
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert warn")
+    expect(page.locator("#fc-global-status")).to_contain_text("母版預覽：排隊重試中")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+
+    # 3. Terminal failure from _fail_or_retry (attempts == maxAttempts == 1 -> status == "failed")
+    # Select the earlier completed scheme first to verify failed generate switches selection and never leaves completed preview visible.
+    page.locator(f'#rd-history-tbody tr[data-rd-id="{done_rd_id}"] button').click()
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：MOCK（模擬算圖已完成）")
+
+    mode_by_tenant["retry-render-tenant"] = "terminal_fail"
+    page.locator("#rd-text").fill("臥室 寬120cm 高200cm 衣櫃 雙門")
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+    with page.expect_response(
+        lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
+        timeout=20_000,
+    ) as fail_info:
+        page.locator("#rd-confirm-yes").click()
+    fail_body = fail_info.value.json()
+    fail_rd_id = fail_body["rdId"]
+    assert fail_body["parametricRender"]["job"]["status"] == "failed"
+    assert fail_body["parametricRender"]["job"]["attemptCount"] == 1
+
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert err")
+    expect(page.locator("#fc-global-status")).to_contain_text("研發方案已儲存")
+    expect(page.locator("#fc-global-status")).to_contain_text("optix kernel fatal error")
+    expect(page.locator("#rd-intent-summary")).to_contain_text(fail_rd_id)
+    expect(page.locator("#rd-truth-badges")).to_contain_text("optix kernel fatal error")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("算圖失敗")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("排隊重試中")
+    expect(
+        page.locator(f'#rd-history-tbody tr[data-rd-id="{fail_rd_id}"] [data-role="rd-preview-status"]')
+    ).to_contain_text("算圖失敗")
+
+    # Reloading from GET /api/product-rd/results preserves all 3 distinct preview states in history.
     page.reload(wait_until="domcontentloaded")
     _switch_tenant(page, "retry-render-tenant")
-    expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中", timeout=20_000)
+    expect(
+        page.locator(f'#rd-history-tbody tr[data-rd-id="{done_rd_id}"] [data-role="rd-preview-status"]')
+    ).to_contain_text("已完成 · MOCK", timeout=20_000)
+    expect(
+        page.locator(f'#rd-history-tbody tr[data-rd-id="{retry_rd_id}"] [data-role="rd-preview-status"]')
+    ).to_contain_text("排隊重試中")
+    expect(
+        page.locator(f'#rd-history-tbody tr[data-rd-id="{fail_rd_id}"] [data-role="rd-preview-status"]')
+    ).to_contain_text("算圖失敗")
+    assert getattr(page, "_fox3d_console_errors", []) == []
+
+
+def test_rd_render_status_boundary_shapes_and_xss_in_error_text(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    xss_err = '<img src=x onerror="window.__fox3dXss=1"> worker-retry-err'
+
+    base = {
+        "tenantId": "sonaqueen-home",
+        "variantCount": 10,
+        "scoredCount": 8,
+        "judgeLabel": "REAL",
+        "scoringStatus": "REAL",
+        "truthLabel": "MOCK",
+        "HUMAN_APPROVAL_REQUIRED": True,
+        "baseSpec": {"kind": "BOOKCASE", "width": 800, "height": 1800, "depth": 350},
+        "baseReport": {"ok": True},
+        "top": [],
+        "approvedAt": None,
+        "approval": {"status": "WAITING_APPROVAL", "judgeLabel": "REAL"},
+    }
+    items = [
+        {
+            **base,
+            "rdId": "rd-shape-queued-err",
+            "createdAt": "2026-11-19T14:05:00.000000Z",
+            "text": "最小 queued+error 形狀與 XSS 測試",
+            "parametricRender": {"job": {"status": "queued", "error": xss_err, "realBlender": True, "usedMock": False}},
+        },
+        {
+            **base,
+            "rdId": "rd-shape-retry-no-err",
+            "createdAt": "2026-11-19T14:04:00.000000Z",
+            "text": "retry_scheduled 無錯誤文字",
+            "parametricRender": {"job": {"status": "retry_scheduled", "attemptCount": 2}},
+        },
+        {
+            **base,
+            "rdId": "rd-shape-fresh-queued",
+            "createdAt": "2026-11-19T14:03:00.000000Z",
+            "text": "初次排隊尚未執行",
+            "parametricRender": {"job": {"status": "queued", "attemptCount": 0, "error": None}},
+        },
+        {
+            **base,
+            "rdId": "rd-shape-running",
+            "createdAt": "2026-11-19T14:02:00.000000Z",
+            "text": "算圖執行中",
+            "parametricRender": {"job": {"status": "rendering", "attemptCount": 1, "maxAttempts": 3}},
+        },
+        {
+            **base,
+            "rdId": "rd-shape-real-done",
+            "createdAt": "2026-11-19T14:01:00.000000Z",
+            "text": "真實算圖完成",
+            "truthLabel": "REAL",
+            "parametricRender": {"job": {"status": "completed", "realBlender": True, "usedMock": False}},
+        },
+        {
+            **base,
+            "rdId": "rd-shape-malformed-job",
+            "createdAt": "2026-11-19T14:00:00.000000Z",
+            "text": "空白或陣列 job 邊界",
+            "parametricRender": {"job": []},
+        },
+    ]
+    by_id = {item["rdId"]: item for item in items}
+
+    page.route(
+        "**/api/product-rd/results?*",
+        lambda route: route.fulfill(
+            json={"items": items, "total": len(items), "offset": 0, "limit": 10, "hasMore": False, "nextCursor": None}
+        ),
+    )
+    page.route(
+        "**/api/product-rd/results/*",
+        lambda route: route.fulfill(json=by_id[route.request.url.rsplit("/", 1)[-1]])
+        if route.request.url.rsplit("/", 1)[-1] in by_id
+        else route.fulfill(status=404, json={"detail": "找不到研發方案"}),
+    )
+
+    page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
+    expect(page.locator("#rd-body")).to_be_visible()
+
+    # Item 1 (auto-selected): minimal {status: "queued", error: xss_err} -> retrying, XSS escaped, not REAL/MOCK completed.
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：排隊重試中（queued · " + xss_err + "）")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
+    assert page.evaluate("window.__fox3dXss || 0") == 0
+    assert page.locator('img[src="x"]').count() == 0
+
+    # Item 2: retry_scheduled without error -> no duplicate "retry_scheduled · retry_scheduled"
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-shape-retry-no-err"] button').click()
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：排隊重試中（retry_scheduled · 第 2 次嘗試）")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("retry_scheduled · retry_scheduled")
+
+    # Item 3: initial queued with attemptCount=0 and error=None -> pending ("排隊待算圖"), not retrying/completed
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-shape-fresh-queued"] button').click()
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：排隊待算圖（queued）")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("排隊重試中")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("已完成")
+
+    # Item 4: rendering with attemptCount=1 -> active retry execution ("重試算圖執行中"), not completed
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-shape-running"] button').click()
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：重試算圖執行中（rendering · 第 1/3 次嘗試）")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("已完成")
+
+    # Item 5: completed with realBlender=True & usedMock=False -> REAL completed
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-shape-real-done"] button').click()
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：REAL（真實算圖已完成）")
+
+    # Item 6: malformed array job -> handled gracefully as SKIPPED without console error or completed badge
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-shape-malformed-job"] button').click()
+    expect(page.locator("#rd-intent-summary")).to_contain_text("SKIPPED（未算圖）")
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
     assert getattr(page, "_fox3d_console_errors", []) == []
