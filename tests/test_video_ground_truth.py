@@ -8,7 +8,7 @@ from fox3d.ids import stable_hash,sha256_bytes
 from fox3d.platform import Platform
 from fox3d.product_truth import run_phase_841_scenario,write_occupancy_png
 from fox3d.video_recipe import make_recipe,validate_recipe,frame_plan,articulation_gate,ROLES
-from fox3d.video_ground_truth import freeze_authority,validate_manifest,validate_observation,reopen_sequence,write_json
+from fox3d.video_ground_truth import freeze_authority,validate_manifest,validate_observation,reopen_sequence,write_json,check_authority
 from fox3d.video_gateway import H3MaxAdapter,LTX25Adapter,qa_candidate,VideoCandidateStore
 
 
@@ -392,3 +392,125 @@ def test_round2_existing_platform_cache_separates_video_authority(bundle,change)
     else:a['generationId']='new-generation'
     a['authorityHash']=stable_hash({k:v for k,v in a.items() if k!='authorityHash'})
     assert job_cache_key(first,blender_version='real')!=job_cache_key(video_job_payload(a),blender_version='real')
+
+
+def _rehash(manifest):
+    body={k:v for k,v in manifest.items() if k!='manifestHash'}
+    manifest['manifestHash']=stable_hash(body)
+    return manifest
+
+
+def test_manifest_hash_is_deterministic(bundle):
+    manifest=bundle['m']
+    body={k:v for k,v in manifest.items() if k!='manifestHash'}
+    again={k:v for k,v in copy.deepcopy(manifest).items() if k!='manifestHash'}
+    assert stable_hash(body)==stable_hash(again)==manifest['manifestHash']
+    rebuilt=copy.deepcopy(body)
+    rebuilt['manifestHash']=stable_hash(rebuilt)
+    assert rebuilt['manifestHash']==manifest['manifestHash']
+    assert stable_hash(rebuilt)==stable_hash(manifest)
+    changed=copy.deepcopy(manifest)
+    changed['frames'][0]['timestamp']=changed['frames'][0]['timestamp']+0.5
+    assert stable_hash({k:v for k,v in changed.items() if k!='manifestHash'})!=manifest['manifestHash']
+
+
+def test_manifest_identity_must_be_object(bundle):
+    manifest=copy.deepcopy(bundle['m'])
+    manifest['identity']=[]
+    _rehash(manifest)
+    assert 'identity_mismatch' in check(bundle,manifest)
+
+
+def test_manifest_hash_mismatch_fail_closed(bundle):
+    manifest=copy.deepcopy(bundle['m'])
+    manifest['manifestHash']='0'*64
+    assert 'manifest_receipt_or_identity' in check(bundle,manifest)
+
+
+def test_each_frame_exr_sha_tamper_fail_closed(bundle):
+    from pathlib import Path
+    for frame in bundle['m']['frames']:
+        for role in ('depth','normal'):
+            path=Path(frame['artifacts'][role]['path'])
+            original=path.read_bytes()
+            try:
+                mutated=bytearray(original)
+                mutated[-1]^=0xFF
+                path.write_bytes(bytes(mutated))
+                assert 'artifact_bytes' in check(bundle)
+            finally:
+                path.write_bytes(original)
+
+
+@pytest.mark.parametrize('mutate',['missing','reorder','duplicate'])
+def test_frame_manifest_structure_fail_closed(bundle,mutate):
+    manifest=copy.deepcopy(bundle['m'])
+    if mutate=='missing':manifest['frames'].pop()
+    elif mutate=='reorder':manifest['frames'].reverse()
+    else:manifest['frames'][1]=copy.deepcopy(manifest['frames'][0])
+    _rehash(manifest)
+    assert 'manifest_receipt_or_identity' in check(bundle,manifest)
+
+
+def test_observation_missing_reordered_and_duplicate_frames(bundle):
+    observation=bundle['receipt']['observation']
+    missing=copy.deepcopy(observation)
+    missing['frames'].pop()
+    assert 'frame_count' in validate_observation(bundle['a'],missing,job_id='test-job')
+    reordered=copy.deepcopy(observation)
+    reordered['frames'].reverse()
+    assert 'frame_order' in validate_observation(bundle['a'],reordered,job_id='test-job')
+    duplicate=copy.deepcopy(observation)
+    duplicate['frames'][1]=copy.deepcopy(duplicate['frames'][0])
+    assert 'frame_order' in validate_observation(bundle['a'],duplicate,job_id='test-job')
+
+
+@pytest.mark.parametrize('key,code',[
+    ('sku','sku_mismatch'),
+    ('engineeringHash','engineering_hash_mismatch'),
+    ('artworkHash','artwork_hash_mismatch'),
+    ('placementHash','placement_hash_mismatch'),
+])
+def test_manifest_sku_and_hash_mismatch_fail_closed(bundle,key,code):
+    manifest=copy.deepcopy(bundle['m'])
+    manifest['identity'][key]='foreign-value'
+    _rehash(manifest)
+    assert code in check(bundle,manifest)
+
+
+def test_blank_sku_fails_closed(bundle):
+    authority=copy.deepcopy(bundle['a'])
+    authority['identity']['sku']=''
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='sku_mismatch'):
+        check_authority(authority,authority['authorityHash'])
+
+
+def test_changed_sku_fails_original_authority_seal(bundle):
+    authority=copy.deepcopy(bundle['a'])
+    authority['identity']['sku']='OTHER-SKU'
+    with pytest.raises(ValueError,match='authority_seal'):
+        check_authority(authority,bundle['a']['authorityHash'])
+
+
+def test_resealed_engineering_hash_disagrees_with_body(bundle):
+    authority=copy.deepcopy(bundle['a'])
+    fake='ab'*32
+    authority['identity']['engineeringHash']=fake
+    authority['sourceFrozen']['engineeringHash']=fake
+    authority['sourceFrozen']['placement']['engineeringHash']=fake
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='engineering_hash_mismatch'):
+        check_authority(authority,authority['authorityHash'])
+
+
+@pytest.mark.parametrize('key,code',[
+    ('artworkHash','artwork_hash_mismatch'),
+    ('placementHash','placement_hash_mismatch'),
+])
+def test_resealed_artwork_or_placement_hash_fail_closed(bundle,key,code):
+    authority=copy.deepcopy(bundle['a'])
+    authority['identity'][key]='cd'*32
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match=code):
+        check_authority(authority,authority['authorityHash'])

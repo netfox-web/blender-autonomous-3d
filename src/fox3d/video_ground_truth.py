@@ -61,9 +61,38 @@ def freeze_authority(plat, source, *, sku, product_version, instruction_sha, cod
     return authority
 
 
+def _require_same(actual, expected, code):
+    if type(actual) is not str or not actual or actual != expected:
+        raise ValueError(code)
+
+
+def _bind_identity(a):
+    """Fail closed when SKU or product hashes disagree with the frozen source."""
+    ident = a["identity"]
+    frozen = a["sourceFrozen"]
+    place = frozen.get("placement") if type(frozen.get("placement")) is dict else {}
+    if type(ident.get("sku")) is not str or not ident.get("sku"):
+        raise ValueError("sku_mismatch")
+    _require_same(ident.get("engineeringHash"), frozen.get("engineeringHash"), "engineering_hash_mismatch")
+    _require_same(place.get("engineeringHash"), ident.get("engineeringHash"), "engineering_hash_mismatch")
+    _require_same(place.get("artworkHash"), ident.get("artworkHash"), "artwork_hash_mismatch")
+    _require_same(place.get("placementHash"), ident.get("placementHash"), "placement_hash_mismatch")
+    eng = a.get("engineering")
+    if type(eng) is not dict:
+        raise ValueError("engineering_hash_mismatch")
+    from fox3d.parametric import CabinetSpec
+    try:
+        recomputed = CabinetSpec.model_validate(eng).engineering_hash()
+    except Exception as exc:
+        raise ValueError("engineering_hash_mismatch") from exc
+    if recomputed != ident.get("engineeringHash"):
+        raise ValueError("engineering_hash_mismatch")
+
+
 def check_authority(a, seal):
     if a.get("authorityHash") != seal or stable_hash({k:v for k,v in a.items() if k != "authorityHash"}) != seal:
         raise ValueError("authority_seal")
+    _bind_identity(a)
     validate_recipe(a["recipe"], a["engineering"])
     if a["recipe"]["recipeId"]=="ARTWORK_DETAIL_6S" and a["recipe"]["detailObject"]!=a["identity"]["objectName"]:raise ValueError("detail_wrong_artwork_component")
     if a["objects"] != expected_objects(a["engineering"]): raise ValueError("geometry_authority")
@@ -183,6 +212,13 @@ def frame_artifacts(frame):
 def validate_manifest(manifest, *, authority, authority_seal, receipt, receipt_seal, dam=None):
     try:
         check_authority(authority, authority_seal)
+        ident = manifest.get("identity")
+        if type(ident) is not dict:
+            raise ValueError("identity_mismatch")
+        for key, code in (("sku", "sku_mismatch"), ("engineeringHash", "engineering_hash_mismatch"),
+                          ("artworkHash", "artwork_hash_mismatch"), ("placementHash", "placement_hash_mismatch")):
+            if ident.get(key) != authority["identity"].get(key):
+                raise ValueError(code)
         if stable_hash(receipt) != receipt_seal: raise ValueError("receipt_seal")
         if receipt["authorityHash"] != authority_seal: raise ValueError("receipt_authority")
         expected = {"schema": "VIDEO_GROUND_TRUTH_MANIFEST_V1", "authorityHash": authority_seal,
