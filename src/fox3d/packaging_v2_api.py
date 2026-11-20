@@ -20,6 +20,7 @@ from fox3d.packv2 import (
 
 _MAX_MM = 5000.0
 _MAX_PANELS = 64
+_MAX_ZONES = 64
 
 
 def _require_body_dict(payload: Any) -> dict[str, Any]:
@@ -104,12 +105,39 @@ def _panel_dims(raw: Any) -> dict[str, float]:
 
 def _check_dieline(dieline: dict[str, Any]) -> None:
     panels = dieline.get("panels")
-    if panels is None:
+    if panels is not None:
+        if not isinstance(panels, list):
+            raise HTTPException(422, "panels 須為陣列")
+        if len(panels) > _MAX_PANELS:
+            raise HTTPException(422, f"panels 最多 {_MAX_PANELS} 項")
+        for index, panel in enumerate(panels):
+            if not isinstance(panel, dict):
+                raise HTTPException(422, f"panels[{index}] 須為物件")
+            panel_id = panel.get("id")
+            if panel_id is None:
+                continue
+            if isinstance(panel_id, bool) or not isinstance(panel_id, (str, int)):
+                raise HTTPException(422, f"panels[{index}].id 須為字串或整數")
+    for field in ("glue", "crease"):
+        raw = dieline.get(field)
+        if raw is not None and not isinstance(raw, list):
+            raise HTTPException(422, f"{field} 須為陣列")
+
+
+def _check_bleed(bleed: dict[str, Any]) -> None:
+    zones = bleed.get("zones")
+    if zones is None:
         return
-    if not isinstance(panels, list):
-        raise HTTPException(422, "panels 須為陣列")
-    if len(panels) > _MAX_PANELS:
-        raise HTTPException(422, f"panels 最多 {_MAX_PANELS} 項")
+    if not isinstance(zones, list):
+        raise HTTPException(422, "zones 須為陣列")
+    if len(zones) > _MAX_ZONES:
+        raise HTTPException(422, f"zones 最多 {_MAX_ZONES} 項")
+    for index, zone in enumerate(zones):
+        if not isinstance(zone, dict):
+            raise HTTPException(422, f"zones[{index}] 須為物件")
+        for field in ("bleedMm", "safeMm"):
+            if field in zone and zone[field] is not None:
+                _as_number(zone[field], f"zones[{index}].{field}")
 
 
 def packaging_v2_router() -> APIRouter:
@@ -162,6 +190,7 @@ def packaging_v2_router() -> APIRouter:
         bleed = body if "zones" in body else body.get("bleed")
         if not isinstance(bleed, dict):
             raise HTTPException(422, "出血／安全區須為 JSON 物件")
+        _check_bleed(bleed)
         return validate_bleed(bleed)
 
     @router.post("/api/packaging/v2/barcode-zone")

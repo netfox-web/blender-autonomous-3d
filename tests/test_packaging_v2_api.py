@@ -111,10 +111,41 @@ def test_dieline_too_many_panels_422(client: TestClient) -> None:
     assert res.status_code == 422
 
 
-@pytest.mark.parametrize("body", [None, "bad", {"panels": "x"}])
-def test_dieline_malformed_422(client: TestClient, body: Any) -> None:
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        (None, None),
+        ("bad", None),
+        ({"panels": "x"}, "panels 須為陣列"),
+        ({"panels": ["a"]}, "panels[0] 須為物件"),
+        ({"panels": [{"id": "ok", "w": 20, "h": 20}, "a"]}, "panels[1] 須為物件"),
+        ({"panels": [{"id": {"x": 1}, "w": 10, "h": 10}]}, "panels[0].id 須為字串或整數"),
+        ({"panels": [{"id": 1.5, "w": 20, "h": 20}]}, "panels[0].id 須為字串或整數"),
+        ({"panels": [{"id": True, "w": 20, "h": 20}]}, "panels[0].id 須為字串或整數"),
+        ({"panels": [{"id": "ok", "w": 20, "h": 20}], "glue": "nope"}, "glue 須為陣列"),
+        ({"panels": [{"id": "ok", "w": 20, "h": 20}], "crease": 1}, "crease 須為陣列"),
+        ({"dieline": {"panels": ["a"]}}, "panels[0] 須為物件"),
+    ],
+)
+def test_dieline_malformed_422(client: TestClient, body: Any, detail: str | None) -> None:
     res = client.post("/api/packaging/v2/dieline/validate", json=body)
     assert res.status_code == 422
+    assert "Traceback" not in res.text
+    assert "AttributeError" not in res.text
+    assert "unhashable" not in res.text
+    if detail is not None:
+        assert res.json()["detail"] == detail
+
+
+def test_dieline_scalar_id_and_feature_lists_ok(client: TestClient) -> None:
+    body = {
+        "panels": [{"id": 7, "w": 20, "h": 20}, {"id": "flap", "w": 20, "h": 20}],
+        "glue": [{"a": 7, "b": "flap"}],
+        "crease": [{"a": 7, "b": "flap"}],
+    }
+    res = client.post("/api/packaging/v2/dieline/validate", json=body)
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
 
 
 def test_bleed_validate_happy(client: TestClient) -> None:
@@ -123,6 +154,71 @@ def test_bleed_validate_happy(client: TestClient) -> None:
     assert res.status_code == 200
     _no_forbidden_labels(res.json())
     assert res.json()["ok"] is True
+
+
+@pytest.mark.parametrize(
+    ("body", "detail"),
+    [
+        ({"zones": 5}, "zones 須為陣列"),
+        ({"zones": ["x"]}, "zones[0] 須為物件"),
+        ({"zones": [None]}, "zones[0] 須為物件"),
+        ({"zones": [{"bleedMm": "abc"}]}, "zones[0].bleedMm 必須是有限數值"),
+        ({"zones": [{"safeMm": "abc"}]}, "zones[0].safeMm 必須是有限數值"),
+        ({"zones": [{"bleedMm": True}]}, "zones[0].bleedMm 必須是有限數值"),
+        ({"zones": [{"safeMm": False}]}, "zones[0].safeMm 必須是有限數值"),
+        ({"bleed": {"zones": 5}}, "zones 須為陣列"),
+    ],
+)
+def test_bleed_malformed_422(client: TestClient, body: Any, detail: str) -> None:
+    res = client.post("/api/packaging/v2/bleed/validate", json=body)
+    assert res.status_code == 422
+    assert res.json()["detail"] == detail
+    for leaked in ("Traceback", "AttributeError", "TypeError", "ValueError", "unhashable"):
+        assert leaked not in res.text
+
+
+def test_bleed_overflow_number_422(client: TestClient) -> None:
+    res = client.post(
+        "/api/packaging/v2/bleed/validate",
+        content=b'{"zones":[{"bleedMm":1e309,"safeMm":5}]}',
+        headers={"content-type": "application/json"},
+    )
+    assert res.status_code == 422
+    assert res.json()["detail"] == "zones[0].bleedMm 必須是有限數值"
+
+
+def test_bleed_zero_mm_is_result_not_422(client: TestClient) -> None:
+    res = client.post(
+        "/api/packaging/v2/bleed/validate",
+        json={"zones": [{"name": "main", "bleedMm": 0, "safeMm": 0}]},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert "bleed:main" in body["errors"]
+    assert "safe:main" in body["errors"]
+
+
+def test_bleed_null_mm_is_result_not_422(client: TestClient) -> None:
+    res = client.post(
+        "/api/packaging/v2/bleed/validate",
+        json={"zones": [{"name": "main", "bleedMm": None, "safeMm": None}]},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert "bleed:main" in body["errors"]
+    assert "safe:main" in body["errors"]
+
+
+def test_bleed_zone_count_limit(client: TestClient) -> None:
+    zone = {"name": "main", "bleedMm": 3, "safeMm": 5}
+    ok = client.post("/api/packaging/v2/bleed/validate", json={"zones": [dict(zone) for _ in range(64)]})
+    assert ok.status_code == 200
+    assert ok.json()["ok"] is True
+    over = client.post("/api/packaging/v2/bleed/validate", json={"zones": [dict(zone) for _ in range(65)]})
+    assert over.status_code == 422
+    assert over.json()["detail"] == "zones 最多 64 項"
 
 
 def test_barcode_zone_happy(client: TestClient) -> None:
