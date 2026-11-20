@@ -1133,13 +1133,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/physical-os/readiness")
     def physical_readiness() -> dict[str, Any]:
-        return get_platform().physical.readiness()
+        return (platform or get_platform()).physical.readiness()
 
     @app.get("/api/readiness")
     def scoped_ready() -> dict[str, Any]:
         from fox3d.readiness import scoped_readiness
 
-        return scoped_readiness()
+        report = (platform or get_platform()).pilot.logistics.inspect_tenantless_carrier_quotes()
+        tenantless_count = int(report.get("tenantlessCount") or 0)
+        return scoped_readiness(evidence={"tenantlessCarrierQuotes": tenantless_count})
 
     @app.post("/api/evidence/verify")
     def evidence_verify(payload: dict[str, Any]) -> dict[str, Any]:

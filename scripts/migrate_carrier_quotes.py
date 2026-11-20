@@ -1,8 +1,18 @@
 """One-time inspection and tenant attribution migration for legacy tenantless carrier quotes.
 
+Pre-deployment / backup readiness requirement:
+  Tenant-scoped backups (backup_pilot) treat carrier_quotes as TENANT_OWNED, exclude explicit
+  global quotes, and fail-closed (BLOCKED) if any legacy tenantless quote or rolled-back quote
+  (ownership=GLOBAL_REFERENCE without globalQuote) remains in logistics.json.
+  Before deployment or running tenant-scoped backups, verify tenantlessCount == 0:
+    python scripts/migrate_carrier_quotes.py --root .fox3d-data --check --require-zero
+
 Usage examples:
   # List all legacy tenantless carrier quotes (and any shipment tenant references):
   python scripts/migrate_carrier_quotes.py --root .fox3d-data --check
+
+  # Pre-deployment gate (exits with code 1 when tenantlessCount > 0):
+  python scripts/migrate_carrier_quotes.py --root .fox3d-data --check --require-zero
 
   # Dry-run migration (infer from shipments + fallback to default tenant):
   python scripts/migrate_carrier_quotes.py --root .fox3d-data --tenant tenant-a --dry-run

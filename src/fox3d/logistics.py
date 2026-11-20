@@ -852,6 +852,7 @@ class LogisticsService:
             return {
                 "totalQuotes": len(self.carrier_quotes),
                 "tenantlessCount": len(items),
+                "ready": len(items) == 0,
                 "quoteIds": [item["quoteId"] for item in items],
                 "items": items,
                 "quotes": items,
@@ -1510,6 +1511,11 @@ def cli_main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Only inspect and list tenantless carrier quotes without modifying anything",
     )
+    parser.add_argument(
+        "--require-zero",
+        action="store_true",
+        help="Pre-deployment check: exit with code 1 if tenantlessCount > 0 (or unresolvedCount > 0)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Compute migration result without writing to disk")
     parser.add_argument("--tenant", "--default-tenant", dest="tenant_id", default=None, help="Default target tenant ID")
     parser.add_argument(
@@ -1553,6 +1559,8 @@ def cli_main(argv: list[str] | None = None) -> int:
             include_explicit_global=bool(args.include_explicit_global),
         )
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        if args.require_zero and int(result.get("tenantlessCount") or 0) > 0:
+            return 1
         return 0
 
     parsed_assignments: dict[str, str] = {}
@@ -1572,6 +1580,8 @@ def cli_main(argv: list[str] | None = None) -> int:
         dry_run=bool(args.dry_run),
     )
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+    if args.require_zero and int(result.get("unresolvedCount") or 0) > 0:
+        return 1
     return 0
 
 

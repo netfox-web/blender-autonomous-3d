@@ -450,7 +450,13 @@ class PhysicalProductOS:
     def readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
         from fox3d.readiness import scoped_readiness
 
-        ev = evidence or {}
+        ev = dict(evidence or {})
+        if "tenantlessCarrierQuotes" not in ev and "tenantlessQuotes" not in ev:
+            pilot = getattr(self.platform, "pilot", None)
+            logistics = getattr(pilot, "logistics", None)
+            if logistics is not None and hasattr(logistics, "inspect_tenantless_carrier_quotes"):
+                report = logistics.inspect_tenantless_carrier_quotes()
+                ev["tenantlessCarrierQuotes"] = int(report.get("tenantlessCount") or 0)
         matrix = scoped_readiness(evidence=ev)
         matrix["kdFurnitureE2E"] = {"label": "REAL" if ev.get("kd") else "PARTIAL", "ready": bool(ev.get("kd") or matrix.get("kdPrototypeReady"))}
         matrix["retailFixtureE2E"] = {"label": "REAL" if ev.get("retail") else "PARTIAL", "ready": bool(ev.get("retail") or matrix.get("retailPrototypeReady"))}

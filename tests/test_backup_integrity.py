@@ -258,6 +258,10 @@ def test_pallet_derived_kept_and_cross_tenant_or_orphan_fail_closed(tmp_path):
     assert seed_a["palletPlanId"] in restored.pilot.logistics.pallets
     assert seed_b["palletPlanId"] not in restored.pilot.logistics.pallets
     assert man["collectionPolicy"]["GLOBAL_REFERENCE_POLICY"] == "EXCLUDE_FROM_TENANT_SCOPED"
+    assert man["collectionPolicy"]["GLOBAL_REFERENCE"] != "logistics.carrier_quotes"
+    assert "carrier_quotes" not in man["collectionPolicy"]["GLOBAL_REFERENCE"]
+    assert "logistics.carrier_quotes" in man["collectionPolicy"]["TENANT_OWNED"]
+    assert man["collectionPolicy"]["CARRIER_QUOTES"] == backup_mod.CARRIER_QUOTES_POLICY
     logistics = plat.root / "logistics" / "logistics.json"
     payload = read_json(logistics)
     payload["pallets"].append(
@@ -816,7 +820,14 @@ def test_tenant_backup_carrier_quotes_http_and_global_exclusion_and_fail_closed(
 
     # 1. Tenant A backup & restore preserves qid_a and excludes qid_b and all explicit global quotes.
     dest_a = tmp_path / "bak-http-a"
-    backup_pilot(plat.root, dest_a, tenant_ids=["ta"])
+    man_a = backup_pilot(plat.root, dest_a, tenant_ids=["ta"])
+    assert man_a["collectionPolicy"]["GLOBAL_REFERENCE"] != "logistics.carrier_quotes"
+    assert "carrier_quotes" not in man_a["collectionPolicy"]["GLOBAL_REFERENCE"]
+    assert "logistics.carrier_quotes" in man_a["collectionPolicy"]["TENANT_OWNED"]
+    assert man_a["collectionPolicy"]["CARRIER_QUOTES"] == backup_mod.CARRIER_QUOTES_POLICY
+    assert "TENANT_OWNED" in man_a["collectionPolicy"]["CARRIER_QUOTES"]
+    assert "explicit global" in man_a["collectionPolicy"]["CARRIER_QUOTES"]
+    assert "fail-closed" in man_a["collectionPolicy"]["CARRIER_QUOTES"]
     backed_a = read_json(dest_a / "data" / "logistics" / "logistics.json")
     assert [q["quoteId"] for q in backed_a["carrier_quotes"]] == [qid_a]
 
@@ -839,6 +850,11 @@ def test_tenant_backup_carrier_quotes_http_and_global_exclusion_and_fail_closed(
     matrix_a = evaluate_tenant_restore_matrix(live=plat, restored=restored_a, tenant_a="ta", tenant_b="tb")
     assert matrix_a["tenantLeakageAbsent"] is True
     assert matrix_a["tenantRequiredStatePreserved"] is True, matrix_a["missing"]
+    assert matrix_a["carrierQuotesPolicy"] == backup_mod.CARRIER_QUOTES_POLICY
+    assert matrix_a["carrierQuotesPolicy"] != "EXCLUDE_FROM_TENANT_SCOPED"
+    assert "TENANT_OWNED" in matrix_a["carrierQuotesPolicy"]
+    assert "explicit global" in matrix_a["carrierQuotesPolicy"]
+    assert "fail-closed" in matrix_a["carrierQuotesPolicy"]
 
     # 2. Tenant B backup & restore preserves qid_b and excludes qid_a and all explicit global quotes.
     dest_b = tmp_path / "bak-http-b"
@@ -891,15 +907,108 @@ def test_tenant_backup_carrier_quotes_http_and_global_exclusion_and_fail_closed(
                 "carrier": "OLD",
                 "charge": 50,
             },
+            {"carrier": "OLD-NO-QID", "service": "ground", "charge": 50},
         ]
     ):
         corrupted = dict(base_payload)
         corrupted["carrier_quotes"] = [*base_payload["carrier_quotes"], bad_quote]
         atomic_write_json(logistics_path, corrupted)
         bad_dest = tmp_path / f"bak-bad-quote-{idx}"
-        with pytest.raises(BackupError, match="ambiguous"):
+        with pytest.raises(BackupError, match="ambiguous") as exc_info:
             backup_pilot(plat.root, bad_dest, tenant_ids=["ta"])
+        err_msg = str(exc_info.value)
+        expected_qid = bad_quote.get("quoteId") or "<missing-quoteId>"
+        assert expected_qid in err_msg
+        assert "migrate_tenantless_carrier_quotes" in err_msg
         _assert_no_manifest(bad_dest)
+
+    # 5. Legacy tenantless quote and rolled-back quote (via unassign_migrated_carrier_quotes) block
+    # backup and readiness preflight until migrated (tenantlessCount == 0).
+    import scripts.migrate_carrier_quotes as migrate_script
+
+    legacy_qid = "q-legacy-pre-898"
+    with_legacy = dict(base_payload)
+    with_legacy["carrier_quotes"] = [
+        *base_payload["carrier_quotes"],
+        {
+            "quoteId": legacy_qid,
+            "carrier": "LEGACY-CARRIER",
+            "service": "ground",
+            "charge": 190.0,
+            "currency": "TWD",
+            "dimDivisor": 6000.0,
+            "validUntil": "2099-12-31",
+            "source": "IMPORTED",
+            "truthLabel": "IMPORTED",
+            "liveProvider": False,
+            "importedAt": "2026-11-19T00:00:00+00:00",
+            "rawSourceHash": "raw-legacy",
+            "quoteHash": "hash-legacy",
+            "ownership": "GLOBAL_REFERENCE",
+        },
+    ]
+    atomic_write_json(logistics_path, with_legacy)
+    plat.pilot.logistics.load()
+
+    # Preflight & readiness fail while legacy tenantless quote exists.
+    inspect_before = plat.pilot.logistics.inspect_tenantless_carrier_quotes()
+    assert inspect_before["tenantlessCount"] == 1
+    assert inspect_before["ready"] is False
+    assert inspect_before["quoteIds"] == [legacy_qid]
+    assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 1
+
+    pilot_ready_before = plat.pilot.readiness(evidence={"carrierQuotes": True})
+    assert pilot_ready_before["tenantlessCarrierQuotesCount"] == 1
+    assert pilot_ready_before["tenantlessCarrierQuotesReady"] is False
+    assert pilot_ready_before["labels"]["tenantlessCarrierQuotesReady"] == "BLOCKED"
+    assert pilot_ready_before["importedCarrierQuoteReady"] is False
+    assert pilot_ready_before["labels"]["importedCarrierQuoteReady"] == "BLOCKED"
+
+    api_ready_before = client.get("/api/readiness").json()
+    assert api_ready_before["tenantlessCarrierQuotesCount"] == 1
+    assert api_ready_before["tenantlessCarrierQuotesReady"] is False
+    assert api_ready_before["labels"]["tenantlessCarrierQuotesReady"] == "BLOCKED"
+
+    with pytest.raises(BackupError) as legacy_exc:
+        backup_pilot(plat.root, tmp_path / "bak-blocked-legacy", tenant_ids=["ta"])
+    assert legacy_qid in str(legacy_exc.value)
+    assert "migrate_tenantless_carrier_quotes" in str(legacy_exc.value)
+
+    # Migrate legacy quote to tenant 'ta'; preflight, readiness, and tenant backup all pass.
+    mig_res = plat.pilot.logistics.migrate_tenantless_carrier_quotes(assignments={legacy_qid: "ta"})
+    assert mig_res["assignedCount"] == 1
+    assert mig_res["unresolvedCount"] == 0
+    assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 0
+
+    pilot_ready_after = plat.pilot.readiness(evidence={"carrierQuotes": True})
+    assert pilot_ready_after["tenantlessCarrierQuotesCount"] == 0
+    assert pilot_ready_after["tenantlessCarrierQuotesReady"] is True
+    assert pilot_ready_after["labels"]["tenantlessCarrierQuotesReady"] == "REAL"
+    assert pilot_ready_after["importedCarrierQuoteReady"] is True
+    assert pilot_ready_after["labels"]["importedCarrierQuoteReady"] == "IMPORTED"
+
+    api_ready_after = client.get("/api/readiness").json()
+    assert api_ready_after["tenantlessCarrierQuotesCount"] == 0
+    assert api_ready_after["tenantlessCarrierQuotesReady"] is True
+    assert api_ready_after["labels"]["tenantlessCarrierQuotesReady"] == "REAL"
+
+    dest_after_mig = tmp_path / "bak-after-mig"
+    backup_pilot(plat.root, dest_after_mig, tenant_ids=["ta"])
+    backed_after_mig = read_json(dest_after_mig / "data" / "logistics" / "logistics.json")
+    assert {q["quoteId"] for q in backed_after_mig["carrier_quotes"]} == {qid_a, legacy_qid}
+
+    # Rolling back via unassign_migrated_carrier_quotes leaves ownership=GLOBAL_REFERENCE without globalQuote,
+    # which blocks backup with quoteId + migrate_tenantless_carrier_quotes hint and fails preflight again.
+    rb_res = plat.pilot.logistics.unassign_migrated_carrier_quotes([legacy_qid])
+    assert rb_res["rolledBackCount"] == 1
+    assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 1
+    assert plat.pilot.readiness(evidence={"carrierQuotes": True})["tenantlessCarrierQuotesReady"] is False
+
+    with pytest.raises(BackupError) as rb_exc:
+        backup_pilot(plat.root, tmp_path / "bak-after-unassign", tenant_ids=["ta"])
+    assert legacy_qid in str(rb_exc.value)
+    assert "migrate_tenantless_carrier_quotes" in str(rb_exc.value)
+    _assert_no_manifest(tmp_path / "bak-after-unassign")
 
 
 
