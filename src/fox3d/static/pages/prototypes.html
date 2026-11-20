@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>原型驗證看板 · Autonomous 3D</title>
+  <link rel="stylesheet" href="/admin/recipes/assets/fox3d-shell.css">
+  <link rel="stylesheet" href="/admin/pages/assets/prototypes.css">
+  <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
+  <script defer src="/admin/pages/assets/prototypes.js"></script>
+</head>
+<body>
+  <main class="proto">
+    <header class="proto-head">
+      <p class="proto-eyebrow">AUTONOMOUS 3D · 原型驗證</p>
+      <h1>原型驗證看板</h1>
+      <p class="proto-lede">查看決策矩陣、單元狀態與證據來源；現場開工／完工與工時登錄需有效班別。</p>
+    </header>
+
+    <section class="proto-bar" aria-label="工作台設定">
+      <label class="proto-field">租戶 <input id="proto-tenant" spellcheck="false" aria-label="租戶編號"></label>
+      <label class="proto-field">組合案 <input id="proto-portfolio" spellcheck="false" aria-label="portfolioId"></label>
+      <button type="button" id="proto-refresh" class="proto-btn">重新載入</button>
+      <p id="proto-banner" class="proto-banner" hidden role="status"></p>
+    </section>
+
+    <div class="proto-split">
+      <section class="proto-panel" aria-labelledby="proto-board-title">
+        <h2 id="proto-board-title">決策看板</h2>
+        <div id="proto-board" class="proto-scroll"><p class="proto-empty">請輸入組合案 ID 後重新載入。</p></div>
+      </section>
+      <section class="proto-panel" aria-labelledby="proto-units-title">
+        <h2 id="proto-units-title">原型單元</h2>
+        <div id="proto-units" class="proto-scroll"><p class="proto-empty">載入中…</p></div>
+      </section>
+    </div>
+
+    <section class="proto-panel" aria-labelledby="proto-detail-title">
+      <h2 id="proto-detail-title">單元明細</h2>
+      <pre id="proto-detail" class="proto-detail">請從上方列表選擇一個單元。</pre>
+      <div id="proto-actions" class="proto-actions" aria-label="現場作業">
+        <label>作業員 <input id="proto-operator" spellcheck="false"></label>
+        <label>班別 <input id="proto-shift" spellcheck="false"></label>
+        <button type="button" id="proto-start" class="proto-btn" disabled>開工</button>
+        <button type="button" id="proto-complete" class="proto-btn" disabled>完工</button>
+        <button type="button" id="proto-labor" class="proto-btn secondary" disabled>登錄工時</button>
+      </div>
+    </section>
+
+    <dialog id="proto-confirm" class="proto-dialog">
+      <form method="dialog" id="proto-confirm-form">
+        <h3>確認作業</h3>
+        <p id="proto-confirm-text"></p>
+        <pre id="proto-confirm-body" class="proto-detail"></pre>
+        <div class="proto-dialog-actions">
+          <button type="submit" value="cancel" id="proto-confirm-cancel">取消</button>
+          <button type="submit" value="ok" id="proto-confirm-ok" class="proto-btn">送出</button>
+        </div>
+      </form>
+    </dialog>
+  </main>
+</body>
+</html>
