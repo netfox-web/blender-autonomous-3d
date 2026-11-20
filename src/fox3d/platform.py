@@ -5,7 +5,6 @@ from __future__ import annotations
 from fox3d.render_store import ParametricStore
 from fox3d.storelock import FileLock
 
-import copy
 import json
 import logging
 import os
@@ -970,16 +969,7 @@ class Platform:
         if not isinstance(snapshot_job, dict):
             return record
         job_id = snapshot_job.get("jobId")
-        live = self.queue.get(job_id) if isinstance(job_id, str) and job_id else None
-        live_copy: dict[str, Any] | None = None
-        if isinstance(live, dict) and live.get("tenantId") == tenant_id:
-            # A worker thread may be updating the job dict while we copy it.
-            for _ in range(3):
-                try:
-                    live_copy = copy.deepcopy(live)
-                    break
-                except RuntimeError:
-                    continue
+        live_copy = self.queue.get_fresh(job_id, tenant_id=tenant_id) if isinstance(job_id, str) and job_id else None
         if live_copy is not None:
             param_render["job"] = live_copy
             param_render["jobStatusSource"] = "LIVE"

@@ -8,6 +8,7 @@ scheduler — it *calls* these ports.
 from __future__ import annotations
 
 import builtins
+import copy
 import threading
 import time
 import unicodedata
@@ -701,6 +702,14 @@ class JobQueue:
     def get(self, job_id: str) -> dict[str, Any] | None:
         return self._jobs.get(job_id)
 
+    def get_fresh(self, job_id: str, *, tenant_id: str) -> dict[str, Any] | None:
+        """Return an independent tenant-scoped snapshot of the latest saved job."""
+        with self._lock:
+            job = self._store.read(tenant_id, job_id) if self._store else self._jobs.get(job_id)
+            if not isinstance(job, dict) or job.get("tenantId") != tenant_id or job.get("jobId") != job_id:
+                return None
+            return copy.deepcopy(job)
+
     def list(self, *, tenant_id: str | None = None) -> list[dict[str, Any]]:
         jobs = list(self._jobs.values())
         if tenant_id is not None:
@@ -723,12 +732,13 @@ class JobQueue:
             return job
 
     def heartbeat(self, job_id: str, progress: float | None = None) -> dict[str, Any]:
-        job = self._jobs[job_id]
-        job["heartbeatAt"] = utcnow().isoformat()
-        if progress is not None:
-            job["progress"] = progress
-        self._save(job)
-        return job
+        with self._lock:
+            job = self._jobs[job_id]
+            job["heartbeatAt"] = utcnow().isoformat()
+            if progress is not None:
+                job["progress"] = progress
+            self._save(job)
+            return job
 
     def claim(
         self,
@@ -763,13 +773,14 @@ class JobQueue:
         return None
 
     def set_status(self, job_id: str, status: JobStatus, **fields: Any) -> dict[str, Any]:
-        job = self._jobs[job_id]
-        job["status"] = transition(job["status"], status)
-        job.update(fields)
-        if status in {"succeeded", "completed", "failed", "cancelled", "expired", "blocked"}:
-            job["completedAt"] = utcnow().isoformat()
-        self._save(job)
-        return job
+        with self._lock:
+            job = self._jobs[job_id]
+            job["status"] = transition(job["status"], status)
+            job.update(fields)
+            if status in {"succeeded", "completed", "failed", "cancelled", "expired", "blocked"}:
+                job["completedAt"] = utcnow().isoformat()
+            self._save(job)
+            return job
 
     def recover_stale_leases(self, *, max_age_seconds: float = 30.0) -> builtins.list[str]:
         """Failed-job / worker-offline recovery for in-flight jobs whose worker is gone.

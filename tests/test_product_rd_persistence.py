@@ -909,6 +909,25 @@ def test_rd_reads_show_live_render_status_after_queued_retry_succeeds(
     assert restarted.get("/api/product-rd/results", headers=TENANT_B).json()["items"] == []
 
 
+def test_rd_reads_use_another_queue_instances_persisted_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fox3d.infra import JobQueue
+
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, _ = _generate_with_queued_retry(plat, client, monkeypatch)
+    worker = JobQueue(tmp_path / "render_core" / "jobs")
+    worker.set_status(job_id, "reserved")
+    worker.set_status(job_id, "running")
+    worker.set_status(job_id, "succeeded")
+    cached = plat.queue.get(job_id)
+    assert cached is not None and cached["status"] == "queued"
+    body = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert _render_job(body)["status"] == "succeeded"
+    assert body["parametricRender"]["jobStatusSource"] == "LIVE"
+    assert client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+
+
 def test_rd_reads_show_terminal_failure_after_retries_exhausted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -947,6 +966,8 @@ def test_rd_render_status_falls_back_to_marked_snapshot_when_job_missing_or_fore
 
     # Job disappears from the queue (e.g. purged): reads keep the snapshot and say so.
     live_job = plat.queue._jobs.pop(job_id)
+    assert plat.queue._store is not None
+    plat.queue._store.delete("tenant-alpha", job_id)
     got = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
     assert got.status_code == 200
     body = got.json()
@@ -955,7 +976,7 @@ def test_rd_render_status_falls_back_to_marked_snapshot_when_job_missing_or_fore
     assert _render_job(body)["jobId"] == job_id
 
     # A job ID that resolves to another tenant's job is never overlaid onto this record.
-    plat.queue._jobs[job_id] = {**live_job, "tenantId": "tenant-beta", "status": "succeeded", "error": "beta-secret"}
+    plat.queue._store.write("tenant-beta", job_id, {**live_job, "tenantId": "tenant-beta", "status": "succeeded", "error": "beta-secret"})
     listed = client.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
     assert listed[0]["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
     assert _render_job(listed[0])["status"] == "queued"
