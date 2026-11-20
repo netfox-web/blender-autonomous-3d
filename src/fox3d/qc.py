@@ -6,8 +6,11 @@ QC photos reference existing DAM. Not a second media store.
 from __future__ import annotations
 
 import copy
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from fox3d.ids import new_id, stable_hash
 from fox3d.infra import utcnow
@@ -111,34 +114,90 @@ class QcService:
         plan = self.schema(family)
         return {"qcPlan": plan, "qcPlanHash": plan_hash(plan)}
 
-    def recover_pending(self) -> None:
+    @staticmethod
+    def _pending_skip_marker(operation_id: str) -> str:
+        return f"{operation_id}:skipped"
+
+    @classmethod
+    def _pending_already_applied(cls, applied: list[Any], operation_id: str) -> bool:
+        marker = cls._pending_skip_marker(operation_id)
+        return operation_id in applied or marker in applied
+
+    def _record_pending_skip(self, wo: dict[str, Any], operation_id: str, rec: dict[str, Any], kind: str, reason: str) -> None:
+        applied = wo.setdefault("qcAppliedOperations", [])
+        marker = self._pending_skip_marker(operation_id)
+        if marker not in applied and operation_id not in applied:
+            applied.append(marker)
+        audit_entry = {"actor": "system", "action": "recover_pending_skip", "reason": reason, "at": _now()}
+        if kind == "defect":
+            rec.setdefault("audit", []).append({**audit_entry, "disposition": rec.get("disposition")})
+        else:
+            rec.setdefault("audit", []).append(audit_entry)
+        store = self.checks if kind == "check" else self.defects
+        store_key = rec["qcId" if kind == "check" else "defectId"]
+        store[store_key] = rec
+
+    def recover_pending(self, *, completing: str | None = None) -> None:
         # The work-order marker is committed in the same snapshot as the transition.
         # It prevents a crash before clearing pending from replaying an old action.
         for operation_id in list(self.pending):
             op = self.pending[operation_id]
             rec = op["record"]
+            kind = str(op["kind"])
+            stalled = False
             if self.workorders is not None:
                 wo = self.workorders.get(rec["workOrderId"])
                 if wo.get("tenantId") != rec["tenantId"]:
-                    raise PermissionError("tenant isolation: qc")
+                    logger.warning("recover_pending: tenant mismatch for %s", operation_id)
+                    try:
+                        emit(self, **op["event"])
+                    except Exception as exc:
+                        logger.warning("recover_pending: emit failed for %s: %s", operation_id, exc)
+                        continue
+                    del self.pending[operation_id]
+                    try:
+                        self.persist()
+                    except Exception as exc:
+                        self.pending[operation_id] = op
+                        logger.warning("recover_pending: qc persist failed for %s: %s", operation_id, exc)
+                    continue
                 applied = wo.setdefault("qcAppliedOperations", [])
-                if operation_id not in applied:
+                if not self._pending_already_applied(applied, operation_id):
                     before = copy.deepcopy(wo)
                     try:
-                        self._apply_work_order(wo, rec, op["kind"])
-                        applied.append(operation_id)
-                        self.workorders.persist()
-                    except Exception:
+                        self._apply_work_order(wo, rec, kind)
+                    except PermissionError as exc:
                         wo.clear()
                         wo.update(before)
-                        raise
-            emit(self, **op["event"])
+                        self._record_pending_skip(wo, operation_id, rec, kind, str(exc))
+                    else:
+                        applied.append(operation_id)
+                    try:
+                        self.workorders.persist()
+                    except Exception as exc:
+                        wo.clear()
+                        wo.update(before)
+                        if operation_id == completing:
+                            raise
+                        logger.warning("recover_pending: workorder persist failed for %s: %s", operation_id, exc)
+                        stalled = True
+            if stalled:
+                continue
+            try:
+                emit(self, **op["event"])
+            except Exception as exc:
+                if operation_id == completing:
+                    raise
+                logger.warning("recover_pending: emit failed for %s: %s", operation_id, exc)
+                continue
             del self.pending[operation_id]
             try:
                 self.persist()
-            except Exception:
+            except Exception as exc:
                 self.pending[operation_id] = op
-                raise
+                if operation_id == completing:
+                    raise
+                logger.warning("recover_pending: qc persist failed for %s: %s", operation_id, exc)
 
     def _apply_work_order(self, wo: dict[str, Any], rec: dict[str, Any], kind: str) -> None:
         assert self.workorders is not None
@@ -178,7 +237,7 @@ class QcService:
                 self.idem.pop(idem_entry[0], None)
             self.pending.pop(operation_id, None)
             raise
-        self.recover_pending()
+        self.recover_pending(completing=operation_id)
 
     def record(
         self,

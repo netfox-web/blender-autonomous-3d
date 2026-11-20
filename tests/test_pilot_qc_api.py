@@ -328,3 +328,52 @@ def test_pending_operation_recovers_on_startup(platform: Any, monkeypatch: Any, 
     assert restored["state"] == "QC_HOLD" and rows[0]["qcId"] in restored["lineage"]["qc"]
     assert len([e for e in restarted.pilot.journal.list(TENANT) if e["aggregateId"] == rows[0]["qcId"]]) == 1
     assert not restarted.pilot.qc.pending
+
+
+def test_stale_pending_after_workorder_persist_failure_unblocks_qc(platform: Any, monkeypatch: Any) -> None:
+    _, wo_stuck = _seed_release_receipt_and_wo(platform)
+    _, wo_other = _seed_release_receipt_and_wo(platform)
+    stuck_id = wo_stuck["workOrderId"]
+    path_stuck = f"/api/pilot/work-orders/{stuck_id}"
+    path_other = f"/api/pilot/work-orders/{wo_other['workOrderId']}/qc"
+    client = TestClient(create_app(platform))
+    defect = {"code": "DEF_SIZE", "disposition": "SCRAP", "confirm": True, "idempotencyKey": "stale-pending"}
+    real_persist = platform.pilot.workorders.persist
+    fail_wo_persist = {"armed": True}
+
+    def persist_with_failure() -> None:
+        if fail_wo_persist["armed"]:
+            fail_wo_persist["armed"] = False
+            raise OSError("simulated transient workorder persist lock")
+        real_persist()
+
+    monkeypatch.setattr(platform.pilot.workorders, "persist", persist_with_failure)
+    with pytest.raises(OSError, match="simulated transient workorder persist lock"):
+        client.post(path_stuck + "/defects", headers=HEADERS, json=defect)
+    assert platform.pilot.qc.pending
+    stuck_defect_id = next(iter(platform.pilot.qc.pending))
+    monkeypatch.setattr(platform.pilot.workorders, "persist", real_persist)
+    platform.pilot.workorders.cancel(stuck_id, actor="tester")
+    assert platform.pilot.workorders.get(stuck_id)["state"] == "CANCELLED"
+
+    qc_body = {
+        "stage": "IN_PROCESS",
+        "checkId": "HOLE_DIA",
+        "measured": 8,
+        "source": "MANUAL",
+        "idempotencyKey": "after-stale",
+    }
+    ok = client.post(path_other, headers=HEADERS, json=qc_body)
+    assert ok.status_code == 200, ok.text
+    assert not platform.pilot.qc.pending
+
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    assert not restarted.pilot.qc.pending
+    skip_marker = f"{stuck_defect_id}:skipped"
+    assert skip_marker in restarted.pilot.workorders.get(stuck_id).get("qcAppliedOperations", [])
+    events = [
+        e
+        for e in restarted.pilot.journal.list(TENANT)
+        if e.get("aggregateId") == stuck_defect_id and e.get("eventType") == "qc.defect"
+    ]
+    assert len(events) == 1
