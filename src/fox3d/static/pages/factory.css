@@ -328,6 +328,11 @@ code {
   font-size: 12px;
 }
 
+.fc-field-warn {
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .fc-state {
   padding: 16px 12px;
   color: var(--mute);
