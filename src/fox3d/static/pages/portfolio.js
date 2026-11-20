@@ -19,8 +19,9 @@
     return v || DEFAULT_TENANT;
   }
 
-  function headers(json) {
-    var h = { 'X-Tenant-Id': tenant(), Accept: 'application/json' };
+  function headers(json, tenantId) {
+    var tid = (tenantId != null && String(tenantId).trim()) ? String(tenantId).trim() : tenant();
+    var h = { 'X-Tenant-Id': tid, Accept: 'application/json' };
     if (json) h['Content-Type'] = 'application/json';
     return h;
   }
@@ -42,7 +43,7 @@
     var opts = options || {};
     return fetch(path, {
       method: opts.method || 'GET',
-      headers: headers(Boolean(opts.body)),
+      headers: headers(Boolean(opts.body), opts.tenantId),
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     }).then(function (r) {
       return r.text().then(function (t) {
@@ -410,11 +411,17 @@
 
     $('po-submit-approval') && $('po-submit-approval').addEventListener('click', function () {
       if (!state.selectedCandidate || state.inflight.submit) return;
+      var submitSnap = {
+        candidateId: state.selectedCandidate,
+        portfolioId: state.portfolioId,
+        tenant: tenant(),
+      };
       setInflight('submit', true);
       $('po-submit-approval').disabled = true;
-      api('/api/portfolio/candidates/' + encodeURIComponent(state.selectedCandidate) + '/submit-approval', {
+      api('/api/portfolio/candidates/' + encodeURIComponent(submitSnap.candidateId) + '/submit-approval', {
         method: 'POST',
         body: { actor: 'pm' },
+        tenantId: submitSnap.tenant,
       }).then(function (res) {
         setInflight('submit', false);
         updateActionButtons();
@@ -422,8 +429,16 @@
           showBanner((res.body && res.body.detail) || '送審失敗');
           return;
         }
+        if (
+          submitSnap.candidateId !== state.selectedCandidate
+          || submitSnap.portfolioId !== state.portfolioId
+          || submitSnap.tenant !== tenant()
+        ) {
+          showBanner('送審已完成，但畫面已切換；請在正確候選或需求上重新送審');
+          return;
+        }
         state.approvalId = res.body.approvalId;
-        state.approvalCandidateId = state.selectedCandidate;
+        state.approvalCandidateId = submitSnap.candidateId;
         showBanner('已送審', true);
         updateActionButtons();
         showDetail(res.body);
@@ -458,6 +473,7 @@
         api('/api/portfolio/approvals/' + encodeURIComponent(approveSnap.approvalId) + '/approve', {
           method: 'POST',
           body: { confirm: true, actor: 'pm', reason: 'ui-approve' },
+          tenantId: approveSnap.tenant,
         }).then(function (res) {
           setInflight('approve', false);
           updateActionButtons();

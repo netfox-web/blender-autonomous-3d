@@ -145,6 +145,101 @@ def test_approve_confirm_shows_candidate_snapshot(admin_page, admin_server) -> N
     assert len(pending) == 0
 
 
+def test_submit_stale_response_after_switching_candidate(admin_page, admin_server) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    _install_post_counter(page, r"/api/portfolio/candidates/.+/submit-approval$", pending)
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page, min_ranked=2)
+    candidate_a = page.locator("#po-ranking-table tbody tr").nth(0).locator("td").nth(1).inner_text()
+    page.locator("#po-ranking-table tbody tr").nth(0).click()
+    page.locator("#po-submit-approval").click()
+    page.wait_for_function("() => document.getElementById('po-submit-approval').disabled")
+    page.locator("#po-ranking-table tbody tr").nth(1).click()
+    expect(page.locator("#po-approve")).to_be_disabled()
+    _release(
+        pending,
+        {
+            "approvalId": "appr-stale-bind-test",
+            "candidateId": candidate_a,
+            "status": "WAITING_PRODUCT_APPROVAL",
+        },
+    )
+    page.wait_for_function("() => !document.getElementById('po-submit-approval').disabled")
+    expect(page.locator("#po-approve")).to_be_disabled()
+    expect(page.locator("#po-banner")).to_contain_text("畫面已切換")
+
+
+def test_submit_stale_response_after_new_intent(admin_page, admin_server) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    _install_post_counter(page, r"/api/portfolio/candidates/.+/submit-approval$", pending)
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    candidate_id = page.locator("#po-ranking-table tbody tr").nth(0).locator("td").nth(1).inner_text()
+    page.locator("#po-ranking-table tbody tr").nth(0).click()
+    page.locator("#po-submit-approval").click()
+    page.wait_for_function("() => document.getElementById('po-submit-approval').disabled")
+    page.locator("#po-segment").select_option("STUDENT")
+    page.locator("#po-create-intent").click()
+    page.wait_for_function(
+        """() => {
+          const banner = document.getElementById('po-banner');
+          return banner && banner.textContent.indexOf('已建立組合需求') >= 0;
+        }"""
+    )
+    _release(
+        pending,
+        {
+            "approvalId": "appr-stale-intent-test",
+            "candidateId": candidate_id,
+            "status": "WAITING_PRODUCT_APPROVAL",
+        },
+    )
+    page.wait_for_function(
+        """() => {
+          const banner = document.getElementById('po-banner');
+          return banner && banner.textContent.indexOf('畫面已切換') >= 0;
+        }"""
+    )
+    expect(page.locator("#po-approve")).to_be_disabled()
+
+
+def test_approve_posts_tenant_from_confirm_snapshot(admin_page, admin_server) -> None:
+    page = admin_page
+    captured_tenants: list[str] = []
+
+    def on_approve_post(route: Route) -> None:
+        captured_tenants.append(
+            (route.request.headers.get("x-tenant-id") or route.request.headers.get("X-Tenant-Id") or "")
+        )
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"status": "APPROVED_FOR_PROTOTYPE"}),
+        )
+
+    page.route(re.compile(r"/api/portfolio/approvals/.+/approve$"), on_approve_post)
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    page.locator("#po-ranking-table tbody tr").nth(0).click()
+    page.locator("#po-submit-approval").click()
+    page.wait_for_function("() => !document.getElementById('po-approve').disabled")
+    page.locator("#po-approve").click()
+    page.wait_for_function("() => document.getElementById('po-confirm').open")
+    page.locator("#po-tenant").fill("tampered-tenant-id")
+    page.locator("#po-confirm-ok").click()
+    page.wait_for_function(
+        """() => {
+          const banner = document.getElementById('po-banner');
+          return banner && banner.textContent.indexOf('原型已核准') >= 0;
+        }"""
+    )
+    assert len(captured_tenants) == 1
+    assert captured_tenants[0] == "sonaqueen-home"
+    assert captured_tenants[0] != "tampered-tenant-id"
+
+
 def test_approve_uses_snapshot_on_delayed_response(admin_page, admin_server) -> None:
     page = admin_page
     pending: list[Route] = []
