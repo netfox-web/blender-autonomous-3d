@@ -103,6 +103,7 @@ def _idem_run(
     idem_key: str,
     sig: str,
     action: Callable[[], dict[str, Any]],
+    durable_intent: bool = False,
 ) -> dict[str, Any]:
     store_key = f"{tenant_id}::api-idem::{scope}::{idem_key}"
     with FileLock(_api_idem_lock_path(factory)):
@@ -114,6 +115,26 @@ def _idem_run(
             result = prev.get("result")
             if isinstance(result, dict):
                 return dict(result)
+        if durable_intent:
+            # Inventory is stored separately. Persist the signature before any stock
+            # mutation, and let the operation persist its recovery checkpoints.
+            if prev is None:
+                factory.api_idem[store_key] = {"sig": sig}
+                factory.persist()
+            try:
+                try:
+                    result = action()
+                except (PrototypeError, PermissionError, KeyError) as exc:
+                    _map_prototype_error(exc)
+                if not isinstance(result, dict):
+                    raise HTTPException(500, "內部回應格式錯誤")
+                durable_result = dict(result)
+                factory.api_idem[store_key] = {"sig": sig, "result": durable_result}
+                factory.persist()
+                return durable_result
+            except Exception:
+                factory.load()
+                raise
         created: dict[str, Any] | None = None
         factory.begin_persist_hold()
         try:
@@ -399,7 +420,7 @@ def prototype_router(provider: Callable[[], Any]) -> APIRouter:
             )
             return rec
 
-        return _idem_run(pf, tenant_id=tid, scope=f"material::{unit_id}", idem_key=idem, sig=_idem_sig(body), action=_action)
+        return _idem_run(pf, tenant_id=tid, scope=f"material::{unit_id}", idem_key=idem, sig=_idem_sig(body), action=_action, durable_intent=consumes)
 
     @router.post("/units/{unit_id}/as-built")
     def record_as_built(unit_id: str, payload: Any = Body(default=None), x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:

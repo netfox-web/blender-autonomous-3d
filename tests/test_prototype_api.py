@@ -579,3 +579,113 @@ def test_labor_api_distinct_minutes_and_idempotent_resend(tmp_path):
     )
     assert retry.status_code == 200
     assert retry.json()["laborId"] == second.json()["laborId"]
+
+def _labor_process(root, uid, body, barrier, queue):
+    client = TestClient(create_app(Platform(root=root, mock_blender=True)))
+    barrier.wait()
+    response = client.post(f"/api/prototypes/units/{uid}/labor", headers={"X-Tenant-Id": "pa"}, json=body)
+    queue.put((response.status_code, response.json()))
+
+
+@pytest.mark.parametrize("different", [False, True])
+def test_labor_idempotency_across_processes(tmp_path, different):
+    import multiprocessing
+
+    _, _, headers, ctx, uid = _create_started_unit(tmp_path)
+    body = {"operatorId": ctx["fixture"]["operatorId"], "shiftId": ctx["shift"]["shiftId"],
+            "minutes": 12, "reason": "process race", "source": "FIXTURE", "idempotencyKey": "process-key"}
+    other = {**body, "minutes": 13} if different else dict(body)
+    mp = multiprocessing.get_context("spawn")
+    barrier, queue = mp.Barrier(2), mp.Queue()
+    processes = [mp.Process(target=_labor_process, args=(tmp_path / "live", uid, payload, barrier, queue))
+                 for payload in (body, other)]
+    for process in processes:
+        process.start()
+    results = [queue.get() for _ in processes]
+    for process in processes:
+        process.join()
+        assert process.exitcode == 0
+    assert sorted(status for status, _ in results) == ([200, 409] if different else [200, 200])
+    reloaded = Platform(root=tmp_path / "live", mock_blender=True)
+    rows = [row for row in reloaded.prototype.labor.values() if row.get("prototypeUnitId") == uid]
+    assert len(rows) == 1
+    winner = next(result for status, result in results if status == 200)
+    assert rows[0]["laborId"] == winner["laborId"]
+    client = TestClient(create_app(reloaded))
+    winning_body = body if rows[0]["minutes"] == 12 else other
+    assert client.post(f"/api/prototypes/units/{uid}/labor", headers=headers, json=winning_body).json()["laborId"] == winner["laborId"]
+    if different:
+        losing_body = other if winning_body == body else body
+        assert client.post(f"/api/prototypes/units/{uid}/labor", headers=headers, json=losing_body).status_code == 409
+
+
+@pytest.mark.parametrize("failure", ["before-reserve", "after-reserve", "after-first-consume", "final-write"])
+def test_material_api_recovers_durable_intent(tmp_path, monkeypatch, failure):
+    plat, client, headers, ctx, uid = _create_started_unit(tmp_path)
+    lot = _seed_lot(plat, "pa", plat.prototype.units[uid], sheets=4)
+    body = {"operatorId": ctx["fixture"]["operatorId"], "shiftId": ctx["shift"]["shiftId"],
+            "sheets": 2, "consumesInventory": True, "idempotencyKey": "material-recovery"}
+    if failure == "before-reserve":
+        def fail_reserve(**kwargs):
+            raise OSError("injected reserve failure")
+
+        monkeypatch.setattr(plat.lots, "allocate_requirement", fail_reserve)
+    elif failure == "final-write":
+        original = plat.prototype.persist
+
+        def fail_final():
+            if any(isinstance(entry.get("result"), dict) and entry["result"].get("prototypeUnitId") == uid
+                   for key, entry in plat.prototype.api_idem.items() if "material::" in key):
+                raise OSError("injected write failure")
+            original()
+
+        monkeypatch.setattr(plat.prototype, "persist", fail_final)
+    else:
+        plat.prototype._crash_mode = failure
+    with pytest.raises(Exception):
+        client.post(f"/api/prototypes/units/{uid}/material", headers=headers, json=body)
+    restarted = Platform(root=tmp_path / "live", mock_blender=True)
+    client2 = TestClient(create_app(restarted))
+    before_conflict = restarted.lots.quantities(lot["lotId"], tenant_id="pa")
+    assert before_conflict["consumed"] == (2 if failure in {"after-first-consume", "final-write"} else 0)
+    assert before_conflict["reserved"] == (2 if failure == "after-reserve" else 0)
+    conflict = client2.post(f"/api/prototypes/units/{uid}/material", headers=headers, json={**body, "sheets": 3})
+    assert conflict.status_code == 409
+    assert restarted.lots.quantities(lot["lotId"], tenant_id="pa") == before_conflict
+    result = client2.post(f"/api/prototypes/units/{uid}/material", headers=headers, json=body)
+    assert result.status_code == 200
+    assert result.json()["inventoryLineage"]["consumedQuantity"] == 2
+    again = Platform(root=tmp_path / "live", mock_blender=True)
+    quantities = again.lots.quantities(lot["lotId"], tenant_id="pa")
+    assert quantities["available"] == 2 and quantities["consumed"] == 2 and quantities["reserved"] == 0
+    assert again.prototype.units[uid]["materialConsumed"] is True
+    assert TestClient(create_app(again)).post(f"/api/prototypes/units/{uid}/material", headers=headers, json=body).json() == result.json()
+
+
+def _material_crash_process(root, uid, body, point):
+    plat = Platform(root=root, mock_blender=True)
+    plat.prototype._crash_mode = point
+    plat.prototype._hard_crash = True
+    TestClient(create_app(plat)).post(f"/api/prototypes/units/{uid}/material", headers={"X-Tenant-Id": "pa"}, json=body)
+
+
+@pytest.mark.parametrize("point", ["after-reserve", "after-first-consume"])
+def test_material_api_recovers_after_process_exit(tmp_path, point):
+    import multiprocessing
+
+    plat, _, headers, ctx, uid = _create_started_unit(tmp_path)
+    lot = _seed_lot(plat, "pa", plat.prototype.units[uid], sheets=4)
+    body = {"operatorId": ctx["fixture"]["operatorId"], "shiftId": ctx["shift"]["shiftId"],
+            "sheets": 2, "consumesInventory": True, "idempotencyKey": "hard-crash"}
+    process = multiprocessing.get_context("spawn").Process(target=_material_crash_process, args=(tmp_path / "live", uid, body, point))
+    process.start()
+    process.join()
+    assert process.exitcode == 1
+    restarted = Platform(root=tmp_path / "live", mock_blender=True)
+    client = TestClient(create_app(restarted))
+    assert client.post(f"/api/prototypes/units/{uid}/material", headers=headers, json={**body, "sheets": 3}).status_code == 409
+    assert client.post(f"/api/prototypes/units/{uid}/material", headers=headers, json=body).status_code == 200
+    recovered = Platform(root=tmp_path / "live", mock_blender=True)
+    stock = recovered.lots.quantities(lot["lotId"], tenant_id="pa")
+    assert (stock["available"], stock["reserved"], stock["consumed"]) == (2, 0, 2)
+    assert recovered.prototype.units[uid]["inventoryLineage"]["consumedQuantity"] == 2
