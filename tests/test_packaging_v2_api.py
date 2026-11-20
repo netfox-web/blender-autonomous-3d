@@ -137,6 +137,29 @@ def test_dieline_malformed_422(client: TestClient, body: Any, detail: str | None
         assert res.json()["detail"] == detail
 
 
+HUGE_INT = 10**400
+
+
+def test_dieline_huge_panel_dim_http_not_500(client: TestClient) -> None:
+    res = client.post(
+        "/api/packaging/v2/dieline/validate",
+        json={"panels": [{"id": "a", "w": HUGE_INT, "h": 10}]},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert "bounds:a" in body["errors"]
+    assert "Traceback" not in res.text
+
+
+def test_compression_huge_stack_count_422(client: TestClient) -> None:
+    body = _good_compression_body() | {"stackCount": HUGE_INT}
+    res = client.post("/api/packaging/v2/compression", json=body)
+    assert res.status_code == 422
+    assert "Traceback" not in res.text
+    assert res.json()["detail"] == "stackCount 不得超過 100000"
+
+
 def test_dieline_scalar_id_and_feature_lists_ok(client: TestClient) -> None:
     body = {
         "panels": [{"id": 7, "w": 20, "h": 20}, {"id": "flap", "w": 20, "h": 20}],

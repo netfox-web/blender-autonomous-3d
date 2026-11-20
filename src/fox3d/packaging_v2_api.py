@@ -21,6 +21,7 @@ from fox3d.packv2 import (
 _MAX_MM = 5000.0
 _MAX_PANELS = 64
 _MAX_ZONES = 64
+_MAX_STACK_COUNT = 100_000
 
 
 def _require_body_dict(payload: Any) -> dict[str, Any]:
@@ -171,6 +172,8 @@ def packaging_v2_router() -> APIRouter:
             raise HTTPException(422, "productWeightKg 與 stackCount 須同時提供")
         weight = _positive_finite(weight_raw, "productWeightKg")
         stack_count = _positive_int(stack_raw, "stackCount")
+        if stack_count > _MAX_STACK_COUNT:
+            raise HTTPException(422, f"stackCount 不得超過 {_MAX_STACK_COUNT}")
         stack_scenario = shipping_load_scenario(product_weight_kg=weight, stack_count=stack_count, compression=comp)
         out["stack"] = stack_scenario
         return out

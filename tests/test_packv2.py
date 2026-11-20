@@ -64,6 +64,13 @@ def test_validate_dieline_numeric_strings_accepted():
     assert out["ok"] is True
 
 
+def test_validate_dieline_huge_integer_dims_report_bounds():
+    huge = 10**400
+    out = validate_dieline(_die([{"id": "a", "w": huge, "h": 10}]))
+    assert out["ok"] is False
+    assert out["errors"] == ["bounds:a"]
+
+
 def test_validate_dieline_no_panels():
     for die in ({}, {"panels": []}, {"panels": None}):
         out = validate_dieline(die)
