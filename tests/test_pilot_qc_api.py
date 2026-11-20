@@ -353,9 +353,6 @@ def test_stale_pending_after_workorder_persist_failure_unblocks_qc(platform: Any
     assert platform.pilot.qc.pending
     stuck_defect_id = next(iter(platform.pilot.qc.pending))
     monkeypatch.setattr(platform.pilot.workorders, "persist", real_persist)
-    platform.pilot.workorders.cancel(stuck_id, actor="tester")
-    assert platform.pilot.workorders.get(stuck_id)["state"] == "CANCELLED"
-
     qc_body = {
         "stage": "IN_PROCESS",
         "checkId": "HOLE_DIA",
@@ -366,11 +363,11 @@ def test_stale_pending_after_workorder_persist_failure_unblocks_qc(platform: Any
     ok = client.post(path_other, headers=HEADERS, json=qc_body)
     assert ok.status_code == 200, ok.text
     assert not platform.pilot.qc.pending
+    assert platform.pilot.workorders.get(stuck_id)["state"] == "REJECTED"
 
     restarted = type(platform)(root=platform.root, mock_blender=True)
     assert not restarted.pilot.qc.pending
-    skip_marker = f"{stuck_defect_id}:skipped"
-    assert skip_marker in restarted.pilot.workorders.get(stuck_id).get("qcAppliedOperations", [])
+    assert "qcAppliedOperations" not in restarted.pilot.workorders.get(stuck_id)
     events = [
         e
         for e in restarted.pilot.journal.list(TENANT)
@@ -503,6 +500,49 @@ def test_paginated_work_orders_only_check_returned_rows(platform: Any, monkeypat
     assert calls == []
     assert len(client.get("/api/pilot/work-orders", headers=HEADERS).json()["items"]) == 112
     assert len(calls) == 112
+
+
+def test_qc_applied_operations_pruned_when_pending_clears(platform: Any) -> None:
+    client = TestClient(create_app(platform))
+    _, wo = _seed_release_receipt_and_wo(platform)
+    wid = wo["workOrderId"]
+    path = f"/api/pilot/work-orders/{wid}/qc"
+    for idx in range(4):
+        body = {
+            "stage": "IN_PROCESS",
+            "checkId": "HOLE_DIA",
+            "measured": 8,
+            "source": "MANUAL",
+            "idempotencyKey": f"prune-{idx}",
+        }
+        assert client.post(path, headers=HEADERS, json=body).status_code == 200
+        applied = platform.pilot.workorders.get(wid).get("qcAppliedOperations")
+        pending_n = len(platform.pilot.qc.pending)
+        if applied is not None:
+            assert len(applied) <= pending_n
+    assert not platform.pilot.qc.pending
+    assert "qcAppliedOperations" not in platform.pilot.workorders.get(wid)
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    assert "qcAppliedOperations" not in restarted.pilot.workorders.get(wid)
+
+
+def test_work_order_complete_and_cancel_call_recover_pending_first(platform: Any, monkeypatch: Any) -> None:
+    calls: list[str] = []
+
+    def track_recover(*, completing: str | None = None) -> None:
+        calls.append("recover")
+
+    monkeypatch.setattr(platform.pilot.qc, "recover_pending", track_recover)
+    _, wo = _seed_release_receipt_and_wo(platform)
+    wid = wo["workOrderId"]
+    try:
+        platform.pilot.workorders.complete(wid, actor="tester", qc_ok=False)
+    except PermissionError:
+        pass
+    assert calls == ["recover"]
+    calls.clear()
+    platform.pilot.workorders.cancel(wid, actor="tester")
+    assert calls == ["recover"]
 
 
 def test_idempotency_snapshot_survives_interruption_at_business_persist(platform: Any) -> None:
