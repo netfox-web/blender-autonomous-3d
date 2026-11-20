@@ -20,6 +20,7 @@ from fox3d.logistics import (
     is_explicit_global_carrier_quote,
     is_valid_tenant_carrier_quote,
     scan_carrier_quote_records,
+    tenant_field_repair_hint,
 )
 from fox3d.release import (
     is_matching_tenant_stem,
@@ -371,6 +372,16 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
                         continue
                     qid = _quote_id_of(rec)
                     if not info["validTenantOwned"]:
+                        if info.get("tenantFieldConflict"):
+                            claimed_raw = info.get("claimedTenantIds") or []
+                            claimed = [tid for tid in claimed_raw if isinstance(tid, str)] if isinstance(claimed_raw, list) else []
+                            raise BackupError(
+                                "BLOCKED",
+                                f"ambiguous {rel}:{key} quoteId={qid} conflicting or invalid tenant fields; "
+                                "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) "
+                                "only as an explicit repair; "
+                                + tenant_field_repair_hint(qid, claimed),
+                            )
                         if info["issue"] in {
                             "conflicting_tenant_and_global",
                             "conflicting_ownership_and_global",

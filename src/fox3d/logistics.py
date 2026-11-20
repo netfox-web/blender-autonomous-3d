@@ -91,42 +91,164 @@ def is_explicit_global_carrier_quote(quote: dict[str, Any]) -> bool:
     )
 
 
+def _usable_tenant_id(raw: Any) -> str | None:
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text:
+            return text
+    return None
+
+
+def _tenant_field_present_but_invalid(raw: Any) -> bool:
+    """True when a tenant field is present but not a usable id.
+
+    None and "" mean the field is absent. Whitespace-only and non-strings are invalid.
+    """
+    if raw is None or raw == "":
+        return False
+    return _usable_tenant_id(raw) is None
+
+
+def _claimed_tenant_ids(*cleaned: str | None) -> list[str]:
+    claimed: list[str] = []
+    for tid in cleaned:
+        if tid is not None and tid not in claimed:
+            claimed.append(tid)
+    return claimed
+
+
+def _raw_tenant_fields(quote: Mapping[str, Any]) -> dict[str, Any]:
+    """Copy the original tenant fields without choosing a winner."""
+    raw: dict[str, Any] = {}
+    if "tenantId" in quote:
+        raw["tenantId"] = copy.deepcopy(quote["tenantId"])
+    if "tenant_id" in quote:
+        raw["tenant_id"] = copy.deepcopy(quote["tenant_id"])
+    return raw
+
+
+def tenant_field_repair_hint(quote_id: str, claimed_tenant_ids: list[str]) -> str:
+    """Operator hint: batch migration must not rewrite conflicting or invalid tenant fields."""
+    if claimed_tenant_ids:
+        choices = ", ".join(f"--repair-tenant {quote_id}={tid}" for tid in claimed_tenant_ids)
+        return (
+            "conflicting or invalid tenant fields stay unresolved; "
+            "batch --tenant, shipment inference, and --mark-global will not change them; "
+            f"repair by choosing an original tenant with {choices}"
+        )
+    return (
+        "invalid tenant fields stay unresolved; "
+        "batch --tenant, shipment inference, and --mark-global will not change them; "
+        f"repair explicitly with --repair-tenant {quote_id}=TENANT_ID or --repair-global {quote_id}"
+    )
+
+
+def _carrier_quote_class(
+    *,
+    status: str,
+    issue: str | None,
+    tenant_id: str | None,
+    explicit_global: bool,
+    valid_tenant_owned: bool,
+    requires_migration: bool,
+    metadata_conflict: bool,
+    tenant_field_conflict: bool = False,
+    claimed_tenant_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "status": status,
+        "issue": issue,
+        "tenantId": tenant_id,
+        "explicitGlobal": explicit_global,
+        "validTenantOwned": valid_tenant_owned,
+        "requiresMigration": requires_migration,
+        "metadataConflict": metadata_conflict,
+        "tenantFieldConflict": tenant_field_conflict,
+        "claimedTenantIds": list(claimed_tenant_ids or []),
+    }
+
+
+_QUOTE_HASH_EXCLUDED = frozenset(
+    {
+        "quoteId",
+        "quoteHash",
+        "ownership",
+        "globalQuote",
+        "isGlobal",
+        "allowGlobal",
+        "migratedFromTenantless",
+    }
+)
+
+
+def _quote_body_hash(updated: Mapping[str, Any]) -> str:
+    return stable_hash({k: updated[k] for k in updated if k not in _QUOTE_HASH_EXCLUDED})
+
+
+def _canonicalize_tenant_quote(quote: Mapping[str, Any], tenant_id: str) -> dict[str, Any]:
+    updated = copy.deepcopy(dict(quote))
+    updated["tenantId"] = tenant_id
+    updated.pop("tenant_id", None)
+    updated.pop("globalQuote", None)
+    updated.pop("isGlobal", None)
+    updated.pop("allowGlobal", None)
+    updated.pop("migratedFromTenantless", None)
+    updated["quoteHash"] = _quote_body_hash(updated)
+    updated["ownership"] = TENANT_OWNED_QUOTE
+    updated["globalQuote"] = False
+    return updated
+
+
+def _canonicalize_global_quote(quote: Mapping[str, Any]) -> dict[str, Any]:
+    updated = copy.deepcopy(dict(quote))
+    updated.pop("tenantId", None)
+    updated.pop("tenant_id", None)
+    updated.pop("isGlobal", None)
+    updated.pop("allowGlobal", None)
+    updated.pop("migratedFromTenantless", None)
+    updated["quoteHash"] = _quote_body_hash(updated)
+    updated["ownership"] = GLOBAL_REFERENCE_QUOTE
+    updated["globalQuote"] = True
+    return updated
+
+
 def classify_carrier_quote(quote: Any) -> dict[str, Any]:
-    """Shared carrier_quote classification rule used by backup filtering, readiness, and migration preflight."""
+    """Shared carrier_quote classification rule used by backup filtering, readiness, and migration preflight.
+
+    Conflicting or invalid tenantId/tenant_id values do not resolve to a tenant. tenantId stays None and
+    tenantFieldConflict is True so batch migration cannot treat the quote as unowned.
+    """
     if not isinstance(quote, dict):
-        return {
-            "status": "BLOCKED",
-            "issue": "non_object",
-            "tenantId": None,
-            "explicitGlobal": False,
-            "validTenantOwned": False,
-            "requiresMigration": True,
-            "metadataConflict": True,
-        }
+        return _carrier_quote_class(
+            status="BLOCKED",
+            issue="non_object",
+            tenant_id=None,
+            explicit_global=False,
+            valid_tenant_owned=False,
+            requires_migration=True,
+            metadata_conflict=True,
+        )
     if is_explicit_global_carrier_quote(quote):
-        return {
-            "status": "EXPLICIT_GLOBAL",
-            "issue": None,
-            "tenantId": None,
-            "explicitGlobal": True,
-            "validTenantOwned": False,
-            "requiresMigration": False,
-            "metadataConflict": False,
-        }
+        return _carrier_quote_class(
+            status="EXPLICIT_GLOBAL",
+            issue=None,
+            tenant_id=None,
+            explicit_global=True,
+            valid_tenant_owned=False,
+            requires_migration=False,
+            metadata_conflict=False,
+        )
 
     raw_tid = quote.get("tenantId")
-    clean_tid = raw_tid.strip() if isinstance(raw_tid, str) and raw_tid.strip() else None
+    clean_tid = _usable_tenant_id(raw_tid)
     raw_legacy_tid = quote.get("tenant_id")
-    clean_legacy_tid = (
-        raw_legacy_tid.strip() if isinstance(raw_legacy_tid, str) and raw_legacy_tid.strip() else None
-    )
-    invalid_tid = (raw_tid not in (None, "") and clean_tid is None) or (
-        raw_legacy_tid not in (None, "") and clean_legacy_tid is None
-    )
-    mismatch_tid = (
-        clean_tid is not None and clean_legacy_tid is not None and clean_tid != clean_legacy_tid
-    )
-    eff_tid = None if (invalid_tid or mismatch_tid) else (clean_tid or clean_legacy_tid)
+    clean_legacy_tid = _usable_tenant_id(raw_legacy_tid)
+    invalid_tid = _tenant_field_present_but_invalid(raw_tid) or _tenant_field_present_but_invalid(raw_legacy_tid)
+    mismatch_tid = clean_tid is not None and clean_legacy_tid is not None and clean_tid != clean_legacy_tid
+    tenant_field_conflict = bool(invalid_tid or mismatch_tid)
+    claimed = _claimed_tenant_ids(clean_tid, clean_legacy_tid)
+    # Do not pick either side when the fields disagree or either field is unusable.
+    eff_tid = None if tenant_field_conflict else (clean_tid or clean_legacy_tid)
 
     has_global_flag = bool(
         quote.get("globalQuote") is True
@@ -138,7 +260,7 @@ def classify_carrier_quote(quote: Any) -> dict[str, Any]:
     invalid_ownership = ownership not in (None, "", TENANT_OWNED_QUOTE, GLOBAL_REFERENCE_QUOTE)
 
     if has_global_flag or has_global_ownership or invalid_ownership:
-        if eff_tid is not None or invalid_tid or mismatch_tid:
+        if eff_tid is not None or tenant_field_conflict:
             issue = "conflicting_tenant_and_global"
             metadata_conflict = True
         elif has_global_flag:
@@ -150,47 +272,54 @@ def classify_carrier_quote(quote: Any) -> dict[str, Any]:
         else:
             issue = "unmigrated_global_reference"
             metadata_conflict = False
-        return {
-            "status": "BLOCKED",
-            "issue": issue,
-            "tenantId": eff_tid,
-            "explicitGlobal": False,
-            "validTenantOwned": False,
-            "requiresMigration": True,
-            "metadataConflict": metadata_conflict,
-        }
+        return _carrier_quote_class(
+            status="BLOCKED",
+            issue=issue,
+            tenant_id=eff_tid,
+            explicit_global=False,
+            valid_tenant_owned=False,
+            requires_migration=True,
+            metadata_conflict=metadata_conflict,
+            tenant_field_conflict=tenant_field_conflict,
+            claimed_tenant_ids=claimed,
+        )
 
     if mismatch_tid:
-        return {
-            "status": "BLOCKED",
-            "issue": "conflicting_tenant_id",
-            "tenantId": None,
-            "explicitGlobal": False,
-            "validTenantOwned": False,
-            "requiresMigration": True,
-            "metadataConflict": True,
-        }
+        return _carrier_quote_class(
+            status="BLOCKED",
+            issue="conflicting_tenant_id",
+            tenant_id=None,
+            explicit_global=False,
+            valid_tenant_owned=False,
+            requires_migration=True,
+            metadata_conflict=True,
+            tenant_field_conflict=True,
+            claimed_tenant_ids=claimed,
+        )
 
     if eff_tid is None:
-        return {
-            "status": "BLOCKED",
-            "issue": "missing_tenant_id",
-            "tenantId": None,
-            "explicitGlobal": False,
-            "validTenantOwned": False,
-            "requiresMigration": True,
-            "metadataConflict": bool(invalid_tid),
-        }
+        return _carrier_quote_class(
+            status="BLOCKED",
+            issue="invalid_tenant_id" if invalid_tid else "missing_tenant_id",
+            tenant_id=None,
+            explicit_global=False,
+            valid_tenant_owned=False,
+            requires_migration=True,
+            metadata_conflict=bool(invalid_tid),
+            tenant_field_conflict=bool(invalid_tid),
+            claimed_tenant_ids=claimed,
+        )
 
-    return {
-        "status": "TENANT_OWNED",
-        "issue": None,
-        "tenantId": eff_tid,
-        "explicitGlobal": False,
-        "validTenantOwned": True,
-        "requiresMigration": False,
-        "metadataConflict": False,
-    }
+    return _carrier_quote_class(
+        status="TENANT_OWNED",
+        issue=None,
+        tenant_id=eff_tid,
+        explicit_global=False,
+        valid_tenant_owned=True,
+        requires_migration=False,
+        metadata_conflict=False,
+        claimed_tenant_ids=claimed,
+    )
 
 
 def is_valid_tenant_carrier_quote(quote: dict[str, Any]) -> bool:
@@ -1216,8 +1345,13 @@ class LogisticsService:
                     str(s["shipmentId"]) for s in ref_shipments if isinstance(s.get("shipmentId"), str) and s["shipmentId"]
                 )
                 existing_tid = info["tenantId"]
+                field_conflict = bool(info["tenantFieldConflict"])
+                claimed = list(info["claimedTenantIds"])
                 shipment_mismatch = bool(existing_tid and any(t != existing_tid for t in ref_tenants))
-                if len(ref_tenants) == 1 and (existing_tid is None or existing_tid == ref_tenants[0]):
+                # A shipment must not nominate an owner while the quote's own tenant fields disagree or are invalid.
+                if field_conflict:
+                    inferred_tid = None
+                elif len(ref_tenants) == 1 and (existing_tid is None or existing_tid == ref_tenants[0]):
                     inferred_tid = ref_tenants[0]
                 elif not ref_tenants and existing_tid is not None:
                     inferred_tid = existing_tid
@@ -1227,6 +1361,7 @@ class LogisticsService:
                     len(ref_tenants) > 1
                     or shipment_mismatch
                     or info["metadataConflict"]
+                    or field_conflict
                 )
                 item = copy.deepcopy(q)
                 item["quoteId"] = qid
@@ -1234,9 +1369,14 @@ class LogisticsService:
                 item["explicitGlobal"] = info["explicitGlobal"]
                 item["issue"] = info["issue"]
                 item["inferredTenantId"] = inferred_tid
+                item["claimedTenantIds"] = claimed
+                item["tenantFieldConflict"] = field_conflict
                 item["referencedByTenants"] = ref_tenants
                 item["referencedShipmentIds"] = ref_ship_ids
                 item["conflict"] = has_conflict
+                if field_conflict:
+                    item["rawTenantFields"] = _raw_tenant_fields(q)
+                    item["remediation"] = tenant_field_repair_hint(qid, claimed)
                 items.append(item)
             for anomaly in self._carrier_quote_anomalies:
                 items.append(self._anomaly_report_item(anomaly, refs_by_qid))
@@ -1275,7 +1415,11 @@ class LogisticsService:
         include_explicit_global: bool = False,
         dry_run: bool = False,
     ) -> dict[str, Any]:
-        """Attribute legacy tenantless or conflicting carrier quotes to tenants (or mark them explicitly global)."""
+        """Attribute legacy tenantless carrier quotes to tenants (or mark them explicitly global).
+
+        Quotes whose tenantId and tenant_id conflict, or whose tenant fields are present but unusable,
+        stay unresolved. Batch default assignment, shipment inference, and --mark-global do not rewrite them.
+        """
         if (
             not isinstance(dry_run, bool)
             or not isinstance(mark_global, bool)
@@ -1370,6 +1514,26 @@ class LogisticsService:
                         if isinstance(s.get("tenantId"), str) and str(s["tenantId"]).strip()
                     }
                 )
+
+                if info["tenantFieldConflict"]:
+                    claimed = list(info["claimedTenantIds"])
+                    entry = {
+                        "quoteId": qid,
+                        "reason": info["issue"] or "conflicting_tenant_id",
+                        "claimedTenantIds": claimed,
+                        "rawTenantFields": _raw_tenant_fields(quote),
+                        "referencedByTenants": ref_tenants,
+                        "remediation": tenant_field_repair_hint(qid, claimed),
+                    }
+                    conflicts.append(entry)
+                    unresolved.append(entry)
+                    attempted_rewrite = bool(mark_global or qid in norm_assignments or eff_default_tid is not None)
+                    if explicit_requested and attempted_rewrite:
+                        raise PermissionError(
+                            f"tenant isolation: carrier quote {qid} has conflicting or invalid tenant fields; "
+                            f"{entry['remediation']}"
+                        )
+                    continue
 
                 if info["validTenantOwned"]:
                     want_tid = norm_assignments.get(qid) or eff_default_tid
@@ -1605,6 +1769,139 @@ class LogisticsService:
             }
 
     assign_tenantless_carrier_quotes = migrate_tenantless_carrier_quotes
+
+    def repair_conflicting_carrier_quote_tenants(
+        self,
+        *,
+        assignments: Mapping[str, str] | None = None,
+        mark_global_ids: Collection[str] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Explicitly repair quotes with conflicting or invalid tenant fields.
+
+        Batch migration cannot choose an owner for these records. This call names each quote.
+        When the record contains usable tenant ids, the chosen tenant must be one of them.
+        The original tenantId and tenant_id values are returned in preservedTenantFields and are
+        not copied onto the stored quote, so a later tenant read cannot see the other claim.
+        """
+        if not isinstance(dry_run, bool):
+            raise ValueError("dry_run must be a boolean")
+
+        norm_assignments: dict[str, str] = {}
+        if assignments is not None:
+            if not isinstance(assignments, Mapping):
+                raise ValueError("assignments must be a mapping of quoteId -> tenantId")
+            for raw_qid, raw_target in assignments.items():
+                if not isinstance(raw_qid, str) or not raw_qid.strip():
+                    raise ValueError("assignment quoteId must be a non-empty string")
+                if not isinstance(raw_target, str) or not raw_target.strip():
+                    raise ValueError("assignment tenantId must be a non-empty string")
+                qid = raw_qid.strip()
+                if qid in norm_assignments:
+                    raise ValueError(f"repair tenant given twice for quoteId {qid}")
+                norm_assignments[qid] = raw_target.strip()
+
+        norm_global: list[str] = []
+        if mark_global_ids is not None:
+            if isinstance(mark_global_ids, str) or not isinstance(mark_global_ids, Collection):
+                raise ValueError("mark_global_ids must be a collection of quoteId strings")
+            for raw_qid in mark_global_ids:
+                if not isinstance(raw_qid, str) or not raw_qid.strip():
+                    raise ValueError("mark_global_ids elements must be non-empty strings")
+                qid = raw_qid.strip()
+                if qid in norm_assignments:
+                    raise ValueError(f"quote {qid} given both a tenant repair and mark-global repair")
+                if qid in norm_global:
+                    raise ValueError(f"repair global given twice for quoteId {qid}")
+                norm_global.append(qid)
+
+        if not norm_assignments and not norm_global:
+            raise ValueError("nothing to repair: pass assignments and/or mark_global_ids")
+
+        ordered: list[tuple[str, str | None]] = [(qid, tid) for qid, tid in norm_assignments.items()]
+        ordered.extend((qid, None) for qid in norm_global)
+
+        with self._lock:
+            self._sync_from_disk()
+            self._refuse_quarantined_quote_ids([qid for qid, _tid in ordered])
+            for qid, _tid in ordered:
+                if qid not in self.carrier_quotes:
+                    raise KeyError(f"carrier quote not found: {qid}")
+
+            repaired: list[dict[str, Any]] = []
+            already: list[dict[str, Any]] = []
+            planned: dict[str, dict[str, Any]] = {}
+            for qid, target_tid in ordered:
+                quote = self.carrier_quotes[qid]
+                info = classify_carrier_quote(quote)
+                claimed = list(info["claimedTenantIds"])
+                preserved = _raw_tenant_fields(quote)
+                want_global = target_tid is None
+                if info["tenantFieldConflict"]:
+                    if want_global:
+                        if claimed:
+                            raise PermissionError(
+                                f"tenant isolation: carrier quote {qid} has original tenant claims; "
+                                f"{tenant_field_repair_hint(qid, claimed)}"
+                            )
+                        planned[qid] = _canonicalize_global_quote(quote)
+                        repaired.append(
+                            {
+                                "quoteId": qid,
+                                "tenantId": None,
+                                "globalQuote": True,
+                                "preservedTenantFields": preserved,
+                            }
+                        )
+                        continue
+                    if claimed and target_tid not in claimed:
+                        raise PermissionError(
+                            f"tenant isolation: carrier quote {qid} cannot be assigned to {target_tid}; "
+                            f"{tenant_field_repair_hint(qid, claimed)}"
+                        )
+                    assert target_tid is not None
+                    planned[qid] = _canonicalize_tenant_quote(quote, target_tid)
+                    repaired.append(
+                        {
+                            "quoteId": qid,
+                            "tenantId": target_tid,
+                            "globalQuote": False,
+                            "preservedTenantFields": preserved,
+                        }
+                    )
+                    continue
+                if want_global and info["explicitGlobal"]:
+                    already.append({"quoteId": qid, "tenantId": None, "globalQuote": True})
+                    continue
+                if (
+                    target_tid is not None
+                    and info["validTenantOwned"]
+                    and info["tenantId"] == target_tid
+                ):
+                    already.append({"quoteId": qid, "tenantId": target_tid, "globalQuote": False})
+                    continue
+                raise PermissionError(
+                    f"tenant isolation: carrier quote {qid} does not have conflicting or invalid tenant fields"
+                )
+
+            if not dry_run and planned:
+                prev_quotes = copy.deepcopy(self.carrier_quotes)
+                try:
+                    for qid, updated_rec in planned.items():
+                        self.carrier_quotes[qid] = updated_rec
+                    self.persist()
+                except Exception:
+                    self.carrier_quotes = prev_quotes
+                    raise
+
+            return {
+                "dryRun": dry_run,
+                "repairedCount": len(repaired),
+                "alreadyRepairedCount": len(already),
+                "unresolvedCount": 0,
+                "repaired": repaired,
+                "alreadyRepaired": already,
+            }
 
     def unassign_migrated_carrier_quotes(
         self,
@@ -1982,6 +2279,21 @@ def unassign_migrated_carrier_quotes(
     return svc.unassign_migrated_carrier_quotes(quote_ids, dry_run=dry_run)
 
 
+def repair_conflicting_carrier_quote_tenants(
+    target: Any,
+    *,
+    assignments: Mapping[str, str] | None = None,
+    mark_global_ids: Collection[str] | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    svc = _resolve_logistics_service(target)
+    return svc.repair_conflicting_carrier_quote_tenants(
+        assignments=assignments,
+        mark_global_ids=mark_global_ids,
+        dry_run=dry_run,
+    )
+
+
 def resolve_carrier_quote_records(
     target: Any,
     *,
@@ -2029,6 +2341,28 @@ def cli_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-infer", action="store_true", help="Do not infer tenant from referencing shipments")
     parser.add_argument("--mark-global", action="store_true", help="Mark tenantless quotes as explicitly global")
     parser.add_argument(
+        "--repair-tenant",
+        action="append",
+        default=[],
+        dest="repair_tenants",
+        metavar="QUOTE_ID=TENANT_ID",
+        help=(
+            "Repair one quote with conflicting or invalid tenant fields by keeping an original claimed tenant. "
+            "Original tenant fields are printed in preservedTenantFields and removed from the stored quote."
+        ),
+    )
+    parser.add_argument(
+        "--repair-global",
+        action="append",
+        default=[],
+        dest="repair_global_ids",
+        metavar="QUOTE_ID",
+        help=(
+            "Repair one quote whose tenant fields are invalid and name no tenant, marking it explicitly global. "
+            "Refused when the quote still has a usable tenant id."
+        ),
+    )
+    parser.add_argument(
         "--include-explicit-global",
         action="store_true",
         help="Also include quotes already marked as explicit global",
@@ -2059,6 +2393,57 @@ def cli_main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     svc = _resolve_logistics_service(Path(args.root))
+    if args.repair_tenants or args.repair_global_ids:
+        if (
+            args.check_only
+            or args.unassign_ids
+            or args.keep_duplicates
+            or args.drop_invalid
+            or args.assign
+            or args.quote_ids
+            or args.tenant_id
+            or args.mark_global
+            or args.no_infer
+            or args.include_explicit_global
+        ):
+            parser.error("repair flags cannot be combined with check, migrate, unassign, or record-resolution flags")
+        repair_assignments: dict[str, str] = {}
+        for item in args.repair_tenants:
+            if "=" not in item:
+                parser.error(f"invalid --repair-tenant {item!r}, expected QUOTE_ID=TENANT_ID")
+            qid, tid = item.split("=", 1)
+            qid = qid.strip()
+            tid = tid.strip()
+            if not qid or not tid:
+                parser.error(f"invalid --repair-tenant {item!r}, expected QUOTE_ID=TENANT_ID")
+            if qid in repair_assignments:
+                parser.error(f"--repair-tenant given twice for quoteId {qid!r}")
+            repair_assignments[qid] = tid
+        repair_globals: list[str] = []
+        for item in args.repair_global_ids:
+            qid = item.strip()
+            if not qid:
+                parser.error("invalid --repair-global, expected a quoteId")
+            if qid in repair_assignments:
+                parser.error(f"{qid!r} given both --repair-tenant and --repair-global")
+            if qid in repair_globals:
+                parser.error(f"--repair-global given twice for quoteId {qid!r}")
+            repair_globals.append(qid)
+        result = svc.repair_conflicting_carrier_quote_tenants(
+            assignments=repair_assignments or None,
+            mark_global_ids=repair_globals or None,
+            dry_run=bool(args.dry_run),
+        )
+        if args.require_zero:
+            # The repair names specific quotes. Other legacy quotes must still fail the pre-deployment gate.
+            remaining = svc.inspect_tenantless_carrier_quotes()
+            result = dict(result)
+            result["remainingTenantlessCount"] = remaining["tenantlessCount"]
+        print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        if args.require_zero and int(result.get("remainingTenantlessCount") or 0) > 0:
+            return 1
+        return 0
+
     if args.keep_duplicates or args.drop_invalid:
         keep_map: dict[str, str] = {}
         for item in args.keep_duplicates:

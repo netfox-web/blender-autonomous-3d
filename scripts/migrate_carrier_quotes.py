@@ -24,6 +24,14 @@ Usage examples:
   # Apply migration with explicit per-quote attribution and default tenant:
   python scripts/migrate_carrier_quotes.py --root .fox3d-data --tenant tenant-a --assign q1=tenant-b
 
+  # Quotes with conflicting tenantId/tenant_id, or with present-but-unusable tenant fields, are left
+  # unchanged by --tenant, shipment inference, and --mark-global. Repair one quote explicitly.
+  # The command prints preservedTenantFields (the original values) and does not store the other
+  # tenant's id on the quote. --repair-tenant must name one of the original usable tenant ids.
+  # --repair-global is only for records whose tenant fields name no usable tenant:
+  python scripts/migrate_carrier_quotes.py --root .fox3d-data --repair-tenant q1=tenant-a
+  python scripts/migrate_carrier_quotes.py --root .fox3d-data --repair-global q-invalid
+
   # Resolve a duplicated quoteId by keeping one copy (fingerprint from --check output; others removed
   # and printed in "removed"), or remove a non-object entry; add --dry-run to preview:
   python scripts/migrate_carrier_quotes.py --root .fox3d-data --keep-duplicate q1=<recordFingerprint>
@@ -47,6 +55,7 @@ from fox3d.logistics import (  # noqa: E402
     is_tenantless_carrier_quote,
     is_valid_tenant_carrier_quote,
     migrate_tenantless_carrier_quotes,
+    repair_conflicting_carrier_quote_tenants,
     resolve_carrier_quote_records,
     unassign_migrated_carrier_quotes,
 )
@@ -60,6 +69,7 @@ __all__ = [
     "is_valid_tenant_carrier_quote",
     "main",
     "migrate_tenantless_carrier_quotes",
+    "repair_conflicting_carrier_quote_tenants",
     "resolve_carrier_quote_records",
     "unassign_migrated_carrier_quotes",
 ]
