@@ -865,13 +865,23 @@ def test_rd_approve_prepare_rereads_scheme_handles_errors_and_marks_snapshot(
             "job": {"status": "queued", "error": "worker crash", "attemptCount": 1, "maxAttempts": 3},
         },
     }
+    other = {
+        **item,
+        "rdId": "rd-snap-02",
+        "createdAt": "2026-11-19T14:00:00.000000Z",
+        "text": "另一個方案",
+        "parametricRender": {"jobStatusSource": "LIVE", "job": {"status": "succeeded", "usedMock": True}},
+    }
     page.route(
         "**/api/product-rd/results?*",
         lambda route: route.fulfill(
-            json={"items": [item], "total": 1, "offset": 0, "limit": 10, "hasMore": False, "nextCursor": None}
+            json={"items": [item, other], "total": 2, "offset": 0, "limit": 10, "hasMore": False, "nextCursor": None}
         ),
     )
     page.route("**/api/product-rd/results/rd-snap-01", lambda route: held_reads.append(route))
+    held_other: list[Route] = []
+    page.route("**/api/product-rd/results/rd-snap-02", lambda route: held_other.append(route))
+    page.expose_function("__fox3dHeldOther", lambda: len(held_other))
     page.expose_function("__fox3dHeldRdReads", lambda: len(held_reads))
 
     page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
@@ -891,6 +901,7 @@ def test_rd_approve_prepare_rereads_scheme_handles_errors_and_marks_snapshot(
     page.locator("#rd-approve-prepare").click()
     page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 1")
     expect(page.locator("#rd-approve-prepare")).to_be_disabled()
+    expect(page.locator("#rd-approve-actor")).to_be_disabled()
     _force_click(page, "rd-approve-prepare")
     assert held_reads[0].request.headers["x-tenant-id"] == "sonaqueen-home"
 
@@ -910,10 +921,27 @@ def test_rd_approve_prepare_rereads_scheme_handles_errors_and_marks_snapshot(
     expect(page.locator("#rd-approve-confirm")).to_be_hidden()
     expect(page.locator("#rd-approve-prepare")).to_be_enabled()
 
-    # Success: confirm shows the retry warning and that it is a generation-time snapshot.
+    # Selecting another scheme while the re-read is in flight: the late answer for the old scheme
+    # must not reopen it or its confirm box, even when the new selection then fails to load.
     page.locator("#rd-approve-prepare").click()
     page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 3")
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-snap-02"] button').click()
+    page.wait_for_function("async () => (await window.__fox3dHeldOther()) === 1")
     held_reads[2].fulfill(json=item)
+    held_other[0].fulfill(status=404, json={"detail": "找不到研發方案"})
+    expect(page.locator("#rd-empty")).to_contain_text("HTTP 404")
+    expect(page.locator("#rd-body")).to_be_hidden()
+    expect(page.locator("#rd-approve-confirm")).to_be_hidden()
+
+    # Success: confirm shows the retry warning and that it is a generation-time snapshot.
+    page.locator('#rd-history-tbody tr[data-rd-id="rd-snap-01"] button').click()
+    page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 4")
+    held_reads[3].fulfill(json=item)
+    expect(page.locator("#rd-intent-summary")).to_contain_text("rd-snap-01")
+    page.locator("#rd-approve-actor").fill("lead-2")
+    page.locator("#rd-approve-prepare").click()
+    page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 5")
+    held_reads[4].fulfill(json=item)
     expect(page.locator("#rd-approve-confirm")).to_be_visible()
     expect(page.locator("#rd-approve-msg")).to_contain_text("排隊重試中")
     expect(page.locator("#rd-approve-msg")).to_contain_text("產生時快照")

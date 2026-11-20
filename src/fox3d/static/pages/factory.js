@@ -1239,6 +1239,9 @@
     var reqSeq = ++rdDetailReqSeq;
     var tenantAtReq = currentTenant();
     rdPendingApprove = null;
+    // Selecting another scheme cancels an approve-confirm re-read that is still in flight.
+    rdApprovePrepSeq++;
+    rdApprovePrepInFlight = false;
     var appBox = $('rd-approve-confirm');
     if (appBox) {
       appBox.hidden = true;
@@ -2011,7 +2014,9 @@
         var prepSeq = ++rdApprovePrepSeq;
         rdApprovePrepInFlight = true;
         var prepBtn = $('rd-approve-prepare');
+        var prepActorInput = $('rd-approve-actor');
         prepBtn.disabled = true;
+        if (prepActorInput) prepActorInput.disabled = true;
 
         apiFetch('/api/product-rd/results/' + encodeURIComponent(prepSnap.rdId), {
           headers: { 'X-Tenant-Id': prepSnap.tenant }
@@ -2081,6 +2086,7 @@
                 state.lastRdResult.approval &&
                 state.lastRdResult.approval.status === 'APPROVED';
               prepBtn.disabled = Boolean(isApproved);
+              if (prepActorInput) prepActorInput.disabled = Boolean(isApproved);
             }
           });
       });

@@ -966,8 +966,17 @@ class Platform:
             return record
         job_id = snapshot_job.get("jobId")
         live = self.queue.get(job_id) if isinstance(job_id, str) and job_id else None
+        live_copy: dict[str, Any] | None = None
         if isinstance(live, dict) and live.get("tenantId") == tenant_id:
-            param_render["job"] = copy.deepcopy(live)
+            # A worker thread may be updating the job dict while we copy it.
+            for _ in range(3):
+                try:
+                    live_copy = copy.deepcopy(live)
+                    break
+                except RuntimeError:
+                    continue
+        if live_copy is not None:
+            param_render["job"] = live_copy
             param_render["jobStatusSource"] = "LIVE"
         else:
             param_render["jobStatusSource"] = "SNAPSHOT"
