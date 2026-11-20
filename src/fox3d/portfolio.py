@@ -246,6 +246,21 @@ def merge_ranking_policy(policy: dict[str, Any] | None) -> dict[str, Any]:
     return pol
 
 
+def _require_finite_score(breakdown: dict[str, Any], total: float | None) -> None:
+    """Refuse a policy whose weighted terms or total overflow to inf/NaN.
+
+    Finite weights such as 1e308 pass ``merge_ranking_policy`` but their products
+    or sum can overflow; such scores cannot be ordered and would persist as
+    non-standard JSON (``Infinity``), so the ranking is rejected before any
+    candidate state changes or the store is written.
+    """
+    for key, item in breakdown.items():
+        if not math.isfinite(float(item["raw"])) or not math.isfinite(float(item["weighted"])):
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 造成加權分數溢位，無法安全計分")
+    if total is not None and not math.isfinite(float(total)):
+        raise PortfolioError("NEEDS_INPUT", "policy.weights 造成總分溢位，無法安全計分")
+
+
 class PortfolioFactory:
     def __init__(self, platform: Any) -> None:
         self.platform = platform
@@ -765,6 +780,7 @@ class PortfolioFactory:
             )
             breakdown = self._score_breakdown(rec, pol)
             total = sum(breakdown[k]["weighted"] for k in pol["weights"]) if valid else None
+            _require_finite_score(breakdown, total)
             scored.append(
                 {
                     "candidateId": rec["candidateId"],

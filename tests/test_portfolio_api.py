@@ -295,6 +295,35 @@ def test_ranking_non_finite_or_overflowing_weight_returns_422(
     assert b"Infinity" not in path.read_bytes()
 
 
+@pytest.mark.parametrize("weight", [1e308, -1e308], ids=["pos-1e308", "neg-1e308"])
+def test_ranking_finite_weights_whose_sum_overflows_returns_422(
+    client: TestClient,
+    platform,  # noqa: ANN001
+    weight: float,
+) -> None:
+    pid = _ranking_setup(client)
+    # A prior successful ranking shortlists candidates, so any state rewrite is observable.
+    assert client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json={}).status_code == 200
+    base_weights = DEFAULT_RANKING_POLICY["weights"]
+    assert isinstance(base_weights, dict)
+    weights = dict.fromkeys(base_weights, weight)
+    path = platform.portfolio.root / "portfolio.json"
+    rankings_before = dict(platform.portfolio.rankings)
+    states_before = {cid: rec["state"] for cid, rec in platform.portfolio.candidates.items()}
+    assert "SHORTLISTED" in states_before.values()
+    file_before = path.read_bytes()
+
+    res = client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json={"policy": {"weights": weights}})
+
+    assert res.status_code == 422
+    assert "溢位" in res.json()["detail"]
+    assert "OverflowError" not in res.text
+    assert platform.portfolio.rankings == rankings_before
+    assert {cid: rec["state"] for cid, rec in platform.portfolio.candidates.items()} == states_before
+    assert path.read_bytes() == file_before
+    assert b"Infinity" not in file_before and b"NaN" not in file_before
+
+
 def test_ranking_valid_custom_weights_succeeds(client: TestClient) -> None:
     pid = _ranking_setup(client)
     base_weights = DEFAULT_RANKING_POLICY["weights"]
