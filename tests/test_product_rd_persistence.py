@@ -745,6 +745,233 @@ def test_non_terminal_or_failed_render_job_never_marks_truth_label_real(
         assert body["truthLabel"] == "MOCK", f"status={non_done_status} must not claim REAL truthLabel"
 
 
+def test_fail_or_retry_actual_render_job_shape_persists_across_restart_and_approve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from fox3d.blender import RuntimeResult
+
+    plat, client = _make_client(tmp_path)
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+
+    def _crash_real_blender(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
+        return RuntimeResult(
+            status="failed",
+            outputs={},
+            error="OPTIX_DEVICE_LOST",
+            real_blender=True,
+            real_optix=True,
+            real_cycles=True,
+            real_render_output=False,
+            used_mock=False,
+            blender_version="4.2.0",
+        )
+
+    monkeypatch.setattr(plat.runtime, "run_job", _crash_real_blender)
+
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬160cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert gen.status_code == 200, gen.text
+    created = gen.json()
+    rd_id = created["rdId"]
+    job = created["parametricRender"]["job"]
+
+    # Verify exact _fail_or_retry shape when attempts < maxAttempts.
+    assert job["status"] == "queued"
+    assert job["error"] == "OPTIX_DEVICE_LOST"
+    assert job["attemptCount"] == 1
+    assert job["maxAttempts"] == 3
+    assert job["retryDelaySeconds"] > 0
+    assert job["realBlender"] is True
+    assert job["usedMock"] is False
+    assert job["output"] == {}
+    assert created["truthLabel"] == "MOCK"
+
+    # Restart and verify list, get, approve, and cross-tenant isolation preserve the exact queued+error job shape.
+    _, restarted = _make_client(tmp_path)
+    listed = restarted.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert len(listed) == 1
+    assert listed[0]["parametricRender"]["job"]["status"] == "queued"
+    assert listed[0]["parametricRender"]["job"]["error"] == "OPTIX_DEVICE_LOST"
+    assert listed[0]["parametricRender"]["job"]["attemptCount"] == 1
+
+    approved = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200
+    app_body = approved.json()
+    assert app_body["approval"]["status"] == "APPROVED"
+    assert app_body["truthLabel"] == "MOCK"
+    assert app_body["parametricRender"]["job"]["status"] == "queued"
+    assert app_body["parametricRender"]["job"]["error"] == "OPTIX_DEVICE_LOST"
+    assert app_body["parametricRender"]["job"]["attemptCount"] == 1
+
+    assert restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+
+
+def _runtime_result(status: str, *, error: str | None = None, used_mock: bool = True) -> Any:
+    from fox3d.blender import RuntimeResult
+
+    return RuntimeResult(
+        status=status,
+        outputs={},
+        error=error,
+        real_blender=not used_mock,
+        real_optix=not used_mock,
+        real_cycles=not used_mock,
+        real_render_output=False,
+        used_mock=used_mock,
+        blender_version="4.2.0",
+    )
+
+
+def _generate_with_queued_retry(
+    plat: Platform, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> tuple[str, str, Any]:
+    """Generate an R&D scheme whose base render fails once and is requeued by _fail_or_retry."""
+    monkeypatch.setattr(plat.gateway, "_vision_adapters", {"live": lambda _p: {"composition": 0.9}})
+    orig_run_job = plat.runtime.run_job
+    monkeypatch.setattr(
+        plat.runtime,
+        "run_job",
+        lambda job, **kw: _runtime_result("failed", error="OPTIX_DEVICE_LOST", used_mock=False),
+    )
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": "客廳 寬160cm 電視櫃 雙門", "variantCount": 10},
+    )
+    assert gen.status_code == 200, gen.text
+    body = gen.json()
+    job = body["parametricRender"]["job"]
+    assert job["status"] == "queued"
+    assert job["attemptCount"] == 1
+    assert body["parametricRender"]["jobStatusSource"] == "LIVE"
+    return body["rdId"], job["jobId"], orig_run_job
+
+
+def _render_job(body: dict[str, Any]) -> dict[str, Any]:
+    job = body["parametricRender"]["job"]
+    assert isinstance(job, dict)
+    return job
+
+
+def test_rd_reads_show_live_render_status_after_queued_retry_succeeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, orig_run_job = _generate_with_queued_retry(plat, client, monkeypatch)
+
+    # The worker retries the queued job and this time the (mock) render succeeds.
+    monkeypatch.setattr(plat.runtime, "run_job", orig_run_job)
+    retried = plat.run_next()
+    assert retried is not None and retried["jobId"] == job_id
+    assert retried["status"] == "succeeded"
+
+    # The stored R&D record still holds the generation-time snapshot ...
+    stored = plat.rd_store.get("tenant-alpha", rd_id)
+    assert stored["parametricRender"]["job"]["status"] == "queued"
+
+    # ... but list, get and approve report the current queue state.
+    listed = client.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert len(listed) == 1
+    assert _render_job(listed[0])["status"] == "succeeded"
+    assert listed[0]["parametricRender"]["jobStatusSource"] == "LIVE"
+
+    got = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert _render_job(got)["status"] == "succeeded"
+
+    approved = client.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200, approved.text
+    app_body = approved.json()
+    assert app_body["approval"]["status"] == "APPROVED"
+    assert _render_job(app_body)["status"] == "succeeded"
+    assert app_body["parametricRender"]["jobStatusSource"] == "LIVE"
+    # truthLabel is never upgraded by a later retry; it stays the conservative generation-time value.
+    assert app_body["truthLabel"] == "MOCK"
+
+    # Restart: the queue is reloaded from disk, so the live state survives a process restart.
+    _, restarted = _make_client(tmp_path)
+    after = restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A).json()
+    assert _render_job(after)["status"] == "succeeded"
+    assert after["approval"]["status"] == "APPROVED"
+
+    # Another tenant still gets nothing.
+    assert restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+    assert restarted.get("/api/product-rd/results", headers=TENANT_B).json()["items"] == []
+
+
+def test_rd_reads_show_terminal_failure_after_retries_exhausted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, _ = _generate_with_queued_retry(plat, client, monkeypatch)
+
+    # Attempts 2 and 3 fail as well -> the job ends terminally failed.
+    second = plat.run_next()
+    assert second is not None and second["status"] == "queued" and second["attemptCount"] == 2
+    third = plat.run_next()
+    assert third is not None and third["jobId"] == job_id
+    assert third["status"] == "failed" and third["attemptCount"] == 3
+
+    _, restarted = _make_client(tmp_path)
+    listed = restarted.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    job = _render_job(listed[0])
+    assert job["status"] == "failed"
+    assert job["error"] == "OPTIX_DEVICE_LOST"
+    assert job["attemptCount"] == 3
+
+    approved = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-supervisor"},
+    )
+    assert approved.status_code == 200, approved.text
+    assert _render_job(approved.json())["status"] == "failed"
+    assert approved.json()["truthLabel"] == "MOCK"
+
+
+def test_rd_render_status_falls_back_to_marked_snapshot_when_job_missing_or_foreign(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+    rd_id, job_id, _ = _generate_with_queued_retry(plat, client, monkeypatch)
+
+    # Job disappears from the queue (e.g. purged): reads keep the snapshot and say so.
+    live_job = plat.queue._jobs.pop(job_id)
+    got = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
+    assert got.status_code == 200
+    body = got.json()
+    assert body["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
+    assert _render_job(body)["status"] == "queued"
+    assert _render_job(body)["jobId"] == job_id
+
+    # A job ID that resolves to another tenant's job is never overlaid onto this record.
+    plat.queue._jobs[job_id] = {**live_job, "tenantId": "tenant-beta", "status": "succeeded", "error": "beta-secret"}
+    listed = client.get("/api/product-rd/results", headers=TENANT_A).json()["items"]
+    assert listed[0]["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
+    assert _render_job(listed[0])["status"] == "queued"
+    assert "beta-secret" not in json.dumps(listed[0])
+
+    # Malformed snapshot job IDs are handled without errors.
+    for bad_job_id in (None, "", 123, ["x"]):
+        record = plat.rd_store.get("tenant-alpha", rd_id)
+        record["parametricRender"]["job"]["jobId"] = bad_job_id
+        with plat.rd_store.tenant_lock("tenant-alpha"):
+            plat.rd_store._write_record_unlocked("tenant-alpha", record)
+        res = client.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
+        assert res.status_code == 200, (bad_job_id, res.text)
+        assert res.json()["parametricRender"]["jobStatusSource"] == "SNAPSHOT"
+
+
 def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
     _, client = _make_client(tmp_path)
 
