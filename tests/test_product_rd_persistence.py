@@ -774,3 +774,251 @@ def test_generate_boundary_inputs_and_bad_approve_actor(tmp_path: Path) -> None:
         )
         assert bad_ap.status_code == 422, f"expected 422 for actor={bad_actor!r}"
         assert "traceback" not in bad_ap.text.lower()
+
+
+def test_v2_generate_enforces_server_side_text_cap_while_legacy_remains_uncapped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat, client = _make_client(tmp_path)
+
+    # Exact 2000-char boundaries (ASCII, CJK 3-byte UTF-8, and 4-byte emoji) succeed on v2.
+    for idx, ok_text in enumerate(
+        (
+            "書櫃 " + ("x" * 1997),
+            "書櫃" + ("甲" * 1998),
+            "🪑" * 2000,
+        )
+    ):
+        assert len(ok_text) == 2000
+        res = client.post(
+            "/api/v2/product-rd/generate",
+            headers=TENANT_A,
+            json={"text": ok_text, "variantCount": 1, "idempotencyKey": f"v2-boundary-{idx}"},
+        )
+        assert res.status_code == 200, (idx, res.text[:300])
+        body = res.json()
+        assert body["text"] == ok_text
+        assert body["textLength"] == 2000
+        assert body["textTruncated"] is False
+        assert len(body["textSummary"]) == 201
+
+    # 2001+ chars, empty/null/whitespace, and malformed inputs fail 422 on v2 without running rd.run or persisting.
+    before_total = client.get("/api/product-rd/results", headers=TENANT_A).json()["total"]
+    orig_run = plat.rd.run
+
+    def _forbid_run(**kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("v2 invalid input must not execute rd.run")
+
+    monkeypatch.setattr(plat.rd, "run", _forbid_run)
+    for bad_v2_body in (
+        {},
+        {"text": None},
+        {"text": ""},
+        {"text": "   "},
+        {"text": "x" * 2001},
+        {"text": "櫃" * 2001},
+        {"text": "🪑" * 2001},
+        {"text": " " * 2001},
+        {"text": 123},
+        {"text": True},
+        {"text": ["書櫃"]},
+        {"text": "書櫃\x00衣櫃"},
+        {"text": "書櫃", "variantCount": 0},
+        {"text": "書櫃", "variantCount": 101},
+        {"text": "書櫃", "variantCount": True},
+        {"text": "書櫃", "idempotencyKey": ""},
+        {"text": "書櫃", "idempotencyKey": "k" * 201},
+        # Reusing an existing valid idempotencyKey with >2000 chars on v2 must still fail validation first.
+        {"text": "櫃" * 2001, "variantCount": 1, "idempotencyKey": "v2-boundary-0"},
+    ):
+        bad_res = client.post("/api/v2/product-rd/generate", headers=TENANT_A, json=bad_v2_body)
+        assert bad_res.status_code == 422, (bad_v2_body, bad_res.status_code, bad_res.text)
+        assert "traceback" not in bad_res.text.lower()
+        assert str(tmp_path) not in bad_res.text
+
+    assert client.get("/api/product-rd/results", headers=TENANT_A).json()["total"] == before_total
+    monkeypatch.setattr(plat.rd, "run", orig_run)
+
+    # Meanwhile legacy /api/product-rd/generate still accepts >2000 chars without cap.
+    over_2000 = "客廳 寬180cm 電視櫃 " + ("甲" * 2200)
+    legacy_ok = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": over_2000, "variantCount": 1},
+    )
+    assert legacy_ok.status_code == 200, legacy_ok.text[:300]
+    assert legacy_ok.json()["text"] == over_2000
+
+
+def test_v2_generate_idempotency_concurrency_and_tenant_isolation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plat1, client1 = _make_client(tmp_path)
+    plat2, client2 = _make_client(tmp_path)
+
+    run_count = 0
+    lock = threading.Lock()
+    orig1 = plat1.rd.run
+    orig2 = plat2.rd.run
+
+    def _spy1(**kw: Any) -> dict[str, Any]:
+        nonlocal run_count
+        with lock:
+            run_count += 1
+        return orig1(**kw)
+
+    def _spy2(**kw: Any) -> dict[str, Any]:
+        nonlocal run_count
+        with lock:
+            run_count += 1
+        return orig2(**kw)
+
+    monkeypatch.setattr(plat1.rd, "run", _spy1)
+    monkeypatch.setattr(plat2.rd, "run", _spy2)
+
+    body = {"text": "臥室 寬120cm 衣櫃 雙門 四層", "variantCount": 10, "idempotencyKey": "v2-idem-concurrent"}
+    barrier = threading.Barrier(6)
+    clients = [client1, client2, client1, client2, client1, client2]
+
+    def _fire(c: TestClient) -> Any:
+        barrier.wait()
+        return c.post("/api/v2/product-rd/generate", headers=TENANT_A, json=body)
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        responses = list(pool.map(_fire, clients))
+
+    assert all(r.status_code == 200 for r in responses), [r.text for r in responses]
+    assert run_count == 1
+    rd_ids = {r.json()["rdId"] for r in responses}
+    assert len(rd_ids) == 1
+    rd_id = next(iter(rd_ids))
+
+    # Parameter conflict on same idempotencyKey -> 409.
+    conflict = client1.post(
+        "/api/v2/product-rd/generate",
+        headers=TENANT_A,
+        json={**body, "text": "玄關 鞋櫃 80cm"},
+    )
+    assert conflict.status_code == 409
+
+    # Tenant B cannot see or approve Tenant A's v2 record, and gets its own isolated record for the same key.
+    assert client1.get("/api/product-rd/results", headers=TENANT_B).json()["total"] == 0
+    assert client1.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_B).status_code == 404
+    assert (
+        client1.post(
+            f"/api/product-rd/results/{rd_id}/approve",
+            headers=TENANT_B,
+            json={"confirm": True, "actor": "other"},
+        ).status_code
+        == 404
+    )
+    other_created = client2.post("/api/v2/product-rd/generate", headers=TENANT_B, json=body)
+    assert other_created.status_code == 200
+    assert other_created.json()["rdId"] != rd_id
+
+
+def test_rd_store_summarizes_list_results_and_compacts_duplicate_text_copies(tmp_path: Path) -> None:
+    plat, client = _make_client(tmp_path)
+    unique_tail = ("極長需求說明段落_" * 800) + "TAIL_MARKER_END"
+    long_text = "書房 寬100cm 高180cm 白木紋書櫃 雙門 四層 " + unique_tail
+    assert len(long_text) > 7000
+
+    gen = client.post(
+        "/api/product-rd/generate",
+        headers=TENANT_A,
+        json={"text": long_text, "variantCount": 10},
+    )
+    assert gen.status_code == 200
+    gen_data = gen.json()
+    rd_id = gen_data["rdId"]
+    assert gen_data["text"] == long_text
+    assert gen_data["textLength"] == len(long_text)
+    assert gen_data["textTruncated"] is False
+    assert len(gen_data["textSummary"]) == 201
+    assert gen_data["textSummary"].endswith("…")
+
+    # On disk, the full long_text is stored only once (in record["text"]), not duplicated across nested metadata/notes.
+    record_file = tmp_path / "product_rd" / stable_hash("tenant-alpha") / f"{stable_hash(rd_id)}.json"
+    raw_disk = record_file.read_text(encoding="utf-8")
+    assert raw_disk.count("TAIL_MARKER_END") == 1
+
+    # List endpoint summarizes text and strips long tail so list responses stay small.
+    _, restarted = _make_client(tmp_path)
+    list_res = restarted.get("/api/product-rd/results", headers=TENANT_A)
+    assert list_res.status_code == 200
+    assert "TAIL_MARKER_END" not in list_res.text
+    list_item = list_res.json()["items"][0]
+    assert list_item["rdId"] == rd_id
+    assert list_item["textTruncated"] is True
+    assert list_item["textLength"] == len(long_text)
+    assert list_item["text"] == gen_data["textSummary"]
+    assert list_item["textSummary"] == gen_data["textSummary"]
+
+    # Detail and approve endpoints still return the full verbatim text.
+    detail_res = restarted.get(f"/api/product-rd/results/{rd_id}", headers=TENANT_A)
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert detail["text"] == long_text
+    assert detail["textTruncated"] is False
+    assert detail["textLength"] == len(long_text)
+
+    ap_res = restarted.post(
+        f"/api/product-rd/results/{rd_id}/approve",
+        headers=TENANT_A,
+        json={"confirm": True, "actor": "rd-approver"},
+    )
+    assert ap_res.status_code == 200
+    assert ap_res.json()["text"] == long_text
+    assert ap_res.json()["textTruncated"] is False
+
+    # Pre-existing legacy un-compacted record on disk is also summarized cleanly when listed.
+    legacy_id = "rd-legacy-bloated-01"
+    legacy_tail = ("舊版重複長字串_" * 500) + "LEGACY_BLOATED_TAIL_END"
+    legacy_long = "玄關 鞋櫃 80cm " + legacy_tail
+    legacy_rec = plat.rd.run(tenant_id="tenant-alpha", text=legacy_long, variant_count=10)
+    legacy_rec.update(
+        {
+            "rdId": legacy_id,
+            "tenantId": "tenant-alpha",
+            "createdAt": "2026-11-20T00:00:00.000000Z",
+            "text": legacy_long,
+            "approval": {
+                "status": "WAITING_APPROVAL",
+                "HUMAN_APPROVAL_REQUIRED": True,
+                "autoApproveForbiddenForProduction": True,
+                "liveMachineControl": False,
+                "approvedAt": None,
+                "actor": None,
+                "judgeLabel": "MOCK",
+            },
+        }
+    )
+    legacy_path = tmp_path / "product_rd" / stable_hash("tenant-alpha") / f"{stable_hash(legacy_id)}.json"
+    legacy_path.write_text(json.dumps(legacy_rec, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+
+    _, restarted2 = _make_client(tmp_path)
+    list_res2 = restarted2.get("/api/product-rd/results", headers=TENANT_A)
+    assert list_res2.status_code == 200
+    assert "LEGACY_BLOATED_TAIL_END" not in list_res2.text
+    by_id = {item["rdId"]: item for item in list_res2.json()["items"]}
+    assert by_id[legacy_id]["textTruncated"] is True
+    assert by_id[legacy_id]["textLength"] == len(legacy_long)
+    assert restarted2.get(f"/api/product-rd/results/{legacy_id}", headers=TENANT_A).json()["text"] == legacy_long
+
+    # Optional max_record_bytes cap rejects oversized writes atomically without leaving temp files.
+    from fox3d.product_rd_store import ProductRDStore
+
+    capped_root = tmp_path / "capped_rd"
+    capped_store = ProductRDStore(capped_root, max_record_bytes=4096)
+    with pytest.raises(ValueError, match="超過大小上限"):
+        capped_store.create_or_get(
+            tenant_id="tenant-alpha",
+            text="書櫃 " + ("超長內容" * 1500),
+            variant_count=1,
+            idempotency_key=None,
+            fingerprint="fp-oversized",
+            default_judge_status="MOCK",
+            builder=lambda: {"rdId": "rd-too-big", "top": [], "approval": {"status": "WAITING_APPROVAL"}},
+        )
+    assert capped_store.list_results("tenant-alpha")["total"] == 0
+    assert list(capped_root.rglob("*.tmp")) == []

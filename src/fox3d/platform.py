@@ -69,6 +69,8 @@ from fox3d.parametric import BOMEngine, CAMAdapter, CNCAdapter, CabinetEngine, C
 from fox3d.product_rd_store import (
     DEFAULT_RD_VARIANT_COUNT,
     ProductRDStore,
+    compact_rd_embedded_text,
+    summarize_rd_text,
     validate_optional_idempotency_key,
     validate_rd_text,
     validate_rd_variant_count,
@@ -930,11 +932,14 @@ class Platform:
             result["HUMAN_APPROVAL_REQUIRED"] = True
             if isinstance(result.get("approval"), dict):
                 result["approval"]["HUMAN_APPROVAL_REQUIRED"] = True
+            summary, _ = summarize_rd_text(clean_text)
+            compact_rd_embedded_text(result, summary)
             if render_base and result.get("baseSpec") and not self._production_gate():
                 stored = self.create_parametric(
                     {**result["baseSpec"], "tenantId": tid, "kind": result["baseSpec"].get("kind")}
                 )
                 result["parametricRender"] = self.render_parametric(stored["spec"]["productId"], tenant_id=tid)
+                compact_rd_embedded_text(result, summary)
             return result
 
         return self.rd_store.create_or_get(
