@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="/admin/pages/assets/kd.css">
   <script defer src="/admin/recipes/assets/fox3d-shell.js"></script>
   <script defer src="/admin/pages/assets/kd.js"></script>
+  <script defer src="/admin/pages/assets/kd-packaging.js"></script>
 </head>
 <body>
   <main class="kd">
@@ -176,6 +177,56 @@
       </form>
       <div id="kd-acr-confirm" class="kd-confirm" hidden></div>
       <pre id="kd-acr-result" class="kd-out" hidden></pre>
+
+      <div id="kdp-root" class="kdp-panel" aria-labelledby="kdp-head-h">
+        <h3 id="kdp-head-h" class="kd-sub">包裝工程檢查</h3>
+        <p class="kd-muted">抗壓與堆疊為工程試算（ESTIMATED／CONFIG），非實驗室認證。</p>
+
+        <h4 class="kdp-sub">抗壓與堆疊試算</h4>
+        <form id="kdp-compress-form" class="kd-form kdp-form">
+          <label>紙板等級
+            <select id="kdp-grade" name="grade"></select>
+          </label>
+          <label>內長 mm <input type="number" id="kdp-len" value="300" min="1" step="any"></label>
+          <label>內寬 mm <input type="number" id="kdp-wid" value="200" min="1" step="any"></label>
+          <label>內高 mm <input type="number" id="kdp-hgt" value="150" min="1" step="any"></label>
+          <label>安全係數 <input type="number" id="kdp-sf" value="3" min="0.1" step="any"></label>
+          <label>單重 kg <input type="number" id="kdp-weight" value="2" min="0.01" step="any"></label>
+          <label>堆疊層數 <input type="number" id="kdp-stack" value="6" min="1" step="1"></label>
+          <button type="submit" id="kdp-compress-btn" class="kd-btn">計算抗壓</button>
+        </form>
+        <p id="kdp-compress-msg" class="kd-muted" aria-live="polite"></p>
+        <pre id="kdp-compress-out" class="kd-out" hidden></pre>
+
+        <h4 class="kdp-sub">刀模檢查</h4>
+        <form id="kdp-dieline-form" class="kdp-form">
+          <label class="kdp-wide">刀模 JSON
+            <textarea id="kdp-dieline-json" rows="6" spellcheck="false" placeholder='{"panels":[{"id":"a","w":100,"h":50}]}'></textarea>
+          </label>
+          <button type="submit" id="kdp-dieline-btn" class="kd-btn">檢查刀模</button>
+        </form>
+        <p id="kdp-dieline-msg" class="kd-muted" aria-live="polite"></p>
+        <ul id="kdp-dieline-issues" class="kdp-issues" hidden></ul>
+
+        <h4 class="kdp-sub">紙箱最佳化</h4>
+        <form id="kdp-opt-form" class="kd-form kdp-form">
+          <label>等級
+            <select id="kdp-opt-grade" name="grade"></select>
+          </label>
+          <label>寬 mm <input type="number" id="kdp-opt-w" value="120" min="1" step="any"></label>
+          <label>高 mm <input type="number" id="kdp-opt-h" value="80" min="1" step="any"></label>
+          <label>深 mm <input type="number" id="kdp-opt-d" value="40" min="1" step="any"></label>
+          <label>單重 kg <input type="number" id="kdp-opt-weight" value="0.4" min="0.01" step="any"></label>
+          <button type="submit" id="kdp-opt-btn" class="kd-btn">最佳化候選</button>
+        </form>
+        <p id="kdp-opt-msg" class="kd-muted" aria-live="polite"></p>
+        <div class="kd-scroll"><table id="kdp-opt-table" class="kd-table" hidden>
+          <thead><tr>
+            <th>盒型</th><th>板材面積</th><th>CBM</th><th>抗壓餘裕 N</th><th>工程否決</th><th>分數</th>
+          </tr></thead>
+          <tbody id="kdp-opt-tbody"></tbody>
+        </table></div>
+      </div>
     </section>
   </main>
 </body>
