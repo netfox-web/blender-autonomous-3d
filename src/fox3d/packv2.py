@@ -100,10 +100,9 @@ def validate_dieline(dieline: dict[str, Any]) -> dict[str, Any]:
     Panels with missing / non-numeric / non-positive ``w`` or ``h`` are reported as
     ``bounds:<id>`` instead of raising.
 
-    Overlap: only panels that supply numeric ``x`` and ``y`` (placed coordinates)
-    take part in the interior-overlap check. Panels without coordinates are an
-    abstract sequential net (laid out side by side), which cannot overlap, so they
-    are not checked.
+    Panels with neither coordinate are abstract sequential nets. If either
+    coordinate is supplied, both must be finite numbers; otherwise report
+    ``coordinates:<id>``. Valid placed panels participate in overlap checks.
     """
     errors: list[str] = []
     panels = dieline.get("panels") or []
@@ -119,7 +118,11 @@ def validate_dieline(dieline: dict[str, Any]) -> dict[str, Any]:
         if w < 8 or h < 8:
             errors.append(f"short_flap:{pid}")
         x, y = _finite_float(p.get("x")), _finite_float(p.get("y"))
-        if x is not None and y is not None:
+        if "x" not in p and "y" not in p:
+            continue
+        if x is None or y is None:
+            errors.append(f"coordinates:{pid}")
+        else:
             placed.append({"id": pid, "x": x, "y": y, "w": w, "h": h})
     ids = [p.get("id") for p in panels]
     if len(ids) != len(set(ids)):
@@ -135,10 +138,8 @@ def validate_dieline(dieline: dict[str, Any]) -> dict[str, Any]:
     for i, a in enumerate(placed):
         for b in placed[i + 1 :]:
             if (
-                a["x"] + a["w"] > b["x"] + eps
-                and b["x"] + b["w"] > a["x"] + eps
-                and a["y"] + a["h"] > b["y"] + eps
-                and b["y"] + b["h"] > a["y"] + eps
+                eps - a["w"] < a["x"] - b["x"] < b["w"] - eps
+                and eps - a["h"] < a["y"] - b["y"] < b["h"] - eps
             ):
                 errors.append(f"overlap:{a['id']}:{b['id']}")
     return {"ok": not errors, "errors": errors, "foldConsistent": "missing_crease" not in errors, "source": "geometry"}

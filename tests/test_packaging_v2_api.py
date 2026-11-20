@@ -152,6 +152,43 @@ def test_dieline_huge_panel_dim_http_not_500(client: TestClient) -> None:
     assert "Traceback" not in res.text
 
 
+@pytest.mark.parametrize("coordinates", [
+    {"x": "bad", "y": 0}, {"x": 0, "y": "bad"},
+    {"x": HUGE_INT, "y": 0}, {"x": 0, "y": HUGE_INT},
+    {"x": 0}, {"y": 0}, {"x": None, "y": None},
+    {"x": False, "y": 0},
+])
+def test_dieline_invalid_coordinates_http_fail(client: TestClient, coordinates: dict[str, Any]) -> None:
+    panels = [{"id": "a", "w": 20, "h": 20, **coordinates},
+              {"id": "b", "w": 20, "h": 20, "x": 0, "y": 0}]
+    res = client.post("/api/packaging/v2/dieline/validate", json={"panels": panels, "crease": [{}]})
+    assert res.status_code == 200
+    assert res.json()["ok"] is False
+    assert res.json()["errors"] == ["coordinates:a"]
+
+
+def test_dieline_placed_overlap_and_abstract_panel_http(client: TestClient) -> None:
+    panels = [{"id": "a", "w": 20, "h": 20, "x": 0, "y": 0},
+              {"id": "b", "w": 20, "h": 20, "x": 0, "y": 0}]
+    body = {"panels": panels, "crease": [{}]}
+    res = client.post("/api/packaging/v2/dieline/validate", json=body)
+    assert res.status_code == 200
+    assert res.json()["errors"] == ["overlap:a:b"]
+    del panels[0]["x"], panels[0]["y"]
+    res = client.post("/api/packaging/v2/dieline/validate", json=body)
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+
+def test_dieline_large_finite_coordinates_overlap_http(client: TestClient) -> None:
+    panels = [{"id": "a", "w": 20, "h": 20, "x": 1e300, "y": -1e300},
+              {"id": "b", "w": 20, "h": 20, "x": 1e300, "y": -1e300}]
+    res = client.post("/api/packaging/v2/dieline/validate", json={"panels": panels, "crease": [{}]})
+    assert res.status_code == 200
+    assert res.json()["ok"] is False
+    assert res.json()["errors"] == ["overlap:a:b"]
+
+
 def test_compression_huge_stack_count_422(client: TestClient) -> None:
     body = _good_compression_body() | {"stackCount": HUGE_INT}
     res = client.post("/api/packaging/v2/compression", json=body)

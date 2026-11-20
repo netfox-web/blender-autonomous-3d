@@ -107,6 +107,14 @@ def test_validate_dieline_overlap_uses_placed_coordinates():
     assert out["errors"] == ["overlap:a:b"]
 
 
+def test_validate_dieline_overlap_at_large_finite_coordinates():
+    panels = [
+        {"id": "a", "x": 1e300, "y": -1e300, "w": 20, "h": 20},
+        {"id": "b", "x": 1e300, "y": -1e300, "w": 20, "h": 20},
+    ]
+    assert validate_dieline(_die(panels))["errors"] == ["overlap:a:b"]
+
+
 def test_validate_dieline_touching_edges_do_not_overlap():
     panels = [
         {"id": "a", "x": 0, "y": 0, "w": 100, "h": 50},
@@ -130,6 +138,20 @@ def test_validate_dieline_overlap_skips_panels_without_coordinates():
         {"id": "b", "x": 10, "y": 10, "w": "x", "h": 50},
     ]
     assert validate_dieline(_die(bad))["errors"] == ["bounds:b"]
+
+
+@pytest.mark.parametrize("coordinates", [
+    {"x": "bad", "y": 0}, {"x": 0, "y": "bad"},
+    {"x": 10**400, "y": 0}, {"x": 0, "y": 10**400},
+    {"x": 0}, {"y": 0}, {"x": None, "y": None},
+    {"x": True, "y": 0}, {"x": float("nan"), "y": 0},
+])
+def test_validate_dieline_invalid_coordinates_fail(coordinates):
+    panels = [{"id": "a", "w": 20, "h": 20, **coordinates},
+              {"id": "b", "w": 20, "h": 20, "x": 0, "y": 0}]
+    out = validate_dieline(_die(panels))
+    assert out["ok"] is False
+    assert out["errors"] == ["coordinates:a"]
 
 
 @pytest.mark.parametrize("family", BOX_FAMILIES)
