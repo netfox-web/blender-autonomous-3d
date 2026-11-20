@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
@@ -188,7 +189,11 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
         restarted.pilot.workorders.load()
         rows = restarted.pilot.qc.checks if action == "qc" else restarted.pilot.qc.defects
         assert len([r for r in rows.values() if r["workOrderId"] == wo["workOrderId"]]) == 1
-        assert restarted.pilot.workorders.get(wo["workOrderId"])["audit"] == audit_before
+        wo_row = restarted.pilot.workorders.get(wo["workOrderId"])
+        if action == "qc":
+            assert wo_row["audit"] == audit_before
+        else:
+            assert wo_row["state"] == "REJECTED"
         assert client.post(path, headers={"X-Tenant-Id": "other"}, json=body).status_code == 404
 
     _, wo = _seed_release_receipt_and_wo(platform)
@@ -210,9 +215,6 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
     assert len(matching) == 1
     assert matching[0]["result"] == "FAIL"
     expected_id = matching[0]["qcId"]
-    wo_reloaded = restarted.pilot.workorders.get(wo["workOrderId"])
-    assert wo_reloaded["state"] == "QC_HOLD"
-    assert expected_id in wo_reloaded["lineage"]["qc"]
     client = TestClient(create_app(restarted))
     replay = client.post(path, headers=HEADERS, json=body)
     assert replay.status_code == 200 and replay.json()["qcId"] == expected_id
@@ -222,3 +224,37 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
     wo_after = restarted.pilot.workorders.get(wo["workOrderId"])
     assert wo_after["state"] == "QC_HOLD"
     assert expected_id in wo_after["lineage"]["qc"]
+
+
+def test_qc_idempotency_survives_crash_before_qc_persist(platform: Any) -> None:
+    from fox3d.storelock import CrashInjected
+
+    _, wo = _seed_release_receipt_and_wo(platform)
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}/qc"
+    body = {"stage": "FINAL", "checkId": "THICKNESS", "measured": 18, "source": "MANUAL", "idempotencyKey": "idem-persist-window"}
+    client = TestClient(create_app(platform))
+
+    for crash in ("after-outbox-prepare",):
+        platform.pilot.qc._crash_mode = crash
+        with pytest.raises(CrashInjected):
+            client.post(path, headers=HEADERS, json=body)
+        platform.pilot.qc._crash_mode = ""
+
+        restarted = type(platform)(root=platform.root, mock_blender=True)
+        store_key = f"{TENANT}::qc-idem::{wo['workOrderId']}::idem-persist-window"
+        matching = [r for r in restarted.pilot.qc.checks.values() if r["workOrderId"] == wo["workOrderId"]]
+        assert len(matching) == 1
+        assert store_key in restarted.pilot.qc.idem
+        qc_id = matching[0]["qcId"]
+        lineage = restarted.pilot.workorders.get(wo["workOrderId"]).get("lineage", {}).get("qc") or []
+        assert lineage == []
+
+        replay_client = TestClient(create_app(restarted))
+        replay = replay_client.post(path, headers=HEADERS, json=body)
+        assert replay.status_code == 200, replay.text
+        assert replay.json()["qcId"] == qc_id
+        replay2 = replay_client.post(path, headers=HEADERS, json=body)
+        assert replay2.status_code == 200 and replay2.json()["qcId"] == qc_id
+        restarted.pilot.qc.load()
+        assert len([r for r in restarted.pilot.qc.checks.values() if r["workOrderId"] == wo["workOrderId"]]) == 1
+        assert store_key in restarted.pilot.qc.idem

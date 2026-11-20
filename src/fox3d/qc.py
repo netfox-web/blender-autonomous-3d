@@ -108,6 +108,55 @@ class QcService:
         plan = self.schema(family)
         return {"qcPlan": plan, "qcPlanHash": plan_hash(plan)}
 
+    def reconcile_work_order_from_check(self, rec: dict[str, Any]) -> None:
+        if self.workorders is None:
+            return
+        work_order_id = str(rec.get("workOrderId") or "")
+        tenant_id = rec.get("tenantId")
+        qc_id = str(rec.get("qcId") or "")
+        if not work_order_id or not qc_id:
+            return
+        wo = self.workorders.get(work_order_id)
+        if wo.get("tenantId") != tenant_id:
+            return
+        dirty = False
+        lineage = list((wo.get("lineage") or {}).get("qc") or [])
+        if qc_id not in lineage:
+            wo["lineage"]["qc"] = lineage + [qc_id]
+            dirty = True
+        operator = str(rec.get("operator") or "qc")
+        check_id = str(rec.get("checkId") or "")
+        hold_wo = not bool(rec.get("ok")) and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}
+        if hold_wo and wo.get("state") not in {"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"} and wo.get("state") != "QC_HOLD":
+            self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
+            dirty = True
+        if dirty:
+            self.workorders.persist()
+
+    def reconcile_work_order_from_defect(self, rec: dict[str, Any]) -> None:
+        if self.workorders is None:
+            return
+        work_order_id = str(rec.get("workOrderId") or "")
+        tenant_id = rec.get("tenantId")
+        if not work_order_id:
+            return
+        wo = self.workorders.get(work_order_id)
+        if wo.get("tenantId") != tenant_id:
+            return
+        actor = str(rec.get("actor") or "qc")
+        disposition = str(rec.get("disposition") or "")
+        dirty = False
+        if disposition == "REWORK" and wo.get("state") == "QC_HOLD":
+            if not any(h.get("open") and h.get("blocking") for h in wo.get("holds") or []):
+                self.workorders._transition(wo, "IN_PROGRESS", actor=actor, reason="defect-rework")
+                wo["rework"] = True
+                dirty = True
+        if disposition in {"SCRAP", "REJECT"} and wo.get("state") != "REJECTED":
+            self.workorders._transition(wo, "REJECTED", actor=actor, reason="defect-reject")
+            dirty = True
+        if dirty:
+            self.workorders.persist()
+
     def record(
         self,
         *,
@@ -170,7 +219,8 @@ class QcService:
             wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
             if hold_wo and wo.get("state") != "QC_HOLD":
                 self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
-            self.workorders.persist()
+        if idem_entry is not None:
+            self.persist()
         release_hash = None
         if self.workorders is not None:
             try:
@@ -188,6 +238,8 @@ class QcService:
             release_hash=release_hash,
             semantic_key=f"{tenant_id}::qc::{work_order_id}::{stage}::{check_id}::{rec['qcId']}",
         )
+        if self.workorders is not None:
+            self.workorders.persist()
         return rec
 
     def incoming_material(self, **kwargs: Any) -> dict[str, Any]:
@@ -232,6 +284,10 @@ class QcService:
         rec["defectHash"] = stable_hash({k: rec[k] for k in rec if k != "defectHash"})
         if dam_asset_id and self.dam is not None:
             self.dam.get(dam_asset_id, tenant_id=tenant_id)
+        self.defects[rec["defectId"]] = rec
+        if idem_entry is not None:
+            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": rec["defectId"]}
+            self.persist()
         if self.workorders is not None:
             wo = self.workorders.get(work_order_id)
             if wo.get("tenantId") != tenant_id:
@@ -243,11 +299,9 @@ class QcService:
                 wo["rework"] = True
             if disposition in {"SCRAP", "REJECT"}:
                 self.workorders._transition(wo, "REJECTED", actor=actor, reason="defect-reject")
-            self.workorders.persist()
-        self.defects[rec["defectId"]] = rec
-        if idem_entry is not None:
-            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": rec["defectId"]}
         emit(self, "qc.defect", tenant_id=tenant_id, aggregate_type="QC", aggregate_id=rec["defectId"], actor=actor, payload={"workOrderId": work_order_id, "code": code, "disposition": disposition}, semantic_key=f"{tenant_id}::defect::{rec['defectId']}")
+        if self.workorders is not None:
+            self.workorders.persist()
         return rec
 
     def required_final_ok(

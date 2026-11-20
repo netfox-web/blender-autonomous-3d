@@ -103,6 +103,7 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                     raise HTTPException(409, "idempotencyKey 衝突")
                 prev_rec = pilot.qc.checks.get(str(prev.get("qcId")))
                 if prev_rec is not None:
+                    pilot.qc.reconcile_work_order_from_check(prev_rec)
                     return dict(prev_rec)
             if wo.get("state") in _QC_OPEN_STATES_REJECTED:
                 raise HTTPException(409, "工單尚未預留材料，無法記錄品檢")
@@ -125,7 +126,6 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                 )
             except PermissionError as exc:
                 raise HTTPException(409, str(exc)) from exc
-            pilot.workorders.persist()
             return dict(rec)
 
     @router.post("/api/pilot/work-orders/{work_order_id}/qc/release-hold")
@@ -191,7 +191,9 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
             if previous:
                 if previous["sig"] != signature:
                     raise HTTPException(409, "idempotencyKey 衝突")
-                return dict(pilot.qc.defects[previous["qcId"]])
+                prev_defect = pilot.qc.defects[previous["qcId"]]
+                pilot.qc.reconcile_work_order_from_defect(prev_defect)
+                return dict(prev_defect)
             try:
                 rec = pilot.qc.defect(tenant_id=tid, work_order_id=work_order_id, code=code, disposition=disposition, actor=str(body.get("actor") or "qc"), note=str(body.get("note") or ""), idem_entry=(store_key, signature))
             except PermissionError as exc:
