@@ -816,3 +816,165 @@ def test_shipment_draft_single_persist_and_rollback_preserves_existing_draft(tmp
     assert log._idem.get(content_key_c2) == existing_sid
     assert "tenant-a::shipment-key::idem-attach-fail" not in log._idem
 
+
+
+def _inject_raw_quotes(log: LogisticsService, extra: list) -> None:
+    import json
+
+    assert log.root is not None
+    path = log.root / "logistics.json"
+    disk = json.loads(path.read_text(encoding="utf-8"))
+    disk["carrier_quotes"].extend(extra)
+    path.write_text(json.dumps(disk, indent=2), encoding="utf-8")
+    log.load()
+
+
+def _raw_quotes(log: LogisticsService) -> list:
+    import json
+
+    assert log.root is not None
+    return json.loads((log.root / "logistics.json").read_text(encoding="utf-8"))["carrier_quotes"]
+
+
+def test_duplicate_quote_id_blocks_preflight_and_is_preserved_until_resolved(tmp_path, capsys):
+    import json
+    from fox3d.logistics import carrier_quote_record_fingerprint, cli_main
+
+    log = _wired_logistics(tmp_path)
+    log.import_carrier_quote({"quoteId": "q-ok", "carrier": "CA", "charge": 1}, source="MANUAL", tenant_id="ta")
+    first = {"quoteId": "q1", "tenantId": "ta", "globalQuote": True}
+    second = {"quoteId": "q1", "tenantId": "ta"}
+    _inject_raw_quotes(log, [first, second])
+
+    # Neither copy is usable as a quote (the later one no longer silently wins).
+    assert "q1" not in log.carrier_quotes
+
+    rep = log.inspect_tenantless_carrier_quotes()
+    assert rep["ready"] is False
+    assert rep["totalQuotes"] == 3
+    assert rep["tenantlessCount"] == 2
+    assert rep["blockingCount"] == 2
+    assert rep["conflictCount"] == 2
+    assert rep["duplicateQuoteIds"] == ["q1"]
+    assert rep["duplicateRecordCount"] == 2
+    assert rep["quoteIds"] == ["q1", "q1"]
+    fps = [item["recordFingerprint"] for item in rep["items"]]
+    assert fps == [carrier_quote_record_fingerprint(first), carrier_quote_record_fingerprint(second)]
+    for item in rep["items"]:
+        assert item["issue"] == "duplicate_quote_id"
+        assert item["duplicateCount"] == 2
+        assert item["conflict"] is True
+        assert "--keep-duplicate q1=" in item["remediation"]
+    assert [item["rawIndex"] for item in rep["items"]] == [1, 2]
+
+    capsys.readouterr()
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["duplicateQuoteIds"] == ["q1"]
+    assert out["tenantlessCount"] == 2
+
+    # Migration without a quote filter reports both copies as unresolved; --require-zero fails.
+    assert cli_main(["--root", str(log.root), "--tenant", "ta", "--require-zero"]) == 1
+    mig = json.loads(capsys.readouterr().out)
+    assert mig["unresolvedCount"] == 2
+    assert {e["reason"] for e in mig["unresolved"]} == {"duplicate_quote_id"}
+
+    # Writes that target the duplicated quoteId are refused instead of picking one copy.
+    with pytest.raises(PermissionError, match="duplicate records"):
+        log.import_carrier_quote({"quoteId": "q1", "carrier": "X", "charge": 2}, source="MANUAL", tenant_id="ta")
+    with pytest.raises(PermissionError, match="duplicate records"):
+        log.migrate_tenantless_carrier_quotes(assignments={"q1": "ta"})
+    with pytest.raises(PermissionError, match="duplicate records"):
+        log.migrate_tenantless_carrier_quotes(quote_ids=["q1"], tenant_id="ta")
+    with pytest.raises(PermissionError, match="duplicate records"):
+        log.unassign_migrated_carrier_quotes(["q1"])
+
+    # Unrelated logistics writes persist both copies verbatim.
+    log.import_carrier_quote({"quoteId": "q-other", "carrier": "CB", "charge": 3}, source="MANUAL", tenant_id="ta")
+    raw = _raw_quotes(log)
+    assert raw.count(first) == 1 and raw.count(second) == 1
+    assert LogisticsService(root=log.root).inspect_tenantless_carrier_quotes()["duplicateQuoteIds"] == ["q1"]
+
+    # Wrong fingerprint is refused and changes nothing; dry-run changes nothing.
+    with pytest.raises(KeyError, match="does not match"):
+        log.resolve_carrier_quote_records(keep={"q1": "0" * 64})
+    with pytest.raises(KeyError, match="no duplicate"):
+        log.resolve_carrier_quote_records(keep={"q-ok": fps[0]})
+    with pytest.raises(ValueError, match="nothing to resolve"):
+        log.resolve_carrier_quote_records()
+    dry = log.resolve_carrier_quote_records(keep={"q1": fps[1]}, dry_run=True)
+    assert dry["removedCount"] == 1 and dry["remainingAnomalyCount"] == 0
+    assert _raw_quotes(log).count(first) == 1
+
+    # Explicit resolution via CLI keeps the chosen copy and prints the removed one.
+    assert cli_main(["--root", str(log.root), "--keep-duplicate", f"q1={fps[1]}", "--require-zero"]) == 0
+    res = json.loads(capsys.readouterr().out)
+    assert res["keptCount"] == 1
+    # rawIndex shifted after the intervening write; the fingerprint still identifies the record.
+    assert [{k: v for k, v in r.items() if k != "rawIndex"} for r in res["removed"]] == [
+        {"reason": "duplicate_quote_id", "quoteId": "q1", "recordFingerprint": fps[0], "record": first}
+    ]
+    raw_after = _raw_quotes(log)
+    assert [q for q in raw_after if q.get("quoteId") == "q1"] == [second]
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 0
+    capsys.readouterr()
+    log.load()
+    assert log.carrier_quotes["q1"] == second
+
+
+def test_non_object_carrier_quote_fails_closed_and_survives_other_writes(tmp_path, capsys):
+    import json
+    from fox3d.logistics import carrier_quote_record_fingerprint, cli_main
+
+    log = _wired_logistics(tmp_path)
+    log.import_carrier_quote({"quoteId": "q-ok", "carrier": "CA", "charge": 1}, source="MANUAL", tenant_id="ta")
+    _inject_raw_quotes(log, ["bad", 7])
+
+    rep = log.inspect_tenantless_carrier_quotes()
+    assert rep["ready"] is False
+    assert rep["invalidRecordCount"] == 2
+    assert rep["tenantlessCount"] == 2
+    assert rep["quoteIds"] == ["<non-object:1>", "<non-object:2>"]
+    assert [item["rawRecord"] for item in rep["items"]] == ["bad", 7]
+    assert all(item["issue"] == "non_object" for item in rep["items"])
+    capsys.readouterr()
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 1
+    capsys.readouterr()
+
+    # Subsequent logistics writes keep the raw entries instead of dropping them.
+    log.import_carrier_quote({"quoteId": "q-two", "carrier": "CB", "charge": 2}, source="MANUAL", tenant_id="ta")
+    cartons = _carton(log, "ta")
+    assert cartons
+    raw = _raw_quotes(log)
+    assert "bad" in raw and 7 in raw
+    assert LogisticsService(root=log.root).inspect_tenantless_carrier_quotes()["invalidRecordCount"] == 2
+
+    with pytest.raises(KeyError, match="non-object"):
+        log.resolve_carrier_quote_records(drop=[carrier_quote_record_fingerprint("other")])
+
+    fp_bad = carrier_quote_record_fingerprint("bad")
+    assert cli_main(["--root", str(log.root), "--drop-invalid", fp_bad, "--require-zero"]) == 1
+    res = json.loads(capsys.readouterr().out)
+    assert res["removed"][0]["record"] == "bad"
+    assert res["remainingAnomalyCount"] == 1
+    assert "bad" not in _raw_quotes(log) and 7 in _raw_quotes(log)
+
+    fp_seven = carrier_quote_record_fingerprint(7)
+    assert cli_main(["--root", str(log.root), "--drop-invalid", fp_seven, "--require-zero"]) == 0
+    capsys.readouterr()
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 0
+    capsys.readouterr()
+    assert {q["quoteId"] for q in _raw_quotes(log)} == {"q-ok", "q-two"}
+
+
+def test_non_list_carrier_quotes_container_fails_closed_without_rewrite(tmp_path):
+    import json
+
+    root = tmp_path / "logistics"
+    root.mkdir()
+    path = root / "logistics.json"
+    path.write_text(json.dumps({"carrier_quotes": {"q1": {"quoteId": "q1", "tenantId": "ta"}}}), encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="carrier_quotes must be a list"):
+        LogisticsService(root=root)
+    assert path.read_bytes() == before

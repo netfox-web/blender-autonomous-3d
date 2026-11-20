@@ -1125,3 +1125,107 @@ def test_tenant_backup_carrier_quotes_http_and_global_exclusion_and_fail_closed(
 
 
 
+
+
+def test_duplicate_and_non_object_carrier_quotes_block_preflight_readiness_and_backup(tmp_path, capsys):
+    from fastapi.testclient import TestClient
+    from fox3d.api import create_app
+    from fox3d.logistics import carrier_quote_record_fingerprint
+
+    import scripts.migrate_carrier_quotes as migrate_script
+
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    client = TestClient(create_app(plat))
+    res_a = client.post(
+        "/api/pilot/carrier-quotes",
+        headers={"X-Tenant-Id": "ta"},
+        json={"carrier": "TCAT-A", "service": "ground", "charge": 135, "dimDivisor": 6000, "source": "MANUAL"},
+    )
+    assert res_a.status_code == 200, res_a.text
+    qid_a = res_a.json()["quoteId"]
+    logistics_path = plat.root / "logistics" / "logistics.json"
+    base_payload = read_json(logistics_path)
+
+    def assert_blocked(dest_name: str, expected: str) -> None:
+        assert plat.pilot.logistics.inspect_tenantless_carrier_quotes()["ready"] is False
+        assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 1
+        capsys.readouterr()
+        ready = plat.pilot.readiness(evidence={"carrierQuotes": True})
+        assert ready["tenantlessCarrierQuotesReady"] is False
+        assert ready["importedCarrierQuoteReady"] is False
+        assert client.get("/api/readiness").json()["tenantlessCarrierQuotesReady"] is False
+        assert client.get("/api/physical-os/readiness").json()["tenantlessCarrierQuotesReady"] is False
+        with pytest.raises(BackupError, match="ambiguous") as exc:
+            backup_pilot(plat.root, tmp_path / dest_name, tenant_ids=["ta"])
+        assert expected in str(exc.value)
+        assert "migrate_carrier_quotes.py" in str(exc.value)
+        _assert_no_manifest(tmp_path / dest_name)
+
+    # 1. Same quoteId twice: earlier conflicting copy must not be hidden by the later valid copy.
+    first = {"quoteId": "q1", "tenantId": "ta", "globalQuote": True}
+    second = {"quoteId": "q1", "tenantId": "ta"}
+    dup_payload = dict(base_payload)
+    dup_payload["carrier_quotes"] = [*base_payload["carrier_quotes"], first, second]
+    atomic_write_json(logistics_path, dup_payload)
+    plat.pilot.logistics.load()
+    report = plat.pilot.logistics.inspect_tenantless_carrier_quotes()
+    assert report["duplicateQuoteIds"] == ["q1"]
+    assert report["tenantlessCount"] == 2
+    assert plat.pilot.readiness(evidence={"carrierQuotes": True})["tenantlessCarrierQuotesCount"] == 2
+    assert_blocked("bak-dup", "duplicate quoteId=q1")
+
+    # Another tenant-scoped HTTP write persists logistics.json; both copies survive and still block.
+    res_b = client.post(
+        "/api/pilot/carrier-quotes",
+        headers={"X-Tenant-Id": "tb"},
+        json={"carrier": "HCT-B", "service": "ground", "charge": 99, "dimDivisor": 6000, "source": "MANUAL"},
+    )
+    assert res_b.status_code == 200, res_b.text
+    raw = read_json(logistics_path)["carrier_quotes"]
+    assert raw.count(first) == 1 and raw.count(second) == 1
+    assert_blocked("bak-dup-after-write", "duplicate quoteId=q1")
+    # Importing over the duplicated quoteId is refused as a conflict, not applied to one copy.
+    res_q1 = client.post(
+        "/api/pilot/carrier-quotes",
+        headers={"X-Tenant-Id": "ta"},
+        json={"quoteId": "q1", "carrier": "X", "service": "ground", "charge": 1, "dimDivisor": 6000, "source": "MANUAL"},
+    )
+    assert res_q1.status_code == 409, res_q1.text
+    assert "globalQuote" not in res_q1.text
+
+    assert (
+        migrate_script.main(
+            ["--root", str(plat.root), "--keep-duplicate", f"q1={carrier_quote_record_fingerprint(second)}"]
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 0
+    capsys.readouterr()
+    assert plat.pilot.readiness(evidence={"carrierQuotes": True})["tenantlessCarrierQuotesReady"] is True
+    dest_ok = tmp_path / "bak-dup-resolved"
+    backup_pilot(plat.root, dest_ok, tenant_ids=["ta"])
+    backed = read_json(dest_ok / "data" / "logistics" / "logistics.json")
+    assert sorted(q["quoteId"] for q in backed["carrier_quotes"]) == sorted([qid_a, "q1"])
+
+    # 2. Non-object entry: preflight was previously "ready" and a later write silently deleted it.
+    bad_payload = read_json(logistics_path)
+    bad_payload["carrier_quotes"] = [*bad_payload["carrier_quotes"], "bad"]
+    atomic_write_json(logistics_path, bad_payload)
+    plat.pilot.logistics.load()
+    assert plat.pilot.logistics.inspect_tenantless_carrier_quotes()["invalidRecordCount"] == 1
+    assert_blocked("bak-non-object", "non-object record")
+    res_c = client.post(
+        "/api/pilot/carrier-quotes",
+        headers={"X-Tenant-Id": "ta"},
+        json={"carrier": "TCAT-C", "service": "ground", "charge": 50, "dimDivisor": 6000, "source": "MANUAL"},
+    )
+    assert res_c.status_code == 200, res_c.text
+    assert "bad" in read_json(logistics_path)["carrier_quotes"]
+    assert_blocked("bak-non-object-after-write", "non-object record")
+
+    assert migrate_script.main(["--root", str(plat.root), "--drop-invalid", carrier_quote_record_fingerprint("bad")]) == 0
+    capsys.readouterr()
+    assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 0
+    capsys.readouterr()
+    backup_pilot(plat.root, tmp_path / "bak-non-object-resolved", tenant_ids=["ta"])
