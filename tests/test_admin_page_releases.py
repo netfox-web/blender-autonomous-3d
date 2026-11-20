@@ -13,7 +13,7 @@ def test_release_page_and_assets(platform: Any) -> None:
     assert '人工放行，不是 LIVE CNC' in page.text
     for name in ('releases.js', 'releases.css'):
         assert client.get('/admin/pages/assets/' + name).status_code == 200
-    js = (Path(__file__).resolve().parents[1] / 'src/fox3d/static/pages/releases.js').read_text()
+    js = (Path(__file__).resolve().parents[1] / 'src/fox3d/static/pages/releases.js').read_text(encoding="utf-8")
     assert 'innerHTML' not in js
     assert "returnValue = ''" in js
     assert 'lockInputs(true)' in js and '網路錯誤' in js
