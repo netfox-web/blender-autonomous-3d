@@ -903,6 +903,21 @@ def test_hold_exit_on_error_lets_peer_finalize_business_committed_tx_once(tmp_pa
     assert journal.verify("ta")["ok"] is True
 
 
+# Hang guard only. The peer sets `done` before returning, including on failure,
+# so a run that finishes does not wait this long. A slow host must not need the
+# ceiling for the assertions below.
+_PEER_SYNC_TIMEOUT_S = 30.0
+
+
+def _raise_if_peer_failed(outcome: dict[str, Any]) -> None:
+    if "peer_error" not in outcome:
+        return
+    peer_error = outcome["peer_error"]
+    if isinstance(peer_error, BaseException):
+        raise AssertionError(f"peer thread failed: {type(peer_error).__name__}: {peer_error}") from peer_error
+    raise AssertionError(f"peer thread failed: {peer_error!r}")
+
+
 def test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path: Path) -> None:
     owner = CommitOutbox(tmp_path / "tx")
     peer = CommitOutbox(tmp_path / "tx")
@@ -921,21 +936,25 @@ def test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path: Pa
             outcome["reconcile"] = peer.reconcile(journal=journal, business_committed=lambda _tx: True)
             outcome["exists"] = owner._path(tx_id).exists()
             outcome["status"] = (read_json(owner._path(tx_id)) or {}).get("status")
-        except BaseException as exc:
+        except Exception as exc:
+            # Do not re-raise: pytest treats that as an unhandled thread exception
+            # and the failure would no longer be this assertion on the main thread.
             outcome["peer_error"] = exc
-            raise
         finally:
             done.set()
 
-    worker = threading.Thread(target=peer_side)
+    # daemon: if the peer is still blocked when the hang guard fires, the
+    # process can exit instead of waiting out the CI step.
+    worker = threading.Thread(target=peer_side, name="outbox-hold-peer", daemon=True)
     worker.start()
     try:
         with owner.hold():
             tx = owner.prepare(_make_event(1))
             tx_id = str(tx["txId"])
             ready.set()
-            assert done.wait(timeout=30), "peer thread did not finish"
-            assert "peer_error" not in outcome, outcome.get("peer_error")
+            if not done.wait(timeout=_PEER_SYNC_TIMEOUT_S):
+                raise AssertionError("peer thread did not finish")
+            _raise_if_peer_failed(outcome)
             assert outcome["abort"] is None
             assert outcome["exists"] is True
             assert outcome["status"] == PREPARED
@@ -944,10 +963,34 @@ def test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path: Pa
             owner.complete(tx_id)
     finally:
         ready.set()
-        worker.join()
+        worker.join(timeout=_PEER_SYNC_TIMEOUT_S)
+    if worker.is_alive():
+        raise AssertionError("peer thread still running after the owner released it")
     assert not owner._path(tx_id).exists()
     assert journal.list("ta") == []
     assert peer.list_open() == []
+
+
+def test_peer_abort_exception_fails_hold_test_with_the_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """peer.abort raising fails the hold test with that error instead of hanging.
+
+    The peer always sets `done` in a finally block and stores the exception.
+    The main thread then fails with that error, so the abort message is the
+    test failure instead of an unhandled thread exception or a hung wait.
+    """
+
+    def explode(self: CommitOutbox, tx_id: str) -> bool | None:
+        raise RuntimeError("peer abort exploded")
+
+    monkeypatch.setattr(CommitOutbox, "abort", explode)
+    with pytest.raises(AssertionError, match=r"peer thread failed: RuntimeError: peer abort exploded") as raised:
+        test_other_thread_cannot_complete_or_reconcile_away_inflight_tx(tmp_path)
+    cause = raised.value.__cause__
+    assert isinstance(cause, RuntimeError)
+    assert str(cause) == "peer abort exploded"
+    assert cause.__traceback__ is not None
 
 
 def test_claim_held_outside_this_process_blocks_cleanup_until_released(tmp_path: Path) -> None:

@@ -951,3 +951,127 @@ def test_rd_approve_prepare_rereads_scheme_handles_errors_and_marks_snapshot(
         msg for msg in getattr(page, "_fox3d_console_errors", []) if not msg.startswith("Failed to load resource")
     ]
     assert script_errors == []
+
+
+def test_product_rd_long_text_over_2000_chars_warns_without_blocking_and_matches_api_contract(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    generate_posts: list[dict[str, Any]] = []
+
+    def spy_generate(route: Route) -> None:
+        if route.request.method == "POST":
+            generate_posts.append(json.loads(route.request.post_data or "{}"))
+        route.continue_()
+
+    page.route("**/api/product-rd/generate", spy_generate)
+
+    page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
+    page.wait_for_selector("#rd-prepare-btn", timeout=20_000)
+    _switch_tenant(page, "long-text-ui-tenant")
+    expect(page.locator("#rd-history-empty")).to_contain_text("尚無歷史研發方案")
+
+    # 1. Textarea must not enforce HTML maxlength=2000 so real keyboard input past 2000 chars works.
+    assert page.locator("#rd-text").get_attribute("maxlength") is None
+    base_long = "客廳 寬180cm 奶油風電視櫃 雙門 掃地機器人 預算 25000 " + ("收納分格與五金補充說明" * 200)
+    assert len(base_long) > 2200
+    page.locator("#rd-text").fill(base_long)
+    page.locator("#rd-text").focus()
+    page.keyboard.press("End")
+    page.locator("#rd-text").press_sequentially("尾端實測字元")
+    expected_text = base_long + "尾端實測字元"
+    assert page.locator("#rd-text").input_value() == expected_text
+    assert len(expected_text) > 2200
+
+    # 2. Inline hint warns when >2000 chars without blocking submission.
+    expect(page.locator("#rd-text-hint")).to_contain_text(f"目前 {len(expected_text)} 字")
+    expect(page.locator("#rd-text-hint")).to_contain_text("超過建議長度 2000 字")
+    assert "fc-field-warn" in (page.locator("#rd-text-hint").get_attribute("class") or "")
+
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+
+    # Global status shows a non-blocking warn (never err), confirm box opens, and inputs lock.
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert warn")
+    expect(page.locator("#fc-global-status")).to_contain_text("僅提示不阻擋")
+    expect(page.locator("#rd-confirm-box")).to_be_visible()
+    expect(page.locator("#rd-text")).to_be_disabled()
+    expect(page.locator("#rd-confirm-msg")).to_contain_text(f"共 {len(expected_text)} 字")
+    assert len(page.locator("#rd-confirm-msg").inner_text()) < 600
+
+    # Cancelling confirm clears the soft-limit warn banner; re-preparing >2000 chars shows warn again.
+    page.locator("#rd-confirm-no").click()
+    expect(page.locator("#fc-global-status")).to_be_hidden()
+    expect(page.locator("#rd-text")).to_be_enabled()
+    page.locator("#rd-prepare-btn").click()
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert warn")
+    expect(page.locator("#rd-confirm-box")).to_be_visible()
+
+    # 3. Confirm posts the full >2000-char text to /api/product-rd/generate and succeeds per API contract.
+    with page.expect_response(
+        lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
+        timeout=20_000,
+    ) as gen_info:
+        page.locator("#rd-confirm-yes").click()
+    gen_resp = gen_info.value
+    assert gen_resp.status == 200
+    gen_json = gen_resp.json()
+    assert len(generate_posts) == 1
+    assert generate_posts[0]["text"] == expected_text
+    assert gen_json["text"] == expected_text
+    assert gen_json["textLength"] == len(expected_text)
+    assert gen_json["textTruncated"] is False
+    rd_id = gen_json["rdId"]
+
+    expect(page.locator("#rd-body")).to_be_visible(timeout=20_000)
+    expect(page.locator("#rd-intent-summary")).to_contain_text(f"{len(expected_text)} 字")
+    first_row = page.locator(f'#rd-history-tbody tr[data-rd-id="{rd_id}"]')
+    expect(first_row).to_be_visible()
+    expect(first_row).to_contain_text(f"需求 {len(expected_text)} 字")
+
+    # 4. Reload + switch back to tenant: GET /api/product-rd/results returns summarized text; detail fetches full text.
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector("#fc-tenant", timeout=20_000)
+    with page.expect_response(
+        lambda resp: "/api/product-rd/results?" in resp.url
+        and resp.request.method == "GET"
+        and resp.request.headers.get("x-tenant-id") == "long-text-ui-tenant",
+        timeout=20_000,
+    ) as list_info:
+        _switch_tenant(page, "long-text-ui-tenant")
+    list_json = list_info.value.json()
+    assert list_json["total"] == 1
+    assert list_json["items"][0]["rdId"] == rd_id
+    assert list_json["items"][0]["textTruncated"] is True
+    assert list_json["items"][0]["textLength"] == len(expected_text)
+    assert "尾端實測字元" not in list_json["items"][0]["text"]
+
+    expect(page.locator("#rd-intent-summary")).to_contain_text("列表摘要", timeout=20_000)
+    with page.expect_response(
+        lambda resp: resp.url.endswith(f"/api/product-rd/results/{rd_id}") and resp.request.method == "GET",
+        timeout=20_000,
+    ) as detail_info:
+        page.locator(f'#rd-history-tbody tr[data-rd-id="{rd_id}"] button').click()
+    detail_json = detail_info.value.json()
+    assert detail_json["text"] == expected_text
+    assert detail_json["textTruncated"] is False
+    expect(page.locator("#rd-intent-summary")).not_to_contain_text("列表摘要")
+    assert getattr(page, "_fox3d_console_errors", []) == []
+
+    # 5. Invalid >2000-char input (oversized mm dimension) reaches API and surfaces backend HTTP 422 error.
+    bad_long = "高" + ("9" * 400) + "cm " + ("超長規格補充" * 350)
+    assert len(bad_long) > 2200
+    page.locator("#rd-text").fill(bad_long)
+    page.locator("#rd-count").fill("10")
+    page.locator("#rd-prepare-btn").click()
+    expect(page.locator("#rd-confirm-box")).to_be_visible()
+    with page.expect_response(
+        lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
+        timeout=20_000,
+    ) as bad_info:
+        page.locator("#rd-confirm-yes").click()
+    assert bad_info.value.status == 422
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert err")
+
+    assert [e for e in getattr(page, "_fox3d_console_errors", []) if "422" not in e] == []
+    assert page.evaluate("window.__fox3dXss || 0") == 0

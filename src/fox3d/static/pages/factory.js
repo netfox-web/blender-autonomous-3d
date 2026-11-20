@@ -30,6 +30,8 @@
   };
 
   var RD_PAGE_LIMIT = 10;
+  var RD_TEXT_SOFT_LIMIT = 2000;
+  var RD_CONFIRM_PREVIEW_CHARS = 200;
   var rdHistoryReqSeq = 0;
   var rdDetailReqSeq = 0;
   var rdGenerateReqSeq = 0;
@@ -41,6 +43,7 @@
   var rdLoadMoreInFlight = false;
   var rdPendingGenerate = null;
   var rdPendingApprove = null;
+  var rdSoftLimitWarnActive = false;
 
   var state = {
     productTypeCodes: [],
@@ -184,11 +187,19 @@
   }
 
   function showGlobalAlert(msg, kind) {
+    rdSoftLimitWarnActive = false;
     var box = $('fc-global-status');
     if (!box) return;
     box.hidden = false;
     box.className = 'fc-alert ' + (kind || 'ok');
     box.textContent = msg;
+  }
+
+  function clearRdSoftLimitWarn() {
+    if (!rdSoftLimitWarnActive) return;
+    rdSoftLimitWarnActive = false;
+    var box = $('fc-global-status');
+    if (box) box.hidden = true;
   }
 
   function renderApiAnswer(box, title, res) {
@@ -320,6 +331,7 @@
           'cm 白木紋' +
           label +
           ' 雙門';
+        updateRdTextHint();
         location.hash = 'rd';
         $('rd').scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
@@ -715,6 +727,30 @@
     return s.slice(0, maxLen) + '…';
   }
 
+  function updateRdTextHint() {
+    var hintEl = $('rd-text-hint');
+    var textEl = $('rd-text');
+    if (!hintEl || !textEl) return;
+    var len = textEl.value.trim().length;
+    if (len > RD_TEXT_SOFT_LIMIT) {
+      hintEl.className = 'fc-mute-small fc-field-warn';
+      hintEl.textContent =
+        '目前 ' +
+        len +
+        ' 字，已超過建議長度 ' +
+        RD_TEXT_SOFT_LIMIT +
+        ' 字；系統僅提示不阻擋，確認後將依 API 契約完整送出（歷史清單僅顯示摘要）。';
+    } else {
+      hintEl.className = 'fc-mute-small';
+      hintEl.textContent =
+        '目前 ' +
+        len +
+        ' 字（建議 ' +
+        RD_TEXT_SOFT_LIMIT +
+        ' 字以內；超過仍可送出，歷史清單僅顯示摘要）。';
+    }
+  }
+
   function isBlockedOrFailedPayload(data) {
     if (!data || typeof data !== 'object') return true;
     var st = String(data.status || '').toUpperCase();
@@ -994,9 +1030,17 @@
     var intentBox = $('rd-intent-summary');
     intentBox.textContent = '';
     var baseSpec = rd.baseSpec || {};
+    var fullTextLen =
+      typeof rd.textLength === 'number'
+        ? rd.textLength
+        : String(rd.text || (rd.intent && rd.intent.notes) || '').length;
     var kvs = [
       ['研發單號', rd.rdId || '—'],
       ['建立時間', formatRdTime(rd.createdAt)],
+      [
+        '需求字數',
+        fullTextLen + ' 字' + (rd.textTruncated ? '（列表摘要，點查看明細載入全文）' : '')
+      ],
       ['解析櫃型', (TYPE_LABELS[baseSpec.kind] || baseSpec.kind || '—') + ' (' + (baseSpec.kind || '') + ')'],
       ['母版尺寸 (mm)', (baseSpec.width || '—') + ' × ' + (baseSpec.height || '—') + ' × ' + (baseSpec.depth || '—')],
       ['產生／合格變體數', (rd.variantCount || 0) + ' 組 ／ 合格 ' + (rd.scoredCount || 0) + ' 組'],
@@ -1138,13 +1182,17 @@
 
       var tdSummary = el('td');
       var stack = el('div', { 'class': 'fc-cell-stack' });
-      var rawText = String(item.text || (item.intent && item.intent.notes) || '').trim();
+      var rawText = String(
+        item.textSummary || item.text || (item.intent && item.intent.notes) || ''
+      ).trim();
       var summaryText = rawText || '（預設需求）';
       if (summaryText.length > 80) {
         summaryText = summaryText.slice(0, 80) + '…';
       }
       stack.appendChild(el('span', null, summaryText));
       var bs = item.baseSpec || {};
+      var itemTextLen =
+        typeof item.textLength === 'number' ? item.textLength : String(item.text || '').length;
       var specLine =
         (TYPE_LABELS[bs.kind] || bs.kind || 'CABINET') +
         ' · ' +
@@ -1153,7 +1201,8 @@
         (bs.height || '—') +
         '×' +
         (bs.depth || '—') +
-        ' mm';
+        ' mm' +
+        (itemTextLen > 80 ? ' · 需求 ' + itemTextLen + ' 字' : '');
       stack.appendChild(el('span', { 'class': 'fc-mute-small' }, specLine));
       tdSummary.appendChild(stack);
       tr.appendChild(tdSummary);
@@ -1328,6 +1377,17 @@
             }
           }
           if (matched && !rdApproveInFlight) {
+            if (
+              state.lastRdResult &&
+              state.lastRdResult.rdId === matched.rdId &&
+              !state.lastRdResult.textTruncated &&
+              matched.textTruncated
+            ) {
+              matched = Object.assign({}, matched, {
+                text: state.lastRdResult.text,
+                textTruncated: false
+              });
+            }
             renderRdResult(matched, null);
           }
         } else if (state.rdHistory.length && !rdApproveInFlight) {
@@ -1848,8 +1908,12 @@
       b.addEventListener('click', function () {
         if (rdGenerateInFlight || !$('rd-confirm-box').hidden) return;
         $('rd-text').value = b.getAttribute('data-text') || '';
+        updateRdTextHint();
       });
     });
+
+    $('rd-text').addEventListener('input', updateRdTextHint);
+    updateRdTextHint();
 
     $('rd-prepare-btn').addEventListener('click', function () {
       if (rdGenerateInFlight || !$('rd-confirm-box').hidden) return;
@@ -1858,15 +1922,25 @@
         showGlobalAlert('請輸入商品研發需求描述文字。', 'err');
         return;
       }
-      if (txt.length > 2000) {
-        showGlobalAlert('商品研發需求文字不可超過 2000 字。', 'err');
-        return;
-      }
       var rawCnt = $('rd-count').value.trim();
       var cnt = Number(rawCnt);
       if (!rawCnt || !Number.isInteger(cnt) || cnt < 10 || cnt > 50) {
         showGlobalAlert('候選變體數量須為 10 至 50 的整數。', 'err');
         return;
+      }
+      var overSoftLimit = txt.length > RD_TEXT_SOFT_LIMIT;
+      if (overSoftLimit) {
+        showGlobalAlert(
+          '提示：需求文字共 ' +
+            txt.length +
+            ' 字（超過建議長度 ' +
+            RD_TEXT_SOFT_LIMIT +
+            ' 字），系統僅提示不阻擋，確認後將依 API 契約完整送出。',
+          'warn'
+        );
+        rdSoftLimitWarnActive = true;
+      } else {
+        clearRdSoftLimitWarn();
       }
       rdPendingGenerate = {
         text: txt,
@@ -1874,9 +1948,18 @@
         variantCount: cnt,
         idempotencyKey: makeIdempotencyKey('rd-gen')
       };
+      var previewText =
+        rdPendingGenerate.text.length > RD_CONFIRM_PREVIEW_CHARS
+          ? rdPendingGenerate.text.slice(0, RD_CONFIRM_PREVIEW_CHARS) +
+            '…（共 ' +
+            rdPendingGenerate.text.length +
+            ' 字' +
+            (overSoftLimit ? '，超過建議 ' + RD_TEXT_SOFT_LIMIT + ' 字，將完整送出' : '') +
+            '）'
+          : rdPendingGenerate.text;
       $('rd-confirm-msg').textContent =
         '即將為租戶「' + rdPendingGenerate.tenant + '」根據需求「' +
-        rdPendingGenerate.text +
+        previewText +
         '」產生 ' +
         rdPendingGenerate.variantCount +
         ' 組研發候選變體並執行工程與視覺評分，請確認：';
@@ -1888,6 +1971,7 @@
     $('rd-confirm-no').addEventListener('click', function () {
       if (rdGenerateInFlight) return;
       rdPendingGenerate = null;
+      clearRdSoftLimitWarn();
       var box = $('rd-confirm-box');
       box.hidden = true;
       syncConfirmLock(box);

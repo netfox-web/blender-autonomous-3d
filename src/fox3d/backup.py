@@ -13,6 +13,7 @@ from typing import Any
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
+from fox3d.logistics import is_explicit_global_carrier_quote
 from fox3d.release import (
     is_matching_tenant_stem,
     legacy_safe_tenant_filename,
@@ -58,7 +59,7 @@ MIXED_SPEC: dict[str, dict[str, str]] = {
         "cartons": TENANT_OWNED,
         "pallets": TENANT_DERIVED,
         "shipments": TENANT_OWNED,
-        "carrier_quotes": GLOBAL_REFERENCE,
+        "carrier_quotes": TENANT_OWNED,
         "checklists": TENANT_OWNED,
         "handoffs": TENANT_OWNED,
     },
@@ -116,6 +117,7 @@ TENANT_MATRIX_DOMAINS = (
     "cartons",
     "palletPlans",
     "shipments",
+    "carrierQuotes",
     "checklists",
     "handoffs",
     "qc",
@@ -149,6 +151,7 @@ TENANT_MATRIX_DOMAINS = (
 )
 OPTIONAL_EMPTY_DOMAINS = frozenset(
     {
+        "carrierQuotes",
         "outbox",
         "portfolioIntents",
         "portfolioCandidates",
@@ -221,7 +224,19 @@ def _tenant_of(rec: Any) -> str | None:
     val = rec.get("tenantId")
     if val is None:
         val = rec.get("tenant_id")
-    return str(val) if val is not None else None
+    if not isinstance(val, str) or not val.strip():
+        return None
+    return val
+
+
+def _is_explicit_global_carrier_quote(rec: dict[str, Any]) -> bool:
+    if not isinstance(rec, dict):
+        return False
+    if rec.get("tenant_id") not in (None, ""):
+        return False
+    if rec.get("ownership") == TENANT_OWNED:
+        return False
+    return is_explicit_global_carrier_quote(rec)
 
 
 def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
@@ -322,6 +337,19 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
             if not isinstance(rec, dict):
                 raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:{key}")
             if policy == TENANT_OWNED:
+                if rel == "logistics/logistics.json" and key == "carrier_quotes":
+                    if _is_explicit_global_carrier_quote(rec):
+                        continue
+                    if (
+                        rec.get("globalQuote") is True
+                        or rec.get("isGlobal") is True
+                        or rec.get("allowGlobal") is True
+                        or rec.get("ownership") == GLOBAL_REFERENCE
+                    ):
+                        raise BackupError(
+                            "BLOCKED",
+                            f"ambiguous {rel}:{key} global flag with missing or conflicting tenantId",
+                        )
                 tid = _tenant_of(rec)
                 if tid is None:
                     raise BackupError("BLOCKED", f"ambiguous {rel}:{key} missing tenantId")
@@ -1254,6 +1282,26 @@ def tenant_state_digest(plat: Any, tenant_id: str) -> dict[str, Any]:
             ),
             "shipmentId",
         ),
+        "carrierQuotes": _entry(
+            sorted(
+                [
+                    {
+                        "quoteId": q.get("quoteId"),
+                        "carrier": q.get("carrier"),
+                        "service": q.get("service"),
+                        "charge": q.get("charge"),
+                        "currency": q.get("currency"),
+                        "dimDivisor": q.get("dimDivisor"),
+                        "validUntil": q.get("validUntil"),
+                        "quoteHash": q.get("quoteHash"),
+                        "tenantId": q.get("tenantId"),
+                    }
+                    for q in _owned(pilot.logistics.carrier_quotes, tenant_id)
+                ],
+                key=lambda r: str(r.get("quoteId")),
+            ),
+            "quoteId",
+        ),
         "checklists": _entry(
             sorted(
                 [
@@ -1722,6 +1770,7 @@ def tenant_domain_counts(plat: Any, tenant_id: str) -> dict[str, int]:
             ]
         ),
         "shipments": len(_owned(pilot.logistics.shipments, tenant_id)),
+        "carrierQuotes": len(_owned(pilot.logistics.carrier_quotes, tenant_id)),
         "checklists": len(_owned(pilot.logistics.checklists, tenant_id)),
         "handoffs": len(_owned(pilot.logistics.handoffs, tenant_id)),
         "qc": len(_owned(pilot.qc.checks, tenant_id)) + len(_owned(pilot.qc.defects, tenant_id)),
@@ -1744,7 +1793,16 @@ def evaluate_tenant_restore_matrix(
     restored_state = tenant_state_digest(restored, tenant_a)
     restored_b = tenant_state_digest(restored, tenant_b)
     quotes = list((restored.pilot.logistics.carrier_quotes or {}).values())
+    leaked_quotes = [
+        q
+        for q in quotes
+        if not isinstance(q, dict)
+        or _tenant_of(q) != tenant_a
+        or _is_explicit_global_carrier_quote(q)
+    ]
     leakage = {k: restored_b[k]["count"] for k in TENANT_MATRIX_DOMAINS if restored_b[k]["count"]}
+    if leaked_quotes:
+        leakage["carrierQuotes"] = max(leakage.get("carrierQuotes", 0), len(leaked_quotes))
     identity_mismatch = [
         key for key in TENANT_MATRIX_DOMAINS if live_state[key] != restored_state[key]
     ]
@@ -1772,7 +1830,7 @@ def evaluate_tenant_restore_matrix(
             "equal": live_state["tenantStateDigest"] == restored_state["tenantStateDigest"],
         },
         "identityMismatch": identity_mismatch,
-        "tenantLeakageAbsent": not leakage and quotes == [],
+        "tenantLeakageAbsent": not leakage and not leaked_quotes,
         "tenantRequiredStatePreserved": not missing,
         "leakage": leakage,
         "missing": missing,

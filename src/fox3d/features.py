@@ -68,7 +68,7 @@ FEATURES: list[dict[str, Any]] = [
      "summary": "零售陳列架、包裝結構、壓克力商品的參數產生。", "keywords": "陳列 包裝 壓克力 retail packaging acrylic",
      "prefixes": ["/api/retail", "/api/packaging", "/api/acrylic"]},
     {"id": "product-rd", "group": "factory", "kind": "api", "icon": "⚙", "title": "商品研發產生",
-     "summary": "從需求產生商品研發方案。", "keywords": "研發 rd 產生", "prefixes": ["/api/product-rd"]},
+     "summary": "從需求產生商品研發方案。", "keywords": "研發 rd 產生", "prefixes": ["/api/product-rd", "/api/v2/product-rd"]},
     {"id": "pilot", "group": "pilot", "kind": "api", "icon": "▣", "title": "試產工單與看板",
      "summary": "試產總覽、工單、批次看板、領料預留、收料、請購、裝箱、匯入匯出。", "keywords": "試產 pilot 工單 看板 批次 收料 請購 裝箱 紙箱",
      "prefixes": ["/api/pilot/console", "/api/pilot/work-orders", "/api/pilot/workorders", "/api/pilot/batches",

@@ -88,6 +88,12 @@ def _cases(platform) -> list[RouteCase]:  # noqa: ANN001
             lambda j: j["baseSpec"]["tenantId"],
         ),
         (
+            "product-rd-v2",
+            "/api/v2/product-rd/generate",
+            {"text": "書櫃 80cm"},
+            lambda j: j["baseSpec"]["tenantId"],
+        ),
+        (
             "factory-spaces",
             "/api/factory/spaces",
             {"width": 3600, "depth": 3000, "height": 2600},
@@ -144,7 +150,7 @@ def route_cases(platform):  # noqa: ANN001
 
 
 @pytest.mark.parametrize("bad_tid", [[], {}, 1, True])
-@pytest.mark.parametrize("idx", range(15))
+@pytest.mark.parametrize("idx", range(16))
 def test_post_body_non_string_tenant_returns_422(route_cases, platform, idx: int, bad_tid: object) -> None:  # noqa: ANN001
     _name, path, body, _tenant_of = route_cases[idx]
     client = TestClient(create_app(platform), raise_server_exceptions=False)
@@ -154,7 +160,7 @@ def test_post_body_non_string_tenant_returns_422(route_cases, platform, idx: int
     assert res.json()["detail"] == "body tenantId must be a string"
 
 
-@pytest.mark.parametrize("idx", range(15))
+@pytest.mark.parametrize("idx", range(16))
 def test_post_body_other_tenant_forbidden(route_cases, platform, idx: int) -> None:  # noqa: ANN001
     _name, path, body, _tenant_of = route_cases[idx]
     client = _client(platform)
@@ -163,7 +169,7 @@ def test_post_body_other_tenant_forbidden(route_cases, platform, idx: int) -> No
     assert res.status_code == 403, res.text
 
 
-@pytest.mark.parametrize("idx", range(15))
+@pytest.mark.parametrize("idx", range(16))
 def test_post_without_body_tenant_uses_header(route_cases, platform, idx: int) -> None:  # noqa: ANN001
     _name, path, body, tenant_of = route_cases[idx]
     client = _client(platform)

@@ -20,6 +20,9 @@ from fox3d.storelock import FileLock
 MIN_RD_VARIANT_COUNT = 1
 MAX_RD_VARIANT_COUNT = 100
 DEFAULT_RD_VARIANT_COUNT = 12
+MAX_RD_V2_TEXT_CHARS = 2000
+MAX_RD_V2_TEXT_UTF8_BYTES = MAX_RD_V2_TEXT_CHARS * 4
+RD_TEXT_SUMMARY_CHARS = 200
 MAX_IDEMPOTENCY_KEY_LEN = 200
 MAX_ACTOR_LEN = 120
 MAX_CURSOR_LEN = 200
@@ -47,7 +50,13 @@ def is_valid_rd_id(value: Any) -> bool:
     return isinstance(value, str) and bool(_RD_ID_RE.fullmatch(value))
 
 
-def validate_rd_text(raw: Any, *, required_non_empty: bool = False) -> str:
+def validate_rd_text(
+    raw: Any,
+    *,
+    required_non_empty: bool = False,
+    max_chars: int | None = None,
+    max_utf8_bytes: int | None = None,
+) -> str:
     if raw is None:
         if required_non_empty:
             raise ValueError("text 不可為空白")
@@ -58,7 +67,82 @@ def validate_rd_text(raw: Any, *, required_non_empty: bool = False) -> str:
         raise ValueError("text 格式錯誤")
     if required_non_empty and not raw.strip():
         raise ValueError("text 不可為空白")
+    if max_chars is not None and len(raw) > max_chars:
+        raise ValueError(f"text 長度不可超過 {max_chars} 字")
+    if max_utf8_bytes is not None and len(raw.encode("utf-8")) > max_utf8_bytes:
+        limit_label = max_chars if max_chars is not None else max_utf8_bytes
+        raise ValueError(f"text 長度不可超過 {limit_label} 字")
     return raw
+
+
+def validate_rd_v2_text(raw: Any) -> str:
+    return validate_rd_text(
+        raw,
+        required_non_empty=True,
+        max_chars=MAX_RD_V2_TEXT_CHARS,
+        max_utf8_bytes=MAX_RD_V2_TEXT_UTF8_BYTES,
+    )
+
+
+def summarize_rd_text(text: str, *, max_chars: int = RD_TEXT_SUMMARY_CHARS) -> tuple[str, bool]:
+    if len(text) <= max_chars:
+        return text, False
+    return text[:max_chars] + "…", True
+
+
+def compact_rd_embedded_text(
+    record: dict[str, Any],
+    summary: str,
+    *,
+    max_chars: int = RD_TEXT_SUMMARY_CHARS,
+) -> None:
+    """Replace redundant copies of long requirement text inside nested specs/intents with a summary."""
+    intent = record.get("intent")
+    if isinstance(intent, dict):
+        notes = intent.get("notes")
+        if isinstance(notes, str) and len(notes) > max_chars:
+            intent["notes"] = summary
+        params = intent.get("params")
+        if isinstance(params, dict):
+            p_meta = params.get("metadata")
+            if isinstance(p_meta, dict) and isinstance(p_meta.get("sourceText"), str) and len(p_meta["sourceText"]) > max_chars:
+                p_meta["sourceText"] = summary
+
+    base_spec = record.get("baseSpec")
+    if isinstance(base_spec, dict):
+        b_meta = base_spec.get("metadata")
+        if isinstance(b_meta, dict) and isinstance(b_meta.get("sourceText"), str) and len(b_meta["sourceText"]) > max_chars:
+            b_meta["sourceText"] = summary
+
+    top = record.get("top")
+    if isinstance(top, list):
+        for row in top:
+            if not isinstance(row, dict):
+                continue
+            spec = row.get("spec")
+            if isinstance(spec, dict):
+                s_meta = spec.get("metadata")
+                if isinstance(s_meta, dict) and isinstance(s_meta.get("sourceText"), str) and len(s_meta["sourceText"]) > max_chars:
+                    s_meta["sourceText"] = summary
+
+    param_render = record.get("parametricRender")
+    if isinstance(param_render, dict):
+        parametric = param_render.get("parametric")
+        if isinstance(parametric, dict):
+            pr_spec = parametric.get("spec")
+            if isinstance(pr_spec, dict):
+                pr_meta = pr_spec.get("metadata")
+                if isinstance(pr_meta, dict) and isinstance(pr_meta.get("sourceText"), str) and len(pr_meta["sourceText"]) > max_chars:
+                    pr_meta["sourceText"] = summary
+        job = param_render.get("job")
+        if isinstance(job, dict):
+            for eng_holder in (job, job.get("payload")):
+                if isinstance(eng_holder, dict):
+                    eng = eng_holder.get("engineering")
+                    if isinstance(eng, dict):
+                        e_meta = eng.get("metadata")
+                        if isinstance(e_meta, dict) and isinstance(e_meta.get("sourceText"), str) and len(e_meta["sourceText"]) > max_chars:
+                            e_meta["sourceText"] = summary
 
 
 def validate_rd_variant_count(raw: Any, *, default: int = DEFAULT_RD_VARIANT_COUNT) -> int:
@@ -162,9 +246,12 @@ def _resolve_render_label(rd: dict[str, Any]) -> str:
 class ProductRDStore:
     """Tenant-scoped atomic JSON persistence for Product R&D schemes."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, max_record_bytes: int | None = None) -> None:
+        if max_record_bytes is not None and (isinstance(max_record_bytes, bool) or max_record_bytes < 1):
+            raise ValueError("max_record_bytes 須為正整數")
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.max_record_bytes = max_record_bytes
         self._cache_lock = threading.RLock()
         self._file_cache: dict[str, tuple[tuple[int, int, int], dict[str, Any]]] = {}
         self._last_ts_by_tenant: dict[str, datetime] = {}
@@ -263,6 +350,8 @@ class ProductRDStore:
         except ValueError as exc:
             raise ValueError("數值超出有效範圍") from exc
         data = raw_json.encode("utf-8")
+        if self.max_record_bytes is not None and len(data) > self.max_record_bytes:
+            raise ValueError(f"研發方案單筆紀錄超過大小上限（{self.max_record_bytes} bytes）")
         publish_bytes(lambda stream: stream.write(data), target)
         try:
             st = target.stat()
@@ -327,7 +416,7 @@ class ProductRDStore:
                     if existing.get("idempotencyKey") == idem:
                         if existing.get("idempotencyFingerprint") != fingerprint:
                             raise ProductRDIdempotencyConflict("idempotency conflict")
-                        return copy.deepcopy(existing)
+                        return self._enrich_detail_record(copy.deepcopy(existing))
 
             built = builder()
             record = copy.deepcopy(built)
@@ -339,6 +428,8 @@ class ProductRDStore:
             judge_label = resolve_judge_label(record, default_status=default_judge_status)
             render_label = _resolve_render_label(record)
             truth_label = "REAL" if (judge_label == "REAL" and render_label == "REAL") else "MOCK"
+            summary, _ = summarize_rd_text(text)
+            compact_rd_embedded_text(record, summary)
 
             approval_val = record.get("approval")
             raw_approval: dict[str, Any] = approval_val if isinstance(approval_val, dict) else {}
@@ -346,6 +437,9 @@ class ProductRDStore:
             record["tenantId"] = tid
             record["createdAt"] = created_at
             record["text"] = text
+            record["textSummary"] = summary
+            record["textLength"] = len(text)
+            record["textTruncated"] = False
             record["requestedVariantCount"] = variant_count
             record["judgeLabel"] = judge_label
             record["scoringStatus"] = judge_label
@@ -370,6 +464,32 @@ class ProductRDStore:
             self._write_record_unlocked(tid, record)
             return copy.deepcopy(record)
 
+    @staticmethod
+    def _enrich_detail_record(rec: dict[str, Any]) -> dict[str, Any]:
+        full_text = str(rec.get("text") or "")
+        summary, _ = summarize_rd_text(full_text)
+        compact_rd_embedded_text(rec, summary)
+        rec["text"] = full_text
+        rec["textSummary"] = summary
+        rec["textLength"] = len(full_text)
+        rec["textTruncated"] = False
+        return rec
+
+    @staticmethod
+    def _project_list_item(rec: dict[str, Any]) -> dict[str, Any]:
+        full_text = str(rec.get("text") or "")
+        summary, is_truncated = summarize_rd_text(full_text)
+        item: dict[str, Any] = {
+            k: (summary if k == "text" else copy.deepcopy(v))
+            for k, v in rec.items()
+        }
+        compact_rd_embedded_text(item, summary)
+        item["text"] = summary
+        item["textSummary"] = summary
+        item["textLength"] = len(full_text)
+        item["textTruncated"] = is_truncated
+        return item
+
     def get(self, tenant_id: str, rd_id: str) -> dict[str, Any]:
         tid = validate_tenant_id(tenant_id)
         if not is_valid_rd_id(rd_id):
@@ -378,7 +498,7 @@ class ProductRDStore:
         rec = self._read_path(target, tid)
         if rec is None or rec.get("rdId") != rd_id:
             raise KeyError(rd_id)
-        return copy.deepcopy(rec)
+        return self._enrich_detail_record(copy.deepcopy(rec))
 
     def exists(self, tenant_id: str, rd_id: str) -> bool:
         try:
@@ -452,7 +572,7 @@ class ProductRDStore:
             next_cursor = f"{tenant_token}|{last_created}|{last_id}"
 
         return {
-            "items": [copy.deepcopy(rec) for _, rec in sliced],
+            "items": [self._project_list_item(rec) for _, rec in sliced],
             "total": total,
             "offset": offset,
             "limit": limit,
@@ -485,7 +605,7 @@ class ProductRDStore:
             cur_approval: dict[str, Any] = cur_approval_val if isinstance(cur_approval_val, dict) else {}
             existing_approved_at = cur_approval.get("approvedAt") or current.get("approvedAt")
             if cur_approval.get("status") == "APPROVED" and isinstance(existing_approved_at, str) and existing_approved_at:
-                return copy.deepcopy(current)
+                return self._enrich_detail_record(copy.deepcopy(current))
 
             judge_label = resolve_judge_label(current, default_status=default_judge_status)
             render_label = _resolve_render_label(current)
@@ -534,10 +654,15 @@ class ProductRDStore:
                     }
                 )
 
+            full_text = str(current.get("text") or "")
+            summary, _ = summarize_rd_text(full_text)
             approved["rdId"] = rd_id
             approved["tenantId"] = tid
             approved["createdAt"] = current["createdAt"]
-            approved["text"] = current.get("text", "")
+            approved["text"] = full_text
+            approved["textSummary"] = summary
+            approved["textLength"] = len(full_text)
+            approved["textTruncated"] = False
             if "requestedVariantCount" in current:
                 approved["requestedVariantCount"] = current["requestedVariantCount"]
             if "idempotencyKey" in current:
@@ -546,6 +671,7 @@ class ProductRDStore:
                 approved["idempotencyFingerprint"] = current["idempotencyFingerprint"]
             if "parametricRender" in current and "parametricRender" not in approved:
                 approved["parametricRender"] = current["parametricRender"]
+            compact_rd_embedded_text(approved, summary)
 
             approved["judgeLabel"] = judge_label
             approved["scoringStatus"] = judge_label
