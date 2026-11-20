@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
 from fox3d.platform import Platform
-from fox3d.portfolio import run_portfolio_scenario
+from fox3d.portfolio import DEFAULT_RANKING_POLICY, run_portfolio_scenario
 
 TENANT_A = "pf-api-a"
 TENANT_B = "pf-api-b"
@@ -227,6 +227,54 @@ def test_supersede_blocks_prototype_pack(client: TestClient) -> None:
     assert client.post(f"/api/portfolio/candidates/{cid}/supersede", headers=_h()).status_code == 200
     res = client.get(f"/api/portfolio/candidates/{cid}/prototype-pack", headers=_h())
     assert res.status_code == 400
+
+
+def _ranking_setup(client: TestClient) -> str:
+    intent = client.post("/api/portfolio/intents", headers=_h(), json={"segment": "STUDENT", "demandSource": "MOCK"}).json()
+    pid = intent["portfolioId"]
+    client.post(f"/api/portfolio/intents/{pid}/candidates", headers=_h())
+    return pid
+
+
+@pytest.mark.parametrize(
+    "policy_body,expected_detail_fragment",
+    [
+        ({"policy": {"weights": None}}, "policy.weights"),
+        ({"policy": {"weights": []}}, "policy.weights"),
+        ({"policy": {"weights": {"bogus": 1}}}, "未知欄位"),
+        ({"policy": {"weights": {"utilization": "heavy"}}}, "utilization"),
+        ({"policy": {"weights": {"utilization": True}}}, "utilization"),
+        ({"policy": 42}, "policy 須為物件"),
+    ],
+)
+def test_ranking_invalid_policy_returns_422_not_500(
+    client: TestClient,
+    policy_body: dict,
+    expected_detail_fragment: str,
+) -> None:
+    pid = _ranking_setup(client)
+    res = client.post(f"/api/portfolio/intents/{pid}/rankings", headers=_h(), json=policy_body)
+    assert res.status_code == 422
+    assert expected_detail_fragment in res.json()["detail"]
+    assert "TypeError" not in res.text
+
+
+def test_ranking_valid_custom_weights_succeeds(client: TestClient) -> None:
+    pid = _ranking_setup(client)
+    base_weights = DEFAULT_RANKING_POLICY["weights"]
+    assert isinstance(base_weights, dict)
+    weights = {**base_weights}
+    weights["utilization"] = 0.4
+    weights["landedCost"] = 0.05
+    res = client.post(
+        f"/api/portfolio/intents/{pid}/rankings",
+        headers=_h(),
+        json={"policy": {"weights": weights}},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body.get("top10")
+    assert body.get("rankingId")
 
 
 def test_scenario_via_factory_matches_http(client: TestClient, tmp_path) -> None:

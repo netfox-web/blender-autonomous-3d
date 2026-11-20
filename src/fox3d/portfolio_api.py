@@ -204,11 +204,19 @@ def portfolio_router(provider: Callable[[], Any]) -> APIRouter:
     ) -> dict[str, Any]:
         body = _require_body(payload)
         tid = _require_tenant(x_tenant_id, body)
-        policy = body.get("policy") if isinstance(body.get("policy"), dict) else None
+        raw_policy = body.get("policy")
+        if raw_policy is not None and not isinstance(raw_policy, dict):
+            raise HTTPException(422, "policy 須為物件")
+        policy = raw_policy if isinstance(raw_policy, dict) else None
         try:
             ranking = pf().rank(portfolio_id, tenant_id=tid, policy=policy, demand_real=False)
             return _ranking_view(pf(), ranking)
-        except (KeyError, PermissionError, PortfolioError) as exc:
+        except PortfolioError as exc:
+            if exc.code == "NEEDS_INPUT":
+                detail = exc.args[0] if exc.args else "請求內容不完整或無效"
+                raise HTTPException(422, detail) from exc
+            _map_portfolio_error(exc)
+        except (KeyError, PermissionError) as exc:
             _map_portfolio_error(exc)
 
     @router.post("/api/portfolio/rankings/{ranking_id}/override")
