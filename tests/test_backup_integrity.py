@@ -1229,3 +1229,45 @@ def test_duplicate_and_non_object_carrier_quotes_block_preflight_readiness_and_b
     assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 0
     capsys.readouterr()
     backup_pilot(plat.root, tmp_path / "bak-non-object-resolved", tenant_ids=["ta"])
+
+
+def test_conflicting_tenant_fields_block_backup_until_explicit_repair(tmp_path):
+    plat = Platform(root=tmp_path / "live", mock_blender=True)
+    plat.pilot.logistics.import_carrier_quote(
+        {"quoteId": "q-owned", "carrier": "CA", "charge": 1},
+        source="MANUAL",
+        tenant_id="ta",
+    )
+    path = plat.root / "logistics" / "logistics.json"
+    payload = read_json(path)
+    original = {"quoteId": "q1", "tenantId": "ta", "tenant_id": "tb", "charge": 123}
+    payload["carrier_quotes"] = [*payload["carrier_quotes"], dict(original)]
+    atomic_write_json(path, payload)
+    plat.pilot.logistics.load()
+
+    dest = tmp_path / "bak-conflict"
+    with pytest.raises(BackupError, match="repair-tenant q1=ta") as blocked:
+        backup_pilot(plat.root, dest, tenant_ids=["ta"])
+    assert "q1" in str(blocked.value)
+    assert "--mark-global will not change them" in str(blocked.value)
+    _assert_no_manifest(dest)
+    assert read_json(path)["carrier_quotes"][-1] == original
+
+    repaired = plat.pilot.logistics.repair_conflicting_carrier_quote_tenants(assignments={"q1": "ta"})
+    assert repaired["repaired"][0]["preservedTenantFields"] == {"tenantId": "ta", "tenant_id": "tb"}
+    stored = next(row for row in read_json(path)["carrier_quotes"] if row.get("quoteId") == "q1")
+    assert stored["tenantId"] == "ta"
+    assert stored["charge"] == 123
+    assert "tenant_id" not in stored
+
+    backup_pilot(plat.root, tmp_path / "bak-ta", tenant_ids=["ta"])
+    backed_ta = read_json(tmp_path / "bak-ta" / "data" / "logistics" / "logistics.json")
+    assert {row["quoteId"] for row in backed_ta["carrier_quotes"]} == {"q-owned", "q1"}
+    q1_backed = next(row for row in backed_ta["carrier_quotes"] if row["quoteId"] == "q1")
+    assert q1_backed["tenantId"] == "ta"
+    assert "tenant_id" not in q1_backed
+    assert "tb" not in json.dumps(q1_backed)
+
+    backup_pilot(plat.root, tmp_path / "bak-tc", tenant_ids=["tc"])
+    backed_tc = read_json(tmp_path / "bak-tc" / "data" / "logistics" / "logistics.json")
+    assert "q1" not in {row["quoteId"] for row in backed_tc["carrier_quotes"]}

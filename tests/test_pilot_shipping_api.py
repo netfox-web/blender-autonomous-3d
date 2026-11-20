@@ -1324,3 +1324,109 @@ def test_shipment_draft_create_single_persist_and_failure_rollback_preserves_exi
     assert f"{TENANT}::shipment::TW:TPE:{c_second}:ground" in logistics._idem
     assert f"{TENANT}::shipment-key::ship-key-attach-fail" not in logistics._idem
 
+
+def test_conflicting_tenant_fields_are_hidden_and_not_rewritten_by_batch_migration(
+    tmp_path: Any, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import scripts.migrate_carrier_quotes as migrate_script
+
+    root = tmp_path / "conflict-tenant-root"
+    plat = Platform(root=root, mock_blender=True)
+    c1 = TestClient(create_app(plat))
+    headers = {
+        "ta": {"X-Tenant-Id": "ta"},
+        "tb": {"X-Tenant-Id": "tb"},
+        "tc": {"X-Tenant-Id": "tc"},
+    }
+    owned = c1.post(
+        "/api/pilot/carrier-quotes",
+        headers=headers["ta"],
+        json={"quoteId": "q-owned", "carrier": "TCAT", "charge": 10},
+    )
+    assert owned.status_code == 200, owned.text
+    _wo_ta, cartons_ta = _create_cartons(c1, plat, tenant="ta", quantity=1, idem_key="conflict-cartons-ta")
+    _wo_tc, cartons_tc = _create_cartons(c1, plat, tenant="tc", quantity=1, idem_key="conflict-cartons-tc")
+
+    log_path = root / "logistics" / "logistics.json"
+    disk = json.loads(log_path.read_text(encoding="utf-8"))
+    original = {"quoteId": "q1", "tenantId": "ta", "tenant_id": "tb", "charge": 123}
+    disk["carrier_quotes"].append(dict(original))
+    log_path.write_text(json.dumps(disk), encoding="utf-8")
+    plat.pilot.logistics.load()
+    raw_before = log_path.read_bytes()
+
+    def visible(tenant: str) -> set[str]:
+        body = c1.get("/api/pilot/carrier-quotes", headers=headers[tenant]).json()
+        return {item["quoteId"] for item in body["items"]}
+
+    assert visible("ta") == {"q-owned"}
+    assert "q1" not in visible("tb")
+    assert "q1" not in visible("tc")
+    hidden = c1.post(
+        "/api/pilot/shipments",
+        headers=headers["tc"],
+        json={"origin": "TW", "destination": "TPE", "cartonIds": cartons_tc, "quoteId": "q1"},
+    )
+    assert hidden.status_code == 404
+
+    capsys.readouterr()
+    assert migrate_script.main(["--root", str(root), "--mark-global", "--require-zero"]) == 1
+    marked = json.loads(capsys.readouterr().out)
+    assert marked["markedGlobalCount"] == 0
+    assert marked["unresolved"][0]["quoteId"] == "q1"
+    assert marked["unresolved"][0]["rawTenantFields"] == {"tenantId": "ta", "tenant_id": "tb"}
+    assert log_path.read_bytes() == raw_before
+    assert "q1" not in visible("tc")
+
+    assert migrate_script.main(["--root", str(root), "--tenant", "tc", "--require-zero"]) == 1
+    assigned = json.loads(capsys.readouterr().out)
+    assert assigned["assignedCount"] == 0
+    assert assigned["unresolved"][0]["rawTenantFields"] == {"tenantId": "ta", "tenant_id": "tb"}
+    assert log_path.read_bytes() == raw_before
+    assert "q1" not in visible("ta")
+    assert "q1" not in visible("tb")
+    assert "q1" not in visible("tc")
+
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        migrate_script.main(["--root", str(root), "--repair-tenant", "q1=tc"])
+    assert log_path.read_bytes() == raw_before
+
+    assert migrate_script.main(["--root", str(root), "--repair-tenant", "q1=ta"]) == 0
+    repaired = json.loads(capsys.readouterr().out)
+    assert repaired["repairedCount"] == 1
+    assert repaired["repaired"][0]["preservedTenantFields"] == {"tenantId": "ta", "tenant_id": "tb"}
+    assert repaired["repaired"][0]["tenantId"] == "ta"
+    stored = next(row for row in json.loads(log_path.read_text(encoding="utf-8"))["carrier_quotes"] if row["quoteId"] == "q1")
+    assert stored["charge"] == 123
+    assert stored["tenantId"] == "ta"
+    assert "tenant_id" not in stored
+
+    assert "q1" in visible("ta")
+    assert "q1" not in visible("tb")
+    assert "q1" not in visible("tc")
+    listed = c1.get("/api/pilot/carrier-quotes", headers=headers["ta"]).json()["items"]
+    q1_item = next(item for item in listed if item["quoteId"] == "q1")
+    assert "tb" not in json.dumps(q1_item)
+    assert q1_item["charge"] == 123
+
+    bind_ta = c1.post(
+        "/api/pilot/shipments",
+        headers=headers["ta"],
+        json={"origin": "TW", "destination": "TPE", "cartonIds": cartons_ta, "quoteId": "q1"},
+    )
+    assert bind_ta.status_code == 200, bind_ta.text
+    assert bind_ta.json()["quoteId"] == "q1"
+    bind_tc = c1.post(
+        "/api/pilot/shipments",
+        headers=headers["tc"],
+        json={"origin": "TW", "destination": "KHH", "cartonIds": cartons_tc, "quoteId": "q1"},
+    )
+    assert bind_tc.status_code == 404
+
+    bytes_after = log_path.read_bytes()
+    assert migrate_script.main(["--root", str(root), "--repair-tenant", "q1=ta"]) == 0
+    again = json.loads(capsys.readouterr().out)
+    assert again["repairedCount"] == 0
+    assert again["alreadyRepairedCount"] == 1
+    assert log_path.read_bytes() == bytes_after
+
