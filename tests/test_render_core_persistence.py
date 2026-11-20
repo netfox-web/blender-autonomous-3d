@@ -1,8 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from fox3d.api import create_app
+from fox3d.infra import JobQueue
 from fox3d.platform import Platform
 
 
@@ -277,3 +279,29 @@ def test_corrupt_render_record_does_not_block_other_jobs(tmp_path):
     (folder / 'broken.json').write_text('{"jobId":', encoding='utf-8')
     restarted = Platform(tmp_path, mock_blender=True)
     assert [item['jobId'] for item in restarted.queue.list(tenant_id='owner')] == [job['jobId']]
+
+
+def test_get_fresh_is_tenant_scoped_and_returns_an_independent_memory_snapshot() -> None:
+    queue = JobQueue()
+    queue.enqueue({"jobId": "one", "tenantId": "owner", "nested": {"value": 1}})
+    snapshot = queue.get_fresh("one", tenant_id="owner")
+    assert snapshot is not None
+    snapshot["nested"]["value"] = 2
+    original = queue.get_fresh("one", tenant_id="owner")
+    assert original is not None and original["nested"]["value"] == 1
+    assert queue.get_fresh("one", tenant_id="other") is None
+    assert queue.get_fresh("missing", tenant_id="owner") is None
+
+
+def test_get_fresh_rejects_invalid_or_mismatched_persisted_records(tmp_path: Path) -> None:
+    queue = JobQueue(tmp_path)
+    assert queue._store is not None
+    queue._store.write("owner", "one", {"jobId": "one", "tenantId": "other"})
+    assert queue.get_fresh("one", tenant_id="owner") is None
+    queue._store.write("owner", "one", {"jobId": "two", "tenantId": "owner"})
+    assert queue.get_fresh("one", tenant_id="owner") is None
+    queue._store.write("owner", "one", {"jobId": "one", "tenantId": "owner"})
+    found = queue.get_fresh("one", tenant_id="owner")
+    assert found is not None and found["jobId"] == "one"
+    queue._store.delete("owner", "one")
+    assert queue.get_fresh("one", tenant_id="owner") is None

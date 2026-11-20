@@ -29,6 +29,15 @@ class RenderStore:
         with FileLock(target.with_suffix('.lock')):
             unlink_owned(target, missing_ok=True)
 
+    def read(self, tenant: str, key: str) -> dict[str, Any] | None:
+        """Read one tenant-partitioned snapshot; missing or invalid data is absent."""
+        target = self.root / stable_hash(tenant) / (stable_hash(key) + '.json')
+        try:
+            record = json.loads(target.read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return None
+        return record if isinstance(record, dict) else None
+
     def read_all(self) -> list[dict[str, Any]]:
         records = []
         for path in self.root.glob('*/*.json'):
