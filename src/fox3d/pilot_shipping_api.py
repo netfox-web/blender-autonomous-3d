@@ -23,9 +23,11 @@ from fox3d.logistics import (
     ALLOWED_SOURCES,
     DIM_DIVISOR,
     _parse_valid_until_date,
+    classify_carrier_quote,
     inspect_tenantless_carrier_quotes,
     is_explicit_global_carrier_quote,
     is_tenantless_carrier_quote,
+    is_valid_tenant_carrier_quote,
     migrate_tenantless_carrier_quotes,
     unassign_migrated_carrier_quotes,
 )
@@ -90,15 +92,14 @@ def _verify_tenant_cartons(logistics: Any, carton_ids: list[str], tid: str) -> l
 
 
 def _quote_visible_to_tenant(quote: dict[str, Any], tid: str) -> bool:
-    """Return True if the quote belongs to tid or was explicitly marked as a global quote.
+    """Return True if the quote is a valid quote belonging to tid or an explicit global quote.
 
-    Legacy tenantless quotes (left behind by interrupted pre-fix writes where tenantId is None
-    and no explicit global flag was set) are not exposed across tenants until migrated.
+    Legacy tenantless or conflicting quotes are not exposed across tenants until migrated.
     """
-    q_tid = quote.get("tenantId")
-    if isinstance(q_tid, str) and q_tid.strip():
-        return q_tid.strip() == tid
-    return is_explicit_global_carrier_quote(quote)
+    info = classify_carrier_quote(quote)
+    if info["validTenantOwned"]:
+        return info["tenantId"] == tid
+    return bool(info["explicitGlobal"])
 
 
 def _visible_quotes(logistics: Any, tid: str) -> list[dict[str, Any]]:
@@ -888,9 +889,11 @@ def pilot_shipping_router(provider: Callable[[], Any]) -> APIRouter:
 router = pilot_shipping_router
 
 __all__ = [
+    "classify_carrier_quote",
     "inspect_tenantless_carrier_quotes",
     "is_explicit_global_carrier_quote",
     "is_tenantless_carrier_quote",
+    "is_valid_tenant_carrier_quote",
     "migrate_tenantless_carrier_quotes",
     "pilot_shipping_router",
     "router",

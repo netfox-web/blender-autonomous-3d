@@ -473,7 +473,10 @@ def test_legacy_snapshot_quarantine_and_explicit_assignment(client: TestClient, 
     # New imports rewrite the file but must not promote legacy rows.
     assert client.post("/api/commerce/import", headers=_headers(TENANT_A), json={"kind": "fx", "rows": [{"snapshotId": "new-a"}]}).status_code == 200
     assert not client.get("/api/commerce/snapshots", headers=_headers(TENANT_B)).json()["items"]
-    assert "666" not in client.get("/api/commerce/snapshots", headers=_headers(TENANT_B)).text
+    # Pin `at`: the response echoes it, and a wall-clock timestamp can itself contain "666".
+    leak = client.get("/api/commerce/snapshots", params={"at": "2026-11-20T00:00:00+00:00"}, headers=_headers(TENANT_B))
+    assert leak.status_code == 200 and leak.json()["at"] == "2026-11-20T00:00:00+00:00"
+    assert "666" not in leak.text and "forged-b" not in leak.text
     store.assign_legacy(["legacy"], tenant_id=TENANT_A)
     ids = {row["snapshotId"] for row in client.get("/api/commerce/snapshots", headers=_headers(TENANT_A)).json()["items"]}
     assert ids == {"legacy", "new-a"}

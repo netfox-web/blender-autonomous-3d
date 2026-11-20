@@ -233,7 +233,7 @@ class PilotOps:
             rec = self.logistics.checklists.get(str(aid)) if isinstance(aid, str) else None
             return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         if atype == "QC":
-            rec = self.qc.checks.get(str(aid)) if isinstance(aid, str) else None
+            rec = (self.qc.checks.get(str(aid)) or self.qc.defects.get(str(aid))) if isinstance(aid, str) else None
             return bool(rec and (not tenant_id or rec.get("tenantId") == tenant_id))
         proto = getattr(self.platform, "prototype", None)
         ev = tx.get("event") or {}
@@ -297,6 +297,7 @@ class PilotOps:
 
     def _reconcile_startup(self) -> dict[str, Any]:
         recovered = self.outbox.reconcile(journal=self.journal, business_committed=self._business_committed)
+        self.qc.recover_pending()
         station = self.dispatcher.reconcile()
         return {"outbox": recovered, "station": station}
 
@@ -665,7 +666,10 @@ class PilotOps:
         return previews
 
     def readiness(self, *, evidence: dict[str, Any] | None = None) -> dict[str, Any]:
-        ev = evidence or {}
+        ev = dict(evidence or {})
+        if "tenantlessCarrierQuotes" not in ev and "tenantlessQuotes" not in ev:
+            report = self.logistics.inspect_tenantless_carrier_quotes()
+            ev["tenantlessCarrierQuotes"] = int(report.get("tenantlessCount") or 0)
         matrix = scoped_readiness(evidence=ev)
 
         def _flag(key: str) -> bool:
@@ -676,11 +680,15 @@ class PilotOps:
         def _label(ready: bool, when_true: str) -> str:
             return when_true if ready else "UNVERIFIED"
 
+        tenantless_count = int(matrix.get("tenantlessCarrierQuotesCount") or 0)
+        tenantless_zero = bool(matrix.get("tenantlessCarrierQuotesReady"))
         matrix["manufacturingReleasePackageReady"] = _flag("releasePackage")
         matrix["manualPilotOpsReady"] = _flag("pilotOps")
         matrix["qcTraceabilityReady"] = _flag("qc")
         matrix["importedSupplierQuoteReady"] = _flag("supplierQuotes")
-        matrix["importedCarrierQuoteReady"] = _flag("carrierQuotes")
+        matrix["importedCarrierQuoteReady"] = _flag("carrierQuotes") and tenantless_zero
+        matrix["tenantlessCarrierQuotesCount"] = tenantless_count
+        matrix["tenantlessCarrierQuotesReady"] = tenantless_zero
         matrix["liveFactoryExecutionReady"] = False
         matrix["liveProviderReady"] = False
         matrix["globalProductionReady"] = False
@@ -693,7 +701,12 @@ class PilotOps:
             "manualPilotOpsReady": _label(matrix["manualPilotOpsReady"], "REAL"),
             "qcTraceabilityReady": _label(matrix["qcTraceabilityReady"], "REAL"),
             "importedSupplierQuoteReady": _label(matrix["importedSupplierQuoteReady"], "IMPORTED"),
-            "importedCarrierQuoteReady": _label(matrix["importedCarrierQuoteReady"], "IMPORTED"),
+            "importedCarrierQuoteReady": (
+                "BLOCKED"
+                if not tenantless_zero
+                else _label(matrix["importedCarrierQuoteReady"], "IMPORTED")
+            ),
+            "tenantlessCarrierQuotesReady": "REAL" if tenantless_zero else "BLOCKED",
             "liveFactoryExecutionReady": "BLOCKED",
             "liveProviderReady": "BLOCKED",
             "globalProductionReady": "BLOCKED",

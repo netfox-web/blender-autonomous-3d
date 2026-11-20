@@ -46,6 +46,7 @@ from fox3d.recovery import ExceptionStateError, PilotException
 from fox3d.cyclecount_api import cyclecount_router
 from fox3d.materials_lot_ops_api import materials_lot_ops_router
 from fox3d.portfolio_api import portfolio_router
+from fox3d.prototype_api import prototype_router
 from fox3d.recipe_admin_api import recipe_router
 from fox3d.station import ADMIN_STATION_STATUSES, STATION_CAPS
 
@@ -1147,13 +1148,15 @@ def create_app(platform: Platform | None = None) -> FastAPI:
 
     @app.get("/api/physical-os/readiness")
     def physical_readiness() -> dict[str, Any]:
-        return get_platform().physical.readiness()
+        return (platform or get_platform()).physical.readiness()
 
     @app.get("/api/readiness")
     def scoped_ready() -> dict[str, Any]:
         from fox3d.readiness import scoped_readiness
 
-        return scoped_readiness()
+        report = (platform or get_platform()).pilot.logistics.inspect_tenantless_carrier_quotes()
+        tenantless_count = int(report.get("tenantlessCount") or 0)
+        return scoped_readiness(evidence={"tenantlessCarrierQuotes": tenantless_count})
 
     @app.post("/api/evidence/verify")
     def evidence_verify(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1354,6 +1357,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         pilot = get_platform().pilot
         with pilot.workorders._lock:
             orders = [dict(wo) for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
+        total = len(orders)
+        paginated = "offset" in request.query_params or "limit" in request.query_params
+        page = orders[offset : offset + limit] if paginated else orders
         enriched = [
             {
                 **wo,
@@ -1364,13 +1370,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                     tenant_id=tid,
                 )["ok"],
             }
-            for wo in orders
+            for wo in page
         ]
-        total = len(enriched)
-        if "offset" not in request.query_params and "limit" not in request.query_params:
+        if not paginated:
             return {"items": enriched, "total": total, "offset": 0, "limit": total, "liveMachineControl": False}
-        items = enriched[offset : offset + limit]
-        return {"items": items, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
+        return {"items": enriched, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
 
     @app.get("/api/pilot/batches/board")
     def pilot_batch_board(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
@@ -1795,6 +1799,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     app.include_router(pilot_shipping_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     app.include_router(materials_lot_ops_router(platform_provider))
+    app.include_router(prototype_router(platform_provider))
     app.include_router(portfolio_router(platform_provider))
     for page in page_routers(lambda: platform if platform is not None else get_platform()):
         app.include_router(page)

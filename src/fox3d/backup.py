@@ -13,7 +13,15 @@ from typing import Any
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.logistics import is_explicit_global_carrier_quote
+from fox3d.logistics import (
+    CARRIER_QUOTE_RECORD_REMEDIATION,
+    carrier_quote_id,
+    classify_carrier_quote,
+    is_explicit_global_carrier_quote,
+    is_valid_tenant_carrier_quote,
+    scan_carrier_quote_records,
+    tenant_field_repair_hint,
+)
 from fox3d.release import (
     is_matching_tenant_stem,
     legacy_safe_tenant_filename,
@@ -47,6 +55,10 @@ TENANT_OWNED = "TENANT_OWNED"
 TENANT_DERIVED = "TENANT_DERIVED"
 GLOBAL_REFERENCE = "GLOBAL_REFERENCE"
 GLOBAL_REFERENCE_POLICY = "EXCLUDE_FROM_TENANT_SCOPED"
+CARRIER_QUOTES_POLICY = (
+    "tenant carrier_quotes are TENANT_OWNED; explicit global quotes excluded (EXCLUDE_FROM_TENANT_SCOPED); "
+    "legacy tenantless quotes fail-closed"
+)
 MIXED_SPEC: dict[str, dict[str, str]] = {
     "lots/lots.json": {"lots": TENANT_OWNED},
     "workorders/workorders.json": {"orders": TENANT_OWNED, "operations": TENANT_DERIVED},
@@ -230,13 +242,28 @@ def _tenant_of(rec: Any) -> str | None:
 
 
 def _is_explicit_global_carrier_quote(rec: dict[str, Any]) -> bool:
-    if not isinstance(rec, dict):
-        return False
-    if rec.get("tenant_id") not in (None, ""):
-        return False
-    if rec.get("ownership") == TENANT_OWNED:
-        return False
     return is_explicit_global_carrier_quote(rec)
+
+
+def _quote_id_of(rec: dict[str, Any]) -> str:
+    return carrier_quote_id(rec)
+
+
+def _block_carrier_quote_record_anomalies(rows: list[Any], rel: str, key: str) -> None:
+    """Fail closed on raw entries LogisticsService quarantines (same rule as preflight / readiness)."""
+    anomalies = scan_carrier_quote_records(rows)["anomalies"]
+    if not anomalies:
+        return
+    first = anomalies[0]
+    if first["reason"] == "duplicate_quote_id":
+        detail = f"duplicate quoteId={first['quoteId']} ({first['duplicateCount']} records)"
+    else:
+        detail = f"non-object record at rawIndex={first['rawIndex']}"
+    raise BackupError(
+        "BLOCKED",
+        f"ambiguous {rel}:{key} {detail}; {len(anomalies)} unresolved raw record(s); "
+        f"{CARRIER_QUOTE_RECORD_REMEDIATION}",
+    )
 
 
 def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
@@ -333,23 +360,49 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
             continue
         kept: list[dict[str, Any]] = []
         parents = _parent_tenants(payload, rel, key) if policy == TENANT_DERIVED else {}
+        if rel == "logistics/logistics.json" and key == "carrier_quotes":
+            _block_carrier_quote_record_anomalies(rows, rel, key)
         for rec in rows:
             if not isinstance(rec, dict):
                 raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:{key}")
             if policy == TENANT_OWNED:
                 if rel == "logistics/logistics.json" and key == "carrier_quotes":
-                    if _is_explicit_global_carrier_quote(rec):
+                    info = classify_carrier_quote(rec)
+                    if info["explicitGlobal"]:
                         continue
-                    if (
-                        rec.get("globalQuote") is True
-                        or rec.get("isGlobal") is True
-                        or rec.get("allowGlobal") is True
-                        or rec.get("ownership") == GLOBAL_REFERENCE
-                    ):
+                    qid = _quote_id_of(rec)
+                    if not info["validTenantOwned"]:
+                        if info.get("tenantFieldConflict"):
+                            claimed_raw = info.get("claimedTenantIds") or []
+                            claimed = [tid for tid in claimed_raw if isinstance(tid, str)] if isinstance(claimed_raw, list) else []
+                            raise BackupError(
+                                "BLOCKED",
+                                f"ambiguous {rel}:{key} quoteId={qid} conflicting or invalid tenant fields; "
+                                "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) "
+                                "only as an explicit repair; "
+                                + tenant_field_repair_hint(qid, claimed),
+                            )
+                        if info["issue"] in {
+                            "conflicting_tenant_and_global",
+                            "conflicting_ownership_and_global",
+                            "unmigrated_global_reference",
+                            "invalid_ownership",
+                        }:
+                            raise BackupError(
+                                "BLOCKED",
+                                f"ambiguous {rel}:{key} quoteId={qid} global flag or unmigrated/rolled-back "
+                                "GLOBAL_REFERENCE ownership with missing or conflicting tenantId; "
+                                "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
+                            )
                         raise BackupError(
                             "BLOCKED",
-                            f"ambiguous {rel}:{key} global flag with missing or conflicting tenantId",
+                            f"ambiguous {rel}:{key} quoteId={qid} missing tenantId; "
+                            "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
                         )
+                    tid = info["tenantId"]
+                    if tid in tids:
+                        kept.append(rec)
+                    continue
                 tid = _tenant_of(rec)
                 if tid is None:
                     raise BackupError("BLOCKED", f"ambiguous {rel}:{key} missing tenantId")
@@ -723,9 +776,10 @@ def backup_pilot(root: Path, dest: Path, *, tenant_ids: list[str] | None = None)
                 "consistentSnapshot": True,
                 "snapshotPathSetBound": True,
                 "collectionPolicy": {
-                    "TENANT_OWNED": "record.tenantId authoritative; missing tenantId fail-closed",
+                    "TENANT_OWNED": "record.tenantId authoritative (including logistics.carrier_quotes); missing tenantId fail-closed",
                     "TENANT_DERIVED": "pallet->carton, operation->workOrder, packet->release; cross-tenant fail-closed",
-                    "GLOBAL_REFERENCE": "logistics.carrier_quotes",
+                    "CARRIER_QUOTES": CARRIER_QUOTES_POLICY,
+                    "GLOBAL_REFERENCE": "explicit global quotes only (globalQuote/isGlobal/allowGlobal without tenantId); excluded from tenant-scoped backups; legacy tenantless quotes fail-closed",
                     "GLOBAL_REFERENCE_POLICY": GLOBAL_REFERENCE_POLICY,
                 },
             }
@@ -1797,6 +1851,7 @@ def evaluate_tenant_restore_matrix(
         q
         for q in quotes
         if not isinstance(q, dict)
+        or not is_valid_tenant_carrier_quote(q)
         or _tenant_of(q) != tenant_a
         or _is_explicit_global_carrier_quote(q)
     ]
@@ -1834,6 +1889,6 @@ def evaluate_tenant_restore_matrix(
         "tenantRequiredStatePreserved": not missing,
         "leakage": leakage,
         "missing": missing,
-        "carrierQuotesPolicy": GLOBAL_REFERENCE_POLICY,
+        "carrierQuotesPolicy": CARRIER_QUOTES_POLICY,
         "truthLabel": "REAL_LOGIC",
     }
