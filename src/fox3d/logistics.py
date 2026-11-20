@@ -2458,14 +2458,20 @@ def cli_main(argv: list[str] | None = None) -> int:
             drop=list(args.drop_invalid) or None,
             dry_run=bool(args.dry_run),
         )
+        if args.require_zero:
+            result["remainingTenantlessCount"] = svc.inspect_tenantless_carrier_quotes()["tenantlessCount"]
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-        if args.require_zero and int(result.get("remainingAnomalyCount") or 0) > 0:
+        if args.require_zero and result["remainingTenantlessCount"] > 0:
             return 1
         return 0
 
     if args.unassign_ids:
         result = svc.unassign_migrated_carrier_quotes(args.unassign_ids, dry_run=bool(args.dry_run))
+        if args.require_zero:
+            result["remainingTenantlessCount"] = svc.inspect_tenantless_carrier_quotes()["tenantlessCount"]
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        if args.require_zero and result["remainingTenantlessCount"] > 0:
+            return 1
         return 0
 
     if args.check_only:

@@ -1210,3 +1210,32 @@ def test_non_list_carrier_quotes_container_fails_closed_without_rewrite(tmp_path
     with pytest.raises(ValueError, match="carrier_quotes must be a list"):
         LogisticsService(root=root)
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("operation", ["keep-duplicate", "drop-invalid", "unassign"])
+def test_require_zero_checks_all_tenantless_quotes_after_record_operations(tmp_path, capsys, operation):
+    import json
+    from fox3d.logistics import carrier_quote_record_fingerprint, cli_main
+
+    log = _wired_logistics(tmp_path)
+    log.persist()
+    legacy = {"quoteId": "legacy", "charge": 123}
+    duplicate = {"quoteId": "duplicate", "tenantId": "ta"}
+    if operation == "keep-duplicate":
+        _inject_raw_quotes(log, [legacy, duplicate, {**duplicate, "charge": 1}])
+        flags = ["--keep-duplicate", f"duplicate={carrier_quote_record_fingerprint(duplicate)}"]
+    elif operation == "drop-invalid":
+        _inject_raw_quotes(log, [legacy, "bad"])
+        flags = ["--drop-invalid", carrier_quote_record_fingerprint("bad")]
+    else:
+        _inject_raw_quotes(log, [legacy, "bad", {"quoteId": "migrated", "tenantId": "ta", "migratedFromTenantless": True}])
+        flags = ["--unassign", "migrated"]
+
+    assert cli_main(["--root", str(log.root), *flags, "--require-zero"]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert result["remainingTenantlessCount"] == report["tenantlessCount"]
+    assert "legacy" in report["quoteIds"]
+    if operation == "unassign":
+        assert "migrated" in report["quoteIds"]
