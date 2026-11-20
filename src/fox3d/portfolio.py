@@ -237,6 +237,12 @@ def merge_ranking_policy(policy: dict[str, Any] | None) -> dict[str, Any]:
     for key, value in weights.items():
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 須為數字")
+        try:
+            as_float = float(value)
+        except OverflowError:
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 超出範圍") from None
+        if not math.isfinite(as_float):
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 須為有限數字")
     return pol
 
 

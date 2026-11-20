@@ -259,6 +259,42 @@ def test_ranking_invalid_policy_returns_422_not_500(
     assert "TypeError" not in res.text
 
 
+@pytest.mark.parametrize(
+    "raw_body,expected_detail_fragment",
+    [
+        ('{"policy":{"weights":{"utilization":NaN}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":Infinity}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":-Infinity}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":1e400}}}', "有限數字"),
+        ('{"policy":{"weights":{"utilization":1' + "0" * 400 + '}}}', "超出範圍"),
+    ],
+    ids=["nan", "infinity", "neg-infinity", "float-overflow", "401-digit-int"],
+)
+def test_ranking_non_finite_or_overflowing_weight_returns_422(
+    client: TestClient,
+    platform,  # noqa: ANN001
+    raw_body: str,
+    expected_detail_fragment: str,
+) -> None:
+    pid = _ranking_setup(client)
+    path = platform.portfolio.root / "portfolio.json"
+    rankings_before = dict(platform.portfolio.rankings)
+    file_before = path.read_bytes()
+    res = client.post(
+        f"/api/portfolio/intents/{pid}/rankings",
+        headers={**_h(), "content-type": "application/json"},
+        content=raw_body,
+    )
+    assert res.status_code == 422
+    assert expected_detail_fragment in res.json()["detail"]
+    assert "utilization" in res.json()["detail"]
+    assert "OverflowError" not in res.text
+    assert platform.portfolio.rankings == rankings_before
+    assert path.read_bytes() == file_before
+    assert b"NaN" not in path.read_bytes()
+    assert b"Infinity" not in path.read_bytes()
+
+
 def test_ranking_valid_custom_weights_succeeds(client: TestClient) -> None:
     pid = _ranking_setup(client)
     base_weights = DEFAULT_RANKING_POLICY["weights"]
