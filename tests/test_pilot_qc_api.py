@@ -377,3 +377,101 @@ def test_stale_pending_after_workorder_persist_failure_unblocks_qc(platform: Any
         if e.get("aggregateId") == stuck_defect_id and e.get("eventType") == "qc.defect"
     ]
     assert len(events) == 1
+
+
+def _fail_persist_while(platform: Any, monkeypatch: Any, work_order_id: str, state: str) -> dict[str, bool]:
+    """Workorder persist keeps failing while ``work_order_id`` is in ``state`` (persistent I/O fault)."""
+    workorders = platform.pilot.workorders
+    real_persist = workorders.persist
+    fault = {"active": True}
+
+    def persist() -> None:
+        if fault["active"] and workorders.get(work_order_id).get("state") == state:
+            raise OSError("simulated persistent workorder disk failure")
+        real_persist()
+
+    monkeypatch.setattr(workorders, "persist", persist)
+    return fault
+
+
+@pytest.mark.parametrize(
+    "action,body,id_field,target_state",
+    [
+        ("defects", {"code": "DEF_SIZE", "disposition": "SCRAP", "confirm": True, "idempotencyKey": "io-scrap"}, "defectId", "REJECTED"),
+        ("qc", {"stage": "IN_PROCESS", "checkId": "HOLE_DIA", "measured": 20, "source": "MANUAL", "idempotencyKey": "io-check"}, "qcId", "QC_HOLD"),
+    ],
+)
+def test_replay_while_pending_io_failure_is_retryable_not_success(
+    platform: Any, monkeypatch: Any, action: str, body: dict[str, Any], id_field: str, target_state: str
+) -> None:
+    _, wo = _seed_release_receipt_and_wo(platform)
+    _, wo_other = _seed_release_receipt_and_wo(platform)
+    wid = wo["workOrderId"]
+    path = f"/api/pilot/work-orders/{wid}/{action}"
+    client = TestClient(create_app(platform))
+    state_before = platform.pilot.workorders.get(wid)["state"]
+    assert state_before != target_state
+    fault = _fail_persist_while(platform, monkeypatch, wid, target_state)
+
+    with pytest.raises(OSError, match="persistent workorder disk failure"):
+        client.post(path, headers=HEADERS, json=body)
+    assert len(platform.pilot.qc.pending) == 1
+    op_id = next(iter(platform.pilot.qc.pending))
+
+    for _ in range(2):
+        replay = client.post(path, headers=HEADERS, json=body)
+        assert replay.status_code == 503, replay.text
+        assert replay.headers.get("Retry-After")
+        assert id_field not in replay.json()
+        assert platform.pilot.workorders.get(wid)["state"] == state_before
+        assert platform.pilot.qc.is_pending(op_id)
+    # Another tenant still cannot see the work order, even through the replay path.
+    assert client.post(path, headers={"X-Tenant-Id": "other"}, json=body).status_code == 404
+    # A different work order keeps working while this one is stuck.
+    other_qc = {"stage": "IN_PROCESS", "checkId": "HOLE_DIA", "measured": 8, "source": "MANUAL", "idempotencyKey": "io-other"}
+    other = client.post(f"/api/pilot/work-orders/{wo_other['workOrderId']}/qc", headers=HEADERS, json=other_qc)
+    assert other.status_code == 200, other.text
+    assert platform.pilot.qc.is_pending(op_id)
+
+    fault["active"] = False
+    healed = client.post(path, headers=HEADERS, json=body)
+    assert healed.status_code == 200, healed.text
+    assert healed.json()[id_field] == op_id
+    assert platform.pilot.workorders.get(wid)["state"] == target_state
+    assert not platform.pilot.qc.pending
+    again = client.post(path, headers=HEADERS, json=body)
+    assert again.status_code == 200 and again.json()[id_field] == op_id
+
+    reloaded = type(platform)(root=platform.root, mock_blender=True)
+    assert not reloaded.pilot.qc.pending
+    assert reloaded.pilot.workorders.get(wid)["state"] == target_state
+    rows = reloaded.pilot.qc.defects if action == "defects" else reloaded.pilot.qc.checks
+    assert [r[id_field] for r in rows.values() if r["workOrderId"] == wid] == [op_id]
+    events = [e for e in reloaded.pilot.journal.list(TENANT) if e.get("aggregateId") == op_id]
+    assert len(events) == 1
+
+
+def test_completing_failure_does_not_stop_other_pending_recovery(platform: Any, monkeypatch: Any) -> None:
+    _, wo_a = _seed_release_receipt_and_wo(platform)
+    _, wo_b = _seed_release_receipt_and_wo(platform)
+    client = TestClient(create_app(platform))
+    fault_a = _fail_persist_while(platform, monkeypatch, wo_a["workOrderId"], "REJECTED")
+    fault_b = _fail_persist_while(platform, monkeypatch, wo_b["workOrderId"], "REJECTED")
+    scrap = {"code": "DEF_SIZE", "disposition": "SCRAP", "confirm": True}
+    with pytest.raises(OSError):
+        client.post(f"/api/pilot/work-orders/{wo_a['workOrderId']}/defects", headers=HEADERS, json={**scrap, "idempotencyKey": "a"})
+    op_a = next(iter(platform.pilot.qc.pending))
+    with pytest.raises(OSError):
+        client.post(f"/api/pilot/work-orders/{wo_b['workOrderId']}/defects", headers=HEADERS, json={**scrap, "idempotencyKey": "b"})
+    op_b = next(k for k in platform.pilot.qc.pending if k != op_a)
+    assert list(platform.pilot.qc.pending) == [op_a, op_b]
+    fault_b["active"] = False
+
+    # op_a (first in order) still fails; op_b behind it must still be recovered.
+    with pytest.raises(OSError):
+        platform.pilot.qc.recover_pending(completing=op_a)
+    assert platform.pilot.qc.is_pending(op_a)
+    assert not platform.pilot.qc.is_pending(op_b)
+    assert platform.pilot.workorders.get(wo_b["workOrderId"])["state"] == "REJECTED"
+    assert platform.pilot.workorders.get(wo_a["workOrderId"])["state"] != "REJECTED"
+    fault_a["active"] = False

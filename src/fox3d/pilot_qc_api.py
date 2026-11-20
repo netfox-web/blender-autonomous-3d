@@ -19,6 +19,25 @@ _ALLOWED_QC_SOURCES = frozenset({"MANUAL", "IMPORTED"})
 _QC_OPEN_STATES_REJECTED = frozenset({"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"})
 
 
+_PENDING_RETRY_AFTER_SECONDS = "5"
+
+
+def _require_operation_completed(pilot: Any, operation_id: str) -> None:
+    """Refuse an idempotent replay whose original operation has not finished.
+
+    ``recover_pending()`` already retried every pending operation (isolating
+    failures per work order / tenant). If this one is still pending, its work-order
+    transition, event or QC commit has not been made durable, so a cached success
+    would be a lie; answer with a retryable error instead.
+    """
+    if pilot.qc.is_pending(operation_id):
+        raise HTTPException(
+            503,
+            "先前的同一請求尚未完成寫入，請稍後以相同 idempotencyKey 重試",
+            headers={"Retry-After": _PENDING_RETRY_AFTER_SECONDS},
+        )
+
+
 def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
     router = APIRouter()
     @router.get("/api/pilot/work-orders/{work_order_id}/qc")
@@ -104,6 +123,7 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                     raise HTTPException(409, "idempotencyKey 衝突")
                 prev_rec = pilot.qc.checks.get(str(prev.get("qcId")))
                 if prev_rec is not None:
+                    _require_operation_completed(pilot, str(prev_rec["qcId"]))
                     return dict(prev_rec)
             if wo.get("state") in _QC_OPEN_STATES_REJECTED:
                 raise HTTPException(409, "工單尚未預留材料，無法記錄品檢")
@@ -194,6 +214,7 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                 if previous["sig"] != signature:
                     raise HTTPException(409, "idempotencyKey 衝突")
                 prev_defect = pilot.qc.defects[previous["qcId"]]
+                _require_operation_completed(pilot, str(prev_defect["defectId"]))
                 return dict(prev_defect)
             try:
                 rec = pilot.qc.defect(tenant_id=tid, work_order_id=work_order_id, code=code, disposition=disposition, actor=str(body.get("actor") or "qc"), note=str(body.get("note") or ""), idem_entry=(store_key, signature))

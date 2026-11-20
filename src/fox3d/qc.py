@@ -137,9 +137,16 @@ class QcService:
         store_key = rec["qcId" if kind == "check" else "defectId"]
         store[store_key] = rec
 
+    def is_pending(self, operation_id: str) -> bool:
+        """True while the operation's work-order, event or QC commit is unfinished."""
+        return str(operation_id) in self.pending
+
     def recover_pending(self, *, completing: str | None = None) -> None:
         # The work-order marker is committed in the same snapshot as the transition.
         # It prevents a crash before clearing pending from replaying an old action.
+        # A failure of ``completing`` is re-raised only after every other pending
+        # operation has been attempted, so one stuck work order never blocks others.
+        completing_error: BaseException | None = None
         for operation_id in list(self.pending):
             op = self.pending[operation_id]
             rec = op["record"]
@@ -178,7 +185,8 @@ class QcService:
                         wo.clear()
                         wo.update(before)
                         if operation_id == completing:
-                            raise
+                            completing_error = exc
+                            continue
                         logger.warning("recover_pending: workorder persist failed for %s: %s", operation_id, exc)
                         stalled = True
             if stalled:
@@ -187,7 +195,8 @@ class QcService:
                 emit(self, **op["event"])
             except Exception as exc:
                 if operation_id == completing:
-                    raise
+                    completing_error = exc
+                    continue
                 logger.warning("recover_pending: emit failed for %s: %s", operation_id, exc)
                 continue
             del self.pending[operation_id]
@@ -196,8 +205,11 @@ class QcService:
             except Exception as exc:
                 self.pending[operation_id] = op
                 if operation_id == completing:
-                    raise
+                    completing_error = exc
+                    continue
                 logger.warning("recover_pending: qc persist failed for %s: %s", operation_id, exc)
+        if completing_error is not None:
+            raise completing_error
 
     def _apply_work_order(self, wo: dict[str, Any], rec: dict[str, Any], kind: str) -> None:
         assert self.workorders is not None
