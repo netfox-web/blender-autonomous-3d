@@ -43,9 +43,17 @@ class _Liar(VideoAdapter):
         }
 
 
-class _Boom(VideoAdapter):
+class _Recording(VideoAdapter):
+    def __init__(self, result=None, error=None):
+        self.calls = 0
+        self.result = result
+        self.error = error
+
     def submit(self, package):
-        raise RuntimeError("provider exploded")
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        return self.result
 
 
 @pytest.mark.parametrize("adapter", [VideoAdapter(), H3MaxAdapter(), LTX25Adapter()])
@@ -56,6 +64,18 @@ def test_mock_transport_never_marks_real(adapter):
     assert result["status"] == "BLOCKED_MOCK_TRANSPORT"
     assert transport.calls == 1
     assert result["outputArtifacts"] == []
+
+
+def test_mock_transport_does_not_call_adapter_submit():
+    adapter = _Recording(result={"status": "SUCCESS", "networkExecuted": True, "outputArtifacts": [{"id": "clip"}]})
+    transport = MockTransport(response={"status": "SUCCESS", "networkExecuted": True})
+    result = submit_provider(adapter, {"sealed": True}, transport=transport, runtime=object())
+    assert adapter.calls == 0
+    assert transport.calls == 1
+    assert result["status"] == "BLOCKED_MOCK_TRANSPORT"
+    assert result["networkExecuted"] is False
+    assert result["outputArtifacts"] == []
+    _assert_not_real(result)
 
 
 def test_mock_transport_ignores_raising_send():
@@ -72,11 +92,35 @@ def test_missing_runtime_never_marks_real():
     assert result["outputArtifacts"] == []
 
 
-def test_adapter_exception_never_marks_real():
-    result = submit_provider(_Boom(), {}, transport=object(), runtime=object())
+def test_adapter_exception_is_not_reached_for_uncontrolled_runtime():
+    adapter = _Recording(error=RuntimeError("provider exploded"))
+    result = submit_provider(adapter, {}, transport=object(), runtime=object())
+    assert adapter.calls == 0
     _assert_not_real(result)
-    assert result["status"] == "BLOCKED_ADAPTER_ERROR"
+    assert result["status"] == "BLOCKED_PROVIDER_RUNTIME"
     assert result["outputArtifacts"] == []
+
+
+@pytest.mark.parametrize("runtime", [object(), "configured", 1])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"status": "SUCCESS", "networkExecuted": True, "outputArtifacts": [{"id": "clip"}]},
+        {"status": "SUCCESS", "networkExecuted": True, "outputArtifacts": []},
+        {"status": "SUCCESS", "networkExecuted": False, "outputArtifacts": [{"id": "clip"}]},
+        {"status": "FAILED", "networkExecuted": True, "outputArtifacts": []},
+    ],
+)
+def test_uncontrolled_runtime_does_not_call_adapter_or_report_success(runtime, raw):
+    adapter = _Recording(result=raw)
+    result = submit_provider(adapter, {"sealed": True}, transport=object(), runtime=runtime)
+    assert adapter.calls == 0
+    assert result["status"] != "SUCCESS"
+    assert result["status"] == "BLOCKED_PROVIDER_RUNTIME"
+    assert result["networkExecuted"] is False
+    assert result["outputArtifacts"] == []
+    assert result["liveProviderReady"] is False
+    _assert_not_real(result)
 
 
 def test_lying_adapter_cannot_promote_real_when_runtime_object_exists():

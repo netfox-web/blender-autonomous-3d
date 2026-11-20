@@ -53,31 +53,36 @@ class MockTransport:
         return self.response
 
 
+_CLOSED_STATUS = {
+    "BLOCKED_PROVIDER_RUNTIME",
+    "BLOCKED_ADAPTER_ERROR",
+    "BLOCKED_MOCK_TRANSPORT",
+    "BLOCKED_NO_RUNTIME",
+}
+
+
+def _public_provider(provider):
+    if type(provider) is str and "REAL" in provider.upper():
+        return "FUTURE_PROVIDER"
+    return provider
+
+
 def _closed(provider, status):
-    if type(status) is not str or "REAL" in status.upper():
+    if status not in _CLOSED_STATUS:
         status = "BLOCKED_PROVIDER_RUNTIME"
-    return {"provider": provider, "status": status, "liveProviderReady": False,
+    return {"provider": _public_provider(provider), "status": status, "liveProviderReady": False,
             "usedMock": False, "networkExecuted": False, "outputArtifacts": []}
 
 
-def _closed_from(provider, raw):
-    if type(raw) is not dict:
-        return _closed(provider, "BLOCKED_ADAPTER_ERROR")
-    status = raw.get("status")
-    result = _closed(provider, status if type(status) is str else "BLOCKED_PROVIDER_RUNTIME")
-    named = raw.get("provider", provider)
-    if type(named) is not str or "REAL" in named.upper():
-        named = provider
-    result["provider"] = named
-    result["liveProviderReady"] = False
-    result["networkExecuted"] = False
-    result["usedMock"] = False
-    return result
-
-
 def submit_provider(adapter, package=None, *, transport=None, runtime=None):
-    """Dispatch one provider attempt. Mock, missing runtime, and adapter failures stay closed."""
-    provider = getattr(adapter, "provider", None)
+    """Dispatch one provider attempt.
+
+    Formal provider dispatch is not supported. A mock transport is closed after
+    its offline send. Any other runtime is refused before adapter.submit, so a
+    live adapter cannot spend a request and then be reported as SUCCESS with
+    networkExecuted cleared and no artifacts.
+    """
+    provider = _public_provider(getattr(adapter, "provider", None))
     try:
         if isinstance(transport, MockTransport):
             try:
@@ -87,10 +92,9 @@ def submit_provider(adapter, package=None, *, transport=None, runtime=None):
             return _closed(provider, "BLOCKED_MOCK_TRANSPORT")
         if runtime is None:
             return _closed(provider, "BLOCKED_NO_RUNTIME")
-        raw = adapter.submit(package)
+        return _closed(provider, "BLOCKED_PROVIDER_RUNTIME")
     except Exception:
         return _closed(provider, "BLOCKED_ADAPTER_ERROR")
-    return _closed_from(provider, raw)
 
 
 def _pixels(record):
