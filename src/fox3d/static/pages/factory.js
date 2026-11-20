@@ -36,6 +36,8 @@
   var rdApproveReqSeq = 0;
   var rdGenerateInFlight = false;
   var rdApproveInFlight = false;
+  var rdApprovePrepInFlight = false;
+  var rdApprovePrepSeq = 0;
   var rdLoadMoreInFlight = false;
   var rdPendingGenerate = null;
   var rdPendingApprove = null;
@@ -731,6 +733,16 @@
     return null;
   }
 
+  // Server sets jobStatusSource=SNAPSHOT when the render job is no longer in the queue,
+  // so the status shown is the one saved when the scheme was generated.
+  function isRdRenderSnapshot(rd) {
+    if (!rd || typeof rd !== 'object' || Array.isArray(rd)) return false;
+    var pr = rd.parametricRender;
+    return Boolean(pr && typeof pr === 'object' && !Array.isArray(pr) && pr.jobStatusSource === 'SNAPSHOT');
+  }
+
+  var RD_RENDER_SNAPSHOT_NOTE = '（產生時快照，目前算圖狀態無法取得）';
+
   function classifyRdRenderJob(job) {
     if (!job || typeof job !== 'object' || Array.isArray(job)) return null;
     var rawStatus = truncateText(job.status, 64);
@@ -969,8 +981,13 @@
       );
     }
     var renderInfo = classifyRdRenderJob(extractRdRenderJob(rd));
+    var renderIsSnapshot = Boolean(renderInfo) && isRdRenderSnapshot(rd);
     var renderDetailBadge = makeRdRenderDetailBadge(renderInfo);
     if (renderDetailBadge) {
+      if (renderIsSnapshot) {
+        renderDetailBadge.textContent += RD_RENDER_SNAPSHOT_NOTE;
+        renderDetailBadge.setAttribute('data-render-source', 'snapshot');
+      }
       badgesBox.appendChild(renderDetailBadge);
     }
 
@@ -984,7 +1001,7 @@
       ['母版尺寸 (mm)', (baseSpec.width || '—') + ' × ' + (baseSpec.height || '—') + ' × ' + (baseSpec.depth || '—')],
       ['產生／合格變體數', (rd.variantCount || 0) + ' 組 ／ 合格 ' + (rd.scoredCount || 0) + ' 組'],
       ['工程規則檢核', rd.baseReport && rd.baseReport.ok ? '通過 (OK)' : '有工程警告'],
-      ['母版 3D 預覽狀態', formatRdRenderSummaryText(renderInfo)],
+      ['母版 3D 預覽狀態', formatRdRenderSummaryText(renderInfo) + (renderIsSnapshot ? RD_RENDER_SNAPSHOT_NOTE : '')],
       ['核准狀態', approvalStatus === 'APPROVED' ? 'APPROVED（已核准）' : 'WAITING_APPROVAL（待核准）']
     ];
     if (approvalStatus === 'APPROVED') {
@@ -1062,7 +1079,7 @@
 
     var btnApprovePrep = $('rd-approve-prepare');
     var actorInput = $('rd-approve-actor');
-    if (btnApprovePrep && !rdApproveInFlight) {
+    if (btnApprovePrep && !rdApproveInFlight && !rdApprovePrepInFlight) {
       if (approvalStatus === 'APPROVED') {
         btnApprovePrep.disabled = true;
         btnApprovePrep.textContent = '此研發方案已核准（APPROVED）';
@@ -1152,7 +1169,12 @@
 
       var itemRenderInfo = classifyRdRenderJob(extractRdRenderJob(item));
       var tdPreview = el('td', { 'data-role': 'rd-preview-status' });
-      tdPreview.appendChild(makeRdHistoryRenderBadge(itemRenderInfo));
+      var itemRenderBadge = makeRdHistoryRenderBadge(itemRenderInfo);
+      if (itemRenderInfo && isRdRenderSnapshot(item)) {
+        itemRenderBadge.textContent += RD_RENDER_SNAPSHOT_NOTE;
+        itemRenderBadge.setAttribute('data-render-source', 'snapshot');
+      }
+      tdPreview.appendChild(itemRenderBadge);
       tr.appendChild(tdPreview);
 
       var app = item.approval || {};
@@ -1471,6 +1493,8 @@
     $('fc-tenant').addEventListener('input', function () {
       rdGenerateReqSeq++;
       rdApproveReqSeq++;
+      rdApprovePrepSeq++;
+      rdApprovePrepInFlight = false;
       rdHistoryReqSeq++;
       rdDetailReqSeq++;
       rdPendingGenerate = null;
@@ -1488,6 +1512,8 @@
     $('fc-tenant').addEventListener('change', function (e) {
       rdGenerateReqSeq++;
       rdApproveReqSeq++;
+      rdApprovePrepSeq++;
+      rdApprovePrepInFlight = false;
       rdPendingGenerate = null;
       var generateBox = $('rd-confirm-box');
       generateBox.hidden = true;
@@ -1965,9 +1991,11 @@
 
     if ($('rd-approve-prepare')) {
       $('rd-approve-prepare').addEventListener('click', function () {
-        if (rdApproveInFlight || !state.selectedRdId || !$('rd-approve-confirm').hidden) return;
-        var current = state.lastRdResult;
-        if (current && current.approval && current.approval.status === 'APPROVED') return;
+        if (rdApproveInFlight || rdApprovePrepInFlight || !state.selectedRdId || !$('rd-approve-confirm').hidden) {
+          return;
+        }
+        var cached = state.lastRdResult;
+        if (cached && cached.approval && cached.approval.status === 'APPROVED') return;
         var actor = ($('rd-approve-actor').value || '').trim();
         if (!actor) {
           showGlobalAlert('請輸入核准人員姓名或工號。', 'err');
@@ -1977,33 +2005,84 @@
           showGlobalAlert('核准人員名稱不可超過 120 字。', 'err');
           return;
         }
-        var judgeLbl = resolveRdJudgeLabel(current);
-        var curRenderInfo = classifyRdRenderJob(extractRdRenderJob(current));
-        var renderApproveNote = '';
-        if (curRenderInfo && curRenderInfo.state === 'retrying') {
-          renderApproveNote = '（注意：母版 3D 預覽仍在排隊重試中，尚未完成算圖）';
-        } else if (curRenderInfo && curRenderInfo.state === 'failed') {
-          renderApproveNote = '（注意：母版 3D 預覽算圖失敗）';
-        } else if (curRenderInfo && curRenderInfo.state === 'pending') {
-          renderApproveNote = '（注意：母版 3D 預覽尚未完成算圖）';
-        }
-        rdPendingApprove = {
-          rdId: state.selectedRdId,
-          tenant: currentTenant(),
-          actor: actor
-        };
-        $('rd-approve-msg').textContent =
-          '確定為租戶「' + rdPendingApprove.tenant + '」由「' +
-          rdPendingApprove.actor +
-          '」核准研發方案 ' +
-          rdPendingApprove.rdId +
-          ' 嗎？核准後狀態將改為 APPROVED 並記錄 approvedAt' +
-          (judgeLbl === 'MOCK' ? '（視覺評分來源仍維持標示為 MOCK）' : '') +
-          renderApproveNote +
-          '：';
-        var box = $('rd-approve-confirm');
-        box.hidden = false;
-        syncConfirmLock(box);
+        // Re-read the scheme so the confirm box shows the current render status, not the one
+        // cached when the scheme was listed (a queued retry may have finished or failed since).
+        var prepSnap = { rdId: state.selectedRdId, tenant: currentTenant(), actor: actor };
+        var prepSeq = ++rdApprovePrepSeq;
+        rdApprovePrepInFlight = true;
+        var prepBtn = $('rd-approve-prepare');
+        prepBtn.disabled = true;
+
+        apiFetch('/api/product-rd/results/' + encodeURIComponent(prepSnap.rdId), {
+          headers: { 'X-Tenant-Id': prepSnap.tenant }
+        })
+          .then(function (res) {
+            if (
+              prepSeq !== rdApprovePrepSeq ||
+              prepSnap.tenant !== currentTenant() ||
+              prepSnap.rdId !== state.selectedRdId
+            ) {
+              return;
+            }
+            if (!res.ok || !res.data || isBlockedOrFailedPayload(res.data) || res.data.rdId !== prepSnap.rdId) {
+              var failDetail = (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
+              showGlobalAlert('無法讀取研發方案目前狀態，未開啟核准確認：' + failDetail, 'err');
+              return;
+            }
+            var current = res.data;
+            rdApprovePrepInFlight = false;
+            upsertRdHistoryItem(current);
+            renderRdResult(current, null);
+            if (current.approval && current.approval.status === 'APPROVED') {
+              showGlobalAlert('研發方案 ' + prepSnap.rdId + ' 已是核准狀態（APPROVED），無需再次核准。', 'warn');
+              return;
+            }
+            var judgeLbl = resolveRdJudgeLabel(current);
+            var curRenderInfo = classifyRdRenderJob(extractRdRenderJob(current));
+            var renderApproveNote = '';
+            if (curRenderInfo && curRenderInfo.state === 'retrying') {
+              renderApproveNote = '（注意：母版 3D 預覽仍在排隊重試中，尚未完成算圖）';
+            } else if (curRenderInfo && curRenderInfo.state === 'failed') {
+              renderApproveNote = '（注意：母版 3D 預覽算圖失敗）';
+            } else if (curRenderInfo && curRenderInfo.state === 'pending') {
+              renderApproveNote = '（注意：母版 3D 預覽尚未完成算圖）';
+            }
+            if (renderApproveNote && isRdRenderSnapshot(current)) {
+              renderApproveNote += RD_RENDER_SNAPSHOT_NOTE;
+            }
+            rdPendingApprove = {
+              rdId: prepSnap.rdId,
+              tenant: prepSnap.tenant,
+              actor: prepSnap.actor
+            };
+            $('rd-approve-msg').textContent =
+              '確定為租戶「' + rdPendingApprove.tenant + '」由「' +
+              rdPendingApprove.actor +
+              '」核准研發方案 ' +
+              rdPendingApprove.rdId +
+              ' 嗎？核准後狀態將改為 APPROVED 並記錄 approvedAt' +
+              (judgeLbl === 'MOCK' ? '（視覺評分來源仍維持標示為 MOCK）' : '') +
+              renderApproveNote +
+              '：';
+            var box = $('rd-approve-confirm');
+            box.hidden = false;
+            syncConfirmLock(box);
+          })
+          .catch(function (e) {
+            if (prepSeq !== rdApprovePrepSeq || prepSnap.tenant !== currentTenant()) return;
+            showGlobalAlert('連線失敗，無法讀取研發方案目前狀態：' + ((e && e.message) || e), 'err');
+          })
+          .finally(function () {
+            if (prepSeq !== rdApprovePrepSeq) return;
+            rdApprovePrepInFlight = false;
+            if ($('rd-approve-confirm').hidden && !rdApproveInFlight) {
+              var isApproved =
+                state.lastRdResult &&
+                state.lastRdResult.approval &&
+                state.lastRdResult.approval.status === 'APPROVED';
+              prepBtn.disabled = Boolean(isApproved);
+            }
+          });
       });
     }
 

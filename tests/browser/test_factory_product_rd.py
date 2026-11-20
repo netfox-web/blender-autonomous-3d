@@ -305,6 +305,10 @@ def test_product_rd_approve_inflight_network_error_and_lookup_404_clears_selecti
         lambda route: route.fulfill(status=404, json={"detail": "找不到研發方案"}),
     )
     page.route(
+        "**/api/product-rd/results/rd-wait-01",
+        lambda route: route.fulfill(json=waiting_item),
+    )
+    page.route(
         "**/api/product-rd/results/rd-wait-01/approve",
         lambda route: held_approves.append(route),
     )
@@ -358,6 +362,7 @@ def test_tenant_switch_cancels_confirmations_and_ignores_inflight_responses(
         lambda route: route.fulfill(json={"items": [], "total": 0, "hasMore": False}),
     )
     page.route("**/api/product-rd/generate", lambda route: held.append(route))
+    page.route("**/api/product-rd/results/tenant-a-result", lambda route: route.fulfill(json=item))
     page.route("**/api/product-rd/results/tenant-a-result/approve", lambda route: held.append(route))
     page.expose_function("__heldCount", lambda: len(held))
     page.goto(admin_server["base_url"] + "/admin/factory#rd")
@@ -730,3 +735,191 @@ def test_rd_render_status_boundary_shapes_and_xss_in_error_text(
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：MOCK")
     expect(page.locator("#rd-truth-badges")).not_to_contain_text("母版 3D 預覽：REAL")
     assert getattr(page, "_fox3d_console_errors", []) == []
+
+
+def test_rd_render_status_after_retry_succeeds_or_fails_is_current_on_reload_and_approve(
+    admin_page: Page, admin_server: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A queued retry that later succeeds or fails terminally must not keep showing "排隊重試中"."""
+    from fox3d.blender import RuntimeResult
+
+    page = admin_page
+    platform = admin_server["platform"]
+    tenant = "retry-live-tenant"
+    orig_run_job = platform.runtime.run_job
+    fail_render = {"on": True}
+
+    def _controlled_run_job(job: dict[str, Any], **kwargs: Any) -> RuntimeResult:
+        if job.get("tenantId") == tenant and fail_render["on"]:
+            return RuntimeResult(
+                status="failed",
+                outputs={},
+                error="optix transient device lost",
+                real_blender=True,
+                used_mock=False,
+            )
+        return orig_run_job(job, **kwargs)
+
+    monkeypatch.setattr(platform.runtime, "run_job", _controlled_run_job)
+
+    def _generate(text: str) -> dict[str, Any]:
+        page.locator("#rd-text").fill(text)
+        page.locator("#rd-count").fill("10")
+        page.locator("#rd-prepare-btn").click()
+        with page.expect_response(
+            lambda resp: resp.url.endswith("/api/product-rd/generate") and resp.request.method == "POST",
+            timeout=20_000,
+        ) as info:
+            page.locator("#rd-confirm-yes").click()
+        body = info.value.json()
+        assert body["parametricRender"]["job"]["status"] == "queued"
+        assert body["parametricRender"]["job"]["attemptCount"] == 1
+        expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中")
+        return body
+
+    def _worker_retry(job_id: str) -> dict[str, Any]:
+        result = platform.execute_job(platform.queue.get(job_id))
+        assert isinstance(result, dict)
+        return result
+
+    page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
+    page.wait_for_selector("#rd-prepare-btn", timeout=20_000)
+    _switch_tenant(page, tenant)
+    expect(page.locator("#rd-history-empty")).to_contain_text("尚無歷史研發方案")
+
+    # 1. Retry later succeeds; the page is NOT reloaded before opening the approve confirm.
+    ok_body = _generate("書房 寬90cm 高180cm 書櫃 四層")
+    ok_rd_id = ok_body["rdId"]
+    fail_render["on"] = False
+    assert _worker_retry(ok_body["parametricRender"]["job"]["jobId"])["status"] == "succeeded"
+
+    page.locator("#rd-approve-actor").fill("rd-reviewer")
+    page.locator("#rd-approve-prepare").click()
+    expect(page.locator("#rd-approve-confirm")).to_be_visible()
+    expect(page.locator("#rd-approve-msg")).to_contain_text(ok_rd_id)
+    expect(page.locator("#rd-approve-msg")).not_to_contain_text("排隊重試中")
+    expect(page.locator("#rd-approve-msg")).not_to_contain_text("尚未完成算圖")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("母版 3D 預覽：MOCK（模擬算圖已完成）")
+    expect(page.locator("#rd-truth-badges")).not_to_contain_text("排隊重試中")
+    page.locator("#rd-approve-no").click()
+    expect(page.locator("#rd-approve-confirm")).to_be_hidden()
+
+    # 2. Retries exhausted -> terminal failure.
+    fail_render["on"] = True
+    fail_body = _generate("臥室 寬120cm 高200cm 衣櫃 雙門")
+    fail_rd_id = fail_body["rdId"]
+    fail_job_id = fail_body["parametricRender"]["job"]["jobId"]
+    assert _worker_retry(fail_job_id)["status"] == "queued"
+    final = _worker_retry(fail_job_id)
+    assert final["status"] == "failed" and final["attemptCount"] == 3
+
+    # Reload: history shows the current states, never the stale "排隊重試中".
+    page.reload(wait_until="domcontentloaded")
+    _switch_tenant(page, tenant)
+    ok_row = page.locator(f'#rd-history-tbody tr[data-rd-id="{ok_rd_id}"] [data-role="rd-preview-status"]')
+    fail_row = page.locator(f'#rd-history-tbody tr[data-rd-id="{fail_rd_id}"] [data-role="rd-preview-status"]')
+    expect(ok_row).to_contain_text("已完成 · MOCK", timeout=20_000)
+    expect(ok_row).not_to_contain_text("排隊重試中")
+    expect(fail_row).to_contain_text("算圖失敗")
+    expect(fail_row).not_to_contain_text("排隊重試中")
+    expect(fail_row).not_to_contain_text("產生時快照")
+
+    # Approving the terminally failed scheme warns about the failure, not about a pending retry.
+    page.locator(f'#rd-history-tbody tr[data-rd-id="{fail_rd_id}"] button').click()
+    expect(page.locator("#rd-truth-badges")).to_contain_text("算圖失敗")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("第 3/3 次嘗試")
+    page.locator("#rd-approve-actor").fill("rd-reviewer")
+    page.locator("#rd-approve-prepare").click()
+    expect(page.locator("#rd-approve-msg")).to_contain_text("母版 3D 預覽算圖失敗")
+    expect(page.locator("#rd-approve-msg")).not_to_contain_text("排隊重試中")
+    page.locator("#rd-approve-yes").click()
+    expect(page.locator("#rd-gate-badge")).to_contain_text("APPROVED", timeout=20_000)
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert warn")
+    expect(page.locator("#fc-global-status")).to_contain_text("母版預覽：算圖失敗")
+    expect(page.locator("#fc-global-status")).not_to_contain_text("排隊重試中")
+    assert getattr(page, "_fox3d_console_errors", []) == []
+
+
+def test_rd_approve_prepare_rereads_scheme_handles_errors_and_marks_snapshot(
+    admin_page: Page, admin_server: dict[str, Any]
+) -> None:
+    page = admin_page
+    held_reads: list[Route] = []
+    item: dict[str, Any] = {
+        "rdId": "rd-snap-01",
+        "tenantId": "sonaqueen-home",
+        "createdAt": "2026-11-19T15:00:00.000000Z",
+        "text": "工作找不到的快照方案",
+        "variantCount": 10,
+        "scoredCount": 8,
+        "judgeLabel": "MOCK",
+        "scoringStatus": "MOCK",
+        "truthLabel": "MOCK",
+        "baseSpec": {"kind": "BOOKCASE", "width": 800, "height": 1800, "depth": 350},
+        "baseReport": {"ok": True},
+        "top": [],
+        "approvedAt": None,
+        "approval": {"status": "WAITING_APPROVAL", "judgeLabel": "MOCK"},
+        "parametricRender": {
+            "jobStatusSource": "SNAPSHOT",
+            "job": {"status": "queued", "error": "worker crash", "attemptCount": 1, "maxAttempts": 3},
+        },
+    }
+    page.route(
+        "**/api/product-rd/results?*",
+        lambda route: route.fulfill(
+            json={"items": [item], "total": 1, "offset": 0, "limit": 10, "hasMore": False, "nextCursor": None}
+        ),
+    )
+    page.route("**/api/product-rd/results/rd-snap-01", lambda route: held_reads.append(route))
+    page.expose_function("__fox3dHeldRdReads", lambda: len(held_reads))
+
+    page.goto(admin_server["base_url"] + "/admin/factory#rd", wait_until="domcontentloaded")
+    expect(page.locator("#rd-body")).to_be_visible()
+
+    # Snapshot status is labelled as such in the detail badge, summary and history row.
+    expect(page.locator("#rd-truth-badges")).to_contain_text("排隊重試中")
+    expect(page.locator("#rd-truth-badges")).to_contain_text("產生時快照，目前算圖狀態無法取得")
+    expect(page.locator("#rd-intent-summary")).to_contain_text("產生時快照")
+    expect(
+        page.locator('#rd-history-tbody tr[data-rd-id="rd-snap-01"] [data-role="rd-preview-status"]')
+    ).to_contain_text("產生時快照")
+
+    page.locator("#rd-approve-actor").fill("lead-2")
+
+    # Prepare re-reads the scheme; button is locked while in flight and a forced click sends nothing extra.
+    page.locator("#rd-approve-prepare").click()
+    page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 1")
+    expect(page.locator("#rd-approve-prepare")).to_be_disabled()
+    _force_click(page, "rd-approve-prepare")
+    assert held_reads[0].request.headers["x-tenant-id"] == "sonaqueen-home"
+
+    # HTTP error: no confirm box, error alert, button usable again.
+    held_reads[0].fulfill(status=500, json={"detail": "internal"})
+    expect(page.locator("#fc-global-status")).to_contain_text("無法讀取研發方案目前狀態")
+    expect(page.locator("#fc-global-status")).to_have_class("fc-alert err")
+    expect(page.locator("#rd-approve-confirm")).to_be_hidden()
+    expect(page.locator("#rd-approve-prepare")).to_be_enabled()
+    assert len(held_reads) == 1
+
+    # Network error: same.
+    page.locator("#rd-approve-prepare").click()
+    page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 2")
+    held_reads[1].abort()
+    expect(page.locator("#fc-global-status")).to_contain_text("連線失敗")
+    expect(page.locator("#rd-approve-confirm")).to_be_hidden()
+    expect(page.locator("#rd-approve-prepare")).to_be_enabled()
+
+    # Success: confirm shows the retry warning and that it is a generation-time snapshot.
+    page.locator("#rd-approve-prepare").click()
+    page.wait_for_function("async () => (await window.__fox3dHeldRdReads()) === 3")
+    held_reads[2].fulfill(json=item)
+    expect(page.locator("#rd-approve-confirm")).to_be_visible()
+    expect(page.locator("#rd-approve-msg")).to_contain_text("排隊重試中")
+    expect(page.locator("#rd-approve-msg")).to_contain_text("產生時快照")
+    expect(page.locator("#rd-approve-prepare")).to_be_disabled()
+    # The injected 500 / aborted request log "Failed to load resource"; no script error may appear.
+    script_errors = [
+        msg for msg in getattr(page, "_fox3d_console_errors", []) if not msg.startswith("Failed to load resource")
+    ]
+    assert script_errors == []
