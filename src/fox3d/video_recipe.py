@@ -10,6 +10,8 @@ from fox3d.ids import stable_hash
 
 DURATIONS = {"HERO_ORBIT_8S": 8, "DOOR_OPEN_8S": 8, "ARTWORK_DETAIL_6S": 6,
              "SMALL_ROOM_10S": 10, "ASSEMBLY_EXPLODE_10S": 10}
+# Stdlib-only: the Blender worker imports this module. Same millimetre cap as CabinetSpec.
+MAX_EXTENT_MM = 5000.0
 ROLES = {"beauty": "png", "depth": "exr", "normal": "exr", "product_mask": "png",
          "artwork_mask": "png", "alpha": "png"}
 
@@ -18,6 +20,13 @@ def finite(value, name="number"):
     if type(value) not in (float, int) or not math.isfinite(value):
         raise ValueError(f"strict_finite:{name}")
     return float(value)
+
+
+def require_extent(value, name):
+    number = finite(value, name)
+    if not 0 < number <= MAX_EXTENT_MM:
+        raise ValueError("engineering_dimensions")
+    return number
 
 
 def integer(value, lo, hi, name):
@@ -68,8 +77,7 @@ def expected_objects(engineering):
     It preserves existing main's rendering conventions without redefining mm truth.
     """
     for key in ("width", "height", "depth"):
-        if finite(engineering[key], key) <= 0:
-            raise ValueError("engineering_dimensions")
+        require_extent(engineering[key], key)
     for part in engineering["components"]:
         for key in ("length", "width", "thickness"):
             if key in part:
@@ -104,9 +112,7 @@ def make_recipe(kind, engineering, *, fps=12, width=128, height=128, artwork_obj
     if kind not in DURATIONS:
         raise ValueError("unknown_video_recipe")
     integer(fps, 1, 60, "fps"); integer(width, 32, 2048, "width"); integer(height, 32, 2048, "height")
-    dimensions = [finite(engineering[k], k)/1000 for k in ("width", "depth", "height")]
-    if min(dimensions) <= 0:
-        raise ValueError("engineering_dimensions")
+    dimensions = [require_extent(engineering[k], k)/1000 for k in ("width", "depth", "height")]
     radius = max(dimensions)*2.5
     target = [0., 0., dimensions[2]*.5]
     angles = [-35., 35.] if kind != "ARTWORK_DETAIL_6S" else [-8., 8.]
