@@ -51,6 +51,9 @@ DEFAULT_RANKING_POLICY = {
     "demandLabel": "MOCK",
     "truthLabel": "CONFIG_ESTIMATE",
 }
+_default_weights = DEFAULT_RANKING_POLICY["weights"]
+assert isinstance(_default_weights, dict)
+RANKING_WEIGHT_KEYS = frozenset(_default_weights)
 ALLOWED_THICKNESS = (18,)
 CONSERVATION_TOLERANCE_MM2 = 2.0
 ENVELOPE_NUMERIC = (
@@ -221,6 +224,41 @@ class PortfolioError(PermissionError):
         super().__init__(detail or code)
         self.code = code
         self.status = "BLOCKED"
+
+
+def merge_ranking_policy(policy: dict[str, Any] | None) -> dict[str, Any]:
+    pol = dict(DEFAULT_RANKING_POLICY if policy is None else {**DEFAULT_RANKING_POLICY, **policy})
+    weights = pol.get("weights")
+    if not isinstance(weights, dict):
+        raise PortfolioError("NEEDS_INPUT", "policy.weights 須為物件")
+    unknown = sorted(k for k in weights if k not in RANKING_WEIGHT_KEYS)
+    if unknown:
+        raise PortfolioError("NEEDS_INPUT", f"policy.weights 含未知欄位: {', '.join(unknown)}")
+    for key, value in weights.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 須為數字")
+        try:
+            as_float = float(value)
+        except OverflowError:
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 超出範圍") from None
+        if not math.isfinite(as_float):
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 須為有限數字")
+    return pol
+
+
+def _require_finite_score(breakdown: dict[str, Any], total: float | None) -> None:
+    """Refuse a policy whose weighted terms or total overflow to inf/NaN.
+
+    Finite weights such as 1e308 pass ``merge_ranking_policy`` but their products
+    or sum can overflow; such scores cannot be ordered and would persist as
+    non-standard JSON (``Infinity``), so the ranking is rejected before any
+    candidate state changes or the store is written.
+    """
+    for key, item in breakdown.items():
+        if not math.isfinite(float(item["raw"])) or not math.isfinite(float(item["weighted"])):
+            raise PortfolioError("NEEDS_INPUT", f"policy.weights.{key} 造成加權分數溢位，無法安全計分")
+    if total is not None and not math.isfinite(float(total)):
+        raise PortfolioError("NEEDS_INPUT", "policy.weights 造成總分溢位，無法安全計分")
 
 
 class PortfolioFactory:
@@ -726,7 +764,7 @@ class PortfolioFactory:
         intent = self.get_intent(portfolio_id, tenant_id=tenant_id)
         if demand_real and intent["demand"]["source"] != "REAL":
             raise PortfolioError("BLOCKED", "MOCK demand cannot be labeled REAL")
-        pol = dict(DEFAULT_RANKING_POLICY if policy is None else {**DEFAULT_RANKING_POLICY, **policy})
+        pol = merge_ranking_policy(policy)
         pol["rankingPolicyHash"] = stable_hash({k: pol[k] for k in pol if k != "rankingPolicyHash"})
         rows = [c for c in self.candidates.values() if c.get("portfolioId") == portfolio_id]
         for rec in rows:
@@ -742,6 +780,7 @@ class PortfolioFactory:
             )
             breakdown = self._score_breakdown(rec, pol)
             total = sum(breakdown[k]["weighted"] for k in pol["weights"]) if valid else None
+            _require_finite_score(breakdown, total)
             scored.append(
                 {
                     "candidateId": rec["candidateId"],
