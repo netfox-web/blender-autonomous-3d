@@ -13,7 +13,12 @@ from typing import Any
 from fox3d.ids import new_id, sha256_bytes, stable_hash
 from fox3d.infra import utcnow
 from fox3d.inventory import atomic_write_json, read_json
-from fox3d.logistics import is_explicit_global_carrier_quote
+from fox3d.logistics import (
+    carrier_quote_id,
+    classify_carrier_quote,
+    is_explicit_global_carrier_quote,
+    is_valid_tenant_carrier_quote,
+)
 from fox3d.release import (
     is_matching_tenant_stem,
     legacy_safe_tenant_filename,
@@ -234,24 +239,11 @@ def _tenant_of(rec: Any) -> str | None:
 
 
 def _is_explicit_global_carrier_quote(rec: dict[str, Any]) -> bool:
-    if not isinstance(rec, dict):
-        return False
-    if rec.get("tenant_id") not in (None, ""):
-        return False
-    if rec.get("ownership") == TENANT_OWNED:
-        return False
     return is_explicit_global_carrier_quote(rec)
 
 
 def _quote_id_of(rec: dict[str, Any]) -> str:
-    raw = rec.get("quoteId")
-    if raw is None:
-        raw = rec.get("quote_id")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    if raw not in (None, ""):
-        return str(raw)
-    return "<missing-quoteId>"
+    return carrier_quote_id(rec)
 
 
 def _filter_idem(idem: Any, tids: set[str]) -> dict[str, Any]:
@@ -353,28 +345,29 @@ def _filter_payload(payload: dict[str, Any], rel: str, tids: set[str]) -> dict[s
                 raise BackupError("BLOCKED", f"ambiguous non-object in {rel}:{key}")
             if policy == TENANT_OWNED:
                 if rel == "logistics/logistics.json" and key == "carrier_quotes":
-                    if _is_explicit_global_carrier_quote(rec):
+                    info = classify_carrier_quote(rec)
+                    if info["explicitGlobal"]:
                         continue
                     qid = _quote_id_of(rec)
-                    if (
-                        rec.get("globalQuote") is True
-                        or rec.get("isGlobal") is True
-                        or rec.get("allowGlobal") is True
-                        or rec.get("ownership") == GLOBAL_REFERENCE
-                    ):
-                        raise BackupError(
-                            "BLOCKED",
-                            f"ambiguous {rel}:{key} quoteId={qid} global flag or unmigrated/rolled-back "
-                            "GLOBAL_REFERENCE ownership with missing or conflicting tenantId; "
-                            "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
-                        )
-                    tid = _tenant_of(rec)
-                    if tid is None:
+                    if not info["validTenantOwned"]:
+                        if info["issue"] in {
+                            "conflicting_tenant_and_global",
+                            "conflicting_ownership_and_global",
+                            "unmigrated_global_reference",
+                            "invalid_ownership",
+                        }:
+                            raise BackupError(
+                                "BLOCKED",
+                                f"ambiguous {rel}:{key} quoteId={qid} global flag or unmigrated/rolled-back "
+                                "GLOBAL_REFERENCE ownership with missing or conflicting tenantId; "
+                                "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
+                            )
                         raise BackupError(
                             "BLOCKED",
                             f"ambiguous {rel}:{key} quoteId={qid} missing tenantId; "
                             "run migrate_tenantless_carrier_quotes (scripts/migrate_carrier_quotes.py) first",
                         )
+                    tid = info["tenantId"]
                     if tid in tids:
                         kept.append(rec)
                     continue
@@ -1826,6 +1819,7 @@ def evaluate_tenant_restore_matrix(
         q
         for q in quotes
         if not isinstance(q, dict)
+        or not is_valid_tenant_carrier_quote(q)
         or _tenant_of(q) != tenant_a
         or _is_explicit_global_carrier_quote(q)
     ]

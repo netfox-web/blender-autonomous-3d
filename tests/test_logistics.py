@@ -629,6 +629,88 @@ def test_inspect_and_migrate_tenantless_carrier_quotes_and_rollback(tmp_path):
     assert reloaded.carrier_quotes["q-legacy-unreferenced"].get("tenantId") is None
 
 
+def test_conflicting_carrier_quotes_preflight_and_remediation_cli(tmp_path, capsys):
+    import json
+    from fox3d.logistics import (
+        classify_carrier_quote,
+        cli_main,
+        is_explicit_global_carrier_quote,
+        is_tenantless_carrier_quote,
+        is_valid_tenant_carrier_quote,
+    )
+
+    q1 = {"quoteId": "q1", "tenantId": "ta", "globalQuote": True}
+    q2 = {"quoteId": "q2", "ownership": "TENANT_OWNED", "globalQuote": True}
+
+    for bad in (q1, q2):
+        assert is_explicit_global_carrier_quote(bad) is False
+        assert is_valid_tenant_carrier_quote(bad) is False
+        assert is_tenantless_carrier_quote(bad) is True
+        info = classify_carrier_quote(bad)
+        assert info["requiresMigration"] is True
+        assert info["metadataConflict"] is True
+
+    log = _wired_logistics(tmp_path)
+    log.import_carrier_quote(
+        {"quoteId": "q-valid-ta", "carrier": "CA", "charge": 100},
+        source="MANUAL",
+        tenant_id="ta",
+    )
+    log.import_carrier_quote(
+        {"quoteId": "q-valid-global", "carrier": "CG", "charge": 120},
+        source="IMPORTED",
+        allow_global=True,
+    )
+    path = log.root / "logistics.json"
+    disk = json.loads(path.read_text(encoding="utf-8"))
+    disk["carrier_quotes"].extend([dict(q1), dict(q2)])
+    path.write_text(json.dumps(disk, indent=2), encoding="utf-8")
+    log.load()
+
+    # 1. CLI --check --require-zero detects both q1 and q2 and exits with code 1.
+    capsys.readouterr()
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 1
+    out_check = json.loads(capsys.readouterr().out)
+    assert out_check["ready"] is False
+    assert out_check["tenantlessCount"] == 2
+    assert out_check["conflictCount"] == 2
+    assert out_check["quoteIds"] == ["q1", "q2"]
+    assert out_check["conflictQuoteIds"] == ["q1", "q2"]
+
+    # 2. Running migration without target tenant or --mark-global leaves both in unresolved & conflicts (exit 1).
+    assert cli_main(["--root", str(log.root), "--require-zero"]) == 1
+    out_unres = json.loads(capsys.readouterr().out)
+    assert out_unres["assignedCount"] == 0
+    assert out_unres["unresolvedCount"] == 2
+    assert out_unres["conflictCount"] == 2
+
+    # 3. Attempting to mark q1 (owned by 'ta') global or assign q1 to 'tb' raises PermissionError.
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.migrate_tenantless_carrier_quotes(quote_ids=["q1"], mark_global=True)
+    with pytest.raises(PermissionError, match="tenant isolation"):
+        log.migrate_tenantless_carrier_quotes(assignments={"q1": "tb"})
+
+    # 4. Remediate q1 to 'ta' and q2 to 'tb' via CLI --assign; verify idempotency on second run.
+    assert cli_main(["--root", str(log.root), "--assign", "q1=ta", "--assign", "q2=tb", "--require-zero"]) == 0
+    out_mig = json.loads(capsys.readouterr().out)
+    assert out_mig["assignedCount"] == 2
+    assert out_mig["unresolvedCount"] == 0
+    assert out_mig["conflictCount"] == 0
+
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 0
+    out_after = json.loads(capsys.readouterr().out)
+    assert out_after["ready"] is True
+    assert out_after["tenantlessCount"] == 0
+
+    # Re-running the exact same CLI assignment command is idempotent (alreadyAssignedCount == 2, assignedCount == 0).
+    assert cli_main(["--root", str(log.root), "--assign", "q1=ta", "--assign", "q2=tb", "--require-zero"]) == 0
+    out_idem = json.loads(capsys.readouterr().out)
+    assert out_idem["assignedCount"] == 0
+    assert out_idem["alreadyAssignedCount"] == 2
+    assert out_idem["unresolvedCount"] == 0
+
+
+
 def test_palletize_persist_false_and_rollback_on_persist_failure(tmp_path, monkeypatch):
     log = _wired_logistics(tmp_path)
     cartons = _carton(log, "tenant-a", qty=1)
