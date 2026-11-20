@@ -5,6 +5,7 @@ QC photos reference existing DAM. Not a second media store.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 from typing import Any
 
@@ -79,12 +80,14 @@ class QcService:
         self.defects: dict[str, dict[str, Any]] = {}
         # (tenant, workOrderId, idempotencyKey) -> {"sig": request signature, "qcId": recorded check}
         self.idem: dict[str, dict[str, str]] = {}
+        self.pending: dict[str, dict[str, Any]] = {}
         self.load()
 
     def load(self) -> None:
         if not self.root:
             return
         payload = read_json(self.root / "qc.json") or {}
+        self.pending = payload.get("pending") or {}
         self.checks = {r["qcId"]: r for r in payload.get("checks") or []}
         self.defects = {r["defectId"]: r for r in payload.get("defects") or []}
         self.idem = {
@@ -98,7 +101,7 @@ class QcService:
             return
         atomic_write_json(
             self.root / "qc.json",
-            {"checks": list(self.checks.values()), "defects": list(self.defects.values()), "idem": self.idem},
+            {"checks": list(self.checks.values()), "defects": list(self.defects.values()), "idem": self.idem, "pending": self.pending},
         )
 
     def schema(self, family: str) -> list[dict[str, Any]]:
@@ -108,54 +111,74 @@ class QcService:
         plan = self.schema(family)
         return {"qcPlan": plan, "qcPlanHash": plan_hash(plan)}
 
-    def reconcile_work_order_from_check(self, rec: dict[str, Any]) -> None:
-        if self.workorders is None:
-            return
-        work_order_id = str(rec.get("workOrderId") or "")
-        tenant_id = rec.get("tenantId")
-        qc_id = str(rec.get("qcId") or "")
-        if not work_order_id or not qc_id:
-            return
-        wo = self.workorders.get(work_order_id)
-        if wo.get("tenantId") != tenant_id:
-            return
-        dirty = False
-        lineage = list((wo.get("lineage") or {}).get("qc") or [])
-        if qc_id not in lineage:
-            wo["lineage"]["qc"] = lineage + [qc_id]
-            dirty = True
-        operator = str(rec.get("operator") or "qc")
-        check_id = str(rec.get("checkId") or "")
-        hold_wo = not bool(rec.get("ok")) and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}
-        if hold_wo and wo.get("state") not in {"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"} and wo.get("state") != "QC_HOLD":
-            self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
-            dirty = True
-        if dirty:
-            self.workorders.persist()
+    def recover_pending(self) -> None:
+        # The work-order marker is committed in the same snapshot as the transition.
+        # It prevents a crash before clearing pending from replaying an old action.
+        for operation_id in list(self.pending):
+            op = self.pending[operation_id]
+            rec = op["record"]
+            if self.workorders is not None:
+                wo = self.workorders.get(rec["workOrderId"])
+                if wo.get("tenantId") != rec["tenantId"]:
+                    raise PermissionError("tenant isolation: qc")
+                applied = wo.setdefault("qcAppliedOperations", [])
+                if operation_id not in applied:
+                    before = copy.deepcopy(wo)
+                    try:
+                        self._apply_work_order(wo, rec, op["kind"])
+                        applied.append(operation_id)
+                        self.workorders.persist()
+                    except Exception:
+                        wo.clear()
+                        wo.update(before)
+                        raise
+            emit(self, **op["event"])
+            del self.pending[operation_id]
+            try:
+                self.persist()
+            except Exception:
+                self.pending[operation_id] = op
+                raise
 
-    def reconcile_work_order_from_defect(self, rec: dict[str, Any]) -> None:
-        if self.workorders is None:
-            return
-        work_order_id = str(rec.get("workOrderId") or "")
-        tenant_id = rec.get("tenantId")
-        if not work_order_id:
-            return
-        wo = self.workorders.get(work_order_id)
-        if wo.get("tenantId") != tenant_id:
-            return
-        actor = str(rec.get("actor") or "qc")
-        disposition = str(rec.get("disposition") or "")
-        dirty = False
-        if disposition == "REWORK" and wo.get("state") == "QC_HOLD":
-            if not any(h.get("open") and h.get("blocking") for h in wo.get("holds") or []):
-                self.workorders._transition(wo, "IN_PROGRESS", actor=actor, reason="defect-rework")
+    def _apply_work_order(self, wo: dict[str, Any], rec: dict[str, Any], kind: str) -> None:
+        assert self.workorders is not None
+        if kind == "check":
+            lineage = wo.setdefault("lineage", {}).setdefault("qc", [])
+            if rec["qcId"] not in lineage:
+                lineage.append(rec["qcId"])
+            if not rec["ok"] and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED", "QC_HOLD"}:
+                self.workorders._transition(wo, "QC_HOLD", actor=rec["operator"], reason=f"qc-fail:{rec['checkId']}")
+        else:
+            disposition = rec["disposition"]
+            if disposition == "REWORK" and wo.get("state") == "QC_HOLD":
+                if any(h.get("open") and h.get("blocking") for h in wo.get("holds") or []):
+                    raise PermissionError("blocking hold")
+                self.workorders._transition(wo, "IN_PROGRESS", actor=rec["actor"], reason="defect-rework")
                 wo["rework"] = True
-                dirty = True
-        if disposition in {"SCRAP", "REJECT"} and wo.get("state") != "REJECTED":
-            self.workorders._transition(wo, "REJECTED", actor=actor, reason="defect-reject")
-            dirty = True
-        if dirty:
-            self.workorders.persist()
+            if disposition in {"SCRAP", "REJECT"}:
+                self.workorders._transition(wo, "REJECTED", actor=rec["actor"], reason="defect-reject")
+
+    def _commit_operation(self, rec: dict[str, Any], kind: str, event: dict[str, Any], idem_entry: tuple[str, str] | None) -> None:
+        operation_id = rec["qcId" if kind == "check" else "defectId"]
+        if self.workorders is not None:
+            wo = self.workorders.get(rec["workOrderId"])
+            if wo.get("tenantId") != rec["tenantId"]:
+                raise PermissionError("tenant isolation: qc")
+            # Validate all transitions before writing either the record or key.
+            self._apply_work_order(copy.deepcopy(wo), rec, kind)
+        (self.checks if kind == "check" else self.defects)[operation_id] = rec
+        if idem_entry is not None:
+            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": operation_id}
+        self.pending[operation_id] = {"kind": kind, "record": rec, "event": event}
+        try:
+            self.persist()
+        except Exception:
+            (self.checks if kind == "check" else self.defects).pop(operation_id, None)
+            if idem_entry is not None:
+                self.idem.pop(idem_entry[0], None)
+            self.pending.pop(operation_id, None)
+            raise
+        self.recover_pending()
 
     def record(
         self,
@@ -211,35 +234,15 @@ class QcService:
             hold_wo = not ok and wo.get("state") not in {"COMPLETED", "CANCELLED", "REJECTED"}
             if hold_wo and wo.get("state") in {"DRAFT", "RELEASED_FOR_MANUAL_EXECUTION"}:
                 raise PermissionError(f"work order in {wo.get('state')} cannot be put on QC_HOLD")
-        self.checks[rec["qcId"]] = rec
-        if idem_entry is not None:
-            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": rec["qcId"]}
-        if self.workorders is not None:
-            wo = self.workorders.get(work_order_id)
-            wo["lineage"]["qc"] = list(wo["lineage"].get("qc") or []) + [rec["qcId"]]
-            if hold_wo and wo.get("state") != "QC_HOLD":
-                self.workorders._transition(wo, "QC_HOLD", actor=operator, reason=f"qc-fail:{check_id}")
-        if idem_entry is not None:
-            self.persist()
-        release_hash = None
-        if self.workorders is not None:
-            try:
-                release_hash = self.workorders.get(work_order_id).get("releaseHash")
-            except KeyError:
-                release_hash = None
-        emit(
-            self,
-            "qc.final" if stage == "FINAL" else "qc.record",
-            tenant_id=tenant_id,
-            aggregate_type="QC",
-            aggregate_id=rec["qcId"],
-            actor=operator,
+        release_hash = wo.get("releaseHash") if self.workorders is not None else None
+        event = dict(
+            event_type="qc.final" if stage == "FINAL" else "qc.record",
+            tenant_id=tenant_id, aggregate_type="QC", aggregate_id=rec["qcId"], actor=operator,
             payload={"result": rec["result"], "stage": stage, "workOrderId": work_order_id, "checkId": check_id},
             release_hash=release_hash,
             semantic_key=f"{tenant_id}::qc::{work_order_id}::{stage}::{check_id}::{rec['qcId']}",
         )
-        if self.workorders is not None:
-            self.workorders.persist()
+        self._commit_operation(rec, "check", event, idem_entry)
         return rec
 
     def incoming_material(self, **kwargs: Any) -> dict[str, Any]:
@@ -284,24 +287,13 @@ class QcService:
         rec["defectHash"] = stable_hash({k: rec[k] for k in rec if k != "defectHash"})
         if dam_asset_id and self.dam is not None:
             self.dam.get(dam_asset_id, tenant_id=tenant_id)
-        self.defects[rec["defectId"]] = rec
-        if idem_entry is not None:
-            self.idem[idem_entry[0]] = {"sig": idem_entry[1], "qcId": rec["defectId"]}
-            self.persist()
-        if self.workorders is not None:
-            wo = self.workorders.get(work_order_id)
-            if wo.get("tenantId") != tenant_id:
-                raise PermissionError("tenant isolation: qc")
-            if disposition == "REWORK" and wo.get("state") == "QC_HOLD":
-                if any(h.get("open") and h.get("blocking") for h in wo.get("holds") or []):
-                    raise PermissionError("blocking hold")
-                self.workorders._transition(wo, "IN_PROGRESS", actor=actor, reason="defect-rework")
-                wo["rework"] = True
-            if disposition in {"SCRAP", "REJECT"}:
-                self.workorders._transition(wo, "REJECTED", actor=actor, reason="defect-reject")
-        emit(self, "qc.defect", tenant_id=tenant_id, aggregate_type="QC", aggregate_id=rec["defectId"], actor=actor, payload={"workOrderId": work_order_id, "code": code, "disposition": disposition}, semantic_key=f"{tenant_id}::defect::{rec['defectId']}")
-        if self.workorders is not None:
-            self.workorders.persist()
+        event = dict(
+            event_type="qc.defect", tenant_id=tenant_id, aggregate_type="QC",
+            aggregate_id=rec["defectId"], actor=actor,
+            payload={"workOrderId": work_order_id, "code": code, "disposition": disposition},
+            semantic_key=f"{tenant_id}::defect::{rec['defectId']}",
+        )
+        self._commit_operation(rec, "defect", event, idem_entry)
         return rec
 
     def required_final_ok(

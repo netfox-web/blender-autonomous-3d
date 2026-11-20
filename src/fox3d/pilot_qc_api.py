@@ -96,6 +96,7 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
         store_key = f"{tid}::qc-idem::{work_order_id}::{idem_key}"
 
         with pilot.workorders._lock:
+            pilot.qc.recover_pending()
             wo = _require_wo(pilot, work_order_id, tid)
             prev = pilot.qc.idem.get(store_key)
             if prev is not None:
@@ -103,7 +104,6 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
                     raise HTTPException(409, "idempotencyKey 衝突")
                 prev_rec = pilot.qc.checks.get(str(prev.get("qcId")))
                 if prev_rec is not None:
-                    pilot.qc.reconcile_work_order_from_check(prev_rec)
                     return dict(prev_rec)
             if wo.get("state") in _QC_OPEN_STATES_REJECTED:
                 raise HTTPException(409, "工單尚未預留材料，無法記錄品檢")
@@ -146,6 +146,7 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
             raise HTTPException(403, str(exc)) from exc
 
         with pilot.workorders._lock:
+            pilot.qc.recover_pending()
             wo = _require_wo(pilot, work_order_id, tid)
             if wo.get("state") in _QC_OPEN_STATES_REJECTED:
                 raise HTTPException(409, "工單尚未預留材料，無 QC_HOLD 可解除")
@@ -186,13 +187,13 @@ def pilot_qc_router(provider: Callable[[], Any]) -> APIRouter:
         signature = stable_hash(body)
         store_key = f"{tid}::defect::{work_order_id}::{key}"
         with pilot.workorders._lock:
+            pilot.qc.recover_pending()
             _require_wo(pilot, work_order_id, tid)
             previous = pilot.qc.idem.get(store_key)
             if previous:
                 if previous["sig"] != signature:
                     raise HTTPException(409, "idempotencyKey 衝突")
                 prev_defect = pilot.qc.defects[previous["qcId"]]
-                pilot.qc.reconcile_work_order_from_defect(prev_defect)
                 return dict(prev_defect)
             try:
                 rec = pilot.qc.defect(tenant_id=tid, work_order_id=work_order_id, code=code, disposition=disposition, actor=str(body.get("actor") or "qc"), note=str(body.get("note") or ""), idem_entry=(store_key, signature))

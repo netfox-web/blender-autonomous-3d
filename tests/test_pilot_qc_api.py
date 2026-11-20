@@ -195,6 +195,7 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
         else:
             assert wo_row["state"] == "REJECTED"
         assert client.post(path, headers={"X-Tenant-Id": "other"}, json=body).status_code == 404
+        platform = restarted
 
     _, wo = _seed_release_receipt_and_wo(platform)
     path = f"/api/pilot/work-orders/{wo['workOrderId']}/qc"
@@ -215,6 +216,9 @@ def test_qc_and_scrap_replay_after_emit_crash(platform: Any, monkeypatch: Any) -
     assert len(matching) == 1
     assert matching[0]["result"] == "FAIL"
     expected_id = matching[0]["qcId"]
+    restored = restarted.pilot.workorders.get(wo["workOrderId"])
+    assert restored["state"] == "QC_HOLD"
+    assert expected_id in restored["lineage"]["qc"]
     client = TestClient(create_app(restarted))
     replay = client.post(path, headers=HEADERS, json=body)
     assert replay.status_code == 200 and replay.json()["qcId"] == expected_id
@@ -247,7 +251,7 @@ def test_qc_idempotency_survives_crash_before_qc_persist(platform: Any) -> None:
         assert store_key in restarted.pilot.qc.idem
         qc_id = matching[0]["qcId"]
         lineage = restarted.pilot.workorders.get(wo["workOrderId"]).get("lineage", {}).get("qc") or []
-        assert lineage == []
+        assert qc_id in lineage
 
         replay_client = TestClient(create_app(restarted))
         replay = replay_client.post(path, headers=HEADERS, json=body)
@@ -258,3 +262,69 @@ def test_qc_idempotency_survives_crash_before_qc_persist(platform: Any) -> None:
         restarted.pilot.qc.load()
         assert len([r for r in restarted.pilot.qc.checks.values() if r["workOrderId"] == wo["workOrderId"]]) == 1
         assert store_key in restarted.pilot.qc.idem
+
+
+def test_old_operations_do_not_change_later_state(platform: Any) -> None:
+    client = TestClient(create_app(platform))
+    _, wo = _seed_release_receipt_and_wo(platform)
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}"
+    fail = {"stage": "IN_PROCESS", "checkId": "HOLE_DIA", "measured": 20, "idempotencyKey": "old-fail"}
+    rework = {"code": "DEF_SIZE", "disposition": "REWORK", "confirm": True, "idempotencyKey": "old-rework"}
+    assert client.post(path + "/qc", headers=HEADERS, json=fail).status_code == 200
+    assert client.post(path + "/defects", headers=HEADERS, json=rework).status_code == 200
+    assert client.post(path + "/qc", headers=HEADERS, json=fail).status_code == 200
+    assert platform.pilot.workorders.get(wo["workOrderId"])["state"] == "IN_PROGRESS"
+    assert client.post(path + "/qc", headers=HEADERS, json={**fail, "idempotencyKey": "new-fail"}).status_code == 200
+    assert client.post(path + "/defects", headers=HEADERS, json=rework).status_code == 200
+    assert platform.pilot.workorders.get(wo["workOrderId"])["state"] == "QC_HOLD"
+
+
+def test_rejected_defect_is_never_saved(platform: Any) -> None:
+    client = TestClient(create_app(platform))
+    _, wo = _seed_release_receipt_and_wo(platform)
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}"
+    fail = {"checkId": "HOLE_DIA", "measured": 20, "idempotencyKey": "fail"}
+    assert client.post(path + "/qc", headers=HEADERS, json=fail).status_code == 200
+    wo["holds"].append({"open": True, "blocking": True})
+    platform.pilot.workorders.persist()
+    body = {"code": "DEF_SIZE", "disposition": "REWORK", "confirm": True, "idempotencyKey": "blocked"}
+    for current in (platform, type(platform)(root=platform.root, mock_blender=True)):
+        c = TestClient(create_app(current))
+        for _ in range(2):
+            assert c.post(path + "/defects", headers=HEADERS, json=body).status_code == 409
+        assert c.get(path + "/qc", headers=HEADERS).json()["defects"] == []
+        assert not any(k.endswith("::blocked") for k in current.pilot.qc.idem)
+
+
+@pytest.mark.parametrize("boundary", ["workorder", "event", "finish"])
+def test_pending_operation_recovers_on_startup(platform: Any, monkeypatch: Any, boundary: str) -> None:
+    import fox3d.qc as qc_module
+
+    _, wo = _seed_release_receipt_and_wo(platform)
+    qc = platform.pilot.qc
+    path = f"/api/pilot/work-orders/{wo['workOrderId']}/qc"
+    body = {"stage": "IN_PROCESS", "checkId": "HOLE_DIA", "measured": 20, "idempotencyKey": "recover"}
+    if boundary == "workorder":
+        monkeypatch.setattr(platform.pilot.workorders, "persist", lambda: (_ for _ in ()).throw(RuntimeError("crash")))
+    elif boundary == "event":
+        monkeypatch.setattr(qc_module, "emit", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("crash")))
+    else:
+        original = qc.persist
+        count = 0
+        def persist() -> None:
+            nonlocal count
+            count += 1
+            if count == 3:
+                raise RuntimeError("crash")
+            original()
+        monkeypatch.setattr(qc, "persist", persist)
+    with pytest.raises(RuntimeError, match="crash"):
+        TestClient(create_app(platform)).post(path, headers=HEADERS, json=body)
+    monkeypatch.undo()
+    restarted = type(platform)(root=platform.root, mock_blender=True)
+    rows = [r for r in restarted.pilot.qc.checks.values() if r["workOrderId"] == wo["workOrderId"]]
+    assert len(rows) == 1
+    restored = restarted.pilot.workorders.get(wo["workOrderId"])
+    assert restored["state"] == "QC_HOLD" and rows[0]["qcId"] in restored["lineage"]["qc"]
+    assert len([e for e in restarted.pilot.journal.list(TENANT) if e["aggregateId"] == rows[0]["qcId"]]) == 1
+    assert not restarted.pilot.qc.pending
