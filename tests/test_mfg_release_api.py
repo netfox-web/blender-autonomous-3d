@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import json
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -24,12 +25,16 @@ def test_release_flow_tenant_idempotence_and_tamper(platform: Any) -> None:
     for path in (base, base + '/packet', base + '/verify', base + '/diff/' + rid):
         assert client.get(path, headers=other).status_code == 404
         assert client.get(path.replace(rid, 'unknown'), headers=h).status_code == 404
+    for action in ('validate', 'submit', 'approve', 'release-manual', 'cancel'):
+        assert client.post(base + '/' + action, headers=other, json={'confirm': True, 'expectedReleaseHash': 'x'}).status_code == 404
     assert client.get('/api/pilot/releases', headers=other).json()['total'] == 0
     assert client.get('/api/pilot/releases?status=DRAFT&limit=1', headers=h).json()['total'] == 1
     for action in ('validate', 'submit'):
         response = client.post(base + '/' + action, headers=h, json={'actor': 'alice'})
         assert response.status_code == 200, response.text
     before = client.get(base, headers=h).json()
+    packet = client.get(base + '/packet', headers=h).json()
+    assert json.loads(packet['release_manifest.json'])['releaseHash'] == before['releaseHash']
     assert client.post(base + '/approve', headers=h, json={'confirm': True, 'expectedReleaseHash': 'bad'}).status_code == 409
     after = client.get(base, headers=h).json()
     assert (after['status'], after['approvedBy'], after.get('approvedAt')) == (before['status'], before['approvedBy'], before.get('approvedAt'))
