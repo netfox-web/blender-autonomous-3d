@@ -432,6 +432,11 @@
       if (!ordersLoaded) clearSelection();
       applySection('batches', res[2], function (d) {
         table('batches', d.items, [['batchId','批次編號'],['state','狀態'],['candidateId','候選編號'],['truthLabel','資料來源']], function (item) { loadBatchDetail(item); });
+        if (Array.isArray(d.items) && Number.isInteger(d.total) && d.total >= d.items.length) {
+          var count = document.createElement('p');
+          count.textContent = '顯示 ' + d.items.length + ' / 共 ' + d.total + ' 筆';
+          $('batches').insertBefore(count, $('batches').firstChild);
+        }
       });
       applySection('board', res[3], function (d) {
         $('board').textContent = '';
