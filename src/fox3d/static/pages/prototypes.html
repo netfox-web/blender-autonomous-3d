@@ -41,6 +41,15 @@
       <div id="proto-actions" class="proto-actions" aria-label="現場作業">
         <label>作業員 <input id="proto-operator" spellcheck="false"></label>
         <label>班別 <input id="proto-shift" spellcheck="false"></label>
+        <label>工時（分） <input id="proto-labor-minutes" type="number" min="0.1" step="any" inputmode="decimal"></label>
+        <label>工時原因 <input id="proto-labor-reason" spellcheck="false"></label>
+        <label>證據來源
+          <select id="proto-labor-source">
+            <option value="MANUAL">MANUAL（現場登錄）</option>
+            <option value="MANUAL_EVIDENCE">MANUAL_EVIDENCE</option>
+            <option value="FIXTURE">FIXTURE（測試）</option>
+          </select>
+        </label>
         <button type="button" id="proto-start" class="proto-btn" disabled>開工</button>
         <button type="button" id="proto-complete" class="proto-btn" disabled>完工</button>
         <button type="button" id="proto-labor" class="proto-btn secondary" disabled>登錄工時</button>

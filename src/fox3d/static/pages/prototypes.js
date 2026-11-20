@@ -187,15 +187,30 @@
     state.confirmSnap = snap;
     $('proto-confirm-text').textContent = text;
     $('proto-confirm-body').textContent = JSON.stringify(snap.body, null, 2);
+    var finished = false;
+    var okBtn = $('proto-confirm-ok');
+    var cancelBtn = $('proto-confirm-cancel');
+    function finish(ok) {
+      if (finished) return;
+      finished = true;
+      dlg.removeEventListener('close', onClose);
+      if (okBtn) okBtn.removeEventListener('click', onOkClick);
+      if (cancelBtn) cancelBtn.removeEventListener('click', onCancelClick);
+      if (ok) onOk(state.confirmSnap);
+    }
+    function onClose() { finish(dlg.returnValue === 'ok'); }
+    function onCancelClick() { dlg.close('cancel'); finish(false); }
+    function onOkClick(ev) {
+      ev.preventDefault();
+      dlg.returnValue = 'ok';
+      dlg.close('ok');
+      finish(true);
+    }
+    dlg.addEventListener('close', onClose);
+    if (cancelBtn) cancelBtn.addEventListener('click', onCancelClick);
+    if (okBtn) okBtn.addEventListener('click', onOkClick);
     dlg.returnValue = '';
     dlg.showModal();
-    var form = $('proto-confirm-form');
-    function done(ev) {
-      form.removeEventListener('close', done);
-      if (ev.target.returnValue !== 'ok') return;
-      onOk(state.confirmSnap);
-    }
-    form.addEventListener('close', done);
   }
 
   function postAction(path, body) {
@@ -221,9 +236,15 @@
     try { idem = crypto.randomUUID(); } catch (e) { idem = 'idem-' + Date.now(); }
     var body = { operatorId: op, shiftId: sh, idempotencyKey: idem };
     if (action === 'labor') {
-      body.minutes = 5;
-      body.reason = 'ui-labor';
-      body.source = 'FIXTURE';
+      var rawMins = ($('proto-labor-minutes') && $('proto-labor-minutes').value) || '';
+      var mins = Number(rawMins);
+      var reason = ($('proto-labor-reason') && $('proto-labor-reason').value || '').trim();
+      var source = ($('proto-labor-source') && $('proto-labor-source').value || '').trim() || 'MANUAL';
+      if (!Number.isFinite(mins) || mins <= 0) throw new Error('請填寫有效工時（分鐘）');
+      if (!reason) throw new Error('請填寫工時原因');
+      body.minutes = mins;
+      body.reason = reason;
+      body.source = source;
     }
     return { action: action, body: body, unitId: state.selected && state.selected.prototypeUnitId };
   }

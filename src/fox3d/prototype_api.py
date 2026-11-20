@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, NoReturn
 
 from fastapi import APIRouter, Body, Header, HTTPException, Query
 
 from fox3d.ids import stable_hash
 from fox3d.infra import validate_tenant_id
+from fox3d.inventory import atomic_write_json, read_json
 from fox3d.prototype import PrototypeError
+from fox3d.storelock import FileLock
 
 _MAX_KEY_LEN = 200
 
@@ -80,12 +83,36 @@ def _map_prototype_error(exc: BaseException) -> NoReturn:
     raise exc
 
 
-def _api_idem_store(factory: Any) -> dict[str, dict[str, Any]]:
-    bucket = factory.__dict__.get("api_idem")
-    if not isinstance(bucket, dict):
-        bucket = {}
-        factory.__dict__["api_idem"] = bucket
-    return bucket
+def _json_bool(payload: dict[str, Any], key: str, *, default: bool = False) -> bool:
+    if key not in payload:
+        return default
+    val = payload[key]
+    if isinstance(val, bool):
+        return val
+    raise HTTPException(422, f"{key} 須為布林值")
+
+
+def _api_idem_path(factory: Any) -> Path:
+    return factory.root / "api_idem.json"
+
+
+def _api_idem_lock_path(factory: Any) -> Path:
+    return factory.root / "api-idem.lock"
+
+
+def _load_api_idem_store(factory: Any) -> dict[str, dict[str, Any]]:
+    raw = read_json(_api_idem_path(factory)) or {}
+    if not isinstance(raw, dict):
+        return {}
+    store: dict[str, dict[str, Any]] = {}
+    for key, entry in raw.items():
+        if isinstance(key, str) and isinstance(entry, dict):
+            store[key] = entry
+    return store
+
+
+def _save_api_idem_store(factory: Any, store: dict[str, dict[str, Any]]) -> None:
+    atomic_write_json(_api_idem_path(factory), store)
 
 
 def _idem_run(
@@ -97,23 +124,25 @@ def _idem_run(
     sig: str,
     action: Callable[[], dict[str, Any]],
 ) -> dict[str, Any]:
-    store = _api_idem_store(factory)
     store_key = f"{tenant_id}::api-idem::{scope}::{idem_key}"
-    prev = store.get(store_key)
-    if prev is not None:
-        if prev.get("sig") != sig:
-            raise HTTPException(409, "idempotencyKey 衝突")
-        result = prev.get("result")
-        if isinstance(result, dict):
-            return dict(result)
-    try:
-        result = action()
-    except (PrototypeError, PermissionError, KeyError) as exc:
-        _map_prototype_error(exc)
-    if not isinstance(result, dict):
-        raise HTTPException(500, "內部回應格式錯誤")
-    store[store_key] = {"sig": sig, "result": dict(result)}
-    return result
+    with FileLock(_api_idem_lock_path(factory)):
+        store = _load_api_idem_store(factory)
+        prev = store.get(store_key)
+        if prev is not None:
+            if prev.get("sig") != sig:
+                raise HTTPException(409, "idempotencyKey 衝突")
+            result = prev.get("result")
+            if isinstance(result, dict):
+                return dict(result)
+        try:
+            result = action()
+        except (PrototypeError, PermissionError, KeyError) as exc:
+            _map_prototype_error(exc)
+        if not isinstance(result, dict):
+            raise HTTPException(500, "內部回應格式錯誤")
+        store[store_key] = {"sig": sig, "result": dict(result)}
+        _save_api_idem_store(factory, store)
+        return result
 
 
 def _idem_sig(payload: dict[str, Any]) -> str:
@@ -333,7 +362,7 @@ def prototype_router(provider: Callable[[], Any]) -> APIRouter:
         _verify_shift(provider, tenant_id=tid, operator_id=op, shift_id=shift)
         idem = _idempotency_key(body)
         pf = factory()
-        consumes = bool(body.get("consumesInventory"))
+        consumes = _json_bool(body, "consumesInventory", default=False)
         sheets = body.get("sheets")
         if sheets is not None and (isinstance(sheets, bool) or not isinstance(sheets, int) or sheets < 1):
             raise HTTPException(422, "sheets 須為正整數")
