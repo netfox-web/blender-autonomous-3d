@@ -2499,9 +2499,16 @@ def cli_main(argv: list[str] | None = None) -> int:
         include_explicit_global=bool(args.include_explicit_global),
         dry_run=bool(args.dry_run),
     )
+    if args.require_zero:
+        result = dict(result)
+        result["remainingTenantlessCount"] = svc.inspect_tenantless_carrier_quotes()["tenantlessCount"]
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-    if args.require_zero and int(result.get("unresolvedCount") or 0) > 0:
-        return 1
+    if args.require_zero:
+        if int(result.get("remainingTenantlessCount") or 0) > 0:
+            return 1
+        if int(result.get("unresolvedCount") or 0) > 0:
+            return 1
+        return 0
     return 0
 
 

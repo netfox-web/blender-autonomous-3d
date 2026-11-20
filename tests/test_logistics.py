@@ -1239,3 +1239,69 @@ def test_require_zero_checks_all_tenantless_quotes_after_record_operations(tmp_p
     assert "legacy" in report["quoteIds"]
     if operation == "unassign":
         assert "migrated" in report["quoteIds"]
+
+
+def test_require_zero_checks_all_tenantless_quotes_after_quote_id_migration(tmp_path, capsys):
+    import json
+    from fox3d.logistics import cli_main
+
+    log = _wired_logistics(tmp_path)
+    log.persist()
+    _inject_raw_quotes(log, [{"quoteId": "q1", "charge": 1}, {"quoteId": "q2", "charge": 2}])
+
+    assert cli_main(["--root", str(log.root), "--quote-id", "q1", "--tenant", "ta", "--require-zero"]) == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["assignedCount"] == 1
+    assert result["unresolvedCount"] == 0
+    assert result["remainingTenantlessCount"] == 1
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert result["remainingTenantlessCount"] == report["tenantlessCount"]
+    assert report["quoteIds"] == ["q2"]
+
+    assert cli_main(["--root", str(log.root), "--quote-id", "q2", "--tenant", "tb", "--require-zero"]) == 0
+    after = json.loads(capsys.readouterr().out)
+    assert after["remainingTenantlessCount"] == 0
+
+    capsys.readouterr()
+    assert cli_main(
+        ["--root", str(log.root), "--quote-id", "q1", "--tenant", "ta", "--require-zero", "--dry-run"]
+    ) == 0
+    dry = json.loads(capsys.readouterr().out)
+    assert dry["dryRun"] is True
+    assert dry["remainingTenantlessCount"] == 0
+
+
+def test_require_zero_quote_id_migration_sees_invalid_records_and_dry_run_unchanged(tmp_path, capsys):
+    import json
+    from fox3d.logistics import cli_main
+
+    log = _wired_logistics(tmp_path)
+    log.persist()
+    legacy = {"quoteId": "legacy", "charge": 3}
+    _inject_raw_quotes(log, [legacy, "bad", {"quoteId": "q1", "charge": 1}])
+
+    assert cli_main(
+        ["--root", str(log.root), "--quote-id", "q1", "--tenant", "ta", "--require-zero", "--dry-run"]
+    ) == 1
+    dry = json.loads(capsys.readouterr().out)
+    assert dry["dryRun"] is True
+    assert dry["assignedCount"] == 1
+    capsys.readouterr()
+    assert cli_main(["--root", str(log.root), "--check"]) == 0
+    preflight = json.loads(capsys.readouterr().out)
+    assert dry["remainingTenantlessCount"] == preflight["tenantlessCount"]
+    assert preflight["invalidRecordCount"] == 1
+    reloaded = LogisticsService(root=log.root)
+    assert reloaded.carrier_quotes["q1"].get("tenantId") is None
+
+    assert cli_main(["--root", str(log.root), "--quote-id", "q1", "--tenant", "ta", "--require-zero"]) == 1
+    mig = json.loads(capsys.readouterr().out)
+    assert mig["remainingTenantlessCount"] >= 2
+
+    capsys.readouterr()
+    assert cli_main(["--root", str(log.root), "--check", "--require-zero"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert mig["remainingTenantlessCount"] == report["tenantlessCount"]
+    assert report["invalidRecordCount"] == 1
+    assert "legacy" in report["quoteIds"]

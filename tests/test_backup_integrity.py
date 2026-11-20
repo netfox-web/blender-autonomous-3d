@@ -1093,8 +1093,8 @@ def test_tenant_backup_carrier_quotes_http_and_global_exclusion_and_fail_closed(
     with pytest.raises(PermissionError, match="tenant isolation"):
         plat.pilot.logistics.migrate_tenantless_carrier_quotes(assignments={"q1": "tb"})
 
-    # Remediate q1 to tenant 'ta' and q2 to explicit global via CLI, then verify preflight, readiness, and backup pass.
-    assert migrate_script.main(["--root", str(plat.root), "--quote-id", "q1", "--assign", "q1=ta", "--require-zero"]) == 0
+    # Remediate q1 to tenant 'ta' and q2 to explicit global via CLI; --require-zero fails until both are cleared.
+    assert migrate_script.main(["--root", str(plat.root), "--quote-id", "q1", "--assign", "q1=ta", "--require-zero"]) == 1
     assert migrate_script.main(["--root", str(plat.root), "--quote-id", "q2", "--mark-global", "--require-zero"]) == 0
     assert migrate_script.main(["--root", str(plat.root), "--check", "--require-zero"]) == 0
     assert plat.pilot.readiness(evidence={"carrierQuotes": True})["tenantlessCarrierQuotesReady"] is True
