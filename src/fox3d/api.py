@@ -33,6 +33,7 @@ from fox3d.pilot_packing_api import pilot_packing_router
 from fox3d.pilot_batch_api import pilot_batch_router
 from fox3d.pilot_qc_api import pilot_qc_router
 from fox3d.pilot_shipping_api import pilot_shipping_router
+from fox3d.mfg_release_api import mfg_release_router
 from fox3d.platform import Platform
 from fox3d.product_rd_store import (
     ProductRDIdempotencyConflict,
@@ -1797,6 +1798,7 @@ def create_app(platform: Platform | None = None) -> FastAPI:
     app.include_router(pilot_batch_router(platform_provider))
     app.include_router(pilot_qc_router(platform_provider))
     app.include_router(pilot_shipping_router(platform_provider))
+    app.include_router(mfg_release_router(platform_provider))
     app.include_router(cyclecount_router(platform_provider))
     app.include_router(materials_lot_ops_router(platform_provider))
     app.include_router(prototype_router(platform_provider))
