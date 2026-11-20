@@ -1354,6 +1354,9 @@ def create_app(platform: Platform | None = None) -> FastAPI:
         pilot = get_platform().pilot
         with pilot.workorders._lock:
             orders = [dict(wo) for wo in pilot.workorders.orders.values() if wo.get("tenantId") == tid]
+        total = len(orders)
+        paginated = "offset" in request.query_params or "limit" in request.query_params
+        page = orders[offset : offset + limit] if paginated else orders
         enriched = [
             {
                 **wo,
@@ -1364,13 +1367,11 @@ def create_app(platform: Platform | None = None) -> FastAPI:
                     tenant_id=tid,
                 )["ok"],
             }
-            for wo in orders
+            for wo in page
         ]
-        total = len(enriched)
-        if "offset" not in request.query_params and "limit" not in request.query_params:
+        if not paginated:
             return {"items": enriched, "total": total, "offset": 0, "limit": total, "liveMachineControl": False}
-        items = enriched[offset : offset + limit]
-        return {"items": items, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
+        return {"items": enriched, "total": total, "offset": offset, "limit": limit, "liveMachineControl": False}
 
     @app.get("/api/pilot/batches/board")
     def pilot_batch_board(x_tenant_id: str | None = Header(default=None)) -> dict[str, Any]:
