@@ -116,6 +116,49 @@ def test_cross_tenant_is_404_without_leak(client: TestClient) -> None:
         assert "KeyError" not in res.text
 
 
+@pytest.mark.parametrize(
+    "candidate_count",
+    ["abc", [], {}, True, 0, 101, 1.5],
+)
+def test_create_intent_candidate_count_malformed_is_422(client: TestClient, candidate_count) -> None:
+    res = client.post(
+        "/api/portfolio/intents",
+        headers=_h(),
+        json={"segment": "STUDENT", "demandSource": "MOCK", "candidateCount": candidate_count},
+    )
+    assert res.status_code == 422
+    assert "candidateCount" in res.json()["detail"]
+
+
+def test_ranking_top10_includes_landed_cost(client: TestClient) -> None:
+    data = _flow(client)
+    row = data["ranking"]["top10"][0]
+    assert "landedCost" in row
+    assert isinstance(row["landedCost"], (int, float))
+
+
+def test_override_promotes_candidate_and_persists(client: TestClient, platform) -> None:
+    data = _flow(client)
+    top = data["ranking"]["top10"]
+    assert len(top) >= 2
+    first_id = top[0]["candidateId"]
+    second_id = top[1]["candidateId"]
+    assert first_id != second_id
+    res = client.post(
+        f"/api/portfolio/rankings/{data['rankingId']}/override",
+        headers=_h(),
+        json={"actor": "planner", "reason": "promote-second", "candidateId": second_id},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["top10"][0]["candidateId"] == second_id
+    override = body["humanOverrides"][-1]
+    assert override["rewritesScore"] is True
+    reloaded = Platform(root=platform.root, mock_blender=True)
+    stored = reloaded.portfolio.rankings[data["rankingId"]]
+    assert stored["top10"][0]["candidateId"] == second_id
+
+
 def test_override_missing_reason_is_422(client: TestClient) -> None:
     data = _flow(client)
     res = client.post(

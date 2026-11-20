@@ -2,12 +2,51 @@
 
 from __future__ import annotations
 
-import pytest
-from playwright.sync_api import expect
+import json
+import re
+from collections.abc import Callable
+from urllib.parse import urlparse
 
-from tests.browser.test_admin_post_flows import _goto
+import pytest
+from playwright.sync_api import Page, Route, expect
+
+from tests.browser.test_admin_post_flows import _goto, _release
 
 pytestmark = pytest.mark.browser
+
+
+def _path(url: str) -> str:
+    return urlparse(url).path
+
+
+def _install_post_counter(
+    page: Page, path_pattern: str, store: list[Route], on_capture: Callable[[Route], None] | None = None
+) -> None:
+    pattern = re.compile(path_pattern)
+
+    def handle(route: Route) -> None:
+        if route.request.method == "POST" and pattern.search(_path(route.request.url)):
+            store.append(route)
+            if on_capture:
+                on_capture(route)
+            return
+        route.continue_()
+
+    page.route(pattern, handle)
+
+
+def _portfolio_bootstrap(page: Page, *, min_ranked: int = 1) -> None:
+    page.locator("#po-segment").select_option("STUDENT")
+    page.locator("#po-create-intent").click()
+    page.wait_for_function("() => !!(document.getElementById('po-generate') && !document.getElementById('po-generate').disabled)")
+    page.locator("#po-generate").click()
+    page.wait_for_function(
+        """() => document.querySelectorAll('#po-candidates-wrap .po-card').length > 0"""
+    )
+    page.locator("#po-rank").click()
+    page.wait_for_function(
+        f"""() => document.querySelectorAll('#po-ranking-table tbody button').length >= {min_ranked}"""
+    )
 
 
 @pytest.mark.parametrize("width", [400, 1440])
@@ -28,7 +67,7 @@ def test_override_dialog_snapshots_fields(admin_page, admin_server) -> None:
     page.wait_for_function("() => !!(document.getElementById('po-generate') && !document.getElementById('po-generate').disabled)")
     page.locator("#po-generate").click()
     page.locator("#po-rank").click()
-    page.wait_for_selector("#po-ranking-table tbody tr", timeout=30_000)
+    page.wait_for_function("() => document.querySelectorAll('#po-ranking-table tbody button').length > 0")
     page.locator("#po-ranking-table button").first.click()
     page.locator("#po-override-actor").fill("snap-actor")
     page.locator("#po-override-reason").fill("snap-reason")
@@ -41,3 +80,108 @@ def test_override_dialog_snapshots_fields(admin_page, admin_server) -> None:
     )
     snap = page.locator("#po-override-snapshot").inner_text()
     assert "snap-reason" in snap
+
+
+def test_override_cancel_does_not_post(admin_page, admin_server) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    _install_post_counter(page, r"/api/portfolio/rankings/.+/override$", pending)
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    page.locator("#po-ranking-table button").first.click()
+    page.locator("#po-override-cancel").click()
+    page.wait_for_function("() => !document.getElementById('po-override-dialog').open")
+    assert len(pending) == 0
+
+
+def test_override_reorders_top_candidate(admin_page, admin_server) -> None:
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page, min_ranked=2)
+    rows = page.locator("#po-ranking-table tbody tr")
+    first_id = rows.nth(0).locator("td").nth(1).inner_text()
+    second_id = rows.nth(1).locator("td").nth(1).inner_text()
+    page.locator("#po-ranking-table button").nth(1).click()
+    page.locator("#po-override-actor").fill("reorder-actor")
+    page.locator("#po-override-reason").fill("reorder-reason")
+    page.locator("#po-override-ok").click()
+    page.wait_for_function(
+        """() => {
+          const banner = document.getElementById('po-banner');
+          return banner && banner.textContent.indexOf('排名已依人工改排更新') >= 0;
+        }"""
+    )
+    new_first = page.locator("#po-ranking-table tbody tr").nth(0).locator("td").nth(1).inner_text()
+    assert new_first == second_id
+    assert new_first != first_id
+
+
+def test_approval_cleared_when_switching_candidates(admin_page, admin_server) -> None:
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    page.locator("#po-ranking-table tbody tr").nth(0).click()
+    page.locator("#po-submit-approval").click()
+    page.wait_for_function("() => !document.getElementById('po-approve').disabled")
+    page.locator("#po-ranking-table tbody tr").nth(1).click()
+    expect(page.locator("#po-approve")).to_be_disabled()
+
+
+def test_approve_confirm_shows_candidate_snapshot(admin_page, admin_server) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    _install_post_counter(page, r"/api/portfolio/approvals/.+/approve$", pending)
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    page.locator("#po-ranking-table tbody tr").nth(0).click()
+    candidate_id = page.locator("#po-ranking-table tbody tr").nth(0).locator("td").nth(1).inner_text()
+    page.locator("#po-submit-approval").click()
+    page.wait_for_function("() => !document.getElementById('po-approve').disabled")
+    page.locator("#po-approve").click()
+    confirm_text = page.locator("#po-confirm-text").inner_text()
+    assert candidate_id in confirm_text
+    assert "核准 ID：" in confirm_text
+    page.locator("#po-confirm-cancel").click()
+    assert len(pending) == 0
+
+
+def test_approve_uses_snapshot_on_delayed_response(admin_page, admin_server) -> None:
+    page = admin_page
+    pending: list[Route] = []
+    _install_post_counter(page, r"/api/portfolio/approvals/.+/approve$", pending)
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    page.locator("#po-ranking-table tbody tr").nth(0).click()
+    snapped = page.locator("#po-ranking-table tbody tr").nth(0).locator("td").nth(1).inner_text()
+    page.locator("#po-submit-approval").click()
+    page.wait_for_function("() => !document.getElementById('po-approve').disabled")
+    page.locator("#po-approve").click()
+    page.locator("#po-confirm-ok").click()
+    page.wait_for_function("() => document.getElementById('po-approve').disabled")
+    page.locator("#po-ranking-table tbody tr").nth(1).click()
+    _release(
+        pending,
+        {"status": "APPROVED_FOR_PROTOTYPE", "approvalId": "fake-delayed", "candidateId": snapped},
+    )
+    page.wait_for_function(
+        """() => {
+          const banner = document.getElementById('po-banner');
+          return banner && banner.textContent.indexOf('原型已核准') >= 0;
+        }"""
+    )
+    assert len(pending) == 1
+    body = json.loads(pending[0].request.post_data or "{}")
+    assert body.get("confirm") is True
+    url = pending[0].request.url
+    assert "/api/portfolio/approvals/" in url and url.rstrip("/").endswith("approve")
+
+
+def test_ranking_cost_column_shows_numbers(admin_page, admin_server) -> None:
+    page = admin_page
+    _goto(page, admin_server["base_url"], "/admin/portfolio", "#po-create-intent")
+    _portfolio_bootstrap(page)
+    cost_cell = page.locator("#po-ranking-table tbody tr").first.locator("td").nth(5).inner_text()
+    assert cost_cell
+    assert cost_cell != "有效"
+    assert cost_cell != "排除"
+    assert re.match(r"^-?\d", cost_cell)
