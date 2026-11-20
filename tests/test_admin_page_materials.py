@@ -370,6 +370,17 @@ def test_materials_js_quarantine_history_displays_at() -> None:
     assert "隔離歷史" in js
 
 
+def test_materials_js_quarantine_action_waits_for_fresh_detail() -> None:
+    from pathlib import Path
+
+    js = (Path(__file__).resolve().parents[1] / "src/fox3d/static/pages/materials.js").read_text(encoding="utf-8")
+    assert "function loadAll()" in js
+    assert "return Promise.all([" in js.split("function loadAll()")[1].split("function errorDetail")[0]
+    quarantine = js.split("function sendQuarantineAttempt")[1].split("function onQuarantineSubmit")[0]
+    assert "return loadAll();" in quarantine
+    assert "return loadLotDetail(state.selectedLot);" in quarantine
+
+
 def test_confirm_dialog_resets_return_value_before_opening() -> None:
     # Esc keeps the previous returnValue; without a reset, Esc after an earlier "ok" would confirm.
     from pathlib import Path

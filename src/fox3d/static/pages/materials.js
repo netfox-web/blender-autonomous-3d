@@ -750,7 +750,7 @@
     state.loading = true;
     showBanner('');
     $('mt-refresh').disabled = true;
-    Promise.all([
+    return Promise.all([
       fetchAllMaterials(),
       api('/api/remnants'),
       loadCycleCounts(),
@@ -1246,7 +1246,7 @@
       })
       .then(function () {
         if (state.selectedLot && state.selectedLot.lotId === attempt.lotId) {
-          loadLotDetail(state.selectedLot);
+          return loadLotDetail(state.selectedLot);
         }
       })
       .catch(function (e) {
