@@ -707,6 +707,12 @@
     return String(iso).replace('T', ' ').replace(/\.\d+Z$/, ' UTC').replace(/Z$/, ' UTC');
   }
 
+  function truncateText(value, maxLen) {
+    var s = String(value == null ? '' : value).trim();
+    if (!maxLen || s.length <= maxLen) return s;
+    return s.slice(0, maxLen) + '…';
+  }
+
   function isBlockedOrFailedPayload(data) {
     if (!data || typeof data !== 'object') return true;
     var st = String(data.status || '').toUpperCase();
@@ -716,37 +722,73 @@
     return false;
   }
 
+  function extractRdRenderJob(rd) {
+    if (!rd || typeof rd !== 'object' || Array.isArray(rd)) return null;
+    var pr = rd.parametricRender;
+    if (!pr || typeof pr !== 'object' || Array.isArray(pr)) return null;
+    if (pr.job && typeof pr.job === 'object' && !Array.isArray(pr.job)) return pr.job;
+    if (pr.status !== undefined || pr.error !== undefined) return pr;
+    return null;
+  }
+
   function classifyRdRenderJob(job) {
-    if (!job || typeof job !== 'object') return null;
-    var rawStatus = String(job.status || '').trim();
+    if (!job || typeof job !== 'object' || Array.isArray(job)) return null;
+    var rawStatus = truncateText(job.status, 64);
     var st = rawStatus.toLowerCase();
-    var err = String(job.error || '').trim();
+    var errText = truncateText(job.error, 120);
+    var rawAttempts = Number(job.attemptCount);
+    var attempts = Number.isFinite(rawAttempts) && rawAttempts > 0 ? Math.floor(rawAttempts) : 0;
+    var rawMax = Number(job.maxAttempts);
+    var maxAttempts = Number.isFinite(rawMax) && rawMax > 0 ? Math.floor(rawMax) : 0;
+    var rawDelay = Number(job.retryDelaySeconds);
+    var retryDelaySeconds = Number.isFinite(rawDelay) && rawDelay > 0 ? rawDelay : 0;
+    var attemptText = attempts > 0
+      ? (maxAttempts > 0 ? '第 ' + attempts + '/' + maxAttempts + ' 次嘗試' : '第 ' + attempts + ' 次嘗試')
+      : '';
+
     if (
       isBlockedOrFailedPayload(job) ||
       st === 'cancelled' ||
       st === 'cancel_requested' ||
-      st === 'expired'
+      st === 'expired' ||
+      st === 'dead_letter' ||
+      st === 'dlq'
     ) {
       return {
         state: 'failed',
         job: job,
-        detail: err || rawStatus || 'FAILED'
+        rawStatus: rawStatus || 'failed',
+        errorText: errText,
+        attemptCount: attempts,
+        maxAttempts: maxAttempts,
+        attemptText: attemptText,
+        detail: errText || rawStatus || 'FAILED'
       };
     }
     if (
       st === 'retry_scheduled' ||
-      (st === 'queued' && (Boolean(err) || Number(job.attemptCount || 0) > 0))
+      (st === 'queued' && (Boolean(errText) || attempts > 0 || retryDelaySeconds > 0))
     ) {
       return {
         state: 'retrying',
         job: job,
-        detail: err || rawStatus || 'queued'
+        rawStatus: rawStatus || 'queued',
+        errorText: errText,
+        attemptCount: attempts,
+        maxAttempts: maxAttempts,
+        retryDelaySeconds: retryDelaySeconds,
+        attemptText: attemptText,
+        detail: errText || attemptText || rawStatus || 'queued'
       };
     }
     if (st === 'succeeded' || st === 'completed') {
       return {
         state: 'completed',
         job: job,
+        rawStatus: rawStatus,
+        attemptCount: attempts,
+        maxAttempts: maxAttempts,
+        attemptText: attemptText,
         label: job.realBlender && !job.usedMock ? 'REAL' : 'MOCK'
       };
     }
@@ -754,14 +796,114 @@
       return {
         state: 'skipped',
         job: job,
+        rawStatus: rawStatus || 'skipped',
         detail: 'SKIPPED'
       };
     }
+    var isRunning = ['reserved', 'dispatched', 'leased', 'running', 'rendering', 'uploading'].indexOf(st) >= 0;
     return {
       state: 'pending',
       job: job,
+      rawStatus: rawStatus || 'queued',
+      isRunning: isRunning,
+      attemptCount: attempts,
+      maxAttempts: maxAttempts,
+      attemptText: attemptText,
       detail: rawStatus || 'queued'
     };
+  }
+
+  function makeRdRenderDetailBadge(renderInfo) {
+    if (!renderInfo) return null;
+    if (renderInfo.state === 'failed') {
+      var failSuffix = renderInfo.attemptText
+        ? '（' + renderInfo.attemptText + ' · 算圖失敗）'
+        : '（算圖失敗）';
+      return el(
+        'span',
+        { 'class': 'fc-badge err', 'data-render-state': 'failed' },
+        '母版 3D 預覽：' + renderInfo.detail + failSuffix
+      );
+    }
+    if (renderInfo.state === 'retrying') {
+      var retryParts = [renderInfo.rawStatus || 'queued'];
+      if (renderInfo.attemptText) retryParts.push(renderInfo.attemptText);
+      if (renderInfo.errorText) retryParts.push(renderInfo.errorText);
+      return el(
+        'span',
+        { 'class': 'fc-badge warn', 'data-render-state': 'retrying' },
+        '母版 3D 預覽：排隊重試中（' + retryParts.join(' · ') + '）'
+      );
+    }
+    if (renderInfo.state === 'completed') {
+      var rLabel = renderInfo.label;
+      return el(
+        'span',
+        { 'class': 'fc-badge ' + (rLabel === 'REAL' ? 'ok' : 'warn'), 'data-render-state': 'completed' },
+        '母版 3D 預覽：' + rLabel + (rLabel === 'MOCK' ? '（模擬算圖已完成）' : '（真實算圖已完成）')
+      );
+    }
+    if (renderInfo.state === 'skipped') {
+      return el(
+        'span',
+        { 'class': 'fc-badge neutral', 'data-render-state': 'skipped' },
+        '母版 3D 預覽：SKIPPED（已略過）'
+      );
+    }
+    var pendParts = [renderInfo.detail];
+    if (renderInfo.attemptText) pendParts.push(renderInfo.attemptText);
+    var pendTitle = renderInfo.isRunning
+      ? (renderInfo.attemptCount > 0 ? '重試算圖執行中' : '算圖執行中')
+      : '排隊待算圖';
+    return el(
+      'span',
+      { 'class': 'fc-badge neutral', 'data-render-state': 'pending' },
+      '母版 3D 預覽：' + pendTitle + '（' + pendParts.join(' · ') + '）'
+    );
+  }
+
+  function formatRdRenderSummaryText(renderInfo) {
+    if (!renderInfo || renderInfo.state === 'skipped') return 'SKIPPED（未算圖）';
+    if (renderInfo.state === 'retrying') {
+      var parts = [renderInfo.rawStatus || 'queued'];
+      if (renderInfo.attemptText) parts.push(renderInfo.attemptText);
+      if (renderInfo.errorText) parts.push(renderInfo.errorText);
+      return '排隊重試中（' + parts.join(' · ') + '）';
+    }
+    if (renderInfo.state === 'completed') {
+      return '已完成（' + renderInfo.label + '）';
+    }
+    if (renderInfo.state === 'failed') {
+      return '算圖失敗（' + renderInfo.detail + '）';
+    }
+    return (renderInfo.isRunning ? '算圖執行中' : '排隊待算圖') + '（' + renderInfo.detail + '）';
+  }
+
+  function makeRdHistoryRenderBadge(renderInfo) {
+    if (!renderInfo || renderInfo.state === 'skipped') {
+      return el('span', { 'class': 'fc-badge neutral', 'data-render-state': 'skipped' }, 'SKIPPED（未算圖）');
+    }
+    if (renderInfo.state === 'retrying') {
+      var retryLabel = '排隊重試中（' + (renderInfo.rawStatus || 'queued') +
+        (renderInfo.attemptText ? ' · ' + renderInfo.attemptText : '') + '）';
+      return el('span', { 'class': 'fc-badge warn', 'data-render-state': 'retrying' }, retryLabel);
+    }
+    if (renderInfo.state === 'completed') {
+      return el(
+        'span',
+        { 'class': 'fc-badge ' + (renderInfo.label === 'REAL' ? 'ok' : 'warn'), 'data-render-state': 'completed' },
+        '已完成 · ' + renderInfo.label
+      );
+    }
+    if (renderInfo.state === 'failed') {
+      return el(
+        'span',
+        { 'class': 'fc-badge err', 'data-render-state': 'failed' },
+        '算圖失敗（' + truncateText(renderInfo.detail, 40) + '）'
+      );
+    }
+    var pendLabel = (renderInfo.isRunning ? '算圖執行中' : '排隊待算圖') + '（' + renderInfo.detail + '）';
+    return el('span', { 'class': 'fc-badge neutral', 'data-render-state': 'pending' }, pendLabel);
   }
 
   function resetRdSelectionUI() {
@@ -826,46 +968,10 @@
         el('span', { 'class': 'fc-badge warn' }, 'MOCK 評分方案（核准後仍為模擬評分）')
       );
     }
-    if (rd.parametricRender && rd.parametricRender.job) {
-      var renderInfo = classifyRdRenderJob(rd.parametricRender.job);
-      if (renderInfo && renderInfo.state === 'failed') {
-        badgesBox.appendChild(
-          el(
-            'span',
-            { 'class': 'fc-badge err' },
-            '母版 3D 預覽：' + renderInfo.detail + '（算圖失敗）'
-          )
-        );
-      } else if (renderInfo && renderInfo.state === 'retrying') {
-        badgesBox.appendChild(
-          el(
-            'span',
-            { 'class': 'fc-badge warn' },
-            '母版 3D 預覽：排隊重試中（' + (renderInfo.job.status || 'queued') + ' · ' + renderInfo.detail + '）'
-          )
-        );
-      } else if (renderInfo && renderInfo.state === 'completed') {
-        var rLabel = renderInfo.label;
-        badgesBox.appendChild(
-          el(
-            'span',
-            { 'class': 'fc-badge ' + (rLabel === 'REAL' ? 'ok' : 'warn') },
-            '母版 3D 預覽：' + rLabel + (rLabel === 'MOCK' ? '（模擬算圖）' : '')
-          )
-        );
-      } else if (renderInfo && renderInfo.state === 'skipped') {
-        badgesBox.appendChild(
-          el('span', { 'class': 'fc-badge neutral' }, '母版 3D 預覽：SKIPPED（已略過）')
-        );
-      } else if (renderInfo) {
-        badgesBox.appendChild(
-          el(
-            'span',
-            { 'class': 'fc-badge neutral' },
-            '母版 3D 預覽：排隊待算圖（' + renderInfo.detail + '）'
-          )
-        );
-      }
+    var renderInfo = classifyRdRenderJob(extractRdRenderJob(rd));
+    var renderDetailBadge = makeRdRenderDetailBadge(renderInfo);
+    if (renderDetailBadge) {
+      badgesBox.appendChild(renderDetailBadge);
     }
 
     var intentBox = $('rd-intent-summary');
@@ -878,6 +984,7 @@
       ['母版尺寸 (mm)', (baseSpec.width || '—') + ' × ' + (baseSpec.height || '—') + ' × ' + (baseSpec.depth || '—')],
       ['產生／合格變體數', (rd.variantCount || 0) + ' 組 ／ 合格 ' + (rd.scoredCount || 0) + ' 組'],
       ['工程規則檢核', rd.baseReport && rd.baseReport.ok ? '通過 (OK)' : '有工程警告'],
+      ['母版 3D 預覽狀態', formatRdRenderSummaryText(renderInfo)],
       ['核准狀態', approvalStatus === 'APPROVED' ? 'APPROVED（已核准）' : 'WAITING_APPROVAL（待核准）']
     ];
     if (approvalStatus === 'APPROVED') {
@@ -1042,6 +1149,11 @@
       var tdJudge = el('td');
       tdJudge.appendChild(makeBadge(judgeLabel));
       tr.appendChild(tdJudge);
+
+      var itemRenderInfo = classifyRdRenderJob(extractRdRenderJob(item));
+      var tdPreview = el('td', { 'data-role': 'rd-preview-status' });
+      tdPreview.appendChild(makeRdHistoryRenderBadge(itemRenderInfo));
+      tr.appendChild(tdPreview);
 
       var app = item.approval || {};
       var appStatus = app.status || 'WAITING_APPROVAL';
@@ -1773,30 +1885,45 @@
       apiFetch('/api/product-rd/generate', { method: 'POST', headers: { 'X-Tenant-Id': snap.tenant }, body: payload })
         .then(function (res) {
           if (reqSeq !== rdGenerateReqSeq || snap.tenant !== currentTenant()) return;
-          var renderInfo = res.data && res.data.parametricRender
-            ? classifyRdRenderJob(res.data.parametricRender.job)
-            : null;
-          var renderFailed = renderInfo && renderInfo.state === 'failed';
-          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data) && !renderFailed) {
+          var renderInfo = classifyRdRenderJob(extractRdRenderJob(res.data));
+          var renderFailed = Boolean(renderInfo && renderInfo.state === 'failed');
+          if (res.ok && res.data && !isBlockedOrFailedPayload(res.data)) {
             rdPendingGenerate = null;
             var box = $('rd-confirm-box');
             box.hidden = true;
             syncConfirmLock(box);
             upsertRdHistoryItem(res.data);
-            renderRdResult(res.data, res, 'rd-api-out', '商品研發產生結果');
-            if (renderInfo && renderInfo.state === 'retrying') {
+            renderRdResult(
+              res.data,
+              res,
+              'rd-api-out',
+              renderFailed ? '商品研發已儲存（母版算圖失敗）' : '商品研發產生結果'
+            );
+            if (renderFailed) {
               showGlobalAlert(
-                '研發方案（單號 ' +
-                  res.data.rdId +
-                  '）已儲存，但母版 3D 算圖暫時失敗並已排隊重試：' +
+                '研發方案已儲存（單號 ' +
+                  (res.data.rdId || '—') +
+                  '），但母版 3D 算圖失敗：' +
+                  renderInfo.detail,
+                'err'
+              );
+            } else if (renderInfo && renderInfo.state === 'retrying') {
+              showGlobalAlert(
+                '研發方案已儲存（單號 ' +
+                  (res.data.rdId || '—') +
+                  '），但母版 3D 算圖暫時失敗並已排隊重試' +
+                  (renderInfo.attemptText ? '（' + renderInfo.attemptText + '）' : '') +
+                  '：' +
                   renderInfo.detail,
                 'warn'
               );
             } else if (renderInfo && renderInfo.state === 'pending') {
               showGlobalAlert(
-                '研發方案（單號 ' +
-                  res.data.rdId +
-                  '）已儲存，母版 3D 預覽排隊待算圖（' +
+                '研發方案已儲存（單號 ' +
+                  (res.data.rdId || '—') +
+                  '），母版 3D 預覽' +
+                  (renderInfo.isRunning ? '算圖執行中' : '排隊待算圖') +
+                  '（' +
                   renderInfo.detail +
                   '）。',
                 'warn'
@@ -1804,7 +1931,7 @@
             } else {
               showGlobalAlert(
                 '商品研發方案產生完成（單號 ' +
-                  res.data.rdId +
+                  (res.data.rdId || '—') +
                   '），共評選出前 ' +
                   (res.data.top ? res.data.top.length : 0) +
                   ' 名候選方案。',
@@ -1818,12 +1945,7 @@
             syncConfirmLock(boxErr);
             rdPendingGenerate = null;
             renderApiAnswer($('rd-api-out'), '商品研發產生失敗', res);
-            var errDetail = (renderFailed && renderInfo.detail) ||
-              (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
-            if (res.ok && renderFailed) {
-              showGlobalAlert('研發方案已儲存，但母版 3D 算圖失敗：' + errDetail, 'err');
-              return refreshRdHistory();
-            }
+            var errDetail = (res.data && (res.data.detail || res.data.error)) || ('HTTP ' + res.status);
             showGlobalAlert('商品研發產生失敗：' + errDetail, 'err');
           }
         })
@@ -1856,6 +1978,15 @@
           return;
         }
         var judgeLbl = resolveRdJudgeLabel(current);
+        var curRenderInfo = classifyRdRenderJob(extractRdRenderJob(current));
+        var renderApproveNote = '';
+        if (curRenderInfo && curRenderInfo.state === 'retrying') {
+          renderApproveNote = '（注意：母版 3D 預覽仍在排隊重試中，尚未完成算圖）';
+        } else if (curRenderInfo && curRenderInfo.state === 'failed') {
+          renderApproveNote = '（注意：母版 3D 預覽算圖失敗）';
+        } else if (curRenderInfo && curRenderInfo.state === 'pending') {
+          renderApproveNote = '（注意：母版 3D 預覽尚未完成算圖）';
+        }
         rdPendingApprove = {
           rdId: state.selectedRdId,
           tenant: currentTenant(),
@@ -1868,6 +1999,7 @@
           rdPendingApprove.rdId +
           ' 嗎？核准後狀態將改為 APPROVED 並記錄 approvedAt' +
           (judgeLbl === 'MOCK' ? '（視覺評分來源仍維持標示為 MOCK）' : '') +
+          renderApproveNote +
           '：';
         var box = $('rd-approve-confirm');
         box.hidden = false;
@@ -1926,6 +2058,13 @@
                 '核准研發方案回應（POST /api/product-rd/results/' + snap.rdId + '/approve）'
               );
               var judgeLbl = resolveRdJudgeLabel(res.data);
+              var appRenderInfo = classifyRdRenderJob(extractRdRenderJob(res.data));
+              var appRenderWarn = Boolean(
+                appRenderInfo &&
+                  (appRenderInfo.state === 'retrying' ||
+                    appRenderInfo.state === 'failed' ||
+                    appRenderInfo.state === 'pending')
+              );
               var appAt = (res.data.approval && res.data.approval.approvedAt) || res.data.approvedAt || '';
               showGlobalAlert(
                 '研發方案 ' +
@@ -1936,8 +2075,9 @@
                   appAt +
                   '，評分來源：' +
                   judgeLbl +
+                  (appRenderInfo ? '，母版預覽：' + formatRdRenderSummaryText(appRenderInfo) : '') +
                   '）。',
-                'ok'
+                appRenderWarn ? 'warn' : 'ok'
               );
               return refreshRdHistory();
             } else {
