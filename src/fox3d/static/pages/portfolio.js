@@ -6,6 +6,7 @@
     portfolioId: null,
     rankingId: null,
     approvalId: null,
+    approvalCandidateId: null,
     selectedCandidate: null,
     confirmOpen: false,
     inflight: {},
@@ -57,6 +58,18 @@
     var n = Number(v);
     if (!isFinite(n)) return '—';
     return n.toFixed(0);
+  }
+
+  function clearApprovalForSelectionChange() {
+    if (!state.approvalId) {
+      updateActionButtons();
+      return;
+    }
+    if (state.approvalCandidateId !== state.selectedCandidate) {
+      state.approvalId = null;
+      state.approvalCandidateId = null;
+    }
+    updateActionButtons();
   }
 
   function confirmDialog(title, text) {
@@ -119,10 +132,10 @@
       });
       card.addEventListener('click', function () {
         state.selectedCandidate = c.candidateId;
+        clearApprovalForSelectionChange();
         Array.prototype.forEach.call(wrap.querySelectorAll('.po-card'), function (el) {
           el.classList.toggle('selected', el.dataset.id === state.selectedCandidate);
         });
-        updateActionButtons();
         showDetail(c);
       });
       wrap.appendChild(card);
@@ -157,8 +170,10 @@
       td(row.kind);
       td(row.score != null ? Number(row.score).toFixed(4) : '—');
       td(row.conservationOk ? 'OK' : '—');
-      td(row.valid ? '有效' : '排除');
-      td(row.state || '—');
+      td(fmtMoney(row.landedCost));
+      var stateLabel = row.state || '—';
+      if (row.valid === false) stateLabel += '（排除）';
+      td(stateLabel);
       var act = document.createElement('td');
       var btn = document.createElement('button');
       btn.type = 'button';
@@ -172,7 +187,7 @@
       tr.appendChild(act);
       tr.addEventListener('click', function () {
         state.selectedCandidate = row.candidateId;
-        updateActionButtons();
+        clearApprovalForSelectionChange();
       });
       tb.appendChild(tr);
     });
@@ -202,7 +217,12 @@
     $('po-plan').disabled = !hasIntent || state.inflight.plan;
     $('po-rank').disabled = !hasIntent || state.inflight.rank;
     $('po-submit-approval').disabled = !state.selectedCandidate || state.inflight.submit;
-    $('po-approve').disabled = !state.approvalId || state.inflight.approve;
+    var canApprove = Boolean(
+      state.approvalId
+      && state.approvalCandidateId
+      && state.selectedCandidate === state.approvalCandidateId
+    );
+    $('po-approve').disabled = !canApprove || state.inflight.approve;
     $('po-supersede').disabled = !state.selectedCandidate || state.inflight.supersede;
   }
 
@@ -257,7 +277,7 @@
           showBanner((res.body && res.body.detail) || '改排失敗');
           return;
         }
-        showBanner('已記錄人工改排', true);
+        showBanner('排名已依人工改排更新', true);
         renderRanking(res.body);
       }).catch(function () {
         btn.disabled = false;
@@ -268,6 +288,12 @@
       $('po-override-actor').readOnly = false;
       $('po-override-reason').readOnly = false;
     });
+    var cancelBtn = $('po-override-cancel');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', function () {
+        dlg.close('cancel');
+      });
+    }
   }
 
   function wire() {
@@ -294,6 +320,10 @@
             return;
           }
           state.portfolioId = res.body.portfolioId;
+          state.rankingId = null;
+          state.approvalId = null;
+          state.approvalCandidateId = null;
+          state.selectedCandidate = null;
           $('po-intent-status').textContent = '需求 ID：' + state.portfolioId;
           showBanner('已建立組合需求', true);
           updateActionButtons();
@@ -393,6 +423,7 @@
           return;
         }
         state.approvalId = res.body.approvalId;
+        state.approvalCandidateId = state.selectedCandidate;
         showBanner('已送審', true);
         updateActionButtons();
         showDetail(res.body);
@@ -404,12 +435,27 @@
     });
 
     $('po-approve') && $('po-approve').addEventListener('click', function () {
-      if (!state.approvalId || state.inflight.approve) return;
-      confirmDialog('核准原型', '此操作需要確認，且同一核准只會生效一次。').then(function (ok) {
+      if (!state.approvalId || !state.approvalCandidateId || state.inflight.approve) return;
+      if (state.approvalCandidateId !== state.selectedCandidate) {
+        showBanner('核准對象與目前選取候選不一致，請重新送審');
+        return;
+      }
+      var approveSnap = {
+        approvalId: state.approvalId,
+        candidateId: state.approvalCandidateId,
+        tenant: tenant(),
+      };
+      var confirmText = [
+        '核准 ID：' + approveSnap.approvalId,
+        '候選：' + approveSnap.candidateId,
+        '租戶：' + approveSnap.tenant,
+        '此操作需要確認，且同一核准只會生效一次。',
+      ].join('\n');
+      confirmDialog('核准原型', confirmText).then(function (ok) {
         if (!ok) return;
         setInflight('approve', true);
         $('po-approve').disabled = true;
-        api('/api/portfolio/approvals/' + encodeURIComponent(state.approvalId) + '/approve', {
+        api('/api/portfolio/approvals/' + encodeURIComponent(approveSnap.approvalId) + '/approve', {
           method: 'POST',
           body: { confirm: true, actor: 'pm', reason: 'ui-approve' },
         }).then(function (res) {
