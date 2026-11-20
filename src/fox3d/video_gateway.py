@@ -39,6 +39,60 @@ class LTX25Adapter(VideoAdapter):
     provider = "LTX_2_5"
 
 
+class MockTransport:
+    """Offline stand-in. send() never reaches a provider network."""
+
+    def __init__(self, response=None):
+        self.response = response
+        self.calls = 0
+
+    def send(self, request):
+        self.calls += 1
+        if isinstance(self.response, Exception):
+            raise self.response
+        return self.response
+
+
+def _closed(provider, status):
+    if type(status) is not str or "REAL" in status.upper():
+        status = "BLOCKED_PROVIDER_RUNTIME"
+    return {"provider": provider, "status": status, "liveProviderReady": False,
+            "usedMock": False, "networkExecuted": False, "outputArtifacts": []}
+
+
+def _closed_from(provider, raw):
+    if type(raw) is not dict:
+        return _closed(provider, "BLOCKED_ADAPTER_ERROR")
+    status = raw.get("status")
+    result = _closed(provider, status if type(status) is str else "BLOCKED_PROVIDER_RUNTIME")
+    named = raw.get("provider", provider)
+    if type(named) is not str or "REAL" in named.upper():
+        named = provider
+    result["provider"] = named
+    result["liveProviderReady"] = False
+    result["networkExecuted"] = False
+    result["usedMock"] = False
+    return result
+
+
+def submit_provider(adapter, package=None, *, transport=None, runtime=None):
+    """Dispatch one provider attempt. Mock, missing runtime, and adapter failures stay closed."""
+    provider = getattr(adapter, "provider", None)
+    try:
+        if isinstance(transport, MockTransport):
+            try:
+                transport.send(package)
+            except Exception:
+                return _closed(provider, "BLOCKED_MOCK_TRANSPORT")
+            return _closed(provider, "BLOCKED_MOCK_TRANSPORT")
+        if runtime is None:
+            return _closed(provider, "BLOCKED_NO_RUNTIME")
+        raw = adapter.submit(package)
+    except Exception:
+        return _closed(provider, "BLOCKED_ADAPTER_ERROR")
+    return _closed_from(provider, raw)
+
+
 def _pixels(record):
     return decode_png_rgb(artifact_bytes(record))
 
