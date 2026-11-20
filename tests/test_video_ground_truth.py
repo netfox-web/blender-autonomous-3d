@@ -514,3 +514,66 @@ def test_resealed_artwork_or_placement_hash_fail_closed(bundle,key,code):
     authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
     with pytest.raises(ValueError,match=code):
         check_authority(authority,authority['authorityHash'])
+
+
+def test_resealed_matching_artwork_and_placement_hashes_fail_closed(bundle):
+    authority=copy.deepcopy(bundle['a'])
+    forged='ef'*32
+    authority['identity']['artworkHash']=forged
+    authority['identity']['placementHash']=forged
+    authority['sourceFrozen']['placement']['artworkHash']=forged
+    authority['sourceFrozen']['placement']['placementHash']=forged
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='artwork_hash_mismatch|placement_hash_mismatch'):
+        check_authority(authority,authority['authorityHash'])
+
+
+def test_resealed_product_truth_strings_cannot_forge_artwork_hash(bundle):
+    from fox3d.artwork import placement_payload
+    authority=copy.deepcopy(bundle['a'])
+    forged_art='ab'*32
+    place=authority['sourceFrozen']['placement']
+    place['artworkHash']=forged_art
+    forged_place=stable_hash(placement_payload(place))
+    place['placementHash']=forged_place
+    authority['sourceArtwork']['artworkHash']=forged_art
+    authority['identity']['artworkHash']=forged_art
+    authority['identity']['placementHash']=forged_place
+    pack=authority['sourcePack']
+    for row in (pack,pack['expectedIdentity'],pack['workerEvidence'],authority['payload']['artworkPlacements'][0]):
+        row['artworkHash']=forged_art
+        row['placementHash']=forged_place
+    authority['identity']['productTruthHash']=stable_hash(pack)
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='artwork_hash_mismatch'):
+        check_authority(authority,authority['authorityHash'])
+
+
+def test_resealed_artwork_preimage_cannot_keep_the_old_hash(bundle):
+    authority=copy.deepcopy(bundle['a'])
+    current=authority['sourceArtwork']['source']
+    authority['sourceArtwork']['source']='IMPORTED' if current!='IMPORTED' else 'GENERATED'
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='artwork_hash_mismatch'):
+        check_authority(authority,authority['authorityHash'])
+
+
+def test_resealed_placement_body_cannot_keep_the_old_hash(bundle):
+    authority=copy.deepcopy(bundle['a'])
+    place=authority['sourceFrozen']['placement']
+    place['xMm']=float(place['xMm'])+1.0
+    authority['authorityHash']=stable_hash({k:v for k,v in authority.items() if k!='authorityHash'})
+    with pytest.raises(ValueError,match='placement_hash_mismatch'):
+        check_authority(authority,authority['authorityHash'])
+
+
+def test_artwork_file_bytes_must_match_sealed_record(bundle):
+    from pathlib import Path
+    path=Path(bundle['a']['sourceArtwork']['path'])
+    original=path.read_bytes()
+    try:
+        path.write_bytes(original+b'\x00')
+        with pytest.raises(ValueError,match='artwork_hash_mismatch'):
+            check_authority(bundle['a'],bundle['a']['authorityHash'])
+    finally:
+        path.write_bytes(original)
