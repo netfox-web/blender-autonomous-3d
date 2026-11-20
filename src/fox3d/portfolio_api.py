@@ -66,6 +66,19 @@ def _actor_reason(body: dict[str, Any], *, require_reason: bool) -> tuple[str, s
     return actor.strip(), str(reason or "").strip()
 
 
+_CANDIDATE_COUNT_MAX = 100
+
+
+def _bounded_candidate_count(raw: Any, *, default: int = 24) -> int:
+    if raw is None:
+        return default
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        raise HTTPException(422, f"candidateCount 須為 1 至 {_CANDIDATE_COUNT_MAX} 的整數")
+    if not 1 <= raw <= _CANDIDATE_COUNT_MAX:
+        raise HTTPException(422, f"candidateCount 須為 1 至 {_CANDIDATE_COUNT_MAX} 的整數")
+    return raw
+
+
 def _map_portfolio_error(exc: BaseException) -> NoReturn:
     if isinstance(exc, KeyError):
         raise HTTPException(404, "找不到組合需求或候選") from exc
@@ -118,7 +131,9 @@ def portfolio_router(provider: Callable[[], Any]) -> APIRouter:
                 tenant_id=tid,
                 segment=str(body.get("segment") or "STUDENT"),
                 demand_source=str(body.get("demandSource") or body.get("demand_source") or "MOCK"),
-                candidate_count=int(body.get("candidateCount") or body.get("candidate_count") or 24),
+                candidate_count=_bounded_candidate_count(
+                    body.get("candidateCount") if "candidateCount" in body else body.get("candidate_count")
+                ),
                 seed=str(body.get("seed") or "portfolio-v1"),
                 envelope=body.get("envelope") if isinstance(body.get("envelope"), dict) else None,
             )
