@@ -115,7 +115,6 @@ class Platform:
         self.spaces = SpacePipeline()
         self.judge = VisionJudge(GatewayVisionProvider(self.gateway))
         self.rd = ProductRDAgent(self.cabinets, self.cost, self.judge, self.studio)
-        self.parametrics: dict[str, dict[str, Any]] = {}
         self.rd_store = ProductRDStore(self.root / "product_rd")
         self.factory = FurnitureFactory(self)
         self.lots = MaterialLotRegistry(self.root / "lots")
